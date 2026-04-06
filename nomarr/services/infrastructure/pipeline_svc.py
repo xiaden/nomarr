@@ -1,4 +1,3 @@
-
 """Library pipeline orchestration service."""
 
 from __future__ import annotations
@@ -60,9 +59,7 @@ class LibraryPipelineService:
 
         scanning_libraries = self.db.library_pipeline_states.get_libraries_in_state(PIPELINE_SCANNING)
         stale_scanning = [
-            library_id
-            for library_id in scanning_libraries
-            if not self._is_task_running(self._scan_task_id(library_id))
+            library_id for library_id in scanning_libraries if not self._is_task_running(self._scan_task_id(library_id))
         ]
         if stale_scanning:
             if len(stale_scanning) == len(scanning_libraries):
@@ -290,7 +287,3 @@ class LibraryPipelineService:
     def _write_task_id(self, library_id: str) -> str:
         """Build the BTS task identifier used for tag writing."""
         return f"write_tags:{library_id}"
-
-
-
-

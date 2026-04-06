@@ -125,9 +125,7 @@ def _resolve_edge_field_value(
         fields_str,
         re.IGNORECASE,
     )
-    assert field_match is not None, (
-        f"Edge INSERT into '{collection}' missing '{field_name}' field in document"
-    )
+    assert field_match is not None, f"Edge INSERT into '{collection}' missing '{field_name}' field in document"
 
     raw_value = field_match.group(1)
     if raw_value.startswith("@"):
@@ -173,8 +171,7 @@ class SchemaAwareMockDB:
             if _DYNAMIC_COLLECTION.match(name):
                 continue
             assert name in VALID_COLLECTIONS, (
-                f"Unknown collection '{name}' referenced in AQL. "
-                f"Add it to migrations and update the whitelist."
+                f"Unknown collection '{name}' referenced in AQL. Add it to migrations and update the whitelist."
             )
 
     def _validate_edge_inserts(self, query: str, bind_vars: dict[str, Any]) -> None:
@@ -194,12 +191,10 @@ class SchemaAwareMockDB:
             from_coll = from_val.split("/", 1)[0]
             to_coll = to_val.split("/", 1)[0]
             assert _matches_allowed_collection_prefix(from_coll, definition["from"]), (
-                f"Edge '{collection}' _from collection '{from_coll}' not in "
-                f"valid sources {definition['from']}"
+                f"Edge '{collection}' _from collection '{from_coll}' not in valid sources {definition['from']}"
             )
             assert _matches_allowed_collection_prefix(to_coll, definition["to"]), (
-                f"Edge '{collection}' _to collection '{to_coll}' not in "
-                f"valid targets {definition['to']}"
+                f"Edge '{collection}' _to collection '{to_coll}' not in valid targets {definition['to']}"
             )
 
     def __getattr__(self, name: str) -> Any:

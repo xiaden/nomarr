@@ -127,7 +127,6 @@ class TestDerivePipelineState:
         assert result == PIPELINE_DONE
 
 
-
 class TestUpgrade:
     """Tests for upgrade()."""
 
@@ -156,10 +155,7 @@ class TestUpgrade:
         assert mock_db.aql.execute.call_count == 1
         executed_query = mock_db.aql.execute.call_args_list[0].args[0]
         assert "library_auto_write" in executed_query
-        assert all(
-            "LET file_ids =" not in call.args[0]
-            for call in mock_db.aql.execute.call_args_list
-        )
+        assert all("LET file_ids =" not in call.args[0] for call in mock_db.aql.execute.call_args_list)
 
     @pytest.mark.unit
     def test_creates_collections_and_graph_on_fresh_install(self) -> None:

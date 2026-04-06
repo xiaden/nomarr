@@ -1068,9 +1068,7 @@ def adr_commit(
     status: Annotated[
         str, "Status: Proposed, Accepted, Deprecated, or Superseded (optional when draft_id given)"
     ] = "",
-    tags: Annotated[
-        list[str], "Tags for categorization (optional when draft_id given)"
-    ] = [],  # noqa: B006  FastMCP reads this as a default annotation, not a mutable default
+    tags: Annotated[list[str], "Tags for categorization (optional when draft_id given)"] = [],  # noqa: B006  FastMCP reads this as a default annotation, not a mutable default
     context: Annotated[
         str, "Context section — why this decision is needed (optional when draft_id given)"
     ] = "",

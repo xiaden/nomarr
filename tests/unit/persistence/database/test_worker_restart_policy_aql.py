@@ -1,6 +1,5 @@
 """Unit tests for WorkerRestartPolicyOperations (worker_restart_policy_aql.py)."""
 
-
 import pytest
 
 from nomarr.persistence.database.worker_restart_policy_aql import (

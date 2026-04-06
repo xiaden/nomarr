@@ -89,9 +89,11 @@ def test_adr_suggest_draft_not_in_decisions_dir(tmp_path: Path) -> None:
     result = _suggest_sample_adr(tmp_path)
     assert "error" not in result
     decisions_dir = tmp_path / "artifacts" / "decisions"
-    committed = [
-        p for p in decisions_dir.iterdir() if p.is_file() and p.suffix == ".md"
-    ] if decisions_dir.exists() else []
+    committed = (
+        [p for p in decisions_dir.iterdir() if p.is_file() and p.suffix == ".md"]
+        if decisions_dir.exists()
+        else []
+    )
     assert committed == [], "adr_suggest should not write to the committed ADR directory"
 
 

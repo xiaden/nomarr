@@ -75,12 +75,14 @@ class TestRetryErroredFiles:
     def test_raises_on_invalid_library(self) -> None:
         mock_db = MagicMock()
         mixin = _ConcreteFilesMixin(mock_db)
-        with patch.object(mixin, "_get_library_or_error", side_effect=ValueError("not found")), pytest.raises(
-            ValueError,
-            match="not found",
+        with (
+            patch.object(mixin, "_get_library_or_error", side_effect=ValueError("not found")),
+            pytest.raises(
+                ValueError,
+                match="not found",
+            ),
         ):
             mixin.retry_errored_files("bad_id")
-
 
 
 class TestReconcileLibraryPaths:

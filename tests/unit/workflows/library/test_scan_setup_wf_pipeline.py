@@ -30,9 +30,7 @@ class TestScanSetupWorkflowPipeline:
                 return_value=(False, None),
             ),
             patch("nomarr.workflows.library.scan_setup_wf.update_scan_progress") as mock_update,
-            patch(
-                "nomarr.workflows.library.scan_setup_wf.transition_to_scanning"
-            ) as mock_transition_to_scanning,
+            patch("nomarr.workflows.library.scan_setup_wf.transition_to_scanning") as mock_transition_to_scanning,
         ):
             result = scan_setup_workflow(mock_db, "libraries/abc123", scan_type="quick")
 
@@ -49,7 +47,6 @@ class TestScanSetupWorkflowPipeline:
             "libraries/abc123",
             PIPELINE_SCANNING,
         )
-
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -68,9 +65,7 @@ class TestScanSetupWorkflowPipeline:
                 return_value=(False, None),
             ),
             patch("nomarr.workflows.library.scan_setup_wf.update_scan_progress") as mock_update,
-            patch(
-                "nomarr.workflows.library.scan_setup_wf.transition_to_scanning"
-            ) as mock_transition_to_scanning,
+            patch("nomarr.workflows.library.scan_setup_wf.transition_to_scanning") as mock_transition_to_scanning,
         ):
             result = scan_setup_workflow(mock_db, "libraries/abc123", scan_type="quick")
 

@@ -30,8 +30,6 @@ class EnsureCalibrationsExistResult:
     action_required: str | None
 
 
-
-
 @dataclass
 class GenerateCalibrationResult:
     """Result from calibration_svc.generate_calibration_with_tracking."""

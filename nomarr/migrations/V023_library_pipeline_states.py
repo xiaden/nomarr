@@ -145,7 +145,7 @@ def upgrade(db: DatabaseLike) -> None:
 
     if db.has_collection("libraries"):
         db.aql.execute(  # type: ignore[union-attr]
-        """
+            """
             FOR lib IN libraries
                 FILTER !HAS(lib, "library_auto_write")
                 UPDATE lib WITH { library_auto_write: false } IN libraries
@@ -166,7 +166,7 @@ def upgrade(db: DatabaseLike) -> None:
     library_rows_cursor = cast(
         "Cursor",
         db.aql.execute(  # type: ignore[union-attr]
-    """
+            """
         FOR lib IN libraries
             LET file_ids = (
                 FOR file IN OUTBOUND lib._id library_contains_file
@@ -213,13 +213,13 @@ def upgrade(db: DatabaseLike) -> None:
                 written_count: written_count
             }
     """,
-        bind_vars={
-            "tagged": STATE_TAGGED,
-            "not_tagged": STATE_NOT_TAGGED,
-            "calibrated": STATE_CALIBRATED,
-            "tags_written": STATE_TAGS_WRITTEN,
-        },
-    )
+            bind_vars={
+                "tagged": STATE_TAGGED,
+                "not_tagged": STATE_NOT_TAGGED,
+                "calibrated": STATE_CALIBRATED,
+                "tags_written": STATE_TAGS_WRITTEN,
+            },
+        ),
     )
     library_rows = cast("list[dict[str, Any]]", list(library_rows_cursor))
 

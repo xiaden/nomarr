@@ -52,9 +52,7 @@ class TestCreateLibraryPipeline:
                 file_write_mode="full",
                 library_auto_write=False,
             )
-        ) < mock_db.mock_calls.index(
-            call.library_pipeline_states.transition_state("libraries/abc123", PIPELINE_IDLE)
-        )
+        ) < mock_db.mock_calls.index(call.library_pipeline_states.transition_state("libraries/abc123", PIPELINE_IDLE))
 
     @pytest.mark.unit
     @pytest.mark.mocked
