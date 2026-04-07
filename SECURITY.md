@@ -11,7 +11,7 @@ Currently, only the latest commit on the `main` branch is supported. Version num
 | Version | Supported          |
 | ------- | ------------------ |
 | latest (main) | :white_check_mark: |
-| < 0.1.x | :x:                |
+| develop | :x:                |
 
 ## Security Considerations
 
