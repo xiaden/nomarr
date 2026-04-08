@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -23,6 +23,13 @@ from nomarr.services.domain.tagging_svc import CALIBRATION_APPLY_TASK_ID
 from nomarr.services.infrastructure.config_svc import INTERNAL_CALIBRATION_MIN_FILES
 from nomarr.services.infrastructure.pipeline_svc import LibraryPipelineService
 from nomarr.services.infrastructure.workers.discovery_worker import _check_idle_pipeline_completion
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
+    from nomarr.services.domain.calibration_svc import CalibrationService
+    from nomarr.services.domain.navidrome_svc import NavidromeService
+    from nomarr.services.domain.tagging_svc import TaggingService
+    from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
 
 pytestmark = [pytest.mark.integration, pytest.mark.mocked]
 
@@ -253,6 +260,11 @@ class PipelineHarness:
     service: LibraryPipelineService
 
 
+def _run_idle_pipeline_completion(db: FakeDatabase, health_pipe: Any) -> int:
+    """Call the worker helper with explicit test-harness casts for mypy."""
+    return _check_idle_pipeline_completion(cast("Database", db), health_pipe)
+
+
 def _make_harness(
     *,
     state_by_library: dict[str, str],
@@ -282,11 +294,11 @@ def _make_harness(
     tagging_svc = FakeTaggingService()
     navidrome_svc = FakeNavidromeService()
     service = LibraryPipelineService(
-        db=db,
-        bts=bts,
-        calibration_svc=calibration_svc,
-        tagging_svc=tagging_svc,
-        navidrome_svc=navidrome_svc,
+        db=cast("Database", db),
+        bts=cast("BackgroundTaskService", bts),
+        calibration_svc=cast("CalibrationService", calibration_svc),
+        tagging_svc=cast("TaggingService", tagging_svc),
+        navidrome_svc=cast("NavidromeService", navidrome_svc),
     )
     return PipelineHarness(
         db=db,
@@ -313,7 +325,7 @@ class TestPipelineIntegration:
         )
         health_pipe = MagicMock()
 
-        completed = _check_idle_pipeline_completion(harness.db, health_pipe)
+        completed = _run_idle_pipeline_completion(harness.db, health_pipe)
         assert completed == 1
         assert harness.db.library_pipeline_states.state_by_library[library_id] == PIPELINE_AWAITING_CALIBRATION
         health_pipe.send.assert_called_once()
@@ -344,14 +356,14 @@ class TestPipelineIntegration:
             tagged_counts={library_id: INTERNAL_CALIBRATION_MIN_FILES - 1},
         )
 
-        _check_idle_pipeline_completion(harness.db, None)
+        _run_idle_pipeline_completion(harness.db, None)
         assert harness.db.library_pipeline_states.state_by_library[library_id] == PIPELINE_TOO_SMALL
 
         harness.db.library_pipeline_states.transition_state(library_id, PIPELINE_SCANNING)
         harness.db.library_pipeline_states.transition_state(library_id, PIPELINE_ML_RUNNING)
         harness.db.file_states.tagged_counts[library_id] = INTERNAL_CALIBRATION_MIN_FILES + 10
 
-        _check_idle_pipeline_completion(harness.db, None)
+        _run_idle_pipeline_completion(harness.db, None)
         assert harness.db.library_pipeline_states.state_by_library[library_id] == PIPELINE_AWAITING_CALIBRATION
 
     def test_concurrent_worker_completion_keeps_second_transition_a_noop(self) -> None:
@@ -364,16 +376,18 @@ class TestPipelineIntegration:
             tagged_counts={library_id: INTERNAL_CALIBRATION_MIN_FILES + 1},
         )
 
-        duplicate_row = [{"library_id": library_id, "tagged_count": INTERNAL_CALIBRATION_MIN_FILES + 1}]
+        duplicate_row: list[dict[str, int | str]] = [
+            {"library_id": library_id, "tagged_count": INTERNAL_CALIBRATION_MIN_FILES + 1}
+        ]
 
         def _always_complete(min_files: int) -> list[dict[str, int | str]]:
             del min_files
             return list(duplicate_row)
 
-        harness.db.library_pipeline_states.find_ml_complete_libraries = _always_complete
+        harness.db.library_pipeline_states.find_ml_complete_libraries = _always_complete  # type: ignore[method-assign]
 
-        _check_idle_pipeline_completion(harness.db, None)
-        _check_idle_pipeline_completion(harness.db, None)
+        _run_idle_pipeline_completion(harness.db, None)
+        _run_idle_pipeline_completion(harness.db, None)
 
         assert harness.db.library_pipeline_states.state_by_library[library_id] == PIPELINE_AWAITING_CALIBRATION
         assert harness.db.library_pipeline_states.noop_transitions == 1
