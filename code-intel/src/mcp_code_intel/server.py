@@ -511,7 +511,8 @@ def lint_project_backend(
 ) -> CallToolResult:
     """Run backend linting tools on specified path.
 
-    Runs ruff (check + format), mypy, import-linter, and pytest. Default: only git-modified/untracked files.
+    Runs ruff (check + format), mypy, import-linter, and pytest.
+    Default: only git-modified/untracked files.
     With check_all=True: all files in path + import-linter contracts.
     """
     result = lint_project_backend_impl(path, check_all)
