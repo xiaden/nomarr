@@ -9,6 +9,9 @@
 # ADRs are stable architectural decisions — always committed
 !decisions/*.md
 
+# ASRs are architectural requirements — always committed
+!requirements/*.md
+
 # Completed design docs are committed for auditability
 !designs/completed/*.md
 
