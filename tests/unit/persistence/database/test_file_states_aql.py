@@ -675,3 +675,368 @@ class TestClearTaggedBatch:
         ops.clear_tagged_batch(["library_files/1"])
         insert_bind_vars = mock_db.aql.execute.call_args_list[1][1]["bind_vars"]
         assert insert_bind_vars["not_tagged"] == "file_states/not_tagged"
+
+
+# ==================================================================
+# Initialization operations
+# ==================================================================
+
+
+class TestInitializeFileStates:
+    """Test initialize_file_states() method."""
+
+    @pytest.mark.unit
+    def test_calls_aql_execute_once(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Calls AQL execute exactly once for one file."""
+        mock_db.aql.execute.return_value = MagicMock()
+
+        ops.initialize_file_states("library_files/abc")
+
+        assert mock_db.aql.execute.call_count == 1
+
+    @pytest.mark.unit
+    def test_bind_vars_include_file_id(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Passes the provided file_id in bind_vars."""
+        mock_db.aql.execute.return_value = MagicMock()
+
+        ops.initialize_file_states("library_files/abc")
+
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert bind_vars["file_id"] == "library_files/abc"
+
+    @pytest.mark.unit
+    def test_bind_vars_include_negative_states(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Passes a non-empty negative_states list in bind_vars."""
+        mock_db.aql.execute.return_value = MagicMock()
+
+        ops.initialize_file_states("library_files/abc")
+
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert isinstance(bind_vars["negative_states"], list)
+        assert bind_vars["negative_states"]
+
+    @pytest.mark.unit
+    def test_bind_vars_include_edge_collection(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Passes the file_has_state edge collection in bind_vars."""
+        mock_db.aql.execute.return_value = MagicMock()
+
+        ops.initialize_file_states("library_files/abc")
+
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert bind_vars["@coll"] == "file_has_state"
+
+
+class TestInitializeFileStatesBatch:
+    """Test initialize_file_states_batch() method."""
+
+    @pytest.mark.unit
+    def test_calls_aql_execute_once(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Calls AQL execute exactly once for a non-empty batch."""
+        mock_db.aql.execute.return_value = MagicMock()
+
+        ops.initialize_file_states_batch(["library_files/1", "library_files/2"])
+
+        assert mock_db.aql.execute.call_count == 1
+
+    @pytest.mark.unit
+    def test_empty_list_skips_execute(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Skips AQL execution when file_ids is empty."""
+        ops.initialize_file_states_batch([])
+
+        assert mock_db.aql.execute.call_count == 0
+
+    @pytest.mark.unit
+    def test_bind_vars_include_file_ids(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Passes the full file_ids list in bind_vars."""
+        mock_db.aql.execute.return_value = MagicMock()
+        file_ids = ["library_files/1", "library_files/2", "library_files/3"]
+
+        ops.initialize_file_states_batch(file_ids)
+
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert bind_vars["file_ids"] == file_ids
+
+    @pytest.mark.unit
+    def test_bind_vars_include_negative_states(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Passes a non-empty negative_states list in bind_vars."""
+        mock_db.aql.execute.return_value = MagicMock()
+
+        ops.initialize_file_states_batch(["library_files/1"])
+
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert isinstance(bind_vars["negative_states"], list)
+        assert bind_vars["negative_states"]
+
+
+# ==================================================================
+# Batch reset and pending tag write queries
+# ==================================================================
+
+
+class TestClearAllStatesBatch:
+    """Test clear_all_states_batch() method."""
+
+    @pytest.mark.unit
+    def test_returns_removed_count(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Returns the removed edge count from the cursor."""
+        mock_db.aql.execute.return_value = iter([5])
+
+        result = ops.clear_all_states_batch(["library_files/1", "library_files/2"])
+
+        assert result == 5
+
+    @pytest.mark.unit
+    def test_empty_list_returns_zero(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Returns zero and skips AQL when file_ids is empty."""
+        result = ops.clear_all_states_batch([])
+
+        assert result == 0
+        assert mock_db.aql.execute.call_count == 0
+
+    @pytest.mark.unit
+    def test_query_filters_by_file_ids(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Uses the provided file_ids list and filters on _from IN @file_ids."""
+        file_ids = ["library_files/1", "library_files/2"]
+        mock_db.aql.execute.return_value = iter([0])
+
+        ops.clear_all_states_batch(file_ids)
+
+        query = mock_db.aql.execute.call_args[0][0]
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert "_from IN @file_ids" in query
+        assert bind_vars["file_ids"] == file_ids
+
+    @pytest.mark.unit
+    def test_returns_zero_when_cursor_empty(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Returns zero when the cursor yields no count."""
+        mock_db.aql.execute.return_value = iter([])
+
+        result = ops.clear_all_states_batch(["library_files/1"])
+
+        assert result == 0
+
+
+class TestCountPendingTagWrites:
+    """Test count_pending_tag_writes() method."""
+
+    @pytest.mark.unit
+    def test_returns_count(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Returns the count produced by the cursor."""
+        mock_db.aql.execute.return_value = iter([4])
+
+        result = ops.count_pending_tag_writes()
+
+        assert result == 4
+
+    @pytest.mark.unit
+    def test_returns_zero_for_empty_cursor(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Returns zero when the cursor is empty."""
+        mock_db.aql.execute.return_value = iter([])
+
+        result = ops.count_pending_tag_writes()
+
+        assert result == 0
+
+    @pytest.mark.unit
+    def test_query_uses_tags_not_written_bind_var(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Binds the tags_not_written state vertex in the query."""
+        mock_db.aql.execute.return_value = iter([0])
+
+        ops.count_pending_tag_writes()
+
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert bind_vars["tags_not_written"] == "file_states/tags_not_written"
+
+
+class TestGetPendingTagWriteFileIds:
+    """Test get_pending_tag_write_file_ids() method."""
+
+    @pytest.mark.unit
+    def test_returns_file_ids(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Returns file IDs from the cursor in order."""
+        expected = ["library_files/1", "library_files/2"]
+        mock_db.aql.execute.return_value = iter(expected)
+
+        result = ops.get_pending_tag_write_file_ids()
+
+        assert result == expected
+
+    @pytest.mark.unit
+    def test_query_uses_tags_not_written_bind_var(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Binds the tags_not_written state vertex in the query."""
+        mock_db.aql.execute.return_value = iter([])
+
+        ops.get_pending_tag_write_file_ids()
+
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert bind_vars["tags_not_written"] == "file_states/tags_not_written"
+
+    @pytest.mark.unit
+    def test_custom_limit_is_passed_as_bind_var(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Passes a custom limit through bind_vars."""
+        mock_db.aql.execute.return_value = iter([])
+
+        ops.get_pending_tag_write_file_ids(limit=50)
+
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert bind_vars["limit"] == 50
+
+
+# ==================================================================
+# Aggregate and lookup queries
+# ==================================================================
+
+
+class TestCountUntaggedFiles:
+    """Test count_untagged_files() method."""
+
+    @pytest.mark.unit
+    def test_returns_count(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Returns the count produced by the scalar query."""
+        mock_db.aql.execute.return_value = iter([7])
+
+        result = ops.count_untagged_files()
+
+        assert result == 7
+
+    @pytest.mark.unit
+    def test_returns_zero_when_empty(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Returns zero when the scalar query yields zero."""
+        mock_db.aql.execute.return_value = iter([0])
+
+        result = ops.count_untagged_files()
+
+        assert result == 0
+
+    @pytest.mark.unit
+    def test_query_includes_not_tagged_bind_var(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Binds the not_tagged state vertex in the query."""
+        mock_db.aql.execute.return_value = iter([0])
+
+        ops.count_untagged_files()
+
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert bind_vars["not_tagged"] == "file_states/not_tagged"
+
+    @pytest.mark.unit
+    def test_library_scoped_query_uses_outbound_traversal(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Library-scoped count uses OUTBOUND traversal via library_contains_file."""
+        mock_db.aql.execute.return_value = iter([0])
+
+        ops.count_untagged_files(library_id="libraries/123")
+
+        query = mock_db.aql.execute.call_args[0][0]
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert "OUTBOUND @library_id library_contains_file" in query
+        assert bind_vars["library_id"] == "libraries/123"
+
+
+class TestCountUncalibratedFiles:
+    """Test count_uncalibrated_files() method."""
+
+    @pytest.mark.unit
+    def test_returns_count(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Returns the count produced by the scalar query."""
+        mock_db.aql.execute.return_value = iter([3])
+
+        result = ops.count_uncalibrated_files()
+
+        assert result == 3
+
+    @pytest.mark.unit
+    def test_query_uses_not_calibrated_bind_var(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Binds the not_calibrated state vertex in the query."""
+        mock_db.aql.execute.return_value = iter([0])
+
+        ops.count_uncalibrated_files()
+
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert bind_vars["not_calibrated"] == "file_states/not_calibrated"
+
+
+class TestGetUncalibratedTaggedFileIds:
+    """Test get_uncalibrated_tagged_file_ids() method."""
+
+    @pytest.mark.unit
+    def test_returns_file_ids(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Returns matching file IDs from the cursor."""
+        mock_db.aql.execute.return_value = iter(["library_files/1"])
+
+        result = ops.get_uncalibrated_tagged_file_ids("libraries/123")
+
+        assert result == ["library_files/1"]
+
+    @pytest.mark.unit
+    def test_query_uses_tagged_and_not_calibrated_bind_vars(
+        self, ops: FileStatesOperations, mock_db: MagicMock
+    ) -> None:
+        """Binds the tagged and not_calibrated state vertices in the query."""
+        mock_db.aql.execute.return_value = iter([])
+
+        ops.get_uncalibrated_tagged_file_ids("libraries/123")
+
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert bind_vars["tagged"] == "file_states/tagged"
+        assert bind_vars["not_calibrated"] == "file_states/not_calibrated"
+
+    @pytest.mark.unit
+    def test_query_uses_library_id(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Binds the provided library_id for scoping."""
+        mock_db.aql.execute.return_value = iter([])
+
+        ops.get_uncalibrated_tagged_file_ids("libraries/123")
+
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert bind_vars["library_id"] == "libraries/123"
+
+
+# ==================================================================
+# discover_next_untagged_file additional coverage
+# ==================================================================
+
+
+class TestDiscoverNextUntaggedFile:
+    """Test discover_next_untagged_file() general behavior."""
+
+    @pytest.mark.unit
+    def test_returns_none_when_no_file_found(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Returns None when the cursor is empty."""
+        mock_db.aql.execute.return_value = iter([])
+
+        result = ops.discover_next_untagged_file()
+
+        assert result is None
+
+    @pytest.mark.unit
+    def test_returns_file_document_when_found(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Returns the first file document when a match exists."""
+        expected = {"_id": "library_files/1"}
+        mock_db.aql.execute.return_value = iter([expected])
+
+        result = ops.discover_next_untagged_file()
+
+        assert result == expected
+
+    @pytest.mark.unit
+    def test_library_scoped_query_uses_outbound_traversal(self, ops: FileStatesOperations, mock_db: MagicMock) -> None:
+        """Library-scoped discovery uses OUTBOUND traversal via library_contains_file."""
+        mock_db.aql.execute.return_value = iter([])
+
+        ops.discover_next_untagged_file(library_id="libraries/123")
+
+        query = mock_db.aql.execute.call_args[0][0]
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+        assert "OUTBOUND @library_id library_contains_file" in query
+        assert bind_vars["library_id"] == "libraries/123"
+
+    @pytest.mark.unit
+    def test_exclude_claimed_false_omits_worker_claim_filter(
+        self, ops: FileStatesOperations, mock_db: MagicMock
+    ) -> None:
+        """Omits the worker_claims filter when exclude_claimed is False."""
+        mock_db.aql.execute.return_value = iter([])
+
+        ops.discover_next_untagged_file(exclude_claimed=False)
+
+        query = mock_db.aql.execute.call_args[0][0]
+        assert "worker_claims" not in query

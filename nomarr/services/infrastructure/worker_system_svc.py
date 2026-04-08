@@ -1,16 +1,4 @@
-"""Worker System Service - Discovery-based worker management.
-
-Manages discovery workers that query library_files directly instead of
-polling a queue. Workers claim files via worker_claims collection.
-
-Implements ComponentLifecycleHandler protocol for HealthMonitor callbacks.
-Receives status change events and decides on restart/recovery actions.
-
-Per GPU_REFACTOR_PLAN.md:
-- Implements admission control (Section 10)
-- Uses tier selection for graceful degradation (Section 9)
-- GPU capability gating at startup (Section 5)
-"""
+"""Discovery-worker system service with admission control and restart handling."""
 
 from __future__ import annotations
 
@@ -20,10 +8,7 @@ import time
 from multiprocessing import Event, Pipe
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.ml.resources.ml_capacity_probe_comp import (
-    CapacityEstimate,
-    get_or_run_capacity_probe,
-)
+from nomarr.components.ml.resources.ml_capacity_probe_comp import CapacityEstimate, get_or_run_capacity_probe
 from nomarr.components.ml.resources.ml_tier_selection_comp import (
     TIER_CONFIGS,
     ExecutionTier,
@@ -33,10 +18,7 @@ from nomarr.components.ml.resources.ml_tier_selection_comp import (
 from nomarr.components.ml.resources.ml_vram_coordinator_comp import release_worker_promises
 from nomarr.components.platform.resource_monitor_comp import check_nvidia_gpu_capability
 from nomarr.components.workers import should_restart_worker
-from nomarr.components.workers.worker_discovery_comp import (
-    cleanup_stale_claims,
-    release_claims_for_worker,
-)
+from nomarr.components.workers.worker_discovery_comp import cleanup_stale_claims, release_claims_for_worker
 from nomarr.helpers.dto.health_dto import (
     ComponentLifecycleHandler,
     ComponentPolicy,
@@ -44,10 +26,7 @@ from nomarr.helpers.dto.health_dto import (
     StatusChangeContext,
 )
 from nomarr.services.infrastructure.pipeline_svc import LibraryPipelineService
-from nomarr.services.infrastructure.workers.discovery_worker import (
-    DiscoveryWorker,
-    create_discovery_worker,
-)
+from nomarr.services.infrastructure.workers.discovery_worker import DiscoveryWorker, create_discovery_worker
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.processing_dto import ProcessorConfig
@@ -55,45 +34,19 @@ if TYPE_CHECKING:
     from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorService
 
 logger = logging.getLogger(__name__)
-
-# Default heartbeat timeout for claim cleanup (30 seconds)
 DEFAULT_HEARTBEAT_TIMEOUT_MS = 30_000
-
-# Default worker health monitoring policy
-# NOTE: Worker sends heartbeats every 3s, monitor checks every 5s
-# This 3s < 5s relationship provides buffer for timing jitter and prevents false unhealthy states
 DEFAULT_WORKER_POLICY = ComponentPolicy(
-    startup_timeout_s=60.0,  # Workers may take time to load models
-    staleness_interval_s=9.0,  # Expect health frame every 9s
-    max_consecutive_misses=3,  # 3 misses = 27s before dead
+    startup_timeout_s=60.0,
+    staleness_interval_s=9.0,
+    max_consecutive_misses=3,
     min_recovery_s=5.0,
-    max_recovery_s=120.0,  # Allow up to 2 min recovery for heavy operations
+    max_recovery_s=120.0,
 )
-
-# Worker startup stagger delay (seconds between starting workers)
 WORKER_STAGGER_DELAY_S = 2.0
 
 
 class WorkerSystemService(ComponentLifecycleHandler):
-    """Discovery-based worker system service with admission control.
-
-    Manages worker processes that:
-    1. Query library_files for files with needs_tagging=1
-    2. Claim files via worker_claims collection
-    3. Process files using process_file_workflow
-    4. Update library_files.tagged=1 before releasing claims
-
-    Implements GPU/CPU adaptive resource management:
-    - GPU capability gating at startup
-    - Capacity probe to measure resource usage
-    - Tier selection for graceful degradation
-    - Admission control for worker count
-
-    Implements ComponentLifecycleHandler:
-    - Registers workers with HealthMonitor (pipes + policy + callback handler)
-    - Receives status change callbacks
-    - Decides on restart/recovery based on status transitions
-    """
+    """Manage discovery workers, admission control, and restart policy."""
 
     def __init__(
         self,
@@ -104,43 +57,24 @@ class WorkerSystemService(ComponentLifecycleHandler):
         worker_count: int = 1,
         default_enabled: bool = True,
     ) -> None:
-        """Initialize worker system service.
-
-        Args:
-            db: Database instance
-            processor_config: Configuration for the processing workflow
-            pipeline_svc: Pipeline coordination service for calibration triggers
-            health_monitor: HealthMonitor to register workers with
-            worker_count: Number of worker processes to spawn (max)
-            default_enabled: Default worker_enabled flag if not in DB
-
-        """
+        """Initialize worker system service."""
         self.db = db
         self.processor_config = processor_config
         self.pipeline_svc = pipeline_svc
         self.health_monitor = health_monitor
         self.worker_count = worker_count
         self.default_enabled = default_enabled
-
         if self.health_monitor is not None:
             self.health_monitor.set_pipeline_callback(self.pipeline_svc.trigger_calibration)
-
-        # Get DB connection info for workers (required for subprocess connections)
         if not db.hosts or not db.password:
             msg = "Database hosts and password required for worker system"
             raise ValueError(msg)
         self._db_hosts: str = db.hosts
         self._db_password: str = db.password
-
-        # Worker process management
         self._workers: list[DiscoveryWorker] = []
         self._stop_event = Event()
         self._started = False
-
-        # Restart timer tracking (idempotent scheduling)
-        self._pending_restart_timers: dict[str, threading.Timer] = {}  # component_id -> Timer
-
-        # GPU/CPU adaptive resource management state
+        self._pending_restart_timers: dict[str, threading.Timer] = {}
         self._gpu_capable: bool | None = None
         self._capacity_estimate: CapacityEstimate | None = None
         self._tier_selection: TierSelection | None = None
@@ -148,16 +82,6 @@ class WorkerSystemService(ComponentLifecycleHandler):
     # ------------------- Resource Management ------------------
 
     def _check_gpu_capability(self) -> bool:
-        """Check NVIDIA GPU capability once at startup.
-
-        Per GPU_REFACTOR_PLAN.md Section 5:
-        - A container is GPU-capable iff nvidia-smi succeeds
-        - Checked once at startup and cached
-
-        Returns:
-            True if GPU is available, False otherwise
-
-        """
         if self._gpu_capable is None:
             self._gpu_capable = check_nvidia_gpu_capability()
             if self._gpu_capable:
@@ -167,37 +91,17 @@ class WorkerSystemService(ComponentLifecycleHandler):
         return self._gpu_capable
 
     def _run_admission_control(self) -> TierSelection:
-        """Run admission control to determine execution tier and worker count.
-
-        Per GPU_REFACTOR_PLAN.md Section 10:
-        1. Check GPU capability
-        2. Wait for capacity estimate
-        3. Select execution tier
-        4. Calculate worker count based on tier
-
-        Returns:
-            TierSelection with tier and calculated worker count
-
-        """
-        # Get resource management config
+        """Determine execution tier and worker count."""
         rm_config = self.processor_config.resource_management
         if rm_config is None or not rm_config.enabled:
-            # Resource management disabled - use configured worker count
             logger.debug("[WorkerSystemService] Resource management disabled, using configured worker count")
-
-            # Return Tier 0 with configured workers
             return TierSelection(
                 tier=ExecutionTier.FAST_PATH,
                 config=TIER_CONFIGS[ExecutionTier.FAST_PATH],
                 calculated_workers=self.worker_count,
                 reason="Resource management disabled",
             )
-
-        # Check GPU capability (result is cached in check_nvidia_gpu_capability)
-        # This pre-warms the GPU capability cache for the capacity probe
         self._check_gpu_capability()
-
-        # Run or wait for capacity probe
         logger.info("[WorkerSystemService] Running capacity probe...")
         capacity_estimate = get_or_run_capacity_probe(
             db=self.db,
@@ -206,11 +110,8 @@ class WorkerSystemService(ComponentLifecycleHandler):
             ram_detection_mode=rm_config.ram_detection_mode,
         )
         self._capacity_estimate = capacity_estimate
-
         if capacity_estimate.is_conservative:
             logger.warning("[WorkerSystemService] Using conservative capacity estimates (probe failed or timed out)")
-
-        # Select execution tier
         tier_selection = select_execution_tier(
             capacity_estimate=capacity_estimate,
             vram_budget_mb=rm_config.vram_budget_mb,
@@ -218,13 +119,11 @@ class WorkerSystemService(ComponentLifecycleHandler):
             config_max_workers=self.worker_count,
         )
         self._tier_selection = tier_selection
-
         logger.info(
             "[WorkerSystemService] Tier selection: %s (workers=%d)",
             tier_selection.reason,
             tier_selection.calculated_workers,
         )
-
         return tier_selection
 
     # ------------------- ComponentLifecycleHandler Protocol ------------------
@@ -236,15 +135,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
         new_status: ComponentStatus,
         context: StatusChangeContext,
     ) -> None:
-        """Handle component status change (from HealthMonitor callback).
-
-        Args:
-            component_id: Worker component ID
-            old_status: Previous status
-            new_status: New status
-            context: Additional context (consecutive_misses, recovery_deadline, etc.)
-
-        """
+        """Handle a health-monitor status transition for a worker."""
         logger.debug(
             "[WorkerSystemService] %s: %s -> %s (misses=%d)",
             component_id,
@@ -252,196 +143,129 @@ class WorkerSystemService(ComponentLifecycleHandler):
             new_status,
             context.consecutive_misses,
         )
-
         if new_status == "dead":
-            # Release file claims for crashed worker
-            released_file_ids = release_claims_for_worker(self.db, component_id)
-            if released_file_ids:
-                logger.info(
-                    "[WorkerSystemService] Released %d claim(s) for dead worker %s - files will be reprocessed",
-                    len(released_file_ids),
-                    component_id,
-                )
-
-            # Release VRAM promises for crashed worker so fleet headroom is reclaimed
-            try:
-                release_worker_promises(self.db, component_id)
-            except Exception:
-                logger.debug(
-                    "[WorkerSystemService] Failed to release VRAM promises for dead worker %s",
-                    component_id,
-                    exc_info=True,
-                )
-
-            # Check if shutdown was requested (graceful stop)
-            if self._stop_event.is_set():
-                logger.info("[WorkerSystemService] Worker %s stopped gracefully, not restarting", component_id)
-                return
-
-            # Cancel any existing pending restart for this component (idempotent scheduling)
-            existing_timer = self._pending_restart_timers.pop(component_id, None)
-            if existing_timer:
-                existing_timer.cancel()
-                logger.debug("[WorkerSystemService] Cancelled existing restart timer for %s", component_id)
-
-            # Worker died unexpectedly - consult restart policy
-            restart_count, last_restart_wall_ms = self.db.worker_restart_policy.get_restart_state(component_id)
-            decision = should_restart_worker(restart_count, last_restart_wall_ms)
-
-            logger.info(
-                "[WorkerSystemService] Restart decision for %s: %s (reason: %s)",
-                component_id,
-                decision.action,
-                decision.reason,
-            )
-
-            if decision.action == "restart":
-                self.db.worker_restart_policy.increment_restart_count(component_id)
-                # Schedule restart with backoff (non-blocking)
-                timer = threading.Timer(
-                    decision.backoff_seconds,
-                    self._restart_worker,
-                    args=(component_id,),
-                )
-                self._pending_restart_timers[component_id] = timer  # Track for idempotency
-                timer.start()
-            else:  # mark_failed
-                if self.health_monitor:
-                    self.health_monitor.set_failed(component_id)
-                self.db.worker_restart_policy.mark_failed_permanent(
-                    component_id,
-                    decision.failure_reason or "Restart limit exceeded",
-                )
-                logger.error(
-                    "[WorkerSystemService] Worker %s marked as permanently failed: %s",
-                    component_id,
-                    decision.failure_reason,
-                )
-
+            self._handle_worker_death(component_id)
         elif new_status == "unhealthy":
-            # Worker is missing health checks but not dead yet
             logger.warning(
-                "[WorkerSystemService] Worker %s unhealthy (%d misses)",
-                component_id,
-                context.consecutive_misses,
+                "[WorkerSystemService] Worker %s unhealthy (%d misses)", component_id, context.consecutive_misses
             )
+
+    def _handle_worker_death(self, component_id: str) -> None:
+        released_file_ids = release_claims_for_worker(self.db, component_id)
+        if released_file_ids:
+            logger.info(
+                "[WorkerSystemService] Released %d claim(s) for dead worker %s - files will be reprocessed",
+                len(released_file_ids),
+                component_id,
+            )
+        try:
+            release_worker_promises(self.db, component_id)
+        except Exception:
+            logger.debug(
+                "[WorkerSystemService] Failed to release VRAM promises for dead worker %s", component_id, exc_info=True
+            )
+        if self._stop_event.is_set():
+            logger.info("[WorkerSystemService] Worker %s stopped gracefully, not restarting", component_id)
+            return
+        existing_timer = self._pending_restart_timers.pop(component_id, None)
+        if existing_timer:
+            existing_timer.cancel()
+            logger.debug("[WorkerSystemService] Cancelled existing restart timer for %s", component_id)
+        restart_count, last_restart_wall_ms = self.db.worker_restart_policy.get_restart_state(component_id)
+        decision = should_restart_worker(restart_count, last_restart_wall_ms)
+        logger.info(
+            "[WorkerSystemService] Restart decision for %s: %s (reason: %s)",
+            component_id,
+            decision.action,
+            decision.reason,
+        )
+        if decision.action == "restart":
+            self.db.worker_restart_policy.increment_restart_count(component_id)
+            timer = threading.Timer(decision.backoff_seconds, self._restart_worker, args=(component_id,))
+            self._pending_restart_timers[component_id] = timer
+            timer.start()
+            return
+        if self.health_monitor:
+            self.health_monitor.set_failed(component_id)
+        self.db.worker_restart_policy.mark_failed_permanent(
+            component_id, decision.failure_reason or "Restart limit exceeded"
+        )
+        logger.error(
+            "[WorkerSystemService] Worker %s marked as permanently failed: %s", component_id, decision.failure_reason
+        )
+
+    def _drain_old_worker(self, worker: DiscoveryWorker, timeout: float) -> None:
+        worker.join(timeout=timeout)
+        if worker.is_alive():
+            logger.warning(
+                "[WorkerSystemService] Old worker %s (pid=%s) still alive before restart, terminating",
+                worker.worker_id,
+                worker.pid,
+            )
+            worker.terminate()
+            worker.join(timeout=1.0)
+            if worker.is_alive():
+                logger.error(
+                    "[WorkerSystemService] Worker %s (pid=%s) still alive after terminate(), force killing",
+                    worker.worker_id,
+                    worker.pid,
+                )
+                worker.kill()
+                worker.join(timeout=0.5)
 
     def _restart_worker(self, component_id: str) -> None:
-        """Spawn replacement worker after backoff delay.
-
-        This is called by threading.Timer after backoff seconds.
-        Only replaces worker if system is still enabled.
-
-        Args:
-            component_id: Worker component ID (e.g., "discovery_worker_0")
-
-        """
-        # Remove timer from pending dict (already executed)
         self._pending_restart_timers.pop(component_id, None)
-
-        # Abort if shutdown was requested — timer.cancel() sets a flag but cannot
-        # interrupt a callback that has already started executing, so we must check here.
         if self._stop_event.is_set():
             logger.info("[WorkerSystemService] Skipping restart for %s (shutdown in progress)", component_id)
             return
-
-        # Re-check worker_enabled (user may have disabled during backoff)
         if not self.is_worker_system_enabled():
-            logger.info(
-                "[WorkerSystemService] Skipping restart for %s (worker system disabled)",
-                component_id,
-            )
+            logger.info("[WorkerSystemService] Skipping restart for %s (worker system disabled)", component_id)
             return
-
-        # Extract worker index from component_id
         try:
             worker_index = int(component_id.split(":")[-1])
         except (ValueError, IndexError):
             logger.exception("[WorkerSystemService] Invalid component_id format: %s", component_id)
             return
 
-        # Spawn replacement worker
         logger.info("[WorkerSystemService] Restarting worker %d", worker_index)
         try:
-            # Drain the old worker first so there is never an overlap where both
-            # the old and new process are simultaneously alive.  The health monitor
-            # already signalled EOF on the pipe, so join() should return instantly,
-            # but we force-kill just in case the process is a zombie or D-state.
-            old_worker: DiscoveryWorker | None = None
-            if worker_index < len(self._workers):
-                old_worker = self._workers[worker_index]
+            old_worker: DiscoveryWorker | None = (
+                self._workers[worker_index] if worker_index < len(self._workers) else None
+            )
             if old_worker is not None:
-                old_worker.join(timeout=2.0)
-                if old_worker.is_alive():
-                    logger.warning(
-                        "[WorkerSystemService] Old worker %s (pid=%s) still alive before restart, terminating",
-                        old_worker.worker_id,
-                        old_worker.pid,
-                    )
-                    old_worker.terminate()
-                    old_worker.join(timeout=1.0)
-                    if old_worker.is_alive():
-                        logger.error(
-                            "[WorkerSystemService] Worker %s (pid=%s) still alive after terminate(), force killing",
-                            old_worker.worker_id,
-                            old_worker.pid,
-                        )
-                        old_worker.kill()
-                        old_worker.join(timeout=0.5)
-
-            # Create dedicated pipe for this worker's health telemetry
+                self._drain_old_worker(old_worker, timeout=2.0)
             parent_conn, child_conn = Pipe(duplex=False)
-
             new_worker = create_discovery_worker(
                 worker_index=worker_index,
                 db_hosts=self._db_hosts,
                 db_password=self._db_password,
                 processor_config=self.processor_config,
                 stop_event=self._stop_event,
-                health_pipe=child_conn,  # Pass write-end to worker
+                health_pipe=child_conn,
                 execution_tier=self._tier_selection.tier if self._tier_selection else 0,
                 prefer_gpu=self._tier_selection.config.prefer_gpu if self._tier_selection else True,
             )
             new_worker.start()
-
-            # Close child end in parent - only the worker should have it
             child_conn.close()
-
-            # Register with HealthMonitor
             if self.health_monitor:
                 self.health_monitor.register_component(new_worker.worker_id, self, parent_conn)
-
-            # Replace worker in list
             if worker_index < len(self._workers):
                 self._workers[worker_index] = new_worker
             else:
-                # Worker list shrunk? Append instead
                 self._workers.append(new_worker)
-
             logger.info(
                 "[WorkerSystemService] Worker %d restarted successfully (new_pid=%s, old_pid=%s)",
                 worker_index,
                 new_worker.pid,
                 old_worker.pid if old_worker else None,
             )
-
-        except Exception as e:
-            logger.error(
-                "[WorkerSystemService] Failed to restart worker %d: %s",
-                worker_index,
-                e,
-                exc_info=True,
-            )
+        except Exception as exc:
+            logger.error("[WorkerSystemService] Failed to restart worker %d: %s", worker_index, exc, exc_info=True)
 
     # ---------------------------- Control Methods ----------------------------
 
     def is_worker_system_enabled(self) -> bool:
-        """Check if worker system is globally enabled.
-
-        Returns:
-            True if worker_enabled=true in DB meta, or default if not set
-
-        """
+        """Return whether the worker system is globally enabled."""
         meta = self.db.meta.get("worker_enabled")
         if meta is None:
             return self.default_enabled
@@ -460,125 +284,77 @@ class WorkerSystemService(ComponentLifecycleHandler):
     # ---------------------------- Worker Lifecycle ----------------------------
 
     def start_all_workers(self) -> None:
-        """Start worker processes based on admission control and tier selection.
-
-        Per GPU_REFACTOR_PLAN.md Section 10:
-        - Runs admission control to determine tier and worker count
-        - Tier 4 means refusal (no workers started)
-        - Workers are started with stagger delays
-        """
+        """Start worker processes based on admission control and tier selection."""
         if self._started:
             logger.debug("[WorkerSystemService] Workers already started")
             return
-
         if not self.is_worker_system_enabled():
             logger.info("[WorkerSystemService] Worker system disabled, not starting")
             return
-
-        # Run admission control to determine tier and worker count
         tier_selection = self._run_admission_control()
-
-        # Check for Tier 4 (refuse)
         if tier_selection.tier == ExecutionTier.REFUSE:
             logger.error(
-                "[WorkerSystemService] Tier 4 (Refuse): %s. No workers will be started.",
-                tier_selection.reason,
+                "[WorkerSystemService] Tier 4 (Refuse): %s. No workers will be started.", tier_selection.reason
             )
-            # Mark as started but with 0 workers
             self._started = True
             return
-
         actual_worker_count = tier_selection.calculated_workers
         logger.debug(
             "[WorkerSystemService] Starting %d discovery worker(s) at %s",
             actual_worker_count,
             tier_selection.config.description,
         )
-
-        # Clean up stale claims from previous runs before starting workers
         removed_claims = self.cleanup_stale_claims()
         if removed_claims > 0:
-            logger.info(
-                "[WorkerSystemService] Cleaned up %d stale claim(s) from previous session",
-                removed_claims,
-            )
-
-        # Clear stop event for new workers
+            logger.info("[WorkerSystemService] Cleaned up %d stale claim(s) from previous session", removed_claims)
         self._stop_event.clear()
-
-        # Create and start workers with stagger delay, registering each with HealthMonitor
         started_workers: list[str] = []
         for i in range(actual_worker_count):
-            # Stagger worker starts to avoid resource contention
             if i > 0:
                 time.sleep(WORKER_STAGGER_DELAY_S)
-
-            # Create dedicated pipe for this worker's health telemetry
-            parent_conn, child_conn = Pipe(duplex=False)  # One-way: child writes, parent reads
-
-            worker = create_discovery_worker(
-                worker_index=i,
-                db_hosts=self._db_hosts,
-                db_password=self._db_password,
-                processor_config=self.processor_config,
-                stop_event=self._stop_event,
-                health_pipe=child_conn,  # Pass write-end to worker
-                execution_tier=tier_selection.tier,  # Pass tier to worker
-                prefer_gpu=tier_selection.config.prefer_gpu,  # GPU preference from tier
-            )
-
-            worker.start()
-            self._workers.append(worker)
-
-            # Close child end in parent - only the worker should have it
-            child_conn.close()
-
-            # Register with HealthMonitor (it owns the pipe reader)
-            if self.health_monitor:
-                self.health_monitor.register_component(
-                    component_id=worker.worker_id,
-                    handler=self,  # WorkerSystemService implements ComponentLifecycleHandler
-                    pipe_conn=parent_conn,
-                    policy=DEFAULT_WORKER_POLICY,
-                )
-
+            worker = self._spawn_worker(i, tier_selection)
             started_workers.append(f"worker:tag:{i} (pid={worker.pid})")
-
-        logger.info(
-            "[WorkerSystemService] Started %d worker(s): %s",
-            actual_worker_count,
-            ", ".join(started_workers),
-        )
+        logger.info("[WorkerSystemService] Started %d worker(s): %s", actual_worker_count, ", ".join(started_workers))
         self._started = True
 
+    def _spawn_worker(self, index: int, tier_selection: TierSelection) -> DiscoveryWorker:
+        parent_conn, child_conn = Pipe(duplex=False)
+        worker = create_discovery_worker(
+            worker_index=index,
+            db_hosts=self._db_hosts,
+            db_password=self._db_password,
+            processor_config=self.processor_config,
+            stop_event=self._stop_event,
+            health_pipe=child_conn,
+            execution_tier=tier_selection.tier,
+            prefer_gpu=tier_selection.config.prefer_gpu,
+        )
+        worker.start()
+        self._workers.append(worker)
+        child_conn.close()
+        if self.health_monitor:
+            self.health_monitor.register_component(
+                component_id=worker.worker_id,
+                handler=self,
+                pipe_conn=parent_conn,
+                policy=DEFAULT_WORKER_POLICY,
+            )
+        return worker
+
     def stop_all_workers(self, timeout: float = 10.0) -> None:
-        """Stop all worker processes gracefully.
-
-        Args:
-            timeout: Seconds to wait for graceful shutdown before force kill
-
-        """
+        """Stop all worker processes gracefully."""
         if not self._workers:
             logger.debug("[WorkerSystemService] No workers to stop")
             return
-
         logger.info("[WorkerSystemService] Stopping %d worker(s)", len(self._workers))
-
-        # Cancel all pending restart timers FIRST (before setting stop event)
         for component_id, timer in list(self._pending_restart_timers.items()):
             timer.cancel()
             logger.debug("[WorkerSystemService] Cancelled pending restart timer for %s", component_id)
         self._pending_restart_timers.clear()
-
-        # Signal all workers to stop
         self._stop_event.set()
-
-        # Unregister workers from HealthMonitor
         if self.health_monitor:
             for worker in self._workers:
                 self.health_monitor.unregister_component(worker.worker_id)
-
-        # Wait for graceful shutdown
         for worker in self._workers:
             worker.join(timeout=timeout)
             if worker.is_alive():
@@ -589,7 +365,6 @@ class WorkerSystemService(ComponentLifecycleHandler):
                 )
                 worker.terminate()
                 worker.join(timeout=1.0)
-                # Final kill if terminate failed (prevents zombies)
                 if worker.is_alive():
                     logger.error(
                         "[WorkerSystemService] Worker %s (pid=%s) still alive after terminate(), force killing",
@@ -598,9 +373,6 @@ class WorkerSystemService(ComponentLifecycleHandler):
                     )
                     worker.kill()
                     worker.join(timeout=0.5)
-
-        # Release VRAM promises for all workers (covers force-killed workers whose
-        # finally blocks did not execute)
         for worker in self._workers:
             try:
                 release_worker_promises(self.db, worker.worker_id)
@@ -610,31 +382,20 @@ class WorkerSystemService(ComponentLifecycleHandler):
                     worker.worker_id,
                     exc_info=True,
                 )
-
         self._workers.clear()
         self._started = False
         logger.info("[WorkerSystemService] All workers stopped")
 
     def is_running(self) -> bool:
         """Check if any workers are running."""
-        return self._started and any(w.is_alive() for w in self._workers)
+        return self._started and any(worker.is_alive() for worker in self._workers)
 
     # ---------------------------- Status Methods ----------------------------
 
     def get_workers_status(self) -> dict[str, Any]:
-        """Get worker system status.
-
-        Returns:
-            Dict with worker pool status
-
-        """
-        alive_workers = [w for w in self._workers if w.is_alive()]
-
-        # Get status from HealthMonitor if available
-        statuses = {}
-        if self.health_monitor:
-            statuses = self.health_monitor.get_all_statuses()
-
+        """Get worker-system status."""
+        alive_workers = [worker for worker in self._workers if worker.is_alive()]
+        statuses = self.health_monitor.get_all_statuses() if self.health_monitor else {}
         return {
             "enabled": self.is_worker_system_enabled(),
             "started": self._started,
@@ -645,22 +406,17 @@ class WorkerSystemService(ComponentLifecycleHandler):
             "gpu_capable": self._gpu_capable,
             "workers": [
                 {
-                    "id": w.worker_id,
-                    "pid": w.pid,
-                    "alive": w.is_alive(),
-                    "status": statuses.get(w.worker_id, "pending"),
+                    "id": worker.worker_id,
+                    "pid": worker.pid,
+                    "alive": worker.is_alive(),
+                    "status": statuses.get(worker.worker_id, "pending"),
                 }
-                for w in self._workers
+                for worker in self._workers
             ],
         }
 
     def get_resource_status(self) -> dict[str, Any]:
-        """Get GPU/CPU resource management status.
-
-        Returns:
-            Dict with resource management status including tier, capacity, and GPU capability
-
-        """
+        """Get resource-management status."""
         return {
             "gpu_capable": self._gpu_capable,
             "tier": self._tier_selection.tier.name if self._tier_selection else None,
@@ -680,12 +436,5 @@ class WorkerSystemService(ComponentLifecycleHandler):
     # ---------------------------- Claim Cleanup ----------------------------
 
     def cleanup_stale_claims(self) -> int:
-        """Run claim cleanup to remove stale/orphaned claims.
-
-        This should be called periodically (e.g., in health monitor cycle).
-
-        Returns:
-            Number of claims removed
-
-        """
+        """Remove stale or orphaned worker claims."""
         return cleanup_stale_claims(self.db, DEFAULT_HEARTBEAT_TIMEOUT_MS)

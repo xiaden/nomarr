@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from nomarr.helpers.dto import LibraryPipelineStatusDTO
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_pipeline_service
-from nomarr.interfaces.api.web.library_if import router as library_router
+from nomarr.interfaces.api.web.library_scan_if import router as library_router
 
 
 @pytest.fixture

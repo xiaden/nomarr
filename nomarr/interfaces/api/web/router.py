@@ -14,7 +14,9 @@ from nomarr.interfaces.api.web import calibration_if as calibration
 from nomarr.interfaces.api.web import config_if as config
 from nomarr.interfaces.api.web import fs_if as fs
 from nomarr.interfaces.api.web import info_if as info
+from nomarr.interfaces.api.web import library_files_if as library_files
 from nomarr.interfaces.api.web import library_if as library
+from nomarr.interfaces.api.web import library_scan_if as library_scan
 from nomarr.interfaces.api.web import metadata_if as metadata
 from nomarr.interfaces.api.web import ml_if as ml
 from nomarr.interfaces.api.web import navidrome_if as navidrome
@@ -36,6 +38,8 @@ router.include_router(config.router)
 router.include_router(fs.router)
 router.include_router(info.router)
 router.include_router(library.router)
+router.include_router(library_files.router)
+router.include_router(library_scan.router)
 router.include_router(metadata.router)
 router.include_router(ml.router)
 router.include_router(navidrome.router)

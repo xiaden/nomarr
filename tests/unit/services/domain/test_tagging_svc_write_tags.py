@@ -195,7 +195,7 @@ class TestWriteTagsToFiles:
         service = _make_service(db=mock_db)
 
         with patch(
-            "nomarr.services.domain.tagging_svc.write_file_tags_workflow",
+            "nomarr.services.domain.tagging_svc.write.write_file_tags_workflow",
             side_effect=[
                 SimpleNamespace(success=True),
                 SimpleNamespace(success=True),
@@ -222,7 +222,7 @@ class TestWriteTagsToFiles:
         service = _make_service(db=mock_db)
 
         with patch(
-            "nomarr.services.domain.tagging_svc.write_file_tags_workflow",
+            "nomarr.services.domain.tagging_svc.write.write_file_tags_workflow",
             side_effect=[
                 SimpleNamespace(success=True),
                 SimpleNamespace(success=False, error="write_error"),
@@ -245,7 +245,7 @@ class TestWriteTagsToFiles:
         service = _make_service(db=mock_db)
 
         with patch(
-            "nomarr.services.domain.tagging_svc.write_file_tags_workflow",
+            "nomarr.services.domain.tagging_svc.write.write_file_tags_workflow",
             return_value=SimpleNamespace(success=False, error="file_modified_externally"),
         ):
             result = service.write_tags_to_files("lib1")
@@ -265,7 +265,7 @@ class TestWriteTagsToFiles:
         service = _make_service(db=mock_db)
 
         with patch(
-            "nomarr.services.domain.tagging_svc.write_file_tags_workflow",
+            "nomarr.services.domain.tagging_svc.write.write_file_tags_workflow",
             side_effect=RuntimeError("boom"),
         ):
             result = service.write_tags_to_files("lib1")

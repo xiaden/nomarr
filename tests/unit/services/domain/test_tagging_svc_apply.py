@@ -186,7 +186,9 @@ class TestGetApplyCombinedStatus:
         status = service.get_apply_combined_status()
 
         assert status["status"] == "completed"
-        assert status["result"]["processed"] == 5
+        result = status["result"]
+        assert result is not None
+        assert result["processed"] == 5
         assert status["is_running"] is False
 
     @pytest.mark.unit

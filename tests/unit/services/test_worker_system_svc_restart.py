@@ -248,3 +248,46 @@ class TestStopAllWorkersTimerCleanup:
 
         # Verify stop_event was set (after timer cancellation)
         assert worker_service._stop_event.is_set()
+
+
+class TestDrainOldWorker:
+    """Test WorkerSystemService._drain_old_worker drain/terminate/kill escalation."""
+
+    def test_drain_exits_cleanly_when_worker_stops_within_timeout(self, worker_service):
+        """When worker stops before timeout, terminate() and kill() are never called."""
+        mock_worker = MagicMock()
+        mock_worker.worker_id = "worker_0"
+        mock_worker.is_alive.return_value = False  # already stopped after join
+
+        worker_service._drain_old_worker(mock_worker, timeout=2.0)
+
+        mock_worker.join.assert_called_once_with(timeout=2.0)
+        mock_worker.terminate.assert_not_called()
+        mock_worker.kill.assert_not_called()
+
+    def test_drain_terminates_when_still_alive_after_first_join(self, worker_service):
+        """When worker is alive after join but stops after terminate(), kill() is skipped."""
+        mock_worker = MagicMock()
+        mock_worker.worker_id = "worker_0"
+        # First is_alive → True (trigger terminate), second → False (no kill needed)
+        mock_worker.is_alive.side_effect = [True, False]
+
+        worker_service._drain_old_worker(mock_worker, timeout=2.0)
+
+        mock_worker.terminate.assert_called_once()
+        mock_worker.kill.assert_not_called()
+        assert mock_worker.join.call_count == 2
+
+    def test_drain_kills_when_still_alive_after_terminate(self, worker_service):
+        """When worker survives both join and terminate(), kill() is called."""
+        mock_worker = MagicMock()
+        mock_worker.worker_id = "worker_0"
+        mock_worker.pid = 9999
+        # All is_alive checks return True → escalates to kill
+        mock_worker.is_alive.return_value = True
+
+        worker_service._drain_old_worker(mock_worker, timeout=2.0)
+
+        mock_worker.terminate.assert_called_once()
+        mock_worker.kill.assert_called_once()
+        assert mock_worker.join.call_count == 3

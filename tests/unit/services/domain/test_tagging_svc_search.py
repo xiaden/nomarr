@@ -80,7 +80,7 @@ class TestSearchFilesByTag:
         service = _make_service(db=mock_db)
 
         with patch(
-            "nomarr.services.domain.tagging_svc.map_file_with_tags_to_dto",
+            "nomarr.services.domain.tagging_svc.query.map_file_with_tags_to_dto",
             side_effect=mapped_files,
         ) as mock_mapper:
             result = service.search_files_by_tag(

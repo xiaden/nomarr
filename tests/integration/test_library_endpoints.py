@@ -12,7 +12,8 @@ from fastapi.testclient import TestClient
 from nomarr.helpers.dto.library_dto import TagCleanupResult
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_library_service, get_tagging_service
-from nomarr.interfaces.api.web.library_if import router as library_router
+from nomarr.interfaces.api.web.library_files_if import router as library_files_router
+from nomarr.interfaces.api.web.library_scan_if import router as library_scan_router
 
 
 @pytest.fixture
@@ -34,7 +35,8 @@ def app(
 ) -> Iterator[FastAPI]:
     """Build a minimal FastAPI app with dependency overrides for library routes."""
     test_app = FastAPI()
-    test_app.include_router(library_router, prefix="/api/web")
+    test_app.include_router(library_files_router, prefix="/api/web")
+    test_app.include_router(library_scan_router, prefix="/api/web")
 
     async def allow_session() -> None:
         return None

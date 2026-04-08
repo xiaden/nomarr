@@ -14,7 +14,7 @@ from nomarr.interfaces.api.web.dependencies import (
     get_navidrome_service,
     get_tagging_service,
 )
-from nomarr.interfaces.api.web.library_if import router as library_router
+from nomarr.interfaces.api.web.library_scan_if import router as library_router
 
 
 @pytest.fixture
