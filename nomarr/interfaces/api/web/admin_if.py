@@ -28,7 +28,17 @@ async def web_admin_restart() -> RestartResponse:
     logger.info("[Web API] Restart requested - restarting server...")
 
     async def do_restart() -> None:
+        """Delay long enough to send the HTTP response, then restart in-place.
+
+        Call `application.stop()` first so worker processes and background tasks shut down
+        cleanly before `os.execv()` replaces this process image with a fresh interpreter,
+        preserving the current PID.
+        """
         await asyncio.sleep(1)
+        logger.info("[Web API] Shutting down before restart")
+        from nomarr.app import application
+
+        application.stop()
         logger.info("[Web API] Executing restart now")
         os.execv(sys.executable, [sys.executable, *sys.argv])
 
