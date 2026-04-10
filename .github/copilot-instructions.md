@@ -73,7 +73,18 @@ Import-linter enforces layer boundaries.
 
 ## Artifact Logging & ADR Policy
 
-**Agents are the long-term memory of this project.** Individual conversations end, but logs and ADRs persist across all future sessions. Use them proactively — both writing and reading.
+**Agents are the long-term memory of this project.** Individual conversations end, but logs, ADRs, and ASRs persist across all future sessions. Use them proactively — both writing and reading.
+
+### Artifact Types
+
+| Type | Purpose | Location | Workflow |
+|------|---------|----------|----------|
+| **Log** | Agent observations, decisions, dead ends, discoveries | `artifacts/logs/` | `log_write` → append-only |
+| **ASR** | Architecturally Significant Requirements — the *why* that motivates decisions | `artifacts/requirements/` | `asr_create` → direct write |
+| **ADR** | Architecture Decision Records — the *what* that was decided | `artifacts/decisions/` | `adr_suggest` → user approval → `adr_commit` |
+| **DD** | Design Documents — the *how* that guides implementation | `artifacts/designs/` | `dd_create` → direct write |
+
+**The chain:** ASR documents the requirement → DD designs the solution → ADR records the decision — ASRs are standalone — no explicit link field; reference ADRs by number in the Notes section if relevant.
 
 ### When to Log (`log_write`)
 
@@ -89,6 +100,22 @@ Log entries are cheap. Silence is expensive. Log when:
 | `research` | You gathered useful findings during investigation | "Traced auth flow: token → middleware → service → component, no workflow layer" |
 
 **Threshold:** If you think "a future agent might waste time rediscovering this" — log it.
+
+### When to Create ASRs (`asr_create`)
+
+ASRs capture the requirements that motivate architectural decisions. They are the 'why' behind ADRs.
+
+`asr_create` writes directly to `artifacts/requirements/` (no approval workflow needed).
+
+Create an ASR when:
+- **A stakeholder expresses a non-functional or architectural requirement** — record it before design begins
+- **A constraint limits design options** — e.g., "Must not require GPU at runtime"
+- **A measurable quality goal shapes the architecture** — e.g., "Search must complete in < 500ms at production scale"
+- **An operational requirement drives deployment decisions** — e.g., "System must recover automatically after DB restart within 30s"
+
+Use `priority` (integer) to rank importance: 0 = most critical, increment by 100 for new entries to allow future insertions between existing priorities.
+
+**Threshold:** If a requirement will constrain the architecture or exclude design options — it's an ASR.
 
 ### When to Create ADRs (`adr_suggest` → `adr_commit`)
 
@@ -110,17 +137,17 @@ Create an ADR when:
 
 Always set `source_log` to link back to the log entry that motivated the decision (e.g., `rnd-dd-author#L12`).
 
-### When to Check Logs & ADRs (Proactive Reading)
+### When to Check Logs, ASRs & ADRs (Proactive Reading)
 
-**Before acting, check what's already known.** This prevents contradicting existing decisions and re-treading dead ends.
+**Before acting, check what's already known.** This prevents contradicting existing requirements and decisions and re-treading dead ends.
 
 | Situation | Action |
 |-----------|--------|
 | Starting work in an unfamiliar area | `log_read(agent="*relevant-agent*")` to see prior observations |
-| About to make an architectural decision | `adr_search(query="*topic*")` to check for existing decisions |
+| About to make an architectural decision | `asr_search(query="*topic*")` to check for requirements, then `adr_search(query="*topic*")` for existing decisions |
 | Encountering unexpected behavior | `log_read(category="discovery")` and `log_read(category="dead-end")` for prior findings |
 | Debugging a failure | `log_read(agent="support-debugger")` for prior diagnoses |
-| Planning a feature that touches existing patterns | `adr_search(tag="*relevant-tag*")` to understand constraints |
+| Planning a feature that touches existing patterns | `asr_search(query="*topic*")` + `adr_search(tag="*relevant-tag*")` to understand constraints |
 
 **Rule: Check before you decide.** An ADR search takes one tool call. Contradicting an existing decision and then having to unwind costs hours.
 

@@ -67,6 +67,9 @@ from .tools.adr_commit import adr_commit as adr_commit_impl
 from .tools.adr_read import adr_read as adr_read_impl
 from .tools.adr_search import adr_search as adr_search_impl
 from .tools.adr_suggest import adr_suggest as adr_suggest_impl
+from .tools.asr_create import asr_create as asr_create_impl
+from .tools.asr_read import asr_read as asr_read_impl
+from .tools.asr_search import asr_search as asr_search_impl
 from .tools.dd_archive import dd_archive as dd_archive_impl
 from .tools.dd_create import dd_create as dd_create_impl
 from .tools.dd_read import dd_read as dd_read_impl
@@ -125,6 +128,9 @@ TOOL_IMPLS: dict[str, object] = {
     "adr_read": adr_read_impl,
     "adr_suggest": adr_suggest_impl,
     "adr_search": adr_search_impl,
+    "asr_create": asr_create_impl,
+    "asr_read": asr_read_impl,
+    "asr_search": asr_search_impl,
     "dd_archive": dd_archive_impl,
     "dd_create": dd_create_impl,
     "dd_read": dd_read_impl,
@@ -1169,6 +1175,107 @@ def adr_search(
     return ToolOutput(
         tool_name="adr_search",
         breadcrumb="Searched ADRs",
+        metadata=result,
+    ).to_call_tool_result()
+
+
+# Architecturally Significant Requirement Tools
+# ──────────────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+def asr_create(
+    priority: Annotated[
+        int,
+        "Priority integer — non-negative; lower = higher importance. "
+        "0 is most critical. Use multiples of 100 for new ASRs to allow insertions.",
+    ],
+    requirement: Annotated[
+        str,
+        "The requirement body — scoped, measurable, technology-independent, "
+        "no implementation detail",
+    ],
+    notes: Annotated[
+        str,
+        "Optional notes — ADR references and background context only. "
+        "No implementation detail. No tech names. (optional)",
+    ] = "",
+    status: Annotated[
+        str,
+        "Status: 'Active', 'Archived', or 'Superseded by ASR-NNNN'",
+    ] = "Active",
+) -> CallToolResult:
+    """Create a new Architecturally Significant Requirement (ASR) in artifacts/requirements/.
+
+    ASRs document the requirements that motivate architectural decisions.
+    They are the 'why' behind ADRs.
+    """
+    result = asr_create_impl(
+        priority=priority,
+        requirement=requirement,
+        notes=notes,
+        status=status,
+        workspace_root=ROOT,
+    )
+    file_links = None
+    if "path" in result:
+        file_links = [FileLink(file_path=ROOT / result["path"], action="created")]
+    return ToolOutput(
+        tool_name="asr_create",
+        breadcrumb="Created ASR at",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
+
+
+@mcp.tool()
+def asr_read(
+    name: Annotated[
+        str,
+        "ASR identifier — number ('1', '0001'), or ASR-prefixed ('ASR-0001', 'ASR-0001.md')",
+    ],
+) -> CallToolResult:
+    """Read and parse an existing Architecturally Significant Requirement.
+
+    Returns structured ASR data.
+    """
+    result = asr_read_impl(name, workspace_root=ROOT)
+    file_links = None
+    if "path" in result:
+        file_links = [FileLink(file_path=ROOT / result["path"], action="")]
+    return ToolOutput(
+        tool_name="asr_read",
+        breadcrumb="Read ASR at",
+        metadata=result,
+        file_links=file_links,
+    ).to_call_tool_result()
+
+
+@mcp.tool()
+def asr_search(
+    query: Annotated[
+        str, "Text to search in requirement and notes, case-insensitive (optional)"
+    ] = "",
+    status: Annotated[str, "Filter by exact status match (optional)"] = "",
+    priority_min: Annotated[int | None, "Minimum priority value to include (optional)"] = None,
+    priority_max: Annotated[int | None, "Maximum priority value to include (optional)"] = None,
+    limit: Annotated[int, "Maximum results to return (capped at 50)"] = 50,
+) -> CallToolResult:
+    """Search Architecturally Significant Requirements by status, priority range, and/or text query.
+
+    Returns results sorted by priority ascending (lowest number = highest priority first).
+    """
+    result = asr_search_impl(
+        query=query,
+        status=status,
+        priority_min=priority_min,
+        priority_max=priority_max,
+        limit=limit,
+        workspace_root=ROOT,
+    )
+    return ToolOutput(
+        tool_name="asr_search",
+        breadcrumb="Searched ASRs",
         metadata=result,
     ).to_call_tool_result()
 

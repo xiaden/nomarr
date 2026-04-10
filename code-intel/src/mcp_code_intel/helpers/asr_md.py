@@ -4,47 +4,39 @@ This module handles markdown mechanics only — no file I/O beyond next_asr_numb
 no logging, no MCP logic.
 
 ASR markdown format:
-    # ASR-NNN: {title}
+    # ASR-NNNN
+    **Priority:** 0
     **Status:** Active
-    **Date:** 2026-04-08
-    **Quality Attribute:** performance
-    **Priority:** High
-    **Source:** {optional source reference}
-    **Linked ADRs:** ADR-001, ADR-003
+    **Created:** 2026-04-08
+    **Updated:** 2026-04-08
 
-    ## Stimulus
+    ## Requirement
     ...
 
-    ## Response Measure
-    ...
-
-    ## Background
+    ## Notes
     ...
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 # --- Constants ---
 
-ASR_STATUSES: frozenset[str] = frozenset({"Active", "Satisfied", "Deferred", "Obsolete"})
-ASR_PRIORITIES: frozenset[str] = frozenset({"Critical", "High", "Medium", "Low"})
+ASR_STATUSES_EXACT: frozenset[str] = frozenset({"Active", "Archived"})
+SUPERSEDED_PATTERN: re.Pattern[str] = re.compile(r"^Superseded by ASR-\d{4}$")
 REQUIREMENTS_DIR = "artifacts/requirements"
 ASR_PREFIX = "ASR-"
 
 # --- Regex patterns ---
 
-TITLE_PATTERN: re.Pattern[str] = re.compile(r"^#\s+ASR-(\d+):\s+(.+)$")
+TITLE_PATTERN: re.Pattern[str] = re.compile(r"^#\s+ASR-(\d+)\s*$")
 META_PATTERN: re.Pattern[str] = re.compile(r"^\*\*(\w[\w\s]*):\*\*\s*(.*)$")
 SECTION_PATTERN: re.Pattern[str] = re.compile(r"^##\s+(.+)$")
-
-# Standard section order
-_STANDARD_SECTIONS = ("Stimulus", "Response Measure", "Background")
 
 
 # --- Dataclass ---
@@ -55,26 +47,20 @@ class ASR:
     """Structured representation of an Architecturally Significant Requirement."""
 
     number: int
-    title: str
+    priority: int
     status: str
-    date: str
-    quality_attribute: str
-    priority: str
-    source: str = ""
-    linked_adrs: list[str] = field(default_factory=list)
-    sections: dict[str, str] = field(default_factory=dict)
+    created: str
+    updated: str
+    requirement: str
+    notes: str = ""
 
 
 # --- Helpers ---
 
 
-def _slugify(title: str) -> str:
-    """Convert a title to a URL-safe slug."""
-    slug = title.lower()
-    slug = re.sub(r"[^a-z0-9]+", "-", slug)
-    slug = slug.strip("-")
-    slug = re.sub(r"-{2,}", "-", slug)
-    return slug
+def today_iso() -> str:
+    """Return today's date as ISO 8601 string."""
+    return date.today().isoformat()
 
 
 def _unescape_literal_newlines(text: str) -> str:
@@ -92,22 +78,18 @@ def _unescape_literal_newlines(text: str) -> str:
 
 def validate_status(status: str) -> str | None:
     """Validate an ASR status. Returns error message or None if valid."""
-    if status not in ASR_STATUSES:
-        return f"Invalid status '{status}': must be one of {sorted(ASR_STATUSES)}"
-    return None
+    if status in ASR_STATUSES_EXACT or SUPERSEDED_PATTERN.match(status):
+        return None
+    return (
+        f"Invalid status '{status}': must be one of {sorted(ASR_STATUSES_EXACT)} "
+        "or match 'Superseded by ASR-NNNN'"
+    )
 
 
-def validate_priority(priority: str) -> str | None:
+def validate_priority(priority: int) -> str | None:
     """Validate an ASR priority. Returns error message or None if valid."""
-    if priority not in ASR_PRIORITIES:
-        return f"Invalid priority '{priority}': must be one of {sorted(ASR_PRIORITIES)}"
-    return None
-
-
-def validate_quality_attribute(qa: str) -> str | None:
-    """Validate that quality_attribute is non-empty. Returns error message or None if valid."""
-    if not qa.strip():
-        return "Quality attribute cannot be empty"
+    if isinstance(priority, bool) or not isinstance(priority, int) or priority < 0:
+        return f"Invalid priority '{priority}': must be a non-negative integer"
     return None
 
 
@@ -118,49 +100,34 @@ def generate_asr(asr: ASR) -> str:
     """Generate ASR markdown from an ASR dataclass."""
     lines: list[str] = []
 
-    # Title
-    lines.append(f"# ASR-{asr.number:03d}: {asr.title}")
+    lines.append(f"# ASR-{asr.number:04d}")
     lines.append("")
 
     # Metadata
-    lines.append(f"**Status:** {asr.status}  ")
-    lines.append(f"**Date:** {asr.date}  ")
-    lines.append(f"**Quality Attribute:** {asr.quality_attribute}  ")
     lines.append(f"**Priority:** {asr.priority}  ")
-    if asr.source:
-        lines.append(f"**Source:** {asr.source}  ")
-    if asr.linked_adrs:
-        lines.append(f"**Linked ADRs:** {', '.join(asr.linked_adrs)}  ")
+    lines.append(f"**Status:** {asr.status}  ")
+    lines.append(f"**Created:** {asr.created}  ")
+    lines.append(f"**Updated:** {asr.updated}  ")
     lines.append("")
 
-    # Standard sections first, then extras
-    written: set[str] = set()
-    for heading in _STANDARD_SECTIONS:
-        if heading in asr.sections:
-            lines.append(f"## {heading}")
-            lines.append("")
-            content = asr.sections[heading].strip()
-            if content:
-                lines.append(content)
-                lines.append("")
-            written.add(heading)
+    lines.append("## Requirement")
+    lines.append("")
+    lines.append(asr.requirement.strip())
+    lines.append("")
 
-    # Extra sections
-    for heading, content in asr.sections.items():
-        if heading not in written:
-            lines.append(f"## {heading}")
-            lines.append("")
-            if content.strip():
-                lines.append(content.strip())
-                lines.append("")
+    notes = asr.notes.strip()
+    if notes:
+        lines.append("## Notes")
+        lines.append("")
+        lines.append(notes)
+        lines.append("")
 
     return "\n".join(lines)
 
 
-def make_asr_filename(number: int, title: str) -> str:
+def make_asr_filename(number: int) -> str:
     """Build the canonical filename for an ASR."""
-    slug = _slugify(title)
-    return f"ASR-{number:03d}-{slug}.md"
+    return f"ASR-{number:04d}.md"
 
 
 def next_asr_number(requirements_dir: Path) -> int:
@@ -172,15 +139,10 @@ def next_asr_number(requirements_dir: Path) -> int:
         return 1
     numbers: list[int] = []
     for f in existing:
-        m = re.match(r"ASR-(\d+)-", f.name)
+        m = re.match(r"^ASR-(\d+)\.md$", f.name)
         if m:
             numbers.append(int(m.group(1)))
     return max(numbers, default=0) + 1
-
-
-def today_iso() -> str:
-    """Return today's date as ISO 8601 string."""
-    return date.today().isoformat()
 
 
 # --- Parsing ---
@@ -195,79 +157,72 @@ def parse_asr(markdown: str) -> ASR:
     lines = markdown.split("\n")
 
     number = 0
-    title = ""
+    priority_raw = ""
     status = ""
-    date_str = ""
-    quality_attribute = ""
-    priority = ""
-    source = ""
-    linked_adrs: list[str] = []
-    sections: dict[str, str] = {}
-
-    _IN_HEADER = "header"
-    _IN_SECTION = "section"
-    state = _IN_HEADER
-    current_section = ""
-    current_lines: list[str] = []
+    created = ""
+    updated = ""
+    requirement_lines: list[str] = []
+    notes_lines: list[str] = []
+    state = "header"
 
     for line in lines:
-        if state == _IN_HEADER:
+        stripped = line.strip()
+
+        if state == "header":
             m = TITLE_PATTERN.match(line)
             if m:
                 number = int(m.group(1))
-                title = m.group(2).strip()
                 continue
             m = META_PATTERN.match(line)
             if m:
                 key = m.group(1).strip()
-                # Strip trailing double-space (markdown line break)
                 val = m.group(2).strip().rstrip()
                 if val.endswith("  "):
                     val = val[:-2].rstrip()
-                if key == "Status":
+                if key == "Priority":
+                    priority_raw = val
+                elif key == "Status":
                     status = val
-                elif key == "Date":
-                    date_str = val
-                elif key == "Quality Attribute":
-                    quality_attribute = val
-                elif key == "Priority":
-                    priority = val
-                elif key == "Source":
-                    source = val
-                elif key == "Linked ADRs":
-                    linked_adrs = [a.strip() for a in val.split(",") if a.strip()]
+                elif key == "Created":
+                    created = val
+                elif key == "Updated":
+                    updated = val
                 continue
-            m = SECTION_PATTERN.match(line)
-            if m:
-                state = _IN_SECTION
-                current_section = m.group(1).strip()
-                current_lines = []
+            if stripped == "## Requirement":
+                state = "requirement"
                 continue
-        elif state == _IN_SECTION:
-            m = SECTION_PATTERN.match(line)
-            if m:
-                sections[current_section] = "\n".join(current_lines).strip()
-                current_section = m.group(1).strip()
-                current_lines = []
-            else:
-                current_lines.append(line)
+            if stripped == "## Notes":
+                state = "notes"
+                continue
+        elif state == "requirement":
+            if stripped == "## Notes":
+                state = "notes"
+                continue
+            requirement_lines.append(line)
+        elif state == "notes":
+            notes_lines.append(line)
 
-    if current_section:
-        sections[current_section] = "\n".join(current_lines).strip()
+    requirement = "\n".join(requirement_lines).strip()
+    notes = "\n".join(notes_lines).strip()
 
-    if not title:
-        raise ValueError("ASR title not found in markdown")
+    if number == 0:
+        raise ValueError("ASR number not found in markdown")
+    if not requirement:
+        raise ValueError("Requirement section not found or empty")
+
+    try:
+        priority = int(priority_raw)
+    except ValueError as exc:
+        raise ValueError("Priority must be an integer") from exc
 
     return ASR(
         number=number,
-        title=title,
-        status=status or "Active",
-        date=date_str,
-        quality_attribute=quality_attribute,
         priority=priority,
-        source=source,
-        linked_adrs=linked_adrs,
-        sections=sections,
+        status=status or "Active",
+        created=created,
+        updated=updated,
+        requirement=requirement,
+        notes=notes,
     )
 
 
@@ -278,20 +233,18 @@ def parse_asr_metadata(markdown: str) -> dict[str, Any]:
 
     result: dict[str, Any] = {
         "number": 0,
-        "title": "",
+        "priority": 0,
         "status": "",
-        "date": "",
-        "quality_attribute": "",
-        "priority": "",
+        "created": "",
+        "updated": "",
     }
 
     for line in lines:
-        if line.startswith("## "):
+        if SECTION_PATTERN.match(line):
             break
         m = TITLE_PATTERN.match(line)
         if m:
             result["number"] = int(m.group(1))
-            result["title"] = m.group(2).strip()
             continue
         m = META_PATTERN.match(line)
         if m:
@@ -301,11 +254,17 @@ def parse_asr_metadata(markdown: str) -> dict[str, Any]:
                 val = val[:-2].rstrip()
             if key == "Status":
                 result["status"] = val
-            elif key == "Date":
-                result["date"] = val
-            elif key == "Quality Attribute":
-                result["quality_attribute"] = val
             elif key == "Priority":
-                result["priority"] = val
+                try:
+                    result["priority"] = int(val)
+                except ValueError as exc:
+                    raise ValueError("Priority must be an integer") from exc
+            elif key == "Created":
+                result["created"] = val
+            elif key == "Updated":
+                result["updated"] = val
+
+    if result["number"] == 0:
+        raise ValueError("ASR number not found in markdown")
 
     return result

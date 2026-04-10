@@ -1,6 +1,6 @@
 # ADR-001: Use ONNX Runtime for ML Inference
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Date:** 2026-04-02  
 **Tags:** ml, performance  
 **Source Log:** rnd-ddauthor#L5  
