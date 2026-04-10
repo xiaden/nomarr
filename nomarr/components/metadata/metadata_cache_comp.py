@@ -4,19 +4,19 @@ Rebuilds derived song metadata fields from authoritative tags collection.
 Part of hybrid entity graph: tags are truth, embedded fields are read cache.
 """
 
+from __future__ import annotations
+
 import contextlib
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from arango.cursor import Cursor
-
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
 
-def rebuild_song_metadata_cache(db: "Database", song_id: str) -> None:
+def rebuild_song_metadata_cache(db: Database, song_id: str) -> None:
     """Rebuild embedded metadata cache fields on a song from tags.
 
     Reads tags from tags collection and writes derived fields to song document.
@@ -54,30 +54,14 @@ def rebuild_song_metadata_cache(db: "Database", song_id: str) -> None:
         except (ValueError, TypeError):
             logger.warning("Failed to parse year from tag: %s", year_raw[0])
 
-    # Update song document with derived cache
-    db.db.aql.execute(
-        """
-        UPDATE PARSE_IDENTIFIER(@song_id).key WITH {
-            artist: @artist,
-            artists: @artists,
-            album: @album,
-            labels: @labels,
-            genres: @genres,
-            year: @year
-        } IN library_files
-        """,
-        bind_vars=cast(
-            "dict[str, Any]",
-            {
-                "song_id": song_id,
-                "artist": artist,
-                "artists": artists,
-                "album": album,
-                "labels": labels,
-                "genres": genres,
-                "year": year,
-            },
-        ),
+    db.library_files.update_metadata_cache(
+        song_id,
+        artist=artist,
+        artists=artists,
+        album=album,
+        labels=labels,
+        genres=genres,
+        year=year,
     )
 
 
@@ -157,7 +141,7 @@ def compute_metadata_cache_fields(metadata: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def update_metadata_cache_batch(db: "Database", updates: list[dict[str, Any]]) -> None:
+def update_metadata_cache_batch(db: Database, updates: list[dict[str, Any]]) -> None:
     """Write pre-computed metadata cache fields for multiple songs in one AQL.
 
     Each entry in *updates* must have ``song_id`` plus the cache fields
@@ -171,23 +155,10 @@ def update_metadata_cache_batch(db: "Database", updates: list[dict[str, Any]]) -
     if not updates:
         return
 
-    db.db.aql.execute(
-        """
-        FOR entry IN @updates
-            UPDATE PARSE_IDENTIFIER(entry.song_id).key WITH {
-                artist: entry.artist,
-                artists: entry.artists,
-                album: entry.album,
-                labels: entry.labels,
-                genres: entry.genres,
-                year: entry.year
-            } IN library_files
-        """,
-        bind_vars=cast("dict[str, Any]", {"updates": updates}),
-    )
+    db.library_files.update_metadata_cache_batch(updates)
 
 
-def rebuild_all_song_metadata_caches(db: "Database", limit: int | None = None) -> int:
+def rebuild_all_song_metadata_caches(db: Database, limit: int | None = None) -> int:
     """Rebuild metadata cache for all songs in library.
 
     Args:
@@ -198,14 +169,7 @@ def rebuild_all_song_metadata_caches(db: "Database", limit: int | None = None) -
         Number of songs processed
 
     """
-    # Get all song _ids
-    query = "FOR file IN library_files SORT file._key"
-    if limit:
-        query += f" LIMIT {limit}"
-    query += " RETURN file._id"
-
-    cursor = cast("Cursor", db.db.aql.execute(query))
-    song_ids = list(cursor)
+    song_ids = db.library_files.list_all_file_ids(limit=limit)
 
     for i, song_id in enumerate(song_ids, 1):
         rebuild_song_metadata_cache(db, song_id)

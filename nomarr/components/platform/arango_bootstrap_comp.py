@@ -18,6 +18,7 @@ from arango import ArangoClient
 from arango.exceptions import CollectionCreateError, DocumentInsertError, GraphCreateError, IndexCreateError
 
 from nomarr.persistence.arango_client import DatabaseLike
+from nomarr.persistence.database.libraries_aql import list_all_library_keys
 
 logger = logging.getLogger(__name__)
 
@@ -520,8 +521,7 @@ def _create_vectors_track_collections(db: DatabaseLike, models_dir: str) -> None
         logger.info("[bootstrap] No libraries collection — skipping per-library vector collections")
         return
 
-    cursor = db.aql.execute("FOR lib IN libraries RETURN lib._key")  # type: ignore[union-attr]
-    library_keys: list[str] = list(cursor)  # type: ignore[arg-type]
+    library_keys = list_all_library_keys(db)
     if not library_keys:
         logger.info("[bootstrap] No libraries found — skipping per-library vector collections")
         return

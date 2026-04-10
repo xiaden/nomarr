@@ -105,7 +105,7 @@ def promote_and_rebuild_workflow(
         drop_cold_vector_index(db.db, backbone_id, library_key)
 
     # Step 4: Drain hot → cold (convergent UPSERT)
-    drained_count = drain_hot_to_cold(db.db, backbone_id, library_key)
+    drained_count = drain_hot_to_cold(db, backbone_id, library_key)
     logger.info(
         "[promote & rebuild] Drained %d documents from hot to cold",
         drained_count,

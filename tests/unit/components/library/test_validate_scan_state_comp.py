@@ -19,7 +19,7 @@ class TestHealShortFiles:
     @pytest.mark.unit
     def test_no_short_files_returns_zero(self) -> None:
         mock_db = MagicMock()
-        mock_db.db.aql.execute.return_value = iter([])
+        mock_db.file_states.find_short_files_missing_too_short.return_value = []
         result = _heal_short_files(mock_db, "libraries/1", 30)
         assert result == 0
         mock_db.file_states.set_too_short.assert_not_called()
@@ -28,7 +28,7 @@ class TestHealShortFiles:
     def test_short_files_calls_set_too_short_for_each(self) -> None:
         mock_db = MagicMock()
         file_ids = ["library_files/a", "library_files/b"]
-        mock_db.db.aql.execute.return_value = iter(file_ids)
+        mock_db.file_states.find_short_files_missing_too_short.return_value = file_ids
         result = _heal_short_files(mock_db, "libraries/1", 30)
         assert result == 2
         assert mock_db.file_states.set_too_short.call_count == 2
@@ -37,18 +37,13 @@ class TestHealShortFiles:
 
     @pytest.mark.unit
     def test_query_uses_outbound_library_edge_traversal(self) -> None:
-        """Library scoping should traverse library_contains_file instead of file.library_id."""
+        """Delegate to persistence layer with correct library_id and min_duration_s."""
         mock_db = MagicMock()
-        mock_db.db.aql.execute.return_value = iter([])
+        mock_db.file_states.find_short_files_missing_too_short.return_value = []
 
         _heal_short_files(mock_db, "libraries/1", 30)
 
-        query = mock_db.db.aql.execute.call_args[0][0]
-        bind_vars = mock_db.db.aql.execute.call_args[1]["bind_vars"]
-
-        assert "FOR file IN OUTBOUND @library_id library_contains_file" in query
-        assert "FILTER file.library_id == @library_id" not in query
-        assert bind_vars["library_id"] == "libraries/1"
+        mock_db.file_states.find_short_files_missing_too_short.assert_called_once_with("libraries/1", 30)
 
 
 class TestValidateUnchangedFiles:
@@ -57,7 +52,7 @@ class TestValidateUnchangedFiles:
     @pytest.mark.unit
     def test_returns_validation_stats(self) -> None:
         mock_db = MagicMock()
-        mock_db.db.aql.execute.return_value = iter([])
+        mock_db.file_states.find_short_files_missing_too_short.return_value = []
         result = validate_unchanged_files(mock_db, "libraries/1", 30)
         assert isinstance(result, ValidationStats)
         assert result.short_files_healed == 0
@@ -66,7 +61,7 @@ class TestValidateUnchangedFiles:
     @pytest.mark.unit
     def test_logs_when_healed_greater_than_zero(self, caplog: pytest.LogCaptureFixture) -> None:
         mock_db = MagicMock()
-        mock_db.db.aql.execute.return_value = iter(["library_files/x"])
+        mock_db.file_states.find_short_files_missing_too_short.return_value = ["library_files/x"]
         import logging
 
         with caplog.at_level(logging.INFO):

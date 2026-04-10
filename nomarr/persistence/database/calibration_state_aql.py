@@ -18,6 +18,46 @@ class CalibrationStateOperations:
         self.collection = db.collection("calibration_state")
         self._edge_collection = cast("Any", db.collection("model_has_calibration"))
 
+    def count_recent(self, threshold: int) -> int:
+        """Count calibration_state documents updated at or after a threshold.
+
+        Args:
+            threshold: Minimum ``updated_at`` timestamp in milliseconds since epoch.
+
+        Returns:
+            Count of matching documents.
+
+        """
+        cursor = cast(
+            "Any",
+            self.db.aql.execute(
+                """
+            RETURN COUNT(
+                FOR calibration IN calibration_state
+                    FILTER calibration.updated_at >= @threshold
+                    RETURN 1
+            )
+            """,
+                bind_vars=cast("dict[str, Any]", {"threshold": threshold}),
+            ),
+        )
+        return cast("int", next(cursor, 0))
+
+    def get_latest_updated_at(self) -> int | None:
+        """Get the most recent calibration_state updated_at timestamp."""
+        cursor = cast(
+            "Any",
+            self.db.aql.execute(
+                """
+            FOR calibration IN calibration_state
+                SORT calibration.updated_at DESC
+                LIMIT 1
+                RETURN calibration.updated_at
+            """,
+            ),
+        )
+        return cast("int | None", next(cursor, None))
+
     def get_sparse_histogram(
         self,
         model_id: str,

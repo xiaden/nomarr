@@ -16,6 +16,20 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
+def list_all_library_keys(db: DatabaseLike) -> list[str]:
+    """Return all library document keys."""
+    cursor = cast(
+        "Cursor",
+        db.aql.execute(
+            """
+            FOR library IN libraries
+                RETURN library._key
+            """,
+        ),
+    )
+    return cast("list[str]", list(cursor))
+
+
 class LibrariesOperations:
     """Operations for the libraries collection."""
 

@@ -1040,3 +1040,39 @@ class TestDiscoverNextUntaggedFile:
 
         query = mock_db.aql.execute.call_args[0][0]
         assert "worker_claims" not in query
+
+
+class TestFindShortFilesMissingTooShort:
+    """Tests for find_short_files_missing_too_short()."""
+
+    @pytest.mark.unit
+    def test_returns_list_of_file_ids(self, ops, mock_db):
+        """Returns short file IDs from the cursor."""
+        mock_db.aql.execute.return_value = iter(["library_files/1", "library_files/2"])
+
+        result = ops.find_short_files_missing_too_short("libraries/123", 30)
+
+        assert result == ["library_files/1", "library_files/2"]
+
+    @pytest.mark.unit
+    def test_returns_empty_list_when_none_found(self, ops, mock_db):
+        """Returns an empty list when no short files need healing."""
+        mock_db.aql.execute.return_value = iter([])
+
+        result = ops.find_short_files_missing_too_short("libraries/123", 30)
+
+        assert result == []
+
+    @pytest.mark.unit
+    def test_query_uses_outbound_library_traversal(self, ops, mock_db):
+        """Query scopes files via OUTBOUND library_contains_file traversal."""
+        mock_db.aql.execute.return_value = iter([])
+
+        ops.find_short_files_missing_too_short("libraries/123", 30)
+
+        query = mock_db.aql.execute.call_args[0][0]
+        bind_vars = mock_db.aql.execute.call_args[1]["bind_vars"]
+
+        assert "FOR file IN OUTBOUND @library_id library_contains_file" in query
+        assert bind_vars["library_id"] == "libraries/123"
+        assert bind_vars["min_duration_s"] == 30

@@ -140,7 +140,8 @@ class TestGetGenerationCombinedStatus:
             patch("nomarr.services.domain.calibration_svc.now_ms") as mock_now_ms,
         ):
             mock_now_ms.return_value.value = 2_000
-            service._db.db.aql.execute.side_effect = [iter([0]), iter([None])]
+            service._db.calibration_state.count_recent.return_value = 0
+            service._db.calibration_state.get_latest_updated_at.return_value = None
 
             status = service.get_generation_combined_status()
 
@@ -194,7 +195,8 @@ class TestGetGenerationCombinedStatus:
             patch("nomarr.services.domain.calibration_svc.now_ms") as mock_now_ms,
         ):
             mock_now_ms.return_value.value = 2_000
-            service._db.db.aql.execute.side_effect = [iter([2]), iter([1_500])]
+            service._db.calibration_state.count_recent.return_value = 2
+            service._db.calibration_state.get_latest_updated_at.return_value = 1_500
 
             status = service.get_generation_combined_status()
 
@@ -219,7 +221,8 @@ class TestGetGenerationCombinedStatus:
             patch("nomarr.services.domain.calibration_svc.now_ms") as mock_now_ms,
         ):
             mock_now_ms.return_value.value = 2_000
-            service._db.db.aql.execute.side_effect = [iter([0]), iter([None])]
+            service._db.calibration_state.count_recent.return_value = 0
+            service._db.calibration_state.get_latest_updated_at.return_value = None
 
             status = service.get_generation_combined_status()
 

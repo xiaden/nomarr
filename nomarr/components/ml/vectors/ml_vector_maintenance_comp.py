@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from nomarr.persistence.arango_client import DatabaseLike
+    from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ def derive_embed_dim(models_dir: str, backbone_id: str) -> int:
     )
 
 
-def drain_hot_to_cold(db: DatabaseLike, backbone_id: str, library_key: str) -> int:
+def drain_hot_to_cold(db: Database, backbone_id: str, library_key: str) -> int:
     """Drain all vectors from hot to cold collection (convergent UPSERT + truncate).
 
     Copies all documents from hot to cold via AQL UPSERT (idempotent by _key),
@@ -69,7 +70,7 @@ def drain_hot_to_cold(db: DatabaseLike, backbone_id: str, library_key: str) -> i
     ``tag.rel == "genre"`` for the document's file (resolved via edge).
 
     Args:
-        db: ArangoDB database handle.
+        db: Database façade.
         backbone_id: Backbone identifier.
         library_key: ArangoDB ``_key`` of the library document.
 
@@ -82,76 +83,7 @@ def drain_hot_to_cold(db: DatabaseLike, backbone_id: str, library_key: str) -> i
     """
     hot_name = f"vectors_track_hot__{backbone_id}__{library_key}"
     cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-
-    if not db.has_collection(hot_name):
-        raise ValueError(f"Hot collection '{hot_name}' does not exist")
-
-    # Create cold collection if it doesn't exist yet (first drain)
-    if not db.has_collection(cold_name):
-        logger.info("Creating cold collection: %s", cold_name)
-        db.create_collection(cold_name)
-
-    # Count hot docs before drain
-    hot_coll = db.collection(hot_name)
-    hot_count = hot_coll.count()
-
-    if hot_count == 0:  # type: ignore[operator]  # count() returns int in sync context
-        return 0
-
-    # Convergent UPSERT with genre enrichment:
-    # File_id resolved via edge traversal (file_id field dropped in migration)
-    # Genres gathered per-doc via subquery joining song_has_tags → tags
-    cursor = db.aql.execute(
-        f"""
-        FOR doc IN {hot_name}
-            LET file_id = FIRST(
-                FOR f IN INBOUND doc file_has_vectors
-                    RETURN f._id
-            )
-            LET genres = (
-                FOR edge IN song_has_tags
-                    FILTER edge._from == file_id
-                    FOR tag IN tags
-                        FILTER tag._id == edge._to AND tag.rel == "genre"
-                        RETURN tag.value
-            )
-            UPSERT {{ _key: doc._key }}
-            INSERT MERGE(doc, {{ genres: genres }})
-            UPDATE MERGE(doc, {{ genres: genres }})
-            IN {cold_name}
-        COLLECT WITH COUNT INTO n
-        RETURN n
-        """
-    )
-    results = list(cursor)  # type: ignore[arg-type]
-    drained: int = results[0] if results else 0
-
-    # Migrate file_has_vectors edges from hot → cold
-    # Resolve file_id via edge traversal (file_id field dropped in migration)
-    db.aql.execute(
-        f"""
-        FOR doc IN {cold_name}
-            LET file_id = FIRST(
-                FOR f IN INBOUND doc file_has_vectors
-                    RETURN f._id
-            )
-            FILTER file_id != null
-            LET hot_id = CONCAT("{hot_name}/", doc._key)
-            LET cold_id = doc._id
-            // Remove old edge pointing to hot (if exists)
-            FOR e IN file_has_vectors
-                FILTER e._to == hot_id
-                REMOVE e IN file_has_vectors
-            // UPSERT edge pointing to cold
-            UPSERT {{ _from: file_id, _to: cold_id }}
-            INSERT {{ _from: file_id, _to: cold_id }}
-            UPDATE {{}}
-            IN file_has_vectors
-        """
-    )
-
-    # Clear hot collection now that all docs are in cold
-    hot_coll.truncate()
+    drained = db.get_vectors_track_maintenance(backbone_id, library_key).drain_to_cold()
 
     logger.info(
         "Drained %d documents from %s to %s",
@@ -348,7 +280,7 @@ def rebuild_cold_vector_index(
     logger.info("[rebuild index] Completed for %s", cold_name)
 
 
-def backfill_genres(db: DatabaseLike, backbone_id: str, library_key: str) -> int:
+def backfill_genres(db: Database, backbone_id: str, library_key: str) -> int:
     """Backfill genres on cold vector documents that predate genre enrichment.
 
     This is a one-time maintenance operation for cold collection documents that
@@ -358,7 +290,7 @@ def backfill_genres(db: DatabaseLike, backbone_id: str, library_key: str) -> int
     documents where ``tag.rel == "genre"`` for the associated file.
 
     Args:
-        db: ArangoDB database handle.
+        db: Database façade.
         backbone_id: Backbone identifier (e.g., ``"discogs_effnet"``).
         library_key: ArangoDB ``_key`` of the library document.
 
@@ -370,38 +302,7 @@ def backfill_genres(db: DatabaseLike, backbone_id: str, library_key: str) -> int
 
     """
     cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    if not db.has_collection(cold_name):
-        raise ValueError(
-            f"Cold collection '{cold_name}' does not exist. "
-            "Run drain_hot_to_cold first to create and populate the cold collection."
-        )
-
-    cursor = db.aql.execute(
-        """
-        FOR doc IN @@cold_coll
-            // Find associated file via edge traversal (FK-free)
-            LET file_ids = (
-                FOR f IN INBOUND doc file_has_vectors
-                    RETURN f._id
-            )
-            LET file_id = FIRST(file_ids)
-            FILTER file_id != null
-            LET genres = (
-                FOR edge IN song_has_tags
-                    FILTER edge._from == file_id
-                    FOR tag IN tags
-                        FILTER tag._id == edge._to AND tag.rel == "genre"
-                        RETURN tag.value
-            )
-            UPDATE doc WITH { genres: genres } IN @@cold_coll
-            COLLECT WITH COUNT INTO updated
-            RETURN updated
-        """,
-        bind_vars={"@cold_coll": cold_name},
-    )
-
-    results = list(cursor)  # type: ignore[arg-type]
-    count: int = results[0] if results else 0
+    count = db.get_vectors_track_maintenance(backbone_id, library_key).backfill_genres()
 
     logger.info(
         "Backfilled genres on %d documents in %s",

@@ -81,28 +81,7 @@ def _heal_short_files(
         Number of files healed
 
     """
-    # Find short files missing too_short state
-    cursor = db.db.aql.execute(
-        """
-        FOR file IN OUTBOUND @library_id library_contains_file
-            FILTER file.duration_seconds != null
-            FILTER file.duration_seconds < @min_duration_s
-            LET has_too_short = LENGTH(
-                FOR edge IN file_has_state
-                    FILTER edge._from == file._id AND edge._to == "file_states/too_short"
-                    LIMIT 1
-                    RETURN 1
-            )
-            FILTER has_too_short == 0
-            RETURN file._id
-        """,
-        bind_vars={
-            "library_id": library_id,
-            "min_duration_s": min_duration_s,
-        },
-    )
-
-    file_ids = list(cursor)
+    file_ids = db.file_states.find_short_files_missing_too_short(library_id, min_duration_s)
     for file_id in file_ids:
         db.file_states.set_too_short(file_id)
 

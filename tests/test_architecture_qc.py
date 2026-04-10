@@ -368,3 +368,47 @@ def test_services_do_not_import_interfaces():
             "Violations:\n" + "\n".join(violations)
         )
         pytest.fail(msg)
+
+
+@pytest.mark.code_smell
+def test_no_raw_aql_outside_persistence_and_migrations():
+    """Test: Ensure raw AQL (db.aql / .aql.execute) is only used in persistence and migrations.
+
+    Raw AQL queries must be encapsulated in the persistence layer for:
+    - Maintainability (centralized query changes)
+    - Security (consistent bind variable usage)
+    - Testing (easier to mock persistence layer)
+
+    Migrations are also allowed raw AQL access for schema transformations.
+
+    Note: This is a code smell test, not a functional test.
+    Marked with @pytest.mark.code_smell to skip in CI.
+    """
+    violations = []
+
+    for py_file in find_python_files(NOMARR_DIR, exclude_dirs={"__pycache__", ".pytest_cache"}):
+        # Allow persistence and migrations
+        if "persistence" in py_file.parts or "migrations" in py_file.parts:
+            continue
+
+        try:
+            with open(py_file, encoding="utf-8") as f:
+                for line_num, line in enumerate(f, start=1):
+                    if re.search(r"\.aql\.", line):
+                        stripped = line.strip()
+                        # Skip comments
+                        if stripped.startswith("#"):
+                            continue
+                        rel_path = py_file.relative_to(PROJECT_ROOT)
+                        violations.append(f"  {rel_path}:{line_num}: {stripped}")
+        except Exception as e:
+            pytest.fail(f"Failed to read {py_file}: {e}")
+
+    if violations:
+        msg = (
+            "Found raw AQL usage (.aql.) outside persistence and migrations.\n"
+            "Raw AQL is only allowed in nomarr/persistence/ and nomarr/migrations/.\n"
+            "Move AQL queries to a *_aql.py module in persistence/database/.\n\n"
+            "Violations:\n" + "\n".join(violations)
+        )
+        pytest.fail(msg)

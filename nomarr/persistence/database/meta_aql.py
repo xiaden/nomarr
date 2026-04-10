@@ -16,6 +16,12 @@ class MetaOperations:
         self.db = db
         self.collection = db.collection("meta")
 
+    def has_version(self) -> bool:
+        """Return whether the meta collection contains a schema version entry."""
+        if not self.db.has_collection("meta"):
+            return False
+        return self.get("version") is not None
+
     def get(self, key: str) -> str | None:
         """Get a meta value by key.
 

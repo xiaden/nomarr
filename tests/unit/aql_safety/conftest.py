@@ -96,6 +96,10 @@ _RE_INSERT_IN = re.compile(
     r"INSERT\s+.*?\bIN(?:TO)?\s+(@@?\w+|\w+)",
     re.IGNORECASE | re.DOTALL,
 )
+_RE_UPSERT_TARGET = re.compile(
+    r"UPSERT\s+.*?UPDATE\s+.*?\bIN(?:TO)?\s+(@@?\w+|\w+)",
+    re.IGNORECASE | re.DOTALL,
+)
 _RE_COLLECTION_REFS = re.compile(
     r"(?:"
     r"FOR\s+\w+\s+IN\s+(?!OUTBOUND|INBOUND|ANY|@)"
@@ -607,16 +611,21 @@ def _find_read_write_conflicts(aql: str) -> set[str]:
         if coll in remove_colls and coll in insert_colls:
             conflicts.add(coll)
 
+    # Pattern C: REMOVE + UPSERT on same collection — the UPSERT search clause
+    # reads the collection after REMOVE already modified it → ERR 1579.
+    upsert_target_colls = {m.group(1).lower() for m in _RE_UPSERT_TARGET.finditer(aql)}
+    conflicts |= remove_colls & upsert_target_colls
+
     return conflicts
 
 
 def _find_violations(root: Path) -> list[_Violation]:
     """Return sorted `(file_path, line_number, collection)` violations under a tree."""
     violations: list[_Violation] = []
-    for file_path, line_number, aql in _scan_aql_execute_calls(root):
-        violations.extend(
-            (file_path, line_number, collection) for collection in sorted(_find_read_write_conflicts(aql))
-        )
+    placeholder_lower = _INTERPOLATION_PLACEHOLDER.lower()
+    for file_path, line_number, aql in _scan_all_aql_strings(root):
+        conflicts = _find_read_write_conflicts(aql) - {placeholder_lower}
+        violations.extend((file_path, line_number, collection) for collection in sorted(conflicts))
 
     return sorted(violations)
 

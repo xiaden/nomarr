@@ -32,6 +32,7 @@ from nomarr.persistence.database.tags_aql import TagOperations
 from nomarr.persistence.database.vectors_track_aql import (
     VectorsTrackColdOperations,
     VectorsTrackHotOperations,
+    VectorsTrackMaintenanceOperations,
 )
 from nomarr.persistence.database.vram_promises_aql import VramPromisesOperations
 from nomarr.persistence.database.worker_claims_aql import WorkerClaimsOperations
@@ -168,6 +169,9 @@ class Database:
         # Cold operations cache (for read/search)
         self._vectors_track_cold: dict[str, VectorsTrackColdOperations] = {}
 
+        # Maintenance operations cache (for promotion/backfill)
+        self._vectors_track_maintenance: dict[str, VectorsTrackMaintenanceOperations] = {}
+
         # Lazy import to avoid circular dependency
         # from nomarr.persistence.database.joined_queries_aql import JoinedQueryOperations
         # self.joined_queries = JoinedQueryOperations(self.db)
@@ -222,6 +226,32 @@ class Database:
                 self.db, backbone_id, library_key, collection_suffix=collection_suffix
             )
         return self._vectors_track_cold[cache_key]
+
+    def get_vectors_track_maintenance(
+        self,
+        backbone_id: str,
+        library_key: str,
+    ) -> VectorsTrackMaintenanceOperations:
+        """Get or create maintenance operations for a backbone+library.
+
+        Maintenance operations own hot→cold drain and genre backfill queries.
+
+        Args:
+            backbone_id: Backbone identifier (e.g., "effnet", "yamnet").
+            library_key: ArangoDB ``_key`` of the library document.
+
+        Returns:
+            The cached maintenance operations for this backbone+library.
+
+        """
+        cache_key = f"{backbone_id}__{library_key}"
+        if cache_key not in self._vectors_track_maintenance:
+            self._vectors_track_maintenance[cache_key] = VectorsTrackMaintenanceOperations(
+                self.db,
+                backbone_id,
+                library_key,
+            )
+        return self._vectors_track_maintenance[cache_key]
 
     def delete_vectors_by_file_id(self, file_id: str) -> int:
         """Delete vectors for a file from ALL backbones and libraries (both hot and cold).

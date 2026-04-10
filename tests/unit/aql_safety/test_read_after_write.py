@@ -77,11 +77,17 @@ class TestFindReadWriteConflicts:
     @pytest.mark.unit
     def test_upsert_insert_branch_not_flagged_as_standalone_write(self) -> None:
         """Pattern B: INSERT inside a UPSERT block is atomic and must not be flagged as a standalone write conflict."""
+        aql = "FOR e IN edges UPSERT {_key: e._key} INSERT {_from: e._from, _to: e._to} UPDATE {} IN edges"
+        assert _find_read_write_conflicts(aql) == set()
+
+    @pytest.mark.unit
+    def test_for_remove_upsert_same_collection_flagged_by_pattern_c(self) -> None:
+        """FOR + REMOVE + UPSERT on same collection is flagged (UPSERT reads after REMOVE writes)."""
         aql = (
             "FOR e IN edges REMOVE e IN edges "
             "UPSERT {_key: e._key} INSERT {_from: e._from, _to: e._to} UPDATE {} IN edges"
         )
-        assert _find_read_write_conflicts(aql) == set()
+        assert _find_read_write_conflicts(aql) == {"edges"}
 
     @pytest.mark.unit
     def test_standalone_insert_after_upsert_block_still_flagged(self) -> None:
@@ -92,6 +98,32 @@ class TestFindReadWriteConflicts:
             "INSERT {_from: 'x', _to: 'y'} INTO edges"
         )
         assert _find_read_write_conflicts(aql) == {"edges"}
+
+    @pytest.mark.unit
+    def test_pattern_c_flags_remove_then_upsert_same_collection(self) -> None:
+        """Pattern C: REMOVE + UPSERT on the same collection triggers ERR 1579."""
+        aql = (
+            "FOR e IN file_has_vectors "
+            "FILTER e._to == 'hot_id' "
+            "REMOVE e IN file_has_vectors "
+            "UPSERT { _from: 'f', _to: 'c' } "
+            "INSERT { _from: 'f', _to: 'c' } "
+            "UPDATE {} "
+            "IN file_has_vectors"
+        )
+        assert _find_read_write_conflicts(aql) == {"file_has_vectors"}
+
+    @pytest.mark.unit
+    def test_pattern_c_remove_upsert_different_collections_safe(self) -> None:
+        """Pattern C: REMOVE on coll_a + UPSERT on coll_b is safe."""
+        aql = "FOR e IN coll_a REMOVE e IN coll_a UPSERT { _key: 'k' } INSERT { v: 1 } UPDATE { v: 1 } IN coll_b"
+        assert _find_read_write_conflicts(aql) == set()
+
+    @pytest.mark.unit
+    def test_pattern_c_upsert_only_not_flagged(self) -> None:
+        """Pattern C: standalone UPSERT without REMOVE is safe."""
+        aql = "UPSERT { _from: @fid, _to: @vid } INSERT { _from: @fid, _to: @vid } UPDATE {} IN file_has_vectors"
+        assert _find_read_write_conflicts(aql) == set()
 
 
 @pytest.mark.unit

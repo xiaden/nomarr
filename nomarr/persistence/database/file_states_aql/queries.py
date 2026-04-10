@@ -286,6 +286,47 @@ class FileStatesQueriesMixin:
         )
         return bool(next(cursor, False))
 
+    def find_short_files_missing_too_short(self, library_id: str, min_duration_s: int) -> list[str]:
+        """Return short file IDs in a library that are missing the ``too_short`` state.
+
+        Args:
+            library_id: Library document ``_id`` (e.g., ``"libraries/12345"``).
+            min_duration_s: Duration threshold in seconds. Files with
+                ``duration_seconds < min_duration_s`` are considered short.
+
+        Returns:
+            List of file ``_id`` strings.
+
+        """
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(  # type: ignore[union-attr]
+                """
+                FOR file IN OUTBOUND @library_id library_contains_file
+                    FILTER file.duration_seconds != null
+                    FILTER file.duration_seconds < @min_duration_s
+                    LET has_too_short = LENGTH(
+                        FOR edge IN file_has_state
+                            FILTER edge._from == file._id
+                            FILTER edge._to == @too_short
+                            LIMIT 1
+                            RETURN 1
+                    )
+                    FILTER has_too_short == 0
+                    RETURN file._id
+                """,
+                bind_vars=cast(
+                    "dict[str, Any]",
+                    {
+                        "library_id": library_id,
+                        "min_duration_s": min_duration_s,
+                        "too_short": STATE_TOO_SHORT,
+                    },
+                ),
+            ),
+        )
+        return list(cursor)
+
     def get_files_with_incomplete_tags(
         self,
         expected_heads: list[dict[str, Any]],

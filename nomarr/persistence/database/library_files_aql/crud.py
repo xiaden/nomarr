@@ -329,6 +329,87 @@ class LibraryFilesCrudMixin:
             bind_vars=bind_vars,
         )
 
+    def update_metadata_cache(
+        self,
+        song_id: str,
+        *,
+        artist: str | None,
+        artists: list[str] | None,
+        album: str | None,
+        labels: list[str] | None,
+        genres: list[str] | None,
+        year: int | None,
+    ) -> None:
+        """Update the embedded metadata cache fields for one song document.
+
+        Args:
+            song_id: Document ``_id`` of the song (e.g., ``"library_files/12345"``).
+            artist: Primary artist name, or ``None`` to clear.
+            artists: Sorted list of all artists, or ``None`` to clear.
+            album: Album name, or ``None`` to clear.
+            labels: Sorted list of label names, or ``None`` to clear.
+            genres: Sorted list of genre names, or ``None`` to clear.
+            year: Release year as integer, or ``None`` to clear.
+
+        """
+        self.db.aql.execute(
+            """
+            UPDATE PARSE_IDENTIFIER(@song_id).key WITH {
+                artist: @artist,
+                artists: @artists,
+                album: @album,
+                labels: @labels,
+                genres: @genres,
+                year: @year
+            } IN library_files
+            """,
+            bind_vars=cast(
+                "dict[str, Any]",
+                {
+                    "song_id": song_id,
+                    "artist": artist,
+                    "artists": artists,
+                    "album": album,
+                    "labels": labels,
+                    "genres": genres,
+                    "year": year,
+                },
+            ),
+        )
+
+    def update_metadata_cache_batch(self, updates: list[dict[str, Any]]) -> None:
+        """Update the embedded metadata cache fields for multiple song documents.
+
+        Args:
+            updates: List of dicts, each with keys:
+                ``song_id`` (str, document ``_id``),
+                ``artist`` (str | None),
+                ``artists`` (list[str] | None),
+                ``album`` (str | None),
+                ``labels`` (list[str] | None),
+                ``genres`` (list[str] | None),
+                ``year`` (int | None).
+                Empty list is a no-op.
+
+        """
+        if not updates:
+            return
+
+        self.db.aql.execute(
+            """
+            FOR entry IN @updates
+                UPDATE PARSE_IDENTIFIER(entry.song_id).key WITH {
+                    artist: entry.artist,
+                    artists: entry.artists,
+                    album: entry.album,
+                    labels: entry.labels,
+                    genres: entry.genres,
+                    year: entry.year
+                } IN library_files
+            """,
+            bind_vars=cast("dict[str, Any]", {"updates": updates}),
+        )
+
     def bulk_delete_files(self, paths: list[str]) -> int:
         """Delete multiple files by path and clean up entity edges.
 

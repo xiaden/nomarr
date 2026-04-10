@@ -331,29 +331,10 @@ class CalibrationService:
 
         # Count heads with recent calibration_state (within 24 hours)
         recent_threshold = now_ms().value - (24 * 60 * 60 * 1000)
-
-        cursor = self._db.db.aql.execute(
-            """
-            RETURN COUNT(
-                FOR c IN calibration_state
-                    FILTER c.updated_at >= @threshold
-                    RETURN 1
-            )
-            """,
-            bind_vars=type_cast("dict[str, Any]", {"threshold": recent_threshold}),
-        )
-        completed = next(cursor, 0)  # type: ignore
+        completed = self._db.calibration_state.count_recent(recent_threshold)
 
         # Get most recent calibration timestamp
-        cursor = self._db.db.aql.execute(
-            """
-            FOR c IN calibration_state
-                SORT c.updated_at DESC
-                LIMIT 1
-                RETURN c.updated_at
-            """,
-        )
-        last_updated = next(cursor, None)  # type: ignore
+        last_updated = self._db.calibration_state.get_latest_updated_at()
 
         return {
             "current_head": None,

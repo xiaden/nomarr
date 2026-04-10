@@ -20,6 +20,7 @@ from nomarr.persistence.arango_client import DatabaseLike
 
 from .chromaprint import LibraryFilesChromaprintMixin
 from .crud import LibraryFilesCrudMixin
+from .inventory import LibraryFilesInventoryMixin
 from .queries import LibraryFilesQueriesMixin
 from .reconciliation import LibraryFilesReconciliationMixin
 from .stats import LibraryFilesStatsMixin
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
 class LibraryFilesOperations(
     LibraryFilesCrudMixin,
     LibraryFilesQueriesMixin,
+    LibraryFilesInventoryMixin,
     LibraryFilesReconciliationMixin,
     LibraryFilesStatsMixin,
     LibraryFilesChromaprintMixin,

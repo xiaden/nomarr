@@ -8,7 +8,7 @@ Called once from Application.__init__ before service initialization.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nomarr.components.platform.arango_bootstrap_comp import ensure_schema
 from nomarr.components.platform.migration_runner_comp import (
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _is_fresh_database(raw_db: Any) -> bool:
+def _is_fresh_database(db: Database) -> bool:
     """Check if this is a fresh database with no schema version.
 
     A fresh database has either no ``meta`` collection at all, or a ``meta``
@@ -34,16 +34,13 @@ def _is_fresh_database(raw_db: Any) -> bool:
     must run to bootstrap the baseline schema before migrations execute.
 
     Args:
-        raw_db: Raw ArangoDB database handle (``db.db``).
+        db: Database facade with raw handle and collection operations.
 
     Returns:
         True if this is a fresh (uninitialized) database.
 
     """
-    if not raw_db.has_collection("meta"):
-        return True
-    cursor = raw_db.aql.execute("FOR doc IN meta FILTER doc.key == 'version' LIMIT 1 RETURN doc.value")
-    return next(cursor, None) is None
+    return not db.meta.has_version()
 
 
 def prepare_database_workflow(
@@ -69,7 +66,7 @@ def prepare_database_workflow(
     # Step 1: Bootstrap schema only on fresh databases.
     # ensure_schema is a frozen baseline — running it on existing databases
     # would recreate indexes that migrations have intentionally dropped.
-    if _is_fresh_database(db.db):
+    if _is_fresh_database(db):
         logger.info("Fresh database detected — bootstrapping schema")
         ensure_schema(db.db, models_dir=models_dir)
     else:
