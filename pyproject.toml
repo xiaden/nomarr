@@ -25,7 +25,7 @@ classifiers = [
 dependencies = [
     "numpy==1.26.4",           # Pinned: onnxruntime compatibility
     "scipy>=1.13.1",
-    "onnxruntime>=1.18.0",     # CPU-only for dev/CI; Docker/GPU builds use onnxruntime-gpu (see requirements.txt)
+    "onnxruntime>=1.24.4",     # CPU-only for dev/CI; Docker/GPU builds use onnxruntime-gpu (see requirements.txt)
     "mutagen>=1.47.0",
     "pyyaml>=6.0.2",
     "fastapi>=0.115.0",
