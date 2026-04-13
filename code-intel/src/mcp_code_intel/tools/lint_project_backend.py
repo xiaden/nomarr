@@ -198,8 +198,9 @@ def lint_project_backend(path: str | None = None, check_all: bool = False) -> di
         path: Relative path to lint (defaults to config's backend_path or "."
               if not configured). Only files in this path are checked.
         check_all: If True, lint all files in path; if False (default),
-                   only modified/untracked files. import-linter and pytest
-                   always run regardless.
+                   only modified/untracked files. import-linter always runs
+                   when scope includes nomarr backend code. pytest always
+                   runs regardless.
 
     Returns:
         Structured JSON:
@@ -293,16 +294,26 @@ def lint_project_backend(path: str | None = None, check_all: bool = False) -> di
         ]
 
         if not modified_py:
-            return {"summary": {"total_errors": 0, "clean": True, "files_checked": 0}}
+            # No modified Python files — but import-linter must still run
+            # if the scope includes nomarr backend code (contracts are global).
+            target_files = []
+        else:
+            target_files = [str(project_root / f) for f in modified_py]
 
-        target_files = [str(project_root / f) for f in modified_py]
+    # Determine if scope includes nomarr backend code (for contract checking)
+    scope_includes_nomarr = (
+        target_path == project_root
+        or (project_root / "nomarr").resolve()
+        == target_path.resolve()
+        or str(target_path.resolve()).startswith(str((project_root / "nomarr").resolve()))
+    )
 
     # Initialize result structure
     result_json: dict[str, Any] = {}
     total_errors = 0
 
-    # Run ruff
-    if DEBUG_LINTER is None or DEBUG_LINTER == "ruff":
+    # Run ruff (skip if no files to check)
+    if target_files and (DEBUG_LINTER is None or DEBUG_LINTER == "ruff"):
         venv_ruff = project_root / ".venv" / "Scripts" / "ruff.exe"
         try:
             result = subprocess.run(
@@ -340,8 +351,8 @@ def lint_project_backend(path: str | None = None, check_all: bool = False) -> di
         except Exception:
             pass  # format failures are non-critical
 
-    # Run mypy
-    if DEBUG_LINTER is None or DEBUG_LINTER == "mypy":
+    # Run mypy (skip if no files to check)
+    if target_files and (DEBUG_LINTER is None or DEBUG_LINTER == "mypy"):
         venv_mypy = project_root / ".venv" / "Scripts" / "mypy.exe"
         stdout, stderr = _run_mypy(venv_mypy, target_files, project_root)
 
@@ -364,8 +375,9 @@ def lint_project_backend(path: str | None = None, check_all: bool = False) -> di
             result_json["mypy"] = normalize_to_json_structure(raw_errors, "mypy")
             total_errors += sum(len(v["occurrences"]) for v in result_json["mypy"].values())
 
-    # Run import-linter (always run — layer contracts must hold regardless of what changed)
-    if DEBUG_LINTER is None or DEBUG_LINTER == "import-linter":
+    # Run import-linter when scope includes nomarr backend code —
+    # layer contracts must hold regardless of what individual files changed.
+    if scope_includes_nomarr and (DEBUG_LINTER is None or DEBUG_LINTER == "import-linter"):
         venv_lint_imports = project_root / ".venv" / "Scripts" / "lint-imports.exe"
         try:
             result = subprocess.run(
