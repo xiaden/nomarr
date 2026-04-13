@@ -40,7 +40,7 @@ dev = [
 lint = [
     "ruff>=0.1.0",
     "mypy>=1.0",
-    "import-linter>=2.0",
+    "import-linter>=2.11",
 ]
 
 [project.scripts]
