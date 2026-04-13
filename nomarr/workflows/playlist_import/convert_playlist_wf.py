@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from nomarr.components.library.library_file_query_comp import get_tracks_for_matching
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -86,7 +88,7 @@ def convert_playlist_workflow(
     logger.info(f"Fetched {len(input_tracks)} tracks from '{metadata.name}'")
 
     # Step 3: Load library tracks
-    library_rows = db.library_files.get_tracks_for_matching(library_id=library_id)
+    library_rows = get_tracks_for_matching(db, library_id=library_id)
     library_tracks = [LibraryTrack.from_db_row(row) for row in library_rows]
 
     logger.info(f"Loaded {len(library_tracks)} library tracks for matching")

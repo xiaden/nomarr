@@ -10,6 +10,17 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.library.library_file_mutation_comp import (
+    set_chromaprint as persist_chromaprint,
+)
+from nomarr.components.library.library_file_mutation_comp import (
+    upsert_library_file as persist_library_file,
+)
+from nomarr.components.library.library_file_query_comp import get_library_file as fetch_library_file
+from nomarr.components.library.library_records_comp import find_library_containing_path
+from nomarr.components.tagging.tag_write_comp import set_song_tags_batch
+from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
+
 if TYPE_CHECKING:
     from nomarr.components.infrastructure.path_comp import LibraryPath
     from nomarr.persistence.db import Database
@@ -33,7 +44,7 @@ def find_library_for_file(db: Database, file_path: str) -> dict[str, Any] | None
         Library dict if found, None otherwise
 
     """
-    return db.libraries.find_library_containing_path(file_path)
+    return find_library_containing_path(db, file_path)
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +81,8 @@ def upsert_library_file(
         Document ``_id``
 
     """
-    return db.library_files.upsert_library_file(
+    return persist_library_file(
+        db,
         path=path,
         library_id=library_id,
         file_size=file_size,
@@ -93,7 +105,7 @@ def get_library_file(db: Database, file_path: str) -> dict[str, Any] | None:
         File dict or None if not found
 
     """
-    return db.library_files.get_library_file(file_path)
+    return fetch_library_file(db, file_path)
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +122,7 @@ def set_chromaprint(db: Database, file_id: str, chromaprint: str) -> None:
         chromaprint: Chromaprint fingerprint string
 
     """
-    db.library_files.set_chromaprint(file_id, chromaprint)
+    persist_chromaprint(db, file_id, chromaprint)
 
 
 def mark_file_tagged(db: Database, file_id: str) -> None:
@@ -121,7 +133,7 @@ def mark_file_tagged(db: Database, file_id: str) -> None:
         file_id: Document ``_id``
 
     """
-    db.file_states.set_tagged(file_id)
+    db.file_states.transition([file_id], STATE_NOT_TAGGED, STATE_TAGGED)
 
 
 # ---------------------------------------------------------------------------
@@ -146,4 +158,4 @@ def save_file_tags(
 
     """
     entries = [{"song_id": file_id, "rel": rel, "values": values} for rel, values in parsed_tags.items()]
-    db.tags.set_song_tags_batch(entries)
+    set_song_tags_batch(db, entries)

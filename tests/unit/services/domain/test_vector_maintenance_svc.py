@@ -26,10 +26,12 @@ class TestGetLibraryVectorStats:
     def test_raises_when_library_not_found(self) -> None:
         """Unknown libraries should raise ValueError before scanning backbones."""
         mock_db = MagicMock()
-        mock_db.libraries.get_library.return_value = None
         service = _make_service(mock_db)
 
-        with pytest.raises(ValueError, match="Library not found: libraries/1"):
+        with (
+            patch("nomarr.services.domain.vector_maintenance_svc.get_library_record", return_value=None),
+            pytest.raises(ValueError, match="Library not found: libraries/1"),
+        ):
             service.get_library_vector_stats("libraries/1")
 
     @pytest.mark.unit
@@ -37,13 +39,15 @@ class TestGetLibraryVectorStats:
     def test_returns_empty_list_when_no_backbones_discovered(self) -> None:
         """No discovered backbones should produce an empty stats list."""
         mock_db = MagicMock()
-        mock_db.libraries.get_library.return_value = {"_key": "1"}
         service = _make_service(mock_db)
 
-        with patch(
-            "nomarr.services.domain.vector_maintenance_svc.discover_backbones",
-            return_value=[],
-        ) as mock_discover_backbones:
+        with (
+            patch("nomarr.services.domain.vector_maintenance_svc.get_library_record", return_value={"_key": "1"}),
+            patch(
+                "nomarr.services.domain.vector_maintenance_svc.discover_backbones",
+                return_value=[],
+            ) as mock_discover_backbones,
+        ):
             result = service.get_library_vector_stats("libraries/1")
 
         assert result == []
@@ -54,10 +58,10 @@ class TestGetLibraryVectorStats:
     def test_returns_stats_row_for_each_backbone(self) -> None:
         """Successful backbone stats should be normalized into response rows."""
         mock_db = MagicMock()
-        mock_db.libraries.get_library.return_value = {"_key": "1"}
         service = _make_service(mock_db)
 
         with (
+            patch("nomarr.services.domain.vector_maintenance_svc.get_library_record", return_value={"_key": "1"}),
             patch(
                 "nomarr.services.domain.vector_maintenance_svc.discover_backbones",
                 return_value=["effnet"],
@@ -85,10 +89,10 @@ class TestGetLibraryVectorStats:
     def test_skips_backbones_that_fail_stats_lookup(self) -> None:
         """Backbones with stats errors should be skipped instead of failing the whole request."""
         mock_db = MagicMock()
-        mock_db.libraries.get_library.return_value = {"_key": "abc"}
         service = _make_service(mock_db)
 
         with (
+            patch("nomarr.services.domain.vector_maintenance_svc.get_library_record", return_value={"_key": "abc"}),
             patch(
                 "nomarr.services.domain.vector_maintenance_svc.discover_backbones",
                 return_value=["broken", "effnet"],

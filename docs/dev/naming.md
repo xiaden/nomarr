@@ -403,7 +403,7 @@ library_svc/
 **Names encode layer information:**
 - `*Service` → Service layer (domain or infrastructure)
 - `*Dict` → DTO (crosses layers)
-- `*Operations` / `*_aql` → Persistence layer
+- `db.<collection>` / `*Namespace` → Persistence layer
 - `*_wf` → Workflow layer
 - `*_comp` → Component layer
 

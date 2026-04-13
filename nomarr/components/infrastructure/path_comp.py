@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from nomarr.components.library.library_records_comp import find_library_containing_path, get_library_record
 from nomarr.helpers.dto.path_dto import LibraryPath
 from nomarr.helpers.files_helper import is_audio_file
 from nomarr.persistence.db import Database
@@ -44,7 +45,7 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
         )
 
     # Find which library contains this path
-    library = db.libraries.find_library_containing_path(str(absolute))
+    library = find_library_containing_path(db, str(absolute))
     if not library:
         return LibraryPath(
             relative="",
@@ -137,7 +138,7 @@ def build_library_path_from_db(
     """
     # If we have a library_id, fetch that library's configuration
     if library_id:
-        library = db.libraries.get_library(library_id)
+        library = get_library_record(db, library_id, include_scan=False)
         if not library or not library["is_enabled"]:
             # Library was disabled or deleted
             return LibraryPath(
@@ -183,7 +184,7 @@ def build_library_path_from_db(
                 reason=f"Cannot resolve stored path: {e}",
             )
 
-        library = db.libraries.find_library_containing_path(str(absolute))
+        library = find_library_containing_path(db, str(absolute))
         if not library:
             return LibraryPath(
                 relative=stored_path,
@@ -261,7 +262,7 @@ def get_library_root(library_path: LibraryPath, db: Database) -> Path | None:
     if not library_path.library_id:
         return None
 
-    library = db.libraries.get_library(library_path.library_id)
+    library = get_library_record(db, library_path.library_id, include_scan=False)
     if not library:
         return None
 

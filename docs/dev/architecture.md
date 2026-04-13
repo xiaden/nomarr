@@ -226,18 +226,19 @@ class TaggingService:
 
 **Contains:**
 - `db.py` — `Database` facade class
-- `database/` — One `*Operations` class per collection (or collection group)
+- `constructor/` — Schema-driven verb templates and dynamic collection namespaces
+- `database/` — Empty legacy namespace stub retained only for cleanup compatibility
 
-**Access pattern:** Always through the `Database` facade, never importing Operations classes directly.
+**Access pattern:** Always through the `Database` facade and constructor-backed `db.<collection>` namespaces; never import persistence internals directly.
 
 ```python
 # ✅ Via Database facade
 db = Database()
-claimed = db.worker_claims.try_claim_file(file_id, worker_id)
+claims = db.worker_claims.worker_id.get.many(worker_id, limit=db.worker_claims.count())
 
-# ❌ Direct import
-from nomarr.persistence.database.worker_claims_aql import WorkerClaimsOperations
+# ❌ Bypassing the facade by importing persistence internals directly
 ```
+
 
 **Key collections (via `db.*`):**
 

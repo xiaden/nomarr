@@ -195,8 +195,10 @@ async def get_vector_stats(
 
     def _get_stats_sync() -> list[VectorHotColdStats]:
         """Run blocking DB queries in thread pool."""
+        from nomarr.components.library.library_records_comp import list_library_records
+
         stats_list = []
-        libraries = vector_maintenance_service.db.libraries.list_libraries()
+        libraries = list_library_records(vector_maintenance_service.db, include_scan=False)
         for lib in libraries:
             library_key = lib["_key"]
             for backbone_id in known_backbones:

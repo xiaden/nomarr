@@ -5,7 +5,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol
 
 from nomarr.components.library.file_tags_comp import get_file_tags_with_path
+from nomarr.components.library.library_file_query_comp import count_files_by_tag, search_files_by_tag
+from nomarr.components.library.library_file_state_comp import count_pending_tag_writes
+from nomarr.components.library.library_records_comp import list_library_records
 from nomarr.components.library.search_files_comp import get_unique_tag_keys, get_unique_tag_values
+from nomarr.components.tagging.tag_query_comp import (
+    count_tags_by_rel,
+    get_tag_songs_with_metadata,
+    get_unique_mood_values,
+    list_tags_by_rel,
+)
 from nomarr.helpers.dto.library_dto import (
     FileTag,
     FileTagsResult,
@@ -59,8 +68,8 @@ class TaggingQueryMixin:
             TagListResult with tags list and total count.
 
         """
-        raw_tags = self.db.tags.list_tags_by_rel(rel=rel, limit=limit, offset=offset, search=prefix)
-        total = self.db.tags.count_tags_by_rel(rel=rel, search=prefix)
+        raw_tags = list_tags_by_rel(self.db, rel=rel, limit=limit, offset=offset, search=prefix)
+        total = count_tags_by_rel(self.db, rel=rel, search=prefix)
 
         tags: list[TagValueItem] = [
             TagValueItem(
@@ -90,8 +99,8 @@ class TaggingQueryMixin:
             Dict with songs list and total count.
 
         """
-        raw_songs = self.db.tags.get_tag_songs_with_metadata(tag_id, limit=limit, offset=offset)
-        total = self.db.tags.count_songs_for_tag(tag_id)
+        raw_songs = get_tag_songs_with_metadata(self.db, tag_id, limit=limit, offset=offset)
+        total = self.db.song_has_tags._to.count(tag_id)
 
         songs: list[TagSongItem] = [
             TagSongItem(
@@ -107,7 +116,7 @@ class TaggingQueryMixin:
 
     def get_pending_commit_count(self) -> int:
         """Count files with pending tag writes (tags_not_written state)."""
-        return self.db.file_states.count_pending_tag_writes()
+        return count_pending_tag_writes(self.db)
 
     def commit_pending_tags(self: _TaggingQueryService, library_id: str | None = None) -> CommitResult:
         """Commit pending tag writes by writing tags for affected libraries.
@@ -120,14 +129,14 @@ class TaggingQueryMixin:
             CommitResult with started flag and pending file count.
 
         """
-        pending = self.db.file_states.count_pending_tag_writes()
+        pending = count_pending_tag_writes(self.db)
         if pending == 0:
             return CommitResult(started=False, pending_files=0)
 
         if library_id:
             self.write_tags_to_files(library_id)
         else:
-            libraries = self.db.libraries.list_libraries()
+            libraries = list_library_records(self.db, include_scan=False)
             for lib in libraries:
                 self.write_tags_to_files(lib["_id"])
 
@@ -145,7 +154,7 @@ class TaggingQueryMixin:
 
     def get_unique_mood_values(self, mood_tier: str = "mood-strict", limit: int = 100) -> UniqueTagKeysResult:
         """Get unique individual mood values extracted from tuple string tags."""
-        values = self.db.tags.get_unique_mood_values(mood_tier=mood_tier, limit=limit)
+        values = get_unique_mood_values(self.db, mood_tier=mood_tier, limit=limit)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
 
     def get_file_tags(self, file_id: str, nomarr_only: bool = False) -> FileTagsResult:
@@ -218,7 +227,7 @@ class TaggingQueryMixin:
             SearchFilesResult with matched files
 
         """
-        files = self.db.library_files.search_files_by_tag(tag_key, target_value, limit, offset)
-        total = self.db.library_files.count_files_by_tag(tag_key, target_value)
+        files = search_files_by_tag(self.db, tag_key, target_value, limit, offset)
+        total = count_files_by_tag(self.db, tag_key, target_value)
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
         return SearchFilesResult(files=files_with_tags, total=total, limit=limit, offset=offset)

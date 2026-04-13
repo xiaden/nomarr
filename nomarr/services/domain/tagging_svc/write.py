@@ -5,8 +5,15 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
+from nomarr.components.library.library_file_state_comp import bulk_set_tags_stale
+from nomarr.components.library.library_records_comp import get_library_record
+from nomarr.components.library.reconciliation_comp import (
+    claim_files_for_reconciliation,
+    count_files_needing_reconciliation,
+    release_claim,
+)
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.dto.library_dto import WriteTagsResult
 from nomarr.workflows.library.file_tags_io_wf import read_file_tags_workflow, remove_file_tags_workflow
@@ -83,17 +90,19 @@ class TaggingWriteMixin:
             WriteTagsResult with processed, remaining, and failed counts
 
         """
-        library = self.db.libraries.get_library(library_id)
+        library = get_library_record(self.db, library_id)
         if not library:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
 
         target_mode = library.get("file_write_mode", "full")
-        calibration_hash = self.db.meta.get("calibration_version")
+        calibration_doc = cast("dict[str, Any] | None", self.db.meta.key.get("calibration_version"))
+        calibration_hash = None if calibration_doc is None else calibration_doc.get("value")
         has_calibration = bool(calibration_hash)
 
         worker_id = f"reconcile:{library_id}"
-        claimed_files = self.db.library_files.claim_files_for_reconciliation(
+        claimed_files = claim_files_for_reconciliation(
+            self.db,
             library_id=library_id,
             worker_id=worker_id,
             batch_size=batch_size,
@@ -119,7 +128,7 @@ class TaggingWriteMixin:
                     logger.debug(
                         f"[reconcile] Skipping {file_key}: modified externally, will retry after rescan",
                     )
-                    self.db.library_files.release_claim(file_key)
+                    release_claim(self.db, file_key)
                 else:
                     failed += 1
                     logger.warning(f"[reconcile] Failed to write tags for {file_key}: {result.error}")
@@ -127,13 +136,11 @@ class TaggingWriteMixin:
                 failed += 1
                 logger.exception(f"[reconcile] Error processing {file_key}: {e}")
                 try:
-                    self.db.library_files.release_claim(file_key)
+                    release_claim(self.db, file_key)
                 except Exception as release_err:
                     logger.debug(f"[reconcile] Failed to release claim for {file_key}: {release_err}")
 
-        remaining = self.db.library_files.count_files_needing_reconciliation(
-            library_id=library_id,
-        )
+        remaining = count_files_needing_reconciliation(self.db, library_id=library_id)
 
         logger.info(f"[reconcile] Library {library_id}: processed={processed}, failed={failed}, remaining={remaining}")
 
@@ -197,7 +204,7 @@ class TaggingWriteMixin:
             Number of files marked stale
 
         """
-        return self.db.file_states.bulk_set_tags_stale(library_id)
+        return bulk_set_tags_stale(self.db, library_id)
 
     def get_reconcile_status(self, library_id: str) -> dict[str, Any]:
         """Get reconciliation status for a library.
@@ -209,14 +216,12 @@ class TaggingWriteMixin:
             Dict with pending_count and in_progress status
 
         """
-        library = self.db.libraries.get_library(library_id)
+        library = get_library_record(self.db, library_id)
         if not library:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
 
-        pending_count = self.db.library_files.count_files_needing_reconciliation(
-            library_id=library_id,
-        )
+        pending_count = count_files_needing_reconciliation(self.db, library_id=library_id)
         task_status = self._bts.get_task_status(f"write_tags:{library_id}")
         in_progress = task_status is not None and task_status["status"] == "running"
 

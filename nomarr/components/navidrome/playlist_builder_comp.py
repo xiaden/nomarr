@@ -1,8 +1,9 @@
 """Build personal playlist track lists from taste profiles and play history.
 
 Each public function encapsulates the domain logic for one playlist type:
-ANN search, exclusion filtering, and result assembly.  All AQL access
-goes through ``db.tags.*`` persistence methods.
+ANN search, exclusion filtering, and result assembly.  ANN search uses
+``db.get_vectors_track_cold`` for vector similarity queries; tag access
+delegates to ``tag_query_comp`` helpers.
 
 Every builder has the uniform signature::
 
@@ -22,6 +23,10 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from nomarr.components.tagging.tag_query_comp import (
+    get_distinct_tag_values_for_files,
+    get_tag_values_grouped_by_file,
+)
 from nomarr.helpers.dto.navidrome_dto import (
     NavidromePersonalPlaylistContext,
     NavidromePersonalPlaylistEntry,
@@ -82,7 +87,7 @@ def build_familiar_playlist(
     nprobe = compute_nprobe(nlists)
     # Over-fetch: most results won't be in the played set
     fetch_limit = ctx["max_songs"] * 5
-    raw_results = cold_ops.search_similar(ctx["centroid"], fetch_limit, nprobe=nprobe)
+    raw_results = cold_ops.ann_search(ctx["centroid"], fetch_limit, nprobe=nprobe)
 
     # Keep only tracks the user has played, preserving ANN ranking
     file_ids = [r["file_id"] for r in raw_results if r["file_id"] in played][: ctx["max_songs"]]
@@ -121,7 +126,7 @@ def build_discovery_playlist(
     nlists = compute_nlists(doc_count)
     nprobe = compute_nprobe(nlists)
     fetch_limit = ctx["max_songs"] * 2
-    raw_results = cold_ops.search_similar(ctx["centroid"], fetch_limit, nprobe=nprobe)
+    raw_results = cold_ops.ann_search(ctx["centroid"], fetch_limit, nprobe=nprobe)
 
     # Exclude played tracks
     file_ids = [r["file_id"] for r in raw_results if r["file_id"] not in played][: ctx["max_songs"]]
@@ -156,7 +161,7 @@ def build_hidden_gems_playlist(
     played = set(ctx["played_file_ids"])
 
     # Collect known artist tag values via persistence
-    known_artists: set[str] = set(db.tags.get_distinct_tag_values_for_files(ctx["played_file_ids"], "artist"))
+    known_artists: set[str] = set(get_distinct_tag_values_for_files(db, ctx["played_file_ids"], "artist"))
     if not known_artists:
         logger.debug("No known artists for hidden gems, falling back to discovery-style")
 
@@ -168,7 +173,7 @@ def build_hidden_gems_playlist(
     nlists = compute_nlists(doc_count)
     nprobe = compute_nprobe(nlists)
     fetch_limit = ctx["max_songs"] * 3  # Over-fetch to compensate for artist filtering
-    raw_results = cold_ops.search_similar(ctx["centroid"], fetch_limit, nprobe=nprobe)
+    raw_results = cold_ops.ann_search(ctx["centroid"], fetch_limit, nprobe=nprobe)
 
     # Exclude played tracks
     candidates: list[dict[str, Any]] = [r for r in raw_results if r["file_id"] not in played]
@@ -176,7 +181,7 @@ def build_hidden_gems_playlist(
     if known_artists:
         # Batch-query artist tags for candidates, then exclude known-artist tracks
         candidate_file_ids = [r["file_id"] for r in candidates]
-        candidate_artists = db.tags.get_tag_values_grouped_by_file(candidate_file_ids, "artist")
+        candidate_artists = get_tag_values_grouped_by_file(db, candidate_file_ids, "artist")
 
         candidates = [r for r in candidates if not (candidate_artists.get(r["file_id"], set()) & known_artists)]
 
@@ -217,7 +222,7 @@ def build_universal_playlist(
     nlists = compute_nlists(doc_count)
     nprobe = compute_nprobe(nlists)
     fetch_limit = ctx["max_songs"] * 3
-    raw_results = cold_ops.search_similar(ctx["centroid"], fetch_limit, nprobe=nprobe)
+    raw_results = cold_ops.ann_search(ctx["centroid"], fetch_limit, nprobe=nprobe)
 
     # Diversified sampling: spread across the result set instead of taking top-N
     file_ids: list[str] = []
@@ -281,7 +286,7 @@ def build_genre_playlists(
         return []
 
     # Fetch genre tags for played tracks in one batch
-    file_genres = db.tags.get_tag_values_grouped_by_file(played_file_ids, "genre")
+    file_genres = get_tag_values_grouped_by_file(db, played_file_ids, "genre")
 
     # Pre-compute recency decay constants
     now_ms_val = now_ms().value
@@ -333,7 +338,12 @@ def build_genre_playlists(
     playlists: list[NavidromePersonalPlaylistEntry] = []
     for genre in top_genres:
         genre_centroid = genre_centroids[genre]
-        raw_results = cold_ops.search_similar_by_genre(genre_centroid, genre, fetch_limit, nprobe)
+        raw_results = cold_ops.ann_search(
+            genre_centroid,
+            fetch_limit,
+            nprobe,
+            filter={"genres": genre},
+        )
 
         if len(raw_results) < _GENRE_MIN_SONGS:
             logger.debug("Genre %r returned only %d results (<%d); skipping", genre, len(raw_results), _GENRE_MIN_SONGS)

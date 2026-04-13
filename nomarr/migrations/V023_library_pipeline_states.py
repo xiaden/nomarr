@@ -6,13 +6,13 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.persistence.database.file_states_aql import (
+from nomarr.helpers.constants.file_states import (
     STATE_CALIBRATED,
     STATE_NOT_TAGGED,
     STATE_TAGGED,
     STATE_TAGS_WRITTEN,
 )
-from nomarr.persistence.database.library_pipeline_states_aql import (
+from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_APPLYING,
     PIPELINE_AWAITING_CALIBRATION,
     PIPELINE_CALIBRATING,

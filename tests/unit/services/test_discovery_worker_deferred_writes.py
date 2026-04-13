@@ -6,6 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.helpers.constants.file_states import (
+    STATE_ERRORED,
+    STATE_NOT_ERRORED,
+    STATE_NOT_TAGGED,
+    STATE_NOT_VECTORS_EXTRACTED,
+    STATE_TAGGED,
+    STATE_VECTORS_EXTRACTED,
+)
 from nomarr.helpers.dto.processing_dto import DeferredFileWrites
 
 _PATCH_PREFIX_SYNC = "nomarr.components.library.file_sync_comp"
@@ -60,8 +68,12 @@ class TestExecuteDeferredWritesSuccess:
 
         _execute_deferred_writes(mock_db, minimal_writes, "worker:tag:0")
 
-        mock_db.file_states.set_tagged.assert_called_once_with("library_files/abc")
-        mock_db.file_states.set_vectors_extracted.assert_called_once_with("library_files/abc")
+        mock_db.file_states.transition.assert_any_call(["library_files/abc"], STATE_NOT_TAGGED, STATE_TAGGED)
+        mock_db.file_states.transition.assert_any_call(
+            ["library_files/abc"],
+            STATE_NOT_VECTORS_EXTRACTED,
+            STATE_VECTORS_EXTRACTED,
+        )
         mock_release.assert_called_once_with(mock_db, "library_files/abc")
 
     @pytest.mark.unit
@@ -88,7 +100,20 @@ class TestExecuteDeferredWritesSuccess:
 
         _execute_deferred_writes(mock_db, minimal_writes, "worker:tag:0")
 
-        mock_db.file_states.set_errored.assert_not_called()
+        assert mock_db.file_states.transition.call_count == 2
+        mock_db.file_states.transition.assert_any_call(["library_files/abc"], STATE_NOT_TAGGED, STATE_TAGGED)
+        mock_db.file_states.transition.assert_any_call(
+            ["library_files/abc"],
+            STATE_NOT_VECTORS_EXTRACTED,
+            STATE_VECTORS_EXTRACTED,
+        )
+        mock_db.file_states.transition.assert_has_calls(
+            [
+                ((["library_files/abc"], STATE_NOT_TAGGED, STATE_TAGGED),),
+                ((["library_files/abc"], STATE_NOT_VECTORS_EXTRACTED, STATE_VECTORS_EXTRACTED),),
+            ],
+            any_order=True,
+        )
 
 
 class TestExecuteDeferredWritesFailure:
@@ -118,8 +143,7 @@ class TestExecuteDeferredWritesFailure:
 
         _execute_deferred_writes(mock_db, minimal_writes, "worker:tag:0")
 
-        mock_db.file_states.set_errored.assert_called_once_with("library_files/abc")
-        mock_db.file_states.set_vectors_extracted.assert_not_called()
+        mock_db.file_states.transition.assert_called_once_with(["library_files/abc"], STATE_NOT_ERRORED, STATE_ERRORED)
         mock_release.assert_called_once_with(mock_db, "library_files/abc")
 
     @pytest.mark.unit
@@ -143,7 +167,7 @@ class TestExecuteDeferredWritesFailure:
         )
 
         mock_parse.side_effect = RuntimeError("parse failed")
-        mock_db.file_states.set_errored.side_effect = RuntimeError("db error")
+        mock_db.file_states.transition.side_effect = RuntimeError("db error")
 
         _execute_deferred_writes(mock_db, minimal_writes, "worker:tag:0")
 

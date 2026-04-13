@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nomarr.persistence.database.library_pipeline_states_aql import (
+from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_AWAITING_CALIBRATION,
     PIPELINE_CALIBRATING,
     PIPELINE_DONE,
@@ -34,6 +34,48 @@ if TYPE_CHECKING:
 pytestmark = [pytest.mark.integration, pytest.mark.mocked]
 
 
+@pytest.fixture(autouse=True)
+def pipeline_state_helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bridge helper-based production code to the stateful fake pipeline facade."""
+
+    monkeypatch.setattr(
+        "nomarr.services.infrastructure.pipeline_svc.get_libraries_in_pipeline_state",
+        lambda db, state: db.library_pipeline_states.get_libraries_in_state(state),
+    )
+    monkeypatch.setattr(
+        "nomarr.services.infrastructure.pipeline_svc.bulk_transition_pipeline_state",
+        lambda db, from_state, to_state: db.library_pipeline_states.bulk_transition(from_state, to_state),
+    )
+    monkeypatch.setattr(
+        "nomarr.services.infrastructure.pipeline_svc.transition_pipeline_state",
+        lambda db, library_id, state: db.library_pipeline_states.transition_state(library_id, state),
+    )
+    monkeypatch.setattr(
+        "nomarr.services.infrastructure.pipeline_svc.get_pipeline_state",
+        lambda db, library_id: db.library_pipeline_states.get_state(library_id),
+    )
+    monkeypatch.setattr(
+        "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_state",
+        lambda db, library_id, state: db.library_pipeline_states.transition_state(library_id, state),
+    )
+    monkeypatch.setattr(
+        "nomarr.components.library.library_records_comp.find_ml_complete_libraries",
+        lambda db, min_files: db.libraries.find_ml_complete_libraries(min_files),
+    )
+    monkeypatch.setattr(
+        "nomarr.services.infrastructure.pipeline_svc.get_library_record",
+        lambda db, library_id, **_kwargs: db.libraries.get_library(library_id),
+    )
+    monkeypatch.setattr(
+        "nomarr.services.infrastructure.pipeline_svc.count_untagged_files",
+        lambda db, library_id: db.library_files.count_untagged_files(library_id),
+    )
+    monkeypatch.setattr(
+        "nomarr.services.infrastructure.pipeline_svc.get_uncalibrated_tagged_file_ids",
+        lambda db, library_id: db.library_files.get_uncalibrated_tagged_file_ids(library_id),
+    )
+
+
 @dataclass
 class FakeFileStates:
     """Minimal file-state facade for pipeline integration tests."""
@@ -47,6 +89,19 @@ class FakeFileStates:
 
     def get_uncalibrated_tagged_file_ids(self, library_id: str) -> list[str]:
         return list(self.uncalibrated_tagged_ids.get(library_id, []))
+
+
+@dataclass
+class FakeLibraryFilesOps:
+    """Minimal library_files facade for pipeline integration tests."""
+
+    file_states: FakeFileStates
+
+    def count_untagged_files(self, library_id: str) -> int:
+        return self.file_states.count_untagged_files(library_id)
+
+    def get_uncalibrated_tagged_file_ids(self, library_id: str) -> list[str]:
+        return self.file_states.get_uncalibrated_tagged_file_ids(library_id)
 
 
 @dataclass
@@ -108,12 +163,30 @@ class FakeLibrariesOps:
     """In-memory library document lookup."""
 
     libraries: dict[str, dict[str, Any]]
+    state_by_library: dict[str, str]
+    file_states: FakeFileStates
 
     def get_library(self, library_id: str) -> dict[str, Any] | None:
         library = self.libraries.get(library_id)
         if library is None:
             return None
         return dict(library)
+
+    def find_ml_complete_libraries(self, min_files: int) -> list[dict[str, Any]]:
+        del min_files
+        rows: list[dict[str, Any]] = []
+        for library_id, current_state in self.state_by_library.items():
+            if current_state != PIPELINE_ML_RUNNING:
+                continue
+            if self.file_states.count_untagged_files(library_id) != 0:
+                continue
+            rows.append(
+                {
+                    "library_id": library_id,
+                    "tagged_count": self.file_states.tagged_counts.get(library_id, 0),
+                },
+            )
+        return rows
 
 
 @dataclass
@@ -122,8 +195,8 @@ class FakeCalibrationStateOps:
 
     states: list[dict[str, Any]] = field(default_factory=list)
 
-    def get_all_calibration_states(self) -> list[dict[str, Any]]:
-        return list(self.states)
+    def count(self) -> int:
+        return len(self.states)
 
 
 class FakeDatabase:
@@ -138,11 +211,16 @@ class FakeDatabase:
         calibration_states: list[dict[str, Any]] | None = None,
     ) -> None:
         self.file_states = file_states
+        self.library_files = FakeLibraryFilesOps(file_states=file_states)
         self.library_pipeline_states = FakeLibraryPipelineStatesOps(
             state_by_library=dict(state_by_library),
             file_states=file_states,
         )
-        self.libraries = FakeLibrariesOps(libraries=libraries)
+        self.libraries = FakeLibrariesOps(
+            libraries=libraries,
+            state_by_library=self.library_pipeline_states.state_by_library,
+            file_states=file_states,
+        )
         self.calibration_state = FakeCalibrationStateOps(states=list(calibration_states or []))
 
 
@@ -384,7 +462,7 @@ class TestPipelineIntegration:
             del min_files
             return list(duplicate_row)
 
-        harness.db.library_pipeline_states.find_ml_complete_libraries = _always_complete  # type: ignore[method-assign]
+        harness.db.libraries.find_ml_complete_libraries = _always_complete  # type: ignore[method-assign]
 
         _run_idle_pipeline_completion(harness.db, None)
         _run_idle_pipeline_completion(harness.db, None)

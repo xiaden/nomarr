@@ -12,6 +12,9 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from nomarr.components.library.library_file_state_comp import find_short_files_missing_too_short
+from nomarr.helpers.constants.file_states import STATE_NOT_TOO_SHORT, STATE_TOO_SHORT
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -81,8 +84,8 @@ def _heal_short_files(
         Number of files healed
 
     """
-    file_ids = db.file_states.find_short_files_missing_too_short(library_id, min_duration_s)
+    file_ids = find_short_files_missing_too_short(db, library_id, min_duration_s)
     for file_id in file_ids:
-        db.file_states.set_too_short(file_id)
+        db.file_states.transition([file_id], STATE_NOT_TOO_SHORT, STATE_TOO_SHORT)
 
     return len(file_ids)

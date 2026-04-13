@@ -11,7 +11,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.file_tags_comp import get_file_tags_with_path
+from nomarr.components.library.library_file_state_comp import get_errored_file_ids
+from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.components.library.library_root_comp import resolve_path_within_library
+from nomarr.helpers.constants.file_states import (
+    STATE_ERRORED,
+    STATE_NOT_ERRORED,
+    STATE_NOT_TAGGED,
+    STATE_TAGGED,
+)
 from nomarr.helpers.dto.library_dto import FileTag, FileTagsResult, RetryErroredResult, TagCleanupResult
 from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
 from nomarr.workflows.library.reconcile_paths_wf import reconcile_library_paths_workflow
@@ -33,7 +41,7 @@ class LibraryFilesMixin:
 
     def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
         """Get a library by ID or raise an error."""
-        result = self.db.libraries.get_library(library_id)
+        result = get_library_record(self.db, library_id)
         if result is None:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
@@ -187,10 +195,12 @@ class LibraryFilesMixin:
 
         """
         self._get_library_or_error(library_id)
-        errored_ids = self.db.file_states.get_errored_file_ids(library_id)
+        errored_ids = get_errored_file_ids(self.db, library_id)
         if file_ids:
             allowed = set(file_ids)
             errored_ids = [fid for fid in errored_ids if fid in allowed]
-        cleared = self.db.file_states.bulk_set_not_errored(errored_ids)
-        self.db.file_states.clear_tagged_batch(errored_ids)
+        if errored_ids:
+            self.db.file_states.transition(errored_ids, STATE_ERRORED, STATE_NOT_ERRORED)
+            self.db.file_states.transition(errored_ids, STATE_TAGGED, STATE_NOT_TAGGED)
+        cleared = len(errored_ids)
         return RetryErroredResult(retried=cleared)

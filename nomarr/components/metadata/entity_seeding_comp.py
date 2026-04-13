@@ -1,6 +1,6 @@
 """Entity seeding component - derive entities from raw metadata tags.
 
-Converts raw metadata strings into song tag edges via unified TagOperations API.
+Converts raw metadata strings into song tag edges via component-owned tag helpers.
 Part of hybrid model: seed edges from imports, then rebuild cache.
 """
 
@@ -11,6 +11,7 @@ from nomarr.components.metadata.metadata_cache_comp import (
     compute_metadata_cache_fields,
     update_metadata_cache_batch,
 )
+from nomarr.components.tagging.tag_write_comp import set_song_tags, set_song_tags_batch
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, Any]) -> None:
     """Derive song tag edges from raw imported metadata tags.
 
-    Uses the unified TagOperations API to set tags directly from raw values.
+    Uses component-owned tag helpers to set tags directly from raw values.
 
     Supports:
     - artist (singular): tag key "artist" or first from "artists"
@@ -37,8 +38,6 @@ def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, A
         tags: Raw metadata tags dict (from mutagen/external source)
 
     """
-    tag_ops = db.tags
-
     # ==================== ARTIST (singular) ====================
     artist_raw = tags.get("artist")
     artists_raw = tags.get("artists")
@@ -50,7 +49,7 @@ def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, A
     elif artists_raw:
         primary_artist = (artists_raw[0] if artists_raw else None) if isinstance(artists_raw, list) else artists_raw
 
-    tag_ops.set_song_tags(song_id, "artist", [primary_artist] if primary_artist else [])
+    set_song_tags(db, song_id, "artist", [primary_artist] if primary_artist else [])
 
     # ==================== ARTISTS (multi) ====================
     # Use "artists" if present, else use ["artist"] if present
@@ -60,15 +59,15 @@ def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, A
     elif primary_artist:
         all_artists = [primary_artist]
 
-    tag_ops.set_song_tags(song_id, "artists", list(all_artists))
+    set_song_tags(db, song_id, "artists", list(all_artists))
 
     # ==================== ALBUM (singular) ====================
     album_raw = tags.get("album")
     if album_raw:
         album_str = album_raw[0] if isinstance(album_raw, list) else album_raw
-        tag_ops.set_song_tags(song_id, "album", [album_str])
+        set_song_tags(db, song_id, "album", [album_str])
     else:
-        tag_ops.set_song_tags(song_id, "album", [])
+        set_song_tags(db, song_id, "album", [])
 
     # ==================== LABEL (multi) ====================
     label_raw = tags.get("label")
@@ -79,7 +78,7 @@ def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, A
         else:
             labels = [str(label_raw)]
 
-    tag_ops.set_song_tags(song_id, "label", list(labels))
+    set_song_tags(db, song_id, "label", list(labels))
 
     # ==================== GENRES (multi) ====================
     genre_raw = tags.get("genre")
@@ -87,15 +86,15 @@ def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, A
     if genre_raw:
         genres = [str(g) for g in genre_raw if g] if isinstance(genre_raw, list) else [str(genre_raw)]
 
-    tag_ops.set_song_tags(song_id, "genre", list(genres))
+    set_song_tags(db, song_id, "genre", list(genres))
 
     # ==================== YEAR (singular) ====================
     year_raw = tags.get("year")
     if year_raw:
         year_int = year_raw if isinstance(year_raw, int) else int(year_raw)
-        tag_ops.set_song_tags(song_id, "year", [year_int])
+        set_song_tags(db, song_id, "year", [year_int])
     else:
-        tag_ops.set_song_tags(song_id, "year", [])
+        set_song_tags(db, song_id, "year", [])
 
 
 _ENTITY_TAG_KEYS = ("artist", "artists", "album", "label", "genre", "year")
@@ -118,7 +117,7 @@ def _build_song_tag_entries(song_id: str, tags: dict[str, Any]) -> list[dict[str
     """Build tag entries for batch-seeding from raw entity tags.
 
     Returns list of dicts with keys ``song_id``, ``rel``, ``values``
-    suitable for :meth:`TagOperations.set_song_tags_batch`.
+    suitable for :func:`nomarr.components.tagging.tag_write_comp.set_song_tags_batch`.
 
     Mirrors the normalization logic in :func:`seed_song_entities_from_tags`
     but collects entries instead of calling the DB per-rel.
@@ -224,7 +223,7 @@ def seed_entities_for_scan_batch(
     # 3) Batch seed entities (3 AQL total instead of 3 x N x 6)
     if all_tag_entries:
         try:
-            db.tags.set_song_tags_batch(all_tag_entries)
+            set_song_tags_batch(db, all_tag_entries)
         except Exception as e:
             logger.warning("Batch tag seeding failed: %s", e)
             return 0

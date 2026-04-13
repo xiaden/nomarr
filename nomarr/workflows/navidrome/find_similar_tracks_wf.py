@@ -10,6 +10,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, TypedDict
 
+from nomarr.components.library.library_file_mutation_comp import get_file_library_key
+from nomarr.components.library.library_file_query_comp import get_files_by_ids_with_tags
+from nomarr.components.navidrome.navidrome_graph_comp import (
+    bulk_resolve_files_to_navidrome_ids,
+    resolve_navidrome_track_to_file,
+)
 from nomarr.helpers.vector_params_helper import compute_nlists, compute_nprobe
 
 if TYPE_CHECKING:
@@ -63,7 +69,7 @@ def find_similar_tracks(
 
     """
     # 1. Resolve seed Navidrome ID to Nomarr file_id
-    seed_file_id = db.navidrome_tracks.resolve_nd_to_file(seed_nd_id)
+    seed_file_id = resolve_navidrome_track_to_file(db, seed_nd_id)
     if seed_file_id is None:
         msg = f"Navidrome song ID '{seed_nd_id}' not found in track map. Run sync first."
         raise ValueError(msg)
@@ -71,7 +77,7 @@ def find_similar_tracks(
     logger.debug("Seed ND ID %s resolved to file_id %s", seed_nd_id, seed_file_id)
 
     # Auto-resolve library_key from the file document (library_id field is "libraries/{key}")
-    library_key = db.library_files.get_file_library_key(seed_file_id)
+    library_key = get_file_library_key(db, seed_file_id)
     if library_key is None:
         msg = f"Could not resolve library for file '{seed_file_id}'. File may have been deleted."
         raise ValueError(msg)
@@ -97,7 +103,7 @@ def find_similar_tracks(
     doc_count = cold_ops.count()
     nlists = compute_nlists(doc_count, vector_group_size)
     nprobe = compute_nprobe(nlists, vector_search_thoroughness)
-    raw_results = cold_ops.search_similar(seed_vector, fetch_limit, nprobe=nprobe)
+    raw_results = cold_ops.ann_search(seed_vector, fetch_limit, nprobe=nprobe)
 
     # Exclude the seed track itself from results
     results = [r for r in raw_results if r["file_id"] != seed_file_id]
@@ -108,7 +114,7 @@ def find_similar_tracks(
 
     # 4. Resolve result file_ids to Navidrome IDs
     result_file_ids = [r["file_id"] for r in results]
-    file_id_to_nd_id = db.navidrome_tracks.bulk_resolve_files_to_nd(result_file_ids)
+    file_id_to_nd_id = bulk_resolve_files_to_navidrome_ids(db, result_file_ids)
 
     # Filter to only results that have a Navidrome mapping
     mapped_results = [(r, file_id_to_nd_id[r["file_id"]]) for r in results if r["file_id"] in file_id_to_nd_id]
@@ -146,7 +152,7 @@ def find_similar_tracks(
 
     # 5. Enrich with metadata
     enrichment_file_ids = [r["file_id"] for r, _ in mapped_results]
-    file_docs = db.library_files.get_files_by_ids_with_tags(enrichment_file_ids)
+    file_docs = get_files_by_ids_with_tags(db, enrichment_file_ids)
     file_docs_by_id: dict[str, dict] = {doc["_id"]: doc for doc in file_docs}
 
     # 6. Build result list

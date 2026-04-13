@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from nomarr.components.navidrome.navidrome_graph_comp import get_top_navidrome_plays
 from nomarr.components.navidrome.playlist_builder_comp import (
     build_discovery_playlist,
     build_familiar_playlist,
@@ -98,7 +99,7 @@ def generate_playlists(
         return []
 
     # Step 2: Get user's played tracks and filter by min_play_count
-    plays = db.navidrome_playcounts.get_top_plays(user_id, top_n)
+    plays = get_top_navidrome_plays(db, user_id, top_n)
     played_tracks: list[TrackPlayData] = [
         p for p in plays if p["file_id"] is not None and p["playcount"] >= min_play_count
     ]

@@ -46,6 +46,7 @@ from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     set_calibration_last_run,
     set_calibration_version,
 )
+from nomarr.components.ml.onnx.ml_model_registry_comp import get_registered_model_by_path
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -359,7 +360,7 @@ def generate_histogram_calibration_wf(
 
     for head_idx, head_info in enumerate(heads):
         # Resolve model_id from head's model_path
-        model_doc = db.ml_models.get_model_by_path(head_info.model_path)
+        model_doc = get_registered_model_by_path(db, head_info.model_path)
         if model_doc is None:
             logger.error(f"[histogram_calibration_wf] No model found for path: {head_info.model_path}")
             failed_count += 1

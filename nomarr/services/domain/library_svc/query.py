@@ -10,7 +10,30 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.scan_lifecycle_comp import (
+from nomarr.components.library.library_file_query_comp import (
+    count_files_by_tag,
+    get_all_library_paths,
+    get_files_by_ids_with_tags,
+    get_library_stats,
+    get_recently_processed,
+    get_tagged_file_paths,
+    search_files_by_tag,
+)
+from nomarr.components.library.library_file_state_comp import (
+    count_errored_files,
+    get_errored_file_ids,
+    get_uncalibrated_tagged_file_ids,
+)
+from nomarr.components.library.library_records_comp import get_library_record, list_library_records
+from nomarr.components.library.scan_lifecycle_comp import get_libraries_in_pipeline_state
+from nomarr.components.library.search_files_comp import (
+    get_unique_tag_keys,
+    get_unique_tag_values,
+    search_library_files,
+)
+from nomarr.components.library.work_status_comp import compute_work_status
+from nomarr.components.tagging.tag_query_comp import get_unique_mood_values
+from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_APPLYING,
     PIPELINE_AWAITING_CALIBRATION,
     PIPELINE_CALIBRATING,
@@ -22,12 +45,6 @@ from nomarr.components.library.scan_lifecycle_comp import (
     PIPELINE_WRITE_READY,
     PIPELINE_WRITING,
 )
-from nomarr.components.library.search_files_comp import (
-    get_unique_tag_keys,
-    get_unique_tag_values,
-    search_library_files,
-)
-from nomarr.components.library.work_status_comp import compute_work_status
 from nomarr.helpers.dto.info_dto import WorkStatusResult
 from nomarr.helpers.dto.library_dto import (
     ErroredFileItem,
@@ -67,7 +84,7 @@ class LibraryQueryMixin:
 
     def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
         """Get a library by ID or raise an error."""
-        result = self.db.libraries.get_library(library_id)
+        result = get_library_record(self.db, library_id)
         if result is None:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
@@ -80,7 +97,7 @@ class LibraryQueryMixin:
             LibraryStatsResult DTO
 
         """
-        stats = self.db.library_files.get_library_stats()
+        stats = get_library_stats(self.db)
         return LibraryStatsResult(
             total_files=stats.get("total_files", 0),
             total_artists=stats.get("total_artists", 0),
@@ -97,7 +114,7 @@ class LibraryQueryMixin:
             List of absolute file paths
 
         """
-        return self.db.library_files.get_all_library_paths()
+        return get_all_library_paths(self.db)
 
     def get_tagged_library_paths(self) -> list[str]:
         """Get all file paths that have been tagged (have tags in database).
@@ -106,7 +123,7 @@ class LibraryQueryMixin:
             List of absolute file paths that have been tagged
 
         """
-        return self.db.library_files.get_tagged_file_paths()
+        return get_tagged_file_paths(self.db)
 
     def get_paths_needing_calibration(self) -> list[str]:
         """Get tagged file paths that are not yet calibrated.
@@ -118,14 +135,14 @@ class LibraryQueryMixin:
             List of absolute file paths needing calibration.
 
         """
-        libraries = self.db.libraries.list_libraries(enabled_only=True)
+        libraries = list_library_records(self.db, enabled_only=True)
         all_file_ids: list[str] = []
         for lib in libraries:
-            file_ids = self.db.file_states.get_uncalibrated_tagged_file_ids(lib["_id"])
+            file_ids = get_uncalibrated_tagged_file_ids(self.db, lib["_id"])
             all_file_ids.extend(file_ids)
         if not all_file_ids:
             return []
-        files = self.db.library_files.get_files_by_ids_with_tags(all_file_ids)
+        files = get_files_by_ids_with_tags(self.db, all_file_ids)
         return [f["path"] for f in files if f.get("path")]
 
     def search_files(self, query: SearchFilesQuery) -> SearchFilesResult:
@@ -146,7 +163,7 @@ class LibraryQueryMixin:
             SearchFilesResult with files matching the IDs
 
         """
-        files = self.db.library_files.get_files_by_ids_with_tags(file_ids)
+        files = get_files_by_ids_with_tags(self.db, file_ids)
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
         return SearchFilesResult(files=files_with_tags, total=len(files), limit=len(file_ids), offset=0)
 
@@ -172,8 +189,8 @@ class LibraryQueryMixin:
             SearchFilesResult with matched files (includes distance for float searches)
 
         """
-        files = self.db.library_files.search_files_by_tag(tag_key, target_value, limit, offset)
-        total = self.db.library_files.count_files_by_tag(tag_key, target_value)
+        files = search_files_by_tag(self.db, tag_key, target_value, limit, offset)
+        total = count_files_by_tag(self.db, tag_key, target_value)
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
         return SearchFilesResult(files=files_with_tags, total=total, limit=limit, offset=offset)
 
@@ -189,7 +206,7 @@ class LibraryQueryMixin:
 
     def get_unique_mood_values(self, mood_tier: str = "mood-strict", limit: int = 100) -> UniqueTagKeysResult:
         """Get unique individual mood values extracted from tuple string tags."""
-        values = self.db.tags.get_unique_mood_values(mood_tier=mood_tier, limit=limit)
+        values = get_unique_mood_values(self.db, mood_tier=mood_tier, limit=limit)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
 
     def get_work_status(self) -> WorkStatusResult:
@@ -206,13 +223,13 @@ class LibraryQueryMixin:
             WorkStatusResult DTO with scanning and processing status
 
         """
-        libraries = self.db.libraries.list_libraries(enabled_only=False)
+        libraries = list_library_records(self.db, enabled_only=False)
         stats = self.get_library_stats()
         recently_tagged = 0  # count_recently_tagged removed — deferred to model versioning
         pipeline_states: dict[str, str] = {}
         for state_doc_id in _PIPELINE_STATE_DOC_IDS:
             state_key = state_doc_id.rsplit("/", 1)[-1]
-            for library_id in self.db.library_pipeline_states.get_libraries_in_state(state_doc_id):
+            for library_id in get_libraries_in_pipeline_state(self.db, state_doc_id):
                 pipeline_states[library_id] = state_key
 
         return compute_work_status(
@@ -238,7 +255,7 @@ class LibraryQueryMixin:
             List of {file_id, path, title, artist, album, scanned_at}
             sorted by scanned_at DESC.
         """
-        return self.db.library_files.get_recently_processed(limit=limit, library_id=library_id)
+        return get_recently_processed(self.db, limit=limit, library_id=library_id)
 
     def get_errored_files(self, library_id: str) -> ErroredFilesResult:
         """Get errored files for a library with basic metadata.
@@ -254,9 +271,9 @@ class LibraryQueryMixin:
 
         """
         self._get_library_or_error(library_id)
-        total = self.db.file_states.count_errored_files(library_id)
-        errored_ids = self.db.file_states.get_errored_file_ids(library_id)
-        files_raw = self.db.library_files.get_files_by_ids_with_tags(errored_ids)
+        total = count_errored_files(self.db, library_id)
+        errored_ids = get_errored_file_ids(self.db, library_id)
+        files_raw = get_files_by_ids_with_tags(self.db, errored_ids)
         files: list[ErroredFileItem] = [
             ErroredFileItem(
                 _id=f["_id"],

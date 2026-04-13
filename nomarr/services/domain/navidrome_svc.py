@@ -10,6 +10,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from nomarr.components.navidrome.navidrome_graph_comp import bulk_resolve_files_to_navidrome_ids
 from nomarr.components.navidrome.templates_comp import generate_template_files, get_template_summary
 from nomarr.helpers.dto import NavidromeGeneratePlaylistsResult
 from nomarr.helpers.dto.navidrome_dto import (
@@ -229,7 +230,7 @@ class NavidromeService:
         )
 
         # Resolve IDs for the response (single DB call, cached by bulk_resolve).
-        id_map = self._db.navidrome_tracks.bulk_resolve_files_to_nd(file_ids)
+        id_map = bulk_resolve_files_to_navidrome_ids(self._db, file_ids)
         track_nd_ids = [id_map[fid] for fid in file_ids if fid in id_map]
         unresolved = [fid for fid in file_ids if fid not in id_map]
 
@@ -555,4 +556,4 @@ class NavidromeService:
             Only contains entries where a ``has_nd_id`` edge exists.
 
         """
-        return self._db.navidrome_tracks.bulk_resolve_files_to_nd(file_ids)
+        return bulk_resolve_files_to_navidrome_ids(self._db, file_ids)

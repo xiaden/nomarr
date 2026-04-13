@@ -10,6 +10,15 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.library.library_file_mutation_comp import (
+    update_metadata_cache,
+)
+from nomarr.components.library.library_file_mutation_comp import (
+    update_metadata_cache_batch as write_metadata_cache_batch,
+)
+from nomarr.components.library.library_file_query_comp import list_all_file_ids
+from nomarr.components.tagging.tag_query_comp import get_song_tags
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -28,7 +37,7 @@ def rebuild_song_metadata_cache(db: Database, song_id: str) -> None:
 
     """
     # Fetch all tags for this song as a dict
-    tags_dict = db.tags.get_song_tags(song_id).to_dict()
+    tags_dict = get_song_tags(db, song_id).to_dict()
 
     # Extract metadata from tags (using rel names directly)
     # to_dict() returns tuple | Iterable, so cast to list
@@ -54,7 +63,8 @@ def rebuild_song_metadata_cache(db: Database, song_id: str) -> None:
         except (ValueError, TypeError):
             logger.warning("Failed to parse year from tag: %s", year_raw[0])
 
-    db.library_files.update_metadata_cache(
+    update_metadata_cache(
+        db,
         song_id,
         artist=artist,
         artists=artists,
@@ -155,7 +165,7 @@ def update_metadata_cache_batch(db: Database, updates: list[dict[str, Any]]) -> 
     if not updates:
         return
 
-    db.library_files.update_metadata_cache_batch(updates)
+    write_metadata_cache_batch(db, updates)
 
 
 def rebuild_all_song_metadata_caches(db: Database, limit: int | None = None) -> int:
@@ -169,7 +179,7 @@ def rebuild_all_song_metadata_caches(db: Database, limit: int | None = None) -> 
         Number of songs processed
 
     """
-    song_ids = db.library_files.list_all_file_ids(limit=limit)
+    song_ids = list_all_file_ids(db, limit=limit)
 
     for i, song_id in enumerate(song_ids, 1):
         rebuild_song_metadata_cache(db, song_id)

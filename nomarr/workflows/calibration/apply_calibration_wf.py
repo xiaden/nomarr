@@ -7,6 +7,9 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING, Protocol
 
+from nomarr.components.library.library_file_query_comp import get_files_by_paths_bulk
+from nomarr.components.ml.inference.ml_segment_stats_store_comp import get_segment_stats_for_files_bulk
+from nomarr.components.tagging.tag_query_comp import get_nomarr_tags_bulk
 from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
 from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult
 from nomarr.helpers.time_helper import internal_ms
@@ -144,10 +147,10 @@ def apply_calibration_wf(
         # Prefetch DB data for this chunk only
         _t_prefetch_start = internal_ms()
         logger.info(f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: prefetching DB data for {chunk_size} files...")
-        prefetched_file_docs = db.library_files.get_files_by_paths_bulk(chunk_paths)
+        prefetched_file_docs = get_files_by_paths_bulk(db, chunk_paths)
         all_file_ids = [doc["_id"] for doc in prefetched_file_docs.values()]
-        prefetched_tags = db.tags.get_nomarr_tags_bulk(all_file_ids) if all_file_ids else {}
-        prefetched_stats = db.segment_scores_stats.get_stats_for_files_bulk(all_file_ids) if all_file_ids else {}
+        prefetched_tags = get_nomarr_tags_bulk(db, all_file_ids) if all_file_ids else {}
+        prefetched_stats = get_segment_stats_for_files_bulk(db, all_file_ids) if all_file_ids else {}
         _t_prefetch_chunk = (internal_ms().value - _t_prefetch_start.value) / 1000
         _t_prefetch_total += _t_prefetch_chunk
 

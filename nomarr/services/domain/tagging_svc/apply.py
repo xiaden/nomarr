@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import asdict
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
+from nomarr.components.library.library_file_state_comp import get_calibration_status_by_library
+from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.dto.calibration_dto import (
     GlobalCalibrationStatus,
@@ -271,17 +273,19 @@ class TaggingApplyMixin:
             Dict representation of GlobalCalibrationStatus DTO
 
         """
-        global_version = self.db.meta.get("calibration_version")
-        last_run_str = self.db.meta.get("calibration_last_run")
+        global_version_doc = cast("dict[str, Any] | None", self.db.meta.key.get("calibration_version"))
+        global_version = None if global_version_doc is None else global_version_doc.get("value")
+        last_run_doc = cast("dict[str, Any] | None", self.db.meta.key.get("calibration_last_run"))
+        last_run_str = None if last_run_doc is None else last_run_doc.get("value")
         last_run = int(last_run_str) if last_run_str else None
 
         library_status_list = []
         if global_version and self.library_service:
-            status_data = self.db.file_states.get_calibration_status_by_library()
+            status_data = get_calibration_status_by_library(self.db)
 
             for status in status_data:
                 library_id = status["library_id"]
-                library_doc = self.db.libraries.get_library(library_id)
+                library_doc = get_library_record(self.db, library_id, include_scan=False)
 
                 if library_doc:
                     calibrated = status["calibrated_count"]

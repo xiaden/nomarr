@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nomarr.persistence.database.library_pipeline_states_aql import (
+from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_APPLYING,
     PIPELINE_AWAITING_CALIBRATION,
     PIPELINE_CALIBRATING,
@@ -51,6 +51,64 @@ def mock_tagging_svc() -> MagicMock:
 def mock_navidrome_svc() -> MagicMock:
     """Provide a mocked Navidrome service dependency."""
     return MagicMock()
+
+
+@pytest.fixture(autouse=True)
+def pipeline_state_helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bridge helper-based production code to the existing service-level mock API."""
+
+    def _update_scan_progress(
+        db: MagicMock,
+        library_id: str,
+        *,
+        status: str | None = None,
+        progress: int | None = None,
+        total: int | None = None,
+        scan_error: str | None = None,
+    ) -> None:
+        kwargs: dict[str, object] = {}
+        if status is not None:
+            kwargs["status"] = status
+        if progress is not None:
+            kwargs["progress"] = progress
+        if total is not None:
+            kwargs["total"] = total
+        if scan_error is not None:
+            kwargs["error"] = scan_error
+        db.libraries.update_scan_status(library_id, **kwargs)
+
+    monkeypatch.setattr(
+        "nomarr.services.infrastructure.pipeline_svc.get_library_record",
+        lambda db, library_id, **_kwargs: db.libraries.get_library(library_id),
+    )
+    monkeypatch.setattr(
+        "nomarr.services.infrastructure.pipeline_svc.get_libraries_in_pipeline_state",
+        lambda db, state: db.library_pipeline_states.get_libraries_in_state(state),
+    )
+    monkeypatch.setattr(
+        "nomarr.services.infrastructure.pipeline_svc.bulk_transition_pipeline_state",
+        lambda db, from_state, to_state: db.library_pipeline_states.bulk_transition(from_state, to_state),
+    )
+    monkeypatch.setattr(
+        "nomarr.services.infrastructure.pipeline_svc.transition_pipeline_state",
+        lambda db, library_id, state: db.library_pipeline_states.transition_state(library_id, state),
+    )
+    monkeypatch.setattr(
+        "nomarr.services.infrastructure.pipeline_svc.get_pipeline_state",
+        lambda db, library_id: db.library_pipeline_states.get_state(library_id),
+    )
+    monkeypatch.setattr(
+        "nomarr.services.infrastructure.pipeline_svc.count_untagged_files",
+        lambda db, library_id: db.library_files.count_untagged_files(library_id),
+    )
+    monkeypatch.setattr(
+        "nomarr.services.infrastructure.pipeline_svc.get_uncalibrated_tagged_file_ids",
+        lambda db, library_id: db.library_files.get_uncalibrated_tagged_file_ids(library_id),
+    )
+    monkeypatch.setattr(
+        "nomarr.services.infrastructure.pipeline_svc.update_scan_progress",
+        _update_scan_progress,
+    )
 
 
 @pytest.fixture
@@ -190,7 +248,7 @@ class TestTriggerCalibration:
         mock_calibration_svc: MagicMock,
     ) -> None:
         """Should return early when no libraries are awaiting calibration."""
-        mock_db.calibration_state.get_all_calibration_states.return_value = []
+        mock_db.calibration_state.count.return_value = 0
         mock_db.library_pipeline_states.bulk_transition.return_value = 0
 
         pipeline_service.trigger_calibration()
@@ -208,7 +266,7 @@ class TestTriggerCalibration:
         mock_calibration_svc: MagicMock,
     ) -> None:
         """Should start histogram calibration when libraries are waiting and no calibration exists."""
-        mock_db.calibration_state.get_all_calibration_states.return_value = []
+        mock_db.calibration_state.count.return_value = 0
         mock_db.library_pipeline_states.bulk_transition.return_value = 2
 
         pipeline_service.trigger_calibration()
@@ -222,7 +280,7 @@ class TestTriggerCalibration:
         mock_db: MagicMock,
     ) -> None:
         """Existing calibration should shortcut directly into apply dispatch."""
-        mock_db.calibration_state.get_all_calibration_states.return_value = [{"version": 1}]
+        mock_db.calibration_state.count.return_value = 1
         mock_db.library_pipeline_states.bulk_transition.side_effect = [2, 2]
         mock_dispatch_apply = MagicMock()
         monkeypatch.setattr(pipeline_service, "_dispatch_apply", mock_dispatch_apply)
@@ -579,7 +637,7 @@ class TestGetPipelineStatus:
             "file_write_mode": "full",
         }
         mock_db.library_pipeline_states.get_state.return_value = "ml_running"
-        mock_db.file_states.count_untagged_files.return_value = 7
+        mock_db.library_files.count_untagged_files.return_value = 7
 
         result = pipeline_service.get_pipeline_status("libraries/test-lib")
 
@@ -600,7 +658,7 @@ class TestGetPipelineStatus:
             "file_write_mode": "minimal",
         }
         mock_db.library_pipeline_states.get_state.return_value = "awaiting_calibration"
-        mock_db.file_states.get_uncalibrated_tagged_file_ids.return_value = ["file1", "file2", "file3"]
+        mock_db.library_files.get_uncalibrated_tagged_file_ids.return_value = ["file1", "file2", "file3"]
 
         result = pipeline_service.get_pipeline_status("libraries/test-lib")
 

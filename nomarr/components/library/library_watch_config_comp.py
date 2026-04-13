@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.library.library_records_comp import get_library_record, list_watchable_library_records
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -21,7 +23,7 @@ def list_watchable_libraries(db: Database) -> list[dict[str, Any]]:
         Watchable library documents with only watcher-relevant fields.
 
     """
-    libraries = db.libraries.list_watchable_libraries()
+    libraries = list_watchable_library_records(db)
     return [_project_watchable_library(library) for library in libraries]
 
 
@@ -37,7 +39,7 @@ def get_library_watch_config(db: Database, library_id: str) -> dict[str, Any] | 
         ``is_enabled``, or ``None`` when the library does not exist.
 
     """
-    library = db.libraries.get_library(library_id)
+    library = get_library_record(db, library_id, include_scan=False)
     if library is None:
         return None
 

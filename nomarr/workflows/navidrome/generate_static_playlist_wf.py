@@ -14,6 +14,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db, get_library_root
+from nomarr.components.library.library_file_query_comp import get_files_by_ids_with_tags
 from nomarr.components.navidrome.m3u_comp import build_m3u, save_m3u
 from nomarr.helpers.dto.navidrome_dto import StaticPlaylistResult
 
@@ -69,7 +70,7 @@ def generate_static_playlist_workflow(
         )
 
     # Step 1: Resolve file metadata from database
-    files = db.library_files.get_files_by_ids_with_tags(file_ids)
+    files = get_files_by_ids_with_tags(db, file_ids)
     found_ids = {f["_id"] for f in files}
     missing_ids = [fid for fid in file_ids if fid not in found_ids]
 

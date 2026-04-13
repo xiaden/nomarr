@@ -1,4 +1,4 @@
-"""Tests for nomarr.persistence.database.library_files_aql.inventory."""
+"""Tests for library-file inventory query helpers."""
 
 from __future__ import annotations
 
@@ -6,16 +6,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nomarr.persistence.database.library_files_aql.inventory import LibraryFilesInventoryMixin
-
-
-class _ConcreteInventoryMixin(LibraryFilesInventoryMixin):
-    """Minimal concrete class for testing the inventory mixin."""
-
-    def __init__(self, db: MagicMock) -> None:
-        self.db = db
-        self.collection = MagicMock()
-        self.parent_db = None
+from nomarr.components.library.library_file_query_comp import list_all_file_ids
+from nomarr.persistence.constructor.pagination import DEFAULT_LIMIT
 
 
 class TestListAllFileIds:
@@ -25,35 +17,29 @@ class TestListAllFileIds:
     def test_returns_all_file_ids_without_limit(self) -> None:
         """Returns all file IDs when no limit is provided."""
         mock_db = MagicMock()
-        mock_db.aql.execute.return_value = iter(["library_files/1", "library_files/2"])
-        mixin = _ConcreteInventoryMixin(mock_db)
+        mock_db.library_files._id.collect.return_value = ["library_files/1", "library_files/2"]
 
-        result = mixin.list_all_file_ids()
+        result = list_all_file_ids(mock_db)
 
         assert result == ["library_files/1", "library_files/2"]
+        mock_db.library_files._id.collect.assert_called_once_with(limit=DEFAULT_LIMIT)
 
     @pytest.mark.unit
-    def test_query_includes_limit_when_provided(self) -> None:
-        """Includes @limit in the query and bind vars when provided."""
+    def test_uses_explicit_collect_limit_when_provided(self) -> None:
+        """Uses the caller-provided collect limit when supplied."""
         mock_db = MagicMock()
-        mock_db.aql.execute.return_value = iter([])
-        mixin = _ConcreteInventoryMixin(mock_db)
+        mock_db.library_files._id.collect.return_value = []
 
-        mixin.list_all_file_ids(limit=10)
+        list_all_file_ids(mock_db, limit=10)
 
-        query = mock_db.aql.execute.call_args.args[0]
-        bind_vars = mock_db.aql.execute.call_args.kwargs["bind_vars"]
-
-        assert "@limit" in query
-        assert bind_vars == {"limit": 10}
+        mock_db.library_files._id.collect.assert_called_once_with(limit=10)
 
     @pytest.mark.unit
     def test_returns_empty_list_when_no_files(self) -> None:
         """Returns an empty list when no file IDs are found."""
         mock_db = MagicMock()
-        mock_db.aql.execute.return_value = iter([])
-        mixin = _ConcreteInventoryMixin(mock_db)
+        mock_db.library_files._id.collect.return_value = []
 
-        result = mixin.list_all_file_ids()
+        result = list_all_file_ids(mock_db)
 
         assert result == []

@@ -22,6 +22,7 @@ import logging
 import pathlib
 import re
 import sys
+from typing import Any, cast
 
 import numpy as np
 
@@ -94,10 +95,11 @@ def update_model_vram_from_oom(db: Database, model_path: str, requested_bytes: i
     Returns:
         The new VRAM limit in bytes.
     """
-    raw = db.meta.get(f"{_META_PREFIX}{model_path}")
+    raw_doc = cast("dict[str, Any] | None", db.meta.key.get(f"{_META_PREFIX}{model_path}"))
+    raw = None if raw_doc is None else raw_doc.get("value")
     base = int(raw) if raw is not None else requested_bytes
     new_limit = int(base * 1.25)
-    db.meta.set(f"{_META_PREFIX}{model_path}", str(new_limit))
+    db.meta.key.upsert([{"key": f"{_META_PREFIX}{model_path}", "value": str(new_limit)}], match_field="key")
     logger.warning(
         "[vram_probe] OOM self-heal: updated %s from %s to %s (%d bytes) — bumped probe by 25%%",
         model_path,
@@ -291,7 +293,7 @@ def probe_all_models(db: Database, models_dir: str) -> None:
         delta = _probe_single_model(model, waveform)
         delta_with_headroom = int(delta * 1.1) if delta is not None else None
         value = str(delta_with_headroom) if delta_with_headroom is not None else str(sys.maxsize)
-        db.meta.set(f"{_META_PREFIX}{model._path}", value)
+        db.meta.key.upsert([{"key": f"{_META_PREFIX}{model._path}", "value": value}], match_field="key")
         readable = _fmt_bytes(delta_with_headroom) if delta_with_headroom is not None else "unmeasured"
         results.append(f"  {model._path} -> {readable}")
 
@@ -315,7 +317,7 @@ def has_model_vram_measurements(db: Database) -> bool:
     Returns:
         True if at least one ``ml_model_vram:*`` key is present.
     """
-    return bool(db.meta.get_by_prefix(_META_PREFIX))
+    return bool(db.meta.key.get.like(f"{_META_PREFIX}%"))
 
 
 def clear_model_vram_measurements(db: Database) -> None:
@@ -324,9 +326,9 @@ def clear_model_vram_measurements(db: Database) -> None:
     Args:
         db: Database instance.
     """
-    existing = db.meta.get_by_prefix(_META_PREFIX)
-    for key in existing:
-        db.meta.delete(key)
+    existing = db.meta.key.get.like(f"{_META_PREFIX}%")
+    for row in existing:
+        db.meta.key.delete(row["key"])
     logger.info("[vram_probe] Cleared %d VRAM measurement(s)", len(existing))
 
 

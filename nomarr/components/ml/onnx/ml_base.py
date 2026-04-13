@@ -96,7 +96,8 @@ class BaseONNXModel(ABC):
             ctx = _worker_ctx.get_worker_context()
             if ctx is not None:
                 db, worker_id = ctx
-                raw = db.meta.get(f"{_VRAM_META_PREFIX}{self._path}")
+                raw_doc = db.meta.key.get(f"{_VRAM_META_PREFIX}{self._path}")
+                raw = None if raw_doc is None else raw_doc.get("value")
                 if raw is not None:
                     vram_limit_bytes = int(raw)
                 logger.debug(

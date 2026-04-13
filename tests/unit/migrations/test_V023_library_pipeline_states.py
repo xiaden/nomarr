@@ -5,8 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nomarr.migrations.V023_library_pipeline_states import _derive_pipeline_state, upgrade
-from nomarr.persistence.database.library_pipeline_states_aql import (
+from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_AWAITING_CALIBRATION,
     PIPELINE_DONE,
     PIPELINE_IDLE,
@@ -14,6 +13,7 @@ from nomarr.persistence.database.library_pipeline_states_aql import (
     PIPELINE_TOO_SMALL,
     PIPELINE_WRITE_READY,
 )
+from nomarr.migrations.V023_library_pipeline_states import _derive_pipeline_state, upgrade
 
 
 class TestDerivePipelineState:

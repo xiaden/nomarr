@@ -19,7 +19,7 @@ search freshness should be updated by draining to cold.
 ## Lifecycle Summary
 
 1. ML workers upsert embeddings into the hot collection via
-   `VectorsTrackHotOperations`.
+   constructor verbs (`db.vectors_track_hot.insert(...)`).
 2. Operators run the synchronous promote & rebuild workflow, which drains the
    hot collection, inserts documents into cold, and rebuilds the ANN index.
 3. Search APIs query the cold collection only, guaranteeing predictable query
@@ -96,7 +96,7 @@ backbones.
 
 | Layer | Responsibilities |
 | --- | --- |
-| Components / Persistence | Low-level ArangoDB operations for hot/cold collections |
+| Components / Persistence | Schema-driven constructor verbs for hot/cold collections |
 | Workflows | `promote_and_rebuild_workflow` orchestrates drain, rebuild, and convergence checks |
 | Services | `VectorSearchService` (cold-only search + fallback reads), `VectorMaintenanceService` (promote + stats) |
 | Interfaces | `/api/web/vector/*` exposes search and maintenance endpoints |

@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from nomarr.components.library.library_records_comp import get_library_record, list_library_records
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -37,7 +39,7 @@ def list_hot_vector_targets(db: Database, models_dir: str) -> list[tuple[str, st
     if not backbones:
         return []
 
-    libraries = db.libraries.list_libraries()
+    libraries = list_library_records(db, include_scan=False)
     if not libraries:
         return []
 
@@ -45,11 +47,8 @@ def list_hot_vector_targets(db: Database, models_dir: str) -> list[tuple[str, st
     for backbone_id in backbones:
         for lib_doc in libraries:
             library_key: str = lib_doc["_key"]
-            hot_coll_name = f"vectors_track_hot__{backbone_id}__{library_key}"
-            if not db.db.has_collection(hot_coll_name):  # type: ignore[union-attr]
-                continue
-            hot_ops = db.register_vectors_track_backbone(backbone_id, library_key)
-            if hot_ops.count() > 0:
+            stats = db.get_vectors_track_maintenance(backbone_id, library_key).get_stats()
+            if int(stats["hot_count"]) > 0:
                 targets.append((backbone_id, library_key))
 
     return targets
@@ -75,22 +74,15 @@ def compute_promotion_nlists(db: Database, backbone_id: str, library_key: str) -
 
     # Read per-library group size (fallback to default 15)
     group_size = 15
-    lib_doc = db.libraries.get_library(library_key)
+    lib_doc = get_library_record(db, library_key, include_scan=False)
     if lib_doc is not None:
         lib_group_size = lib_doc.get("vector_group_size")
         if lib_group_size is not None:
             group_size = int(lib_group_size)
 
     # Sum hot + cold counts
-    hot_coll_name = f"vectors_track_hot__{backbone_id}__{library_key}"
-    cold_coll_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-
-    hot_count = 0
-    if db.db.has_collection(hot_coll_name):  # type: ignore[union-attr]
-        hot_count = db.register_vectors_track_backbone(backbone_id, library_key).count()
-
-    cold_count = 0
-    if db.db.has_collection(cold_coll_name):  # type: ignore[union-attr]
-        cold_count = db.get_vectors_track_cold(backbone_id, library_key).count()
+    stats = db.get_vectors_track_maintenance(backbone_id, library_key).get_stats()
+    hot_count = int(stats["hot_count"])
+    cold_count = int(stats["cold_count"])
 
     return compute_nlists(hot_count + cold_count, group_size)

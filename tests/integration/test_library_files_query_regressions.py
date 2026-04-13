@@ -1,4 +1,4 @@
-"""Regression tests for ``nomarr.persistence.database.library_files_aql.queries``."""
+"""Regression tests for library-file query helpers."""
 
 from __future__ import annotations
 
@@ -6,16 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nomarr.persistence.database.library_files_aql.queries import LibraryFilesQueriesMixin
-
-
-class _ConcreteQueriesMixin(LibraryFilesQueriesMixin):
-    """Minimal concrete class for testing the mixin."""
-
-    def __init__(self, db: MagicMock) -> None:
-        self.db = db
-        self.collection = MagicMock()
-        self.parent_db = None
+from nomarr.components.library.library_file_query_comp import get_recently_processed, search_library_files_with_tags
 
 
 class TestLibraryFilesQueryRegressions:
@@ -23,45 +14,27 @@ class TestLibraryFilesQueryRegressions:
 
     @pytest.mark.integration
     @pytest.mark.mocked
-    def test_search_results_include_edge_derived_library_id_without_changing_count_query(self) -> None:
-        """Search data query should hydrate ``library_id`` from edges while count stays filter-only."""
+    def test_search_results_include_edge_derived_library_id_after_constructor_migration(self) -> None:
+        """Search results should still hydrate ``library_id`` via ownership edges."""
         mock_db = MagicMock()
-        mock_db.aql.execute.side_effect = [
-            iter([1]),
-            iter(
-                [
-                    {
-                        "_id": "library_files/1",
-                        "path": "D:/Music/Test Song.flac",
-                        "normalized_path": "Test Song.flac",
-                        "artist": "Test Artist",
-                        "album": "Test Album",
-                        "title": "Test Song",
-                        "tags": [],
-                        "library_id": "libraries/1",
-                    },
-                ],
-            ),
+        mock_db.library_files.get.many.by_filter.return_value = [
+            {
+                "_id": "library_files/1",
+                "path": "D:/Music/Test Song.flac",
+                "normalized_path": "Test Song.flac",
+                "artist": "Test Artist",
+                "album": "Test Album",
+                "title": "Test Song",
+            },
         ]
-        mixin = _ConcreteQueriesMixin(mock_db)
+        mock_db.library_files.traversal.return_value = []
+        mock_db.library_contains_file._to.get.many.return_value = [{"_from": "libraries/1"}]
 
-        files, total = mixin.search_library_files_with_tags(query_text="Test Song")
+        files, total = search_library_files_with_tags(mock_db, query_text="Test Song")
 
         assert total == 1
         assert files[0]["library_id"] == "libraries/1"
-
-        count_query = mock_db.aql.execute.call_args_list[0].args[0]
-        data_query = mock_db.aql.execute.call_args_list[1].args[0]
-        data_bind_vars = mock_db.aql.execute.call_args_list[1].kwargs["bind_vars"]
-
-        assert "library_contains_file" not in count_query
-        assert (
-            "LET lib_id = FIRST(FOR lib IN INBOUND file._id library_contains_file LIMIT 1 RETURN lib._id)" in data_query
-        )
-        assert "RETURN MERGE(file, { tags: tags, library_id: lib_id })" in data_query
-        assert data_bind_vars["q_pattern"] == "%Test Song%"
-        assert data_bind_vars["limit"] == 100
-        assert data_bind_vars["offset"] == 0
+        mock_db.library_files.get.many.by_filter.assert_called_once_with({}, limit=1000)
 
 
 class TestGetRecentlyProcessed:
@@ -72,51 +45,43 @@ class TestGetRecentlyProcessed:
     def test_returns_scanned_at_field(self) -> None:
         """Recently processed query should return the scanned_at field."""
         mock_db = MagicMock()
-        mock_db.aql.execute.return_value = iter(
-            [
-                {
-                    "file_id": "library_files/1",
-                    "path": "Artist/Album/Test Song.flac",
-                    "title": "Test Song",
-                    "artist": "Test Artist",
-                    "album": "Test Album",
-                    "scanned_at": 1_710_000_000,
-                },
-            ],
-        )
-        mixin = _ConcreteQueriesMixin(mock_db)
-
-        rows = mixin.get_recently_processed(limit=5)
-
-        bind_vars = mock_db.aql.execute.call_args.kwargs["bind_vars"]
+        mock_db.file_states.traversal.return_value = [
+            {
+                "_id": "library_files/1",
+                "normalized_path": "Artist/Album/Test Song.flac",
+                "title": "Test Song",
+                "artist": "Test Artist",
+                "album": "Test Album",
+                "scanned_at": 1_710_000_000,
+            },
+        ]
+        rows = get_recently_processed(mock_db, limit=5)
 
         assert rows[0]["scanned_at"] == 1_710_000_000
-        assert bind_vars["limit"] == 5
 
     @pytest.mark.integration
     @pytest.mark.mocked
-    def test_library_scoped_binds_library_id(self) -> None:
-        """Library-scoped query should pass library_id as a bind variable."""
+    def test_library_scoped_intersects_tagged_files_with_library_edges(self) -> None:
+        """Library-scoped query should intersect tagged files with ownership edges."""
         mock_db = MagicMock()
-        mock_db.aql.execute.return_value = iter([])
-        mixin = _ConcreteQueriesMixin(mock_db)
+        mock_db.file_states.traversal.return_value = [
+            {"_id": "library_files/1", "normalized_path": "one.flac", "scanned_at": 10},
+            {"_id": "library_files/2", "normalized_path": "two.flac", "scanned_at": 20},
+        ]
+        mock_db.library_contains_file._from.get.many.return_value = [{"_to": "library_files/2"}]
 
-        mixin.get_recently_processed(library_id="libraries/123")
+        rows = get_recently_processed(mock_db, library_id="libraries/123")
 
-        bind_vars = mock_db.aql.execute.call_args.kwargs["bind_vars"]
-
-        assert bind_vars["library_id"] == "libraries/123"
+        assert [row["file_id"] for row in rows] == ["library_files/2"]
+        mock_db.library_contains_file._from.get.many.assert_called_once_with("libraries/123", limit=1000)
 
     @pytest.mark.integration
     @pytest.mark.mocked
-    def test_global_query_omits_library_id_bind(self) -> None:
-        """Global query should not bind a library_id."""
+    def test_global_query_skips_library_edge_lookup(self) -> None:
+        """Global query should not query library ownership edges."""
         mock_db = MagicMock()
-        mock_db.aql.execute.return_value = iter([])
-        mixin = _ConcreteQueriesMixin(mock_db)
+        mock_db.file_states.traversal.return_value = []
 
-        mixin.get_recently_processed()
+        get_recently_processed(mock_db)
 
-        bind_vars = mock_db.aql.execute.call_args.kwargs["bind_vars"]
-
-        assert "library_id" not in bind_vars
+        mock_db.library_contains_file._from.get.many.assert_not_called()

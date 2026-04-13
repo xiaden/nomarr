@@ -10,6 +10,33 @@ import pytest
 from nomarr.components.navidrome.subsonic_crawl_comp import CrawledSong
 from nomarr.workflows.navidrome.sync_navidrome_wf import sync_navidrome
 
+
+@pytest.fixture(autouse=True)
+def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bridge helper-based workflow imports to the historical db mock surface."""
+
+    monkeypatch.setattr(
+        "nomarr.workflows.navidrome.sync_navidrome_wf.bulk_upsert_navidrome_tracks",
+        lambda db, nd_ids: db.navidrome_tracks.bulk_upsert_tracks(nd_ids),
+    )
+    monkeypatch.setattr(
+        "nomarr.workflows.navidrome.sync_navidrome_wf.bulk_ensure_navidrome_file_links",
+        lambda db, mappings: db.navidrome_tracks.bulk_ensure_file_links(mappings),
+    )
+    monkeypatch.setattr(
+        "nomarr.workflows.navidrome.sync_navidrome_wf.bulk_upsert_navidrome_plays",
+        lambda db, user_id, plays: db.navidrome_playcounts.bulk_upsert_plays(user_id, plays),
+    )
+    monkeypatch.setattr(
+        "nomarr.workflows.navidrome.sync_navidrome_wf.list_navidrome_track_keys",
+        lambda db: db.navidrome_tracks.get_all_track_keys(),
+    )
+    monkeypatch.setattr(
+        "nomarr.workflows.navidrome.sync_navidrome_wf.delete_navidrome_tracks_cascade",
+        lambda db, nd_ids: db.navidrome_tracks.delete_tracks_cascade(nd_ids),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -42,6 +69,7 @@ def _song(nd_id: str, path: str, play_count: int = 0, last_played_ms: int = 0) -
 
 _CRAWL_PATH = "nomarr.workflows.navidrome.sync_navidrome_wf.crawl_navidrome_songs"
 _DETECT_PREFIX = "nomarr.workflows.navidrome.sync_navidrome_wf._detect_prefix"
+_GET_FILES_BY_PATHS = "nomarr.workflows.navidrome.sync_navidrome_wf.get_files_by_paths_bulk"
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +102,7 @@ class TestSyncNavidrome:
         with (
             patch(_CRAWL_PATH, return_value=songs),
             patch(_DETECT_PREFIX, return_value="/nd"),
+            patch(_GET_FILES_BY_PATHS, return_value=db.library_files.get_files_by_paths_bulk.return_value),
         ):
             result = sync_navidrome(client, db, "user-1")
 
@@ -104,6 +133,7 @@ class TestSyncNavidrome:
         with (
             patch(_CRAWL_PATH, return_value=songs),
             patch(_DETECT_PREFIX, return_value="/nd"),
+            patch(_GET_FILES_BY_PATHS, return_value=db.library_files.get_files_by_paths_bulk.return_value),
         ):
             result = sync_navidrome(client, db, "user-1")
 
@@ -119,6 +149,7 @@ class TestSyncNavidrome:
         with (
             patch(_CRAWL_PATH, return_value=[]),
             patch(_DETECT_PREFIX, return_value=""),
+            patch(_GET_FILES_BY_PATHS, return_value=db.library_files.get_files_by_paths_bulk.return_value),
         ):
             result = sync_navidrome(client, db, "user-1")
 
@@ -142,6 +173,7 @@ class TestSyncNavidrome:
         with (
             patch(_CRAWL_PATH, return_value=songs),
             patch(_DETECT_PREFIX, return_value="/nd"),
+            patch(_GET_FILES_BY_PATHS, return_value=db.library_files.get_files_by_paths_bulk.return_value),
         ):
             result = sync_navidrome(client, db, "user-1")
 
@@ -163,6 +195,7 @@ class TestSyncNavidrome:
         with (
             patch(_CRAWL_PATH, return_value=songs),
             patch(_DETECT_PREFIX, return_value="/nd"),
+            patch(_GET_FILES_BY_PATHS, return_value=db.library_files.get_files_by_paths_bulk.return_value),
         ):
             result = sync_navidrome(client, db, "user-1")
 
@@ -191,6 +224,7 @@ class TestSyncNavidrome:
         with (
             patch(_CRAWL_PATH, return_value=songs),
             patch(_DETECT_PREFIX, return_value="/nd"),
+            patch(_GET_FILES_BY_PATHS, return_value=db.library_files.get_files_by_paths_bulk.return_value),
         ):
             result = sync_navidrome(client, db, "user-1")
 

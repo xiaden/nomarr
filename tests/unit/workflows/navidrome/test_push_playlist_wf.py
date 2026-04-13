@@ -10,6 +10,16 @@ from nomarr.helpers.dto.navidrome_dto import PushPlaylistResult
 from nomarr.workflows.navidrome.push_playlist_wf import push_playlist
 
 
+@pytest.fixture(autouse=True)
+def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bridge helper-based workflow imports to the historical db mock surface."""
+
+    monkeypatch.setattr(
+        "nomarr.workflows.navidrome.push_playlist_wf.bulk_resolve_files_to_navidrome_ids",
+        lambda db, file_ids: db.navidrome_tracks.bulk_resolve_files_to_nd(file_ids),
+    )
+
+
 def _make_db(id_map: dict[str, str]) -> MagicMock:
     """Create a mock Database with navidrome_tracks.bulk_resolve_files_to_nd."""
     db = MagicMock()

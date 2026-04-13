@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
+from nomarr.components.library.library_file_mutation_comp import update_file_path
 from nomarr.components.library.metadata_extraction_comp import compute_chromaprint_for_file
 from nomarr.persistence import Database
 
@@ -240,7 +241,8 @@ def apply_detected_moves(
             # new_path not under library_root; skip normalization
             computed_normalized_path = None
 
-        db.library_files.update_file_path(
+        update_file_path(
+            db,
             file_id=move.file_id,
             new_path=move.new_path,
             file_size=move.new_file_size,

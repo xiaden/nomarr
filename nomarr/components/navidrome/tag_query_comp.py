@@ -8,6 +8,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal
 
+from nomarr.components.library.library_file_query_comp import get_tracks_by_file_ids
+from nomarr.components.tagging.tag_query_comp import get_file_ids_matching_tag
+from nomarr.components.tagging.tag_stats_comp import get_tag_value_counts as get_tag_value_counts_map
+from nomarr.components.tagging.tag_stats_comp import get_unique_rels
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -22,7 +27,7 @@ def get_nomarr_tag_rels(db: Database) -> list[str]:
         List of tag relationship keys (e.g., ['nom:mood-strict', 'nom:energy'])
 
     """
-    return db.tags.get_unique_rels(nomarr_only=True)
+    return get_unique_rels(db, nomarr_only=True)
 
 
 def get_tag_value_counts(db: Database, rel: str) -> dict[Any, int]:
@@ -36,7 +41,7 @@ def get_tag_value_counts(db: Database, rel: str) -> dict[Any, int]:
         Dict mapping tag values to their occurrence counts
 
     """
-    return db.tags.get_tag_value_counts(rel)
+    return get_tag_value_counts_map(db, rel)
 
 
 def find_files_matching_tag(
@@ -57,11 +62,7 @@ def find_files_matching_tag(
         Set of file IDs matching the condition
 
     """
-    result = db.tags.get_file_ids_matching_tag(
-        rel=rel,
-        operator=operator,
-        value=value,
-    )
+    result = get_file_ids_matching_tag(db, rel=rel, operator=operator, value=value)
     return set(result) if not isinstance(result, set) else result
 
 
@@ -84,7 +85,8 @@ def get_playlist_preview_tracks(
         List of track dictionaries with path, title, artist, album, etc.
 
     """
-    return db.library_files.get_tracks_by_file_ids(
+    return get_tracks_by_file_ids(
+        db,
         file_ids=file_ids,
         order_by=order_by,
         limit=limit,

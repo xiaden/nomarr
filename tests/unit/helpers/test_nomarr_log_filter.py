@@ -74,10 +74,10 @@ class TestNomarrLogFilterIdentityRole:
     @pytest.mark.unit
     def test_aql_suffix(self, log_filter: NomarrLogFilter) -> None:
         """_aql suffix should produce [Identity] [AQL] tags."""
-        record = self._make_record("nomarr.persistence.database.library_files_aql")
+        record = self._make_record("nomarr.persistence.database.tag_model_output_aql")
         log_filter.filter(record)
 
-        assert _get_attr(record, "nomarr_identity_tag") == "[Library Files]"
+        assert _get_attr(record, "nomarr_identity_tag") == "[Tag Model Output]"
         assert _get_attr(record, "nomarr_role_tag") == "[AQL]"
 
     @pytest.mark.unit

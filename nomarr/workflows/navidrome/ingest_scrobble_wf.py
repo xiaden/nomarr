@@ -11,6 +11,12 @@ import logging
 import threading
 from typing import TYPE_CHECKING
 
+from nomarr.components.navidrome.navidrome_graph_comp import (
+    increment_navidrome_play,
+    resolve_navidrome_track_to_file,
+    upsert_navidrome_track,
+)
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -53,13 +59,13 @@ def ingest_scrobble(db: Database, user_id: str, nd_id: str, timestamp_ms: int) -
         _dedup_cache[cache_key] = timestamp_ms
 
     # Step 2: Upsert track vertex
-    db.navidrome_tracks.upsert_track(nd_id)
+    upsert_navidrome_track(db, nd_id)
 
     # Step 3: Atomically increment play count (creates bucket if needed)
-    db.navidrome_playcounts.increment_play(user_id, nd_id, timestamp_ms)
+    increment_navidrome_play(db, user_id, nd_id, timestamp_ms)
 
     # Step 4: Attempt file resolution (observability only)
-    file_id = db.navidrome_tracks.resolve_nd_to_file(nd_id)
+    file_id = resolve_navidrome_track_to_file(db, nd_id)
     if file_id:
         logger.debug("Scrobble resolved: nd_id=%s -> %s", nd_id, file_id)
     else:

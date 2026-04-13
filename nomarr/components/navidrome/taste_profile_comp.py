@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from nomarr.components.navidrome.navidrome_graph_comp import get_top_navidrome_plays
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
@@ -57,7 +58,7 @@ def compute_taste_profile(
 
     """
     # Step 1: Fetch top plays via graph traversal
-    plays: list[TrackPlayData] = db.navidrome_playcounts.get_top_plays(user_id, top_n)
+    plays: list[TrackPlayData] = get_top_navidrome_plays(db, user_id, top_n)
     if not plays:
         logger.info("No play data for user %s — cannot build taste profile", user_id)
         return None

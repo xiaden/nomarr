@@ -9,14 +9,110 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from typing import TYPE_CHECKING, Any, cast
 
+from nomarr.components.ml.calibration.ml_calibration_state_comp import (
+    load_all_calibration_states,
+    load_calibration_state,
+    save_calibration_state,
+)
+from nomarr.components.ml.onnx.ml_model_registry_comp import list_registered_models
 from nomarr.helpers.dto.ml_dto import SaveCalibrationSidecarsResult
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
+
+
+def _extract_label_from_nom_rel(rel: str, model_key_for_tag: str) -> str | None:
+    """Extract the label portion from a Nomarr ML tag relation."""
+    if not rel.startswith("nom:"):
+        return None
+
+    rel_without_prefix = rel[4:]
+    if model_key_for_tag not in rel_without_prefix:
+        return None
+
+    embedder_marker = f"_{model_key_for_tag}"
+    embedder_pos = rel_without_prefix.find(embedder_marker)
+    if embedder_pos > 0:
+        label_and_framework = rel_without_prefix[:embedder_pos]
+    else:
+        label_and_framework = rel_without_prefix
+
+    framework_sep = label_and_framework.rfind("_")
+    if framework_sep > 0:
+        return label_and_framework[:framework_sep]
+    return label_and_framework
+
+
+def get_sparse_histogram(
+    db: Database,
+    *,
+    model_id: str,
+    label: str,
+    lo: float = 0.0,
+    hi: float = 1.0,
+    bins: int = 10000,
+) -> list[dict[str, Any]]:
+    """Query sparse histogram bins for one model label.
+
+    The constructor owns calibration_state CRUD now; this query remains in the
+    calibration component because it is a cross-collection analytics read over
+    `song_has_tags` and `tags`, not a calibration_state collection verb.
+    """
+    model_doc = cast("dict[str, Any] | None", db.ml_models.get(model_id))
+    if model_doc is None:
+        return []
+
+    backbone = model_doc.get("backbone")
+    release_date = model_doc.get("embedder_release_date")
+    if not isinstance(backbone, str) or not isinstance(release_date, str):
+        return []
+
+    model_key_for_tag = f"{backbone}{release_date.replace('-', '')}"
+    bin_width = (hi - lo) / bins
+    max_bin = bins - 1
+    matching_rels: list[str] = []
+    all_rels = cast("list[Any]", db.tags.rel.collect(limit=10000))
+    for rel in all_rels:
+        if not isinstance(rel, str) or not rel.startswith("nom:"):
+            continue
+        extracted_label = _extract_label_from_nom_rel(rel, model_key_for_tag)
+        if extracted_label == label:
+            matching_rels.append(rel)
+
+    histogram_by_bin: dict[int, dict[str, Any]] = {}
+    for matched_rel in matching_rels:
+        tag_docs = cast(
+            "list[dict[str, Any]]",
+            db.tags.get.many.by_filter({"rel": matched_rel}, limit=50000),
+        )
+        for tag_doc in tag_docs:
+            value = tag_doc.get("value")
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                continue
+
+            bin_idx_raw = math.floor((value - lo) / bin_width)
+            bin_idx = min(max(bin_idx_raw, 0), max_bin)
+            bin_row = histogram_by_bin.setdefault(
+                bin_idx,
+                {
+                    "min_val": lo + (bin_idx * bin_width),
+                    "count": 0,
+                    "underflow_count": 0,
+                    "overflow_count": 0,
+                },
+            )
+            bin_row["count"] += 1
+            if value < lo:
+                bin_row["underflow_count"] += 1
+            if value > hi:
+                bin_row["overflow_count"] += 1
+
+    return sorted(histogram_by_bin.values(), key=lambda row: cast("float", row["min_val"]))
 
 
 def _parse_tag_key_components(tag_key: str) -> tuple[str, str, str] | None:
@@ -296,7 +392,7 @@ def generate_calibration_from_histogram(
 
     """
     bin_width = (hi - lo) / bins
-    sparse_bins = db.calibration_state.get_sparse_histogram(model_id=model_id, label=label, lo=lo, hi=hi, bins=bins)
+    sparse_bins = get_sparse_histogram(db, model_id=model_id, label=label, lo=lo, hi=hi, bins=bins)
     if not sparse_bins:
         logger.warning(f"[calibration] No data for {model_id}:{head_name}:{label}")
         return {"p5": lo, "p95": hi, "n": 0, "underflow_count": 0, "overflow_count": 0, "histogram_bins": []}
@@ -337,7 +433,7 @@ def export_calibration_state_to_json(db: Database, output_path: str) -> dict[str
 
     """
     logger.info(f"[calibration] Exporting calibration_state to {output_path}")
-    calibrations = db.calibration_state.get_all_calibration_states()
+    calibrations = load_all_calibration_states(db)
     export_data = []
     for calib in calibrations:
         model_info = calib.get("model") or {}
@@ -398,7 +494,7 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
         raise ValueError(msg)
 
     # Build model lookup cache: (backbone, embedder_release_date) -> model_id
-    all_models = db.ml_models.list_models()
+    all_models = list_registered_models(db)
     model_lookup: dict[tuple[str, str], str] = {}
     for model in all_models:
         key = (model.get("backbone", ""), model.get("embedder_release_date", ""))
@@ -425,14 +521,15 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
                 continue
 
             # Check if calibration already exists
-            existing = db.calibration_state.get_calibration_state(head_name, label)
+            existing = load_calibration_state(db, head_name, label)
             calibration_def_hash = calib["calibration_def_hash"]
             if existing and (not overwrite) and (existing.get("calibration_def_hash") == calibration_def_hash):
                 logger.debug(f"[calibration] Skipping {head_name}:{label} (already exists)")
                 skipped_count += 1
                 continue
 
-            db.calibration_state.upsert_calibration_state(
+            save_calibration_state(
+                db,
                 model_id=model_id,
                 head_name=head_name,
                 label=label,

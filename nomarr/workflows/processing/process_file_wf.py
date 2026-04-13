@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db
+from nomarr.components.library.library_file_mutation_comp import bulk_delete_files
 from nomarr.components.ml.audio.ml_audio_comp import (
     AudioLoadCrashError,
     AudioLoadShutdownError,
@@ -25,6 +26,7 @@ from nomarr.components.ml.inference.ml_backbone_embed_comp import compute_backbo
 from nomarr.components.ml.inference.ml_head_pipeline_comp import run_heads
 from nomarr.components.ml.onnx.ml_cache import ONNXModelCache
 from nomarr.components.ml.onnx.ml_discovery_comp import compute_model_suite_hash
+from nomarr.components.ml.onnx.ml_model_registry_comp import build_model_output_id_map
 from nomarr.components.ml.resources.ml_timing_comp import build_timing_summary
 from nomarr.components.ml.vectors.ml_vector_persist_comp import persist_backbone_vector
 from nomarr.components.tagging.tagging_aggregation_comp import collect_mood_outputs
@@ -117,7 +119,7 @@ def process_file_workflow(
     except AudioLoadCrashError as e:
         logger.error(f"[processor] Audio load crashed for {path}: {e}")
         if db:
-            db.library_files.bulk_delete_files([path])
+            bulk_delete_files(db, [path])
             logger.info(f"[processor] Deleted invalid file: {path}")
         elapsed = round((internal_ms().value - start_all.value) / 1000, 2)
         return ProcessFileResult(
@@ -210,7 +212,7 @@ def process_file_workflow(
     # Queries the graph once to map model ONNX path+label → output vertex _id.
     output_edges: dict[str, tuple[str, float]] = {}
     if db is not None and all_head_outputs:
-        output_id_map = db.ml_model_outputs.get_output_id_map()
+        output_id_map = build_model_output_id_map(db)
         for ho in all_head_outputs:
             path_map = output_id_map.get(ho.head._path)
             if path_map is not None:

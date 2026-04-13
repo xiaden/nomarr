@@ -14,7 +14,13 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypedDict
 from typing import cast as type_cast
 
-from nomarr.components.ml.calibration.ml_calibration_state_comp import compute_reconciliation_info
+from nomarr.components.ml.calibration.ml_calibration_state_comp import (
+    compute_reconciliation_info,
+    count_recent_calibration_states,
+    get_latest_calibration_state_updated_at,
+    load_all_calibration_states,
+    load_calibration_state,
+)
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.time_helper import now_ms
@@ -331,10 +337,10 @@ class CalibrationService:
 
         # Count heads with recent calibration_state (within 24 hours)
         recent_threshold = now_ms().value - (24 * 60 * 60 * 1000)
-        completed = self._db.calibration_state.count_recent(recent_threshold)
+        completed = count_recent_calibration_states(self._db, recent_threshold)
 
         # Get most recent calibration timestamp
-        last_updated = self._db.calibration_state.get_latest_updated_at()
+        last_updated = get_latest_calibration_state_updated_at(self._db)
 
         return {
             "current_head": None,
@@ -394,7 +400,7 @@ class CalibrationService:
             ValueError: If no calibration state found for label
 
         """
-        state = self._db.calibration_state.get_calibration_state(head_name, label)
+        state = load_calibration_state(self._db, head_name, label)
         if not state:
             raise ValueError(f"No calibration state found for {model_key}:{head_name}:{label}")
 
@@ -416,7 +422,7 @@ class CalibrationService:
             List of calibration state documents with histogram_bins
 
         """
-        return self._db.calibration_state.get_all_calibration_states()
+        return load_all_calibration_states(self._db)
 
     # -------------------------------------------------------------------------
 

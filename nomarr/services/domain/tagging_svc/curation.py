@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.tagging.tag_query_comp import get_song_tags, get_tag, list_songs_for_tag
+from nomarr.components.tagging.tag_write_comp import find_or_create_tag, relink_tag_edges, set_song_tags
+from nomarr.helpers.constants.file_states import STATE_TAGS_NOT_WRITTEN, STATE_TAGS_WRITTEN
 from nomarr.helpers.dto.tag_curation_dto import MergeResult, RenameResult, SplitResult
 
 if TYPE_CHECKING:
@@ -30,7 +33,7 @@ class TaggingCurationMixin:
 
     def _get_tag_or_error(self, tag_id: str) -> dict[str, Any]:
         """Fetch a tag document or raise ValueError."""
-        tag = self.db.tags.get_tag(tag_id)
+        tag = get_tag(self.db, tag_id)
         if not tag:
             msg = f"Tag not found: {tag_id}"
             raise ValueError(msg)
@@ -56,14 +59,14 @@ class TaggingCurationMixin:
         source_tag = self._get_tag_or_error(tag_id)
         self._reject_nom_prefix(tag_doc=source_tag)
 
-        target_tag_id = self.db.tags.find_or_create_tag(source_tag["rel"], new_value)
+        target_tag_id = find_or_create_tag(self.db, source_tag["rel"], new_value)
         merged_into_existing = target_tag_id != tag_id
 
-        relink = self.db.tags.relink_tag_edges(tag_id, target_tag_id)
+        relink = relink_tag_edges(self.db, tag_id, target_tag_id)
 
-        song_ids = self.db.tags.list_songs_for_tag(target_tag_id)
+        song_ids = list_songs_for_tag(self.db, target_tag_id)
         for song_id in song_ids:
-            self.db.file_states.set_tags_not_written(song_id)
+            self.db.file_states.transition([song_id], STATE_TAGS_WRITTEN, STATE_TAGS_NOT_WRITTEN)
 
         return RenameResult(moved=relink["moved"], merged_into_existing=merged_into_existing)
 
@@ -96,14 +99,14 @@ class TaggingCurationMixin:
             source_tag = self._get_tag_or_error(source_id)
             self._reject_nom_prefix(tag_doc=source_tag)
 
-            relink = self.db.tags.relink_tag_edges(source_id, canonical_tag_id)
+            relink = relink_tag_edges(self.db, source_id, canonical_tag_id)
             total_moved += relink["moved"]
             if relink["source_orphaned"]:
                 sources_removed += 1
 
-        song_ids = self.db.tags.list_songs_for_tag(canonical_tag_id)
+        song_ids = list_songs_for_tag(self.db, canonical_tag_id)
         for song_id in song_ids:
-            self.db.file_states.set_tags_not_written(song_id)
+            self.db.file_states.transition([song_id], STATE_TAGS_WRITTEN, STATE_TAGS_NOT_WRITTEN)
 
         return MergeResult(total_moved=total_moved, sources_removed=sources_removed)
 
@@ -128,13 +131,13 @@ class TaggingCurationMixin:
         source_tag = self._get_tag_or_error(source_tag_id)
         self._reject_nom_prefix(tag_doc=source_tag)
 
-        target_tag_id = self.db.tags.find_or_create_tag(source_tag["rel"], new_value)
+        target_tag_id = find_or_create_tag(self.db, source_tag["rel"], new_value)
         new_tag_created = target_tag_id != source_tag_id
 
-        relink = self.db.tags.relink_tag_edges(source_tag_id, target_tag_id, song_ids=song_ids)
+        relink = relink_tag_edges(self.db, source_tag_id, target_tag_id, song_ids=song_ids)
 
         for song_id in song_ids:
-            self.db.file_states.set_tags_not_written(song_id)
+            self.db.file_states.transition([song_id], STATE_TAGS_WRITTEN, STATE_TAGS_NOT_WRITTEN)
 
         return SplitResult(moved=relink["moved"], new_tag_created=new_tag_created)
 
@@ -157,7 +160,7 @@ class TaggingCurationMixin:
 
         """
         self._reject_nom_prefix(rel=rel)
-        self.db.tags.set_song_tags(file_id, rel, list(values))
-        self.db.file_states.set_tags_not_written(file_id)
-        tags = self.db.tags.get_song_tags(file_id, rel=rel)
+        set_song_tags(self.db, file_id, rel, list(values))
+        self.db.file_states.transition([file_id], STATE_TAGS_WRITTEN, STATE_TAGS_NOT_WRITTEN)
+        tags = get_song_tags(self.db, file_id, rel=rel)
         return {"file_id": file_id, "rel": rel, "tags": tags.to_dict()}

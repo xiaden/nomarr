@@ -14,6 +14,15 @@ TAG_UNIFICATION_REFACTOR: Entities are now tags. Route collection values map to 
 import logging
 from typing import Literal
 
+from nomarr.components.tagging.tag_cleanup_comp import cleanup_orphaned_tags, get_orphaned_tag_count
+from nomarr.components.tagging.tag_query_comp import (
+    count_tags_by_rel,
+    get_song_tags,
+    get_tag,
+    list_songs_for_tag,
+    list_tags_by_rel,
+)
+from nomarr.components.tagging.tag_write_comp import find_or_create_tag
 from nomarr.helpers.dto.metadata_dto import EntityDict, EntityListResult, SongListForEntityResult
 from nomarr.persistence.db import Database
 
@@ -64,8 +73,8 @@ class MetadataService:
 
         """
         rel = COLLECTION_REL_MAP[collection]
-        tags = self.db.tags.list_tags_by_rel(rel, limit=limit, offset=offset, search=search)
-        total = self.db.tags.count_tags_by_rel(rel, search=search)
+        tags = list_tags_by_rel(self.db, rel, limit=limit, offset=offset, search=search)
+        total = count_tags_by_rel(self.db, rel, search=search)
 
         entity_dicts: list[EntityDict] = [
             {
@@ -94,12 +103,12 @@ class MetadataService:
             EntityDict or None if not found
 
         """
-        tag = self.db.tags.get_tag(entity_id)
+        tag = get_tag(self.db, entity_id)
         if not tag:
             return None
 
         # Get song count for this tag
-        song_count = self.db.tags.count_songs_for_tag(entity_id)
+        song_count = self.db.song_has_tags._to.count(entity_id)
 
         return EntityDict(
             _id=tag["_id"],
@@ -127,8 +136,8 @@ class MetadataService:
             SongListForEntityResult with song_ids, total, limit, offset
 
         """
-        song_ids = self.db.tags.list_songs_for_tag(entity_id, limit=limit, offset=offset)
-        total = self.db.tags.count_songs_for_tag(entity_id)
+        song_ids = list_songs_for_tag(self.db, entity_id, limit=limit, offset=offset)
+        total = self.db.song_has_tags._to.count(entity_id)
 
         return SongListForEntityResult(
             song_ids=song_ids,
@@ -152,21 +161,21 @@ class MetadataService:
 
         """
         # Get all songs for this album
-        song_ids = self.db.tags.list_songs_for_tag(album_id, limit=10000)
+        song_ids = list_songs_for_tag(self.db, album_id, limit=10000)
 
         # For each song, get primary artist tags
         artist_ids_seen: set[str] = set()
         artists: list[EntityDict] = []
 
         for song_id in song_ids:
-            artist_tags = self.db.tags.get_song_tags(song_id, rel="artist")
+            artist_tags = get_song_tags(self.db, song_id, rel="artist")
             for artist_tag in artist_tags:
                 # Get the first value from the tag (always a list now)
                 for value in artist_tag.value:
-                    tag_id = self.db.tags.find_or_create_tag("artist", value)
+                    tag_id = find_or_create_tag(self.db, "artist", value)
                     if tag_id not in artist_ids_seen:
                         artist_ids_seen.add(tag_id)
-                        tag = self.db.tags.get_tag(tag_id)
+                        tag = get_tag(self.db, tag_id)
                         if tag:
                             artists.append(
                                 EntityDict(
@@ -196,27 +205,27 @@ class MetadataService:
 
         """
         # Get all songs for this artist
-        song_ids = self.db.tags.list_songs_for_tag(artist_id, limit=10000)
+        song_ids = list_songs_for_tag(self.db, artist_id, limit=10000)
 
         # For each song, get album tags
         album_ids_seen: set[str] = set()
         albums: list[EntityDict] = []
 
         for song_id in song_ids:
-            album_tags = self.db.tags.get_song_tags(song_id, rel="album")
+            album_tags = get_song_tags(self.db, song_id, rel="album")
             for album_tag in album_tags:
                 # Get the first value from the tag (always a list now)
                 for value in album_tag.value:
-                    tag_id = self.db.tags.find_or_create_tag("album", value)
+                    tag_id = find_or_create_tag(self.db, "album", value)
                     if tag_id not in album_ids_seen:
                         album_ids_seen.add(tag_id)
-                        tag = self.db.tags.get_tag(tag_id)
+                        tag = get_tag(self.db, tag_id)
                         if tag:
                             # Count songs in this album that are also by this artist
                             album_song_count = sum(
                                 1
                                 for s in song_ids
-                                if any(value in t.value for t in self.db.tags.get_song_tags(s, rel="album"))
+                                if any(value in t.value for t in get_song_tags(self.db, s, rel="album"))
                             )
                             albums.append(
                                 EntityDict(
@@ -239,11 +248,11 @@ class MetadataService:
 
         """
         return {
-            "artists": self.db.tags.count_tags_by_rel("artist"),
-            "albums": self.db.tags.count_tags_by_rel("album"),
-            "labels": self.db.tags.count_tags_by_rel("label"),
-            "genres": self.db.tags.count_tags_by_rel("genre"),
-            "years": self.db.tags.count_tags_by_rel("year"),
+            "artists": count_tags_by_rel(self.db, "artist"),
+            "albums": count_tags_by_rel(self.db, "album"),
+            "labels": count_tags_by_rel(self.db, "label"),
+            "genres": count_tags_by_rel(self.db, "genre"),
+            "years": count_tags_by_rel(self.db, "year"),
         }
 
     def cleanup_orphaned_entities(self, dry_run: bool = False) -> dict[str, int | dict[str, int]]:
@@ -257,12 +266,12 @@ class MetadataService:
 
         """
         if dry_run:
-            orphan_count = self.db.tags.get_orphaned_tag_count()
+            orphan_count = get_orphaned_tag_count(self.db)
             return {
                 "orphaned_count": orphan_count,
                 "deleted_count": 0,
             }
-        deleted_count = self.db.tags.cleanup_orphaned_tags()
+        deleted_count = cleanup_orphaned_tags(self.db)
         return {
             "orphaned_count": deleted_count,  # Was orphaned, now deleted
             "deleted_count": deleted_count,

@@ -16,11 +16,12 @@ from __future__ import annotations
 
 import logging
 import secrets
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import bcrypt
 
 from nomarr.helpers.time_helper import now_s
+from nomarr.persistence.schema import Op
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -59,7 +60,8 @@ class KeyManagementService:
             Use this for validation. Use get_or_create_api_key() during initialization.
 
         """
-        return self._db.meta.get("api_key")
+        api_key_doc = cast("dict[str, Any] | None", self._db.meta.key.get("api_key"))
+        return None if api_key_doc is None else cast("str | None", api_key_doc.get("value"))
 
     def get_or_create_api_key(self) -> str:
         """Get or create the public API key for external endpoints.
@@ -69,11 +71,12 @@ class KeyManagementService:
             API key string (existing or newly generated)
 
         """
-        key = self._db.meta.get("api_key")
+        key_doc = cast("dict[str, Any] | None", self._db.meta.key.get("api_key"))
+        key = None if key_doc is None else cast("str | None", key_doc.get("value"))
         if key:
             return key
         new_key = secrets.token_urlsafe(32)
-        self._db.meta.set("api_key", new_key)
+        self._db.meta.key.upsert([{"key": "api_key", "value": new_key}], match_field="key")
         logger.info("[KeyManagement] Generated new API key on first run.")
         return new_key
 
@@ -85,7 +88,7 @@ class KeyManagementService:
 
         """
         new_key = secrets.token_urlsafe(32)
-        self._db.meta.set("api_key", new_key)
+        self._db.meta.key.upsert([{"key": "api_key", "value": new_key}], match_field="key")
         logger.info("[KeyManagement] API key regenerated.")
         return new_key
 
@@ -134,7 +137,8 @@ class KeyManagementService:
             RuntimeError: If password not found in database
 
         """
-        password_hash = self._db.meta.get("admin_password_hash")
+        password_hash_doc = cast("dict[str, Any] | None", self._db.meta.key.get("admin_password_hash"))
+        password_hash = None if password_hash_doc is None else cast("str | None", password_hash_doc.get("value"))
         if not password_hash:
             msg = "Admin password not found in DB. Password should be generated during initialization."
             raise RuntimeError(msg)
@@ -157,17 +161,18 @@ class KeyManagementService:
             Plaintext password if auto-generated (for logging), empty string otherwise
 
         """
-        existing_hash = self._db.meta.get("admin_password_hash")
+        existing_hash_doc = cast("dict[str, Any] | None", self._db.meta.key.get("admin_password_hash"))
+        existing_hash = None if existing_hash_doc is None else cast("str | None", existing_hash_doc.get("value"))
         if existing_hash:
             return ""
         if config_password:
             password_hash = self.hash_password(config_password)
-            self._db.meta.set("admin_password_hash", password_hash)
+            self._db.meta.key.upsert([{"key": "admin_password_hash", "value": password_hash}], match_field="key")
             logger.info("[KeyManagement] Admin password set from config file.")
             return ""
         random_password = secrets.token_urlsafe(16)
         password_hash = self.hash_password(random_password)
-        self._db.meta.set("admin_password_hash", password_hash)
+        self._db.meta.key.upsert([{"key": "admin_password_hash", "value": password_hash}], match_field="key")
         logger.warning("[KeyManagement] ========================================")
         logger.warning("[KeyManagement] AUTO-GENERATED ADMIN PASSWORD:")
         logger.warning(f"[KeyManagement]   {random_password}")
@@ -186,7 +191,7 @@ class KeyManagementService:
 
         """
         password_hash = self.hash_password(new_password)
-        self._db.meta.set("admin_password_hash", password_hash)
+        self._db.meta.key.upsert([{"key": "admin_password_hash", "value": password_hash}], match_field="key")
         logger.warning("[KeyManagement] Admin password reset - all sessions invalidated")
 
     def create_session(self) -> str:
@@ -200,7 +205,15 @@ class KeyManagementService:
         session_token = secrets.token_urlsafe(32)
         expiry = now_s().value + SESSION_TIMEOUT_SECONDS
         _session_cache[session_token] = expiry
-        self._db.sessions.create_session(session_id=session_token, user_id="admin", expiry_timestamp=int(expiry * 1000))
+        self._db.sessions.insert(
+            [
+                {
+                    "session_id": session_token,
+                    "user_id": "admin",
+                    "expiry_timestamp": int(expiry * 1000),
+                }
+            ],
+        )
         logger.info(f"[KeyManagement] Created new session (expires in {SESSION_TIMEOUT_SECONDS}s)")
         return session_token
 
@@ -236,7 +249,7 @@ class KeyManagementService:
 
         """
         _session_cache.pop(session_token, None)
-        self._db.sessions.delete(session_token)
+        self._db.sessions.session_id.delete(session_token)
         logger.info("[KeyManagement] Session invalidated (logout)")
 
     def cleanup_expired_sessions(self) -> int:
@@ -250,7 +263,13 @@ class KeyManagementService:
         expired = [token for token, expiry in _session_cache.items() if expiry < now]
         for token in expired:
             _session_cache.pop(token, None)
-        db_count = self._db.sessions.cleanup_expired()
+        expired_docs = self._db.sessions.expiry_timestamp.get.in_(
+            {Op.LT: int(now * 1000)},
+            limit=self._db.sessions.count(),
+        )
+        if expired_docs:
+            self._db.sessions.delete([doc["_id"] for doc in expired_docs])
+        db_count = len(expired_docs)
         if expired or db_count:
             logger.info(f"[KeyManagement] Cleaned up {len(expired)} expired session(s) from cache, {db_count} from DB")
         return len(expired)
@@ -262,7 +281,10 @@ class KeyManagementService:
             Number of sessions loaded
 
         """
-        sessions = self._db.sessions.load_all()
+        sessions = self._db.sessions.expiry_timestamp.get.in_(
+            {Op.GT: int(now_s().value * 1000)},
+            limit=self._db.sessions.count(),
+        )
         _session_cache.update((s["session_id"], s["expiry_timestamp"] / 1000.0) for s in sessions)
         logger.debug(f"[KeyManagement] Loaded {len(sessions)} active session(s) from database")
         return len(sessions)

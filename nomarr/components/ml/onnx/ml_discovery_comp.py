@@ -18,6 +18,11 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.ml.onnx.ml_model_registry_comp import (
+    list_fully_labeled_model_outputs,
+    list_registered_models,
+)
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -189,7 +194,7 @@ def _discover_heads_from_db(models_dir: str, db: Database) -> list[HeadInfo]:
     objects are ready for inference.
     """
     heads: list[HeadInfo] = []
-    all_models = db.ml_models.list_models()
+    all_models = list_registered_models(db)
 
     for doc in all_models:
         if not doc.get("fully_configured", False):
@@ -211,7 +216,7 @@ def _discover_heads_from_db(models_dir: str, db: Database) -> list[HeadInfo]:
 
         # Labels from fully-labeled output vertices
         model_id: str = doc["_id"]
-        output_docs = db.ml_model_outputs.get_fully_labeled_outputs(model_id)
+        output_docs = list_fully_labeled_model_outputs(db, model_id)
         labels = [od["label"] for od in output_docs]
 
         heads.append(
@@ -326,7 +331,7 @@ def filter_configured_heads(
         heads: Discovered heads from :func:`discover_heads`.
         model_config: Mapping of ``model_stem`` to
             ``(fully_configured, output_count)`` built from
-            ``db.ml_models.list_models()``.
+            ``list_registered_models(db)``.
 
     Returns:
         Filtered list containing only heads with fully-configured models.

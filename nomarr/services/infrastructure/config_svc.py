@@ -133,7 +133,7 @@ class ConfigService:
         try:
             db = Database()
             try:
-                db.meta.set(f"config_{key}", value)
+                db.meta.key.upsert([{"key": f"config_{key}", "value": value}], match_field="key")
             finally:
                 db.close()
         except Exception:
@@ -225,17 +225,22 @@ class ConfigService:
             db = Database()
             try:
                 # Batch-read existing config keys from DB
-                existing = db.meta.get_by_prefix("config_")
+                existing_docs = db.meta.key.get.like("config_%")
+                existing = {doc["key"]: doc.get("value", "") for doc in existing_docs}
                 existing_keys = {k[7:] for k in existing}  # Strip 'config_' prefix
 
                 # Seed: write only keys NOT already in DB
                 for key in _ALLOWED_CONFIG_KEYS:
                     if key not in existing_keys and key in bootstrap_config:
                         value = bootstrap_config[key]
-                        db.meta.set(f"config_{key}", str(value) if value is not None else "")
+                        db.meta.key.upsert(
+                            [{"key": f"config_{key}", "value": str(value) if value is not None else ""}],
+                            match_field="key",
+                        )
 
                 # Load: read all config_* keys back into cache
-                all_config = db.meta.get_by_prefix("config_")
+                all_config_docs = db.meta.key.get.like("config_%")
+                all_config = {doc["key"]: doc.get("value", "") for doc in all_config_docs}
                 for db_key, db_value in all_config.items():
                     config_key = db_key[7:]  # Strip 'config_' prefix
                     if config_key in _ALLOWED_CONFIG_KEYS:

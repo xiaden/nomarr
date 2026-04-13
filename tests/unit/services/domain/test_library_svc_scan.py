@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -87,16 +86,11 @@ class TestScanStateQueries:
     def test_get_status_aggregate_counts_running_jobs_from_pipeline_state(self) -> None:
         """Aggregate running_jobs should equal the number of scanning pipeline libraries."""
         service = _make_service()
-        mock_get_libraries_in_state = cast(
-            "MagicMock",
-            service.db.library_pipeline_states.get_libraries_in_state,
-        )
-        mock_get_libraries_in_state.return_value = [
-            "libraries/lib1",
-            "libraries/lib2",
-        ]
-
-        result = service.get_status()
+        with patch(
+            "nomarr.services.domain.library_svc.scan.get_scanning_library_ids",
+            return_value={"libraries/lib1", "libraries/lib2"},
+        ):
+            result = service.get_status()
 
         assert result.configured is True
         assert result.running_jobs == 2
@@ -107,13 +101,7 @@ class TestScanStateQueries:
     def test_get_status_library_running_jobs_ignores_scan_status_field(self) -> None:
         """Per-library running_jobs should come from pipeline state, not scan_status text."""
         service = _make_service()
-        mock_get_libraries_in_state = cast(
-            "MagicMock",
-            service.db.library_pipeline_states.get_libraries_in_state,
-        )
-        mock_get_library = cast("MagicMock", service.db.libraries.get_library)
-        mock_get_libraries_in_state.return_value = ["libraries/lib2"]
-        mock_get_library.return_value = {
+        library = {
             "_id": "libraries/lib1",
             "_key": "lib1",
             "_rev": "_abc",
@@ -129,7 +117,14 @@ class TestScanStateQueries:
             "scanned_at": None,
         }
 
-        result = service.get_status("libraries/lib1")
+        with (
+            patch("nomarr.services.domain.library_svc.scan.resolve_library_for_scan", return_value=library),
+            patch(
+                "nomarr.services.domain.library_svc.scan.get_scanning_library_ids",
+                return_value={"libraries/lib2"},
+            ),
+        ):
+            result = service.get_status("libraries/lib1")
 
         assert result.scan_status == "scanning"
         assert result.running_jobs == 0
@@ -139,13 +134,7 @@ class TestScanStateQueries:
     def test_get_status_library_running_jobs_reflects_pipeline_state_even_when_scan_status_is_idle(self) -> None:
         """Per-library running_jobs should be 1 when the requested library is in the scanning pipeline state."""
         service = _make_service()
-        mock_get_libraries_in_state = cast(
-            "MagicMock",
-            service.db.library_pipeline_states.get_libraries_in_state,
-        )
-        mock_get_library = cast("MagicMock", service.db.libraries.get_library)
-        mock_get_libraries_in_state.return_value = ["libraries/lib1"]
-        mock_get_library.return_value = {
+        library = {
             "_id": "libraries/lib1",
             "_key": "lib1",
             "_rev": "_abc",
@@ -161,7 +150,14 @@ class TestScanStateQueries:
             "scanned_at": None,
         }
 
-        result = service.get_status("libraries/lib1")
+        with (
+            patch("nomarr.services.domain.library_svc.scan.resolve_library_for_scan", return_value=library),
+            patch(
+                "nomarr.services.domain.library_svc.scan.get_scanning_library_ids",
+                return_value={"libraries/lib1"},
+            ),
+        ):
+            result = service.get_status("libraries/lib1")
 
         assert result.scan_status == "idle"
         assert result.running_jobs == 1

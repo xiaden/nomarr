@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.tagging.tag_stats_comp import get_all_tag_stats_batched
 from nomarr.helpers.tag_key_mapping import (
     is_versioned_ml_key,
     make_navidrome_field_name,
@@ -48,7 +49,7 @@ def preview_tag_stats_workflow(db: Database, namespace: str = "nom") -> dict[str
 
     """
     logger.info("[navidrome] Computing tag statistics (batched query)...")
-    stats_by_tag = db.tags.get_all_tag_stats_batched()
+    stats_by_tag = get_all_tag_stats_batched(db)
 
     # Add short_name and field_name to each tag's stats
     for tag_key, stats in stats_by_tag.items():

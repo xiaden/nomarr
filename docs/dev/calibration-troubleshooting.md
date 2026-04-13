@@ -223,7 +223,7 @@ Use Docker environment (`.docker/compose.yaml`) to test with realistic data:
 
 ## Related Files
 
-- **Query implementation:** [nomarr/persistence/database/calibration_state_aql.py](../../nomarr/persistence/database/calibration_state_aql.py)
+- **Constructor-backed persistence implementation:** [nomarr/components/ml/calibration/ml_calibration_state_comp.py](../../nomarr/components/ml/calibration/ml_calibration_state_comp.py)
 - **Workflow orchestration:** [nomarr/workflows/calibration/generate_calibration_wf.py](../../nomarr/workflows/calibration/generate_calibration_wf.py)
 - **API endpoints:** [nomarr/interfaces/api/web/calibration_if.py](../../nomarr/interfaces/api/web/calibration_if.py)
 - **Frontend display:** [frontend/src/features/calibration/CalibrationPage.tsx](../../frontend/src/features/calibration/CalibrationPage.tsx)

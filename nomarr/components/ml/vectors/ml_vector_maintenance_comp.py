@@ -7,13 +7,51 @@ Never called during bootstrap (maintenance workflow only).
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
-    from nomarr.persistence.arango_client import DatabaseLike
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
+
+
+def _load_vector_docs(vector_ops: Any) -> list[dict[str, Any]]:
+    """Load all vector documents from a hot or cold namespace."""
+    doc_count = cast("int", vector_ops.count())
+    if doc_count <= 0:
+        return []
+
+    doc_ids = cast("list[str]", vector_ops._id.collect(limit=doc_count))
+    if not doc_ids:
+        return []
+
+    return cast("list[dict[str, Any]]", vector_ops.get.many(doc_ids))
+
+
+def _get_file_genres(db: Database, file_id: str) -> list[str]:
+    """Resolve distinct genre tag values for a file via constructor verbs."""
+    tag_edges = cast(
+        "list[dict[str, Any]]",
+        db.song_has_tags._from.get.many(file_id, limit=db.song_has_tags.count()),
+    )
+
+    genres: list[str] = []
+    seen: set[str] = set()
+    for edge in tag_edges:
+        tag_id = edge.get("_to")
+        if not isinstance(tag_id, str):
+            continue
+
+        tag_doc = db.tags.get(tag_id)
+        if not isinstance(tag_doc, dict) or tag_doc.get("rel") != "genre":
+            continue
+
+        genre_value = tag_doc.get("value")
+        if isinstance(genre_value, str) and genre_value not in seen:
+            seen.add(genre_value)
+            genres.append(genre_value)
+
+    return genres
 
 
 def derive_embed_dim(models_dir: str, backbone_id: str) -> int:
@@ -78,27 +116,70 @@ def drain_hot_to_cold(db: Database, backbone_id: str, library_key: str) -> int:
         Number of documents drained from hot.
 
     Raises:
-        Exception: If AQL execution fails.
+        ValueError: If the hot collection does not exist.
 
     """
     hot_name = f"vectors_track_hot__{backbone_id}__{library_key}"
-    cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    drained = db.get_vectors_track_maintenance(backbone_id, library_key).drain_to_cold()
+    maintenance = db.get_vectors_track_maintenance(backbone_id, library_key)
+    hot_ops = db.register_vectors_track_backbone(backbone_id, library_key)
+    cold_ops = db.get_vectors_track_cold(backbone_id, library_key)
+
+    try:
+        hot_count = cast("int", hot_ops.count())
+    except Exception as exc:
+        raise ValueError(f"Hot collection '{hot_name}' does not exist") from exc
+
+    if hot_count == 0:
+        return 0
+
+    maintenance.ensure_cold_collection()
+
+    hot_docs = _load_vector_docs(cast("Any", hot_ops))
+    enriched_docs: list[dict[str, Any]] = []
+    hot_doc_ids: list[str] = []
+
+    for hot_doc in hot_docs:
+        file_id = hot_doc.get("file_id")
+        hot_doc_id = hot_doc.get("_id")
+        genres = _get_file_genres(db, file_id) if isinstance(file_id, str) else []
+        enriched_docs.append({**hot_doc, "genres": genres})
+        if isinstance(hot_doc_id, str):
+            hot_doc_ids.append(hot_doc_id)
+
+    cold_doc_ids = cast(
+        "list[str]",
+        cast("Any", cold_ops)._key.upsert(enriched_docs, match_field="_key"),
+    )
+
+    edge_docs: list[dict[str, str]] = []
+    for hot_doc, cold_doc_id in zip(hot_docs, cold_doc_ids, strict=False):
+        hot_doc_id = hot_doc.get("_id")
+        file_id = hot_doc.get("file_id")
+        if isinstance(hot_doc_id, str):
+            db.file_has_vectors._to.delete(hot_doc_id)
+        if isinstance(file_id, str):
+            edge_docs.append({"_from": file_id, "_to": cold_doc_id})
+
+    if edge_docs:
+        db.file_has_vectors.insert(edge_docs)
+
+    cast("Any", hot_ops).truncate()
+    drained = len(hot_docs)
 
     logger.info(
         "Drained %d documents from %s to %s",
         drained,
         hot_name,
-        cold_name,
+        f"vectors_track_cold__{backbone_id}__{library_key}",
     )
     return drained
 
 
-def verify_hot_empty(db: DatabaseLike, backbone_id: str, library_key: str) -> None:
+def verify_hot_empty(db: Database, backbone_id: str, library_key: str) -> None:
     """Verify hot collection is empty after drain (completeness check).
 
     Args:
-        db: ArangoDB database handle.
+        db: Database façade.
         backbone_id: Backbone identifier.
         library_key: ArangoDB ``_key`` of the library document.
 
@@ -106,50 +187,37 @@ def verify_hot_empty(db: DatabaseLike, backbone_id: str, library_key: str) -> No
         RuntimeError: If hot collection is not empty.
 
     """
-    hot_name = f"vectors_track_hot__{backbone_id}__{library_key}"
-    if not db.has_collection(hot_name):
-        return  # Hot doesn't exist = empty
+    maintenance = db.get_vectors_track_maintenance(backbone_id, library_key)
+    hot_count = cast("int", maintenance.get_stats()["hot_count"])
 
-    hot_coll = db.collection(hot_name)
-    hot_count = hot_coll.count()
-
-    if hot_count > 0:  # type: ignore[operator]  # count() returns int in sync context
+    if hot_count > 0:
         raise RuntimeError(
-            f"Hot collection '{hot_name}' not empty after drain: {hot_count} documents remain. "
+            f"Hot collection 'vectors_track_hot__{backbone_id}__{library_key}' not empty after drain: {hot_count} documents remain. "
             "This indicates drain operation failed or concurrent writes occurred during promotion."
         )
 
 
-def drop_cold_vector_index(db: DatabaseLike, backbone_id: str, library_key: str) -> None:
+def drop_cold_vector_index(db: Database, backbone_id: str, library_key: str) -> None:
     """Drop vector index from cold collection (free memory before drain).
 
     Args:
-        db: ArangoDB database handle.
+        db: Database façade.
         backbone_id: Backbone identifier.
         library_key: ArangoDB ``_key`` of the library document.
 
     """
-    cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    if not db.has_collection(cold_name):
-        return  # Cold doesn't exist yet
-
-    cold_coll = db.collection(cold_name)
-    existing_indexes = cold_coll.indexes()
-
-    for idx in existing_indexes:  # type: ignore[union-attr]
-        if idx.get("type") == "vector":
-            idx_id = idx.get("id")
-            if idx_id:
-                logger.info("Dropping vector index %s from %s", idx_id, cold_name)
-                cold_coll.delete_index(idx_id)  # type: ignore[attr-defined]
-                return
+    maintenance = db.get_vectors_track_maintenance(backbone_id, library_key)
+    try:
+        maintenance.drop_index()
+    except ValueError:
+        return
 
 
-def has_vector_index(db: DatabaseLike, backbone_id: str, library_key: str) -> bool:
+def has_vector_index(db: Database, backbone_id: str, library_key: str) -> bool:
     """Check if cold collection has a vector index.
 
     Args:
-        db: ArangoDB database handle.
+        db: Database façade.
         backbone_id: Backbone identifier.
         library_key: ArangoDB ``_key`` of the library document.
 
@@ -157,21 +225,12 @@ def has_vector_index(db: DatabaseLike, backbone_id: str, library_key: str) -> bo
         True if cold collection has vector index, False otherwise.
 
     """
-    cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    if not db.has_collection(cold_name):
-        return False
-
-    cold_coll = db.collection(cold_name)
-    existing_indexes = cold_coll.indexes()
-
-    return any(
-        idx.get("type") == "vector"
-        for idx in existing_indexes  # type: ignore[union-attr]
-    )
+    maintenance = db.get_vectors_track_maintenance(backbone_id, library_key)
+    return bool(maintenance.get_stats()["index_exists"])
 
 
 def build_cold_vector_index(
-    db: DatabaseLike,
+    db: Database,
     backbone_id: str,
     library_key: str,
     embed_dim: int,
@@ -180,7 +239,7 @@ def build_cold_vector_index(
     """Build vector index on cold collection.
 
     Args:
-        db: ArangoDB database handle.
+        db: Database façade.
         backbone_id: Backbone identifier.
         library_key: ArangoDB ``_key`` of the library document.
         embed_dim: Embedding dimension (from derive_embed_dim).
@@ -192,13 +251,8 @@ def build_cold_vector_index(
 
     """
     cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    if not db.has_collection(cold_name):
-        raise ValueError(
-            f"Cold collection '{cold_name}' does not exist. Run drain_hot_to_cold first to create cold collection."
-        )
-
-    cold_coll = db.collection(cold_name)
-    doc_count = cold_coll.count()  # type: ignore[assignment]  # count() returns int in sync context
+    maintenance = db.get_vectors_track_maintenance(backbone_id, library_key)
+    doc_count = cast("int", maintenance.get_stats()["cold_count"])
 
     logger.info(
         "Building vector index on %s (dim=%d, nlists=%d, docs=%d)",
@@ -209,18 +263,7 @@ def build_cold_vector_index(
     )
 
     try:
-        cold_coll.add_index(  # type: ignore[attr-defined]
-            {
-                "type": "vector",
-                "fields": ["vector_n"],
-                "params": {
-                    "metric": "cosine",
-                    "dimension": embed_dim,
-                    "nLists": nlists,
-                },
-                "storedValues": ["genres"],
-            },
-        )
+        maintenance.build_index(embed_dim=embed_dim, nlists=nlists)
         logger.info("Vector index created successfully on %s", cold_name)
     except Exception as exc:
         logger.error(
@@ -234,7 +277,7 @@ def build_cold_vector_index(
 
 
 def rebuild_cold_vector_index(
-    db: DatabaseLike,
+    db: Database,
     backbone_id: str,
     library_key: str,
     embed_dim: int,
@@ -246,7 +289,7 @@ def rebuild_cold_vector_index(
     fully promoted and only the index parameters need updating.
 
     Args:
-        db: ArangoDB database handle.
+        db: Database façade.
         backbone_id: Backbone identifier.
         library_key: ArangoDB ``_key`` of the library document.
         embed_dim: Embedding dimension (from derive_embed_dim).
@@ -258,11 +301,7 @@ def rebuild_cold_vector_index(
 
     """
     cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    if not db.has_collection(cold_name):
-        raise ValueError(
-            f"Cold collection '{cold_name}' does not exist. "
-            "Run promote & rebuild first to populate the cold collection."
-        )
+    maintenance = db.get_vectors_track_maintenance(backbone_id, library_key)
 
     logger.info(
         "[rebuild index] Starting for %s (dim=%d, nlists=%d)",
@@ -271,11 +310,7 @@ def rebuild_cold_vector_index(
         nlists,
     )
 
-    # Drop existing index if present
-    drop_cold_vector_index(db, backbone_id, library_key)
-
-    # Build fresh index on the fully-populated cold collection
-    build_cold_vector_index(db, backbone_id, library_key, embed_dim, nlists)
+    maintenance.rebuild_index(embed_dim=embed_dim, nlists=nlists)
 
     logger.info("[rebuild index] Completed for %s", cold_name)
 
@@ -302,7 +337,26 @@ def backfill_genres(db: Database, backbone_id: str, library_key: str) -> int:
 
     """
     cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    count = db.get_vectors_track_maintenance(backbone_id, library_key).backfill_genres()
+    cold_ops = db.get_vectors_track_cold(backbone_id, library_key)
+
+    try:
+        cold_docs = _load_vector_docs(cast("Any", cold_ops))
+    except Exception as exc:
+        raise ValueError(
+            f"Cold collection '{cold_name}' does not exist. "
+            "Run drain_hot_to_cold first to create and populate the cold collection."
+        ) from exc
+
+    for cold_doc in cold_docs:
+        file_id = cold_doc.get("file_id")
+        doc_key = cold_doc.get("_key")
+        if not isinstance(doc_key, str):
+            continue
+
+        genres = _get_file_genres(db, file_id) if isinstance(file_id, str) else []
+        cast("Any", cold_ops)._key.update(doc_key, {"genres": genres})
+
+    count = len(cold_docs)
 
     logger.info(
         "Backfilled genres on %d documents in %s",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -21,7 +21,7 @@ class HealthComp:
             List of worker health records
 
         """
-        return self.db.health.get_all_workers()
+        return cast("list[dict[str, Any]]", self.db.health.component_type.get("worker"))
 
     def get_component(self, component: str) -> dict[str, Any] | None:
         """Get health status for a specific component.
@@ -33,4 +33,4 @@ class HealthComp:
             Health record or None if not found
 
         """
-        return self.db.health.get_component(component)
+        return cast("dict[str, Any] | None", self.db.health.component_id.get(component))

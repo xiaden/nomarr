@@ -10,6 +10,12 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.library.library_file_query_comp import get_file_by_id
+from nomarr.components.library.library_records_comp import get_library_record
+from nomarr.components.library.reconciliation_comp import release_claim, set_file_written
+from nomarr.components.tagging.tag_query_comp import get_song_tags
+from nomarr.components.tagging.tag_write_comp import set_song_tags, set_song_tags_batch
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -39,7 +45,7 @@ def get_file_for_writing(
     else:
         file_id = f"library_files/{file_key}"
 
-    file_doc = db.library_files.get_file_by_id(file_id)
+    file_doc = get_file_by_id(db, file_id)
     return file_id, file_key, file_doc
 
 
@@ -53,7 +59,7 @@ def resolve_library_root(
     library_id: str,
 ) -> Path | None:
     """Return the library's root path, or ``None`` if the library is missing."""
-    library_doc = db.libraries.get_library(library_id)
+    library_doc = get_library_record(db, library_id, include_scan=False)
     if not library_doc:
         return None
     return Path(library_doc["root_path"])
@@ -70,9 +76,10 @@ def get_nomarr_tags(
 ) -> Tags:
     """Fetch Nomarr-namespaced tags for *file_id*.
 
-    Equivalent to ``db.tags.get_song_tags(file_id, nomarr_only=True)``.
+    Equivalent to calling the component-owned tag query helper with
+    ``nomarr_only=True``.
     """
-    return db.tags.get_song_tags(file_id, nomarr_only=True)
+    return get_song_tags(db, file_id, nomarr_only=True)
 
 
 # All three mood tier rels that must always be written (or cleared) together.
@@ -111,7 +118,7 @@ def save_mood_tags(
     count = 0
     for rel in _MOOD_TIER_RELS:
         values = written.get(rel, [])
-        db.tags.set_song_tags(file_id, rel, values)
+        set_song_tags(db, file_id, rel, list(values))
         if values:
             count += 1
     return count
@@ -121,11 +128,13 @@ def save_mood_tags_batch(
     db: Database,
     items: list[tuple[str, Tags]],
 ) -> int:
-    """Write mood tags for multiple files in 3 AQL queries total.
+    """Write mood tags for multiple files via constructor-backed verbs.
 
-    Uses ``set_song_tags_batch`` to collapse all per-file, per-tag writes into
-    three round-trips (delete old edges, upsert vertices, upsert edges)
-    regardless of file count.
+    Delegates to ``set_song_tags_batch`` which performs component-layer
+    coordination: edge discovery per ``(song_id, rel)`` pair, targeted edge
+    deletion, tag upsert per unique ``(rel, value)`` pair, and bulk edge
+    insert.  Query count scales with the number of files and distinct tag
+    values.
 
     Args:
         db: Database instance
@@ -148,7 +157,7 @@ def save_mood_tags_batch(
         # Always emit all three tiers; absent ones get an empty list (→ delete)
         entries.extend({"song_id": file_id, "rel": rel, "values": written.get(rel, [])} for rel in _MOOD_TIER_RELS)
 
-    db.tags.set_song_tags_batch(entries)
+    set_song_tags_batch(db, entries)
     return sum(1 for e in entries if e["values"])
 
 
@@ -166,7 +175,7 @@ def release_file_claim(
     Swallows exceptions so callers in error paths don't need try/except.
     """
     try:
-        db.library_files.release_claim(file_key)
+        release_claim(db, file_key)
     except Exception as exc:
         logger.debug(
             "[file_write_comp] Failed to release claim for %s: %s",
@@ -180,4 +189,4 @@ def mark_file_written(
     file_key: str,
 ) -> None:
     """Record that tags were successfully written to *file_key*."""
-    db.library_files.set_file_written(file_key)
+    set_file_written(db, file_key)

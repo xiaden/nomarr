@@ -17,7 +17,9 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
+
+from arango.exceptions import DocumentInsertError
 
 from nomarr.components.platform.resource_monitor_comp import (
     check_nvidia_gpu_capability,
@@ -36,6 +38,7 @@ PROBE_POLL_INTERVAL_S = 5000  # Interval to poll for completed probe
 PROBE_TIMEOUT_S = 120000  # Timeout waiting for another worker's probe
 CONSERVATIVE_BACKBONE_VRAM_MB = 8192  # Default if probe fails (EffNet worst case)
 CONSERVATIVE_WORKER_RAM_MB = 4096  # Default if probe fails
+PROBE_LOCK_TTL_MS = 1800 * 1000
 
 
 @dataclass
@@ -56,6 +59,99 @@ class CapacityEstimate:
     estimated_worker_ram_mb: int
     gpu_capable: bool
     is_conservative: bool = False
+
+
+def _probe_lock_reference(model_set_hash: str) -> str:
+    """Build the unique document_reference used for capacity probe locks."""
+    return f"capacity_probe:{model_set_hash}"
+
+
+def _try_acquire_probe_lock(db: Database, model_set_hash: str, worker_id: str) -> bool:
+    """Acquire the constructor-backed probe lock for one model set."""
+    reference = _probe_lock_reference(model_set_hash)
+    now_value = float(now_ms().value)
+    existing = db.locks.document_reference.get(reference)
+    if existing is not None:
+        existing_expires_at = float(existing.get("expires_at", 0.0))
+        if existing_expires_at >= now_value and existing.get("holder") != worker_id:
+            return False
+        db.locks.document_reference.delete(reference)
+
+    try:
+        db.locks.insert(
+            [
+                {
+                    "document_reference": reference,
+                    "lock_type": "capacity_probe",
+                    "holder": worker_id,
+                    "expires_at": now_value + float(PROBE_LOCK_TTL_MS),
+                    "acquired_at": now_value,
+                    "status": "active",
+                }
+            ],
+        )
+    except DocumentInsertError:
+        return False
+
+    return True
+
+
+def _get_probe_lock_status(db: Database, model_set_hash: str) -> dict[str, Any] | None:
+    """Return the lock document for a capacity probe, if present."""
+    return cast("dict[str, Any] | None", db.locks.document_reference.get(_probe_lock_reference(model_set_hash)))
+
+
+def _complete_probe_lock(db: Database, model_set_hash: str) -> None:
+    """Mark a capacity probe lock complete without changing its reference."""
+    reference = _probe_lock_reference(model_set_hash)
+    existing = db.locks.document_reference.get(reference)
+    if existing is None:
+        return
+
+    updated = dict(existing)
+    updated.pop("_id", None)
+    updated["document_reference"] = reference
+    updated["status"] = "complete"
+    db.locks.document_reference.upsert([updated], match_field="document_reference")
+
+
+def _release_probe_lock(db: Database, model_set_hash: str) -> None:
+    """Delete the lock document for a capacity probe."""
+    db.locks.document_reference.delete(_probe_lock_reference(model_set_hash))
+
+
+def _get_capacity_estimate(db: Database, model_set_hash: str) -> dict[str, Any] | None:
+    """Read the persisted capacity estimate document for one model set."""
+    return cast("dict[str, Any] | None", db.ml_capacity.model_set_hash.get(model_set_hash))
+
+
+def _save_capacity_estimate(
+    db: Database,
+    model_set_hash: str,
+    measured_backbone_vram_mb: int,
+    estimated_worker_ram_mb: int,
+    probe_duration_s: float,
+    probed_by_worker: str,
+) -> None:
+    """Persist or refresh the capacity estimate for one model set."""
+    existing = _get_capacity_estimate(db, model_set_hash)
+    timestamp = now_ms().value
+    payload: dict[str, Any] = {
+        "model_set_hash": model_set_hash,
+        "measured_backbone_vram_mb": measured_backbone_vram_mb,
+        "estimated_worker_ram_mb": estimated_worker_ram_mb,
+        "probe_duration_s": probe_duration_s,
+        "probed_by": probed_by_worker,
+        "created_at": timestamp if existing is None else existing.get("created_at"),
+        "updated_at": None if existing is None else timestamp,
+    }
+    db.ml_capacity.model_set_hash.upsert([payload], match_field="model_set_hash")
+
+
+def _delete_capacity_estimate(db: Database, model_set_hash: str) -> None:
+    """Delete the stored capacity estimate and any related probe lock."""
+    db.ml_capacity.model_set_hash.delete(model_set_hash)
+    _release_probe_lock(db, model_set_hash)
 
 
 def compute_model_set_hash(models_dir: str) -> str:
@@ -118,7 +214,7 @@ def get_or_run_capacity_probe(
     gpu_capable = check_nvidia_gpu_capability()
 
     # Check for existing estimate
-    existing = db.ml_capacity.get_capacity_estimate(model_set_hash)
+    existing = _get_capacity_estimate(db, model_set_hash)
     if existing is not None:
         logger.debug(
             "[ml_capacity_probe] Using cached estimate for hash=%s (vram=%dMB, ram=%dMB)",
@@ -135,7 +231,7 @@ def get_or_run_capacity_probe(
         )
 
     # Try to acquire probe lock
-    lock_acquired = db.ml_capacity.try_acquire_probe_lock(model_set_hash, worker_id)
+    lock_acquired = _try_acquire_probe_lock(db, model_set_hash, worker_id)
 
     if lock_acquired:
         # This worker will perform the probe
@@ -208,7 +304,7 @@ def _run_capacity_probe(
                 "[ml_capacity_probe] No heads found in %s, using conservative estimates",
                 models_dir,
             )
-            db.ml_capacity.release_probe_lock(model_set_hash)
+            _release_probe_lock(db, model_set_hash)
             return CapacityEstimate(
                 model_set_hash=model_set_hash,
                 measured_backbone_vram_mb=CONSERVATIVE_BACKBONE_VRAM_MB if gpu_capable else 0,
@@ -258,16 +354,17 @@ def _run_capacity_probe(
         )
 
         # Persist results
-        db.ml_capacity.save_capacity_estimate(
+        _save_capacity_estimate(
             model_set_hash=model_set_hash,
             measured_backbone_vram_mb=backbone_vram_mb,
             estimated_worker_ram_mb=worker_ram_mb,
             probe_duration_s=probe_duration,
             probed_by_worker=worker_id,
+            db=db,
         )
 
         # Mark lock as complete
-        db.ml_capacity.complete_probe_lock(model_set_hash)
+        _complete_probe_lock(db, model_set_hash)
 
         return CapacityEstimate(
             model_set_hash=model_set_hash,
@@ -280,7 +377,7 @@ def _run_capacity_probe(
     except Exception as e:
         logger.exception("[ml_capacity_probe] Probe failed: %s", e)
         # Release lock on failure so another worker can try
-        db.ml_capacity.release_probe_lock(model_set_hash)
+        _release_probe_lock(db, model_set_hash)
 
         # Return conservative estimates
         return CapacityEstimate(
@@ -315,7 +412,7 @@ def _wait_for_probe_completion(
 
     while internal_ms().value < deadline:
         # Check for completed estimate
-        estimate = db.ml_capacity.get_capacity_estimate(model_set_hash)
+        estimate = _get_capacity_estimate(db, model_set_hash)
         if estimate is not None:
             logger.info(
                 "[ml_capacity_probe] Got probe result from another worker (vram=%dMB, ram=%dMB)",
@@ -331,10 +428,10 @@ def _wait_for_probe_completion(
             )
 
         # Check if lock is still held
-        lock = db.ml_capacity.get_probe_lock_status(model_set_hash)
+        lock = _get_probe_lock_status(db, model_set_hash)
         if lock is None:
             # Lock was released (probe failed), check for estimate one more time
-            estimate = db.ml_capacity.get_capacity_estimate(model_set_hash)
+            estimate = _get_capacity_estimate(db, model_set_hash)
             if estimate is not None:
                 return CapacityEstimate(
                     model_set_hash=model_set_hash,
@@ -372,5 +469,5 @@ def invalidate_capacity_estimate(db: Database, models_dir: str) -> None:
 
     """
     model_set_hash = compute_model_set_hash(models_dir)
-    db.ml_capacity.delete_capacity_estimate(model_set_hash)
+    _delete_capacity_estimate(db, model_set_hash)
     logger.info("[ml_capacity_probe] Invalidated capacity estimate for hash=%s", model_set_hash)

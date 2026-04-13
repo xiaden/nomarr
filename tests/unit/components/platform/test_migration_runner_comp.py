@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import ModuleType
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -152,10 +152,17 @@ class TestApplyMigration:
 
         apply_migration("V001_test", module, db)
 
-        db.migrations.record_migration_started.assert_called_once()
-        call_kwargs = db.migrations.record_migration_started.call_args.kwargs
-        assert call_kwargs["name"] == "V001_test"
-        assert call_kwargs["migration_version"] == "1.0.0"
+        db.migrations.name.upsert.assert_any_call(
+            [
+                {
+                    "name": "V001_test",
+                    "status": "in_progress",
+                    "started_at": ANY,
+                    "migration_version": "1.0.0",
+                }
+            ],
+            match_field="name",
+        )
 
     @pytest.mark.unit
     def test_calls_mark_migration_applied_after_upgrade(self) -> None:
@@ -165,7 +172,17 @@ class TestApplyMigration:
 
         apply_migration("V001_test", module, db)
 
-        db.migrations.mark_migration_applied.assert_called_once()
+        db.migrations.name.upsert.assert_any_call(
+            [
+                {
+                    "name": "V001_test",
+                    "status": "applied",
+                    "applied_at": ANY,
+                    "duration_ms": ANY,
+                }
+            ],
+            match_field="name",
+        )
 
     @pytest.mark.unit
     def test_calls_set_version_with_migration_version(self) -> None:

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.constants.pipeline_states import PIPELINE_SCANNING
 from nomarr.helpers.dto.info_dto import LibraryPipelineInfo, ScanningLibraryInfo, WorkStatusResult
-from nomarr.persistence.database.library_pipeline_states_aql import PIPELINE_SCANNING
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.library_dto import LibraryStatsResult

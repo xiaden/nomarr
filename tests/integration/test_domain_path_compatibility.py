@@ -22,6 +22,29 @@ import pytest
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 from nomarr.workflows.library.sync_file_to_library_wf import sync_file_to_library
 
+
+@pytest.fixture(autouse=True)
+def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bridge helper-based production imports to the legacy mock surface used here."""
+
+    monkeypatch.setattr(
+        "nomarr.components.infrastructure.path_comp.find_library_containing_path",
+        lambda db, file_path: db.libraries.find_library_containing_path(file_path),
+    )
+    monkeypatch.setattr(
+        "nomarr.workflows.library.sync_file_to_library_wf.find_library_for_file",
+        lambda db, file_path: db.libraries.find_library_containing_path(file_path),
+    )
+    monkeypatch.setattr(
+        "nomarr.workflows.library.sync_file_to_library_wf.upsert_library_file",
+        lambda db, **kwargs: db.library_files.upsert_library_file(**kwargs),
+    )
+    monkeypatch.setattr(
+        "nomarr.workflows.library.sync_file_to_library_wf.get_library_file",
+        lambda db, file_path: db.library_files.get_library_file(file_path),
+    )
+
+
 # Platform-specific test paths
 IS_WINDOWS = sys.platform == "win32"
 if IS_WINDOWS:
@@ -107,9 +130,6 @@ class TestLibraryUpdateDomain:
 
         # Mock file operations
         mock_db.library_files.upsert_library_file.return_value = "library_files/file1"
-        mock_db.tags.delete_song_tags = MagicMock()
-        mock_db.tags.set_song_tags = MagicMock()
-
         test_metadata = {
             "duration": 180.5,
             "artist": "Test Artist",

@@ -40,7 +40,7 @@ def _is_fresh_database(db: Database) -> bool:
         True if this is a fresh (uninitialized) database.
 
     """
-    return not db.meta.has_version()
+    return db.meta.key.get("version") is None
 
 
 def prepare_database_workflow(

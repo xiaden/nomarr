@@ -17,12 +17,43 @@ Typical call sequence (executed in ml_onnx_cache or ml_onnx_base):
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import Any
 
 from nomarr.components.platform import resource_monitor_comp as _resource_monitor
+from nomarr.helpers.time_helper import now_ms
 
 logger = logging.getLogger(__name__)
+
+_RESERVE_MB = 256.0
+
+
+def _promise_key(worker_id: str, model_path: str) -> str:
+    """Compute a stable key for a worker+model VRAM promise."""
+    raw = f"{worker_id}:{model_path}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+
+def _get_worker_promises(db: Any, worker_id: str) -> list[dict[str, Any]]:
+    """Return all VRAM promises currently held by one worker."""
+    total = db.vram_promises.count()  # type: ignore[union-attr]
+    if total == 0:
+        return []
+    return list(db.vram_promises.worker_id.get(worker_id, limit=total))  # type: ignore[union-attr]
+
+
+def _get_all_promises(db: Any) -> list[dict[str, Any]]:
+    """Return all VRAM promise documents via constructor-backed accessors."""
+    total = db.vram_promises.count()  # type: ignore[union-attr]
+    if total == 0:
+        return []
+
+    promises: list[dict[str, Any]] = []
+    worker_ids = db.vram_promises.worker_id.collect(limit=total)  # type: ignore[union-attr]
+    for current_worker_id in worker_ids:
+        promises.extend(db.vram_promises.worker_id.get(current_worker_id, limit=total))  # type: ignore[union-attr]
+    return promises
 
 
 def register_vram_promise(
@@ -66,14 +97,43 @@ def register_vram_promise(
     total_mb: float = float(vram["total_mb"])
     used_mb: float = float(vram["used_mb"])
 
-    registered: bool = db.vram_promises.try_register(  # type: ignore[union-attr]
-        worker_id=worker_id,
-        pid=pid,
-        model_path=model_path,
-        promised_mb=promised_mb,
-        total_mb=total_mb,
-        used_mb=used_mb,
+    promises = _get_all_promises(db)
+    sum_promised = sum(float(promise.get("promised_mb", 0.0)) for promise in promises)
+    free_mb = total_mb - used_mb
+    headroom = free_mb - sum_promised - _RESERVE_MB
+    if headroom < promised_mb:
+        logger.debug(
+            "[vram_coordinator] Rejected promise: worker=%s model=%s promised=%.0f MB "
+            "(total=%.0f used=%.0f) — insufficient headroom",
+            worker_id,
+            model_path,
+            promised_mb,
+            total_mb,
+            used_mb,
+        )
+        return False
+
+    existing_ids = [
+        promise["_id"] for promise in _get_worker_promises(db, worker_id) if promise.get("model_path") == model_path
+    ]
+    if existing_ids:
+        db.vram_promises.delete(existing_ids)  # type: ignore[union-attr]
+
+    db.vram_promises.insert(  # type: ignore[union-attr]
+        [
+            {
+                "_key": _promise_key(worker_id, model_path),
+                "worker_id": worker_id,
+                "pid": pid,
+                "model_path": model_path,
+                "promised_mb": promised_mb,
+                "total_mb": total_mb,
+                "used_mb": used_mb,
+                "last_seen_ms": now_ms().value,
+            }
+        ],
     )
+    registered = True
 
     if registered:
         logger.debug(
@@ -114,7 +174,11 @@ def release_vram_promise(
         model_path:  Absolute path to the ONNX model file.
 
     """
-    db.vram_promises.release(worker_id=worker_id, model_path=model_path)  # type: ignore[union-attr]
+    matching_ids = [
+        promise["_id"] for promise in _get_worker_promises(db, worker_id) if promise.get("model_path") == model_path
+    ]
+    if matching_ids:
+        db.vram_promises.delete(matching_ids)  # type: ignore[union-attr]
     logger.debug(
         "[vram_coordinator] Released promise: worker=%s model=%s",
         worker_id,
@@ -139,7 +203,7 @@ def get_fleet_vram_state(
                             ({"used_mb": int, "total_mb": int, "error": str|None})
 
     """
-    promises: list[dict[str, Any]] = db.vram_promises.get_all()  # type: ignore[union-attr]
+    promises = _get_all_promises(db)
     vram = _resource_monitor.get_vram_usage_mb()
     return {"promises": promises, "vram": vram}
 
@@ -165,7 +229,10 @@ def release_worker_promises(
         Number of promise documents removed.
 
     """
-    removed: int = db.vram_promises.release_all_for_worker(worker_id=worker_id)  # type: ignore[union-attr]
+    promises = _get_worker_promises(db, worker_id)
+    removed = len(promises)
+    if promises:
+        db.vram_promises.delete([promise["_id"] for promise in promises])  # type: ignore[union-attr]
     if removed:
         logger.info(
             "[vram_coordinator] Released %d promise(s) for worker %s",

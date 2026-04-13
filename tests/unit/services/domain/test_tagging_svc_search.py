@@ -75,14 +75,22 @@ class TestSearchFilesByTag:
                 tags=[],
             ),
         ]
-        mock_db.library_files.search_files_by_tag.return_value = raw_files
-        mock_db.library_files.count_files_by_tag.return_value = 50
         service = _make_service(db=mock_db)
 
-        with patch(
-            "nomarr.services.domain.tagging_svc.query.map_file_with_tags_to_dto",
-            side_effect=mapped_files,
-        ) as mock_mapper:
+        with (
+            patch(
+                "nomarr.services.domain.tagging_svc.query.search_files_by_tag",
+                return_value=raw_files,
+            ) as mock_search,
+            patch(
+                "nomarr.services.domain.tagging_svc.query.count_files_by_tag",
+                return_value=50,
+            ) as mock_count,
+            patch(
+                "nomarr.services.domain.tagging_svc.query.map_file_with_tags_to_dto",
+                side_effect=mapped_files,
+            ) as mock_mapper,
+        ):
             result = service.search_files_by_tag(
                 tag_key="genre",
                 target_value="rock",
@@ -96,7 +104,7 @@ class TestSearchFilesByTag:
             limit=25,
             offset=10,
         )
-        mock_db.library_files.search_files_by_tag.assert_called_once_with("genre", "rock", 25, 10)
-        mock_db.library_files.count_files_by_tag.assert_called_once_with("genre", "rock")
+        mock_search.assert_called_once_with(mock_db, "genre", "rock", 25, 10)
+        mock_count.assert_called_once_with(mock_db, "genre", "rock")
         assert mock_mapper.call_count == 2
         assert result.total != len(raw_files)

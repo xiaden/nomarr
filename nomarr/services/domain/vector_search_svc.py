@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from nomarr.components.library.library_records_comp import list_library_records
 from nomarr.components.ml.vectors.ml_vector_maintenance_comp import has_vector_index
 from nomarr.helpers.vector_params_helper import compute_nlists, compute_nprobe
 from nomarr.persistence.db import Database
@@ -103,7 +104,7 @@ class VectorSearchService:
         target_library = library_key if library_scope is None or library_scope == "own" else library_scope
 
         # Validate vector index exists
-        if not has_vector_index(self.db.db, backbone_id, target_library):
+        if not has_vector_index(self.db, backbone_id, target_library):
             msg = (
                 f"Vector search not available for backbone '{backbone_id}' "
                 f"library '{target_library}': cold collection has no vector index. "
@@ -123,7 +124,7 @@ class VectorSearchService:
             nprobe = compute_nprobe(nlists, thoroughness)
 
         try:
-            raw_results = cold_ops.search_similar(vector, limit, nprobe=nprobe)
+            raw_results = cold_ops.ann_search(vector, limit, nprobe=nprobe)
         except Exception as e:
             logger.error(
                 f"Vector search failed for backbone={backbone_id}, library={target_library}, limit={limit}: {e}",
@@ -167,7 +168,7 @@ class VectorSearchService:
             Merged, deduplicated, score-sorted list of results capped at *limit*.
         """
         all_results: list[dict[str, Any]] = []
-        libraries = self.db.libraries.list_libraries()
+        libraries = list_library_records(self.db, include_scan=False)
 
         for lib in libraries:
             lib_key: str = lib["_key"]
@@ -188,7 +189,7 @@ class VectorSearchService:
                     nlists = compute_nlists(doc_count, group_size)
                     effective_nprobe = compute_nprobe(nlists, thoroughness)
 
-                results = cold_ops.search_similar(vector, limit, nprobe=effective_nprobe)
+                results = cold_ops.ann_search(vector, limit, nprobe=effective_nprobe)
                 all_results.extend(results)
             except Exception:
                 logger.warning(

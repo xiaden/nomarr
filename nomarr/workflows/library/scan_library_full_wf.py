@@ -20,6 +20,11 @@ from nomarr.components.library.move_detection_comp import (
 )
 from nomarr.components.library.scan_lifecycle_comp import (
     cleanup_stale_folders,
+    count_library_files,
+    get_files_for_folder,
+    get_files_for_folders,
+    get_folder_rel_paths,
+    library_has_tagged_files,
     mark_scan_completed,
     mark_scan_started,
     remove_deleted_files,
@@ -30,6 +35,12 @@ from nomarr.components.library.scan_lifecycle_comp import (
 )
 from nomarr.components.library.validate_scan_state_comp import validate_unchanged_files
 from nomarr.components.metadata import seed_entities_for_scan_batch
+from nomarr.helpers.constants.file_states import (
+    STATE_ERRORED,
+    STATE_NOT_ERRORED,
+    STATE_NOT_SCANNED,
+    STATE_SCANNED,
+)
 from nomarr.helpers.time_helper import internal_ms, now_ms
 from nomarr.workflows.library.validate_library_tags_wf import validate_library_tags_workflow
 from nomarr.workflows.metadata.cleanup_orphaned_entities_wf import cleanup_orphaned_entities_workflow
@@ -85,9 +96,9 @@ def scan_library_full_workflow(
 
     try:
         # Step 2 — Pre-scan DB lookups (no global file snapshot)
-        db_folder_paths = db.library_files.get_folder_rel_paths(library_id)
-        has_tagged_files = db.file_states.library_has_tagged_files(library_id)
-        file_count = db.library_files.count_library_files(library_id)
+        db_folder_paths = get_folder_rel_paths(db, library_id)
+        has_tagged_files = library_has_tagged_files(db, library_id)
+        file_count = count_library_files(db, library_id)
 
         # Step 3 — Discover folders on disk
         all_folders = discover_library_folders(library_root, [library_root])
@@ -103,7 +114,8 @@ def scan_library_full_workflow(
         missing_docs_map: dict[str, dict[str, Any]] = {}
         if vanished_folder_paths:
             missing_docs_map.update(
-                db.library_files.get_files_for_folders(
+                get_files_for_folders(
+                    db,
                     library_id,
                     list(vanished_folder_paths),
                 ),
@@ -120,7 +132,8 @@ def scan_library_full_workflow(
             for attempt in range(2):
                 try:
                     # Fetch only this folder's files from DB
-                    existing_for_folder = db.library_files.get_files_for_folder(
+                    existing_for_folder = get_files_for_folder(
+                        db,
                         library_id,
                         folder.rel_path,
                     )
@@ -154,8 +167,8 @@ def scan_library_full_workflow(
                     # Upsert updated entries immediately
                     if updated_entries:
                         file_ids = upsert_scanned_files(db, updated_entries, batch.edge_bootstraps)
-                        db.file_states.bulk_set_scanned(file_ids)
-                        db.file_states.bulk_set_not_errored(file_ids)
+                        db.file_states.transition(file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
+                        db.file_states.transition(file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
                         metadata_by_id = {
                             fid: batch.metadata_map[entry["path"]]
                             for fid, entry in zip(file_ids, updated_entries, strict=True)
@@ -190,8 +203,8 @@ def scan_library_full_workflow(
                     elif new_entries:
                         # No tagged files — upsert new entries immediately
                         file_ids = upsert_scanned_files(db, new_entries, batch.edge_bootstraps)
-                        db.file_states.bulk_set_scanned(file_ids)
-                        db.file_states.bulk_set_not_errored(file_ids)
+                        db.file_states.transition(file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
+                        db.file_states.transition(file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
                         stats["files_added"] += len(new_entries)
                         metadata_by_id = {
                             fid: batch.metadata_map[entry["path"]]
@@ -252,8 +265,8 @@ def scan_library_full_workflow(
 
         if truly_new:
             file_ids = upsert_scanned_files(db, truly_new, unmatched_edge_bootstraps)
-            db.file_states.bulk_set_scanned(file_ids)
-            db.file_states.bulk_set_not_errored(file_ids)
+            db.file_states.transition(file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
+            db.file_states.transition(file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
             stats["files_added"] += len(truly_new)
             metadata_by_id = {
                 fid: unmatched_new_metadata[entry["path"]]

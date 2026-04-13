@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.db import Database
 from nomarr.services.domain.analytics_svc import AnalyticsService
 from nomarr.services.domain.calibration_svc import CalibrationService
@@ -202,7 +203,17 @@ class Application:
             heartbeat_db = Database()
             while self._running:
                 try:
-                    heartbeat_db.health.update_heartbeat(component_id="app", status="healthy")
+                    heartbeat_db.health.component_id.upsert(
+                        [
+                            {
+                                "component_id": "app",
+                                "component_type": "app",
+                                "status": "healthy",
+                                "last_heartbeat": now_ms().value,
+                            }
+                        ],
+                        match_field="component_id",
+                    )
                 except Exception as e:
                     logger.exception(f"[Application] Heartbeat error: {e}")
                 time.sleep(5)
@@ -230,8 +241,20 @@ class Application:
             return
         logger.debug("[Application] Starting...")
         logger.debug("[Application] Cleaning ephemeral runtime state...")
-        self.db.health.clean_all()
-        self.db.health.mark_starting(component_id="app", component_type="app")
+        health_ids = self.db.health._id.collect(limit=None)
+        if health_ids:
+            self.db.health.delete(health_ids)
+        self.db.health.component_id.upsert(
+            [
+                {
+                    "component_id": "app",
+                    "component_type": "app",
+                    "status": "starting",
+                    "last_heartbeat": now_ms().value,
+                }
+            ],
+            match_field="component_id",
+        )
         logger.debug("[Application] Initializing authentication...")
         key_service = KeyManagementService(self.db)
         self.api_key = key_service.get_or_create_api_key()
@@ -390,7 +413,10 @@ class Application:
         info_service.start()
         self._running = True
         self._start_app_heartbeat()
-        self.db.health.mark_healthy(component_id="app")
+        self.db.health.component_id.update(
+            "app",
+            {"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
+        )
 
         # Summary log with key startup info
         from nomarr.services.infrastructure import keys_svc
@@ -430,9 +456,14 @@ class Application:
             logger.info("[Application] Stopping health monitor...")
             self.health_monitor.stop()
         try:
-            self.db.health.mark_stopping(component_id="app", exit_code=0)
+            self.db.health.component_id.update(
+                "app",
+                {"status": "stopping", "exit_code": 0},
+            )
             logger.info("[Application] Cleaning ephemeral runtime state...")
-            self.db.health.clean_all()
+            health_ids = self.db.health._id.collect(limit=None)
+            if health_ids:
+                self.db.health.delete(health_ids)
         except Exception as e:
             logger.warning(f"[Application] DB unavailable during shutdown (expected if containers stopping): {e}")
         self._running = False

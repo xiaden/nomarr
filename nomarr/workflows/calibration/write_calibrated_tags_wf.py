@@ -49,6 +49,7 @@ from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     get_calibration_version,
     update_file_calibration_hash,
 )
+from nomarr.components.ml.inference.ml_segment_stats_store_comp import get_segment_stats_for_file
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
 from nomarr.components.processing.file_write_comp import get_nomarr_tags, save_mood_tags
 from nomarr.components.tagging.tagging_aggregation_comp import aggregate_mood_tiers
@@ -295,7 +296,7 @@ def write_calibrated_tags_wf(
     if batch_ctx is not None and batch_ctx.prefetched_stats is not None:
         stats_list = batch_ctx.prefetched_stats.get(str(file_id), [])
     else:
-        stats_list = db.segment_scores_stats.get_stats_for_file(str(file_id))
+        stats_list = get_segment_stats_for_file(db, str(file_id))
     segment_stats_by_head: dict[str, list[dict[str, Any]]] = {}
     for doc in stats_list:
         head_name = doc.get("head_name")

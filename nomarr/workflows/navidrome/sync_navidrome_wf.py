@@ -13,6 +13,14 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.library.library_file_query_comp import detect_nd_path_prefix, get_files_by_paths_bulk
+from nomarr.components.navidrome.navidrome_graph_comp import (
+    bulk_ensure_navidrome_file_links,
+    bulk_upsert_navidrome_plays,
+    bulk_upsert_navidrome_tracks,
+    delete_navidrome_tracks_cascade,
+    list_navidrome_track_keys,
+)
 from nomarr.components.navidrome.subsonic_crawl_comp import crawl_navidrome_songs
 from nomarr.helpers.dto.navidrome_dto import NdSyncResult
 from nomarr.helpers.time_helper import internal_ms
@@ -41,7 +49,7 @@ def _detect_prefix(songs: list[CrawledSong], db: Database) -> str:
     """
     sample = [s["nd_path"] for s in songs[:_PREFIX_SAMPLE_SIZE]]
     for nd_path in sample:
-        prefix = db.library_files.detect_nd_path_prefix(nd_path)
+        prefix = detect_nd_path_prefix(db, nd_path)
         if prefix is not None:
             logger.info("sync_navidrome: auto-detected path prefix %r", prefix)
             return prefix
@@ -62,7 +70,7 @@ def sync_navidrome(
 
     Walks all albums via ``getAlbumList2`` (paginated), fetches each album's
     songs via ``getAlbum``, auto-detects the path prefix, resolves Nomarr
-    file IDs via ``db.library_files.get_files_by_paths_bulk()``, and writes
+    file IDs via ``get_files_by_paths_bulk(db, ...)``, and writes
     to ``navidrome_tracks``, ``has_nd_id``, ``navidrome_playcounts``, and
     ``has_plays`` collections.  Orphan tracks (present in DB but absent from
     Navidrome) are cascade-deleted.
@@ -84,7 +92,7 @@ def sync_navidrome(
     # Step 2: Auto-detect path prefix and strip it from all ND paths
     nd_prefix = _detect_prefix(all_songs, db)
     remapped_paths = [s["nd_path"].removeprefix(nd_prefix) for s in all_songs]
-    path_to_doc = db.library_files.get_files_by_paths_bulk(remapped_paths)
+    path_to_doc = get_files_by_paths_bulk(db, remapped_paths)
 
     # Step 3: Build resolved mappings and play edge data
     nd_ids: list[str] = []
@@ -116,18 +124,18 @@ def sync_navidrome(
     # Step 4: Upsert track vertices and file link edges (batched)
     tracks_upserted = 0
     for i in range(0, len(nd_ids), _UPSERT_BATCH_SIZE):
-        tracks_upserted += db.navidrome_tracks.bulk_upsert_tracks(nd_ids[i : i + _UPSERT_BATCH_SIZE])
+        tracks_upserted += bulk_upsert_navidrome_tracks(db, nd_ids[i : i + _UPSERT_BATCH_SIZE])
 
     for i in range(0, len(file_link_mappings), _UPSERT_BATCH_SIZE):
-        db.navidrome_tracks.bulk_ensure_file_links(file_link_mappings[i : i + _UPSERT_BATCH_SIZE])
+        bulk_ensure_navidrome_file_links(db, file_link_mappings[i : i + _UPSERT_BATCH_SIZE])
 
     # Step 5: Upsert play count data (wipe-and-rebuild for user)
-    play_edges_upserted = db.navidrome_playcounts.bulk_upsert_plays(user_id, play_edges)
+    play_edges_upserted = bulk_upsert_navidrome_plays(db, user_id, play_edges)
 
     # Step 6: Orphan cleanup — remove tracks no longer in Navidrome
-    all_db_track_keys = db.navidrome_tracks.get_all_track_keys()
+    all_db_track_keys = list_navidrome_track_keys(db)
     orphan_keys = [k for k in all_db_track_keys if k not in seen_nd_ids]
-    orphans_removed = db.navidrome_tracks.delete_tracks_cascade(orphan_keys) if orphan_keys else 0
+    orphans_removed = delete_navidrome_tracks_cascade(db, orphan_keys) if orphan_keys else 0
     if orphans_removed:
         logger.info("sync_navidrome: Removed %d orphan tracks", orphans_removed)
 

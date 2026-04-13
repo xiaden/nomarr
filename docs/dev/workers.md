@@ -179,16 +179,16 @@ file_id = discover_and_claim_file(
 )
 ```
 
-**Claim mechanism** uses `persistence/database/worker_claims_aql.py`:
+**Claim mechanism** uses constructor-backed `db.worker_claims` accessors via the `Database` facade:
 
-| Operation | Method | Description |
-|-----------|--------|-------------|
-| Claim file | `try_claim_file(file_id, worker_id)` | Insert claim with deterministic `_key` (atomic uniqueness) |
-| Release claim | `release_claim(file_id)` | Delete claim after processing |
-| Get claim | `get_claim(file_id)` | Check if file is claimed |
-| Worker claims | `get_claims_for_worker(worker_id)` | All claims held by a worker |
-| Release all | `release_claims_for_worker(worker_id)` | Release all claims (crash recovery) |
-| Cleanup stale | `cleanup_all_stale_claims(timeout_ms)` | Remove inactive/completed/ineligible claims |
+| Operation | Constructor accessor | Description |
+|-----------|----------------------|-------------|
+| Claim file | `worker_claims.insert([claim_doc])` | Insert claim with deterministic `_key` (atomic uniqueness) |
+| Release claim | `worker_claims.file_id.delete(file_id)` | Delete claim after processing |
+| Get claim | `worker_claims.file_id.get(file_id)` | Check if file is claimed |
+| Worker claims | `worker_claims.worker_id.get.many(worker_id, limit=worker_claims.count())` | All claims held by a worker |
+| Release all | `worker_claims.delete([claim["_id"] for claim in claims])` | Release all claims (crash recovery) |
+| Cleanup stale | `worker_claims.get.many.by_filter({}, limit=None)` + `worker_claims.delete(...)` | Enumerate claims via constructor verbs, filter stale rows in component code, then delete by `_id` |
 
 **Claim document structure:**
 ```json

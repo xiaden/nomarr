@@ -78,14 +78,11 @@ def promote_and_rebuild_workflow(
 
     # Step 2: Log starting state (hot count, cold count, index exists)
     # Use Database methods (hot for write, cold for read/search)
-    hot_ops = db.register_vectors_track_backbone(backbone_id, library_key)
-    cold_ops = db.get_vectors_track_cold(backbone_id, library_key)
-
-    cold_coll_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-
-    hot_count_before = hot_ops.count()  # type: ignore[assignment]  # count() returns int in sync context
-    cold_count_before = cold_ops.count() if db.db.has_collection(cold_coll_name) else 0  # type: ignore[assignment,operator]
-    index_exists_before = has_vector_index(db.db, backbone_id, library_key)
+    maintenance = db.get_vectors_track_maintenance(backbone_id, library_key)
+    stats_before = maintenance.get_stats()
+    hot_count_before = int(stats_before["hot_count"])
+    cold_count_before = int(stats_before["cold_count"])
+    index_exists_before = has_vector_index(db, backbone_id, library_key)
 
     logger.info(
         "[promote & rebuild] Starting state: hot=%d, cold=%d, index_exists=%s",
@@ -102,7 +99,7 @@ def promote_and_rebuild_workflow(
     # Step 3: Drop cold vector index if exists (free memory before drain)
     if index_exists_before:
         logger.info("[promote & rebuild] Dropping existing cold vector index")
-        drop_cold_vector_index(db.db, backbone_id, library_key)
+        drop_cold_vector_index(db, backbone_id, library_key)
 
     # Step 4: Drain hot → cold (convergent UPSERT)
     drained_count = drain_hot_to_cold(db, backbone_id, library_key)
@@ -113,7 +110,7 @@ def promote_and_rebuild_workflow(
 
     # Step 5: Verify hot is empty (completeness check)
     try:
-        verify_hot_empty(db.db, backbone_id, library_key)
+        verify_hot_empty(db, backbone_id, library_key)
         logger.info("[promote & rebuild] Hot collection empty after drain ✓")
     except RuntimeError as exc:
         logger.error(
@@ -128,12 +125,13 @@ def promote_and_rebuild_workflow(
         embed_dim,
         nlists,
     )
-    build_cold_vector_index(db.db, backbone_id, library_key, embed_dim, nlists)
+    build_cold_vector_index(db, backbone_id, library_key, embed_dim, nlists)
 
     # Step 7: Log completion state
-    hot_count_after = hot_ops.count()  # type: ignore[assignment]  # count() returns int in sync context
-    cold_count_after = cold_ops.count()  # type: ignore[assignment]
-    index_exists_after = has_vector_index(db.db, backbone_id, library_key)
+    stats_after = maintenance.get_stats()
+    hot_count_after = int(stats_after["hot_count"])
+    cold_count_after = int(stats_after["cold_count"])
+    index_exists_after = has_vector_index(db, backbone_id, library_key)
 
     logger.info(
         "[promote & rebuild] Completion state: hot=%d, cold=%d, index_exists=%s",

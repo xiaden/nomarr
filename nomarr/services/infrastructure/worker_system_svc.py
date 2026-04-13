@@ -6,7 +6,7 @@ import logging
 import threading
 import time
 from multiprocessing import Event, Pipe
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.ml.resources.ml_capacity_probe_comp import CapacityEstimate, get_or_run_capacity_probe
 from nomarr.components.ml.resources.ml_tier_selection_comp import (
@@ -25,6 +25,7 @@ from nomarr.helpers.dto.health_dto import (
     ComponentStatus,
     StatusChangeContext,
 )
+from nomarr.helpers.time_helper import now_ms
 from nomarr.services.infrastructure.pipeline_svc import LibraryPipelineService
 from nomarr.services.infrastructure.workers.discovery_worker import DiscoveryWorker, create_discovery_worker
 
@@ -171,7 +172,14 @@ class WorkerSystemService(ComponentLifecycleHandler):
         if existing_timer:
             existing_timer.cancel()
             logger.debug("[WorkerSystemService] Cancelled existing restart timer for %s", component_id)
-        restart_count, last_restart_wall_ms = self.db.worker_restart_policy.get_restart_state(component_id)
+        restart_state = cast(
+            "dict[str, Any] | None",
+            self.db.worker_restart_policy.component_id.get(component_id),
+        )
+        restart_count = int(restart_state.get("restart_count", 0)) if restart_state is not None else 0
+        last_restart_wall_ms = (
+            cast("int | None", restart_state.get("last_restart_wall_ms")) if restart_state is not None else None
+        )
         decision = should_restart_worker(restart_count, last_restart_wall_ms)
         logger.info(
             "[WorkerSystemService] Restart decision for %s: %s (reason: %s)",
@@ -180,16 +188,61 @@ class WorkerSystemService(ComponentLifecycleHandler):
             decision.reason,
         )
         if decision.action == "restart":
-            self.db.worker_restart_policy.increment_restart_count(component_id)
+            timestamp = now_ms().value
+            if restart_state is None:
+                self.db.worker_restart_policy.component_id.upsert(
+                    [
+                        {
+                            "component_id": component_id,
+                            "restart_count": 1,
+                            "last_restart_wall_ms": timestamp,
+                            "failed_at_wall_ms": None,
+                            "failure_reason": None,
+                            "updated_at_wall_ms": timestamp,
+                        }
+                    ],
+                    match_field="component_id",
+                )
+            else:
+                self.db.worker_restart_policy.component_id.update(
+                    component_id,
+                    {
+                        "restart_count": restart_count + 1,
+                        "last_restart_wall_ms": timestamp,
+                        "updated_at_wall_ms": timestamp,
+                    },
+                )
             timer = threading.Timer(decision.backoff_seconds, self._restart_worker, args=(component_id,))
             self._pending_restart_timers[component_id] = timer
             timer.start()
             return
         if self.health_monitor:
             self.health_monitor.set_failed(component_id)
-        self.db.worker_restart_policy.mark_failed_permanent(
-            component_id, decision.failure_reason or "Restart limit exceeded"
-        )
+        failure_reason = decision.failure_reason or "Restart limit exceeded"
+        timestamp = now_ms().value
+        if restart_state is None:
+            self.db.worker_restart_policy.component_id.upsert(
+                [
+                    {
+                        "component_id": component_id,
+                        "restart_count": 0,
+                        "last_restart_wall_ms": None,
+                        "failed_at_wall_ms": timestamp,
+                        "failure_reason": failure_reason,
+                        "updated_at_wall_ms": timestamp,
+                    }
+                ],
+                match_field="component_id",
+            )
+        else:
+            self.db.worker_restart_policy.component_id.update(
+                component_id,
+                {
+                    "failed_at_wall_ms": timestamp,
+                    "failure_reason": failure_reason,
+                    "updated_at_wall_ms": timestamp,
+                },
+            )
         logger.error(
             "[WorkerSystemService] Worker %s marked as permanently failed: %s", component_id, decision.failure_reason
         )
@@ -266,19 +319,19 @@ class WorkerSystemService(ComponentLifecycleHandler):
 
     def is_worker_system_enabled(self) -> bool:
         """Return whether the worker system is globally enabled."""
-        meta = self.db.meta.get("worker_enabled")
+        meta = cast("dict[str, Any] | None", self.db.meta.key.get("worker_enabled"))
         if meta is None:
             return self.default_enabled
-        return meta == "true"
+        return cast("str | None", meta.get("value")) == "true"
 
     def enable_worker_system(self) -> None:
         """Enable worker system globally (sets worker_enabled=true in DB meta)."""
-        self.db.meta.set("worker_enabled", "true")
+        self.db.meta.key.upsert([{"key": "worker_enabled", "value": "true"}], match_field="key")
         logger.info("[WorkerSystemService] Worker system globally enabled")
 
     def disable_worker_system(self) -> None:
         """Disable worker system globally (sets worker_enabled=false in DB meta)."""
-        self.db.meta.set("worker_enabled", "false")
+        self.db.meta.key.upsert([{"key": "worker_enabled", "value": "false"}], match_field="key")
         logger.info("[WorkerSystemService] Worker system globally disabled")
 
     # ---------------------------- Worker Lifecycle ----------------------------

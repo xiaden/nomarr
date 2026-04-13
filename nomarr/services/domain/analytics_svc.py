@@ -21,7 +21,17 @@ from nomarr.components.analytics.analytics_comp import (
     compute_tag_frequencies,
 )
 from nomarr.components.analytics.collection_overview_comp import compute_collection_overview
-from nomarr.components.analytics.mood_analysis_comp import compute_mood_analysis
+from nomarr.components.analytics.mood_analysis_comp import (
+    compute_mood_analysis,
+    get_mood_and_tier_tags_for_correlation,
+    get_mood_distribution_data,
+)
+from nomarr.components.library.library_file_query_comp import (
+    get_artist_album_frequencies,
+    list_library_files,
+)
+from nomarr.components.tagging.tag_query_comp import get_file_ids_for_mood_tags, get_file_ids_for_tags
+from nomarr.components.tagging.tag_stats_comp import get_tag_frequencies
 from nomarr.helpers.dto import TagSpec
 from nomarr.helpers.dto.analytics_dto import (
     ComputeTagCoOccurrenceParams,
@@ -77,11 +87,11 @@ class AnalyticsService:
         """
         namespace_prefix = f"{self.cfg.namespace}:"
         # Get tag frequencies from tags collection
-        tag_data = self._db.tags.get_tag_frequencies(limit=limit, namespace_prefix=namespace_prefix)
+        tag_data = get_tag_frequencies(self._db, limit=limit, namespace_prefix=namespace_prefix)
         # Get artist/album frequencies from library_files
-        file_data = self._db.library_files.get_artist_album_frequencies(limit=limit)
+        file_data = get_artist_album_frequencies(self._db, limit=limit)
         # Get total file count
-        _, total_count = self._db.library_files.list_library_files(limit=1)
+        _, total_count = list_library_files(self._db, limit=1)
 
         data = {
             "total_files": total_count,
@@ -135,7 +145,7 @@ class AnalyticsService:
             TagCorrelationData with mood-to-mood and mood-to-tier correlations
 
         """
-        tag_data = self._db.tags.get_mood_and_tier_tags_for_correlation()
+        tag_data = get_mood_and_tier_tags_for_correlation(self._db)
         data = {
             "mood_tag_rows": tag_data["mood_tag_rows"],
             "tier_tag_keys": tag_data["tier_tag_keys"],
@@ -161,7 +171,7 @@ class AnalyticsService:
             List of MoodDistributionItem DTOs
 
         """
-        mood_rows = self._db.tags.get_mood_distribution_data(library_id)
+        mood_rows = get_mood_distribution_data(self._db, library_id)
         result = compute_mood_distribution(mood_rows=mood_rows)
 
         # Transform to list format with percentages
@@ -232,7 +242,8 @@ class AnalyticsService:
         # Regular tags: use exact match
         if regular_specs:
             tag_data.update(
-                self._db.tags.get_file_ids_for_tags(
+                get_file_ids_for_tags(
+                    self._db,
                     tag_specs=regular_specs,
                     library_id=library_id,
                 ),
@@ -240,7 +251,8 @@ class AnalyticsService:
 
         # Mood tags: use CONTAINS matching for each tier
         for tier, values in mood_specs.items():
-            mood_data = self._db.tags.get_file_ids_for_mood_tags(
+            mood_data = get_file_ids_for_mood_tags(
+                self._db,
                 mood_values=values,
                 mood_tier=tier,
                 library_id=library_id,

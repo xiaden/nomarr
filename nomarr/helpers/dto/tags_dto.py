@@ -12,12 +12,12 @@ Usage:
     tags = Tags.from_dict({"artist": "Beatles", "genre": ["rock", "pop"]})
 
     # Create from DB rows
-    tags = Tags.from_db_rows(db.tags.get_song_tags(file_id))
+    tags = Tags.from_db_rows(raw_rows)
 
     # Convert back
     tag_dict = tags.to_dict()
     for key, values in tags.to_db_rows():
-        db.tags.set_song_tags(file_id, key, values)
+        set_song_tags(db, file_id, key, list(values))
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ class Tags:
         Aggregates multiple rows with same key into single Tag.
 
         Args:
-            db_rows: List of {rel, value} dicts from get_song_tags()
+            db_rows: List of ``{rel, value}`` dicts from a tag query helper
 
         """
         # Group by key
@@ -114,7 +114,7 @@ class Tags:
         """Convert to DB write format.
 
         Returns:
-            List of (key, values) tuples for db.tags.set_song_tags()
+            List of ``(key, values)`` tuples for component-layer tag writers
 
         """
         return [(tag.key, tag.value) for tag in self.items]

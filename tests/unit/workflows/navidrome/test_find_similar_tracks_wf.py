@@ -9,6 +9,29 @@ import pytest
 
 from nomarr.workflows.navidrome.find_similar_tracks_wf import find_similar_tracks
 
+
+@pytest.fixture(autouse=True)
+def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bridge helper-based workflow imports to the existing db mock surface."""
+
+    monkeypatch.setattr(
+        "nomarr.workflows.navidrome.find_similar_tracks_wf.get_file_library_key",
+        lambda db, file_id: db.library_files.get_file_library_key(file_id),
+    )
+    monkeypatch.setattr(
+        "nomarr.workflows.navidrome.find_similar_tracks_wf.get_files_by_ids_with_tags",
+        lambda db, file_ids: db.library_files.get_files_by_ids_with_tags(file_ids),
+    )
+    monkeypatch.setattr(
+        "nomarr.workflows.navidrome.find_similar_tracks_wf.resolve_navidrome_track_to_file",
+        lambda db, nd_id: db.navidrome_tracks.resolve_nd_to_file(nd_id),
+    )
+    monkeypatch.setattr(
+        "nomarr.workflows.navidrome.find_similar_tracks_wf.bulk_resolve_files_to_navidrome_ids",
+        lambda db, file_ids: db.navidrome_tracks.bulk_resolve_files_to_nd(file_ids),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -40,7 +63,7 @@ def _make_db(
     # cold ops
     cold_ops = MagicMock()
     cold_ops.get_vector.return_value = {"vector_n": seed_vector, "file_id": nd_lookup} if nd_lookup else None
-    cold_ops.search_similar.return_value = ann_results
+    cold_ops.ann_search.return_value = ann_results
     cold_ops.count.return_value = 300  # reasonable default for nprobe calculation
     db.get_vectors_track_cold.return_value = cold_ops
 
@@ -130,8 +153,8 @@ class TestFindSimilarTracksHappyPath:
         find_similar_tracks("nd-seed", count=25, backbone_id="effnet", db=db)
 
         cold_ops = db.get_vectors_track_cold.return_value
-        cold_ops.search_similar.assert_called_once()
-        call_limit = cold_ops.search_similar.call_args[0][1]
+        cold_ops.ann_search.assert_called_once()
+        call_limit = cold_ops.ann_search.call_args[0][1]
         assert call_limit == 51  # 25 * 2 + 1
 
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from nomarr.components.library.library_records_comp import update_library_record
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -35,7 +37,8 @@ class UpdateLibraryMetadataComp:
             library_auto_write: New auto-write setting (optional).
 
         """
-        self.db.libraries.update_library(
+        update_library_record(
+            self.db,
             library_id,
             name=name,
             is_enabled=is_enabled,

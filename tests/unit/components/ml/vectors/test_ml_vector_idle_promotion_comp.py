@@ -23,37 +23,37 @@ class TestListHotVectorTargets:
         mock_discover.return_value = ["effnet", "musicnn"]
 
         db = MagicMock()
-        db.libraries.list_libraries.return_value = [
+        libraries = [
             {"_key": "lib1"},
             {"_key": "lib2"},
         ]
 
-        # effnet__lib1 has vectors, effnet__lib2 does not exist,
-        # musicnn__lib1 exists but empty, musicnn__lib2 has vectors
-        def has_collection(name: str) -> bool:
-            return name in {
-                "vectors_track_hot__effnet__lib1",
-                "vectors_track_hot__musicnn__lib1",
-                "vectors_track_hot__musicnn__lib2",
-            }
-
-        db.db.has_collection.side_effect = has_collection
-
-        # Mock hot ops count per (backbone, library)
-        hot_ops_map: dict[str, int] = {
+        # effnet__lib1 has vectors, effnet__lib2 has no hot collection,
+        # musicnn__lib1 exists but empty, musicnn__lib2 has vectors.
+        hot_ops_map: dict[str, int | None] = {
             "effnet__lib1": 42,
+            "effnet__lib2": None,
             "musicnn__lib1": 0,
             "musicnn__lib2": 10,
         }
 
-        def register_backbone(backbone_id: str, library_key: str) -> MagicMock:
-            ops = MagicMock()
-            ops.count.return_value = hot_ops_map.get(f"{backbone_id}__{library_key}", 0)
-            return ops
+        def get_maintenance(backbone_id: str, library_key: str) -> MagicMock:
+            stats = MagicMock()
+            hot_count = hot_ops_map.get(f"{backbone_id}__{library_key}")
+            stats.get_stats.return_value = {
+                "hot_count": 0 if hot_count is None else hot_count,
+                "cold_count": 0,
+                "index_exists": False,
+            }
+            return stats
 
-        db.register_vectors_track_backbone.side_effect = register_backbone
+        db.get_vectors_track_maintenance.side_effect = get_maintenance
 
-        result = list_hot_vector_targets(db, "/models")
+        with patch(
+            "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.list_library_records",
+            return_value=libraries,
+        ):
+            result = list_hot_vector_targets(db, "/models")
 
         assert result == [("effnet", "lib1"), ("musicnn", "lib2")]
         mock_discover.assert_called_once_with("/models")
@@ -71,7 +71,7 @@ class TestListHotVectorTargets:
         result = list_hot_vector_targets(db, "/models")
 
         assert result == []
-        db.libraries.list_libraries.assert_not_called()
+        db.get_vectors_track_maintenance.assert_not_called()
 
     @patch(f"{DISCOVERY_MODULE}.discover_backbones")
     def test_returns_empty_when_no_libraries(self, mock_discover: MagicMock) -> None:
@@ -82,8 +82,90 @@ class TestListHotVectorTargets:
 
         mock_discover.return_value = ["effnet"]
         db = MagicMock()
-        db.libraries.list_libraries.return_value = []
-
-        result = list_hot_vector_targets(db, "/models")
+        with patch(
+            "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.list_library_records",
+            return_value=[],
+        ):
+            result = list_hot_vector_targets(db, "/models")
 
         assert result == []
+
+
+@pytest.mark.unit
+class TestComputePromotionNlists:
+    """Tests for ``compute_promotion_nlists``."""
+
+    @pytest.mark.mocked
+    def test_uses_library_group_size_when_available(self) -> None:
+        from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import compute_promotion_nlists
+
+        db = MagicMock()
+        db.get_vectors_track_maintenance.return_value.get_stats.return_value = {
+            "hot_count": 100,
+            "cold_count": 200,
+        }
+
+        with (
+            patch(
+                "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.get_library_record",
+                return_value={"vector_group_size": 20},
+            ),
+            patch(
+                "nomarr.helpers.vector_params_helper.compute_nlists",
+                return_value=37,
+            ) as mock_compute_nlists,
+        ):
+            result = compute_promotion_nlists(db, "effnet", "lib1")
+
+        assert result == 37
+        mock_compute_nlists.assert_called_once_with(300, 20)
+
+    @pytest.mark.mocked
+    def test_falls_back_to_default_group_size_when_library_missing(self) -> None:
+        from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import compute_promotion_nlists
+
+        db = MagicMock()
+        db.get_vectors_track_maintenance.return_value.get_stats.return_value = {
+            "hot_count": 5,
+            "cold_count": 7,
+        }
+
+        with (
+            patch(
+                "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.get_library_record",
+                return_value=None,
+            ),
+            patch(
+                "nomarr.helpers.vector_params_helper.compute_nlists",
+                return_value=12,
+            ) as mock_compute_nlists,
+        ):
+            result = compute_promotion_nlists(db, "effnet", "lib1")
+
+        assert result == 12
+        mock_compute_nlists.assert_called_once_with(12, 15)
+
+    @pytest.mark.mocked
+    def test_falls_back_to_default_when_group_size_absent(self) -> None:
+        from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import compute_promotion_nlists
+
+        db = MagicMock()
+        db.get_vectors_track_maintenance.return_value.get_stats.return_value = {
+            "hot_count": 2,
+            "cold_count": 3,
+        }
+
+        with (
+            patch(
+                "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.get_library_record",
+                return_value={"_key": "lib1"},
+            ),
+            patch(
+                "nomarr.helpers.vector_params_helper.compute_nlists",
+                return_value=9,
+            ) as mock_compute_nlists,
+        ):
+            result = compute_promotion_nlists(db, "effnet", "lib1")
+
+        assert result == 9
+        mock_compute_nlists.assert_called_once_with(5, 15)

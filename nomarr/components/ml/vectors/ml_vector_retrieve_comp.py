@@ -35,8 +35,9 @@ def get_cold_track_vector(
 
     """
     cold_coll_name = f"vectors_track_cold__{backbone_id}__{library_key}"
+    maintenance_stats = db.get_vectors_track_maintenance(backbone_id, library_key).get_stats()
 
-    if not db.db.has_collection(cold_coll_name):
+    if int(maintenance_stats["cold_count"]) <= 0:
         logger.debug(
             "Cold collection %s does not exist for backbone=%s, library=%s",
             cold_coll_name,

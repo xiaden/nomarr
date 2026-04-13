@@ -6,7 +6,17 @@ import functools
 import logging
 import threading
 
+from nomarr.components.library.library_file_state_comp import count_untagged_files, get_uncalibrated_tagged_file_ids
+from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.components.library.scan_lifecycle_comp import (
+    bulk_transition_pipeline_state,
+    get_libraries_in_pipeline_state,
+    get_pipeline_state,
+    transition_pipeline_state,
+    update_scan_progress,
+)
+from nomarr.helpers import ManagedTask
+from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_APPLYING,
     PIPELINE_AWAITING_CALIBRATION,
     PIPELINE_CALIBRATING,
@@ -16,7 +26,6 @@ from nomarr.components.library.scan_lifecycle_comp import (
     PIPELINE_WRITE_READY,
     PIPELINE_WRITING,
 )
-from nomarr.helpers import ManagedTask
 from nomarr.helpers.dto.library_dto import LibraryPipelineStatusDTO
 from nomarr.persistence.db import Database
 from nomarr.services.domain.calibration_svc import CALIBRATION_GENERATE_TASK_ID, CalibrationService
@@ -57,29 +66,32 @@ class LibraryPipelineService:
             "writing": 0,
         }
 
-        scanning_libraries = self.db.library_pipeline_states.get_libraries_in_state(PIPELINE_SCANNING)
+        scanning_libraries = get_libraries_in_pipeline_state(self.db, PIPELINE_SCANNING)
         stale_scanning = [
             library_id for library_id in scanning_libraries if not self._is_task_running(self._scan_task_id(library_id))
         ]
         if stale_scanning:
             if len(stale_scanning) == len(scanning_libraries):
-                recovery_counts["scanning"] = self.db.library_pipeline_states.bulk_transition(
+                recovery_counts["scanning"] = bulk_transition_pipeline_state(
+                    self.db,
                     PIPELINE_SCANNING,
                     PIPELINE_IDLE,
                 )
                 for library_id in stale_scanning:
-                    self.db.libraries.update_scan_status(
+                    update_scan_progress(
+                        self.db,
                         library_id,
                         status="idle",
-                        error="Scan interrupted by server restart",
+                        scan_error="Scan interrupted by server restart",
                     )
             else:
                 for library_id in stale_scanning:
-                    self.db.library_pipeline_states.transition_state(library_id, PIPELINE_IDLE)
-                    self.db.libraries.update_scan_status(
+                    transition_pipeline_state(self.db, library_id, PIPELINE_IDLE)
+                    update_scan_progress(
+                        self.db,
                         library_id,
                         status="idle",
-                        error="Scan interrupted by server restart",
+                        scan_error="Scan interrupted by server restart",
                     )
                 recovery_counts["scanning"] = len(stale_scanning)
             logger.info(
@@ -88,7 +100,8 @@ class LibraryPipelineService:
             )
 
         if not self._is_task_running(CALIBRATION_GENERATE_TASK_ID):
-            recovery_counts["calibrating"] = self.db.library_pipeline_states.bulk_transition(
+            recovery_counts["calibrating"] = bulk_transition_pipeline_state(
+                self.db,
                 PIPELINE_CALIBRATING,
                 PIPELINE_AWAITING_CALIBRATION,
             )
@@ -99,7 +112,8 @@ class LibraryPipelineService:
                 )
 
         if not self._is_task_running(CALIBRATION_APPLY_TASK_ID):
-            recovery_counts["applying"] = self.db.library_pipeline_states.bulk_transition(
+            recovery_counts["applying"] = bulk_transition_pipeline_state(
+                self.db,
                 PIPELINE_APPLYING,
                 PIPELINE_AWAITING_CALIBRATION,
             )
@@ -109,11 +123,11 @@ class LibraryPipelineService:
                     recovery_counts["applying"],
                 )
 
-        writing_libraries = self.db.library_pipeline_states.get_libraries_in_state(PIPELINE_WRITING)
+        writing_libraries = get_libraries_in_pipeline_state(self.db, PIPELINE_WRITING)
         for library_id in writing_libraries:
             if self._is_task_running(self._write_task_id(library_id)):
                 continue
-            self.db.library_pipeline_states.transition_state(library_id, PIPELINE_WRITE_READY)
+            transition_pipeline_state(self.db, library_id, PIPELINE_WRITE_READY)
             recovery_counts["writing"] += 1
             logger.info("Recovered stale writing library %s to write_ready", library_id)
 
@@ -121,8 +135,9 @@ class LibraryPipelineService:
 
     def trigger_calibration(self) -> None:
         """Start calibration or shortcut directly to calibration apply."""
-        calibration_exists = bool(self.db.calibration_state.get_all_calibration_states())
-        calibrating_count = self.db.library_pipeline_states.bulk_transition(
+        calibration_exists = self.db.calibration_state.count() > 0
+        calibrating_count = bulk_transition_pipeline_state(
+            self.db,
             PIPELINE_AWAITING_CALIBRATION,
             PIPELINE_CALIBRATING,
         )
@@ -131,7 +146,8 @@ class LibraryPipelineService:
             return
 
         if calibration_exists:
-            applying_count = self.db.library_pipeline_states.bulk_transition(
+            applying_count = bulk_transition_pipeline_state(
+                self.db,
                 PIPELINE_CALIBRATING,
                 PIPELINE_APPLYING,
             )
@@ -150,7 +166,8 @@ class LibraryPipelineService:
 
     def on_calibration_complete(self) -> None:
         """Advance all calibrating libraries into the apply stage."""
-        applying_count = self.db.library_pipeline_states.bulk_transition(
+        applying_count = bulk_transition_pipeline_state(
+            self.db,
             PIPELINE_CALIBRATING,
             PIPELINE_APPLYING,
         )
@@ -186,21 +203,21 @@ class LibraryPipelineService:
 
     def on_apply_complete(self) -> None:
         """Route libraries from applying to writing or write_ready."""
-        applying_libraries = self.db.library_pipeline_states.get_libraries_in_state(PIPELINE_APPLYING)
+        applying_libraries = get_libraries_in_pipeline_state(self.db, PIPELINE_APPLYING)
         for library_id in applying_libraries:
-            library = self.db.libraries.get_library(library_id)
+            library = get_library_record(self.db, library_id, include_scan=False)
             if library is None:
                 logger.warning(
                     "Library %s was missing during apply completion; moving to write_ready",
                     library_id,
                 )
-                self.db.library_pipeline_states.transition_state(library_id, PIPELINE_WRITE_READY)
+                transition_pipeline_state(self.db, library_id, PIPELINE_WRITE_READY)
                 continue
 
             library_auto_write = bool(library.get("library_auto_write", False))
             file_write_mode = str(library.get("file_write_mode", "none"))
             if library_auto_write and file_write_mode != "none":
-                self.db.library_pipeline_states.transition_state(library_id, PIPELINE_WRITING)
+                transition_pipeline_state(self.db, library_id, PIPELINE_WRITING)
                 logger.info(
                     "Library %s entering writing stage after calibration apply completion",
                     library_id,
@@ -208,7 +225,7 @@ class LibraryPipelineService:
                 self._dispatch_write(library_id)
                 continue
 
-            self.db.library_pipeline_states.transition_state(library_id, PIPELINE_WRITE_READY)
+            transition_pipeline_state(self.db, library_id, PIPELINE_WRITE_READY)
             logger.info(
                 "Library %s moved to write_ready after calibration apply completion",
                 library_id,
@@ -216,12 +233,12 @@ class LibraryPipelineService:
 
     def get_pipeline_status(self, library_id: str) -> LibraryPipelineStatusDTO | None:
         """Return state-aware pipeline status details for a library."""
-        library = self.db.libraries.get_library(library_id)
+        library = get_library_record(self.db, library_id, include_scan=False)
         if library is None:
             return None
 
         try:
-            state = self.db.library_pipeline_states.get_state(library_id)
+            state = get_pipeline_state(self.db, library_id)
         except ValueError:
             state = "idle"
 
@@ -230,9 +247,9 @@ class LibraryPipelineService:
         pending_write_count: int | None = None
 
         if state == "ml_running":
-            untagged_count = self.db.file_states.count_untagged_files(library_id)
+            untagged_count = count_untagged_files(self.db, library_id)
         elif state in {"awaiting_calibration", "calibrating", "applying"}:
-            uncalibrated_count = len(self.db.file_states.get_uncalibrated_tagged_file_ids(library_id))
+            uncalibrated_count = len(get_uncalibrated_tagged_file_ids(self.db, library_id))
         elif state in {"write_ready", "writing"}:
             pending_write_count = int(self.tagging_svc.get_reconcile_status(library_id)["pending_count"])
 
@@ -277,7 +294,7 @@ class LibraryPipelineService:
 
     def on_write_complete(self, library_id: str) -> None:
         """Mark a library done and trigger Navidrome rescan."""
-        self.db.library_pipeline_states.transition_state(library_id, PIPELINE_DONE)
+        transition_pipeline_state(self.db, library_id, PIPELINE_DONE)
         logger.info("Library %s pipeline transitioned to done", library_id)
         rescan_triggered = self.navidrome_svc.trigger_rescan()
         logger.info(

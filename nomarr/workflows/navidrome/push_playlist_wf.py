@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from nomarr.components.navidrome.navidrome_graph_comp import bulk_resolve_files_to_navidrome_ids
 from nomarr.helpers.dto.navidrome_dto import PushPlaylistResult
 
 if TYPE_CHECKING:
@@ -40,7 +41,7 @@ def push_playlist(
 
     """
     # 1. Resolve Nomarr file_ids to Navidrome song IDs.
-    id_map = db.navidrome_tracks.bulk_resolve_files_to_nd(file_ids)
+    id_map = bulk_resolve_files_to_navidrome_ids(db, file_ids)
     resolved_ids = [id_map[fid] for fid in file_ids if fid in id_map]
     unresolved_count = len(file_ids) - len(resolved_ids)
 

@@ -48,7 +48,8 @@
 			".github/agents/RnD": true,
 			".github/agents/Support": true
 		},
-		"chat.subagents.allowInvocationsFromSubagents": true
+		"chat.subagents.allowInvocationsFromSubagents": true,
+		"python.analysis.typeCheckingMode": "basic"
 	},
 	"extensions": {
 		"recommendations": [

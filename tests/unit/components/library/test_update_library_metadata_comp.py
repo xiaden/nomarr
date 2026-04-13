@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -21,9 +21,11 @@ class TestUpdateLibraryMetadataComp:
         mock_db = MagicMock()
         component = UpdateLibraryMetadataComp(mock_db)
 
-        component.update("libraries/1", library_auto_write=True)
+        with patch("nomarr.components.library.update_library_metadata_comp.update_library_record") as update_record:
+            component.update("libraries/1", library_auto_write=True)
 
-        mock_db.libraries.update_library.assert_called_once_with(
+        update_record.assert_called_once_with(
+            mock_db,
             "libraries/1",
             name=None,
             is_enabled=None,
@@ -39,9 +41,11 @@ class TestUpdateLibraryMetadataComp:
         mock_db = MagicMock()
         component = UpdateLibraryMetadataComp(mock_db)
 
-        component.update("libraries/1")
+        with patch("nomarr.components.library.update_library_metadata_comp.update_library_record") as update_record:
+            component.update("libraries/1")
 
-        mock_db.libraries.update_library.assert_called_once_with(
+        update_record.assert_called_once_with(
+            mock_db,
             "libraries/1",
             name=None,
             is_enabled=None,
@@ -57,9 +61,11 @@ class TestUpdateLibraryMetadataComp:
         mock_db = MagicMock()
         component = UpdateLibraryMetadataComp(mock_db)
 
-        component.update("libraries/1", file_write_mode="minimal")
+        with patch("nomarr.components.library.update_library_metadata_comp.update_library_record") as update_record:
+            component.update("libraries/1", file_write_mode="minimal")
 
-        mock_db.libraries.update_library.assert_called_once_with(
+        update_record.assert_called_once_with(
+            mock_db,
             "libraries/1",
             name=None,
             is_enabled=None,

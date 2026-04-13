@@ -16,6 +16,12 @@ from nomarr.components.library.library_admin_comp import (
     delete_library,
     update_library_root,
 )
+from nomarr.components.library.library_file_query_comp import get_library_counts
+from nomarr.components.library.library_records_comp import (
+    get_library_record,
+    list_library_records,
+    update_library_config_fields,
+)
 from nomarr.components.library.update_library_metadata_comp import UpdateLibraryMetadataComp
 from nomarr.components.platform.arango_bootstrap_comp import provision_vectors_track_for_library
 from nomarr.helpers.config_schema import validate_library_config
@@ -55,7 +61,7 @@ class LibraryAdminMixin:
             ValueError: If library does not exist
 
         """
-        result = self.db.libraries.get_library(library_id)
+        result = get_library_record(self.db, library_id)
         if result is None:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
@@ -80,10 +86,10 @@ class LibraryAdminMixin:
             List of LibraryDict DTOs with file/folder counts
 
         """
-        libraries = self.db.libraries.list_libraries(enabled_only=enabled_only)
+        libraries = list_library_records(self.db, enabled_only=enabled_only)
 
         # Get file/folder counts for all libraries
-        counts = self.db.library_files.get_library_counts()
+        counts = get_library_counts(self.db)
 
         result = []
         for lib in libraries:
@@ -277,10 +283,14 @@ class LibraryAdminMixin:
         global_group_size: int = config_service.get("vector_group_size", 15)
         global_thoroughness: int = config_service.get("vector_search_thoroughness", 10)
         return VectorConfigResult(
-            vector_group_size=lib.get("vector_group_size", global_group_size),
-            vector_search_thoroughness=lib.get("vector_search_thoroughness", global_thoroughness),
-            is_group_size_inherited="vector_group_size" not in lib,
-            is_thoroughness_inherited="vector_search_thoroughness" not in lib,
+            vector_group_size=global_group_size if lib.get("vector_group_size") is None else lib["vector_group_size"],
+            vector_search_thoroughness=(
+                global_thoroughness
+                if lib.get("vector_search_thoroughness") is None
+                else lib["vector_search_thoroughness"]
+            ),
+            is_group_size_inherited=lib.get("vector_group_size") is None,
+            is_thoroughness_inherited=lib.get("vector_search_thoroughness") is None,
         )
 
     def update_vector_config(
@@ -320,4 +330,4 @@ class LibraryAdminMixin:
         else:
             unset_fields.append("vector_search_thoroughness")
 
-        self.db.libraries.update_library_config_fields(library_id, set_fields or None, unset_fields or None)
+        update_library_config_fields(self.db, library_id, set_fields or None, unset_fields or None)

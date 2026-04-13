@@ -13,7 +13,15 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from multiprocessing import Event
 from typing import TYPE_CHECKING, Any
 
-from nomarr.helpers.time_helper import internal_s
+from nomarr.helpers.constants.file_states import (
+    STATE_ERRORED,
+    STATE_NOT_ERRORED,
+    STATE_NOT_TAGGED,
+    STATE_NOT_VECTORS_EXTRACTED,
+    STATE_TAGGED,
+    STATE_VECTORS_EXTRACTED,
+)
+from nomarr.helpers.time_helper import internal_s, now_ms
 
 if TYPE_CHECKING:
     from multiprocessing.synchronize import Event as EventType
@@ -33,12 +41,13 @@ HEALTH_FRAME_PREFIX = "HEALTH|"
 
 def _check_idle_pipeline_completion(db: Database, health_pipe: Any) -> int:
     """Transition idle ML-complete libraries and signal calibration health updates."""
-    from nomarr.components.library.scan_lifecycle_comp import PIPELINE_AWAITING_CALIBRATION, PIPELINE_TOO_SMALL
+    from nomarr.components.library.library_records_comp import find_ml_complete_libraries
+    from nomarr.components.library.scan_lifecycle_comp import transition_pipeline_state
+    from nomarr.helpers.constants.pipeline_states import PIPELINE_AWAITING_CALIBRATION, PIPELINE_TOO_SMALL
     from nomarr.helpers.dto.health_dto import PIPELINE_FRAME_PREFIX
     from nomarr.services.infrastructure.config_svc import INTERNAL_CALIBRATION_MIN_FILES
 
-    pipeline_states = db.library_pipeline_states
-    completed = pipeline_states.find_ml_complete_libraries(INTERNAL_CALIBRATION_MIN_FILES)
+    completed = find_ml_complete_libraries(db, INTERNAL_CALIBRATION_MIN_FILES)
     transitions_fired = 0
     for result in completed:
         library_id = result["library_id"]
@@ -46,7 +55,7 @@ def _check_idle_pipeline_completion(db: Database, health_pipe: Any) -> int:
         target_state = (
             PIPELINE_AWAITING_CALIBRATION if tagged_count >= INTERNAL_CALIBRATION_MIN_FILES else PIPELINE_TOO_SMALL
         )
-        pipeline_states.transition_state(library_id, target_state)
+        transition_pipeline_state(db, library_id, target_state)
         transitions_fired += 1
     if transitions_fired > 0 and health_pipe is not None:
         try:
@@ -71,7 +80,10 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
     """Persist deferred file writes and release the worker claim."""
     from nomarr.components.library.file_sync_comp import save_file_tags, set_chromaprint
     from nomarr.components.ml.inference.ml_segment_stats_comp import compute_segment_stats
+    from nomarr.components.ml.inference.ml_segment_stats_store_comp import upsert_segment_stats_batch
+    from nomarr.components.ml.onnx.tag_model_output_comp import write_tag_model_output_edges_batch
     from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
+    from nomarr.components.tagging.tag_write_comp import resolve_tag_ids
     from nomarr.components.workers.worker_discovery_comp import release_claim
 
     file_id = writes.file_id
@@ -84,14 +96,14 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
         if writes.ml_edges:
             output_edges = writes.ml_edges.output_edges
             pairs = [(rel, score) for rel, (_, score) in output_edges.items()]
-            tag_ids = db.tags.resolve_tag_ids(pairs)
+            tag_ids = resolve_tag_ids(db, pairs)
             edge_tuples: list[tuple[str, str, float]] = []
             for tag_rel, (output_id, score) in output_edges.items():
                 tag_id = tag_ids.get((tag_rel, score))
                 if tag_id is not None:
                     edge_tuples.append((tag_id, output_id, score))
             if edge_tuples:
-                db.tag_model_output.write_edges_batch(edge_tuples)
+                write_tag_model_output_edges_batch(db, edge_tuples)
         if writes.chromaprint:
             set_chromaprint(db, file_id, writes.chromaprint)
         if writes.raw_segments:
@@ -109,13 +121,13 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
                     }
                 )
             if stats_entries:
-                db.segment_scores_stats.upsert_stats_batch(stats_entries)
-        db.file_states.set_tagged(file_id)
-        db.file_states.set_vectors_extracted(file_id)
+                upsert_segment_stats_batch(db, stats_entries)
+        db.file_states.transition([file_id], STATE_NOT_TAGGED, STATE_TAGGED)
+        db.file_states.transition([file_id], STATE_NOT_VECTORS_EXTRACTED, STATE_VECTORS_EXTRACTED)
         logger.debug("[%s] Async writes done for %s (%d tags)", worker_id, writes.path, len(writes.db_tags))
     except Exception:
         try:
-            db.file_states.set_errored(file_id)
+            db.file_states.transition([file_id], STATE_NOT_ERRORED, STATE_ERRORED)
         except Exception:
             logger.debug("[%s] Failed to set errored state for %s", worker_id, file_id, exc_info=True)
         logger.exception("[%s] Async write failed for %s — file will be retried", worker_id, writes.path)
@@ -222,8 +234,21 @@ class DiscoveryWorker(multiprocessing.Process):
             logger.debug("[%s] Failed to clear stale VRAM promises at startup", self.worker_id, exc_info=True)
         config = ProcessorConfig(**self.processor_config_dict)
         self._current_status = "healthy"
-        db.health.mark_starting(self.worker_id, "worker")
-        db.health.mark_healthy(self.worker_id)
+        db.health.component_id.upsert(
+            [
+                {
+                    "component_id": self.worker_id,
+                    "component_type": "worker",
+                    "status": "starting",
+                    "last_heartbeat": now_ms().value,
+                }
+            ],
+            match_field="component_id",
+        )
+        db.health.component_id.update(
+            self.worker_id,
+            {"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
+        )
         logger.info(
             "[%s] Discovery worker started (pid=%s, tier=%d, prefer_gpu=%s)",
             self.worker_id,
@@ -353,11 +378,12 @@ class DiscoveryWorker(multiprocessing.Process):
         """Process a claimed file and schedule any deferred database writes."""
         import sys
 
+        from nomarr.components.library.library_file_query_comp import get_file_by_id
         from nomarr.components.workers.worker_discovery_comp import release_claim
         from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
         logger.debug("[%s] Fetching file doc for %s", self.worker_id, file_id)
-        file_doc = db.library_files.get_file_by_id(file_id)
+        file_doc = get_file_by_id(db, file_id)
         if not file_doc:
             logger.warning("[%s] Claimed file %s not found in database", self.worker_id, file_id)
             release_claim(db, file_id)
@@ -379,7 +405,7 @@ class DiscoveryWorker(multiprocessing.Process):
             pending_write = None
         if result.heads_processed == 0 and result.tags_written == 0:
             logger.info("[%s] Skipped %s (all heads skipped - likely too short)", self.worker_id, file_path)
-            db.file_states.set_tagged(file_id)
+            db.file_states.transition([file_id], STATE_NOT_TAGGED, STATE_TAGGED)
             release_claim(db, file_id)
             return None, True
         if result.deferred_writes is not None:
@@ -404,7 +430,7 @@ class DiscoveryWorker(multiprocessing.Process):
         next_errors = consecutive_errors + 1
         logger.exception("[%s] Error processing %s: %s", self.worker_id, file_id, error)
         try:
-            db.file_states.set_errored(file_id)
+            db.file_states.transition([file_id], STATE_NOT_ERRORED, STATE_ERRORED)
         except Exception:
             logger.debug("[%s] Failed to set errored state for %s", self.worker_id, file_id, exc_info=True)
         release_claim(db, file_id)
@@ -490,7 +516,7 @@ class DiscoveryWorker(multiprocessing.Process):
             if promotion_running is not None and promotion_running.is_alive():
                 promotion_running.join(timeout=8)
             logger.info("[%s] Discovery worker stopping (processed %d files)", self.worker_id, files_processed)
-            db.health.mark_stopping(self.worker_id)
+            db.health.component_id.update(self.worker_id, {"status": "stopping"})
             try:
                 from nomarr.components.ml.resources.ml_vram_coordinator_comp import release_worker_promises
 

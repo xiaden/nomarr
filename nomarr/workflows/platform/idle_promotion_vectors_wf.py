@@ -14,12 +14,79 @@ that is thread-safe within a single process.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
+
+from arango.exceptions import DocumentInsertError
+
+from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.schema import Op
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
+
+
+def _make_lock_reference(lock_type: str, resource_id: str) -> str:
+    """Build the unique document reference used by the locks collection."""
+    return f"{lock_type}:{resource_id}"
+
+
+def _reap_stale_promotion_locks(db: Database, worker_id: str, stale_after_ms: int) -> None:
+    """Delete stale promotion locks using constructor-backed field filters."""
+    stale_threshold = float(now_ms().value - stale_after_ms)
+    stale_locks = db.locks.acquired_at.get.in_(
+        {Op.LT: stale_threshold},
+        limit=db.locks.count(),
+    )
+    for lock in stale_locks:
+        if lock.get("lock_type") != "vector_promotion":
+            continue
+        reference = str(lock["document_reference"])
+        resource_id = reference.split(":", maxsplit=1)[1]
+        db.locks.document_reference.delete(reference)
+        logger.warning("[%s] Reaped stale promotion lock for %s", worker_id, resource_id)
+
+
+def _acquire_lock(db: Database, lock_type: str, resource_id: str, holder: str, ttl_seconds: int) -> bool:
+    """Acquire a lock using plain CRUD against the constructor namespace."""
+    reference = _make_lock_reference(lock_type, resource_id)
+    now = float(now_ms().value)
+    expires_at = now + float(ttl_seconds * 1000)
+
+    existing = cast("dict[str, Any] | None", db.locks.document_reference.get(reference))
+    if existing is not None:
+        existing_expires_at = float(existing.get("expires_at", 0.0))
+        if existing_expires_at >= now and existing.get("holder") != holder:
+            return False
+        db.locks.document_reference.delete(reference)
+
+    try:
+        db.locks.insert(
+            [
+                {
+                    "document_reference": reference,
+                    "lock_type": lock_type,
+                    "holder": holder,
+                    "expires_at": expires_at,
+                    "acquired_at": now,
+                    "status": "active",
+                }
+            ],
+        )
+    except DocumentInsertError:
+        return False
+
+    return True
+
+
+def _release_lock(db: Database, lock_type: str, resource_id: str, holder: str) -> bool:
+    """Release a lock only when it is still owned by the requested holder."""
+    reference = _make_lock_reference(lock_type, resource_id)
+    existing = cast("dict[str, Any] | None", db.locks.document_reference.get(reference))
+    if existing is None or existing.get("holder") != holder:
+        return False
+    return db.locks.document_reference.delete(reference) > 0
 
 
 def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: str) -> int:
@@ -64,22 +131,14 @@ def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: st
     )
 
     # Step 2: Reap stale locks (crashed workers, >10 minutes)
-    # Lock type "vector_promotion" with resource_id "backbone_id__library_key"
-    stale_locks = db.locks.get_stale_locks("vector_promotion", stale_after_ms=600_000)
-    for _, resource_id in stale_locks:
-        db.locks.force_release("vector_promotion", resource_id)
-        logger.warning(
-            "[%s] Reaped stale promotion lock for %s",
-            worker_id,
-            resource_id,
-        )
+    _reap_stale_promotion_locks(db, worker_id, stale_after_ms=600_000)
 
     # Step 3-4: Acquire lock, compute nlists, promote and rebuild
     promoted = 0
     ttl_seconds = 1800  # 30 minutes
     for backbone_id, library_key in targets:
         resource_id = f"{backbone_id}__{library_key}"
-        if not db.locks.try_acquire("vector_promotion", resource_id, worker_id, ttl_seconds):
+        if not _acquire_lock(db, "vector_promotion", resource_id, worker_id, ttl_seconds):
             logger.debug(
                 "[%s] Lock held for %s — skipping",
                 worker_id,
@@ -106,7 +165,7 @@ def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: st
                 library_key,
             )
         finally:
-            db.locks.release("vector_promotion", resource_id, worker_id)
+            _release_lock(db, "vector_promotion", resource_id, worker_id)
 
     logger.info("[%s] Idle promotion complete: %d promoted", worker_id, promoted)
     return promoted

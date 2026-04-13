@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from nomarr.components.library.library_file_mutation_comp import get_file_library_key as resolve_file_library_key
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -22,4 +24,4 @@ def get_file_library_key(db: Database, file_id: str) -> str | None:
         Library ``_key`` string, or ``None`` if the file does not exist.
 
     """
-    return db.library_files.get_file_library_key(file_id)
+    return resolve_file_library_key(db, file_id)

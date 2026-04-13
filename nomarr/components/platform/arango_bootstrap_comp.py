@@ -17,8 +17,8 @@ import time
 from arango import ArangoClient
 from arango.exceptions import CollectionCreateError, DocumentInsertError, GraphCreateError, IndexCreateError
 
+from nomarr.components.library.library_records_comp import list_all_library_keys
 from nomarr.persistence.arango_client import DatabaseLike
-from nomarr.persistence.database.libraries_aql import list_all_library_keys
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +150,7 @@ def _seed_file_states(db: DatabaseLike) -> None:
 
     Idempotent — inserts only if the document is missing.
     """
-    from nomarr.persistence.database.file_states_aql import ALL_STATE_VERTICES
+    from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES
 
     coll = db.collection("file_states")  # type: ignore[union-attr]
     for vertex in ALL_STATE_VERTICES:

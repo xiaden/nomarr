@@ -22,6 +22,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.library.library_file_mutation_comp import update_file_modified_time
 from nomarr.components.processing.file_write_comp import (
     get_file_for_writing,
     get_nomarr_tags,
@@ -222,7 +223,7 @@ def write_file_tags_workflow(
 
         # Sync mtime in DB so scanner skips this file on next scan
         if result.new_mtime_ms is not None:
-            db.library_files.update_file_modified_time(file_key, result.new_mtime_ms)
+            update_file_modified_time(db, file_key, result.new_mtime_ms)
 
         # Update file projection state in database
         mark_file_written(db, file_key)

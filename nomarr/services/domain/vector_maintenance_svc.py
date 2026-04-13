@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from nomarr.services.infrastructure.config_svc import ConfigService
 
+from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones
 from nomarr.components.ml.vectors.ml_vector_maintenance_comp import has_vector_index
 from nomarr.helpers.vector_params_helper import compute_nlists
@@ -112,7 +113,7 @@ class VectorMaintenanceService:
         hot_count = hot_ops.count() if self.db.db.has_collection(hot_coll_name) else 0
         # Check if cold collection exists before counting
         cold_count = cold_ops.count() if self.db.db.has_collection(cold_coll_name) else 0
-        index_exists = has_vector_index(self.db.db, backbone_id, library_key)
+        index_exists = has_vector_index(self.db, backbone_id, library_key)
 
         return {
             "hot_count": hot_count,
@@ -134,7 +135,7 @@ class VectorMaintenanceService:
             ValueError: If library not found
 
         """
-        library = self.db.libraries.get_library(library_id)
+        library = get_library_record(self.db, library_id, include_scan=False)
         if library is None:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
@@ -178,7 +179,7 @@ class VectorMaintenanceService:
         group_size: int = self._config_svc.get("vector_group_size", 15)
 
         if library_key is not None:
-            lib_doc = self.db.libraries.get_library(library_key)
+            lib_doc = get_library_record(self.db, library_key, include_scan=False)
             if lib_doc is not None:
                 lib_group_size = lib_doc.get("vector_group_size")
                 if lib_group_size is not None:

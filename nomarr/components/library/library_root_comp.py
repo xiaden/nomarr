@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from nomarr.components.library.library_records_comp import list_library_records
 from nomarr.helpers.files_helper import resolve_library_path
 
 if TYPE_CHECKING:
@@ -134,7 +135,7 @@ def ensure_no_overlapping_library_root(db: Database, candidate_root: str, *, ign
     candidate_path = Path(candidate_root).resolve()
 
     # Fetch all existing libraries
-    existing_libraries = db.libraries.list_libraries(enabled_only=False)
+    existing_libraries = list_library_records(db, enabled_only=False, include_scan=False)
 
     for library in existing_libraries:
         # Skip if this is the library being updated

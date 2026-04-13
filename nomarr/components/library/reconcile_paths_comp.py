@@ -11,6 +11,8 @@ import logging
 from typing import TYPE_CHECKING, Literal
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db
+from nomarr.components.library.library_file_mutation_comp import delete_library_file
+from nomarr.components.library.library_file_query_comp import get_library_stats, list_library_files
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -46,7 +48,7 @@ def reconcile_library_paths(
 
     Example:
         # After changing library root in config
-        from nomarr.components.library import reconcile_library_paths
+        from nomarr.components.library.reconcile_paths_comp import reconcile_library_paths
 
         result = reconcile_library_paths(
             db=db,
@@ -67,12 +69,12 @@ def reconcile_library_paths(
         "deleted_files": 0,
         "errors": 0,
     }
-    stats = db.library_files.get_library_stats()
+    stats = get_library_stats(db)
     total_count = stats.get("total_files", 0)
     logger.info(f"[reconcile_library_paths] Found {total_count} files to validate")
     offset = 0
     while True:
-        files, _ = db.library_files.list_library_files(library_id=library_id, limit=batch_size, offset=offset)
+        files, _ = list_library_files(db, library_id=library_id, limit=batch_size, offset=offset)
         if not files:
             break
         logger.debug(f"[reconcile_library_paths] Processing batch at offset {offset} ({len(files)} files)")
@@ -135,7 +137,7 @@ def _handle_invalid_path(
         logger.warning(f"[reconcile_library_paths] Invalid path ({status}): {file_path} - {reason}")
     elif policy == "delete_invalid":
         try:
-            db.library_files.delete_library_file(file_path)
+            delete_library_file(db, file_path)
             result["deleted_files"] += 1
             logger.info(f"[reconcile_library_paths] Deleted invalid path ({status}): {file_path} - {reason}")
         except Exception as e:

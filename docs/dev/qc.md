@@ -146,10 +146,10 @@ result = process_file(path)  # May crash entire service
 
 **Patterns:**
 ```python
-# ✅ Good - AQL parameterized query
-db.aql.execute(
-    "FOR doc IN library_files FILTER doc._key == @key RETURN doc",
-    bind_vars={"key": file_key}
+# ✅ Good - constructor verb via Database facade
+docs = db.worker_claims.get.many.by_filter(
+    {"worker_id": "worker:demo:0"},
+    limit=100,
 )
 
 # ✅ Good - path validation
@@ -239,7 +239,7 @@ For each Python file:
 
 **3. Persistence Layer:**
 - `nomarr/persistence/db.py` — Database facade
-- `nomarr/persistence/database/` — AQL operations modules
+- `nomarr/persistence/constructor/` — Schema-driven verb templates and namespaces
 
 **4. API Layer:**
 - `nomarr/interfaces/api/` — FastAPI routes and auth

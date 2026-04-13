@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -52,11 +52,13 @@ class TestListEntities:
     ) -> None:
         """Each singular collection should resolve to the correct rel query."""
         mock_db = MagicMock()
-        mock_db.tags.list_tags_by_rel.return_value = []
-        mock_db.tags.count_tags_by_rel.return_value = 0
         service = _make_service(db=mock_db)
 
-        result = service.list_entities(collection)
+        with (
+            patch("nomarr.services.domain.metadata_svc.list_tags_by_rel", return_value=[]) as mock_list,
+            patch("nomarr.services.domain.metadata_svc.count_tags_by_rel", return_value=0) as mock_count,
+        ):
+            result = service.list_entities(collection)
 
         assert result == {
             "entities": [],
@@ -64,20 +66,21 @@ class TestListEntities:
             "limit": 100,
             "offset": 0,
         }
-        mock_db.tags.list_tags_by_rel.assert_called_once_with(
+        mock_list.assert_called_once_with(
+            mock_db,
             expected_rel,
             limit=100,
             offset=0,
             search=None,
         )
-        mock_db.tags.count_tags_by_rel.assert_called_once_with(expected_rel, search=None)
+        mock_count.assert_called_once_with(mock_db, expected_rel, search=None)
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_passes_through_limit_offset_and_search(self) -> None:
         """Explicit paging and search options should be forwarded to persistence."""
         mock_db = MagicMock()
-        mock_db.tags.list_tags_by_rel.return_value = [
+        listed_tags = [
             {
                 "_id": "tags/artist-1",
                 "_key": "artist-1",
@@ -85,10 +88,13 @@ class TestListEntities:
                 "song_count": 12,
             },
         ]
-        mock_db.tags.count_tags_by_rel.return_value = 1
         service = _make_service(db=mock_db)
 
-        result = service.list_entities("artist", limit=10, offset=5, search="art")
+        with (
+            patch("nomarr.services.domain.metadata_svc.list_tags_by_rel", return_value=listed_tags) as mock_list,
+            patch("nomarr.services.domain.metadata_svc.count_tags_by_rel", return_value=1) as mock_count,
+        ):
+            result = service.list_entities("artist", limit=10, offset=5, search="art")
 
         assert result == {
             "entities": [
@@ -103,13 +109,14 @@ class TestListEntities:
             "limit": 10,
             "offset": 5,
         }
-        mock_db.tags.list_tags_by_rel.assert_called_once_with(
+        mock_list.assert_called_once_with(
+            mock_db,
             "artist",
             limit=10,
             offset=5,
             search="art",
         )
-        mock_db.tags.count_tags_by_rel.assert_called_once_with("artist", search="art")
+        mock_count.assert_called_once_with(mock_db, "artist", search="art")
 
 
 class TestGetEntity:
@@ -120,29 +127,30 @@ class TestGetEntity:
     def test_returns_none_when_tag_not_found(self) -> None:
         """Missing tags should surface as None."""
         mock_db = MagicMock()
-        mock_db.tags.get_tag.return_value = None
         service = _make_service(db=mock_db)
 
-        result = service.get_entity("tags/missing")
+        with patch("nomarr.services.domain.metadata_svc.get_tag", return_value=None) as mock_get_tag:
+            result = service.get_entity("tags/missing")
 
         assert result is None
-        mock_db.tags.get_tag.assert_called_once_with("tags/missing")
-        mock_db.tags.count_songs_for_tag.assert_not_called()
+        mock_get_tag.assert_called_once_with(mock_db, "tags/missing")
+        mock_db.song_has_tags._to.count.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_entity_dict_when_tag_found(self) -> None:
         """Existing tags should be transformed into an entity dict."""
         mock_db = MagicMock()
-        mock_db.tags.get_tag.return_value = {
+        tag_doc = {
             "_id": "tags/artist-1",
             "_key": "artist-1",
             "value": "The Artist",
         }
-        mock_db.tags.count_songs_for_tag.return_value = 7
+        mock_db.song_has_tags._to.count.return_value = 7
         service = _make_service(db=mock_db)
 
-        result = service.get_entity("tags/artist-1")
+        with patch("nomarr.services.domain.metadata_svc.get_tag", return_value=tag_doc) as mock_get_tag:
+            result = service.get_entity("tags/artist-1")
 
         assert result == {
             "_id": "tags/artist-1",
@@ -150,8 +158,8 @@ class TestGetEntity:
             "display_name": "The Artist",
             "song_count": 7,
         }
-        mock_db.tags.get_tag.assert_called_once_with("tags/artist-1")
-        mock_db.tags.count_songs_for_tag.assert_called_once_with("tags/artist-1")
+        mock_get_tag.assert_called_once_with(mock_db, "tags/artist-1")
+        mock_db.song_has_tags._to.count.assert_called_once_with("tags/artist-1")
 
 
 class TestGetEntityCounts:
@@ -169,10 +177,13 @@ class TestGetEntityCounts:
             "genre": 44,
             "year": 55,
         }
-        mock_db.tags.count_tags_by_rel.side_effect = lambda rel: counts_by_rel[rel]
         service = _make_service(db=mock_db)
 
-        result = service.get_entity_counts()
+        with patch(
+            "nomarr.services.domain.metadata_svc.count_tags_by_rel",
+            side_effect=lambda _db, rel: counts_by_rel[rel],
+        ) as mock_count:
+            result = service.get_entity_counts()
 
         assert result == {
             "artists": 11,
@@ -181,13 +192,13 @@ class TestGetEntityCounts:
             "genres": 44,
             "years": 55,
         }
-        mock_db.tags.count_tags_by_rel.assert_has_calls(
+        mock_count.assert_has_calls(
             [
-                call("artist"),
-                call("album"),
-                call("label"),
-                call("genre"),
-                call("year"),
+                call(mock_db, "artist"),
+                call(mock_db, "album"),
+                call(mock_db, "label"),
+                call(mock_db, "genre"),
+                call(mock_db, "year"),
             ],
         )
-        assert mock_db.tags.count_tags_by_rel.call_count == 5
+        assert mock_count.call_count == 5

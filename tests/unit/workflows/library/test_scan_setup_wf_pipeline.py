@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.helpers.exceptions import LibraryAlreadyScanningError
-from nomarr.persistence.database.library_pipeline_states_aql import PIPELINE_SCANNING
 from nomarr.workflows.library.scan_setup_wf import scan_setup_workflow
 
 
@@ -45,10 +44,7 @@ class TestScanSetupWorkflowPipeline:
             progress=0,
             total=0,
         )
-        mock_db.library_pipeline_states.transition_state.assert_called_once_with(
-            "libraries/abc123",
-            PIPELINE_SCANNING,
-        )
+        mock_transition_to_scanning.assert_called_once_with(mock_db, "libraries/abc123")
 
     @pytest.mark.unit
     @pytest.mark.mocked

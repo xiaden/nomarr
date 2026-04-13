@@ -15,6 +15,12 @@ from nomarr.components.ml.onnx.ml_discovery_comp import (
     discover_backbones,
     discover_heads,
 )
+from nomarr.components.ml.onnx.ml_model_registry_comp import (
+    list_model_outputs_for_model,
+    list_registered_models,
+    mark_model_fully_configured,
+    update_model_output_label,
+)
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
@@ -104,7 +110,7 @@ class MLService:
             List of ml_models documents.
 
         """
-        return self.db.ml_models.list_models()
+        return list_registered_models(self.db)
 
     def get_model_outputs(self, model_id: str) -> list[dict[str, Any]]:
         """Return output vertices for a specific model.
@@ -116,7 +122,7 @@ class MLService:
             List of ml_model_outputs documents ordered by output_index.
 
         """
-        return self.db.ml_model_outputs.get_outputs_for_model(model_id)
+        return list_model_outputs_for_model(self.db, model_id)
 
     def update_output_label(self, output_id: str, label: str) -> None:
         """Write a human-readable label for a model output vertex.
@@ -126,7 +132,7 @@ class MLService:
             label: Human-readable tag label for this activation.
 
         """
-        self.db.ml_model_outputs.update_label(output_id=output_id, label=label)
+        update_model_output_label(self.db, output_id=output_id, label=label)
 
     def mark_model_configured(self, model_id: str, value: bool) -> None:
         """Set the fully_configured flag on a model vertex.
@@ -136,4 +142,4 @@ class MLService:
             value: True to enable model for inference, False to disable.
 
         """
-        self.db.ml_models.set_fully_configured(model_id, value)
+        mark_model_fully_configured(self.db, model_id, value)

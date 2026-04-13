@@ -171,6 +171,7 @@ class FakeArangoHandle:
     def __init__(self, harness: VectorLifecycleHarness) -> None:
         self.harness = harness
         self._collections: set[str] = set()
+        self.aql = self
 
     def register_collection(self, name: str) -> None:
         self._collections.add(name)
@@ -188,6 +189,14 @@ class FakeArangoHandle:
 
     def collection(self, name: str) -> FakeArangoCollection:
         return FakeArangoCollection(self.harness, name)
+
+    def execute(self, query: str, bind_vars: dict[str, Any] | None = None) -> Any:
+        """Handle the minimal AQL surface exercised by the vector tests."""
+        del query
+        file_id = None if bind_vars is None else bind_vars.get("file_id")
+        if isinstance(file_id, str) and file_id.startswith("library_files/"):
+            return iter(["libraries/test_lib"])
+        return iter([])
 
 
 class FakeHotOperations:
@@ -237,7 +246,8 @@ class FakeColdOperations:
     def get_vector(self, file_id: str) -> dict[str, Any] | None:
         return self.harness.get_cold_vector(self.backbone_id, file_id)
 
-    def search_similar(self, vector: list[float], limit: int, *, nprobe: int = 10) -> list[dict[str, Any]]:
+    def ann_search(self, vector: list[float], limit: int, *, nprobe: int = 10) -> list[dict[str, Any]]:
+        del nprobe
         return self.harness.search_cold(self.backbone_id, vector, limit)
 
     def count(self) -> int:
@@ -250,6 +260,35 @@ class FakeColdOperations:
         return sum(self.delete_by_file_id(file_id) for file_id in file_ids)
 
 
+class FakeVectorsTrackMaintenance:
+    """Minimal maintenance namespace used by constructor-backed vector helpers."""
+
+    def __init__(self, harness: VectorLifecycleHarness, backbone_id: str) -> None:
+        self.harness = harness
+        self.backbone_id = backbone_id
+
+    def ensure_cold_collection(self) -> None:
+        self.harness.ensure_cold_collection(self.backbone_id)
+
+    def get_stats(self) -> dict[str, int | bool]:
+        return {
+            "hot_count": self.harness.hot_count(self.backbone_id),
+            "cold_count": self.harness.cold_count(self.backbone_id),
+            "index_exists": self.harness.has_vector_index(self.backbone_id),
+        }
+
+    def drop_index(self) -> None:
+        self.harness.vector_indexes.discard(self.backbone_id)
+
+    def build_index(self, *, embed_dim: int, nlists: int) -> None:
+        del embed_dim, nlists
+        self.harness.install_vector_index(self.backbone_id)
+
+    def rebuild_index(self, *, embed_dim: int, nlists: int) -> None:
+        self.drop_index()
+        self.build_index(embed_dim=embed_dim, nlists=nlists)
+
+
 class FakeDatabaseAdapter:
     """Provides the minimal Database interface needed by the services."""
 
@@ -258,9 +297,25 @@ class FakeDatabaseAdapter:
         self.db = FakeArangoHandle(harness)
         self.vectors_track: dict[str, FakeHotOperations] = {}
         self._vectors_track_cold: dict[str, FakeColdOperations] = {}
+        self._vectors_track_maintenance: dict[str, FakeVectorsTrackMaintenance] = {}
         self.library_files = MagicMock()
         # Default: all file_ids belong to "test_lib"
         self.library_files.get_file_library_key.return_value = "test_lib"
+        self.library_contains_file = MagicMock()
+        self.library_contains_file._to.get.many.side_effect = self._get_library_contains_file_edges
+
+    def _get_library_contains_file_edges(
+        self,
+        file_id: str,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[dict[str, str]]:
+        del limit, offset
+        library_key = self.library_files.get_file_library_key(file_id)
+        if not library_key:
+            return []
+        return [{"_from": f"libraries/{library_key}", "_to": file_id}]
 
     def register_vectors_track_backbone(self, backbone_id: str, library_key: str = "test_lib") -> FakeHotOperations:
         self.harness.register_backbone(backbone_id)
@@ -271,6 +326,17 @@ class FakeDatabaseAdapter:
         self.harness.ensure_cold_collection(backbone_id)
         self.db.register_collection(f"vectors_track_cold__{backbone_id}__{library_key}")
         return self._vectors_track_cold.setdefault(backbone_id, FakeColdOperations(self.harness, backbone_id))
+
+    def get_vectors_track_maintenance(
+        self,
+        backbone_id: str,
+        library_key: str = "test_lib",
+    ) -> FakeVectorsTrackMaintenance:
+        self.db.register_collection(f"vectors_track_hot__{backbone_id}__{library_key}")
+        return self._vectors_track_maintenance.setdefault(
+            backbone_id,
+            FakeVectorsTrackMaintenance(self.harness, backbone_id),
+        )
 
 
 @pytest.fixture
@@ -293,7 +359,6 @@ def test_bootstrap_creates_hot_collections_only(monkeypatch: pytest.MonkeyPatch)
         return name == "libraries"
 
     db_mock.has_collection.side_effect = _has_collection
-    db_mock.aql.execute.return_value = iter(["lib1"])
     created_collections: list[str] = []
     db_mock.create_collection.side_effect = created_collections.append
 
@@ -314,6 +379,10 @@ def test_bootstrap_creates_hot_collections_only(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(
         "nomarr.components.platform.arango_bootstrap_comp._ensure_index",
         record_index,
+    )
+    monkeypatch.setattr(
+        "nomarr.components.platform.arango_bootstrap_comp.list_all_library_keys",
+        lambda _db: ["lib1"],
     )
 
     _create_vectors_track_collections(db_mock, models_dir="/tmp/models")
@@ -470,20 +539,33 @@ def test_cascade_delete_calls_hot_and_cold_ops() -> None:
     """Database.delete_vectors_by_file_id should delete across hot/cold caches."""
 
     database = object.__new__(Database)
-    hot_ops = MagicMock()
-    cold_ops = MagicMock()
-    hot_ops.delete_by_file_id.return_value = 1
-    cold_ops.delete_by_file_id.return_value = 2
 
-    database.vectors_track = {"effnet": hot_ops}
-    database._vectors_track_cold = {"effnet": cold_ops}
+    class _DeleteField:
+        def __init__(self, deleted: int) -> None:
+            self.deleted = deleted
+            self.calls: list[str] = []
+
+        def delete(self, file_id: str) -> int:
+            self.calls.append(file_id)
+            return self.deleted
+
+    class _VectorNamespace:
+        def __init__(self, deleted: int) -> None:
+            self.file_id = _DeleteField(deleted)
+
+    hot_namespace = _VectorNamespace(1)
+    cold_namespace = _VectorNamespace(2)
+    database.vectors_track = cast("dict[str, Any]", {"effnet__lib": hot_namespace})
+    database._vectors_track_cold = cast("dict[str, Any]", {"effnet__lib": cold_namespace})
     database.db = MagicMock()
 
     deleted = Database.delete_vectors_by_file_id(database, "library_files/7")
 
     assert deleted == 3
-    hot_ops.delete_by_file_id.assert_called_once_with("library_files/7")
-    cold_ops.delete_by_file_id.assert_called_once_with("library_files/7")
+    assert hot_namespace.file_id.calls == ["library_files/7"]
+    assert cold_namespace.file_id.calls == ["library_files/7"]
+    database.db.aql.execute.assert_called_once()
+    assert database.db.aql.execute.call_args.kwargs["bind_vars"] == {"file_id": "library_files/7"}
 
 
 def test_promote_is_safe_no_op_when_hot_empty(
@@ -557,4 +639,5 @@ def test_promote_twice_keeps_cold_collection_convergent(
     assert vector_harness.cold_count("effnet") == 1
     stored = vector_harness.get_cold_vector("effnet", "library_files/99")
     assert stored is not None
+    assert stored["vector"] == [0.6, 0.7, 0.8]
     assert stored["vector"] == [0.6, 0.7, 0.8]

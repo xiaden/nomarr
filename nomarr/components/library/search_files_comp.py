@@ -7,6 +7,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.library.library_file_query_comp import search_library_files_with_tags
+from nomarr.components.tagging.tag_query_comp import list_tags_by_rel
+from nomarr.components.tagging.tag_stats_comp import get_unique_rels
 from nomarr.helpers.dto.library_dto import SearchFilesQuery
 
 if TYPE_CHECKING:
@@ -28,7 +31,8 @@ def search_library_files(
 
     """
     # Use joined queries for efficient file+tag retrieval
-    return db.library_files.search_library_files_with_tags(
+    return search_library_files_with_tags(
+        db,
         query_text=query.query_text,
         artist=query.artist,
         album=query.album,
@@ -51,7 +55,7 @@ def get_unique_tag_keys(db: Database, nomarr_only: bool = False) -> list[str]:
         List of unique tag keys (rel values)
 
     """
-    return db.tags.get_unique_rels(nomarr_only=nomarr_only)
+    return get_unique_rels(db, nomarr_only=nomarr_only)
 
 
 def get_unique_tag_values(db: Database, tag_key: str, nomarr_only: bool = False) -> list[str]:
@@ -67,5 +71,5 @@ def get_unique_tag_values(db: Database, tag_key: str, nomarr_only: bool = False)
 
     """
     # Get all tags for this rel (limited to reasonable count)
-    tags = db.tags.list_tags_by_rel(tag_key, limit=10000, sort_by_count=True)
+    tags = list_tags_by_rel(db, tag_key, limit=10000, sort_by_count=True)
     return [str(t["value"]) for t in tags]

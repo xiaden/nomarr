@@ -138,10 +138,10 @@ class TestGetGenerationCombinedStatus:
         with (
             patch("nomarr.services.domain.calibration_svc.discover_heads_no_db", return_value=[]),
             patch("nomarr.services.domain.calibration_svc.now_ms") as mock_now_ms,
+            patch("nomarr.services.domain.calibration_svc.count_recent_calibration_states", return_value=0),
+            patch("nomarr.services.domain.calibration_svc.get_latest_calibration_state_updated_at", return_value=None),
         ):
             mock_now_ms.return_value.value = 2_000
-            service._db.calibration_state.count_recent.return_value = 0
-            service._db.calibration_state.get_latest_updated_at.return_value = None
 
             status = service.get_generation_combined_status()
 
@@ -193,10 +193,10 @@ class TestGetGenerationCombinedStatus:
         with (
             patch("nomarr.services.domain.calibration_svc.discover_heads_no_db", return_value=["a", "b", "c"]),
             patch("nomarr.services.domain.calibration_svc.now_ms") as mock_now_ms,
+            patch("nomarr.services.domain.calibration_svc.count_recent_calibration_states", return_value=2),
+            patch("nomarr.services.domain.calibration_svc.get_latest_calibration_state_updated_at", return_value=1_500),
         ):
             mock_now_ms.return_value.value = 2_000
-            service._db.calibration_state.count_recent.return_value = 2
-            service._db.calibration_state.get_latest_updated_at.return_value = 1_500
 
             status = service.get_generation_combined_status()
 
@@ -219,10 +219,10 @@ class TestGetGenerationCombinedStatus:
         with (
             patch("nomarr.services.domain.calibration_svc.discover_heads_no_db", return_value=[]),
             patch("nomarr.services.domain.calibration_svc.now_ms") as mock_now_ms,
+            patch("nomarr.services.domain.calibration_svc.count_recent_calibration_states", return_value=0),
+            patch("nomarr.services.domain.calibration_svc.get_latest_calibration_state_updated_at", return_value=None),
         ):
             mock_now_ms.return_value.value = 2_000
-            service._db.calibration_state.count_recent.return_value = 0
-            service._db.calibration_state.get_latest_updated_at.return_value = None
 
             status = service.get_generation_combined_status()
 

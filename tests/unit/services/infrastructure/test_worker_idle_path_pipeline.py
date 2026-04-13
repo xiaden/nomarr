@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from nomarr.helpers.dto.health_dto import PIPELINE_FRAME_PREFIX, ComponentPolicy
-from nomarr.helpers.dto.processing_dto import ProcessorConfig
-from nomarr.persistence.database.library_pipeline_states_aql import (
+from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_AWAITING_CALIBRATION,
     PIPELINE_TOO_SMALL,
 )
+from nomarr.helpers.dto.health_dto import PIPELINE_FRAME_PREFIX, ComponentPolicy
+from nomarr.helpers.dto.processing_dto import ProcessorConfig
 from nomarr.services.infrastructure.config_svc import INTERNAL_CALIBRATION_MIN_FILES
 
 pytestmark = [pytest.mark.unit, pytest.mark.mocked]
@@ -39,8 +39,18 @@ def worker_db() -> MagicMock:
     db.password = "test"
     db.meta = MagicMock()
     db.worker_restart_policy = MagicMock()
-    db.worker_restart_policy.get_restart_state.return_value = (0, None)
+    db.worker_restart_policy.component_id.get.return_value = None
     return db
+
+
+@pytest.fixture(autouse=True)
+def pipeline_state_shim(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep worker tests on the legacy transition mock while production uses helper seams."""
+
+    monkeypatch.setattr(
+        "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_state",
+        lambda db, library_id, state: db.library_pipeline_states.transition_state(library_id, state),
+    )
 
 
 class TestIdlePipelineCompletion:
@@ -54,22 +64,20 @@ class TestIdlePipelineCompletion:
         from nomarr.services.infrastructure.workers.discovery_worker import _check_idle_pipeline_completion
 
         mock_pipeline_states = worker_db.library_pipeline_states
-        mock_pipeline_states.find_ml_complete_libraries.return_value = [
-            {
-                "library_id": "libraries/large",
-                "tagged_count": INTERNAL_CALIBRATION_MIN_FILES,
-            },
-            {
-                "library_id": "libraries/small",
-                "tagged_count": INTERNAL_CALIBRATION_MIN_FILES - 1,
-            },
+        completed = [
+            {"library_id": "libraries/large", "tagged_count": INTERNAL_CALIBRATION_MIN_FILES},
+            {"library_id": "libraries/small", "tagged_count": INTERNAL_CALIBRATION_MIN_FILES - 1},
         ]
         health_pipe = MagicMock()
 
-        transitions = _check_idle_pipeline_completion(worker_db, health_pipe)
+        with patch(
+            "nomarr.components.library.library_records_comp.find_ml_complete_libraries",
+            return_value=completed,
+        ) as mock_find_ml_complete_libraries:
+            transitions = _check_idle_pipeline_completion(worker_db, health_pipe)
 
         assert transitions == 2
-        mock_pipeline_states.find_ml_complete_libraries.assert_called_once_with(INTERNAL_CALIBRATION_MIN_FILES)
+        mock_find_ml_complete_libraries.assert_called_once_with(worker_db, INTERNAL_CALIBRATION_MIN_FILES)
         assert mock_pipeline_states.transition_state.call_args_list == [
             call("libraries/large", PIPELINE_AWAITING_CALIBRATION),
             call("libraries/small", PIPELINE_TOO_SMALL),
@@ -84,10 +92,13 @@ class TestIdlePipelineCompletion:
         from nomarr.services.infrastructure.workers.discovery_worker import _check_idle_pipeline_completion
 
         mock_pipeline_states = worker_db.library_pipeline_states
-        mock_pipeline_states.find_ml_complete_libraries.return_value = []
         health_pipe = MagicMock()
 
-        transitions = _check_idle_pipeline_completion(worker_db, health_pipe)
+        with patch(
+            "nomarr.components.library.library_records_comp.find_ml_complete_libraries",
+            return_value=[],
+        ):
+            transitions = _check_idle_pipeline_completion(worker_db, health_pipe)
 
         assert transitions == 0
         mock_pipeline_states.transition_state.assert_not_called()
@@ -101,21 +112,19 @@ class TestIdlePipelineCompletion:
         from nomarr.services.infrastructure.workers.discovery_worker import _check_idle_pipeline_completion
 
         mock_pipeline_states = worker_db.library_pipeline_states
-        mock_pipeline_states.find_ml_complete_libraries.return_value = [
-            {
-                "library_id": "libraries/large",
-                "tagged_count": INTERNAL_CALIBRATION_MIN_FILES,
-            },
-            {
-                "library_id": "libraries/small",
-                "tagged_count": INTERNAL_CALIBRATION_MIN_FILES - 1,
-            },
+        completed = [
+            {"library_id": "libraries/large", "tagged_count": INTERNAL_CALIBRATION_MIN_FILES},
+            {"library_id": "libraries/small", "tagged_count": INTERNAL_CALIBRATION_MIN_FILES - 1},
         ]
 
-        transitions = _check_idle_pipeline_completion(worker_db, None)
+        with patch(
+            "nomarr.components.library.library_records_comp.find_ml_complete_libraries",
+            return_value=completed,
+        ) as mock_find_ml_complete_libraries:
+            transitions = _check_idle_pipeline_completion(worker_db, None)
 
         assert transitions == 2
-        mock_pipeline_states.find_ml_complete_libraries.assert_called_once_with(INTERNAL_CALIBRATION_MIN_FILES)
+        mock_find_ml_complete_libraries.assert_called_once_with(worker_db, INTERNAL_CALIBRATION_MIN_FILES)
         assert mock_pipeline_states.transition_state.call_args_list == [
             call("libraries/large", PIPELINE_AWAITING_CALIBRATION),
             call("libraries/small", PIPELINE_TOO_SMALL),
@@ -129,19 +138,18 @@ class TestIdlePipelineCompletion:
         from nomarr.services.infrastructure.workers.discovery_worker import _check_idle_pipeline_completion
 
         mock_pipeline_states = worker_db.library_pipeline_states
-        mock_pipeline_states.find_ml_complete_libraries.return_value = [
-            {
-                "library_id": "libraries/large",
-                "tagged_count": INTERNAL_CALIBRATION_MIN_FILES,
-            },
-        ]
+        completed = [{"library_id": "libraries/large", "tagged_count": INTERNAL_CALIBRATION_MIN_FILES}]
         health_pipe = MagicMock()
         health_pipe.send.side_effect = BrokenPipeError("pipe closed")
 
-        transitions = _check_idle_pipeline_completion(worker_db, health_pipe)
+        with patch(
+            "nomarr.components.library.library_records_comp.find_ml_complete_libraries",
+            return_value=completed,
+        ) as mock_find_ml_complete_libraries:
+            transitions = _check_idle_pipeline_completion(worker_db, health_pipe)
 
         assert transitions == 1
-        mock_pipeline_states.find_ml_complete_libraries.assert_called_once_with(INTERNAL_CALIBRATION_MIN_FILES)
+        mock_find_ml_complete_libraries.assert_called_once_with(worker_db, INTERNAL_CALIBRATION_MIN_FILES)
         mock_pipeline_states.transition_state.assert_called_once_with(
             "libraries/large",
             PIPELINE_AWAITING_CALIBRATION,
