@@ -18,8 +18,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from arango.exceptions import DocumentInsertError
 
+from nomarr.helpers.filter_types import Op
 from nomarr.helpers.time_helper import now_ms
-from nomarr.persistence.schema import Op
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database

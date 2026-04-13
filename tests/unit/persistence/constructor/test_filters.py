@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
+from nomarr.helpers.filter_types import Op
 from nomarr.persistence.constructor.filters import (
     build_comparison_filter,
     build_equality_filter,
     build_in_filter,
     build_like_filter,
 )
-from nomarr.persistence.schema import Op
 
 
 @pytest.mark.unit

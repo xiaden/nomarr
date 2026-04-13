@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from nomarr.helpers.filter_types import AggResult, FilterDict
 from nomarr.persistence.arango_client import SafeDatabase
 from nomarr.persistence.constructor.filters import (
     build_comparison_filter,
@@ -16,7 +17,6 @@ from nomarr.persistence.constructor.filters import (
     build_like_filter,
 )
 from nomarr.persistence.constructor.pagination import inject_pagination
-from nomarr.persistence.schema import AggResult, FilterDict
 
 Document = dict[str, Any]
 

@@ -7,7 +7,7 @@ The SchemaConstructor reads this schema at import time to build namespace object
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, TypedDict
+from typing import Any
 
 
 class CollectionType(StrEnum):
@@ -18,30 +18,6 @@ class CollectionType(StrEnum):
     STATE_GRAPH = "state_graph"
     TEMPLATE = "template"
     INFRASTRUCTURE = "infrastructure"
-
-
-class Op(StrEnum):
-    """Comparison operators for the .in() FilterDict overload."""
-
-    LT = "lt"
-    GT = "gt"
-    LTE = "lte"
-    GTE = "gte"
-    EQ = "eq"
-    NEQ = "neq"
-    NOT = "not"
-
-
-# Type aliases for filter type system
-FilterValue = int | float | bool | str
-FilterDict = dict[Op, FilterValue]
-
-
-class AggResult(TypedDict):
-    """Return type for aggregate verb."""
-
-    value: str
-    count: int
 
 
 class SchemaValidationError(RuntimeError):

@@ -31,10 +31,12 @@ from nomarr.interfaces.api.types.vector_types import (
     VectorStatsResponse,
 )
 from nomarr.interfaces.api.web.dependencies import (
+    get_library_service,
     get_ml_service,
     get_vector_maintenance_service,
     get_vector_search_service,
 )
+from nomarr.services.domain.library_svc import LibraryService
 from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
 from nomarr.services.domain.vector_search_svc import VectorSearchService
 from nomarr.services.infrastructure.ml_svc import MLService
@@ -175,6 +177,7 @@ async def get_track_vector(
 async def get_vector_stats(
     ml_service: MLService = Depends(get_ml_service),
     vector_maintenance_service: VectorMaintenanceService = Depends(get_vector_maintenance_service),
+    library_service: LibraryService = Depends(get_library_service),
 ) -> VectorStatsResponse:
     """Get hot/cold statistics for all backbones.
 
@@ -195,12 +198,10 @@ async def get_vector_stats(
 
     def _get_stats_sync() -> list[VectorHotColdStats]:
         """Run blocking DB queries in thread pool."""
-        from nomarr.components.library.library_records_comp import list_library_records
-
         stats_list = []
-        libraries = list_library_records(vector_maintenance_service.db, include_scan=False)
+        libraries = library_service.list_libraries()
         for lib in libraries:
-            library_key = lib["_key"]
+            library_key = lib._key
             for backbone_id in known_backbones:
                 try:
                     stats = vector_maintenance_service.get_hot_cold_stats(backbone_id, library_key=library_key)

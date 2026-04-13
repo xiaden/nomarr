@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, TypedDict
 
-from nomarr.persistence.schema import FilterDict
+from nomarr.helpers.filter_types import FilterDict
 
 class AggResult(TypedDict):
     value: str

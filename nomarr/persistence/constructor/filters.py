@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from nomarr.persistence.schema import FilterDict, Op
+from nomarr.helpers.filter_types import FilterDict, Op
 
 AQL_OP_MAP = {
     Op.LT: "<",

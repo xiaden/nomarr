@@ -20,8 +20,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 import bcrypt
 
+from nomarr.helpers.filter_types import Op
 from nomarr.helpers.time_helper import now_s
-from nomarr.persistence.schema import Op
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:

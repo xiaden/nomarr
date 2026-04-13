@@ -6,8 +6,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nomarr.helpers.filter_types import Op
 from nomarr.persistence.constructor import SchemaConstructor
-from nomarr.persistence.schema import SCHEMA, Op
+from nomarr.persistence.schema import SCHEMA
 
 
 @pytest.fixture

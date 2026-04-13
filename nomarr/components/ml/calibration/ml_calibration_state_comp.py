@@ -17,8 +17,8 @@ from nomarr.components.library.library_file_state_comp import (
 )
 from nomarr.components.library.library_records_comp import list_library_records
 from nomarr.helpers.constants.file_states import STATE_CALIBRATED, STATE_NOT_CALIBRATED
+from nomarr.helpers.filter_types import Op
 from nomarr.helpers.time_helper import now_ms
-from nomarr.persistence.schema import Op
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database

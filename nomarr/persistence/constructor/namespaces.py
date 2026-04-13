@@ -6,9 +6,10 @@ import hashlib
 import math
 from typing import Any, cast
 
+from nomarr.helpers.filter_types import AggResult, FilterDict
 from nomarr.persistence.arango_client import SafeDatabase
 from nomarr.persistence.constructor import verbs
-from nomarr.persistence.schema import AggResult, FilterDict, SchemaValidationError
+from nomarr.persistence.schema import SchemaValidationError
 
 Document = dict[str, Any]
 FieldSpec = dict[str, Any]

@@ -18,6 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nomarr.helpers.filter_types import Op
 from nomarr.persistence.constructor.builder import SchemaConstructor
 from nomarr.persistence.constructor.namespaces import (
     CollectionGetNamespace,
@@ -25,7 +26,7 @@ from nomarr.persistence.constructor.namespaces import (
     FieldNamespace,
     GetModifierNamespace,
 )
-from nomarr.persistence.schema import SCHEMA, CollectionType, Op
+from nomarr.persistence.schema import SCHEMA, CollectionType
 
 # ---------------------------------------------------------------------------
 # Constants

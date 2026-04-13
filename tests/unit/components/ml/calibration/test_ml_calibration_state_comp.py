@@ -25,7 +25,7 @@ from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     update_file_calibration_hashes_batch,
 )
 from nomarr.helpers.constants.file_states import STATE_CALIBRATED, STATE_NOT_CALIBRATED
-from nomarr.persistence.schema import Op
+from nomarr.helpers.filter_types import Op
 
 
 class TestUpdateFileCalibrationHash:

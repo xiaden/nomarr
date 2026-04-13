@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.helpers.filter_types import Op
 from nomarr.persistence.constructor.namespaces import (
     CollectionNamespace,
     FieldNamespace,
@@ -14,7 +15,7 @@ from nomarr.persistence.constructor.namespaces import (
     IdGetManyNamespace,
     IdGetNamespace,
 )
-from nomarr.persistence.schema import CollectionType, Op
+from nomarr.persistence.schema import CollectionType
 
 
 def _build_ns(
