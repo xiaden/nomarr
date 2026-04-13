@@ -303,8 +303,7 @@ def lint_project_backend(path: str | None = None, check_all: bool = False) -> di
     # Determine if scope includes nomarr backend code (for contract checking)
     scope_includes_nomarr = (
         target_path == project_root
-        or (project_root / "nomarr").resolve()
-        == target_path.resolve()
+        or (project_root / "nomarr").resolve() == target_path.resolve()
         or str(target_path.resolve()).startswith(str((project_root / "nomarr").resolve()))
     )
 
