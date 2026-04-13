@@ -6,6 +6,7 @@ The collection name uses @@ bind var notation (two @ = collection bind).
 
 from __future__ import annotations
 
+import logging
 from typing import Any, cast
 
 from nomarr.helpers.filter_types import AggResult, FilterDict
@@ -19,6 +20,14 @@ from nomarr.persistence.constructor.filters import (
 from nomarr.persistence.constructor.pagination import inject_pagination
 
 Document = dict[str, Any]
+
+logger = logging.getLogger(__name__)
+
+
+def _execute_aql(db: SafeDatabase, query: str, bind_vars: dict[str, Any]) -> Any:
+    """Execute AQL via python-arango, logging the query at INFO level."""
+    logger.info("AQL: %s | bind_vars: %s", query, bind_vars)
+    return db.aql.execute(query, bind_vars=bind_vars)
 
 
 def _cursor_to_documents(cursor: Any) -> list[Document]:
@@ -38,7 +47,8 @@ def get_one_by_id(db: SafeDatabase, collection: str, doc_id: str) -> Document | 
 
 def get_many_by_ids(db: SafeDatabase, collection: str, ids: list[str]) -> list[Document]:
     """Get multiple documents by _id list."""
-    cursor = db.aql.execute(
+    cursor = _execute_aql(
+        db,
         "FOR doc IN @@col FILTER doc._id IN @ids RETURN doc",
         bind_vars={"@col": collection, "ids": ids},
     )
@@ -47,7 +57,8 @@ def get_many_by_ids(db: SafeDatabase, collection: str, ids: list[str]) -> list[D
 
 def get_one_by_field(db: SafeDatabase, collection: str, field: str, value: Any) -> Document | None:
     """Get single document where field == value."""
-    cursor = db.aql.execute(
+    cursor = _execute_aql(
+        db,
         "FOR doc IN @@col FILTER doc[@field] == @val LIMIT 1 RETURN doc",
         bind_vars={"@col": collection, "field": field, "val": value},
     )
@@ -71,7 +82,8 @@ def get_many_by_field(
     )
     bind_vars = {"@col": collection, "field": field, "val": value}
     bind_vars.update(pagination_vars)
-    cursor = db.aql.execute(
+    cursor = _execute_aql(
+        db,
         query,
         bind_vars=bind_vars,
     )
@@ -97,7 +109,7 @@ def get_many_by_filter(
     bind_vars = {"@col": collection}
     bind_vars.update(filter_vars)
     bind_vars.update(pagination_vars)
-    cursor = db.aql.execute(query, bind_vars=bind_vars)
+    cursor = _execute_aql(db, query, bind_vars=bind_vars)
     return _cursor_to_documents(cursor)
 
 
@@ -119,7 +131,7 @@ def get_in_by_field(
     )
     bind_vars["@col"] = collection
     bind_vars.update(pagination_vars)
-    cursor = db.aql.execute(query, bind_vars=bind_vars)
+    cursor = _execute_aql(db, query, bind_vars=bind_vars)
     return _cursor_to_documents(cursor)
 
 
@@ -141,7 +153,7 @@ def get_range_by_field(
     )
     bind_vars["@col"] = collection
     bind_vars.update(pagination_vars)
-    cursor = db.aql.execute(query, bind_vars=bind_vars)
+    cursor = _execute_aql(db, query, bind_vars=bind_vars)
     return _cursor_to_documents(cursor)
 
 
@@ -163,7 +175,7 @@ def get_like_by_field(
     )
     bind_vars["@col"] = collection
     bind_vars.update(pagination_vars)
-    cursor = db.aql.execute(query, bind_vars=bind_vars)
+    cursor = _execute_aql(db, query, bind_vars=bind_vars)
     return _cursor_to_documents(cursor)
 
 
@@ -192,12 +204,14 @@ def upsert_by_field(
             bind_vars: dict[str, Any] = {"@col": collection, "docs": [doc]}
             for index, field_name in enumerate(field):
                 bind_vars[f"f{index}"] = field_name
-            cursor = db.aql.execute(
+            cursor = _execute_aql(
+                db,
                 "FOR doc IN @docs UPSERT { " + upsert_fields + " } INSERT doc UPDATE doc IN @@col RETURN NEW._id",
                 bind_vars=bind_vars,
             )
         else:
-            cursor = db.aql.execute(
+            cursor = _execute_aql(
+                db,
                 "UPSERT { [@field]: @key_val } INSERT @doc UPDATE @doc IN @@col RETURN NEW._id",
                 bind_vars={
                     "@col": collection,
@@ -218,7 +232,8 @@ def update_by_field(
     fields: Document,
 ) -> None:
     """Update all documents where field == match_value."""
-    db.aql.execute(
+    _execute_aql(
+        db,
         "FOR doc IN @@col FILTER doc[@field] == @val UPDATE doc WITH @fields IN @@col",
         bind_vars={"@col": collection, "field": field, "val": match_value, "fields": fields},
     )
@@ -239,7 +254,7 @@ def update_by_filter(
 
     bind_vars = {"@col": collection, "fields": fields}
     bind_vars.update(filter_vars)
-    db.aql.execute("\n".join(query_lines), bind_vars=bind_vars)
+    _execute_aql(db, "\n".join(query_lines), bind_vars=bind_vars)
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +264,8 @@ def update_by_filter(
 
 def delete_by_ids(db: SafeDatabase, collection: str, ids: list[str]) -> None:
     """Delete documents by ``_id`` list."""
-    db.aql.execute(
+    _execute_aql(
+        db,
         "FOR id IN @ids REMOVE {_id: id} IN @@col",
         bind_vars={"@col": collection, "ids": ids},
     )
@@ -257,7 +273,8 @@ def delete_by_ids(db: SafeDatabase, collection: str, ids: list[str]) -> None:
 
 def delete_by_field(db: SafeDatabase, collection: str, field: str, value: Any) -> int:
     """Delete all documents where field == value. Returns count deleted."""
-    cursor = db.aql.execute(
+    cursor = _execute_aql(
+        db,
         "FOR doc IN @@col FILTER doc[@field] == @val REMOVE doc IN @@col RETURN 1",
         bind_vars={"@col": collection, "field": field, "val": value},
     )
@@ -279,7 +296,7 @@ def delete_by_filter(db: SafeDatabase, collection: str, filter_dict: dict[str, A
 
     bind_vars = {"@col": collection}
     bind_vars.update(filter_vars)
-    cursor = db.aql.execute("\n".join(query_lines), bind_vars=bind_vars)
+    cursor = _execute_aql(db, "\n".join(query_lines), bind_vars=bind_vars)
     return sum(1 for _ in cursor)
 
 
@@ -290,7 +307,8 @@ def delete_by_filter(db: SafeDatabase, collection: str, filter_dict: dict[str, A
 
 def count_all(db: SafeDatabase, collection: str) -> int:
     """Count all documents in collection."""
-    cursor = db.aql.execute(
+    cursor = _execute_aql(
+        db,
         "RETURN LENGTH(@@col)",
         bind_vars={"@col": collection},
     )
@@ -299,7 +317,8 @@ def count_all(db: SafeDatabase, collection: str) -> int:
 
 def count_by_field(db: SafeDatabase, collection: str, field: str, value: Any) -> int:
     """Count documents where field == value."""
-    cursor = db.aql.execute(
+    cursor = _execute_aql(
+        db,
         "FOR doc IN @@col FILTER doc[@field] == @val COLLECT WITH COUNT INTO c RETURN c",
         bind_vars={"@col": collection, "field": field, "val": value},
     )
@@ -321,7 +340,7 @@ def count_by_filter(db: SafeDatabase, collection: str, filter_dict: dict[str, An
 
     bind_vars = {"@col": collection}
     bind_vars.update(filter_vars)
-    cursor = db.aql.execute("\n".join(query_lines), bind_vars=bind_vars)
+    cursor = _execute_aql(db, "\n".join(query_lines), bind_vars=bind_vars)
     return cast("int", next(cursor, 0))
 
 
@@ -349,7 +368,7 @@ def collect_field(
     bind_vars = {"@col": collection, "field": field}
     bind_vars.update(filter_vars)
     bind_vars.update(pagination_vars)
-    cursor = db.aql.execute(query, bind_vars=bind_vars)
+    cursor = _execute_aql(db, query, bind_vars=bind_vars)
     return list(cursor)
 
 
@@ -377,7 +396,7 @@ def aggregate_field(
     bind_vars = {"@col": collection, "field": field}
     bind_vars.update(filter_vars)
     bind_vars.update(pagination_vars)
-    cursor = db.aql.execute(query, bind_vars=bind_vars)
+    cursor = _execute_aql(db, query, bind_vars=bind_vars)
     return [cast("AggResult", row) for row in cursor]
 
 
@@ -417,7 +436,7 @@ def traversal_by_id(
 
     bind_vars = {"start_id": start_id, "@edge": edge}
     bind_vars.update(pagination_vars)
-    cursor = db.aql.execute(query, bind_vars=bind_vars)
+    cursor = _execute_aql(db, query, bind_vars=bind_vars)
     return _cursor_to_documents(cursor)
 
 
@@ -459,7 +478,7 @@ def traversal_by_filter(
         raise ValueError(msg)
 
     bind_vars.update(pagination_vars)
-    cursor = db.aql.execute(query, bind_vars=bind_vars)
+    cursor = _execute_aql(db, query, bind_vars=bind_vars)
     return _cursor_to_documents(cursor)
 
 
@@ -509,7 +528,7 @@ def traversal_by_filter_with_target_filter(
         raise ValueError(msg)
 
     bind_vars.update(pagination_vars)
-    cursor = db.aql.execute(query, bind_vars=bind_vars)
+    cursor = _execute_aql(db, query, bind_vars=bind_vars)
     return _cursor_to_documents(cursor)
 
 
@@ -544,7 +563,8 @@ def ann_search(
         bind_vars["filter_value"] = filter_value
         filter_clause = "FILTER @filter_value IN doc[@filter_field] OR doc[@filter_field] == @filter_value"
 
-    cursor = db.aql.execute(
+    cursor = _execute_aql(
+        db,
         f"""
         FOR doc IN APPROX_NEAR_COSINE(@@col, @query_vector, @nprobe)
             {filter_clause}
