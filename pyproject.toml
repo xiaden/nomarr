@@ -38,7 +38,7 @@ dependencies = [
     "psutil>=7.0.0",
     "rapidfuzz>=3.0.0",
     "spotipy>=2.24.0",
-    "packaging>=24.0",
+    "packaging>=26.0",
 ]
 
 [project.optional-dependencies]
