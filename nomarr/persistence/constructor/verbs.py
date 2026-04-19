@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 
 
 def _execute_aql(db: SafeDatabase, query: str, bind_vars: dict[str, Any]) -> Any:
-    """Execute AQL via python-arango, logging the query at INFO level."""
-    logger.info("AQL: %s | bind_vars: %s", query, bind_vars)
+    """Execute AQL via python-arango, logging the query at DEBUG level."""
+    logger.debug("AQL: %s | bind_vars: %s", query, bind_vars)
     return db.aql.execute(query, bind_vars=bind_vars)
 
 
