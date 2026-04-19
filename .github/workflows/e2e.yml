@@ -1,33 +1,16 @@
-name: E2E Tests
+name: E2E Tests (Manual)
 
 on:
-  # Run after CI completes (image must be built and pushed first)
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [main, develop]
-  # Direct trigger on develop pushes to e2e-related files
-  push:
-    branches: [develop]
-    paths:
-      - ".github/workflows/e2e.yml"
-      - "e2e/**"
-      - "playwright.config.ts"
   # Manual trigger with optional image tag override
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Nomarr image tag to test (default: branch-appropriate tag)"
+        description: "Nomarr image tag to test (default: develop)"
         required: false
         type: string
 
 jobs:
   e2e:
-    # Only run if CI succeeded (for workflow_run trigger) or direct trigger
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'push' ||
-      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -43,8 +26,6 @@ jobs:
         run: |
           if [ -n "${{ inputs.image_tag }}" ]; then
             TAG="${{ inputs.image_tag }}"
-          elif [ "${{ github.event.workflow_run.head_branch || github.ref_name }}" = "main" ]; then
-            TAG="latest"
           else
             TAG="develop"
           fi
