@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from arango.exceptions import AQLQueryExecuteError
+
 from nomarr.components.platform.arango_bootstrap_comp import ensure_schema
 from nomarr.components.platform.migration_runner_comp import (
     MigrationError,
@@ -40,7 +42,13 @@ def _is_fresh_database(db: Database) -> bool:
         True if this is a fresh (uninitialized) database.
 
     """
-    return db.meta.key.get("version") is None
+    try:
+        return db.meta.key.get("version") is None
+    except AQLQueryExecuteError as exc:
+        # ERR 1203: collection or view not found — truly fresh database
+        if "[ERR 1203]" in str(exc):
+            return True
+        raise
 
 
 def prepare_database_workflow(
