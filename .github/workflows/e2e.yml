@@ -6,6 +6,13 @@ on:
     workflows: ["CI"]
     types: [completed]
     branches: [main, develop]
+  # Direct trigger on develop pushes to e2e-related files
+  push:
+    branches: [develop]
+    paths:
+      - ".github/workflows/e2e.yml"
+      - "e2e/**"
+      - "playwright.config.ts"
   # Manual trigger with optional image tag override
   workflow_dispatch:
     inputs:
