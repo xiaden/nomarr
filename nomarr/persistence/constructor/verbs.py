@@ -7,6 +7,7 @@ The collection name uses @@ bind var notation (two @ = collection bind).
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, cast
 
 from nomarr.helpers.filter_types import AggResult, FilterDict
@@ -28,6 +29,16 @@ def _execute_aql(db: SafeDatabase, query: str, bind_vars: dict[str, Any]) -> Any
     """Execute AQL via python-arango, logging the query at INFO level."""
     logger.info("AQL: %s | bind_vars: %s", query, bind_vars)
     return db.aql.execute(query, bind_vars=bind_vars)
+
+
+_FIELD_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def _validate_field_name(field: str) -> None:
+    """Ensure *field* is a safe AQL identifier before string interpolation."""
+    if not _FIELD_NAME_RE.match(field):
+        msg = f"Invalid field name for AQL interpolation: {field!r}"
+        raise ValueError(msg)
 
 
 def _cursor_to_documents(cursor: Any) -> list[Document]:
@@ -200,22 +211,24 @@ def upsert_by_field(
     ids: list[str] = []
     for doc in docs:
         if isinstance(field, list):
-            upsert_fields = ", ".join(f"[@f{index}]: doc[@f{index}]" for index, _ in enumerate(field))
-            bind_vars: dict[str, Any] = {"@col": collection, "docs": [doc]}
-            for index, field_name in enumerate(field):
-                bind_vars[f"f{index}"] = field_name
+            for f in field:
+                _validate_field_name(f)
+            upsert_fields = ", ".join(f"`{f}`: @kv{i}" for i, f in enumerate(field))
+            bind_vars: dict[str, Any] = {"@col": collection, "doc": doc}
+            for i, f in enumerate(field):
+                bind_vars[f"kv{i}"] = doc.get(f)
             cursor = _execute_aql(
                 db,
-                "FOR doc IN @docs UPSERT { " + upsert_fields + " } INSERT doc UPDATE doc IN @@col RETURN NEW._id",
+                f"UPSERT {{ {upsert_fields} }} INSERT @doc UPDATE @doc IN @@col RETURN NEW._id",
                 bind_vars=bind_vars,
             )
         else:
+            _validate_field_name(field)
             cursor = _execute_aql(
                 db,
-                "UPSERT { [@field]: @key_val } INSERT @doc UPDATE @doc IN @@col RETURN NEW._id",
+                f"UPSERT {{ `{field}`: @key_val }} INSERT @doc UPDATE @doc IN @@col RETURN NEW._id",
                 bind_vars={
                     "@col": collection,
-                    "field": field,
                     "key_val": doc.get(field),
                     "doc": doc,
                 },

@@ -84,9 +84,9 @@ class TestUpsertByField:
         assert result == ["items/1", "items/2"]
         first_call = db.aql.execute.call_args_list[0]
         assert "UPSERT" in first_call.args[0]
+        assert "`slug`" in first_call.args[0]
         assert first_call.kwargs["bind_vars"] == {
             "@col": "items",
-            "field": "slug",
             "key_val": "foo",
             "doc": {"slug": "foo"},
         }
@@ -104,12 +104,12 @@ class TestUpsertByField:
 
         assert result == ["tags/1", "tags/2"]
         first_call = db.aql.execute.call_args_list[0]
-        assert "FOR doc IN @docs UPSERT { [@f0]: doc[@f0], [@f1]: doc[@f1] }" in first_call.args[0]
+        assert "UPSERT { `rel`: @kv0, `value`: @kv1 }" in first_call.args[0]
         assert first_call.kwargs["bind_vars"] == {
             "@col": "tags",
-            "docs": [docs[0]],
-            "f0": "rel",
-            "f1": "value",
+            "doc": docs[0],
+            "kv0": "genre",
+            "kv1": "rock",
         }
 
     def test_empty_docs_list_returns_empty_list_without_db_call(self) -> None:
