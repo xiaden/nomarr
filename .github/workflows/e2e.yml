@@ -1,0 +1,180 @@
+name: E2E Tests
+
+on:
+  # Run after CI completes (image must be built and pushed first)
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main, develop]
+  # Manual trigger with optional image tag override
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Nomarr image tag to test (default: branch-appropriate tag)"
+        required: false
+        type: string
+
+jobs:
+  e2e:
+    # Only run if CI succeeded (or manual trigger)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Determine image tag
+        id: image
+        run: |
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            TAG="${{ inputs.image_tag }}"
+          elif [ "${{ github.event.workflow_run.head_branch || github.ref_name }}" = "main" ]; then
+            TAG="latest"
+          else
+            TAG="develop"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "Using image tag: ${TAG}"
+
+      - name: Create Docker environment files
+        run: |
+          cat > docker/nomarr.env <<'EOF'
+          ARANGO_HOST=http://nomarr-arangodb:8529
+          ARANGO_ROOT_PASSWORD=e2e_test_password
+          EOF
+
+          cat > docker/nomarr-arangodb.env <<'EOF'
+          ARANGO_ROOT_PASSWORD=e2e_test_password
+          ARANGO_NO_AUTH=0
+          EOF
+
+      - name: Create compose override for CI
+        run: |
+          cat > docker/compose.e2e.yaml <<'EOF'
+          services:
+            nomarr:
+              image: ghcr.io/xiaden/nomarr:${{ steps.image.outputs.tag }}
+              user: "1000:1000"
+              ports:
+                - "8356:8356"
+              volumes:
+                - nomarr-config:/app/config
+              env_file:
+                - nomarr.env
+              depends_on:
+                nomarr-arangodb:
+                  condition: service_healthy
+              deploy: {}
+              restart: "no"
+              healthcheck:
+                test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8356/info || exit 1"]
+                interval: 5s
+                timeout: 10s
+                retries: 30
+                start_period: 30s
+
+            nomarr-arangodb:
+              image: arangodb:3.12
+              env_file:
+                - nomarr-arangodb.env
+              command: ["--vector-index", "--query.memory-limit=1073741824"]
+              volumes:
+                - arangodb-data:/var/lib/arangodb3
+              restart: "no"
+              healthcheck:
+                test: ["CMD-SHELL", "arangosh --server.endpoint tcp://127.0.0.1:8529 --server.username root --server.password \"$$ARANGO_ROOT_PASSWORD\" --javascript.execute-string 'db._version()' >/dev/null 2>&1"]
+                interval: 5s
+                timeout: 5s
+                retries: 20
+                start_period: 15s
+
+          volumes:
+            nomarr-config:
+            arangodb-data:
+          EOF
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull Nomarr image
+        run: docker pull ghcr.io/xiaden/nomarr:${{ steps.image.outputs.tag }}
+
+      - name: Start containers
+        working-directory: docker
+        run: |
+          docker compose -f compose.e2e.yaml up -d
+          echo "Waiting for services to become healthy..."
+          docker compose -f compose.e2e.yaml logs -f &
+          LOG_PID=$!
+
+          # Wait for both services to be healthy
+          timeout 180 bash -c '
+            while true; do
+              NOMARR_HEALTH=$(docker inspect --format="{{.State.Health.Status}}" nomarr 2>/dev/null || echo "missing")
+              ARANGO_HEALTH=$(docker inspect --format="{{.State.Health.Status}}" nomarr-arangodb 2>/dev/null || echo "missing")
+              echo "  nomarr: ${NOMARR_HEALTH} | arangodb: ${ARANGO_HEALTH}"
+              if [ "$NOMARR_HEALTH" = "healthy" ] && [ "$ARANGO_HEALTH" = "healthy" ]; then
+                echo "✅ All services healthy"
+                break
+              fi
+              sleep 5
+            done
+          '
+          kill $LOG_PID 2>/dev/null || true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      - name: Install Playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        run: npx playwright test --project=chromium --reporter=list,html
+        env:
+          CI: true
+
+      - name: Dump container logs on failure
+        if: failure()
+        working-directory: docker
+        run: |
+          echo "========== NOMARR LOGS =========="
+          docker compose -f compose.e2e.yaml logs nomarr --tail=200
+          echo ""
+          echo "========== ARANGODB LOGS =========="
+          docker compose -f compose.e2e.yaml logs nomarr-arangodb --tail=100
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/
+          retention-days: 14
+
+      - name: Stop containers
+        if: always()
+        working-directory: docker
+        run: docker compose -f compose.e2e.yaml down -v
