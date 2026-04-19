@@ -7,7 +7,6 @@ The collection name uses @@ bind var notation (two @ = collection bind).
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any, cast
 
 from nomarr.helpers.filter_types import AggResult, FilterDict
@@ -31,12 +30,9 @@ def _execute_aql(db: SafeDatabase, query: str, bind_vars: dict[str, Any]) -> Any
     return db.aql.execute(query, bind_vars=bind_vars)
 
 
-_FIELD_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
-
-
 def _validate_field_name(field: str) -> None:
-    """Ensure *field* is a safe AQL identifier before string interpolation."""
-    if not _FIELD_NAME_RE.match(field):
+    """Ensure *field* is safe for backtick-quoted AQL interpolation."""
+    if not field or "`" in field:
         msg = f"Invalid field name for AQL interpolation: {field!r}"
         raise ValueError(msg)
 
