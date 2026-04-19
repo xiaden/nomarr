@@ -571,6 +571,9 @@ SCHEMA: dict[str, Any] = {
         "type": CollectionType.STATE_GRAPH,
         "capabilities": ["count", "transition", "traversal"],
         "edge_collection": "file_has_state",
+        "edges": {
+            "file_has_state": {"target": "library_files", "direction": "INBOUND"},
+        },
         "axes": {
             # Each axis: (true_vertex_id, false_vertex_id)
             "tagged": ("file_states/tagged", "file_states/not_tagged"),
