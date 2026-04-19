@@ -79,6 +79,7 @@ def _malloc_trim() -> None:
 def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id: str) -> None:
     """Persist deferred file writes and release the worker claim."""
     from nomarr.components.library.file_sync_comp import save_file_tags, set_chromaprint
+    from nomarr.components.library.library_file_state_comp import transition_file_state
     from nomarr.components.ml.inference.ml_segment_stats_comp import compute_segment_stats
     from nomarr.components.ml.inference.ml_segment_stats_store_comp import upsert_segment_stats_batch
     from nomarr.components.ml.onnx.tag_model_output_comp import write_tag_model_output_edges_batch
@@ -122,12 +123,12 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
                 )
             if stats_entries:
                 upsert_segment_stats_batch(db, stats_entries)
-        db.file_states.transition([file_id], STATE_NOT_TAGGED, STATE_TAGGED)
-        db.file_states.transition([file_id], STATE_NOT_VECTORS_EXTRACTED, STATE_VECTORS_EXTRACTED)
+        transition_file_state(db, [file_id], STATE_NOT_TAGGED, STATE_TAGGED)
+        transition_file_state(db, [file_id], STATE_NOT_VECTORS_EXTRACTED, STATE_VECTORS_EXTRACTED)
         logger.debug("[%s] Async writes done for %s (%d tags)", worker_id, writes.path, len(writes.db_tags))
     except Exception:
         try:
-            db.file_states.transition([file_id], STATE_NOT_ERRORED, STATE_ERRORED)
+            transition_file_state(db, [file_id], STATE_NOT_ERRORED, STATE_ERRORED)
         except Exception:
             logger.debug("[%s] Failed to set errored state for %s", worker_id, file_id, exc_info=True)
         logger.exception("[%s] Async write failed for %s — file will be retried", worker_id, writes.path)
@@ -379,6 +380,7 @@ class DiscoveryWorker(multiprocessing.Process):
         import sys
 
         from nomarr.components.library.library_file_query_comp import get_file_by_id
+        from nomarr.components.library.library_file_state_comp import transition_file_state
         from nomarr.components.workers.worker_discovery_comp import release_claim
         from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
@@ -405,7 +407,7 @@ class DiscoveryWorker(multiprocessing.Process):
             pending_write = None
         if result.heads_processed == 0 and result.tags_written == 0:
             logger.info("[%s] Skipped %s (all heads skipped - likely too short)", self.worker_id, file_path)
-            db.file_states.transition([file_id], STATE_NOT_TAGGED, STATE_TAGGED)
+            transition_file_state(db, [file_id], STATE_NOT_TAGGED, STATE_TAGGED)
             release_claim(db, file_id)
             return None, True
         if result.deferred_writes is not None:
@@ -425,12 +427,13 @@ class DiscoveryWorker(multiprocessing.Process):
         return pending_write, True
 
     def _handle_process_error(self, db: Database, file_id: str, error: Exception, consecutive_errors: int) -> int:
+        from nomarr.components.library.library_file_state_comp import transition_file_state
         from nomarr.components.workers.worker_discovery_comp import release_claim
 
         next_errors = consecutive_errors + 1
         logger.exception("[%s] Error processing %s: %s", self.worker_id, file_id, error)
         try:
-            db.file_states.transition([file_id], STATE_NOT_ERRORED, STATE_ERRORED)
+            transition_file_state(db, [file_id], STATE_NOT_ERRORED, STATE_ERRORED)
         except Exception:
             logger.debug("[%s] Failed to set errored state for %s", self.worker_id, file_id, exc_info=True)
         release_claim(db, file_id)

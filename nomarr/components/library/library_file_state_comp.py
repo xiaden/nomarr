@@ -8,6 +8,7 @@ from arango.exceptions import DocumentInsertError
 
 from nomarr.helpers.constants.file_states import (
     ALL_STATE_VERTICES,
+    AXIS_PAIRS,
     STATE_CALIBRATED,
     STATE_ERRORED,
     STATE_NOT_CALIBRATED,
@@ -26,6 +27,30 @@ if TYPE_CHECKING:
 
 
 DUPLICATE_KEY_ERROR_CODE = 1210
+
+# Build reverse lookup: given (from_vertex, to_vertex), verify the pair belongs to the same axis.
+_VALID_TRANSITIONS: set[tuple[str, str]] = set()
+for _positive, _negative in AXIS_PAIRS.values():
+    _VALID_TRANSITIONS.add((_positive, _negative))
+    _VALID_TRANSITIONS.add((_negative, _positive))
+
+
+def transition_file_state(db: Database, file_ids: list[str], from_state: str, to_state: str) -> None:
+    """Transition files between boolean state vertices with axis-pair validation.
+
+    Validates that ``from_state`` and ``to_state`` belong to the same axis pair
+    as defined in ``AXIS_PAIRS`` before delegating to persistence.
+
+    Raises:
+        ValueError: If the from/to pair is not a valid axis transition.
+    """
+    if (from_state, to_state) not in _VALID_TRANSITIONS:
+        msg = (
+            f"Invalid state transition: {from_state!r} -> {to_state!r}. "
+            f"Transitions must swap between poles of the same axis (see AXIS_PAIRS)."
+        )
+        raise ValueError(msg)
+    db.file_states.transition(file_ids, from_state, to_state)
 
 
 def _insert_file_state_edges_ignoring_duplicates(db: Database, edge_docs: list[dict[str, str]]) -> None:
@@ -289,7 +314,7 @@ def bulk_set_not_calibrated(db: Database) -> int:
     file_ids = [edge["_from"] for edge in db.file_has_state._to.get.many(STATE_CALIBRATED, limit=None)]
     if not file_ids:
         return 0
-    db.file_states.transition(file_ids, STATE_CALIBRATED, STATE_NOT_CALIBRATED)
+    transition_file_state(db, file_ids, STATE_CALIBRATED, STATE_NOT_CALIBRATED)
     return len(file_ids)
 
 
@@ -301,7 +326,7 @@ def bulk_set_tags_stale(db: Database, library_id: str | None = None) -> int:
         file_ids = [file_id for file_id in file_ids if file_id in library_file_ids]
     if not file_ids:
         return 0
-    db.file_states.transition(file_ids, STATE_TAGS_CURRENT, STATE_TAGS_STALE)
+    transition_file_state(db, file_ids, STATE_TAGS_CURRENT, STATE_TAGS_STALE)
     return len(file_ids)
 
 
@@ -310,5 +335,5 @@ def bulk_set_not_vectors_extracted(db: Database) -> int:
     file_ids = [edge["_from"] for edge in db.file_has_state._to.get.many(STATE_VECTORS_EXTRACTED, limit=None)]
     if not file_ids:
         return 0
-    db.file_states.transition(file_ids, STATE_VECTORS_EXTRACTED, STATE_NOT_VECTORS_EXTRACTED)
+    transition_file_state(db, file_ids, STATE_VECTORS_EXTRACTED, STATE_NOT_VECTORS_EXTRACTED)
     return len(file_ids)

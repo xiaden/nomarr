@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from arango.exceptions import DocumentInsertError
 
-from nomarr.components.library.library_file_state_comp import get_stale_file_ids
+from nomarr.components.library.library_file_state_comp import get_stale_file_ids, transition_file_state
 from nomarr.helpers.constants.file_states import (
     STATE_TAGS_CURRENT,
     STATE_TAGS_NOT_WRITTEN,
@@ -90,8 +90,8 @@ def set_file_written(db: Database, file_key: str) -> None:
     else:
         file_id = f"library_files/{file_key}"
 
-    db.file_states.transition([file_id], STATE_TAGS_NOT_WRITTEN, STATE_TAGS_WRITTEN)
-    db.file_states.transition([file_id], STATE_TAGS_STALE, STATE_TAGS_CURRENT)
+    transition_file_state(db, [file_id], STATE_TAGS_NOT_WRITTEN, STATE_TAGS_WRITTEN)
+    transition_file_state(db, [file_id], STATE_TAGS_STALE, STATE_TAGS_CURRENT)
     db.worker_claims.file_id.delete(file_id)
 
 

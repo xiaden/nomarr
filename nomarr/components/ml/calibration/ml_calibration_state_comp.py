@@ -14,6 +14,7 @@ from nomarr.components.library.library_file_state_comp import (
     bulk_set_not_calibrated,
     bulk_set_not_vectors_extracted,
     get_calibration_status_by_library,
+    transition_file_state,
 )
 from nomarr.components.library.library_records_comp import list_library_records
 from nomarr.helpers.constants.file_states import STATE_CALIBRATED, STATE_NOT_CALIBRATED
@@ -275,7 +276,7 @@ def update_file_calibration_hash(
     file_id: str,
 ) -> None:
     """Mark a single library file as calibrated."""
-    db.file_states.transition([file_id], STATE_NOT_CALIBRATED, STATE_CALIBRATED)
+    transition_file_state(db, [file_id], STATE_NOT_CALIBRATED, STATE_CALIBRATED)
 
 
 def update_file_calibration_hashes_batch(
@@ -290,7 +291,7 @@ def update_file_calibration_hashes_batch(
 
     """
     for file_id in file_ids:
-        db.file_states.transition([file_id], STATE_NOT_CALIBRATED, STATE_CALIBRATED)
+        transition_file_state(db, [file_id], STATE_NOT_CALIBRATED, STATE_CALIBRATED)
 
 
 def compute_reconciliation_info(

@@ -9,6 +9,7 @@ from nomarr.components.library.library_file_state_comp import (
     clear_all_states_batch,
     initialize_file_states,
     initialize_file_states_batch,
+    transition_file_state,
 )
 from nomarr.components.ml.inference.ml_segment_stats_store_comp import (
     delete_segment_stats_for_file,
@@ -99,7 +100,7 @@ def upsert_library_file(
     )
     initialize_file_states(db, file_id)
     if last_tagged_at is not None:
-        db.file_states.transition([file_id], STATE_NOT_TAGGED, STATE_TAGGED)
+        transition_file_state(db, [file_id], STATE_NOT_TAGGED, STATE_TAGGED)
     return file_id
 
 

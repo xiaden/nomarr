@@ -574,17 +574,6 @@ SCHEMA: dict[str, Any] = {
         "edges": {
             "file_has_state": {"target": "library_files", "direction": "INBOUND"},
         },
-        "axes": {
-            # Each axis: (true_vertex_id, false_vertex_id)
-            "tagged": ("file_states/tagged", "file_states/not_tagged"),
-            "too_short": ("file_states/too_short", "file_states/not_too_short"),
-            "calibrated": ("file_states/calibrated", "file_states/not_calibrated"),
-            "tags_written": ("file_states/tags_written", "file_states/tags_not_written"),
-            "tags_current": ("file_states/tags_current", "file_states/tags_stale"),
-            "scanned": ("file_states/scanned", "file_states/not_scanned"),
-            "vectors_extracted": ("file_states/vectors_extracted", "file_states/not_vectors_extracted"),
-            "errored": ("file_states/errored", "file_states/not_errored"),
-        },
         "fields": {
             "_key": {"type": "str", "capabilities": ["get"], "unique": True},
             "_id": {"type": "str", "capabilities": ["get"], "unique": True},

@@ -17,6 +17,7 @@ from nomarr.components.library.library_file_mutation_comp import (
     upsert_library_file as persist_library_file,
 )
 from nomarr.components.library.library_file_query_comp import get_library_file as fetch_library_file
+from nomarr.components.library.library_file_state_comp import transition_file_state
 from nomarr.components.library.library_records_comp import find_library_containing_path
 from nomarr.components.tagging.tag_write_comp import set_song_tags_batch
 from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
@@ -133,7 +134,7 @@ def mark_file_tagged(db: Database, file_id: str) -> None:
         file_id: Document ``_id``
 
     """
-    db.file_states.transition([file_id], STATE_NOT_TAGGED, STATE_TAGGED)
+    transition_file_state(db, [file_id], STATE_NOT_TAGGED, STATE_TAGGED)
 
 
 # ---------------------------------------------------------------------------

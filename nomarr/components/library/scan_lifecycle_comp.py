@@ -25,7 +25,7 @@ from nomarr.components.library.library_file_query_comp import (
 from nomarr.components.library.library_file_query_comp import (
     get_folder_rel_paths as _get_folder_rel_paths,
 )
-from nomarr.components.library.library_file_state_comp import library_has_tagged_files
+from nomarr.components.library.library_file_state_comp import library_has_tagged_files, transition_file_state
 from nomarr.components.library.library_records_comp import get_library_record, list_library_records
 from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
 from nomarr.helpers.constants.pipeline_states import (
@@ -553,7 +553,7 @@ def bootstrap_file_state_edges(
             continue
 
         if bootstrap["type"] == "ml_tagged":
-            db.file_states.transition([file_id], STATE_NOT_TAGGED, STATE_TAGGED)
+            transition_file_state(db, [file_id], STATE_NOT_TAGGED, STATE_TAGGED)
             count += 1
     return count
 

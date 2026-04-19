@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.file_batch_scanner_comp import scan_folder_files
 from nomarr.components.library.folder_analysis_comp import discover_library_folders
+from nomarr.components.library.library_file_state_comp import transition_file_state
 from nomarr.components.library.library_root_comp import validate_library_root
 from nomarr.components.library.move_detection_comp import (
     apply_detected_moves,
@@ -170,8 +171,8 @@ def scan_library_quick_workflow(
                     # Upsert updated entries immediately
                     if updated_entries:
                         file_ids = upsert_scanned_files(db, updated_entries, batch.edge_bootstraps)
-                        db.file_states.transition(file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
-                        db.file_states.transition(file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
+                        transition_file_state(db, file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
+                        transition_file_state(db, file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
                         metadata_by_id = {
                             fid: batch.metadata_map[entry["path"]]
                             for fid, entry in zip(file_ids, updated_entries, strict=True)
@@ -206,8 +207,8 @@ def scan_library_quick_workflow(
                     elif new_entries:
                         # No tagged files — upsert new entries immediately
                         file_ids = upsert_scanned_files(db, new_entries, batch.edge_bootstraps)
-                        db.file_states.transition(file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
-                        db.file_states.transition(file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
+                        transition_file_state(db, file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
+                        transition_file_state(db, file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
                         stats["files_added"] += len(new_entries)
                         metadata_by_id = {
                             fid: batch.metadata_map[entry["path"]]
@@ -268,8 +269,8 @@ def scan_library_quick_workflow(
 
         if truly_new:
             file_ids = upsert_scanned_files(db, truly_new, unmatched_edge_bootstraps)
-            db.file_states.transition(file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
-            db.file_states.transition(file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
+            transition_file_state(db, file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
+            transition_file_state(db, file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
             stats["files_added"] += len(truly_new)
             metadata_by_id = {
                 fid: unmatched_new_metadata[entry["path"]]

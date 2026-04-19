@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.library.library_file_state_comp import transition_file_state
 from nomarr.components.tagging.tag_query_comp import get_song_tags, get_tag, list_songs_for_tag
 from nomarr.components.tagging.tag_write_comp import find_or_create_tag, relink_tag_edges, set_song_tags
 from nomarr.helpers.constants.file_states import STATE_TAGS_NOT_WRITTEN, STATE_TAGS_WRITTEN
@@ -66,7 +67,7 @@ class TaggingCurationMixin:
 
         song_ids = list_songs_for_tag(self.db, target_tag_id)
         for song_id in song_ids:
-            self.db.file_states.transition([song_id], STATE_TAGS_WRITTEN, STATE_TAGS_NOT_WRITTEN)
+            transition_file_state(self.db, [song_id], STATE_TAGS_WRITTEN, STATE_TAGS_NOT_WRITTEN)
 
         return RenameResult(moved=relink["moved"], merged_into_existing=merged_into_existing)
 
@@ -106,7 +107,7 @@ class TaggingCurationMixin:
 
         song_ids = list_songs_for_tag(self.db, canonical_tag_id)
         for song_id in song_ids:
-            self.db.file_states.transition([song_id], STATE_TAGS_WRITTEN, STATE_TAGS_NOT_WRITTEN)
+            transition_file_state(self.db, [song_id], STATE_TAGS_WRITTEN, STATE_TAGS_NOT_WRITTEN)
 
         return MergeResult(total_moved=total_moved, sources_removed=sources_removed)
 
@@ -137,7 +138,7 @@ class TaggingCurationMixin:
         relink = relink_tag_edges(self.db, source_tag_id, target_tag_id, song_ids=song_ids)
 
         for song_id in song_ids:
-            self.db.file_states.transition([song_id], STATE_TAGS_WRITTEN, STATE_TAGS_NOT_WRITTEN)
+            transition_file_state(self.db, [song_id], STATE_TAGS_WRITTEN, STATE_TAGS_NOT_WRITTEN)
 
         return SplitResult(moved=relink["moved"], new_tag_created=new_tag_created)
 
@@ -161,6 +162,6 @@ class TaggingCurationMixin:
         """
         self._reject_nom_prefix(rel=rel)
         set_song_tags(self.db, file_id, rel, list(values))
-        self.db.file_states.transition([file_id], STATE_TAGS_WRITTEN, STATE_TAGS_NOT_WRITTEN)
+        transition_file_state(self.db, [file_id], STATE_TAGS_WRITTEN, STATE_TAGS_NOT_WRITTEN)
         tags = get_song_tags(self.db, file_id, rel=rel)
         return {"file_id": file_id, "rel": rel, "tags": tags.to_dict()}

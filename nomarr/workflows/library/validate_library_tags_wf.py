@@ -6,7 +6,7 @@ import logging
 from collections import Counter
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_file_state_comp import get_files_with_incomplete_tags
+from nomarr.components.library.library_file_state_comp import get_files_with_incomplete_tags, transition_file_state
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
 from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
 
@@ -72,7 +72,7 @@ def validate_library_tags_workflow(
     repaired = 0
     if auto_repair and incomplete:
         file_ids = [row["file_id"] for row in incomplete]
-        db.file_states.transition(file_ids, STATE_TAGGED, STATE_NOT_TAGGED)
+        transition_file_state(db, file_ids, STATE_TAGGED, STATE_NOT_TAGGED)
         repaired = len(incomplete)
 
     return {

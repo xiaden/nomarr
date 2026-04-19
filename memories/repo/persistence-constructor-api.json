@@ -1,0 +1,13 @@
+{
+  "subject": "Persistence API access pattern",
+  "fact": "Persistence access goes through the `Database` facade, which builds collection namespaces from `nomarr.persistence.schema.SCHEMA` via `SchemaConstructor`; `nomarr.persistence.database` is an empty legacy namespace stub kept only for import compatibility, and per-collection type stubs live under `nomarr/persistence/stubs/*.pyi`.",
+  "citations": [
+    "nomarr/persistence/db.py",
+    "nomarr/persistence/constructor/builder.py",
+    "nomarr/persistence/database/__init__.py",
+    "nomarr/persistence/stubs/tags.pyi",
+    "nomarr/persistence/stubs/library_files.pyi"
+  ],
+  "reason": "Future agents need to avoid generating or searching for deleted `*_aql.py` modules and should use the constructor-backed namespace API instead.",
+  "category": "architecture"
+}

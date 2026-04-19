@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.file_tags_comp import get_file_tags_with_path
-from nomarr.components.library.library_file_state_comp import get_errored_file_ids
+from nomarr.components.library.library_file_state_comp import get_errored_file_ids, transition_file_state
 from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.components.library.library_root_comp import resolve_path_within_library
 from nomarr.helpers.constants.file_states import (
@@ -200,7 +200,7 @@ class LibraryFilesMixin:
             allowed = set(file_ids)
             errored_ids = [fid for fid in errored_ids if fid in allowed]
         if errored_ids:
-            self.db.file_states.transition(errored_ids, STATE_ERRORED, STATE_NOT_ERRORED)
-            self.db.file_states.transition(errored_ids, STATE_TAGGED, STATE_NOT_TAGGED)
+            transition_file_state(self.db, errored_ids, STATE_ERRORED, STATE_NOT_ERRORED)
+            transition_file_state(self.db, errored_ids, STATE_TAGGED, STATE_NOT_TAGGED)
         cleared = len(errored_ids)
         return RetryErroredResult(retried=cleared)
