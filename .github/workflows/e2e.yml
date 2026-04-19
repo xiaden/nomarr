@@ -23,9 +23,10 @@ on:
 
 jobs:
   e2e:
-    # Only run if CI succeeded (or manual trigger)
+    # Only run if CI succeeded (for workflow_run trigger) or direct trigger
     if: >-
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
