@@ -1,64 +1,64 @@
 {
-  "generated_at": "2026-04-20T10:25:56Z",
+  "generated_at": "2026-04-20T10:43:04Z",
   "summary": {
     "total_sessions": 22,
     "unique_agents": 16,
-    "total_tokens": 122615386,
-    "total_tool_calls": 3221,
+    "total_tokens": 127483466,
+    "total_tool_calls": 3382,
     "total_failures": 13,
-    "failure_rate": 0.004
+    "failure_rate": 0.0038
   },
   "agent_aggregates": {
     "Agent": {
       "count": 23,
-      "total_tokens": 76372675,
-      "avg_tokens": 3320551,
-      "total_tree_tokens": 122713676,
-      "avg_tool_calls": 58.5,
-      "total_management_calls": 26,
-      "total_editing_calls": 218,
-      "total_exploration_calls": 574,
+      "total_tokens": 77450197,
+      "avg_tokens": 3367400,
+      "total_tree_tokens": 127581756,
+      "avg_tool_calls": 59.0,
+      "total_management_calls": 27,
+      "total_editing_calls": 222,
+      "total_exploration_calls": 577,
       "total_qa_calls": 178,
-      "total_logging_calls": 298,
+      "total_logging_calls": 302,
       "total_research_calls": 50,
-      "avg_management_ratio": 0.0147,
-      "avg_editing_ratio": 0.1162,
-      "avg_exploration_ratio": 0.3775,
-      "avg_qa_ratio": 0.079,
-      "avg_logging_ratio": 0.3836,
-      "avg_research_ratio": 0.0284,
+      "avg_management_ratio": 0.015,
+      "avg_editing_ratio": 0.117,
+      "avg_exploration_ratio": 0.3773,
+      "avg_qa_ratio": 0.0779,
+      "avg_logging_ratio": 0.3841,
+      "avg_research_ratio": 0.028,
       "avg_failure_rate": 0.0078,
       "total_failures": 11,
-      "avg_tokens_per_mutation": 314035.1,
+      "avg_tokens_per_mutation": 312104.4,
       "avg_calls_before_dispatch": 74.8,
-      "avg_turns": 54.3,
+      "avg_turns": 54.8,
       "models_used": [
         "claude-opus-4.6"
       ]
     },
     "Exec-Executor": {
-      "count": 20,
-      "total_tokens": 14214496,
-      "avg_tokens": 710725,
-      "total_tree_tokens": 14214496,
-      "avg_tool_calls": 25.9,
+      "count": 23,
+      "total_tokens": 16953803,
+      "avg_tokens": 737122,
+      "total_tree_tokens": 16953803,
+      "avg_tool_calls": 27.2,
       "total_management_calls": 0,
-      "total_editing_calls": 28,
-      "total_exploration_calls": 250,
-      "total_qa_calls": 59,
-      "total_logging_calls": 88,
-      "total_research_calls": 92,
+      "total_editing_calls": 31,
+      "total_exploration_calls": 291,
+      "total_qa_calls": 64,
+      "total_logging_calls": 113,
+      "total_research_calls": 126,
       "avg_management_ratio": 0.0,
-      "avg_editing_ratio": 0.047,
-      "avg_exploration_ratio": 0.464,
-      "avg_qa_ratio": 0.085,
-      "avg_logging_ratio": 0.1918,
-      "avg_research_ratio": 0.2122,
+      "avg_editing_ratio": 0.0445,
+      "avg_exploration_ratio": 0.4536,
+      "avg_qa_ratio": 0.0799,
+      "avg_logging_ratio": 0.1956,
+      "avg_research_ratio": 0.2264,
       "avg_failure_rate": 0.0,
       "total_failures": 0,
-      "avg_tokens_per_mutation": 542081.6,
+      "avg_tokens_per_mutation": 616285.8,
       "avg_calls_before_dispatch": null,
-      "avg_turns": 12.6,
+      "avg_turns": 13.3,
       "models_used": [
         "gpt-5.4"
       ]
@@ -90,6 +90,33 @@
         "claude-sonnet-4.6"
       ]
     },
+    "Exec-Manager": {
+      "count": 7,
+      "total_tokens": 3639062,
+      "avg_tokens": 519866,
+      "total_tree_tokens": 27606945,
+      "avg_tool_calls": 15.4,
+      "total_management_calls": 33,
+      "total_editing_calls": 0,
+      "total_exploration_calls": 28,
+      "total_qa_calls": 8,
+      "total_logging_calls": 11,
+      "total_research_calls": 28,
+      "avg_management_ratio": 0.3058,
+      "avg_editing_ratio": 0.0,
+      "avg_exploration_ratio": 0.1942,
+      "avg_qa_ratio": 0.0577,
+      "avg_logging_ratio": 0.1014,
+      "avg_research_ratio": 0.3409,
+      "avg_failure_rate": 0.0,
+      "total_failures": 0,
+      "avg_tokens_per_mutation": 0,
+      "avg_calls_before_dispatch": 6.0,
+      "avg_turns": 12.7,
+      "models_used": [
+        "claude-sonnet-4.6"
+      ]
+    },
     "QA-TestAnalyzer": {
       "count": 6,
       "total_tokens": 3558387,
@@ -117,31 +144,31 @@
         "claude-sonnet-4.6"
       ]
     },
-    "Exec-Manager": {
-      "count": 6,
-      "total_tokens": 3548302,
-      "avg_tokens": 591384,
-      "total_tree_tokens": 26383154,
-      "avg_tool_calls": 17.3,
-      "total_management_calls": 32,
+    "Support-PatternEnforcer": {
+      "count": 4,
+      "total_tokens": 2749456,
+      "avg_tokens": 687364,
+      "total_tree_tokens": 2749456,
+      "avg_tool_calls": 36.5,
+      "total_management_calls": 0,
       "total_editing_calls": 0,
-      "total_exploration_calls": 28,
-      "total_qa_calls": 8,
-      "total_logging_calls": 11,
-      "total_research_calls": 25,
-      "avg_management_ratio": 0.3151,
+      "total_exploration_calls": 135,
+      "total_qa_calls": 0,
+      "total_logging_calls": 2,
+      "total_research_calls": 9,
+      "avg_management_ratio": 0.0,
       "avg_editing_ratio": 0.0,
-      "avg_exploration_ratio": 0.2266,
-      "avg_qa_ratio": 0.0673,
-      "avg_logging_ratio": 0.1183,
-      "avg_research_ratio": 0.2727,
+      "avg_exploration_ratio": 0.927,
+      "avg_qa_ratio": 0.0,
+      "avg_logging_ratio": 0.0129,
+      "avg_research_ratio": 0.0602,
       "avg_failure_rate": 0.0,
       "total_failures": 0,
       "avg_tokens_per_mutation": 0,
-      "avg_calls_before_dispatch": 6.5,
-      "avg_turns": 14.2,
+      "avg_calls_before_dispatch": null,
+      "avg_turns": 10.5,
       "models_used": [
-        "claude-sonnet-4.6"
+        "gpt-5.4"
       ]
     },
     "RnD-DDAuthor": {
@@ -248,33 +275,6 @@
       "avg_tokens_per_mutation": 0,
       "avg_calls_before_dispatch": null,
       "avg_turns": 8.8,
-      "models_used": [
-        "gpt-5.4"
-      ]
-    },
-    "Support-PatternEnforcer": {
-      "count": 3,
-      "total_tokens": 1788965,
-      "avg_tokens": 596322,
-      "total_tree_tokens": 1788965,
-      "avg_tool_calls": 36.3,
-      "total_management_calls": 0,
-      "total_editing_calls": 0,
-      "total_exploration_calls": 103,
-      "total_qa_calls": 0,
-      "total_logging_calls": 2,
-      "total_research_calls": 4,
-      "avg_management_ratio": 0.0,
-      "avg_editing_ratio": 0.0,
-      "avg_exploration_ratio": 0.9477,
-      "avg_qa_ratio": 0.0,
-      "avg_logging_ratio": 0.0171,
-      "avg_research_ratio": 0.0352,
-      "avg_failure_rate": 0.0,
-      "total_failures": 0,
-      "avg_tokens_per_mutation": 0,
-      "avg_calls_before_dispatch": null,
-      "avg_turns": 10.0,
       "models_used": [
         "gpt-5.4"
       ]
@@ -446,12 +446,12 @@
     {
       "name": "read_file",
       "category": "exploration",
-      "total_calls": 1130,
+      "total_calls": 1180,
       "failures": 4,
-      "failure_rate": 0.0035,
-      "repeats": 750,
-      "repeat_rate": 0.6637,
-      "avg_duration_ms": 50.7,
+      "failure_rate": 0.0034,
+      "repeats": 788,
+      "repeat_rate": 0.6678,
+      "avg_duration_ms": 50.6,
       "agent_count": 15,
       "agents": [
         "Agent",
@@ -474,12 +474,12 @@
     {
       "name": "grep_search",
       "category": "exploration",
-      "total_calls": 398,
+      "total_calls": 421,
       "failures": 0,
       "failure_rate": 0.0,
-      "repeats": 208,
-      "repeat_rate": 0.5226,
-      "avg_duration_ms": 171.1,
+      "repeats": 222,
+      "repeat_rate": 0.5273,
+      "avg_duration_ms": 167.4,
       "agent_count": 13,
       "agents": [
         "Agent",
@@ -500,11 +500,11 @@
     {
       "name": "manage_todo_list",
       "category": "logging",
-      "total_calls": 288,
+      "total_calls": 291,
       "failures": 0,
       "failure_rate": 0.0,
       "repeats": 94,
-      "repeat_rate": 0.3264,
+      "repeat_rate": 0.323,
       "avg_duration_ms": 2.1,
       "agent_count": 1,
       "agents": [
@@ -533,12 +533,12 @@
     {
       "name": "mcp_nomarr_dev_read_module_api",
       "category": "research",
-      "total_calls": 109,
+      "total_calls": 118,
       "failures": 0,
       "failure_rate": 0.0,
-      "repeats": 83,
-      "repeat_rate": 0.7615,
-      "avg_duration_ms": 200.3,
+      "repeats": 88,
+      "repeat_rate": 0.7458,
+      "avg_duration_ms": 190.9,
       "agent_count": 7,
       "agents": [
         "Agent",
@@ -553,12 +553,12 @@
     {
       "name": "replace_string_in_file",
       "category": "editing",
-      "total_calls": 104,
+      "total_calls": 105,
       "failures": 0,
       "failure_rate": 0.0,
       "repeats": 28,
-      "repeat_rate": 0.2692,
-      "avg_duration_ms": 18.5,
+      "repeat_rate": 0.2667,
+      "avg_duration_ms": 18.4,
       "agent_count": 1,
       "agents": [
         "Agent"
@@ -567,12 +567,12 @@
     {
       "name": "mcp_nomarr_dev_lint_project_backend",
       "category": "qa",
-      "total_calls": 98,
+      "total_calls": 103,
       "failures": 0,
       "failure_rate": 0.0,
-      "repeats": 31,
-      "repeat_rate": 0.3163,
-      "avg_duration_ms": 17314.1,
+      "repeats": 33,
+      "repeat_rate": 0.3204,
+      "avg_duration_ms": 17199.9,
       "agent_count": 6,
       "agents": [
         "Agent",
@@ -584,14 +584,28 @@
       ]
     },
     {
+      "name": "mcp_nomarr_dev_plan_complete_step",
+      "category": "logging",
+      "total_calls": 98,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 72,
+      "repeat_rate": 0.7347,
+      "avg_duration_ms": 224.0,
+      "agent_count": 1,
+      "agents": [
+        "Exec-Executor"
+      ]
+    },
+    {
       "name": "runSubagent",
       "category": "management",
-      "total_calls": 80,
+      "total_calls": 82,
       "failures": 0,
       "failure_rate": 0.0,
       "repeats": 31,
-      "repeat_rate": 0.3875,
-      "avg_duration_ms": 1407336.8,
+      "repeat_rate": 0.378,
+      "avg_duration_ms": 1381575.1,
       "agent_count": 5,
       "agents": [
         "Agent",
@@ -602,28 +616,14 @@
       ]
     },
     {
-      "name": "mcp_nomarr_dev_plan_complete_step",
-      "category": "logging",
-      "total_calls": 77,
-      "failures": 0,
-      "failure_rate": 0.0,
-      "repeats": 54,
-      "repeat_rate": 0.7013,
-      "avg_duration_ms": 278.1,
-      "agent_count": 1,
-      "agents": [
-        "Exec-Executor"
-      ]
-    },
-    {
       "name": "mcp_nomarr_dev_log_read",
       "category": "research",
-      "total_calls": 72,
+      "total_calls": 78,
       "failures": 0,
       "failure_rate": 0.0,
-      "repeats": 40,
-      "repeat_rate": 0.5556,
-      "avg_duration_ms": 48.3,
+      "repeats": 43,
+      "repeat_rate": 0.5513,
+      "avg_duration_ms": 47.9,
       "agent_count": 6,
       "agents": [
         "Exec-Executor",
@@ -653,6 +653,23 @@
         "RnD-DDAuthor",
         "Support-Librarian",
         "Support-PatternEnforcer"
+      ]
+    },
+    {
+      "name": "mcp_nomarr_dev_read_module_source",
+      "category": "research",
+      "total_calls": 51,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 30,
+      "repeat_rate": 0.5882,
+      "avg_duration_ms": 834.1,
+      "agent_count": 4,
+      "agents": [
+        "Agent",
+        "Exec-Executor",
+        "Exec-Planner",
+        "QA-Reviewer"
       ]
     },
     {
@@ -693,6 +710,29 @@
       ]
     },
     {
+      "name": "mcp_nomarr_dev_log_write",
+      "category": "logging",
+      "total_calls": 43,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 2,
+      "repeat_rate": 0.0465,
+      "avg_duration_ms": 34.1,
+      "agent_count": 10,
+      "agents": [
+        "Agent",
+        "Exec-Executor",
+        "Exec-Fixer",
+        "Exec-Manager",
+        "Exec-Planner",
+        "QA-Reviewer",
+        "RnD-DDAuthor",
+        "RnD-Manager",
+        "Support-Librarian",
+        "Support-PatternEnforcer"
+      ]
+    },
+    {
       "name": "multi_replace_string_in_file",
       "category": "editing",
       "total_calls": 42,
@@ -708,26 +748,17 @@
       ]
     },
     {
-      "name": "mcp_nomarr_dev_log_write",
-      "category": "logging",
+      "name": "mcp_gitkraken_git_add_or_commit",
+      "category": "editing",
       "total_calls": 38,
-      "failures": 0,
-      "failure_rate": 0.0,
-      "repeats": 0,
-      "repeat_rate": 0.0,
-      "avg_duration_ms": 30.9,
-      "agent_count": 10,
+      "failures": 3,
+      "failure_rate": 0.0789,
+      "repeats": 16,
+      "repeat_rate": 0.4211,
+      "avg_duration_ms": 2120.1,
+      "agent_count": 1,
       "agents": [
-        "Agent",
-        "Exec-Executor",
-        "Exec-Fixer",
-        "Exec-Manager",
-        "Exec-Planner",
-        "QA-Reviewer",
-        "RnD-DDAuthor",
-        "RnD-Manager",
-        "Support-Librarian",
-        "Support-PatternEnforcer"
+        "Agent"
       ]
     },
     {
@@ -748,45 +779,32 @@
       ]
     },
     {
-      "name": "mcp_nomarr_dev_read_module_source",
+      "name": "mcp_nomarr_dev_plan_read",
       "category": "research",
-      "total_calls": 37,
+      "total_calls": 34,
       "failures": 0,
       "failure_rate": 0.0,
-      "repeats": 20,
-      "repeat_rate": 0.5405,
-      "avg_duration_ms": 1134.9,
-      "agent_count": 4,
+      "repeats": 4,
+      "repeat_rate": 0.1176,
+      "avg_duration_ms": 38.4,
+      "agent_count": 5,
       "agents": [
-        "Agent",
         "Exec-Executor",
+        "Exec-Fixer",
+        "Exec-Manager",
         "Exec-Planner",
         "QA-Reviewer"
       ]
     },
     {
-      "name": "mcp_gitkraken_git_add_or_commit",
-      "category": "editing",
-      "total_calls": 36,
-      "failures": 3,
-      "failure_rate": 0.0833,
-      "repeats": 15,
-      "repeat_rate": 0.4167,
-      "avg_duration_ms": 2083.4,
-      "agent_count": 1,
-      "agents": [
-        "Agent"
-      ]
-    },
-    {
       "name": "mcp_nomarr_dev_adr_read",
       "category": "research",
-      "total_calls": 30,
+      "total_calls": 32,
       "failures": 0,
       "failure_rate": 0.0,
       "repeats": 5,
-      "repeat_rate": 0.1667,
-      "avg_duration_ms": 1193.5,
+      "repeat_rate": 0.1562,
+      "avg_duration_ms": 1119.9,
       "agent_count": 8,
       "agents": [
         "Agent",
@@ -800,32 +818,14 @@
       ]
     },
     {
-      "name": "mcp_nomarr_dev_plan_read",
-      "category": "research",
-      "total_calls": 29,
-      "failures": 0,
-      "failure_rate": 0.0,
-      "repeats": 4,
-      "repeat_rate": 0.1379,
-      "avg_duration_ms": 42.2,
-      "agent_count": 5,
-      "agents": [
-        "Exec-Executor",
-        "Exec-Fixer",
-        "Exec-Manager",
-        "Exec-Planner",
-        "QA-Reviewer"
-      ]
-    },
-    {
       "name": "apply_patch",
       "category": "editing",
-      "total_calls": 27,
+      "total_calls": 30,
       "failures": 0,
       "failure_rate": 0.0,
       "repeats": 1,
-      "repeat_rate": 0.037,
-      "avg_duration_ms": 262.2,
+      "repeat_rate": 0.0333,
+      "avg_duration_ms": 238.5,
       "agent_count": 1,
       "agents": [
         "Exec-Executor"
@@ -849,14 +849,29 @@
       ]
     },
     {
+      "name": "mcp_oraios_serena_get_symbols_overview",
+      "category": "research",
+      "total_calls": 21,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 15,
+      "repeat_rate": 0.7143,
+      "avg_duration_ms": 9421.7,
+      "agent_count": 2,
+      "agents": [
+        "QA-DocsAnalyzer",
+        "Support-PatternEnforcer"
+      ]
+    },
+    {
       "name": "mcp_gitkraken_git_push",
       "category": "editing",
-      "total_calls": 18,
+      "total_calls": 19,
       "failures": 2,
-      "failure_rate": 0.1111,
+      "failure_rate": 0.1053,
       "repeats": 0,
       "repeat_rate": 0.0,
-      "avg_duration_ms": 4340.4,
+      "avg_duration_ms": 4269.7,
       "agent_count": 1,
       "agents": [
         "Agent"
@@ -877,20 +892,6 @@
       ]
     },
     {
-      "name": "mcp_oraios_serena_get_symbols_overview",
-      "category": "research",
-      "total_calls": 17,
-      "failures": 0,
-      "failure_rate": 0.0,
-      "repeats": 12,
-      "repeat_rate": 0.7059,
-      "avg_duration_ms": 11556.6,
-      "agent_count": 1,
-      "agents": [
-        "QA-DocsAnalyzer"
-      ]
-    },
-    {
       "name": "mcp_nomarr_dev_asr_search",
       "category": "research",
       "total_calls": 16,
@@ -908,12 +909,12 @@
     {
       "name": "mcp_nomarr_dev_dd_read",
       "category": "research",
-      "total_calls": 14,
+      "total_calls": 15,
       "failures": 0,
       "failure_rate": 0.0,
       "repeats": 2,
-      "repeat_rate": 0.1429,
-      "avg_duration_ms": 34.1,
+      "repeat_rate": 0.1333,
+      "avg_duration_ms": 33.8,
       "agent_count": 7,
       "agents": [
         "Agent",
@@ -957,6 +958,20 @@
       ]
     },
     {
+      "name": "fetch_webpage",
+      "category": "exploration",
+      "total_calls": 12,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 6,
+      "repeat_rate": 0.5,
+      "avg_duration_ms": 6925.7,
+      "agent_count": 1,
+      "agents": [
+        "Agent"
+      ]
+    },
+    {
       "name": "mcp_nomarr_dev_read_file_line",
       "category": "exploration",
       "total_calls": 12,
@@ -968,20 +983,6 @@
       "agent_count": 1,
       "agents": [
         "Exec-Planner"
-      ]
-    },
-    {
-      "name": "fetch_webpage",
-      "category": "exploration",
-      "total_calls": 10,
-      "failures": 0,
-      "failure_rate": 0.0,
-      "repeats": 5,
-      "repeat_rate": 0.5,
-      "avg_duration_ms": 7383.7,
-      "agent_count": 1,
-      "agents": [
-        "Agent"
       ]
     },
     {
@@ -1033,6 +1034,21 @@
       ]
     },
     {
+      "name": "mcp_nomarr_dev_locate_module_symbol",
+      "category": "research",
+      "total_calls": 6,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 1,
+      "repeat_rate": 0.1667,
+      "avg_duration_ms": 1572.3,
+      "agent_count": 2,
+      "agents": [
+        "Agent",
+        "Exec-Executor"
+      ]
+    },
+    {
       "name": "mcp_nomarr_dev_adr_suggest",
       "category": "logging",
       "total_calls": 6,
@@ -1061,18 +1077,17 @@
       ]
     },
     {
-      "name": "mcp_nomarr_dev_locate_module_symbol",
-      "category": "research",
+      "name": "mcp_nomarr_dev_plan_archive",
+      "category": "logging",
       "total_calls": 5,
       "failures": 0,
       "failure_rate": 0.0,
-      "repeats": 1,
-      "repeat_rate": 0.2,
-      "avg_duration_ms": 1793.6,
-      "agent_count": 2,
+      "repeats": 0,
+      "repeat_rate": 0.0,
+      "avg_duration_ms": 47.0,
+      "agent_count": 1,
       "agents": [
-        "Agent",
-        "Exec-Executor"
+        "Exec-Manager"
       ]
     },
     {
@@ -1087,20 +1102,6 @@
       "agent_count": 1,
       "agents": [
         "QA-Reviewer"
-      ]
-    },
-    {
-      "name": "mcp_nomarr_dev_plan_archive",
-      "category": "logging",
-      "total_calls": 5,
-      "failures": 0,
-      "failure_rate": 0.0,
-      "repeats": 0,
-      "repeat_rate": 0.0,
-      "avg_duration_ms": 47.0,
-      "agent_count": 1,
-      "agents": [
-        "Exec-Manager"
       ]
     },
     {
@@ -1259,6 +1260,20 @@
       ]
     },
     {
+      "name": "semantic_search",
+      "category": "exploration",
+      "total_calls": 1,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 0,
+      "repeat_rate": 0.0,
+      "avg_duration_ms": 5266.0,
+      "agent_count": 1,
+      "agents": [
+        "Support-PatternEnforcer"
+      ]
+    },
+    {
       "name": "mcp_oraios_serena_find_symbol",
       "category": "research",
       "total_calls": 1,
@@ -1282,34 +1297,34 @@
         "log_file": "main.jsonl",
         "timestamp": 1776676276426,
         "spawn_prompt": "",
-        "turn_count": 129,
-        "wall_time_ms": 17103369,
-        "total_input_tokens": 8035883,
-        "total_output_tokens": 29022,
-        "total_tokens": 8064905,
-        "tree_tokens": 8064905,
-        "tool_call_count": 126,
+        "turn_count": 137,
+        "wall_time_ms": 18129927,
+        "total_input_tokens": 8572115,
+        "total_output_tokens": 30079,
+        "total_tokens": 8602194,
+        "tree_tokens": 8602194,
+        "tool_call_count": 134,
         "management_count": 1,
-        "editing_count": 15,
-        "exploration_count": 35,
+        "editing_count": 19,
+        "exploration_count": 37,
         "qa_count": 43,
-        "logging_count": 25,
+        "logging_count": 27,
         "research_count": 5,
-        "management_ratio": 0.0079,
-        "editing_ratio": 0.119,
-        "exploration_ratio": 0.2778,
-        "qa_ratio": 0.3413,
-        "logging_ratio": 0.1984,
-        "research_ratio": 0.0397,
+        "management_ratio": 0.0075,
+        "editing_ratio": 0.1418,
+        "exploration_ratio": 0.2761,
+        "qa_ratio": 0.3209,
+        "logging_ratio": 0.2015,
+        "research_ratio": 0.0373,
         "failure_count": 3,
-        "failure_rate": 0.0238,
-        "repeated_tool_calls": 34,
-        "tokens_per_mutation": 537660.3,
+        "failure_rate": 0.0224,
+        "repeated_tool_calls": 36,
+        "tokens_per_mutation": 452747.1,
         "calls_before_first_dispatch": null,
         "models_used": [
           "claude-opus-4.6"
         ],
-        "avg_ttft_ms": 4580.5,
+        "avg_ttft_ms": 4629.1,
         "tool_calls": [
           {
             "name": "manage_todo_list",
@@ -2192,6 +2207,62 @@
             "status": "ok",
             "timestamp": 1776680749494,
             "args_summary": ""
+          },
+          {
+            "name": "mcp_gitkraken_git_add_or_commit",
+            "duration_ms": 5470,
+            "status": "ok",
+            "timestamp": 1776680754144,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_gitkraken_git_push",
+            "duration_ms": 2997,
+            "status": "ok",
+            "timestamp": 1776680764241,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 4,
+            "status": "ok",
+            "timestamp": 1776680927878,
+            "args_summary": ""
+          },
+          {
+            "name": "fetch_webpage",
+            "duration_ms": 4733,
+            "status": "ok",
+            "timestamp": 1776680936401,
+            "args_summary": ""
+          },
+          {
+            "name": "fetch_webpage",
+            "duration_ms": 4538,
+            "status": "ok",
+            "timestamp": 1776680946810,
+            "args_summary": ""
+          },
+          {
+            "name": "replace_string_in_file",
+            "duration_ms": 7,
+            "status": "ok",
+            "timestamp": 1776680969377,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 3,
+            "status": "ok",
+            "timestamp": 1776681767817,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_gitkraken_git_add_or_commit",
+            "duration_ms": 91,
+            "status": "ok",
+            "timestamp": 1776681776052,
+            "args_summary": ""
           }
         ],
         "children": []
@@ -2206,7 +2277,7 @@
         "timestamp": 1776669955696,
         "spawn_prompt": "",
         "turn_count": 23,
-        "wall_time_ms": 19660093,
+        "wall_time_ms": 20690217,
         "total_input_tokens": 845398,
         "total_output_tokens": 4034,
         "total_tokens": 849432,
@@ -2442,34 +2513,34 @@
         "log_file": "main.jsonl",
         "timestamp": 1776669885562,
         "spawn_prompt": "",
-        "turn_count": 100,
-        "wall_time_ms": 19920174,
-        "total_input_tokens": 6272869,
-        "total_output_tokens": 40667,
-        "total_tokens": 6313536,
-        "tree_tokens": 11136773,
-        "tool_call_count": 109,
-        "management_count": 5,
+        "turn_count": 105,
+        "wall_time_ms": 20950298,
+        "total_input_tokens": 6805146,
+        "total_output_tokens": 48623,
+        "total_tokens": 6853769,
+        "tree_tokens": 15467564,
+        "tool_call_count": 113,
+        "management_count": 6,
         "editing_count": 10,
-        "exploration_count": 32,
+        "exploration_count": 33,
         "qa_count": 10,
-        "logging_count": 33,
+        "logging_count": 35,
         "research_count": 19,
-        "management_ratio": 0.0459,
-        "editing_ratio": 0.0917,
-        "exploration_ratio": 0.2936,
-        "qa_ratio": 0.0917,
-        "logging_ratio": 0.3028,
-        "research_ratio": 0.1743,
+        "management_ratio": 0.0531,
+        "editing_ratio": 0.0885,
+        "exploration_ratio": 0.292,
+        "qa_ratio": 0.0885,
+        "logging_ratio": 0.3097,
+        "research_ratio": 0.1681,
         "failure_count": 1,
-        "failure_rate": 0.0092,
+        "failure_rate": 0.0088,
         "repeated_tool_calls": 29,
-        "tokens_per_mutation": 631353.6,
+        "tokens_per_mutation": 685376.9,
         "calls_before_first_dispatch": 67,
         "models_used": [
           "claude-opus-4.6"
         ],
-        "avg_ttft_ms": 4900.4,
+        "avg_ttft_ms": 4984.9,
         "tool_calls": [
           {
             "name": "manage_todo_list",
@@ -3233,6 +3304,34 @@
             "status": "ok",
             "timestamp": 1776678896630,
             "args_summary": "Exec-Planner"
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776680762170,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 72,
+            "status": "ok",
+            "timestamp": 1776680774482,
+            "args_summary": ""
+          },
+          {
+            "name": "runSubagent",
+            "duration_ms": 281486,
+            "status": "ok",
+            "timestamp": 1776680788190,
+            "args_summary": "Support-PatternEnforcer"
+          },
+          {
+            "name": "mcp_nomarr_dev_log_write",
+            "duration_ms": 7,
+            "status": "ok",
+            "timestamp": 1776681086151,
+            "args_summary": ""
           }
         ],
         "children": [
@@ -5149,6 +5248,1235 @@
               }
             ],
             "children": []
+          },
+          {
+            "agent_name": "Support-PatternEnforcer",
+            "log_file": "runSubagent-Support-PatternEnforcer-toolu_bdrk_01TdDAnmGnRs7BHFjvNNF8TS.jsonl",
+            "timestamp": 1776680788214,
+            "spawn_prompt": "## Task\n\nADR-028 was just committed: \"Compose complex types from simpler types instead of redeclaring their fields.\" The first known violation is ONNXHeadModel duplicating HeadInfo's fields.\n\nSearch the codebase for OTHER instances of this same anti-pattern: a complex type that redeclares fields from a simpler type it could compose instead. \n\nLook for:\n1. Classes that share 3+ field names with another class in the same or lower layer\n2. Constructor patterns that extract fields from one object to pass individually into another constructor\n3. Classes with `build_versioned_tag_key()` or similar methods duplicated across types\n4. Any dataclass/NamedTuple/class that looks like a superset of another's fields with different naming\n\nFocus on `nomarr/` \u2014 skip tests, scripts, and code-intel.\n\nFor each instance found, report:\n- The two types involved\n- Which fields are duplicated\n- Which file(s)\n- Severity: how much duplication / how likely to cause type mismatches\n\nReturn a structured list. If you find nothing beyond ONNXHeadModel/HeadInfo, say so.",
+            "turn_count": 12,
+            "wall_time_ms": 281172,
+            "total_input_tokens": 949543,
+            "total_output_tokens": 10948,
+            "total_tokens": 960491,
+            "tree_tokens": 960491,
+            "tool_call_count": 37,
+            "management_count": 0,
+            "editing_count": 0,
+            "exploration_count": 32,
+            "qa_count": 0,
+            "logging_count": 0,
+            "research_count": 5,
+            "management_ratio": 0.0,
+            "editing_ratio": 0.0,
+            "exploration_ratio": 0.8649,
+            "qa_ratio": 0.0,
+            "logging_ratio": 0.0,
+            "research_ratio": 0.1351,
+            "failure_count": 0,
+            "failure_rate": 0.0,
+            "repeated_tool_calls": 28,
+            "tokens_per_mutation": 0.0,
+            "calls_before_first_dispatch": null,
+            "models_used": [
+              "gpt-5.4"
+            ],
+            "avg_ttft_ms": 865.6,
+            "tool_calls": [
+              {
+                "name": "read_file",
+                "duration_ms": 32,
+                "status": "ok",
+                "timestamp": 1776680803262,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 33,
+                "status": "ok",
+                "timestamp": 1776680803263,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 35,
+                "status": "ok",
+                "timestamp": 1776680803263,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_adr_read",
+                "duration_ms": 6,
+                "status": "ok",
+                "timestamp": 1776680824315,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 78,
+                "status": "ok",
+                "timestamp": 1776680824315,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 119,
+                "status": "ok",
+                "timestamp": 1776680824316,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 168,
+                "status": "ok",
+                "timestamp": 1776680824316,
+                "args_summary": ""
+              },
+              {
+                "name": "semantic_search",
+                "duration_ms": 5266,
+                "status": "ok",
+                "timestamp": 1776680839716,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_oraios_serena_get_symbols_overview",
+                "duration_ms": 195,
+                "status": "ok",
+                "timestamp": 1776680872156,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_oraios_serena_get_symbols_overview",
+                "duration_ms": 398,
+                "status": "ok",
+                "timestamp": 1776680872156,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_oraios_serena_get_symbols_overview",
+                "duration_ms": 399,
+                "status": "ok",
+                "timestamp": 1776680872156,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_oraios_serena_get_symbols_overview",
+                "duration_ms": 401,
+                "status": "ok",
+                "timestamp": 1776680872156,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 15,
+                "status": "ok",
+                "timestamp": 1776680894093,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 38,
+                "status": "ok",
+                "timestamp": 1776680894094,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 40,
+                "status": "ok",
+                "timestamp": 1776680894094,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 53,
+                "status": "ok",
+                "timestamp": 1776680894094,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 53,
+                "status": "ok",
+                "timestamp": 1776680917954,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 55,
+                "status": "ok",
+                "timestamp": 1776680917954,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 68,
+                "status": "ok",
+                "timestamp": 1776680917954,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 71,
+                "status": "ok",
+                "timestamp": 1776680917954,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 100,
+                "status": "ok",
+                "timestamp": 1776680935798,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 118,
+                "status": "ok",
+                "timestamp": 1776680935798,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 209,
+                "status": "ok",
+                "timestamp": 1776680935798,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 119,
+                "status": "ok",
+                "timestamp": 1776680956701,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 130,
+                "status": "ok",
+                "timestamp": 1776680956701,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 151,
+                "status": "ok",
+                "timestamp": 1776680956701,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 82,
+                "status": "ok",
+                "timestamp": 1776680974547,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 95,
+                "status": "ok",
+                "timestamp": 1776680974547,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 108,
+                "status": "ok",
+                "timestamp": 1776680974547,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 124,
+                "status": "ok",
+                "timestamp": 1776680974547,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 22,
+                "status": "ok",
+                "timestamp": 1776680981671,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 55,
+                "status": "ok",
+                "timestamp": 1776680981671,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 60,
+                "status": "ok",
+                "timestamp": 1776680981671,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 83,
+                "status": "ok",
+                "timestamp": 1776680990149,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 102,
+                "status": "ok",
+                "timestamp": 1776680990150,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 112,
+                "status": "ok",
+                "timestamp": 1776680990150,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 177,
+                "status": "ok",
+                "timestamp": 1776680990150,
+                "args_summary": ""
+              }
+            ],
+            "children": []
+          },
+          {
+            "agent_name": "Exec-Manager",
+            "log_file": "runSubagent-Exec-Manager-toolu_bdrk_01Lg8fwm8dBW8TFQJHXuJFiU.jsonl",
+            "timestamp": 1776681108950,
+            "spawn_prompt": "",
+            "turn_count": 4,
+            "wall_time_ms": 480179,
+            "total_input_tokens": 87261,
+            "total_output_tokens": 3499,
+            "total_tokens": 90760,
+            "tree_tokens": 1223791,
+            "tool_call_count": 4,
+            "management_count": 1,
+            "editing_count": 0,
+            "exploration_count": 0,
+            "qa_count": 0,
+            "logging_count": 0,
+            "research_count": 3,
+            "management_ratio": 0.25,
+            "editing_ratio": 0.0,
+            "exploration_ratio": 0.0,
+            "qa_ratio": 0.0,
+            "logging_ratio": 0.0,
+            "research_ratio": 0.75,
+            "failure_count": 0,
+            "failure_rate": 0.0,
+            "repeated_tool_calls": 0,
+            "tokens_per_mutation": 0.0,
+            "calls_before_first_dispatch": 3,
+            "models_used": [
+              "claude-sonnet-4.6"
+            ],
+            "avg_ttft_ms": 2918.0,
+            "tool_calls": [
+              {
+                "name": "mcp_nomarr_dev_plan_read",
+                "duration_ms": 12,
+                "status": "ok",
+                "timestamp": 1776681113835,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_adr_read",
+                "duration_ms": 27,
+                "status": "ok",
+                "timestamp": 1776681113835,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_dd_read",
+                "duration_ms": 29,
+                "status": "ok",
+                "timestamp": 1776681113835,
+                "args_summary": ""
+              },
+              {
+                "name": "runSubagent",
+                "duration_ms": 420729,
+                "status": "ok",
+                "timestamp": 1776681141913,
+                "args_summary": "Exec-Executor"
+              }
+            ],
+            "children": [
+              {
+                "agent_name": "Exec-Executor",
+                "log_file": "runSubagent-Exec-Executor-toolu_012SEDa1nQMXmKSgF8BMhq4S.jsonl",
+                "timestamp": 1776681141928,
+                "spawn_prompt": "Execute Phase 1 of the plan.\n\nRead these context files FIRST before doing anything:\n- artifacts/plans/pending/TASK-onnx-head-composition-A-refactor.md (the plan \u2014 implement ONLY Phase 1)\n- artifacts/designs/pending/DD-onnx-head-model-composition.md (detailed per-file changes)\n- .github/instructions/components.instructions.md (layer rules)\n\n## Task\n\n    plan: \"TASK-onnx-head-composition-A-refactor\"\n    phase: 1\n\n## Phase 1 Steps Summary (from plan):\n\nP1-S1: In `nomarr/components/ml/onnx/ml_head.py`: add `HeadInfo` import to existing `TYPE_CHECKING` block (line 20 area)\n\nP1-S2: In `nomarr/components/ml/onnx/ml_head.py`: replace `__init__` method \u2014 remove `labels` parameter, add `meta: HeadInfo | None = None` keyword parameter; remove `head_parts_from_path()` call and the `backbone_name`, `head_type`, `model_name`, `labels`, `is_regression` field assignments; add `self.meta: HeadInfo | None = meta`; keep `input_node`, `output_node`, `input_dim`, `num_classes` unchanged\n\nP1-S3: In `nomarr/components/ml/onnx/ml_head.py`: remove the `name` property and the `build_versioned_tag_key()` method\n\nP1-S4: In `nomarr/components/ml/onnx/ml_head.py`: remove `from pathlib import Path` import if it's unused after removing `head_parts_from_path()` call from `__init__` \u2014 verify first by checking all uses of `Path` in the file\n\nP1-S5: In `nomarr/components/ml/onnx/ml_discovery_comp.py` function `discover_head_models()`: replace the `ONNXHeadModel(onnx_path, labels=list(info.labels))` / `ONNXHeadModel(onnx_path)` branching with a single `ONNXHeadModel(onnx_path, meta=info)` call; when `info is None`, pass `meta=None`\n\nP1-S6: In `nomarr/components/ml/onnx/ml_discovery_comp.py` function `discover_head_models()`: update sort key from `lambda m: (m.backbone_name, m.head_type, m.model_name)` to `lambda m: (m.meta.backbone, m.meta.head_type, m.meta.model_stem)`\n\nP1-S7: In `nomarr/components/ml/onnx/ml_discovery_comp.py` function `discover_head_models_no_db()`: replace the `ONNXHeadModel(onnx_path)` construction with code that synthesizes a `HeadInfo` from filesystem structure (backbone, head_type, model_stem from path parts; empty labels; `is_regression_head` from `_REGRESSION_HEADS` set; `embedding_graph` from `_resolve_embedding_graph()`) and passes it as `ONNXHeadModel(onnx_path, meta=synthesized_info)`\n\nP1-S8: In `nomarr/components/ml/onnx/ml_discovery_comp.py` function `discover_head_models_no_db()`: update sort key from `lambda m: (m.backbone_name, m.head_type, m.model_name)` to `lambda m: (m.meta.backbone, m.meta.head_type, m.meta.model_stem)`\n\nP1-S9: Run `lint_project_backend` targeting `nomarr/components/ml/onnx/` \u2014 expect errors in downstream callers (ml_cache, ml_head_pipeline_comp, ml_heads_comp, process_file_wf) which are fixed in Phase 2. **Record the lint output in your report** so Phase 2 executor knows what errors to expect.\n\n## Key Rules\n- `HeadInfo` import in `ml_head.py` MUST be TYPE_CHECKING only (circular import: ml_discovery_comp.py already imports ONNXHeadModel from ml_head.py). Do NOT add a runtime import.\n- `from __future__ import annotations` is already in `ml_head.py`, so `meta: HeadInfo | None` is a string annotation at runtime \u2014 safe to use under TYPE_CHECKING.\n- No delegation properties \u2014 only structural changes in Phase 1.\n- `head_parts_from_path()` function STAYS in ml_head.py \u2014 it's used independently by register_ml_models_wf.py.\n\n## For discover_head_models_no_db() HeadInfo synthesis:\nThe design doc shows this pattern:\n```python\nmeta = HeadInfo(\n    name=model_stem,\n    labels=[],\n    backbone=backbone,\n    head_type=head_type,\n    model_stem=model_stem,\n    model_path=onnx_path,\n    embedding_graph=embedding_graph or \"\",\n    is_regression_head=model_stem in _REGRESSION_HEADS,\n)\nmodels.append(ONNXHeadModel(onnx_path, meta=meta))\n```\nRead the actual HeadInfo constructor signature in ml_discovery_comp.py before constructing \u2014 field names must match exactly.\n\n## After completing all steps:\nMark each step complete in the plan file. Report:\n1. What was changed in each file\n2. The lint output from P1-S9 (both errors and successes)\n3. Any deviations from the plan and why",
+                "turn_count": 22,
+                "wall_time_ms": 420484,
+                "total_input_tokens": 1122206,
+                "total_output_tokens": 10825,
+                "total_tokens": 1133031,
+                "tree_tokens": 1133031,
+                "tool_call_count": 38,
+                "management_count": 0,
+                "editing_count": 1,
+                "exploration_count": 13,
+                "qa_count": 2,
+                "logging_count": 12,
+                "research_count": 10,
+                "management_ratio": 0.0,
+                "editing_ratio": 0.0263,
+                "exploration_ratio": 0.3421,
+                "qa_ratio": 0.0526,
+                "logging_ratio": 0.3158,
+                "research_ratio": 0.2632,
+                "failure_count": 0,
+                "failure_rate": 0.0,
+                "repeated_tool_calls": 24,
+                "tokens_per_mutation": 1133031.0,
+                "calls_before_first_dispatch": null,
+                "models_used": [
+                  "gpt-5.4"
+                ],
+                "avg_ttft_ms": 701.1,
+                "tool_calls": [
+                  {
+                    "name": "read_file",
+                    "duration_ms": 21,
+                    "status": "ok",
+                    "timestamp": 1776681166256,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 39,
+                    "status": "ok",
+                    "timestamp": 1776681166256,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 60,
+                    "status": "ok",
+                    "timestamp": 1776681166256,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 63,
+                    "status": "ok",
+                    "timestamp": 1776681166255,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 63,
+                    "status": "ok",
+                    "timestamp": 1776681166256,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 72,
+                    "status": "ok",
+                    "timestamp": 1776681166256,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_log_read",
+                    "duration_ms": 13,
+                    "status": "ok",
+                    "timestamp": 1776681182804,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_log_read",
+                    "duration_ms": 31,
+                    "status": "ok",
+                    "timestamp": 1776681182805,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_read_module_api",
+                    "duration_ms": 32,
+                    "status": "ok",
+                    "timestamp": 1776681182805,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_read_module_api",
+                    "duration_ms": 33,
+                    "status": "ok",
+                    "timestamp": 1776681182805,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_read_module_source",
+                    "duration_ms": 19,
+                    "status": "ok",
+                    "timestamp": 1776681199734,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_read_module_source",
+                    "duration_ms": 49,
+                    "status": "ok",
+                    "timestamp": 1776681199734,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_read_module_source",
+                    "duration_ms": 49,
+                    "status": "ok",
+                    "timestamp": 1776681199734,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_read_module_source",
+                    "duration_ms": 50,
+                    "status": "ok",
+                    "timestamp": 1776681199734,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 28,
+                    "status": "ok",
+                    "timestamp": 1776681218246,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 34,
+                    "status": "ok",
+                    "timestamp": 1776681218246,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_plan_read",
+                    "duration_ms": 23,
+                    "status": "ok",
+                    "timestamp": 1776681256737,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 56,
+                    "status": "ok",
+                    "timestamp": 1776681256737,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 75,
+                    "status": "ok",
+                    "timestamp": 1776681256737,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "apply_patch",
+                    "duration_ms": 25,
+                    "status": "ok",
+                    "timestamp": 1776681314154,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_lint_project_backend",
+                    "duration_ms": 11257,
+                    "status": "ok",
+                    "timestamp": 1776681335516,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_lint_project_backend",
+                    "duration_ms": 17344,
+                    "status": "ok",
+                    "timestamp": 1776681377670,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 28,
+                    "status": "ok",
+                    "timestamp": 1776681417347,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 30,
+                    "status": "ok",
+                    "timestamp": 1776681417347,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 68,
+                    "status": "ok",
+                    "timestamp": 1776681417347,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_log_write",
+                    "duration_ms": 71,
+                    "status": "ok",
+                    "timestamp": 1776681439568,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_log_write",
+                    "duration_ms": 72,
+                    "status": "ok",
+                    "timestamp": 1776681439568,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_plan_complete_step",
+                    "duration_ms": 4,
+                    "status": "ok",
+                    "timestamp": 1776681457469,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_plan_complete_step",
+                    "duration_ms": 26,
+                    "status": "ok",
+                    "timestamp": 1776681469725,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_plan_complete_step",
+                    "duration_ms": 30,
+                    "status": "ok",
+                    "timestamp": 1776681481956,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_plan_complete_step",
+                    "duration_ms": 26,
+                    "status": "ok",
+                    "timestamp": 1776681484059,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_plan_complete_step",
+                    "duration_ms": 26,
+                    "status": "ok",
+                    "timestamp": 1776681486318,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_plan_complete_step",
+                    "duration_ms": 28,
+                    "status": "ok",
+                    "timestamp": 1776681494510,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_plan_complete_step",
+                    "duration_ms": 27,
+                    "status": "ok",
+                    "timestamp": 1776681502005,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_plan_complete_step",
+                    "duration_ms": 27,
+                    "status": "ok",
+                    "timestamp": 1776681504100,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_plan_complete_step",
+                    "duration_ms": 30,
+                    "status": "ok",
+                    "timestamp": 1776681506586,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_plan_complete_step",
+                    "duration_ms": 26,
+                    "status": "ok",
+                    "timestamp": 1776681515213,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_plan_read",
+                    "duration_ms": 12,
+                    "status": "ok",
+                    "timestamp": 1776681528426,
+                    "args_summary": ""
+                  }
+                ],
+                "children": []
+              }
+            ]
+          },
+          {
+            "agent_name": "Exec-Executor",
+            "log_file": "runSubagent-Exec-Executor-toolu_012SEDa1nQMXmKSgF8BMhq4S.jsonl",
+            "timestamp": 1776681141928,
+            "spawn_prompt": "Execute Phase 1 of the plan.\n\nRead these context files FIRST before doing anything:\n- artifacts/plans/pending/TASK-onnx-head-composition-A-refactor.md (the plan \u2014 implement ONLY Phase 1)\n- artifacts/designs/pending/DD-onnx-head-model-composition.md (detailed per-file changes)\n- .github/instructions/components.instructions.md (layer rules)\n\n## Task\n\n    plan: \"TASK-onnx-head-composition-A-refactor\"\n    phase: 1\n\n## Phase 1 Steps Summary (from plan):\n\nP1-S1: In `nomarr/components/ml/onnx/ml_head.py`: add `HeadInfo` import to existing `TYPE_CHECKING` block (line 20 area)\n\nP1-S2: In `nomarr/components/ml/onnx/ml_head.py`: replace `__init__` method \u2014 remove `labels` parameter, add `meta: HeadInfo | None = None` keyword parameter; remove `head_parts_from_path()` call and the `backbone_name`, `head_type`, `model_name`, `labels`, `is_regression` field assignments; add `self.meta: HeadInfo | None = meta`; keep `input_node`, `output_node`, `input_dim`, `num_classes` unchanged\n\nP1-S3: In `nomarr/components/ml/onnx/ml_head.py`: remove the `name` property and the `build_versioned_tag_key()` method\n\nP1-S4: In `nomarr/components/ml/onnx/ml_head.py`: remove `from pathlib import Path` import if it's unused after removing `head_parts_from_path()` call from `__init__` \u2014 verify first by checking all uses of `Path` in the file\n\nP1-S5: In `nomarr/components/ml/onnx/ml_discovery_comp.py` function `discover_head_models()`: replace the `ONNXHeadModel(onnx_path, labels=list(info.labels))` / `ONNXHeadModel(onnx_path)` branching with a single `ONNXHeadModel(onnx_path, meta=info)` call; when `info is None`, pass `meta=None`\n\nP1-S6: In `nomarr/components/ml/onnx/ml_discovery_comp.py` function `discover_head_models()`: update sort key from `lambda m: (m.backbone_name, m.head_type, m.model_name)` to `lambda m: (m.meta.backbone, m.meta.head_type, m.meta.model_stem)`\n\nP1-S7: In `nomarr/components/ml/onnx/ml_discovery_comp.py` function `discover_head_models_no_db()`: replace the `ONNXHeadModel(onnx_path)` construction with code that synthesizes a `HeadInfo` from filesystem structure (backbone, head_type, model_stem from path parts; empty labels; `is_regression_head` from `_REGRESSION_HEADS` set; `embedding_graph` from `_resolve_embedding_graph()`) and passes it as `ONNXHeadModel(onnx_path, meta=synthesized_info)`\n\nP1-S8: In `nomarr/components/ml/onnx/ml_discovery_comp.py` function `discover_head_models_no_db()`: update sort key from `lambda m: (m.backbone_name, m.head_type, m.model_name)` to `lambda m: (m.meta.backbone, m.meta.head_type, m.meta.model_stem)`\n\nP1-S9: Run `lint_project_backend` targeting `nomarr/components/ml/onnx/` \u2014 expect errors in downstream callers (ml_cache, ml_head_pipeline_comp, ml_heads_comp, process_file_wf) which are fixed in Phase 2. **Record the lint output in your report** so Phase 2 executor knows what errors to expect.\n\n## Key Rules\n- `HeadInfo` import in `ml_head.py` MUST be TYPE_CHECKING only (circular import: ml_discovery_comp.py already imports ONNXHeadModel from ml_head.py). Do NOT add a runtime import.\n- `from __future__ import annotations` is already in `ml_head.py`, so `meta: HeadInfo | None` is a string annotation at runtime \u2014 safe to use under TYPE_CHECKING.\n- No delegation properties \u2014 only structural changes in Phase 1.\n- `head_parts_from_path()` function STAYS in ml_head.py \u2014 it's used independently by register_ml_models_wf.py.\n\n## For discover_head_models_no_db() HeadInfo synthesis:\nThe design doc shows this pattern:\n```python\nmeta = HeadInfo(\n    name=model_stem,\n    labels=[],\n    backbone=backbone,\n    head_type=head_type,\n    model_stem=model_stem,\n    model_path=onnx_path,\n    embedding_graph=embedding_graph or \"\",\n    is_regression_head=model_stem in _REGRESSION_HEADS,\n)\nmodels.append(ONNXHeadModel(onnx_path, meta=meta))\n```\nRead the actual HeadInfo constructor signature in ml_discovery_comp.py before constructing \u2014 field names must match exactly.\n\n## After completing all steps:\nMark each step complete in the plan file. Report:\n1. What was changed in each file\n2. The lint output from P1-S9 (both errors and successes)\n3. Any deviations from the plan and why",
+            "turn_count": 22,
+            "wall_time_ms": 420484,
+            "total_input_tokens": 1122206,
+            "total_output_tokens": 10825,
+            "total_tokens": 1133031,
+            "tree_tokens": 1133031,
+            "tool_call_count": 38,
+            "management_count": 0,
+            "editing_count": 1,
+            "exploration_count": 13,
+            "qa_count": 2,
+            "logging_count": 12,
+            "research_count": 10,
+            "management_ratio": 0.0,
+            "editing_ratio": 0.0263,
+            "exploration_ratio": 0.3421,
+            "qa_ratio": 0.0526,
+            "logging_ratio": 0.3158,
+            "research_ratio": 0.2632,
+            "failure_count": 0,
+            "failure_rate": 0.0,
+            "repeated_tool_calls": 24,
+            "tokens_per_mutation": 1133031.0,
+            "calls_before_first_dispatch": null,
+            "models_used": [
+              "gpt-5.4"
+            ],
+            "avg_ttft_ms": 701.1,
+            "tool_calls": [
+              {
+                "name": "read_file",
+                "duration_ms": 21,
+                "status": "ok",
+                "timestamp": 1776681166256,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 39,
+                "status": "ok",
+                "timestamp": 1776681166256,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 60,
+                "status": "ok",
+                "timestamp": 1776681166256,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 63,
+                "status": "ok",
+                "timestamp": 1776681166255,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 63,
+                "status": "ok",
+                "timestamp": 1776681166256,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 72,
+                "status": "ok",
+                "timestamp": 1776681166256,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_log_read",
+                "duration_ms": 13,
+                "status": "ok",
+                "timestamp": 1776681182804,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_log_read",
+                "duration_ms": 31,
+                "status": "ok",
+                "timestamp": 1776681182805,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_api",
+                "duration_ms": 32,
+                "status": "ok",
+                "timestamp": 1776681182805,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_api",
+                "duration_ms": 33,
+                "status": "ok",
+                "timestamp": 1776681182805,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 19,
+                "status": "ok",
+                "timestamp": 1776681199734,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 49,
+                "status": "ok",
+                "timestamp": 1776681199734,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 49,
+                "status": "ok",
+                "timestamp": 1776681199734,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 50,
+                "status": "ok",
+                "timestamp": 1776681199734,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 28,
+                "status": "ok",
+                "timestamp": 1776681218246,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 34,
+                "status": "ok",
+                "timestamp": 1776681218246,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_plan_read",
+                "duration_ms": 23,
+                "status": "ok",
+                "timestamp": 1776681256737,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 56,
+                "status": "ok",
+                "timestamp": 1776681256737,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 75,
+                "status": "ok",
+                "timestamp": 1776681256737,
+                "args_summary": ""
+              },
+              {
+                "name": "apply_patch",
+                "duration_ms": 25,
+                "status": "ok",
+                "timestamp": 1776681314154,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_lint_project_backend",
+                "duration_ms": 11257,
+                "status": "ok",
+                "timestamp": 1776681335516,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_lint_project_backend",
+                "duration_ms": 17344,
+                "status": "ok",
+                "timestamp": 1776681377670,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 28,
+                "status": "ok",
+                "timestamp": 1776681417347,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 30,
+                "status": "ok",
+                "timestamp": 1776681417347,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 68,
+                "status": "ok",
+                "timestamp": 1776681417347,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_log_write",
+                "duration_ms": 71,
+                "status": "ok",
+                "timestamp": 1776681439568,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_log_write",
+                "duration_ms": 72,
+                "status": "ok",
+                "timestamp": 1776681439568,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_plan_complete_step",
+                "duration_ms": 4,
+                "status": "ok",
+                "timestamp": 1776681457469,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_plan_complete_step",
+                "duration_ms": 26,
+                "status": "ok",
+                "timestamp": 1776681469725,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_plan_complete_step",
+                "duration_ms": 30,
+                "status": "ok",
+                "timestamp": 1776681481956,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_plan_complete_step",
+                "duration_ms": 26,
+                "status": "ok",
+                "timestamp": 1776681484059,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_plan_complete_step",
+                "duration_ms": 26,
+                "status": "ok",
+                "timestamp": 1776681486318,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_plan_complete_step",
+                "duration_ms": 28,
+                "status": "ok",
+                "timestamp": 1776681494510,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_plan_complete_step",
+                "duration_ms": 27,
+                "status": "ok",
+                "timestamp": 1776681502005,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_plan_complete_step",
+                "duration_ms": 27,
+                "status": "ok",
+                "timestamp": 1776681504100,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_plan_complete_step",
+                "duration_ms": 30,
+                "status": "ok",
+                "timestamp": 1776681506586,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_plan_complete_step",
+                "duration_ms": 26,
+                "status": "ok",
+                "timestamp": 1776681515213,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_plan_read",
+                "duration_ms": 12,
+                "status": "ok",
+                "timestamp": 1776681528426,
+                "args_summary": ""
+              }
+            ],
+            "children": []
+          },
+          {
+            "agent_name": "Exec-Executor",
+            "log_file": "runSubagent-Exec-Executor-toolu_015NFUhhoW3jRRoLCiY3yM1J.jsonl",
+            "timestamp": 1776681589156,
+            "spawn_prompt": "",
+            "turn_count": 12,
+            "wall_time_ms": 189201,
+            "total_input_tokens": 469634,
+            "total_output_tokens": 3611,
+            "total_tokens": 473245,
+            "tree_tokens": 473245,
+            "tool_call_count": 32,
+            "management_count": 0,
+            "editing_count": 1,
+            "exploration_count": 15,
+            "qa_count": 1,
+            "logging_count": 1,
+            "research_count": 14,
+            "management_ratio": 0.0,
+            "editing_ratio": 0.0312,
+            "exploration_ratio": 0.4688,
+            "qa_ratio": 0.0312,
+            "logging_ratio": 0.0312,
+            "research_ratio": 0.4375,
+            "failure_count": 0,
+            "failure_rate": 0.0,
+            "repeated_tool_calls": 19,
+            "tokens_per_mutation": 473245.0,
+            "calls_before_first_dispatch": null,
+            "models_used": [
+              "gpt-5.4"
+            ],
+            "avg_ttft_ms": 741.6,
+            "tool_calls": [
+              {
+                "name": "read_file",
+                "duration_ms": 22,
+                "status": "ok",
+                "timestamp": 1776681611460,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 23,
+                "status": "ok",
+                "timestamp": 1776681611460,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 30,
+                "status": "ok",
+                "timestamp": 1776681611460,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 20,
+                "status": "ok",
+                "timestamp": 1776681625068,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 35,
+                "status": "ok",
+                "timestamp": 1776681625068,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 35,
+                "status": "ok",
+                "timestamp": 1776681625069,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 37,
+                "status": "ok",
+                "timestamp": 1776681625069,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_log_read",
+                "duration_ms": 79,
+                "status": "ok",
+                "timestamp": 1776681625068,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_log_read",
+                "duration_ms": 90,
+                "status": "ok",
+                "timestamp": 1776681625068,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_api",
+                "duration_ms": 13,
+                "status": "ok",
+                "timestamp": 1776681639808,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_api",
+                "duration_ms": 29,
+                "status": "ok",
+                "timestamp": 1776681639808,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_api",
+                "duration_ms": 30,
+                "status": "ok",
+                "timestamp": 1776681639808,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_api",
+                "duration_ms": 29,
+                "status": "ok",
+                "timestamp": 1776681639809,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 21,
+                "status": "ok",
+                "timestamp": 1776681650043,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 36,
+                "status": "ok",
+                "timestamp": 1776681650044,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 45,
+                "status": "ok",
+                "timestamp": 1776681650044,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 47,
+                "status": "ok",
+                "timestamp": 1776681650044,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 48,
+                "status": "ok",
+                "timestamp": 1776681650044,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 30,
+                "status": "ok",
+                "timestamp": 1776681665056,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 32,
+                "status": "ok",
+                "timestamp": 1776681665056,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 47,
+                "status": "ok",
+                "timestamp": 1776681665056,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 50,
+                "status": "ok",
+                "timestamp": 1776681665056,
+                "args_summary": ""
+              },
+              {
+                "name": "apply_patch",
+                "duration_ms": 24,
+                "status": "ok",
+                "timestamp": 1776681684137,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_lint_project_backend",
+                "duration_ms": 17602,
+                "status": "ok",
+                "timestamp": 1776681692035,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_plan_complete_step",
+                "duration_ms": 35,
+                "status": "ok",
+                "timestamp": 1776681726798,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_locate_module_symbol",
+                "duration_ms": 466,
+                "status": "ok",
+                "timestamp": 1776681746505,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_api",
+                "duration_ms": 467,
+                "status": "ok",
+                "timestamp": 1776681746505,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 73,
+                "status": "ok",
+                "timestamp": 1776681764167,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 74,
+                "status": "ok",
+                "timestamp": 1776681764167,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 74,
+                "status": "ok",
+                "timestamp": 1776681764167,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 19,
+                "status": "ok",
+                "timestamp": 1776681778356,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 86,
+                "status": "ok",
+                "timestamp": 1776681778357,
+                "args_summary": ""
+              }
+            ],
+            "children": []
           }
         ]
       }
@@ -5162,7 +6490,7 @@
         "timestamp": 1776666752941,
         "spawn_prompt": "",
         "turn_count": 27,
-        "wall_time_ms": 22612210,
+        "wall_time_ms": 23642334,
         "total_input_tokens": 1052375,
         "total_output_tokens": 5191,
         "total_tokens": 1057566,
@@ -5406,7 +6734,7 @@
         "timestamp": 1776665512435,
         "spawn_prompt": "",
         "turn_count": 88,
-        "wall_time_ms": 23164734,
+        "wall_time_ms": 24194858,
         "total_input_tokens": 5543139,
         "total_output_tokens": 31648,
         "total_tokens": 5574787,
@@ -6451,7 +7779,7 @@
         "timestamp": 1776661253532,
         "spawn_prompt": "",
         "turn_count": 3,
-        "wall_time_ms": 25672370,
+        "wall_time_ms": 26702494,
         "total_input_tokens": 62567,
         "total_output_tokens": 286,
         "total_tokens": 62853,
@@ -6513,7 +7841,7 @@
         "timestamp": 1776660817336,
         "spawn_prompt": "",
         "turn_count": 251,
-        "wall_time_ms": 69784072,
+        "wall_time_ms": 70814196,
         "total_input_tokens": 17596497,
         "total_output_tokens": 147132,
         "total_tokens": 17743629,
@@ -8360,7 +9688,7 @@
         "timestamp": 1776659852521,
         "spawn_prompt": "",
         "turn_count": 44,
-        "wall_time_ms": 70880211,
+        "wall_time_ms": 71910335,
         "total_input_tokens": 1715486,
         "total_output_tokens": 12525,
         "total_tokens": 1728011,
@@ -9529,7 +10857,7 @@
         "timestamp": 1776655333167,
         "spawn_prompt": "",
         "turn_count": 82,
-        "wall_time_ms": 74259637,
+        "wall_time_ms": 75289761,
         "total_input_tokens": 5406990,
         "total_output_tokens": 36023,
         "total_tokens": 5443013,
@@ -10151,7 +11479,7 @@
         "timestamp": 1776655039691,
         "spawn_prompt": "",
         "turn_count": 3,
-        "wall_time_ms": 75172610,
+        "wall_time_ms": 76202734,
         "total_input_tokens": 93909,
         "total_output_tokens": 527,
         "total_tokens": 94436,
@@ -10213,7 +11541,7 @@
         "timestamp": 1776610540819,
         "spawn_prompt": "",
         "turn_count": 10,
-        "wall_time_ms": 75616098,
+        "wall_time_ms": 76646222,
         "total_input_tokens": 357652,
         "total_output_tokens": 3253,
         "total_tokens": 360905,
@@ -10324,7 +11652,7 @@
         "timestamp": 1776609928156,
         "spawn_prompt": "",
         "turn_count": 7,
-        "wall_time_ms": 75804519,
+        "wall_time_ms": 76834643,
         "total_input_tokens": 251718,
         "total_output_tokens": 2116,
         "total_tokens": 253834,
@@ -10421,7 +11749,7 @@
         "timestamp": 1776609264118,
         "spawn_prompt": "",
         "turn_count": 67,
-        "wall_time_ms": 77723769,
+        "wall_time_ms": 78753893,
         "total_input_tokens": 3412237,
         "total_output_tokens": 13081,
         "total_tokens": 3425318,
@@ -11015,7 +12343,7 @@
         "timestamp": 1776608112735,
         "spawn_prompt": "",
         "turn_count": 64,
-        "wall_time_ms": 167838646,
+        "wall_time_ms": 168868770,
         "total_input_tokens": 3611049,
         "total_output_tokens": 21237,
         "total_tokens": 3632286,
@@ -24438,7 +25766,7 @@
         "timestamp": 1776607959517,
         "spawn_prompt": "",
         "turn_count": 14,
-        "wall_time_ms": 167838646,
+        "wall_time_ms": 168868770,
         "total_input_tokens": 452389,
         "total_output_tokens": 1833,
         "total_tokens": 454222,
@@ -24577,7 +25905,7 @@
         "timestamp": 1776604932996,
         "spawn_prompt": "",
         "turn_count": 55,
-        "wall_time_ms": 167838646,
+        "wall_time_ms": 168868770,
         "total_input_tokens": 3001276,
         "total_output_tokens": 10307,
         "total_tokens": 3011583,
@@ -25038,7 +26366,7 @@
         "timestamp": 1776603638658,
         "spawn_prompt": "",
         "turn_count": 204,
-        "wall_time_ms": 167838646,
+        "wall_time_ms": 168868770,
         "total_input_tokens": 14186371,
         "total_output_tokens": 61378,
         "total_tokens": 14247749,
@@ -26919,7 +28247,7 @@
         "timestamp": 1776603026116,
         "spawn_prompt": "",
         "turn_count": 2,
-        "wall_time_ms": 167838646,
+        "wall_time_ms": 168868770,
         "total_input_tokens": 61016,
         "total_output_tokens": 991,
         "total_tokens": 62007,
@@ -26974,7 +28302,7 @@
         "timestamp": 1776591627963,
         "spawn_prompt": "",
         "turn_count": 1,
-        "wall_time_ms": 167838646,
+        "wall_time_ms": 168868770,
         "total_input_tokens": 29686,
         "total_output_tokens": 307,
         "total_tokens": 29993,
@@ -27022,7 +28350,7 @@
         "timestamp": 1776581463860,
         "spawn_prompt": "",
         "turn_count": 36,
-        "wall_time_ms": 167838646,
+        "wall_time_ms": 168868770,
         "total_input_tokens": 1439111,
         "total_output_tokens": 8910,
         "total_tokens": 1448021,
@@ -27378,7 +28706,7 @@
         "timestamp": 1776512899415,
         "spawn_prompt": "",
         "turn_count": 4,
-        "wall_time_ms": 167838646,
+        "wall_time_ms": 168868770,
         "total_input_tokens": 373259,
         "total_output_tokens": 332,
         "total_tokens": 373591,

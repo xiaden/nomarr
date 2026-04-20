@@ -2,7 +2,7 @@ name: Deploy Agent Dashboard
 
 on:
   push:
-    branches: [develop]
+    branches: [main, develop]
     paths:
       - scripts/diagnostics/outputs/**
 
