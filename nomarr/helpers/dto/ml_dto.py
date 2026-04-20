@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nomarr.components.ml.onnx.ml_discovery_comp import HeadInfo
+    from nomarr.components.ml.onnx.ml_head import ONNXHeadModel
     from nomarr.helpers.dto.path_dto import LibraryPath
 
 
@@ -35,7 +36,7 @@ class HeadOutput:
 
     """
 
-    head: HeadInfo
+    head: HeadInfo | ONNXHeadModel
     model_key: str
     label: str
     value: float

@@ -62,7 +62,7 @@ class TestDerivePipelineState:
     def test_returns_too_small_when_tagged_count_below_internal_minimum(self) -> None:
         """Returns too_small when fully tagged libraries do not meet calibration minimum."""
         with patch(
-            "nomarr.services.infrastructure.config_svc.INTERNAL_CALIBRATION_MIN_FILES",
+            "nomarr.migrations.V023_library_pipeline_states.INTERNAL_CALIBRATION_MIN_FILES",
             10,
         ):
             result = _derive_pipeline_state(
@@ -79,7 +79,7 @@ class TestDerivePipelineState:
     def test_returns_awaiting_calibration_when_calibration_is_incomplete(self) -> None:
         """Returns awaiting_calibration once enough files are tagged but not calibrated."""
         with patch(
-            "nomarr.services.infrastructure.config_svc.INTERNAL_CALIBRATION_MIN_FILES",
+            "nomarr.migrations.V023_library_pipeline_states.INTERNAL_CALIBRATION_MIN_FILES",
             10,
         ):
             result = _derive_pipeline_state(
@@ -96,7 +96,7 @@ class TestDerivePipelineState:
     def test_returns_write_ready_when_calibrated_but_not_written(self) -> None:
         """Returns write_ready after calibration is complete and writes are pending."""
         with patch(
-            "nomarr.services.infrastructure.config_svc.INTERNAL_CALIBRATION_MIN_FILES",
+            "nomarr.migrations.V023_library_pipeline_states.INTERNAL_CALIBRATION_MIN_FILES",
             10,
         ):
             result = _derive_pipeline_state(
@@ -113,7 +113,7 @@ class TestDerivePipelineState:
     def test_returns_done_when_all_pipeline_steps_are_complete(self) -> None:
         """Returns done when tagging, calibration, and writes are complete."""
         with patch(
-            "nomarr.services.infrastructure.config_svc.INTERNAL_CALIBRATION_MIN_FILES",
+            "nomarr.migrations.V023_library_pipeline_states.INTERNAL_CALIBRATION_MIN_FILES",
             10,
         ):
             result = _derive_pipeline_state(
