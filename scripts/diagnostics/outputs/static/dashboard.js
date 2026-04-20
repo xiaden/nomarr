@@ -213,28 +213,26 @@ function buildRadarSelector(data, allAgentNames) {
 function renderRadarChart(data, selectedNames) {
     if (radarChart) { radarChart.destroy(); charts = charts.filter(c => c !== radarChart); }
     const categories = ['total_management_calls', 'total_editing_calls', 'total_exploration_calls', 'total_qa_calls', 'total_logging_calls', 'total_research_calls'];
-    const categoryLabels = ['Mgmt%', 'Edit%', 'Explore%', 'QA%', 'Log%', 'Research%'];
-    const categoryTotals = categories.map(cat =>
-        selectedNames.reduce((sum, n) => sum + ((data.agent_aggregates[n] || {})[cat] || 0), 0)
-    );
-    const datasets = selectedNames.map(name => ({
-        label: name,
-        data: categories.map((cat, ci) => {
-            const total = categoryTotals[ci];
-            if (!total) return 0;
-            return Math.round(((data.agent_aggregates[name] || {})[cat] || 0) / total * 1000) / 10;
-        }),
-        borderColor: roleColor(name),
-        backgroundColor: roleColor(name) + '22',
-        pointRadius: 3,
-    }));
+    const categoryLabels = ['Mgmt', 'Edit', 'Explore', 'QA', 'Log', 'Research'];
+    const datasets = selectedNames.map(name => {
+        const agg = data.agent_aggregates[name] || {};
+        const counts = categories.map(cat => agg[cat] || 0);
+        const agentTotal = counts.reduce((a, b) => a + b, 0);
+        return {
+            label: name,
+            data: counts.map(c => agentTotal ? Math.round(c / agentTotal * 1000) / 10 : 0),
+            borderColor: roleColor(name),
+            backgroundColor: roleColor(name) + '22',
+            pointRadius: 3,
+        };
+    });
     radarChart = new Chart(document.getElementById('usageRadar'), {
         type: 'radar',
         data: { labels: categoryLabels, datasets },
         options: {
             responsive: true,
             plugins: {
-                title: { display: true, text: 'Relative Tool Usage Share', color: '#e6edf3' },
+                title: { display: true, text: 'Agent Stat Block — Tool Category Distribution (%)', color: '#e6edf3' },
                 legend: { display: false }
             },
             scales: { r: { beginAtZero: true, max: 100, grid: { color: '#30363d' }, pointLabels: { color: '#8b949e' } } }
