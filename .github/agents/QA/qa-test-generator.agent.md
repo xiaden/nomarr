@@ -4,7 +4,7 @@ description: Generates tests to fill coverage gaps identified by QA-TestAnalyzer
 model: GPT-5.4 (copilot)
 user-invocable: false
 agents: []
-tools: [execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/runInTerminal, execute/runTests, read/readFile, search/codebase, search/fileSearch, search/textSearch, nomarr_dev/edit_file_create, nomarr_dev/edit_file_insert_at_boundary, nomarr_dev/edit_file_replace_string, nomarr_dev/lint_project_backend, nomarr_dev/lint_project_frontend, nomarr_dev/list_project_directory_tree, nomarr_dev/locate_module_symbol, nomarr_dev/read_file_line, nomarr_dev/read_file_line_range, nomarr_dev/read_file_symbol_at_line, nomarr_dev/read_module_api, nomarr_dev/read_module_source, nomarr_dev/search_file_text, nomarr_dev/trace_module_calls, oraios/serena/find_file, oraios/serena/get_symbols_overview, nomarr_dev/log_read, nomarr_dev/log_write]
+tools: [execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/runInTerminal, execute/runTests, search/codebase, search/fileSearch, nomarr_dev/edit_file_create, nomarr_dev/edit_file_insert_at_boundary, nomarr_dev/edit_file_replace_string, nomarr_dev/lint_project_backend, nomarr_dev/lint_project_frontend, nomarr_dev/list_project_directory_tree, nomarr_dev/locate_module_symbol, nomarr_dev/read_file_line, nomarr_dev/read_file_line_range, nomarr_dev/read_file_symbol_at_line, nomarr_dev/read_module_api, nomarr_dev/read_module_source, nomarr_dev/search_file_text, nomarr_dev/trace_module_calls, oraios/serena/find_file, oraios/serena/get_symbols_overview, nomarr_dev/log_read, nomarr_dev/log_write]
 ---
 
 # Test Generator Agent

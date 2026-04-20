@@ -3,7 +3,7 @@ name: Support-Librarian
 description: Artifact corpus navigator. Searches logs, ADRs, ASRs, and design docs to return curated, contextual summaries of what's relevant to the caller's current task. Saves callers from guessing search terms or interpreting raw artifact dumps. Read-only — returns structured summaries, does not create or modify artifacts.
 model: GPT-5.4 (copilot)
 agents: []
-tools: [read/readFile, search/fileSearch, search/listDirectory, search/textSearch, nomarr_dev/adr_read, nomarr_dev/adr_search, nomarr_dev/asr_read, nomarr_dev/asr_search, nomarr_dev/dd_read, nomarr_dev/log_read, nomarr_dev/log_write]
+tools: [search/fileSearch, search/listDirectory, nomarr_dev/adr_read, nomarr_dev/adr_search, nomarr_dev/asr_read, nomarr_dev/asr_search, nomarr_dev/dd_read, nomarr_dev/log_read, nomarr_dev/log_write]
 ---
 
 # Librarian Agent

@@ -3,7 +3,7 @@ name: Exec-Manager
 description: Owns the full lifecycle of a single implementation plan. Spawns Exec-Executor (per phase), QA-Reviewer (after completion), and Exec-Fixer (on review issues). Handles fix cycles internally — only escalates true blockers. Invokable directly for single-plan execution or via Director for multi-plan features.
 model: Claude Sonnet 4.6 (copilot)
 agents: [Exec-Executor, QA-Reviewer, Exec-Fixer, Exec-Planner]
-tools: [read/readFile, agent, nomarr_dev/lint_project_backend, nomarr_dev/lint_project_frontend, nomarr_dev/list_project_directory_tree, nomarr_dev/plan_read, nomarr_dev/read_file_line_range, nomarr_dev/adr_read, nomarr_dev/adr_search, nomarr_dev/dd_archive, nomarr_dev/dd_read, nomarr_dev/log_read, nomarr_dev/log_write, nomarr_dev/plan_archive, nomarr_dev/adr_commit, nomarr_dev/adr_suggest, oraios/serena/activate_project]
+tools: [agent, nomarr_dev/lint_project_backend, nomarr_dev/lint_project_frontend, nomarr_dev/list_project_directory_tree, nomarr_dev/plan_read, nomarr_dev/read_file_line_range, nomarr_dev/adr_read, nomarr_dev/adr_search, nomarr_dev/dd_archive, nomarr_dev/dd_read, nomarr_dev/log_read, nomarr_dev/log_write, nomarr_dev/plan_archive, nomarr_dev/adr_commit, nomarr_dev/adr_suggest, oraios/serena/activate_project]
 ---
 
 # Plan Manager Agent

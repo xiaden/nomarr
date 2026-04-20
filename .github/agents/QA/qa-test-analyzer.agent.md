@@ -4,7 +4,7 @@ description: Analyzes test coverage and quality for changed files. Identifies mi
 model: Claude Sonnet 4.6 (copilot)
 user-invocable: false
 agents: [QA-TestGenerator]
-tools: [agent, execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/runInTerminal, execute/runTests, read/readFile, search/fileSearch, search/listDirectory, search/textSearch, nomarr_dev/list_project_directory_tree, nomarr_dev/locate_module_symbol, nomarr_dev/read_file_line, nomarr_dev/read_file_line_range, nomarr_dev/read_file_symbol_at_line, nomarr_dev/read_module_api, nomarr_dev/read_module_source, nomarr_dev/search_file_text, nomarr_dev/trace_module_calls, oraios/serena/find_file, oraios/serena/find_referencing_symbols, oraios/serena/find_symbol, oraios/serena/get_symbols_overview, oraios/serena/search_for_pattern, nomarr_dev/log_read, nomarr_dev/log_write]
+tools: [agent, execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/runInTerminal, execute/runTests, search/fileSearch, search/listDirectory, nomarr_dev/list_project_directory_tree, nomarr_dev/locate_module_symbol, nomarr_dev/read_file_line, nomarr_dev/read_file_line_range, nomarr_dev/read_file_symbol_at_line, nomarr_dev/read_module_api, nomarr_dev/read_module_source, nomarr_dev/search_file_text, nomarr_dev/trace_module_calls, oraios/serena/find_file, oraios/serena/find_referencing_symbols, oraios/serena/find_symbol, oraios/serena/get_symbols_overview, oraios/serena/search_for_pattern, nomarr_dev/log_read, nomarr_dev/log_write]
 ---
 
 # Test Analyzer Agent

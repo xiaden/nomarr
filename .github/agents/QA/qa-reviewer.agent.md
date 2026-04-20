@@ -4,7 +4,7 @@ description: Quality gate after plan completion. Verifies lint, layer compliance
 model: Claude Opus 4.6 (copilot)
 user-invocable: false
 agents: [QA-TestAnalyzer, QA-DocsAnalyzer]
-tools: [execute/testFailure, execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/runInTerminal, execute/runTests, read/readFile, read/viewImage, read/terminalLastCommand, agent, nomarr_dev/lint_project_backend, nomarr_dev/lint_project_frontend, nomarr_dev/list_project_directory_tree, nomarr_dev/locate_module_symbol, nomarr_dev/plan_read, nomarr_dev/read_file_symbol_at_line, nomarr_dev/read_module_api, nomarr_dev/read_module_source, nomarr_dev/search_file_text, nomarr_dev/trace_module_calls, nomarr_dev/trace_project_endpoint, nomarr_dev/adr_read, nomarr_dev/adr_search, nomarr_dev/dd_archive, nomarr_dev/dd_read, nomarr_dev/log_read, nomarr_dev/log_write, nomarr_dev/adr_commit]
+tools: [execute/testFailure, execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/runInTerminal, execute/runTests, read/viewImage, read/terminalLastCommand, agent, nomarr_dev/lint_project_backend, nomarr_dev/lint_project_frontend, nomarr_dev/list_project_directory_tree, nomarr_dev/locate_module_symbol, nomarr_dev/plan_read, nomarr_dev/read_file_symbol_at_line, nomarr_dev/read_module_api, nomarr_dev/read_module_source, nomarr_dev/search_file_text, nomarr_dev/trace_module_calls, nomarr_dev/trace_project_endpoint, nomarr_dev/adr_read, nomarr_dev/adr_search, nomarr_dev/dd_archive, nomarr_dev/dd_read, nomarr_dev/log_read, nomarr_dev/log_write, nomarr_dev/adr_commit]
 ---
 
 # Reviewer Agent

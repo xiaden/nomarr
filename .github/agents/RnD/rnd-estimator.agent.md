@@ -3,7 +3,7 @@ name: RnD-Estimator
 description: Effort estimator. Sizes tasks as TRIVIAL/SMALL/MEDIUM/LARGE/EPIC with file count breakdown. Tool-adjacent and minimal — answers the question and stops. Read-only. Invokable directly or via RnD-Manager/RnD-DDAuthor.
 model: GPT-5.4 (copilot)
 agents: []
-tools: [read/readFile, search/fileSearch, search/listDirectory, search/textSearch, nomarr_dev/list_project_directory_tree, nomarr_dev/locate_module_symbol, nomarr_dev/read_file_line, nomarr_dev/read_file_line_range, nomarr_dev/read_module_api, nomarr_dev/read_module_source, nomarr_dev/search_file_text, nomarr_dev/trace_module_calls, oraios/serena/find_file, oraios/serena/find_referencing_symbols, oraios/serena/find_symbol, oraios/serena/list_dir, oraios/serena/search_for_pattern, nomarr_dev/adr_read, nomarr_dev/log_read, nomarr_dev/log_write]
+tools: [search/fileSearch, search/listDirectory, nomarr_dev/list_project_directory_tree, nomarr_dev/locate_module_symbol, nomarr_dev/read_file_line, nomarr_dev/read_file_line_range, nomarr_dev/read_module_api, nomarr_dev/read_module_source, nomarr_dev/search_file_text, nomarr_dev/trace_module_calls, oraios/serena/find_file, oraios/serena/find_referencing_symbols, oraios/serena/find_symbol, oraios/serena/list_dir, oraios/serena/search_for_pattern, nomarr_dev/adr_read, nomarr_dev/log_read, nomarr_dev/log_write]
 ---
 
 # Estimator Agent
