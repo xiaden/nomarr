@@ -1,37 +1,37 @@
 {
-  "generated_at": "2026-04-20T06:52:34Z",
+  "generated_at": "2026-04-20T10:25:56Z",
   "summary": {
-    "total_sessions": 19,
+    "total_sessions": 22,
     "unique_agents": 16,
-    "total_tokens": 100251949,
-    "total_tool_calls": 2691,
-    "total_failures": 8,
-    "failure_rate": 0.003
+    "total_tokens": 122615386,
+    "total_tool_calls": 3221,
+    "total_failures": 13,
+    "failure_rate": 0.004
   },
   "agent_aggregates": {
     "Agent": {
-      "count": 20,
-      "total_tokens": 58832475,
-      "avg_tokens": 2941624,
-      "total_tree_tokens": 100350239,
-      "avg_tool_calls": 52.4,
-      "total_management_calls": 20,
-      "total_editing_calls": 184,
-      "total_exploration_calls": 480,
-      "total_qa_calls": 110,
-      "total_logging_calls": 227,
-      "total_research_calls": 26,
-      "avg_management_ratio": 0.0142,
-      "avg_editing_ratio": 0.1121,
-      "avg_exploration_ratio": 0.3874,
-      "avg_qa_ratio": 0.0561,
-      "avg_logging_ratio": 0.4082,
-      "avg_research_ratio": 0.0219,
-      "avg_failure_rate": 0.0074,
-      "total_failures": 7,
-      "avg_tokens_per_mutation": 288359.1,
-      "avg_calls_before_dispatch": 76.8,
-      "avg_turns": 48.0,
+      "count": 23,
+      "total_tokens": 76372675,
+      "avg_tokens": 3320551,
+      "total_tree_tokens": 122713676,
+      "avg_tool_calls": 58.5,
+      "total_management_calls": 26,
+      "total_editing_calls": 218,
+      "total_exploration_calls": 574,
+      "total_qa_calls": 178,
+      "total_logging_calls": 298,
+      "total_research_calls": 50,
+      "avg_management_ratio": 0.0147,
+      "avg_editing_ratio": 0.1162,
+      "avg_exploration_ratio": 0.3775,
+      "avg_qa_ratio": 0.079,
+      "avg_logging_ratio": 0.3836,
+      "avg_research_ratio": 0.0284,
+      "avg_failure_rate": 0.0078,
+      "total_failures": 11,
+      "avg_tokens_per_mutation": 314035.1,
+      "avg_calls_before_dispatch": 74.8,
+      "avg_turns": 54.3,
       "models_used": [
         "claude-opus-4.6"
       ]
@@ -144,6 +144,33 @@
         "claude-sonnet-4.6"
       ]
     },
+    "RnD-DDAuthor": {
+      "count": 4,
+      "total_tokens": 2455854,
+      "avg_tokens": 613964,
+      "total_tree_tokens": 2455854,
+      "avg_tool_calls": 17.8,
+      "total_management_calls": 0,
+      "total_editing_calls": 2,
+      "total_exploration_calls": 56,
+      "total_qa_calls": 4,
+      "total_logging_calls": 4,
+      "total_research_calls": 5,
+      "avg_management_ratio": 0.0,
+      "avg_editing_ratio": 0.053,
+      "avg_exploration_ratio": 0.7391,
+      "avg_qa_ratio": 0.0625,
+      "avg_logging_ratio": 0.0519,
+      "avg_research_ratio": 0.0935,
+      "avg_failure_rate": 0.0093,
+      "total_failures": 1,
+      "avg_tokens_per_mutation": 461419.5,
+      "avg_calls_before_dispatch": null,
+      "avg_turns": 13.0,
+      "models_used": [
+        "claude-opus-4.6"
+      ]
+    },
     "QA-Reviewer": {
       "count": 6,
       "total_tokens": 2344549,
@@ -171,6 +198,87 @@
         "claude-opus-4.6"
       ]
     },
+    "Explore": {
+      "count": 6,
+      "total_tokens": 2072149,
+      "avg_tokens": 345358,
+      "total_tree_tokens": 2072149,
+      "avg_tool_calls": 14.3,
+      "total_management_calls": 0,
+      "total_editing_calls": 0,
+      "total_exploration_calls": 85,
+      "total_qa_calls": 0,
+      "total_logging_calls": 0,
+      "total_research_calls": 0,
+      "avg_management_ratio": 0.0,
+      "avg_editing_ratio": 0.0,
+      "avg_exploration_ratio": 0.9958,
+      "avg_qa_ratio": 0.0,
+      "avg_logging_ratio": 0.0,
+      "avg_research_ratio": 0.0,
+      "avg_failure_rate": 0.0,
+      "total_failures": 0,
+      "avg_tokens_per_mutation": 0,
+      "avg_calls_before_dispatch": null,
+      "avg_turns": 9.3,
+      "models_used": [
+        "claude-haiku-4.5"
+      ]
+    },
+    "Support-Librarian": {
+      "count": 5,
+      "total_tokens": 1968104,
+      "avg_tokens": 393621,
+      "total_tree_tokens": 1968104,
+      "avg_tool_calls": 36.6,
+      "total_management_calls": 0,
+      "total_editing_calls": 0,
+      "total_exploration_calls": 115,
+      "total_qa_calls": 0,
+      "total_logging_calls": 2,
+      "total_research_calls": 66,
+      "avg_management_ratio": 0.0,
+      "avg_editing_ratio": 0.0,
+      "avg_exploration_ratio": 0.6549,
+      "avg_qa_ratio": 0.0,
+      "avg_logging_ratio": 0.0139,
+      "avg_research_ratio": 0.3312,
+      "avg_failure_rate": 0.0,
+      "total_failures": 0,
+      "avg_tokens_per_mutation": 0,
+      "avg_calls_before_dispatch": null,
+      "avg_turns": 8.8,
+      "models_used": [
+        "gpt-5.4"
+      ]
+    },
+    "Support-PatternEnforcer": {
+      "count": 3,
+      "total_tokens": 1788965,
+      "avg_tokens": 596322,
+      "total_tree_tokens": 1788965,
+      "avg_tool_calls": 36.3,
+      "total_management_calls": 0,
+      "total_editing_calls": 0,
+      "total_exploration_calls": 103,
+      "total_qa_calls": 0,
+      "total_logging_calls": 2,
+      "total_research_calls": 4,
+      "avg_management_ratio": 0.0,
+      "avg_editing_ratio": 0.0,
+      "avg_exploration_ratio": 0.9477,
+      "avg_qa_ratio": 0.0,
+      "avg_logging_ratio": 0.0171,
+      "avg_research_ratio": 0.0352,
+      "avg_failure_rate": 0.0,
+      "total_failures": 0,
+      "avg_tokens_per_mutation": 0,
+      "avg_calls_before_dispatch": null,
+      "avg_turns": 10.0,
+      "models_used": [
+        "gpt-5.4"
+      ]
+    },
     "QA-DocsAnalyzer": {
       "count": 7,
       "total_tokens": 1495126,
@@ -196,33 +304,6 @@
       "avg_turns": 6.6,
       "models_used": [
         "claude-sonnet-4.6"
-      ]
-    },
-    "Support-PatternEnforcer": {
-      "count": 2,
-      "total_tokens": 1494107,
-      "avg_tokens": 747054,
-      "total_tree_tokens": 1494107,
-      "avg_tool_calls": 39.0,
-      "total_management_calls": 0,
-      "total_editing_calls": 0,
-      "total_exploration_calls": 72,
-      "total_qa_calls": 0,
-      "total_logging_calls": 2,
-      "total_research_calls": 4,
-      "avg_management_ratio": 0.0,
-      "avg_editing_ratio": 0.0,
-      "avg_exploration_ratio": 0.9216,
-      "avg_qa_ratio": 0.0,
-      "avg_logging_ratio": 0.0257,
-      "avg_research_ratio": 0.0527,
-      "avg_failure_rate": 0.0,
-      "total_failures": 0,
-      "avg_tokens_per_mutation": 0,
-      "avg_calls_before_dispatch": null,
-      "avg_turns": 11.0,
-      "models_used": [
-        "gpt-5.4"
       ]
     },
     "default": {
@@ -279,137 +360,56 @@
         "gpt-5.4"
       ]
     },
-    "Support-Librarian": {
-      "count": 3,
-      "total_tokens": 1098525,
-      "avg_tokens": 366175,
-      "total_tree_tokens": 1098525,
-      "avg_tool_calls": 37.7,
+    "Exec-Planner": {
+      "count": 2,
+      "total_tokens": 1026363,
+      "avg_tokens": 513182,
+      "total_tree_tokens": 1026363,
+      "avg_tool_calls": 26.5,
       "total_management_calls": 0,
-      "total_editing_calls": 0,
-      "total_exploration_calls": 69,
+      "total_editing_calls": 2,
+      "total_exploration_calls": 22,
       "total_qa_calls": 0,
       "total_logging_calls": 2,
-      "total_research_calls": 42,
+      "total_research_calls": 27,
       "avg_management_ratio": 0.0,
-      "avg_editing_ratio": 0.0,
-      "avg_exploration_ratio": 0.6432,
+      "avg_editing_ratio": 0.0379,
+      "avg_exploration_ratio": 0.425,
       "avg_qa_ratio": 0.0,
-      "avg_logging_ratio": 0.0232,
-      "avg_research_ratio": 0.3336,
+      "avg_logging_ratio": 0.0379,
+      "avg_research_ratio": 0.4993,
       "avg_failure_rate": 0.0,
       "total_failures": 0,
-      "avg_tokens_per_mutation": 0,
-      "avg_calls_before_dispatch": null,
-      "avg_turns": 9.7,
-      "models_used": [
-        "gpt-5.4"
-      ]
-    },
-    "RnD-DDAuthor": {
-      "count": 2,
-      "total_tokens": 921773,
-      "avg_tokens": 460886,
-      "total_tree_tokens": 921773,
-      "avg_tool_calls": 11.0,
-      "total_management_calls": 0,
-      "total_editing_calls": 1,
-      "total_exploration_calls": 12,
-      "total_qa_calls": 4,
-      "total_logging_calls": 2,
-      "total_research_calls": 3,
-      "avg_management_ratio": 0.0,
-      "avg_editing_ratio": 0.0833,
-      "avg_exploration_ratio": 0.5833,
-      "avg_qa_ratio": 0.125,
-      "avg_logging_ratio": 0.0625,
-      "avg_research_ratio": 0.1458,
-      "avg_failure_rate": 0.0,
-      "total_failures": 0,
-      "avg_tokens_per_mutation": 288792.0,
+      "avg_tokens_per_mutation": 513181.5,
       "avg_calls_before_dispatch": null,
       "avg_turns": 10.5,
       "models_used": [
         "claude-opus-4.6"
       ]
     },
-    "Explore": {
-      "count": 5,
-      "total_tokens": 772862,
-      "avg_tokens": 154572,
-      "total_tree_tokens": 772862,
-      "avg_tool_calls": 7.6,
-      "total_management_calls": 0,
-      "total_editing_calls": 0,
-      "total_exploration_calls": 38,
-      "total_qa_calls": 0,
-      "total_logging_calls": 0,
-      "total_research_calls": 0,
-      "avg_management_ratio": 0.0,
-      "avg_editing_ratio": 0.0,
-      "avg_exploration_ratio": 1.0,
-      "avg_qa_ratio": 0.0,
-      "avg_logging_ratio": 0.0,
-      "avg_research_ratio": 0.0,
-      "avg_failure_rate": 0.0,
-      "total_failures": 0,
-      "avg_tokens_per_mutation": 0,
-      "avg_calls_before_dispatch": null,
-      "avg_turns": 4.6,
-      "models_used": [
-        "claude-haiku-4.5"
-      ]
-    },
     "RnD-Manager": {
-      "count": 3,
-      "total_tokens": 595010,
-      "avg_tokens": 198337,
-      "total_tree_tokens": 11411522,
-      "avg_tool_calls": 11.0,
-      "total_management_calls": 11,
+      "count": 4,
+      "total_tokens": 752985,
+      "avg_tokens": 188246,
+      "total_tree_tokens": 13788905,
+      "avg_tool_calls": 9.5,
+      "total_management_calls": 15,
       "total_editing_calls": 0,
       "total_exploration_calls": 4,
       "total_qa_calls": 0,
-      "total_logging_calls": 6,
+      "total_logging_calls": 7,
       "total_research_calls": 12,
-      "avg_management_ratio": 0.315,
+      "avg_management_ratio": 0.4363,
       "avg_editing_ratio": 0.0,
-      "avg_exploration_ratio": 0.1059,
+      "avg_exploration_ratio": 0.0794,
       "avg_qa_ratio": 0.0,
-      "avg_logging_ratio": 0.1673,
-      "avg_research_ratio": 0.4118,
+      "avg_logging_ratio": 0.1755,
+      "avg_research_ratio": 0.3088,
       "avg_failure_rate": 0.0,
       "total_failures": 0,
       "avg_tokens_per_mutation": 0,
-      "avg_calls_before_dispatch": 6.0,
-      "avg_turns": 8.0,
-      "models_used": [
-        "claude-opus-4.6"
-      ]
-    },
-    "Exec-Planner": {
-      "count": 1,
-      "total_tokens": 358906,
-      "avg_tokens": 358906,
-      "total_tree_tokens": 358906,
-      "avg_tool_calls": 25.0,
-      "total_management_calls": 0,
-      "total_editing_calls": 1,
-      "total_exploration_calls": 15,
-      "total_qa_calls": 0,
-      "total_logging_calls": 1,
-      "total_research_calls": 8,
-      "avg_management_ratio": 0.0,
-      "avg_editing_ratio": 0.04,
-      "avg_exploration_ratio": 0.6,
-      "avg_qa_ratio": 0.0,
-      "avg_logging_ratio": 0.04,
-      "avg_research_ratio": 0.32,
-      "avg_failure_rate": 0.0,
-      "total_failures": 0,
-      "avg_tokens_per_mutation": 358906.0,
-      "avg_calls_before_dispatch": null,
-      "avg_turns": 8.0,
+      "avg_calls_before_dispatch": 4.5,
+      "avg_turns": 7.5,
       "models_used": [
         "claude-opus-4.6"
       ]
@@ -446,12 +446,12 @@
     {
       "name": "read_file",
       "category": "exploration",
-      "total_calls": 974,
-      "failures": 3,
-      "failure_rate": 0.0031,
-      "repeats": 658,
-      "repeat_rate": 0.6756,
-      "avg_duration_ms": 55.0,
+      "total_calls": 1130,
+      "failures": 4,
+      "failure_rate": 0.0035,
+      "repeats": 750,
+      "repeat_rate": 0.6637,
+      "avg_duration_ms": 50.7,
       "agent_count": 15,
       "agents": [
         "Agent",
@@ -474,17 +474,18 @@
     {
       "name": "grep_search",
       "category": "exploration",
-      "total_calls": 323,
+      "total_calls": 398,
       "failures": 0,
       "failure_rate": 0.0,
-      "repeats": 171,
-      "repeat_rate": 0.5294,
-      "avg_duration_ms": 176.5,
-      "agent_count": 12,
+      "repeats": 208,
+      "repeat_rate": 0.5226,
+      "avg_duration_ms": 171.1,
+      "agent_count": 13,
       "agents": [
         "Agent",
         "Exec-Executor",
         "Exec-Fixer",
+        "Exec-Planner",
         "Explore",
         "QA-DocsAnalyzer",
         "QA-DocsGenerator",
@@ -499,11 +500,11 @@
     {
       "name": "manage_todo_list",
       "category": "logging",
-      "total_calls": 224,
+      "total_calls": 288,
       "failures": 0,
       "failure_rate": 0.0,
-      "repeats": 83,
-      "repeat_rate": 0.3705,
+      "repeats": 94,
+      "repeat_rate": 0.3264,
       "avg_duration_ms": 2.1,
       "agent_count": 1,
       "agents": [
@@ -513,12 +514,12 @@
     {
       "name": "run_in_terminal",
       "category": "qa",
-      "total_calls": 128,
-      "failures": 2,
-      "failure_rate": 0.0156,
-      "repeats": 62,
-      "repeat_rate": 0.4844,
-      "avg_duration_ms": 363780.7,
+      "total_calls": 193,
+      "failures": 4,
+      "failure_rate": 0.0207,
+      "repeats": 100,
+      "repeat_rate": 0.5181,
+      "avg_duration_ms": 245311.8,
       "agent_count": 6,
       "agents": [
         "Agent",
@@ -532,31 +533,46 @@
     {
       "name": "mcp_nomarr_dev_read_module_api",
       "category": "research",
-      "total_calls": 104,
+      "total_calls": 109,
       "failures": 0,
       "failure_rate": 0.0,
-      "repeats": 79,
-      "repeat_rate": 0.7596,
-      "avg_duration_ms": 208.0,
-      "agent_count": 6,
+      "repeats": 83,
+      "repeat_rate": 0.7615,
+      "avg_duration_ms": 200.3,
+      "agent_count": 7,
       "agents": [
         "Agent",
         "Exec-Executor",
         "Exec-Fixer",
+        "Exec-Planner",
         "QA-DocsAnalyzer",
         "QA-Reviewer",
         "QA-TestAnalyzer"
       ]
     },
     {
-      "name": "mcp_nomarr_dev_lint_project_backend",
-      "category": "qa",
-      "total_calls": 96,
+      "name": "replace_string_in_file",
+      "category": "editing",
+      "total_calls": 104,
       "failures": 0,
       "failure_rate": 0.0,
-      "repeats": 30,
-      "repeat_rate": 0.3125,
-      "avg_duration_ms": 17361.3,
+      "repeats": 28,
+      "repeat_rate": 0.2692,
+      "avg_duration_ms": 18.5,
+      "agent_count": 1,
+      "agents": [
+        "Agent"
+      ]
+    },
+    {
+      "name": "mcp_nomarr_dev_lint_project_backend",
+      "category": "qa",
+      "total_calls": 98,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 31,
+      "repeat_rate": 0.3163,
+      "avg_duration_ms": 17314.1,
       "agent_count": 6,
       "agents": [
         "Agent",
@@ -568,17 +584,21 @@
       ]
     },
     {
-      "name": "replace_string_in_file",
-      "category": "editing",
-      "total_calls": 92,
+      "name": "runSubagent",
+      "category": "management",
+      "total_calls": 80,
       "failures": 0,
       "failure_rate": 0.0,
-      "repeats": 28,
-      "repeat_rate": 0.3043,
-      "avg_duration_ms": 19.1,
-      "agent_count": 1,
+      "repeats": 31,
+      "repeat_rate": 0.3875,
+      "avg_duration_ms": 1407336.8,
+      "agent_count": 5,
       "agents": [
-        "Agent"
+        "Agent",
+        "Exec-Manager",
+        "QA-DocsAnalyzer",
+        "QA-Reviewer",
+        "RnD-Manager"
       ]
     },
     {
@@ -596,32 +616,14 @@
       ]
     },
     {
-      "name": "runSubagent",
-      "category": "management",
+      "name": "mcp_nomarr_dev_log_read",
+      "category": "research",
       "total_calls": 72,
       "failures": 0,
       "failure_rate": 0.0,
-      "repeats": 28,
-      "repeat_rate": 0.3889,
-      "avg_duration_ms": 1530425.2,
-      "agent_count": 5,
-      "agents": [
-        "Agent",
-        "Exec-Manager",
-        "QA-DocsAnalyzer",
-        "QA-Reviewer",
-        "RnD-Manager"
-      ]
-    },
-    {
-      "name": "mcp_nomarr_dev_log_read",
-      "category": "research",
-      "total_calls": 71,
-      "failures": 0,
-      "failure_rate": 0.0,
       "repeats": 40,
-      "repeat_rate": 0.5634,
-      "avg_duration_ms": 48.9,
+      "repeat_rate": 0.5556,
+      "avg_duration_ms": 48.3,
       "agent_count": 6,
       "agents": [
         "Exec-Executor",
@@ -635,18 +637,20 @@
     {
       "name": "file_search",
       "category": "exploration",
-      "total_calls": 53,
+      "total_calls": 69,
       "failures": 0,
       "failure_rate": 0.0,
-      "repeats": 21,
-      "repeat_rate": 0.3962,
-      "avg_duration_ms": 128.7,
-      "agent_count": 6,
+      "repeats": 27,
+      "repeat_rate": 0.3913,
+      "avg_duration_ms": 114.6,
+      "agent_count": 8,
       "agents": [
         "Agent",
         "Exec-Executor",
+        "Exec-Planner",
         "Explore",
         "QA-TestAnalyzer",
+        "RnD-DDAuthor",
         "Support-Librarian",
         "Support-PatternEnforcer"
       ]
@@ -654,12 +658,12 @@
     {
       "name": "list_dir",
       "category": "exploration",
-      "total_calls": 42,
+      "total_calls": 47,
       "failures": 0,
       "failure_rate": 0.0,
-      "repeats": 22,
-      "repeat_rate": 0.5238,
-      "avg_duration_ms": 903.9,
+      "repeats": 25,
+      "repeat_rate": 0.5319,
+      "avg_duration_ms": 808.9,
       "agent_count": 7,
       "agents": [
         "Agent",
@@ -672,30 +676,14 @@
       ]
     },
     {
-      "name": "mcp_nomarr_dev_read_file_line_range",
-      "category": "exploration",
-      "total_calls": 36,
-      "failures": 0,
-      "failure_rate": 0.0,
-      "repeats": 30,
-      "repeat_rate": 0.8333,
-      "avg_duration_ms": 27.4,
-      "agent_count": 3,
-      "agents": [
-        "Exec-Fixer",
-        "Exec-Manager",
-        "QA-DocsAnalyzer"
-      ]
-    },
-    {
       "name": "tool_search",
       "category": "exploration",
-      "total_calls": 35,
+      "total_calls": 45,
       "failures": 0,
       "failure_rate": 0.0,
       "repeats": 4,
-      "repeat_rate": 0.1143,
-      "avg_duration_ms": 1969.6,
+      "repeat_rate": 0.0889,
+      "avg_duration_ms": 1783.0,
       "agent_count": 4,
       "agents": [
         "Agent",
@@ -707,12 +695,12 @@
     {
       "name": "multi_replace_string_in_file",
       "category": "editing",
-      "total_calls": 33,
+      "total_calls": 42,
       "failures": 0,
       "failure_rate": 0.0,
       "repeats": 2,
-      "repeat_rate": 0.0606,
-      "avg_duration_ms": 28.5,
+      "repeat_rate": 0.0476,
+      "avg_duration_ms": 26.6,
       "agent_count": 2,
       "agents": [
         "Agent",
@@ -722,12 +710,12 @@
     {
       "name": "mcp_nomarr_dev_log_write",
       "category": "logging",
-      "total_calls": 33,
+      "total_calls": 38,
       "failures": 0,
       "failure_rate": 0.0,
       "repeats": 0,
       "repeat_rate": 0.0,
-      "avg_duration_ms": 33.5,
+      "avg_duration_ms": 30.9,
       "agent_count": 10,
       "agents": [
         "Agent",
@@ -743,28 +731,83 @@
       ]
     },
     {
+      "name": "mcp_nomarr_dev_read_file_line_range",
+      "category": "exploration",
+      "total_calls": 38,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 31,
+      "repeat_rate": 0.8158,
+      "avg_duration_ms": 27.3,
+      "agent_count": 4,
+      "agents": [
+        "Exec-Fixer",
+        "Exec-Manager",
+        "QA-DocsAnalyzer",
+        "Support-PatternEnforcer"
+      ]
+    },
+    {
+      "name": "mcp_nomarr_dev_read_module_source",
+      "category": "research",
+      "total_calls": 37,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 20,
+      "repeat_rate": 0.5405,
+      "avg_duration_ms": 1134.9,
+      "agent_count": 4,
+      "agents": [
+        "Agent",
+        "Exec-Executor",
+        "Exec-Planner",
+        "QA-Reviewer"
+      ]
+    },
+    {
       "name": "mcp_gitkraken_git_add_or_commit",
       "category": "editing",
-      "total_calls": 28,
-      "failures": 1,
-      "failure_rate": 0.0357,
-      "repeats": 12,
-      "repeat_rate": 0.4286,
-      "avg_duration_ms": 125.4,
+      "total_calls": 36,
+      "failures": 3,
+      "failure_rate": 0.0833,
+      "repeats": 15,
+      "repeat_rate": 0.4167,
+      "avg_duration_ms": 2083.4,
       "agent_count": 1,
       "agents": [
         "Agent"
       ]
     },
     {
+      "name": "mcp_nomarr_dev_adr_read",
+      "category": "research",
+      "total_calls": 30,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 5,
+      "repeat_rate": 0.1667,
+      "avg_duration_ms": 1193.5,
+      "agent_count": 8,
+      "agents": [
+        "Agent",
+        "Exec-Manager",
+        "Exec-Planner",
+        "QA-Reviewer",
+        "RnD-DDAuthor",
+        "Support-Librarian",
+        "Support-PatternEnforcer",
+        "Support-Researcher"
+      ]
+    },
+    {
       "name": "mcp_nomarr_dev_plan_read",
       "category": "research",
-      "total_calls": 28,
+      "total_calls": 29,
       "failures": 0,
       "failure_rate": 0.0,
       "repeats": 4,
-      "repeat_rate": 0.1429,
-      "avg_duration_ms": 43.3,
+      "repeat_rate": 0.1379,
+      "avg_duration_ms": 42.2,
       "agent_count": 5,
       "agents": [
         "Exec-Executor",
@@ -789,57 +832,48 @@
       ]
     },
     {
-      "name": "mcp_nomarr_dev_adr_read",
-      "category": "research",
-      "total_calls": 22,
-      "failures": 0,
-      "failure_rate": 0.0,
-      "repeats": 2,
-      "repeat_rate": 0.0909,
-      "avg_duration_ms": 1621.7,
-      "agent_count": 8,
-      "agents": [
-        "Agent",
-        "Exec-Manager",
-        "Exec-Planner",
-        "QA-Reviewer",
-        "RnD-DDAuthor",
-        "Support-Librarian",
-        "Support-PatternEnforcer",
-        "Support-Researcher"
-      ]
-    },
-    {
-      "name": "mcp_nomarr_dev_read_module_source",
-      "category": "research",
-      "total_calls": 20,
-      "failures": 0,
-      "failure_rate": 0.0,
-      "repeats": 10,
-      "repeat_rate": 0.5,
-      "avg_duration_ms": 2052.0,
-      "agent_count": 3,
-      "agents": [
-        "Agent",
-        "Exec-Executor",
-        "QA-Reviewer"
-      ]
-    },
-    {
       "name": "mcp_nomarr_dev_adr_search",
       "category": "research",
-      "total_calls": 19,
+      "total_calls": 26,
       "failures": 0,
       "failure_rate": 0.0,
-      "repeats": 8,
-      "repeat_rate": 0.4211,
-      "avg_duration_ms": 38.5,
+      "repeats": 12,
+      "repeat_rate": 0.4615,
+      "avg_duration_ms": 47.2,
       "agent_count": 4,
       "agents": [
         "Agent",
         "Exec-Planner",
         "RnD-Manager",
         "Support-Librarian"
+      ]
+    },
+    {
+      "name": "mcp_gitkraken_git_push",
+      "category": "editing",
+      "total_calls": 18,
+      "failures": 2,
+      "failure_rate": 0.1111,
+      "repeats": 0,
+      "repeat_rate": 0.0,
+      "avg_duration_ms": 4340.4,
+      "agent_count": 1,
+      "agents": [
+        "Agent"
+      ]
+    },
+    {
+      "name": "create_file",
+      "category": "editing",
+      "total_calls": 17,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 6,
+      "repeat_rate": 0.3529,
+      "avg_duration_ms": 22.5,
+      "agent_count": 1,
+      "agents": [
+        "Agent"
       ]
     },
     {
@@ -857,31 +891,38 @@
       ]
     },
     {
-      "name": "mcp_gitkraken_git_push",
-      "category": "editing",
-      "total_calls": 15,
-      "failures": 2,
-      "failure_rate": 0.1333,
-      "repeats": 0,
-      "repeat_rate": 0.0,
-      "avg_duration_ms": 4282.2,
-      "agent_count": 1,
+      "name": "mcp_nomarr_dev_asr_search",
+      "category": "research",
+      "total_calls": 16,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 8,
+      "repeat_rate": 0.5,
+      "avg_duration_ms": 51.6,
+      "agent_count": 2,
       "agents": [
-        "Agent"
+        "Agent",
+        "Support-Librarian"
       ]
     },
     {
-      "name": "create_file",
-      "category": "editing",
+      "name": "mcp_nomarr_dev_dd_read",
+      "category": "research",
       "total_calls": 14,
       "failures": 0,
       "failure_rate": 0.0,
-      "repeats": 6,
-      "repeat_rate": 0.4286,
-      "avg_duration_ms": 23.4,
-      "agent_count": 1,
+      "repeats": 2,
+      "repeat_rate": 0.1429,
+      "avg_duration_ms": 34.1,
+      "agent_count": 7,
       "agents": [
-        "Agent"
+        "Agent",
+        "Exec-Manager",
+        "Exec-Planner",
+        "QA-Reviewer",
+        "RnD-DDAuthor",
+        "RnD-Manager",
+        "Support-Librarian"
       ]
     },
     {
@@ -901,6 +942,21 @@
       ]
     },
     {
+      "name": "mcp_nomarr_dev_asr_read",
+      "category": "research",
+      "total_calls": 12,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 6,
+      "repeat_rate": 0.5,
+      "avg_duration_ms": 19.2,
+      "agent_count": 2,
+      "agents": [
+        "Agent",
+        "Support-Librarian"
+      ]
+    },
+    {
       "name": "mcp_nomarr_dev_read_file_line",
       "category": "exploration",
       "total_calls": 12,
@@ -912,6 +968,20 @@
       "agent_count": 1,
       "agents": [
         "Exec-Planner"
+      ]
+    },
+    {
+      "name": "fetch_webpage",
+      "category": "exploration",
+      "total_calls": 10,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 5,
+      "repeat_rate": 0.5,
+      "avg_duration_ms": 7383.7,
+      "agent_count": 1,
+      "agents": [
+        "Agent"
       ]
     },
     {
@@ -932,21 +1002,6 @@
       ]
     },
     {
-      "name": "mcp_nomarr_dev_asr_search",
-      "category": "research",
-      "total_calls": 10,
-      "failures": 0,
-      "failure_rate": 0.0,
-      "repeats": 6,
-      "repeat_rate": 0.6,
-      "avg_duration_ms": 44.5,
-      "agent_count": 2,
-      "agents": [
-        "Agent",
-        "Support-Librarian"
-      ]
-    },
-    {
       "name": "mcp_nomarr_dev_search_file_text",
       "category": "exploration",
       "total_calls": 10,
@@ -960,24 +1015,6 @@
         "Exec-Executor",
         "Exec-Fixer",
         "QA-Reviewer"
-      ]
-    },
-    {
-      "name": "mcp_nomarr_dev_dd_read",
-      "category": "research",
-      "total_calls": 9,
-      "failures": 0,
-      "failure_rate": 0.0,
-      "repeats": 0,
-      "repeat_rate": 0.0,
-      "avg_duration_ms": 38.7,
-      "agent_count": 5,
-      "agents": [
-        "Agent",
-        "Exec-Manager",
-        "QA-Reviewer",
-        "RnD-DDAuthor",
-        "RnD-Manager"
       ]
     },
     {
@@ -996,17 +1033,46 @@
       ]
     },
     {
-      "name": "fetch_webpage",
-      "category": "exploration",
-      "total_calls": 7,
+      "name": "mcp_nomarr_dev_adr_suggest",
+      "category": "logging",
+      "total_calls": 6,
       "failures": 0,
       "failure_rate": 0.0,
-      "repeats": 4,
-      "repeat_rate": 0.5714,
-      "avg_duration_ms": 6761.1,
+      "repeats": 1,
+      "repeat_rate": 0.1667,
+      "avg_duration_ms": 9.3,
       "agent_count": 1,
       "agents": [
         "Agent"
+      ]
+    },
+    {
+      "name": "mcp_nomarr_dev_read_file_symbol_at_line",
+      "category": "research",
+      "total_calls": 5,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 1,
+      "repeat_rate": 0.2,
+      "avg_duration_ms": 656.0,
+      "agent_count": 1,
+      "agents": [
+        "Agent"
+      ]
+    },
+    {
+      "name": "mcp_nomarr_dev_locate_module_symbol",
+      "category": "research",
+      "total_calls": 5,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 1,
+      "repeat_rate": 0.2,
+      "avg_duration_ms": 1793.6,
+      "agent_count": 2,
+      "agents": [
+        "Agent",
+        "Exec-Executor"
       ]
     },
     {
@@ -1038,43 +1104,42 @@
       ]
     },
     {
-      "name": "mcp_nomarr_dev_asr_read",
-      "category": "research",
-      "total_calls": 4,
-      "failures": 0,
-      "failure_rate": 0.0,
-      "repeats": 2,
-      "repeat_rate": 0.5,
-      "avg_duration_ms": 18.2,
-      "agent_count": 2,
-      "agents": [
-        "Agent",
-        "Support-Librarian"
-      ]
-    },
-    {
       "name": "vscode_askQuestions",
       "category": "management",
-      "total_calls": 3,
+      "total_calls": 4,
       "failures": 0,
       "failure_rate": 0.0,
       "repeats": 0,
       "repeat_rate": 0.0,
-      "avg_duration_ms": 232328.7,
+      "avg_duration_ms": 253051.8,
       "agent_count": 1,
       "agents": [
         "Agent"
       ]
     },
     {
-      "name": "mcp_nomarr_dev_adr_suggest",
-      "category": "logging",
-      "total_calls": 2,
+      "name": "vscode_listCodeUsages",
+      "category": "research",
+      "total_calls": 3,
       "failures": 0,
       "failure_rate": 0.0,
       "repeats": 0,
       "repeat_rate": 0.0,
-      "avg_duration_ms": 9.5,
+      "avg_duration_ms": 1274.7,
+      "agent_count": 1,
+      "agents": [
+        "Agent"
+      ]
+    },
+    {
+      "name": "mcp_gitkraken_git_status",
+      "category": "exploration",
+      "total_calls": 3,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 0,
+      "repeat_rate": 0.0,
+      "avg_duration_ms": 14573143.3,
       "agent_count": 1,
       "agents": [
         "Agent"
@@ -1083,12 +1148,12 @@
     {
       "name": "mcp_nomarr_dev_adr_commit",
       "category": "management",
-      "total_calls": 2,
+      "total_calls": 3,
       "failures": 0,
       "failure_rate": 0.0,
       "repeats": 0,
       "repeat_rate": 0.0,
-      "avg_duration_ms": 18.5,
+      "avg_duration_ms": 20.0,
       "agent_count": 1,
       "agents": [
         "Agent"
@@ -1097,12 +1162,12 @@
     {
       "name": "mcp_nomarr_dev_edit_file_create",
       "category": "editing",
-      "total_calls": 2,
+      "total_calls": 3,
       "failures": 0,
       "failure_rate": 0.0,
       "repeats": 0,
       "repeat_rate": 0.0,
-      "avg_duration_ms": 36.5,
+      "avg_duration_ms": 30.0,
       "agent_count": 2,
       "agents": [
         "Exec-Executor",
@@ -1110,32 +1175,87 @@
       ]
     },
     {
-      "name": "mcp_nomarr_dev_locate_module_symbol",
-      "category": "research",
+      "name": "mcp_nomarr_dev_dd_create",
+      "category": "logging",
       "total_calls": 2,
       "failures": 0,
       "failure_rate": 0.0,
       "repeats": 0,
       "repeat_rate": 0.0,
-      "avg_duration_ms": 684.5,
-      "agent_count": 2,
+      "avg_duration_ms": 13.5,
+      "agent_count": 1,
       "agents": [
-        "Agent",
-        "Exec-Executor"
+        "RnD-DDAuthor"
       ]
     },
     {
-      "name": "mcp_nomarr_dev_dd_create",
+      "name": "mcp_nomarr_dev_asr_create",
       "category": "logging",
       "total_calls": 1,
       "failures": 0,
       "failure_rate": 0.0,
       "repeats": 0,
       "repeat_rate": 0.0,
-      "avg_duration_ms": 21.0,
+      "avg_duration_ms": 16.0,
       "agent_count": 1,
       "agents": [
-        "RnD-DDAuthor"
+        "Agent"
+      ]
+    },
+    {
+      "name": "get_terminal_output",
+      "category": "qa",
+      "total_calls": 1,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 0,
+      "repeat_rate": 0.0,
+      "avg_duration_ms": 2.0,
+      "agent_count": 1,
+      "agents": [
+        "Agent"
+      ]
+    },
+    {
+      "name": "mcp_context7_resolve-library-id",
+      "category": "other",
+      "total_calls": 1,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 0,
+      "repeat_rate": 0.0,
+      "avg_duration_ms": 979.0,
+      "agent_count": 1,
+      "agents": [
+        "Agent"
+      ]
+    },
+    {
+      "name": "mcp_context7_get-library-docs",
+      "category": "other",
+      "total_calls": 1,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 0,
+      "repeat_rate": 0.0,
+      "avg_duration_ms": 1150.0,
+      "agent_count": 1,
+      "agents": [
+        "Agent"
+      ]
+    },
+    {
+      "name": "memory",
+      "category": "other",
+      "total_calls": 1,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "repeats": 0,
+      "repeat_rate": 0.0,
+      "avg_duration_ms": 9.0,
+      "agent_count": 1,
+      "agents": [
+        "Explore"
       ]
     },
     {
@@ -1151,23 +1271,3888 @@
       "agents": [
         "QA-TestAnalyzer"
       ]
-    },
-    {
-      "name": "mcp_gitkraken_git_status",
-      "category": "exploration",
-      "total_calls": 1,
-      "failures": 0,
-      "failure_rate": 0.0,
-      "repeats": 0,
-      "repeat_rate": 0.0,
-      "avg_duration_ms": 43719188.0,
-      "agent_count": 1,
-      "agents": [
-        "Agent"
-      ]
     }
   ],
   "sessions": [
+    {
+      "session_id": "50581b55-531a-48fb-b277-1bb8333b70e6",
+      "timestamp": 1776676276426,
+      "root": {
+        "agent_name": "Agent",
+        "log_file": "main.jsonl",
+        "timestamp": 1776676276426,
+        "spawn_prompt": "",
+        "turn_count": 129,
+        "wall_time_ms": 17103369,
+        "total_input_tokens": 8035883,
+        "total_output_tokens": 29022,
+        "total_tokens": 8064905,
+        "tree_tokens": 8064905,
+        "tool_call_count": 126,
+        "management_count": 1,
+        "editing_count": 15,
+        "exploration_count": 35,
+        "qa_count": 43,
+        "logging_count": 25,
+        "research_count": 5,
+        "management_ratio": 0.0079,
+        "editing_ratio": 0.119,
+        "exploration_ratio": 0.2778,
+        "qa_ratio": 0.3413,
+        "logging_ratio": 0.1984,
+        "research_ratio": 0.0397,
+        "failure_count": 3,
+        "failure_rate": 0.0238,
+        "repeated_tool_calls": 34,
+        "tokens_per_mutation": 537660.3,
+        "calls_before_first_dispatch": null,
+        "models_used": [
+          "claude-opus-4.6"
+        ],
+        "avg_ttft_ms": 4580.5,
+        "tool_calls": [
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776676277471,
+            "args_summary": ""
+          },
+          {
+            "name": "tool_search",
+            "duration_ms": 1224,
+            "status": "ok",
+            "timestamp": 1776676282210,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_asr_search",
+            "duration_ms": 16,
+            "status": "ok",
+            "timestamp": 1776676289320,
+            "args_summary": ""
+          },
+          {
+            "name": "file_search",
+            "duration_ms": 64,
+            "status": "ok",
+            "timestamp": 1776676293189,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_asr_read",
+            "duration_ms": 8,
+            "status": "ok",
+            "timestamp": 1776676296664,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_asr_create",
+            "duration_ms": 16,
+            "status": "ok",
+            "timestamp": 1776676303843,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776676580929,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_asr_read",
+            "duration_ms": 17,
+            "status": "ok",
+            "timestamp": 1776676589399,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_asr_read",
+            "duration_ms": 33,
+            "status": "ok",
+            "timestamp": 1776676589399,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_asr_read",
+            "duration_ms": 35,
+            "status": "ok",
+            "timestamp": 1776676589399,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 17,
+            "status": "ok",
+            "timestamp": 1776676595147,
+            "args_summary": ""
+          },
+          {
+            "name": "multi_replace_string_in_file",
+            "duration_ms": 21,
+            "status": "ok",
+            "timestamp": 1776676602148,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 3,
+            "status": "ok",
+            "timestamp": 1776676648098,
+            "args_summary": ""
+          },
+          {
+            "name": "replace_string_in_file",
+            "duration_ms": 13,
+            "status": "ok",
+            "timestamp": 1776676661700,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776676753768,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 3581,
+            "status": "ok",
+            "timestamp": 1776676760760,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 17485,
+            "status": "ok",
+            "timestamp": 1776676768869,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 13265,
+            "status": "ok",
+            "timestamp": 1776676791117,
+            "args_summary": ""
+          },
+          {
+            "name": "file_search",
+            "duration_ms": 74,
+            "status": "ok",
+            "timestamp": 1776676815996,
+            "args_summary": ""
+          },
+          {
+            "name": "grep_search",
+            "duration_ms": 113,
+            "status": "ok",
+            "timestamp": 1776676815996,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 4,
+            "status": "ok",
+            "timestamp": 1776676884701,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 5158,
+            "status": "ok",
+            "timestamp": 1776676889771,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 447,
+            "status": "ok",
+            "timestamp": 1776676900667,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776677126015,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 45624,
+            "status": "ok",
+            "timestamp": 1776677132820,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 5891,
+            "status": "ok",
+            "timestamp": 1776677184608,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776677310365,
+            "args_summary": ""
+          },
+          {
+            "name": "create_file",
+            "duration_ms": 22,
+            "status": "ok",
+            "timestamp": 1776677319316,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 24626,
+            "status": "ok",
+            "timestamp": 1776677324653,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 17975,
+            "status": "ok",
+            "timestamp": 1776677356103,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 3480,
+            "status": "ok",
+            "timestamp": 1776677380144,
+            "args_summary": ""
+          },
+          {
+            "name": "get_terminal_output",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776677393274,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776677530233,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 13,
+            "status": "ok",
+            "timestamp": 1776677537453,
+            "args_summary": ""
+          },
+          {
+            "name": "replace_string_in_file",
+            "duration_ms": 26,
+            "status": "ok",
+            "timestamp": 1776677547693,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 19719,
+            "status": "ok",
+            "timestamp": 1776677554033,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 40005,
+            "status": "ok",
+            "timestamp": 1776677591340,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 5130,
+            "status": "ok",
+            "timestamp": 1776677638516,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 5352,
+            "status": "ok",
+            "timestamp": 1776677652353,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 21782,
+            "status": "ok",
+            "timestamp": 1776677665791,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 23,
+            "status": "ok",
+            "timestamp": 1776677694041,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 4359,
+            "status": "ok",
+            "timestamp": 1776677706079,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 29672,
+            "status": "ok",
+            "timestamp": 1776677716608,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 26763,
+            "status": "ok",
+            "timestamp": 1776677754412,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 11598,
+            "status": "ok",
+            "timestamp": 1776677790132,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 4918,
+            "status": "ok",
+            "timestamp": 1776677808371,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 12532,
+            "status": "ok",
+            "timestamp": 1776677833332,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 4108,
+            "status": "ok",
+            "timestamp": 1776677853278,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 0,
+            "status": "ok",
+            "timestamp": 1776678047678,
+            "args_summary": ""
+          },
+          {
+            "name": "replace_string_in_file",
+            "duration_ms": 10,
+            "status": "ok",
+            "timestamp": 1776678064246,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 6,
+            "status": "ok",
+            "timestamp": 1776678191828,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 5275,
+            "status": "ok",
+            "timestamp": 1776678204520,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 31782,
+            "status": "error",
+            "timestamp": 1776678217979,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 8,
+            "status": "ok",
+            "timestamp": 1776678250119,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 2215,
+            "status": "ok",
+            "timestamp": 1776678259710,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776678312199,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776678378689,
+            "args_summary": ""
+          },
+          {
+            "name": "tool_search",
+            "duration_ms": 687,
+            "status": "ok",
+            "timestamp": 1776678384208,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 2069,
+            "status": "ok",
+            "timestamp": 1776678392600,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 26,
+            "status": "ok",
+            "timestamp": 1776678400908,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 248,
+            "status": "ok",
+            "timestamp": 1776678408889,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_gitkraken_git_add_or_commit",
+            "duration_ms": 910,
+            "status": "error",
+            "timestamp": 1776678415402,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 581,
+            "status": "ok",
+            "timestamp": 1776678422632,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 7162,
+            "status": "ok",
+            "timestamp": 1776678428511,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 310,
+            "status": "ok",
+            "timestamp": 1776678443768,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_gitkraken_git_push",
+            "duration_ms": 3891,
+            "status": "ok",
+            "timestamp": 1776678449163,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 3,
+            "status": "ok",
+            "timestamp": 1776678484988,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 17,
+            "status": "ok",
+            "timestamp": 1776678491700,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 114,
+            "status": "ok",
+            "timestamp": 1776678500070,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 2471,
+            "status": "ok",
+            "timestamp": 1776678507382,
+            "args_summary": ""
+          },
+          {
+            "name": "multi_replace_string_in_file",
+            "duration_ms": 22,
+            "status": "ok",
+            "timestamp": 1776678520955,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 11314,
+            "status": "ok",
+            "timestamp": 1776678528707,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 6394,
+            "status": "ok",
+            "timestamp": 1776678548013,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 20,
+            "status": "ok",
+            "timestamp": 1776678562234,
+            "args_summary": ""
+          },
+          {
+            "name": "multi_replace_string_in_file",
+            "duration_ms": 18,
+            "status": "ok",
+            "timestamp": 1776678580300,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 12605,
+            "status": "ok",
+            "timestamp": 1776678586583,
+            "args_summary": ""
+          },
+          {
+            "name": "multi_replace_string_in_file",
+            "duration_ms": 16,
+            "status": "ok",
+            "timestamp": 1776678614414,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 31953,
+            "status": "ok",
+            "timestamp": 1776678620671,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776678658595,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 33,
+            "status": "ok",
+            "timestamp": 1776678664394,
+            "args_summary": ""
+          },
+          {
+            "name": "tool_search",
+            "duration_ms": 1135,
+            "status": "ok",
+            "timestamp": 1776678669130,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_context7_resolve-library-id",
+            "duration_ms": 979,
+            "status": "ok",
+            "timestamp": 1776678676399,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_context7_get-library-docs",
+            "duration_ms": 1150,
+            "status": "ok",
+            "timestamp": 1776678684776,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 28,
+            "status": "ok",
+            "timestamp": 1776678693028,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 19,
+            "status": "ok",
+            "timestamp": 1776678699268,
+            "args_summary": ""
+          },
+          {
+            "name": "fetch_webpage",
+            "duration_ms": 16677,
+            "status": "ok",
+            "timestamp": 1776678705235,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 6,
+            "status": "ok",
+            "timestamp": 1776678738552,
+            "args_summary": ""
+          },
+          {
+            "name": "fetch_webpage",
+            "duration_ms": 2265,
+            "status": "ok",
+            "timestamp": 1776678743590,
+            "args_summary": ""
+          },
+          {
+            "name": "fetch_webpage",
+            "duration_ms": 7567,
+            "status": "ok",
+            "timestamp": 1776678750341,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 69,
+            "status": "ok",
+            "timestamp": 1776678766395,
+            "args_summary": ""
+          },
+          {
+            "name": "replace_string_in_file",
+            "duration_ms": 5,
+            "status": "ok",
+            "timestamp": 1776678771854,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 25024,
+            "status": "ok",
+            "timestamp": 1776678776534,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 4,
+            "status": "ok",
+            "timestamp": 1776678813279,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 3,
+            "status": "ok",
+            "timestamp": 1776679063611,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 19,
+            "status": "ok",
+            "timestamp": 1776679070478,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 45,
+            "status": "ok",
+            "timestamp": 1776679070478,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 16,
+            "status": "ok",
+            "timestamp": 1776679074754,
+            "args_summary": ""
+          },
+          {
+            "name": "replace_string_in_file",
+            "duration_ms": 15,
+            "status": "ok",
+            "timestamp": 1776679100638,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 1499,
+            "status": "ok",
+            "timestamp": 1776679105999,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 602,
+            "status": "ok",
+            "timestamp": 1776679112888,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 7641,
+            "status": "error",
+            "timestamp": 1776679119284,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776679180421,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 17,
+            "status": "ok",
+            "timestamp": 1776679189079,
+            "args_summary": ""
+          },
+          {
+            "name": "replace_string_in_file",
+            "duration_ms": 12,
+            "status": "ok",
+            "timestamp": 1776679203344,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 8279,
+            "status": "ok",
+            "timestamp": 1776679208426,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776679335751,
+            "args_summary": ""
+          },
+          {
+            "name": "file_search",
+            "duration_ms": 73,
+            "status": "ok",
+            "timestamp": 1776679355143,
+            "args_summary": ""
+          },
+          {
+            "name": "file_search",
+            "duration_ms": 85,
+            "status": "ok",
+            "timestamp": 1776679355142,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 19,
+            "status": "ok",
+            "timestamp": 1776679361472,
+            "args_summary": ""
+          },
+          {
+            "name": "grep_search",
+            "duration_ms": 65,
+            "status": "ok",
+            "timestamp": 1776679366669,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776679368293,
+            "args_summary": ""
+          },
+          {
+            "name": "grep_search",
+            "duration_ms": 64,
+            "status": "ok",
+            "timestamp": 1776679375168,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 21,
+            "status": "ok",
+            "timestamp": 1776679379586,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776680171628,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776680260004,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 50,
+            "status": "ok",
+            "timestamp": 1776680266022,
+            "args_summary": ""
+          },
+          {
+            "name": "file_search",
+            "duration_ms": 80,
+            "status": "ok",
+            "timestamp": 1776680266021,
+            "args_summary": ""
+          },
+          {
+            "name": "file_search",
+            "duration_ms": 87,
+            "status": "ok",
+            "timestamp": 1776680266022,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 19,
+            "status": "ok",
+            "timestamp": 1776680270331,
+            "args_summary": ""
+          },
+          {
+            "name": "vscode_askQuestions",
+            "duration_ms": 315221,
+            "status": "ok",
+            "timestamp": 1776680280190,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776680601248,
+            "args_summary": ""
+          },
+          {
+            "name": "create_file",
+            "duration_ms": 24,
+            "status": "ok",
+            "timestamp": 1776680607424,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 4,
+            "status": "ok",
+            "timestamp": 1776680611943,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776680737684,
+            "args_summary": ""
+          },
+          {
+            "name": "tool_search",
+            "duration_ms": 547,
+            "status": "ok",
+            "timestamp": 1776680744259,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_gitkraken_git_add_or_commit",
+            "duration_ms": 85,
+            "status": "ok",
+            "timestamp": 1776680749494,
+            "args_summary": ""
+          }
+        ],
+        "children": []
+      }
+    },
+    {
+      "session_id": "49d085ef-d4fb-4b91-a288-dbc83895a7b4",
+      "timestamp": 1776669955696,
+      "root": {
+        "agent_name": "Agent",
+        "log_file": "main.jsonl",
+        "timestamp": 1776669955696,
+        "spawn_prompt": "",
+        "turn_count": 23,
+        "wall_time_ms": 19660093,
+        "total_input_tokens": 845398,
+        "total_output_tokens": 4034,
+        "total_tokens": 849432,
+        "tree_tokens": 849432,
+        "tool_call_count": 28,
+        "management_count": 0,
+        "editing_count": 4,
+        "exploration_count": 12,
+        "qa_count": 5,
+        "logging_count": 7,
+        "research_count": 0,
+        "management_ratio": 0.0,
+        "editing_ratio": 0.1429,
+        "exploration_ratio": 0.4286,
+        "qa_ratio": 0.1786,
+        "logging_ratio": 0.25,
+        "research_ratio": 0.0,
+        "failure_count": 0,
+        "failure_rate": 0.0,
+        "repeated_tool_calls": 14,
+        "tokens_per_mutation": 212358.0,
+        "calls_before_first_dispatch": null,
+        "models_used": [
+          "claude-opus-4.6"
+        ],
+        "avg_ttft_ms": 4309.0,
+        "tool_calls": [
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776669956952,
+            "args_summary": ""
+          },
+          {
+            "name": "file_search",
+            "duration_ms": 62,
+            "status": "ok",
+            "timestamp": 1776669961935,
+            "args_summary": ""
+          },
+          {
+            "name": "file_search",
+            "duration_ms": 68,
+            "status": "ok",
+            "timestamp": 1776669961935,
+            "args_summary": ""
+          },
+          {
+            "name": "file_search",
+            "duration_ms": 74,
+            "status": "ok",
+            "timestamp": 1776669961935,
+            "args_summary": ""
+          },
+          {
+            "name": "file_search",
+            "duration_ms": 76,
+            "status": "ok",
+            "timestamp": 1776669967841,
+            "args_summary": ""
+          },
+          {
+            "name": "grep_search",
+            "duration_ms": 133,
+            "status": "ok",
+            "timestamp": 1776669967841,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 4,
+            "status": "ok",
+            "timestamp": 1776670010905,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 26,
+            "status": "ok",
+            "timestamp": 1776670017063,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 26,
+            "status": "ok",
+            "timestamp": 1776670017064,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 8,
+            "status": "ok",
+            "timestamp": 1776670021581,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 11,
+            "status": "ok",
+            "timestamp": 1776670021582,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 7,
+            "status": "ok",
+            "timestamp": 1776670025726,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 6,
+            "status": "ok",
+            "timestamp": 1776670030141,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776670040217,
+            "args_summary": ""
+          },
+          {
+            "name": "create_file",
+            "duration_ms": 8,
+            "status": "ok",
+            "timestamp": 1776670054016,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776670058044,
+            "args_summary": ""
+          },
+          {
+            "name": "replace_string_in_file",
+            "duration_ms": 6,
+            "status": "ok",
+            "timestamp": 1776670067767,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776670074675,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 3,
+            "status": "ok",
+            "timestamp": 1776670083958,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 112211,
+            "status": "ok",
+            "timestamp": 1776670088760,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 8567,
+            "status": "ok",
+            "timestamp": 1776670206184,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 751,
+            "status": "ok",
+            "timestamp": 1776670220430,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 626,
+            "status": "ok",
+            "timestamp": 1776670226529,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 3,
+            "status": "ok",
+            "timestamp": 1776670233039,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776670300224,
+            "args_summary": ""
+          },
+          {
+            "name": "tool_search",
+            "duration_ms": 902,
+            "status": "ok",
+            "timestamp": 1776670305852,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_gitkraken_git_add_or_commit",
+            "duration_ms": 101,
+            "status": "ok",
+            "timestamp": 1776670311132,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_gitkraken_git_add_or_commit",
+            "duration_ms": 66519,
+            "status": "ok",
+            "timestamp": 1776670318034,
+            "args_summary": ""
+          }
+        ],
+        "children": []
+      }
+    },
+    {
+      "session_id": "38d330cd-54e5-4caf-8b11-d1c5f8b51ab0",
+      "timestamp": 1776669885562,
+      "root": {
+        "agent_name": "Agent",
+        "log_file": "main.jsonl",
+        "timestamp": 1776669885562,
+        "spawn_prompt": "",
+        "turn_count": 100,
+        "wall_time_ms": 19920174,
+        "total_input_tokens": 6272869,
+        "total_output_tokens": 40667,
+        "total_tokens": 6313536,
+        "tree_tokens": 11136773,
+        "tool_call_count": 109,
+        "management_count": 5,
+        "editing_count": 10,
+        "exploration_count": 32,
+        "qa_count": 10,
+        "logging_count": 33,
+        "research_count": 19,
+        "management_ratio": 0.0459,
+        "editing_ratio": 0.0917,
+        "exploration_ratio": 0.2936,
+        "qa_ratio": 0.0917,
+        "logging_ratio": 0.3028,
+        "research_ratio": 0.1743,
+        "failure_count": 1,
+        "failure_rate": 0.0092,
+        "repeated_tool_calls": 29,
+        "tokens_per_mutation": 631353.6,
+        "calls_before_first_dispatch": 67,
+        "models_used": [
+          "claude-opus-4.6"
+        ],
+        "avg_ttft_ms": 4900.4,
+        "tool_calls": [
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776669889653,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776669895351,
+            "args_summary": ""
+          },
+          {
+            "name": "tool_search",
+            "duration_ms": 1070,
+            "status": "ok",
+            "timestamp": 1776669899876,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_read_file_symbol_at_line",
+            "duration_ms": 3197,
+            "status": "ok",
+            "timestamp": 1776669905256,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_locate_module_symbol",
+            "duration_ms": 3601,
+            "status": "ok",
+            "timestamp": 1776669905257,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_locate_module_symbol",
+            "duration_ms": 3607,
+            "status": "ok",
+            "timestamp": 1776669905257,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_read_module_source",
+            "duration_ms": 17,
+            "status": "ok",
+            "timestamp": 1776669913993,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_read_module_source",
+            "duration_ms": 383,
+            "status": "ok",
+            "timestamp": 1776669913993,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_locate_module_symbol",
+            "duration_ms": 391,
+            "status": "ok",
+            "timestamp": 1776669913993,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_read_module_source",
+            "duration_ms": 12,
+            "status": "ok",
+            "timestamp": 1776669919764,
+            "args_summary": ""
+          },
+          {
+            "name": "vscode_listCodeUsages",
+            "duration_ms": 708,
+            "status": "ok",
+            "timestamp": 1776669928391,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_read_file_symbol_at_line",
+            "duration_ms": 8,
+            "status": "ok",
+            "timestamp": 1776669932783,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 9,
+            "status": "ok",
+            "timestamp": 1776669953078,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 15,
+            "status": "ok",
+            "timestamp": 1776669953078,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 14,
+            "status": "ok",
+            "timestamp": 1776669969493,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 5,
+            "status": "ok",
+            "timestamp": 1776669974287,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_read_module_source",
+            "duration_ms": 11,
+            "status": "ok",
+            "timestamp": 1776669979135,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 12,
+            "status": "ok",
+            "timestamp": 1776669983859,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 6,
+            "status": "ok",
+            "timestamp": 1776669987780,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776669994173,
+            "args_summary": ""
+          },
+          {
+            "name": "multi_replace_string_in_file",
+            "duration_ms": 14,
+            "status": "ok",
+            "timestamp": 1776670012860,
+            "args_summary": ""
+          },
+          {
+            "name": "tool_search",
+            "duration_ms": 902,
+            "status": "ok",
+            "timestamp": 1776670018469,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_lint_project_backend",
+            "duration_ms": 20128,
+            "status": "ok",
+            "timestamp": 1776670024926,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_lint_project_backend",
+            "duration_ms": 9977,
+            "status": "ok",
+            "timestamp": 1776670053308,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776670067449,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 10088,
+            "status": "ok",
+            "timestamp": 1776670075465,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776670090081,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 5,
+            "status": "ok",
+            "timestamp": 1776670179327,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 20,
+            "status": "ok",
+            "timestamp": 1776670186071,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 15,
+            "status": "ok",
+            "timestamp": 1776670190237,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776670365909,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 8,
+            "status": "ok",
+            "timestamp": 1776670371290,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 4,
+            "status": "ok",
+            "timestamp": 1776670406974,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 16,
+            "status": "ok",
+            "timestamp": 1776670413434,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 19,
+            "status": "ok",
+            "timestamp": 1776670413434,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776670750346,
+            "args_summary": ""
+          },
+          {
+            "name": "tool_search",
+            "duration_ms": 2982,
+            "status": "ok",
+            "timestamp": 1776670759825,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_gitkraken_git_status",
+            "duration_ms": 115,
+            "status": "ok",
+            "timestamp": 1776670771405,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_gitkraken_git_add_or_commit",
+            "duration_ms": 120,
+            "status": "ok",
+            "timestamp": 1776670777880,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_gitkraken_git_add_or_commit",
+            "duration_ms": 3245,
+            "status": "error",
+            "timestamp": 1776670783062,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 1046,
+            "status": "ok",
+            "timestamp": 1776670794212,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 1370,
+            "status": "ok",
+            "timestamp": 1776670805751,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 239,
+            "status": "ok",
+            "timestamp": 1776670814545,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_gitkraken_git_push",
+            "duration_ms": 3091,
+            "status": "ok",
+            "timestamp": 1776670818922,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776670871072,
+            "args_summary": ""
+          },
+          {
+            "name": "file_search",
+            "duration_ms": 64,
+            "status": "ok",
+            "timestamp": 1776670877065,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 30,
+            "status": "ok",
+            "timestamp": 1776670882494,
+            "args_summary": ""
+          },
+          {
+            "name": "grep_search",
+            "duration_ms": 60,
+            "status": "ok",
+            "timestamp": 1776670895878,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 37,
+            "status": "ok",
+            "timestamp": 1776670901871,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 19,
+            "status": "ok",
+            "timestamp": 1776670908003,
+            "args_summary": ""
+          },
+          {
+            "name": "grep_search",
+            "duration_ms": 49,
+            "status": "ok",
+            "timestamp": 1776670914904,
+            "args_summary": ""
+          },
+          {
+            "name": "replace_string_in_file",
+            "duration_ms": 19,
+            "status": "ok",
+            "timestamp": 1776670929672,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 97230,
+            "status": "ok",
+            "timestamp": 1776670938810,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 3876,
+            "status": "ok",
+            "timestamp": 1776671041512,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 8859,
+            "status": "ok",
+            "timestamp": 1776671054066,
+            "args_summary": ""
+          },
+          {
+            "name": "replace_string_in_file",
+            "duration_ms": 16,
+            "status": "ok",
+            "timestamp": 1776671077810,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 4073,
+            "status": "ok",
+            "timestamp": 1776671082914,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 20,
+            "status": "ok",
+            "timestamp": 1776671097175,
+            "args_summary": ""
+          },
+          {
+            "name": "grep_search",
+            "duration_ms": 57,
+            "status": "ok",
+            "timestamp": 1776671103493,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776671191858,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 13,
+            "status": "ok",
+            "timestamp": 1776671199102,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_read_file_symbol_at_line",
+            "duration_ms": 23,
+            "status": "ok",
+            "timestamp": 1776671213664,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_read_module_source",
+            "duration_ms": 19,
+            "status": "ok",
+            "timestamp": 1776671221685,
+            "args_summary": ""
+          },
+          {
+            "name": "vscode_listCodeUsages",
+            "duration_ms": 796,
+            "status": "ok",
+            "timestamp": 1776671221706,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776671316242,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 39,
+            "status": "ok",
+            "timestamp": 1776671327578,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 3,
+            "status": "ok",
+            "timestamp": 1776671336191,
+            "args_summary": ""
+          },
+          {
+            "name": "runSubagent",
+            "duration_ms": 136664,
+            "status": "ok",
+            "timestamp": 1776671344110,
+            "args_summary": "Support-Librarian"
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776671488300,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_read_module_source",
+            "duration_ms": 28,
+            "status": "ok",
+            "timestamp": 1776671494469,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_read_module_source",
+            "duration_ms": 28,
+            "status": "ok",
+            "timestamp": 1776671494470,
+            "args_summary": ""
+          },
+          {
+            "name": "runSubagent",
+            "duration_ms": 183549,
+            "status": "ok",
+            "timestamp": 1776671513756,
+            "args_summary": "Explore"
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 3,
+            "status": "ok",
+            "timestamp": 1776671704108,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 5,
+            "status": "ok",
+            "timestamp": 1776671710642,
+            "args_summary": ""
+          },
+          {
+            "name": "multi_replace_string_in_file",
+            "duration_ms": 6,
+            "status": "ok",
+            "timestamp": 1776671720511,
+            "args_summary": ""
+          },
+          {
+            "name": "tool_search",
+            "duration_ms": 1029,
+            "status": "ok",
+            "timestamp": 1776671725692,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_log_write",
+            "duration_ms": 7,
+            "status": "ok",
+            "timestamp": 1776671742847,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_adr_suggest",
+            "duration_ms": 5,
+            "status": "ok",
+            "timestamp": 1776671784118,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_adr_suggest",
+            "duration_ms": 7,
+            "status": "ok",
+            "timestamp": 1776671805222,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776671814371,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776672304391,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776672540051,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776672653892,
+            "args_summary": ""
+          },
+          {
+            "name": "vscode_listCodeUsages",
+            "duration_ms": 2320,
+            "status": "ok",
+            "timestamp": 1776672676724,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_read_file_symbol_at_line",
+            "duration_ms": 23,
+            "status": "ok",
+            "timestamp": 1776672687746,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_read_file_symbol_at_line",
+            "duration_ms": 29,
+            "status": "ok",
+            "timestamp": 1776672687746,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 4,
+            "status": "ok",
+            "timestamp": 1776672777239,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_log_write",
+            "duration_ms": 18,
+            "status": "ok",
+            "timestamp": 1776672808234,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_adr_suggest",
+            "duration_ms": 13,
+            "status": "ok",
+            "timestamp": 1776672841881,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776672975884,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_adr_suggest",
+            "duration_ms": 12,
+            "status": "ok",
+            "timestamp": 1776673003734,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 0,
+            "status": "ok",
+            "timestamp": 1776675734308,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776675791917,
+            "args_summary": ""
+          },
+          {
+            "name": "multi_replace_string_in_file",
+            "duration_ms": 39,
+            "status": "ok",
+            "timestamp": 1776675803197,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776675883074,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_read_module_source",
+            "duration_ms": 16,
+            "status": "ok",
+            "timestamp": 1776675896084,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 5,
+            "status": "ok",
+            "timestamp": 1776675997409,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776676159114,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_nomarr_dev_adr_commit",
+            "duration_ms": 23,
+            "status": "ok",
+            "timestamp": 1776676166378,
+            "args_summary": ""
+          },
+          {
+            "name": "runSubagent",
+            "duration_ms": 1032229,
+            "status": "ok",
+            "timestamp": 1776676193625,
+            "args_summary": "RnD-Manager"
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776678802534,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 21,
+            "status": "ok",
+            "timestamp": 1776678812455,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 21,
+            "status": "ok",
+            "timestamp": 1776678817365,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 8,
+            "status": "ok",
+            "timestamp": 1776678822263,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 5,
+            "status": "ok",
+            "timestamp": 1776678827217,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 5,
+            "status": "ok",
+            "timestamp": 1776678834188,
+            "args_summary": ""
+          },
+          {
+            "name": "multi_replace_string_in_file",
+            "duration_ms": 23,
+            "status": "ok",
+            "timestamp": 1776678868692,
+            "args_summary": ""
+          },
+          {
+            "name": "replace_string_in_file",
+            "duration_ms": 7,
+            "status": "ok",
+            "timestamp": 1776678876756,
+            "args_summary": ""
+          },
+          {
+            "name": "runSubagent",
+            "duration_ms": 124648,
+            "status": "ok",
+            "timestamp": 1776678896630,
+            "args_summary": "Exec-Planner"
+          }
+        ],
+        "children": [
+          {
+            "agent_name": "Support-Librarian",
+            "log_file": "runSubagent-Support-Librarian-toolu_bdrk_01Nf1ffhqry8QiFwm7PFz9ub.jsonl",
+            "timestamp": 1776671344123,
+            "spawn_prompt": "Search the artifact corpus for everything relevant to this task:\n\nTask: design \u2014 consolidating ML head model type hierarchy (HeadInfo, ONNXHeadModel, HeadOutput, HeadSpec)\nScope: nomarr/components/ml/, nomarr/helpers/dto/ml_dto.py, nomarr/components/tagging/\n\nSpecific concerns:\n- Are there existing ADRs about ML model types, head models, or the ONNX inference layer?\n- Has anyone tried reorganizing the ML type hierarchy before?\n- Are there logs about layer violations between helpers and components for ML types?\n- Any dead ends around HeadInfo / ONNXHeadModel refactoring?\n- Prior decisions about where DTOs vs domain models should live?\n\nReturn a structured briefing with constraints (ADRs/decisions that must be respected), \nwarnings (dead ends, failed approaches), context (useful background), and open questions \n(unresolved uncertainties from prior work).",
+            "turn_count": 8,
+            "wall_time_ms": 136380,
+            "total_input_tokens": 473045,
+            "total_output_tokens": 6065,
+            "total_tokens": 479110,
+            "tree_tokens": 479110,
+            "tool_call_count": 33,
+            "management_count": 0,
+            "editing_count": 0,
+            "exploration_count": 31,
+            "qa_count": 0,
+            "logging_count": 0,
+            "research_count": 2,
+            "management_ratio": 0.0,
+            "editing_ratio": 0.0,
+            "exploration_ratio": 0.9394,
+            "qa_ratio": 0.0,
+            "logging_ratio": 0.0,
+            "research_ratio": 0.0606,
+            "failure_count": 0,
+            "failure_rate": 0.0,
+            "repeated_tool_calls": 24,
+            "tokens_per_mutation": 0.0,
+            "calls_before_first_dispatch": null,
+            "models_used": [
+              "gpt-5.4"
+            ],
+            "avg_ttft_ms": 693.5,
+            "tool_calls": [
+              {
+                "name": "read_file",
+                "duration_ms": 10,
+                "status": "ok",
+                "timestamp": 1776671353190,
+                "args_summary": ""
+              },
+              {
+                "name": "list_dir",
+                "duration_ms": 10,
+                "status": "ok",
+                "timestamp": 1776671362821,
+                "args_summary": ""
+              },
+              {
+                "name": "list_dir",
+                "duration_ms": 11,
+                "status": "ok",
+                "timestamp": 1776671362821,
+                "args_summary": ""
+              },
+              {
+                "name": "list_dir",
+                "duration_ms": 11,
+                "status": "ok",
+                "timestamp": 1776671362821,
+                "args_summary": ""
+              },
+              {
+                "name": "list_dir",
+                "duration_ms": 13,
+                "status": "ok",
+                "timestamp": 1776671362821,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_asr_search",
+                "duration_ms": 235,
+                "status": "ok",
+                "timestamp": 1776671362821,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_adr_search",
+                "duration_ms": 236,
+                "status": "ok",
+                "timestamp": 1776671362821,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 120,
+                "status": "ok",
+                "timestamp": 1776671373139,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 236,
+                "status": "ok",
+                "timestamp": 1776671373139,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 275,
+                "status": "ok",
+                "timestamp": 1776671373139,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 279,
+                "status": "ok",
+                "timestamp": 1776671373140,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 350,
+                "status": "ok",
+                "timestamp": 1776671373140,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 1123,
+                "status": "ok",
+                "timestamp": 1776671373139,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 40,
+                "status": "ok",
+                "timestamp": 1776671384977,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 39,
+                "status": "ok",
+                "timestamp": 1776671384978,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 40,
+                "status": "ok",
+                "timestamp": 1776671384978,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 40,
+                "status": "ok",
+                "timestamp": 1776671384978,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 46,
+                "status": "ok",
+                "timestamp": 1776671384977,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 46,
+                "status": "ok",
+                "timestamp": 1776671384978,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 48,
+                "status": "ok",
+                "timestamp": 1776671394428,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 50,
+                "status": "ok",
+                "timestamp": 1776671394428,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 51,
+                "status": "ok",
+                "timestamp": 1776671394428,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 56,
+                "status": "ok",
+                "timestamp": 1776671394429,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 57,
+                "status": "ok",
+                "timestamp": 1776671394429,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 60,
+                "status": "ok",
+                "timestamp": 1776671394429,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 61,
+                "status": "ok",
+                "timestamp": 1776671403025,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 88,
+                "status": "ok",
+                "timestamp": 1776671403025,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 105,
+                "status": "ok",
+                "timestamp": 1776671403026,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 115,
+                "status": "ok",
+                "timestamp": 1776671403025,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 39,
+                "status": "ok",
+                "timestamp": 1776671415416,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 70,
+                "status": "ok",
+                "timestamp": 1776671415416,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 82,
+                "status": "ok",
+                "timestamp": 1776671415417,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 133,
+                "status": "ok",
+                "timestamp": 1776671415417,
+                "args_summary": ""
+              }
+            ],
+            "children": []
+          },
+          {
+            "agent_name": "Explore",
+            "log_file": "runSubagent-Explore-toolu_bdrk_01EFfMCr89MAqkJwxV1TK6Jt.jsonl",
+            "timestamp": 1776671513771,
+            "spawn_prompt": "Thorough investigation. I need to understand what properties/methods are accessed on `HeadOutput.head` at every usage site. The field is defined in `nomarr/helpers/dto/ml_dto.py` as `head: HeadInfo | ONNXHeadModel`.\n\nCheck these files where `HeadOutput.head` or `.head` on a HeadOutput instance is accessed:\n- nomarr/components/tagging/tagging_aggregation_comp.py (lines ~127, 135, 184, 332, 358)\n- nomarr/components/tagging/tagging_reconstruction_comp.py (lines ~191, 206)\n\nFor each usage site, tell me:\n1. What the variable holding HeadOutput is named\n2. What attribute/method is accessed on `.head` (if any beyond identity comparison)\n3. Whether it's passed an ONNXHeadModel or HeadInfo\n\nAlso check: what attributes does `HeadInfo` have vs `ONNXHeadModel`? Are they structurally compatible (duck-type equivalent for the fields actually used)?\n\nReturn a complete mapping.",
+            "turn_count": 33,
+            "wall_time_ms": 183503,
+            "total_input_tokens": 1286037,
+            "total_output_tokens": 13250,
+            "total_tokens": 1299287,
+            "tree_tokens": 1299287,
+            "tool_call_count": 48,
+            "management_count": 0,
+            "editing_count": 0,
+            "exploration_count": 47,
+            "qa_count": 0,
+            "logging_count": 0,
+            "research_count": 0,
+            "management_ratio": 0.0,
+            "editing_ratio": 0.0,
+            "exploration_ratio": 0.9792,
+            "qa_ratio": 0.0,
+            "logging_ratio": 0.0,
+            "research_ratio": 0.0,
+            "failure_count": 0,
+            "failure_rate": 0.0,
+            "repeated_tool_calls": 26,
+            "tokens_per_mutation": 0.0,
+            "calls_before_first_dispatch": null,
+            "models_used": [
+              "claude-haiku-4.5"
+            ],
+            "avg_ttft_ms": 2551.3,
+            "tool_calls": [
+              {
+                "name": "read_file",
+                "duration_ms": 23,
+                "status": "ok",
+                "timestamp": 1776671524363,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 1821,
+                "status": "ok",
+                "timestamp": 1776671524363,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 14,
+                "status": "ok",
+                "timestamp": 1776671529518,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 18,
+                "status": "ok",
+                "timestamp": 1776671529518,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 12,
+                "status": "ok",
+                "timestamp": 1776671537900,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 19,
+                "status": "ok",
+                "timestamp": 1776671537900,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 21,
+                "status": "ok",
+                "timestamp": 1776671537900,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 22,
+                "status": "ok",
+                "timestamp": 1776671537900,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 50,
+                "status": "ok",
+                "timestamp": 1776671541914,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 95,
+                "status": "ok",
+                "timestamp": 1776671541914,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 262,
+                "status": "ok",
+                "timestamp": 1776671544885,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 7,
+                "status": "ok",
+                "timestamp": 1776671548727,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 7,
+                "status": "ok",
+                "timestamp": 1776671548727,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 8,
+                "status": "ok",
+                "timestamp": 1776671553343,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 8,
+                "status": "ok",
+                "timestamp": 1776671553344,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 11,
+                "status": "ok",
+                "timestamp": 1776671557090,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 12,
+                "status": "ok",
+                "timestamp": 1776671557090,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 8,
+                "status": "ok",
+                "timestamp": 1776671561523,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 9,
+                "status": "ok",
+                "timestamp": 1776671561523,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 83,
+                "status": "ok",
+                "timestamp": 1776671565908,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 13,
+                "status": "ok",
+                "timestamp": 1776671569049,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 15,
+                "status": "ok",
+                "timestamp": 1776671569049,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 76,
+                "status": "ok",
+                "timestamp": 1776671571914,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 18,
+                "status": "ok",
+                "timestamp": 1776671574740,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 78,
+                "status": "ok",
+                "timestamp": 1776671574740,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 8,
+                "status": "ok",
+                "timestamp": 1776671577981,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 9,
+                "status": "ok",
+                "timestamp": 1776671577981,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 6,
+                "status": "ok",
+                "timestamp": 1776671581038,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 83,
+                "status": "ok",
+                "timestamp": 1776671587222,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 15,
+                "status": "ok",
+                "timestamp": 1776671590661,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 16,
+                "status": "ok",
+                "timestamp": 1776671590661,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 8,
+                "status": "ok",
+                "timestamp": 1776671594762,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 78,
+                "status": "ok",
+                "timestamp": 1776671598074,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 12,
+                "status": "ok",
+                "timestamp": 1776671600616,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 72,
+                "status": "ok",
+                "timestamp": 1776671604282,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 10,
+                "status": "ok",
+                "timestamp": 1776671608196,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 11,
+                "status": "ok",
+                "timestamp": 1776671608196,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 73,
+                "status": "ok",
+                "timestamp": 1776671612004,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 6,
+                "status": "ok",
+                "timestamp": 1776671615521,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 9,
+                "status": "ok",
+                "timestamp": 1776671620542,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 59,
+                "status": "ok",
+                "timestamp": 1776671624471,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 9,
+                "status": "ok",
+                "timestamp": 1776671627836,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 13,
+                "status": "ok",
+                "timestamp": 1776671627836,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 14,
+                "status": "ok",
+                "timestamp": 1776671632439,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 8,
+                "status": "ok",
+                "timestamp": 1776671643086,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 9,
+                "status": "ok",
+                "timestamp": 1776671647908,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 8,
+                "status": "ok",
+                "timestamp": 1776671661641,
+                "args_summary": ""
+              },
+              {
+                "name": "memory",
+                "duration_ms": 9,
+                "status": "ok",
+                "timestamp": 1776671682145,
+                "args_summary": ""
+              }
+            ],
+            "children": []
+          },
+          {
+            "agent_name": "RnD-Manager",
+            "log_file": "runSubagent-RnD-Manager-toolu_bdrk_01Gfo8V6m4pCCTf9zY49TXv2.jsonl",
+            "timestamp": 1776676193648,
+            "spawn_prompt": "## Task\n\nDesign the refactoring of `ONNXHeadModel` to compose `HeadInfo` per ADR-028 (just committed). This is the first application of the new \"compose complex types from simpler types\" principle.\n\n## Context\n\nRead ADR-028 with `adr_read(name=\"ADR-028\")` for the full decision.\n\n### The Problem\n\n`ONNXHeadModel` (in `nomarr/components/ml/onnx/ml_head.py`) redeclares fields from `HeadInfo` (in `nomarr/components/ml/onnx/ml_discovery_comp.py`) instead of containing a `HeadInfo` instance:\n\n- `backbone_name`, `head_type`, `model_name`, `labels`, `is_regression` \u2014 all duplicated from HeadInfo\n- `build_versioned_tag_key()` \u2014 method duplicated from HeadInfo\n- Naming doesn't even match: `is_regression` vs `is_regression_head`, `._path` vs `model_path`, `model_name` vs `name`\n\n`HeadOutput.head` (in `nomarr/helpers/dto/ml_dto.py`) is typed `HeadInfo` but receives `ONNXHeadModel` at runtime from `to_head_outputs()` in `ml_heads_comp.py`. This causes mypy errors and would cause `AttributeError` at runtime if the two code paths mixed.\n\n`discover_head_models()` in `ml_discovery_comp.py` already builds `HeadInfo` objects and throws them away after extracting labels.\n\n### The Fix (per ADR-028)\n\n1. `ONNXHeadModel` gets a `meta: HeadInfo` attribute (accessor name context-dependent, `.meta` suggested)\n2. Remove duplicated fields from `ONNXHeadModel`: `backbone_name`, `head_type`, `model_name`, `labels`, `is_regression`, `build_versioned_tag_key()`\n3. `discover_head_models()` passes the `HeadInfo` it already builds into `ONNXHeadModel` instead of discarding it\n4. `discover_head_models_no_db()` synthesizes a minimal `HeadInfo` from path metadata\n5. `HeadOutput(head=model.meta)` instead of `HeadOutput(head=model)` \u2014 always `HeadInfo`, no type mismatch\n6. Call sites update: `model.labels` \u2192 `model.meta.labels`, `model.is_regression` \u2192 `model.meta.is_regression_head`, `ho.head._path` \u2192 `ho.head.model_path`\n7. The existing mypy error on `ml_heads_comp.py:368` and `:387` gets fixed by this refactor (HeadOutput.head will actually receive HeadInfo)\n8. The `HeadOutput.head` type annotation stays `HeadInfo` (currently correct, just not matched at runtime)\n\n### What NOT to do\n\n- Do not use multiple inheritance \u2014 ADR-028 chose composition over MI\n- Do not add protocols or union types \u2014 the whole point is HeadOutput.head is always HeadInfo\n- Do not move files or restructure the ML package \u2014 this is a type relationship fix only\n- Do not touch `HeadSpec` unless its `from_head_info` method needs updating for the new accessor pattern\n\n### Constraints\n\n- `nomarr/helpers/dto/ml_dto.py` currently has a TYPE_CHECKING import of `HeadInfo` from `components/ml/onnx/ml_discovery_comp.py` \u2014 this is a helper\u2192components import that import-linter flags. Check whether this pre-existed or was introduced. If it pre-existed, it may need a separate fix.\n- `BaseONNXModel.__init__` takes `path: str` \u2014 ONNXHeadModel can get this from `head_info.model_path`\n- Run `lint_project_backend` after design to validate the approach\n\n### Deliverable\n\nCreate a design document (DD) covering:\n1. Exact changes to each file\n2. Migration path for callers (what changes, what stays)\n3. How `discover_head_models_no_db()` synthesizes HeadInfo without DB\n4. Any edge cases or risks\n\nThen create implementation plans from the design.",
+            "turn_count": 6,
+            "wall_time_ms": 1032005,
+            "total_input_tokens": 153111,
+            "total_output_tokens": 4864,
+            "total_tokens": 157975,
+            "tree_tokens": 2377383,
+            "tool_call_count": 5,
+            "management_count": 4,
+            "editing_count": 0,
+            "exploration_count": 0,
+            "qa_count": 0,
+            "logging_count": 1,
+            "research_count": 0,
+            "management_ratio": 0.8,
+            "editing_ratio": 0.0,
+            "exploration_ratio": 0.0,
+            "qa_ratio": 0.0,
+            "logging_ratio": 0.2,
+            "research_ratio": 0.0,
+            "failure_count": 0,
+            "failure_rate": 0.0,
+            "repeated_tool_calls": 3,
+            "tokens_per_mutation": 0.0,
+            "calls_before_first_dispatch": 0,
+            "models_used": [
+              "claude-opus-4.6"
+            ],
+            "avg_ttft_ms": 3142.5,
+            "tool_calls": [
+              {
+                "name": "runSubagent",
+                "duration_ms": 228395,
+                "status": "ok",
+                "timestamp": 1776676210800,
+                "args_summary": "Support-Librarian"
+              },
+              {
+                "name": "runSubagent",
+                "duration_ms": 189922,
+                "status": "ok",
+                "timestamp": 1776676468159,
+                "args_summary": "RnD-DDAuthor"
+              },
+              {
+                "name": "runSubagent",
+                "duration_ms": 336852,
+                "status": "ok",
+                "timestamp": 1776676670548,
+                "args_summary": "Support-PatternEnforcer"
+              },
+              {
+                "name": "runSubagent",
+                "duration_ms": 164071,
+                "status": "ok",
+                "timestamp": 1776677028158,
+                "args_summary": "RnD-DDAuthor"
+              },
+              {
+                "name": "mcp_nomarr_dev_log_write",
+                "duration_ms": 17,
+                "status": "ok",
+                "timestamp": 1776677203432,
+                "args_summary": ""
+              }
+            ],
+            "children": [
+              {
+                "agent_name": "Support-Librarian",
+                "log_file": "runSubagent-Support-Librarian-toolu_bdrk_012V2zczmD1JtqRP5rFXSwpV.jsonl",
+                "timestamp": 1776676210821,
+                "spawn_prompt": "I need a briefing on all artifacts relevant to refactoring `ONNXHeadModel` to compose `HeadInfo` instead of redeclaring its fields.\n\nSearch for:\n1. ADR-028 \u2014 the decision driving this work. Read it with `adr_read(name=\"ADR-028\")`.\n2. Any other ADRs related to: ONNX, head models, type composition, ML pipeline, HeadInfo, HeadOutput, dto patterns\n3. Any logs from agents about: ONNXHeadModel, HeadInfo, HeadOutput, ml_head.py, ml_discovery_comp.py, ml_heads_comp.py, ml_dto.py, type mismatches, mypy errors in ML code\n4. Any design documents related to ML pipeline, ONNX models, or type refactoring \u2014 check `artifacts/designs/` directory\n5. Any ASRs related to ML architecture, type safety, or composition patterns\n\nReturn a structured briefing with:\n- Full content of ADR-028\n- Any constraints or warnings from prior artifacts\n- Any dead ends or prior attempts at this refactoring\n- Any related decisions that downstream agents need to know about\n- Tags from all found artifacts for cross-referencing",
+                "turn_count": 7,
+                "wall_time_ms": 228144,
+                "total_input_tokens": 381942,
+                "total_output_tokens": 8527,
+                "total_tokens": 390469,
+                "tree_tokens": 390469,
+                "tool_call_count": 37,
+                "management_count": 0,
+                "editing_count": 0,
+                "exploration_count": 15,
+                "qa_count": 0,
+                "logging_count": 0,
+                "research_count": 22,
+                "management_ratio": 0.0,
+                "editing_ratio": 0.0,
+                "exploration_ratio": 0.4054,
+                "qa_ratio": 0.0,
+                "logging_ratio": 0.0,
+                "research_ratio": 0.5946,
+                "failure_count": 0,
+                "failure_rate": 0.0,
+                "repeated_tool_calls": 22,
+                "tokens_per_mutation": 0.0,
+                "calls_before_first_dispatch": null,
+                "models_used": [
+                  "gpt-5.4"
+                ],
+                "avg_ttft_ms": 977.6,
+                "tool_calls": [
+                  {
+                    "name": "read_file",
+                    "duration_ms": 28,
+                    "status": "ok",
+                    "timestamp": 1776676242180,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "list_dir",
+                    "duration_ms": 9,
+                    "status": "ok",
+                    "timestamp": 1776676267980,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_adr_read",
+                    "duration_ms": 26,
+                    "status": "ok",
+                    "timestamp": 1776676267980,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_adr_search",
+                    "duration_ms": 36,
+                    "status": "ok",
+                    "timestamp": 1776676267980,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_adr_search",
+                    "duration_ms": 51,
+                    "status": "ok",
+                    "timestamp": 1776676267980,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_adr_search",
+                    "duration_ms": 53,
+                    "status": "ok",
+                    "timestamp": 1776676267980,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_adr_search",
+                    "duration_ms": 54,
+                    "status": "ok",
+                    "timestamp": 1776676267980,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_adr_search",
+                    "duration_ms": 54,
+                    "status": "ok",
+                    "timestamp": 1776676267980,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_asr_search",
+                    "duration_ms": 55,
+                    "status": "ok",
+                    "timestamp": 1776676267980,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 92,
+                    "status": "ok",
+                    "timestamp": 1776676267981,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 125,
+                    "status": "ok",
+                    "timestamp": 1776676267980,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_adr_read",
+                    "duration_ms": 11,
+                    "status": "ok",
+                    "timestamp": 1776676301397,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_adr_read",
+                    "duration_ms": 18,
+                    "status": "ok",
+                    "timestamp": 1776676301397,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_adr_read",
+                    "duration_ms": 22,
+                    "status": "ok",
+                    "timestamp": 1776676301397,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_asr_search",
+                    "duration_ms": 23,
+                    "status": "ok",
+                    "timestamp": 1776676301397,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_asr_search",
+                    "duration_ms": 25,
+                    "status": "ok",
+                    "timestamp": 1776676301397,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_asr_search",
+                    "duration_ms": 26,
+                    "status": "ok",
+                    "timestamp": 1776676301397,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_asr_read",
+                    "duration_ms": 27,
+                    "status": "ok",
+                    "timestamp": 1776676301397,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 98,
+                    "status": "ok",
+                    "timestamp": 1776676301398,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 110,
+                    "status": "ok",
+                    "timestamp": 1776676301398,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 129,
+                    "status": "ok",
+                    "timestamp": 1776676301398,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_asr_read",
+                    "duration_ms": 7,
+                    "status": "ok",
+                    "timestamp": 1776676324113,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_asr_read",
+                    "duration_ms": 10,
+                    "status": "ok",
+                    "timestamp": 1776676324113,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_asr_read",
+                    "duration_ms": 21,
+                    "status": "ok",
+                    "timestamp": 1776676324113,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_dd_read",
+                    "duration_ms": 26,
+                    "status": "ok",
+                    "timestamp": 1776676324113,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_dd_read",
+                    "duration_ms": 27,
+                    "status": "ok",
+                    "timestamp": 1776676324113,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_dd_read",
+                    "duration_ms": 27,
+                    "status": "ok",
+                    "timestamp": 1776676324113,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 42,
+                    "status": "ok",
+                    "timestamp": 1776676324114,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 43,
+                    "status": "ok",
+                    "timestamp": 1776676324114,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 54,
+                    "status": "ok",
+                    "timestamp": 1776676324114,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 93,
+                    "status": "ok",
+                    "timestamp": 1776676347708,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 103,
+                    "status": "ok",
+                    "timestamp": 1776676347708,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 112,
+                    "status": "ok",
+                    "timestamp": 1776676347708,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 158,
+                    "status": "ok",
+                    "timestamp": 1776676347708,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 162,
+                    "status": "ok",
+                    "timestamp": 1776676347709,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_adr_read",
+                    "duration_ms": 7,
+                    "status": "ok",
+                    "timestamp": 1776676377984,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_adr_read",
+                    "duration_ms": 7,
+                    "status": "ok",
+                    "timestamp": 1776676377985,
+                    "args_summary": ""
+                  }
+                ],
+                "children": []
+              },
+              {
+                "agent_name": "RnD-DDAuthor",
+                "log_file": "runSubagent-RnD-DDAuthor-toolu_bdrk_01KaEowGgzMNPoSWLQSSZNhd.jsonl",
+                "timestamp": 1776676468190,
+                "spawn_prompt": "## Task\n\nCreate a design document for refactoring `ONNXHeadModel` to compose `HeadInfo` per ADR-028. This is the first application of the \"compose complex types from simpler types\" principle.\n\nRead ADR-028 with `adr_read(name=\"ADR-028\")` for the full decision text.\n\n## Artifact Context (from Librarian)\n\n### Governing Decision\nADR-028: \"When a complex type needs metadata or behavior from a simpler type, it holds an instance of that type \u2014 it does not redeclare the fields.\"\n\n### Prior Dead End\nDo NOT widen `HeadOutput.head` to `HeadInfo | ONNXHeadModel` \u2014 this was tried and reverted. It created a helpers\u2192components import and papered over the mismatch.\n\n### Import Constraint\n`ml_dto.py` already has a `TYPE_CHECKING` import of `HeadInfo` from `components/ml/onnx/ml_discovery_comp.py`. This helpers\u2192components import already has an import-linter `ignore_imports` exception. This pre-existed.\n\n### Related ADRs\n- ADR-026: Top-level imports by default\n- ADR-027: Extract shared dependencies to break circular imports\n- ASR-0011: New ML backends must plug into stable contract\n\n## The Problem\n\n`ONNXHeadModel` (in `nomarr/components/ml/onnx/ml_head.py`) redeclares fields from `HeadInfo` (in `nomarr/components/ml/onnx/ml_discovery_comp.py`):\n- `backbone_name`, `head_type`, `model_name`, `labels`, `is_regression` \u2014 all duplicated from HeadInfo\n- `build_versioned_tag_key()` \u2014 method duplicated from HeadInfo\n- Names don't match: `is_regression` vs `is_regression_head`, `._path` vs `model_path`, `model_name` vs `name`\n\n`HeadOutput.head` (in `nomarr/helpers/dto/ml_dto.py`) is typed `HeadInfo` but receives `ONNXHeadModel` at runtime from `to_head_outputs()` in `ml_heads_comp.py`. This causes mypy errors and would cause `AttributeError` if the two code paths mixed.\n\n`discover_head_models()` in `ml_discovery_comp.py` already builds `HeadInfo` objects and throws them away after extracting labels.\n\n## The Fix (per ADR-028)\n\n1. `ONNXHeadModel` gets a `meta: HeadInfo` attribute\n2. Remove duplicated fields: `backbone_name`, `head_type`, `model_name`, `labels`, `is_regression`, `build_versioned_tag_key()`\n3. `discover_head_models()` passes the `HeadInfo` it already builds into `ONNXHeadModel`\n4. `discover_head_models_no_db()` synthesizes a minimal `HeadInfo` from path metadata\n5. `HeadOutput(head=model.meta)` instead of `HeadOutput(head=model)`\n6. Call sites update: `model.labels` \u2192 `model.meta.labels`, `model.is_regression` \u2192 `model.meta.is_regression_head`, `ho.head._path` \u2192 `ho.head.model_path`\n7. Existing mypy errors on `ml_heads_comp.py:368` and `:387` get fixed\n8. `HeadOutput.head` type annotation stays `HeadInfo`\n\n## What NOT To Do\n- No multiple inheritance\n- No protocols or union types\n- No file moves or ML package restructuring\n- No `HeadSpec` changes unless `from_head_info` needs updating for new accessor pattern\n\n## Research Requirements\n\nYou MUST read the following files thoroughly to understand current structure:\n1. `nomarr/components/ml/onnx/ml_head.py` \u2014 ONNXHeadModel class\n2. `nomarr/components/ml/onnx/ml_discovery_comp.py` \u2014 HeadInfo class and discover_head_models()\n3. `nomarr/helpers/dto/ml_dto.py` \u2014 HeadOutput and HeadSpec\n4. `nomarr/components/ml/onnx/ml_heads_comp.py` \u2014 to_head_outputs() and all call sites\n\nAlso search for ALL callers of:\n- `ONNXHeadModel` (construction and attribute access)\n- `model.labels`, `model.is_regression`, `model.backbone_name`, `model.head_type`, `model.model_name`\n- `model.build_versioned_tag_key()`\n- `ho.head._path`, `ho.head.model_path`\n- `HeadOutput.head` attribute access patterns\n\n## DD Requirements\n\nThe design document must cover:\n\n1. **Exact changes to each file** \u2014 what gets added, removed, modified, with before/after snippets\n2. **Migration path for callers** \u2014 every call site that changes, with old\u2192new mapping\n3. **How `discover_head_models_no_db()` synthesizes HeadInfo without DB** \u2014 exact approach\n4. **Import changes** \u2014 any new imports needed, any removed, import-linter implications\n5. **Edge cases and risks** \u2014 what could go wrong, what needs careful handling\n6. **Phase ordering** \u2014 which changes must happen together (atomic) vs can be sequential\n\nName the DD: `DD-onnx-head-model-composition`",
+                "turn_count": 18,
+                "wall_time_ms": 189862,
+                "total_input_tokens": 891603,
+                "total_output_tokens": 8431,
+                "total_tokens": 900034,
+                "tree_tokens": 900034,
+                "tool_call_count": 27,
+                "management_count": 0,
+                "editing_count": 0,
+                "exploration_count": 25,
+                "qa_count": 0,
+                "logging_count": 1,
+                "research_count": 1,
+                "management_ratio": 0.0,
+                "editing_ratio": 0.0,
+                "exploration_ratio": 0.9259,
+                "qa_ratio": 0.0,
+                "logging_ratio": 0.037,
+                "research_ratio": 0.037,
+                "failure_count": 1,
+                "failure_rate": 0.037,
+                "repeated_tool_calls": 12,
+                "tokens_per_mutation": 0.0,
+                "calls_before_first_dispatch": null,
+                "models_used": [
+                  "claude-opus-4.6"
+                ],
+                "avg_ttft_ms": 3097.4,
+                "tool_calls": [
+                  {
+                    "name": "mcp_nomarr_dev_adr_read",
+                    "duration_ms": 5,
+                    "status": "ok",
+                    "timestamp": 1776676478051,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 21,
+                    "status": "ok",
+                    "timestamp": 1776676478051,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 23,
+                    "status": "ok",
+                    "timestamp": 1776676478051,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 11,
+                    "status": "ok",
+                    "timestamp": 1776676483822,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 13,
+                    "status": "ok",
+                    "timestamp": 1776676483822,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 16,
+                    "status": "ok",
+                    "timestamp": 1776676483822,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 6,
+                    "status": "ok",
+                    "timestamp": 1776676488772,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 7,
+                    "status": "error",
+                    "timestamp": 1776676488772,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "file_search",
+                    "duration_ms": 47,
+                    "status": "ok",
+                    "timestamp": 1776676492281,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 13,
+                    "status": "ok",
+                    "timestamp": 1776676496000,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 10,
+                    "status": "ok",
+                    "timestamp": 1776676499632,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 95,
+                    "status": "ok",
+                    "timestamp": 1776676506800,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 128,
+                    "status": "ok",
+                    "timestamp": 1776676506800,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 137,
+                    "status": "ok",
+                    "timestamp": 1776676506800,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 20,
+                    "status": "ok",
+                    "timestamp": 1776676512782,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 54,
+                    "status": "ok",
+                    "timestamp": 1776676512782,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 18,
+                    "status": "ok",
+                    "timestamp": 1776676517352,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 55,
+                    "status": "ok",
+                    "timestamp": 1776676517353,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 7,
+                    "status": "ok",
+                    "timestamp": 1776676521741,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 8,
+                    "status": "ok",
+                    "timestamp": 1776676521741,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 45,
+                    "status": "ok",
+                    "timestamp": 1776676526900,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 49,
+                    "status": "ok",
+                    "timestamp": 1776676531480,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 10,
+                    "status": "ok",
+                    "timestamp": 1776676538393,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 4,
+                    "status": "ok",
+                    "timestamp": 1776676542262,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 51,
+                    "status": "ok",
+                    "timestamp": 1776676548056,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 11,
+                    "status": "ok",
+                    "timestamp": 1776676551935,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_dd_create",
+                    "duration_ms": 6,
+                    "status": "ok",
+                    "timestamp": 1776676643026,
+                    "args_summary": ""
+                  }
+                ],
+                "children": []
+              },
+              {
+                "agent_name": "Support-PatternEnforcer",
+                "log_file": "runSubagent-Support-PatternEnforcer-toolu_bdrk_012ETui5zhNwAVyAN2FkhpVq.jsonl",
+                "timestamp": 1776676670562,
+                "spawn_prompt": "## Task\n\nValidate that the design document `artifacts/designs/pending/DD-onnx-head-model-composition.md` covers ALL files that need changes for the ONNXHeadModel \u2192 HeadInfo composition refactor.\n\nRead the DD first with `dd_read(name=\"DD-onnx-head-model-composition\")`.\n\n## What to Check\n\nThe refactor replaces direct field access on `ONNXHeadModel` with access through a composed `HeadInfo` instance (`model.meta`). Find ALL places in the codebase that:\n\n1. **Access duplicated fields on ONNXHeadModel instances:** `model.labels`, `model.is_regression`, `model.backbone_name`, `model.head_type`, `model.model_name`, `model.build_versioned_tag_key()`\n2. **Construct ONNXHeadModel** \u2014 constructor calls need updating\n3. **Access `HeadOutput.head` attributes** \u2014 especially `ho.head._path`, `ho.head.model_path`, `ho.head.labels`, `ho.head.is_regression`, `ho.head.is_regression_head`\n4. **Import ONNXHeadModel or HeadInfo** \u2014 import statements that may need updating\n5. **Use `head_parts_from_path()`** \u2014 utility that may be removed\n\nSearch the ENTIRE `nomarr/` directory and `tests/` directory for all of these patterns. Report:\n- Files found that ARE covered by the DD\n- Files found that are NOT covered by the DD (gaps)\n- Any attribute access patterns the DD missed\n\nBe thorough \u2014 check services, workflows, components, interfaces, and tests.",
+                "turn_count": 8,
+                "wall_time_ms": 336577,
+                "total_input_tokens": 283582,
+                "total_output_tokens": 11276,
+                "total_tokens": 294858,
+                "tree_tokens": 294858,
+                "tool_call_count": 31,
+                "management_count": 0,
+                "editing_count": 0,
+                "exploration_count": 31,
+                "qa_count": 0,
+                "logging_count": 0,
+                "research_count": 0,
+                "management_ratio": 0.0,
+                "editing_ratio": 0.0,
+                "exploration_ratio": 1.0,
+                "qa_ratio": 0.0,
+                "logging_ratio": 0.0,
+                "research_ratio": 0.0,
+                "failure_count": 0,
+                "failure_rate": 0.0,
+                "repeated_tool_calls": 21,
+                "tokens_per_mutation": 0.0,
+                "calls_before_first_dispatch": null,
+                "models_used": [
+                  "gpt-5.4"
+                ],
+                "avg_ttft_ms": 776.2,
+                "tool_calls": [
+                  {
+                    "name": "read_file",
+                    "duration_ms": 16,
+                    "status": "ok",
+                    "timestamp": 1776676699722,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 18,
+                    "status": "ok",
+                    "timestamp": 1776676699722,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 57,
+                    "status": "ok",
+                    "timestamp": 1776676728201,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 87,
+                    "status": "ok",
+                    "timestamp": 1776676728201,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 119,
+                    "status": "ok",
+                    "timestamp": 1776676728201,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 162,
+                    "status": "ok",
+                    "timestamp": 1776676728201,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 185,
+                    "status": "ok",
+                    "timestamp": 1776676728201,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 79,
+                    "status": "ok",
+                    "timestamp": 1776676761658,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 145,
+                    "status": "ok",
+                    "timestamp": 1776676761659,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 168,
+                    "status": "ok",
+                    "timestamp": 1776676761658,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 193,
+                    "status": "ok",
+                    "timestamp": 1776676761658,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 206,
+                    "status": "ok",
+                    "timestamp": 1776676761658,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 43,
+                    "status": "ok",
+                    "timestamp": 1776676795743,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 46,
+                    "status": "ok",
+                    "timestamp": 1776676795743,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 85,
+                    "status": "ok",
+                    "timestamp": 1776676795742,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 89,
+                    "status": "ok",
+                    "timestamp": 1776676795742,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 94,
+                    "status": "ok",
+                    "timestamp": 1776676795743,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 45,
+                    "status": "ok",
+                    "timestamp": 1776676822333,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 47,
+                    "status": "ok",
+                    "timestamp": 1776676822333,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 55,
+                    "status": "ok",
+                    "timestamp": 1776676822333,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 56,
+                    "status": "ok",
+                    "timestamp": 1776676822333,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 113,
+                    "status": "ok",
+                    "timestamp": 1776676822333,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 41,
+                    "status": "ok",
+                    "timestamp": 1776676868487,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 42,
+                    "status": "ok",
+                    "timestamp": 1776676868487,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 43,
+                    "status": "ok",
+                    "timestamp": 1776676868487,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 69,
+                    "status": "ok",
+                    "timestamp": 1776676868486,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 75,
+                    "status": "ok",
+                    "timestamp": 1776676868487,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_read_file_line_range",
+                    "duration_ms": 23,
+                    "status": "ok",
+                    "timestamp": 1776676911962,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_read_file_line_range",
+                    "duration_ms": 25,
+                    "status": "ok",
+                    "timestamp": 1776676911962,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 72,
+                    "status": "ok",
+                    "timestamp": 1776676911963,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 135,
+                    "status": "ok",
+                    "timestamp": 1776676911963,
+                    "args_summary": ""
+                  }
+                ],
+                "children": []
+              },
+              {
+                "agent_name": "RnD-DDAuthor",
+                "log_file": "runSubagent-RnD-DDAuthor-toolu_bdrk_012VVK3UtbT5SzCDFz31uS5D.jsonl",
+                "timestamp": 1776677028173,
+                "spawn_prompt": "## Task\n\nAmend the design document `DD-onnx-head-model-composition` (in `artifacts/designs/pending/`) to fix coverage gaps found by PatternEnforcer audit.\n\nRead the current DD with `dd_read(name=\"DD-onnx-head-model-composition\")`.\n\n## Gaps to Fix\n\n### 1. Missing file: `nomarr/components/ml/onnx/ml_cache.py`\n- Line 103: `self.heads.setdefault(head.backbone_name, []).append(head)`\n- `backbone_name` is a duplicated field being removed\n- Must update to `head.meta.backbone` or add delegation property\n- Read this file to understand the full context\n\n### 2. Missing file: `nomarr/workflows/platform/register_ml_models_wf.py`\n- Line 18: imports `head_parts_from_path` from `ml_head.py`\n- Line 72: calls `head_parts_from_path()`\n- DD proposes removing this function but doesn't account for this caller\n- Read this file to determine the right fix\n\n### 3. Missing sort keys in `nomarr/components/ml/onnx/ml_discovery_comp.py`\n- Lines 472, 532: `models.sort(key=lambda m: (m.backbone_name, m.head_type, m.model_name))`\n- These use duplicated fields that will be removed\n- Must update to use `m.meta.*` equivalents\n\n### 4. Missing delegation property for `head_type`\n- `ml_head_pipeline_comp.py` lines 112, 124 use `head_model.head_type`\n- DD's delegation properties list only covers `name`, `labels`, `is_regression`\n- Must either add `head_type` delegation or change these call sites in Phase 2\n\n### 5. Import strategy inconsistency in `ml_head.py`\n- DD says both \"add runtime import of HeadInfo\" AND \"use TYPE_CHECKING only\"\n- These conflict \u2014 pick one and be consistent\n- Since `ml_discovery_comp.py` imports `ONNXHeadModel` from `ml_head.py`, and `ml_head.py` would import `HeadInfo` from `ml_discovery_comp.py`, there IS a circular import risk\n- Resolve: is runtime import safe, or must it be TYPE_CHECKING + string annotation?\n\n### 6. `ml_heads_comp.py` missing from DD Scope section\n- File IS covered in the DD body but not listed in the Scope header\n\n## Instructions\n\n1. Read the current DD\n2. Read the 2 missing files (`ml_cache.py` and `register_ml_models_wf.py`) to understand what changes they need\n3. Check the circular import situation between `ml_head.py` and `ml_discovery_comp.py`\n4. Amend the DD to fix all 6 gaps\n5. Make the delegation properties list complete \u2014 every field that ANY caller accesses must either have a delegation property in Phase 1 or be migrated to `model.meta.*` in Phase 2\n6. The DD should have a complete, exhaustive list of every call site that changes\n\nDo NOT create a new DD \u2014 amend the existing one.",
+                "turn_count": 13,
+                "wall_time_ms": 164044,
+                "total_input_tokens": 625994,
+                "total_output_tokens": 8053,
+                "total_tokens": 634047,
+                "tree_tokens": 634047,
+                "tool_call_count": 22,
+                "management_count": 0,
+                "editing_count": 1,
+                "exploration_count": 19,
+                "qa_count": 0,
+                "logging_count": 1,
+                "research_count": 1,
+                "management_ratio": 0.0,
+                "editing_ratio": 0.0455,
+                "exploration_ratio": 0.8636,
+                "qa_ratio": 0.0,
+                "logging_ratio": 0.0455,
+                "research_ratio": 0.0455,
+                "failure_count": 0,
+                "failure_rate": 0.0,
+                "repeated_tool_calls": 14,
+                "tokens_per_mutation": 634047.0,
+                "calls_before_first_dispatch": null,
+                "models_used": [
+                  "claude-opus-4.6"
+                ],
+                "avg_ttft_ms": 3915.8,
+                "tool_calls": [
+                  {
+                    "name": "read_file",
+                    "duration_ms": 23,
+                    "status": "ok",
+                    "timestamp": 1776677037794,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 24,
+                    "status": "ok",
+                    "timestamp": 1776677037794,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 25,
+                    "status": "ok",
+                    "timestamp": 1776677037794,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_dd_read",
+                    "duration_ms": 27,
+                    "status": "ok",
+                    "timestamp": 1776677037794,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 29,
+                    "status": "ok",
+                    "timestamp": 1776677037794,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 12,
+                    "status": "ok",
+                    "timestamp": 1776677045722,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 20,
+                    "status": "ok",
+                    "timestamp": 1776677045722,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 22,
+                    "status": "ok",
+                    "timestamp": 1776677045722,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 25,
+                    "status": "ok",
+                    "timestamp": 1776677045722,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 83,
+                    "status": "ok",
+                    "timestamp": 1776677053005,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 94,
+                    "status": "ok",
+                    "timestamp": 1776677053005,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "grep_search",
+                    "duration_ms": 101,
+                    "status": "ok",
+                    "timestamp": 1776677053005,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 126,
+                    "status": "ok",
+                    "timestamp": 1776677057780,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 126,
+                    "status": "ok",
+                    "timestamp": 1776677057780,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 5,
+                    "status": "ok",
+                    "timestamp": 1776677066372,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 11,
+                    "status": "ok",
+                    "timestamp": 1776677070804,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 9,
+                    "status": "ok",
+                    "timestamp": 1776677075048,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 6,
+                    "status": "ok",
+                    "timestamp": 1776677078308,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 7,
+                    "status": "ok",
+                    "timestamp": 1776677082498,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "multi_replace_string_in_file",
+                    "duration_ms": 20,
+                    "status": "ok",
+                    "timestamp": 1776677147043,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "read_file",
+                    "duration_ms": 4,
+                    "status": "ok",
+                    "timestamp": 1776677151688,
+                    "args_summary": ""
+                  },
+                  {
+                    "name": "mcp_nomarr_dev_log_write",
+                    "duration_ms": 18,
+                    "status": "ok",
+                    "timestamp": 1776677176452,
+                    "args_summary": ""
+                  }
+                ],
+                "children": []
+              }
+            ]
+          },
+          {
+            "agent_name": "Exec-Planner",
+            "log_file": "runSubagent-Exec-Planner-toolu_bdrk_01J6Vz3AbEEpJy3A45dvXzMN.jsonl",
+            "timestamp": 1776678896657,
+            "spawn_prompt": "## Task\n\nCreate an implementation plan for the ONNXHeadModel composition refactor described in `DD-onnx-head-model-composition.md` (in `artifacts/designs/pending/`).\n\nRead the DD first with `dd_read(name=\"DD-onnx-head-model-composition\")`.\n\nAlso read ADR-028 with `adr_read(name=\"ADR-028\")` for the governing principle.\n\n## Key Decisions Already Made\n\n1. **No delegation properties / shims.** Remove duplicated fields from ONNXHeadModel AND update all callers to use `model.meta.*` in one pass. No backward compatibility period.\n2. **Tests are NOT part of this plan.** QA handles test coverage separately.\n3. **`meta: HeadInfo` is always non-None** \u2014 both `discover_head_models()` and `discover_head_models_no_db()` supply a HeadInfo.\n4. **`head_parts_from_path()` is kept** \u2014 used independently by `register_ml_models_wf.py`.\n\n## Scope \u2014 8 Files\n\n1. `nomarr/components/ml/onnx/ml_head.py` \u2014 Remove duplicated fields, add `meta: HeadInfo`, add TYPE_CHECKING import\n2. `nomarr/components/ml/onnx/ml_discovery_comp.py` \u2014 Pass HeadInfo into ONNXHeadModel, update sort keys\n3. `nomarr/components/ml/onnx/ml_cache.py` \u2014 Update `head.backbone_name` \u2192 `head.meta.backbone`\n4. `nomarr/components/ml/inference/ml_head_pipeline_comp.py` \u2014 Update all `head_model.*` \u2192 `head_model.meta.*`, update `_build_tag_key`\n5. `nomarr/components/ml/inference/ml_heads_comp.py` \u2014 Update `to_head_outputs` parameter type\n6. `nomarr/helpers/dto/ml_dto.py` \u2014 No changes needed (already typed HeadInfo)\n7. `nomarr/workflows/processing/process_file_wf.py` \u2014 `ho.head._path` \u2192 `ho.head.model_path`\n8. `nomarr/workflows/platform/register_ml_models_wf.py` \u2014 No changes needed\n\n## Plan Requirements\n\n- Single plan file, not multi-part\n- Phases should be ordered so each phase leaves the code in a lintable state if possible (though with no shims, there may be a brief broken window between removing fields and updating callers \u2014 that's fine within a single phase)\n- Each step should be specific enough for an executor to implement without design decisions\n- Run `lint_project_backend` as the final step of each phase\n- Do NOT include test-writing steps \u2014 QA handles that separately\n\nWrite the plan to `artifacts/plans/pending/`.",
+            "turn_count": 13,
+            "wall_time_ms": 124612,
+            "total_input_tokens": 662030,
+            "total_output_tokens": 5427,
+            "total_tokens": 667457,
+            "tree_tokens": 667457,
+            "tool_call_count": 28,
+            "management_count": 0,
+            "editing_count": 1,
+            "exploration_count": 7,
+            "qa_count": 0,
+            "logging_count": 1,
+            "research_count": 19,
+            "management_ratio": 0.0,
+            "editing_ratio": 0.0357,
+            "exploration_ratio": 0.25,
+            "qa_ratio": 0.0,
+            "logging_ratio": 0.0357,
+            "research_ratio": 0.6786,
+            "failure_count": 0,
+            "failure_rate": 0.0,
+            "repeated_tool_calls": 15,
+            "tokens_per_mutation": 667457.0,
+            "calls_before_first_dispatch": null,
+            "models_used": [
+              "claude-opus-4.6"
+            ],
+            "avg_ttft_ms": 3286.2,
+            "tool_calls": [
+              {
+                "name": "mcp_nomarr_dev_dd_read",
+                "duration_ms": 23,
+                "status": "ok",
+                "timestamp": 1776678904391,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_adr_read",
+                "duration_ms": 30,
+                "status": "ok",
+                "timestamp": 1776678904391,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 51,
+                "status": "ok",
+                "timestamp": 1776678904391,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_api",
+                "duration_ms": 26,
+                "status": "ok",
+                "timestamp": 1776678911980,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_api",
+                "duration_ms": 30,
+                "status": "ok",
+                "timestamp": 1776678911980,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_api",
+                "duration_ms": 41,
+                "status": "ok",
+                "timestamp": 1776678911980,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_api",
+                "duration_ms": 52,
+                "status": "ok",
+                "timestamp": 1776678911980,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_api",
+                "duration_ms": 53,
+                "status": "ok",
+                "timestamp": 1776678911980,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 22,
+                "status": "ok",
+                "timestamp": 1776678922357,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 40,
+                "status": "ok",
+                "timestamp": 1776678922357,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 47,
+                "status": "ok",
+                "timestamp": 1776678922357,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 51,
+                "status": "ok",
+                "timestamp": 1776678922357,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 52,
+                "status": "ok",
+                "timestamp": 1776678922357,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 27,
+                "status": "ok",
+                "timestamp": 1776678928018,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 58,
+                "status": "ok",
+                "timestamp": 1776678928019,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 68,
+                "status": "ok",
+                "timestamp": 1776678928019,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_read_module_source",
+                "duration_ms": 71,
+                "status": "ok",
+                "timestamp": 1776678928019,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 51,
+                "status": "ok",
+                "timestamp": 1776678934487,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 57,
+                "status": "ok",
+                "timestamp": 1776678934487,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 72,
+                "status": "ok",
+                "timestamp": 1776678940249,
+                "args_summary": ""
+              },
+              {
+                "name": "grep_search",
+                "duration_ms": 81,
+                "status": "ok",
+                "timestamp": 1776678940249,
+                "args_summary": ""
+              },
+              {
+                "name": "read_file",
+                "duration_ms": 8,
+                "status": "ok",
+                "timestamp": 1776678944575,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_log_read",
+                "duration_ms": 6,
+                "status": "ok",
+                "timestamp": 1776678950580,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_adr_search",
+                "duration_ms": 11,
+                "status": "ok",
+                "timestamp": 1776678950580,
+                "args_summary": ""
+              },
+              {
+                "name": "file_search",
+                "duration_ms": 46,
+                "status": "ok",
+                "timestamp": 1776678956292,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_edit_file_create",
+                "duration_ms": 17,
+                "status": "ok",
+                "timestamp": 1776678994943,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_plan_read",
+                "duration_ms": 10,
+                "status": "ok",
+                "timestamp": 1776678999716,
+                "args_summary": ""
+              },
+              {
+                "name": "mcp_nomarr_dev_log_write",
+                "duration_ms": 8,
+                "status": "ok",
+                "timestamp": 1776679011179,
+                "args_summary": ""
+              }
+            ],
+            "children": []
+          }
+        ]
+      }
+    },
     {
       "session_id": "e849ae63-eb9e-4aa0-a919-610d04b7ef8b",
       "timestamp": 1776666752941,
@@ -1176,34 +5161,34 @@
         "log_file": "main.jsonl",
         "timestamp": 1776666752941,
         "spawn_prompt": "",
-        "turn_count": 10,
-        "wall_time_ms": 9709399,
-        "total_input_tokens": 338808,
-        "total_output_tokens": 2091,
-        "total_tokens": 340899,
-        "tree_tokens": 340899,
-        "tool_call_count": 12,
+        "turn_count": 27,
+        "wall_time_ms": 22612210,
+        "total_input_tokens": 1052375,
+        "total_output_tokens": 5191,
+        "total_tokens": 1057566,
+        "tree_tokens": 1057566,
+        "tool_call_count": 29,
         "management_count": 0,
-        "editing_count": 1,
-        "exploration_count": 7,
-        "qa_count": 0,
-        "logging_count": 4,
+        "editing_count": 5,
+        "exploration_count": 15,
+        "qa_count": 2,
+        "logging_count": 7,
         "research_count": 0,
         "management_ratio": 0.0,
-        "editing_ratio": 0.0833,
-        "exploration_ratio": 0.5833,
-        "qa_ratio": 0.0,
-        "logging_ratio": 0.3333,
+        "editing_ratio": 0.1724,
+        "exploration_ratio": 0.5172,
+        "qa_ratio": 0.069,
+        "logging_ratio": 0.2414,
         "research_ratio": 0.0,
         "failure_count": 0,
         "failure_rate": 0.0,
-        "repeated_tool_calls": 3,
-        "tokens_per_mutation": 340899.0,
+        "repeated_tool_calls": 9,
+        "tokens_per_mutation": 211513.2,
         "calls_before_first_dispatch": null,
         "models_used": [
           "claude-opus-4.6"
         ],
-        "avg_ttft_ms": 5513.8,
+        "avg_ttft_ms": 4463.9,
         "tool_calls": [
           {
             "name": "manage_todo_list",
@@ -1288,6 +5273,125 @@
             "status": "ok",
             "timestamp": 1776667430034,
             "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776668336410,
+            "args_summary": ""
+          },
+          {
+            "name": "tool_search",
+            "duration_ms": 821,
+            "status": "ok",
+            "timestamp": 1776668343179,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_gitkraken_git_status",
+            "duration_ms": 127,
+            "status": "ok",
+            "timestamp": 1776668347563,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_gitkraken_git_add_or_commit",
+            "duration_ms": 250,
+            "status": "ok",
+            "timestamp": 1776668363027,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_gitkraken_git_add_or_commit",
+            "duration_ms": 259,
+            "status": "ok",
+            "timestamp": 1776668367738,
+            "args_summary": ""
+          },
+          {
+            "name": "mcp_gitkraken_git_push",
+            "duration_ms": 6913,
+            "status": "ok",
+            "timestamp": 1776668371722,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776669668626,
+            "args_summary": ""
+          },
+          {
+            "name": "grep_search",
+            "duration_ms": 133,
+            "status": "ok",
+            "timestamp": 1776669674662,
+            "args_summary": ""
+          },
+          {
+            "name": "grep_search",
+            "duration_ms": 278,
+            "status": "ok",
+            "timestamp": 1776669678850,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776669708631,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 18,
+            "status": "ok",
+            "timestamp": 1776669714570,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 11,
+            "status": "ok",
+            "timestamp": 1776669719750,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 16,
+            "status": "ok",
+            "timestamp": 1776669723932,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 12,
+            "status": "ok",
+            "timestamp": 1776669729363,
+            "args_summary": ""
+          },
+          {
+            "name": "replace_string_in_file",
+            "duration_ms": 22,
+            "status": "ok",
+            "timestamp": 1776669734196,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 23194,
+            "status": "ok",
+            "timestamp": 1776669739709,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 19775,
+            "status": "ok",
+            "timestamp": 1776669769637,
+            "args_summary": ""
           }
         ],
         "children": []
@@ -1302,7 +5406,7 @@
         "timestamp": 1776665512435,
         "spawn_prompt": "",
         "turn_count": 88,
-        "wall_time_ms": 10261923,
+        "wall_time_ms": 23164734,
         "total_input_tokens": 5543139,
         "total_output_tokens": 31648,
         "total_tokens": 5574787,
@@ -2347,7 +6451,7 @@
         "timestamp": 1776661253532,
         "spawn_prompt": "",
         "turn_count": 3,
-        "wall_time_ms": 12769559,
+        "wall_time_ms": 25672370,
         "total_input_tokens": 62567,
         "total_output_tokens": 286,
         "total_tokens": 62853,
@@ -2408,34 +6512,34 @@
         "log_file": "main.jsonl",
         "timestamp": 1776660817336,
         "spawn_prompt": "",
-        "turn_count": 232,
-        "wall_time_ms": 56991345,
-        "total_input_tokens": 16006696,
-        "total_output_tokens": 141273,
-        "total_tokens": 16147969,
-        "tree_tokens": 16147969,
-        "tool_call_count": 239,
+        "turn_count": 251,
+        "wall_time_ms": 69784072,
+        "total_input_tokens": 17596497,
+        "total_output_tokens": 147132,
+        "total_tokens": 17743629,
+        "tree_tokens": 17743629,
+        "tool_call_count": 258,
         "management_count": 1,
-        "editing_count": 53,
-        "exploration_count": 90,
-        "qa_count": 55,
-        "logging_count": 40,
+        "editing_count": 54,
+        "exploration_count": 97,
+        "qa_count": 63,
+        "logging_count": 43,
         "research_count": 0,
-        "management_ratio": 0.0042,
-        "editing_ratio": 0.2218,
-        "exploration_ratio": 0.3766,
-        "qa_ratio": 0.2301,
-        "logging_ratio": 0.1674,
+        "management_ratio": 0.0039,
+        "editing_ratio": 0.2093,
+        "exploration_ratio": 0.376,
+        "qa_ratio": 0.2442,
+        "logging_ratio": 0.1667,
         "research_ratio": 0.0,
         "failure_count": 0,
         "failure_rate": 0.0,
-        "repeated_tool_calls": 115,
-        "tokens_per_mutation": 304678.7,
+        "repeated_tool_calls": 123,
+        "tokens_per_mutation": 328585.7,
         "calls_before_first_dispatch": null,
         "models_used": [
           "claude-opus-4.6"
         ],
-        "avg_ttft_ms": 4414.6,
+        "avg_ttft_ms": 4506.7,
         "tool_calls": [
           {
             "name": "manage_todo_list",
@@ -4109,6 +8213,139 @@
             "status": "ok",
             "timestamp": 1776667944781,
             "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 3690,
+            "status": "ok",
+            "timestamp": 1776667950623,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 215,
+            "status": "ok",
+            "timestamp": 1776667960965,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 1,
+            "status": "ok",
+            "timestamp": 1776668002808,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 1277,
+            "status": "ok",
+            "timestamp": 1776668015536,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 396,
+            "status": "ok",
+            "timestamp": 1776668037233,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 221,
+            "status": "ok",
+            "timestamp": 1776668049846,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 932,
+            "status": "ok",
+            "timestamp": 1776668058708,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 597,
+            "status": "ok",
+            "timestamp": 1776668074171,
+            "args_summary": ""
+          },
+          {
+            "name": "run_in_terminal",
+            "duration_ms": 938,
+            "status": "ok",
+            "timestamp": 1776668081852,
+            "args_summary": ""
+          },
+          {
+            "name": "file_search",
+            "duration_ms": 61,
+            "status": "ok",
+            "timestamp": 1776668089677,
+            "args_summary": ""
+          },
+          {
+            "name": "grep_search",
+            "duration_ms": 121,
+            "status": "ok",
+            "timestamp": 1776668098755,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 4,
+            "status": "ok",
+            "timestamp": 1776668152435,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 40,
+            "status": "ok",
+            "timestamp": 1776668164791,
+            "args_summary": ""
+          },
+          {
+            "name": "read_file",
+            "duration_ms": 16,
+            "status": "ok",
+            "timestamp": 1776668169763,
+            "args_summary": ""
+          },
+          {
+            "name": "replace_string_in_file",
+            "duration_ms": 19,
+            "status": "ok",
+            "timestamp": 1776668180747,
+            "args_summary": ""
+          },
+          {
+            "name": "file_search",
+            "duration_ms": 68,
+            "status": "ok",
+            "timestamp": 1776668186159,
+            "args_summary": ""
+          },
+          {
+            "name": "file_search",
+            "duration_ms": 58,
+            "status": "ok",
+            "timestamp": 1776668192067,
+            "args_summary": ""
+          },
+          {
+            "name": "manage_todo_list",
+            "duration_ms": 2,
+            "status": "ok",
+            "timestamp": 1776668286001,
+            "args_summary": ""
+          },
+          {
+            "name": "grep_search",
+            "duration_ms": 55,
+            "status": "ok",
+            "timestamp": 1776668293784,
+            "args_summary": ""
           }
         ],
         "children": []
@@ -4123,7 +8360,7 @@
         "timestamp": 1776659852521,
         "spawn_prompt": "",
         "turn_count": 44,
-        "wall_time_ms": 57977400,
+        "wall_time_ms": 70880211,
         "total_input_tokens": 1715486,
         "total_output_tokens": 12525,
         "total_tokens": 1728011,
@@ -5292,7 +9529,7 @@
         "timestamp": 1776655333167,
         "spawn_prompt": "",
         "turn_count": 82,
-        "wall_time_ms": 61356826,
+        "wall_time_ms": 74259637,
         "total_input_tokens": 5406990,
         "total_output_tokens": 36023,
         "total_tokens": 5443013,
@@ -5914,7 +10151,7 @@
         "timestamp": 1776655039691,
         "spawn_prompt": "",
         "turn_count": 3,
-        "wall_time_ms": 62269799,
+        "wall_time_ms": 75172610,
         "total_input_tokens": 93909,
         "total_output_tokens": 527,
         "total_tokens": 94436,
@@ -5976,7 +10213,7 @@
         "timestamp": 1776610540819,
         "spawn_prompt": "",
         "turn_count": 10,
-        "wall_time_ms": 62713287,
+        "wall_time_ms": 75616098,
         "total_input_tokens": 357652,
         "total_output_tokens": 3253,
         "total_tokens": 360905,
@@ -6087,7 +10324,7 @@
         "timestamp": 1776609928156,
         "spawn_prompt": "",
         "turn_count": 7,
-        "wall_time_ms": 62901708,
+        "wall_time_ms": 75804519,
         "total_input_tokens": 251718,
         "total_output_tokens": 2116,
         "total_tokens": 253834,
@@ -6184,7 +10421,7 @@
         "timestamp": 1776609264118,
         "spawn_prompt": "",
         "turn_count": 67,
-        "wall_time_ms": 64820958,
+        "wall_time_ms": 77723769,
         "total_input_tokens": 3412237,
         "total_output_tokens": 13081,
         "total_tokens": 3425318,
@@ -6778,7 +11015,7 @@
         "timestamp": 1776608112735,
         "spawn_prompt": "",
         "turn_count": 64,
-        "wall_time_ms": 154935835,
+        "wall_time_ms": 167838646,
         "total_input_tokens": 3611049,
         "total_output_tokens": 21237,
         "total_tokens": 3632286,
@@ -20201,7 +24438,7 @@
         "timestamp": 1776607959517,
         "spawn_prompt": "",
         "turn_count": 14,
-        "wall_time_ms": 154935835,
+        "wall_time_ms": 167838646,
         "total_input_tokens": 452389,
         "total_output_tokens": 1833,
         "total_tokens": 454222,
@@ -20340,7 +24577,7 @@
         "timestamp": 1776604932996,
         "spawn_prompt": "",
         "turn_count": 55,
-        "wall_time_ms": 154935835,
+        "wall_time_ms": 167838646,
         "total_input_tokens": 3001276,
         "total_output_tokens": 10307,
         "total_tokens": 3011583,
@@ -20801,7 +25038,7 @@
         "timestamp": 1776603638658,
         "spawn_prompt": "",
         "turn_count": 204,
-        "wall_time_ms": 154935835,
+        "wall_time_ms": 167838646,
         "total_input_tokens": 14186371,
         "total_output_tokens": 61378,
         "total_tokens": 14247749,
@@ -22682,7 +26919,7 @@
         "timestamp": 1776603026116,
         "spawn_prompt": "",
         "turn_count": 2,
-        "wall_time_ms": 154935835,
+        "wall_time_ms": 167838646,
         "total_input_tokens": 61016,
         "total_output_tokens": 991,
         "total_tokens": 62007,
@@ -22737,7 +26974,7 @@
         "timestamp": 1776591627963,
         "spawn_prompt": "",
         "turn_count": 1,
-        "wall_time_ms": 154935835,
+        "wall_time_ms": 167838646,
         "total_input_tokens": 29686,
         "total_output_tokens": 307,
         "total_tokens": 29993,
@@ -22785,7 +27022,7 @@
         "timestamp": 1776581463860,
         "spawn_prompt": "",
         "turn_count": 36,
-        "wall_time_ms": 154935835,
+        "wall_time_ms": 167838646,
         "total_input_tokens": 1439111,
         "total_output_tokens": 8910,
         "total_tokens": 1448021,
@@ -23141,7 +27378,7 @@
         "timestamp": 1776512899415,
         "spawn_prompt": "",
         "turn_count": 4,
-        "wall_time_ms": 154935835,
+        "wall_time_ms": 167838646,
         "total_input_tokens": 373259,
         "total_output_tokens": 332,
         "total_tokens": 373591,
