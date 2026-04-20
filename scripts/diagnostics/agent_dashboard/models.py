@@ -7,20 +7,42 @@ from dataclasses import dataclass, field
 # ---------------------------------------------------------------------------
 # Tool classification sets
 #
-# Six categories mapping to the agent workflow cycle:
-#   management  — spawning agents, approving ADRs, asking user questions
-#   editing     — file creation, modification, deletion, git commits
-#   exploration — unstructured searches, file reads, directory listing
-#   qa          — linting, testing, terminal commands for verification
-#   logging     — log_write, plan_complete_step, adr_suggest, manage_todo_list
-#   research    — reading ADRs/ASRs/DDs, AST-assisted reads, structured code nav
+# Seven categories mapping to the agent workflow cycle:
+#   excluded    — meta-tools, noise (read_file), and terminal misuse signals
+#   management  — spawning agents, approving ADRs, asking user questions, git ops
+#   editing     — file creation, modification, deletion
+#   exploration — unstructured searches, file reads, directory listing, find_symbol
+#   qa          — linting, testing
+#   logging     — log_write, plan_complete_step, adr_suggest, manage_todo_list, memory
+#   research    — reading ADRs/ASRs/DDs, AST-assisted reads, structured code nav,
+#                 external docs (context7, fetch_webpage)
 # ---------------------------------------------------------------------------
+
+# Tools excluded from category stats entirely — meta-tools, noise, and misuse signals.
+# They still appear in the Tool Health table, just not in the stat block / ratios.
+EXCLUDED_TOOLS = frozenset(
+    {
+        # Noise — read_file is 3x the next most-used tool and drowns signal
+        "read_file",
+        # Meta-tools — infrastructure, not agent behavior
+        "tool_search",
+        "vscode_listCodeUsages",
+        # Terminal — misuse signal; a better MCP tool should have been used
+        "run_in_terminal",
+        "get_terminal_output",
+        "send_to_terminal",
+        "kill_terminal",
+    }
+)
 
 MANAGEMENT_TOOLS = frozenset(
     {
         "runSubagent",
         "mcp_nomarr_dev_adr_commit",
         "vscode_askQuestions",
+        # Git operations
+        "mcp_gitkraken_git_add_or_commit",
+        "mcp_gitkraken_git_push",
     }
 )
 
@@ -47,16 +69,12 @@ EDITING_TOOLS = frozenset(
         "mcp_oraios_serena_insert_after_symbol",
         "mcp_oraios_serena_insert_before_symbol",
         "mcp_oraios_serena_rename_symbol",
-        # Git
-        "mcp_gitkraken_git_add_or_commit",
-        "mcp_gitkraken_git_push",
     }
 )
 
 EXPLORATION_TOOLS = frozenset(
     {
         # Unstructured file reads
-        "read_file",
         "view_image",
         "list_dir",
         "mcp_nomarr_dev_list_project_directory_tree",
@@ -67,23 +85,16 @@ EXPLORATION_TOOLS = frozenset(
         "semantic_search",
         "file_search",
         "mcp_nomarr_dev_search_file_text",
-        # Tool/library discovery
-        "tool_search",
-        "fetch_webpage",
-        "mcp_context7_resolve_library_id",
-        "mcp_context7_get_library_docs",
         # Git status
         "mcp_gitkraken_git_status",
         "mcp_gitkraken_git_blame",
+        # Serena broad symbol search (exploration, not targeted research)
+        "mcp_oraios_serena_find_symbol",
     }
 )
 
 QA_TOOLS = frozenset(
     {
-        "run_in_terminal",
-        "get_terminal_output",
-        "send_to_terminal",
-        "kill_terminal",
         "mcp_nomarr_dev_lint_project_backend",
         "mcp_nomarr_dev_lint_project_frontend",
         "runTests",
@@ -100,6 +111,8 @@ LOGGING_TOOLS = frozenset(
         "mcp_nomarr_dev_dd_archive",
         "mcp_nomarr_dev_plan_complete_step",
         "mcp_nomarr_dev_plan_archive",
+        # Memory
+        "memory",
     }
 )
 
@@ -121,16 +134,17 @@ RESEARCH_TOOLS = frozenset(
         "mcp_nomarr_dev_trace_project_endpoint",
         "mcp_nomarr_dev_read_file_symbol_at_line",
         "mcp_nomarr_dev_py_introspect",
-        # Serena symbol navigation
+        # Serena targeted navigation
         "mcp_oraios_serena_get_symbols_overview",
-        "mcp_oraios_serena_find_symbol",
         "mcp_oraios_serena_find_referencing_symbols",
-        # VS Code symbol navigation
-        "vscode_listCodeUsages",
+        # External documentation
+        "fetch_webpage",
+        "mcp_context7_resolve-library-id",
+        "mcp_context7_get-library-docs",
     }
 )
 
-ALL_CLASSIFIED = MANAGEMENT_TOOLS | EDITING_TOOLS | EXPLORATION_TOOLS | QA_TOOLS | LOGGING_TOOLS | RESEARCH_TOOLS
+ALL_CLASSIFIED = EXCLUDED_TOOLS | MANAGEMENT_TOOLS | EDITING_TOOLS | EXPLORATION_TOOLS | QA_TOOLS | LOGGING_TOOLS | RESEARCH_TOOLS
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +210,11 @@ class AgentInvocation:
     @property
     def tool_call_count(self) -> int:
         return len(self.tool_calls)
+
+    @property
+    def classified_tool_count(self) -> int:
+        """Tool calls excluding noise/meta tools — denominator for ratios."""
+        return sum(1 for t in self.tool_calls if t.name not in EXCLUDED_TOOLS)
 
     @property
     def management_count(self) -> int:
@@ -268,39 +287,33 @@ class AgentInvocation:
 
     @property
     def management_ratio(self) -> float:
-        if not self.tool_calls:
-            return 0.0
-        return self.management_count / len(self.tool_calls)
+        d = self.classified_tool_count
+        return self.management_count / d if d else 0.0
 
     @property
     def editing_ratio(self) -> float:
-        if not self.tool_calls:
-            return 0.0
-        return self.editing_count / len(self.tool_calls)
+        d = self.classified_tool_count
+        return self.editing_count / d if d else 0.0
 
     @property
     def exploration_ratio(self) -> float:
-        if not self.tool_calls:
-            return 0.0
-        return self.exploration_count / len(self.tool_calls)
+        d = self.classified_tool_count
+        return self.exploration_count / d if d else 0.0
 
     @property
     def qa_ratio(self) -> float:
-        if not self.tool_calls:
-            return 0.0
-        return self.qa_count / len(self.tool_calls)
+        d = self.classified_tool_count
+        return self.qa_count / d if d else 0.0
 
     @property
     def logging_ratio(self) -> float:
-        if not self.tool_calls:
-            return 0.0
-        return self.logging_count / len(self.tool_calls)
+        d = self.classified_tool_count
+        return self.logging_count / d if d else 0.0
 
     @property
     def research_ratio(self) -> float:
-        if not self.tool_calls:
-            return 0.0
-        return self.research_count / len(self.tool_calls)
+        d = self.classified_tool_count
+        return self.research_count / d if d else 0.0
 
     @property
     def models_used(self) -> set[str]:
@@ -444,6 +457,8 @@ class ToolAggregate:
 
     @property
     def category(self) -> str:
+        if self.name in EXCLUDED_TOOLS:
+            return "excluded"
         if self.name in MANAGEMENT_TOOLS:
             return "management"
         if self.name in EDITING_TOOLS:
