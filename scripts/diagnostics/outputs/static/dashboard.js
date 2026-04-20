@@ -214,13 +214,19 @@ function renderRadarChart(data, selectedNames) {
     if (radarChart) { radarChart.destroy(); charts = charts.filter(c => c !== radarChart); }
     const categories = ['total_management_calls', 'total_editing_calls', 'total_exploration_calls', 'total_qa_calls', 'total_logging_calls', 'total_research_calls'];
     const categoryLabels = ['Mgmt', 'Edit', 'Explore', 'QA', 'Log', 'Research'];
+    // Each agent: compute real %, normalize to own max, then sqrt scale
     const datasets = selectedNames.map(name => {
         const agg = data.agent_aggregates[name] || {};
         const counts = categories.map(cat => agg[cat] || 0);
         const agentTotal = counts.reduce((a, b) => a + b, 0);
+        const pcts = counts.map(c => agentTotal ? c / agentTotal * 100 : 0);
+        const maxPct = Math.max(...pcts, 1); // avoid /0
+        // Normalize to max → sqrt → scale to 100
+        const display = pcts.map(p => Math.round(Math.sqrt(p / maxPct) * 1000) / 10);
         return {
             label: name,
-            data: counts.map(c => agentTotal ? Math.round(c / agentTotal * 1000) / 10 : 0),
+            data: display,
+            _realPcts: pcts, // stash for tooltip
             borderColor: roleColor(name),
             backgroundColor: roleColor(name) + '22',
             pointRadius: 3,
@@ -232,10 +238,18 @@ function renderRadarChart(data, selectedNames) {
         options: {
             responsive: true,
             plugins: {
-                title: { display: true, text: 'Agent Stat Block — Tool Category Distribution (%)', color: '#e6edf3' },
-                legend: { display: false }
+                title: { display: true, text: 'Agent Stat Block — sqrt-scaled, normalized to peak category', color: '#e6edf3' },
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => {
+                            const real = ctx.dataset._realPcts[ctx.dataIndex];
+                            return `${ctx.dataset.label}: ${real.toFixed(1)}%`;
+                        }
+                    }
+                }
             },
-            scales: { r: { beginAtZero: true, max: 100, grid: { color: '#30363d' }, pointLabels: { color: '#8b949e' } } }
+            scales: { r: { beginAtZero: true, max: 100, ticks: { display: false }, grid: { color: '#30363d' }, pointLabels: { color: '#8b949e' } } }
         }
     });
     charts.push(radarChart);
