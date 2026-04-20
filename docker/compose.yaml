@@ -29,6 +29,12 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8356/info || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
     restart: unless-stopped
 
   # ArangoDB database service

@@ -255,6 +255,7 @@ jobs:
           cat > docker/compose.e2e.yaml <<'EOF'
           services:
             nomarr:
+              container_name: nomarr
               image: ${{ needs.build-and-push.outputs.sha_tag }}
               user: "1000:1000"
               ports:
@@ -276,6 +277,7 @@ jobs:
                 start_period: 30s
 
             nomarr-arangodb:
+              container_name: nomarr-arangodb
               image: arangodb:3.12
               env_file:
                 - nomarr-arangodb.env

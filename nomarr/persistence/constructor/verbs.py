@@ -7,7 +7,11 @@ The collection name uses @@ bind var notation (two @ = collection bind).
 from __future__ import annotations
 
 import logging
+import random
+import time
 from typing import Any, cast
+
+from arango.exceptions import AQLQueryExecuteError
 
 from nomarr.helpers.filter_types import AggResult, FilterDict
 from nomarr.persistence.arango_client import SafeDatabase
@@ -21,13 +25,43 @@ from nomarr.persistence.constructor.pagination import inject_pagination
 
 Document = dict[str, Any]
 
+_WRITE_WRITE_CONFLICT_CODE = 1200
+_MAX_RETRIES = 3
+_RETRY_BASE_DELAY = 0.05  # 50ms, doubles each retry
+
 logger = logging.getLogger(__name__)
 
 
-def _execute_aql(db: SafeDatabase, query: str, bind_vars: dict[str, Any]) -> Any:
-    """Execute AQL via python-arango, logging the query at DEBUG level."""
+def _execute_aql(
+    db: SafeDatabase,
+    query: str,
+    bind_vars: dict[str, Any],
+    *,
+    retry_on_conflict: bool = False,
+) -> Any:
+    """Execute AQL via python-arango, logging the query at DEBUG level.
+
+    When *retry_on_conflict* is ``True``, transient ArangoDB write-write
+    conflicts (error 1200) are retried up to ``_MAX_RETRIES`` times with
+    exponential back-off.
+    """
     logger.debug("AQL: %s | bind_vars: %s", query, bind_vars)
-    return db.aql.execute(query, bind_vars=bind_vars)
+    if not retry_on_conflict:
+        return db.aql.execute(query, bind_vars=bind_vars)
+
+    last_exc: AQLQueryExecuteError | None = None
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            return db.aql.execute(query, bind_vars=bind_vars)
+        except AQLQueryExecuteError as exc:
+            if exc.error_code != _WRITE_WRITE_CONFLICT_CODE or attempt == _MAX_RETRIES:
+                raise
+            last_exc = exc
+            delay = _RETRY_BASE_DELAY * (2**attempt) + random.uniform(0, _RETRY_BASE_DELAY)
+            logger.debug("Write-write conflict (attempt %d/%d), retrying in %.3fs", attempt + 1, _MAX_RETRIES, delay)
+            time.sleep(delay)
+    assert last_exc is not None  # unreachable: loop always runs ≥1 iteration
+    raise last_exc
 
 
 def _validate_field_name(field: str) -> None:
@@ -217,6 +251,7 @@ def upsert_by_field(
                 db,
                 f"UPSERT {{ {upsert_fields} }} INSERT @doc UPDATE @doc IN @@col RETURN NEW._id",
                 bind_vars=bind_vars,
+                retry_on_conflict=True,
             )
         else:
             _validate_field_name(field)
@@ -228,6 +263,7 @@ def upsert_by_field(
                     "key_val": doc.get(field),
                     "doc": doc,
                 },
+                retry_on_conflict=True,
             )
         ids.append(cast("str", next(cursor)))
     return ids
