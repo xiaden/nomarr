@@ -4,6 +4,8 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING
 
+from arango.exceptions import CollectionCreateError, DocumentInsertError, GraphCreateError, IndexCreateError
+
 if TYPE_CHECKING:
     from nomarr.persistence.arango_client import DatabaseLike
 
@@ -36,8 +38,6 @@ def upgrade(db: DatabaseLike) -> None:
     Args:
         db: ArangoDB database handle.
     """
-    from arango.exceptions import CollectionCreateError, DocumentInsertError, GraphCreateError, IndexCreateError
-
     # =========================================================================
     # Phase 1 — DDL: New collections and edges
     # =========================================================================

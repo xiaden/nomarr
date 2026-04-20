@@ -11,7 +11,6 @@ import hashlib
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.components.library.library_file_mutation_comp import bulk_delete_files, upsert_batch
 from nomarr.components.library.library_file_query_comp import (
     count_library_files,
     list_library_files,
@@ -25,8 +24,12 @@ from nomarr.components.library.library_file_query_comp import (
 from nomarr.components.library.library_file_query_comp import (
     get_folder_rel_paths as _get_folder_rel_paths,
 )
-from nomarr.components.library.library_file_state_comp import library_has_tagged_files, transition_file_state
-from nomarr.components.library.library_records_comp import get_library_record, list_library_records
+from nomarr.components.library.library_file_state_comp import (
+    clear_all_states_batch,
+    initialize_file_states_batch,
+    library_has_tagged_files,
+    transition_file_state,
+)
 from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
 from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_IDLE,
@@ -254,6 +257,108 @@ def bulk_transition_pipeline_state(db: Database, from_state: str, to_state: str)
     return len(docs)
 
 
+def _get_library_record(db: Database, library_id: str) -> dict[str, Any] | None:
+    """Return one library document by `_id` or bare key without scan enrichment."""
+    normalized_id = _library_id_from_key(library_id)
+    return cast("dict[str, Any] | None", db.libraries.get(normalized_id))
+
+
+def _list_library_records(db: Database) -> list[dict[str, Any]]:
+    """Return library documents in legacy created-at order with scan fields merged."""
+    ids = cast("list[str]", db.libraries._id.collect(limit=db.libraries.count()))
+    docs = [doc for doc_id in ids if (doc := cast("dict[str, Any] | None", db.libraries.get(doc_id))) is not None]
+    docs.sort(key=lambda doc: int(cast("int", doc.get("created_at", 0) or 0)))
+
+    enriched_docs: list[dict[str, Any]] = []
+    for doc in docs:
+        scan_doc = get_scan_state(db, str(doc["_id"]))
+        if scan_doc is None:
+            enriched_docs.append(
+                {
+                    **doc,
+                    "scan_status": "idle",
+                    "scan_progress": 0,
+                    "scan_total": 0,
+                    "scanned_at": None,
+                    "scan_error": None,
+                    "last_scan_started_at": None,
+                    "scan_type_in_progress": None,
+                }
+            )
+            continue
+
+        enriched_docs.append(
+            {
+                **doc,
+                "scan_status": scan_doc.get("status", "idle"),
+                "scan_progress": scan_doc.get("files_processed", 0),
+                "scan_total": scan_doc.get("files_total", 0),
+                "scanned_at": scan_doc.get("completed_at"),
+                "scan_error": scan_doc.get("error"),
+                "last_scan_started_at": scan_doc.get("started_at"),
+                "scan_type_in_progress": scan_doc.get("scan_type"),
+            }
+        )
+
+    return enriched_docs
+
+
+def _delete_segment_stats_for_files(db: Database, file_ids: list[str]) -> int:
+    """Cascade-delete all segment-stats documents linked to the provided files."""
+    deleted = 0
+    for file_id in file_ids:
+        stats_docs = cast(
+            "list[dict[str, Any]]",
+            db.library_files.traversal(file_id, edge="file_has_segment_stats", limit=db.segment_scores_stats.count()),
+        )
+        stats_ids = [cast("str", doc["_id"]) for doc in stats_docs if "_id" in doc]
+        if stats_ids:
+            deleted += int(db.segment_scores_stats.cascade(stats_ids))
+    return deleted
+
+
+def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
+    """Batch-upsert library files, ownership edges, and initial state edges."""
+    if not file_docs:
+        return []
+
+    library_ids = [doc.get("library_id") for doc in file_docs]
+    clean_docs = [{key: value for key, value in doc.items() if key != "library_id"} for doc in file_docs]
+    file_ids = cast("list[str]", db.library_files.path.upsert(clean_docs, match_field="path"))
+
+    edge_docs = [
+        {"_from": library_id, "_to": file_id}
+        for library_id, file_id in zip(library_ids, file_ids, strict=True)
+        if library_id is not None
+    ]
+    if edge_docs:
+        db.library_contains_file._to.upsert(edge_docs, match_field=["_from", "_to"])
+
+    initialize_file_states_batch(db, file_ids)
+    return file_ids
+
+
+def _bulk_delete_files(db: Database, paths: list[str]) -> int:
+    """Delete multiple files by path and clean up their derived data."""
+    if not paths:
+        return 0
+
+    file_docs = cast("list[dict[str, Any]]", db.library_files.path.get.in_(paths))
+    file_ids = [str(doc["_id"]) for doc in file_docs]
+    if not file_ids:
+        return 0
+
+    db.delete_vectors_by_file_ids(file_ids)
+    _delete_segment_stats_for_files(db, file_ids)
+    for file_id in file_ids:
+        db.song_has_tags._from.delete(file_id)
+    clear_all_states_batch(db, file_ids)
+    for file_id in file_ids:
+        db.library_contains_file._to.delete(file_id)
+    db.library_files.delete(file_ids)
+    return len(file_ids)
+
+
 # ---------------------------------------------------------------------------
 # Library resolution
 # ---------------------------------------------------------------------------
@@ -273,7 +378,7 @@ def resolve_library_for_scan(db: Database, library_id: str) -> dict[str, Any]:
         ValueError: If library not found
 
     """
-    library = get_library_record(db, library_id)
+    library = _get_library_record(db, library_id)
     if not library:
         msg = f"Library {library_id} not found"
         raise LibraryNotFoundError(msg)
@@ -342,7 +447,7 @@ def get_library_scan_histories(
         limit: Maximum number of records to return. None for all.
 
     """
-    libraries = list_library_records(db, enabled_only=False)
+    libraries = _list_library_records(db)
     if limit is not None:
         libraries = libraries[:limit]
 
@@ -511,7 +616,7 @@ def upsert_scanned_files(
         List of document _ids (inserted or updated)
 
     """
-    file_ids = upsert_batch(db, file_entries)
+    file_ids = _upsert_batch(db, file_entries)
 
     if edge_bootstraps:
         # Build path → id map from results
@@ -569,7 +674,7 @@ def remove_deleted_files(db: Database, paths: list[str]) -> int:
         Number of files deleted
 
     """
-    return bulk_delete_files(db, paths)
+    return _bulk_delete_files(db, paths)
 
 
 # ---------------------------------------------------------------------------

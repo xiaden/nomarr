@@ -9,6 +9,7 @@ from typing import Any, cast
 from nomarr.helpers.filter_types import AggResult, FilterDict
 from nomarr.persistence.arango_client import SafeDatabase
 from nomarr.persistence.constructor import verbs
+from nomarr.persistence.constructor.cascade import CascadeEngine
 from nomarr.persistence.schema import SchemaValidationError
 
 Document = dict[str, Any]
@@ -418,8 +419,6 @@ class CollectionNamespace:
 
     def _cascade(self, ids: list[str]) -> int:
         """Cascade delete across schema-declared edge targets."""
-        from nomarr.persistence.constructor.cascade import CascadeEngine
-
         cascade_targets = cast("list[str]", self._spec.get("cascade", []))
         if not cascade_targets:
             return 0

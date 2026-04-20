@@ -4,7 +4,7 @@ Data transfer objects for ML components, inference, and calibration.
 These form cross-layer contracts between components, workflows, and services.
 
 Rules:
-- Import only stdlib and typing (no nomarr.* imports)
+- Import only stdlib and typing at runtime (TYPE_CHECKING-guarded nomarr.* imports are permitted for type annotations)
 - Pure data structures only (no I/O, no DB access, no business logic)
 """
 
@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from nomarr.components.ml.onnx.ml_discovery_comp import HeadInfo
     from nomarr.helpers.dto.path_dto import LibraryPath
 
 
@@ -34,7 +35,7 @@ class HeadOutput:
 
     """
 
-    head: Any  # HeadInfo from components - use Any to avoid circular import
+    head: HeadInfo
     model_key: str
     label: str
     value: float

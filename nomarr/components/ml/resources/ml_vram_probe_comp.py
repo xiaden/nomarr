@@ -20,13 +20,12 @@ from __future__ import annotations
 
 import logging
 import pathlib
-import re
 import sys
-from typing import Any, cast
+import threading
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from nomarr.components.ml.onnx.ml_base import BaseONNXModel
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbone_models, discover_head_models_no_db
 from nomarr.components.platform.resource_monitor_comp import (
     get_vram_usage_mb,
@@ -34,14 +33,13 @@ from nomarr.components.platform.resource_monitor_comp import (
 )
 from nomarr.persistence.db import Database
 
+if TYPE_CHECKING:
+    from nomarr.components.ml.onnx.ml_base import BaseONNXModel
+
 logger = logging.getLogger(__name__)
 
 # Meta key prefix for per-model VRAM measurements
 _META_PREFIX = "ml_model_vram:"
-
-# Regex to extract the requested byte count from a BFC arena OOM error message.
-# ORT format: "BFCArena::AllocateRawInternal: Available memory of X is smaller than requested bytes of Y"
-_OOM_PATTERN = re.compile(r"requested bytes of (\d+)")
 
 
 def _fmt_bytes(n: int) -> str:
@@ -51,63 +49,6 @@ def _fmt_bytes(n: int) -> str:
     if n >= 1_048_576:
         return f"{n / 1_048_576:.1f} MB"
     return f"{n} B"
-
-
-def parse_oom_requested_bytes(error: BaseException) -> int | None:
-    """Parse the requested-bytes value from a BFC arena OOM error message.
-
-    ORT raises ``RuntimeError`` with a message matching::
-
-        BFCArena::AllocateRawInternal: Available memory of X is smaller
-        than requested bytes of Y
-
-    Args:
-        error: The caught exception (any ``BaseException`` subclass).
-
-    Returns:
-        The integer byte count *Y* from the message, or ``None`` if the
-        pattern is not present (i.e. not a BFC arena OOM).
-    """
-    match = _OOM_PATTERN.search(str(error))
-    if match is None:
-        return None
-    return int(match.group(1))
-
-
-def update_model_vram_from_oom(db: Database, model_path: str, requested_bytes: int) -> int:
-    """Write a corrected VRAM limit after a BFC arena OOM.
-
-    Bumps the *existing probe measurement* by 25% and persists it to
-    ``meta[ml_model_vram:<model_path>]``.  The probe value is used as the
-    baseline because it reflects the model's true total VRAM footprint;
-    *requested_bytes* from the OOM message is only a single layer's
-    activation allocation and is not representative of the whole model.
-
-    If no probe value exists yet, falls back to ``requested_bytes * 1.25``
-    as a best-effort estimate.
-
-    Args:
-        db:              Database instance.
-        model_path:      Model path key (the part after the prefix).
-        requested_bytes: Byte count parsed from the OOM message (used only
-                         as fallback when no probe entry exists).
-
-    Returns:
-        The new VRAM limit in bytes.
-    """
-    raw_doc = cast("dict[str, Any] | None", db.meta.key.get(f"{_META_PREFIX}{model_path}"))
-    raw = None if raw_doc is None else raw_doc.get("value")
-    base = int(raw) if raw is not None else requested_bytes
-    new_limit = int(base * 1.25)
-    db.meta.key.upsert([{"key": f"{_META_PREFIX}{model_path}", "value": str(new_limit)}], match_field="key")
-    logger.warning(
-        "[vram_probe] OOM self-heal: updated %s from %s to %s (%d bytes) — bumped probe by 25%%",
-        model_path,
-        _fmt_bytes(base),
-        _fmt_bytes(new_limit),
-        new_limit,
-    )
-    return new_limit
 
 
 # Pre-built minimal identity ONNX model for CUDA context warming.
@@ -175,8 +116,6 @@ def _probe_single_model(
     Returns:
         Peak VRAM delta in bytes, or ``None`` if the model failed to load or run.
     """
-    import threading
-
     _poll_interval_s = 0.05  # 50 ms — nvidia-smi updates ~100 ms, so this oversamples
 
     reset_telemetry_cache()

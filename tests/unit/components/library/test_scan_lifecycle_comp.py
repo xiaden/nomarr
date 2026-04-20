@@ -129,7 +129,7 @@ class TestGetLibraryScanHistories:
         ]
 
         with patch(
-            "nomarr.components.library.scan_lifecycle_comp.list_library_records",
+            "nomarr.components.library.scan_lifecycle_comp._list_library_records",
             return_value=libraries,
         ) as mock_list_library_records:
             result = get_library_scan_histories(mock_db)
@@ -148,7 +148,7 @@ class TestGetLibraryScanHistories:
                 "scan_status": "idle",
             },
         ]
-        mock_list_library_records.assert_called_once_with(mock_db, enabled_only=False)
+        mock_list_library_records.assert_called_once_with(mock_db)
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -161,7 +161,7 @@ class TestGetLibraryScanHistories:
         ]
 
         with patch(
-            "nomarr.components.library.scan_lifecycle_comp.list_library_records",
+            "nomarr.components.library.scan_lifecycle_comp._list_library_records",
             return_value=libraries,
         ) as mock_list_library_records:
             result = get_library_scan_histories(mock_db, limit=2)
@@ -180,7 +180,7 @@ class TestGetLibraryScanHistories:
                 "scan_status": "scanning",
             },
         ]
-        mock_list_library_records.assert_called_once_with(mock_db, enabled_only=False)
+        mock_list_library_records.assert_called_once_with(mock_db)
 
     @pytest.mark.unit
     @pytest.mark.mocked

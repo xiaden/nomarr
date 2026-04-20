@@ -12,7 +12,9 @@ These routes will be mounted under /api/web via the web router.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -191,9 +193,6 @@ async def get_vector_stats(
         VectorStatsResponse with stats for all backbones
 
     """
-    import asyncio
-    from concurrent.futures import ThreadPoolExecutor
-
     known_backbones = ml_service.list_backbones()
 
     def _get_stats_sync() -> list[VectorHotColdStats]:

@@ -7,13 +7,11 @@ CollectionNamespace objects that provide the nested accessor API.
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from nomarr.persistence.arango_client import SafeDatabase
+from nomarr.persistence.constructor.namespaces import CollectionNamespace
 from nomarr.persistence.schema import SCHEMA, CollectionType, SchemaValidationError
-
-if TYPE_CHECKING:
-    from nomarr.persistence.constructor.namespaces import CollectionNamespace
 
 
 class SchemaConstructor:
@@ -94,8 +92,6 @@ class SchemaConstructor:
             Fully constructed CollectionNamespace.
 
         """
-        from nomarr.persistence.constructor.namespaces import CollectionNamespace
-
         collection_name = cast("str", spec.get("collection_name", name))
 
         return CollectionNamespace(
@@ -165,8 +161,6 @@ class SchemaConstructor:
         """
         target = schema or self._schema
         self.validate_schema(target)
-
-        from nomarr.persistence.constructor.namespaces import CollectionNamespace
 
         namespaces: dict[str, CollectionNamespace] = {}
         for name, spec in target.items():

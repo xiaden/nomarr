@@ -137,11 +137,12 @@ For multi-agent workflows:
 
 1. **Gather artifact context first** — Spawn Support-Librarian with the task scope. Pass its briefing (constraints, warnings, context) to all downstream agents.
 2. **Run agents in dependency order** — Ideator before Architect (Architect needs options to analyze)
-3. **Pass prior agent output as context** — each agent builds on the previous
-4. **Use Improver to refine** — after any stage, Improver can iterate on the output
-5. **Validate DD coverage** — After DDAuthor, spawn Support-PatternEnforcer to check scope. If gaps found, route back to DDAuthor.
-6. **Synthesize across reports** — You combine findings into a coherent recommendation
-7. **Present to user or Director** — Summary + recommendation + supporting artifacts
+3. **Pass known artifact references directly** — When you know a specific ADR/DD/ASR by name, tell subagents to `adr_read(name="ADR-NNN")` or `dd_read(name="DD-slug")`. Do NOT tell them to search for it. If the artifact content is already in your context, summarize the relevant parts inline instead of forcing a re-fetch.
+4. **Pass prior agent output as context** — each agent builds on the previous
+5. **Use Improver to refine** — after any stage, Improver can iterate on the output
+6. **Validate DD coverage** — After DDAuthor, spawn Support-PatternEnforcer to check scope. If gaps found, route back to DDAuthor.
+7. **Synthesize across reports** — You combine findings into a coherent recommendation
+8. **Present to user or Director** — Summary + recommendation + supporting artifacts
 
 ### 3. Return Results
 
@@ -190,6 +191,8 @@ blockers:           # Only if status != DONE
 - **Don't use terminal for investigation** — Quick version checks are fine. Multi-command diagnostic sessions are Support-Debugger's job.
 - **Don't synthesize findings from raw tool output** — If you need to combine information from multiple sources into a recommendation, that synthesis IS the work of your advisory agents (Architect, Ideator, Improver). Spawn them with the question.
 - **"No work needed" is not a conclusion, it is an unverified hypothesis** — If you are about to tell the user no work is needed, stop. Spawn **Support-Researcher** to verify the hypothesis. Log the finding with category `observation` or `research`. Only after an investigation confirms it may you report "no action required" — and you must cite the investigation in your output contract's `artifacts` list (as an analysis report, even if no DD was created). Returning "nah" without investigation is the single most common and most costly failure mode.
+- **Don't search for artifacts you already know by name** — If you have a specific ADR number (e.g., "ADR-026"), NEVER use `adr_search` to find it. Pass `adr_read(name="ADR-026")` to the subagent, or summarize its content directly if you already have it in context. `adr_search` queries titles and tags — it is for *discovery*, not for looking up known references.
+- **Don't do reconnaissance busywork before clear tasks** — When the user gives you a specific artifact reference (ADR number, DD name, log entry) and a clear task ("create a DD for ADR-026"), dispatch immediately with the reference. Do NOT: read logs from multiple agents, list directories, search for the artifact you were just told about, or write meta-logs about "restarting the pipeline." Your job is to dispatch, not to perform a preflight audit of your own prior sessions.
 
 ## Artifact Logging & ADR Behavior
 
@@ -197,9 +200,15 @@ As R&D head, you see the full picture across research, design, and analysis. Log
 
 ### Before Dispatching
 
-- `adr_search(query="topic")` — check for existing decisions relevant to this R&D task
+**Only do pre-dispatch checks when you lack information needed to route.**
+
+When the task references a **known artifact** (e.g., "create DD for ADR-026"), you already have routing information. Dispatch immediately — pass the artifact reference to the subagent using `adr_read(name="ADR-026")`, not `adr_search`.
+
+When the task is **open-ended** (e.g., "research import patterns"), use reconnaissance to determine routing:
+- `adr_search(query="topic")` — check for existing decisions (discovery only, not lookup of known ADRs)
 - `log_read(agent="rnd-manager")` — review your own prior observations
-- `log_read(agent="rnd-dd-author")` — see what prior design sessions discovered
+
+**Never combine these into a multi-tool "preflight" ritual.** Each check must answer a specific routing question. If you can't articulate what routing decision the check informs, skip it.
 
 ### When to Log
 

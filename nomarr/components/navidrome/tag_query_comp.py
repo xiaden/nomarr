@@ -12,6 +12,7 @@ from nomarr.components.library.library_file_query_comp import get_tracks_by_file
 from nomarr.components.tagging.tag_query_comp import get_file_ids_matching_tag
 from nomarr.components.tagging.tag_stats_comp import get_tag_value_counts as get_tag_value_counts_map
 from nomarr.components.tagging.tag_stats_comp import get_unique_rels
+from nomarr.helpers.tag_key_mapping import is_versioned_ml_key, make_short_tag_name
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -112,8 +113,6 @@ def get_short_to_versioned_mapping(
         could create multiple versions of the same label.
 
     """
-    from nomarr.helpers.tag_key_mapping import is_versioned_ml_key, make_short_tag_name
-
     all_rels = get_nomarr_tag_rels(db)
     nom_rels = [rel for rel in all_rels if rel.startswith(f"{namespace}:")]
 

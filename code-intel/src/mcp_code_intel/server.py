@@ -265,6 +265,22 @@ mcp = FastMCP(
     ),
 )
 
+
+def _extract_tool_error(result: dict[str, Any]) -> str | None:
+    """Extract error message from a tool result dict, if present.
+
+    Tool impls use two patterns:
+    - Artifact tools: {"error": "code", "message": "Human-readable text"}
+    - Code tools: {"error": "Human-readable text"}
+
+    Returns the human-readable message, or None if no error.
+    """
+    if "error" not in result:
+        return None
+    msg: str = result.get("message") or result["error"]
+    return msg
+
+
 # Validate configuration on startup and store globally for tools
 _config = _validate_config_on_startup()
 
@@ -311,11 +327,13 @@ def read_module_api(
 ) -> CallToolResult:
     """Discover the entire API of any Python module."""
     result = read_module_api_impl(module_name)
+    error = _extract_tool_error(result)
     file_path = result.get("file")
     file_links = [FileLink(file_path=file_path, action="")] if file_path else None
     return ToolOutput(
         tool_name="read_module_api",
         breadcrumb=f"Read API for module: {module_name} at:",
+        error=error,
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()
@@ -340,6 +358,7 @@ def read_module_source(
 
     """
     result = read_module_source_impl(qualified_name, large_context=large_context)
+    error = _extract_tool_error(result)
     file_path = result.get("file")
     start_line = result.get("symbol_start_line")
     end_line = result.get("symbol_end_line")
@@ -357,6 +376,7 @@ def read_module_source(
     return ToolOutput(
         tool_name="read_module_source",
         breadcrumb="Read source:",
+        error=error,
         assistant_content=[source] if source else None,
         metadata=result,
         file_links=file_links,
@@ -376,11 +396,13 @@ def read_file_symbol_at_line(
     Returns the innermost containing symbol so you can reason about full context.
     """
     result = read_file_symbol_at_line_impl(file_path, line_number, ROOT)
+    error = _extract_tool_error(result)
     source = result.pop("source", "")
     symbol_name = result.get("qualified_name", "symbol")
     return ToolOutput(
         tool_name="read_file_symbol_at_line",
         breadcrumb=f"Read {symbol_name} at:",
+        error=error,
         assistant_content=[source] if source else None,
         metadata=result,
         file_links=[
@@ -408,6 +430,7 @@ def locate_module_symbol(
     Supports partially qualified names for scoping (e.g., 'services.ConfigService').
     """
     result = locate_module_symbol_impl(symbol_name)
+    error = _extract_tool_error(result)
     matches = result.get("matches", [])
     file_links = None
     if matches:
@@ -424,6 +447,7 @@ def locate_module_symbol(
     return ToolOutput(
         tool_name="locate_module_symbol",
         breadcrumb=f"Located {symbol_name} at:",
+        error=error,
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()
@@ -444,6 +468,7 @@ def trace_module_calls(
     Shows every nomarr function it calls, recursively, with file paths and line numbers.
     """
     result = trace_module_calls_impl(function, ROOT, config=_config)
+    error = _extract_tool_error(result)
     tree = result.get("tree", {})
     file_path = tree.get("file")
     line = tree.get("line")
@@ -459,6 +484,7 @@ def trace_module_calls(
     return ToolOutput(
         tool_name="trace_module_calls",
         breadcrumb=f"Traced calls from: {function} at:",
+        error=error,
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()
@@ -482,6 +508,7 @@ def trace_project_endpoint(
     Use this for interface endpoints to get the complete picture without manual DI resolution.
     """
     result = trace_project_endpoint_impl(endpoint, ROOT, config=_config)
+    error = _extract_tool_error(result)
     ep = result.get("endpoint", {})
     file_path = ep.get("file")
     line = ep.get("line")
@@ -497,6 +524,7 @@ def trace_project_endpoint(
     return ToolOutput(
         tool_name="trace_project_endpoint",
         breadcrumb=f"Traced endpoint: {endpoint} at:",
+        error=error,
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()
@@ -628,6 +656,7 @@ def read_file_line_range(
     result = read_file_range_impl(
         file_path, start_line, end_line, ROOT, include_imports=include_imports
     )
+    error = _extract_tool_error(result)
 
     # Keep warning in structured content for assistant; don't leak into user summary
     warning = result.pop("warning", None)
@@ -650,6 +679,7 @@ def read_file_line_range(
     return ToolOutput(
         tool_name="read_file_line_range",
         breadcrumb="Read",
+        error=error,
         assistant_content=assistant_content or None,
         metadata=result,
         file_links=[
@@ -680,6 +710,7 @@ def read_file_line(
     for structured navigation.
     """
     result = read_file_line_impl(file_path, line_number, ROOT, include_imports=include_imports)
+    error = _extract_tool_error(result)
 
     # Keep warning in structured content for assistant; don't leak into user summary
     warning = result.pop("warning", None)
@@ -702,6 +733,7 @@ def read_file_line(
     return ToolOutput(
         tool_name="read_file_line",
         breadcrumb="Read",
+        error=error,
         assistant_content=assistant_content or None,
         metadata=result,
         file_links=[
@@ -717,6 +749,7 @@ def search_file_text(
 ) -> CallToolResult:
     """Find exact text in non-Python files (configs, frontend, logs) and show 2-line context."""
     result = search_file_text_impl(file_path, search_string, ROOT)
+    error = _extract_tool_error(result)
     matches = result.get("matches", [])
 
     # Extract content from each match for assistant-targeted content
@@ -753,6 +786,7 @@ def search_file_text(
     return ToolOutput(
         tool_name="search_file_text",
         breadcrumb=breadcrumb,
+        error=error,
         assistant_content=assistant_content or None,
         metadata=result,
         file_links=file_links,
@@ -975,12 +1009,14 @@ def dd_create(
         extra_sections=extra_sections,
         workspace_root=ROOT,
     )
+    error = _extract_tool_error(result)
     file_links = None
     if "path" in result:
         file_links = [FileLink(file_path=ROOT / result["path"], action="created")]
     return ToolOutput(
         tool_name="dd_create",
         breadcrumb="Created DD at",
+        error=error,
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()
@@ -998,12 +1034,14 @@ def dd_read(
     Searches pending then completed directories. Returns structured document data.
     """
     result = dd_read_impl(name, workspace_root=ROOT)
+    error = _extract_tool_error(result)
     file_links = None
     if "path" in result:
         file_links = [FileLink(file_path=ROOT / result["path"], action="")]
     return ToolOutput(
         tool_name="dd_read",
         breadcrumb="Read DD at",
+        error=error,
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()
@@ -1051,12 +1089,14 @@ def adr_suggest(
         supersedes=supersedes,
         workspace_root=ROOT,
     )
+    error = _extract_tool_error(result)
     file_links = None
     if "draft_path" in result:
         file_links = [FileLink(file_path=ROOT / result["draft_path"], action="draft")]
     return ToolOutput(
         tool_name="adr_suggest",
         breadcrumb="ADR draft saved at",
+        error=error,
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()
@@ -1119,12 +1159,14 @@ def adr_commit(
         draft_id=draft_id,
         workspace_root=ROOT,
     )
+    error = _extract_tool_error(result)
     file_links = None
     if "path" in result:
         file_links = [FileLink(file_path=ROOT / result["path"], action="created")]
     return ToolOutput(
         tool_name="adr_commit",
         breadcrumb="Created ADR at",
+        error=error,
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()
@@ -1143,12 +1185,14 @@ def adr_read(
     Resolves various name formats. Returns structured ADR data.
     """
     result = adr_read_impl(name, workspace_root=ROOT)
+    error = _extract_tool_error(result)
     file_links = None
     if "path" in result:
         file_links = [FileLink(file_path=ROOT / result["path"], action="")]
     return ToolOutput(
         tool_name="adr_read",
         breadcrumb="Read ADR at",
+        error=error,
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()
@@ -1172,9 +1216,11 @@ def adr_search(
         limit=limit,
         workspace_root=ROOT,
     )
+    error = _extract_tool_error(result)
     return ToolOutput(
         tool_name="adr_search",
         breadcrumb="Searched ADRs",
+        error=error,
         metadata=result,
     ).to_call_tool_result()
 
@@ -1217,12 +1263,14 @@ def asr_create(
         status=status,
         workspace_root=ROOT,
     )
+    error = _extract_tool_error(result)
     file_links = None
     if "path" in result:
         file_links = [FileLink(file_path=ROOT / result["path"], action="created")]
     return ToolOutput(
         tool_name="asr_create",
         breadcrumb="Created ASR at",
+        error=error,
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()
@@ -1240,12 +1288,14 @@ def asr_read(
     Returns structured ASR data.
     """
     result = asr_read_impl(name, workspace_root=ROOT)
+    error = _extract_tool_error(result)
     file_links = None
     if "path" in result:
         file_links = [FileLink(file_path=ROOT / result["path"], action="")]
     return ToolOutput(
         tool_name="asr_read",
         breadcrumb="Read ASR at",
+        error=error,
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()
@@ -1273,9 +1323,11 @@ def asr_search(
         limit=limit,
         workspace_root=ROOT,
     )
+    error = _extract_tool_error(result)
     return ToolOutput(
         tool_name="asr_search",
         breadcrumb="Searched ASRs",
+        error=error,
         metadata=result,
     ).to_call_tool_result()
 
@@ -1308,12 +1360,14 @@ def log_write(
         tags=tags,
         workspace_root=ROOT,
     )
+    error = _extract_tool_error(result)
     file_links = None
     if "path" in result:
         file_links = [FileLink(file_path=ROOT / result["path"], action="modified")]
     return ToolOutput(
         tool_name="log_write",
         breadcrumb="Wrote log entry at",
+        error=error,
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()
@@ -1339,6 +1393,7 @@ def log_read(
         limit=limit,
         workspace_root=ROOT,
     )
+    error = _extract_tool_error(result)
     file_links = None
     if "agent" in result:
         log_path = ROOT / "artifacts" / "logs" / f"{agent}.log.md"
@@ -1347,6 +1402,7 @@ def log_read(
     return ToolOutput(
         tool_name="log_read",
         breadcrumb="Read log for",
+        error=error,
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()
@@ -1374,12 +1430,14 @@ def plan_archive(
         ignore_blocked=ignore_blocked,
         workspace_root=ROOT,
     )
+    error = _extract_tool_error(result)
     file_links = None
     if "path" in result:
         file_links = [FileLink(file_path=ROOT / result["path"], action="archived")]
     return ToolOutput(
         tool_name="plan_archive",
         breadcrumb="Archived plan at",
+        error=error,
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()
@@ -1398,12 +1456,14 @@ def dd_archive(
     Updates status to Completed before moving.
     """
     result = dd_archive_impl(name, workspace_root=ROOT)
+    error = _extract_tool_error(result)
     file_links = None
     if "path" in result:
         file_links = [FileLink(file_path=ROOT / result["path"], action="archived")]
     return ToolOutput(
         tool_name="dd_archive",
         breadcrumb="Archived DD at",
+        error=error,
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()
@@ -1425,6 +1485,7 @@ def plan_read(
     Returns phases with steps, completion status, notes, and next step info.
     """
     result = plan_read_impl(plan_name, workspace_root=ROOT)
+    error = _extract_tool_error(result)
     plan_file = plan_name if plan_name.endswith(".md") else f"{plan_name}.md"
     plan_path = ROOT / "plans" / plan_file
     file_links = None
@@ -1433,6 +1494,7 @@ def plan_read(
     return ToolOutput(
         tool_name="plan_read",
         breadcrumb="Read Plan at",
+        error=error,
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()
@@ -1478,6 +1540,7 @@ def plan_complete_step(
             metadata={"error": error_message},
         ).to_call_tool_result()
     result = plan_complete_step_impl(plan_name, step_id, workspace_root=ROOT, annotation=ann_dict)
+    error = _extract_tool_error(result)
     plan_file = plan_name if plan_name.endswith(".md") else f"{plan_name}.md"
     plan_path = ROOT / "plans" / plan_file
     file_links = None
@@ -1491,6 +1554,7 @@ def plan_complete_step(
     return ToolOutput(
         tool_name="plan_complete_step",
         breadcrumb=breadcrumb_text,
+        error=error,
         metadata=result,
         file_links=file_links,
     ).to_call_tool_result()
@@ -1669,9 +1733,11 @@ def py_introspect(
         errors = result.get("errors", [])
         summary = f"Error: {errors[0]}" if errors else "Unknown error"
 
+    error = errors[0] if status == "error" and errors else None
     return ToolOutput(
         tool_name="py_introspect",
         breadcrumb=summary,
+        error=error,
         metadata=result,
     ).to_call_tool_result()
 

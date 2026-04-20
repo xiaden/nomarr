@@ -7,6 +7,7 @@ all models use comparable score ranges without forcing specific tag prevalence.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -18,7 +19,9 @@ from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     load_calibration_state,
     save_calibration_state,
 )
+from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
 from nomarr.components.ml.onnx.ml_model_registry_comp import list_registered_models
+from nomarr.components.tagging.mood_labels_comp import normalize_tag_label
 from nomarr.helpers.dto.ml_dto import SaveCalibrationSidecarsResult
 
 logger = logging.getLogger(__name__)
@@ -160,8 +163,6 @@ def save_calibration_sidecars(
         Summary of saved files with paths and tag counts
 
     """
-    from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
-
     logger.info("[calibration] Saving calibration sidecars")
     heads = discover_heads_no_db(models_dir)
     if not heads:
@@ -171,8 +172,6 @@ def save_calibration_sidecars(
     for head_info in heads:
         head_date = ""
         for label in head_info.labels:
-            from nomarr.components.tagging.mood_labels_comp import normalize_tag_label
-
             norm_label = normalize_tag_label(label)
             key = (head_info.backbone, head_date, norm_label)
             head_lookup[key] = head_info
@@ -282,8 +281,6 @@ def compute_calibration_def_hash(model_id: str, head_name: str, label: str) -> s
         MD5 hash of calibration definition
 
     """
-    import hashlib
-
     calib_def_str = f"{model_id}:{head_name}:{label}"
     return hashlib.md5(calib_def_str.encode()).hexdigest()
 
@@ -573,8 +570,6 @@ def compute_global_calibration_hash(calibration_states: list[dict[str, Any]]) ->
         MD5 hash representing the combined calibration version
 
     """
-    import hashlib
-
     sorted_states = sorted(calibration_states, key=lambda x: x.get("_key", ""))
     hash_parts = []
     for state in sorted_states:

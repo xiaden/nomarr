@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 from typing import cast as type_cast
 
 from nomarr.components.ml.calibration.ml_calibration_state_comp import (
+    clear_all_calibration_data,
     compute_reconciliation_info,
     count_recent_calibration_states,
     get_latest_calibration_state_updated_at,
@@ -442,8 +443,6 @@ class CalibrationService:
         if self.is_generation_running():
             msg = "Cannot clear calibration while generation is running."
             raise RuntimeError(msg)
-
-        from nomarr.components.ml.calibration.ml_calibration_state_comp import clear_all_calibration_data
 
         return clear_all_calibration_data(self._db)
 

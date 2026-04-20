@@ -18,6 +18,9 @@ import logging
 import multiprocessing
 from typing import TYPE_CHECKING
 
+from nomarr.components.platform.gpu_probe_comp import probe_gpu_availability
+from nomarr.persistence.db import Database
+
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from multiprocessing.connection import Connection
@@ -75,11 +78,6 @@ class GPUHealthMonitor(multiprocessing.Process):
         Continuously probes GPU, writes resource snapshot to DB, and sends
         heartbeat frames to HealthMonitorService.
         """
-
-        from nomarr.components.platform import (
-            probe_gpu_availability,
-        )
-        from nomarr.persistence.db import Database
 
         logger.info("[GPUHealthMonitor] Starting GPU health monitoring process")
         try:

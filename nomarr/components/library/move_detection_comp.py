@@ -11,6 +11,11 @@ from typing import Any
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 from nomarr.components.library.library_file_mutation_comp import update_file_path
 from nomarr.components.library.metadata_extraction_comp import compute_chromaprint_for_file
+from nomarr.components.metadata.entity_seeding_comp import (
+    _extract_entity_tags,
+    seed_song_entities_from_tags,
+)
+from nomarr.components.metadata.metadata_cache_comp import rebuild_song_metadata_cache
 from nomarr.persistence import Database
 
 logger = logging.getLogger(__name__)
@@ -224,12 +229,6 @@ def apply_detected_moves(
         Number of moves successfully applied
 
     """
-    from nomarr.components.metadata.entity_seeding_comp import (
-        _extract_entity_tags,
-        seed_song_entities_from_tags,
-    )
-    from nomarr.components.metadata.metadata_cache_comp import rebuild_song_metadata_cache
-
     applied = 0
     for move in moves:
         # Compute normalized_path from new_path relative to library_root

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_file_query_comp import get_library_counts
 from nomarr.components.library.library_file_state_comp import count_untagged_files
+from nomarr.components.library.scan_lifecycle_comp import get_scan_state
 from nomarr.helpers.constants.pipeline_states import PIPELINE_ML_RUNNING
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.constructor import SchemaConstructor
@@ -263,8 +264,6 @@ def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, A
 
 def _merge_scan_state(db: Database, library: dict[str, Any]) -> dict[str, Any]:
     """Merge library scan state into a library document for API compatibility."""
-    from nomarr.components.library.scan_lifecycle_comp import get_scan_state
-
     scan_doc = get_scan_state(db, str(library["_id"]))
     if scan_doc is None:
         return {

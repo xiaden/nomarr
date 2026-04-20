@@ -10,6 +10,7 @@ import random
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from nomarr.components.library.library_file_state_comp import count_untagged_files
 from nomarr.helpers.constants.file_states import STATE_TAGGED
 from nomarr.persistence.constructor.pagination import DEFAULT_LIMIT
 from nomarr.persistence.db import Database
@@ -446,7 +447,6 @@ def get_library_stats(db: Database, library_id: str | None = None) -> dict[str, 
         "total_duration": sum(_numeric_value(file_doc.get("duration_seconds")) for file_doc in file_docs),
         "total_size": int(sum(_numeric_value(file_doc.get("file_size")) for file_doc in file_docs)),
     }
-    from nomarr.components.library.library_file_state_comp import count_untagged_files
 
     result["needs_tagging_count"] = count_untagged_files(db, library_id)
     return result

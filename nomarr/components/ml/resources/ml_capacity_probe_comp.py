@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from arango.exceptions import DocumentInsertError
 
+from nomarr.components.ml.onnx.ml_cache import ONNXModelCache
+from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
 from nomarr.components.platform.resource_monitor_comp import (
     check_nvidia_gpu_capability,
     get_ram_usage_mb,
@@ -295,8 +297,6 @@ def _run_capacity_probe(
 
         # Import ML components to trigger model loading
         # This simulates the actual resource usage during processing
-        from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
-
         # Discover heads to understand model requirements
         heads = discover_heads_no_db(models_dir)
         if not heads:
@@ -322,9 +322,7 @@ def _run_capacity_probe(
         )
 
         # Warm up ONNX model cache to measure actual memory usage
-        from nomarr.components.ml.onnx.ml_cache import ONNXModelCache as _ONNXModelCache
-
-        _probe_cache = _ONNXModelCache(models_dir, "gpu" if gpu_capable else "cpu")
+        _probe_cache = ONNXModelCache(models_dir, "gpu" if gpu_capable else "cpu")
         _probe_cache.warm = True
 
         # Measure RAM after loading

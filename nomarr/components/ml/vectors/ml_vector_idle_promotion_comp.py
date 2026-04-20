@@ -11,6 +11,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from nomarr.components.library.library_records_comp import get_library_record, list_library_records
+from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones
+from nomarr.helpers.vector_params_helper import compute_nlists
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -33,8 +35,6 @@ def list_hot_vector_targets(db: Database, models_dir: str) -> list[tuple[str, st
         collection exists and has at least one document.
 
     """
-    from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones
-
     backbones = discover_backbones(models_dir)
     if not backbones:
         return []
@@ -70,8 +70,6 @@ def compute_promotion_nlists(db: Database, backbone_id: str, library_key: str) -
         Optimal nlists value (10-4000).
 
     """
-    from nomarr.helpers.vector_params_helper import compute_nlists
-
     # Read per-library group size (fallback to default 15)
     group_size = 15
     lib_doc = get_library_record(db, library_key, include_scan=False)

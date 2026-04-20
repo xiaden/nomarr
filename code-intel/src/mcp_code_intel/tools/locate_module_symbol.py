@@ -39,6 +39,14 @@ def locate_module_symbol(symbol_name: str) -> dict[str, Any]:
         - warning: Present if > 5 matches (symbol too common, simplified output)
 
     """
+    if not symbol_name or not symbol_name.strip():
+        return {
+            "query": symbol_name,
+            "matches": [],
+            "total_matches": 0,
+            "error": "symbol_name cannot be empty",
+        }
+
     # Parse partially qualified names
     parts = symbol_name.split(".")
     path_filter = None

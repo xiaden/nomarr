@@ -6,15 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-COMP_MODULE = "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp"
-WF_MODULE = "nomarr.workflows.platform.promote_and_rebuild_vectors_wf"
+MODULE_UNDER_TEST = "nomarr.workflows.platform.idle_promotion_vectors_wf"
 
 
 @pytest.mark.unit
 class TestIdlePromotionVectorsWorkflow:
     """Tests for idle_promotion_vectors_workflow."""
 
-    @patch(f"{COMP_MODULE}.list_hot_vector_targets")
+    @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
     def test_returns_zero_when_no_targets(self, mock_targets: MagicMock) -> None:
         """Returns 0 when no hot vector targets exist."""
         from nomarr.workflows.platform.idle_promotion_vectors_wf import (
@@ -28,9 +27,9 @@ class TestIdlePromotionVectorsWorkflow:
 
         assert result == 0
 
-    @patch(f"{WF_MODULE}.promote_and_rebuild_workflow")
-    @patch(f"{COMP_MODULE}.list_hot_vector_targets")
-    @patch(f"{COMP_MODULE}.compute_promotion_nlists")
+    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow")
+    @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
+    @patch(f"{MODULE_UNDER_TEST}.compute_promotion_nlists")
     def test_promotes_when_lock_acquired(
         self,
         mock_nlists: MagicMock,
@@ -68,9 +67,9 @@ class TestIdlePromotionVectorsWorkflow:
         db.locks.document_reference.delete.assert_any_call("vector_promotion:effnet__lib1")
         db.locks.document_reference.delete.assert_any_call("vector_promotion:musicnn__lib2")
 
-    @patch(f"{WF_MODULE}.promote_and_rebuild_workflow")
-    @patch(f"{COMP_MODULE}.list_hot_vector_targets")
-    @patch(f"{COMP_MODULE}.compute_promotion_nlists")
+    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow")
+    @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
+    @patch(f"{MODULE_UNDER_TEST}.compute_promotion_nlists")
     def test_skips_when_lock_not_acquired(
         self,
         mock_nlists: MagicMock,
@@ -101,9 +100,9 @@ class TestIdlePromotionVectorsWorkflow:
         db.locks.insert.assert_not_called()
         db.locks.document_reference.delete.assert_not_called()
 
-    @patch(f"{WF_MODULE}.promote_and_rebuild_workflow")
-    @patch(f"{COMP_MODULE}.list_hot_vector_targets")
-    @patch(f"{COMP_MODULE}.compute_promotion_nlists")
+    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow")
+    @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
+    @patch(f"{MODULE_UNDER_TEST}.compute_promotion_nlists")
     def test_releases_lock_on_workflow_failure(
         self,
         mock_nlists: MagicMock,
@@ -131,9 +130,9 @@ class TestIdlePromotionVectorsWorkflow:
         assert result == 0
         db.locks.document_reference.delete.assert_called_once_with("vector_promotion:effnet__lib1")
 
-    @patch(f"{WF_MODULE}.promote_and_rebuild_workflow")
-    @patch(f"{COMP_MODULE}.list_hot_vector_targets")
-    @patch(f"{COMP_MODULE}.compute_promotion_nlists")
+    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow")
+    @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
+    @patch(f"{MODULE_UNDER_TEST}.compute_promotion_nlists")
     def test_reaps_stale_locks(
         self,
         mock_nlists: MagicMock,

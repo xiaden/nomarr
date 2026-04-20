@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
+from nomarr.components.ml.onnx.ml_discovery_comp import _resolve_embedding_graph
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -71,8 +73,6 @@ def derive_embed_dim(models_dir: str, backbone_id: str) -> int:
         ValueError: If backbone ONNX file not found or embed_dim cannot be determined.
 
     """
-    from nomarr.components.ml.onnx.ml_discovery_comp import _resolve_embedding_graph
-
     embedding_graph = _resolve_embedding_graph(models_dir, backbone_id)
     if not embedding_graph:
         raise ValueError(f"No embedding graph found for backbone '{backbone_id}' in {models_dir}")

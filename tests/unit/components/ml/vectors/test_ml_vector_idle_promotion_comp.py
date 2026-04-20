@@ -6,14 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-DISCOVERY_MODULE = "nomarr.components.ml.onnx.ml_discovery_comp"
+ML_IDLE_PROMOTION_MODULE = "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp"
 
 
 @pytest.mark.unit
 class TestListHotVectorTargets:
     """Tests for list_hot_vector_targets."""
 
-    @patch(f"{DISCOVERY_MODULE}.discover_backbones")
+    @patch(f"{ML_IDLE_PROMOTION_MODULE}.discover_backbones")
     def test_returns_pairs_with_hot_vectors(self, mock_discover: MagicMock) -> None:
         """Returns (backbone, library) pairs where hot count > 0."""
         from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
@@ -58,7 +58,7 @@ class TestListHotVectorTargets:
         assert result == [("effnet", "lib1"), ("musicnn", "lib2")]
         mock_discover.assert_called_once_with("/models")
 
-    @patch(f"{DISCOVERY_MODULE}.discover_backbones")
+    @patch(f"{ML_IDLE_PROMOTION_MODULE}.discover_backbones")
     def test_returns_empty_when_no_backbones(self, mock_discover: MagicMock) -> None:
         """Returns empty list when no backbones discovered."""
         from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
@@ -73,7 +73,7 @@ class TestListHotVectorTargets:
         assert result == []
         db.get_vectors_track_maintenance.assert_not_called()
 
-    @patch(f"{DISCOVERY_MODULE}.discover_backbones")
+    @patch(f"{ML_IDLE_PROMOTION_MODULE}.discover_backbones")
     def test_returns_empty_when_no_libraries(self, mock_discover: MagicMock) -> None:
         """Returns empty list when no libraries exist."""
         from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
@@ -111,7 +111,7 @@ class TestComputePromotionNlists:
                 return_value={"vector_group_size": 20},
             ),
             patch(
-                "nomarr.helpers.vector_params_helper.compute_nlists",
+                "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.compute_nlists",
                 return_value=37,
             ) as mock_compute_nlists,
         ):
@@ -136,7 +136,7 @@ class TestComputePromotionNlists:
                 return_value=None,
             ),
             patch(
-                "nomarr.helpers.vector_params_helper.compute_nlists",
+                "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.compute_nlists",
                 return_value=12,
             ) as mock_compute_nlists,
         ):
@@ -161,7 +161,7 @@ class TestComputePromotionNlists:
                 return_value={"_key": "lib1"},
             ),
             patch(
-                "nomarr.helpers.vector_params_helper.compute_nlists",
+                "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.compute_nlists",
                 return_value=9,
             ) as mock_compute_nlists,
         ):

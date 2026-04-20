@@ -14,9 +14,13 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
+import nomarr.components.ml.resources.ml_vram_coordinator_comp as _coordinator
+import nomarr.components.ml.resources.ml_worker_context_comp as _worker_ctx
 from nomarr.components.ml.onnx import ml_session_comp as backend_onnx
-from nomarr.components.ml.resources import ml_vram_coordinator_comp as _coordinator
-from nomarr.components.ml.resources import ml_worker_context_comp as _worker_ctx
+from nomarr.components.ml.resources.ml_vram_oom_helper_comp import (
+    parse_oom_requested_bytes,
+    update_model_vram_from_oom,
+)
 
 if TYPE_CHECKING:
     import onnxruntime as ort
@@ -213,11 +217,6 @@ class BaseONNXModel(ABC):
                 the error is not a recoverable BFC arena OOM.
 
         """
-        from nomarr.components.ml.resources.ml_vram_probe_comp import (
-            parse_oom_requested_bytes,
-            update_model_vram_from_oom,
-        )
-
         while True:
             try:
                 return self._run(inputs)

@@ -434,6 +434,13 @@ def read_module_api(
     """
     result: dict[str, Any] = {"module": module_name}
 
+    if not module_name or not module_name.strip():
+        result["error"] = "module_name cannot be empty"
+        return result
+    if "/" in module_name or "\\" in module_name:
+        result["error"] = f"Invalid module name (contains path separators): {module_name}"
+        return result
+
     # Find the source file
     source_path = _module_to_path(module_name)
     if source_path is None:

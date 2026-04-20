@@ -30,6 +30,24 @@ def asr_search(
     """
     effective_limit = min(limit, _MAX_LIMIT) if limit > 0 else _MAX_LIMIT
 
+    if priority_min is not None and priority_min < 0:
+        return {
+            "error": "invalid_params",
+            "message": "priority_min cannot be negative",
+        }
+    if priority_max is not None and priority_max < 0:
+        return {
+            "error": "invalid_params",
+            "message": "priority_max cannot be negative",
+        }
+    if priority_min is not None and priority_max is not None and priority_min > priority_max:
+        return {
+            "error": "invalid_params",
+            "message": (
+                f"priority_min ({priority_min}) cannot exceed priority_max ({priority_max})"
+            ),
+        }
+
     requirements_dir = workspace_root / REQUIREMENTS_DIR
     if not requirements_dir.exists():
         return {"results": [], "total": 0}

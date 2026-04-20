@@ -18,6 +18,8 @@ from arango import ArangoClient
 from arango.exceptions import CollectionCreateError, DocumentInsertError, GraphCreateError, IndexCreateError
 
 from nomarr.components.library.library_records_comp import list_all_library_keys
+from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones, discover_heads_no_db
+from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES
 from nomarr.persistence.arango_client import DatabaseLike
 
 logger = logging.getLogger(__name__)
@@ -150,8 +152,6 @@ def _seed_file_states(db: DatabaseLike) -> None:
 
     Idempotent — inserts only if the document is missing.
     """
-    from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES
-
     coll = db.collection("file_states")  # type: ignore[union-attr]
     for vertex in ALL_STATE_VERTICES:
         with contextlib.suppress(DocumentInsertError):
@@ -446,8 +446,6 @@ def _discover_backbone_ids(models_dir: str) -> list[str]:
 
     """
     try:
-        from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
-
         heads = discover_heads_no_db(models_dir)
         backbones = sorted({h.backbone for h in heads})
         logger.debug("[bootstrap] Discovered backbones for vectors_track: %s", backbones)
@@ -471,8 +469,6 @@ def provision_vectors_track_for_library(db: DatabaseLike, models_dir: str, libra
 
     """
     try:
-        from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones
-
         backbones = discover_backbones(models_dir)
     except Exception:
         logger.warning(

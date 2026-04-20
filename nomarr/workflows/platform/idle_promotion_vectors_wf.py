@@ -18,8 +18,13 @@ from typing import TYPE_CHECKING, Any, cast
 
 from arango.exceptions import DocumentInsertError
 
+from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
+    compute_promotion_nlists,
+    list_hot_vector_targets,
+)
 from nomarr.helpers.filter_types import Op
 from nomarr.helpers.time_helper import now_ms
+from nomarr.workflows.platform.promote_and_rebuild_vectors_wf import promote_and_rebuild_workflow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -110,14 +115,6 @@ def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: st
         Number of backbone+library pairs successfully promoted.
 
     """
-    from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
-        compute_promotion_nlists,
-        list_hot_vector_targets,
-    )
-    from nomarr.workflows.platform.promote_and_rebuild_vectors_wf import (
-        promote_and_rebuild_workflow,
-    )
-
     # Step 1: Find targets
     targets = list_hot_vector_targets(db, models_dir)
     if not targets:

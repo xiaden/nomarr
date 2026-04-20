@@ -22,7 +22,7 @@ from .resources.ml_tier_selection_comp import (
     TierSelection,
     select_execution_tier,
 )
-from .resources.ml_vram_probe_comp import (
+from .resources.ml_vram_oom_helper_comp import (
     parse_oom_requested_bytes,
     update_model_vram_from_oom,
 )

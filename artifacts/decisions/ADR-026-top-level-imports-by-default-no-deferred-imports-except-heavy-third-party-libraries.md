@@ -28,7 +28,7 @@ This codebase has zero circular imports. The layered architecture (interfaces �
 
 1. **Heavy third-party libraries that are environment-conditional.** Libraries like `essentia` and `onnxruntime` that may not be installed in all deployment environments may be imported inside function bodies. The deferral must be meaningful — the library is large, optional, or unavailable in some environments.
 
-2. **DI wiring in application entry points.** `app.py` and worker entry point files (e.g., `discovery_worker.py`) import services and components inside initialization functions as part of the dependency injection pattern. This is factory registration, not deferred importing.
+2. **DI wiring in application entry points and DI factory modules.** `app.py`, `start.py`, worker entry point files (e.g., `discovery_worker.py`), and DI factory modules (`dependencies.py`, `api_app.py`, `auth.py`) import services and components inside initialization or factory functions as part of the dependency injection pattern. These files defer `from nomarr.app import application` because the singleton isn't constructed at import time — this is factory registration, not cargo-culted deferral.
 
 ### TYPE_CHECKING Convention
 

@@ -66,7 +66,7 @@ class TestNavidromeServiceGeneratePlaylists:
         service, config_service = _make_service(config_values)
 
         with patch(
-            "nomarr.workflows.navidrome.generate_playlists_wf.generate_playlists",
+            "nomarr.services.domain.navidrome_svc.generate_playlists",
             return_value=[_playlist_entry()],
         ):
             service.generate_playlists("user-1")
@@ -104,7 +104,7 @@ class TestNavidromeServiceGeneratePlaylists:
         )
 
         with patch(
-            "nomarr.workflows.navidrome.generate_playlists_wf.generate_playlists",
+            "nomarr.services.domain.navidrome_svc.generate_playlists",
             return_value=[_playlist_entry()],
         ) as mock_generate:
             service.generate_playlists("user-1")
@@ -120,7 +120,7 @@ class TestNavidromeServiceGeneratePlaylists:
         service, _ = _make_service({"library_key": "lib-main"})
 
         with patch(
-            "nomarr.workflows.navidrome.generate_playlists_wf.generate_playlists",
+            "nomarr.services.domain.navidrome_svc.generate_playlists",
             return_value=[_playlist_entry()],
         ):
             result = service.generate_playlists("user-1")
@@ -135,7 +135,7 @@ class TestNavidromeServiceGeneratePlaylists:
         service, _ = _make_service({"library_key": "lib-main"})
 
         with patch(
-            "nomarr.workflows.navidrome.generate_playlists_wf.generate_playlists",
+            "nomarr.services.domain.navidrome_svc.generate_playlists",
             return_value=[],
         ):
             result = service.generate_playlists("user-1")
@@ -150,7 +150,7 @@ class TestNavidromeServiceGeneratePlaylists:
         service, _ = _make_service({"library_key": "lib-main"})
 
         with patch(
-            "nomarr.workflows.navidrome.generate_playlists_wf.generate_playlists",
+            "nomarr.services.domain.navidrome_svc.generate_playlists",
             return_value=[_playlist_entry()],
         ) as mock_generate:
             service.generate_playlists("user-1", max_genre_playlists=30)

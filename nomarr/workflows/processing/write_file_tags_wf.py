@@ -22,6 +22,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.infrastructure.path_comp import build_library_path_from_db
 from nomarr.components.library.library_file_mutation_comp import update_file_modified_time
 from nomarr.components.processing.file_write_comp import (
     get_file_for_writing,
@@ -89,8 +90,6 @@ def _resolve_library_path(
     db: Database,
 ) -> LibraryPath | None:
     """Resolve file_doc to a validated LibraryPath."""
-    from nomarr.components.infrastructure.path_comp import build_library_path_from_db
-
     stored_path = file_doc.get("path", "")
     library_id = file_doc.get("library_id")
 

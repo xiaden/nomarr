@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nomarr Agent Performance Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="static/dashboard.css">
+</head>
+<body>
+
+<!-- Loading / upload screen -->
+<div id="loading">
+    <h1>Agent Performance Dashboard</h1>
+    <p>Loading data…</p>
+    <div id="upload-area" class="upload-area">
+        <p>📂 Drop <code>agent_dashboard.json</code> here or click to upload</p>
+        <p class="upload-hint" id="auto-load-status">Checking for agent_dashboard.json…</p>
+        <input type="file" id="file-input" accept=".json">
+    </div>
+</div>
+
+<!-- Dashboard (hidden until data loads) -->
+<div id="dashboard">
+
+<h1>Agent Performance Dashboard</h1>
+<p class="subtitle" id="subtitle"></p>
+
+<div class="kpi-grid">
+    <div class="kpi"><div class="kpi-value" id="kpi-sessions">—</div><div class="kpi-label">Sessions</div></div>
+    <div class="kpi"><div class="kpi-value" id="kpi-agents">—</div><div class="kpi-label">Unique Agents</div></div>
+    <div class="kpi"><div class="kpi-value" id="kpi-tokens">—</div><div class="kpi-label">Total Tokens</div></div>
+    <div class="kpi"><div class="kpi-value" id="kpi-tools">—</div><div class="kpi-label">Total Tool Calls</div></div>
+    <div class="kpi"><div class="kpi-value" id="kpi-failures">—</div><div class="kpi-label">Tool Failures</div></div>
+    <div class="kpi"><div class="kpi-value" id="kpi-failrate">—</div><div class="kpi-label">Failure Rate</div></div>
+</div>
+
+<div class="charts-grid">
+    <div class="chart-card"><canvas id="tokensByAgent"></canvas></div>
+    <div class="chart-card"><canvas id="tokenTimeline"></canvas></div>
+    <div class="chart-card"><canvas id="invocationsByAgent"></canvas></div>
+    <div class="chart-card">
+        <canvas id="usageRadar"></canvas>
+        <div id="radar-agent-selector" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;justify-content:center"></div>
+    </div>
+</div>
+
+<h2>Agent Efficiency Summary</h2>
+<div style="overflow-x:auto">
+<table>
+    <thead>
+        <tr>
+            <th>Agent</th><th>Runs</th><th>Total Tokens</th><th>Avg Tokens</th>
+            <th>Avg Tools</th><th>Mgmt%</th><th>Edit%</th><th>Explore%</th><th>QA%</th><th>Log%</th><th>Research%</th>
+            <th>Fail%</th><th>Pre-dispatch</th><th>Avg Turns</th><th>Models</th>
+        </tr>
+    </thead>
+    <tbody id="agent-tbody"></tbody>
+</table>
+</div>
+
+<h2>Tool Health</h2>
+<p style="color:var(--text-dim);font-size:0.85em;margin-bottom:12px">Per-tool failure rates and performance across all agents.</p>
+<div style="overflow-x:auto">
+<table>
+    <thead>
+        <tr>
+            <th>Tool</th><th>Category</th><th>Calls</th><th>Failures</th>
+            <th>Fail%</th><th>Repeats</th><th>Repeat%</th><th>Avg Duration</th><th>Agents</th><th>Used By</th>
+        </tr>
+    </thead>
+    <tbody id="tool-tbody"></tbody>
+</table>
+</div>
+
+<h2>Session History</h2>
+<div class="filter-bar">
+    <button class="filter-btn active" onclick="filterSessions('all', this)">All</button>
+    <button class="filter-btn" onclick="filterSessions('manager', this)">Managers</button>
+    <button class="filter-btn" onclick="filterSessions('executor', this)">Executors</button>
+    <button class="filter-btn" onclick="filterSessions('advisory', this)">Advisory</button>
+    <button class="filter-btn" onclick="filterSessions('qa', this)">QA</button>
+    <button class="filter-btn" onclick="filterSessions('general', this)">General</button>
+</div>
+<div id="session-container"></div>
+
+</div><!-- /dashboard -->
+
+<script src="static/dashboard.js"></script>
+</body>
+</html>

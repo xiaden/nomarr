@@ -6,6 +6,15 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
+from arango.exceptions import (
+    CollectionCreateError,
+    DocumentInsertError,
+    EdgeDefinitionCreateError,
+    EdgeDefinitionReplaceError,
+    GraphCreateError,
+    IndexCreateError,
+)
+
 from nomarr.helpers.constants.file_states import (
     STATE_CALIBRATED,
     STATE_NOT_TAGGED,
@@ -24,6 +33,7 @@ from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_WRITE_READY,
     PIPELINE_WRITING,
 )
+from nomarr.services.infrastructure.config_svc import INTERNAL_CALIBRATION_MIN_FILES
 
 if TYPE_CHECKING:
     from arango.cursor import Cursor
@@ -60,8 +70,6 @@ def _derive_pipeline_state(
     written_count: int,
 ) -> str:
     """Derive the initial library pipeline state from file-state counts."""
-    from nomarr.services.infrastructure.config_svc import INTERNAL_CALIBRATION_MIN_FILES
-
     if total_files == 0 or tagged_count == 0:
         return PIPELINE_IDLE
     if untagged_count > 0 or tagged_count < total_files:
@@ -77,15 +85,6 @@ def _derive_pipeline_state(
 
 def upgrade(db: DatabaseLike) -> None:
     """Create the pipeline state graph and seed derived state edges for existing libraries."""
-    from arango.exceptions import (
-        CollectionCreateError,
-        DocumentInsertError,
-        EdgeDefinitionCreateError,
-        EdgeDefinitionReplaceError,
-        GraphCreateError,
-        IndexCreateError,
-    )
-
     if not db.has_collection(_PIPELINE_VERTEX_COLLECTION):  # type: ignore[union-attr]
         with contextlib.suppress(CollectionCreateError):
             db.create_collection(_PIPELINE_VERTEX_COLLECTION)  # type: ignore[union-attr]

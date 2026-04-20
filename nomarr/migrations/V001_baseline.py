@@ -18,6 +18,8 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING
 
+from arango.exceptions import CollectionCreateError, GraphCreateError, IndexCreateError
+
 if TYPE_CHECKING:
     from nomarr.persistence.arango_client import DatabaseLike
 
@@ -42,8 +44,6 @@ def upgrade(db: DatabaseLike) -> None:
         db: ArangoDB database handle.
 
     """
-    from arango.exceptions import CollectionCreateError, GraphCreateError, IndexCreateError
-
     # -- Document collections --
     if not db.has_collection("applied_migrations"):  # type: ignore[union-attr]
         with contextlib.suppress(CollectionCreateError):

@@ -21,6 +21,7 @@ from nomarr.components.ml.onnx.ml_model_registry_comp import (
     mark_model_fully_configured,
     update_model_output_label,
 )
+from nomarr.components.ml.resources.ml_vram_probe_comp import clear_model_vram_measurements
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
@@ -98,8 +99,6 @@ class MLService:
         The next discovery worker startup will re-run the probe and record
         fresh measurements.
         """
-        from nomarr.components.ml.resources.ml_vram_probe_comp import clear_model_vram_measurements
-
         clear_model_vram_measurements(self.db)
         logger.info("[MLService] VRAM measurements cleared — probe will re-run on next worker start")
 

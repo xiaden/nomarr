@@ -3,17 +3,25 @@
 from __future__ import annotations
 
 import logging
+import math
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING, Protocol
 
 from nomarr.components.library.library_file_query_comp import get_files_by_paths_bulk
+from nomarr.components.ml.calibration.ml_calibration_state_comp import (
+    get_calibration_version,
+    update_file_calibration_hashes_batch,
+)
 from nomarr.components.ml.inference.ml_segment_stats_store_comp import get_segment_stats_for_files_bulk
+from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
+from nomarr.components.processing.file_write_comp import save_mood_tags_batch
 from nomarr.components.tagging.tag_query_comp import get_nomarr_tags_bulk
 from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
 from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult
 from nomarr.helpers.time_helper import internal_ms
-from nomarr.workflows.calibration.write_calibrated_tags_wf import write_calibrated_tags_wf
+from nomarr.workflows.calibration.calibration_loader_wf import load_calibrations_from_db_wf
+from nomarr.workflows.calibration.write_calibrated_tags_wf import BatchContext, write_calibrated_tags_wf
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -78,17 +86,6 @@ def apply_calibration_wf(
         ApplyCalibrationResult with processed/failed/total counts
 
     """
-    import math
-
-    from nomarr.components.ml.calibration.ml_calibration_state_comp import (
-        get_calibration_version,
-        update_file_calibration_hashes_batch,
-    )
-    from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
-    from nomarr.components.processing.file_write_comp import save_mood_tags_batch
-    from nomarr.workflows.calibration.calibration_loader_wf import load_calibrations_from_db_wf
-    from nomarr.workflows.calibration.write_calibrated_tags_wf import BatchContext
-
     total = len(paths)
     if not paths:
         return ApplyCalibrationResult(

@@ -58,6 +58,7 @@ Import-linter enforces layer boundaries.
 - Let workflows import services or interfaces
 - Let helpers import any `nomarr.*` modules
 - Guess context or line counts in tool usage
+- Spawn built-in VS Code agents (`Explore`, `default`) via `runSubagent`. Only spawn agents defined in `.github/agents/`. For exploration or research, use `Support-Researcher`.
 - Assume context will be lost or "run out." **Context does not run out.** It compacts: tool calls and thinking blocks are stripped, verbose output is summarized, but all relevant information is retained and potentially-relevant information is linked with file references you can re-read. There is no cliff where you suddenly lose everything. Do not preemptively dump state into files, session notes, or output — that loop of "saving context" is itself what wastes context. Do the work. If you need to re-read something later, the compacted context will tell you where it is.
 
 **Always:**
@@ -168,3 +169,22 @@ log_write(
 ```
 
 This is not optional. **Known unknowns must be recorded.** Silent uncertainty becomes invisible bugs.
+
+### Passing Artifacts Between Agents
+
+**Search tools query content, not identifiers.** When you've found a relevant artifact and need another agent to use it — whether you're invoking a subagent or returning results to a caller — pass the right lookup information, not a raw identifier the search tool won't match.
+
+| Artifact | Identifier Format | How to Pass to Another Agent |
+|----------|-------------------|---------------------------|
+| **ADR** | `ADR-026` | Pass `adr_read(name="ADR-026")` — direct read by number. Do NOT pass `adr_search(query="ADR-026")` — search queries title/tags, not numbers. Alternatively, pass the title or a key phrase for `adr_search(query="deferred imports")`. |
+| **ASR** | `ASR-startup-time` | Pass `asr_read(name="ASR-startup-time")` — direct read by name. `asr_search` queries title/tags, not filenames. For search, pass a topic: `asr_search(query="startup")`. |
+| **DD** | `DD-schema-refactor` | Pass `dd_read(name="DD-schema-refactor")` — direct read by name. There is no `dd_search` tool; only `dd_read` exists. If unsure of the name, list `artifacts/designs/` first. |
+| **Log entry** | `agent#L12` | Pass `log_read(agent="agent", title_query="keyword")` with a title substring. Logs have no random-access by entry ID — you filter by agent + category + tag + title_query. |
+
+**Rules for passing artifact references:**
+
+1. **If you know the exact artifact:** Pass the `*_read` tool call with the identifier. Example: *"Read ADR-026 with `adr_read(name='ADR-026')` for the import convention."*
+2. **If the receiver needs to discover artifacts:** Give topic keywords for search, not identifiers. Example: *"Search for prior decisions about imports with `adr_search(query='imports')`."*
+3. **If the artifact is already in your context:** Summarize the relevant content directly instead of forcing a re-fetch. This is faster and avoids lookup mistakes.
+4. **Never assume search matches identifiers.** `adr_search`, `asr_search`, and `log_read` all query human-readable content (titles, tags, body text) — not filenames or numbers.
+5. **Include tags when returning artifact references.** Tags are the primary discovery mechanism for `adr_search(tag=...)` and `log_read(tag=...)`. When reporting that you found a relevant ADR or log entry, always include its tags so the receiving agent can find related artifacts.

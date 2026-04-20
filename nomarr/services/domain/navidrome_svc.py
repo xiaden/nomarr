@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from nomarr.components.navidrome.navidrome_graph_comp import bulk_resolve_files_to_navidrome_ids
+from nomarr.components.navidrome.subsonic_client_comp import SubsonicClient
+from nomarr.components.navidrome.tag_query_comp import get_tag_value_counts
 from nomarr.components.navidrome.templates_comp import generate_template_files, get_template_summary
 from nomarr.helpers.dto import NavidromeGeneratePlaylistsResult
 from nomarr.helpers.dto.navidrome_dto import (
@@ -32,11 +34,14 @@ from nomarr.workflows.navidrome import (
     preview_smart_playlist_workflow,
     preview_tag_stats_workflow,
 )
+from nomarr.workflows.navidrome.find_similar_tracks_wf import find_similar_tracks
+from nomarr.workflows.navidrome.generate_playlists_wf import generate_playlists
+from nomarr.workflows.navidrome.ingest_scrobble_wf import ingest_scrobble
 from nomarr.workflows.navidrome.push_playlist_wf import push_playlist
+from nomarr.workflows.navidrome.sync_navidrome_wf import sync_navidrome
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
-    from nomarr.components.navidrome.subsonic_client_comp import SubsonicClient
     from nomarr.helpers.dto.navidrome_dto import NdSyncResult, PlaylistPreviewResult
     from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.config_svc import ConfigService
@@ -90,8 +95,6 @@ class NavidromeService:
             Sorted list of distinct tag values as strings
 
         """
-        from nomarr.components.navidrome.tag_query_comp import get_tag_value_counts
-
         value_counts = get_tag_value_counts(self._db, rel)
         return sorted(str(v) for v in value_counts)
 
@@ -324,8 +327,6 @@ class NavidromeService:
         if self._client is not None and self._client_creds == current_creds:
             return self._client
 
-        from nomarr.components.navidrome.subsonic_client_comp import SubsonicClient
-
         self._client = SubsonicClient(
             base_url=api_url,
             user=api_user,
@@ -397,8 +398,6 @@ class NavidromeService:
             ValueError: If Navidrome API credentials are not configured.
 
         """
-        from nomarr.workflows.navidrome.sync_navidrome_wf import sync_navidrome
-
         client = self._get_client()
         api_user: str = self._config_service.get("navidrome_api_user", "")
         return sync_navidrome(
@@ -431,8 +430,6 @@ class NavidromeService:
             ValueError: If song map has no mapping or no vector exists.
 
         """
-        from nomarr.workflows.navidrome.find_similar_tracks_wf import find_similar_tracks
-
         group_size: int = self._config_service.get("vector_group_size", 15)
         thoroughness: int = self._config_service.get("vector_search_thoroughness", 10)
 
@@ -460,8 +457,6 @@ class NavidromeService:
             timestamp_ms: Epoch milliseconds of the scrobble event.
 
         """
-        from nomarr.workflows.navidrome.ingest_scrobble_wf import ingest_scrobble
-
         ingest_scrobble(db=self._db, user_id=user_id, nd_id=nd_id, timestamp_ms=timestamp_ms)
 
     # ------------------------------------------------------------------
@@ -496,8 +491,6 @@ class NavidromeService:
             MisconfiguredError: If ``library_key`` is not configured.
 
         """
-        from nomarr.workflows.navidrome.generate_playlists_wf import generate_playlists
-
         backbone_id: str = self._config_service.get("pp_backbone_id", "effnet-discogs")
         library_key: str = self._config_service.get("library_key", "")
         if not library_key:

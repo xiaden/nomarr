@@ -5,6 +5,7 @@ Parses raw tag values read from audio files into typed Python values.
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import json
 from typing import TYPE_CHECKING
@@ -69,8 +70,6 @@ def parse_tag_values(tags: dict[str, str | TagValue | list[TagValue]]) -> dict[s
         if value.startswith("(") and value.endswith(")"):
             try:
                 # Use ast.literal_eval for safe parsing of tuple literals
-                import ast
-
                 parsed_value = ast.literal_eval(value)
                 if isinstance(parsed_value, tuple):
                     parsed[key] = list(parsed_value)

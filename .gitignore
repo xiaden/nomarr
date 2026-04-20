@@ -51,6 +51,9 @@ build.ps1
 # Serena IDE files
 .serena/
 
+# Copilot memory (local agent state)
+memories/
+
 # Old/deprecated models
 models_old/
 

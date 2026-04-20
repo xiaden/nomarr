@@ -57,6 +57,7 @@ from nomarr.components.tagging.tagging_reconstruction_comp import (
     reconstruct_head_outputs_from_stats,
 )
 from nomarr.helpers.dto.tags_dto import Tags
+from nomarr.workflows.calibration.calibration_loader_wf import load_calibrations_from_db_wf
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
@@ -202,8 +203,6 @@ def _load_calibrations_from_db(db: Database) -> dict[str, Any]:
         Empty dict if no calibrations exist (initial state)
 
     """
-    from nomarr.workflows.calibration.calibration_loader_wf import load_calibrations_from_db_wf
-
     calibrations = load_calibrations_from_db_wf(db)
     if not calibrations:
         logger.debug("[calibrated_tags] No calibrations in database (initial state)")

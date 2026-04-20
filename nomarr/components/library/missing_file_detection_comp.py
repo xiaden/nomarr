@@ -7,6 +7,7 @@ comparison.  Files in skipped (cached) folders are assumed present.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -44,8 +45,6 @@ def detect_missing_files(
     missing: set[str] = set()
 
     for existing_path in existing_files:
-        from pathlib import Path
-
         parent_dir = str(Path(existing_path).parent)
 
         if parent_dir in scanned_folder_paths:

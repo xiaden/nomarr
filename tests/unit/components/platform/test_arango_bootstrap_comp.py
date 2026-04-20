@@ -21,7 +21,7 @@ class TestProvisionVectorsTrackForLibrary:
 
         with (
             patch(
-                "nomarr.components.ml.onnx.ml_discovery_comp.discover_backbones",
+                "nomarr.components.platform.arango_bootstrap_comp.discover_backbones",
                 return_value=["effnet", "yamnet"],
             ),
             patch("nomarr.components.platform.arango_bootstrap_comp._ensure_index") as mock_ensure_index,
@@ -51,7 +51,7 @@ class TestProvisionVectorsTrackForLibrary:
 
         with (
             patch(
-                "nomarr.components.ml.onnx.ml_discovery_comp.discover_backbones",
+                "nomarr.components.platform.arango_bootstrap_comp.discover_backbones",
                 return_value=["effnet"],
             ),
             patch("nomarr.components.platform.arango_bootstrap_comp._ensure_index") as mock_ensure_index,
@@ -75,7 +75,7 @@ class TestProvisionVectorsTrackForLibrary:
 
         with (
             patch(
-                "nomarr.components.ml.onnx.ml_discovery_comp.discover_backbones",
+                "nomarr.components.platform.arango_bootstrap_comp.discover_backbones",
                 return_value=[],
             ),
             patch("nomarr.components.platform.arango_bootstrap_comp._ensure_index") as mock_ensure_index,
@@ -93,7 +93,7 @@ class TestProvisionVectorsTrackForLibrary:
 
         with (
             patch(
-                "nomarr.components.ml.onnx.ml_discovery_comp.discover_backbones",
+                "nomarr.components.platform.arango_bootstrap_comp.discover_backbones",
                 side_effect=Exception("no models"),
             ),
             patch("nomarr.components.platform.arango_bootstrap_comp._ensure_index") as mock_ensure_index,
@@ -111,7 +111,7 @@ class TestProvisionVectorsTrackForLibrary:
         db.has_collection.return_value = False
 
         with patch(
-            "nomarr.components.ml.onnx.ml_discovery_comp.discover_backbones",
+            "nomarr.components.platform.arango_bootstrap_comp.discover_backbones",
             return_value=["effnet"],
         ):
             provision_vectors_track_for_library(db, "/models", "rock")

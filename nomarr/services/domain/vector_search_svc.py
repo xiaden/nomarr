@@ -3,11 +3,14 @@
 import logging
 from typing import Any
 
+from nomarr.components.library.file_library_comp import get_file_library_key
 from nomarr.components.library.library_records_comp import list_library_records
 from nomarr.components.ml.vectors.ml_vector_maintenance_comp import has_vector_index
+from nomarr.components.ml.vectors.ml_vector_retrieve_comp import get_cold_track_vector
 from nomarr.helpers.vector_params_helper import compute_nlists, compute_nprobe
 from nomarr.persistence.db import Database
 from nomarr.services.infrastructure.config_svc import ConfigService
+from nomarr.workflows.vectors.get_track_vector_wf import get_track_vector as get_track_vector_wf
 
 logger = logging.getLogger(__name__)
 
@@ -70,11 +73,6 @@ class VectorSearchService:
                 has no vector index.
             RuntimeError: If search query fails
         """
-        from nomarr.components.library.file_library_comp import get_file_library_key
-        from nomarr.components.ml.vectors.ml_vector_retrieve_comp import (
-            get_cold_track_vector,
-        )
-
         # Step 1: Resolve library_key from file_id
         library_key = get_file_library_key(self.db, file_id)
         if library_key is None:
@@ -233,8 +231,4 @@ class VectorSearchService:
         Returns:
             Vector document or None if not found
         """
-        from nomarr.workflows.vectors.get_track_vector_wf import (
-            get_track_vector as get_track_vector_wf,
-        )
-
         return get_track_vector_wf(self.db, file_id, backbone_id)

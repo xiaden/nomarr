@@ -388,7 +388,7 @@ class TestPhaseOneQueryHelpers:
         ]
 
         with patch(
-            "nomarr.components.library.library_file_state_comp.count_untagged_files",
+            "nomarr.components.library.library_file_query_comp.count_untagged_files",
             return_value=4,
         ):
             result = get_library_stats(mock_db)

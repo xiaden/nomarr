@@ -16,8 +16,11 @@ import glob
 import hashlib
 import logging
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.ml.onnx.ml_backbone import ONNXBackboneModel
+from nomarr.components.ml.onnx.ml_head import ONNXHeadModel
 from nomarr.components.ml.onnx.ml_model_registry_comp import (
     list_fully_labeled_model_outputs,
     list_registered_models,
@@ -409,8 +412,6 @@ def discover_backbone_models(models_dir: str) -> list[Any]:
     Returns:
         List of :class:`ONNXBackboneModel` instances sorted by backbone name.
     """
-    from nomarr.components.ml.onnx.ml_backbone import ONNXBackboneModel
-
     models: list[ONNXBackboneModel] = []
 
     for backbone_dir in glob.glob(os.path.join(models_dir, "*")):
@@ -450,8 +451,6 @@ def discover_head_models_no_db(models_dir: str) -> list[Any]:
         List of :class:`ONNXHeadModel` instances sorted by
         ``(backbone_name, head_type, model_name)``.
     """
-    from nomarr.components.ml.onnx.ml_head import ONNXHeadModel
-
     models: list[ONNXHeadModel] = []
 
     for backbone_dir in glob.glob(os.path.join(models_dir, "*")):
@@ -495,10 +494,6 @@ def discover_head_models(
         List of :class:`ONNXHeadModel` instances sorted by
         ``(backbone_name, head_type, model_name)``.
     """
-    from pathlib import Path as _Path
-
-    from nomarr.components.ml.onnx.ml_head import ONNXHeadModel
-
     # Build metadata lookup from HeadInfo (DB-backed).
     head_info_map: dict[str, HeadInfo] = {}
     try:
@@ -523,7 +518,7 @@ def discover_head_models(
                 continue
 
             for onnx_path in sorted(glob.glob(os.path.join(head_type_dir, "*.onnx"))):
-                stem = _Path(onnx_path).stem
+                stem = Path(onnx_path).stem
                 info = head_info_map.get(stem)
                 if info is not None:
                     model = ONNXHeadModel(

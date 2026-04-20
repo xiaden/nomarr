@@ -122,6 +122,10 @@ def read_module_source(qualified_name: str, *, large_context: bool = False) -> d
     """
     result: dict[str, Any] = {"name": qualified_name}
 
+    if not qualified_name or not qualified_name.strip():
+        result["error"] = "qualified_name cannot be empty"
+        return result
+
     # Determine context lines
     context_lines = LARGE_CONTEXT_LINES if large_context else DEFAULT_CONTEXT_LINES
 

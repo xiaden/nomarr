@@ -15,6 +15,7 @@ The value comes from per-model VRAM probe measurements stored in meta
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -105,8 +106,6 @@ def create_session(
         FileNotFoundError: If *model_path* does not exist.
     """
     require()
-
-    import os
 
     if not os.path.exists(model_path):
         msg = f"ONNX model file not found: {model_path}"
