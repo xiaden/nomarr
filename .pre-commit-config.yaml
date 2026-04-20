@@ -1,0 +1,43 @@
+# Pre-commit hooks: lint and type-check before every commit.
+# Install: pre-commit install
+# Manual run: pre-commit run --all-files
+
+repos:
+  # --- Ruff: lint + format (Python) ---
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.9
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
+  # --- Mypy: type checking (Python) ---
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.19.0
+    hooks:
+      - id: mypy
+        args: [--config-file=pyproject.toml]
+        additional_dependencies:
+          - types-PyYAML
+          - types-requests
+        pass_filenames: false
+
+  # --- Import linter: layer boundary enforcement ---
+  - repo: local
+    hooks:
+      - id: import-linter
+        name: import-linter
+        entry: lint-imports
+        language: system
+        pass_filenames: false
+        files: ^nomarr/
+
+  # --- Frontend: ESLint + TypeScript ---
+  - repo: local
+    hooks:
+      - id: frontend-lint
+        name: frontend-lint
+        entry: bash -c "cd frontend && npx eslint --max-warnings=0 ."
+        language: system
+        pass_filenames: false
+        files: ^frontend/src/
