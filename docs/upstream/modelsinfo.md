@@ -379,7 +379,7 @@ pool = Pool()
 pool.set("embeddings", embeddings)
 
 model = TensorflowPredict(graphFilename="genre_discogs400-discogs-maest-5s-pw-1.pb", inputs=["embeddings"], outputs=["PartitionedCall/Identity_1"])
-predictions = model(pool)["PartitionedCall/Identity_1"]
+predictions = model[pool]("PartitionedCall/Identity_1")
 ⬇️ genre_discogs400-discogs-maest-10-pw
 
 [weights, metadata, demo]
@@ -397,7 +397,7 @@ pool = Pool()
 pool.set("embeddings", embeddings)
 
 model = TensorflowPredict(graphFilename="genre_discogs400-discogs-maest-10s-pw-1.pb", inputs=["embeddings"], outputs=["PartitionedCall/Identity_1"])
-predictions = model(pool)["PartitionedCall/Identity_1"]
+predictions = model[pool]("PartitionedCall/Identity_1")
 ⬇️ genre_discogs400-discogs-maest-10s-fs
 
 [weights, metadata, demo]
@@ -415,7 +415,7 @@ pool = Pool()
 pool.set("embeddings", embeddings)
 
 model = TensorflowPredict(graphFilename="genre_discogs400-discogs-maest-10s-fs-1.pb", inputs=["embeddings"], outputs=["PartitionedCall/Identity_1"])
-predictions = model(pool)["PartitionedCall/Identity_1"]
+predictions = model[pool]("PartitionedCall/Identity_1")
 ⬇️ genre_discogs400-discogs-maest-30s-dw
 
 [weights, metadata, demo]
@@ -433,7 +433,7 @@ pool = Pool()
 pool.set("embeddings", embeddings)
 
 model = TensorflowPredict(graphFilename="genre_discogs400-discogs-maest-10s-dw-1.pb", inputs=["embeddings"], outputs=["PartitionedCall/Identity_1"])
-predictions = model(pool)["PartitionedCall/Identity_1"]
+predictions = model[pool]("PartitionedCall/Identity_1")
 ⬇️ genre_discogs400-discogs-maest-20s-pw
 
 [weights, metadata, demo]
@@ -451,7 +451,7 @@ pool = Pool()
 pool.set("embeddings", embeddings)
 
 model = TensorflowPredict(graphFilename="genre_discogs400-discogs-maest-20s-pw-1.pb", inputs=["embeddings"], outputs=["PartitionedCall/Identity_1"])
-predictions = model(pool)["PartitionedCall/Identity_1"]
+predictions = model[pool]("PartitionedCall/Identity_1")
 ⬇️ genre_discogs400-discogs-maest-30s-pw
 
 [weights, metadata, demo]
@@ -469,7 +469,7 @@ pool = Pool()
 pool.set("embeddings", embeddings)
 
 model = TensorflowPredict(graphFilename="genre_discogs400-discogs-maest-30s-pw-1.pb", inputs=["embeddings"], outputs=["PartitionedCall/Identity_1"])
-predictions = model(pool)["PartitionedCall/Identity_1"]
+predictions = model[pool]("PartitionedCall/Identity_1")
 ⬇️ genre_discogs400-discogs-maest-30s-pw-ts
 
 [weights, metadata, demo]
@@ -487,7 +487,7 @@ pool = Pool()
 pool.set("embeddings", embeddings)
 
 model = TensorflowPredict(graphFilename="genre_discogs400-discogs-maest-30s-pw-ts-1.pb", inputs=["embeddings"], outputs=["PartitionedCall/Identity_1"])
-predictions = model(pool)["PartitionedCall/Identity_1"]
+predictions = model[pool]("PartitionedCall/Identity_1")
 Genre Discogs519
 Music style classification by 519 styles from the Discogs taxonomy:
 
@@ -525,7 +525,7 @@ pool = Pool()
 pool.set("embeddings", embeddings)
 
 model = TensorflowPredict(graphFilename="genre_discogs519-discogs-maest-30s-pw-519l-1.pb", inputs=["embeddings"], outputs=["PartitionedCall/Identity_1"])
-predictions = model(pool)["PartitionedCall/Identity_1"]
+predictions = model[pool]("PartitionedCall/Identity_1")
 MTG-Jamendo genre
 Multi-label classification with the genre subset of MTG-Jamendo Dataset (87 classes):
 
@@ -2351,13 +2351,13 @@ from essentia.standard import AudioLoader, TensorflowPredict
 from essentia import Pool
 import numpy as np
 
-# Input should be audio @41kHz.
+# Input should be audio @41kHz
 
-audio, sr, _, _, _, _ = AudioLoader(filename="audio.wav")()
+audio, sr, _,_, _,_ = AudioLoader(filename="audio.wav")()
 
 pool = Pool()
 
-# The input needs to have 4 dimensions so that it is interpreted as an Essentia tensor.
+# The input needs to have 4 dimensions so that it is interpreted as an Essentia tensor
 
 pool.set("waveform", audio[..., np.newaxis, np.newaxis])
 
@@ -2380,13 +2380,13 @@ from essentia.standard import AudioLoader, TensorflowPredict
 from essentia import Pool
 import numpy as np
 
-# Input should be audio @41kHz.
+# Input should be audio @41kHz
 
-audio, sr, _, _, _, _ = AudioLoader(filename="audio.wav")()
+audio, sr, _,_, _,_ = AudioLoader(filename="audio.wav")()
 
 pool = Pool()
 
-# The input needs to have 4 dimensions so that it is interpreted as an Essentia tensor.
+# The input needs to have 4 dimensions so that it is interpreted as an Essentia tensor
 
 pool.set("waveform", audio[..., np.newaxis, np.newaxis])
 
@@ -2411,13 +2411,13 @@ from essentia.standard import AudioLoader, TensorflowPredict
 from essentia import Pool
 import numpy as np
 
-# Input should be audio @41kHz.
+# Input should be audio @41kHz
 
-audio, sr, _, _, _, _ = AudioLoader(filename="audio.wav")()
+audio, sr, _,_, _,_ = AudioLoader(filename="audio.wav")()
 
 pool = Pool()
 
-# The input needs to have 4 dimensions so that it is interpreted as an Essentia tensor.
+# The input needs to have 4 dimensions so that it is interpreted as an Essentia tensor
 
 pool.set("waveform", audio[..., np.newaxis, np.newaxis])
 

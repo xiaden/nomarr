@@ -21,7 +21,7 @@ Under the following terms:
 
 ### Full License
 
-https://creativecommons.org/licenses/by-nc-sa/4.0/
+<https://creativecommons.org/licenses/by-nc-sa/4.0/>
 
 ### Commercial Licensing
 
@@ -30,15 +30,15 @@ For commercial licensing of these models, please contact:
 - Music Technology Group
 - Universitat Pompeu Fabra
 - Barcelona, Spain
-- https://www.upf.edu/web/mtg/contact
+- <https://www.upf.edu/web/mtg/contact>
 
 ## Source
 
 These models are from the Essentia project:
 
-- Homepage: https://essentia.upf.edu/
-- Models: https://essentia.upf.edu/models.html
-- GitHub: https://github.com/MTG/essentia
+- Homepage: <https://essentia.upf.edu/>
+- Models: <https://essentia.upf.edu/models.html>
+- GitHub: <https://github.com/MTG/essentia>
 
 ## Citation
 

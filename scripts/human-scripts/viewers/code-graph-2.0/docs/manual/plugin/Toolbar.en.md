@@ -45,15 +45,15 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Property  | Description                                                                  | Type                                                                                        | Default Value | Required |
+| Property | Description | Type | Default Value | Required |
 | --------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------- | -------- |
-| type      | Plugin type                                                                  | string                                                                                      | `toolbar`     | ✓        |
-| key       | Unique identifier for the plugin, used for updates                           | string                                                                                      | -             |          |
-| className | Additional CSS class name for the toolbar DOM element                        | string                                                                                      | -             |          |
-| position  | Toolbar position relative to the canvas, [optional values](#position)        | string                                                                                      | `'top-left'`  |          |
-| style     | Custom style for the toolbar DOM element, [common values](#style-attributes) | [CSSStyleDeclaration](https://developer.mozilla.org/en-US/docs/Web/API/CSSStyleDeclaration) | -             |          |
-| getItems  | Returns the list of toolbar items                                            | () => [ToolbarItem](#toolbaritem)[] \| Promise<[ToolbarItem](#toolbaritem)[]>               | -             | ✓        |
-| onClick   | Callback function after a toolbar item is clicked                            | (value: string, target: Element) => void                                                    | -             |          |
+| type | Plugin type | string | `toolbar` | ✓ |
+| key | Unique identifier for the plugin, used for updates | string | - | |
+| className | Additional CSS class name for the toolbar DOM element | string | - | |
+| position | Toolbar position relative to the canvas, [optional values](#position) | string | `'top-left'` | |
+| style | Custom style for the toolbar DOM element, [common values](#style-attributes) | [CSSStyleDeclaration](https://developer.mozilla.org/en-US/docs/Web/API/CSSStyleDeclaration) | - | |
+| getItems | Returns the list of toolbar items | () => [ToolbarItem](#toolbaritem)[] \| Promise<[ToolbarItem](#toolbaritem)[]> | - | ✓ |
+| onClick | Callback function after a toolbar item is clicked | (value: string, target: Element) => void | - | |
 
 ### position
 
@@ -70,25 +70,25 @@ The `position` parameter supports the following values:
 
 ### style Attributes
 
-| Attribute       | Description      | Type   | Default Value       |
+| Attribute | Description | Type | Default Value |
 | --------------- | ---------------- | ------ | ------------------- |
-| backgroundColor | Background color | string | `#fff`              |
-| border          | Border           | string | `1px solid #e8e8e8` |
-| borderRadius    | Border radius    | string | `4px`               |
-| height          | Height           | string | `auto`              |
-| margin          | Margin           | string | `12px`              |
-| opacity         | Opacity          | number | 0.9                 |
-| padding         | Padding          | string | `8px`               |
-| width           | Width            | string | `auto`              |
+| backgroundColor | Background color | string | `#fff` |
+| border | Border | string | `1px solid #e8e8e8` |
+| borderRadius | Border radius | string | `4px` |
+| height | Height | string | `auto` |
+| margin | Margin | string | `12px` |
+| opacity | Opacity | number | 0.9 |
+| padding | Padding | string | `8px` |
+| width | Width | string | `auto` |
 
 ### ToolbarItem
 
 Each toolbar item (ToolbarItem) includes the following attributes:
 
-| Attribute | Description                                                | Type     | Required |
+| Attribute | Description | Type | Required |
 | --------- | ---------------------------------------------------------- | -------- | -------- |
-| id        | Icon ID of the item, see [Built-in Icons](#built-in-icons) | `string` | ✓        |
-| value     | Value returned when the item is clicked                    | `string` | ✓        |
+| id | Icon ID of the item, see [Built-in Icons](#built-in-icons) | `string` | ✓ |
+| value | Value returned when the item is clicked | `string` | ✓ |
 
 ### Built-in Icons
 

@@ -36,42 +36,42 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Property       | Description                                                                                                                                                                                                                   | Type                                                                                                                                                                    | Default Value                               | Required |
+| Property | Description | Type | Default Value | Required |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | -------- |
-| type           | Plugin type                                                                                                                                                                                                                   | string                                                                                                                                                                  | `fisheye`                                   | ✓        |
-| key            | Unique identifier for the plugin, can be used to get the plugin instance or update plugin options                                                                                                                             | string                                                                                                                                                                  | -                                           |          |
-| trigger        | Method to move the fisheye:<br/>- `pointermove`: The fisheye always follows the mouse movement <br/>- `click`: Move the fisheye to the click position when clicking on the canvas <br/>- `drag`: Move the fisheye by dragging | `pointermove` \| `drag` \| `click`                                                                                                                                      | `pointermove`                               |          |
-| r              | Radius of the fisheye                                                                                                                                                                                                         | number                                                                                                                                                                  | 120                                         |          |
-| maxR           | Maximum adjustable radius of the fisheye                                                                                                                                                                                      | number                                                                                                                                                                  | Half of the smaller dimension of the canvas |          |
-| minR           | Minimum adjustable radius of the fisheye                                                                                                                                                                                      | number                                                                                                                                                                  | 0                                           |          |
-| d              | Distortion factor                                                                                                                                                                                                             | number                                                                                                                                                                  | 1.5                                         |          |
-| maxD           | Maximum adjustable distortion factor of the fisheye                                                                                                                                                                           | number                                                                                                                                                                  | 5                                           |          |
-| minD           | Minimum adjustable distortion factor of the fisheye                                                                                                                                                                           | number                                                                                                                                                                  | 0                                           |          |
-| scaleRBy       | Method to adjust the fisheye radius:<br/>- `'wheel'`: Adjust by wheel <br/>- `'drag'`: Adjust by dragging                                                                                                                     | `wheel` \| `drag`                                                                                                                                                       | -                                           |          |
-| scaleDBy       | Method to adjust the fisheye distortion factor:<br/>- `'wheel'`: Adjust by wheel <br/>- `'drag'`: Adjust by dragging                                                                                                          | `wheel` \| `drag`                                                                                                                                                       | -                                           |          |
-| showDPercent   | Whether to show the distortion factor value in the fisheye                                                                                                                                                                    | boolean                                                                                                                                                                 | true                                        |          |
-| style          | Style of the fisheye, [configuration options](#style)                                                                                                                                                                         | object                                                                                                                                                                  | -                                           |          |
-| nodeStyle      | Style of nodes in the fisheye                                                                                                                                                                                                 | [NodeStyle](/en/manual/element/node/base-node#style) \| ((datum: [NodeData](/en/manual/data#节点数据nodedata)) => [NodeStyle](/en/manual/element/node/base-node#style)) | `{ label: true }`                           |          |
-| preventDefault | Whether to prevent default events                                                                                                                                                                                             | boolean                                                                                                                                                                 | true                                        |          |
+| type | Plugin type | string | `fisheye` | ✓ |
+| key | Unique identifier for the plugin, can be used to get the plugin instance or update plugin options | string | - | |
+| trigger | Method to move the fisheye:<br/>- `pointermove`: The fisheye always follows the mouse movement <br/>- `click`: Move the fisheye to the click position when clicking on the canvas <br/>- `drag`: Move the fisheye by dragging | `pointermove` \| `drag` \| `click` | `pointermove` | |
+| r | Radius of the fisheye | number | 120 | |
+| maxR | Maximum adjustable radius of the fisheye | number | Half of the smaller dimension of the canvas | |
+| minR | Minimum adjustable radius of the fisheye | number | 0 | |
+| d | Distortion factor | number | 1.5 | |
+| maxD | Maximum adjustable distortion factor of the fisheye | number | 5 | |
+| minD | Minimum adjustable distortion factor of the fisheye | number | 0 | |
+| scaleRBy | Method to adjust the fisheye radius:<br/>- `'wheel'`: Adjust by wheel <br/>- `'drag'`: Adjust by dragging | `wheel` \| `drag` | - | |
+| scaleDBy | Method to adjust the fisheye distortion factor:<br/>- `'wheel'`: Adjust by wheel <br/>- `'drag'`: Adjust by dragging | `wheel` \| `drag` | - | |
+| showDPercent | Whether to show the distortion factor value in the fisheye | boolean | true | |
+| style | Style of the fisheye, [configuration options](#style) | object | - | |
+| nodeStyle | Style of nodes in the fisheye | [NodeStyle](/en/manual/element/node/base-node#style) \| ((datum: [NodeData](/en/manual/data#节点数据nodedata)) => [NodeStyle](/en/manual/element/node/base-node#style)) | `{ label: true }` | |
+| preventDefault | Whether to prevent default events | boolean | true | |
 
 ### style
 
 Circular style properties for configuring the appearance of the fisheye.
 
-| Property      | Description        | Type                          | Default Value |
+| Property | Description | Type | Default Value |
 | ------------- | ------------------ | ----------------------------- | ------------- |
-| fill          | Fill color         | string \| Pattern \| null     | `#ccc`        |
-| stroke        | Stroke color       | string \| Pattern \| null     | `#000`        |
-| opacity       | Overall opacity    | number \| string              | -             |
-| fillOpacity   | Fill opacity       | number \| string              | 0.1           |
-| strokeOpacity | Stroke opacity     | number \| string              | -             |
-| lineWidth     | Line width         | number \| string              | 2             |
-| lineCap       | Line cap style     | `butt` \| `round` \| `square` | -             |
-| lineJoin      | Line join style    | `miter` \| `round` \| `bevel` | -             |
-| shadowColor   | Shadow color       | string                        | -             |
-| shadowBlur    | Shadow blur degree | number                        | -             |
-| shadowOffsetX | Shadow X offset    | number                        | -             |
-| shadowOffsetY | Shadow Y offset    | number                        | -             |
+| fill | Fill color | string \| Pattern \| null | `#ccc` |
+| stroke | Stroke color | string \| Pattern \| null | `#000` |
+| opacity | Overall opacity | number \| string | - |
+| fillOpacity | Fill opacity | number \| string | 0.1 |
+| strokeOpacity | Stroke opacity | number \| string | - |
+| lineWidth | Line width | number \| string | 2 |
+| lineCap | Line cap style | `butt` \| `round` \| `square` | - |
+| lineJoin | Line join style | `miter` \| `round` \| `bevel` | - |
+| shadowColor | Shadow color | string | - |
+| shadowBlur | Shadow blur degree | number | - |
+| shadowOffsetX | Shadow X offset | number | - |
+| shadowOffsetY | Shadow Y offset | number | - |
 
 For complete style properties, refer to [Element - Node - Built-in Node - General Style Properties - style](/en/manual/element/node/base-node#style)
 

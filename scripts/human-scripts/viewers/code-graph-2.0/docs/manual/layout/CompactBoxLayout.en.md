@@ -31,17 +31,17 @@ const graph = new Graph({
 
 ## Options
 
-| Property  | Description                                                                                                   | Type                                                         | Default | Required |
-| --------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------- | -------- |
-| type      | Layout type                                                                                                   | `compact-box`                                                | -       | ✓        |
-| direction | Layout direction, [options](#direction)                                                                       | `LR` \| `RL` \| `TB` \| `BT` \| `H` \| `V`                   | `LR`    |          |
-| getSide   | Set whether the node is on the left or right of the root. Only works for `H` direction. [See below](#getside) | (d: { data?: [NodeData](/en/manual/data#节点数据nodedata) }) => string |         |          |
-| getId     | Callback for node id                                                                                          | (d?: [NodeData](/en/manual/data#节点数据nodedata)) => string |         |          |
-| getWidth  | Callback for node width                                                                                       | (d?: [NodeData](/en/manual/data#节点数据nodedata)) => number |         |          |
-| getHeight | Callback for node height                                                                                      | (d?: [NodeData](/en/manual/data#节点数据nodedata)) => number |         |          |
-| getHGap   | Callback for horizontal gap                                                                                   | (d?: [NodeData](/en/manual/data#节点数据nodedata)) => number |         |          |
-| getVGap   | Callback for vertical gap                                                                                     | (d?: [NodeData](/en/manual/data#节点数据nodedata)) => number |         |          |
-| radial    | Whether to enable radial layout, [see below](#radial)                                                         | boolean                                                      | false   |          |
+ | Property | Description | Type | Default | Required |
+ | --------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------- | -------- |
+ | type | Layout type | `compact-box` | - | ✓ |
+ | direction | Layout direction, [options](#direction) | `LR` \ | `RL` \ | `TB` \ | `BT` \ | `H` \ | `V` | `LR` | |
+ | getSide | Set whether the node is on the left or right of the root. Only works for `H` direction. [See below](#getside) | (d: { data?: [NodeData](/en/manual/data#节点数据nodedata) }) => string | | |
+ | getId | Callback for node id | (d?: [NodeData](/en/manual/data#节点数据nodedata)) => string | | |
+ | getWidth | Callback for node width | (d?: [NodeData](/en/manual/data#节点数据nodedata)) => number | | |
+ | getHeight | Callback for node height | (d?: [NodeData](/en/manual/data#节点数据nodedata)) => number | | |
+ | getHGap | Callback for horizontal gap | (d?: [NodeData](/en/manual/data#节点数据nodedata)) => number | | |
+ | getVGap | Callback for vertical gap | (d?: [NodeData](/en/manual/data#节点数据nodedata)) => number | | |
+ | radial | Whether to enable radial layout, [see below](#radial) | boolean | false | |
 
 ### direction
 

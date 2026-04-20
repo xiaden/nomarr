@@ -33,19 +33,19 @@ const graph = new Graph({
 
 ## Options
 
-| Property               | Description                                                                                      | Type                                                                                                                                   | Default  | Required |
+| Property | Description | Type | Default | Required |
 | ---------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
-| type                   | Layout type                                                                                      | `fishbone`                                                                                                                             | -        | ✓        |
-| direction              | Layout direction, `RL` (right to left, head on right), `LR` (left to right, head on left)        | `RL` \| `LR`                                                                                                                           | `RL`     |          |
-| hGap                   | Horizontal gap                                                                                   | number                                                                                                                                 | -        |          |
-| vGap                   | Vertical gap                                                                                     | number                                                                                                                                 | -        |          |
-| getRibSep              | Function to get rib gap                                                                          | (node: NodeData) => number                                                                                                             | () => 60 |          |
-| width                  | Layout width                                                                                     | number                                                                                                                                 | -        |          |
-| height                 | Layout height                                                                                    | number                                                                                                                                 | -        |          |
-| nodeSize               | Node size                                                                                        | number \| [number, number] \| [number, number, number] \| ((node: NodeData) => number \| [number, number] \| [number, number, number]) | -        |          |
-| isLayoutInvisibleNodes | Whether invisible nodes participate in layout (effective when preLayout is true)                 | boolean                                                                                                                                | -        |          |
-| nodeFilter             | Nodes to participate in this layout                                                              | (node: NodeData) => boolean                                                                                                            | -        |          |
-| preLayout              | Use pre-layout, calculate layout before initializing elements (not suitable for pipeline layout) | boolean                                                                                                                                | -        |          |
+| type | Layout type | `fishbone` | - | ✓ |
+| direction | Layout direction, `RL` (right to left, head on right), `LR` (left to right, head on left) | `RL` \| `LR` | `RL` | |
+| hGap | Horizontal gap | number | - | |
+| vGap | Vertical gap | number | - | |
+| getRibSep | Function to get rib gap | (node: NodeData) => number | () => 60 | |
+| width | Layout width | number | - | |
+| height | Layout height | number | - | |
+| nodeSize | Node size | number \| [number, number] \| [number, number, number] \| ((node: NodeData) => number \| [number, number] \| [number, number, number]) | - | |
+| isLayoutInvisibleNodes | Whether invisible nodes participate in layout (effective when preLayout is true) | boolean | - | |
+| nodeFilter | Nodes to participate in this layout | (node: NodeData) => boolean | - | |
+| preLayout | Use pre-layout, calculate layout before initializing elements (not suitable for pipeline layout) | boolean | - | |
 
 ## Code Example
 

@@ -2,20 +2,20 @@
 
 ## Parts
 
-| Part | Title | Depends On | Layers |
-|---|---|---|---|
-| A | Shared helper fixes (content_boundaries + file_helpers) | None | helpers |
-| B | Insert text EOL + trailing newline fix | A | tools (edit_file_insert_text) |
-| C | Python navigation tool fixes | None | tools (read_module_source, locate_module_symbol) |
+ | Part | Title | Depends On | Layers |
+ | --- | --- | --- | --- |
+ | A | Shared helper fixes (content_boundaries + file_helpers) | None | helpers |
+ | B | Insert text EOL + trailing newline fix | A | tools (edit_file_insert_text) |
+ | C | Python navigation tool fixes | None | tools (read_module_source, locate_module_symbol) |
 
 ## Dependency Graph
 
 ```
 A (helpers)          C (python nav)
-    |                    |
+ | | 
     v                    |
 B (insert text)          |
-                         |
+ | 
 (no cross-deps between B and C)
 ```
 

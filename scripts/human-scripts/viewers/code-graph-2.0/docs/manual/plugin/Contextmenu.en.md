@@ -37,25 +37,25 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Property       | Description                                                                                                               | Type                                                                              | Default Value    | Required |
+| Property | Description | Type | Default Value | Required |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------- | -------- |
-| className      | Additional class name for the menu DOM                                                                                    | string                                                                            | `g6-contextmenu` |          |
-| trigger        | How to trigger the right-click menu: `contextmenu` for right-click, `click` for click                                     | `click` \| `contextmenu`                                                          | `contextmenu`    |          |
-| offset         | Offset of the menu display in X and Y directions                                                                          | [number, number]                                                                  | [4, 4]           |          |
-| onClick        | Callback method triggered after the menu is clicked, [example](#onclick)                                                  | (value: string, target: HTMLElement, current: Element) => void                    | -                |          |
-| getItems       | Returns the list of menu items, supports `Promise` type return value. It is a shortcut configuration for `getContent`     | (event: IElementEvent) => [Item](#item)[] \| Promise<[Item](#item)[]>             | -                |          |
-| getContent     | Returns the content of the menu, supports `Promise` type return value, can also use `getItems` for shortcut configuration | (event: IElementEvent) => HTMLElement \| string \| Promise<HTMLElement \| string> | -                |          |
-| loadingContent | Menu content used when `getContent` returns a `Promise`                                                                   | HTMLElement \| string                                                             | -                |          |
-| enable         | Whether it is available, determines whether the right-click menu is supported by parameters, by default all are available | boolean \| (event: IElementEvent) => boolean                                      | true             |          |
+| className | Additional class name for the menu DOM | string | `g6-contextmenu` | |
+| trigger | How to trigger the right-click menu: `contextmenu` for right-click, `click` for click | `click` \| `contextmenu` | `contextmenu` | |
+| offset | Offset of the menu display in X and Y directions | [number, number] | [4, 4] | |
+| onClick | Callback method triggered after the menu is clicked, [example](#onclick) | (value: string, target: HTMLElement, current: Element) => void | - | |
+| getItems | Returns the list of menu items, supports `Promise` type return value. It is a shortcut configuration for `getContent` | (event: IElementEvent) => [Item](#item)[] \| Promise<[Item](#item)[]> | - | |
+| getContent | Returns the content of the menu, supports `Promise` type return value, can also use `getItems` for shortcut configuration | (event: IElementEvent) => HTMLElement \| string \| Promise<HTMLElement \| string> | - | |
+| loadingContent | Menu content used when `getContent` returns a `Promise` | HTMLElement \| string | - | |
+| enable | Whether it is available, determines whether the right-click menu is supported by parameters, by default all are available | boolean \| (event: IElementEvent) => boolean | true | |
 
 ### Item
 
 Each menu item (Item) contains the following properties:
 
-| Property | Description                          | Type     | Required |
+| Property | Description | Type | Required |
 | -------- | ------------------------------------ | -------- | -------- |
-| name     | Name displayed for the menu item     | `string` | ✓        |
-| value    | Value corresponding to the menu item | `string` | ✓        |
+| name | Name displayed for the menu item | `string` | ✓ |
+| value | Value corresponding to the menu item | `string` | ✓ |
 
 ### onClick
 

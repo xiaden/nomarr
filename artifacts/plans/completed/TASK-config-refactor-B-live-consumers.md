@@ -50,7 +50,7 @@ This plan separates the two categories and ensures live settings are read throug
     **Notes:** calibrate_heads is safe to make live because it's passed as a parameter per-workflow-invocation, not a persistent state toggle. Changing it mid-run affects only future file processing, not in-flight jobs.
       Removed calibrate_heads from TaggingServiceConfig. Injected ConfigService into constructor. Replaced self.cfg.calibrate_heads at lines 107 and 158 with self._config_service.get("calibrate_heads", False). Added ConfigService to TYPE_CHECKING imports.
 - [x] Update `app.py` to pass ConfigService to PlaylistImportService and TaggingService, remove dead fields from config construction
-    **Notes:** Updated app.py: PlaylistImportConfig() now empty, PlaylistImportService gets config_service=self._config_service. TaggingServiceConfig no longer passes calibrate_heads, TaggingService gets config_service=self._config_service. Removed dead `self.calibrate_heads` snapshot attribute from Application.__init__ (no longer consumed).
+    **Notes:** Updated app.py: PlaylistImportConfig() now empty, PlaylistImportService gets config_service=self._config_service. TaggingServiceConfig no longer passes calibrate_heads, TaggingService gets config_service=self._config_service. Removed dead `self.calibrate_heads` snapshot attribute from Application.**init** (no longer consumed).
 - [x] Verify via `lint_project_backend(path="nomarr/services")`
     **Notes:** lint_project_backend(nomarr/services): 0 errors, 5 files checked, clean.
 - [x] Verify via `lint_project_backend(path="nomarr/app.py")`
@@ -60,7 +60,7 @@ This plan separates the two categories and ensures live settings are read throug
 
 - [x] Split `ProcessorConfig` into `ProcessorStaticConfig` (models_dir, namespace, version_tag_key, tagger_version, min_duration_s, allow_short, batch_size) created once at startup, and a `ProcessorJobConfig` (file_write_mode, overwrite_tags, calibrate_heads) built per-job from ConfigService
     **Notes:** Worker dispatch reads live fields from ConfigService and constructs ProcessorJobConfig at dispatch time. The worker function receives both: static config (startup singleton) + job config (per-file fresh). This keeps the expensive static parts (model hash) cached while live fields reflect current settings. The two configs are separate dataclasses, not merged into one — clear ownership boundary.
-      Split ProcessorConfig into ProcessorStaticConfig (models_dir, min_duration_s, allow_short, batch_size, namespace, version_tag_key, tagger_version, resource_management) and ProcessorJobConfig (overwrite_tags, calibrate_heads, file_write_mode). Added backward-compatible alias `ProcessorConfig = ProcessorStaticConfig` so existing imports continue working. Updated __init__.py re-exports. Documented that ProcessorJobConfig fields are currently not consumed by the processing pipeline but exist as canonical location for live processing config.
+      Split ProcessorConfig into ProcessorStaticConfig (models_dir, min_duration_s, allow_short, batch_size, namespace, version_tag_key, tagger_version, resource_management) and ProcessorJobConfig (overwrite_tags, calibrate_heads, file_write_mode). Added backward-compatible alias `ProcessorConfig = ProcessorStaticConfig` so existing imports continue working. Updated **init**.py re-exports. Documented that ProcessorJobConfig fields are currently not consumed by the processing pipeline but exist as canonical location for live processing config.
 - [x] Update `make_processor_config()` to return only `ProcessorStaticConfig` (rename to `make_static_processor_config()`)
     **Notes:** Renamed make_processor_config() to make_static_processor_config(), returns ProcessorStaticConfig. Removed LIVE fields (overwrite_tags, calibrate_heads, file_write_mode) from the return value. Updated import from ProcessorConfig to ProcessorStaticConfig + ProcessorJobConfig.
 - [x] Add `make_job_config() -> ProcessorJobConfig` on ConfigService that reads live fields
@@ -75,11 +75,11 @@ This plan separates the two categories and ensures live settings are read throug
 ### Phase 5: End-to-end verification
 
 - [x] Verify: web UI sets navidrome_api_url → POST config → ConfigService.set() → ping() reads fresh → SubsonicClient rebuilt
-    **Notes:** Trace confirmed: POST /api/web/config → config_service.set(key, value) writes to mutable cache → NavidromeService._get_api_credentials() reads navidrome_api_url fresh via self._config_service.get(). Verified in config_if.py update_config (line 35) and navidrome_svc.py _get_api_credentials (line 260).
+    **Notes:** Trace confirmed: POST /api/web/config → config_service.set(key, value) writes to mutable cache → NavidromeService._get_api_credentials() reads navidrome_api_url fresh via self._config_service.get(). Verified in config_if.py update_config (line 35) and navidrome_svc.py_get_api_credentials (line 260).
 - [x] Verify: web UI sets spotify_client_id → POST config → ConfigService.set() → playlist import reads fresh
     **Notes:** Trace confirmed: convert_playlist (line 81-82) and has_spotify_credentials (line 91) both read spotify_client_id and spotify_client_secret via self._config_service.get(). POST config → set() → fresh on next call.
 - [x] Verify: web UI sets navidrome_path_prefix_map → POST config → ConfigService.set() → sync_song_map reads fresh parsed value
-    **Notes:** Trace confirmed: sync_song_map (line 369-371) reads navidrome_path_prefix_map fresh via self._config_service.get("navidrome_path_prefix_map", ""), then parses with _parse_path_prefix_map() on demand. POST config → set() → fresh on next sync call.
+    **Notes:** Trace confirmed: sync_song_map (line 369-371) reads navidrome_path_prefix_map fresh via self._config_service.get("navidrome_path_prefix_map", ""), then parses with_parse_path_prefix_map() on demand. POST config → set() → fresh on next sync call.
 - [x] Verify: GET config returns fresh values after POST
     **Notes:** Trace confirmed: GET /api/web/config → get_config_for_web() reads from self._cache under lock (line 216). POST → set() writes to same cache under lock. GET after POST returns fresh values.
 - [x] Run full `lint_project_backend()` — zero errors

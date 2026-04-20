@@ -54,6 +54,7 @@ Content after all phases should also become a top-level key.
 With multiple paragraphs.
 
 And bullet points:
+
 - Item one
 - Item two
 

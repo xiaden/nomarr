@@ -37,34 +37,34 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Property                 | Description                                                                              | Type                                                           | Default Value | Required |
+| Property | Description | Type | Default Value | Required |
 | ------------------------ | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ------------- | -------- |
-| type                     | Plugin type                                                                              | string                                                         | `bubble-sets` | ✓        |
-| key                      | Unique identifier for the plugin for subsequent updates                                  | string                                                         | -             |          |
-| members                  | Member elements, including nodes and edges, [example](#members)                          | string[]                                                       | -             | ✓        |
-| avoidMembers             | Elements to avoid, not included when drawing contours (currently supports setting nodes) | string[]                                                       | -             |          |
-| label                    | Whether to display labels                                                                | boolean                                                        | true          |          |
-| labelPlacement           | Label position                                                                           | `left` \| `right` \| `top` \| `bottom` \| `center` \| `bottom` | `bottom`      |          |
-| labelBackground          | Whether to display background                                                            | boolean                                                        | false         |          |
-| labelPadding             | Label padding                                                                            | number \| number[]                                             | 0             |          |
-| labelCloseToPath         | Whether the label is close to the contour, [example](#labelclosetopath)                  | boolean                                                        | true          |          |
-| labelAutoRotate          | Whether the label rotates with the contour, [example](#labelautorotate)                  | boolean                                                        | true          |          |
-| labelOffsetX             | Label x-axis offset                                                                      | number                                                         | 0             |          |
-| labelOffsetY             | Label y-axis offset                                                                      | number                                                         | 0             |          |
-| labelMaxWidth            | Maximum width of the text, automatically ellipsized if exceeded                          | number                                                         | -             |          |
-| maxRoutingIterations     | Maximum number of iterations for calculating paths between members                       | number                                                         | 100           |          |
-| maxMarchingIterations    | Maximum number of iterations for calculating contours                                    | number                                                         | 20            |          |
-| pixelGroup               | Number of pixels per potential area group, used to improve speed                         | number                                                         | 4             |          |
-| edgeR0                   | Edge radius parameter R0                                                                 | number                                                         | -             |          |
-| edgeR1                   | Edge radius parameter R1                                                                 | number                                                         | -             |          |
-| nodeR0                   | Node radius parameter R0                                                                 | number                                                         | -             |          |
-| nodeR1                   | Node radius parameter R1                                                                 | number                                                         | -             |          |
-| morphBuffer              | Morph buffer size                                                                        | number                                                         |               |          |
-| threshold                | Threshold                                                                                | number                                                         | -             |          |
-| memberInfluenceFactor    | Member influence factor                                                                  | number                                                         | -             |          |
-| edgeInfluenceFactor      | Edge influence factor                                                                    | number                                                         | -             |          |
-| nonMemberInfluenceFactor | Non-member influence factor                                                              | number                                                         | -             |          |
-| virtualEdges             | Whether to use virtual edges                                                             | boolean                                                        | -             |          |
+| type | Plugin type | string | `bubble-sets` | ✓ |
+| key | Unique identifier for the plugin for subsequent updates | string | - | |
+| members | Member elements, including nodes and edges, [example](#members) | string[] | - | ✓ |
+| avoidMembers | Elements to avoid, not included when drawing contours (currently supports setting nodes) | string[] | - | |
+| label | Whether to display labels | boolean | true | |
+| labelPlacement | Label position | `left` \| `right` \| `top` \| `bottom` \| `center` \| `bottom` | `bottom` | |
+| labelBackground | Whether to display background | boolean | false | |
+| labelPadding | Label padding | number \| number[] | 0 | |
+| labelCloseToPath | Whether the label is close to the contour, [example](#labelclosetopath) | boolean | true | |
+| labelAutoRotate | Whether the label rotates with the contour, [example](#labelautorotate) | boolean | true | |
+| labelOffsetX | Label x-axis offset | number | 0 | |
+| labelOffsetY | Label y-axis offset | number | 0 | |
+| labelMaxWidth | Maximum width of the text, automatically ellipsized if exceeded | number | - | |
+| maxRoutingIterations | Maximum number of iterations for calculating paths between members | number | 100 | |
+| maxMarchingIterations | Maximum number of iterations for calculating contours | number | 20 | |
+| pixelGroup | Number of pixels per potential area group, used to improve speed | number | 4 | |
+| edgeR0 | Edge radius parameter R0 | number | - | |
+| edgeR1 | Edge radius parameter R1 | number | - | |
+| nodeR0 | Node radius parameter R0 | number | - | |
+| nodeR1 | Node radius parameter R1 | number | - | |
+| morphBuffer | Morph buffer size | number | | |
+| threshold | Threshold | number | - | |
+| memberInfluenceFactor | Member influence factor | number | - | |
+| edgeInfluenceFactor | Edge influence factor | number | - | |
+| nonMemberInfluenceFactor | Non-member influence factor | number | - | |
+| virtualEdges | Whether to use virtual edges | boolean | - | |
 
 ### members
 

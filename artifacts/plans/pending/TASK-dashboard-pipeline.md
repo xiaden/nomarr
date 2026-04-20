@@ -14,13 +14,13 @@ This task adds a vertical stepper pipeline widget to the Dashboard that:
 
 **Pipeline steps and their state detection:**
 
-| Step | Detect Complete | Detect In-Progress | Action Component |
-|------|----------------|-------------------|------------------|
-| Add Library | `list()` returns ≥1 library | — | Inline `ServerFilePicker` + create API call |
-| Scan Library | Library has `scannedAt` set | `workStatus.is_scanning` | "Scan" button → `scan(libraryId)` |
-| Tag Files | `pending_files === 0 && processed_files > 0` | `workStatus.is_processing` | Progress bar (already fetched by Dashboard) |
-| Calibrate | `calibrationStatus.last_run > 0` | `histogramStatus.running` | "Run Calibration" button → `startHistogramCalibration()` |
-| Browse Insights | Always last, never "complete" | — | "Explore" nav link to /insights |
+ | Step | Detect Complete | Detect In-Progress | Action Component |
+ | ------ | ---------------- | ------------------- | ------------------ |
+ | Add Library | `list()` returns ≥1 library | — | Inline `ServerFilePicker` + create API call |
+ | Scan Library | Library has `scannedAt` set | `workStatus.is_scanning` | "Scan" button → `scan(libraryId)` |
+ | Tag Files | `pending_files === 0 && processed_files > 0` | `workStatus.is_processing` | Progress bar (already fetched by Dashboard) |
+ | Calibrate | `calibrationStatus.last_run > 0` | `histogramStatus.running` | "Run Calibration" button → `startHistogramCalibration()` |
+ | Browse Insights | Always last, never "complete" | — | "Explore" nav link to /insights |
 
 **Existing APIs already fetched by DashboardPage:** `getWorkStatus()`, `getStats()`, `getRecentActivity()`. Additional calls needed: `list()` (libraries), `getStatus()` (calibration). Both are lightweight.
 

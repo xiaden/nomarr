@@ -1,6 +1,6 @@
 # MCP Specification: Tools (2025-11-25)
 
-Source: https://modelcontextprotocol.io/specification/2025-11-25/server/tools
+Source: <https://modelcontextprotocol.io/specification/2025-11-25/server/tools>
 
 ## Overview
 
@@ -13,6 +13,7 @@ Tools in MCP are designed to be model-controlled, meaning that the language mode
 > **Warning:** For trust & safety and security, there SHOULD always be a human in the loop with the ability to deny tool invocations.
 
 Applications SHOULD:
+
 - Provide UI that makes clear which tools are being exposed to the AI model
 - Insert clear visual indicators when tools are invoked
 - Present confirmation prompts to the user for operations, to ensure a human is in the loop
@@ -40,6 +41,7 @@ Servers that support tools MUST declare the `tools` capability:
 To discover available tools, clients send a `tools/list` request. This operation supports pagination.
 
 Request:
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -52,6 +54,7 @@ Request:
 ```
 
 Response:
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -94,6 +97,7 @@ Response:
 To invoke a tool, clients send a `tools/call` request:
 
 Request:
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -109,6 +113,7 @@ Request:
 ```
 
 Response:
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -140,24 +145,24 @@ When the list of available tools changes, servers that declared the `listChanged
 
 ```
 Server          Client          LLM
-  |               |              |
-  |  tools/list   |              |
-  |<--------------|              |
-  |  List of tools|              |
-  |-------------->|  Select tool |
-  |               |<-------------|
-  |  tools/call   |              |
-  |<--------------|              |
-  |  Tool result  |              |
-  |-------------->|Process result|
-  |               |------------->|
-  |               |              |
-  | tools/list_changed           |
-  |-------------->|              |
-  |  tools/list   |              |
-  |<--------------|              |
-  | Updated tools |              |
-  |-------------->|              |
+ | | |
+ | tools/list | |
+ |<--------------| |
+ | List of tools| |
+ |-------------->| Select tool |
+ | |<-------------|
+ | tools/call | |
+ |<--------------| |
+ | Tool result | |
+ |-------------->|Process result|
+ | |------------->|
+ | | |
+ | tools/list_changed |
+ |-------------->| |
+ | tools/list | |
+ |<--------------| |
+ | Updated tools | |
+ |-------------->| |
 ```
 
 ## 5. Data Types
@@ -165,6 +170,7 @@ Server          Client          LLM
 ### 5.1 Tool
 
 A tool definition includes:
+
 - `name`: Unique identifier for the tool
 - `title`: Optional human-readable name of the tool for display purposes.
 - `description`: Human-readable description of functionality
@@ -194,6 +200,7 @@ A tool definition includes:
 - Tool names SHOULD be unique within a server.
 
 Example valid tool names:
+
 - `getUser`
 - `DATA_EXPORT_v2`
 - `admin.tools.list`
@@ -293,6 +300,7 @@ Tools may also provide an output schema for validation of structured results. If
 - Clients SHOULD validate structured results against this schema.
 
 Example tool with output schema:
+
 ```json
 {
   "name": "get_weather_data",
@@ -330,6 +338,7 @@ Example tool with output schema:
 ```
 
 Example valid response for this tool:
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -351,6 +360,7 @@ Example valid response for this tool:
 ```
 
 Providing an output schema helps clients and LLMs understand and properly handle structured tool outputs by:
+
 - Enabling strict schema validation of responses
 - Providing type information for better integration with programming languages
 - Guiding clients and LLMs to properly parse and utilize the returned data
@@ -358,7 +368,7 @@ Providing an output schema helps clients and LLMs understand and properly handle
 
 ### 5.3 Schema Examples
 
-#### 5.3.1 Tool with default 2020-12 schema:
+#### 5.3.1 Tool with default 2020-12 schema
 
 ```json
 {
@@ -375,7 +385,7 @@ Providing an output schema helps clients and LLMs understand and properly handle
 }
 ```
 
-#### 5.3.2 Tool with explicit draft-07 schema:
+#### 5.3.2 Tool with explicit draft-07 schema
 
 ```json
 {
@@ -393,7 +403,7 @@ Providing an output schema helps clients and LLMs understand and properly handle
 }
 ```
 
-#### 5.3.3 Tool with no parameters:
+#### 5.3.3 Tool with no parameters
 
 ```json
 {
@@ -426,6 +436,7 @@ Tool Execution Errors contain actionable feedback that language models can use t
 - Clients MAY provide protocol errors to language models, though these are less likely to result in successful recovery.
 
 Example protocol error:
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -438,6 +449,7 @@ Example protocol error:
 ```
 
 Example tool execution error (input validation):
+
 ```json
 {
   "jsonrpc": "2.0",

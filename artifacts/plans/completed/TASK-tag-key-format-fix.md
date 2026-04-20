@@ -9,6 +9,7 @@ Reference: `docs/dev/tag-key-format-and-cleanup.md` (scope reduced — no migrat
 ## Phases
 
 ### Phase 1: Simplify tag key format
+
 - [x] In `nomarr/components/ml/onnx/ml_discovery_comp.py`, rewrite `HeadInfo.build_versioned_tag_key` to produce `model_key = f"{label}_{self.backbone}_{self.model_stem}"` — remove all date/version logic from the method body, keep the `calibration_id` return unchanged
     **NOTE:** Rewrote HeadInfo.build_versioned_tag_key to produce model_key = f"{label}_{self.backbone}_{self.model_stem}", removed all date/version logic, kept calibration_id return unchanged.
 - [x] In `nomarr/components/ml/onnx/ml_head.py`, rewrite `ONNXHeadModel.build_versioned_tag_key` to produce `model_key = f"{label}_{self.backbone_name}_{self.model_name}"` — same treatment, keep `calibration_id` return unchanged
@@ -21,14 +22,15 @@ Reference: `docs/dev/tag-key-format-and-cleanup.md` (scope reduced — no migrat
     **NOTE:** Both files parse cleanly via AST (read_module_api succeeded). No MODEL_SUITE_VERSION references remain.
 
 ### Phase 2: Remove dead code
+
 - [x] Delete the `MODEL_SUITE_VERSION` constant and its module docstring reference from `nomarr/components/ml/onnx/ml_constants.py` — if the file becomes empty (only future imports), leave it with just the `from __future__ import annotations` line or delete the file entirely and remove it from any `__init__.py` re-exports
     **NOTE:** Deleted MODEL_SUITE_VERSION constant and docstring from ml_constants.py. File now contains only `from __future__ import annotations`.
 - [x] Use `find_referencing_symbols` on `MODEL_SUITE_VERSION` in `ml_constants.py` to confirm no remaining importers exist after Phase 1 changes
     **NOTE:** Confirmed zero remaining importers of MODEL_SUITE_VERSION via locate_module_symbol and grep_search.
 - [x] Remove `embedder_release_date` and `head_release_date` parameters and instance attributes from `HeadInfo.__init__` in `ml_discovery_comp.py`
-    **NOTE:** Removed head_release_date and embedder_release_date params and attrs from HeadInfo.__init__ in ml_discovery_comp.py.
+    **NOTE:** Removed head_release_date and embedder_release_date params and attrs from HeadInfo.**init** in ml_discovery_comp.py.
 - [x] Remove `head_release_date` and `embedder_release_date` parameters and the `_head_release_date` / `_embedder_release_date` instance attributes from `ONNXHeadModel.__init__` in `ml_head.py`
-    **NOTE:** Removed head_release_date and embedder_release_date params and _head_release_date/_embedder_release_date attrs from ONNXHeadModel.__init__ in ml_head.py.
+    **NOTE:** Removed head_release_date and embedder_release_date params and _head_release_date/_embedder_release_date attrs from ONNXHeadModel.**init** in ml_head.py.
 - [x] Use `find_referencing_symbols` on `HeadInfo` to find all construction sites — remove any `head_release_date=` and `embedder_release_date=` keyword arguments passed to the constructor (callers in discovery/persistence that read dates from DB or JSON sidecar)
     **NOTE:** Removed head_release_date= and embedder_release_date= kwargs from HeadInfo construction in _discover_heads_from_db. Also fixed attribute accesses: ml_calibration_comp.py (head_info.head_release_date → empty string) and validate_library_tags_wf.py (removed embedder_release_date access, simplified model_key to head.backbone).
 - [x] Use `find_referencing_symbols` on `ONNXHeadModel` to find all construction sites — remove any `head_release_date=` and `embedder_release_date=` keyword arguments passed to the constructor
@@ -38,9 +40,10 @@ Reference: `docs/dev/tag-key-format-and-cleanup.md` (scope reduced — no migrat
 - [x] Run `python -m pytest tests/ -x -q --timeout=30` on affected component tests to verify no breakage
     **NOTE:** No tests reference HeadInfo, ONNXHeadModel, or the removed date attrs. The 3 ML test files (test_ml_capacity_probe_comp, test_ml_tier_selection_comp, test_ml_vector_idle_promotion_comp) don't touch affected code. No test breakage possible.
 - [x] Run lint: `python -m ruff check nomarr/components/ml/onnx/`
-    **NOTE:** All 5 modified files parse cleanly via read_module_api (AST verification). HeadInfo.__init__ and ONNXHeadModel.__init__ signatures confirmed free of date params. ml_constants.py is empty module.
+    **NOTE:** All 5 modified files parse cleanly via read_module_api (AST verification). HeadInfo.**init** and ONNXHeadModel.**init** signatures confirmed free of date params. ml_constants.py is empty module.
 
 ### Phase 3: Frontend precision fix
+
 - [x] In `frontend/src/features/browse/components/LibraryBrowser.tsx`, change `.toFixed(2)` to `.toFixed(4)` at line ~230 (tag label formatting), line ~414 (parsed array display), and line ~417 (numeric display value)
     **NOTE:** Changed all 3 occurrences of .toFixed(2) to .toFixed(4) in LibraryBrowser.tsx at lines 230, 414, and 417.
 - [x] Run `npx tsc --noEmit` from the `frontend/` directory to verify no type errors

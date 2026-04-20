@@ -26,6 +26,7 @@ All editing tools follow these principles:
 **Purpose**: Create new files atomically with automatic directory creation.
 
 **Function signature:**
+
 ```python
 def edit_file_create(files: list[dict]) -> dict
 ```
@@ -91,6 +92,7 @@ def edit_file_create(files: list[dict]) -> dict
 ### Examples
 
 **Example 1: Create a single file**
+
 ```python
 edit_file_create(files=[
     {"path": "services/example_service.py", "content": "# Example service\n"}
@@ -98,6 +100,7 @@ edit_file_create(files=[
 ```
 
 **Example 2: Create a nested batch**
+
 ```python
 edit_file_create(files=[
     {"path": "services/example/session_service.py", "content": "# Session service\n"},
@@ -107,6 +110,7 @@ edit_file_create(files=[
 ```
 
 **Example 3: Create empty configuration files**
+
 ```python
 edit_file_create(files=[
     {"path": "config/dev.yaml"},
@@ -127,6 +131,7 @@ edit_file_create(files=[
 **Purpose**: Replace entire file contents atomically.
 
 **Function signature:**
+
 ```python
 def edit_file_replace_content(ops: list[dict]) -> dict
 ```
@@ -194,6 +199,7 @@ def edit_file_replace_content(ops: list[dict]) -> dict
 ### Examples
 
 **Example 1: Replace a configuration file**
+
 ```python
 edit_file_replace_content(ops=[
     {"path": "config/app.yaml", "content": "debug: true\nhost: api.example.com\n"}
@@ -201,6 +207,7 @@ edit_file_replace_content(ops=[
 ```
 
 **Example 2: Batch replace generated files**
+
 ```python
 edit_file_replace_content(ops=[
     {"path": "docs/example-a.md", "content": "# Example A\n"},
@@ -209,6 +216,7 @@ edit_file_replace_content(ops=[
 ```
 
 **Example 3: Clear a file**
+
 ```python
 edit_file_replace_content(ops=[
     {"path": "tmp/output.log", "content": ""}
@@ -228,6 +236,7 @@ edit_file_replace_content(ops=[
 **Purpose**: Insert text at the beginning or end of existing files.
 
 **Function signature:**
+
 ```python
 def edit_file_insert_at_boundary(position: Literal["bof", "eof"], ops: list[dict]) -> dict
 ```
@@ -278,6 +287,7 @@ def edit_file_insert_at_boundary(position: Literal["bof", "eof"], ops: list[dict
 ### Examples
 
 **Example 1: Add an import block at the top of a file**
+
 ```python
 edit_file_insert_at_boundary(
     position="bof",
@@ -288,6 +298,7 @@ edit_file_insert_at_boundary(
 ```
 
 **Example 2: Append a helper at the end of a file**
+
 ```python
 edit_file_insert_at_boundary(
     position="eof",
@@ -298,6 +309,7 @@ edit_file_insert_at_boundary(
 ```
 
 **Example 3: Add the same footer to multiple docs**
+
 ```python
 edit_file_insert_at_boundary(
     position="eof",
@@ -321,6 +333,7 @@ edit_file_insert_at_boundary(
 **Purpose**: Insert text before or after a uniquely matching content anchor.
 
 **Function signature:**
+
 ```python
 def edit_file_insert_at_line(ops: list[dict]) -> dict
 ```
@@ -375,6 +388,7 @@ def edit_file_insert_at_line(ops: list[dict]) -> dict
 ### Examples
 
 **Example 1: Insert a log line after a docstring**
+
 ```python
 edit_file_insert_at_line(ops=[
     {
@@ -387,6 +401,7 @@ edit_file_insert_at_line(ops=[
 ```
 
 **Example 2: Insert a comment before a specific statement**
+
 ```python
 edit_file_insert_at_line(ops=[
     {
@@ -399,6 +414,7 @@ edit_file_insert_at_line(ops=[
 ```
 
 **Example 3: Batch anchor-based inserts**
+
 ```python
 edit_file_insert_at_line(ops=[
     {
@@ -435,6 +451,7 @@ All editing tools enforce atomic transactions:
 5. **No partial success**: A failed call returns `status: "failed"` with no applied mutations
 
 **Example rollback scenario:**
+
 ```python
 edit_file_replace_content(ops=[
     {"path": "config/app.yaml", "content": "debug: true\n"},
@@ -454,11 +471,13 @@ edit_file_replace_content(ops=[
 **Why?** Content-aware targeting is more stable than hand-managed line and column math, especially in batch operations.
 
 **Implementation:**
+
 - `edit_file_insert_at_boundary` has no line or column coordinates to maintain.
 - `edit_file_insert_at_line` resolves insert locations by unique anchor text.
 - Boundary-based tools such as `edit_file_replace_by_content` and `edit_file_move_by_content` validate the source range against the original file contents before committing changes.
 
 **Example:**
+
 ```python
 edit_file_insert_at_line(ops=[
     {
@@ -558,6 +577,7 @@ All tools return structured error responses:
 ```
 
 **Common error reasons:**
+
 - `"File already exists"` (`edit_file_create`)
 - `"File not found"` (`edit_file_replace_content`, insert tools, move tools)
 - `"Duplicate path in batch"` (batch editing tools)
@@ -567,6 +587,7 @@ All tools return structured error responses:
 - `"Disk full"` (all editing tools)
 
 **Error recovery:**
+
 1. All operations are rolled back automatically
 2. No manual cleanup is required
 3. Check `failed_ops` for the specific error details
@@ -579,6 +600,7 @@ All tools return structured error responses:
 ### Batch Operations
 
 Prefer a single batch call over multiple sequential calls when possible:
+
 - **Better atomicity**: One failure rolls back the whole planned change
 - **Better performance**: Validation and write phases happen once per batch
 - **Cleaner call graph**: Fewer tool invocations means less orchestration overhead
@@ -592,6 +614,7 @@ Prefer a single batch call over multiple sequential calls when possible:
 ### Context Return Size
 
 Tools limit returned context to keep responses compact:
+
 - `edit_file_create`: Opening lines of each created file
 - `edit_file_replace_content`: Summarized replacement context
 - `edit_file_insert_at_boundary`: Changed region with nearby context
@@ -603,16 +626,16 @@ If you need the full file contents, read the file separately after the mutation 
 
 ## Choosing the Right Tool
 
-| Scenario | Tool | Why |
-|----------|------|-----|
-| Create new files | `edit_file_create` | Auto-creates parent directories and fails on existing files |
-| Replace an entire file | `edit_file_replace_content` | Best fit for whole-file rewrites |
-| Make targeted string edits | `edit_file_replace_string` | Exact-match replacement with expected-count safety |
-| Replace a bounded block | `edit_file_replace_by_content` | Uses content boundaries instead of line numbers |
-| Insert at top or bottom | `edit_file_insert_at_boundary` | Direct boundary insertion with no anchor selection |
-| Insert near existing content | `edit_file_insert_at_line` | Uses a unique content anchor instead of line numbers |
-| Move or rename a file | `edit_file_move` | Single-call file move within the workspace |
-| Move a bounded block | `edit_file_move_by_content` | Extracts or relocates content using boundaries |
+ | Scenario | Tool | Why |
+ | ---------- | ------ | ----- |
+ | Create new files | `edit_file_create` | Auto-creates parent directories and fails on existing files |
+ | Replace an entire file | `edit_file_replace_content` | Best fit for whole-file rewrites |
+ | Make targeted string edits | `edit_file_replace_string` | Exact-match replacement with expected-count safety |
+ | Replace a bounded block | `edit_file_replace_by_content` | Uses content boundaries instead of line numbers |
+ | Insert at top or bottom | `edit_file_insert_at_boundary` | Direct boundary insertion with no anchor selection |
+ | Insert near existing content | `edit_file_insert_at_line` | Uses a unique content anchor instead of line numbers |
+ | Move or rename a file | `edit_file_move` | Single-call file move within the workspace |
+ | Move a bounded block | `edit_file_move_by_content` | Extracts or relocates content using boundaries |
 
 ---
 

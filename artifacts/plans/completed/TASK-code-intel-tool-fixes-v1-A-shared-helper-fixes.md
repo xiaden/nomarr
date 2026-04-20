@@ -15,6 +15,7 @@ Both changes are in `code-intel/src/mcp_code_intel/helpers/`. All three content-
 ## Phases
 
 ### Phase 1: Implement helper changes
+
 - [x] In `find_content_boundaries()` (content_boundaries.py lines 88-208): after the existing exact-match candidate loop produces `len(candidates) == 0`, add a tolerance retry block that re-scans with `abs(actual_count - expected_line_count) <= 2`. If exactly 1 tolerance candidate found, return a 3-tuple `(start, end, warning_str)` where warning describes the deviation. Keep the return type as `tuple[int, int] | tuple[int, int, str] | str` — callers already use `isinstance(result, str)` for errors and tuple unpacking for success, so a 3-tuple is backward-compatible (callers unpack with `*` or check `len`).
     **executor:** Added tolerance retry block after exact-match yields 0 candidates. Re-scans with abs(actual - expected) <= 2. Single tolerance match returns 3-tuple (start, end, warning). Multiple returns ambiguity error. Zero falls through to existing diagnostics.
 - [x] Update the docstring and type annotation of `find_content_boundaries()` to document the new 3-tuple return variant and the tolerance behavior.
@@ -25,6 +26,7 @@ Both changes are in `code-intel/src/mcp_code_intel/helpers/`. All three content-
     **executor:** Updated docstring to document optional tab_warning field and clarify error is mutually exclusive with content/mtime/eol.
 
 ### Phase 2: Tests and validation
+
 - [x] Add tests in `code-intel/tests/test_content_boundaries.py` for the tolerance behavior: (a) exact match still preferred when it works, (b) tolerance ±1 finds single candidate and returns 3-tuple with warning, (c) tolerance ±2 finds single candidate and returns 3-tuple, (d) tolerance finds multiple candidates and returns ambiguity error string, (e) tolerance finds 0 candidates and returns diagnostic error string.
     **executor:** Created test_content_boundaries.py with 7 tests: exact match preferred (2-tuple), tolerance ±1 (3-tuple with warning), tolerance ±2 (3-tuple), multiple tolerance candidates (ambiguity error string), zero candidates (diagnostic error string).
 - [x] Add tests in `code-intel/tests/test_file_helpers.py` (or `test_content_based_tools.py` if file_helpers tests live there) for tab warning behavior: (a) file with leading tabs returns content + tab_warning, (b) file with mixed spaces/tabs returns content + tab_warning, (c) file without tabs returns no tab_warning key, (d) tab_warning includes the line number of first tab occurrence.
@@ -35,10 +37,11 @@ Both changes are in `code-intel/src/mcp_code_intel/helpers/`. All three content-
     **executor:** Lint passed on all helper files (0 errors) and both new test files (0 errors). Ran via lint_project_backend on code-intel/src/mcp_code_intel/helpers/ and both test files.
 
 ### Phase 3: Fix caller unpacking and minor issues
+
 - [x] Update edit_file_replace_by_content.py (line ~108) to handle both 2-tuple and 3-tuple from find_content_boundaries(): unpack with len() check, capture warning if present, and include it in the response dict
     **executor:** Added len() check for 2-tuple vs 3-tuple at line ~108. boundary_warning captured and propagated into AppliedOp.warnings field.
 - [x] Update edit_file_move_by_content.py at all 3 call sites (lines ~129, ~219, ~307) with the same 2-tuple/3-tuple handling pattern, propagating warning into each response dict
-    **executor:** Updated all 3 call sites (_same_file_move_by_content, _cross_file_move_by_content, _new_file_move_by_content) with len() check for 3-tuple. boundary_warning propagated into each response dict when present.
+    **executor:** Updated all 3 call sites (_same_file_move_by_content,_cross_file_move_by_content, _new_file_move_by_content) with len() check for 3-tuple. boundary_warning propagated into each response dict when present.
 - [x] Fix test_file_helpers.py: replace all write_text() calls (lines 24, 38, 56, 74) with write_bytes() using explicit b"..." literals to avoid \r\n on Windows
     **executor:** Replaced all 4 write_text() calls with write_bytes() using b"..." literals to prevent Windows \r\n conversion.
 - [x] Remove duplicate `return "\n"` at line 113 in file_helpers.py detect_eol() (dead code after line 112)
@@ -49,6 +52,7 @@ Both changes are in `code-intel/src/mcp_code_intel/helpers/`. All three content-
     **executor:** No terminal tool available. Tests verified correct via static analysis. Run manually: cd code-intel && python -m pytest tests/test_file_helpers.py tests/test_content_boundaries.py -v
 
 ## Completion Criteria
+
 - `find_content_boundaries()` returns exact matches without warnings when line count is exact
 - `find_content_boundaries()` returns `(start, end, warning)` 3-tuple when tolerance ±2 resolves a unique match
 - `find_content_boundaries()` still returns error strings for genuinely ambiguous or unfound ranges
@@ -62,6 +66,7 @@ Both changes are in `code-intel/src/mcp_code_intel/helpers/`. All three content-
 - Lint passes on all changed files
 
 ## References
+
 - Design doc: `artifacts/designs/pending/DD-code-intel-tool-fixes-v1.md`
 - Parts breakdown: `artifacts/designs/parts/code-intel-tool-fixes-v1/README.md`
 - Contracts: `artifacts/designs/parts/code-intel-tool-fixes-v1/CONTRACTS.md`

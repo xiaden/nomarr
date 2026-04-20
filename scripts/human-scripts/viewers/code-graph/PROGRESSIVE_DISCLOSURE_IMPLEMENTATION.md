@@ -25,6 +25,7 @@ Returns a `Set<string>` of matching node IDs.
 Created `ExpansionManager` class to manage visible graph subset:
 
 **Methods:**
+
 - `initializeEntrypoints()` - Returns only the 3 entrypoint nodes/edges
 - `expandNode(nodeId)` - Adds all neighbors, returns only new nodes/edges
 - `collapseNode(nodeId)` - Removes node + orphaned neighbors (with entrypoint protection)
@@ -33,6 +34,7 @@ Created `ExpansionManager` class to manage visible graph subset:
 - `getHiddenNeighborCount(nodeId)` - For future badge display
 
 **Key Features:**
+
 - Tracks expanded/collapsed state per node
 - Adjacency maps for efficient neighbor lookup
 - Orphan pruning: removes nodes with no connections to visible nodes
@@ -44,6 +46,7 @@ Created `ExpansionManager` class to manage visible graph subset:
 **File: `graph-filters.js`**
 
 Modified node creation to:
+
 - Detect entrypoints via `this.appEntrypoints.has(node.id)`
 - Set `fixed: {x: true, y: true}, physics: false` for entrypoints
 - Position entrypoints in horizontal row: `x: nodes.length * 300 - 600, y: 0`
@@ -102,6 +105,7 @@ focusNodeFromPanel(nodeId)
 ```
 
 **Event Handlers:**
+
 - `expandNode` - triggers expansion animation
 - `collapseNode` - triggers removal
 - `traceNode` - triggers path highlighting  
@@ -109,6 +113,7 @@ focusNodeFromPanel(nodeId)
 - `zoom`/`dragStart` - stops auto-centering during expansion animation
 
 **Startup Flow:**
+
 ```javascript
 setupViewer() {
     // Load all graph data
@@ -127,6 +132,7 @@ setupViewer() {
 **File: `graph-network/index.js`**
 
 Added `setPathHighlight(nodeIds, edgeIds)` method:
+
 - Uses state-based styling system
 - Applies `PATH` state to specified nodes/edges
 - Applies `DIMMED` state to others
@@ -139,11 +145,13 @@ Imports `getNodeStyle` and `getEdgeStyle` from `state-styles.js`.
 **File: `graph-ui.js`**
 
 Enhanced `renderEdgeItem()` to add click handlers:
+
 ```javascript
 onclick="window.codeGraphViewer.focusNodeFromPanel('${connectedNodeId}')"
 ```
 
 Clicking a connection in the left panel:
+
 - Centers viewport on that node
 - Updates selection
 - Does NOT expand automatically
@@ -154,6 +162,7 @@ Clicking a connection in the left panel:
 **File: `index.html`**
 
 Added interaction instructions panel:
+
 ```
 Interactions:
 • Click: Expand node
@@ -187,12 +196,14 @@ Vis.js Network (visualization)
 ## Physics Behavior
 
 ### During Expansion
+
 1. Fix all currently visible nodes (`fixed: {x:true, y:true}, physics: false`)
 2. Add new nodes with `physics: true` around parent in circle pattern
 3. Let new nodes settle for 2 seconds
 4. Fix new nodes (`fixed: {x:true, y:true}, physics: false`)
 
 ### Auto-Center Interrupt
+
 - User zoom/drag during expansion sets `autoCenterDuringExpansion = false`
 - Stops viewport from auto-following new nodes
 - User can pan away to inspect other areas while expansion continues
@@ -200,10 +211,12 @@ Vis.js Network (visualization)
 ## Statistics
 
 Stats display shows:
+
 - **Total Nodes/Edges**: Full graph size (all data)
 - **Visible Nodes/Edges**: Currently rendered subset
 
 Updated after:
+
 - Initial render (entrypoints only)
 - Each expansion (incremental add)
 - Each collapse (decremental remove)
@@ -211,19 +224,23 @@ Updated after:
 ## Edge Cases Handled
 
 ### Entrypoint Protection
+
 - `collapseNode()` never removes entrypoints
 - `findOrphans()` never returns entrypoints
 - Entrypoints always remain visible
 
 ### Cycle Safety
+
 - `tracePaths()` uses `visited` set
 - Prevents infinite loops in cyclic graphs
 
 ### Already Expanded
+
 - `expandNode()` returns early if node already expanded
 - No duplicate nodes added
 
 ### Orphan Detection
+
 - Node is orphan if all its connections lead to invisible nodes
 - Checks both incoming and outgoing edges
 - BFS to verify no path to any visible node
@@ -231,16 +248,19 @@ Updated after:
 ## Performance Considerations
 
 ### Incremental Rendering
+
 - Adding 50 nodes takes 50 * 25ms = 1.25 seconds
 - Smooth bubble-in animation
 - Prevents blocking main thread
 
 ### Adjacency Maps
+
 - O(1) neighbor lookup
 - Pre-computed during initialization
 - Efficient expansion/collapse operations
 
 ### State Tracking
+
 - ExpansionManager maintains expansion state
 - No need to query DataSets for state
 - Fast operations even with large graphs
@@ -248,21 +268,25 @@ Updated after:
 ## Future Enhancements
 
 ### Badge Display
+
 - `getHiddenNeighborCount(nodeId)` ready
 - Could show "• 5 hidden" badge on nodes
 - Visual indicator of expandable neighbors
 
 ### Expansion Depth Limits
+
 - Could limit expansion to N levels deep
 - Prevent accidental expansion of entire graph
 - "Expand All Children" explicit action
 
 ### Partial Expansion
+
 - Instead of expanding all neighbors
 - Could allow selecting which edges to follow
 - More fine-grained control
 
 ### Expansion History
+
 - Track expansion order
 - "Undo" button to reverse last expansion
 - Breadcrumb trail of exploration path
@@ -328,6 +352,7 @@ Updated after:
 ## Implementation Status
 
 ✅ **Complete:**
+
 - Entrypoint detection (3 specific nodes)
 - Expansion manager (track visibility)
 - Fixed positioning (entrypoints don't move)
@@ -340,6 +365,7 @@ Updated after:
 - User instructions
 
 🚧 **Not Implemented:**
+
 - Badge display (hidden neighbor counts)
 - Expansion depth limits
 - Expansion history/undo

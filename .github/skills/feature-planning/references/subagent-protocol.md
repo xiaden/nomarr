@@ -81,6 +81,7 @@ Out of scope for this part:
 ### One part per dispatch
 
 Never combine "Plan parts B and D since they're in the same round." Each subagent call produces one plan file. Combining causes:
+
 - Bloated context (two parts' worth of research)
 - Interleaved steps from different domains
 - Plans that are too large for plan_read
@@ -102,10 +103,10 @@ Never combine "Plan parts B and D since they're in the same round." Each subagen
 
 ## Common Subagent Mistakes and Fixes
 
-| Mistake | Cause | Fix |
-|---|---|---|
-| Workflow receives `VectorSearchService` | Subagent didn't check layer rules | Edit plan: change param to `db: Database`, call persistence directly |
-| Plan references method not yet created | Planned out of dependency order | Either: add method creation to this plan, or re-order execution |
-| Missing lint step | Subagent omitted boilerplate | Add `Verify lint_project_backend() passes with zero errors` as final step per phase |
-| Step count > 12 | Part scope too broad | Split into two plans: `{letter}` and `{letter}2` |
-| TypedDict defined in wrong layer | Subagent put DTO in workflow file | Move to `nomarr/helpers/dto/` per architecture rules |
+ | Mistake | Cause | Fix |
+ | --- | --- | --- |
+ | Workflow receives `VectorSearchService` | Subagent didn't check layer rules | Edit plan: change param to `db: Database`, call persistence directly |
+ | Plan references method not yet created | Planned out of dependency order | Either: add method creation to this plan, or re-order execution |
+ | Missing lint step | Subagent omitted boilerplate | Add `Verify lint_project_backend() passes with zero errors` as final step per phase |
+ | Step count > 12 | Part scope too broad | Split into two plans: `{letter}` and `{letter}2` |
+ | TypedDict defined in wrong layer | Subagent put DTO in workflow file | Move to `nomarr/helpers/dto/` per architecture rules |

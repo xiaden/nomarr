@@ -13,6 +13,7 @@ This guide explains common questions and potential confusion points when working
 **Per-label calibration uses file count, not prediction aggregation.**
 
 For a library with 30,000 audio files:
+
 - **Binary classification head** (e.g., `gender` with labels `male`, `female`):
   - Male calibration: ~30,000 samples
   - Female calibration: ~30,000 samples
@@ -27,6 +28,7 @@ For a library with 30,000 audio files:
 - New per-label system: Calibrates each label separately → ~30,000 samples each → independent P5/P95 ranges
 
 **Rationale:**
+
 - Male confidence distributions differ from female confidence distributions
 - A song predicted as 85% male should use male-specific calibration curve
 - Mixing complementary predictions (male=0.85, female=0.15) into one histogram obscures label-specific patterns
@@ -60,21 +62,21 @@ FOR doc IN calibration_state
 
 **23 calibration documents total** (one per label across all heads):
 
-| Head Type | Head Name | Labels | Document Count |
-|-----------|-----------|--------|----------------|
-| Binary | `gender` | male, female | 2 |
-| Binary | `voice_instrumental` | instrumental, voice | 2 |
-| Binary | `mood_acoustic` | acoustic, electric | 2 |
-| Binary | `mood_aggressive` | aggressive, relaxed | 2 |
-| Binary | `mood_electronic` | acoustic, electronic | 2 |
-| Binary | `mood_happy` | happy, sad | 2 |
-| Binary | `mood_party` | party, nonParty | 2 |
-| Binary | `mood_relaxed` | relaxed, energetic | 2 |
-| Regression | `approachability` | approachability | 1 |
-| Regression | `danceability` | danceability | 1 |
-| Regression | `engagement` | engagement | 1 |
-| Binary | `timbre` | bright, dark | 2 |
-| Binary | `tonal_atonal` | tonal, atonal | 2 |
+ | Head Type | Head Name | Labels | Document Count |
+ | ----------- | ----------- | -------- | ---------------- |
+ | Binary | `gender` | male, female | 2 |
+ | Binary | `voice_instrumental` | instrumental, voice | 2 |
+ | Binary | `mood_acoustic` | acoustic, electric | 2 |
+ | Binary | `mood_aggressive` | aggressive, relaxed | 2 |
+ | Binary | `mood_electronic` | acoustic, electronic | 2 |
+ | Binary | `mood_happy` | happy, sad | 2 |
+ | Binary | `mood_party` | party, nonParty | 2 |
+ | Binary | `mood_relaxed` | relaxed, energetic | 2 |
+ | Regression | `approachability` | approachability | 1 |
+ | Regression | `danceability` | danceability | 1 |
+ | Regression | `engagement` | engagement | 1 |
+ | Binary | `timbre` | bright, dark | 2 |
+ | Binary | `tonal_atonal` | tonal, atonal | 2 |
 
 **Total: 23 documents**
 
@@ -101,6 +103,7 @@ FOR doc IN calibration_state
 **Explanation:** This is correct behavior. Per-label calibration uses file count (30k files → 30k samples per label), not aggregated prediction count (30k files × 2 labels = 60k).
 
 **Verification:**
+
 1. Check library file count: `RETURN LENGTH(library_files)`
 2. Compare to calibration sample count: should match file count, not 2× file count
 
@@ -111,6 +114,7 @@ FOR doc IN calibration_state
 **Symptom:** `gender:male` has P5=0.05, P95=0.95 but `gender:female` has P5=0.02, P95=0.88
 
 **Explanation:** This is expected and desirable. Different labels have different confidence distributions:
+
 - Male predictions may cluster tightly (high confidence): wide P5-P95 range
 - Female predictions may be more uncertain: narrower P5-P95 range
 - Independent calibration captures these label-specific patterns
@@ -122,11 +126,13 @@ FOR doc IN calibration_state
 ### Issue: "Calibration generation produces fewer than 23 documents"
 
 **Possible Causes:**
+
 1. **No predictions for label:** If no files have predictions for a label (e.g., no `tonal` predictions), no calibration document is created
 2. **Generation interrupted:** Check logs for errors during workflow execution
 3. **Filter bug:** Verify label extraction query in `get_sparse_histogram`
 
 **Verification:**
+
 ```aql
 // Check which labels have predictions
 FOR label IN ["male", "female", "voice", "instrumental", /* ... all 23 labels ... */]
@@ -182,12 +188,14 @@ FOR doc IN calibration_state
 ### Regenerating Calibration After Schema Changes
 
 1. **Delete old documents:**
+
    ```aql
    FOR doc IN calibration_state
      REMOVE doc IN calibration_state
    ```
 
 2. **Trigger regeneration via API:**
+
    ```powershell
    # Login
    $login = Invoke-RestMethod -Uri "http://127.0.0.1:8356/api/web/authentication/login" `
@@ -202,6 +210,7 @@ FOR doc IN calibration_state
    ```
 
 3. **Verify result:**
+
    ```aql
    RETURN LENGTH(calibration_state)  // Should be 23
    ```

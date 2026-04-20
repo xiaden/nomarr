@@ -11,6 +11,7 @@ This plan restructures `plans/` into `artifacts/`, moves all existing files to t
 ## Phases
 
 ### Phase 1: Create Directory Structure and Move Files
+
 - [x] Create the full `artifacts/` directory tree: `plans/pending/`, `plans/completed/`, `designs/pending/`, `designs/completed/`, `designs/parts/`, `decisions/`, `logs/`, `scratch/examples/`, `scratch/speculative/`; copy `plans/PLAN_SCHEMA.json` to `artifacts/plans/PLAN_SCHEMA.json`
     **Note:** Created full artifacts/ tree with .gitkeep files. Copied PLAN_SCHEMA.json to artifacts/plans/PLAN_SCHEMA.json.
 - [x] Move active task plans (`plans/TASK-*.md` and `plans/test-payload.instructions.md`) to `artifacts/plans/pending/`
@@ -25,6 +26,7 @@ This plan restructures `plans/` into `artifacts/`, moves all existing files to t
     **Notes:** Moved 9 examples, 20 speculative, 0 scratch files. plans/ now contains only .gitignore.
 
 ### Phase 2: Update Plan Tools and Path References
+
 - [x] In `code-intel/src/mcp_code_intel/tools/plan_read.py`: replace `PLANS_DIR = "plans"` with two constants `PLANS_PENDING_DIR = "artifacts/plans/pending"` and `PLANS_COMPLETED_DIR = "artifacts/plans/completed"`; update `_resolve_plan_path` to search pending first, then completed, returning the first match
     **Notes:** Updated constants and _resolve_plan_path returns None if not found in either location.
 - [x] In `code-intel/src/mcp_code_intel/tools/plan_complete_step.py`: replace `PLANS_DIR = "plans"` with `PLANS_PENDING_DIR = "artifacts/plans/pending"`; update `_resolve_plan_path` to only resolve within pending (completed plans are immutable)
@@ -39,6 +41,7 @@ This plan restructures `plans/` into `artifacts/`, moves all existing files to t
     **Notes:** Plan is at artifacts/plans/pending/ (moved in Phase 1). DD at artifacts/designs/pending/DD-agent-artifact-tools.md. Parts at artifacts/designs/parts/agent-artifact-tools/. All verified.
 
 ## Completion Criteria
+
 - `plans/` directory no longer exists (or contains only `.gitignore`)
 - `artifacts/` tree matches the layout specified in the design document
 - All active task plans are in `artifacts/plans/pending/`, all completed in `artifacts/plans/completed/`
@@ -48,6 +51,7 @@ This plan restructures `plans/` into `artifacts/`, moves all existing files to t
 - No stale `plans/` path references remain in `.github/` config files, agent files, skills, prompts, or schemas
 
 ## References
+
 - Design doc: `plans/dev/design-agent-artifact-tools.md`
 - Parts breakdown: `plans/dev/agent-artifact-tools-parts/README.md`
 - Contracts: `plans/dev/agent-artifact-tools-parts/CONTRACTS.md`

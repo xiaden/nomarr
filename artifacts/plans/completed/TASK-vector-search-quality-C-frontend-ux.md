@@ -51,7 +51,7 @@ Prerequisites: Part A (config fields in DynamicConfig and LibraryConfigFields) a
 
 ### Phase 4: Vector config UI components
 
-- [x] Create VectorConfigExplainer component that computes and displays "what this means" text from totalTracks, groupSize, and thoroughness props using pure client-side math (nLists = max(10, floor(totalTracks / groupSize)), nProbe = max(1, floor(nLists * thoroughness / 100)), songsChecked = nProbe * groupSize)
+- [x] Create VectorConfigExplainer component that computes and displays "what this means" text from totalTracks, groupSize, and thoroughness props using pure client-side math (nLists = max(10, floor(totalTracks / groupSize)), nProbe = max(1, floor(nLists *thoroughness / 100)), songsChecked = nProbe* groupSize)
     **Notes:** Created frontend/src/features/library/components/VectorConfigExplainer.tsx. Pure component with client-side nLists/nProbe math, shows neighborhood/search explanation. Handles zero-tracks case.
 - [x] Create VectorConfigSection component containing group size slider (range 5-100, step 5, default 15), thoroughness slider (range 1-50, step 1, default 10), "use global default" toggle, and embedded VectorConfigExplainer
     **Notes:** Created frontend/src/features/library/components/VectorConfigSection.tsx with group size slider (5-100, step 5), thoroughness slider (1-50, step 1), global defaults toggle, and embedded VectorConfigExplainer.

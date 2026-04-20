@@ -21,9 +21,9 @@ Provide a clear and concise description of what this PR does.
 
 List the key changes:
 
-- 
-- 
-- 
+-
+-
+-
 
 ## Architecture Impact
 
@@ -55,15 +55,16 @@ Which layers are affected? (Check all that apply)
 - [ ] Tested in Docker environment
 
 **Test environment:**
-- OS: 
-- Docker version: 
-- GPU: 
+
+- OS:
+- Docker version:
+- GPU:
 
 **Test scenarios:**
 
-1. 
-2. 
-3. 
+1.
+2.
+3.
 
 ## Checklist
 
@@ -123,5 +124,5 @@ Add any other context about the PR here.
 
 **(Optional) Specific areas you'd like reviewers to focus on:**
 
-- 
-- 
+-
+-

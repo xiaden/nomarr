@@ -9,6 +9,7 @@ applyTo: nomarr/persistence/**
 **Purpose:** Own all database access. Provide a clean data access API for higher layers.
 
 Persistence is the **data access layer**:
+
 - `Database` class owns the connection and exposes collection namespaces
 - `constructor/` builds `*Namespace` objects dynamically from the collection schema
 - External code accesses via constructor-backed namespaces: `db.tags.rel.get.many(...)`, `db.library_files.path.get(...)`
@@ -99,6 +100,7 @@ from nomarr.persistence.database.library_files_aql import LibraryFilesAQL
 **Never rename `_id` or `_key`.**
 
 These are ArangoDB-native identifiers:
+
 - `_key`: Document key (unique within collection)
 - `_id`: Full document ID (`collection/_key`)
 
@@ -123,14 +125,14 @@ There are no hand-written `*AQL` classes.
 All **collection-level** mutation verbs accept `list[...]` inputs — never a scalar, never a union.
 Pass `[item]` for single values. No separate `_batch` or `bulk_` variants.
 
-| Verb | Input | Return |
-|------|-------|--------|
-| `insert(docs)` | `list[dict]` | `list[str]` |
-| `upsert(docs, match_field)` | `list[dict]` | `list[str]` |
-| `delete(ids)` | `list[str]` | `None` |
-| `cascade(ids)` | `list[str]` | `int` |
-| `transition(ids, from_edge, to_edge)` | `list[str]` | `None` |
-| `truncate()` | *(none)* | `None` |
+ | Verb | Input | Return |
+ | ------ | ------- | -------- |
+ | `insert(docs)` | `list[dict]` | `list[str]` |
+ | `upsert(docs, match_field)` | `list[dict]` | `list[str]` |
+ | `delete(ids)` | `list[str]` | `None` |
+ | `cascade(ids)` | `list[str]` | `int` |
+ | `transition(ids, from_edge, to_edge)` | `list[str]` | `None` |
+ | `truncate()` | *(none)* | `None` |
 
 **Field-level** `delete(value) -> int` is different — it takes a single field value (WHERE clause) and returns a count. This is not subject to the always-list rule.
 

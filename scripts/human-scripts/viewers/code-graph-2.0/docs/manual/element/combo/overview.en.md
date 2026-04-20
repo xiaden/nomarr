@@ -22,14 +22,14 @@ G6 has built-in Combos including `circle` (circular combo) and `rect` (rectangul
 
 When defining a Combo, you need to add a `combos` field to the graph's data object. Each Combo is an object with the following structure:
 
-| Attribute | Description                                                                                            | Type           | Default | Required |
+| Attribute | Description | Type | Default | Required |
 | --------- | ------------------------------------------------------------------------------------------------------ | -------------- | ------- | -------- |
-| id        | Unique identifier of the combo                                                                         | string         | -       | ✓        |
-| type      | Combo type, name of built-in combo type or custom combo name, such as `circle` or `rect`               | string         | -       |          |
-| data      | Combo data, used to store custom data of the combo, accessible via callback functions in style mapping | object         | -       |          |
-| style     | Combo style                                                                                            | object         | -       |          |
-| states    | Initial states of the combo                                                                            | string[]       | -       |          |
-| combo     | Parent combo ID. If there is no parent combo, it is null                                               | string \| null | -       |          |
+| id | Unique identifier of the combo | string | - | ✓ |
+| type | Combo type, name of built-in combo type or custom combo name, such as `circle` or `rect` | string | - | |
+| data | Combo data, used to store custom data of the combo, accessible via callback functions in style mapping | object | - | |
+| style | Combo style | object | - | |
+| states | Initial states of the combo | string[] | - | |
+| combo | Parent combo ID. If there is no parent combo, it is null | string \| null | - | |
 
 An example of a data item in the `combos` array:
 

@@ -25,6 +25,7 @@ When the user switches the X or Y axis preset (e.g., Genre → Mood, or Genre �
 ### Bug 2: Same value cannot be used on both X and Y axes
 
 The `ADD_MANUAL_TAG` reducer in `useAxisState` has this check:
+
 ```typescript
 const existsOnOther = state[otherAxis].tags.some(
   (t) => t.key === action.tag.key && t.value === action.tag.value
@@ -51,6 +52,7 @@ The current design has 3 separate `useEffect` hooks trying to sync external hook
 **Option A (preferred): Lift `usePresetData` out of `useAxisState`**
 
 Instead of `useAxisState` running `usePresetData` internally and syncing via effects:
+
 - Move the `usePresetData` calls up into `TagCoOccurrenceGrid.tsx` (or a custom hook at the same level)
 - When preset changes, directly await the fetch result and dispatch `SET_TAGS` atomically
 - Use a `useEffect` that watches `state.x.preset` and `state.y.preset`, then fetches and sets in one go
@@ -72,6 +74,7 @@ Update `ManualTagSelector.tsx` accordingly: the "Add to X" button should be disa
 #### Fix 3: Fix mood TagSpec key handling
 
 In `usePresetData.ts`, the mood preset sends:
+
 ```typescript
 const moodTags: TagSpec[] = response.tag_keys.map((moodValue) => ({
   key: fetchStrategy.tagKey ?? "nom:mood-*",  // "nom:mood-*" 
@@ -80,6 +83,7 @@ const moodTags: TagSpec[] = response.tag_keys.map((moodValue) => ({
 ```
 
 In the service (`analytics_svc.py`), the key is checked with:
+
 ```python
 if key.startswith("nom:mood-"):
     tier = key[4:]  # "mood-strict"
@@ -88,6 +92,7 @@ if key.startswith("nom:mood-"):
 But `"nom:mood-*"` does NOT start with `"nom:mood-"` in a real tier sense — wait, actually `"nom:mood-*"` DOES start with `"nom:mood-"`. But `tier = key[4:]` = `"mood-*"` — then `mood_specs["mood-*"] = [values]`. Then the query uses `rel = f"nom:{tier}"` = `"nom:mood-*"` — and AQL queries for `tag.rel == "nom:mood-*"` which would match nothing (tags use `nom:mood-strict`, `nom:mood-regular`, etc., not the wildcard literal).
 
 Actually wait — let me re-read. `fetchStrategy.moodTier` is set to `"mood-strict"` for the mood preset. And in the fetch code:
+
 ```typescript
 const moodTier = fetchStrategy.moodTier ?? "mood-strict";
 const response = await getMoodValues(moodTier, maxValues);
@@ -114,13 +119,13 @@ No backend, service, workflow, persistence, or DTO changes needed.
 
 ## Files to Change
 
-| File | Changes |
-|---|---|
-| `frontend/src/features/analytics/components/TagCoOccurrenceGrid/useAxisState.ts` | Rewrite data flow to eliminate race conditions |
-| `frontend/src/features/analytics/components/TagCoOccurrenceGrid/usePresetData.ts` | Fix mood tag key to use actual tier (not wildcard) |
-| `frontend/src/features/analytics/components/TagCoOccurrenceGrid/types.ts` | Minor: possibly update mood preset fetchStrategy tagKey |
-| `frontend/src/features/analytics/components/TagCoOccurrenceGrid/ManualTagSelector.tsx` | Fix cross-axis uniqueness check |
-| `frontend/src/features/analytics/components/TagCoOccurrenceGrid/TagCoOccurrenceGrid.test.tsx` | Update/add tests for the fixed behavior |
+ | File | Changes |
+ | --- | --- |
+ | `frontend/src/features/analytics/components/TagCoOccurrenceGrid/useAxisState.ts` | Rewrite data flow to eliminate race conditions |
+ | `frontend/src/features/analytics/components/TagCoOccurrenceGrid/usePresetData.ts` | Fix mood tag key to use actual tier (not wildcard) |
+ | `frontend/src/features/analytics/components/TagCoOccurrenceGrid/types.ts` | Minor: possibly update mood preset fetchStrategy tagKey |
+ | `frontend/src/features/analytics/components/TagCoOccurrenceGrid/ManualTagSelector.tsx` | Fix cross-axis uniqueness check |
+ | `frontend/src/features/analytics/components/TagCoOccurrenceGrid/TagCoOccurrenceGrid.test.tsx` | Update/add tests for the fixed behavior |
 
 ---
 

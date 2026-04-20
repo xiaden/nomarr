@@ -48,6 +48,7 @@ TagCoOccurrenceGrid/
 ## UI Components
 
 ### PresetSelector
+
 - MUI ToggleButtonGroup (exclusive selection)
 - Options: Genre | Mood | Year | Manual
 - Changing preset triggers data fetch and auto-populates axis tags
@@ -55,6 +56,7 @@ TagCoOccurrenceGrid/
 - Swap button (⇄) between the two selectors swaps entire axis states
 
 ### HeatmapGrid
+
 - MUI Table with sticky positioning:
   - Column headers: sticky top
   - Row headers (first column): sticky left
@@ -63,6 +65,7 @@ TagCoOccurrenceGrid/
 - Vertical scroll contained within panel
 
 ### HeatmapCell
+
 - Background color computed from count/max ratio
 - Color scale: dark (#1a1a1a) → blue gradient (#4a9eff)
 - MUI Tooltip on hover showing:
@@ -72,11 +75,13 @@ TagCoOccurrenceGrid/
   - Percentage: {n/total * 100}% of max
 
 ### ColorLegend
+
 - Horizontal gradient bar showing scale
 - Labels: "0" on left, "{max}" on right
 - Caption: "Files matching both tags"
 
 ### ManualTagSelector (Advanced Accordion)
+
 - Collapsed by default
 - Expands to show:
   - Tag key dropdown (ComboBox)

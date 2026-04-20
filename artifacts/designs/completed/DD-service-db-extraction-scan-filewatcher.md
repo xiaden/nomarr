@@ -6,6 +6,7 @@
 **Revised:** 2026-04-06 (Amendment 3)
 
 **Related Documents:**
+
 - [ADR-003](artifacts/decisions/ADR-003-pure-boolean-state-graph-for-file-processing-pipeline.md) — Pure Boolean State Graph
 - [ADR-004](artifacts/decisions/ADR-004-schema-refactor-v1-graph-normalization.md) — Schema Refactor V1
 - [ADR-013](artifacts/decisions/ADR-013-expand-tagging-service-as-full-tags-vertical-slice.md) — Tag Service Vertical Slice
@@ -52,16 +53,16 @@ The following prior decisions constrain this design:
 
 ### Dead Code Deletion
 
-| Method | Lines | Evidence | Action |
-|--------|-------|----------|--------|
-| `_has_healthy_library_workers` | def at L47, body starts L54 | Zero callers across entire codebase | **DELETE** |
-| `_is_scan_running` | def at L66, DB call at L73 | No production callers. Two unit test callers at `tests/unit/services/domain/test_library_svc_scan.py:96` and `:111` — tests must be deleted along with the method. `library_admin_comp._is_scan_running(db)` already exists as the canonical implementation. | **DELETE** |
+ | Method | Lines | Evidence | Action |
+ | -------- | ------- | ---------- | -------- |
+ | `_has_healthy_library_workers` | def at L47, body starts L54 | Zero callers across entire codebase | **DELETE** |
+ | `_is_scan_running` | def at L66, DB call at L73 | No production callers. Two unit test callers at `tests/unit/services/domain/test_library_svc_scan.py:96` and `:111` — tests must be deleted along with the method. `library_admin_comp._is_scan_running(db)` already exists as the canonical implementation. | **DELETE** |
 
 ### Deduplicated Helper
 
-| Method | Current Implementation | Replacement |
-|--------|----------------------|-------------|
-| `_get_library_or_error` (L39-44) | `db.libraries.get_library(id)` → None check → raise `ValueError` | `scan_lifecycle_comp.resolve_library_for_scan(db, library_id)` |
+ | Method | Current Implementation | Replacement |
+ | -------- | ---------------------- | ------------- |
+ | `_get_library_or_error` (L39-44) | `db.libraries.get_library(id)` → None check → raise `ValueError` | `scan_lifecycle_comp.resolve_library_for_scan(db, library_id)` |
 
 **Callers in scan.py:** `get_status()` at L217 and `validate_library_tags()` at L280. NOT `start_quick_scan` or `start_full_scan` — those validate through `scan_setup_workflow`.
 
@@ -133,6 +134,7 @@ scan.py methods:
 **Decision:** Absorb `_reset_stale_scan_statuses` logic into `LibraryPipelineService.recover_stale_states()` (at `nomarr/services/infrastructure/pipeline_svc.py`).
 
 This eliminates:
+
 - 3 of 8 DB calls in `file_watcher_svc.py`
 - A timing hazard between daemon thread and main thread recovery
 - Semantic duplication of recovery logic
@@ -148,6 +150,7 @@ This eliminates:
 A new component file at `nomarr/components/library/library_watch_config_comp.py` for the remaining 5 DB calls.
 
 **Why a new file (not extending existing components):**
+
 - `scan_lifecycle_comp` owns scan state transitions — watch mode and library config queries are a different concern
 - `library_admin_comp` owns CRUD on libraries — read-only watcher queries don't belong there
 - A dedicated `_comp.py` file keeps the watcher's data needs cohesive and under 150 lines
@@ -164,6 +167,7 @@ def list_watchable_libraries(db: Database) -> list[dict[str, Any]]:
     Returns projection: {_id, root_path, watch_mode} only.
     """
 ```
+
 **Replaces:** `sync_watchers` (L250) call to `db.libraries.list_watchable_libraries()`. This is NOT a thin wrapper — the component owns the projection contract (`{_id, root_path, watch_mode}` only), ensuring callers receive a bounded field set rather than full library documents. This is consistent with existing practice like `check_interrupted_scan` in `scan_lifecycle_comp`.
 
 ```python
@@ -173,6 +177,7 @@ def get_library_watch_config(db: Database, library_id: str) -> dict[str, Any] | 
     Projected fields: root_path, watch_mode, is_enabled.
     """
 ```
+
 **Replaces:** `start_watching_library` (L303) and `_polling_loop` (L409) calls to `db.libraries.get_library(library_id)`. Callers only need root path, watch_mode, and is_enabled — this projects just those fields. The `is_enabled` field is required because `_polling_loop()` needs it to decide when to stop watching a library.
 
 #### `update_watch_mode` — routed through `UpdateLibraryMetadataComp`
@@ -196,12 +201,14 @@ This means `library_watch_config_comp` has 2 functions (`list_watchable_librarie
 **Rationale:** There are 20 test instantiations in `tests/unit/services/test_file_watcher_svc.py` plus 1 production call in `app.py:312`. Changing the constructor signature would require updating all 21 call sites for zero architectural benefit. The dependency-direction rule is "no direct `db.collection.*` calls in services" — not "services can't hold a db reference." Other services already follow this pattern (hold `db`, pass to components).
 
 **Constructor (unchanged externally):**
+
 ```python
 def __init__(self, db: Database, library_service, debounce_seconds, event_loop, polling_interval_seconds):
     self._db = db  # Passed to component functions only — no direct db.collection.* calls
 ```
 
 All remaining call sites become:
+
 ```python
 library_watch_config_comp.list_watchable_libraries(self._db)
 library_watch_config_comp.get_library_watch_config(self._db, library_id)
@@ -229,6 +236,7 @@ file_watcher_svc.py methods:
 ## Part 3: Startup Order Fix
 
 ### Current (problematic)
+
 ```
 L307: LibraryService created
 L312: FileWatcherService(db, library_service) created
@@ -238,6 +246,7 @@ L358: pipeline_svc.recover_stale_states()  ← RACES with above
 ```
 
 ### After (safe)
+
 ```
 L307: LibraryService created
 L312: FileWatcherService(db, library_service) created  ← no recovery here
@@ -252,15 +261,15 @@ The daemon thread start can stay in its current position since it no longer does
 
 ## Layer Mapping
 
-| Component | Layer | File | Responsibility |
-|-----------|-------|------|----------------|
-| `scan_lifecycle_comp` | component | `nomarr/components/library/scan_lifecycle_comp.py` | +2 functions: scanning IDs, scan history |
-| `library_watch_config_comp` | component | `nomarr/components/library/library_watch_config_comp.py` | NEW: 2 read-only functions for watch config queries |
-| `UpdateLibraryMetadataComp` | component | `nomarr/components/library/update_library_metadata_comp.py` | EXISTING: used for `update_watch_mode` via `.update(library_id, watch_mode=...)` |
-| `LibraryScanMixin` | service | `nomarr/services/domain/library_svc/scan.py` | Remove dead code + replace DB calls with component calls |
-| `FileWatcherService` | service | `nomarr/services/infrastructure/file_watcher_svc.py` | Replace all DB calls with component calls, delete recovery method |
-| `LibraryPipelineService` | service | `nomarr/services/infrastructure/pipeline_svc.py` | Absorb stale scan metadata reset into recover_stale_states() |
-| Startup wiring | app | `nomarr/app.py` | Adjust startup order if needed |
+ | Component | Layer | File | Responsibility |
+ | ----------- | ------- | ------ | ---------------- |
+ | `scan_lifecycle_comp` | component | `nomarr/components/library/scan_lifecycle_comp.py` | +2 functions: scanning IDs, scan history |
+ | `library_watch_config_comp` | component | `nomarr/components/library/library_watch_config_comp.py` | NEW: 2 read-only functions for watch config queries |
+ | `UpdateLibraryMetadataComp` | component | `nomarr/components/library/update_library_metadata_comp.py` | EXISTING: used for `update_watch_mode` via `.update(library_id, watch_mode=...)` |
+ | `LibraryScanMixin` | service | `nomarr/services/domain/library_svc/scan.py` | Remove dead code + replace DB calls with component calls |
+ | `FileWatcherService` | service | `nomarr/services/infrastructure/file_watcher_svc.py` | Replace all DB calls with component calls, delete recovery method |
+ | `LibraryPipelineService` | service | `nomarr/services/infrastructure/pipeline_svc.py` | Absorb stale scan metadata reset into recover_stale_states() |
+ | Startup wiring | app | `nomarr/app.py` | Adjust startup order if needed |
 
 ---
 
@@ -303,14 +312,14 @@ This combination gives the cleanest layer separation with the smallest blast rad
 
 These test files require updates as part of this extraction:
 
-| File | Changes Required |
-|------|------------------|
-| `tests/unit/services/domain/test_library_svc_scan.py` | Delete `_is_scan_running` tests (L96, L111). Update `get_status` tests for component-delegated implementation. |
-| `tests/unit/services/test_file_watcher_svc.py` | Constructor signature unchanged — no updates to 20 instantiation sites. Delete `TestResetStaleScanStatuses` class (L629-673) since `_reset_stale_scan_statuses` is absorbed into pipeline_svc. Grep for `watcher.db` references before `self.db` → `self._db` rename. |
-| `tests/unit/services/infrastructure/test_pipeline_svc.py` | Add tests for absorbed stale scan recovery (existing call sites at L97, L121, L148, L169, L338, L370 need coverage for new recovery responsibility). |
-| `tests/integration/test_pipeline_integration.py` | Verify integration coverage for absorbed recovery logic (existing call at L420). |
-| `tests/unit/components/library/test_scan_lifecycle_comp.py` | Extend with tests for new `get_scanning_library_ids` and `get_library_scan_histories` functions. |
-| `tests/unit/components/library/test_library_watch_config_comp.py` | **NEW**: Unit tests for `list_watchable_libraries` and `get_library_watch_config`. |
+ | File | Changes Required |
+ | ------ | ------------------ |
+ | `tests/unit/services/domain/test_library_svc_scan.py` | Delete `_is_scan_running` tests (L96, L111). Update `get_status` tests for component-delegated implementation. |
+ | `tests/unit/services/test_file_watcher_svc.py` | Constructor signature unchanged — no updates to 20 instantiation sites. Delete `TestResetStaleScanStatuses` class (L629-673) since `_reset_stale_scan_statuses` is absorbed into pipeline_svc. Grep for `watcher.db` references before `self.db` → `self._db` rename. |
+ | `tests/unit/services/infrastructure/test_pipeline_svc.py` | Add tests for absorbed stale scan recovery (existing call sites at L97, L121, L148, L169, L338, L370 need coverage for new recovery responsibility). |
+ | `tests/integration/test_pipeline_integration.py` | Verify integration coverage for absorbed recovery logic (existing call at L420). |
+ | `tests/unit/components/library/test_scan_lifecycle_comp.py` | Extend with tests for new `get_scanning_library_ids` and `get_library_scan_histories` functions. |
+ | `tests/unit/components/library/test_library_watch_config_comp.py` | **NEW**: Unit tests for `list_watchable_libraries` and `get_library_watch_config`. |
 
 ---
 
@@ -318,13 +327,13 @@ These test files require updates as part of this extraction:
 
 The following infrastructure services have the same direct-DB-call pattern but are **explicitly out of scope** for this design. They should be addressed in a separate extraction effort:
 
-| Service | File | Direct DB Calls |
-|---------|------|-----------------|
-| HealthMonitorService | `nomarr/services/infrastructure/health_monitor_svc.py` | 1 call |
-| MLService | `nomarr/services/infrastructure/ml_svc.py` | 4 calls |
-| LibraryPipelineService | `nomarr/services/infrastructure/pipeline_svc.py` | ~20 calls |
-| WorkerSystemService | `nomarr/services/infrastructure/worker_system_svc.py` | 6 calls |
-| KeysService | `nomarr/services/infrastructure/keys_svc.py` | 12 calls (uses `self._db`) |
+ | Service | File | Direct DB Calls |
+ | --------- | ------ | ----------------- |
+ | HealthMonitorService | `nomarr/services/infrastructure/health_monitor_svc.py` | 1 call |
+ | MLService | `nomarr/services/infrastructure/ml_svc.py` | 4 calls |
+ | LibraryPipelineService | `nomarr/services/infrastructure/pipeline_svc.py` | ~20 calls |
+ | WorkerSystemService | `nomarr/services/infrastructure/worker_system_svc.py` | 6 calls |
+ | KeysService | `nomarr/services/infrastructure/keys_svc.py` | 12 calls (uses `self._db`) |
 
 These are noted here for future planning visibility. Each would follow a similar component-extraction pattern.
 
@@ -353,12 +362,14 @@ These are noted here for future planning visibility. Each would follow a similar
 **Amendment 1** (2026-04-06): Initial QA corrections — line number fixes, factual corrections from codebase verification.
 
 **Amendment 2** (2026-04-06): 26 fixes applied across 4 severity tiers:
+
 - **MUST-FIX (4):** Corrected pipeline_svc path (M-1). Removed unnecessary `get_scan_status_data` function (M-2). Fixed `get_status()` to assemble `LibraryScanStatusResult` inline instead of routing through `work_status_comp` (M-3). Committed `recover_stale_states` scan_status reset as a firm decision (M-4).
 - **SHOULD-FIX (6):** Renamed `resolve_library_watch_config` → `get_library_watch_config` (S-1). Dropped redundant `get_library_watch_mode` (S-2). Added `__init__.py` re-export step (S-3). Added projection for `list_watchable_libraries` (S-4). Called out `self.db` → `self._db` rename with grep step (S-5). Added `limit` param to `get_library_scan_histories` (S-6).
 - **PATTERN ENFORCER (5):** Added `is_enabled` to watch config projection (PE-1). Fixed `list_watchable_libraries` filter semantics (PE-2). Specified `recover_stale_states` return shape (PE-3). Named `validate_library_tags` production caller (PE-4). Justified `update_watch_mode` vs `UpdateLibraryMetadataComp.update()` (PE-5).
 - **FACTUAL + OPTIONAL (11):** Fixed 8 line number errors. Corrected `start_scan()` to `start_quick_scan()`/`start_full_scan()`. Added phase ordering note (O-1). Added benign race comment note (O-2). Renamed component file to `library_watch_config_comp.py` (O-3).
 
 **Amendment 3** (2026-04-06): 7 fixes from PatternEnforcer Round 3 (source: rnd-manager#L36):
+
 - **FAIL-1:** Fixed internal contradiction — "eliminate this dependency entirely" → "eliminate direct `db.collection.*` calls." Constructor retains `db` to pass to components.
 - **FAIL-2:** Rerouted `update_watch_mode` through existing `UpdateLibraryMetadataComp.update()` instead of new thin wrapper. `library_watch_config_comp` reduced to 2 read-only functions. Made `list_watchable_libraries` projection value explicit.
 - **FAIL-3:** Fixed `get_scanning_library_ids` implementation — persistence already returns `list[str]`, no extraction needed. Component value is providing `PIPELINE_SCANNING` constant.

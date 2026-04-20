@@ -27,13 +27,13 @@ const graph = new Graph({
 
 <img src="https://mdn.alipayobjects.com/huamei_qa8qxu/afts/img/A*tTShQLD_dGoAAAAAAAAAAAAAemJ7AQ/original" width="400" alt="Dendrogram Layout Options Illustration" />
 
-| Property  | Description                                            | Type                                       | Default | Required |
+| Property | Description | Type | Default | Required |
 | --------- | ------------------------------------------------------ | ------------------------------------------ | ------- | -------- |
-| type      | Layout type                                            | `dendrogram`                               | -       | ✓        |
-| direction | Layout direction, [options](#direction)                | `LR` \| `RL` \| `TB` \| `BT` \| `H` \| `V` | `LR`    |          |
-| nodeSep   | Node spacing, distance between nodes on the same level | number                                     | 20      |          |
-| rankSep   | Rank spacing, distance between different levels        | number                                     | 200     |          |
-| radial    | Whether to enable radial layout, [see below](#radial)  | boolean                                    | false   |          |
+| type | Layout type | `dendrogram` | - | ✓ |
+| direction | Layout direction, [options](#direction) | `LR` \| `RL` \| `TB` \| `BT` \| `H` \| `V` | `LR` | |
+| nodeSep | Node spacing, distance between nodes on the same level | number | 20 | |
+| rankSep | Rank spacing, distance between different levels | number | 200 | |
+| radial | Whether to enable radial layout, [see below](#radial) | boolean | false | |
 
 ### direction
 

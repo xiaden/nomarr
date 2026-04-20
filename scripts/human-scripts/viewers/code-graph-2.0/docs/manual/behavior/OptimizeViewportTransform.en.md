@@ -52,12 +52,12 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Option   | Description                                                                                                          | Type                                   | Default                       | Required |
+| Option | Description | Type | Default | Required |
 | -------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ----------------------------- | -------- |
-| type     | Behavior type name                                                                                                   | string                                 | `optimize-viewport-transform` | ✓        |
-| enable   | Whether to enable this behavior                                                                                      | boolean \| ((event: Event) => boolean) | true                          |          |
-| debounce | How long after the operation ends to restore the visibility of all elements (milliseconds)                           | number                                 | 200                           |          |
-| shapes   | Specify the graphical elements that should remain visible during canvas operations, [configuration options](#shapes) | function                               | `(type) => type === 'node'`   |          |
+| type | Behavior type name | string | `optimize-viewport-transform` | ✓ |
+| enable | Whether to enable this behavior | boolean \| ((event: Event) => boolean) | true | |
+| debounce | How long after the operation ends to restore the visibility of all elements (milliseconds) | number | 200 | |
+| shapes | Specify the graphical elements that should remain visible during canvas operations, [configuration options](#shapes) | function | `(type) => type === 'node'` | |
 
 ### Shapes
 

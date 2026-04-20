@@ -81,7 +81,7 @@ Currently, the configuration of palettes is mainly focused on elements, taking n
 
 > When the number of elements exceeds the number of colors in the palette, the colors in the palette will be reused in a cyclic manner.
 
-2. Standard Configuration: The attributes for configuring a discrete palette include: `type: 'group'`, `field`, `color`, `invert`.
+1. Standard Configuration: The attributes for configuring a discrete palette include: `type: 'group'`, `field`, `color`, `invert`.
 
 Among them, `type: 'group'` explicitly specifies that the current palette type is a discrete palette; `field` designates the field for grouping in the element data; `color` is the name of the palette; `invert` indicates whether to invert the palette.
 

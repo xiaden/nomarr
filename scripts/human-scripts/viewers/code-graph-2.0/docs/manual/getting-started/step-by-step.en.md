@@ -80,7 +80,7 @@ alert('Hello, G6!');
 npm run dev
 ```
 
-Open a web browser and visit the address output in the terminal (typically: http://127.0.0.1:5173/), and you will see a pop-up displaying "Hello, G6!".
+Open a web browser and visit the address output in the terminal (typically: <http://127.0.0.1:5173/>), and you will see a pop-up displaying "Hello, G6!".
 
 ## Creating a Simple Graph
 

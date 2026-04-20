@@ -9,11 +9,11 @@
 
 ## Execution Summary
 
-| Plan | Title | Rounds | Fix Plans | Status |
-|---|---|---|---|---|
-| A | Shared Helper Fixes | 2 | — | PASS |
-| B | Insert Text EOL Fix | 1 | — | PASS |
-| C | Python Nav Fixes | 2 | — | PASS |
+ | Plan | Title | Rounds | Fix Plans | Status |
+ | --- | --- | --- | --- | --- |
+ | A | Shared Helper Fixes | 2 | — | PASS |
+ | B | Insert Text EOL Fix | 1 | — | PASS |
+ | C | Python Nav Fixes | 2 | — | PASS |
 
 ## Design Deviations
 
@@ -27,10 +27,12 @@
 ## Files Created/Modified
 
 ### Helpers
+
 - `code-intel/src/mcp_code_intel/helpers/content_boundaries.py` (modified — ±2 tolerance retry, 3-tuple return)
 - `code-intel/src/mcp_code_intel/helpers/file_helpers.py` (modified — tab rejection → tab_warning metadata)
 
 ### Tools
+
 - `code-intel/src/mcp_code_intel/tools/edit_file_replace_by_content.py` (modified — 3-tuple handling)
 - `code-intel/src/mcp_code_intel/tools/edit_file_move_by_content.py` (modified — 3-tuple handling)
 - `code-intel/src/mcp_code_intel/tools/edit_file_insert_text.py` (modified — CRLF normalization, trailing newline fix, tab_warning propagation)
@@ -39,11 +41,13 @@
 - `code-intel/src/mcp_code_intel/server.py` (modified — deprecated tool removal)
 
 ### Deprecated (moved to tools/deprecated/)
+
 - `code-intel/src/mcp_code_intel/tools/deprecated/analyze_project_api_coverage.py`
 - `code-intel/src/mcp_code_intel/tools/deprecated/edit_file_copy_paste_text.py`
 - `code-intel/src/mcp_code_intel/tools/deprecated/list_project_routes.py`
 
 ### Tests
+
 - `code-intel/tests/test_content_boundaries.py` (modified — tolerance tests)
 - `code-intel/tests/test_file_helpers.py` (created — tab warning tests)
 - `code-intel/tests/test_locate_module_symbol.py` (modified — parent_filter, path-segment tests)

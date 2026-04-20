@@ -40,17 +40,20 @@ All artifact parsers normalize EOL per ADR-002.
 ## Consequences
 
 **Positive:**
+
 - Institutional memory survives across conversations — dead ends, discoveries, and decisions are recorded
 - Clear agent roles prevent quality shortcuts (executor can't skip review)
 - ADR search before decisions prevents contradicting existing choices
 - Log entries surface patterns across sessions (e.g., recurring blockers)
 
 **Negative:**
+
 - Agent system adds overhead for simple tasks (overkill for single-file changes)
 - Artifact tools increase MCP server surface area
 - Agents must be disciplined about logging (too much noise defeats the purpose)
 
 **Deferred:**
+
 - Automated ADR promotion (from artifacts/ to committed docs/)
 - Cross-session agent memory beyond file artifacts
 - Metrics/dashboards for agent activity

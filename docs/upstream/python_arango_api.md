@@ -2,7 +2,7 @@
 
 Last updated: 2026-04-01  
 Based on: python-arango ≥8.0.0 (Nomarr's pinned minimum)  
-Source: https://github.com/arangodb/python-arango
+Source: <https://github.com/arangodb/python-arango>
 
 ---
 
@@ -137,13 +137,13 @@ db.graphs()                           # -> list[dict]
 
 ### StandardDatabase Methods
 
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `db.collections()` | `list[dict]` | List all collections |
-| `db.has_collection(name)` | `bool` | Check existence |
-| `db.collection(name)` | `StandardCollection` | Get API wrapper (no creation) |
-| `db.create_collection(name, **kwargs)` | `StandardCollection` | Create collection |
-| `db.delete_collection(name)` | `bool` | Delete collection |
+ | Method | Returns | Description |
+ | -------- | --------- | ------------- |
+ | `db.collections()` | `list[dict]` | List all collections |
+ | `db.has_collection(name)` | `bool` | Check existence |
+ | `db.collection(name)` | `StandardCollection` | Get API wrapper (no creation) |
+ | `db.create_collection(name, **kwargs)` | `StandardCollection` | Create collection |
+ | `db.delete_collection(name)` | `bool` | Delete collection |
 
 ### Create with Options
 
@@ -172,16 +172,16 @@ edges = db.create_collection('edges', edge=True)
 
 ### StandardCollection Properties
 
-| Method / Property | Returns | Description |
-|-------------------|---------|-------------|
-| `.name` | `str` | Collection name |
-| `.db_name` | `str` | Database name |
-| `.properties()` | `dict` | Full collection properties |
-| `.revision()` | `str` | Collection revision |
-| `.statistics()` | `dict` | Collection statistics |
-| `.checksum()` | `dict` | Collection checksum |
-| `.count()` | `int` | Document count |
-| `len(collection)` | `int` | Same as `.count()` |
+ | Method / Property | Returns | Description |
+ | ------------------- | --------- | ------------- |
+ | `.name` | `str` | Collection name |
+ | `.db_name` | `str` | Database name |
+ | `.properties()` | `dict` | Full collection properties |
+ | `.revision()` | `str` | Collection revision |
+ | `.statistics()` | `dict` | Collection statistics |
+ | `.checksum()` | `dict` | Collection checksum |
+ | `.count()` | `int` | Document count |
+ | `len(collection)` | `int` | Same as `.count()` |
 
 ### Collection Operations
 
@@ -293,20 +293,20 @@ for student in students:
 
 **These replace common single-collection AQL patterns without writing any AQL.**
 
-| Method | Replaces AQL Pattern | Description |
-|--------|---------------------|-------------|
-| `collection.ids()` | `FOR d IN c RETURN d._id` | All document IDs |
-| `collection.keys()` | `FOR d IN c RETURN d._key` | All document keys |
-| `collection.all(skip, limit)` | `FOR d IN c LIMIT skip,limit RETURN d` | All docs with pagination |
-| `collection.find(filters, skip, limit)` | `FOR d IN c FILTER d.x==v RETURN d` | Filter by equality |
-| `collection.find(filters, sort=[...])` | `FOR d IN c FILTER ... SORT ... RETURN d` | Find with sort |
-| `collection.get_many(ids_or_keys)` | `FOR d IN c FILTER d._key IN [...] RETURN d` | Batch get by IDs/keys |
-| `collection.random()` | N/A | Random document |
-| `collection.update_match(filters, body)` | `FOR d IN c FILTER ... UPDATE d WITH {...} IN c` | Conditional update |
-| `collection.replace_match(filters, body)` | `FOR d IN c FILTER ... REPLACE d WITH {...} IN c` | Conditional replace |
-| `collection.delete_match(filters)` | `FOR d IN c FILTER ... REMOVE d IN c` | Conditional delete |
-| `collection.count()` | `RETURN LENGTH(c)` | Document count |
-| `collection.has(key)` | `RETURN DOCUMENT(c, key) != null` | Existence check |
+ | Method | Replaces AQL Pattern | Description |
+ | -------- | --------------------- | ------------- |
+ | `collection.ids()` | `FOR d IN c RETURN d._id` | All document IDs |
+ | `collection.keys()` | `FOR d IN c RETURN d._key` | All document keys |
+ | `collection.all(skip, limit)` | `FOR d IN c LIMIT skip,limit RETURN d` | All docs with pagination |
+ | `collection.find(filters, skip, limit)` | `FOR d IN c FILTER d.x==v RETURN d` | Filter by equality |
+ | `collection.find(filters, sort=[...])` | `FOR d IN c FILTER ... SORT ... RETURN d` | Find with sort |
+ | `collection.get_many(ids_or_keys)` | `FOR d IN c FILTER d._key IN [...] RETURN d` | Batch get by IDs/keys |
+ | `collection.random()` | N/A | Random document |
+ | `collection.update_match(filters, body)` | `FOR d IN c FILTER ... UPDATE d WITH {...} IN c` | Conditional update |
+ | `collection.replace_match(filters, body)` | `FOR d IN c FILTER ... REPLACE d WITH {...} IN c` | Conditional replace |
+ | `collection.delete_match(filters)` | `FOR d IN c FILTER ... REMOVE d IN c` | Conditional delete |
+ | `collection.count()` | `RETURN LENGTH(c)` | Document count |
+ | `collection.has(key)` | `RETURN DOCUMENT(c, key) != null` | Existence check |
 
 ### find() Details
 
@@ -495,13 +495,13 @@ cities.delete_index(index_id)         # -> bool
 
 ### Index Types Summary
 
-| Type | Use Case | Key Options |
-|------|----------|-------------|
-| `persistent` | Equality/range lookups, sorting | `unique`, `sparse`, `name`, `deduplicate` |
-| `fulltext` | Text search (legacy — prefer ArangoSearch) | `fields` (single field) |
-| `geo` | Geospatial queries | `geoJson` |
-| `ttl` | Auto-expiring documents | `expireAfter` (seconds) |
-| `mdi` | Multi-dimensional range queries | `fieldValueTypes` |
+ | Type | Use Case | Key Options |
+ | ------ | ---------- | ------------- |
+ | `persistent` | Equality/range lookups, sorting | `unique`, `sparse`, `name`, `deduplicate` |
+ | `fulltext` | Text search (legacy — prefer ArangoSearch) | `fields` (single field) |
+ | `geo` | Geospatial queries | `geoJson` |
+ | `ttl` | Auto-expiring documents | `expireAfter` (seconds) |
+ | `mdi` | Multi-dimensional range queries | `fieldValueTypes` |
 
 ---
 
@@ -878,6 +878,7 @@ batch_db.commit()
 ```
 
 ### Rules
+
 - `BatchDatabase` and `BatchJob` are **stateful** — not thread-safe
 - `BatchDatabase` cannot be reused after commit
 - Prefer `collection.*_many()` methods for all new code
@@ -975,57 +976,57 @@ Use this to decide when to use the python-arango API vs raw AQL during the rewri
 
 ### ✅ Use API (no AQL needed)
 
-| Operation | API Method |
-|-----------|-----------|
-| Get document by key | `collection.get(key)` |
-| Check document exists | `collection.has(key)` |
-| Insert single document | `collection.insert(doc)` |
-| Update single document | `collection.update(doc)` |
-| Replace single document | `collection.replace(doc)` |
-| Delete single document | `collection.delete(key)` |
-| Bulk insert | `collection.insert_many(docs)` |
-| Bulk update | `collection.update_many(docs)` |
-| Bulk replace | `collection.replace_many(docs)` |
-| Bulk delete | `collection.delete_many(keys)` |
-| Find by equality filter | `collection.find(filters)` |
-| Update matching docs | `collection.update_match(filters, body)` |
-| Delete matching docs | `collection.delete_match(filters)` |
-| Get all document keys | `collection.keys()` |
-| Get all document IDs | `collection.ids()` |
-| Paginate all docs | `collection.all(skip, limit)` |
-| Get random document | `collection.random()` |
-| Count documents | `collection.count()` |
-| Get many by keys | `collection.get_many(keys)` |
-| Edge CRUD | `edge_collection.insert/update/delete/get` |
-| Link vertices | `edge_collection.link(from, to)` |
-| Edges of vertex | `edge_collection.edges(vertex, direction)` |
-| Transaction wrapping | `db.begin_transaction(...)` |
+ | Operation | API Method |
+ | ----------- | ----------- |
+ | Get document by key | `collection.get(key)` |
+ | Check document exists | `collection.has(key)` |
+ | Insert single document | `collection.insert(doc)` |
+ | Update single document | `collection.update(doc)` |
+ | Replace single document | `collection.replace(doc)` |
+ | Delete single document | `collection.delete(key)` |
+ | Bulk insert | `collection.insert_many(docs)` |
+ | Bulk update | `collection.update_many(docs)` |
+ | Bulk replace | `collection.replace_many(docs)` |
+ | Bulk delete | `collection.delete_many(keys)` |
+ | Find by equality filter | `collection.find(filters)` |
+ | Update matching docs | `collection.update_match(filters, body)` |
+ | Delete matching docs | `collection.delete_match(filters)` |
+ | Get all document keys | `collection.keys()` |
+ | Get all document IDs | `collection.ids()` |
+ | Paginate all docs | `collection.all(skip, limit)` |
+ | Get random document | `collection.random()` |
+ | Count documents | `collection.count()` |
+ | Get many by keys | `collection.get_many(keys)` |
+ | Edge CRUD | `edge_collection.insert/update/delete/get` |
+ | Link vertices | `edge_collection.link(from, to)` |
+ | Edges of vertex | `edge_collection.edges(vertex, direction)` |
+ | Transaction wrapping | `db.begin_transaction(...)` |
 
 ### ⚠️ Use AQL (API insufficient)
 
-| Operation | Why AQL? |
-|-----------|----------|
-| Multi-collection joins | API operates on single collections |
-| Graph traversals | `FOR v, e, p IN 1..N OUTBOUND ...` |
-| Computed projections | `RETURN {name: d.first, score: d.x * 2}` |
-| Aggregations (GROUP BY) | `COLLECT ... AGGREGATE ...` |
-| Subqueries | Nested `FOR` loops |
-| Conditional logic | `LET x = (cond ? a : b)` |
-| Upsert (insert-or-update) | `UPSERT ... INSERT ... UPDATE ...` |
-| Complex filters | `FILTER d.age > 20 AND d.name LIKE '%son'` |
-| ArangoSearch queries | `FOR d IN view SEARCH ANALYZER(...)` |
-| Full-text search | `FOR d IN FULLTEXT(collection, field, query)` |
-| Geo queries | `FOR d IN collection FILTER GEO_DISTANCE(...)` |
-| Sorted + filtered + limited | When sort/filter/limit interact beyond `find()` |
+ | Operation | Why AQL? |
+ | ----------- | ---------- |
+ | Multi-collection joins | API operates on single collections |
+ | Graph traversals | `FOR v, e, p IN 1..N OUTBOUND ...` |
+ | Computed projections | `RETURN {name: d.first, score: d.x * 2}` |
+ | Aggregations (GROUP BY) | `COLLECT ... AGGREGATE ...` |
+ | Subqueries | Nested `FOR` loops |
+ | Conditional logic | `LET x = (cond ? a : b)` |
+ | Upsert (insert-or-update) | `UPSERT ... INSERT ... UPDATE ...` |
+ | Complex filters | `FILTER d.age > 20 AND d.name LIKE '%son'` |
+ | ArangoSearch queries | `FOR d IN view SEARCH ANALYZER(...)` |
+ | Full-text search | `FOR d IN FULLTEXT(collection, field, query)` |
+ | Geo queries | `FOR d IN collection FILTER GEO_DISTANCE(...)` |
+ | Sorted + filtered + limited | When sort/filter/limit interact beyond `find()` |
 
 ### 🔄 Gray Area (prefer API, fall back to AQL)
 
-| Operation | Guidance |
-|-----------|----------|
-| Filter by range (`age > 20`) | Use AQL — `find()` only does equality |
-| Filter by multiple fields | `find({'a': 1, 'b': 2})` works for AND-equality; use AQL for OR / range |
-| Sorted results | `find(filters, sort=[...])` works for simple sorts; AQL for complex |
-| Count with filter | `find()` + `len(list(...))` for small sets; AQL `COLLECT WITH COUNT` for large |
+ | Operation | Guidance |
+ | ----------- | ---------- |
+ | Filter by range (`age > 20`) | Use AQL — `find()` only does equality |
+ | Filter by multiple fields | `find({'a': 1, 'b': 2})` works for AND-equality; use AQL for OR / range |
+ | Sorted results | `find(filters, sort=[...])` works for simple sorts; AQL for complex |
+ | Count with filter | `find()` + `len(list(...))` for small sets; AQL `COLLECT WITH COUNT` for large |
 
 ---
 

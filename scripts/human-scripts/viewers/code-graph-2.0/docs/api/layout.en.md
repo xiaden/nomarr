@@ -28,9 +28,9 @@ setLayout(layout: LayoutOptions | ((prev: LayoutOptions) => LayoutOptions)): voi
 
 **Parameters**
 
-| Parameter | Description                                                                                        | Type                                                                        | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------- | -------- |
-| layout    | Layout configuration object, or a function returning a new configuration based on the previous one | [LayoutOptions](#layoutoptions) \| ((prev: LayoutOptions) => LayoutOptions) | -       | ✓        |
+| layout | Layout configuration object, or a function returning a new configuration based on the previous one | [LayoutOptions](#layoutoptions) \| ((prev: LayoutOptions) => LayoutOptions) | - | ✓ |
 
 **Example 1**: Set a force-directed layout
 
@@ -118,9 +118,9 @@ layout(layoutOptions?: LayoutOptions): Promise<void>;
 
 **Parameters**
 
-| Parameter     | Description                 | Type                                                                        | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | ------------- | --------------------------- | --------------------------------------------------------------------------- | ------- | -------- |
-| layoutOptions | Layout configuration object | [LayoutOptions](#layoutoptions) \| ((prev: LayoutOptions) => LayoutOptions) | -       |          |
+| layoutOptions | Layout configuration object | [LayoutOptions](#layoutoptions) \| ((prev: LayoutOptions) => LayoutOptions) | - | |
 
 If `layoutOptions` is provided, it takes precedence over the graph's current layout configuration.
 

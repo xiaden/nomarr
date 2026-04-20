@@ -1,0 +1,34 @@
+{
+  // Line length: not enforced — technical docs, tables, URLs routinely exceed any limit
+  "MD013": false,
+  // Inline HTML: used legitimately in docs (details, summary, br, etc.)
+  "MD033": false,
+  // Duplicate headings: ADRs/ASRs reuse ## Context, ## Notes by design
+  "MD024": false,
+  // Multiple top-level headings: long docs use multiple h1s by design
+  "MD025": false,
+  // Emphasis as heading: **Bold** pseudo-headings are conventional in this project
+  "MD036": false,
+  // Fenced code language: not all code blocks need a language tag
+  "MD040": false,
+  // First line heading: not all files start with #
+  "MD041": false,
+  // Alt text on images: not enforced
+  "MD045": false,
+  // Ordered list prefix: mixed styles acceptable
+  "MD029": false,
+  // Bare URLs: acceptable in technical docs
+  "MD034": false,
+  // No space in code spans: not enforced
+  "MD038": false,
+  // Emphasis style: not enforced
+  "MD049": false,
+  // Strong style: not enforced
+  "MD050": false,
+  // Reference links/images: not enforced
+  "MD052": false,
+  // Link/image reference definitions: not enforced
+  "MD053": false,
+  // Table column count: false positives from | in type signatures (doc | list[doc])
+  "MD056": false
+}

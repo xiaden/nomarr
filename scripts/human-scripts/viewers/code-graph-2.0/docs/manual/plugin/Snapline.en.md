@@ -38,17 +38,17 @@ const graph = new Graph({
 
 ## Options
 
-| Property            | Description                                                                                                                                                                                            | Type                                      | Default                 | Required |
+| Property | Description | Type | Default | Required |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------- | ----------------------- | -------- |
-| type                | Plugin type                                                                                                                                                                                            | string                                    | `'snapline'`            | ✓        |
-| key                 | Plugin unique identifier                                                                                                                                                                               | string                                    | -                       |          |
-| tolerance           | The alignment accuracy, that is, when the distance between the moved node and the target position is less than tolerance, the alignment line is displayed                                              | number                                    | 5                       |          |
-| offset              | The extension distance of the snapline                                                                                                                                                                 | number                                    | 20                      |          |
-| autoSnap            | Whether to enable automatic snapping                                                                                                                                                                   | boolean                                   | true                    |          |
-| shape               | Specifies which shape on the element to use as the reference shape:<br/>- `'key'`: uses the key shape of the element as the reference shape<br/>- `Function`: receives the element and returns a shape | string \| ((node: Node) => DisplayObject) | `'key'`                 |          |
-| verticalLineStyle   | Vertical snapline style                                                                                                                                                                                | BaseStyleProps                            | `{ stroke: '#1783FF' }` |          |
-| horizontalLineStyle | Horizontal snapline style                                                                                                                                                                              | BaseStyleProps                            | `{ stroke: '#1783FF' }` |          |
-| filter              | Filter nodes that do not need to participate in alignment                                                                                                                                              | (node: Node) => boolean                   | `() => true`            |          |
+| type | Plugin type | string | `'snapline'` | ✓ |
+| key | Plugin unique identifier | string | - | |
+| tolerance | The alignment accuracy, that is, when the distance between the moved node and the target position is less than tolerance, the alignment line is displayed | number | 5 | |
+| offset | The extension distance of the snapline | number | 20 | |
+| autoSnap | Whether to enable automatic snapping | boolean | true | |
+| shape | Specifies which shape on the element to use as the reference shape:<br/>- `'key'`: uses the key shape of the element as the reference shape<br/>- `Function`: receives the element and returns a shape | string \| ((node: Node) => DisplayObject) | `'key'` | |
+| verticalLineStyle | Vertical snapline style | BaseStyleProps | `{ stroke: '#1783FF' }` | |
+| horizontalLineStyle | Horizontal snapline style | BaseStyleProps | `{ stroke: '#1783FF' }` | |
+| filter | Filter nodes that do not need to participate in alignment | (node: Node) => boolean | `() => true` | |
 
 ### shape
 
@@ -72,22 +72,22 @@ The `shape` property specifies the reference shape for elements and supports the
 
 ### Snapline Style Configuration
 
-| Property       | Description             | Type                                     | Default     |
+| Property | Description | Type | Default |
 | -------------- | ----------------------- | ---------------------------------------- | ----------- |
-| stroke         | Line color              | string \| Pattern \| null                | `'#1783FF'` |
-| opacity        | Overall opacity         | number \| string                         | 1           |
-| strokeOpacity  | Stroke opacity          | number \| string                         | 1           |
-| lineWidth      | Line width              | number \| string                         | 1           |
-| lineCap        | Line end style          | `'butt'` \| `'round'` \| `'square'`      | `'butt'`    |
-| lineJoin       | Line join style         | `'miter'` \| `'round'` \| `'bevel'`      | `'miter'`   |
-| lineDash       | Dash line configuration | number \| string \| (string \| number)[] | -           |
-| lineDashOffset | Dash line offset        | number                                   | 0           |
-| shadowBlur     | Shadow blur             | number                                   | 0           |
-| shadowColor    | Shadow color            | string                                   | -           |
-| shadowOffsetX  | Shadow X offset         | number                                   | 0           |
-| shadowOffsetY  | Shadow Y offset         | number                                   | 0           |
-| cursor         | Mouse cursor style      | string                                   | `'default'` |
-| zIndex         | Rendering level         | number                                   | 0           |
+| stroke | Line color | string \| Pattern \| null | `'#1783FF'` |
+| opacity | Overall opacity | number \| string | 1 |
+| strokeOpacity | Stroke opacity | number \| string | 1 |
+| lineWidth | Line width | number \| string | 1 |
+| lineCap | Line end style | `'butt'` \| `'round'` \| `'square'` | `'butt'` |
+| lineJoin | Line join style | `'miter'` \| `'round'` \| `'bevel'` | `'miter'` |
+| lineDash | Dash line configuration | number \| string \| (string \| number)[] | - |
+| lineDashOffset | Dash line offset | number | 0 |
+| shadowBlur | Shadow blur | number | 0 |
+| shadowColor | Shadow color | string | - |
+| shadowOffsetX | Shadow X offset | number | 0 |
+| shadowOffsetY | Shadow Y offset | number | 0 |
+| cursor | Mouse cursor style | string | `'default'` |
+| zIndex | Rendering level | number | 0 |
 
 Example configuration:
 

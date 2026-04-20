@@ -17,6 +17,7 @@ interfaces → services → workflows → components → persistence/helpers
 ```
 
 **Rules:**
+
 - Outer layers depend on inner layers, never reverse
 - Inner layers have no knowledge of outer layers
 - Business logic is isolated from transport mechanisms (HTTP, CLI)
@@ -27,6 +28,7 @@ interfaces → services → workflows → components → persistence/helpers
 No global state or singleton imports. Major resources (database, config, ML backends) are injected via constructor parameters or FastAPI `Depends`.
 
 **Constructor injection (services):**
+
 ```python
 class WorkerSystemService:
     def __init__(
@@ -42,6 +44,7 @@ class WorkerSystemService:
 ```
 
 **FastAPI Depends (interfaces):**
+
 ```python
 @router.post("/scan")
 async def scan_library(
@@ -119,18 +122,21 @@ All ML inference runs exclusively through ONNX Runtime.
 **Purpose:** Expose Nomarr to external consumers (HTTP API, CLI).
 
 **Contains:**
+
 - `api/web/` — FastAPI HTTP endpoints (authenticated UI API)
 - `api/v1/` — Public/external API endpoints
 - `api/types/` — Pydantic request/response models
 - `cli/` — Command-line interface
 
 **Rules:**
+
 - Validate inputs (Pydantic handles this)
 - Call exactly **one service method** per endpoint
 - Serialize outputs
 - **No business logic, no direct database access, no ML inference**
 
 **Example:**
+
 ```python
 @router.post("/process")
 async def process_files(
@@ -146,12 +152,14 @@ async def process_files(
 ### Services (`services/`)
 
 **Contains:**
+
 - `domain/` — Library, analytics, calibration, metadata, navidrome, tagging, vector search/maintenance, playlist import
 - `infrastructure/` — Config, workers, health monitor, pipeline orchestration, ML, file watcher, background tasks, CLI bootstrap
 
 **Purpose:** Own runtime resources, wire dependencies, orchestrate workflows.
 
 **Rules:**
+
 - Construct long-lived objects (Database, workers, ML sessions)
 - Inject dependencies into workflows
 - Return DTOs to interfaces
@@ -159,6 +167,7 @@ async def process_files(
 - Services may call workflows and/or components directly (workflows are not mandatory pass-through for simple operations)
 
 **Example:**
+
 ```python
 class TaggingService:
     def __init__(self, db: Database, ml_svc: MLService):
@@ -180,6 +189,7 @@ class TaggingService:
 **Purpose:** Implement multi-step use cases by composing components.
 
 **Contains:**
+
 - `calibration/` — Calibration generation, application, import/export
 - `library/` — Scanning, sync, cleanup, tag I/O, path reconciliation
 - `metadata/` — Entity cleanup, cache rebuild
@@ -190,6 +200,7 @@ class TaggingService:
 - `vectors/` — Track vector retrieval
 
 **Rules:**
+
 - Accept all dependencies as parameters
 - Call components (and other workflows) — **never import services or interfaces**
 - **No global config reads**
@@ -201,6 +212,7 @@ class TaggingService:
 **Purpose:** Domain-specific logic. The only layer that may access persistence.
 
 **Contains:**
+
 - `analytics/` — Tag statistics, collection overview, mood analysis
 - `infrastructure/` — Health, path resolution
 - `library/` — File management, scanning, move detection, search, metadata extraction
@@ -214,6 +226,7 @@ class TaggingService:
 - `workers/` — Crash recovery, work discovery
 
 **Rules:**
+
 - Implement complex domain logic
 - Can call persistence and helpers
 - **No knowledge of services, workflows, or interfaces**
@@ -225,6 +238,7 @@ class TaggingService:
 **Purpose:** ArangoDB access layer.
 
 **Contains:**
+
 - `db.py` — `Database` facade class
 - `constructor/` — Schema-driven verb templates and dynamic collection namespaces
 - `database/` — Empty legacy namespace stub retained only for cleanup compatibility
@@ -239,33 +253,32 @@ claims = db.worker_claims.worker_id.get.many(worker_id, limit=db.worker_claims.c
 # ❌ Bypassing the facade by importing persistence internals directly
 ```
 
-
 **Key collections (via `db.*`):**
 
-| Accessor | Collection(s) | Domain |
-|----------|---------------|--------|
-| `db.libraries` | `libraries` | Library |
-| `db.library_files` | `library_files` | Library |
-| `db.library_folders` | `library_folders` | Library |
-| `db.tags` | `tags` (edge collection) | Tagging |
-| `db.tag_model_output` | `tag_model_output` (edge) | Tagging |
-| `db.ml_models` | `ml_models` | ML |
-| `db.ml_model_outputs` | `ml_model_outputs` | ML |
-| `db.calibration_state` | `calibration_state` | ML/Calibration |
-| `db.calibration_history` | `calibration_history` | ML/Calibration |
-| `db.segment_scores_stats` | `segment_scores_stats` | ML |
-| `db.worker_claims` | `worker_claims` | Workers |
-| `db.worker_restart_policy` | `worker_restart_policy` | Workers |
-| `db.health` | `health` | Infrastructure |
-| `db.file_states` | `file_states` | Library |
-| `db.navidrome_tracks` | `navidrome_tracks` | Navidrome |
-| `db.navidrome_playcounts` | `navidrome_playcounts` | Navidrome |
-| `db.sessions` | `sessions` | Infrastructure |
-| `db.meta` | `meta` | Infrastructure |
-| `db.vram_promises` | `vram_promises` | ML/Resources |
-| `db.ml_capacity` | `ml_capacity` | ML/Resources |
-| `db.vector_promotion_locks` | `vector_promotion_locks` | Vectors |
-| `db.migrations` | `applied_migrations` | Platform |
+ | Accessor | Collection(s) | Domain |
+ | ---------- | --------------- | -------- |
+ | `db.libraries` | `libraries` | Library |
+ | `db.library_files` | `library_files` | Library |
+ | `db.library_folders` | `library_folders` | Library |
+ | `db.tags` | `tags` (edge collection) | Tagging |
+ | `db.tag_model_output` | `tag_model_output` (edge) | Tagging |
+ | `db.ml_models` | `ml_models` | ML |
+ | `db.ml_model_outputs` | `ml_model_outputs` | ML |
+ | `db.calibration_state` | `calibration_state` | ML/Calibration |
+ | `db.calibration_history` | `calibration_history` | ML/Calibration |
+ | `db.segment_scores_stats` | `segment_scores_stats` | ML |
+ | `db.worker_claims` | `worker_claims` | Workers |
+ | `db.worker_restart_policy` | `worker_restart_policy` | Workers |
+ | `db.health` | `health` | Infrastructure |
+ | `db.file_states` | `file_states` | Library |
+ | `db.navidrome_tracks` | `navidrome_tracks` | Navidrome |
+ | `db.navidrome_playcounts` | `navidrome_playcounts` | Navidrome |
+ | `db.sessions` | `sessions` | Infrastructure |
+ | `db.meta` | `meta` | Infrastructure |
+ | `db.vram_promises` | `vram_promises` | ML/Resources |
+ | `db.ml_capacity` | `ml_capacity` | ML/Resources |
+ | `db.vector_promotion_locks` | `vector_promotion_locks` | Vectors |
+ | `db.migrations` | `applied_migrations` | Platform |
 
 Vector collections (`vectors_track_*`) are registered dynamically per backbone+library via `db.register_vectors_track_backbone()` and `db.get_vectors_track_cold()`.
 
@@ -276,10 +289,12 @@ Vector collections (`vectors_track_*`) are registered dynamically per backbone+l
 **Purpose:** Pure utilities and shared data types.
 
 **Contains:**
+
 - `dto/` — Data transfer objects (`health_dto.py`, etc.)
 - Audio file validation, file system utilities, logging setup, time helpers
 
 **Rules:**
+
 - **Pure functions only** (no I/O side effects beyond their stated purpose)
 - **No imports from `nomarr.*`** (only stdlib and third-party)
 - Stateless utilities
@@ -290,25 +305,25 @@ Vector collections (`vectors_track_*`) are registered dynamically per backbone+l
 
 ### Allowed Dependencies
 
-| Layer | Can Import |
-|-------|------------|
-| `interfaces` | `services`, `helpers` |
-| `services` | `workflows`, `components`, `persistence`, `helpers` |
-| `workflows` | `components`, `persistence` (type only), `helpers` |
-| `components` | `persistence`, `helpers`, other `components` |
-| `persistence` | `helpers` only |
-| `helpers` | stdlib, third-party only |
+ | Layer | Can Import |
+ | ------- | ------------ |
+ | `interfaces` | `services`, `helpers` |
+ | `services` | `workflows`, `components`, `persistence`, `helpers` |
+ | `workflows` | `components`, `persistence` (type only), `helpers` |
+ | `components` | `persistence`, `helpers`, other `components` |
+ | `persistence` | `helpers` only |
+ | `helpers` | stdlib, third-party only |
 
 ### Forbidden Dependencies
 
-| Layer | **Cannot** Import |
-|-------|-------------------|
-| `interfaces` | `workflows`, `components`, `persistence` |
-| `services` | `interfaces` |
-| `workflows` | `services`, `interfaces` |
-| `components` | `workflows`, `services`, `interfaces` |
-| `persistence` | `workflows`, `components`, `services`, `interfaces` |
-| `helpers` | Any `nomarr.*` modules |
+ | Layer | **Cannot** Import |
+ | ------- | ------------------- |
+ | `interfaces` | `workflows`, `components`, `persistence` |
+ | `services` | `interfaces` |
+ | `workflows` | `services`, `interfaces` |
+ | `components` | `workflows`, `services`, `interfaces` |
+ | `persistence` | `workflows`, `components`, `services`, `interfaces` |
+ | `helpers` | Any `nomarr.*` modules |
 
 **Enforcement:** `import-linter` checks these rules in CI. Lateral (same-layer) imports are allowed: workflows may call other workflows, components may call other components.
 
@@ -457,6 +472,7 @@ Main Process (API Server)
 ### Health Monitoring
 
 Worker health is tracked via **pipe/FD channels**, not database polling:
+
 - Each worker writes health frames (`HEALTH|{json}`) to its pipe every 3 seconds
 - `HealthMonitorService` reads frames and maintains an in-memory status registry
 - Pipe closure = immediate crash detection
@@ -474,12 +490,13 @@ Automatically detects filesystem changes and triggers incremental library scans.
 
 **Two modes:**
 
-| Mode | Mechanism | Best For |
-|------|-----------|----------|
-| Event (default) | watchdog library — real-time filesystem events | Local disks |
-| Poll | Periodic full-library scans at configurable interval | Network mounts (NFS/SMB) |
+ | Mode | Mechanism | Best For |
+ | ------ | ----------- | ---------- |
+ | Event (default) | watchdog library — real-time filesystem events | Local disks |
+ | Poll | Periodic full-library scans at configurable interval | Network mounts (NFS/SMB) |
 
 **Configuration:**
+
 ```bash
 export NOMARR_WATCH_MODE=poll   # or 'event' (default)
 ```

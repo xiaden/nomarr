@@ -9,10 +9,10 @@ Workflows for the ML tagging pipeline and file tag writing. These are the core d
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|---------|
-| `process_file_wf.py` | Full ML pipeline — validate path, compute embeddings per backbone, run heads in parallel, aggregate mood tiers, persist results |
-| `write_file_tags_wf.py` | Mode-filtered tag writing — read DB tags, filter by mode (none/minimal/full), write to audio file via `TagWriter` |
+ | Module | Purpose |
+ | -------- | --------- |
+ | `process_file_wf.py` | Full ML pipeline — validate path, compute embeddings per backbone, run heads in parallel, aggregate mood tiers, persist results |
+ | `write_file_tags_wf.py` | Mode-filtered tag writing — read DB tags, filter by mode (none/minimal/full), write to audio file via `TagWriter` |
 
 ## Patterns
 

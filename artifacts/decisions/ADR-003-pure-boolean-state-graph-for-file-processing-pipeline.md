@@ -18,6 +18,7 @@ Adopt a pure boolean state model with 8 axes, each having positive and negative 
 - scanned/not_scanned, vectors_extracted/not_vectors_extracted, errored/not_errored
 
 Key design choices:
+
 1. **Every file has exactly one edge per axis** (invariant enforced by REMOVE+INSERT transitions)
 2. **Zero payload on edges** — all domain data lives on documents or in separate collections
 3. **Negative vertices enable O(1) discovery** via INBOUND traversal (vs old O(n) scans)
@@ -31,18 +32,21 @@ Key design choices:
 ## Consequences
 
 **Positive:**
+
 - Discovery queries O(1) instead of O(n) — INBOUND traversal on negative vertex finds files needing work
 - Clean separation of concerns — state edges are program logic, domain data lives elsewhere
 - Passthrough mixins eliminated — fewer layers, clearer call chains
 - Method signatures simplified — no more calibration_hash, target_mode, write_mode params threading through layers
 
 **Negative:**
+
 - Migration V022 required (forward-only, seeds negative vertices for all existing files)
 - All callers updated (17 files across components/workflows/services/interfaces)
 - `count_recently_tagged` metric lost — tagged_at timestamp was on old edge payload, data not preserved
 - Test suite needs significant updates (23+ test files reference old API)
 
 **Deferred:**
+
 - Domain relationship edges (genre_of, artist_of) — separate concern, separate ADR when needed
 - calibration_snapshots collection — deferred to model versioning work
 

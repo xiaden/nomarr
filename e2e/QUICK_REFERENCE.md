@@ -59,6 +59,7 @@ e2e/
 ## Writing Tests
 
 ### Basic test
+
 ```typescript
 import { test, expect } from '@playwright/test';
 
@@ -69,6 +70,7 @@ test('my test', async ({ page }) => {
 ```
 
 ### Authenticated test
+
 ```typescript
 import { test, expect } from './fixtures/auth';
 
@@ -79,6 +81,7 @@ test('my test', async ({ authenticatedPage: page }) => {
 ```
 
 ### API testing
+
 ```typescript
 import { test, expect } from './fixtures/auth';
 import { createApiHelpers } from './fixtures/api-helpers';
@@ -97,11 +100,13 @@ test('my test', async ({ authenticatedPage: page }) => {
 ## Debugging Tips
 
 ### Take screenshots
+
 ```typescript
 await page.screenshot({ path: 'screenshot.png' });
 ```
 
 ### Wait for specific state
+
 ```typescript
 await page.waitForLoadState('networkidle');
 await page.waitForTimeout(1000);
@@ -109,11 +114,13 @@ await page.waitForSelector('button[type="submit"]');
 ```
 
 ### Console logging
+
 ```typescript
 page.on('console', msg => console.log('Browser:', msg.text()));
 ```
 
 ### Pause execution
+
 ```typescript
 await page.pause(); // Opens inspector
 ```
@@ -121,23 +128,27 @@ await page.pause(); // Opens inspector
 ## Selectors
 
 ### By role
+
 ```typescript
 page.getByRole('button', { name: 'Submit' })
 page.getByRole('textbox', { name: 'Email' })
 ```
 
 ### By text
+
 ```typescript
 page.locator('text=Login')
 page.locator('text=/login/i') // regex
 ```
 
 ### By test ID
+
 ```typescript
 page.locator('[data-testid="my-element"]')
 ```
 
 ### By CSS
+
 ```typescript
 page.locator('button[type="submit"]')
 page.locator('.my-class')
@@ -147,28 +158,33 @@ page.locator('#my-id')
 ## Assertions
 
 ### Visibility
+
 ```typescript
 await expect(page.locator('h1')).toBeVisible();
 await expect(page.locator('h1')).not.toBeVisible();
 ```
 
 ### Text content
+
 ```typescript
 await expect(page.locator('h1')).toHaveText('Welcome');
 await expect(page.locator('h1')).toContainText('Welcome');
 ```
 
 ### Count
+
 ```typescript
 await expect(page.locator('.item')).toHaveCount(5);
 ```
 
 ### Value
+
 ```typescript
 await expect(page.locator('input')).toHaveValue('test');
 ```
 
 ### URL
+
 ```typescript
 await expect(page).toHaveURL('/dashboard');
 await expect(page).toHaveURL(/dashboard/);
@@ -190,6 +206,7 @@ await expect(page).toHaveURL(/dashboard/);
 ## CI/CD Integration
 
 ### GitHub Actions example
+
 ```yaml
 - name: Install dependencies
   run: npm ci
@@ -229,22 +246,26 @@ DEBUG=pw:api
 ## Troubleshooting
 
 ### Tests timing out
+
 - Increase timeout in test: `test.setTimeout(60000)`
 - Check if server is running
 - Look for network issues
 
 ### Selector not found
+
 - Use `await page.pause()` to inspect
 - Check if element is in shadow DOM
 - Verify element actually exists in UI
 
 ### Flaky tests
+
 - Add explicit waits
 - Use `waitForLoadState('networkidle')`
 - Check for race conditions
 - Use `test.retry()` for known flaky tests
 
 ### Browser not launching
+
 - Run `npx playwright install`
 - Check system dependencies
 - Verify no port conflicts

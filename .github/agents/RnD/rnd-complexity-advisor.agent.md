@@ -46,19 +46,20 @@ comparison:          # Optional — existing code to compare against
 
 ### 1. Abstraction Appropriateness
 
-| Signal | Concern |
-|--------|---------|
-| Single-use class | Could be a function |
-| Single-method class | Could be a function |
-| Deep inheritance | Could be composition |
-| Factory for one type | Unnecessary indirection |
-| Generic over one type | Premature abstraction |
+ | Signal | Concern |
+ | -------- | --------- |
+ | Single-use class | Could be a function |
+ | Single-method class | Could be a function |
+ | Deep inheritance | Could be composition |
+ | Factory for one type | Unnecessary indirection |
+ | Generic over one type | Premature abstraction |
 
 These aren't automatically wrong — they're signals worth investigating. A single-use class might exist because tests need to mock it. A factory might exist because a second type is coming next sprint. Check before flagging.
 
 ### 2. Indirection Cost
 
 Count the hops from entry point to actual work:
+
 - **Good:** Entry → Helper → Done
 - **Concerning:** Entry → Factory → Builder → Strategy → Adapter → Done
 
@@ -67,6 +68,7 @@ Each hop should provide clear value. If you can't articulate why a hop exists, i
 ### 3. Pattern Fit
 
 Compare against similar code in the codebase:
+
 - Does this use more abstraction than equivalent features?
 - Does it introduce patterns not used elsewhere?
 - Would a new contributor understand why it's structured this way?
@@ -144,12 +146,14 @@ recommendation: |
 ## Complexity vs. Simplicity
 
 **Complexity is justified when:**
+
 - Multiple implementations exist
 - Extension is actively happening
 - The abstraction clarifies, not obscures
 - Tests are significantly easier to write
 
 **Complexity is suspect when:**
+
 - "We might need this later"
 - Single implementation with no plans
 - Abstraction makes code harder to follow

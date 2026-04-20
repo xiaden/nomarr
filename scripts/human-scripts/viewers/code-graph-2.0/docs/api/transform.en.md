@@ -46,9 +46,9 @@ setTransforms(transforms: TransformOptions | ((prev: TransformOptions) => Transf
 
 **Parameters**
 
-| Parameter  | Description                                                                                               | Type                                                                                  | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | ---------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------- | -------- |
-| transforms | New data transformer configurations, or a function returning new configurations based on the current ones | [TransformOptions](#transformoptions) \| (prev: TransformOptions) => TransformOptions | -       | ✓        |
+| transforms | New data transformer configurations, or a function returning new configurations based on the current ones | [TransformOptions](#transformoptions) \| (prev: TransformOptions) => TransformOptions | - | ✓ |
 
 **Note**
 
@@ -101,9 +101,9 @@ updateTransform(transform: UpdateTransformOption): void;
 
 **Parameters**
 
-| Parameter | Description                                         | Type                                            | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | --------------------------------------------------- | ----------------------------------------------- | ------- | -------- |
-| transform | Configuration of the data transformer to be updated | [UpdateTransformOption](#updatetransformoption) | -       | ✓        |
+| transform | Configuration of the data transformer to be updated | [UpdateTransformOption](#updatetransformoption) | - | ✓ |
 
 **Note**
 

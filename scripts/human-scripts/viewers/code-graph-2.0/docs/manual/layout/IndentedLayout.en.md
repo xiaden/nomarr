@@ -22,20 +22,20 @@ Indented tree layout represents the hierarchy of tree nodes through indentation 
 
 > IndentedLayout supports common layout configuration items and specific configuration items, as shown below.
 
-| Property               | Description                                                         | Type                            | Default    | Required |
+| Property | Description | Type | Default | Required |
 | ---------------------- | ------------------------------------------------------------------- | ------------------------------- | ---------- | -------- |
-| type                   | Layout type, must be 'indented'                                     | 'indented'                      | -          | ✓        |
-| direction              | Layout direction, see details below                                 | 'LR' \| 'RL' \| 'H'             | 'LR'       |          |
-| indent                 | Column spacing, fixed value or function                             | number \| (d?: Node) => number  | 20         |          |
-| getWidth               | Get each node's width, effective when direction='H'                 | (d?: Node) => number            | -          |          |
-| getHeight              | Get each node's height                                              | (d?: Node) => number            | -          |          |
-| getSide                | Node placement on left/right side of root, overrides direction='H'  | (d?: Node) => 'left' \| 'right' | -          |          |
-| dropCap                | Whether the first child of each node starts on the next line        | boolean                         | true       |          |
-| isLayoutInvisibleNodes | Whether invisible nodes participate in layout (when preLayout=true) | boolean                         | false      |          |
-| nodeFilter             | Nodes participating in this layout                                  | (node: NodeData) => boolean     | () => true |          |
-| preLayout              | Use pre-layout, calculate layout before initializing elements       | boolean                         | false      |          |
-| enableWorker           | Whether to run layout in WebWorker                                  | boolean                         | -          |          |
-| iterations             | Number of iterations for iterative layout                           | number                          | -          |          |
+| type | Layout type, must be 'indented' | 'indented' | - | ✓ |
+| direction | Layout direction, see details below | 'LR' \| 'RL' \| 'H' | 'LR' | |
+| indent | Column spacing, fixed value or function | number \| (d?: Node) => number | 20 | |
+| getWidth | Get each node's width, effective when direction='H' | (d?: Node) => number | - | |
+| getHeight | Get each node's height | (d?: Node) => number | - | |
+| getSide | Node placement on left/right side of root, overrides direction='H' | (d?: Node) => 'left' \| 'right' | - | |
+| dropCap | Whether the first child of each node starts on the next line | boolean | true | |
+| isLayoutInvisibleNodes | Whether invisible nodes participate in layout (when preLayout=true) | boolean | false | |
+| nodeFilter | Nodes participating in this layout | (node: NodeData) => boolean | () => true | |
+| preLayout | Use pre-layout, calculate layout before initializing elements | boolean | false | |
+| enableWorker | Whether to run layout in WebWorker | boolean | - | |
+| iterations | Number of iterations for iterative layout | number | - | |
 
 ### Complex Type Explanations
 
@@ -53,6 +53,7 @@ Indented tree layout represents the hierarchy of tree nodes through indentation 
   - Fixed value: Consistent indentation for all levels
   - Function: (d?: Node) => number, customize indentation based on node
   - Example:
+
     ```js
     (d) => {
       if (d.parent?.id === 'testId') return d.parent.x + 50;
@@ -64,6 +65,7 @@ Indented tree layout represents the hierarchy of tree nodes through indentation 
 
   - Used to customize each node's width/height, often for content adaptation
   - Example:
+
     ```js
     (d) => (d.id === 'testId' ? 50 : 100);
     ```
@@ -71,6 +73,7 @@ Indented tree layout represents the hierarchy of tree nodes through indentation 
 - **getSide**
   - Specifies which side of the root node a node should be placed, only effective when direction='H'
   - Example:
+
     ```js
     (d) => (d.id === 'testId' ? 'left' : 'right');
     ```

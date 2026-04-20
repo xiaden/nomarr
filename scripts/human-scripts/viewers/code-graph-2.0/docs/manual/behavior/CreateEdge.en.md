@@ -47,14 +47,14 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Option   | Description                                                                                                 | Type                                                                                                     | Default       | Required |
+| Option | Description | Type | Default | Required |
 | -------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------- | -------- |
-| type     | Behavior type name                                                                                          | string                                                                                                   | `create-edge` | √        |
-| trigger  | The way to trigger the creation of a new edge: `click` means click to trigger; `drag` means drag to trigger | `click` \| `drag`                                                                                        | `drag`        |          |
-| enable   | Whether to enable this behavior                                                                             | boolean \| ((event: [Event](/en/api/event#event-object-properties)) => boolean)                          | true          |          |
-| onCreate | Callback function for creating an edge, returns edge data                                                   | (edge: [EdgeData](/en/manual/data#edge-data-edgedata)) => [EdgeData](/en/manual/data#edge-data-edgedata) | -             |          |
-| onFinish | Callback function for successfully creating an edge                                                         | (edge: [EdgeData](/en/manual/data#edge-data-edgedata)) => void                                           | -             |          |
-| style    | Style of the newly created edge, [configuration options](#style)                                            | See below                                                                                                | -             |          |
+| type | Behavior type name | string | `create-edge` | √ |
+| trigger | The way to trigger the creation of a new edge: `click` means click to trigger; `drag` means drag to trigger | `click` \| `drag` | `drag` | |
+| enable | Whether to enable this behavior | boolean \| ((event: [Event](/en/api/event#event-object-properties)) => boolean) | true | |
+| onCreate | Callback function for creating an edge, returns edge data | (edge: [EdgeData](/en/manual/data#edge-data-edgedata)) => [EdgeData](/en/manual/data#edge-data-edgedata) | - | |
+| onFinish | Callback function for successfully creating an edge | (edge: [EdgeData](/en/manual/data#edge-data-edgedata)) => void | - | |
+| style | Style of the newly created edge, [configuration options](#style) | See below | - | |
 
 ### style
 

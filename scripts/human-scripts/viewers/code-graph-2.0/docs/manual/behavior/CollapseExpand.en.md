@@ -54,15 +54,15 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Option     | Description                                         | Type                                                                     | Default Value     | Required |
+| Option | Description | Type | Default Value | Required |
 | ---------- | --------------------------------------------------- | ------------------------------------------------------------------------ | ----------------- | -------- |
-| type       | Behavior type name                                  | `collapse-expand` \| string                                              | `collapse-expand` | ✓        |
-| animation  | Enable expand/collapse animation effects            | boolean                                                                  | true              |          |
-| enable     | Enable expand/collapse functionality                | boolean \| ((event: [/en/api/event#event-object-properties]) => boolean) | true              |          |
-| trigger    | Trigger method, can be single-click or double-click | `click` \| `dblclick`                                                    | `dblclick`        |          |
-| onCollapse | Callback function when collapse is completed        | (id: string) => void                                                     | -                 |          |
-| onExpand   | Callback function when expand is completed          | (id: string) => void                                                     | -                 |          |
-| align      | Align with the target element to avoid view offset  | boolean                                                                  | true              |          |
+| type | Behavior type name | `collapse-expand` \| string | `collapse-expand` | ✓ |
+| animation | Enable expand/collapse animation effects | boolean | true | |
+| enable | Enable expand/collapse functionality | boolean \| ((event: [/en/api/event#event-object-properties]) => boolean) | true | |
+| trigger | Trigger method, can be single-click or double-click | `click` \| `dblclick` | `dblclick` | |
+| onCollapse | Callback function when collapse is completed | (id: string) => void | - | |
+| onExpand | Callback function when expand is completed | (id: string) => void | - | |
+| align | Align with the target element to avoid view offset | boolean | true | |
 
 ## Code Examples
 

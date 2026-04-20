@@ -36,33 +36,33 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Property             | Description                                              | Type                                                                        | Default Value | Required |
+| Property | Description | Type | Default Value | Required |
 | -------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------- | ------------- | -------- |
-| type                 | Plugin type                                              | string                                                                      | `watermark`   | ✓        |
-| width                | Width of a single watermark                              | number                                                                      | 200           |          |
-| height               | Height of a single watermark                             | number                                                                      | 100           |          |
-| opacity              | Opacity of the watermark                                 | number                                                                      | 0.2           |          |
-| rotate               | Rotation angle of the watermark                          | number                                                                      | Math.PI / 12  |          |
-| imageURL             | Image watermark URL, higher priority than text watermark | string                                                                      | -             |          |
-| text                 | Watermark text content                                   | string                                                                      | -             |          |
-| textFill             | Color of the text watermark                              | string                                                                      | `#000`        |          |
-| textFontSize         | Font size of the text watermark                          | number                                                                      | 16            |          |
-| textFontFamily       | Font of the text watermark                               | string                                                                      | -             |          |
-| textFontWeight       | Font weight of the text watermark                        | string                                                                      | -             |          |
-| textFontVariant      | Font variant of the text watermark                       | string                                                                      | -             |          |
-| textAlign            | Text alignment of the watermark                          | `center` \| `end` \| `left` \| `right` \| `start`                           | `center`      |          |
-| textBaseline         | Baseline alignment of the text watermark                 | `alphabetic` \| `bottom` \| `hanging` \| `ideographic` \| `middle` \| `top` | `middle`      |          |
-| backgroundRepeat     | Repeat mode of the watermark                             | string                                                                      | `repeat`      |          |
-| backgroundAttachment | Background attachment behavior of the watermark          | string                                                                      | -             |          |
-| backgroundBlendMode  | Background blend mode of the watermark                   | string                                                                      | -             |          |
-| backgroundClip       | Background clip of the watermark                         | string                                                                      | -             |          |
-| backgroundColor      | Background color of the watermark                        | string                                                                      | -             |          |
-| backgroundImage      | Background image of the watermark                        | string                                                                      | -             |          |
-| backgroundOrigin     | Background origin of the watermark                       | string                                                                      | -             |          |
-| backgroundPosition   | Background position of the watermark                     | string                                                                      | -             |          |
-| backgroundPositionX  | Horizontal position of the watermark background          | string                                                                      | -             |          |
-| backgroundPositionY  | Vertical position of the watermark background            | string                                                                      | -             |          |
-| backgroundSize       | Background size of the watermark                         | string                                                                      | -             |          |
+| type | Plugin type | string | `watermark` | ✓ |
+| width | Width of a single watermark | number | 200 | |
+| height | Height of a single watermark | number | 100 | |
+| opacity | Opacity of the watermark | number | 0.2 | |
+| rotate | Rotation angle of the watermark | number | Math.PI / 12 | |
+| imageURL | Image watermark URL, higher priority than text watermark | string | - | |
+| text | Watermark text content | string | - | |
+| textFill | Color of the text watermark | string | `#000` | |
+| textFontSize | Font size of the text watermark | number | 16 | |
+| textFontFamily | Font of the text watermark | string | - | |
+| textFontWeight | Font weight of the text watermark | string | - | |
+| textFontVariant | Font variant of the text watermark | string | - | |
+| textAlign | Text alignment of the watermark | `center` \| `end` \| `left` \| `right` \| `start` | `center` | |
+| textBaseline | Baseline alignment of the text watermark | `alphabetic` \| `bottom` \| `hanging` \| `ideographic` \| `middle` \| `top` | `middle` | |
+| backgroundRepeat | Repeat mode of the watermark | string | `repeat` | |
+| backgroundAttachment | Background attachment behavior of the watermark | string | - | |
+| backgroundBlendMode | Background blend mode of the watermark | string | - | |
+| backgroundClip | Background clip of the watermark | string | - | |
+| backgroundColor | Background color of the watermark | string | - | |
+| backgroundImage | Background image of the watermark | string | - | |
+| backgroundOrigin | Background origin of the watermark | string | - | |
+| backgroundPosition | Background position of the watermark | string | - | |
+| backgroundPositionX | Horizontal position of the watermark background | string | - | |
+| backgroundPositionY | Vertical position of the watermark background | string | - | |
+| backgroundSize | Background size of the watermark | string | - | |
 
 ## Code Examples
 

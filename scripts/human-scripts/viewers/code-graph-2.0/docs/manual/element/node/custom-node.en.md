@@ -390,6 +390,7 @@ graph.render();
 2. **Style Mapping**: Use functions in `node.style` to map data to style attributes
 3. **Node Access**: Access data in custom nodes through `attributes` or `this.context.graph`
 4. **Rendering Usage**: Use the obtained data to render custom graphics
+
    :::
 
 ## From Simple to Complex: Gradually Building Feature-Rich Nodes

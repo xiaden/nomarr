@@ -73,6 +73,7 @@ Applied MUI components to existing page:
 A modernized, scalable tag viewing component built with MUI X DataGrid:
 
 **Features**:
+
 - **Sortable columns**: Click headers to sort by key, value, type, or Nomarr status
 - **Quick filter**: Text field to filter tags by key, value, or type
 - **Nomarr toggle**: Switch to show only Nomarr tags (`nom:` prefixed)
@@ -83,12 +84,14 @@ A modernized, scalable tag viewing component built with MUI X DataGrid:
 - **Responsive layout**: Fixed 400px height with scrolling
 
 **Columns**:
+
 - `Key` - Tag key (bold + primary color for Nomarr tags)
 - `Value` - Tag value (truncated with tooltip for long values)
 - `Type` - Tag type as outlined chip
 - `Nomarr` - Primary chip badge for Nomarr tags
 
 **Usage**:
+
 ```tsx
 import { FileTagsDataGrid } from "../components/FileTagsDataGrid";
 
@@ -100,16 +103,19 @@ import { FileTagsDataGrid } from "../components/FileTagsDataGrid";
 ### Core Components (@mui/material)
 
 Layout:
+
 - `Box` - Flexible container with sx prop
 - `Stack` - Flexbox layout with spacing
 - `Container`, `Grid`, `Paper`, `Card`
 
 Inputs:
+
 - `Button`, `IconButton`, `ButtonGroup`
 - `TextField`, `Select`, `Checkbox`, `Radio`
 - `Switch`, `Slider`, `Autocomplete`
 
 Display:
+
 - `Typography`, `Chip`, `Badge`, `Avatar`
 - `Divider`, `List`, `Table`, `Tooltip`
 - `Dialog`, `Drawer`, `Menu`, `Snackbar`
@@ -117,6 +123,7 @@ Display:
 ### Charts (@mui/x-charts)
 
 Available chart types:
+
 - `BarChart` - Bar charts with horizontal/vertical orientation
 - `LineChart` - Line charts with multiple series
 - `PieChart` - Pie and donut charts
@@ -139,6 +146,7 @@ import { BarChart } from "@mui/x-charts/BarChart";
 ### Data Grid (@mui/x-data-grid)
 
 High-performance table component with:
+
 - Sorting, filtering, pagination
 - Column resizing and reordering
 - Row selection (single/multiple)
@@ -164,6 +172,7 @@ const rows = [
 ```
 
 **See `FileTagsDataGrid` component** for a production implementation with:
+
 - Custom cell renderers (chips, tooltips)
 - Quick filter integration
 - Toggle-based row filtering

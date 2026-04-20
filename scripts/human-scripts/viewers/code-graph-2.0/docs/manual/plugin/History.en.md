@@ -49,12 +49,12 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Property         | Description                                                                                                                                                                                                   | Type                                                           | Default Value | Required |
+| Property | Description | Type | Default Value | Required |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ------------- | -------- |
-| afterAddCommand  | Called after a command is added to the `Undo/Redo` queue. `revert` is `true` for undo operations and `false` for redo operations                                                                              | (cmd: [Command](#command), revert: boolean) => void            | -             |          |
-| beforeAddCommand | Called before a command is added to the `Undo/Redo` queue. If this method returns `false`, the command will not be added to the queue. `revert` is `true` for undo operations and `false` for redo operations | (cmd: [Command](#command), revert: boolean) => boolean \| void | -             |          |
-| executeCommand   | Callback function when executing a command                                                                                                                                                                    | (cmd: [Command](#command)) => void                             | -             |          |
-| stackSize        | Maximum length of history records to be recorded                                                                                                                                                              | number                                                         | 0 (unlimited) |          |
+| afterAddCommand | Called after a command is added to the `Undo/Redo` queue. `revert` is `true` for undo operations and `false` for redo operations | (cmd: [Command](#command), revert: boolean) => void | - | |
+| beforeAddCommand | Called before a command is added to the `Undo/Redo` queue. If this method returns `false`, the command will not be added to the queue. `revert` is `true` for undo operations and `false` for redo operations | (cmd: [Command](#command), revert: boolean) => boolean \| void | - | |
+| executeCommand | Callback function when executing a command | (cmd: [Command](#command)) => void | - | |
+| stackSize | Maximum length of history records to be recorded | number | 0 (unlimited) | |
 
 ### Parameter Type Description
 

@@ -38,21 +38,21 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Property       | Description                                                                                                             | Type                                                                                                                                                                                                   | Default Value  | Required |
+| Property | Description | Type | Default Value | Required |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- | -------- |
-| type           | Plugin type                                                                                                             | string                                                                                                                                                                                                 | `minimap`      | ✓        |
-| key            | Unique identifier for the plugin, used for subsequent updates                                                           | string                                                                                                                                                                                                 | -              |          |
-| className      | Class name of the thumbnail canvas, not effective when an external container is passed                                  | string                                                                                                                                                                                                 |                |          |
-| container      | Container to which the thumbnail is mounted, if not provided, it is mounted to the container where the Graph is located | HTMLElement \| string                                                                                                                                                                                  |                |          |
-| containerStyle | Style of the thumbnail container, not effective when an external container is passed                                    | Partial\<CSSStyleDeclaration\>                                                                                                                                                                         |                |          |
-| delay          | Delay update time (milliseconds) for performance optimization                                                           | number                                                                                                                                                                                                 | 128            |          |
-| filter         | Filter for filtering out elements that do not need to be displayed                                                      | (id: string, elementType: `node` \| `edge` \| `combo`) => boolean                                                                                                                                      |                |          |
-| maskStyle      | Style of the mask                                                                                                       | Partial\<CSSStyleDeclaration\>                                                                                                                                                                         |                |          |
-| padding        | Padding                                                                                                                 | number \| number[]                                                                                                                                                                                     | 10             |          |
-| position       | Position of the thumbnail relative to the canvas                                                                        | [number, number] \| `left` \| `right` \| `top` \| `bottom` \| `left-top` \| `left-bottom` \| `right-top` \| `right-bottom` \| `top-left` \| `top-right` \| `bottom-left` \| `bottom-right` \| `center` | `right-bottom` |          |
-| renderer       | Renderer, default is Canvas renderer                                                                                    | IRenderer                                                                                                                                                                                              |                |          |
-| shape          | Method for generating element thumbnails                                                                                | `key` \| ((id: string, elementType: `node` \| `edge` \| `combo`, element: DisplayObject) => DisplayObject)                                                                                             | `key`          |          |
-| size           | Width and height                                                                                                        | [number, number]                                                                                                                                                                                       | [240, 160]     |          |
+| type | Plugin type | string | `minimap` | ✓ |
+| key | Unique identifier for the plugin, used for subsequent updates | string | - | |
+| className | Class name of the thumbnail canvas, not effective when an external container is passed | string | | |
+| container | Container to which the thumbnail is mounted, if not provided, it is mounted to the container where the Graph is located | HTMLElement \| string | | |
+| containerStyle | Style of the thumbnail container, not effective when an external container is passed | Partial\<CSSStyleDeclaration\> | | |
+| delay | Delay update time (milliseconds) for performance optimization | number | 128 | |
+| filter | Filter for filtering out elements that do not need to be displayed | (id: string, elementType: `node` \| `edge` \| `combo`) => boolean | | |
+| maskStyle | Style of the mask | Partial\<CSSStyleDeclaration\> | | |
+| padding | Padding | number \| number[] | 10 | |
+| position | Position of the thumbnail relative to the canvas | [number, number] \| `left` \| `right` \| `top` \| `bottom` \| `left-top` \| `left-bottom` \| `right-top` \| `right-bottom` \| `top-left` \| `top-right` \| `bottom-left` \| `bottom-right` \| `center` | `right-bottom` | |
+| renderer | Renderer, default is Canvas renderer | IRenderer | | |
+| shape | Method for generating element thumbnails | `key` \| ((id: string, elementType: `node` \| `edge` \| `combo`, element: DisplayObject) => DisplayObject) | `key` | |
+| size | Width and height | [number, number] | [240, 160] | |
 
 ### containerStyle
 
@@ -60,15 +60,15 @@ Set the style of the thumbnail container, not effective when an external contain
 
 Below are some common configurations:
 
-| Property     | Description                | Type   | Default Value    | Required |
+| Property | Description | Type | Default Value | Required |
 | ------------ | -------------------------- | ------ | ---------------- | -------- |
-| border       | Container border style     | string | `1px solid #ddd` | ✓        |
-| background   | Container background color | string | `#fff`           | ✓        |
-| borderRadius | Container border radius    | string | -                |          |
-| boxShadow    | Container shadow effect    | string | -                |          |
-| padding      | Container padding          | string | -                |          |
-| margin       | Container margin           | string | -                |          |
-| opacity      | Opacity                    | string | -                |          |
+| border | Container border style | string | `1px solid #ddd` | ✓ |
+| background | Container background color | string | `#fff` | ✓ |
+| borderRadius | Container border radius | string | - | |
+| boxShadow | Container shadow effect | string | - | |
+| padding | Container padding | string | - | |
+| margin | Container margin | string | - | |
+| opacity | Opacity | string | - | |
 
 ### maskStyle
 
@@ -76,15 +76,15 @@ Specify the style of the mask. Inherits all CSS style properties (CSSStyleDeclar
 
 Below are some common configurations:
 
-| Property     | Description                | Type   | Default Value        | Required |
+| Property | Description | Type | Default Value | Required |
 | ------------ | -------------------------- | ------ | -------------------- | -------- |
-| border       | Container border style     | string | `1px solid #ddd`     | ✓        |
-| background   | Container background color | string | `rgba(0, 0, 0, 0.1)` | ✓        |
-| borderRadius | Container border radius    | string | -                    | -        |
-| boxShadow    | Container shadow effect    | string | -                    | -        |
-| padding      | Container padding          | string | -                    | -        |
-| margin       | Container margin           | string | -                    | -        |
-| opacity      | Opacity                    | string | -                    | -        |
+| border | Container border style | string | `1px solid #ddd` | ✓ |
+| background | Container background color | string | `rgba(0, 0, 0, 0.1)` | ✓ |
+| borderRadius | Container border radius | string | - | - |
+| boxShadow | Container shadow effect | string | - | - |
+| padding | Container padding | string | - | - |
+| margin | Container margin | string | - | - |
+| opacity | Opacity | string | - | - |
 
 ### position
 

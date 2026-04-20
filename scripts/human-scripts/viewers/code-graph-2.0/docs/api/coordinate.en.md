@@ -33,9 +33,9 @@ getCanvasByClient(point: Point): Point;
 
 **Parameters**
 
-| Parameter | Description              | Type                                         | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ------------------------ | -------------------------------------------- | ------- | -------- |
-| point     | Browser coordinate point | [number, number] \| [number, number, number] | -       | ✓        |
+| point | Browser coordinate point | [number, number] \| [number, number, number] | - | ✓ |
 
 **Return Value**
 
@@ -52,9 +52,9 @@ getCanvasByViewport(point: Point): Point;
 
 **Parameters**
 
-| Parameter | Description               | Type                                         | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ------------------------- | -------------------------------------------- | ------- | -------- |
-| point     | Viewport coordinate point | [number, number] \| [number, number, number] | -       | ✓        |
+| point | Viewport coordinate point | [number, number] \| [number, number, number] | - | ✓ |
 
 **Return Value**
 
@@ -71,9 +71,9 @@ getClientByCanvas(point: Point): Point;
 
 **Parameters**
 
-| Parameter | Description             | Type                                         | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------------------- | -------------------------------------------- | ------- | -------- |
-| point     | Canvas coordinate point | [number, number] \| [number, number, number] | -       | ✓        |
+| point | Canvas coordinate point | [number, number] \| [number, number, number] | - | ✓ |
 
 **Return Value**
 
@@ -90,9 +90,9 @@ getViewportByCanvas(point: Point): Point;
 
 **Parameters**
 
-| Parameter | Description             | Type                                         | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------------------- | -------------------------------------------- | ------- | -------- |
-| point     | Canvas coordinate point | [number, number] \| [number, number, number] | -       | ✓        |
+| point | Canvas coordinate point | [number, number] \| [number, number, number] | - | ✓ |
 
 **Return Value**
 

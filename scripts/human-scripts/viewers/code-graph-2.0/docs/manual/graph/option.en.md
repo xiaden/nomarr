@@ -36,17 +36,17 @@ const graph = new Graph({
 
 #### FitViewOptions
 
-| Property  | Description                                                                                                                                                             | Type                       | Default    | Required |
+| Property | Description | Type | Default | Required |
 | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ---------- | -------- |
-| when      | Adaptation occurs under the following conditions <br/> - `'overflow'` adapt only when content overflows <br/> - `'always'` always adapt                                 | `'overflow'` \| `'always'` | `'always'` |          |
-| direction | Adapt only in the specified direction <br/> - `'x'` adapt only in x direction <br/> - `'y'` adapt only in y direction <br/> - `'both'` adapt in both x and y directions | `'x'` \| `'y'` \| `'both'` | `'both'`   |          |
+| when | Adaptation occurs under the following conditions <br/> - `'overflow'` adapt only when content overflows <br/> - `'always'` always adapt | `'overflow'` \| `'always'` | `'always'` | |
+| direction | Adapt only in the specified direction <br/> - `'x'` adapt only in x direction <br/> - `'y'` adapt only in y direction <br/> - `'both'` adapt in both x and y directions | `'x'` \| `'y'` \| `'both'` | `'both'` | |
 
 #### ViewportAnimationEffectTiming
 
 ```typescript
 type ViewportAnimationEffectTiming =
-  | boolean // true to enable default animation, false to disable animation
-  | {
+ | boolean // true to enable default animation, false to disable animation
+ | {
       easing?: string; // Animation easing function: 'ease-in-out', 'ease-in', 'ease-out', 'linear'
       duration?: number; // Animation duration (milliseconds)
     };
@@ -76,16 +76,16 @@ Canvas configuration. Related configuration items under GraphOptions (such as `c
 
 #### CanvasConfig
 
-| Property         | Description                                                                                | Type                                                                           | Default | Required |
+| Property | Description | Type | Default | Required |
 | ---------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ | ------- | -------- |
-| container        | Canvas container                                                                           | string \| HTMLElement                                                          | -       |          |
-| devicePixelRatio | Device pixel ratio                                                                         | number                                                                         | -       |          |
-| width            | Canvas width                                                                               | number                                                                         | -       |          |
-| height           | Canvas height                                                                              | number                                                                         | -       |          |
-| cursor           | Cursor style, same as [GraphOptions.cursor](#cursor)                                       | string                                                                         | -       |          |
-| background       | Canvas background color                                                                    | string                                                                         | -       |          |
-| renderer         | Renderer, same as [GraphOptions.renderer](#renderer)                                       | (layer: `'background'` \| `'main'` \| `'label'` \| `'transient'`) => IRenderer | -       |          |
-| enableMultiLayer | Whether to enable multi-layer. Non-dynamic parameter, effective only during initialization | boolean                                                                        | -       |          |
+| container | Canvas container | string \| HTMLElement | - | |
+| devicePixelRatio | Device pixel ratio | number | - | |
+| width | Canvas width | number | - | |
+| height | Canvas height | number | - | |
+| cursor | Cursor style, same as [GraphOptions.cursor](#cursor) | string | - | |
+| background | Canvas background color | string | - | |
+| renderer | Renderer, same as [GraphOptions.renderer](#renderer) | (layer: `'background'` \| `'main'` \| `'label'` \| `'transient'`) => IRenderer | - | |
+| enableMultiLayer | Whether to enable multi-layer. Non-dynamic parameter, effective only during initialization | boolean | - | |
 
 ## container
 
@@ -208,14 +208,14 @@ When configured as an animation option, animation will be enabled, and this anim
 
 #### AnimationEffectTiming
 
-| Property   | Description                    | Type                                                                | Default     | Required |
+| Property | Description | Type | Default | Required |
 | ---------- | ------------------------------ | ------------------------------------------------------------------- | ----------- | -------- |
-| delay      | Animation delay time           | number                                                              | -           |          |
-| direction  | Animation direction            | `'alternate'` \| `'alternate-reverse'` \| `'normal'` \| `'reverse'` | `'forward'` |          |
-| duration   | Animation duration             | number                                                              | -           |          |
-| easing     | Animation easing function      | string                                                              | -           |          |
-| fill       | Fill mode after animation ends | `'auto'` \| `'backwards'` \| `'both'` \| `'forwards'` \| `'none'`   | `'none'`    |          |
-| iterations | Animation iteration count      | number                                                              | -           |          |
+| delay | Animation delay time | number | - | |
+| direction | Animation direction | `'alternate'` \| `'alternate-reverse'` \| `'normal'` \| `'reverse'` | `'forward'` | |
+| duration | Animation duration | number | - | |
+| easing | Animation easing function | string | - | |
+| fill | Fill mode after animation ends | `'auto'` \| `'backwards'` \| `'both'` \| `'forwards'` \| `'none'` | `'none'` | |
+| iterations | Animation iteration count | number | - | |
 
 **Example:**
 
@@ -242,46 +242,46 @@ Data.
 
 #### GraphData
 
-| Property | Description | Type                      | Default | Required |
+| Property | Description | Type | Default | Required |
 | -------- | ----------- | ------------------------- | ------- | -------- |
-| nodes    | Node data   | [NodeData](#nodedata)[]   | -       | ✓        |
-| edges    | Edge data   | [EdgeData](#edgedata)[]   | -       | ✓        |
-| combos   | Combo data  | [ComboData](#combodata)[] | -       | ✓        |
+| nodes | Node data | [NodeData](#nodedata)[] | - | ✓ |
+| edges | Edge data | [EdgeData](#edgedata)[] | - | ✓ |
+| combos | Combo data | [ComboData](#combodata)[] | - | ✓ |
 
 #### NodeData
 
-| Property | Description                                                                                                                                         | Type           | Default | Required |
+| Property | Description | Type | Default | Required |
 | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------- | -------- |
-| id       | Unique identifier for the node, used to distinguish different nodes                                                                                 | string         | -       | ✓        |
-| type     | Node type, built-in node type name or custom node name                                                                                              | string         | -       |          |
-| data     | Node data, used to store custom data for the node, such as node name, description, etc. Can be accessed in style mapping through callback functions | object         | -       |          |
-| style    | Node style, including visual attributes such as position, size, color, etc.                                                                         | object         | -       |          |
-| states   | Initial state of the node, such as selected, activated, hovered, etc.                                                                               | string[]       | -       |          |
-| combo    | ID of the combo to which it belongs, used to organize the hierarchical relationship of nodes, if none, it is null                                   | string \| null | -       |          |
-| children | Collection of child node IDs, used only in tree graph scenarios                                                                                     | string[]       | -       |          |
+| id | Unique identifier for the node, used to distinguish different nodes | string | - | ✓ |
+| type | Node type, built-in node type name or custom node name | string | - | |
+| data | Node data, used to store custom data for the node, such as node name, description, etc. Can be accessed in style mapping through callback functions | object | - | |
+| style | Node style, including visual attributes such as position, size, color, etc. | object | - | |
+| states | Initial state of the node, such as selected, activated, hovered, etc. | string[] | - | |
+| combo | ID of the combo to which it belongs, used to organize the hierarchical relationship of nodes, if none, it is null | string \| null | - | |
+| children | Collection of child node IDs, used only in tree graph scenarios | string[] | - | |
 
 #### EdgeData
 
-| Property | Description                                                                                                    | Type     | Default | Required |
+| Property | Description | Type | Default | Required |
 | -------- | -------------------------------------------------------------------------------------------------------------- | -------- | ------- | -------- |
-| source   | Starting node ID of the edge                                                                                   | string   | -       | ✓        |
-| target   | Target node ID of the edge                                                                                     | string   | -       | ✓        |
-| id       | Unique identifier for the edge                                                                                 | string   | -       |          |
-| type     | Edge type, built-in edge type name or custom edge name                                                         | string   | -       |          |
-| data     | Edge data, used to store custom data for the edge, can be accessed in style mapping through callback functions | object   | -       |          |
-| style    | Edge style, including visual attributes such as line color, width, arrow, etc.                                 | object   | -       |          |
-| states   | Initial state of the edge                                                                                      | string[] | -       |          |
+| source | Starting node ID of the edge | string | - | ✓ |
+| target | Target node ID of the edge | string | - | ✓ |
+| id | Unique identifier for the edge | string | - | |
+| type | Edge type, built-in edge type name or custom edge name | string | - | |
+| data | Edge data, used to store custom data for the edge, can be accessed in style mapping through callback functions | object | - | |
+| style | Edge style, including visual attributes such as line color, width, arrow, etc. | object | - | |
+| states | Initial state of the edge | string[] | - | |
 
 #### ComboData
 
-| Property | Description                                                                                                      | Type           | Default | Required |
+| Property | Description | Type | Default | Required |
 | -------- | ---------------------------------------------------------------------------------------------------------------- | -------------- | ------- | -------- |
-| id       | Unique identifier for the combo                                                                                  | string         | -       | ✓        |
-| type     | Combo type, built-in combo type name or custom combo name                                                        | string         | -       |          |
-| data     | Combo data, used to store custom data for the combo, can be accessed in style mapping through callback functions | object         | -       |          |
-| style    | Combo style                                                                                                      | object         | -       |          |
-| states   | Initial state of the combo                                                                                       | string[]       | -       |          |
-| combo    | Parent combo ID. If there is no parent combo, it is null                                                         | string \| null | -       |          |
+| id | Unique identifier for the combo | string | - | ✓ |
+| type | Combo type, built-in combo type name or custom combo name | string | - | |
+| data | Combo data, used to store custom data for the combo, can be accessed in style mapping through callback functions | object | - | |
+| style | Combo style | object | - | |
+| states | Initial state of the combo | string[] | - | |
+| combo | Parent combo ID. If there is no parent combo, it is null | string \| null | - | |
 
 **Example:**
 
@@ -308,13 +308,13 @@ Node configuration options.
 
 #### NodeOptions
 
-| Property  | Description                                                                      | Type                                                     | Default  | Required |
+| Property | Description | Type | Default | Required |
 | --------- | -------------------------------------------------------------------------------- | -------------------------------------------------------- | -------- | -------- |
-| type      | Node type, built-in node type name or custom node name                           | [Type](/en/manual/element/node/base-node#type)           | `circle` |          |
-| style     | Node style, including color, size, etc.                                          | [Style](/en/manual/element/node/base-node#style)         | -        |          |
-| state     | Define the style of the node in different states                                 | [State](/en/manual/element/node/base-node#state)         | -        |          |
-| palette   | Define the color palette of the node, used to map colors based on different data | [Palette](/en/manual/element/node/base-node#palette)     | -        |          |
-| animation | Define the animation effect of the node                                          | [Animation](/en/manual/element/node/base-node#animation) | -        |          |
+| type | Node type, built-in node type name or custom node name | [Type](/en/manual/element/node/base-node#type) | `circle` | |
+| style | Node style, including color, size, etc. | [Style](/en/manual/element/node/base-node#style) | - | |
+| state | Define the style of the node in different states | [State](/en/manual/element/node/base-node#state) | - | |
+| palette | Define the color palette of the node, used to map colors based on different data | [Palette](/en/manual/element/node/base-node#palette) | - | |
+| animation | Define the animation effect of the node | [Animation](/en/manual/element/node/base-node#animation) | - | |
 
 See [Node](/en/manual/element/node/base-node) for details
 
@@ -355,13 +355,13 @@ Edge configuration options
 
 #### EdgeOptions
 
-| Property  | Description                                                                      | Type                                                     | Default | Required |
+| Property | Description | Type | Default | Required |
 | --------- | -------------------------------------------------------------------------------- | -------------------------------------------------------- | ------- | -------- |
-| type      | Edge type, built-in edge type name or custom edge name                           | [Type](/en/manual/element/edge/base-edge#type)           | `line`  |          |
-| style     | Edge style, including color, size, etc.                                          | [Style](/en/manual/element/edge/base-edge#style)         | -       |          |
-| state     | Define the style of the edge in different states                                 | [State](/en/manual/element/edge/base-edge#state)         | -       |          |
-| palette   | Define the color palette of the edge, used to map colors based on different data | [Palette](/en/manual/element/edge/base-edge#palette)     | -       |          |
-| animation | Define the animation effect of the edge                                          | [Animation](/en/manual/element/edge/base-edge#animation) | -       |          |
+| type | Edge type, built-in edge type name or custom edge name | [Type](/en/manual/element/edge/base-edge#type) | `line` | |
+| style | Edge style, including color, size, etc. | [Style](/en/manual/element/edge/base-edge#style) | - | |
+| state | Define the style of the edge in different states | [State](/en/manual/element/edge/base-edge#state) | - | |
+| palette | Define the color palette of the edge, used to map colors based on different data | [Palette](/en/manual/element/edge/base-edge#palette) | - | |
+| animation | Define the animation effect of the edge | [Animation](/en/manual/element/edge/base-edge#animation) | - | |
 
 See [Edge](/en/manual/element/edge/base-edge) for details
 
@@ -393,13 +393,13 @@ const graph = new Graph({
 
 Combo configuration options
 
-| Property  | Description                                                                       | Type                                                       | Default  | Required |
+| Property | Description | Type | Default | Required |
 | --------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------- | -------- | -------- |
-| type      | Combo type, built-in combo type name or custom combo name                         | [Type](/en/manual/element/combo/base-combo#type)           | `circle` |          |
-| style     | Combo style, including color, size, etc.                                          | [Style](/en/manual/element/combo/base-combo#style)         | -        |          |
-| state     | Define the style of the combo in different states                                 | [State](/en/manual/element/combo/base-combo#state)         | -        |          |
-| palette   | Define the color palette of the combo, used to map colors based on different data | [Palette](/en/manual/element/combo/base-combo#palette)     | -        |          |
-| animation | Define the animation effect of the combo                                          | [Animation](/en/manual/element/combo/base-combo#animation) | -        |          |
+| type | Combo type, built-in combo type name or custom combo name | [Type](/en/manual/element/combo/base-combo#type) | `circle` | |
+| style | Combo style, including color, size, etc. | [Style](/en/manual/element/combo/base-combo#style) | - | |
+| state | Define the style of the combo in different states | [State](/en/manual/element/combo/base-combo#state) | - | |
+| palette | Define the color palette of the combo, used to map colors based on different data | [Palette](/en/manual/element/combo/base-combo#palette) | - | |
+| animation | Define the animation effect of the combo | [Animation](/en/manual/element/combo/base-combo#animation) | - | |
 
 See [Combo](/en/manual/element/combo/base-combo) for details
 

@@ -20,7 +20,6 @@ The gap between these steps means the DB can sit indefinitely in a state where c
 
 **Solution:** Add a post-generation hook to `CalibrationService` that is wired by `Application.start()` after both services are constructed. When generation completes successfully, the hook automatically calls `TaggingService.start_apply_calibration_background()`.
 
-
 ## Phases
 
 ### Phase 1: Extend CalibrationService with a post-generation hook
@@ -47,7 +46,6 @@ The gap between these steps means the DB can sit indefinitely in a state where c
 - [x] Run `lint_project_backend` on the full workspace — zero errors is the only acceptable state
     **Notes:** `lint_project_backend()` full workspace — 0 errors, 11 files checked.
 
-
 ## Completion Criteria
 
 - After `POST /calibration/start-histogram` completes successfully, `TaggingService.start_apply_calibration_background()` is called automatically without any manual intervention
@@ -55,7 +53,6 @@ The gap between these steps means the DB can sit indefinitely in a state where c
 - The hook is only called when `heads_failed == 0` — partial calibration failures do NOT auto-trigger a potentially incorrect apply
 - No audio files are written to disk as a side effect of this pipeline. The reconcile / `write_file_tags_wf` pathway is untouched
 - Full lint passes with zero errors
-
 
 ## References
 

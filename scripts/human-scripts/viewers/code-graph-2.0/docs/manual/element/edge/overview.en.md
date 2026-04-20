@@ -24,15 +24,15 @@ G6 provides the following built-in edges:
 
 When defining an edge, you need to add an `edges` field to the graph's data object. Each edge is an object with the following structure:
 
-| Attribute | Description                                                                                                   | Type     | Default | Required |
+| Attribute | Description | Type | Default | Required |
 | --------- | ------------------------------------------------------------------------------------------------------------- | -------- | ------- | -------- |
-| source    | ID of the starting node of the edge                                                                           | string   | -       | ✓        |
-| target    | ID of the target node of the edge                                                                             | string   | -       | ✓        |
-| id        | Unique identifier of the edge                                                                                 | string   | -       |          |
-| type      | Type of edge, name of built-in edge type or custom edge, such as `line` or `polyline`                         | string   | -       |          |
-| data      | Edge data, used to store custom data of the edge, can be accessed in style mapping through callback functions | object   | -       |          |
-| style     | Edge style, including visual attributes like line color, width, arrow, etc.                                   | object   | -       |          |
-| states    | Initial states of the edge                                                                                    | string[] | -       |          |
+| source | ID of the starting node of the edge | string | - | ✓ |
+| target | ID of the target node of the edge | string | - | ✓ |
+| id | Unique identifier of the edge | string | - | |
+| type | Type of edge, name of built-in edge type or custom edge, such as `line` or `polyline` | string | - | |
+| data | Edge data, used to store custom data of the edge, can be accessed in style mapping through callback functions | object | - | |
+| style | Edge style, including visual attributes like line color, width, arrow, etc. | object | - | |
+| states | Initial states of the edge | string[] | - | |
 
 An example of a data item in the `edges` array:
 

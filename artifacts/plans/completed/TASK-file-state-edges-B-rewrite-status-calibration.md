@@ -26,6 +26,7 @@ Each method is rewritten to use `db.file_states` or direct AQL graph traversals 
 ## Phases
 
 ### Phase 1: Rewrite Status Mixin
+
 - [x] Rewrite `mark_file_tagged` to call `db.file_states.set_ml_tagged(file_id, version, now_ms)` instead of updating flat fields; update all callers (trace from tagging workers/workflows) to not rely on `tagged`/`needs_tagging` fields in returned docs
     **Notes:** Rewrote mark_file_tagged to delegate to parent_db.file_states.set_ml_tagged. Updated file_sync_comp.py caller. Removed unused now_ms import.
 - [x] Rewrite `library_has_tagged_files` to query for existence of any `file_has_state` edge to `file_states/ml_tagged` for the library's files, instead of filtering `tagged == true`
@@ -40,6 +41,7 @@ Each method is rewritten to use `db.file_states` or direct AQL graph traversals 
     **Notes:** Lint clean on status.py and file_sync_comp.py. Only pre-existing navidrome_song_map_aql.py Cursor typing errors (5).
 
 ### Phase 2: Rewrite Calibration Mixin & Stats
+
 - [x] Rewrite `update_calibration_hash` and `update_calibration_hashes_batch` to call `db.file_states.set_calibrated(file_id, hash, now_ms)` — upserts edge instead of updating flat field
 - [x] Rewrite `clear_all_calibration_hashes` to call `db.file_states.clear_all_calibrated()` — removes all calibrated edges instead of nulling flat fields; also remove the `last_written_calibration_hash` nulling (that field moves to reconciled edge in Part C)
 - [x] Rewrite `get_calibration_status_by_library` to count files with/without `calibrated` edge matching expected hash, grouped by library, instead of comparing flat `calibration_hash` field
@@ -48,6 +50,7 @@ Each method is rewritten to use `db.file_states` or direct AQL graph traversals 
 - [x] Run `lint_project_backend` on all modified files
 
 ## Completion Criteria
+
 - All status.py methods use edge-based queries via `db.file_states` or graph AQL
 - All calibration.py methods use edge-based queries
 - `mark_file_invalid` and `bulk_mark_invalid` are deleted (no callers)
@@ -56,6 +59,7 @@ Each method is rewritten to use `db.file_states` or direct AQL graph traversals 
 - `lint_project_backend` passes with zero new errors
 
 ## References
+
 - Prerequisite: `plans/TASK-file-state-edges-A-schema-and-persistence.md`
 - Status mixin: `nomarr/persistence/database/library_files_aql/status.py`
 - Calibration mixin: `nomarr/persistence/database/library_files_aql/calibration.py`

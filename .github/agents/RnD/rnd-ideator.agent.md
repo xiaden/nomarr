@@ -48,6 +48,7 @@ problem:
 ### 1. Understand the Problem Space
 
 Before ideating:
+
 - Read architectural constraints — some ideas are DOA if they violate layer rules
 - Search codebase for similar solved problems — the best idea might already exist in adjacent code
 - Identify reusable patterns and components
@@ -57,15 +58,16 @@ Before ideating:
 
 Generate 5–7 distinct approaches. "Distinct" means different mechanisms, not different names for the same idea:
 
-| Approach Type | Description |
-|---------------|-------------|
-| Conventional | Standard pattern for this problem domain |
-| Minimalist | Smallest change that solves the problem |
-| Extensible | Over-engineers for future flexibility |
-| Radical | Rethinks assumptions, may be impractical |
-| Hybrid | Combines elements of other approaches |
+ | Approach Type | Description |
+ | --------------- | ------------- |
+ | Conventional | Standard pattern for this problem domain |
+ | Minimalist | Smallest change that solves the problem |
+ | Extensible | Over-engineers for future flexibility |
+ | Radical | Rethinks assumptions, may be impractical |
+ | Hybrid | Combines elements of other approaches |
 
 For each idea:
+
 - One-sentence summary
 - Key mechanism (how it works)
 - Codebase fit (what existing code enables this)
@@ -74,17 +76,18 @@ For each idea:
 
 For each idea, evaluate honestly — inflated scores defeat the purpose:
 
-| Criterion | Score (1-5) | Notes |
-|-----------|-------------|-------|
-| Architecture fit | | Does it respect layer boundaries? |
-| Implementation effort | | How much code? How many files? |
-| Risk | | What could go wrong? |
-| Testability | | Easy to verify correctness? |
-| Maintainability | | Future devs will understand it? |
+ | Criterion | Score (1-5) | Notes |
+ | ----------- | ------------- | ------- |
+ | Architecture fit | | Does it respect layer boundaries? |
+ | Implementation effort | | How much code? How many files? |
+ | Risk | | What could go wrong? |
+ | Testability | | Easy to verify correctness? |
+ | Maintainability | | Future devs will understand it? |
 
 ### 4. Rank and Recommend
 
 Sort by composite score. Flag:
+
 - **Top pick:** Highest confidence recommendation
 - **Safe pick:** Lower risk, possibly more effort
 - **Moonshot:** High potential but needs more research

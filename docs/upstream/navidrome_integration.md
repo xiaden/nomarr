@@ -73,6 +73,7 @@ JSONForms-based per-plugin config, user-scope grants, library-scope grants.
 ### Permissions model (manifest)
 
 Each `.ndp` package includes a `manifest.json` declaring:
+
 - Which external HTTP hosts the plugin may contact
 - Whether it needs persistent storage
 - Whether it needs library access
@@ -203,6 +204,7 @@ mapping may need to be per-library, not global.
 ### 1. Nomarr as a Navidrome Metadata Agent plugin
 
 Build a `.ndp` plugin (Go/TinyGo) that:
+
 - Declares itself as a Metadata Agent in `manifest.json`
 - Declares HTTP access permission to `http://nomarr:8000` (or configured URL)
 - Implements `getSimilarSongs2`: queries Nomarr's vector similarity API, returns
@@ -296,11 +298,10 @@ practical references until official docs land.
 
 ## References
 
-- Navidrome releases: https://github.com/navidrome/navidrome/releases
-- Plugin usage docs: https://www.navidrome.org/docs/usage/features/plugins/
-- Subsonic API compatibility: https://www.navidrome.org/docs/developers/subsonic-api/
-- OpenSubsonic extensions tracker: https://github.com/navidrome/navidrome/issues/2695
-- AudioMuse-AI NV plugin (reference impl): https://github.com/NeptuneHub/AudioMuse-AI-NV-plugin
-- Extism WASM runtime: https://extism.org/
-- Multi-library docs: https://www.navidrome.org/docs/usage/features/multi-library/
-
+- Navidrome releases: <https://github.com/navidrome/navidrome/releases>
+- Plugin usage docs: <https://www.navidrome.org/docs/usage/features/plugins/>
+- Subsonic API compatibility: <https://www.navidrome.org/docs/developers/subsonic-api/>
+- OpenSubsonic extensions tracker: <https://github.com/navidrome/navidrome/issues/2695>
+- AudioMuse-AI NV plugin (reference impl): <https://github.com/NeptuneHub/AudioMuse-AI-NV-plugin>
+- Extism WASM runtime: <https://extism.org/>
+- Multi-library docs: <https://www.navidrome.org/docs/usage/features/multi-library/>

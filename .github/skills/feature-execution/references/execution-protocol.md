@@ -69,39 +69,38 @@ If Phase 1, write: "This is the first phase. No prior work."}
 
 ### What to always include
 
-| Context | Source | Purpose |
-|---|---|---|
-| Target plan | `artifacts/plans/pending/TASK-{feature}-{letter}-*.md` | Phase boundaries, step descriptions, what NOT to implement yet |
-| Contracts ledger | `artifacts/designs/parts/{feature}/CONTRACTS.md` | Method signatures to call or create — prevents guessing |
-| Feature parts README | `artifacts/designs/parts/{feature}/README.md` | Execution rounds, dependency order, scope boundaries |
-| This prompt template | `.github/skills/feature-execution/references/execution-protocol.md` | Reference for constructing the subagent prompt |
-| **Layer instructions — include ALL that apply to this phase:** | | |
-| Interfaces layer | `.github/instructions/interfaces.instructions.md` | Route handlers, auth, Pydantic-only-here rule |
-| Services layer | `.github/instructions/services.instructions.md` | DI wiring, thinness, no business logic |
-| Workflows layer | `.github/instructions/workflows.instructions.md` | Use-case orchestration, one public function per file |
-| Components layer | `.github/instructions/components.instructions.md` | Domain logic, stateless functions, ML isolation |
-| Persistence layer | `.github/instructions/persistence.instructions.md` | AQL queries, db.module.method() access pattern |
-| Helpers layer | `.github/instructions/helpers.instructions.md` | Pure utilities, DTOs, no nomarr imports |
-| Frontend | `.github/instructions/frontend.instructions.md` | React/TS conventions, MUI sx prop, no `any` |
+ | Context | Source | Purpose |
+ | --- | --- | --- |
+ | Target plan | `artifacts/plans/pending/TASK-{feature}-{letter}-*.md` | Phase boundaries, step descriptions, what NOT to implement yet |
+ | Contracts ledger | `artifacts/designs/parts/{feature}/CONTRACTS.md` | Method signatures to call or create — prevents guessing |
+ | Feature parts README | `artifacts/designs/parts/{feature}/README.md` | Execution rounds, dependency order, scope boundaries |
+ | This prompt template | `.github/skills/feature-execution/references/execution-protocol.md` | Reference for constructing the subagent prompt |
+ | **Layer instructions — include ALL that apply to this phase:** | | |
+ | Interfaces layer | `.github/instructions/interfaces.instructions.md` | Route handlers, auth, Pydantic-only-here rule |
+ | Services layer | `.github/instructions/services.instructions.md` | DI wiring, thinness, no business logic |
+ | Workflows layer | `.github/instructions/workflows.instructions.md` | Use-case orchestration, one public function per file |
+ | Components layer | `.github/instructions/components.instructions.md` | Domain logic, stateless functions, ML isolation |
+ | Persistence layer | `.github/instructions/persistence.instructions.md` | AQL queries, db.module.method() access pattern |
+ | Helpers layer | `.github/instructions/helpers.instructions.md` | Pure utilities, DTOs, no nomarr imports |
+ | Frontend | `.github/instructions/frontend.instructions.md` | React/TS conventions, MUI sx prop, no `any` |
 
 Only include the layer docs for layers the phase actually touches. A frontend-only phase does not need persistence.instructions.md.
 
 ### What to include conditionally
 
-
-| Context | When |
-|---|---|
-| Prior phase annotations | Phase 2+ of same plan |
-| Specific codebase patterns | When the plan references "follow pattern in X" |
-| Design doc sections | When plan steps reference design decisions |
+ | Context | When |
+ | --- | --- |
+ | Prior phase annotations | Phase 2+ of same plan |
+ | Specific codebase patterns | When the plan references "follow pattern in X" |
+ | Design doc sections | When plan steps reference design decisions |
 
 ### What to never include
 
-| Context | Why |
-|---|---|
-| Other plans' full content | Bloats context, causes cross-plan confusion |
-| Entire CONTRACTS.md for early plans | If only 2 entries exist, paste them; don't paste the boilerplate |
-| General coding instructions | The subagent inherits copilot-instructions.md already |
+ | Context | Why |
+ | --- | --- |
+ | Other plans' full content | Bloats context, causes cross-plan confusion |
+ | Entire CONTRACTS.md for early plans | If only 2 entries exist, paste them; don't paste the boilerplate |
+ | General coding instructions | The subagent inherits copilot-instructions.md already |
 
 ---
 
@@ -120,13 +119,13 @@ Only include the layer docs for layers the phase actually touches. A frontend-on
 
 ## Handling Subagent Failures
 
-| Situation | Action |
-|---|---|
-| Subagent completes all steps | Proceed to next phase |
-| Subagent completes some steps, blocks on others | Read annotations. Fix blockers yourself or adjust plan, then re-dispatch for remaining steps |
-| Subagent reports a plan error (wrong method signature, missing dependency) | Update the plan. Do NOT ask the subagent to improvise around plan errors |
-| Subagent runs out of context mid-phase | Check which steps completed via plan_read. Re-dispatch for remaining steps in the phase |
-| Subagent produces code that doesn't lint | This should be caught by the subagent's own lint step. If it wasn't, note it for review |
+ | Situation | Action |
+ | --- | --- |
+ | Subagent completes all steps | Proceed to next phase |
+ | Subagent completes some steps, blocks on others | Read annotations. Fix blockers yourself or adjust plan, then re-dispatch for remaining steps |
+ | Subagent reports a plan error (wrong method signature, missing dependency) | Update the plan. Do NOT ask the subagent to improvise around plan errors |
+ | Subagent runs out of context mid-phase | Check which steps completed via plan_read. Re-dispatch for remaining steps in the phase |
+ | Subagent produces code that doesn't lint | This should be caught by the subagent's own lint step. If it wasn't, note it for review |
 
 ---
 

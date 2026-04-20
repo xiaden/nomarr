@@ -148,6 +148,7 @@ class MyLineEdge extends BaseEdge {
 
 - `getKeyStyle`: Defines the basic style of the edge, such as line width, color, etc.
 - `getKeyPath`: An abstract method in `BaseEdge` that **must be implemented**, it defines the path shape of the edge
+
   :::
 
 ### Step 2: Register Custom Edge
@@ -206,17 +207,17 @@ graph.render();
 
 G6 nodes are drawn using atomic graphic units provided by the [G graphics system](https://g.antv.antgroup.com/). Here are common graphic elements and their uses:
 
-| Graphic Element | Type       | Description                                                                                                                                                                                                                                                                 |
+| Graphic Element | Type | Description |
 | --------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Circle          | `circle`   | Suitable for representing states, avatars, circular buttons, etc. Refer to SVG's [\<circle\>](https://developer.mozilla.org/en-US/docs/Web/SVG/Reference/Element/circle) element                                                                                            |
-| Ellipse         | `ellipse`  | Similar to circle, but supports scenarios with different horizontal and vertical axes. Refer to SVG's [\<ellipse\>](https://developer.mozilla.org/en-US/docs/Web/SVG/Reference/Element/ellipse) element                                                                     |
-| Image           | `image`    | Used to display icons, user avatars, LOGOs, etc. Refer to SVG's [\<image\>](https://developer.mozilla.org/en-US/docs/Web/SVG/Element/image) element                                                                                                                         |
-| Line            | `line`     | Used for decoration, auxiliary connections, etc. Refer to SVG's [\<line\>](https://developer.mozilla.org/en-US/docs/Web/SVG/Element/line) element                                                                                                                           |
-| Path            | `path`     | Supports complex graphics such as arrows, arcs, curves, Bézier paths, etc. The path contains a set of commands and parameters with different semantics, [specific usage](https://developer.mozilla.org/en-US/docs/Web/SVG/Tutorial/Paths)                                   |
-| Polygon         | `polygon`  | Supports custom graphics such as pentagrams, arrows. Refer to SVG's [\<polygon\>](https://developer.mozilla.org/en-US/docs/Web/SVG/Element/polygon) element                                                                                                                 |
-| Polyline        | `polyline` | Multi-point polyline, suitable for complex connection structures. Refer to SVG's [\<polyline\>](https://developer.mozilla.org/en-US/docs/Web/SVG/Element/polyline) element                                                                                                  |
-| Rectangle       | `rect`     | Most commonly used graphic, suitable as containers, cards, buttons, and other basic structures. Refer to SVG's [\<rect\>](https://developer.mozilla.org/en-US/docs/Web/SVG/Element/rect) element                                                                            |
-| Text            | `text`     | Displays names, descriptions, labels, and other content. Provides simple single-line/multi-line text layout capabilities, single-line supports horizontal alignment, character spacing; multi-line supports explicit line breaks and automatic wrapping, vertical alignment |
+| Circle | `circle` | Suitable for representing states, avatars, circular buttons, etc. Refer to SVG's [\<circle\>](https://developer.mozilla.org/en-US/docs/Web/SVG/Reference/Element/circle) element |
+| Ellipse | `ellipse` | Similar to circle, but supports scenarios with different horizontal and vertical axes. Refer to SVG's [\<ellipse\>](https://developer.mozilla.org/en-US/docs/Web/SVG/Reference/Element/ellipse) element |
+| Image | `image` | Used to display icons, user avatars, LOGOs, etc. Refer to SVG's [\<image\>](https://developer.mozilla.org/en-US/docs/Web/SVG/Element/image) element |
+| Line | `line` | Used for decoration, auxiliary connections, etc. Refer to SVG's [\<line\>](https://developer.mozilla.org/en-US/docs/Web/SVG/Element/line) element |
+| Path | `path` | Supports complex graphics such as arrows, arcs, curves, Bézier paths, etc. The path contains a set of commands and parameters with different semantics, [specific usage](https://developer.mozilla.org/en-US/docs/Web/SVG/Tutorial/Paths) |
+| Polygon | `polygon` | Supports custom graphics such as pentagrams, arrows. Refer to SVG's [\<polygon\>](https://developer.mozilla.org/en-US/docs/Web/SVG/Element/polygon) element |
+| Polyline | `polyline` | Multi-point polyline, suitable for complex connection structures. Refer to SVG's [\<polyline\>](https://developer.mozilla.org/en-US/docs/Web/SVG/Element/polyline) element |
+| Rectangle | `rect` | Most commonly used graphic, suitable as containers, cards, buttons, and other basic structures. Refer to SVG's [\<rect\>](https://developer.mozilla.org/en-US/docs/Web/SVG/Element/rect) element |
+| Text | `text` | Displays names, descriptions, labels, and other content. Provides simple single-line/multi-line text layout capabilities, single-line supports horizontal alignment, character spacing; multi-line supports explicit line breaks and automatic wrapping, vertical alignment |
 
 > For more atomic graphics and detailed properties, please refer to [Element - Shape (Optional)](/en/manual/element/shape/overview)
 
@@ -228,10 +229,10 @@ Before starting to customize elements, you need to understand some important pro
 
 #### Properties
 
-| Property   | Type                          | Description                                           |
+| Property | Type | Description |
 | ---------- | ----------------------------- | ----------------------------------------------------- |
-| shapeMap   | Record<string, DisplayObject> | Mapping table of all graphics under current element   |
-| animateMap | Record<string, IAnimation>    | Mapping table of all animations under current element |
+| shapeMap | Record<string, DisplayObject> | Mapping table of all graphics under current element |
+| animateMap | Record<string, IAnimation> | Mapping table of all animations under current element |
 
 #### Methods
 
@@ -243,12 +244,12 @@ When creating custom elements, you will frequently use the `upsert` method. It's
 upsert(key: string, Ctor: { new (...args: any[]): DisplayObject }, style: Record<string, any>, container: DisplayObject);
 ```
 
-| Parameter | Type                                    | Description                                                                                                                                                                                                                                                                                                                       |
+| Parameter | Type | Description |
 | --------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| key       | string                                  | The key of the graphic, i.e., the corresponding key in `shapeMap`. Built-in keys include `'key'` `'label'` `'halo'` `'icon'` `'port'` `'badge'`<br/> The key should not use special symbols, it will be converted to camelCase to call `getXxxStyle` and `drawXxxShape` methods (see [Element Conventions](#element-conventions)) |
-| Ctor      | { new (...args: any[]): DisplayObject } | Graphic class                                                                                                                                                                                                                                                                                                                     |
-| style     | Record<string, any>                     | Graphic style                                                                                                                                                                                                                                                                                                                     |
-| container | DisplayObject                           | Container to mount the graphic                                                                                                                                                                                                                                                                                                    |
+| key | string | The key of the graphic, i.e., the corresponding key in `shapeMap`. Built-in keys include `'key'` `'label'` `'halo'` `'icon'` `'port'` `'badge'`<br/> The key should not use special symbols, it will be converted to camelCase to call `getXxxStyle` and `drawXxxShape` methods (see [Element Conventions](#element-conventions)) |
+| Ctor | { new (...args: any[]): DisplayObject } | Graphic class |
+| style | Record<string, any> | Graphic style |
+| container | DisplayObject | Container to mount the graphic |
 
 For example, inserting a purple circle at a fixed position:
 
@@ -275,10 +276,10 @@ Every custom edge class must implement the `render(attributes, container)` metho
 render(style: Record<string, any>, container: Group): void;
 ```
 
-| Parameter | Type                | Description   |
+| Parameter | Type | Description |
 | --------- | ------------------- | ------------- |
-| style     | Record<string, any> | Element style |
-| container | Group               | Container     |
+| style | Record<string, any> | Element style |
+| container | Group | Container |
 
 #### `getShape(name)`: Get Created Graphics
 
@@ -308,11 +309,11 @@ Currently conventional element properties include:
 
 The following lifecycle hook functions are provided, which you can override in custom edges to execute specific logic at key moments:
 
-| Hook Function | Trigger Time                                            | Typical Usage                                                                    |
+| Hook Function | Trigger Time | Typical Usage |
 | ------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `onCreate`    | When edge creation is completed with entrance animation | Bind interaction events, initialize edge state, add external listeners           |
-| `onUpdate`    | When edge update is completed with update animation     | Update dependent data, adjust related elements, trigger linkage effects          |
-| `onDestroy`   | When edge completes exit animation and is destroyed     | Clean up resources, remove external listeners, execute destruction notifications |
+| `onCreate` | When edge creation is completed with entrance animation | Bind interaction events, initialize edge state, add external listeners |
+| `onUpdate` | When edge update is completed with update animation | Update dependent data, adjust related elements, trigger linkage effects |
+| `onDestroy` | When edge completes exit animation and is destroyed | Clean up resources, remove external listeners, execute destruction notifications |
 
 ### State Response
 

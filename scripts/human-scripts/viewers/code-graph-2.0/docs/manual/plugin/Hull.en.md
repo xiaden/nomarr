@@ -41,23 +41,23 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Property         | Description                                                                                              | Type                                               | Default Value | Required |
+| Property | Description | Type | Default Value | Required |
 | ---------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------- | -------- |
-| type             | Plugin type                                                                                              | string                                             | `hull`        | ✓        |
-| key              | Unique identifier for the plugin, used for subsequent updates                                            | string                                             | -             |          |
-| members          | Elements within the Hull, including nodes and edges                                                      | string[]                                           | -             | ✓        |
-| concavity        | Concavity, the larger the value, the smaller the concavity; default is Infinity representing Convex Hull | number                                             | Infinity      |          |
-| corner           | Corner type, options are `rounded` \| `smooth` \| `sharp`                                                | string                                             | `rounded`     |          |
-| padding          | Padding                                                                                                  | number                                             | `10`          |          |
-| label            | Whether to display the label                                                                             | boolean                                            | true          |          |
-| labelPlacement   | Label position                                                                                           | `left` \| `right` \| `top` \| `bottom` \| `center` | `bottom`      |          |
-| labelBackground  | Whether to display the background                                                                        | boolean                                            | false         |          |
-| labelPadding     | Label padding                                                                                            | number \| number[]                                 | 0             |          |
-| labelCloseToPath | Whether the label is close to the hull                                                                   | boolean                                            | true          |          |
-| labelAutoRotate  | Whether the label rotates with the hull, effective only when closeToPath is true                         | boolean                                            | true          |          |
-| labelOffsetX     | X-axis offset                                                                                            | number                                             | 0             |          |
-| labelOffsetY     | Y-axis offset                                                                                            | number                                             | 0             |          |
-| labelMaxWidth    | Maximum width of the text, exceeding will automatically ellipsis                                         | number                                             | 0             |          |
+| type | Plugin type | string | `hull` | ✓ |
+| key | Unique identifier for the plugin, used for subsequent updates | string | - | |
+| members | Elements within the Hull, including nodes and edges | string[] | - | ✓ |
+| concavity | Concavity, the larger the value, the smaller the concavity; default is Infinity representing Convex Hull | number | Infinity | |
+| corner | Corner type, options are `rounded` \| `smooth` \| `sharp` | string | `rounded` | |
+| padding | Padding | number | `10` | |
+| label | Whether to display the label | boolean | true | |
+| labelPlacement | Label position | `left` \| `right` \| `top` \| `bottom` \| `center` | `bottom` | |
+| labelBackground | Whether to display the background | boolean | false | |
+| labelPadding | Label padding | number \| number[] | 0 | |
+| labelCloseToPath | Whether the label is close to the hull | boolean | true | |
+| labelAutoRotate | Whether the label rotates with the hull, effective only when closeToPath is true | boolean | true | |
+| labelOffsetX | X-axis offset | number | 0 | |
+| labelOffsetY | Y-axis offset | number | 0 | |
+| labelMaxWidth | Maximum width of the text, exceeding will automatically ellipsis | number | 0 | |
 
 For complete label styles, see [this link](https://g6.antv.antgroup.com/manual/element/node/base-node#%E6%A0%87%E7%AD%BE%E6%A0%B7%E5%BC%8F)
 

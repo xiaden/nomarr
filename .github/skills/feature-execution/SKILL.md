@@ -94,6 +94,7 @@ task:
 ```
 
 **Exec-Manager handles internally:**
+
 - Dispatching Executor per phase
 - Running Reviewer after all phases complete
 - Dispatching Fixer if review finds issues
@@ -101,11 +102,11 @@ task:
 
 ### 2b. Handle Exec-Manager Response
 
-| Status | Action |
-|--------|--------|
-| `DONE` | Proceed to Phase 3 (Update Ledger) |
-| `BLOCKED` | Investigate blocker. If resolvable, provide guidance and re-dispatch. If not, stop execution. |
-| `ESCALATE` | Stop. Present to user. Common causes: 3+ fix rounds, fundamental design issue, missing requirements. |
+ | Status | Action |
+ | -------- | -------- |
+ | `DONE` | Proceed to Phase 3 (Update Ledger) |
+ | `BLOCKED` | Investigate blocker. If resolvable, provide guidance and re-dispatch. If not, stop execution. |
+ | `ESCALATE` | Stop. Present to user. Common causes: 3+ fix rounds, fundamental design issue, missing requirements. |
 
 **Do NOT re-run Exec-Manager for DONE.** The plan is complete. Proceed to ledger update.
 
@@ -154,17 +155,18 @@ Create `artifacts/designs/parts/{feature}/COMPLETION.md`:
 
 Use `edit_file_move` for each artifact:
 
-| Source | Destination |
-|---|---|
-| `artifacts/plans/pending/TASK-{feature}-*.md` | `artifacts/plans/completed/TASK-{feature}-*.md` |
-| `artifacts/designs/pending/DD-{feature}.md` | `artifacts/designs/completed/DD-{feature}.md` |
-| `artifacts/designs/parts/{feature}/` | `artifacts/designs/completed/{feature}/` |
+ | Source | Destination |
+ | --- | --- |
+ | `artifacts/plans/pending/TASK-{feature}-*.md` | `artifacts/plans/completed/TASK-{feature}-*.md` |
+ | `artifacts/designs/pending/DD-{feature}.md` | `artifacts/designs/completed/DD-{feature}.md` |
+ | `artifacts/designs/parts/{feature}/` | `artifacts/designs/completed/{feature}/` |
 
 Move plans and design doc first, parts directory last (it contains the manifest you just wrote).
 
 ### 5c. Verify Clean State
 
 After moving:
+
 - No `TASK-{feature}-*.md` files remain in `artifacts/plans/pending/`
 - No `{feature}/` directory remains in `artifacts/designs/parts/`
 - No `DD-{feature}.md` remains in `artifacts/designs/pending/`

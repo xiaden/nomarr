@@ -93,10 +93,10 @@ Fixes often reveal deeper issues. Log what you learn.
 
 ### When to Log
 
-| Situation | Category |
-|-----------|----------|
-| A fix reveals a recurring pattern | `discovery` |
-| An issue can't be fixed minimally — needs broader change | `observation` + tag `needs-review` |
-| Uncertain whether the fix is correct | `observation` + tag `uncertainty` |
+ | Situation | Category |
+ | ----------- | ---------- |
+ | A fix reveals a recurring pattern | `discovery` |
+ | An issue can't be fixed minimally — needs broader change | `observation` + tag `needs-review` |
+ | Uncertain whether the fix is correct | `observation` + tag `uncertainty` |
 
 Log your agent name as `exec-fixer`.

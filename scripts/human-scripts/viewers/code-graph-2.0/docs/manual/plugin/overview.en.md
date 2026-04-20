@@ -15,31 +15,31 @@ Most customization needs can be achieved through plugins. G6 comes with some bui
 
 G6 provides a rich set of built-in plugins covering various common functional scenarios:
 
-| Category                     | Plugin Name                                                                                         | Registration Type  | Description                                                            |
+| Category | Plugin Name | Registration Type | Description |
 | ---------------------------- | --------------------------------------------------------------------------------------------------- | ------------------ | ---------------------------------------------------------------------- |
-| **Visual Style Enhancement** |                                                                                                     |                    |                                                                        |
-|                              | [Grid Line](/en/manual/plugin/grid-line)                                                            | `grid-line`        | Displays grid reference lines on the canvas                            |
-|                              | [Background](/en/manual/plugin/background)                                                          | `background`       | Adds background images or colors to the canvas                         |
-|                              | [Watermark](/en/manual/plugin/watermark)                                                            | `watermark`        | Adds a watermark to the canvas to protect copyright                    |
-|                              | [Hull](/en/manual/plugin/hull)                                                                      | `hull`             | Creates an outline for a specified set of nodes                        |
-|                              | [Bubble Sets](/en/manual/plugin/bubble-sets)                                                        | `bubble-sets`      | Creates smooth bubble-like element outlines                            |
-|                              | [Snapline](/en/manual/plugin/snapline)                                                              | `snapline`         | Displays alignment reference lines when dragging elements              |
-| **Navigation and Overview**  |                                                                                                     |                    |                                                                        |
-|                              | [Minimap](/en/manual/plugin/minimap)                                                                | `minimap`          | Displays a thumbnail preview of the graph, supporting navigation       |
-|                              | [Fullscreen](/en/manual/plugin/fullscreen)                                                          | `fullscreen`       | Supports full-screen display and exit for charts                       |
-|                              | [Timebar](/en/manual/plugin/timebar)                                                                | `timebar`          | Provides filtering and playback control for temporal data              |
-| **Interactive Controls**     |                                                                                                     |                    |                                                                        |
-|                              | [Toolbar](/en/manual/plugin/toolbar)                                                                | `toolbar`          | Provides a collection of common operation buttons                      |
-|                              | [Context Menu](/en/manual/plugin/contextmenu)                                                       | `contextmenu`      | Displays a menu of selectable operations on right-click                |
-|                              | [Tooltip](/en/manual/plugin/tooltip)                                                                | `tooltip`          | Displays detailed information about elements on hover                  |
-|                              | [Legend](/en/manual/plugin/legend)                                                                  | `legend`           | Displays categories and corresponding style descriptions of chart data |
-| **Data Exploration**         |                                                                                                     |                    |                                                                        |
-|                              | [Fisheye](/en/manual/plugin/fisheye)                                                                | `fisheye`          | Provides a focus + context exploration experience                      |
-|                              | [Edge Filter Lens](/en/manual/plugin/edge-filter-lens)                                              | `edge-filter-lens` | Filters and displays edges within a specified area                     |
-|                              | [Edge Bundling](/en/manual/plugin/edge-bundling)                                                    | `edge-bundling`    | Bundles edges with similar paths together to reduce visual clutter     |
-| **Advanced Features**        |                                                                                                     |                    |                                                                        |
-|                              | [History](/en/manual/plugin/history)                                                                | `history`          | Supports undo/redo operations                                          |
-|                              | [Camera Setting](/enhttps://github.com/antvis/G6/blob/v5/packages/g6/src/plugins/camera-setting.ts) | `camera-setting`   | Configures camera parameters in a 3D scene                             |
+| **Visual Style Enhancement** | | | |
+| | [Grid Line](/en/manual/plugin/grid-line) | `grid-line` | Displays grid reference lines on the canvas |
+| | [Background](/en/manual/plugin/background) | `background` | Adds background images or colors to the canvas |
+| | [Watermark](/en/manual/plugin/watermark) | `watermark` | Adds a watermark to the canvas to protect copyright |
+| | [Hull](/en/manual/plugin/hull) | `hull` | Creates an outline for a specified set of nodes |
+| | [Bubble Sets](/en/manual/plugin/bubble-sets) | `bubble-sets` | Creates smooth bubble-like element outlines |
+| | [Snapline](/en/manual/plugin/snapline) | `snapline` | Displays alignment reference lines when dragging elements |
+| **Navigation and Overview** | | | |
+| | [Minimap](/en/manual/plugin/minimap) | `minimap` | Displays a thumbnail preview of the graph, supporting navigation |
+| | [Fullscreen](/en/manual/plugin/fullscreen) | `fullscreen` | Supports full-screen display and exit for charts |
+| | [Timebar](/en/manual/plugin/timebar) | `timebar` | Provides filtering and playback control for temporal data |
+| **Interactive Controls** | | | |
+| | [Toolbar](/en/manual/plugin/toolbar) | `toolbar` | Provides a collection of common operation buttons |
+| | [Context Menu](/en/manual/plugin/contextmenu) | `contextmenu` | Displays a menu of selectable operations on right-click |
+| | [Tooltip](/en/manual/plugin/tooltip) | `tooltip` | Displays detailed information about elements on hover |
+| | [Legend](/en/manual/plugin/legend) | `legend` | Displays categories and corresponding style descriptions of chart data |
+| **Data Exploration** | | | |
+| | [Fisheye](/en/manual/plugin/fisheye) | `fisheye` | Provides a focus + context exploration experience |
+| | [Edge Filter Lens](/en/manual/plugin/edge-filter-lens) | `edge-filter-lens` | Filters and displays edges within a specified area |
+| | [Edge Bundling](/en/manual/plugin/edge-bundling) | `edge-bundling` | Bundles edges with similar paths together to reduce visual clutter |
+| **Advanced Features** | | | |
+| | [History](/en/manual/plugin/history) | `history` | Supports undo/redo operations |
+| | [Camera Setting](/enhttps://github.com/antvis/G6/blob/v5/packages/g6/src/plugins/camera-setting.ts) | `camera-setting` | Configures camera parameters in a 3D scene |
 
 For detailed configuration of each plugin, refer to the [Built-in Plugin Documentation](/en/manual/plugin/grid-line).
 

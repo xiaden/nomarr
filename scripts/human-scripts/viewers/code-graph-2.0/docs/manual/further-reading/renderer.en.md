@@ -13,7 +13,7 @@ G6 uses Canvas as the default renderer, but also supports rendering with SVG and
 npm install @antv/g-svg
 ```
 
-2. Configure the renderer:
+1. Configure the renderer:
 
 ```javascript
 import { Renderer as SVGRenderer } from '@antv/g-svg';
@@ -34,7 +34,7 @@ const graph = new Graph({
 npm install @antv/g-webgl
 ```
 
-2. Configure the renderer:
+1. Configure the renderer:
 
 ```javascript
 import { Renderer as WebGLRenderer } from '@antv/g-webgl';

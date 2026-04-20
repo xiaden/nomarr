@@ -10,10 +10,10 @@ Forward-only migration system using baseline + delta approach. Migrations run au
 
 ## Current Migrations
 
-| File | Purpose |
-|------|--------|
-| `V001_baseline.py` | Consolidated baseline — creates all collections, indexes, graphs, and seed documents (idempotent) |
-| `V020_rename_schema_version_key.py` | Rename `meta.schema_version` to `meta.version` |
+ | File | Purpose |
+ | ------ | -------- |
+ | `V001_baseline.py` | Consolidated baseline — creates all collections, indexes, graphs, and seed documents (idempotent) |
+ | `V020_rename_schema_version_key.py` | Rename `meta.schema_version` to `meta.version` |
 
 ## How to Add a New Migration
 

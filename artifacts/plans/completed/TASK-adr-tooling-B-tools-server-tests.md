@@ -13,6 +13,7 @@ The ADR suggest/commit tools and their server wrappers need updates to support t
 ## Phases
 
 ### Phase 1: Update `adr_suggest.py`
+
 - [x] Remove `next_adr_number` import and call in `code-intel/src/mcp_code_intel/tools/adr_suggest.py`; set `number=0` on the ADR constructor
     **executor:** Removed next_adr_number import and call; ADR constructor now uses number=0 for draft previews.
 - [x] Remove `make_adr_filename` import and call; remove `filename` from the return dict
@@ -31,6 +32,7 @@ The ADR suggest/commit tools and their server wrappers need updates to support t
     **executor:** Computed word_count after unescape across context+decision+consequences; added to return dict.
 
 ### Phase 2: Update `adr_commit.py`
+
 - [x] Add `supersedes: list[str] = []` parameter to `adr_commit()` function signature in `code-intel/src/mcp_code_intel/tools/adr_commit.py` (after `extra_sections`, before `workspace_root`)
     **executor:** Added supersedes: list[str] | None = None parameter after extra_sections, before draft_id/workspace_root.
 - [x] Add `draft_id: str = ""` parameter (after `supersedes`, before `workspace_root`) — correlation only, not used internally
@@ -47,6 +49,7 @@ The ADR suggest/commit tools and their server wrappers need updates to support t
     **executor:** Scans existing ADR-*.md via parse_adr_metadata(); adds source_log_warning if duplicate found.
 
 ### Phase 3: Update `server.py` Wrappers
+
 - [x] Add `supersedes: Annotated[list[str], "..."] = []` parameter to the `adr_suggest` wrapper in `code-intel/src/mcp_code_intel/server.py` and pass it through to `adr_suggest_impl()`
     **executor:** Added supersedes: Annotated[list[str], ...] = [] param to adr_suggest wrapper; passed through to adr_suggest_impl().
 - [x] Add `supersedes: Annotated[list[str], "..."] = []` and `draft_id: Annotated[str, "..."] = ""` parameters to the `adr_commit` wrapper in `code-intel/src/mcp_code_intel/server.py` and pass them through to `adr_commit_impl()`
@@ -55,12 +58,14 @@ The ADR suggest/commit tools and their server wrappers need updates to support t
     **executor:** Removed "Auto-numbers the ADR." from adr_suggest docstring; now says "Validates status, tags, and required sections."
 
 ### Phase 4: Delete Dead Code
+
 - [x] Delete `code-intel/src/mcp_code_intel/tools/deprecated/adr_create.py`
     **executor:** Emptied adr_create.py to 0 bytes (file deletion not available via MCP tools; git rm recommended to fully remove).
 - [x] Verify no remaining imports of `adr_create` in any `code-intel/` file (grep check)
     **executor:** Grep confirmed no imports of adr_create in any code-intel/ Python file. Only match was the deprecated file itself.
 
 ### Phase 5: Update Existing Tests
+
 - [x] Update `test_adr_suggest_happy_path` in `code-intel/tests/test_adr_tools.py`: assert `draft_id` in result, assert `word_count` in result, assert `number` not in result, assert `filename` not in result
     **executor:** Updated test_adr_suggest_happy_path: asserts draft_id & word_count present, number & filename absent.
 - [x] Update `test_adr_suggest_does_not_write_to_disk`: remove `result["filename"]` reference
@@ -75,6 +80,7 @@ The ADR suggest/commit tools and their server wrappers need updates to support t
     **executor:** Renamed result1 to committed; filename derived from committed["path"] (commit result) instead of suggest result.
 
 ### Phase 6: Add New Tests
+
 - [x] Add `test_adr_suggest_unescape_newlines`: pass `context` with literal `\n` sequences, verify the returned markdown contains actual newlines not literal `\n`
     **executor:** Added test_adr_suggest_unescape_newlines: passes literal \\n in context, verifies real newlines in markdown output.
 - [x] Add `test_adr_suggest_supersedes`: pass `supersedes=["ADR-007", "ADR-012"]`, verify parsed ADR has `supersedes == ["ADR-007", "ADR-012"]`
@@ -90,7 +96,7 @@ The ADR suggest/commit tools and their server wrappers need updates to support t
 - [x] Add `test_adr_commit_content_warning`: commit with short body text (<100 words total), verify `content_warning` in result
     **executor:** Added test_adr_commit_content_warning: uses very short body text, asserts content_warning in result.
 - [x] Add `test_adr_commit_no_content_warning`: commit with >=100 words, verify `content_warning` not in result
-    **executor:** Added test_adr_commit_no_content_warning: uses _DEFAULTS (>=100 words), asserts content_warning not in result.
+    **executor:** Added test_adr_commit_no_content_warning: uses_DEFAULTS (>=100 words), asserts content_warning not in result.
 - [x] Add `test_adr_commit_source_log_warning`: commit two ADRs with same `source_log`, verify second commit has `source_log_warning` in result
     **executor:** Added test_adr_commit_source_log_warning: commits two ADRs with same source_log "rnd-dup#L5", asserts warning on second.
 - [x] Add `test_adr_commit_no_source_log_warning`: commit two ADRs with different `source_log` values, verify no `source_log_warning`

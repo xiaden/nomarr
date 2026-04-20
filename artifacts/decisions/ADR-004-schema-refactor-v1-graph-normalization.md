@@ -24,18 +24,21 @@ Migration V021 implements a comprehensive schema normalization:
 ## Consequences
 
 **Positive:**
+
 - Relationships are queryable via graph traversal, not just key lookups
 - Lock logic is DRY — one implementation, discriminated by type
 - Scan state can evolve independently of library documents
 - Pydantic models catch schema drift at the persistence boundary instead of at runtime deep in business logic
 
 **Negative:**
+
 - Breaking changes to `db.*` facade — all callers of old lock and scan APIs must update
 - Migration V021 is large (creates 7 edge collections, 2 document collections, 1 named graph, multiple indexes)
 - Edge-based queries are slightly more complex than embedded field access
 - Alpha policy: forward-only, no rollback
 
 **Deferred:**
+
 - Migrating all existing AQL operations to use Pydantic models (incremental adoption)
 - Domain relationship edges (genre_of, artist_of) — separate concern
 

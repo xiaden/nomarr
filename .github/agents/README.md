@@ -76,49 +76,49 @@ Director
 
 ### Executive (Root)
 
-| Agent | Purpose | Spawns |
-|-------|---------|--------|
-| `Director` | Top-level orchestrator for multi-plan features | RnD-Manager, Exec-Planner, Exec-Manager, Support-Researcher, Support-Debugger, Support-PatternEnforcer, Support-Librarian |
-| `RnD-Manager` | R&D department head — exploration, design, analysis | RnD-DDAuthor, all RnD advisors, Support-PatternEnforcer, Support-Librarian, Support-Researcher |
-| `Exec-Manager` | Owns one plan's full lifecycle | Exec-Executor, QA-Reviewer, Exec-Fixer, Exec-Planner |
+ | Agent | Purpose | Spawns |
+ | ------- | --------- | -------- |
+ | `Director` | Top-level orchestrator for multi-plan features | RnD-Manager, Exec-Planner, Exec-Manager, Support-Researcher, Support-Debugger, Support-PatternEnforcer, Support-Librarian |
+ | `RnD-Manager` | R&D department head — exploration, design, analysis | RnD-DDAuthor, all RnD advisors, Support-PatternEnforcer, Support-Librarian, Support-Researcher |
+ | `Exec-Manager` | Owns one plan's full lifecycle | Exec-Executor, QA-Reviewer, Exec-Fixer, Exec-Planner |
 
 ### R&D Department (`RnD/`)
 
-| Agent | Purpose | Spawns |
-|-------|---------|--------|
-| `RnD-DDAuthor` | Creates design docs from requirements | RnD-Ideator, RnD-Architect, RnD-Estimator, Support-Researcher, Support-Librarian |
-| `RnD-Ideator` | Creative solution generation — default first step for most R&D work | — |
-| `RnD-Architect` | Implementation options with tradeoff analysis | Support-Researcher |
-| `RnD-Estimator` | Effort sizing (TRIVIAL → EPIC) — use to scope before committing | — |
-| `RnD-Improver` | Iterative refinement loop — polishes any agent's output | — |
-| `RnD-ComplexityAdvisor` | Identifies over-engineering and unnecessary abstraction | — |
+ | Agent | Purpose | Spawns |
+ | ------- | --------- | -------- |
+ | `RnD-DDAuthor` | Creates design docs from requirements | RnD-Ideator, RnD-Architect, RnD-Estimator, Support-Researcher, Support-Librarian |
+ | `RnD-Ideator` | Creative solution generation — default first step for most R&D work | — |
+ | `RnD-Architect` | Implementation options with tradeoff analysis | Support-Researcher |
+ | `RnD-Estimator` | Effort sizing (TRIVIAL → EPIC) — use to scope before committing | — |
+ | `RnD-Improver` | Iterative refinement loop — polishes any agent's output | — |
+ | `RnD-ComplexityAdvisor` | Identifies over-engineering and unnecessary abstraction | — |
 
 ### Plan Execution (`Exec/`)
 
-| Agent | Purpose | Spawns |
-|-------|---------|--------|
-| `Exec-Executor` | Implements one phase of a plan | — |
-| `Exec-Planner` | Creates or amends plan files | Support-Researcher, Support-Librarian |
-| `Exec-Fixer` | Targeted repairs from review issues | — |
+ | Agent | Purpose | Spawns |
+ | ------- | --------- | -------- |
+ | `Exec-Executor` | Implements one phase of a plan | — |
+ | `Exec-Planner` | Creates or amends plan files | Support-Researcher, Support-Librarian |
+ | `Exec-Fixer` | Targeted repairs from review issues | — |
 
 ### Quality Assurance (`QA/`)
 
-| Agent | Purpose | Spawns |
-|-------|---------|--------|
-| `QA-Reviewer` | Quality gate with test/docs verification | QA-TestAnalyzer, QA-DocsAnalyzer |
-| `QA-TestAnalyzer` | Test coverage analysis with self-repair | QA-TestGenerator |
-| `QA-TestGenerator` | Generates tests to fill gaps | — |
-| `QA-DocsAnalyzer` | Documentation analysis with self-repair | QA-DocsGenerator |
-| `QA-DocsGenerator` | Generates/updates documentation | — |
+ | Agent | Purpose | Spawns |
+ | ------- | --------- | -------- |
+ | `QA-Reviewer` | Quality gate with test/docs verification | QA-TestAnalyzer, QA-DocsAnalyzer |
+ | `QA-TestAnalyzer` | Test coverage analysis with self-repair | QA-TestGenerator |
+ | `QA-TestGenerator` | Generates tests to fill gaps | — |
+ | `QA-DocsAnalyzer` | Documentation analysis with self-repair | QA-DocsGenerator |
+ | `QA-DocsGenerator` | Generates/updates documentation | — |
 
 ### Support (`Support/`) — Shared Services
 
-| Agent | Purpose | Spawns |
-|-------|---------|--------|
-| `Support-Researcher` | Deep codebase/external research | — |
-| `Support-Debugger` | Root cause analysis for failures | — |
-| `Support-Librarian` | Searches artifact corpus (ADRs, logs, DDs) for relevant context | — |
-| `Support-PatternEnforcer` | Finds where a pattern should apply across the codebase | — |
+ | Agent | Purpose | Spawns |
+ | ------- | --------- | -------- |
+ | `Support-Researcher` | Deep codebase/external research | — |
+ | `Support-Debugger` | Root cause analysis for failures | — |
+ | `Support-Librarian` | Searches artifact corpus (ADRs, logs, DDs) for relevant context | — |
+ | `Support-PatternEnforcer` | Finds where a pattern should apply across the codebase | — |
 
 ---
 
@@ -176,6 +176,7 @@ nextAction:         # Optional
 ## Dispatch Example
 
 Director prompt:
+
 ```
 Dispatch Exec-Manager for Plan B.
 
@@ -194,6 +195,7 @@ task:
 ```
 
 Exec-Manager returns:
+
 ```yaml
 status: DONE
 summary: "Plan B complete: 7 phases, 33 steps, 1 fix cycle"

@@ -65,19 +65,19 @@ Let's analyze the following code snippet:
 <div id="container" style="width: 500px; height: 500px"></div>
 ```
 
-2. Then, include the G6's JS file:
+1. Then, include the G6's JS file:
 
 ```html
 <script src="https://unpkg.com/@antv/g6@5/dist/g6.min.js"></script>
 ```
 
-3. Use the `fetch` method to obtain the graph's data:
+1. Use the `fetch` method to obtain the graph's data:
 
 ```js
 fetch('https://assets.antv.antgroup.com/g6/graph.json').then((res) => res.json());
 ```
 
-4. Finally, create an instance of the graph, pass in the configuration object, and call the `render` method to render the graph:
+1. Finally, create an instance of the graph, pass in the configuration object, and call the `render` method to render the graph:
 
 ```js
 const { Graph } = G6;

@@ -40,17 +40,18 @@ Layer-specific guidance auto-applies based on file paths. What follows are the h
 
 Instructions are stored in `.github/instructions/` and organized by layer:
 
-| Path Pattern | Instruction File |
-|--------------|------------------|
-| `nomarr/interfaces/` | `interfaces.instructions.md` |
-| `nomarr/services/` | `services.instructions.md` |
-| `nomarr/workflows/` | `workflows.instructions.md` |
-| `nomarr/components/` | `components.instructions.md` |
-| `nomarr/persistence/` | `persistence.instructions.md` |
-| `nomarr/helpers/` | `helpers.instructions.md` |
-| `frontend/` | `frontend.instructions.md` |
+ | Path Pattern | Instruction File |
+ | -------------- | ------------------ |
+ | `nomarr/interfaces/` | `interfaces.instructions.md` |
+ | `nomarr/services/` | `services.instructions.md` |
+ | `nomarr/workflows/` | `workflows.instructions.md` |
+ | `nomarr/components/` | `components.instructions.md` |
+ | `nomarr/persistence/` | `persistence.instructions.md` |
+ | `nomarr/helpers/` | `helpers.instructions.md` |
+ | `frontend/` | `frontend.instructions.md` |
 
 These instructions contain:
+
 - Layer-specific conventions and patterns
 - Required validation steps (including mandatory `lint_project_backend`)
 - Common mistakes to avoid
@@ -64,6 +65,7 @@ These instructions contain:
 **You MUST verify code quality after editing ANY Python file.**
 
 **This applies to:**
+
 - All nomarr backend layers (interfaces, services, workflows, components, persistence, helpers)
 - code-intel Python code
 - Scripts, tests, tooling - any `.py` file you touch
@@ -111,6 +113,7 @@ Check this hierarchy before reaching for `read_file_range`, `grep_search`, or `s
 **These tools use static AST analysis** - fast, safe, work even when imports are broken. Use them first.
 
 **Runtime verification (RARE - only when AST tools insufficient):**
+
 - `py_introspect(checks)` - Subprocess-isolated runtime checks (actual MRO after metaclasses, resolved isinstance checks, exception raising via AST)
 - Only use when you need behavior that can't be determined statically
 - Example: metaclass-modified signatures, dynamic class hierarchy, verifying parent classes at import time
@@ -163,19 +166,19 @@ These tools understand FastAPI DI and nomarr's architecture. Serena is a fallbac
 
 **When to use each tool:**
 
-| Use Case | Tool | Why |
-|----------|------|-----|
-| Create multiple new files | `edit_file_create` | Atomic batch creation with automatic directory creation |
-| Replace entire file | `edit_file_replace_content` | Atomic replacement with context validation (first 2 + last 2 lines) |
-| Add import at top of file | `edit_file_insert_at_boundary` | Use `position='bof'` for prepending |
-| Add function at end of file | `edit_file_insert_at_boundary` | Use `position='eof'` for appending |
-| Insert near existing code | `edit_file_insert_at_line` | Use `anchor` to find line, `position='before'` or `'after'` |
-| Replace small string (< 50 lines) | `edit_file_replace_string` | Content-based, requires exact match |
-| Replace large block (50+ lines) | `edit_file_replace_by_content` | Content boundaries + line count validation, no line numbers |
-| Move code block within/between files | `edit_file_move_by_content` | Source boundaries + target anchor, no line numbers |
-| Copy same code to many places | `edit_file_copy_paste_text` | Source cached once, pasted to multiple targets efficiently |
-| Copy boilerplate code to multiple places | `edit_file_copy_paste_text` | Primary use case - read once, paste everywhere |
-| Move or rename a file | `edit_file_move` | Single call, auto-creates target parent directories |
+ | Use Case | Tool | Why |
+ | ---------- | ------ | ----- |
+ | Create multiple new files | `edit_file_create` | Atomic batch creation with automatic directory creation |
+ | Replace entire file | `edit_file_replace_content` | Atomic replacement with context validation (first 2 + last 2 lines) |
+ | Add import at top of file | `edit_file_insert_at_boundary` | Use `position='bof'` for prepending |
+ | Add function at end of file | `edit_file_insert_at_boundary` | Use `position='eof'` for appending |
+ | Insert near existing code | `edit_file_insert_at_line` | Use `anchor` to find line, `position='before'` or `'after'` |
+ | Replace small string (< 50 lines) | `edit_file_replace_string` | Content-based, requires exact match |
+ | Replace large block (50+ lines) | `edit_file_replace_by_content` | Content boundaries + line count validation, no line numbers |
+ | Move code block within/between files | `edit_file_move_by_content` | Source boundaries + target anchor, no line numbers |
+ | Copy same code to many places | `edit_file_copy_paste_text` | Source cached once, pasted to multiple targets efficiently |
+ | Copy boilerplate code to multiple places | `edit_file_copy_paste_text` | Primary use case - read once, paste everywhere |
+ | Move or rename a file | `edit_file_move` | Single call, auto-creates target parent directories |
 
 **Critical rule: Content anchors are sequential**
 
@@ -195,6 +198,7 @@ edit_file_insert_at_line([
 ```
 
 **Batch boilerplate duplication example:**
+
 ```python
 # Copy error handling pattern from helpers.py lines 5-7 to multiple methods
 edit_file_copy_paste_text([
@@ -225,6 +229,7 @@ When given a complex task (multiple coordinated edits across layers, architectur
    - Only use `plan_read` when resuming in a fresh context without the plan attached
 
 This is required because:
+
 - The Plan agent performs upfront research, avoiding mid-execution surprises
 - Plans are structured and parseable, making them easy to resume if a session ends mid-task
 - Step completion is tracked in the plan file itself, not in ephemeral state
@@ -236,6 +241,7 @@ This is required because:
 **To execute multi-part feature plans:** Use the `feature-execution` skill. It orchestrates execution subagents (one phase at a time), dispatches thorough review subagents after each plan, and manages fix cycles when review finds issues. Use after `feature-planning` has produced validated plans.
 
 **Required structure:**
+
 ```markdown
 # Task: <title>
 
@@ -258,10 +264,11 @@ This is required because:
 ```
 
 **Critical rules:**
+
 - Steps MUST be flat lists - nested checkboxes will cause parser errors
 - If substeps are needed → they're actually separate steps or phase-level notes
 - Use `**Notes:**`, `**Warning:**`, `**Blocked:**` annotations after steps (or phases)
-- Annotation text must not contain bullets (`- `), checkboxes (`- [`), or numbered lists (`1.`) — the parser will misinterpret them as steps
+- Annotation text must not contain bullets (`-`), checkboxes (`- [`), or numbered lists (`1.`) — the parser will misinterpret them as steps
 - Phase numbers must be sequential starting from 1
 - Steps auto-generate IDs like `P1-S1`, `P2-S3`
 
@@ -290,6 +297,7 @@ Standard tools are not disallowed, only heavily discouraged in favor of MCP tool
 The semantic tools answer the *real* question, not the proxy question. Instead of reading file imports to understand dependencies, use `trace_module_calls`. Instead of reading the top of a file to find class attributes, use `read_module_source` on the class. The tools understand what you're actually asking.
 
 **Common anti-pattern: Reading imports**
+
 - Imports are implementation details, not architectural facts
 - `trace_module_calls` shows actual call chains
 - `read_module_api` shows exported contract
@@ -315,6 +323,7 @@ If `lint_project_backend` reports errors, they belong to you now. Don't dismiss 
 4. **Verify the fix.** Run `lint_project_backend` again. Zero errors is the only acceptable state.
 
 **Suppression comments (`# noqa`, `# type: ignore`) are only acceptable when ALL are true:**
+
 - The error is a **verified false positive** (tool limitation, not your bug)
 - Fixing requires **changing external code** you don't control
 - You add an **inline comment explaining why** suppression is necessary
@@ -335,23 +344,23 @@ When using `log_write`, your agent name is `agent`. Use it consistently.
 
 You are the most common agent — you see the most code and encounter the most surprises. Log proactively:
 
-| Situation | Category | Example |
-|-----------|----------|---------|
-| You notice something fragile or inconsistent | `observation` | "Config loading in X bypasses ConfigService — potential layer violation" |
-| You're unsure about an approach and pick one anyway | `observation` + tag `uncertainty` | "Unclear if this migration needs a down path — proceeding without" |
-| You discover a codebase pattern or gotcha | `discovery` | "AQL UPSERT requires all three clauses even when update is empty" |
-| An approach fails and you switch strategies | `dead-end` | "Tried using Serena rename on re-exported symbol — doesn't follow re-exports" |
-| You make a choice between approaches | `decision` | "Used component-level caching over service-level — keeps DI simpler" |
-| You uncover useful context during research | `research` | "Library scan workflow depends on filesystem watcher, not polling" |
+ | Situation | Category | Example |
+ | ----------- | ---------- | --------- |
+ | You notice something fragile or inconsistent | `observation` | "Config loading in X bypasses ConfigService — potential layer violation" |
+ | You're unsure about an approach and pick one anyway | `observation` + tag `uncertainty` | "Unclear if this migration needs a down path — proceeding without" |
+ | You discover a codebase pattern or gotcha | `discovery` | "AQL UPSERT requires all three clauses even when update is empty" |
+ | An approach fails and you switch strategies | `dead-end` | "Tried using Serena rename on re-exported symbol — doesn't follow re-exports" |
+ | You make a choice between approaches | `decision` | "Used component-level caching over service-level — keeps DI simpler" |
+ | You uncover useful context during research | `research` | "Library scan workflow depends on filesystem watcher, not polling" |
 
 ### When You Must Check Before Acting
 
-| Situation | Action |
-|-----------|--------|
-| Entering an unfamiliar module or layer | `adr_search(query="module-name")` and `log_read(agent="agent", tag="module-name")` |
-| About to make an architectural choice | `adr_search(query="topic")` — one tool call prevents contradicting a prior decision |
-| Encountering something weird | `log_read(category="discovery")` and `log_read(category="dead-end")` |
-| Starting a complex task | `log_read(agent="agent")` to see what prior sessions found |
+ | Situation | Action |
+ | ----------- | -------- |
+ | Entering an unfamiliar module or layer | `adr_search(query="module-name")` and `log_read(agent="agent", tag="module-name")` |
+ | About to make an architectural choice | `adr_search(query="topic")` — one tool call prevents contradicting a prior decision |
+ | Encountering something weird | `log_read(category="discovery")` and `log_read(category="dead-end")` |
+ | Starting a complex task | `log_read(agent="agent")` to see what prior sessions found |
 
 ### When You Must Create ADRs
 
@@ -377,6 +386,7 @@ Use this workflow when you make decisions that constrain future work:
 Config is loaded once by `ConfigService` and passed via parameters. No global singletons.
 
 ---
+
 ## Meta: Tool Usage Patterns
 
 **This section is living documentation.** When you complete a task and discover a pattern worth remembering, add it here. These are lessons for future contexts—including yourself.
@@ -387,16 +397,16 @@ Config is loaded once by `ConfigService` and passed via parameters. No global si
 
 When you reach for `read_file_range` on Python code, stop and ask: **what am I actually trying to learn?**
 
-| You think you need... | You're actually asking... | Use this instead |
-|-----------------------|--------------------------|------------------|
-| Read file imports | "What does this module depend on?" | `trace_module_calls`, `read_module_api` |
-| Read top of file | "What are the class attributes?" | `read_module_source` on the class |
-| Search for import statement | "Where is X defined?" | `locate_module_symbol` |
-| Read file to find function | "What's the module API?" | `read_module_api` |
-| Check if import is wrong | "Is there a layer violation?" | `lint_project_backend` |
-| Verify code was deleted | "Does this symbol still exist anywhere?" | `locate_module_symbol` (0 matches = deleted) |
-| Move/rename a file via terminal | "I need to relocate this file" | `edit_file_move` (single call, creates parent dirs) |
-| Run python -c to check signature/MRO | "What's the runtime signature/inheritance?" | `py_introspect` with multiple checks in one call |
+ | You think you need... | You're actually asking... | Use this instead |
+ | ----------------------- | -------------------------- | ------------------ |
+ | Read file imports | "What does this module depend on?" | `trace_module_calls`, `read_module_api` |
+ | Read top of file | "What are the class attributes?" | `read_module_source` on the class |
+ | Search for import statement | "Where is X defined?" | `locate_module_symbol` |
+ | Read file to find function | "What's the module API?" | `read_module_api` |
+ | Check if import is wrong | "Is there a layer violation?" | `lint_project_backend` |
+ | Verify code was deleted | "Does this symbol still exist anywhere?" | `locate_module_symbol` (0 matches = deleted) |
+ | Move/rename a file via terminal | "I need to relocate this file" | `edit_file_move` (single call, creates parent dirs) |
+ | Run python -c to check signature/MRO | "What's the runtime signature/inheritance?" | `py_introspect` with multiple checks in one call |
 
 ### Tool Gotchas
 
@@ -423,6 +433,7 @@ When you reach for `read_file_range` on Python code, stop and ask: **what am I a
   - Inserting near known code → `edit_file_insert_at_line` with `anchor`
 
 **When `edit_file_replace_by_content` fails:**
+
 - **Multiple boundary matches** → Make boundaries more specific (include adjacent line content), don't adjust line count
 - **Line count mismatch** → The error shows `(range = N lines, expected M)`. Validate the context of the file by re-reading it, don't assume the tool expected is correct.
 - **Generic boundaries** (` ``` `, `return`, `}`) → Switch to `edit_file_replace_string` with the full unique text
@@ -430,11 +441,13 @@ When you reach for `read_file_range` on Python code, stop and ask: **what am I a
 ### When to Update These Instructions
 
 **Add to `agent.agent.md` when:**
+
 - You made a tool choice mistake that wasted >5 minutes
 - You discovered a pattern that would help future contexts
 - A hard rule was missing and caused architectural violations
 
 **Don't add to instructions:**
+
 - Project-specific details (those go in layer-specific .instructions.md)
 - One-off workarounds for external library bugs
 - Temporary states during refactors
@@ -449,6 +462,7 @@ Use Serena's `insert_after_symbol` or `replace_symbol_body` on the markdown file
 For Docker development environment details (credentials, API authentication, ArangoDB queries, collection schema), use the `docker` skill (`.github/skills/docker/SKILL.md`).
 
 **Key rules:**
+
 - Use `127.0.0.1` not `localhost` (Windows IPv6 issue causes 21-second hangs)
 - Set 60-120s timeouts for DB queries (large collections are not instant)
 - Use Docker for e2e tests and prod-like debugging; use native dev for faster iteration

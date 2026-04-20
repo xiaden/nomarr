@@ -78,11 +78,11 @@ The package command produces `dist/nomarr.ndp` — a ZIP archive containing
 After the plugin is loaded, configure it in Navidrome's admin UI under
 **Settings → Plugins → nomarr**:
 
-| Setting | Required | Description |
-|---------|----------|-------------|
-| **Nomarr API URL** | Yes | Base URL of your Nomarr instance (e.g. `http://nomarr:8356`) |
-| **Nomarr API Key** | Yes | API key for authenticating with Nomarr's v1 API |
-| **ML Backbone** | No | ML backbone model for similarity (default: `effnet`) |
+ | Setting | Required | Description |
+ | --------- | ---------- | ------------- |
+ | **Nomarr API URL** | Yes | Base URL of your Nomarr instance (e.g. `http://nomarr:8356`) |
+ | **Nomarr API Key** | Yes | API key for authenticating with Nomarr's v1 API |
+ | **ML Backbone** | No | ML backbone model for similarity (default: `effnet`) |
 
 ### Generating a Nomarr API Key
 
@@ -131,23 +131,23 @@ that user:
 ]
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `username` | string (required) | Navidrome username |
-| `enabled_types` | string[] (optional) | Playlist types to generate. Omit to generate all types. |
-| `max_songs` | int (optional) | Maximum tracks per playlist |
-| `min_songs` | int (optional) | Minimum tracks required to create a playlist |
-| `max_genre_playlists` | int (optional) | Maximum number of genre playlists to generate per user (1–25, default 5) |
+ | Field | Type | Description |
+ | ------- | ------ | ------------- |
+ | `username` | string (required) | Navidrome username |
+ | `enabled_types` | string[] (optional) | Playlist types to generate. Omit to generate all types. |
+ | `max_songs` | int (optional) | Maximum tracks per playlist |
+ | `min_songs` | int (optional) | Minimum tracks required to create a playlist |
+ | `max_genre_playlists` | int (optional) | Maximum number of genre playlists to generate per user (1–25, default 5) |
 
 ### Playlist Types
 
-| `enabled_types` value | Playlist Name | Description |
-|-----------------------|---------------|-------------|
-| `familiar` | Your Favorites | Sonically coherent mix of tracks near your taste centroid |
-| `discovery` | Discover Weekly | Unplayed tracks near your taste centroid |
-| `hidden_gems` | Hidden Gems | Unplayed tracks from unfamiliar artists |
-| `universal` | Your Mix | Diversified blend sampled across your full taste profile |
-| `genre` | Your {Genre} Mix | One playlist per genre in your taste profile (e.g. "Your Rock Mix") |
+ | `enabled_types` value | Playlist Name | Description |
+ | ----------------------- | --------------- | ------------- |
+ | `familiar` | Your Favorites | Sonically coherent mix of tracks near your taste centroid |
+ | `discovery` | Discover Weekly | Unplayed tracks near your taste centroid |
+ | `hidden_gems` | Hidden Gems | Unplayed tracks from unfamiliar artists |
+ | `universal` | Your Mix | Diversified blend sampled across your full taste profile |
+ | `genre` | Your {Genre} Mix | One playlist per genre in your taste profile (e.g. "Your Rock Mix") |
 
 > **Note:** If `enabled_types` is omitted for a user, all five types are generated.
 

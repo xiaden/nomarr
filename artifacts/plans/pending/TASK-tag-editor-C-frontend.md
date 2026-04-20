@@ -9,6 +9,7 @@ With the backend API in place (Plans A+B), the tag curation tool needs a fronten
 ## Phases
 
 ### Phase 1: API Client & Hooks
+
 - [x] Create `frontend/src/shared/api/tagCuration.ts` with TypeScript types mirroring backend DTOs (`TagValueItem`, `TagListResult`, `RenameResult`, `MergeResult`, `SplitResult`, `CommitResult`, `TagSongItem`) and API client functions for all tag-curation endpoints (fetchTagValues, fetchTagSongs, renameTag, mergeTags, splitTag, commitPendingTags, fetchPendingCount, updateFileTags). Place in `shared/api/` per codebase convention (no feature-local `api.ts` files).
 - [x] Add re-export entry `export * from "./tagCuration";` to `frontend/src/shared/api/index.ts`
 - [x] Update `frontend/src/shared/api/library.ts`: migrate `cleanupOrphanedTags()` and `getFileTags()` endpoint URLs to point at new tag-curation API paths, or remove them from `library.ts` and re-implement in `tagCuration.ts`. Update the explicit exports in `frontend/src/shared/api/index.ts` accordingly (move `cleanupOrphanedTags`, `getFileTags`, `CleanupTagsResult`, `FileTagsResult` from the library export block to the tagCuration re-export).
@@ -19,6 +20,7 @@ With the backend API in place (Plans A+B), the tag curation tool needs a fronten
 - [x] Create `frontend/src/features/tag-curation/hooks/usePendingCommit.ts` — polls `GET /pending-count` on interval (e.g., 10s), exposes `commit()` action and `isCommitting` state. Returns `{pendingCount, commit, isCommitting, isPolling}`.
 
 ### Phase 2: Page Components & Routing
+
 - [x] Create `frontend/src/features/tag-curation/TagCurationPage.tsx` — page layout with: `CommitBar` at top, library dropdown (reuse existing `LibrarySelector` or create simple select), search bar with `rel` filter dropdown, `TagValueGrid` as main content. Lazy-load in router.
     **NOTE:** TagCurationPage.tsx created; uses getUniqueTagKeys from shared/api/files.ts to populate rel dropdown; prefix filter is a letter A-Z dropdown; passes rel/prefix to TagValueGrid as optional props.
 - [x] Create `frontend/src/features/tag-curation/components/TagValueGrid.tsx` — MUI DataGrid with columns `(rel, value, song_count)`, `paginationMode="server"`, `processRowUpdate` handler for inline rename (double-click value cell), row selection with checkboxes for merge, detail panel via `getDetailPanelContent` for song drill-down (`SongListPanel`). Disable editing and selection for `nom:` prefix rows (grey styling).
@@ -35,6 +37,7 @@ With the backend API in place (Plans A+B), the tag curation tool needs a fronten
     **NOTE:** index.ts barrel export created; exports TagCurationPage, CommitBar, MergeDialog, SongListPanel, TagValueGrid.
 
 ## Completion Criteria
+
 - `/tag-curation` route loads and shows tag value grid with data from backend
 - Server-side pagination works on both tag value list and song drill-down
 - Inline editing triggers rename API (with merge prompt if target exists)
@@ -45,6 +48,7 @@ With the backend API in place (Plans A+B), the tag curation tool needs a fronten
 - Frontend builds successfully with zero TypeScript errors
 
 ## References
+
 - Design doc: `artifacts/designs/pending/DD-tag-editor.md` (Frontend Architecture section)
 - ADR-011: MUI DataGrid inline cell editing
 - ADR-012: Server-side pagination

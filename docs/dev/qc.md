@@ -35,6 +35,7 @@ lint_project_backend(check_all=True)                # Full lint + import-linter 
 ```
 
 **Frontend QC:**
+
 ```python
 lint_project_frontend()  # Runs ESLint + TypeScript
 ```
@@ -48,6 +49,7 @@ Zero errors is the only acceptable state. If `lint_project_backend` reports erro
 ### 1. Code Standards
 
 **Checks:**
+
 - [ ] Naming conventions follow [naming.md](naming.md)
 - [ ] Type hints present and correct (`mypy`)
 - [ ] Docstrings for all public functions/classes
@@ -55,6 +57,7 @@ Zero errors is the only acceptable state. If `lint_project_backend` reports erro
 - [ ] No unused imports/variables (`ruff`)
 
 **Tools:**
+
 - `ruff check .` — Linting
 - `mypy .` — Type checking
 - `import-linter` — Layer boundary enforcement
@@ -62,6 +65,7 @@ Zero errors is the only acceptable state. If `lint_project_backend` reports erro
 ### 2. Architecture & Design
 
 **Checks:**
+
 - [ ] Layer boundaries respected (see [architecture.md](architecture.md))
 - [ ] No circular dependencies
 - [ ] Business logic in workflows/components, not services
@@ -69,10 +73,12 @@ Zero errors is the only acceptable state. If `lint_project_backend` reports erro
 - [ ] Proper dependency flow: interfaces → services → workflows → components → persistence/helpers
 
 **Tools:**
+
 - `import-linter` — Enforce layer boundaries (run via `lint_project_backend(check_all=True)`)
 - `trace_module_calls` / `trace_project_endpoint` — MCP tools to trace call chains
 
 **Layer rules:**
+
 - Interfaces may import services only
 - Services may import workflows and components
 - Workflows may import components and other workflows
@@ -83,6 +89,7 @@ Zero errors is the only acceptable state. If `lint_project_backend` reports erro
 ### 3. Error Handling
 
 **Checks:**
+
 - [ ] All file operations have try/except
 - [ ] Database operations have error handling
 - [ ] HTTP endpoints return proper status codes
@@ -90,6 +97,7 @@ Zero errors is the only acceptable state. If `lint_project_backend` reports erro
 - [ ] Error messages are user-friendly (not stack traces)
 
 **Patterns:**
+
 ```python
 # ✅ Good
 try:
@@ -107,6 +115,7 @@ result = process_file(path)  # May crash entire service
 ### 4. Testing Coverage
 
 **Checks:**
+
 - [ ] Unit tests for business logic
 - [ ] Integration tests for system flows
 - [ ] Edge cases tested (empty, null, invalid)
@@ -114,10 +123,12 @@ result = process_file(path)  # May crash entire service
 - [ ] Test fixtures available
 
 **Tools:**
+
 - `pytest tests/ -v` — Run tests
 - `pytest --cov=nomarr --cov-report=html` — Coverage report
 
 **Targets:**
+
 - Overall coverage > 80%
 - Critical paths (processing, calibration) > 90%
 - Interfaces (API, CLI) > 70%
@@ -125,12 +136,14 @@ result = process_file(path)  # May crash entire service
 ### 5. Documentation
 
 **Checks:**
+
 - [ ] User documentation up to date (see [../user/](../user/))
 - [ ] Developer documentation up to date (see [../dev/](../dev/))
 - [ ] Config options explained
 - [ ] Code comments for complex logic
 
 **Locations:**
+
 - `docs/user/` — User-facing documentation
 - `docs/dev/` — Developer documentation
 - Docstrings — In-code documentation
@@ -138,6 +151,7 @@ result = process_file(path)  # May crash entire service
 ### 6. Security
 
 **Checks:**
+
 - [ ] Authentication required where needed
 - [ ] No hardcoded secrets/keys
 - [ ] Input validation on all endpoints
@@ -145,6 +159,7 @@ result = process_file(path)  # May crash entire service
 - [ ] Session secrets not in version control
 
 **Patterns:**
+
 ```python
 # ✅ Good - constructor verb via Database facade
 docs = db.worker_claims.get.many.by_filter(
@@ -160,6 +175,7 @@ if not path.startswith(library_path):
 ### 7. Performance
 
 **Checks:**
+
 - [ ] No N+1 queries
 - [ ] ArangoDB indexes on queried fields
 - [ ] ONNX model cache working correctly
@@ -169,6 +185,7 @@ if not path.startswith(library_path):
 ### 8. Configuration
 
 **Checks:**
+
 - [ ] All settings read via `ConfigService` (never at import time)
 - [ ] Sensible defaults
 - [ ] Config validation on startup
@@ -193,6 +210,7 @@ lint_project_backend(check_all=True)
 ### Per-Change
 
 After editing any Python file, run:
+
 ```python
 lint_project_backend(path="nomarr/services")  # or the specific path you changed
 ```
@@ -227,24 +245,29 @@ For each Python file:
 ### Priority Modules (Review First)
 
 **1. Core Processing:**
+
 - `nomarr/workflows/processing/` — Audio processing workflows
 - `nomarr/components/ml/` — ONNX inference, audio preprocessing
 - `nomarr/components/tagging/` — Tag extraction and aggregation
 
 **2. Services:**
+
 - `nomarr/services/domain/library_svc/` — Library management
 - `nomarr/services/domain/calibration_svc.py` — Calibration
 - `nomarr/services/domain/tagging_svc.py` — Tagging operations
 - `nomarr/services/infrastructure/worker_system_svc.py` — Worker lifecycle
 
 **3. Persistence Layer:**
+
 - `nomarr/persistence/db.py` — Database facade
 - `nomarr/persistence/constructor/` — Schema-driven verb templates and namespaces
 
 **4. API Layer:**
+
 - `nomarr/interfaces/api/` — FastAPI routes and auth
 
 **5. CLI Layer:**
+
 - `nomarr/interfaces/cli/` — CLI commands
 
 ---
@@ -276,6 +299,7 @@ This can be slow on development machines without GPU.
 ### The Solution
 
 **On development machine (fast):**
+
 ```bash
 # No ML dependencies needed
 ruff check .
@@ -284,6 +308,7 @@ lint_project_backend(check_all=True)
 ```
 
 **In Docker container (complete):**
+
 ```bash
 # With ML dependencies
 docker exec nomarr mypy nomarr/
@@ -296,34 +321,34 @@ docker exec nomarr pytest tests/
 
 ### MCP Tools (Preferred)
 
-| Tool | Purpose |
-|------|---------|
-| `lint_project_backend()` | Run ruff + mypy (+ import-linter with `check_all`) |
-| `lint_project_frontend()` | Run ESLint + TypeScript |
-| `read_module_api(module)` | Inspect module's public API without reading full file |
-| `locate_module_symbol(name)` | Find where a symbol is defined |
-| `trace_module_calls(fn)` | Follow call chains from entry points |
-| `trace_project_endpoint(ep)` | Trace FastAPI route through DI layers |
+ | Tool | Purpose |
+ | ------ | --------- |
+ | `lint_project_backend()` | Run ruff + mypy (+ import-linter with `check_all`) |
+ | `lint_project_frontend()` | Run ESLint + TypeScript |
+ | `read_module_api(module)` | Inspect module's public API without reading full file |
+ | `locate_module_symbol(name)` | Find where a symbol is defined |
+ | `trace_module_calls(fn)` | Follow call chains from entry points |
+ | `trace_project_endpoint(ep)` | Trace FastAPI route through DI layers |
 
 ### CLI Tools
 
 **Always available (no ML deps):**
 
-| Tool | Purpose |
-|------|---------|
-| `ruff` | Fast linter and formatter |
-| `import-linter` | Architecture boundary enforcer |
-| `radon` | Complexity metrics |
-| `interrogate` | Docstring coverage |
+ | Tool | Purpose |
+ | ------ | --------- |
+ | `ruff` | Fast linter and formatter |
+ | `import-linter` | Architecture boundary enforcer |
+ | `radon` | Complexity metrics |
+ | `interrogate` | Docstring coverage |
 
 **Requires Docker (ML deps):**
 
-| Tool | Purpose |
-|------|---------|
-| `mypy` | Static type checking |
-| `bandit` | Security scanner |
-| `vulture` | Dead code detector |
-| `pytest` | Test runner with coverage |
+ | Tool | Purpose |
+ | ------ | --------- |
+ | `mypy` | Static type checking |
+ | `bandit` | Security scanner |
+ | `vulture` | Dead code detector |
+ | `pytest` | Test runner with coverage |
 
 ### Installing CLI Tools
 
@@ -338,16 +363,19 @@ pip install ruff radon interrogate import-linter
 ### Track Over Time
 
 **Code Quality:**
+
 - Linting errors: Target = 0
 - Type coverage: Target > 95%
 - Docstring coverage: Target > 90%
 
 **Architecture:**
+
 - Import boundary violations: Target = 0
 - Circular dependencies: Target = 0
 - Average complexity: Target < 10
 
 **Testing:**
+
 - Test coverage: Target > 80%
 - Critical path coverage: Target > 90%
 - Failed tests: Target = 0
@@ -365,16 +393,19 @@ pip install ruff radon interrogate import-linter
 ## Summary
 
 **QC is systematic:**
+
 1. Run `lint_project_backend` after every change
 2. Manual review of changed code
 3. Track metrics over time
 4. Fix issues before they accumulate
 
 **QC is fast:**
+
 - Per-change checks: 5–10 seconds via `lint_project_backend`
 - Full Docker checks: 2–3 minutes
 
 **QC prevents:**
+
 - Architecture violations
 - Security issues
 - Performance regressions

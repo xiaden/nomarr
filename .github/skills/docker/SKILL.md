@@ -10,12 +10,14 @@ Use `.docker/compose.yaml` to run the containerized test environment (app + Aran
 ## Docker vs Native Dev
 
 **Use Docker when:**
+
 - Reproducing prod-reported issues not visible in native dev
 - Running e2e tests with Playwright (`npx playwright test` in container)
 - Testing DB migration behavior
 - Verifying essentia audio analysis in prod-like environment
 
 **Use native dev when:**
+
 - Writing/debugging backend services (faster iteration)
 - Running lint/type checks
 - Unit/integration tests
@@ -71,6 +73,7 @@ foreach ($q in $queries) {
 ```
 
 **Performance expectations:**
+
 - `song_has_tags` (~200k+ docs) / `tags` (~30k+ docs) queries: 5–30+ seconds
 - Full-table scans (orphaned edge checks): 30–60+ seconds
 - Calibration generation: 30–120 seconds

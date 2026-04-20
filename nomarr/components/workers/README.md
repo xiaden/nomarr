@@ -12,10 +12,10 @@ Work discovery, claiming, and crash recovery for the ML tagging worker fleet.
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|----------|
-| `worker_discovery_comp` | File discovery (needs_tagging=1, is_valid=1), atomic claim/release, stale claim cleanup, combined discover-and-claim |
-| `worker_crash_comp` | Two-tier restart limiting (short window + lifetime cap), exponential backoff (1s–60s), `RestartDecision` with action/reason |
+ | Module | Purpose |
+ | -------- | ---------- |
+ | `worker_discovery_comp` | File discovery (needs_tagging=1, is_valid=1), atomic claim/release, stale claim cleanup, combined discover-and-claim |
+ | `worker_crash_comp` | Two-tier restart limiting (short window + lifetime cap), exponential backoff (1s–60s), `RestartDecision` with action/reason |
 
 ## Patterns
 

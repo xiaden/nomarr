@@ -6,6 +6,7 @@
 **Revised:** 2026-04-02
 
 **Related Documents:**
+
 - [design-agent-hierarchy-restructure.md](design-agent-hierarchy-restructure.md) — Agent hierarchy and scoping
 - [.github/instructions/task-plans.instructions.md](../../.github/instructions/task-plans.instructions.md) — Plan schema (model for markdown-backed tools)
 - [code-intel/README.md](../../code-intel/README.md) — MCP server overview
@@ -15,6 +16,7 @@
 ## Scope
 
 This document covers:
+
 1. Nine new MCP tools for creating, reading, searching, and archiving structured artifacts
 2. Markdown schemas for design documents, ADRs, and agent logs
 3. Restructured `artifacts/` directory with lifecycle management
@@ -49,16 +51,16 @@ The plan tools (`plan_read`, `plan_complete_step`) demonstrate that structured m
 
 ## Design Goals
 
-| Goal | Rationale |
-|------|----------|
-| Schema enforcement at creation time | Prevent format drift; agents produce valid artifacts or get errors |
-| Verified lifecycle transitions | Archive tools validate completion before moving artifacts |
-| Append-only logs | Operational history is immutable; no rewriting the past |
-| Auto-incrementing ADR numbers | Eliminate numbering collisions between concurrent agents |
-| Human-discoverable active work | `pending/` directories show only in-flight artifacts |
-| Chain-of-command log scoping | Agents read logs one level up and one level down, not laterally |
-| Tool simplicity | Tools are CRUD + lifecycle — no access-control logic; scoping is in agent YAML |
-| Consistent response format | All tools use `ToolOutput` with breadcrumb + metadata pattern |
+ | Goal | Rationale |
+ | ------ | ---------- |
+ | Schema enforcement at creation time | Prevent format drift; agents produce valid artifacts or get errors |
+ | Verified lifecycle transitions | Archive tools validate completion before moving artifacts |
+ | Append-only logs | Operational history is immutable; no rewriting the past |
+ | Auto-incrementing ADR numbers | Eliminate numbering collisions between concurrent agents |
+ | Human-discoverable active work | `pending/` directories show only in-flight artifacts |
+ | Chain-of-command log scoping | Agents read logs one level up and one level down, not laterally |
+ | Tool simplicity | Tools are CRUD + lifecycle — no access-control logic; scoping is in agent YAML |
+ | Consistent response format | All tools use `ToolOutput` with breadcrumb + metadata pattern |
 
 ---
 
@@ -88,6 +90,7 @@ artifacts/
 ```
 
 **Lifecycle rules:**
+
 - **Plans and DDs** have `pending/` → `completed/` lifecycle, gated by verification tools
 - **ADRs** are reference material — no lifecycle split. Status tracked in metadata (Proposed → Accepted → Deprecated → Superseded)
 - **Logs** are append-only streams — no lifecycle transition
@@ -95,21 +98,21 @@ artifacts/
 
 ### Layer Mapping
 
-| Component | Layer | Location | Responsibility |
-|-----------|-------|----------|----------------|
-| `dd_create` | tool | `tools/dd_create.py` | Validate + write DD to `designs/pending/` |
-| `dd_read` | tool | `tools/dd_read.py` | Parse DD from pending or completed |
-| `dd_archive` | tool | `tools/dd_archive.py` | Verify all linked plans completed, move DD |
-| `adr_create` | tool | `tools/adr_create.py` | Auto-number + validate + write ADR |
-| `adr_read` | tool | `tools/adr_read.py` | Parse + return ADR as structured JSON |
-| `adr_search` | tool | `tools/adr_search.py` | Glob + grep ADR files, return summaries |
-| `log_write` | tool | `tools/log_write.py` | Append timestamped entry to agent log |
-| `log_read` | tool | `tools/log_read.py` | Parse + filter + return log entries |
-| `plan_archive` | tool | `tools/plan_archive.py` | Verify all steps complete, move plan |
-| `dd_md` | helper | `helpers/dd_md.py` | DD markdown parser and generator |
-| `adr_md` | helper | `helpers/adr_md.py` | ADR markdown parser and generator |
-| `log_md` | helper | `helpers/log_md.py` | Log markdown parser and appender |
-| `server.py` | registration | `server.py` | `@mcp.tool()` wrappers, imports, `TOOL_IMPLS` |
+ | Component | Layer | Location | Responsibility |
+ | ----------- | ------- | ---------- | ---------------- |
+ | `dd_create` | tool | `tools/dd_create.py` | Validate + write DD to `designs/pending/` |
+ | `dd_read` | tool | `tools/dd_read.py` | Parse DD from pending or completed |
+ | `dd_archive` | tool | `tools/dd_archive.py` | Verify all linked plans completed, move DD |
+ | `adr_create` | tool | `tools/adr_create.py` | Auto-number + validate + write ADR |
+ | `adr_read` | tool | `tools/adr_read.py` | Parse + return ADR as structured JSON |
+ | `adr_search` | tool | `tools/adr_search.py` | Glob + grep ADR files, return summaries |
+ | `log_write` | tool | `tools/log_write.py` | Append timestamped entry to agent log |
+ | `log_read` | tool | `tools/log_read.py` | Parse + filter + return log entries |
+ | `plan_archive` | tool | `tools/plan_archive.py` | Verify all steps complete, move plan |
+ | `dd_md` | helper | `helpers/dd_md.py` | DD markdown parser and generator |
+ | `adr_md` | helper | `helpers/adr_md.py` | ADR markdown parser and generator |
+ | `log_md` | helper | `helpers/log_md.py` | Log markdown parser and appender |
+ | `server.py` | registration | `server.py` | `@mcp.tool()` wrappers, imports, `TOOL_IMPLS` |
 
 All paths relative to `code-intel/src/mcp_code_intel/`.
 
@@ -233,6 +236,7 @@ def dd_create(
 ```
 
 **Validation:**
+
 - Slug matches `^[a-z0-9][a-z0-9-]*[a-z0-9]$`
 - Status is one of the allowed values
 - Required sections are non-empty
@@ -263,6 +267,7 @@ def dd_archive(
 ```
 
 **Verification before moving:**
+
 1. Resolve DD in `artifacts/designs/pending/` (error if already in `completed/` or not found)
 2. Extract the slug from the DD filename
 3. Scan `artifacts/plans/pending/` for plans matching `TASK-{slug}-*.md` (convention-based link)
@@ -293,6 +298,7 @@ def adr_create(
 **Auto-numbering:** Scans `artifacts/decisions/ADR-*.md`, extracts highest NNN, increments. Retries up to 3 times on collision.
 
 **Validation:**
+
 - At least one tag
 - Status is one of the allowed values
 - Required sections are non-empty
@@ -345,6 +351,7 @@ def log_write(
 **Behavior:** Creates the log file with header if it doesn't exist. Appends new entry with auto-incremented ID and current timestamp. Entries are separated by `---` horizontal rules.
 
 **Validation:**
+
 - `agent` matches `^[a-z][a-z0-9-]*[a-z0-9]$`
 - `category` is one of the allowed values
 - `title` is non-empty
@@ -379,6 +386,7 @@ def plan_archive(
 ```
 
 **Verification before moving:**
+
 1. Resolve plan in `artifacts/plans/pending/` (error if already in `completed/` or not found)
 2. Parse the plan via existing `plan_md.parse_plan()`
 3. Check every step is `checked: True` — if any unchecked → error with list of incomplete step IDs
@@ -482,39 +490,40 @@ class AgentLog:
 
 Tools are exposed to agents via their `.agent.md` YAML `tools:` array using the `nomarr_dev/{tool_name}` naming convention.
 
-| Agent | New Tools |
-|-------|-----------|
-| Director | `dd_read`, `adr_search`, `adr_read`, `log_read` |
-| RnD-Manager | `dd_read`, `adr_search`, `adr_read`, `log_read`, `log_write` |
-| RnD-DDAuthor | `dd_create`, `dd_read`, `adr_create`, `adr_read`, `log_write` |
-| RnD-Architect | `dd_read`, `adr_create`, `adr_search`, `adr_read`, `log_write` |
-| RnD-Advisory (Ideator, Estimator, etc.) | `adr_read`, `log_write` |
-| Support-PatternEnforcer | `adr_read`, `log_write` |
-| Exec-Manager | `dd_read`, `dd_archive`, `adr_search`, `adr_read`, `plan_archive`, `log_read`, `log_write` |
-| Exec-Executor | `log_write` |
-| Exec-Planner | `dd_read`, `adr_search`, `adr_read`, `log_write` |
-| Exec-Fixer | `log_write` |
-| QA-Reviewer | `dd_read`, `adr_search`, `adr_read`, `log_write`, `log_read` |
-| QA-Leaf agents | `log_write` |
-| Support-Researcher | `dd_read`, `adr_search`, `adr_read`, `log_write`, `log_read` |
-| Support-Debugger | `adr_search`, `adr_read`, `log_write`, `log_read` |
+ | Agent | New Tools |
+ | ------- | ----------- |
+ | Director | `dd_read`, `adr_search`, `adr_read`, `log_read` |
+ | RnD-Manager | `dd_read`, `adr_search`, `adr_read`, `log_read`, `log_write` |
+ | RnD-DDAuthor | `dd_create`, `dd_read`, `adr_create`, `adr_read`, `log_write` |
+ | RnD-Architect | `dd_read`, `adr_create`, `adr_search`, `adr_read`, `log_write` |
+ | RnD-Advisory (Ideator, Estimator, etc.) | `adr_read`, `log_write` |
+ | Support-PatternEnforcer | `adr_read`, `log_write` |
+ | Exec-Manager | `dd_read`, `dd_archive`, `adr_search`, `adr_read`, `plan_archive`, `log_read`, `log_write` |
+ | Exec-Executor | `log_write` |
+ | Exec-Planner | `dd_read`, `adr_search`, `adr_read`, `log_write` |
+ | Exec-Fixer | `log_write` |
+ | QA-Reviewer | `dd_read`, `adr_search`, `adr_read`, `log_write`, `log_read` |
+ | QA-Leaf agents | `log_write` |
+ | Support-Researcher | `dd_read`, `adr_search`, `adr_read`, `log_write`, `log_read` |
+ | Support-Debugger | `adr_search`, `adr_read`, `log_write`, `log_read` |
 
 **Archive tool scoping:** Only Exec-Manager gets `plan_archive` and `dd_archive`. Archiving is a management/lifecycle action, not a worker action.
 
 ### Log-Read Chain-of-Command Scoping
 
 Log-Read scoping is NOT enforced in tool code. The `log_read` tool accepts any `agent` parameter. Scoping is enforced by:
+
 1. Only granting `log_read` to agents that need it
 2. Documenting the allowed `agent` values in each agent's instructions
 
-| Agent with `log_read` | Can Read Logs Of |
-|-----------------------|-----------------|
-| Director | Own, `rnd-manager`, `exec-manager` (direct reports) |
-| RnD-Manager | Own, `director` (up), all `rnd-*` agents (down) |
-| Exec-Manager | Own, `director` (up), `exec-executor`, `exec-fixer`, `exec-planner` (down) |
-| QA-Reviewer | Own, `exec-manager` (up), `exec-executor` (audit target), `qa-test-analyzer`, `qa-docs-analyzer` (down) |
-| Support-Researcher | Own, `director`, `rnd-manager`, `exec-manager` (manager-level) |
-| Support-Debugger | Own, `director`, `rnd-manager`, `exec-manager` (manager-level), `exec-executor` (audit target) |
+ | Agent with `log_read` | Can Read Logs Of |
+ | ----------------------- | ----------------- |
+ | Director | Own, `rnd-manager`, `exec-manager` (direct reports) |
+ | RnD-Manager | Own, `director` (up), all `rnd-*` agents (down) |
+ | Exec-Manager | Own, `director` (up), `exec-executor`, `exec-fixer`, `exec-planner` (down) |
+ | QA-Reviewer | Own, `exec-manager` (up), `exec-executor` (audit target), `qa-test-analyzer`, `qa-docs-analyzer` (down) |
+ | Support-Researcher | Own, `director`, `rnd-manager`, `exec-manager` (manager-level) |
+ | Support-Debugger | Own, `director`, `rnd-manager`, `exec-manager` (manager-level), `exec-executor` (audit target) |
 
 This keeps the tool simple and the access model in the configuration layer where it belongs.
 
@@ -524,13 +533,13 @@ This keeps the tool simple and the access model in the configuration layer where
 
 The directory restructure requires updates to existing plan tools:
 
-| Tool | Change |
-|------|--------|
-| `plan_read` | Base path changes from `plans/` to `artifacts/plans/pending/`; also search `artifacts/plans/completed/` |
-| `plan_complete_step` | Base path changes from `plans/` to `artifacts/plans/pending/` (only operates on pending plans) |
-| All agent files | Context file paths referencing `plans/` must update to `artifacts/plans/pending/` |
-| Skills | `feature-planning`, `feature-execution` path references updated |
-| Instructions | `task-plans.instructions.md`, `copilot-instructions.md` path references updated |
+ | Tool | Change |
+ | ------ | -------- |
+ | `plan_read` | Base path changes from `plans/` to `artifacts/plans/pending/`; also search `artifacts/plans/completed/` |
+ | `plan_complete_step` | Base path changes from `plans/` to `artifacts/plans/pending/` (only operates on pending plans) |
+ | All agent files | Context file paths referencing `plans/` must update to `artifacts/plans/pending/` |
+ | Skills | `feature-planning`, `feature-execution` path references updated |
+ | Instructions | `task-plans.instructions.md`, `copilot-instructions.md` path references updated |
 
 ---
 
@@ -538,40 +547,41 @@ The directory restructure requires updates to existing plan tools:
 
 Existing content in `plans/` moves to the new structure:
 
-| Current Location | New Location |
-|-----------------|--------------|
-| `plans/TASK-*.md` (active) | `artifacts/plans/pending/TASK-*.md` |
-| `plans/completed/TASK-*.md` | `artifacts/plans/completed/TASK-*.md` |
-| `plans/dev/design-*.md` | `artifacts/designs/pending/DD-*.md` (renamed to DD- prefix) |
-| `plans/dev/{feature}-parts/` | `artifacts/designs/parts/{feature}/` |
-| `plans/scratch/` | `artifacts/scratch/` |
-| `plans/speculative/` | `artifacts/scratch/speculative/` |
-| `plans/examples/` | `artifacts/scratch/examples/` |
-| `plans/dev/` (remaining) | `artifacts/scratch/dev/` (if anything left) |
-| `plans/PLAN_SCHEMA.json` | `artifacts/plans/PLAN_SCHEMA.json` |
+ | Current Location | New Location |
+ | ----------------- | -------------- |
+ | `plans/TASK-*.md` (active) | `artifacts/plans/pending/TASK-*.md` |
+ | `plans/completed/TASK-*.md` | `artifacts/plans/completed/TASK-*.md` |
+ | `plans/dev/design-*.md` | `artifacts/designs/pending/DD-*.md` (renamed to DD- prefix) |
+ | `plans/dev/{feature}-parts/` | `artifacts/designs/parts/{feature}/` |
+ | `plans/scratch/` | `artifacts/scratch/` |
+ | `plans/speculative/` | `artifacts/scratch/speculative/` |
+ | `plans/examples/` | `artifacts/scratch/examples/` |
+ | `plans/dev/` (remaining) | `artifacts/scratch/dev/` (if anything left) |
+ | `plans/PLAN_SCHEMA.json` | `artifacts/plans/PLAN_SCHEMA.json` |
 
 DD renaming during migration:
-| Current Name | New Name |
-|-------------|----------|
-| `design-schema-refactor-v1.md` | `DD-schema-refactor-v1.md` |
-| `design-cascade-delete.md` | `DD-cascade-delete.md` |
-| `design-db-issues-investigation.md` | `DD-db-issues-investigation.md` |
-| `design-agent-hierarchy-restructure.md` | `DD-agent-hierarchy-restructure.md` |
+
+ | Current Name | New Name |
+ | ------------- | ---------- |
+ | `design-schema-refactor-v1.md` | `DD-schema-refactor-v1.md` |
+ | `design-cascade-delete.md` | `DD-cascade-delete.md` |
+ | `design-db-issues-investigation.md` | `DD-db-issues-investigation.md` |
+ | `design-agent-hierarchy-restructure.md` | `DD-agent-hierarchy-restructure.md` |
 
 ---
 
 ## Constraints
 
-| Constraint | Detail |
-|------------|--------|
-| No concurrent write protection for logs | Agents run sequentially in VS Code; no true concurrency. Simple append is sufficient. |
-| ADR auto-numbering race condition | Mitigate with glob-then-write; if file exists, increment and retry (max 3 retries). Sufficient for agent workloads. |
-| No DD overwrites | `dd_create` fails if file exists. Edits to DDs use general-purpose file editing tools. |
-| Log append-only | `log_write` only appends. No edit or delete tool. Log files can be manually edited if needed. |
-| Max 50 results | `adr_search` and `log_read` cap results at 50 to bound context window usage. |
-| No full-text indexing | Search is grep-based over flat files. Acceptable at expected scale (tens of ADRs, hundreds of log entries). |
-| Workspace-root relative | All paths resolved relative to `workspace_root`, same as plan tools. No absolute paths stored in artifacts. |
-| Archive is one-way | No "un-archive" tool. Manually move files back if needed. |
+ | Constraint | Detail |
+ | ------------ | -------- |
+ | No concurrent write protection for logs | Agents run sequentially in VS Code; no true concurrency. Simple append is sufficient. |
+ | ADR auto-numbering race condition | Mitigate with glob-then-write; if file exists, increment and retry (max 3 retries). Sufficient for agent workloads. |
+ | No DD overwrites | `dd_create` fails if file exists. Edits to DDs use general-purpose file editing tools. |
+ | Log append-only | `log_write` only appends. No edit or delete tool. Log files can be manually edited if needed. |
+ | Max 50 results | `adr_search` and `log_read` cap results at 50 to bound context window usage. |
+ | No full-text indexing | Search is grep-based over flat files. Acceptable at expected scale (tens of ADRs, hundreds of log entries). |
+ | Workspace-root relative | All paths resolved relative to `workspace_root`, same as plan tools. No absolute paths stored in artifacts. |
+ | Archive is one-way | No "un-archive" tool. Manually move files back if needed. |
 
 ---
 

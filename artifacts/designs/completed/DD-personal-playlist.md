@@ -18,19 +18,20 @@ The data model is **graph-native**: Navidrome track IDs, their link to Nomarr fi
 
 ## What Exists Today
 
-| Capability | Status | Where |
-|---|---|---|
-| Per-track embeddings (effnet, musicnn) | **Done** | `vectors_track_hot__*` / `vectors_track_cold__*` collections |
-| ANN vector search on cold collections | **Done** | `VectorsTrackColdOperations.search_similar()` |
-| Navidrome ↔ Nomarr ID mapping | **Exists, being replaced** | `navidrome_song_map` → migrates to graph model |
-| Subsonic API client | **Done** | `SubsonicClient` in `components/navidrome/` |
-| Playlist push to Navidrome | **Done** | `push_playlist_wf.py` — creates/replaces playlist by name |
-| Similar tracks from seed vector | **Done** | `find_similar_tracks_wf.py` — ANN search + ID resolution |
-| Plugin config surface in Navidrome UI | **Done** | `manifest.json` JSON Schema → rendered as form fields |
-| Navidrome API credentials (live from ConfigService) | **Done** | `navidrome_api_url`, `navidrome_api_user`, `navidrome_api_password` |
-| Tag system (artists, genres, etc.) | **Done** | `tags` vertices + `song_has_tags` edges |
+ | Capability | Status | Where |
+ | --- | --- | --- |
+ | Per-track embeddings (effnet, musicnn) | **Done** | `vectors_track_hot__*` / `vectors_track_cold__*` collections |
+ | ANN vector search on cold collections | **Done** | `VectorsTrackColdOperations.search_similar()` |
+ | Navidrome ↔ Nomarr ID mapping | **Exists, being replaced** | `navidrome_song_map` → migrates to graph model |
+ | Subsonic API client | **Done** | `SubsonicClient` in `components/navidrome/` |
+ | Playlist push to Navidrome | **Done** | `push_playlist_wf.py` — creates/replaces playlist by name |
+ | Similar tracks from seed vector | **Done** | `find_similar_tracks_wf.py` — ANN search + ID resolution |
+ | Plugin config surface in Navidrome UI | **Done** | `manifest.json` JSON Schema → rendered as form fields |
+ | Navidrome API credentials (live from ConfigService) | **Done** | `navidrome_api_url`, `navidrome_api_user`, `navidrome_api_password` |
+ | Tag system (artists, genres, etc.) | **Done** | `tags` vertices + `song_has_tags` edges |
 
 **What does NOT exist:**
+
 - Graph-based Navidrome track + play count model (new collections)
 - Scrobble ingestion endpoint (`/api/v1/navidrome/scrobble`)
 - Plugin Scrobbler capability (forward scrobbles to Nomarr)
@@ -47,6 +48,7 @@ The data model is **graph-native**: Navidrome track IDs, their link to Nomarr fi
 The old approach (a document collection with composite keys, denormalized artist fields, and file_id foreign keys) conflates identity mapping with play tracking and requires manual joins. ArangoDB is a graph database — model graph problems as graphs.
 
 The graph model provides:
+
 - **No denormalization** — relationships are edges, not duplicated fields
 - **Clean separation** — track identity, file linkage, and play counts are distinct vertices
 - **Per-user play counts** as first-class vertices, not embedded fields
@@ -121,6 +123,7 @@ Links a Navidrome track to its play count vertices. **No properties on the edge.
 ### Query Patterns
 
 **Top plays for user X** (the primary taste profile query):
+
 ```aql
 FOR pc IN navidrome_playcounts
     FILTER pc.userid == @user
@@ -140,18 +143,21 @@ FOR pc IN navidrome_playcounts
 Note: starts from the `navidrome_playcounts` index (fast userid + playcount lookup), then traverses inbound to resolve IDs. The "awkward" part is the 2-hop reverse traversal from playcount → track → file, but the index-first approach makes this efficient.
 
 **Plays for a Navidrome track** (easy forward traversal):
+
 ```aql
 FOR pc IN 1..1 OUTBOUND DOCUMENT("navidrome_tracks", @nd_id) has_plays
     RETURN { userid: pc.userid, playcount: pc.playcount }
 ```
 
 **Resolve nd_id → file_id** (replaces song_map lookup):
+
 ```aql
 FOR lib_file IN 1..1 INBOUND DOCUMENT("navidrome_tracks", @nd_id) has_nd_id
     RETURN lib_file._id
 ```
 
 **Known artists for a user** (for Hidden Gems filtering):
+
 ```aql
 FOR pc IN navidrome_playcounts
     FILTER pc.userid == @user AND pc.playcount > 0
@@ -172,11 +178,11 @@ No denormalized artist field — the tag system is the authority. This avoids st
 
 Orphans arise from three scenarios:
 
-| Scenario | Orphaned Objects | Cleanup Strategy |
-|---|---|---|
-| Library file deleted from Nomarr | Dangling `has_nd_id` edge (from=deleted) | Periodic sweep: find edges where `_from` doc doesn't exist |
-| Navidrome track removed | `navidrome_tracks` vertex + downstream `has_plays` edges + `navidrome_playcounts` vertices | On library sync: remove tracks not seen in Navidrome, cascade delete |
-| User removed from Navidrome | `navidrome_playcounts` vertices for that user | On user list refresh: delete playcounts for unknown userids |
+ | Scenario | Orphaned Objects | Cleanup Strategy |
+ | --- | --- | --- |
+ | Library file deleted from Nomarr | Dangling `has_nd_id` edge (from=deleted) | Periodic sweep: find edges where `_from` doc doesn't exist |
+ | Navidrome track removed | `navidrome_tracks` vertex + downstream `has_plays` edges + `navidrome_playcounts` vertices | On library sync: remove tracks not seen in Navidrome, cascade delete |
+ | User removed from Navidrome | `navidrome_playcounts` vertices for that user | On user list refresh: delete playcounts for unknown userids |
 
 Orphan cleanup runs as part of the library sync workflow (not a standalone cron). It's cheap — check for dangling edges and vertices after the main sync completes.
 
@@ -244,14 +250,14 @@ The plugin is a **thin relay and scheduler**, not a compute engine. Nomarr does 
 
 ### Plugin Capabilities Used
 
-| Capability | Purpose |
-|---|---|
-| **Scrobbler** | Receive per-user scrobble events from Navidrome, forward to Nomarr |
-| **Users** | Enumerate which users the plugin is enabled for |
-| **SubsonicAPI** | Call Subsonic API internally for initial play history sync |
-| **Scheduler** | Schedule recurring playlist generation |
-| **HTTP** | POST scrobbles and trigger generation on Nomarr's API |
-| **KVStore** | Persist per-user sync state (has initial sync completed?) |
+ | Capability | Purpose |
+ | --- | --- |
+ | **Scrobbler** | Receive per-user scrobble events from Navidrome, forward to Nomarr |
+ | **Users** | Enumerate which users the plugin is enabled for |
+ | **SubsonicAPI** | Call Subsonic API internally for initial play history sync |
+ | **Scheduler** | Schedule recurring playlist generation |
+ | **HTTP** | POST scrobbles and trigger generation on Nomarr's API |
+ | **KVStore** | Persist per-user sync state (has initial sync completed?) |
 
 ### Plugin Flow
 
@@ -298,6 +304,7 @@ From the Navidrome plugin docs:
 The plugin has a built-in `scheduler_schedulerecurring(cronExpr, payload, scheduleId)` host function. Nomarr has **no cron config and no scheduling responsibility**.
 
 Plugin `nd_on_init` schedules:
+
 - Recurring playlist generation (default: daily at 3 AM, configurable via plugin config)
 - On trigger, the plugin calls `/api/v1/navidrome/generate-playlists` for each enabled user
 - Nomarr returns playlist track IDs
@@ -343,6 +350,7 @@ This is acceptable for v1. Genre changes are infrequent. But it creates a future
 $$w_i = \log(1 + \text{playcount}_i) \cdot e^{-\lambda \cdot d_i}$$
 
 Where:
+
 - $\lambda = \ln(2) / \text{half\_life}$ (configurable, default 30 days)
 - $d_i$ = days since last played
 - Log-scaling prevents heavy-rotation tracks from dominating
@@ -350,10 +358,10 @@ Where:
 
 ### Unknown Recency Handling
 
-| Case | Cause | Handling |
-|---|---|---|
-| `playcount == 0` | Never played | **Exclude entirely.** Not a taste signal. |
-| `playcount > 0`, no `last_played_ms` | Legacy Navidrome — plays before timestamps were tracked | **Assign synthetic recency of `half_life × 2` days ago.** Default 30-day half-life → 60 days → decay weight ≈ 0.25. |
+ | Case | Cause | Handling |
+ | --- | --- | --- |
+ | `playcount == 0` | Never played | **Exclude entirely.** Not a taste signal. |
+ | `playcount > 0`, no `last_played_ms` | Legacy Navidrome — plays before timestamps were tracked | **Assign synthetic recency of `half_life × 2` days ago.** Default 30-day half-life → 60 days → decay weight ≈ 0.25. |
 
 Everything goes through the same exponential decay — the synthetic recency is just a different $d_i$ value.
 
@@ -371,13 +379,13 @@ Cold collection indexes use cosine metric (stored as `vector_n`). The single wei
 
 Five playlist types for v1. Each type uses the same weighted centroid but queries different indexes with different filters.
 
-| Type | ANN Index | Filter Logic | What It Produces |
-|---|---|---|---|
-| **Familiar** | None (direct query) | Only tracks with `playcount >= threshold` | "Songs you love" — comfort music you know well |
-| **Discovery** | Global | Exclude tracks with `playcount > 0` (never heard) | "Songs you'll probably like but haven't heard" |
-| **Hidden Gems** | Global | Exclude ALL tracks from artists in user's play history | "New artists that match your taste" — maximum novelty |
-| **Genre** | Per-genre index | Same centroid, genre-constrained search space | "Your Jazz Mix", "Your Metal Mix" — per-genre taste |
-| **Universal** | Global | Diversified sampling across results | "Discovered for You" — cross-genre mix |
+ | Type | ANN Index | Filter Logic | What It Produces |
+ | --- | --- | --- | --- |
+ | **Familiar** | None (direct query) | Only tracks with `playcount >= threshold` | "Songs you love" — comfort music you know well |
+ | **Discovery** | Global | Exclude tracks with `playcount > 0` (never heard) | "Songs you'll probably like but haven't heard" |
+ | **Hidden Gems** | Global | Exclude ALL tracks from artists in user's play history | "New artists that match your taste" — maximum novelty |
+ | **Genre** | Per-genre index | Same centroid, genre-constrained search space | "Your Jazz Mix", "Your Metal Mix" — per-genre taste |
+ | **Universal** | Global | Diversified sampling across results | "Discovered for You" — cross-genre mix |
 
 ### Hidden Gems: Artist Exclusion via Tag Traversal
 
@@ -575,22 +583,22 @@ AudioMuse-AI (open source, NeptuneHub/AudioMuse-AI) implements an equivalent fea
 
 ### Weaknesses We Exploit
 
-| Their Weakness | Our Advantage |
-|---|---|
-| Album-level play frequency + `random.sample()` | Exact per-track play counts from real-time scrobble + initial sync |
-| N+1 `getSong` calls for `lastPlayed` | `last_played_ms` updated on every scrobble — always fresh, zero extra API calls |
-| Single centroid — diverse taste collapses to mushy middle | Genre-partitioned ANN indexes — each genre gets its own search space |
-| Global play counts (no per-user) | Per-user `navidrome_playcounts` from day one |
-| Synchronous cron execution blocks other tasks | Plugin-side async scheduling |
-| One playlist type | Taxonomy: Familiar, Discovery, Hidden Gems, Genre, Universal |
-| External ANN library (Voyager) | ArangoDB-native ANN via `APPROX_NEAR_COSINE` — same DB, zero operational overhead |
+ | Their Weakness | Our Advantage |
+ | --- | --- |
+ | Album-level play frequency + `random.sample()` | Exact per-track play counts from real-time scrobble + initial sync |
+ | N+1 `getSong` calls for `lastPlayed` | `last_played_ms` updated on every scrobble — always fresh, zero extra API calls |
+ | Single centroid — diverse taste collapses to mushy middle | Genre-partitioned ANN indexes — each genre gets its own search space |
+ | Global play counts (no per-user) | Per-user `navidrome_playcounts` from day one |
+ | Synchronous cron execution blocks other tasks | Plugin-side async scheduling |
+ | One playlist type | Taxonomy: Familiar, Discovery, Hidden Gems, Genre, Universal |
+ | External ANN library (Voyager) | ArangoDB-native ANN via `APPROX_NEAR_COSINE` — same DB, zero operational overhead |
 
 ### What We Adopt From Them
 
-| Their Pattern | Our Adaptation |
-|---|---|
-| **Exponential decay for recency** | Adopt as default weighting formula |
-| **Dated playlist naming** | Supported as `overwrite_playlists: false` mode |
+ | Their Pattern | Our Adaptation |
+ | --- | --- |
+ | **Exponential decay for recency** | Adopt as default weighting formula |
+ | **Dated playlist naming** | Supported as `overwrite_playlists: false` mode |
 
 ### Differentiation Summary
 
@@ -603,22 +611,23 @@ Nomarr:     per_user_scrobble → graph_play_data → weighted_centroid → genr
 
 ## Difficulty Assessment
 
-| Component | Difficulty | Notes |
-|---|---|---|
-| Graph collections + migration from song_map | **Easy-Medium** | New vertex/edge collections, migrate existing data, AQL operations |
-| Scrobble ingestion endpoint | **Easy** | Thin interface → upsert workflow on graph |
-| Plugin Scrobbler capability | **Medium** | WASM plugin development (Go/TinyGo), HTTP POST to Nomarr |
-| Plugin scheduler for generation | **Easy-Medium** | `scheduler_schedulerecurring` + HTTP trigger |
-| Initial play history sync workflow | **Easy-Medium** | Walk albums (existing pattern), capture per-user play counts, create graph edges |
-| Weighted centroid + genre-partitioned ANN | **Easy** | Single weighted average + L2 normalize, ArangoDB does the rest |
-| Playlist type filters (Familiar/Discovery/Hidden Gems) | **Easy-Medium** | AQL query variations per type, tag traversal for Hidden Gems |
-| Playlist generation endpoint | **Medium** | Orchestrate all the above into a single workflow |
-| Plugin playlist push via SubsonicAPI | **Easy** | `subsonicapi_call("createPlaylist?...")` per user |
-| Config UI for playlist settings | **Easy** | Known pattern, existing config page |
-| Orphan cleanup | **Easy** | Graph traversal sweep after sync |
-| Genre-partitioned ANN indexes | **Easy-Medium** | Build during cold promotion, filter by genre tag. 100+ track threshold. |
+ | Component | Difficulty | Notes |
+ | --- | --- | --- |
+ | Graph collections + migration from song_map | **Easy-Medium** | New vertex/edge collections, migrate existing data, AQL operations |
+ | Scrobble ingestion endpoint | **Easy** | Thin interface → upsert workflow on graph |
+ | Plugin Scrobbler capability | **Medium** | WASM plugin development (Go/TinyGo), HTTP POST to Nomarr |
+ | Plugin scheduler for generation | **Easy-Medium** | `scheduler_schedulerecurring` + HTTP trigger |
+ | Initial play history sync workflow | **Easy-Medium** | Walk albums (existing pattern), capture per-user play counts, create graph edges |
+ | Weighted centroid + genre-partitioned ANN | **Easy** | Single weighted average + L2 normalize, ArangoDB does the rest |
+ | Playlist type filters (Familiar/Discovery/Hidden Gems) | **Easy-Medium** | AQL query variations per type, tag traversal for Hidden Gems |
+ | Playlist generation endpoint | **Medium** | Orchestrate all the above into a single workflow |
+ | Plugin playlist push via SubsonicAPI | **Easy** | `subsonicapi_call("createPlaylist?...")` per user |
+ | Config UI for playlist settings | **Easy** | Known pattern, existing config page |
+ | Orphan cleanup | **Easy** | Graph traversal sweep after sync |
+ | Genre-partitioned ANN indexes | **Easy-Medium** | Build during cold promotion, filter by genre tag. 100+ track threshold. |
 
 ### Total Estimate
+
 - **v1 (graph model, per-user scrobble, genre-partitioned ANN, all 5 playlist types):** ~4-5 sessions
 - **v1.5 (genre index refresh on tag change, freshness window):** ~2 sessions
 - **v2 (backbone blending, starred track boost, ListenBrainz/Last.fm):** ~3-4 sessions

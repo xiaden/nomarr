@@ -5,6 +5,7 @@
 `ConfigService` has a broken read/write contract that causes real user-facing bugs (e.g., Navidrome credentials set via web UI don't take effect until restart).
 
 **Current broken flow:**
+
 - `_compose()` merges defaults → YAML → ENV → DB on first `get()` call, caches forever
 - `set_config_value()` writes to DB but never invalidates the cache
 - `get()` returns stale startup values for the lifetime of the process
@@ -13,6 +14,7 @@
 - 3 separate whitelist sets can drift (`_ALLOWED_CONFIG_KEYS`, two inline `editable_keys` in `config_if.py`)
 
 **Desired architecture:**
+
 1. **Bootstrap (startup only):** Load defaults → YAML → ENV overrides → write merged result to DB meta table (single throwaway DB connection)
 2. **Runtime init:** Read all config from DB → populate a mutable in-memory cache (same throwaway connection as bootstrap)
 3. **Runtime read:** Always from cache (fast, no recomposition)
@@ -28,7 +30,7 @@ DB is the durable store. Cache is the fast read path. The setter keeps them in s
     **Notes:** Single connection for both operations eliminates the two-throwaway problem. Bootstrap uses `db.meta.get_by_prefix("config_")` once to batch-read existing keys, then only writes keys NOT already in DB (preserves user's web UI changes across restarts). After seeding, same connection reads all `config_*` keys back into `self._cache`.
       Added `_bootstrap_and_load()` at line 232. Opens one throwaway Database(), batch-reads existing keys, seeds missing keys, loads all config_* back into `self._cache`. Includes fallback to file/env config if DB unavailable. Also added `_parse_db_value()` static method for type parsing.
 - [x] Bootstrap logic: compose from `_default_config()` + `_load_yaml()` + `_apply_env_overrides()`, then for each key, write to DB only if not already present in the batch-read set
-    **Notes:** Implemented in `_bootstrap_and_load()` lines 243-256. Calls `self._compose()` which chains _default_config + _load_yaml + _apply_env_overrides. Then iterates _ALLOWED_CONFIG_KEYS, writes to DB only if key not in `existing_keys` set built from batch-read.
+    **Notes:** Implemented in `_bootstrap_and_load()` lines 243-256. Calls `self._compose()` which chains _default_config + _load_yaml + _apply_env_overrides. Then iterates_ALLOWED_CONFIG_KEYS, writes to DB only if key not in `existing_keys` set built from batch-read.
 - [x] Cache load logic: after bootstrap writes, `db.meta.get_by_prefix("config_")` again (or reuse if no writes happened), parse values, populate `self._cache`
     **Notes:** Cache holds parsed Python types (bool, int, float, str). DB holds string representations. The parse step in cache load converts DB strings to typed values using the same parsing logic currently in `_load_db_config()`. This asymmetry is intentional: DB is a flat string KV store, cache is the typed runtime interface.
       Lines 258-263: second `get_by_prefix("config_")` call reads all keys back, parses via `_parse_db_value()` static method (lines 276-285). Cache holds typed Python values; DB holds strings.
@@ -98,7 +100,7 @@ DB is the durable store. Cache is the fast read path. The setter keeps them in s
     **Notes:** Writes from FastAPI request threads, reads from workers + request handlers. Lock covers all `_cache` access points including the `dict(self._cache)` copy in `get_config()`. CPython GIL makes simple dict ops atomic, but explicit lock is cleaner, future-proof, and ensures the copy isn't torn by a concurrent `set()`.
 - [x] Simplify `Application.__init__`: remove `self._config = config_service.get_config().config` snapshot — use `config_service.get()` for startup values
     **Notes:** Application attributes that STAY as snapshots (truly static, set once): `db_path`, `models_dir`, `library_root`, `api_host`, `api_port`, `namespace`, `version_tag_key`, `tagger_version`, `worker_poll_interval`, `library_scan_poll_interval`, `worker_enabled_default`, `admin_password_config`. These are infrastructure values that cannot change at runtime. The `self._config` dict itself is removed.
-      Removed `self._config = config_service.get_config().config` from __init__. Now uses `config_service.get()` for static snapshots (db_path, models_dir, library_root, calibrate_heads, library_auto_tag, library_ignore_patterns, admin_password). Also fixed 3 remaining `self._config.get()` calls in start() → `self._config_service.get()` (navidrome_path_prefix_map, spotify_client_id, spotify_client_secret). Zero remaining bare `self._config` references.
+      Removed `self._config = config_service.get_config().config` from **init**. Now uses `config_service.get()` for static snapshots (db_path, models_dir, library_root, calibrate_heads, library_auto_tag, library_ignore_patterns, admin_password). Also fixed 3 remaining `self._config.get()` calls in start() → `self._config_service.get()` (navidrome_path_prefix_map, spotify_client_id, spotify_client_secret). Zero remaining bare `self._config` references.
 - [x] Update `Application.start()` to pass ConfigService to services that read live config (NavidromeService already done, others in Part B)
     **Notes:** NavidromeService already injected with config_service (prior session). PlaylistImportService (spotify creds) and TaggingService (calibrate_heads) still use frozen dataclass configs — these are Plan B scope (frozen dataclass elimination). No other services in start() need ConfigService injection for Plan A.
 - [x] Verify via `lint_project_backend(path="nomarr/app.py")`

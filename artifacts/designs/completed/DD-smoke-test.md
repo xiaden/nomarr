@@ -5,6 +5,7 @@
 **Created:** 2026-04-02  
 
 **Related Documents:**
+
 - [Plan A](artifacts/plans/pending/TASK-agent-artifact-tools-A.md) — Directory restructure
 
 ---

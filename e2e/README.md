@@ -21,26 +21,31 @@ e2e/
 ## Running Tests
 
 ### Run all tests
+
 ```bash
 npx playwright test
 ```
 
 ### Run specific test file
+
 ```bash
 npx playwright test e2e/auth.spec.ts
 ```
 
 ### Run tests in headed mode (see browser)
+
 ```bash
 npx playwright test --headed
 ```
 
 ### Run tests in UI mode (interactive)
+
 ```bash
 npx playwright test --ui
 ```
 
 ### Run tests in a specific browser
+
 ```bash
 npx playwright test --project=chromium
 npx playwright test --project=firefox
@@ -48,6 +53,7 @@ npx playwright test --project=webkit
 ```
 
 ### Debug tests
+
 ```bash
 npx playwright test --debug
 ```
@@ -61,11 +67,13 @@ npx playwright test --debug
 ## Test Categories
 
 ### Authentication (`auth.spec.ts`)
+
 - Login with correct/incorrect password
 - Logout functionality
 - Protected route access
 
 ### Libraries (`libraries.spec.ts`)
+
 - List libraries
 - View library stats
 - Navigate library management
@@ -73,6 +81,7 @@ npx playwright test --debug
 - Create new library (skipped by default - requires valid path)
 
 ### Calibration (`calibration.spec.ts`)
+
 - Load calibration status
 - View calibration history
 - Generate calibration UI
@@ -80,12 +89,14 @@ npx playwright test --debug
 - Convergence status
 
 ### Analytics (`analytics.spec.ts`)
+
 - Navigate to analytics
 - Load tag frequencies
 - Load mood distribution
 - Load tag correlations
 
 ### Metadata (`metadata.spec.ts`)
+
 - Load entity counts
 - Browse artists
 - Browse albums
@@ -93,12 +104,14 @@ npx playwright test --debug
 - View artist albums (skipped - requires data)
 
 ### Worker Control (`worker.spec.ts`)
+
 - Display worker status
 - Pause worker (skipped - modifies state)
 - Resume worker (skipped - modifies state)
 - Load processing status
 
 ### System Info (`info-health.spec.ts`)
+
 - Load system info
 - Load health status
 - Load GPU health
@@ -108,6 +121,7 @@ npx playwright test --debug
 ## Test Patterns
 
 ### Using authenticated fixture
+
 ```typescript
 test('my test', async ({ authenticatedPage: page }) => {
   // Already logged in
@@ -115,6 +129,7 @@ test('my test', async ({ authenticatedPage: page }) => {
 ```
 
 ### Using API helpers
+
 ```typescript
 const api = createApiHelpers(page);
 
@@ -129,7 +144,9 @@ const data = await api.getApiResponse('/api/web/library', 'GET');
 ```
 
 ### Skipping tests conditionally
+
 Some tests are skipped by default because they:
+
 - Require specific data (e.g., libraries, artists)
 - Modify system state (e.g., pause worker)
 - Need valid file paths (e.g., create library)
@@ -139,6 +156,7 @@ Use `test.skip()` to skip tests conditionally or remove `.skip` to enable them w
 ## Configuration
 
 Tests are configured in `playwright.config.ts`:
+
 - Base URL: `http://localhost:8356`
 - Runs across Chromium, Firefox, and WebKit
 - Screenshots and videos captured on failure
@@ -148,7 +166,9 @@ Tests are configured in `playwright.config.ts`:
 ## Troubleshooting
 
 ### Server not starting
+
 Ensure the dev server command in `playwright.config.ts` is correct:
+
 ```typescript
 webServer: {
   command: 'npm run dev',
@@ -157,18 +177,23 @@ webServer: {
 ```
 
 ### Authentication failing
+
 Check the password in `e2e/fixtures/auth.ts`:
+
 ```typescript
 export async function login(page: Page, password: string = 'nomarr') {
 ```
 
 ### Timeouts
+
 Some operations may take longer than default timeouts. Increase timeouts as needed:
+
 ```typescript
 await page.waitForSelector('selector', { timeout: 10000 });
 ```
 
 ### Viewing test results
+
 ```bash
 npx playwright show-report
 ```

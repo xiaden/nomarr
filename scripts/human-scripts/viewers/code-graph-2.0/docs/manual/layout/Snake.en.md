@@ -29,16 +29,16 @@ Suitable for scenarios that require compact presentation of linear relationships
 
 > If the layout has specific properties, they are listed below. For common layout options, see [Base Layout Options](/en/manual/layout/base-layout)
 
-| Property                | Description                                                 | Type                                               | Default                                                    | Required |
+| Property | Description | Type | Default | Required |
 | ----------------------- | ----------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------- | -------- |
-| type                    | Layout type                                                 | snake                                              | -                                                          | ✓        |
-| [clockwise](#clockwise) | Whether nodes are arranged clockwise                        | boolean                                            | true                                                       |          |
-| colGap                  | Gap size between columns                                    | number                                             | Automatically calculated by canvas width and total columns |          |
-| cols                    | Number of columns                                           | number                                             | 5                                                          |          |
-| nodeSize                | Node size                                                   | Size \| ((node: NodeData) => Size)                 | -                                                          |          |
-| padding                 | Padding, i.e., distance from layout area to canvas boundary | number \| number[]                                 | 0                                                          |          |
-| rowGap                  | Gap size between rows                                       | number                                             | Automatically calculated by canvas height and total rows   |          |
-| sortBy                  | Node sorting method                                         | (nodeA: NodeData, nodeB: NodeData) => -1 \| 0 \| 1 | Default is the path order in the graph                     |          |
+| type | Layout type | snake | - | ✓ |
+| [clockwise](#clockwise) | Whether nodes are arranged clockwise | boolean | true | |
+| colGap | Gap size between columns | number | Automatically calculated by canvas width and total columns | |
+| cols | Number of columns | number | 5 | |
+| nodeSize | Node size | Size \| ((node: NodeData) => Size) | - | |
+| padding | Padding, i.e., distance from layout area to canvas boundary | number \| number[] | 0 | |
+| rowGap | Gap size between rows | number | Automatically calculated by canvas height and total rows | |
+| sortBy | Node sorting method | (nodeA: NodeData, nodeB: NodeData) => -1 \| 0 \| 1 | Default is the path order in the graph | |
 
 ### clockwise
 

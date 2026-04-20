@@ -9,6 +9,7 @@ need to fix the auth thing
 3. test it maybe?
 
 things to remember:
+
 - sessions are weird
 - api keys exist
 - dont break prod

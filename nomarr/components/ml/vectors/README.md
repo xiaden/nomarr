@@ -13,13 +13,13 @@ Embedding vector storage with hot/cold tiered collections for similarity search.
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|----------|
-| `ml_vector_pool_comp` | Pool segment embeddings into single track-level vector (trimmed mean) for JSON serialization |
-| `ml_vector_persist_comp` | Write pooled vectors to per-backbone hot collections during ML processing |
-| `ml_vector_retrieve_comp` | Fetch promoted vectors from cold collections for similarity search |
-| `ml_vector_maintenance_comp` | Hot→cold drain (convergent UPSERT + truncate), vector index build/rebuild, genre backfill, embed_dim probing |
-| `ml_vector_idle_promotion_comp` | Discover hot collections with pending vectors, compute optimal nlists for index parameters |
+ | Module | Purpose |
+ | -------- | ---------- |
+ | `ml_vector_pool_comp` | Pool segment embeddings into single track-level vector (trimmed mean) for JSON serialization |
+ | `ml_vector_persist_comp` | Write pooled vectors to per-backbone hot collections during ML processing |
+ | `ml_vector_retrieve_comp` | Fetch promoted vectors from cold collections for similarity search |
+ | `ml_vector_maintenance_comp` | Hot→cold drain (convergent UPSERT + truncate), vector index build/rebuild, genre backfill, embed_dim probing |
+ | `ml_vector_idle_promotion_comp` | Discover hot collections with pending vectors, compute optimal nlists for index parameters |
 
 ## Patterns
 

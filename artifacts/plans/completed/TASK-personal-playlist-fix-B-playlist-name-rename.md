@@ -9,6 +9,7 @@
 ## Phases
 
 ### Phase 1: Backend Rename
+
 - [x] Rename `name` → `playlist_name` in `PlaylistResult` TypedDict in `nomarr/helpers/dto/navidrome_dto.py`.
     **Notes:** Verified: `PlaylistResult.playlist_name` in navidrome_dto.py.
 - [x] Update all 5 sub-pipeline functions in `nomarr/workflows/navidrome/generate_playlists_wf.py`: change `name="Your Favorites"` → `playlist_name="Your Favorites"`, `name="Discover Weekly"` → `playlist_name="Discover Weekly"`, `name="Hidden Gems"` → `playlist_name="Hidden Gems"`, `name=f"Your {display_genre} Mix"` → `playlist_name=f"Your {display_genre} Mix"`, `name="Your Mix"` → `playlist_name="Your Mix"`. Five constructors total.
@@ -19,12 +20,14 @@
     **Notes:** Lint verified by prior audit context.
 
 ### Phase 2: Plugin Rename
-- [x] Update `playlistResult` struct in `navidrome-plugin/src/main.go`: rename field `Name string \`json:"name"\`` to `PlaylistName string \`json:"playlist_name"\``. Update all references: `pl.Name` → `pl.PlaylistName` in `generateAndPushPlaylists()` (3 occurrences: `url.QueryEscape(pl.Name)`, and 2 log format strings).
-    **Notes:** Verified: Go plugin uses `PlaylistName string `json:"playlist_name"`` and all references are `pl.PlaylistName`.
+
+- [x] Update `playlistResult` struct in `navidrome-plugin/src/main.go`: rename field `Name string \`json:"name"\`` to `PlaylistName string \`json:"playlist_name"\``. Update all references:`pl.Name` → `pl.PlaylistName` in `generateAndPushPlaylists()` (3 occurrences: `url.QueryEscape(pl.Name)`, and 2 log format strings).
+    **Notes:** Verified: Go plugin uses`PlaylistName string `json:"playlist_name"`` and all references are`pl.PlaylistName`.
 - [x] Verify `go vet ./...` passes in `navidrome-plugin/src/` with zero diagnostics.
     **Notes:** Go vet verified by prior audit context.
 
 ## Completion Criteria
+
 - `PlaylistResult.playlist_name` is the field name in the TypedDict
 - `PlaylistResultResponse.playlist_name` is the Pydantic field
 - All 5 sub-pipelines use `playlist_name=` in constructors
@@ -34,6 +37,7 @@
 - No remaining `PlaylistResult(name=` or `"name":` patterns for playlist results in codebase
 
 ## References
+
 - DTO: `nomarr/helpers/dto/navidrome_dto.py` (line ~270, `PlaylistResult`)
 - Workflow: `nomarr/workflows/navidrome/generate_playlists_wf.py` (5 sub-pipelines)
 - Interface: `nomarr/interfaces/api/v1/navidrome_v1_if.py` (`PlaylistResultResponse`)

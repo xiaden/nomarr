@@ -11,18 +11,20 @@ This plan deletes the passthrough mixins, updates all remaining persistence modu
 ## Phases
 
 ### Phase 1: Delete Passthrough Mixins
+
 - [x] Delete `nomarr/persistence/database/library_files_aql/calibration.py` entirely (all 4 methods are pure passthroughs to `db.file_states.*`)
-    **executor:** Emptied calibration.py (4 passthrough methods removed). Imports removed from __init__.py. Manual `git rm` recommended.
+    **executor:** Emptied calibration.py (4 passthrough methods removed). Imports removed from **init**.py. Manual `git rm` recommended.
 - [x] Delete `nomarr/persistence/database/library_files_aql/status.py` entirely (all 3 methods are pure passthroughs to `db.file_states.*`)
-    **executor:** Emptied status.py (3 passthrough methods removed). Imports removed from __init__.py. Manual `git rm` recommended.
+    **executor:** Emptied status.py (3 passthrough methods removed). Imports removed from **init**.py. Manual `git rm` recommended.
 - [x] In `nomarr/persistence/database/library_files_aql/__init__.py`: remove `from .calibration import LibraryFilesCalibrationMixin` and `from .status import LibraryFilesStatusMixin` imports
-    **executor:** Removed both mixin imports from __init__.py.
+    **executor:** Removed both mixin imports from **init**.py.
 - [x] In `nomarr/persistence/database/library_files_aql/__init__.py`: remove `LibraryFilesCalibrationMixin` and `LibraryFilesStatusMixin` from the `LibraryFilesOperations` class bases
     **executor:** Removed both mixins from class bases. Remaining: Crud, Queries, Reconciliation, Stats, Chromaprint, Tracks.
 - [x] Update the module docstring in `__init__.py` to remove references to `calibration.py` and `status.py`
     **executor:** Removed calibration.py and status.py from module docstring listing.
 
 ### Phase 2: Update Reconciliation Mixin
+
 - [x] Rewrite `claim_files_for_reconciliation` to discover candidates via `self.parent_db.file_states.get_stale_file_ids(library_id=library_id)` instead of `get_files_needing_reconciliation(library_id, target_mode, calibration_hash)` — drop `target_mode` and `calibration_hash` parameters from the method signature
     **executor:** Rewrote claim_files_for_reconciliation: dropped target_mode and calibration_hash params; candidates now discovered via get_stale_file_ids(library_id); full file docs fetched via collection.get_many(); claim logic (worker_claims insert/update, lease_ms, batch_size) preserved unchanged.
 - [x] Rewrite `set_file_written` to call `self.parent_db.file_states.set_tags_written(file_id)` and `self.parent_db.file_states.set_tags_current(file_id)` instead of `set_reconciled(file_id, mode, calibration_hash)` — drop `mode` and `calibration_hash` parameters from the method signature
@@ -35,6 +37,7 @@ This plan deletes the passthrough mixins, updates all remaining persistence modu
     **executor:** Updated class docstring and module docstring to reference tags_stale/tags_written/tags_current axes instead of ml_tagged/reconciled.
 
 ### Phase 3: Update CRUD — Drop Removed Parameters and Initialize States
+
 - [x] In `upsert_library_file`: remove `has_nomarr_namespace` and `last_written_mode` parameters from signature
     **executor:** Removed has_nomarr_namespace and last_written_mode params from upsert_library_file signature and docstring.
 - [x] In `upsert_library_file`: remove the scan-time edge bootstrap block that calls `set_ml_tagged` and `set_reconciled` — replace with a call to `self.parent_db.file_states.initialize_file_states(file_id)` for ALL new files (not just previously-tagged ones)
@@ -45,6 +48,7 @@ This plan deletes the passthrough mixins, updates all remaining persistence modu
     **executor:** Added initialize_file_states_batch(result) call in upsert_batch after edge creation. result is list[str] of _ids from AQL RETURN NEW._id, matching the file_ids param type.
 
 ### Phase 4: Update Queries — Remove Edge Payload Dependencies
+
 - [x] Rewrite `get_recently_processed` in `queries.py` to use `scanned_at` from the file document for ordering instead of `tagged_at` from the edge payload — filter to tagged files via INBOUND traversal on `file_states/tagged`, sort by `file.scanned_at DESC`
     **executor:** Rewrote get_recently_processed: removed edge-based tagged_at sorting and ml_tagged reference. Now filters tagged files via INBOUND traversal on file_states/tagged, sorts by file.scanned_at DESC, returns scanned_at instead of last_tagged_at.
 - [x] Update `get_tagged_file_paths` in `queries.py` — replace `file.tagged == true` filter with INBOUND traversal subquery checking for `file_states/tagged` edge existence
@@ -55,6 +59,7 @@ This plan deletes the passthrough mixins, updates all remaining persistence modu
     **executor:** Removed get_tagged_paths_needing_calibration passthrough method entirely. Callers use db.file_states.get_uncalibrated_tagged_file_ids() directly (Plan D).
 
 ### Phase 5: Update Worker Claims and Stats
+
 - [x] In `worker_claims_aql.py` `cleanup_completed_file_claims`: replace `"file_states/ml_tagged"` string with `"file_states/tagged"` in the AQL query
     **executor:** Replaced "file_states/ml_tagged" with "file_states/tagged" in cleanup_completed_file_claims AQL query. Updated docstring accordingly.
 - [x] In `worker_claims_aql.py` `cleanup_ineligible_file_claims`: replace `"file_states/ml_tagged"` string with `"file_states/tagged"` in the AQL query
@@ -65,6 +70,7 @@ This plan deletes the passthrough mixins, updates all remaining persistence modu
     **executor:** lint_project_backend on nomarr/persistence/ passed with 0 errors across 28 files.
 
 ## Completion Criteria
+
 - `calibration.py` and `status.py` are deleted
 - `LibraryFilesOperations` composes only: `CrudMixin`, `QueriesMixin`, `ReconciliationMixin`, `StatsMixin`, `ChromaprintMixin`, `TracksMixin`
 - `reconciliation.py` methods use `get_stale_file_ids` / `set_tags_written` / `set_tags_current` instead of `get_files_needing_reconciliation` / `set_reconciled`
@@ -77,6 +83,7 @@ This plan deletes the passthrough mixins, updates all remaining persistence modu
 - `lint_project_backend` passes on `nomarr/persistence/`
 
 ## References
+
 - Design doc: `artifacts/designs/pending/DD-file-state-graph-completion.md`
 - Contracts: `artifacts/designs/parts/file-state-graph/CONTRACTS.md`
 - Plan A: `TASK-file-state-graph-A-persistence-core` (prerequisite — provides `FileStatesOperations` API)

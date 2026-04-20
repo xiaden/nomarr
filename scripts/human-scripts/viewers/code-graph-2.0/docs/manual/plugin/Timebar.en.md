@@ -38,32 +38,32 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Property       | Description                                                                                                                                                                              | Type                                               | Default Value | Required |
+| Property | Description | Type | Default Value | Required |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------- | -------- |
-| type           | Plugin type                                                                                                                                                                              | string                                             | `timebar`     | ✓        |
-| key            | Unique identifier for the plugin, can be used to get the plugin instance or update plugin options                                                                                        | string                                             | -             |          |
-| className      | Additional class name for the toolbar DOM                                                                                                                                                | string                                             | `g6-timebar`  |          |
-| x              | X position (position will be invalid if set)                                                                                                                                             | number                                             | -             |          |
-| y              | Y position (position will be invalid if set)                                                                                                                                             | number                                             | -             |          |
-| width          | Timebar width                                                                                                                                                                            | number                                             | 450           |          |
-| height         | Timebar height                                                                                                                                                                           | number                                             | 60            |          |
-| position       | Timebar position                                                                                                                                                                         | `bottom` \| `top`                                  | `bottom`      |          |
-| padding        | Padding                                                                                                                                                                                  | number \| number[]                                 | 10            |          |
-| data           | Time data                                                                                                                                                                                | number[] \| { time: number; value: number }[]      | -             | ✓        |
-| timebarType    | Timebar display type                                                                                                                                                                     | `time` \| `chart`                                  | `time`        |          |
-| elementTypes   | Filter element types                                                                                                                                                                     | (`node` \| `edge` \| `combo`)[]                    | [`node`]      |          |
-| mode           | Control element filtering method, supports the following two configurations: <br/>- `modify`: filter by modifying graph data <br/>- `visibility`: filter by modifying element visibility | `modify` \| `visibility`                           | `modify`      |          |
-| values         | Current time value                                                                                                                                                                       | number \| [number, number] \| Date \| [Date, Date] | -             |          |
-| loop           | Whether to loop playback                                                                                                                                                                 | boolean                                            | false         |          |
-| getTime        | Method to get element time                                                                                                                                                               | (datum: ElementDatum) => number                    | -             |          |
-| labelFormatter | Custom time formatting in chart mode                                                                                                                                                     | (time: number \| Date) => string                   | -             |          |
-| onChange       | Callback when the time interval changes                                                                                                                                                  | (values: number \| [number, number]) => void       | -             |          |
-| onReset        | Callback when reset                                                                                                                                                                      | () => void                                         | -             |          |
-| onSpeedChange  | Callback when playback speed changes                                                                                                                                                     | (speed: number) => void                            | -             |          |
-| onPlay         | Callback when playback starts                                                                                                                                                            | () => void                                         | -             |          |
-| onPause        | Callback when paused                                                                                                                                                                     | () => void                                         | -             |          |
-| onBackward     | Callback when moving backward                                                                                                                                                            | () => void                                         | -             |          |
-| onForward      | Callback when moving forward                                                                                                                                                             | () => void                                         | -             |          |
+| type | Plugin type | string | `timebar` | ✓ |
+| key | Unique identifier for the plugin, can be used to get the plugin instance or update plugin options | string | - | |
+| className | Additional class name for the toolbar DOM | string | `g6-timebar` | |
+| x | X position (position will be invalid if set) | number | - | |
+| y | Y position (position will be invalid if set) | number | - | |
+| width | Timebar width | number | 450 | |
+| height | Timebar height | number | 60 | |
+| position | Timebar position | `bottom` \| `top` | `bottom` | |
+| padding | Padding | number \| number[] | 10 | |
+| data | Time data | number[] \| { time: number; value: number }[] | - | ✓ |
+| timebarType | Timebar display type | `time` \| `chart` | `time` | |
+| elementTypes | Filter element types | (`node` \| `edge` \| `combo`)[] | [`node`] | |
+| mode | Control element filtering method, supports the following two configurations: <br/>- `modify`: filter by modifying graph data <br/>- `visibility`: filter by modifying element visibility | `modify` \| `visibility` | `modify` | |
+| values | Current time value | number \| [number, number] \| Date \| [Date, Date] | - | |
+| loop | Whether to loop playback | boolean | false | |
+| getTime | Method to get element time | (datum: ElementDatum) => number | - | |
+| labelFormatter | Custom time formatting in chart mode | (time: number \| Date) => string | - | |
+| onChange | Callback when the time interval changes | (values: number \| [number, number]) => void | - | |
+| onReset | Callback when reset | () => void | - | |
+| onSpeedChange | Callback when playback speed changes | (speed: number) => void | - | |
+| onPlay | Callback when playback starts | () => void | - | |
+| onPause | Callback when paused | () => void | - | |
+| onBackward | Callback when moving backward | () => void | - | |
+| onForward | Callback when moving forward | () => void | - | |
 
 ### timebarType
 

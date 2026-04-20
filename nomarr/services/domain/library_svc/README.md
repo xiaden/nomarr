@@ -12,15 +12,15 @@ Composite service for library management, assembled from focused mixins. Handles
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|---------|
-| `__init__.py` | Exports `LibraryService` and `LibraryServiceConfig` |
-| `admin.py` | `LibraryAdminMixin` — library CRUD, clear data, vector config, worker health checks |
-| `config.py` | `LibraryServiceConfig` dataclass — namespace, tagger_version, library_root |
-| `entities.py` | `LibraryEntitiesMixin` — entity navigation (placeholder) |
-| `files.py` | `LibraryFilesMixin` — file tags, reconciliation, path resolution, tag cleanup |
-| `query.py` | `LibraryQueryMixin` — stats, search, tag keys/values, work status, recently processed |
-| `scan.py` | `LibraryScanMixin` — quick/full scan dispatch, status, history, cancellation, validation |
+ | Module | Purpose |
+ | -------- | --------- |
+ | `__init__.py` | Exports `LibraryService` and `LibraryServiceConfig` |
+ | `admin.py` | `LibraryAdminMixin` — library CRUD, clear data, vector config, worker health checks |
+ | `config.py` | `LibraryServiceConfig` dataclass — namespace, tagger_version, library_root |
+ | `entities.py` | `LibraryEntitiesMixin` — entity navigation (placeholder) |
+ | `files.py` | `LibraryFilesMixin` — file tags, reconciliation, path resolution, tag cleanup |
+ | `query.py` | `LibraryQueryMixin` — stats, search, tag keys/values, work status, recently processed |
+ | `scan.py` | `LibraryScanMixin` — quick/full scan dispatch, status, history, cancellation, validation |
 
 ## Patterns
 

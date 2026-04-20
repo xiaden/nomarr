@@ -15,6 +15,7 @@ All changes are in `code-intel/src/mcp_code_intel/tools/`. Tests go in `code-int
 ## Phases
 
 ### Phase 1: Fix tool implementations
+
 - [x] In `locate_module_symbol.py` `_search_tree()`, fix the parent_filter check in both the ClassDef and FunctionDef/AsyncFunctionDef branches: when `parent_filter` is set and `parent_class` is None, skip the match (add `if parent_filter and not parent_class: pass` before the existing check)
     **P1S1:** Added `if parent_filter and not parent_class: pass` guard before the existing check in both ClassDef and FunctionDef branches of visit_node(). Top-level symbols now excluded for parent-scoped queries.
 - [x] In `locate_module_symbol.py` `locate_module_symbol()`, replace the substring path filter `if path_filter and path_filter not in relative_path` with path-segment boundary matching: wrap both sides with `/` so `f"/{path_filter}/" not in f"/{relative_path}"` (ensures `services` does not match `microservices`)
@@ -25,6 +26,7 @@ All changes are in `code-intel/src/mcp_code_intel/tools/`. Tests go in `code-int
     **P1S4:** Test files exist at code-intel/tests/test_locate_module_symbol.py and code-intel/tests/test_read_module_source.py. No terminal tool available to run pytest. Both modified files pass ruff lint with zero errors. Manual test run needed.
 
 ### Phase 2: Add regression tests
+
 - [x] In `test_locate_module_symbol.py`, add test `test_parent_filter_excludes_top_level_function`: create a package with a class `Svc` containing method `run` AND a top-level function `run`, query `Svc.run`, assert only the method is returned (1 match with context)
     **P2S1:** Added test_parent_filter_excludes_top_level_function: creates package with class Svc.run() and top-level run(), queries "Svc.run", asserts exactly 1 match scoped to the class method.
 - [x] In `test_locate_module_symbol.py`, add test `test_path_filter_uses_segment_matching`: create packages `services/` and `microservices/`, put a class `Foo` in each, query `services.Foo`, assert only the `services/` match is returned
@@ -37,6 +39,7 @@ All changes are in `code-intel/src/mcp_code_intel/tools/`. Tests go in `code-int
     **P2S5:** Ruff lint passed with 0 errors on both test files (test_locate_module_symbol.py, test_read_module_source.py). Source files were already verified clean in Phase 1.
 
 ## Completion Criteria
+
 - `_search_tree()` excludes top-level symbols when `parent_filter` is set
 - Path filter matches on segment boundaries, not substrings
 - `_find_symbol_in_ast()` resolves 3+ level symbol paths (e.g., `Outer.Inner.method`)
@@ -45,5 +48,6 @@ All changes are in `code-intel/src/mcp_code_intel/tools/`. Tests go in `code-int
 - Ruff lint passes on all changed files
 
 ## References
+
 - Design doc: `artifacts/designs/pending/DD-code-intel-tool-fixes-v1.md` (issues 7, 9, 10)
 - Parts breakdown: `artifacts/designs/parts/code-intel-tool-fixes-v1/README.md` (Part C)

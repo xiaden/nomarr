@@ -30,20 +30,20 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Property     | Description               | Type                                                                                                                                          | Default Value                         | Required |
+| Property | Description | Type | Default Value | Required |
 | ------------ | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | -------- |
-| type         | Plugin type               | string                                                                                                                                        | `tooltip`                             | ✓        |
-| key          | Identifier                | string                                                                                                                                        | -                                     |          |
-| position     | Tooltip position          | `top` \| `bottom` \| `left` \| `right` \| `top-left` \| `top-right` \| `bottom-left` \| `bottom-right`                                        | `top-right`                           |          |
-| enable       | Whether plugin is enabled | boolean \| ((event: [IElementEvent](/en/api/event#event-object-properties), items: NodeData \| EdgeData \| ComboData[]) => boolean)           | true                                  |          |
-| getContent   | Custom content            | (event: [IElementEvent](/en/api/event#event-object-properties), items: NodeData \| EdgeData \| ComboData[]) => Promise<HTMLElement \| string> | -                                     |          |
-| onOpenChange | Show/hide callback        | (open: boolean) => void                                                                                                                       | -                                     |          |
-| trigger      | Trigger behavior          | `hover` \| `click`                                                                                                                            | `hover`                               |
-| container    | Custom render container   | string \| HTMLElement                                                                                                                         | -                                     |          |
-| offset       | Offset distance           | [number,number]                                                                                                                               | [10,10]                               |          |
-| enterable    | Whether pointer can enter | boolean                                                                                                                                       | false                                 |          |
-| title        | Title                     | string                                                                                                                                        | -                                     |
-| style        | Style object              | Record<string,any>                                                                                                                            | {'.tooltip': { visibility: 'hidden'}} |          |
+| type | Plugin type | string | `tooltip` | ✓ |
+| key | Identifier | string | - | |
+| position | Tooltip position | `top` \| `bottom` \| `left` \| `right` \| `top-left` \| `top-right` \| `bottom-left` \| `bottom-right` | `top-right` | |
+| enable | Whether plugin is enabled | boolean \| ((event: [IElementEvent](/en/api/event#event-object-properties), items: NodeData \| EdgeData \| ComboData[]) => boolean) | true | |
+| getContent | Custom content | (event: [IElementEvent](/en/api/event#event-object-properties), items: NodeData \| EdgeData \| ComboData[]) => Promise<HTMLElement \| string> | - | |
+| onOpenChange | Show/hide callback | (open: boolean) => void | - | |
+| trigger | Trigger behavior | `hover` \| `click` | `hover` |
+| container | Custom render container | string \| HTMLElement | - | |
+| offset | Offset distance | [number,number] | [10,10] | |
+| enterable | Whether pointer can enter | boolean | false | |
+| title | Title | string | - |
+| style | Style object | Record<string,any> | {'.tooltip': { visibility: 'hidden'}} | |
 
 ## Detailed Configuration
 

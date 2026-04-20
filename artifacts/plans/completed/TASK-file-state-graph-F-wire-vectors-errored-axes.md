@@ -11,6 +11,7 @@ This plan wires both axes: `vectors_extracted` is set during deferred writes and
 ## Phases
 
 ### Phase 1: Persistence additions for vectors_extracted and errored
+
 - [x] Add `bulk_set_not_vectors_extracted(self) -> int` to `FileStatesOperations` in `nomarr/persistence/database/file_states_aql.py` — transitions ALL files from `vectors_extracted` to `not_vectors_extracted` using the same pattern as `bulk_set_not_calibrated`
     **executor:** Added bulk_set_not_vectors_extracted() following bulk_set_not_calibrated pattern — global reset, no file_ids filter.
   **Notes:** This is a global reset (no file_ids param) because model suite changes affect all files.
@@ -26,8 +27,9 @@ This plan wires both axes: `vectors_extracted` is set during deferred writes and
     **executor:** Both files pass lint with 0 errors.
 
 ### Phase 2: Wire vectors_extracted, errored, and clear-on-rescan
+
 - [x] In `nomarr/services/infrastructure/workers/discovery_worker.py` `_execute_deferred_writes`, add `db.file_states.set_vectors_extracted(file_id)` alongside the existing `db.file_states.set_tagged(file_id)` call (step 5 in the function)
-    **executor:** Added db.file_states.set_vectors_extracted(file_id) right after set_tagged in step 5 of _execute_deferred_writes.
+    **executor:** Added db.file_states.set_vectors_extracted(file_id) right after set_tagged in step 5 of_execute_deferred_writes.
   **Notes:** Co-locating with set_tagged keeps all state transitions in one place. The file_id is already in scope.
 - [x] In `nomarr/services/infrastructure/workers/discovery_worker.py` `_execute_deferred_writes` except block, add `db.file_states.set_errored(file_id)` before the existing logger.exception call
     **executor:** Added db.file_states.set_errored(file_id) in except block, wrapped in try/except to avoid masking the original error. Placed before logger.exception.
@@ -45,6 +47,7 @@ This plan wires both axes: `vectors_extracted` is set during deferred writes and
     **executor:** All 4 modified files pass lint_project_backend with 0 errors.
 
 ## Completion Criteria
+
 - `bulk_set_not_vectors_extracted()` and `bulk_set_not_errored(file_ids)` exist on `FileStatesOperations`
 - `discover_next_untagged_file` excludes files in the `errored` state
 - `set_vectors_extracted` is called in `_execute_deferred_writes` alongside `set_tagged`
@@ -55,6 +58,7 @@ This plan wires both axes: `vectors_extracted` is set during deferred writes and
 - All modified files pass `lint_project_backend`
 
 ## References
+
 - Design doc: `artifacts/designs/pending/DD-file-state-graph-completion.md`
 - Parts breakdown: `artifacts/designs/parts/file-state-graph/README.md`
 - Contracts ledger: `artifacts/designs/parts/file-state-graph/CONTRACTS.md`

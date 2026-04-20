@@ -76,12 +76,12 @@ function MyComponent() {
 
 ## Props
 
-| Prop       | Type                                | Required | Description                                                                                                                                |
+| Prop | Type | Required | Description |
 | ---------- | ----------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `value`    | `string`                            | Yes      | Current selected path (relative to library root)                                                                                           |
-| `onChange` | `(path: string) => void`            | Yes      | Callback when path is selected                                                                                                             |
-| `mode`     | `"file" \| "directory" \| "either"` | No       | Selection mode (defaults to "directory"): "file" for files only, "directory" for directories only, "either" for both files and directories |
-| `label`    | `string`                            | No       | Optional label to display above picker                                                                                                     |
+| `value` | `string` | Yes | Current selected path (relative to library root) |
+| `onChange` | `(path: string) => void` | Yes | Callback when path is selected |
+| `mode` | `"file" \| "directory" \| "either"` | No | Selection mode (defaults to "directory"): "file" for files only, "directory" for directories only, "either" for both files and directories |
+| `label` | `string` | No | Optional label to display above picker |
 
 ## Behavior by Mode
 

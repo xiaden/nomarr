@@ -7,6 +7,7 @@
 Nomarr is **alpha software** with forward-only migrations. Breaking changes are allowed before 1.0, but the system self-repairs via database migrations on startup. When you change contracts and something breaks, fix the breakage by updating callers and adding migrations if schema changes. Priority is always clean architecture over preserving old code.
 
 **Do break:**
+
 - Change service method signatures to fix layer violations
 - Rename modules to match actual responsibilities
 - Delete unused code even if recently added
@@ -14,12 +15,14 @@ Nomarr is **alpha software** with forward-only migrations. Breaking changes are 
 - Change database schemas (add a migration in `nomarr/migrations/` — do NOT edit `ensure_schema`, it is a frozen baseline)
 
 **Fix the breakage by:**
+
 - Updating all callers (use `find_referencing_symbols`)
 - Running `lint_project_backend` to find compile errors
 - Updating tests to match new contracts
 - Writing a forward-only migration if schema changes (see `docs/dev/migrations.md`)
 
 **Priority order:**
+
 1. Clean architecture (proper layers, clear contracts)
 2. Working code (passes lint + tests)
 3. Self-repairing (migrations for schema changes)
@@ -78,12 +81,12 @@ Import-linter enforces layer boundaries.
 
 ### Artifact Types
 
-| Type | Purpose | Location | Workflow |
-|------|---------|----------|----------|
-| **Log** | Agent observations, decisions, dead ends, discoveries | `artifacts/logs/` | `log_write` → append-only |
-| **ASR** | Architecturally Significant Requirements — the *why* that motivates decisions | `artifacts/requirements/` | `asr_create` → direct write |
-| **ADR** | Architecture Decision Records — the *what* that was decided | `artifacts/decisions/` | `adr_suggest` → user approval → `adr_commit` |
-| **DD** | Design Documents — the *how* that guides implementation | `artifacts/designs/` | `dd_create` → direct write |
+ | Type | Purpose | Location | Workflow |
+ | ------ | --------- | ---------- | ---------- |
+ | **Log** | Agent observations, decisions, dead ends, discoveries | `artifacts/logs/` | `log_write` → append-only |
+ | **ASR** | Architecturally Significant Requirements — the *why* that motivates decisions | `artifacts/requirements/` | `asr_create` → direct write |
+ | **ADR** | Architecture Decision Records — the *what* that was decided | `artifacts/decisions/` | `adr_suggest` → user approval → `adr_commit` |
+ | **DD** | Design Documents — the *how* that guides implementation | `artifacts/designs/` | `dd_create` → direct write |
 
 **The chain:** ASR documents the requirement → DD designs the solution → ADR records the decision — ASRs are standalone — no explicit link field; reference ADRs by number in the Notes section if relevant.
 
@@ -91,14 +94,14 @@ Import-linter enforces layer boundaries.
 
 Log entries are cheap. Silence is expensive. Log when:
 
-| Category | When | Example |
-|----------|------|---------|
-| `observation` | You notice something unexpected, inconsistent, or fragile in the codebase | "Module X imports Y through a re-export chain that hides the real dependency" |
-| `decision` | You choose between approaches and want the reasoning preserved | "Used batch AQL over per-document updates for performance — see ADR-005" |
-| `discovery` | You find a pattern, convention, or gotcha that future agents should know | "ArangoDB edge collections require `_from`/`_to` even for UPSERT" |
-| `dead-end` | An approach didn't work — save others from repeating it | "Tried monkey-patching essentia loader — fails silently, reverted to wrapper" |
-| `blocker` | Something blocks progress and needs visibility | "Migration 015 assumes column exists but 014 was never applied in test env" |
-| `research` | You gathered useful findings during investigation | "Traced auth flow: token → middleware → service → component, no workflow layer" |
+ | Category | When | Example |
+ | ---------- | ------ | --------- |
+ | `observation` | You notice something unexpected, inconsistent, or fragile in the codebase | "Module X imports Y through a re-export chain that hides the real dependency" |
+ | `decision` | You choose between approaches and want the reasoning preserved | "Used batch AQL over per-document updates for performance — see ADR-005" |
+ | `discovery` | You find a pattern, convention, or gotcha that future agents should know | "ArangoDB edge collections require `_from`/`_to` even for UPSERT" |
+ | `dead-end` | An approach didn't work — save others from repeating it | "Tried monkey-patching essentia loader — fails silently, reverted to wrapper" |
+ | `blocker` | Something blocks progress and needs visibility | "Migration 015 assumes column exists but 014 was never applied in test env" |
+ | `research` | You gathered useful findings during investigation | "Traced auth flow: token → middleware → service → component, no workflow layer" |
 
 **Threshold:** If you think "a future agent might waste time rediscovering this" — log it.
 
@@ -109,6 +112,7 @@ ASRs capture the requirements that motivate architectural decisions. They are th
 `asr_create` writes directly to `artifacts/requirements/` (no approval workflow needed).
 
 Create an ASR when:
+
 - **A stakeholder expresses a non-functional or architectural requirement** — record it before design begins
 - **A constraint limits design options** — e.g., "Must not require GPU at runtime"
 - **A measurable quality goal shapes the architecture** — e.g., "Search must complete in < 500ms at production scale"
@@ -142,13 +146,13 @@ Always set `source_log` to link back to the log entry that motivated the decisio
 
 **Before acting, check what's already known.** This prevents contradicting existing requirements and decisions and re-treading dead ends.
 
-| Situation | Action |
-|-----------|--------|
-| Starting work in an unfamiliar area | `log_read(agent="*relevant-agent*")` to see prior observations |
-| About to make an architectural decision | `asr_search(query="*topic*")` to check for requirements, then `adr_search(query="*topic*")` for existing decisions |
-| Encountering unexpected behavior | `log_read(category="discovery")` and `log_read(category="dead-end")` for prior findings |
-| Debugging a failure | `log_read(agent="support-debugger")` for prior diagnoses |
-| Planning a feature that touches existing patterns | `asr_search(query="*topic*")` + `adr_search(tag="*relevant-tag*")` to understand constraints |
+ | Situation | Action |
+ | ----------- | -------- |
+ | Starting work in an unfamiliar area | `log_read(agent="*relevant-agent*")` to see prior observations |
+ | About to make an architectural decision | `asr_search(query="*topic*")` to check for requirements, then `adr_search(query="*topic*")` for existing decisions |
+ | Encountering unexpected behavior | `log_read(category="discovery")` and `log_read(category="dead-end")` for prior findings |
+ | Debugging a failure | `log_read(agent="support-debugger")` for prior diagnoses |
+ | Planning a feature that touches existing patterns | `asr_search(query="*topic*")` + `adr_search(tag="*relevant-tag*")` to understand constraints |
 
 **Rule: Check before you decide.** An ADR search takes one tool call. Contradicting an existing decision and then having to unwind costs hours.
 
@@ -174,12 +178,12 @@ This is not optional. **Known unknowns must be recorded.** Silent uncertainty be
 
 **Search tools query content, not identifiers.** When you've found a relevant artifact and need another agent to use it — whether you're invoking a subagent or returning results to a caller — pass the right lookup information, not a raw identifier the search tool won't match.
 
-| Artifact | Identifier Format | How to Pass to Another Agent |
-|----------|-------------------|---------------------------|
-| **ADR** | `ADR-026` | Pass `adr_read(name="ADR-026")` — direct read by number. Do NOT pass `adr_search(query="ADR-026")` — search queries title/tags, not numbers. Alternatively, pass the title or a key phrase for `adr_search(query="deferred imports")`. |
-| **ASR** | `ASR-startup-time` | Pass `asr_read(name="ASR-startup-time")` — direct read by name. `asr_search` queries title/tags, not filenames. For search, pass a topic: `asr_search(query="startup")`. |
-| **DD** | `DD-schema-refactor` | Pass `dd_read(name="DD-schema-refactor")` — direct read by name. There is no `dd_search` tool; only `dd_read` exists. If unsure of the name, list `artifacts/designs/` first. |
-| **Log entry** | `agent#L12` | Pass `log_read(agent="agent", title_query="keyword")` with a title substring. Logs have no random-access by entry ID — you filter by agent + category + tag + title_query. |
+ | Artifact | Identifier Format | How to Pass to Another Agent |
+ | ---------- | ------------------- | --------------------------- |
+ | **ADR** | `ADR-026` | Pass `adr_read(name="ADR-026")` — direct read by number. Do NOT pass `adr_search(query="ADR-026")` — search queries title/tags, not numbers. Alternatively, pass the title or a key phrase for `adr_search(query="deferred imports")`. |
+ | **ASR** | `ASR-startup-time` | Pass `asr_read(name="ASR-startup-time")` — direct read by name. `asr_search` queries title/tags, not filenames. For search, pass a topic: `asr_search(query="startup")`. |
+ | **DD** | `DD-schema-refactor` | Pass `dd_read(name="DD-schema-refactor")` — direct read by name. There is no `dd_search` tool; only `dd_read` exists. If unsure of the name, list `artifacts/designs/` first. |
+ | **Log entry** | `agent#L12` | Pass `log_read(agent="agent", title_query="keyword")` with a title substring. Logs have no random-access by entry ID — you filter by agent + category + tag + title_query. |
 
 **Rules for passing artifact references:**
 

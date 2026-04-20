@@ -13,13 +13,13 @@ The Nomarr codebase has grown significantly, with several files exceeding 500–
 
 File length limits are enforced per architecture layer, as documented in the corresponding `.github/instructions/` files:
 
-| Layer | Consider Split | MUST Split |
-|-------|---------------|------------|
-| Components | 300 lines | 500 lines |
-| Services | 300 lines | 500 lines |
-| Interfaces | 300 lines | 500 lines |
-| Workflows | 300 lines | 500 lines |
-| Persistence | 400 lines | 600 lines |
+ | Layer | Consider Split | MUST Split |
+ | ------- | --------------- | ------------ |
+ | Components | 300 lines | 500 lines |
+ | Services | 300 lines | 500 lines |
+ | Interfaces | 300 lines | 500 lines |
+ | Workflows | 300 lines | 500 lines |
+ | Persistence | 400 lines | 600 lines |
 
 **"Consider split"** means the file should be evaluated for decomposition during the next significant change. **"MUST split"** means the file must be split before new features are added to it.
 

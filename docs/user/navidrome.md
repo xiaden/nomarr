@@ -190,13 +190,13 @@ The **Generate Config** panel lets you:
 
 **Common tags extracted by Nomarr:**
 
-| Category | Examples |
-|----------|----------|
-| **Mood** | energetic, mellow, happy, sad, aggressive, peaceful |
-| **Genre** | rock, pop, electronic, jazz, classical, hip hop, metal |
-| **Instrumentation** | acoustic, electric, vocal, instrumental |
-| **Rhythm** | danceable, fast, slow |
-| **Production** | live, studio, lo-fi, hi-fi |
+ | Category | Examples |
+ | ---------- | ---------- |
+ | **Mood** | energetic, mellow, happy, sad, aggressive, peaceful |
+ | **Genre** | rock, pop, electronic, jazz, classical, hip hop, metal |
+ | **Instrumentation** | acoustic, electric, vocal, instrumental |
+ | **Rhythm** | danceable, fast, slow |
+ | **Production** | live, studio, lo-fi, hi-fi |
 
 See the full tag vocabulary in the Nomarr Web UI under the **Tags** page.
 
@@ -212,13 +212,13 @@ Nomarr can generate playlists automatically based on your Navidrome play history
 
 **Playlist types generated:**
 
-| Type | Description |
-|------|-------------|
-| `familiar` | Songs you have played frequently that match your taste profile |
-| `discovery` | Unheard songs that are similar to your favourites |
-| `hidden_gems` | Rarely-played songs that match your taste profile |
-| `genre` | One playlist per top genre preference (up to `pp_max_genre_playlists`) |
-| `universal` | A broad mix blending all taste dimensions |
+ | Type | Description |
+ | ------ | ------------- |
+ | `familiar` | Songs you have played frequently that match your taste profile |
+ | `discovery` | Unheard songs that are similar to your favourites |
+ | `hidden_gems` | Rarely-played songs that match your taste profile |
+ | `genre` | One playlist per top genre preference (up to `pp_max_genre_playlists`) |
+ | `universal` | A broad mix blending all taste dimensions |
 
 ### Prerequisites
 
@@ -231,22 +231,22 @@ Nomarr can generate playlists automatically based on your Navidrome play history
 
 All `pp_*` settings are configurable from the Web UI settings panel:
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `pp_enabled` | `false` | Enable personal playlist generation |
-| `pp_backbone_id` | `effnet-discogs` | Embedding backbone model used for similarity calculations |
-| `pp_half_life_days` | `30` | Half-life in days for time-decay weighting of play history |
-| `pp_top_n` | `200` | Number of top-played songs to consider when building taste profiles |
-| `pp_min_play_count` | `3` | Minimum play count for a song to count toward the taste profile |
-| `pp_max_songs` | `50` | Maximum songs per generated playlist |
-| `pp_min_songs` | `10` | Minimum songs required for a playlist to be kept |
-| `pp_max_genre_playlists` | `5` | Maximum number of genre-focused playlists to generate per run (max: 25) |
-| `pp_overwrite_playlists` | `true` | Replace existing playlists instead of appending |
-| `pp_type_familiar` | `true` | Generate Familiar Favorites playlist |
-| `pp_type_discovery` | `true` | Generate Discovery playlist |
-| `pp_type_hidden_gems` | `true` | Generate Hidden Gems playlist |
-| `pp_type_genre` | `true` | Generate genre-focused playlists |
-| `pp_type_universal` | `true` | Generate universal mix playlist |
+ | Setting | Default | Description |
+ | --------- | --------- | ------------- |
+ | `pp_enabled` | `false` | Enable personal playlist generation |
+ | `pp_backbone_id` | `effnet-discogs` | Embedding backbone model used for similarity calculations |
+ | `pp_half_life_days` | `30` | Half-life in days for time-decay weighting of play history |
+ | `pp_top_n` | `200` | Number of top-played songs to consider when building taste profiles |
+ | `pp_min_play_count` | `3` | Minimum play count for a song to count toward the taste profile |
+ | `pp_max_songs` | `50` | Maximum songs per generated playlist |
+ | `pp_min_songs` | `10` | Minimum songs required for a playlist to be kept |
+ | `pp_max_genre_playlists` | `5` | Maximum number of genre-focused playlists to generate per run (max: 25) |
+ | `pp_overwrite_playlists` | `true` | Replace existing playlists instead of appending |
+ | `pp_type_familiar` | `true` | Generate Familiar Favorites playlist |
+ | `pp_type_discovery` | `true` | Generate Discovery playlist |
+ | `pp_type_hidden_gems` | `true` | Generate Hidden Gems playlist |
+ | `pp_type_genre` | `true` | Generate genre-focused playlists |
+ | `pp_type_universal` | `true` | Generate universal mix playlist |
 
 ### API Usage
 
@@ -258,13 +258,13 @@ POST /api/v1/navidrome/generate-playlists
 
 Request body:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `user_id` | string | Navidrome user identifier |
-| `enabled_types` | string[] \| null | Override which playlist types to generate; `null` uses config |
-| `max_songs` | int \| null | Override max songs per playlist; `null` uses config |
-| `min_songs` | int \| null | Override min songs per playlist; `null` uses config |
-| `max_genre_playlists` | int \| null | Override max genre playlists (1–25); `null` uses config |
+ | Field | Type | Description |
+ | ------- | ------ | ------------- |
+ | `user_id` | string | Navidrome user identifier |
+ | `enabled_types` | string[] \ | null | Override which playlist types to generate; `null` uses config |
+ | `max_songs` | int \ | null | Override max songs per playlist; `null` uses config |
+ | `min_songs` | int \ | null | Override min songs per playlist; `null` uses config |
+ | `max_genre_playlists` | int \ | null | Override max genre playlists (1–25); `null` uses config |
 
 Returns `status: "ok"` with a list of generated playlists, or `status: "no_data"` when there is insufficient play history. Returns HTTP 422 if `library_key` is not configured.
 
@@ -311,20 +311,20 @@ For programmatic access, Nomarr provides a full REST API for all Navidrome opera
 
 **Key endpoints:**
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/web/navidrome/preview` | GET | Tag statistics for your library |
-| `/api/web/navidrome/tag-values` | GET | Distinct values for a specific tag |
-| `/api/web/navidrome/config` | GET | Generate TOML config text |
-| `/api/web/navidrome/playlists/preview` | POST | Preview playlist query results |
-| `/api/web/navidrome/playlists/generate` | POST | Generate .nsp playlist file |
-| `/api/web/navidrome/playlists/static` | POST | Generate static M3U playlist |
-| `/api/web/navidrome/playlists/push` | POST | Push playlist to Navidrome |
-| `/api/web/navidrome/templates` | GET | List available templates |
-| `/api/web/navidrome/templates` | POST | Batch generate from templates |
-| `/api/web/navidrome/sync-songs` | POST | Sync Navidrome songs to Nomarr |
-| `/api/web/navidrome/ping` | POST | Test Navidrome connectivity |
-| `/api/web/navidrome/status` | GET | Check if Navidrome is configured |
+ | Endpoint | Method | Description |
+ | ---------- | -------- | ------------- |
+ | `/api/web/navidrome/preview` | GET | Tag statistics for your library |
+ | `/api/web/navidrome/tag-values` | GET | Distinct values for a specific tag |
+ | `/api/web/navidrome/config` | GET | Generate TOML config text |
+ | `/api/web/navidrome/playlists/preview` | POST | Preview playlist query results |
+ | `/api/web/navidrome/playlists/generate` | POST | Generate .nsp playlist file |
+ | `/api/web/navidrome/playlists/static` | POST | Generate static M3U playlist |
+ | `/api/web/navidrome/playlists/push` | POST | Push playlist to Navidrome |
+ | `/api/web/navidrome/templates` | GET | List available templates |
+ | `/api/web/navidrome/templates` | POST | Batch generate from templates |
+ | `/api/web/navidrome/sync-songs` | POST | Sync Navidrome songs to Nomarr |
+ | `/api/web/navidrome/ping` | POST | Test Navidrome connectivity |
+ | `/api/web/navidrome/status` | GET | Check if Navidrome is configured |
 
 ---
 

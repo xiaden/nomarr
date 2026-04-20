@@ -14,16 +14,16 @@ ComboCombined composite layout is suitable for graph data with composite group s
 
 ## Options
 
-| Property     | Description                                                                                                                                        | Type                                                                                       | Default          | Required |
+| Property | Description | Type | Default | Required |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------- | -------- |
-| type         | Layout type                                                                                                                                        | `combo-combined`                                                                           | -                | ✓        |
-| center       | Layout center                                                                                                                                      | [`PointTuple`](https://github.com/antvis/layout/blob/v5/packages/layout/src/types.ts#L829) | Graph center     |          |
-| comboPadding | Padding value inside the combo, used only for force calculation, not for rendering. It is recommended to set the same value as the visual padding. | `((d?: unknown) => number)` \| `number` \| `number[]` \| `undefined`                       | 10               |          |
-| innerLayout  | Layout algorithm for elements inside the combo, [see below](#innerlayout)                                                                          | [`Layout`](https://github.com/antvis/layout/blob/v5/packages/layout/src/types.ts#L881)     | ConcentricLayout |          |
-| nodeSize     | Node size (diameter), used for collision detection. If not specified, it is calculated from the node's size property, or defaults to 10.           | `number` \| `number[]` \| (d?: [NodeData](/en/manual/data#节点数据nodedata)) => number     | 10               |          |
-| outerLayout  | Layout algorithm for the outermost layer, [see below](#outerlayout)                                                                                | [`Layout`](https://github.com/antvis/layout/blob/v5/packages/layout/src/types.ts#L866)     | ForceLayout      |          |
-| spacing      | Minimum spacing between node/combo edges when preventNodeOverlap or preventOverlap is `true`. Can be a callback for different nodes.               | `number` \| (d?: [NodeData](/en/manual/data#节点数据nodedata)) => number                   | -                |          |
-| treeKey      | treeKey                                                                                                                                            | `string`                                                                                   | -                |          |
+| type | Layout type | `combo-combined` | - | ✓ |
+| center | Layout center | [`PointTuple`](https://github.com/antvis/layout/blob/v5/packages/layout/src/types.ts#L829) | Graph center | |
+| comboPadding | Padding value inside the combo, used only for force calculation, not for rendering. It is recommended to set the same value as the visual padding. | `((d?: unknown) => number)` \| `number` \| `number[]` \| `undefined` | 10 | |
+| innerLayout | Layout algorithm for elements inside the combo, [see below](#innerlayout) | [`Layout`](https://github.com/antvis/layout/blob/v5/packages/layout/src/types.ts#L881) | ConcentricLayout | |
+| nodeSize | Node size (diameter), used for collision detection. If not specified, it is calculated from the node's size property, or defaults to 10. | `number` \| `number[]` \| (d?: [NodeData](/en/manual/data#节点数据nodedata)) => number | 10 | |
+| outerLayout | Layout algorithm for the outermost layer, [see below](#outerlayout) | [`Layout`](https://github.com/antvis/layout/blob/v5/packages/layout/src/types.ts#L866) | ForceLayout | |
+| spacing | Minimum spacing between node/combo edges when preventNodeOverlap or preventOverlap is `true`. Can be a callback for different nodes. | `number` \| (d?: [NodeData](/en/manual/data#节点数据nodedata)) => number | - | |
+| treeKey | treeKey | `string` | - | |
 
 ### innerLayout
 

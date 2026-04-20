@@ -41,82 +41,81 @@ See [config_schema.json](config_schema.json) for full configuration options.
 
 ### Code Navigation
 
-| Tool | Description |
-|------|-------------|
-| `list_project_directory_tree` | List directory contents with smart filtering |
-| `read_module_api` | Discover the entire API of any Python module |
-| `read_module_source` | Get source code of a function/method/class by import path |
-| `read_file_symbol_at_line` | Get full function/class containing a line |
-| `locate_module_symbol` | Find all definitions of a symbol across the codebase |
-| `trace_module_calls` | Trace function call chains |
-| `trace_project_endpoint` | Trace FastAPI endpoints through DI |
+ | Tool | Description |
+ | ------ | ------------- |
+ | `list_project_directory_tree` | List directory contents with smart filtering |
+ | `read_module_api` | Discover the entire API of any Python module |
+ | `read_module_source` | Get source code of a function/method/class by import path |
+ | `read_file_symbol_at_line` | Get full function/class containing a line |
+ | `locate_module_symbol` | Find all definitions of a symbol across the codebase |
+ | `trace_module_calls` | Trace function call chains |
+ | `trace_project_endpoint` | Trace FastAPI endpoints through DI |
 
 ### Artifact / ADR Tools
 
-| Tool | Description |
-|------|-------------|
-| `adr_suggest` | Write staging draft to artifacts/decisions/drafts/ for review |
-| `adr_commit` | Write an approved ADR to disk in artifacts/decisions/ |
-| `adr_read` | Read and parse an existing Architecture Decision Record |
-| `adr_search` | Search ADRs by tag, status, and/or text query |
+ | Tool | Description |
+ | ------ | ------------- |
+ | `adr_suggest` | Write staging draft to artifacts/decisions/drafts/ for review |
+ | `adr_commit` | Write an approved ADR to disk in artifacts/decisions/ |
+ | `adr_read` | Read and parse an existing Architecture Decision Record |
+ | `adr_search` | Search ADRs by tag, status, and/or text query |
 
 ### Design Doc Tools
 
-| Tool | Description |
-|------|-------------|
-| `dd_create` | Create a new Design Document markdown file |
-| `dd_read` | Read and parse an existing Design Document |
-| `dd_archive` | Archive a design document from pending to completed |
+ | Tool | Description |
+ | ------ | ------------- |
+ | `dd_create` | Create a new Design Document markdown file |
+ | `dd_read` | Read and parse an existing Design Document |
+ | `dd_archive` | Archive a design document from pending to completed |
 
 ### Agent Log Tools
 
-| Tool | Description |
-|------|-------------|
-| `log_write` | Append an entry to an agent's log file |
-| `log_read` | Read an agent's log entries with optional filters |
+ | Tool | Description |
+ | ------ | ------------- |
+ | `log_write` | Append an entry to an agent's log file |
+ | `log_read` | Read an agent's log entries with optional filters |
 
 ### File Reading
 
-| Tool | Description |
-|------|-------------|
-| `read_file_line` | Quick error context (target line + 2 lines around) |
-| `read_file_line_range` | Read a range of lines from any file (max 100 lines) |
-| `search_file_text` | Find exact text in files with 2-line context |
-
+ | Tool | Description |
+ | ------ | ------------- |
+ | `read_file_line` | Quick error context (target line + 2 lines around) |
+ | `read_file_line_range` | Read a range of lines from any file (max 100 lines) |
+ | `search_file_text` | Find exact text in files with 2-line context |
 
 ### File Editing
 
-| Tool | Description |
-|------|-------------|
-| `edit_file_create` | Create new files atomically (batch, fails if exists) |
-| `edit_file_replace_content` | Replace entire file contents atomically (batch) |
-| `edit_file_replace_string` | Apply multiple string replacements atomically (single write) |
-| `edit_file_replace_by_content` | Replace a line range identified by content boundaries |
-| `edit_file_insert_at_boundary` | Insert text at bof or eof of file(s) |
-| `edit_file_insert_at_line` | Insert text before or after a content anchor in file(s) |
-| `edit_file_move` | Move/rename a file within the workspace |
-| `edit_file_move_by_content` | Move text between locations using content boundaries |
+ | Tool | Description |
+ | ------ | ------------- |
+ | `edit_file_create` | Create new files atomically (batch, fails if exists) |
+ | `edit_file_replace_content` | Replace entire file contents atomically (batch) |
+ | `edit_file_replace_string` | Apply multiple string replacements atomically (single write) |
+ | `edit_file_replace_by_content` | Replace a line range identified by content boundaries |
+ | `edit_file_insert_at_boundary` | Insert text at bof or eof of file(s) |
+ | `edit_file_insert_at_line` | Insert text before or after a content anchor in file(s) |
+ | `edit_file_move` | Move/rename a file within the workspace |
+ | `edit_file_move_by_content` | Move text between locations using content boundaries |
 
 ### Linting
 
-| Tool | Description |
-|------|-------------|
-| `lint_project_backend` | Run ruff, mypy, import-linter (optionally pytest) |
-| `lint_project_frontend` | Run ESLint, TypeScript checks, and Vitest |
+ | Tool | Description |
+ | ------ | ------------- |
+ | `lint_project_backend` | Run ruff, mypy, import-linter (optionally pytest) |
+ | `lint_project_frontend` | Run ESLint, TypeScript checks, and Vitest |
 
 ### Task Planning
 
-| Tool | Description |
-|------|-------------|
-| `plan_read` | Read a task plan as structured JSON |
-| `plan_complete_step` | Mark steps complete with annotations |
-| `plan_archive` | Archive a completed task plan from pending to completed |
+ | Tool | Description |
+ | ------ | ------------- |
+ | `plan_read` | Read a task plan as structured JSON |
+ | `plan_complete_step` | Mark steps complete with annotations |
+ | `plan_archive` | Archive a completed task plan from pending to completed |
 
 ### Python Introspection
 
-| Tool | Description |
-|------|-------------|
-| `py_introspect` | Run whitelist-only Python introspection checks in isolated subprocess |
+ | Tool | Description |
+ | ------ | ------------- |
+ | `py_introspect` | Run whitelist-only Python introspection checks in isolated subprocess |
 
 ## File Mutation Capabilities
 

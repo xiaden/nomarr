@@ -40,6 +40,7 @@ functionally complete but an audit reveals residual issues:
 ## Phases
 
 ### Phase 1: Fix Reconciliation Bug & Dead Code
+
 - [x] Add `ml_tagged` edge presence filter to `get_files_needing_reconciliation` in `file_states_aql.py` — only return files that have an `ml_tagged` edge (subquery check), so untagged files are excluded from reconciliation candidates
     **Notes:** Added ml_tagged edge presence filter (LET has_tagged + FILTER has_tagged > 0) to get_files_needing_reconciliation AQL query. Added ml_tagged_state bind var. Updated docstring to document the precondition.
 - [x] Add same `ml_tagged` filter to `count_files_needing_reconciliation` in `file_states_aql.py` to keep query logic consistent
@@ -52,8 +53,9 @@ functionally complete but an audit reveals residual issues:
     **Notes:** Ran lint_project_backend on all 3 modified files (file_states_aql.py, calibration.py, V017_remove_dead_state_fields.py). Zero new errors. Only pre-existing navidrome_song_map_aql.py mypy Cursor typing errors (5).
 
 ### Phase 2: Consolidate Edge Queries into FileStatesOperations
+
 - [x] Add `discover_next_untagged_file(min_duration_s, allow_short)` method to `FileStatesOperations` that encapsulates the edge-absence + worker-claims check currently inline in `status.py` `discover_next_unprocessed_file`, then update `discover_next_unprocessed_file` to delegate to it
-    **Notes:** Added discover_next_untagged_file() and _log_tagging_diagnostics() to FileStatesOperations. Uses bind vars for collection/state constants. Rewrote status.py discover_next_unprocessed_file to delegate (3-line body). Removed unused imports (logging, cast, Cursor) from status.py. Both files lint clean.
+    **Notes:** Added discover_next_untagged_file() and_log_tagging_diagnostics() to FileStatesOperations. Uses bind vars for collection/state constants. Rewrote status.py discover_next_unprocessed_file to delegate (3-line body). Removed unused imports (logging, cast, Cursor) from status.py. Both files lint clean.
 - [x] Add `count_untagged_files(library_id)` method to `FileStatesOperations` for the `needs_tagging_count` query currently inline in `stats.py` `get_library_stats`, then update `get_library_stats` to use it
     **Notes:** Added count_untagged_files(library_id) to FileStatesOperations. Rewrote get_library_stats to run aggregate AQL without edge subquery, then call file_states.count_untagged_files(library_id) separately. No hardcoded "file_has_state" or "file_states/ml_tagged" strings remain in stats.py. Lint clean.
 - [x] Add `count_recently_tagged(window_ms)` method to `FileStatesOperations` for the edge-based tagged_at query currently inline in `stats.py` `count_recently_tagged`, then update the stats mixin to delegate
@@ -66,6 +68,7 @@ functionally complete but an audit reveals residual issues:
     **Notes:** Ran lint_project_backend on nomarr/persistence/database (covers file_states_aql.py + all mixin files + crud.py) and V017 migration. Zero new errors. Only 5 pre-existing mypy errors in navidrome_song_map_aql.py (Cursor type assignments, unrelated to plan changes).
 
 ## Completion Criteria
+
 - Reconciliation queries only return files with `ml_tagged` edge (bug fixed)
 - No flat-field writes remain in any mixin method (calibration.py dead code removed)
 - V017 migration has accurate documentation (stale warning removed)
@@ -74,6 +77,7 @@ functionally complete but an audit reveals residual issues:
 - `lint_project_backend` passes with zero new errors
 
 ## References
+
 - Prerequisite: `plans/completed/TASK-file-state-edges-C-rewrite-reconciliation-cleanup.md`
 - FileStatesOperations: `nomarr/persistence/database/file_states_aql.py`
 - Status mixin: `nomarr/persistence/database/library_files_aql/status.py`

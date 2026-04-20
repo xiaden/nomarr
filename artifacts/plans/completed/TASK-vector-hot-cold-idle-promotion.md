@@ -49,16 +49,18 @@ pending hot vectors. This requires:
 ## Phases
 
 ### Phase 1: DB-Level Promotion Lock
+
 - [x] Create `nomarr/migrations/V019_add_vector_promotion_locks.py` with `SCHEMA_VERSION_BEFORE = 18`, `SCHEMA_VERSION_AFTER = 19` that creates the `vector_promotion_locks` collection if it does not exist. Follow the migration pattern from existing collection-creation migrations.
     **Notes:** Created nomarr/migrations/V019_add_vector_promotion_locks.py (53 lines). SCHEMA_VERSION_BEFORE=18, SCHEMA_VERSION_AFTER=19. Creates vector_promotion_locks collection idempotently. Lint clean.
 - [x] Create `nomarr/persistence/database/vector_promotion_lock_aql.py` with `VectorPromotionLockOperations` class. Collection name: `vector_promotion_locks`. Lock key format: `{backbone_id}__{library_key}`. Document schema: `{ _key, locked_by: worker_id, locked_at: epoch_ms }`. Implement: `try_acquire_lock(backbone_id, library_key, worker_id) -> bool` using AQL INSERT with `ignoreErrors: true` (returns True if inserted); `release_lock(backbone_id, library_key, worker_id) -> None` with DELETE guarded by `locked_by == worker_id`; `force_release_lock(backbone_id, library_key) -> None` as unconditional DELETE by key; `get_stale_locks(stale_after_ms) -> list[tuple[str, str]]` returning `(backbone_id, library_key)` pairs whose `locked_at` exceeds the threshold.
     **Notes:** Created nomarr/persistence/database/vector_promotion_lock_aql.py (177 lines). VectorPromotionLockOperations with try_acquire_lock (AQL INSERT ignoreErrors), release_lock (locked_by guard), force_release_lock (unconditional), get_stale_locks (returns (backbone_id, library_key) tuples). Lint clean.
 - [x] Register `vector_promotion_locks: VectorPromotionLockOperations` as attribute on `Database.__init__` and export `VectorPromotionLockOperations` from `nomarr/persistence/database/__init__.py`.
-    **Notes:** Added import + attribute in db.py (line 32 import, line 149 init). Added export in database/__init__.py (line 26 import, line 41 __all__). Lint clean on both files.
+    **Notes:** Added import + attribute in db.py (line 32 import, line 149 init). Added export in database/**init**.py (line 26 import, line 41 **all**). Lint clean on both files.
 - [x] Run `lint_project_backend(path="nomarr/persistence")` and fix all errors.
     **Notes:** lint_project_backend(path="nomarr/persistence") \u2014 0 errors, 8 files checked.
 
 ### Phase 2: Idle Promotion Component
+
 - [x] Create `nomarr/components/ml/vectors/ml_vector_idle_promotion_comp.py`. Module docstring must state that `db` is safe to share with the calling thread due to python-arango connection pooling. Implement `list_hot_vector_targets(db: Database, models_dir: str) -> list[tuple[str, str]]`: calls `discover_backbones(models_dir)` for backbone IDs, `db.libraries.list_libraries()` for library keys, then for each `(backbone_id, library_key)` pair checks `db.db.has_collection(f"vectors_track_hot__{backbone_id}__{library_key}")` and if present calls `db.register_vectors_track_backbone(backbone_id, library_key).count()`. Returns pairs where count > 0.
     **Notes:** Created nomarr/components/ml/vectors/ml_vector_idle_promotion_comp.py (65 lines). list_hot_vector_targets iterates discover_backbones() x list_libraries(), checks has_collection + count() > 0. Module docstring documents thread safety. Lint clean.
 - [x] Implement `run_idle_promotion(db: Database, worker_id: str, models_dir: str) -> int`: (a) calls `list_hot_vector_targets`; (b) calls `db.vector_promotion_locks.get_stale_locks(stale_after_ms=600_000)` and force-releases each; (c) for each target, calls `try_acquire_lock`; (d) if acquired, computes nlists via private `_compute_nlists(db, backbone_id, library_key)` that reads per-library `vector_group_size` from library doc (fallback to 15), sums hot+cold counts, and calls `compute_nlists` from `nomarr.helpers.vector_params_helper`; (e) calls `promote_and_rebuild_workflow(db, backbone_id, library_key, nlists, models_dir)` inside try/finally that always releases lock; (f) returns count of targets promoted.
@@ -67,6 +69,7 @@ pending hot vectors. This requires:
     **Notes:** lint_project_backend(path="nomarr/components/ml/vectors/ml_vector_idle_promotion_comp.py") — 0 errors.
 
 ### Phase 3: Worker Loop Integration
+
 - [x] Add `IDLE_POLLS_BEFORE_PROMOTION: int = 3` module-level constant near existing constants in `discovery_worker.py`. Add `idle_consecutive_polls: int = 0` and `promotion_running: threading.Thread | None = None` in `run()` alongside existing tracking variables.
     **Notes:** Added IDLE_POLLS_BEFORE_PROMOTION=3 at line 38 (module-level). Added idle_consecutive_polls and promotion_running at lines 352-353 (run() tracking vars). F841 unused warnings expected — resolved in P3-S2 when these are wired into the idle branch.
 - [x] In the idle branch (`file_id is None`): increment `idle_consecutive_polls` **as the first statement** (before cache eviction block and `time.sleep`). Reset `idle_consecutive_polls = 0` at top of the work-found path (immediately after non-None file_id confirmed). After the cache eviction block, before `time.sleep(IDLE_SLEEP_S)`: if `idle_consecutive_polls >= IDLE_POLLS_BEFORE_PROMOTION` and (`promotion_running is None` or `not promotion_running.is_alive()`), import `run_idle_promotion` from `nomarr.components.ml.vectors.ml_vector_idle_promotion_comp`, spawn `threading.Thread(target=run_idle_promotion, args=(db, self.worker_id, config.models_dir), daemon=True)`, assign to `promotion_running`, start it, log `[%s] Spawning idle vector promotion thread` at INFO level.
@@ -77,6 +80,7 @@ pending hot vectors. This requires:
     **Notes:** lint_project_backend(path="nomarr/services/infrastructure/workers/discovery_worker.py") — 0 errors.
 
 ### Phase 4: Tests
+
 - [x] Write unit tests in `tests/unit/components/ml/vectors/test_ml_vector_idle_promotion_comp.py`: test `list_hot_vector_targets` by mocking `discover_backbones` to return multiple backbones, `db.libraries.list_libraries` to return libraries, `db.db.has_collection` and `count()` — verify correct (backbone, library_key) pairing and filtering of empty collections. Test `run_idle_promotion` by mocking lock acquire returning True/False, mocking `promote_and_rebuild_workflow`, verifying lock is always released in `finally` even when the workflow raises.
 - [x] Write unit tests in `tests/unit/persistence/database/test_vector_promotion_lock_aql.py` for `try_acquire_lock` verifying AQL INSERT with `ignoreErrors` is called correctly, and `release_lock` verifying the `locked_by` guard.
 - [x] Run `lint_project_backend()` with no path (full workspace) to confirm zero errors.

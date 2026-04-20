@@ -12,16 +12,16 @@ ONNX Runtime session management, model discovery, and caching — the execution 
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|----------|
-| `ml_base` | Abstract `BaseONNXModel` — session lifecycle, load/unload, VRAM coordinator integration, BFC OOM self-healing |
-| `ml_backbone` | `ONNXBackboneModel` — waveform → embedding extraction with per-backbone preprocessing |
-| `ml_head` | `ONNXHeadModel` — embedding → classification/regression scores with tensor metadata resolution at load time |
-| `ml_cache` | `ONNXModelCache` — grouped container, warm/cold switching loads/unloads all sessions at once |
-| `ml_discovery_comp` | Filesystem + DB model discovery, `HeadInfo` metadata, model suite hashing, versioned tag keys |
-| `ml_known_models_comp` | Known model output defaults and semantic opponent map derivation for conflict suppression |
-| `ml_session_comp` | Low-level session creation (`create_session`), CUDA provider options, batched inference runner |
-| `ml_constants` | Shared constants |
+ | Module | Purpose |
+ | -------- | ---------- |
+ | `ml_base` | Abstract `BaseONNXModel` — session lifecycle, load/unload, VRAM coordinator integration, BFC OOM self-healing |
+ | `ml_backbone` | `ONNXBackboneModel` — waveform → embedding extraction with per-backbone preprocessing |
+ | `ml_head` | `ONNXHeadModel` — embedding → classification/regression scores with tensor metadata resolution at load time |
+ | `ml_cache` | `ONNXModelCache` — grouped container, warm/cold switching loads/unloads all sessions at once |
+ | `ml_discovery_comp` | Filesystem + DB model discovery, `HeadInfo` metadata, model suite hashing, versioned tag keys |
+ | `ml_known_models_comp` | Known model output defaults and semantic opponent map derivation for conflict suppression |
+ | `ml_session_comp` | Low-level session creation (`create_session`), CUDA provider options, batched inference runner |
+ | `ml_constants` | Shared constants |
 
 ## Patterns
 

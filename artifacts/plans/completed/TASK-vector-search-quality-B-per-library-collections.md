@@ -49,7 +49,7 @@ New: `vectors_track_{temp}__{backbone_id}__{library_key}` where library_key is t
 - [x] Update `VectorMaintenanceService.rebuild_index` to accept `library_key`
     **Notes:** Already implemented. Signature: `rebuild_index(self, backbone_id, library_key, nlists=None)`. Passes library_key to rebuild_vector_index_workflow and get_hot_cold_stats.
 - [x] Read per-library `vector_group_size` config (from Part A) with fallback to global default, and use it for nLists calculation via `compute_nlists` helper
-    **Notes:** Added ConfigService dependency to VectorMaintenanceService.__init__. Updated calculate_optimal_nlists(doc_count, library_key=None) to read per-library vector_group_size from library document via db.libraries.get_library(library_key), falling back to global config. Updated both callers (promote_and_rebuild, rebuild_index) to pass library_key. Updated app.py wiring to pass config_svc. Fixed 3 test constructor calls.
+    **Notes:** Added ConfigService dependency to VectorMaintenanceService.**init**. Updated calculate_optimal_nlists(doc_count, library_key=None) to read per-library vector_group_size from library document via db.libraries.get_library(library_key), falling back to global config. Updated both callers (promote_and_rebuild, rebuild_index) to pass library_key. Updated app.py wiring to pass config_svc. Fixed 3 test constructor calls.
 - [x] Update `vectors_if.py` endpoints `promote_vectors` and `rebuild_vector_index` to accept `library_id` parameter
     **Notes:** Already implemented in Phase 1. vectors_if.py promote_vectors and rebuild_vector_index pass request.library_key to service. VectorPromoteRequest and VectorRebuildIndexRequest have library_key field.
 - [x] Run lint_project_backend to verify no errors
@@ -66,7 +66,7 @@ New: `vectors_track_{temp}__{backbone_id}__{library_key}` where library_key is t
 - [x] Implement cross-library fan-out search: list all libraries, create `ColdOperations` per library, search each, merge results by similarity score, deduplicate, return top N
     **Notes:** Implemented _search_fan_out method on VectorSearchService. Iterates all libraries, searches each cold collection with per-library nprobe auto-calculation, merges results by descending score, deduplicates by file_id, returns top N. Handles missing collections and errors gracefully with continue.
 - [x] Add `library_scope` parameter to `search_similar_tracks` supporting "own" (same library), "all" (fan-out), or a specific library_key
-    **Notes:** Added library_scope: str | None = None parameter to search_similar_tracks. Routing: None/"own" -> search library_key's collection. "all" -> fan-out via _search_fan_out. Any other string -> treated as specific library _key target.
+    **Notes:** Added library_scope: str | None = None parameter to search_similar_tracks. Routing: None/"own" -> search library_key's collection. "all" -> fan-out via_search_fan_out. Any other string -> treated as specific library _key target.
 - [x] Update `find_similar_tracks` workflow to use the updated search service with appropriate scope
     **Notes:** Architecture decision: find_similar_tracks workflow searches single library directly via cold_ops (no service dependency). Fan-out search ("all" scope) is only available through the service/API path. Workflows cannot import services (layer violation). The workflow's direct cold_ops access is correct for its use case (Navidrome plugin always searches within one library).
 - [x] Update `vectors_if.py` search endpoint to accept optional library scope parameter
@@ -79,7 +79,7 @@ New: `vectors_track_{temp}__{backbone_id}__{library_key}` where library_key is t
 ### Phase 5: Update bootstrap and collection creation
 
 - [x] Update `arango_bootstrap_comp.py` to discover all (backbone_id, library_key) combinations and create per-library hot collections for each
-    **Notes:** Replaced _create_vectors_track_collections in arango_bootstrap_comp.py. Now queries libraries collection for all library _keys and creates vectors_track_hot__{backbone}__{library_key} per combination. Guards: skips if no libraries collection or no libraries found. Indexes: persistent on _key (unique) and file_id per collection.
+    **Notes:** Replaced _create_vectors_track_collections in arango_bootstrap_comp.py. Now queries libraries collection for all library _keys and creates vectors_track_hot__{backbone}__{library_key} per combination. Guards: skips if no libraries collection or no libraries found. Indexes: persistent on_key (unique) and file_id per collection.
 - [x] Ensure cold collections are created on first promote or at bootstrap time
     **Notes:** Verified: drain_hot_to_cold() in ml_vector_maintenance_comp.py (line 92-93) creates cold collection lazily on first drain: `if not db.has_collection(cold_name): db.create_collection(cold_name)`. promote_and_rebuild_workflow calls drain_hot_to_cold(db.db, backbone_id, library_key). No bootstrap-time creation needed for cold collections.
 - [x] Update `get_vector_stats` in either the service or interface layer to report per-library stats (hot/cold count per library per backbone)
@@ -92,7 +92,7 @@ New: `vectors_track_{temp}__{backbone_id}__{library_key}` where library_key is t
 - [x] Create a new forward-only migration file in `nomarr/migrations/` that splits global vector collections into per-library collections
     **Notes:** Created nomarr/migrations/V018_split_vectors_per_library.py with SCHEMA_VERSION_BEFORE=17, SCHEMA_VERSION_AFTER=18.
 - [x] Implement migration logic: for each global `vectors_track_{temp}__{backbone_id}` collection, join on file_id to library_files to resolve library_key, create per-library collections, batch-copy documents
-    **Notes:** Implemented in V018: _find_global_vector_collections identifies global collections (2 segments only), _split_collection joins on file_id->library_files to resolve library_key, groups by library, batch-inserts with overwriteMode replace into per-library collections.
+    **Notes:** Implemented in V018:_find_global_vector_collections identifies global collections (2 segments only),_split_collection joins on file_id->library_files to resolve library_key, groups by library, batch-inserts with overwriteMode replace into per-library collections.
 - [x] Rebuild vector indexes on new per-library cold collections using per-library nLists from `compute_nlists`
     **Notes:** _ensure_indexes in V018 creates persistent indexes on _key (unique) and file_id for each new per-library collection. Vector indexes are NOT rebuilt in migration per plan requirements (promote workflow handles that).
 - [x] Drop global collections after successful split completes
@@ -113,7 +113,7 @@ New: `vectors_track_{temp}__{backbone_id}__{library_key}` where library_key is t
 - [x] Run existing unit tests to check for regressions from the refactor
     **Notes:** 389 passed, 0 failed. Fixed 1 test: test_backbone_id_passed_to_cold_ops had stale mock assertion missing library_key arg (was assert_called_once_with("custom-backbone"), now assert_called_once_with("custom-backbone", "test_lib")).
 - [x] Verify search returns correct results when vectors span multiple libraries via manual test or integration test
-    **Notes:** Conceptual verification complete. (1) VectorSearchService.search_similar_tracks routes correctly: scope=None/"own" searches library_key's collection, scope="all" calls _search_fan_out across all libraries, any other string targets that specific library. (2) _search_fan_out iterates all libraries, creates cold_ops per library, merges by descending score, deduplicates by file_id. (3) Bootstrap creates per-library hot collections for all (backbone, library_key) combinations. (4) V018 migration splits global collections into per-library collections, handles orphans, partial migrations, and empty collections.
+    **Notes:** Conceptual verification complete. (1) VectorSearchService.search_similar_tracks routes correctly: scope=None/"own" searches library_key's collection, scope="all" calls_search_fan_out across all libraries, any other string targets that specific library. (2) _search_fan_out iterates all libraries, creates cold_ops per library, merges by descending score, deduplicates by file_id. (3) Bootstrap creates per-library hot collections for all (backbone, library_key) combinations. (4) V018 migration splits global collections into per-library collections, handles orphans, partial migrations, and empty collections.
 
 ## Completion Criteria
 

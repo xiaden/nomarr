@@ -40,10 +40,10 @@ Thank you for your interest in contributing to Nomarr! This document provides gu
 - Code follows the existing architecture patterns (see below)
 - Pull requests should target `develop` unless you are coordinating an approved hotfix flow
 - CI must pass before merge on `develop` or `main`, including all required gates:
-   - Lint: `ruff check nomarr/ tests/`
-   - Backend tests: `pytest tests/ -m "not container_only and not requires_database and not code_smell"`
-   - Frontend tests: `npm run test -- --run`
-   - CodeQL for pull requests to `main`
+  - Lint: `ruff check nomarr/ tests/`
+  - Backend tests: `pytest tests/ -m "not container_only and not requires_database and not code_smell"`
+  - Frontend tests: `npm run test -- --run`
+  - CodeQL for pull requests to `main`
 - Python code passes `ruff` linting and `mypy` type checking (zero errors)
 - Frontend code passes ESLint
 - All relevant tests pass locally before you open or update the PR
@@ -63,6 +63,7 @@ Keep names short, lowercase, and descriptive.
 **For ML model contributions:**
 
 ⚠️ **Consult with Music Technology Group, Universitat Pompeu Fabra** before submitting PRs that:
+
 - Modify model processing logic
 - Create derivative works of Essentia models
 - Change how model outputs are interpreted or normalized
@@ -193,6 +194,7 @@ npx playwright test
 - Reference issues when applicable (`Fixes #123`)
 
 Examples:
+
 ```
 Fix calibration calculation for edge case with zero variance
 Add file watcher polling mode for network mounts

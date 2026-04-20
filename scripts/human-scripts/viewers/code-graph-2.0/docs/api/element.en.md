@@ -27,9 +27,9 @@ getElementPosition(id: ID): Point;
 
 **Parameters**:
 
-| Parameter | Description | Type   | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------- | ------ | ------- | -------- |
-| id        | Element ID  | string | -       | ✓        |
+| id | Element ID | string | - | ✓ |
 
 **Return Value**:
 
@@ -52,9 +52,9 @@ getElementRenderBounds(id: ID): AABB;
 
 **Parameters**:
 
-| Parameter | Description | Type   | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------- | ------ | ------- | -------- |
-| id        | Element ID  | string | -       | ✓        |
+| id | Element ID | string | - | ✓ |
 
 **Return Value**:
 
@@ -71,9 +71,9 @@ getElementRenderStyle(id: ID): Record<string, any>;
 
 **Parameters**:
 
-| Parameter | Description | Type   | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------- | ------ | ------- | -------- |
-| id        | Element ID  | string | -       | ✓        |
+| id | Element ID | string | - | ✓ |
 
 **Return Value**:
 
@@ -90,9 +90,9 @@ getElementState(id: ID): State[];
 
 **Parameters**:
 
-| Parameter | Description | Type   | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------- | ------ | ------- | -------- |
-| id        | Element ID  | string | -       | ✓        |
+| id | Element ID | string | - | ✓ |
 
 **Return Value**:
 
@@ -109,9 +109,9 @@ getElementType(id: ID): string;
 
 **Parameters**:
 
-| Parameter | Description | Type   | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------- | ------ | ------- | -------- |
-| id        | Element ID  | string | -       | ✓        |
+| id | Element ID | string | - | ✓ |
 
 **Return Value**:
 
@@ -128,9 +128,9 @@ getElementVisibility(id: ID): 'visible' | 'hidden';
 
 **Parameters**:
 
-| Parameter | Description | Type   | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------- | ------ | ------- | -------- |
-| id        | Element ID  | string | -       | ✓        |
+| id | Element ID | string | - | ✓ |
 
 **Return Value**:
 
@@ -147,9 +147,9 @@ getElementZIndex(id: ID): number;
 
 **Parameters**:
 
-| Parameter | Description | Type   | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------- | ------ | ------- | -------- |
-| id        | Element ID  | string | -       | ✓        |
+| id | Element ID | string | - | ✓ |
 
 **Return Value**:
 
@@ -172,18 +172,18 @@ setElementState(state: Record<ID, State | State[]>, animation?: boolean): Promis
 
 **Single Element State Setting**
 
-| Parameter | Description       | Type            | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------------- | --------------- | ------- | -------- | --- |
-| id        | Element ID to set | string          | -       | ✓        |
-| state     | State to set      | [State](#state) | State[] | -        | ✓   |
-| animation | Enable animation  | boolean         | -       |          |
+| id | Element ID to set | string | - | ✓ |
+| state | State to set | [State](#state) | State[] | - | ✓ |
+| animation | Enable animation | boolean | - | |
 
 **Batch Element State Setting**
 
-| Parameter | Description                    | Type                       | Default  | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ------------------------------ | -------------------------- | -------- | -------- | --- |
-| state     | Mapping of element ID to state | Record<ID, [State](#state) | State[]> | -        | ✓   |
-| animation | Enable animation               | boolean                    | -        |          |
+| state | Mapping of element ID to state | Record<ID, [State](#state) | State[]> | - | ✓ |
+| animation | Enable animation | boolean | - | |
 
 **Return Value**:
 
@@ -220,18 +220,18 @@ setElementVisibility(visibility: Record<ID, 'visible' | 'hidden'>, animation?: b
 
 **Single Element Visibility Setting**
 
-| Parameter  | Description       | Type      | Default  | Required |
+| Parameter | Description | Type | Default | Required |
 | ---------- | ----------------- | --------- | -------- | -------- | --- |
-| id         | Element ID to set | string    | -        | ✓        |
-| visibility | Visibility to set | 'visible' | 'hidden' | -        | ✓   |
-| animation  | Enable animation  | boolean   | -        |          |
+| id | Element ID to set | string | - | ✓ |
+| visibility | Visibility to set | 'visible' | 'hidden' | - | ✓ |
+| animation | Enable animation | boolean | - | |
 
 **Batch Element Visibility Setting**
 
-| Parameter  | Description                         | Type                 | Default   | Required |
+| Parameter | Description | Type | Default | Required |
 | ---------- | ----------------------------------- | -------------------- | --------- | -------- | --- |
-| visibility | Mapping of element ID to visibility | Record<ID, 'visible' | 'hidden'> | -        | ✓   |
-| animation  | Enable animation                    | boolean              | -         |          |
+| visibility | Mapping of element ID to visibility | Record<ID, 'visible' | 'hidden'> | - | ✓ |
+| animation | Enable animation | boolean | - | |
 
 **Return Value**:
 
@@ -267,16 +267,16 @@ setElementZIndex(zIndex: Record<ID, number>): Promise<void>;
 
 **Single Element Z-Index Setting**
 
-| Parameter | Description | Type   | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------- | ------ | ------- | -------- |
-| id        | Element ID  | string | -       | ✓        |
-| zIndex    | Z-Index     | number | -       | ✓        |
+| id | Element ID | string | - | ✓ |
+| zIndex | Z-Index | number | - | ✓ |
 
 **Batch Element Z-Index Setting**
 
-| Parameter | Description                      | Type               | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | -------------------------------- | ------------------ | ------- | -------- |
-| zIndex    | Mapping of element ID to z-index | Record<ID, number> | -       | ✓        |
+| zIndex | Mapping of element ID to z-index | Record<ID, number> | - | ✓ |
 
 **Return Value**:
 
@@ -307,9 +307,9 @@ setNode(node: NodeOptions): void;
 
 **Parameters**:
 
-| Parameter | Description        | Type                                            | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ------------------ | ----------------------------------------------- | ------- | -------- |
-| node      | Node configuration | [NodeOptions](/en/manual/element/node/overview) | -       | ✓        |
+| node | Node configuration | [NodeOptions](/en/manual/element/node/overview) | - | ✓ |
 
 **Example**:
 
@@ -332,9 +332,9 @@ setEdge(edge: EdgeOptions): void;
 
 **Parameters**:
 
-| Parameter | Description        | Type                                            | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ------------------ | ----------------------------------------------- | ------- | -------- |
-| edge      | Edge configuration | [EdgeOptions](/en/manual/element/edge/overview) | -       | ✓        |
+| edge | Edge configuration | [EdgeOptions](/en/manual/element/edge/overview) | - | ✓ |
 
 ### Graph.setCombo(combo)
 
@@ -346,9 +346,9 @@ setCombo(combo: ComboOptions): void;
 
 **Parameters**:
 
-| Parameter | Description         | Type                                              | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ------------------- | ------------------------------------------------- | ------- | -------- |
-| combo     | Combo configuration | [ComboOptions](/en/manual/element/combo/overview) | -       | ✓        |
+| combo | Combo configuration | [ComboOptions](/en/manual/element/combo/overview) | - | ✓ |
 
 ### Graph.collapseElement(id, options)
 
@@ -360,10 +360,10 @@ collapseElement(id: ID, options?: boolean | CollapseExpandNodeOptions): Promise<
 
 **Parameters**:
 
-| Parameter | Description                                                     | Type    | Default                                                 | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | --------------------------------------------------------------- | ------- | ------------------------------------------------------- | -------- | --- |
-| id        | Element ID to collapse                                          | string  | -                                                       | ✓        |
-| options   | Enable animation or detailed configuration for collapsing nodes | boolean | [CollapseExpandNodeOptions](#collapseexpandnodeoptions) | -        |     |
+| id | Element ID to collapse | string | - | ✓ |
+| options | Enable animation or detailed configuration for collapsing nodes | boolean | [CollapseExpandNodeOptions](#collapseexpandnodeoptions) | - | |
 
 **Return Value**:
 
@@ -395,10 +395,10 @@ expandElement(id: ID, options?: boolean | CollapseExpandNodeOptions): Promise<vo
 
 **Parameters**:
 
-| Parameter | Description                                                    | Type    | Default                                                 | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | -------------------------------------------------------------- | ------- | ------------------------------------------------------- | -------- | --- |
-| id        | Element ID to expand                                           | string  | -                                                       | ✓        |
-| options   | Enable animation or detailed configuration for expanding nodes | boolean | [CollapseExpandNodeOptions](#collapseexpandnodeoptions) | -        |     |
+| id | Element ID to expand | string | - | ✓ |
+| options | Enable animation or detailed configuration for expanding nodes | boolean | [CollapseExpandNodeOptions](#collapseexpandnodeoptions) | - | |
 
 **Return Value**:
 
@@ -430,9 +430,9 @@ frontElement(id: ID | ID[]): void;
 
 **Parameters**:
 
-| Parameter | Description | Type   | Default  | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------- | ------ | -------- | -------- | --- |
-| id        | Element ID  | string | string[] | -        | ✓   |
+| id | Element ID | string | string[] | - | ✓ |
 
 **Return Value**:
 
@@ -458,10 +458,10 @@ showElement(id: ID | ID[], animation?: boolean): Promise<void>;
 
 **Parameters**:
 
-| Parameter | Description      | Type    | Default  | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ---------------- | ------- | -------- | -------- | --- |
-| id        | Element ID       | string  | string[] | -        | ✓   |
-| animation | Enable animation | boolean | -        |          |
+| id | Element ID | string | string[] | - | ✓ |
+| animation | Enable animation | boolean | - | |
 
 **Return Value**:
 
@@ -491,10 +491,10 @@ hideElement(id: ID | ID[], animation?: boolean): Promise<void>;
 
 **Parameters**:
 
-| Parameter | Description      | Type    | Default  | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ---------------- | ------- | -------- | -------- | --- |
-| id        | Element ID       | string  | string[] | -        | ✓   |
-| animation | Enable animation | boolean | -        |          |
+| id | Element ID | string | string[] | - | ✓ |
+| animation | Enable animation | boolean | - | |
 
 **Return Value**:
 
@@ -530,18 +530,18 @@ translateElement(offsets: Record<ID, Point>, animation?: boolean): Promise<void>
 
 **Single Element Translation**
 
-| Parameter | Description                            | Type             | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | -------------------------------------- | ---------------- | ------- | -------- |
-| id        | Element ID                             | string           | -       | ✓        |
-| offset    | Relative translation distance [dx, dy] | [number, number] | -       | ✓        |
-| animation | Enable animation                       | boolean          | -       |          |
+| id | Element ID | string | - | ✓ |
+| offset | Relative translation distance [dx, dy] | [number, number] | - | ✓ |
+| animation | Enable animation | boolean | - | |
 
 **Batch Element Translation**
 
-| Parameter | Description                                   | Type                         | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | --------------------------------------------- | ---------------------------- | ------- | -------- |
-| offsets   | Mapping of element ID to translation distance | Record<ID, [number, number]> | -       | ✓        |
-| animation | Enable animation                              | boolean                      | -       |          |
+| offsets | Mapping of element ID to translation distance | Record<ID, [number, number]> | - | ✓ |
+| animation | Enable animation | boolean | - | |
 
 **Return Value**:
 
@@ -584,18 +584,18 @@ translateElementTo(positions: Record<ID, Point>, animation?: boolean): Promise<v
 
 **Single Element Movement**
 
-| Parameter | Description                     | Type             | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ------------------------------- | ---------------- | ------- | -------- |
-| id        | Element ID                      | string           | -       | ✓        |
-| position  | Target absolute position [x, y] | [number, number] | -       | ✓        |
-| animation | Enable animation                | boolean          | -       |          |
+| id | Element ID | string | - | ✓ |
+| position | Target absolute position [x, y] | [number, number] | - | ✓ |
+| animation | Enable animation | boolean | - | |
 
 **Batch Element Movement**
 
-| Parameter | Description                              | Type                             | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ---------------------------------------- | -------------------------------- | ------- | -------- |
-| positions | Mapping of element ID to target position | Record<string, [number, number]> | -       | ✓        |
-| animation | Enable animation                         | boolean                          | -       |          |
+| positions | Mapping of element ID to target position | Record<string, [number, number]> | - | ✓ |
+| animation | Enable animation | boolean | - | |
 
 **Return Value**:
 
@@ -632,10 +632,10 @@ focusElement(id: ID | ID[], animation?: ViewportAnimationEffectTiming): Promise<
 
 **Parameters**:
 
-| Parameter | Description                         | Type                                                            | Default  | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------------------------------- | --------------------------------------------------------------- | -------- | -------- | --- |
-| id        | One or more element IDs to focus on | string                                                          | string[] | -        | ✓   |
-| animation | Viewport animation configuration    | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | -        |          |
+| id | One or more element IDs to focus on | string | string[] | - | ✓ |
+| animation | Viewport animation configuration | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | - | |
 
 **Return Value**:
 
@@ -683,8 +683,8 @@ Viewport animation configuration type.
 
 ```typescript
 type ViewportAnimationEffectTiming =
-  | boolean // Enable animation
-  | {
+ | boolean // Enable animation
+ | {
       easing?: string; // Easing function
       duration?: number; // Animation duration (ms)
     };

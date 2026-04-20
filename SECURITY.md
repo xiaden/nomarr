@@ -8,10 +8,10 @@
 
 Currently, only the latest commit on the `main` branch is supported. Version numbers are provisional during alpha.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| latest (main) | :white_check_mark: |
-| < 0.1.x | :x:                |
+ | Version | Supported |
+ | ------- | ------------------ |
+ | latest (main) | :white_check_mark: |
+ | < 0.1.x | :x: |
 
 ## Security Considerations
 
@@ -69,7 +69,7 @@ services:
 ### How to Report
 
 1. **GitHub Security Advisories** (preferred):
-   - Go to https://github.com/xiaden/nomarr/security/advisories
+   - Go to <https://github.com/xiaden/nomarr/security/advisories>
    - Click "Report a vulnerability"
    - Fill in the details
 
@@ -107,10 +107,12 @@ services:
 ### File System Access
 
 - **Mount music libraries read-only** when possible:
+
   ```yaml
   volumes:
     - /path/to/music:/music:ro
   ```
+
 - **Limit Nomarr's write access** to only necessary directories
 - **Use separate Docker volumes** for config and database
 

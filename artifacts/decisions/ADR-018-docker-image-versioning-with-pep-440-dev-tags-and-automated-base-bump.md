@@ -31,11 +31,13 @@ This ensures `develop` builds test against the most recent `develop` base layer 
 ## Consequences
 
 **Positive:**
+
 - Docker tags on `develop` carry semantic meaning (`0.2.3.dev42`) rather than opaque branch-name tags.
 - `main` images are always SemVer-tagged and also carry `:latest`, making upgrade path unambiguous for users.
 - Automated base bump prevents stale base layers piling up.
 
 **Negative:**
+
 - PEP 440 dev tags are not standard Docker UX — users pulling `develop`-sourced images must understand the `.devN` suffix.
 - Base bump workflow requires the `develop` branch to exist (dependency on ADR-017).
 - SHA tags remain on all images for traceability but increase GHCR storage slightly.

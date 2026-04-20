@@ -5,6 +5,7 @@
 The migration consolidation tool needs to replay all migrations (V004–V019) onto a clone of Shape A to produce Shape B, then compare the two shapes for equivalence. Part A (prerequisite) defined the `SchemaShape` data model and the `ensure_schema` parser. Part B implements the replay engine: an AST-based analyzer that parses each migration's `upgrade()` function, recognizes database operations, and applies them to a mutable working copy of the schema.
 
 The replay engine must handle four categories of migrations:
+
 - **Verification-only** (V004–V006): no state change, skip.
 - **Static DDL** (V010–V015): create/delete/rename collections, add/delete indexes, create graphs, seed documents.
 - **Dynamic/blacklisted** (V007, V008, V018): loop over `db.collections()` to operate on runtime-named vector collections — skip with warning.
@@ -12,6 +13,7 @@ The replay engine must handle four categories of migrations:
 - **Mixed** (V016, V019): DDL operations replayed, AQL/data operations logged.
 
 Key design constraints:
+
 - `SchemaShape` is frozen/immutable. The replayer uses a `MutableSchemaShape` internally, then freezes the result.
 - When an operation references something missing (e.g., rename a non-existent collection), create a phantom first, then apply the operation.
 - When a rename targets an existing name, merge the items.
@@ -25,6 +27,7 @@ Key design constraints:
 ## Phases
 
 ### Phase 1: Mutable Schema + Migration Discovery
+
 - [x] Create `scripts/consolidate_migrations/migration_replayer.py` with module docstring explaining its role: AST-based replay of V004–V019 `upgrade()` functions onto a mutable schema shape
     **Notes:** Created `scripts/consolidate_migrations/migration_replayer.py` with comprehensive module docstring covering all migration categories, design constraints, and the phantom creation rule.
 - [x] Define `MutableSchemaShape` class with fields `collections: dict[str, Collection]`, `indexes: set[Index]`, `graphs: dict[str, Graph]`, `seed_documents: set[SeedDocument]` — keyed by name for O(1) lookup during replay operations
@@ -42,6 +45,7 @@ Key design constraints:
 **Notes:** `MutableSchemaShape` is NOT frozen — it's a plain class for in-place mutation during replay. The `collections` dict is keyed by `name` for efficient rename/delete lookup. `indexes` remains a set because index operations are add/remove by value. The `discover_migrations` function uses a regex like `V(\d+)_` to extract version numbers and sorts numerically.
 
 ### Phase 2: AST Operation Recognizers
+
 - [x] Implement `_is_dynamic_loop(node: ast.For) -> bool` that detects `for ... in db.collections()` loop patterns (the signal that a migration operates on dynamically-named collections) — matches V007/V008/V018 patterns
     **Notes:** Signature expanded to `(node: ast.For, func_body: list[ast.stmt]) -> bool` — needs func_body to scan for `db.collections()` in preceding statements. Uses `node` via `stmt is node` identity check to limit scan to statements before the loop. Added `_contains_db_collections_call` helper that walks AST subtrees for the `db.collections()` attribute call pattern.
 - [x] Implement `_recognize_create_collection(node: ast.Call) -> tuple[str, bool] | None` that matches `db.create_collection(name)` and `db.create_collection(name, edge=True)` calls, returning `(collection_name, is_edge)` or `None`
@@ -66,6 +70,7 @@ Key design constraints:
 **Notes:** All recognizers take an `ast.Call` node (or `ast.For` for loops) and return either a typed result or `None` (no match). Variable resolution is local-scope only: scan the function body for `name = db.collection("...")` assignments to resolve `coll` variables. The rename recognizer must handle the V013 pattern where `_OLD_NAME` and `_NEW_NAME` are module-level constants — resolve them from the module's top-level `ast.Assign` nodes. The `delete_index` recognizer for V011's pattern (find TTL index by type/fields, then delete by id) should recognize the semantic intent: "delete TTL index on fields [last_seen_ms] from collection vram_promises" — the replayer will match by type+fields, not by runtime id.
 
 ### Phase 3: Replay Mutators + Migration Walker
+
 - [x] Implement `_apply_create_collection(shape: MutableSchemaShape, name: str, edge: bool, warnings: list[str]) -> None` that adds a `Collection` to the mutable shape, skipping with a log if it already exists (idempotent)
     **Notes:** Added `from .blacklist import is_blacklisted` import. Mutator checks blacklist before creating, skips with warning if dynamic prefix matches. Idempotent: skips if collection already exists. Extra `migration_name` parameter on all mutators for descriptive warnings (consistent pattern across all Phase 3 mutators).
 - [x] Implement `_apply_delete_collection(shape: MutableSchemaShape, name: str, warnings: list[str]) -> None` that removes a collection and all its indexes from the mutable shape — if the collection doesn't exist, create a phantom first then remove it (phantom creation rule)
@@ -88,10 +93,11 @@ Key design constraints:
 **Notes:** The walker must handle nested structures: V019 calls helper functions like `_create_collections(db)`, `_create_indexes(db)`, `_create_graph(db)`. The walker should resolve calls to module-level functions (functions defined in the same migration file) and walk their bodies recursively. This is essential for V019 which delegates all work to private helpers. The phantom creation rule ensures that migrations referencing collections that existed historically but don't appear in the current `ensure_schema()` can still be replayed without errors. Warnings should include the migration name and a human-readable description of what was skipped or phantom-created.
 
 ### Phase 4: Public API + Integration Smoke Test
+
 - [x] Implement the main public function `replay_migrations(base_shape: SchemaShape, migrations_dir: Path) -> tuple[SchemaShape, list[str]]` that clones `base_shape` into a `MutableSchemaShape`, discovers and sorts migrations, parses and replays each one via `_walk_upgrade`, collects warnings, and returns `(frozen_shape, warnings)`
     **Notes:** Implemented `replay_migrations(base_shape, migrations_dir)` that discovers migrations, converts to MutableSchemaShape, parses and walks each upgrade() function, collects warnings, freezes and returns (SchemaShape, warnings). Error handling wraps _parse_upgrade_function in try/except ValueError for robustness.
 - [x] Add a `if __name__ == "__main__"` block that imports `parse_ensure_schema` from Plan A, parses Shape A from the real bootstrap file, calls `replay_migrations` with Shape A and the real migrations directory, prints the resulting Shape B summary (collection count, index count, graph count, seed doc count), and prints all warnings
-    **Notes:** Added __main__ block that resolves project root from __file__, parses Shape A via parse_ensure_schema, calls replay_migrations, prints shape summaries (collection/index/graph/seed counts), all warnings, and a diff of collection names between shapes A and B. Exits 0 on success, 2 on missing paths.
+    **Notes:** Added **main** block that resolves project root from **file**, parses Shape A via parse_ensure_schema, calls replay_migrations, prints shape summaries (collection/index/graph/seed counts), all warnings, and a diff of collection names between shapes A and B. Exits 0 on success, 2 on missing paths.
 - [x] Run the replayer against the real codebase and verify: (a) V004–V006 are skipped as verification-only, (b) V007/V008/V018 are skipped as dynamic with warnings, (c) V009/V017 are logged as data transforms, (d) V010–V016/V019 DDL operations are applied, (e) no crashes on any migration file
     **Notes:** All verified: (a) V004-V006 produce no mutations (verification-only), (b) V007/V008/V018 all show "Skipped dynamic loop" warnings, (c) V009/V017 logged as "AQL data transform (not validated)", (d) V010-V016/V019 DDL operations applied without errors, (e) zero crashes across all 16 migration files. 19 warnings total, all expected.
 - [x] Verify Shape B contains the expected items: collections from Shape A plus any created-and-not-deleted by static migrations (e.g., `vram_promises` from V010, collections from V014/V016/V019), minus any deleted (e.g., `gpu_warmup_claims` from V012, `navidrome_song_map` from V019), with renames applied (e.g., `song_tag_edges` → `song_has_tags` from V013)

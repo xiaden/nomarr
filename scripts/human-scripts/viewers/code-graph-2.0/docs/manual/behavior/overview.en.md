@@ -25,28 +25,28 @@ const graph = new Graph({
 
 G6 provides a variety of built-in behaviors that are **ready to use without registration**:
 
-| Category            | Behavior Name                                                                  | Registration Type             | Function Description                                         |
+| Category | Behavior Name | Registration Type | Function Description |
 | ------------------- | ------------------------------------------------------------------------------ | ----------------------------- | ------------------------------------------------------------ |
-| Navigation          |                                                                                |                               |                                                              |
-|                     | [Drag Canvas](/en/manual/behavior/drag-canvas)                                 | `drag-canvas`                 | Drag the entire canvas view                                  |
-|                     | [Zoom Canvas](/en/manual/behavior/zoom-canvas)                                 | `zoom-canvas`                 | Zoom the canvas view                                         |
-|                     | [Scroll Canvas](/en/manual/behavior/scroll-canvas)                             | `scroll-canvas`               | Scroll the canvas using the wheel                            |
-|                     | [Optimize Viewport Transform](/en/manual/behavior/optimize-viewport-transform) | `optimize-viewport-transform` | Optimize view transform performance                          |
-| Selection           |                                                                                |                               |                                                              |
-|                     | [Click Select](/en/manual/behavior/click-select)                               | `click-select`                | Click to select graph elements                               |
-|                     | [Brush Select](/en/manual/behavior/brush-select)                               | `brush-select`                | Select elements by dragging a rectangular area               |
-|                     | [Lasso Select](/en/manual/behavior/lasso-select)                               | `lasso-select`                | Freely draw an area to select elements                       |
-| Editing             |                                                                                |                               |                                                              |
-|                     | [Create Edge](/en/manual/behavior/create-edge)                                 | `create-edge`                 | Interactively create new edges                               |
-|                     | [Drag Element](/en/manual/behavior/drag-element)                               | `drag-element`                | Drag nodes or combos                                         |
-|                     | [Force-directed Drag](/en/manual/behavior/drag-element-force)                  | `drag-element-force`          | Drag nodes in force-directed layout                          |
-| Data Exploration    |                                                                                |                               |                                                              |
-|                     | [Collapse/Expand](/en/manual/behavior/collapse-expand)                         | `collapse-expand`             | Expand or collapse subtree nodes                             |
-|                     | [Focus Element](/en/manual/behavior/focus-element)                             | `focus-element`               | Focus on specific elements and automatically adjust the view |
-|                     | [Hover Activate](/en/manual/behavior/hover-activate)                           | `hover-activate`              | Highlight elements when hovering                             |
-| Visual Optimization |                                                                                |                               |                                                              |
-|                     | [Fix Element Size](/en/manual/behavior/fix-element-size)                       | `fix-element-size`            | Fix the element size to a specified value                    |
-|                     | [Auto-adapt Label](/en/manual/behavior/auto-adapt-label)                       | `auto-adapt-label`            | Automatically adjust label position                          |
+| Navigation | | | |
+| | [Drag Canvas](/en/manual/behavior/drag-canvas) | `drag-canvas` | Drag the entire canvas view |
+| | [Zoom Canvas](/en/manual/behavior/zoom-canvas) | `zoom-canvas` | Zoom the canvas view |
+| | [Scroll Canvas](/en/manual/behavior/scroll-canvas) | `scroll-canvas` | Scroll the canvas using the wheel |
+| | [Optimize Viewport Transform](/en/manual/behavior/optimize-viewport-transform) | `optimize-viewport-transform` | Optimize view transform performance |
+| Selection | | | |
+| | [Click Select](/en/manual/behavior/click-select) | `click-select` | Click to select graph elements |
+| | [Brush Select](/en/manual/behavior/brush-select) | `brush-select` | Select elements by dragging a rectangular area |
+| | [Lasso Select](/en/manual/behavior/lasso-select) | `lasso-select` | Freely draw an area to select elements |
+| Editing | | | |
+| | [Create Edge](/en/manual/behavior/create-edge) | `create-edge` | Interactively create new edges |
+| | [Drag Element](/en/manual/behavior/drag-element) | `drag-element` | Drag nodes or combos |
+| | [Force-directed Drag](/en/manual/behavior/drag-element-force) | `drag-element-force` | Drag nodes in force-directed layout |
+| Data Exploration | | | |
+| | [Collapse/Expand](/en/manual/behavior/collapse-expand) | `collapse-expand` | Expand or collapse subtree nodes |
+| | [Focus Element](/en/manual/behavior/focus-element) | `focus-element` | Focus on specific elements and automatically adjust the view |
+| | [Hover Activate](/en/manual/behavior/hover-activate) | `hover-activate` | Highlight elements when hovering |
+| Visual Optimization | | | |
+| | [Fix Element Size](/en/manual/behavior/fix-element-size) | `fix-element-size` | Fix the element size to a specified value |
+| | [Auto-adapt Label](/en/manual/behavior/auto-adapt-label) | `auto-adapt-label` | Automatically adjust label position |
 
 For detailed configuration of each behavior, refer to the [Built-in Behavior Documentation](/en/manual/behavior/drag-canvas).
 

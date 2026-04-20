@@ -48,18 +48,21 @@ scope:
 ### 1. Find Pattern Adopters
 
 Search for `uses_pattern` signatures to understand current adoption:
+
 - Which modules already use the pattern?
 - What's the typical usage context?
 
 ### 2. Find Legacy Code
 
 Search for `legacy_indicators` to find candidates:
+
 - Which modules use old approach?
 - Are there mixed files (some new, some old)?
 
 ### 3. Validate Candidates
 
 For each legacy hit:
+
 - **True positive:** Actually should migrate
 - **False positive:** Has legitimate reason to use old approach
 - **Unclear:** Needs human decision
@@ -67,6 +70,7 @@ For each legacy hit:
 ### 4. Prioritize
 
 Rank by:
+
 - **Frequency:** How often is this pattern used in the file?
 - **Risk:** What breaks if we migrate incorrectly?
 - **Dependencies:** Does other code depend on the legacy behavior?

@@ -11,11 +11,11 @@ Entity lifecycle management — seeding tag relationships from raw metadata, reb
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|----------|
-| `entity_seeding_comp` | Seed tag vertices/edges from raw mutagen metadata — single-file (`seed_song_entities_from_tags`) and batch (`seed_entities_for_scan_batch`) paths |
-| `metadata_cache_comp` | Compute and write denormalized cache fields (artist, album, genres, etc.) on song documents — single rebuild, batch update, and full-library rebuild |
-| `entity_cleanup_comp` | Count and remove orphaned tags (tags with no referencing songs) |
+ | Module | Purpose |
+ | -------- | ---------- |
+ | `entity_seeding_comp` | Seed tag vertices/edges from raw mutagen metadata — single-file (`seed_song_entities_from_tags`) and batch (`seed_entities_for_scan_batch`) paths |
+ | `metadata_cache_comp` | Compute and write denormalized cache fields (artist, album, genres, etc.) on song documents — single rebuild, batch update, and full-library rebuild |
+ | `entity_cleanup_comp` | Count and remove orphaned tags (tags with no referencing songs) |
 
 ## Patterns
 

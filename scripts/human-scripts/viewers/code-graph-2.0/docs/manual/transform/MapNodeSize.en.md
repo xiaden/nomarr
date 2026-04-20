@@ -24,11 +24,11 @@ The method of measuring the node centrality
 
 ```typescript
 type NodeCentralityOptions =
-  | { type: 'degree'; direction?: 'in' | 'out' | 'both' }
-  | { type: 'betweenness'; directed?: boolean; weightPropertyName?: string }
-  | { type: 'closeness'; directed?: boolean; weightPropertyName?: string }
-  | { type: 'eigenvector'; directed?: boolean }
-  | { type: 'pagerank'; epsilon?: number; linkProb?: number };
+ | { type: 'degree'; direction?: 'in' | 'out' | 'both' }
+ | { type: 'betweenness'; directed?: boolean; weightPropertyName?: string }
+ | { type: 'closeness'; directed?: boolean; weightPropertyName?: string }
+ | { type: 'eigenvector'; directed?: boolean }
+ | { type: 'pagerank'; epsilon?: number; linkProb?: number };
 ```
 
 ### mapLabelSize

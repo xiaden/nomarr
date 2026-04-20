@@ -9,13 +9,13 @@ Before acting on any significant task, spawn `Support-Librarian` to search the a
 
 ## When to Use
 
-| You're about to... | Use this skill |
-|--------------------|---------------|
-| Design a feature (DDAuthor) | Yes — before writing the design doc |
-| Create an implementation plan (Exec-Planner) | Yes — before creating the plan |
-| Route work to a department (Director, RnD-Manager) | Yes — before dispatching |
-| Execute a plan phase (Exec-Executor) | No — the plan should already reflect artifact context |
-| Do a quick fact check | No — overhead not worth it |
+ | You're about to... | Use this skill |
+ | -------------------- | --------------- |
+ | Design a feature (DDAuthor) | Yes — before writing the design doc |
+ | Create an implementation plan (Exec-Planner) | Yes — before creating the plan |
+ | Route work to a department (Director, RnD-Manager) | Yes — before dispatching |
+ | Execute a plan phase (Exec-Executor) | No — the plan should already reflect artifact context |
+ | Do a quick fact check | No — overhead not worth it |
 
 **Threshold:** If the task touches architecture, creates artifacts, or makes decisions that constrain future work — gather context first. If it's mechanical execution of an already-validated plan — skip.
 
@@ -54,13 +54,13 @@ warnings (dead ends, failed approaches), context (useful background), and open q
 
 The Librarian returns a structured briefing. Use it:
 
-| Section | What to do |
-|---------|-----------|
-| `constraints` | These are non-negotiable. Your design/plan must comply. |
-| `warnings` | Avoid these approaches. If you must use one, document why. |
-| `context` | Consider this background. May influence your approach. |
-| `open_questions` | Surface these to the user or document your resolution. |
-| `no_relevant_artifacts` | Proceed with confidence — no prior work constrains you here. |
+ | Section | What to do |
+ | --------- | ----------- |
+ | `constraints` | These are non-negotiable. Your design/plan must comply. |
+ | `warnings` | Avoid these approaches. If you must use one, document why. |
+ | `context` | Consider this background. May influence your approach. |
+ | `open_questions` | Surface these to the user or document your resolution. |
+ | `no_relevant_artifacts` | Proceed with confidence — no prior work constrains you here. |
 
 ## Example: DDAuthor Using This Skill
 

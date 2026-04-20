@@ -5,11 +5,12 @@
 **Created:** 2026-04-06  
 
 **Related Documents:**
-- [](artifacts/decisions/ADR-003-pure-boolean-state-graph-for-file-processing-pipeline.md) — 
-- [](artifacts/decisions/ADR-004-schema-refactor-v1-graph-normalization.md) — 
-- [](artifacts/decisions/ADR-020-rest-api-naming-convention-kebab-case-full-words.md) — 
-- [](support-debugger#L2,L3,L4,L5,L6,L7) — 
-- [](rnd-manager#L27,L28) — 
+
+- [](artifacts/decisions/ADR-003-pure-boolean-state-graph-for-file-processing-pipeline.md) —
+- [](artifacts/decisions/ADR-004-schema-refactor-v1-graph-normalization.md) —
+- [](artifacts/decisions/ADR-020-rest-api-naming-convention-kebab-case-full-words.md) —
+- [](support-debugger#L2,L3,L4,L5,L6,L7) —
+- [](rnd-manager#L27,L28) —
 
 ---
 
@@ -41,25 +42,25 @@ The scan state break (BREAK-5) requires an architectural decision about how scan
 
 #### BREAK-1: `/machine-learning/recent-activity` 500
 
-| Attribute | Detail |
-|-----------|--------|
-| **Root cause** | AQL `get_recently_processed` (queries.py:486–547) projects `scanned_at: file.scanned_at` in both RETURN blocks. `RecentFileItem` (ml_if.py:27–35) requires field `last_tagged_at: int` with no default. Pydantic `ValidationError` on every response. |
-| **Error chain** | AQL returns `{..., scanned_at: 1712345678}` → `RecentFileItem(**doc)` → missing `last_tagged_at` → ValidationError → caught by except-all → HTTP 500 |
-| **Impact** | Recent activity panel completely broken for all users. |
-| **Fix** | Rename AQL projection alias in both RETURN blocks: `scanned_at: file.scanned_at` → `last_tagged_at: file.scanned_at`. Update docstring `Returns:` section. Two one-word changes. |
-| **Files** | `nomarr/persistence/database/library_files_aql/queries.py` (lines ~522, ~540) |
-| **Complexity** | TRIVIAL |
+ | Attribute | Detail |
+ | ----------- | -------- |
+ | **Root cause** | AQL `get_recently_processed` (queries.py:486–547) projects `scanned_at: file.scanned_at` in both RETURN blocks. `RecentFileItem` (ml_if.py:27–35) requires field `last_tagged_at: int` with no default. Pydantic `ValidationError` on every response. |
+ | **Error chain** | AQL returns `{..., scanned_at: 1712345678}` → `RecentFileItem(**doc)` → missing `last_tagged_at` → ValidationError → caught by except-all → HTTP 500 |
+ | **Impact** | Recent activity panel completely broken for all users. |
+ | **Fix** | Rename AQL projection alias in both RETURN blocks: `scanned_at: file.scanned_at` → `last_tagged_at: file.scanned_at`. Update docstring `Returns:` section. Two one-word changes. |
+ | **Files** | `nomarr/persistence/database/library_files_aql/queries.py` (lines ~522, ~540) |
+ | **Complexity** | TRIVIAL |
 
 #### BREAK-2: `/library/file/search` 500
 
-| Attribute | Detail |
-|-----------|--------|
-| **Root cause** | V021 migration set `library_id: null` on all library_files documents (moved relationship to `library_contains_file` edge). `search_library_files_with_tags` AQL still does `RETURN MERGE(file, { tags: tags })` which includes `library_id: null`. Downstream: `_library_mapping.py:30` passes `None` → `library_types.py` calls `encode_id(None)` → `TypeError: argument of type 'NoneType' is not iterable`. |
-| **Error chain** | V021 nulls `library_id` → AQL returns `library_id: null` → mapping passes `None` to `encode_id()` → `TypeError` → HTTP 500 "Failed to search files" |
-| **Impact** | File search completely broken for all users. |
-| **Fix** | Add INBOUND edge lookup in AQL RETURN block: `LET lib_id = FIRST(FOR lib IN INBOUND file._id library_contains_file LIMIT 1 RETURN lib._id)`, then `RETURN MERGE(file, { tags: tags, library_id: lib_id })`. The `library_id: lib_id` in MERGE's second arg overrides the null from the file doc. |
-| **Files** | `nomarr/persistence/database/library_files_aql/queries.py` (search query RETURN block, ~line 462–479) |
-| **Complexity** | SMALL |
+ | Attribute | Detail |
+ | ----------- | -------- |
+ | **Root cause** | V021 migration set `library_id: null` on all library_files documents (moved relationship to `library_contains_file` edge). `search_library_files_with_tags` AQL still does `RETURN MERGE(file, { tags: tags })` which includes `library_id: null`. Downstream: `_library_mapping.py:30` passes `None` → `library_types.py` calls `encode_id(None)` → `TypeError: argument of type 'NoneType' is not iterable`. |
+ | **Error chain** | V021 nulls `library_id` → AQL returns `library_id: null` → mapping passes `None` to `encode_id()` → `TypeError` → HTTP 500 "Failed to search files" |
+ | **Impact** | File search completely broken for all users. |
+ | **Fix** | Add INBOUND edge lookup in AQL RETURN block: `LET lib_id = FIRST(FOR lib IN INBOUND file._id library_contains_file LIMIT 1 RETURN lib._id)`, then `RETURN MERGE(file, { tags: tags, library_id: lib_id })`. The `library_id: lib_id` in MERGE's second arg overrides the null from the file doc. |
+ | **Files** | `nomarr/persistence/database/library_files_aql/queries.py` (search query RETURN block, ~line 462–479) |
+ | **Complexity** | SMALL |
 
 ---
 
@@ -67,67 +68,67 @@ The scan state break (BREAK-5) requires an architectural decision about how scan
 
 #### BREAK-3: `get_files_with_incomplete_tags()` returns empty results
 
-| Attribute | Detail |
-|-----------|--------|
-| **Root cause** | `file_states_aql.py:902` has `FILTER file.library_id == @library_id` — but `library_id` is null on all library_files docs after V021. Filter never matches when `library_id` is provided. |
-| **Also** | Line ~933 returns `library_id: file.library_id` in results (always null). |
-| **Impact** | Any feature depending on "files with incomplete tags" in a specific library gets nothing. Affects calibration and tag writing workflows silently. |
-| **Fix** | Replace `FILTER file.library_id == @library_id` with edge-based library scoping. Change the query to start from `FOR file IN INBOUND @library_id library_contains_file` (filtering tagged files via the existing `file_has_state` subquery), then derive `library_id` from the bind var in the RETURN block. |
-| **Files** | `nomarr/persistence/database/file_states_aql.py` (~lines 890–940) |
-| **Complexity** | SMALL |
+ | Attribute | Detail |
+ | ----------- | -------- |
+ | **Root cause** | `file_states_aql.py:902` has `FILTER file.library_id == @library_id` — but `library_id` is null on all library_files docs after V021. Filter never matches when `library_id` is provided. |
+ | **Also** | Line ~933 returns `library_id: file.library_id` in results (always null). |
+ | **Impact** | Any feature depending on "files with incomplete tags" in a specific library gets nothing. Affects calibration and tag writing workflows silently. |
+ | **Fix** | Replace `FILTER file.library_id == @library_id` with edge-based library scoping. Change the query to start from `FOR file IN INBOUND @library_id library_contains_file` (filtering tagged files via the existing `file_has_state` subquery), then derive `library_id` from the bind var in the RETURN block. |
+ | **Files** | `nomarr/persistence/database/file_states_aql.py` (~lines 890–940) |
+ | **Complexity** | SMALL |
 
 #### BREAK-4: `get_all_tracks()` returns empty when library_id provided
 
-| Attribute | Detail |
-|-----------|--------|
-| **Root cause** | `tracks.py:105` has `FILTER f.library_id == @library_id` — same null `library_id` issue as BREAK-3. |
-| **Impact** | Navidrome integration and any track listing by library silently returns nothing. |
-| **Fix** | Same edge-traversal pattern. When `library_id` is provided, start with `FOR f IN OUTBOUND @library_id library_contains_file` instead of `FOR f IN library_files` with filter. When not provided, keep the current `FOR f IN library_files` scan. |
-| **Files** | `nomarr/persistence/database/library_files_aql/tracks.py` (~line 101–107) |
-| **Complexity** | SMALL |
+ | Attribute | Detail |
+ | ----------- | -------- |
+ | **Root cause** | `tracks.py:105` has `FILTER f.library_id == @library_id` — same null `library_id` issue as BREAK-3. |
+ | **Impact** | Navidrome integration and any track listing by library silently returns nothing. |
+ | **Fix** | Same edge-traversal pattern. When `library_id` is provided, start with `FOR f IN OUTBOUND @library_id library_contains_file` instead of `FOR f IN library_files` with filter. When not provided, keep the current `FOR f IN library_files` scan. |
+ | **Files** | `nomarr/persistence/database/library_files_aql/tracks.py` (~line 101–107) |
+ | **Complexity** | SMALL |
 
 #### BREAK-4b: `validate_unchanged_files()` returns empty when library_id provided
 
-| Attribute | Detail |
-|-----------|--------|
-| **Root cause** | `validate_scan_state_comp.py:87` has `FILTER file.library_id == @library_id` — same V021 null `library_id` pattern as BREAK-3/4. |
-| **Called from** | `scan_library_full_wf.py:315` during full library scans. |
-| **Impact** | Unchanged-file healing for short files silently stops matching during full scans. Files that haven't changed are not recognized as unchanged, defeating the optimization that skips re-processing. |
-| **Fix** | Same edge-traversal pattern: replace `FILTER file.library_id == @library_id` with `FOR file IN INBOUND @library_id library_contains_file` scoping. |
-| **Files** | `nomarr/components/library/validate_scan_state_comp.py` (~line 87) |
-| **Complexity** | SMALL |
+ | Attribute | Detail |
+ | ----------- | -------- |
+ | **Root cause** | `validate_scan_state_comp.py:87` has `FILTER file.library_id == @library_id` — same V021 null `library_id` pattern as BREAK-3/4. |
+ | **Called from** | `scan_library_full_wf.py:315` during full library scans. |
+ | **Impact** | Unchanged-file healing for short files silently stops matching during full scans. Files that haven't changed are not recognized as unchanged, defeating the optimization that skips re-processing. |
+ | **Fix** | Same edge-traversal pattern: replace `FILTER file.library_id == @library_id` with `FOR file IN INBOUND @library_id library_contains_file` scoping. |
+ | **Files** | `nomarr/components/library/validate_scan_state_comp.py` (~line 87) |
+ | **Complexity** | SMALL |
 
 #### BREAK-5: Scan state tracking broken
 
-| Attribute | Detail |
-|-----------|--------|
-| **Root cause** | `library_has_scan` edge is never created for libraries added after V021. Multiple contributing factors: (1) `library_admin_comp.create_library` doesn't initialize scan doc/edge; (2) `library_scans_aql.update_scan` UPSERTs scan doc but never creates edge; (3) `get_or_create_scan()` correctly creates both but is never called in production; (4) `list_libraries` AQL does `OUTBOUND lib library_has_scan` → no edge → scan=null → fallback "idle". |
-| **Error chain** | `create_library` → no scan init → first scan → `update_scan_progress` → `libraries.update_scan_status` → `library_scans.update_scan` → UPSERT doc only (no edge) → `list_libraries` traverses missing edge → scan=null → "idle" always |
-| **Impact** | `is_scanning=false`, `progress=0`, `status=idle`, `total=0` during active scans. Frontend never polls. Buttons re-enable immediately after scan start. |
-| **Files** | `nomarr/persistence/database/library_scans_aql.py`, `nomarr/persistence/database/libraries_aql.py`, `nomarr/components/library/library_admin_comp.py`, `nomarr/components/library/work_status_comp.py`, `nomarr/workflows/library/scan_setup_wf.py`, `nomarr/services/infrastructure/file_watcher_svc.py` |
-| **Complexity** | MEDIUM (requires architectural decision) |
-| **Additional readers** | Two additional scan_status readers must be migrated as part of this fix (see BREAK-5a and BREAK-5b below). |
+ | Attribute | Detail |
+ | ----------- | -------- |
+ | **Root cause** | `library_has_scan` edge is never created for libraries added after V021. Multiple contributing factors: (1) `library_admin_comp.create_library` doesn't initialize scan doc/edge; (2) `library_scans_aql.update_scan` UPSERTs scan doc but never creates edge; (3) `get_or_create_scan()` correctly creates both but is never called in production; (4) `list_libraries` AQL does `OUTBOUND lib library_has_scan` → no edge → scan=null → fallback "idle". |
+ | **Error chain** | `create_library` → no scan init → first scan → `update_scan_progress` → `libraries.update_scan_status` → `library_scans.update_scan` → UPSERT doc only (no edge) → `list_libraries` traverses missing edge → scan=null → "idle" always |
+ | **Impact** | `is_scanning=false`, `progress=0`, `status=idle`, `total=0` during active scans. Frontend never polls. Buttons re-enable immediately after scan start. |
+ | **Files** | `nomarr/persistence/database/library_scans_aql.py`, `nomarr/persistence/database/libraries_aql.py`, `nomarr/components/library/library_admin_comp.py`, `nomarr/components/library/work_status_comp.py`, `nomarr/workflows/library/scan_setup_wf.py`, `nomarr/services/infrastructure/file_watcher_svc.py` |
+ | **Complexity** | MEDIUM (requires architectural decision) |
+ | **Additional readers** | Two additional scan_status readers must be migrated as part of this fix (see BREAK-5a and BREAK-5b below). |
 
 #### BREAK-5a: `file_watcher_svc` startup recovery reads scan_status instead of pipeline_state
 
-| Attribute | Detail |
-|-----------|--------|
-| **Root cause** | `file_watcher_svc.py:207–215` startup recovery iterates `list_libraries()`, checks `lib.get("scan_status") == "scanning"`, and calls `update_scan_status(status="idle")`. This reads scan state from the scan document, not from pipeline_state. |
-| **Overlap** | `pipeline_svc.py:60–71` already recovers stale `PIPELINE_SCANNING` via pipeline state. These two recovery paths may be redundant. |
-| **Impact** | If scan_status diverges from pipeline_state (which it does when the edge is missing), startup recovery either resets a scan that pipeline_svc would also reset, or misses a scan that only pipeline_state knows about. |
-| **Fix** | Either: (a) migrate to read from `pipeline_state` instead of `scan_status`, OR (b) remove the recovery block entirely if `pipeline_svc` already covers the same case. Document whichever approach is chosen. |
-| **Files** | `nomarr/services/infrastructure/file_watcher_svc.py` (~lines 207–215) |
-| **Complexity** | SMALL |
+ | Attribute | Detail |
+ | ----------- | -------- |
+ | **Root cause** | `file_watcher_svc.py:207–215` startup recovery iterates `list_libraries()`, checks `lib.get("scan_status") == "scanning"`, and calls `update_scan_status(status="idle")`. This reads scan state from the scan document, not from pipeline_state. |
+ | **Overlap** | `pipeline_svc.py:60–71` already recovers stale `PIPELINE_SCANNING` via pipeline state. These two recovery paths may be redundant. |
+ | **Impact** | If scan_status diverges from pipeline_state (which it does when the edge is missing), startup recovery either resets a scan that pipeline_svc would also reset, or misses a scan that only pipeline_state knows about. |
+ | **Fix** | Either: (a) migrate to read from `pipeline_state` instead of `scan_status`, OR (b) remove the recovery block entirely if `pipeline_svc` already covers the same case. Document whichever approach is chosen. |
+ | **Files** | `nomarr/services/infrastructure/file_watcher_svc.py` (~lines 207–215) |
+ | **Complexity** | SMALL |
 
 #### BREAK-5b: `_is_scan_running()` reads scan_status
 
-| Attribute | Detail |
-|-----------|--------|
-| **Root cause** | `library_admin_comp.py:168` — `_is_scan_running()` checks `any(lib.get("scan_status") == "scanning" ...)`. Called from `clear_library_data()` at line 140. |
-| **Impact** | If pipeline_state becomes the source of truth for "is scanning" (per our dual-purpose split), this helper returns stale results. |
-| **Fix** | Migrate `_is_scan_running()` to check pipeline_state instead of scan_status. |
-| **Files** | `nomarr/components/library/library_admin_comp.py` (~line 168) |
-| **Complexity** | SMALL |
+ | Attribute | Detail |
+ | ----------- | -------- |
+ | **Root cause** | `library_admin_comp.py:168` — `_is_scan_running()` checks `any(lib.get("scan_status") == "scanning" ...)`. Called from `clear_library_data()` at line 140. |
+ | **Impact** | If pipeline_state becomes the source of truth for "is scanning" (per our dual-purpose split), this helper returns stale results. |
+ | **Fix** | Migrate `_is_scan_running()` to check pipeline_state instead of scan_status. |
+ | **Files** | `nomarr/components/library/library_admin_comp.py` (~line 168) |
+ | **Complexity** | SMALL |
 
 ---
 
@@ -135,13 +136,13 @@ The scan state break (BREAK-5) requires an architectural decision about how scan
 
 #### BREAK-6: Orphaned type models
 
-| Attribute | Detail |
-|-----------|--------|
-| **Root cause** | `admin_types.py` and `calibration_types.py` are exported in `nomarr/interfaces/api/types/__init__.py` but not imported by any active router after the restructure. |
-| **Fix** | Remove from `__init__.py` exports. Optionally delete the files. |
-| **Impact** | No runtime impact — dead code only. |
-| **Files** | `nomarr/interfaces/api/types/__init__.py`, `nomarr/interfaces/api/types/admin_types.py`, `nomarr/interfaces/api/types/calibration_types.py` |
-| **Complexity** | TRIVIAL |
+ | Attribute | Detail |
+ | ----------- | -------- |
+ | **Root cause** | `admin_types.py` and `calibration_types.py` are exported in `nomarr/interfaces/api/types/__init__.py` but not imported by any active router after the restructure. |
+ | **Fix** | Remove from `__init__.py` exports. Optionally delete the files. |
+ | **Impact** | No runtime impact — dead code only. |
+ | **Files** | `nomarr/interfaces/api/types/__init__.py`, `nomarr/interfaces/api/types/admin_types.py`, `nomarr/interfaces/api/types/calibration_types.py` |
+ | **Complexity** | TRIVIAL |
 
 ---
 
@@ -188,12 +189,12 @@ This approach keeps ADR-003's pure boolean state graph for state determination w
 
 **Goal**: Restore `/machine-learning/recent-activity` and `/library/file/search` to working state.
 
-| Step | File | Change |
-|------|------|--------|
-| 1a | `queries.py` ~line 522 | Rename `scanned_at:` → `last_tagged_at:` in first RETURN block |
-| 1b | `queries.py` ~line 540 | Same rename in second RETURN block |
-| 1c | `queries.py` ~line 490 | Update docstring Returns section |
-| 1d | `queries.py` ~line 462-479 | Add `LET lib_id = FIRST(FOR lib IN INBOUND file._id library_contains_file LIMIT 1 RETURN lib._id)` and update RETURN to include `library_id: lib_id` |
+ | Step | File | Change |
+ | ------ | ------ | -------- |
+ | 1a | `queries.py` ~line 522 | Rename `scanned_at:` → `last_tagged_at:` in first RETURN block |
+ | 1b | `queries.py` ~line 540 | Same rename in second RETURN block |
+ | 1c | `queries.py` ~line 490 | Update docstring Returns section |
+ | 1d | `queries.py` ~line 462-479 | Add `LET lib_id = FIRST(FOR lib IN INBOUND file._id library_contains_file LIMIT 1 RETURN lib._id)` and update RETURN to include `library_id: lib_id` |
 
 **Verification**: `GET /api/web/machine-learning/recent-activity?limit=5` returns 200 with `last_tagged_at` field. `GET /api/web/library/file/search?q=test` returns 200 with non-null `library_id` values.
 
@@ -201,12 +202,12 @@ This approach keeps ADR-003's pure boolean state graph for state determination w
 
 **Goal**: Fix all AQL queries that filter on `file.library_id` (now null after V021).
 
-| Step | File | Change |
-|------|------|--------|
-| 2a | `file_states_aql.py` ~line 897-905 | Replace `FILTER file.library_id == @library_id` with edge-based scoping: start from `FOR file IN INBOUND @library_id library_contains_file` |
-| 2b | `file_states_aql.py` ~line 933 | Fix RETURN to derive `library_id` from `@library_id` bind var |
-| 2c | `tracks.py` ~line 101-107 | When `library_id` provided, use `FOR f IN OUTBOUND @library_id library_contains_file` instead of filter on null field |
-| 2d | `validate_scan_state_comp.py` ~line 87 | Replace `FILTER file.library_id == @library_id` with edge-based scoping (same pattern as 2a) |
+ | Step | File | Change |
+ | ------ | ------ | -------- |
+ | 2a | `file_states_aql.py` ~line 897-905 | Replace `FILTER file.library_id == @library_id` with edge-based scoping: start from `FOR file IN INBOUND @library_id library_contains_file` |
+ | 2b | `file_states_aql.py` ~line 933 | Fix RETURN to derive `library_id` from `@library_id` bind var |
+ | 2c | `tracks.py` ~line 101-107 | When `library_id` provided, use `FOR f IN OUTBOUND @library_id library_contains_file` instead of filter on null field |
+ | 2d | `validate_scan_state_comp.py` ~line 87 | Replace `FILTER file.library_id == @library_id` with edge-based scoping (same pattern as 2a) |
 
 **Verification**: `get_files_with_incomplete_tags(library_id="libraries/X")` returns non-empty list for a library with tagged files. `get_all_tracks(library_id="libraries/X")` returns tracks. `validate_unchanged_files()` correctly identifies unchanged files during full scan.
 
@@ -214,15 +215,15 @@ This approach keeps ADR-003's pure boolean state graph for state determination w
 
 **Goal**: Fix scan state tracking per the dual-purpose split architecture above.
 
-| Step | File | Change |
-|------|------|--------|
-| 3a | `library_scans_aql.py:update_scan` | Add UPSERT for `library_has_scan` edge after scan doc UPSERT |
-| 3b | `library_admin_comp.py:create_library` | Call `db.library_scans.get_or_create_scan(library_id)` after library creation |
-| 3c | `work_status_comp.py:compute_work_status` | Derive `is_scanning` from `pipeline_states` param instead of `scan_status` field |
-| 3d | `scan_setup_wf.py` | Change `scan_status == "scanning"` guard to check pipeline state |
-| 3e | `libraries_aql.py` | Verify `list_libraries` and `get_library` AQL handle missing scan edge gracefully (already has fallback) |
-| 3f | `file_watcher_svc.py` ~lines 207-215 | Migrate startup recovery to read pipeline_state instead of scan_status, OR remove if redundant with `pipeline_svc.py:60-71` recovery. Requires investigation during implementation. |
-| 3g | `library_admin_comp.py:_is_scan_running` ~line 168 | Migrate `_is_scan_running()` to check pipeline_state instead of `scan_status` |
+ | Step | File | Change |
+ | ------ | ------ | -------- |
+ | 3a | `library_scans_aql.py:update_scan` | Add UPSERT for `library_has_scan` edge after scan doc UPSERT |
+ | 3b | `library_admin_comp.py:create_library` | Call `db.library_scans.get_or_create_scan(library_id)` after library creation |
+ | 3c | `work_status_comp.py:compute_work_status` | Derive `is_scanning` from `pipeline_states` param instead of `scan_status` field |
+ | 3d | `scan_setup_wf.py` | Change `scan_status == "scanning"` guard to check pipeline state |
+ | 3e | `libraries_aql.py` | Verify `list_libraries` and `get_library` AQL handle missing scan edge gracefully (already has fallback) |
+ | 3f | `file_watcher_svc.py` ~lines 207-215 | Migrate startup recovery to read pipeline_state instead of scan_status, OR remove if redundant with `pipeline_svc.py:60-71` recovery. Requires investigation during implementation. |
+ | 3g | `library_admin_comp.py:_is_scan_running` ~line 168 | Migrate `_is_scan_running()` to check pipeline_state instead of `scan_status` |
 
 **Verification**: Create new library → scan it → `GET /api/web/library` shows `scanStatus: "scanning"` and progress updates. `GET /api/web/machine-learning/work-status` shows `is_scanning: true` during scan. Frontend polls and disables buttons.
 
@@ -230,10 +231,10 @@ This approach keeps ADR-003's pure boolean state graph for state determination w
 
 **Goal**: Remove dead code.
 
-| Step | File | Change |
-|------|------|--------|
-| 4a | `nomarr/interfaces/api/types/__init__.py` | Remove `admin_types` and `calibration_types` imports/exports |
-| 4b | `admin_types.py`, `calibration_types.py` | Delete files (or keep as tombstones with deprecation comment) |
+ | Step | File | Change |
+ | ------ | ------ | -------- |
+ | 4a | `nomarr/interfaces/api/types/__init__.py` | Remove `admin_types` and `calibration_types` imports/exports |
+ | 4b | `admin_types.py`, `calibration_types.py` | Delete files (or keep as tombstones with deprecation comment) |
 
 **Verification**: `python -c "from nomarr.interfaces.api.types import *"` succeeds without importing dead modules. Lint passes.
 
@@ -270,21 +271,21 @@ This approach keeps ADR-003's pure boolean state graph for state determination w
 
 ## Files Changed (Complete Manifest)
 
-| File | Phases | Changes |
-|------|--------|---------|
-| `nomarr/persistence/database/library_files_aql/queries.py` | 1 | BREAK-1: Rename `scanned_at` → `last_tagged_at` alias (×2). BREAK-2: Add INBOUND edge lookup for `library_id` in search RETURN. |
-| `nomarr/persistence/database/file_states_aql.py` | 2 | BREAK-3: Replace `FILTER file.library_id` with edge-based scoping; fix RETURN `library_id`. |
-| `nomarr/persistence/database/library_files_aql/tracks.py` | 2 | BREAK-4: Replace `FILTER f.library_id` with edge traversal when `library_id` provided. |
-| `nomarr/persistence/database/library_scans_aql.py` | 3 | BREAK-5: Add `library_has_scan` edge UPSERT to `update_scan`. |
-| `nomarr/persistence/database/libraries_aql.py` | 3 | BREAK-5: Verify graceful fallback in `list_libraries`/`get_library` AQL (likely no change). |
-| `nomarr/components/library/library_admin_comp.py` | 3 | BREAK-5: Call `get_or_create_scan` after library creation. BREAK-5b: Migrate `_is_scan_running()` to check pipeline_state. |
-| `nomarr/components/library/work_status_comp.py` | 3 | BREAK-5: Derive `is_scanning` from `pipeline_states`, not `scan_status`. |
-| `nomarr/workflows/library/scan_setup_wf.py` | 3 | BREAK-5: Guard check reads pipeline state instead of `scan_status`. |
-| `nomarr/components/library/validate_scan_state_comp.py` | 2 | BREAK-4b: Replace `FILTER file.library_id == @library_id` with edge-based scoping. |
-| `nomarr/services/infrastructure/file_watcher_svc.py` | 3 | BREAK-5a: Migrate startup recovery scan_status reader to pipeline_state, or remove if redundant with pipeline_svc recovery. |
-| `nomarr/interfaces/api/types/__init__.py` | 4 | BREAK-6: Remove dead `admin_types`/`calibration_types` exports. |
-| `nomarr/interfaces/api/types/admin_types.py` | 4 | BREAK-6: Delete file. |
-| `nomarr/interfaces/api/types/calibration_types.py` | 4 | BREAK-6: Delete file. |
+ | File | Phases | Changes |
+ | ------ | -------- | --------- |
+ | `nomarr/persistence/database/library_files_aql/queries.py` | 1 | BREAK-1: Rename `scanned_at` → `last_tagged_at` alias (×2). BREAK-2: Add INBOUND edge lookup for `library_id` in search RETURN. |
+ | `nomarr/persistence/database/file_states_aql.py` | 2 | BREAK-3: Replace `FILTER file.library_id` with edge-based scoping; fix RETURN `library_id`. |
+ | `nomarr/persistence/database/library_files_aql/tracks.py` | 2 | BREAK-4: Replace `FILTER f.library_id` with edge traversal when `library_id` provided. |
+ | `nomarr/persistence/database/library_scans_aql.py` | 3 | BREAK-5: Add `library_has_scan` edge UPSERT to `update_scan`. |
+ | `nomarr/persistence/database/libraries_aql.py` | 3 | BREAK-5: Verify graceful fallback in `list_libraries`/`get_library` AQL (likely no change). |
+ | `nomarr/components/library/library_admin_comp.py` | 3 | BREAK-5: Call `get_or_create_scan` after library creation. BREAK-5b: Migrate `_is_scan_running()` to check pipeline_state. |
+ | `nomarr/components/library/work_status_comp.py` | 3 | BREAK-5: Derive `is_scanning` from `pipeline_states`, not `scan_status`. |
+ | `nomarr/workflows/library/scan_setup_wf.py` | 3 | BREAK-5: Guard check reads pipeline state instead of `scan_status`. |
+ | `nomarr/components/library/validate_scan_state_comp.py` | 2 | BREAK-4b: Replace `FILTER file.library_id == @library_id` with edge-based scoping. |
+ | `nomarr/services/infrastructure/file_watcher_svc.py` | 3 | BREAK-5a: Migrate startup recovery scan_status reader to pipeline_state, or remove if redundant with pipeline_svc recovery. |
+ | `nomarr/interfaces/api/types/__init__.py` | 4 | BREAK-6: Remove dead `admin_types`/`calibration_types` exports. |
+ | `nomarr/interfaces/api/types/admin_types.py` | 4 | BREAK-6: Delete file. |
+ | `nomarr/interfaces/api/types/calibration_types.py` | 4 | BREAK-6: Delete file. |
 
 ## Migration Requirements
 
@@ -294,18 +295,18 @@ One optional consideration: a lightweight healing query to create `library_has_s
 
 ## Verification Plan
 
-| Break | Test | Expected Result |
-|-------|------|-----------------|
-| BREAK-1 | `GET /api/web/machine-learning/recent-activity?limit=5` | 200, response items have `last_tagged_at` (integer) |
-| BREAK-2 | `GET /api/web/library/file/search?q=test` | 200, all items have non-null `library_id` |
-| BREAK-3 | Call `get_files_with_incomplete_tags(library_id="libraries/{key}")` for a library with tagged files | Non-empty result list with correct `library_id` values |
-| BREAK-4 | Call `get_all_tracks(library_id="libraries/{key}")` for a library with valid files | Non-empty track list |
-| BREAK-4b | Run full scan on library with unchanged files → check `validate_unchanged_files()` output | Non-empty result list of unchanged files |
-| BREAK-5 | Create new library → start scan → `GET /api/web/library` | `scanStatus: "scanning"`, `scanProgress > 0` during scan |
-| BREAK-5 | During scan → `GET /api/web/machine-learning/work-status` | `is_scanning: true`, `scanning_libraries` non-empty |
-| BREAK-6 | `python -c "from nomarr.interfaces.api.types import *"` | No import errors; `admin_types`/`calibration_types` symbols absent |
-| ALL | `python -m pytest tests/ -x` | All tests pass |
-| ALL | Lint passes (`ruff check nomarr/`) | Zero errors |
+ | Break | Test | Expected Result |
+ | ------- | ------ | ----------------- |
+ | BREAK-1 | `GET /api/web/machine-learning/recent-activity?limit=5` | 200, response items have `last_tagged_at` (integer) |
+ | BREAK-2 | `GET /api/web/library/file/search?q=test` | 200, all items have non-null `library_id` |
+ | BREAK-3 | Call `get_files_with_incomplete_tags(library_id="libraries/{key}")` for a library with tagged files | Non-empty result list with correct `library_id` values |
+ | BREAK-4 | Call `get_all_tracks(library_id="libraries/{key}")` for a library with valid files | Non-empty track list |
+ | BREAK-4b | Run full scan on library with unchanged files → check `validate_unchanged_files()` output | Non-empty result list of unchanged files |
+ | BREAK-5 | Create new library → start scan → `GET /api/web/library` | `scanStatus: "scanning"`, `scanProgress > 0` during scan |
+ | BREAK-5 | During scan → `GET /api/web/machine-learning/work-status` | `is_scanning: true`, `scanning_libraries` non-empty |
+ | BREAK-6 | `python -c "from nomarr.interfaces.api.types import *"` | No import errors; `admin_types`/`calibration_types` symbols absent |
+ | ALL | `python -m pytest tests/ -x` | All tests pass |
+ | ALL | Lint passes (`ruff check nomarr/`) | Zero errors |
 
 ## Verified Healthy (Not in Scope)
 

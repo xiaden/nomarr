@@ -11,13 +11,13 @@ Fetch playlists from streaming platforms, normalize metadata, and match tracks a
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|----------|
-| `url_parser_comp` | Extract platform and playlist ID from Spotify/Deezer URLs — handles web URLs, Spotify URIs, and Deezer short links |
-| `spotify_fetcher_comp` | Fetch Spotify playlists via `spotipy` (Client Credentials flow), handles pagination for 100+ track playlists |
-| `deezer_fetcher_comp` | Fetch Deezer playlists via public API (no auth required), resolves `link.deezer.com` short links |
-| `metadata_normalizer_comp` | Text normalization for matching — Unicode NFKC, strip featuring/remaster suffixes, remove punctuation, artist-specific "The" handling |
-| `track_matcher_comp` | Multi-strategy matching: ISRC exact → title+artist exact → fuzzy (token_sort_ratio). Returns confidence levels and ambiguity flags |
+ | Module | Purpose |
+ | -------- | ---------- |
+ | `url_parser_comp` | Extract platform and playlist ID from Spotify/Deezer URLs — handles web URLs, Spotify URIs, and Deezer short links |
+ | `spotify_fetcher_comp` | Fetch Spotify playlists via `spotipy` (Client Credentials flow), handles pagination for 100+ track playlists |
+ | `deezer_fetcher_comp` | Fetch Deezer playlists via public API (no auth required), resolves `link.deezer.com` short links |
+ | `metadata_normalizer_comp` | Text normalization for matching — Unicode NFKC, strip featuring/remaster suffixes, remove punctuation, artist-specific "The" handling |
+ | `track_matcher_comp` | Multi-strategy matching: ISRC exact → title+artist exact → fuzzy (token_sort_ratio). Returns confidence levels and ambiguity flags |
 
 ## Patterns
 

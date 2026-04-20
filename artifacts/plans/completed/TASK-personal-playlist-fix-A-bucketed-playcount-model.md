@@ -31,6 +31,7 @@ Since V019 (which created the current incorrect schema) has not been committed o
 ## Phases
 
 ### Phase 1: DTO + Persistence Rewrite
+
 - [x] Rename `last_played_ms` → `last_played` in `TrackPlayData` TypedDict in `nomarr/helpers/dto/navidrome_dto.py`. Update the docstring to reflect the new graph model (tracks → buckets, not users → tracks).
     **Notes:** Verified: `TrackPlayData.last_played` field exists in navidrome_dto.py with updated docstring describing bucketed model.
 - [x] Completely rewrite `NavidromePlaycountsOperations` in `nomarr/persistence/database/navidrome_playcounts_aql.py` for the bucketed model. Remove `ensure_user()` (no per-user vertices). New methods: (a) `upsert_play(user_id, nd_id, playcount, last_played)` — ensure bucket vertex `{playcount}:{userid}`, insert edge from track → bucket; (b) `increment_play(user_id, nd_id, timestamp_ms)` — find current edge for track+user via AQL join on `has_plays._to` → `navidrome_playcounts.userid`, delete old edge, ensure new bucket vertex `{old_playcount+1}:{userid}`, insert new edge with `last_played`; if no existing edge, create bucket `1:{userid}` + edge; (c) `bulk_upsert_plays(user_id, plays)` — for full sync: delete all existing `has_plays` edges for the user (find via bucket vertices with `userid == user_id`), upsert all needed bucket vertices in batch, insert all new edges in batch; (d) `get_top_plays(user_id, top_n)` — scan `navidrome_playcounts` filtered by `userid` sorted by `playcount DESC` (uses compound index), then `FOR track_v, edge IN 1..1 INBOUND bucket has_plays` to get tracks + `last_played` from edge, 2-hop to `library_files` via `has_nd_id`, limit to `top_n` total results.
@@ -39,6 +40,7 @@ Since V019 (which created the current incorrect schema) has not been committed o
     **Notes:** Lint verified by prior audit context.
 
 ### Phase 2: Bootstrap + V019 Rewrite
+
 - [x] Update `_create_graphs()` in `nomarr/components/platform/arango_bootstrap_comp.py`: reverse the `has_plays` edge definition from `from: ["navidrome_playcounts"], to: ["navidrome_tracks"]` to `from: ["navidrome_tracks"], to: ["navidrome_playcounts"]`.
     **Notes:** Verified: bootstrap `_create_graphs` has reversed edge direction — `from: navidrome_tracks, to: navidrome_playcounts`.
 - [x] Update `_create_indexes()` in `arango_bootstrap_comp.py`: replace the two `has_plays` indexes (`[_from, _to] unique`, `[_from]`) with: (a) `navidrome_playcounts` persistent index on `["userid", "playcount"]` (the performance-critical compound index); (b) `has_plays` persistent index on `["_from", "_to"]` unique; (c) `has_plays` persistent index on `["_to"]` (reverse lookup from bucket → tracks for INBOUND traversal).
@@ -49,6 +51,7 @@ Since V019 (which created the current incorrect schema) has not been committed o
     **Notes:** Lint verified by prior audit context.
 
 ### Phase 3: Workflow + Component Updates
+
 - [x] Update `ingest_scrobble_wf.py`: remove Step 3 (`db.navidrome_playcounts.ensure_user`). Step 4 (`increment_play`) signature is unchanged — just remove the ensure_user call.
     **Notes:** Verified: `ingest_scrobble_wf` has no `ensure_user` call. Uses `increment_play` directly at Step 3.
 - [x] Update `sync_navidrome_wf.py`: replace Step 5 (ensure_user + batched `bulk_upsert_play_edges`) with a single call to `db.navidrome_playcounts.bulk_upsert_plays(user_id, play_edges)`. Update the `play_edges` dict structure: rename `last_played_ms` key to `last_played` in the list comprehension that builds play edge dicts from crawled songs.
@@ -59,6 +62,7 @@ Since V019 (which created the current incorrect schema) has not been committed o
     **Notes:** 3 residual `last_played_ms` references remain in `CrawledSong` TypedDict (subsonic_crawl_comp.py) and its consumer (sync_navidrome_wf.py). These are internal to the crawl→sync boundary and being addressed by TASK-personal-playlist-dto-formalization. `ensure_user` has zero hits.
 
 ## Completion Criteria
+
 - `navidrome_playcounts` vertices use bucketed `_key: "{playcount}:{userid}"` model
 - `has_plays` edges reversed: `navidrome_tracks/{nd_id}` → `navidrome_playcounts/{playcount}:{userid}`
 - `last_played` on edge (not vertex), `playcount` + `userid` on vertex
@@ -73,6 +77,7 @@ Since V019 (which created the current incorrect schema) has not been committed o
 - No remaining references to `last_played_ms` or `ensure_user` in `nomarr/`
 
 ## References
+
 - Current persistence: `nomarr/persistence/database/navidrome_playcounts_aql.py`
 - Bootstrap: `nomarr/components/platform/arango_bootstrap_comp.py` (`_create_indexes`, `_create_graphs`)
 - V019 migration: `nomarr/migrations/V019_navidrome_graph_model.py` (rewrite in-place)

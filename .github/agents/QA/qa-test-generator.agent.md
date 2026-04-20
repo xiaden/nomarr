@@ -70,6 +70,7 @@ read_module_source("nomarr.persistence.database.foo_aql.delete_foo")
 ```
 
 What you need to know:
+
 - Method signature and types (your test needs to call it correctly)
 - Dependencies (what you'll need to mock)
 - Return values and exceptions (what you'll assert on)
@@ -84,6 +85,7 @@ find_file("test_*.py", "tests/persistence/database/")
 ```
 
 Your tests should be indistinguishable from what's already there. Match:
+
 - Import patterns and fixture usage
 - Assertion style and naming conventions
 - Test class grouping (if used)
@@ -154,6 +156,7 @@ runTests(path="tests/persistence/database/test_foo_aql.py::test_delete_foo_succe
 ```
 
 If a test fails, investigate and fix it. Common causes:
+
 - Wrong mock setup (missing return value, wrong method path)
 - Incorrect assertion (expected value doesn't match actual behavior)
 - Missing fixture or import
@@ -212,21 +215,25 @@ lintErrors: 0
 Each layer has its own mocking boundaries. Getting these right is the difference between a test that proves something and a test that proves nothing.
 
 ### Persistence Tests
+
 - Mock the `Database` object
 - Test AQL query construction and document transformation
 - Test error handling (not found, duplicate key)
 
 ### Workflow Tests
+
 - Mock component dependencies via DI
 - Test orchestration logic and error propagation
 - Test transaction boundaries
 
 ### Component Tests
+
 - Test domain logic in isolation
 - Mock external services (API clients, ML models)
 - Cover edge cases thoroughly
 
 ### Interface Tests
+
 - Test request validation and response serialization
 - Test auth/permissions
 - Use TestClient for FastAPI

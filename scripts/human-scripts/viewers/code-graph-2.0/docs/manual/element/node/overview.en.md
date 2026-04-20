@@ -19,18 +19,18 @@ G6 provides a variety of built-in node types, **which can be used directly witho
 
 <image width="300" src="https://mdn.alipayobjects.com/huamei_qa8qxu/afts/img/A*TZt2S7Z0d-8AAAAAAAAAAAAADmJ7AQ/original" />
 
-| Node Type      | Registration Name | Description                                     |
+| Node Type | Registration Name | Description |
 | -------------- | ----------------- | ----------------------------------------------- |
-| Circle Node    | `circle`          | Commonly used for entities                      |
-| Rectangle Node | `rect`            | Suitable for more text and details              |
-| Ellipse Node   | `ellipse`         | A variant of the circle                         |
-| Diamond Node   | `diamond`         | Often used for decision points or special nodes |
-| Triangle Node  | `triangle`        | Can indicate direction or special marks         |
-| Hexagon Node   | `hexagon`         | Suitable for grid layouts and honeycomb charts  |
-| Star Node      | `star`            | Highlights important nodes                      |
-| Donut Node     | `donut`           | Can display proportions or progress             |
-| Image Node     | `image`           | Uses an image as the node body                  |
-| HTML Node      | `html`            | Supports custom HTML content                    |
+| Circle Node | `circle` | Commonly used for entities |
+| Rectangle Node | `rect` | Suitable for more text and details |
+| Ellipse Node | `ellipse` | A variant of the circle |
+| Diamond Node | `diamond` | Often used for decision points or special nodes |
+| Triangle Node | `triangle` | Can indicate direction or special marks |
+| Hexagon Node | `hexagon` | Suitable for grid layouts and honeycomb charts |
+| Star Node | `star` | Highlights important nodes |
+| Donut Node | `donut` | Can display proportions or progress |
+| Image Node | `image` | Uses an image as the node body |
+| HTML Node | `html` | Supports custom HTML content |
 
 ### 3D Nodes
 
@@ -65,15 +65,15 @@ Unlike built-in nodes, **custom nodes need to be registered before use**. For de
 
 When defining nodes, you need to add a `nodes` field to the graph's data object. Each node is an object with the following structure:
 
-| Property | Description                                                                                                                             | Type           | Default | Required |
+| Property | Description | Type | Default | Required |
 | -------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------- | -------- |
-| id       | Unique identifier for the node, used to distinguish different nodes                                                                     | string         | -       | ✓        |
-| type     | Node type, either a built-in node type name or a custom node name                                                                       | string         | -       |          |
-| data     | Node data, used to store custom data such as the node's name, description, etc. Can be accessed via callback functions in style mapping | object         | -       |          |
-| style    | Node style, including visual attributes like position, size, color, etc.                                                                | object         | -       |          |
-| states   | Initial states of the node, such as selected, active, hover, etc.                                                                       | string[]       | -       |          |
-| combo    | The ID of the combo to which the node belongs, used to organize hierarchical relationships. If none, it is null                         | string \| null | -       |          |
-| children | Collection of child node IDs, used only in tree graph scenarios                                                                         | string[]       | -       |          |
+| id | Unique identifier for the node, used to distinguish different nodes | string | - | ✓ |
+| type | Node type, either a built-in node type name or a custom node name | string | - | |
+| data | Node data, used to store custom data such as the node's name, description, etc. Can be accessed via callback functions in style mapping | object | - | |
+| style | Node style, including visual attributes like position, size, color, etc. | object | - | |
+| states | Initial states of the node, such as selected, active, hover, etc. | string[] | - | |
+| combo | The ID of the combo to which the node belongs, used to organize hierarchical relationships. If none, it is null | string \| null | - | |
+| children | Collection of child node IDs, used only in tree graph scenarios | string[] | - | |
 
 An example of a data item in the `nodes` array:
 

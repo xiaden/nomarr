@@ -61,83 +61,83 @@ Controls the number of times forces are applied in each calculation:
 
 ## Options
 
-| Property        | Description                                        | Type                                       | Default    | Required |
+| Property | Description | Type | Default | Required |
 | --------------- | -------------------------------------------------- | ------------------------------------------ | ---------- | -------- |
-| type            | Layout type                                        | string                                     | 'd3-force' | ✓        |
-| nodeSize        | Node size (diameter), for collision detection      | number \| ((node, index, nodes) => number) | -          |          |
-| iterations      | Number of force iterations, higher is more precise | number                                     | -          |          |
-| onTick          | Callback for each iteration, for real-time results | (data: LayoutMapping) => void              | -          |          |
-| forceSimulation | Custom force simulation, defaults to d3.js method  | Simulation<NodeDatum, EdgeDatum>           | -          |          |
-| randomSource    | Function to generate random numbers                | () => number                               | -          |          |
+| type | Layout type | string | 'd3-force' | ✓ |
+| nodeSize | Node size (diameter), for collision detection | number \| ((node, index, nodes) => number) | - | |
+| iterations | Number of force iterations, higher is more precise | number | - | |
+| onTick | Callback for each iteration, for real-time results | (data: LayoutMapping) => void | - | |
+| forceSimulation | Custom force simulation, defaults to d3.js method | Simulation<NodeDatum, EdgeDatum> | - | |
+| randomSource | Function to generate random numbers | () => number | - | |
 
 ### Iteration Control
 
-| Property      | Description                                          | Type   | Default | Required |
+| Property | Description | Type | Default | Required |
 | ------------- | ---------------------------------------------------- | ------ | ------- | -------- |
-| alpha         | Current convergence threshold, controls activity     | number | 1       |          |
-| alphaMin      | Minimum threshold to stop, when alpha < this, stop   | number | 0.001   |          |
-| alphaDecay    | Decay rate of alpha, [0, 1], 0.028 ≈ 300 iterations  | number | 0.028   |          |
-| alphaTarget   | Target alpha, system tries to converge to this value | number | 0       |          |
-| velocityDecay | Velocity decay factor, higher means slower movement  | number | 0.4     |          |
+| alpha | Current convergence threshold, controls activity | number | 1 | |
+| alphaMin | Minimum threshold to stop, when alpha < this, stop | number | 0.001 | |
+| alphaDecay | Decay rate of alpha, [0, 1], 0.028 ≈ 300 iterations | number | 0.028 | |
+| alphaTarget | Target alpha, system tries to converge to this value | number | 0 | |
+| velocityDecay | Velocity decay factor, higher means slower movement | number | 0.4 | |
 
 ### Force Model Options
 
 #### Link Force (link)
 
-| Property        | Description                                  | Type                                       | Default     | Required |
+| Property | Description | Type | Default | Required |
 | --------------- | -------------------------------------------- | ------------------------------------------ | ----------- | -------- |
-| link.id         | Function to generate edge id                 | (edge, index, edges) => string             | (e) => e.id |          |
-| link.distance   | Ideal edge length                            | number \| ((edge, index, edges) => number) | 30          |          |
-| link.strength   | Force strength, higher means closer to ideal | number \| ((edge, index, edges) => number) | 1           |          |
-| link.iterations | Number of link force iterations              | number                                     | 1           |          |
+| link.id | Function to generate edge id | (edge, index, edges) => string | (e) => e.id | |
+| link.distance | Ideal edge length | number \| ((edge, index, edges) => number) | 30 | |
+| link.strength | Force strength, higher means closer to ideal | number \| ((edge, index, edges) => number) | 1 | |
+| link.iterations | Number of link force iterations | number | 1 | |
 
 #### Many-Body Force (manyBody)
 
-| Property             | Description                                                     | Type                                       | Default  | Required |
+| Property | Description | Type | Default | Required |
 | -------------------- | --------------------------------------------------------------- | ------------------------------------------ | -------- | -------- |
-| manyBody.strength    | Force strength, negative for repulsion, positive for attraction | number \| ((node, index, nodes) => number) | -30      |          |
-| manyBody.theta       | Barnes-Hut accuracy, smaller is more accurate                   | number                                     | 0.9      |          |
-| manyBody.distanceMin | Minimum distance, prevents excessive force                      | number                                     | 1        |          |
-| manyBody.distanceMax | Maximum distance, beyond which no force is applied              | number                                     | Infinity |          |
+| manyBody.strength | Force strength, negative for repulsion, positive for attraction | number \| ((node, index, nodes) => number) | -30 | |
+| manyBody.theta | Barnes-Hut accuracy, smaller is more accurate | number | 0.9 | |
+| manyBody.distanceMin | Minimum distance, prevents excessive force | number | 1 | |
+| manyBody.distanceMax | Maximum distance, beyond which no force is applied | number | Infinity | |
 
 #### Center Force (center)
 
-| Property        | Description                                   | Type   | Default | Required |
+| Property | Description | Type | Default | Required |
 | --------------- | --------------------------------------------- | ------ | ------- | -------- |
-| center.x        | Center x coordinate                           | number | 0       |          |
-| center.y        | Center y coordinate                           | number | 0       |          |
-| center.strength | Force strength, higher means closer to center | number | 1       |          |
+| center.x | Center x coordinate | number | 0 | |
+| center.y | Center y coordinate | number | 0 | |
+| center.strength | Force strength, higher means closer to center | number | 1 | |
 
 #### Collision Force (collide)
 
-| Property           | Description                                     | Type                                       | Default | Required |
+| Property | Description | Type | Default | Required |
 | ------------------ | ----------------------------------------------- | ------------------------------------------ | ------- | -------- |
-| collide.radius     | Collision radius, nodes repel if closer         | number \| ((node, index, nodes) => number) | 10      |          |
-| collide.strength   | Force strength, higher means stronger repulsion | number                                     | 1       |          |
-| collide.iterations | Number of collision iterations                  | number                                     | 1       |          |
+| collide.radius | Collision radius, nodes repel if closer | number \| ((node, index, nodes) => number) | 10 | |
+| collide.strength | Force strength, higher means stronger repulsion | number | 1 | |
+| collide.iterations | Number of collision iterations | number | 1 | |
 
 #### Radial Force (radial)
 
-| Property        | Description                                   | Type                                       | Default | Required |
+| Property | Description | Type | Default | Required |
 | --------------- | --------------------------------------------- | ------------------------------------------ | ------- | -------- |
-| radial.strength | Force strength, higher means closer to radius | number \| ((node, index, nodes) => number) | 0.1     |          |
-| radial.radius   | Target radius, nodes are attracted to circle  | number \| ((node, index, nodes) => number) | 100     |          |
-| radial.x        | Center x coordinate                           | number                                     | 0       |          |
-| radial.y        | Center y coordinate                           | number                                     | 0       |          |
+| radial.strength | Force strength, higher means closer to radius | number \| ((node, index, nodes) => number) | 0.1 | |
+| radial.radius | Target radius, nodes are attracted to circle | number \| ((node, index, nodes) => number) | 100 | |
+| radial.x | Center x coordinate | number | 0 | |
+| radial.y | Center y coordinate | number | 0 | |
 
 #### X Axis Force (x)
 
-| Property   | Description                               | Type                                       | Default | Required |
+| Property | Description | Type | Default | Required |
 | ---------- | ----------------------------------------- | ------------------------------------------ | ------- | -------- |
-| x.strength | Force strength in x direction             | number \| ((node, index, nodes) => number) | -       |          |
-| x.x        | Target x coordinate, nodes attracted here | number \| ((node, index, nodes) => number) | -       |          |
+| x.strength | Force strength in x direction | number \| ((node, index, nodes) => number) | - | |
+| x.x | Target x coordinate, nodes attracted here | number \| ((node, index, nodes) => number) | - | |
 
 #### Y Axis Force (y)
 
-| Property   | Description                               | Type                                       | Default | Required |
+| Property | Description | Type | Default | Required |
 | ---------- | ----------------------------------------- | ------------------------------------------ | ------- | -------- |
-| y.strength | Force strength in y direction             | number \| ((node, index, nodes) => number) | -       |          |
-| y.y        | Target y coordinate, nodes attracted here | number \| ((node, index, nodes) => number) | -       |          |
+| y.strength | Force strength in y direction | number \| ((node, index, nodes) => number) | - | |
+| y.y | Target y coordinate, nodes attracted here | number \| ((node, index, nodes) => number) | - | |
 
 ## Code Examples
 

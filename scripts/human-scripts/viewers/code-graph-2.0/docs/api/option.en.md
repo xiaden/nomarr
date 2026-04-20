@@ -46,9 +46,9 @@ setOptions(options: GraphOptions): void;
 
 **Parameters**
 
-| Parameter | Description               | Type                                    | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ------------------------- | --------------------------------------- | ------- | -------- |
-| options   | New configuration options | [GraphOptions](/en/manual/graph/option) | -       | ✓        |
+| options | New configuration options | [GraphOptions](/en/manual/graph/option) | - | ✓ |
 
 **Note**
 

@@ -15,6 +15,7 @@ Nomarr uses a unified discovery-based worker system for background ML processing
 All workers are identical `DiscoveryWorker` processes. There are no separate scanner, calibration, or queue workers.
 
 **Worker loop:**
+
 1. Query `library_files` for next unprocessed file (`needs_tagging=1`)
 2. Claim file by inserting a deterministic claim document into `worker_claims`
 3. Process file using `process_file_workflow` (ONNX backbone + heads → tags)
@@ -23,6 +24,7 @@ All workers are identical `DiscoveryWorker` processes. There are no separate sca
 6. Repeat immediately (no sleep between files; sleep only when idle)
 
 Each worker:
+
 - Runs in a separate Python process (`multiprocessing.Process`)
 - Creates its own `Database` connection (process isolation)
 - Reports health via OS pipe to `HealthMonitorService` (see [Health System](health.md))
@@ -46,10 +48,10 @@ Nomarr also uses an in-process **Background Task Service (BTS)** for lightweight
 
 This is **not** the same as the multiprocessing worker system documented above:
 
-| Mechanism | Runtime model | Best for |
-|-----------|---------------|----------|
-| `BackgroundTaskService` | `threading.Thread` in the API process | Short-to-medium in-process background work, such as write-tags dispatch |
-| `DiscoveryWorker` pool | `multiprocessing.Process` subprocesses | Isolated ML file processing, claim-based discovery, and crash recovery |
+ | Mechanism | Runtime model | Best for |
+ | ----------- | --------------- | ---------- |
+ | `BackgroundTaskService` | `threading.Thread` in the API process | Short-to-medium in-process background work, such as write-tags dispatch |
+ | `DiscoveryWorker` pool | `multiprocessing.Process` subprocesses | Isolated ML file processing, claim-based discovery, and crash recovery |
 
 Use BTS when the task should share the application's existing services and process state. Use worker processes when the task needs isolation, separate process lifecycle management, or the full discovery/claim pipeline.
 
@@ -70,13 +72,13 @@ task = ManagedTask(
 
 `ManagedTask` fields:
 
-| Field | Purpose |
-|-------|---------|
-| `task_id` | Stable identifier used for deduplication, cancellation, and polling |
-| `fn` | Zero-argument callable executed on the background thread; prefer `functools.partial(...)` when you need to bind arguments |
-| `stop_event` | Cooperative cancellation signal checked by the task at safe checkpoints |
-| `on_complete` | Optional callback invoked after successful completion |
-| `daemon` | Whether the thread runs as a daemon; BTS tasks default to `True` |
+ | Field | Purpose |
+ | ------- | --------- |
+ | `task_id` | Stable identifier used for deduplication, cancellation, and polling |
+ | `fn` | Zero-argument callable executed on the background thread; prefer `functools.partial(...)` when you need to bind arguments |
+ | `stop_event` | Cooperative cancellation signal checked by the task at safe checkpoints |
+ | `on_complete` | Optional callback invoked after successful completion |
+ | `daemon` | Whether the thread runs as a daemon; BTS tasks default to `True` |
 
 ### Canonical Dispatch Example: Write-Tags
 
@@ -181,16 +183,17 @@ file_id = discover_and_claim_file(
 
 **Claim mechanism** uses constructor-backed `db.worker_claims` accessors via the `Database` facade:
 
-| Operation | Constructor accessor | Description |
-|-----------|----------------------|-------------|
-| Claim file | `worker_claims.insert([claim_doc])` | Insert claim with deterministic `_key` (atomic uniqueness) |
-| Release claim | `worker_claims.file_id.delete(file_id)` | Delete claim after processing |
-| Get claim | `worker_claims.file_id.get(file_id)` | Check if file is claimed |
-| Worker claims | `worker_claims.worker_id.get.many(worker_id, limit=worker_claims.count())` | All claims held by a worker |
-| Release all | `worker_claims.delete([claim["_id"] for claim in claims])` | Release all claims (crash recovery) |
-| Cleanup stale | `worker_claims.get.many.by_filter({}, limit=None)` + `worker_claims.delete(...)` | Enumerate claims via constructor verbs, filter stale rows in component code, then delete by `_id` |
+ | Operation | Constructor accessor | Description |
+ | ----------- | ---------------------- | ------------- |
+ | Claim file | `worker_claims.insert([claim_doc])` | Insert claim with deterministic `_key` (atomic uniqueness) |
+ | Release claim | `worker_claims.file_id.delete(file_id)` | Delete claim after processing |
+ | Get claim | `worker_claims.file_id.get(file_id)` | Check if file is claimed |
+ | Worker claims | `worker_claims.worker_id.get.many(worker_id, limit=worker_claims.count())` | All claims held by a worker |
+ | Release all | `worker_claims.delete([claim["_id"] for claim in claims])` | Release all claims (crash recovery) |
+ | Cleanup stale | `worker_claims.get.many.by_filter({}, limit=None)` + `worker_claims.delete(...)` | Enumerate claims via constructor verbs, filter stale rows in component code, then delete by `_id` |
 
 **Claim document structure:**
+
 ```json
 {
   "_key": "claim_{file_key}",
@@ -201,6 +204,7 @@ file_id = discover_and_claim_file(
 ```
 
 **Key properties:**
+
 - **Deterministic `_key`:** Based on file `_key`; ArangoDB uniqueness prevents duplicate claims
 - **One claim per file:** Only one worker can process a file at a time
 - **Ephemeral:** Represents active work, not scheduled work; deleted after processing
@@ -221,6 +225,7 @@ For each claimed file:
 ### 4. Idle Behavior
 
 When no work is found:
+
 - Sleep for 1 second between polls (`IDLE_SLEEP_S`)
 - After 40 seconds idle (`CACHE_IDLE_TIMEOUT_S`), evict ONNX model cache to free VRAM
 - After enough idle polls, spawn background vector promotion thread
@@ -270,6 +275,7 @@ Crash recovery is coordinated between `HealthMonitorService` and `WorkerSystemSe
 ### Detection
 
 `HealthMonitorService` detects worker death via:
+
 - **Pipe closure:** Worker process exits → pipe EOF → immediate `dead` status
 - **Staleness:** Worker stops sending health frames → `healthy` → `unhealthy` → `dead` (after `max_consecutive_misses`)
 - **Startup timeout:** Worker never sends first frame → `pending` → `dead`
@@ -290,6 +296,7 @@ When `HealthMonitorService` transitions a worker to `dead`, it calls `WorkerSyst
 ### Restart Policy
 
 Restart decisions use `should_restart_worker(restart_count, last_restart_wall_ms)` which returns:
+
 - `action="restart"` with `backoff_seconds` (exponential backoff)
 - `action="mark_failed"` with `failure_reason` (restart limit exceeded)
 
@@ -298,6 +305,7 @@ Restart decisions use `should_restart_worker(restart_count, last_restart_wall_ms
 ### Claim Recovery
 
 When a worker crashes mid-file:
+
 - Its claim document remains in `worker_claims`
 - `WorkerSystemService.on_status_change("dead")` immediately releases the claim
 - The file returns to `needs_tagging=1` state and becomes rediscoverable
@@ -315,17 +323,17 @@ Manages the worker pool lifecycle and implements `ComponentLifecycleHandler` for
 
 ### Key Methods
 
-| Method | Purpose |
-|--------|--------|
-| `start_all_workers()` | Admission control → tier selection → spawn workers |
-| `stop_all_workers(timeout)` | Graceful shutdown with force-kill fallback |
-| `disable_worker_system()` | Disable processing, stop workers |
-| `enable_worker_system()` | Enable processing, start workers |
-| `is_running()` | Check if any workers are running |
-| `get_workers_status()` | Worker pool status dict |
-| `get_resource_status()` | GPU/CPU tier and capacity info |
-| `cleanup_stale_claims()` | Remove orphaned claims |
-| `on_status_change(...)` | Health callback → restart/fail decisions |
+ | Method | Purpose |
+ | -------- | -------- |
+ | `start_all_workers()` | Admission control → tier selection → spawn workers |
+ | `stop_all_workers(timeout)` | Graceful shutdown with force-kill fallback |
+ | `disable_worker_system()` | Disable processing, stop workers |
+ | `enable_worker_system()` | Enable processing, start workers |
+ | `is_running()` | Check if any workers are running |
+ | `get_workers_status()` | Worker pool status dict |
+ | `get_resource_status()` | GPU/CPU tier and capacity info |
+ | `cleanup_stale_claims()` | Remove orphaned claims |
+ | `on_status_change(...)` | Health callback → restart/fail decisions |
 
 ### Admission Control
 
@@ -362,36 +370,40 @@ docker logs nomarr 2>&1 | grep "worker:discovery:0"
 ### Common Issues
 
 **Worker stuck in `pending`:**
+
 - ONNX model loading can take 30–60s on first run
 - Check GPU accessibility (`nvidia-smi` in container)
 - Startup timeout (`startup_timeout_s=60.0` default) will transition to `dead` automatically
 
 **Worker keeps crashing:**
+
 - Check logs for specific file paths causing crashes
 - Verify VRAM availability (effnet backbone requires significant GPU memory)
 - Check restart count via `worker_restart_policy` collection
 - Inspect problematic files with `ffprobe`
 
 **Workers not processing files:**
+
 - Verify `worker_enabled=True` (check `/api/v1/info`)
 - Ensure files exist in `library_files` with tagging state needing processing
 - Check worker is `healthy` (health pipe active)
 - Check for orphaned claims: query `worker_claims` collection
 
 **Consecutive error shutdown:**
+
 - After 10 consecutive errors (`MAX_CONSECUTIVE_ERRORS`), worker shuts down
 - Check logs for the error pattern and fix root cause
 - Worker will be restarted by health system (if within restart limits)
 
 ### Exit Codes
 
-| Code | Meaning |
-|------|--------|
-| `0` | Clean exit |
-| `1` | Uncaught exception |
-| `130` | SIGINT (Ctrl+C) |
-| `137` | SIGKILL |
-| `143` | SIGTERM |
+ | Code | Meaning |
+ | ------ | -------- |
+ | `0` | Clean exit |
+ | `1` | Uncaught exception |
+ | `130` | SIGINT (Ctrl+C) |
+ | `137` | SIGKILL |
+ | `143` | SIGTERM |
 
 ---
 

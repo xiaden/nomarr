@@ -41,18 +41,18 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Property        | Description                                                                                                                                                                                            | Type   | Default Value   | Required |
+| Property | Description | Type | Default Value | Required |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | --------------- | -------- |
-| type            | Plugin type, used to identify the plugin as an edge bundling plugin                                                                                                                                    | string | `edge-bundling` | ✓        |
-| key             | Unique identifier for the plugin, can be used to get the plugin instance or update plugin options                                                                                                      | string | -               |          |
-| bundleThreshold | Edge compatibility threshold, determines which edges should be bundled together, the larger the value, the fewer edges are bundled, [example](#bundlethreshold)                                        | number | 0.6             |          |
-| cycles          | Number of simulation cycles, controls the number of execution rounds of the edge bundling simulation                                                                                                   | number | 6               |          |
-| divisions       | Initial number of cut points, in subsequent cycles, the number of cut points will gradually increase according to divRate, affecting the degree of edge subdivision                                    | number | 1               |          |
-| divRate         | Growth rate of cut points, determines the growth rate of cut points in each cycle                                                                                                                      | number | 2               |          |
-| iterations      | Specifies the number of iterations executed in the first cycle, in subsequent cycles, the number of iterations will gradually decrease according to iterRate, affecting the accuracy of the simulation | number | 90              |          |
-| iterRate        | Iteration decrement rate, controls the reduction ratio of iterations in each cycle                                                                                                                     | number | 2/3             |          |
-| K               | Edge strength, affects the attraction and repulsion between edges, [example](#k)                                                                                                                       | number | 0.1             |          |
-| lambda          | Initial step size, in subsequent cycles, the step size will double increment, affecting the magnitude of node movement during edge bundling                                                            | number | 0.1             |          |
+| type | Plugin type, used to identify the plugin as an edge bundling plugin | string | `edge-bundling` | ✓ |
+| key | Unique identifier for the plugin, can be used to get the plugin instance or update plugin options | string | - | |
+| bundleThreshold | Edge compatibility threshold, determines which edges should be bundled together, the larger the value, the fewer edges are bundled, [example](#bundlethreshold) | number | 0.6 | |
+| cycles | Number of simulation cycles, controls the number of execution rounds of the edge bundling simulation | number | 6 | |
+| divisions | Initial number of cut points, in subsequent cycles, the number of cut points will gradually increase according to divRate, affecting the degree of edge subdivision | number | 1 | |
+| divRate | Growth rate of cut points, determines the growth rate of cut points in each cycle | number | 2 | |
+| iterations | Specifies the number of iterations executed in the first cycle, in subsequent cycles, the number of iterations will gradually decrease according to iterRate, affecting the accuracy of the simulation | number | 90 | |
+| iterRate | Iteration decrement rate, controls the reduction ratio of iterations in each cycle | number | 2/3 | |
+| K | Edge strength, affects the attraction and repulsion between edges, [example](#k) | number | 0.1 | |
+| lambda | Initial step size, in subsequent cycles, the step size will double increment, affecting the magnitude of node movement during edge bundling | number | 0.1 | |
 
 ### bundleThreshold
 

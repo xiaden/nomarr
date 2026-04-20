@@ -12,14 +12,14 @@ Database bootstrap, GPU monitoring, migration execution, and resource tracking.
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|----------|
-| `arango_bootstrap_comp` | `wait_for_arango` (connection retry loop), `ensure_schema` (frozen baseline — collections, indexes, graphs), per-backbone vector collection creation |
-| `arango_first_run_comp` | First-run provisioning — create database, generate app password, detect fresh installs vs. existing config |
-| `migration_runner_comp` | Discover migration modules, validate version chains, apply pending migrations with two-phase recording, detect schema version mismatches |
-| `gpu_probe_comp` | Single-shot `nvidia-smi` subprocess check — fail-fast GPU availability detection without importing CUDA libraries |
-| `gpu_monitor_comp` | `GPUHealthMonitor` (multiprocessing.Process) — continuous GPU probing with heartbeat frames sent to HealthMonitorService |
-| `resource_monitor_comp` | VRAM/RAM telemetry with TTL caching, budget-based headroom checks, cgroup-aware RAM detection for Docker containers |
+ | Module | Purpose |
+ | -------- | ---------- |
+ | `arango_bootstrap_comp` | `wait_for_arango` (connection retry loop), `ensure_schema` (frozen baseline — collections, indexes, graphs), per-backbone vector collection creation |
+ | `arango_first_run_comp` | First-run provisioning — create database, generate app password, detect fresh installs vs. existing config |
+ | `migration_runner_comp` | Discover migration modules, validate version chains, apply pending migrations with two-phase recording, detect schema version mismatches |
+ | `gpu_probe_comp` | Single-shot `nvidia-smi` subprocess check — fail-fast GPU availability detection without importing CUDA libraries |
+ | `gpu_monitor_comp` | `GPUHealthMonitor` (multiprocessing.Process) — continuous GPU probing with heartbeat frames sent to HealthMonitorService |
+ | `resource_monitor_comp` | VRAM/RAM telemetry with TTL caching, budget-based headroom checks, cgroup-aware RAM detection for Docker containers |
 
 ## Patterns
 

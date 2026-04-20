@@ -158,7 +158,7 @@ If a Smart Playlist is not showing up in the Navidrome UI, check the following:
 - Check the logs for any errors during the library scan.
 - Ensure the `.nsp` file is in the correct folder and has the correct permissions.
 - Ensure the file is correctly formatted and does not contain any syntax errors. Tip: Use a JSON validator to check
-  the file (ex: https://jsonlint.com/)
+  the file (ex: <https://jsonlint.com/>)
 - Check the playlist's visibility and ownership settings.
 
 ### Referencing Other Playlists
@@ -200,54 +200,54 @@ The list of tracks in a Smart Playlist is read-only and cannot be edited directl
 
 Here's a table of fields you can use in your Smart Playlists:
 
-| Field                  | Description                              |
+| Field | Description |
 | ---------------------- | ---------------------------------------- |
-| `title`                | Track title                              |
-| `album`                | Album name                               |
-| `hascoverart`          | Track has cover art                      |
-| `tracknumber`          | Track number                             |
-| `discnumber`           | Disc number                              |
-| `year`                 | Year of release                          |
-| `date`                 | Recording date                           |
-| `originalyear`         | Original year                            |
-| `originaldate`         | Original date                            |
-| `releaseyear`          | Release year                             |
-| `releasedate`          | Release date                             |
-| `size`                 | File size                                |
-| `compilation`          | Compilation album                        |
-| `dateadded`            | Date added to library                    |
-| `datemodified`         | Date modified                            |
-| `discsubtitle`         | Disc subtitle                            |
-| `comment`              | Comment                                  |
-| `lyrics`               | Lyrics                                   |
-| `sorttitle`            | Sorted track title                       |
-| `sortalbum`            | Sorted album name                        |
-| `sortartist`           | Sorted artist name                       |
-| `sortalbumartist`      | Sorted album artist name                 |
-| `albumtype`            | Album type                               |
-| `albumcomment`         | Album comment                            |
-| `catalognumber`        | Catalog number                           |
-| `filepath`             | File path, relative to the MusicFolder   |
-| `filetype`             | File type                                |
-| `grouping`             | Grouping                                 |
-| `duration`             | Track duration                           |
-| `bitrate`              | Bitrate                                  |
-| `bitdepth`             | Bit depth                                |
-| `bpm`                  | Beats per minute                         |
-| `channels`             | Audio channels                           |
-| `loved`                | Track is loved                           |
-| `dateloved`            | Date track was loved                     |
-| `lastplayed`           | Date track was last played               |
-| `daterated`            | Date track was lrated                    |
-| `playcount`            | Number of times track was played         |
-| `rating`               | Track rating                             |
-| `mbz_album_id`         | MusicBrainz Album ID                     |
-| `mbz_album_artist_id`  | MusicBrainz Album Artist ID              |
-| `mbz_artist_id`        | MusicBrainz Artist ID                    |
-| `mbz_recording_id`     | MusicBrainz Recording ID                 |
-| `mbz_release_track_id` | MusicBrainz Release Track ID             |
-| `mbz_release_group_id` | MusicBrainz Release Group ID             |
-| `library_id`           | Library ID (for multi-library filtering) |
+| `title` | Track title |
+| `album` | Album name |
+| `hascoverart` | Track has cover art |
+| `tracknumber` | Track number |
+| `discnumber` | Disc number |
+| `year` | Year of release |
+| `date` | Recording date |
+| `originalyear` | Original year |
+| `originaldate` | Original date |
+| `releaseyear` | Release year |
+| `releasedate` | Release date |
+| `size` | File size |
+| `compilation` | Compilation album |
+| `dateadded` | Date added to library |
+| `datemodified` | Date modified |
+| `discsubtitle` | Disc subtitle |
+| `comment` | Comment |
+| `lyrics` | Lyrics |
+| `sorttitle` | Sorted track title |
+| `sortalbum` | Sorted album name |
+| `sortartist` | Sorted artist name |
+| `sortalbumartist` | Sorted album artist name |
+| `albumtype` | Album type |
+| `albumcomment` | Album comment |
+| `catalognumber` | Catalog number |
+| `filepath` | File path, relative to the MusicFolder |
+| `filetype` | File type |
+| `grouping` | Grouping |
+| `duration` | Track duration |
+| `bitrate` | Bitrate |
+| `bitdepth` | Bit depth |
+| `bpm` | Beats per minute |
+| `channels` | Audio channels |
+| `loved` | Track is loved |
+| `dateloved` | Date track was loved |
+| `lastplayed` | Date track was last played |
+| `daterated` | Date track was lrated |
+| `playcount` | Number of times track was played |
+| `rating` | Track rating |
+| `mbz_album_id` | MusicBrainz Album ID |
+| `mbz_album_artist_id` | MusicBrainz Album Artist ID |
+| `mbz_artist_id` | MusicBrainz Artist ID |
+| `mbz_recording_id` | MusicBrainz Recording ID |
+| `mbz_release_track_id` | MusicBrainz Release Track ID |
+| `mbz_release_group_id` | MusicBrainz Release Group ID |
+| `library_id` | Library ID (for multi-library filtering) |
 
 ##### Notes
 
@@ -283,23 +283,23 @@ Check the [Custom Tags](/docs/usage/configuration/custom-tags) for more informat
 
 Here's a table of operators you can use in your Smart Playlists:
 
-| Operator        | Description              | Argument type                     |
+| Operator | Description | Argument type |
 | --------------- | ------------------------ | --------------------------------- |
-| `is`            | Equal                    | String, Number, Boolean           |
-| `isNot`         | Not equal                | String, Number, Boolean           |
-| `gt`            | Greater than             | Number                            |
-| `lt`            | Less than                | Number                            |
-| `contains`      | Contains                 | String                            |
-| `notContains`   | Does not contain         | String                            |
-| `startsWith`    | Starts with              | String                            |
-| `endsWith`      | Ends with                | String                            |
-| `inTheRange`    | In the range (inclusive) | Array of two numbers or dates     |
-| `before`        | Before                   | Date (`"YYYY-MM-DD"`)             |
-| `after`         | After                    | Date (`"YYYY-MM-DD"`)             |
-| `inTheLast`     | In the last              | Number of days                    |
-| `notInTheLast`  | Not in the last          | Number of days                    |
-| `inPlaylist`    | In playlist              | Another playlist's ID (see below) |
-| `notInPlaylist` | Not in playlist          | Another playlist's ID (see below) |
+| `is` | Equal | String, Number, Boolean |
+| `isNot` | Not equal | String, Number, Boolean |
+| `gt` | Greater than | Number |
+| `lt` | Less than | Number |
+| `contains` | Contains | String |
+| `notContains` | Does not contain | String |
+| `startsWith` | Starts with | String |
+| `endsWith` | Ends with | String |
+| `inTheRange` | In the range (inclusive) | Array of two numbers or dates |
+| `before` | Before | Date (`"YYYY-MM-DD"`) |
+| `after` | After | Date (`"YYYY-MM-DD"`) |
+| `inTheLast` | In the last | Number of days |
+| `notInTheLast` | Not in the last | Number of days |
+| `inPlaylist` | In playlist | Another playlist's ID (see below) |
+| `notInPlaylist` | Not in playlist | Another playlist's ID (see below) |
 
 The nature of the field determines the argument type. For example, `year` and `tracknumber` require a number,
 while `title` and `album` require a string.

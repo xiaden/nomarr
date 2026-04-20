@@ -17,7 +17,7 @@ Below are some example configurations that you can refer to when building your p
 npm install webpack webpack-cli --save-dev
 ```
 
-2. Refer to the following `webpack.config.js` for configuration:
+1. Refer to the following `webpack.config.js` for configuration:
 
 ```js
 const path = require('path');
@@ -32,7 +32,7 @@ module.exports = {
 };
 ```
 
-3. Run the build command:
+1. Run the build command:
 
 ```bash
 npx webpack
@@ -51,7 +51,7 @@ npx webpack
 npm install babel-loader@8 @babel/preset-env @open-wc/webpack-import-meta-loader --save-dev
 ```
 
-2. Modify the `webpack.config.js` configuration:
+1. Modify the `webpack.config.js` configuration:
 
 <embed src="@/common/manual/feature/webpack4.md"></embed>
 :::
@@ -68,7 +68,7 @@ npm install babel-loader@8 @babel/preset-env @open-wc/webpack-import-meta-loader
 npm install rollup @rollup/plugin-commonjs @rollup/plugin-node-resolve --save-dev
 ```
 
-2. Refer to the following `rollup.config.js` for configuration:
+1. Refer to the following `rollup.config.js` for configuration:
 
 ```js
 const commonjs = require('@rollup/plugin-commonjs');
@@ -85,7 +85,7 @@ module.exports = {
 };
 ```
 
-3. Run the build command:
+1. Run the build command:
 
 ```bash
 npx rollup -c
@@ -99,7 +99,7 @@ npx rollup -c
 npm install esbuild --save-dev
 ```
 
-2. Run the build command:
+1. Run the build command:
 
 ```bash
 npx esbuild src/index.ts --bundle --outfile=dist/index.js

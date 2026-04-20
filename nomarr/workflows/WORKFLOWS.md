@@ -134,11 +134,13 @@ def process_file_workflow(
 ### When to Extract
 
 **Extract to a component if:**
+
 - The workflow does non-trivial computation itself
 - Complex branching is embedded in the workflow
 - The logic is reusable across workflows
 
 **Split into smaller workflows if:**
+
 - The workflow exceeds the size limit
 - It has large, reusable sub-sequences
 - Multiple user stories live in one file
@@ -148,6 +150,7 @@ def process_file_workflow(
 ## 5. Boundaries & Import Rules
 
 **Allowed:**
+
 - ✅ Components (`nomarr.components.*`)
 - ✅ Other workflows (`nomarr.workflows.*`) — lateral imports
 - ✅ Helpers (`nomarr.helpers.*`)
@@ -155,6 +158,7 @@ def process_file_workflow(
 - ✅ Standard library, numpy, etc.
 
 **Forbidden:**
+
 - ❌ Services (`nomarr.services.*`)
 - ❌ Interfaces (`nomarr.interfaces.*`)
 - ❌ `nomarr.app`
@@ -215,11 +219,11 @@ def cleanup_workflow(db: Database, library_id: str) -> CleanupResult:
 
 ## 7. Anti-Patterns
 
-| Anti-Pattern | Why It's Wrong | Fix |
-|---|---|---|
-| Complex computation in workflow | Logic belongs in components | Extract to component |
-| Calling `db.tags.*`, `db.libraries.*` | Only components access persistence | Pass `db` to component function |
-| Importing services | Violates layer direction | Services call workflows, not reverse |
-| Importing Pydantic models | Interface concern only | Use DTOs from `helpers/dto/` |
-| Returning raw dicts | Untyped, fragile contract | Return a DTO |
-| Reading env vars / global config | Hidden dependency | Accept config as parameter |
+ | Anti-Pattern | Why It's Wrong | Fix |
+ | --- | --- | --- |
+ | Complex computation in workflow | Logic belongs in components | Extract to component |
+ | Calling `db.tags.*`, `db.libraries.*` | Only components access persistence | Pass `db` to component function |
+ | Importing services | Violates layer direction | Services call workflows, not reverse |
+ | Importing Pydantic models | Interface concern only | Use DTOs from `helpers/dto/` |
+ | Returning raw dicts | Untyped, fragile contract | Return a DTO |
+ | Reading env vars / global config | Hidden dependency | Accept config as parameter |

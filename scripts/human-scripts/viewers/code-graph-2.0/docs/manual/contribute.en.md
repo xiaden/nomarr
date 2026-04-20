@@ -3,7 +3,7 @@ title: contribute
 order: 14
 ---
 
-To contribute, you need to understand G6's code structure and development workflow. The code repository for G6 is located at: https://github.com/antvis/G6
+To contribute, you need to understand G6's code structure and development workflow. The code repository for G6 is located at: <https://github.com/antvis/G6>
 
 If you want to fix a bug or add a new feature, you need to first fork a copy of the code to your repository, then make modifications in your repository, and finally submit a Pull Request (PR) to the G6 repository.
 
@@ -65,15 +65,15 @@ If you want to fix a bug or add a new feature, you need to first fork a copy of 
               <ul>
                 <li>
                   animations
-                  <small>Animation Executors and Built-in Animations</small>   
+                  <small>Animation Executors and Built-in Animations</small>
                 </li>
                 <li>
                   behaviors
-                  <small>Built-in Interactions</small>   
+                  <small>Built-in Interactions</small>
                 </li>
                 <li>
                   constants
-                  <small>Constants and Enumeration Values</small>   
+                  <small>Constants and Enumeration Values</small>
                 </li>
                 <li>
                   elements
@@ -99,47 +99,47 @@ If you want to fix a bug or add a new feature, you need to first fork a copy of 
                 </li>
                 <li>
                   layouts
-                  <small>Layout References and Encapsulation</small>   
+                  <small>Layout References and Encapsulation</small>
                 </li>
                 <li>
                   palettes
-                  <small>Built-in Palettes</small>   
+                  <small>Built-in Palettes</small>
                 </li>
                 <li>
                   plugins
-                  <small>Built-in Plugins</small>   
+                  <small>Built-in Plugins</small>
                 </li>
                 <li>
                   registry
-                  <small>Registry Module</small>   
+                  <small>Registry Module</small>
                 </li>
                 <li>
                   runtime
-                  <small>Graph and Core Controller</small>   
+                  <small>Graph and Core Controller</small>
                 </li>
                 <li>
                   spec
-                  <small>Specification Type Definitions</small>   
+                  <small>Specification Type Definitions</small>
                 </li>
                 <li>
                   themes
-                  <small>Built-in Themes</small>   
+                  <small>Built-in Themes</small>
                 </li>
                 <li>
                   transforms
-                  <small>Built-in Data Transformations</small>   
+                  <small>Built-in Data Transformations</small>
                 </li>
                 <li>
                   types
-                  <small>Type Definitions</small>   
+                  <small>Type Definitions</small>
                 </li>
                 <li>
                   utils
-                  <small>Utility Functions</small>   
+                  <small>Utility Functions</small>
                 </li>
                 <li>
                   exports.ts
-                  <small>Export Items</small>   
+                  <small>Export Items</small>
                 </li>
                 <li>
                   preset.ts
@@ -227,7 +227,7 @@ cd /path/to/your/workspace
 git clone git@github.com:[your username]/G6.git
 ```
 
-2. Install Dependencies
+1. Install Dependencies
 
 :::warning{title=Warning}
 Please ensure your local environment meets the following requirements:
@@ -245,7 +245,7 @@ cd G6
 pnpm install
 ```
 
-3. Start the Development Environment
+1. Start the Development Environment
 
 ```bash
 # Enter the g6 code directory.
@@ -255,9 +255,9 @@ cd ./packages/g6
 pnpm dev
 ```
 
-At this point, you can access G6's development environment and preview the examples by visiting http://127.0.0.1:8080 in your web browser.
+At this point, you can access G6's development environment and preview the examples by visiting <http://127.0.0.1:8080> in your web browser.
 
-4. Develop New Features or Fix Bugs
+1. Develop New Features or Fix Bugs
 
 Switch to a development branch:
 
@@ -267,7 +267,7 @@ git checkout -b [branch name]
 
 Make code modifications according to your needs and test locally.
 
-5. Write Test Cases
+1. Write Test Cases
 
 In the `packages/g6/__tests__/unit` directory, write test cases to ensure your code behaves as expected.
 
@@ -277,7 +277,7 @@ Validate Your Code with Tests：
 pnpm test
 ```
 
-6. Submit a Pull Request (PR)
+1. Submit a Pull Request (PR)
 
 ```bash
 # Stage changes

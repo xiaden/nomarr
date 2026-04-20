@@ -23,9 +23,9 @@ Applicable scenarios:
 
 > If the element has specific attributes, we will list them below. For all general style attributes, see [BaseNode](/en/manual/element/node/base-node)
 
-| Attribute | Description                                                           | Type   | Default                            | Required |
+| Attribute | Description | Type | Default | Required |
 | --------- | --------------------------------------------------------------------- | ------ | ---------------------------------- | -------- |
-| innerR    | Inner radius, the distance from the star's center to the inner vertex | number | Default is 3/8 of the outer radius |
+| innerR | Inner radius, the distance from the star's center to the inner vertex | number | Default is 3/8 of the outer radius |
 
 Structure Description:
 

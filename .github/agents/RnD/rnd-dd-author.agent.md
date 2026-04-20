@@ -61,6 +61,7 @@ task:
 ### 1. Gather Artifact Context
 
 Before researching the codebase, spawn **Support-Librarian** with the feature scope to find:
+
 - ADRs that constrain the design
 - Prior dead ends and failed approaches
 - Existing design docs in the same area
@@ -71,6 +72,7 @@ Incorporate the briefing into your research and design. Constraints from ADRs ar
 ### 2. Understand Requirements
 
 Parse the requirements. Identify:
+
 - **Core capability:** What does this enable that doesn't exist today?
 - **User-facing behavior:** What does the user see or do differently?
 - **System boundaries:** Backend? Frontend? Plugin? External integration?
@@ -83,6 +85,7 @@ List ambiguities explicitly. If critical decisions are missing, return `status: 
 Design docs that ignore existing patterns produce plans that violate architecture. This step isn't optional.
 
 Use MCP tools to discover:
+
 - **Existing patterns** for similar features — how the codebase already solves adjacent problems
 - **Module APIs** that this feature will extend or call
 - **Layer boundaries** — where does this code belong?
@@ -107,9 +110,9 @@ Structure the design document:
 ## Architecture
 
 ### Layer Mapping
-| Component | Layer | Responsibility |
-|-----------|-------|----------------|
-| ... | ... | ... |
+ | Component | Layer | Responsibility | 
+ | ----------- | ------- | ---------------- | 
+ | ... | ... | ... | 
 
 ### Data Model
 {New collections, edge types, document shapes}
@@ -133,6 +136,7 @@ Structure the design document:
 ### 5. Validate Design
 
 Before finalizing, verify against the codebase:
+
 - [ ] Every component maps to a valid layer
 - [ ] No upward imports implied (workflows don't call services, etc.)
 - [ ] New APIs follow existing naming conventions
@@ -180,13 +184,13 @@ You are the primary ADR author on this project. Design decisions made here const
 
 ### When to Log
 
-| Situation | Category |
-|-----------|----------|
-| Research reveals unexpected codebase patterns | `discovery` |
-| You choose between design approaches | `decision` |
-| Requirements are ambiguous and you interpret them | `observation` + tag `uncertainty` |
-| A design direction won't work | `dead-end` |
-| Research findings that ground the design | `research` |
+ | Situation | Category |
+ | ----------- | ---------- |
+ | Research reveals unexpected codebase patterns | `discovery` |
+ | You choose between design approaches | `decision` |
+ | Requirements are ambiguous and you interpret them | `observation` + tag `uncertainty` |
+ | A design direction won't work | `dead-end` |
+ | Research findings that ground the design | `research` |
 
 ### When to Create ADRs
 

@@ -9,6 +9,7 @@ applyTo: nomarr/components/**
 **Purpose:** Contain heavy, domain-specific logic (analytics, tagging, ML, etc.).
 
 Components are the **workhorses** that do the real computational work:
+
 - ML inference and embeddings
 - Tag aggregation and resolution
 - Statistical analysis
@@ -107,10 +108,12 @@ def load_audio_mono(file_path: str, sample_rate: int = 16000) -> np.ndarray:
 **`path_comp` is the sole authority for `LibraryPath` construction.**
 
 All raw user paths and DB paths must flow through:
+
 - `build_library_path_from_input()` — for API/CLI/user-provided paths
 - `build_library_path_from_db()` — for paths retrieved from database
 
 Components are responsible for:
+
 - Calling factory functions before any filesystem access
 - Checking `path.is_valid()` before proceeding
 - Never accepting raw path strings where `LibraryPath` exists

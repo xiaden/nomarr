@@ -5,11 +5,12 @@
 **Created:** 2026-04-06  
 
 **Related Documents:**
-- [ADR-003: Pure Boolean State Graph for File Processing Pipeline](artifacts/decisions/ADR-003-pure-boolean-state-graph-for-file-processing-pipeline.md) — 
-- [ADR-004: Schema Refactor V1 — Graph Normalization](artifacts/decisions/ADR-004-schema-refactor-v1-graph-normalization.md) — 
-- [DD: Discovery Worker ERR 1579 Fix](artifacts/designs/pending/DD-discovery-worker-err1579-fix.md) — 
-- [DD: File State Graph Completion](artifacts/designs/completed/DD-file-state-graph-completion.md) — 
-- [DD: Schema Refactor V1](artifacts/designs/completed/DD-schema-refactor-v1.md) — 
+
+- [ADR-003: Pure Boolean State Graph for File Processing Pipeline](artifacts/decisions/ADR-003-pure-boolean-state-graph-for-file-processing-pipeline.md) —
+- [ADR-004: Schema Refactor V1 — Graph Normalization](artifacts/decisions/ADR-004-schema-refactor-v1-graph-normalization.md) —
+- [DD: Discovery Worker ERR 1579 Fix](artifacts/designs/pending/DD-discovery-worker-err1579-fix.md) —
+- [DD: File State Graph Completion](artifacts/designs/completed/DD-file-state-graph-completion.md) —
+- [DD: Schema Refactor V1](artifacts/designs/completed/DD-schema-refactor-v1.md) —
 
 ---
 
@@ -31,9 +32,9 @@ The existing `tests/unit/test_aql_safety.py` provides static read-after-write de
 
 Additionally, the persistence test infrastructure has two gaps:
 
-4. **Duplicated mock fixtures.** Six test files in `tests/unit/persistence/database/` copy-paste an identical `mock_db` fixture (~8 lines each). No shared `conftest.py` exists. (Service-level test files also define `mock_db` fixtures, but those are structurally different and out of scope — see Constraints.)
+1. **Duplicated mock fixtures.** Six test files in `tests/unit/persistence/database/` copy-paste an identical `mock_db` fixture (~8 lines each). No shared `conftest.py` exists. (Service-level test files also define `mock_db` fixtures, but those are structurally different and out of scope — see Constraints.)
 
-5. **Zero test coverage on `VectorsTrackHotOperations` / `VectorsTrackColdOperations`.** These classes use dynamic collection names via f-strings and cannot be validated by static string extraction alone.
+2. **Zero test coverage on `VectorsTrackHotOperations` / `VectorsTrackColdOperations`.** These classes use dynamic collection names via f-strings and cannot be validated by static string extraction alone.
 
 ---
 
@@ -42,6 +43,7 @@ Additionally, the persistence test infrastructure has two gaps:
 ## Phase 1: F-String AQL Inventory Scan
 
 ### What It Does
+
 Adds a new test to `tests/unit/test_aql_safety.py` that enumerates ALL f-string AQL calls (`ast.JoinedStr` nodes inside `aql.execute()` calls), extracts each interpolated expression, and validates it against an allowlist of known-safe patterns.
 
 ### Implementation Approach
@@ -59,6 +61,7 @@ Adds a new test to `tests/unit/test_aql_safety.py` that enumerates ALL f-string 
 
 **Variable provenance resolution:**
 The visitor must maintain a dict of `{var_name: ast_node}` for `ast.Assign` / `ast.AnnAssign` nodes within each function body. When `aql.execute(query)` references a name, look it up in this dict. Only single-assignment, same-function-scope resolution is needed — no cross-function or cross-module tracing. This covers the actual codebase patterns:
+
 - `file_states_aql.py:902` (built) → `:941` (executed)
 - `library_files_aql/crud.py:310` (built) → `:316` (executed)
 - `tags_aql/queries.py:67` (built) → `:105` (executed)
@@ -66,65 +69,68 @@ The visitor must maintain a dict of `{var_name: ast_node}` for `ast.Assign` / `a
 
 **Safe interpolation taxonomy:**
 
-| Pattern ID | Description | Example Variables | Classification |
-|------------|-------------|-------------------|----------------|
-| `collection_name` | Attribute access `self.collection_name` or local variable `collection_name` | `self.collection_name`, `collection_name` | Safe — dynamic vector collection |
-| `integer_param` | Integer/float literal or typed-integer parameter | `nprobe`, `limit` | Safe — numeric value |
-| `limit_clause` | Clause built from integer limit/offset | `limit_clause` (e.g., `f"LIMIT {limit}"`) | Safe — numeric derivation |
-| `sort_clause` | Clause built from validated sort parameters | `sort_clause` (built from `order_by` list) | Safe — controlled construction |
-| `filter_clause` | Filter built from validated field names and bind-var references | `filter_clause`, `filter_block`, `library_filter`, `library_filter_clause` | Safe — controlled string construction |
-| `field_assignments` | Field assignment string built from dict keys | `field_assignments` (e.g., `", ".join(...)`) | Safe — controlled dict keys |
-| `conditional_fragment` | Ternary or conditional AQL fragment (empty string or hardcoded sub-query) | `f"{'LET lib_match = ...' if library_id else ''}"` | Safe — hardcoded alternatives |
-| `operator` | Operator from a safe map | `op` (e.g., `==`, `!=`, `IN`) | Safe — closed set |
+ | Pattern ID | Description | Example Variables | Classification |
+ | ------------ | ------------- | ------------------- | ---------------- |
+ | `collection_name` | Attribute access `self.collection_name` or local variable `collection_name` | `self.collection_name`, `collection_name` | Safe — dynamic vector collection |
+ | `integer_param` | Integer/float literal or typed-integer parameter | `nprobe`, `limit` | Safe — numeric value |
+ | `limit_clause` | Clause built from integer limit/offset | `limit_clause` (e.g., `f"LIMIT {limit}"`) | Safe — numeric derivation |
+ | `sort_clause` | Clause built from validated sort parameters | `sort_clause` (built from `order_by` list) | Safe — controlled construction |
+ | `filter_clause` | Filter built from validated field names and bind-var references | `filter_clause`, `filter_block`, `library_filter`, `library_filter_clause` | Safe — controlled string construction |
+ | `field_assignments` | Field assignment string built from dict keys | `field_assignments` (e.g., `", ".join(...)`) | Safe — controlled dict keys |
+ | `conditional_fragment` | Ternary or conditional AQL fragment (empty string or hardcoded sub-query) | `f"{'LET lib_match = ...' if library_id else ''}"` | Safe — hardcoded alternatives |
+ | `operator` | Operator from a safe map | `op` (e.g., `==`, `!=`, `IN`) | Safe — closed set |
 
 **Concrete f-string sites found in research (32 total):**
 
-| File | Line | Interpolation(s) | Classification | Execution |
-|------|------|-------------------|----------------|-----------|
-| `vectors_track_aql.py` | 82 | `{collection_name}` | `collection_name` | inline |
-| `vectors_track_aql.py` | 205 | `{collection_name}` | `collection_name` | inline |
-| `vectors_track_aql.py` | 248 | `{collection_name}` | `collection_name` | inline |
-| `vectors_track_aql.py` | 291 | `{self.collection_name}` | `collection_name` | inline |
-| `vectors_track_aql.py` | 415 | `{self.collection_name}` + `{nprobe}` | `collection_name` + `integer_param` | inline |
-| `vectors_track_aql.py` | 471 | `{self.collection_name}` + `{nprobe}` | `collection_name` + `integer_param` | inline |
-| `vectors_track_aql.py` | 503 | `{self.collection_name}` | `collection_name` | inline |
-| `vectors_track_aql.py` | 529 | `{collection_name}` | `collection_name` | inline |
-| `vectors_track_aql.py` | 572 | `{collection_name}` | `collection_name` | inline |
-| `file_states_aql.py` | 902 | `{library_filter}` | `filter_clause` | var → :941 |
-| `libraries_aql.py` | 157 | `{filter_clause}` | `filter_clause` | inline |
-| `library_files_aql/crud.py` | 310 | `{field_assignments}` | `field_assignments` | var → :316 |
-| `library_files_aql/queries.py` | 252 | `{filter_clause}` | `filter_clause` | var → :258 |
-| `library_files_aql/queries.py` | 263 | `{filter_clause}` | `filter_clause` | var → :265 |
-| `library_files_aql/queries.py` | 274 | `{filter_clause}` | `filter_clause` | var → :278 |
-| `library_files_aql/queries.py` | 284 | `{filter_clause}` | `filter_clause` | var → :286 |
-| `library_files_aql/queries.py` | 439 | `{filter_clause}` | `filter_clause` | inline |
-| `library_files_aql/queries.py` | 457 | `{filter_clause}` | `filter_clause` | inline |
-| `library_files_aql/tracks.py` | 53+57 | `{sort_clause}` + `{limit_clause}` | `sort_clause` + `limit_clause` | inline |
-| `library_files_aql/tracks.py` | 105 | `{library_filter}` | `filter_clause` | var → :112 |
-| `tags_aql/analytics.py` | 44 | `{conditional library_filter}` | `conditional_fragment` | var → :55 |
-| `tags_aql/analytics.py` | 95 | `{conditional library_filter}` | `conditional_fragment` | var → :105 |
-| `tags_aql/mood.py` | 104 | `{library_filter}` | `filter_clause` | var → :113 |
-| `tags_aql/mood.py` | 232 | `{library_filter_clause}` | `filter_clause` | var → :249 |
-| `tags_aql/mood.py` | 321 | `{library_filter_clause}` | `filter_clause` | var → :339 |
-| `tags_aql/queries.py` | 67 | `{filter_block}` | `filter_clause` | var → :74 |
-| `tags_aql/queries.py` | 86 | `{filter_block}` | `filter_clause` | var → :100 |
-| `tags_aql/queries.py` | 130 | `{filter_block}` | `filter_clause` | var → :144 |
-| `tags_aql/queries.py` | 288 | `{library_filter}` | `filter_clause` | var → :348 |
-| `tags_aql/queries.py` | 348 | `{library_filter}` | `filter_clause` | var → :370 |
-| `tags_aql/queries.py` | 358 | `{library_filter}` | `filter_clause` | var → :380 |
-| `tags_aql/queries.py` | 412 | `{library_filter_clause}` | `filter_clause` | var → :430 |
+ | File | Line | Interpolation(s) | Classification | Execution |
+ | ------ | ------ | ------------------- | ---------------- | ----------- |
+ | `vectors_track_aql.py` | 82 | `{collection_name}` | `collection_name` | inline |
+ | `vectors_track_aql.py` | 205 | `{collection_name}` | `collection_name` | inline |
+ | `vectors_track_aql.py` | 248 | `{collection_name}` | `collection_name` | inline |
+ | `vectors_track_aql.py` | 291 | `{self.collection_name}` | `collection_name` | inline |
+ | `vectors_track_aql.py` | 415 | `{self.collection_name}` + `{nprobe}` | `collection_name` + `integer_param` | inline |
+ | `vectors_track_aql.py` | 471 | `{self.collection_name}` + `{nprobe}` | `collection_name` + `integer_param` | inline |
+ | `vectors_track_aql.py` | 503 | `{self.collection_name}` | `collection_name` | inline |
+ | `vectors_track_aql.py` | 529 | `{collection_name}` | `collection_name` | inline |
+ | `vectors_track_aql.py` | 572 | `{collection_name}` | `collection_name` | inline |
+ | `file_states_aql.py` | 902 | `{library_filter}` | `filter_clause` | var → :941 |
+ | `libraries_aql.py` | 157 | `{filter_clause}` | `filter_clause` | inline |
+ | `library_files_aql/crud.py` | 310 | `{field_assignments}` | `field_assignments` | var → :316 |
+ | `library_files_aql/queries.py` | 252 | `{filter_clause}` | `filter_clause` | var → :258 |
+ | `library_files_aql/queries.py` | 263 | `{filter_clause}` | `filter_clause` | var → :265 |
+ | `library_files_aql/queries.py` | 274 | `{filter_clause}` | `filter_clause` | var → :278 |
+ | `library_files_aql/queries.py` | 284 | `{filter_clause}` | `filter_clause` | var → :286 |
+ | `library_files_aql/queries.py` | 439 | `{filter_clause}` | `filter_clause` | inline |
+ | `library_files_aql/queries.py` | 457 | `{filter_clause}` | `filter_clause` | inline |
+ | `library_files_aql/tracks.py` | 53+57 | `{sort_clause}` + `{limit_clause}` | `sort_clause` + `limit_clause` | inline |
+ | `library_files_aql/tracks.py` | 105 | `{library_filter}` | `filter_clause` | var → :112 |
+ | `tags_aql/analytics.py` | 44 | `{conditional library_filter}` | `conditional_fragment` | var → :55 |
+ | `tags_aql/analytics.py` | 95 | `{conditional library_filter}` | `conditional_fragment` | var → :105 |
+ | `tags_aql/mood.py` | 104 | `{library_filter}` | `filter_clause` | var → :113 |
+ | `tags_aql/mood.py` | 232 | `{library_filter_clause}` | `filter_clause` | var → :249 |
+ | `tags_aql/mood.py` | 321 | `{library_filter_clause}` | `filter_clause` | var → :339 |
+ | `tags_aql/queries.py` | 67 | `{filter_block}` | `filter_clause` | var → :74 |
+ | `tags_aql/queries.py` | 86 | `{filter_block}` | `filter_clause` | var → :100 |
+ | `tags_aql/queries.py` | 130 | `{filter_block}` | `filter_clause` | var → :144 |
+ | `tags_aql/queries.py` | 288 | `{library_filter}` | `filter_clause` | var → :348 |
+ | `tags_aql/queries.py` | 348 | `{library_filter}` | `filter_clause` | var → :370 |
+ | `tags_aql/queries.py` | 358 | `{library_filter}` | `filter_clause` | var → :380 |
+ | `tags_aql/queries.py` | 412 | `{library_filter_clause}` | `filter_clause` | var → :430 |
 
 **Key observation:** 21 of 32 sites use the variable-assignment pattern (built as `query = f"..."`, executed later as `aql.execute(query)`). A visitor that only inspects inline f-string arguments to `aql.execute()` would miss two-thirds of the codebase.
 
 **Test function: `test_fstring_aql_interpolations_are_safe`**
+
 - Collects all f-string AQL calls across codebase (with variable provenance resolution)
 - Asserts every interpolation matches a safe pattern from the taxonomy
 - Any new f-string AQL that doesn't match a known pattern will fail the test, forcing explicit review
 
 ### Files Touched
+
 - `tests/unit/test_aql_safety.py` — add `_FStringAqlVisitor` class (with provenance tracking) and test function
 
 ### Acceptance Criteria
+
 - Test passes on current codebase (all 32 f-string sites classified as safe)
 - A new f-string AQL with `{user_input}` interpolation would fail the test
 - Variable-assigned queries (e.g., `query = f"..."` → `aql.execute(query)`) are resolved and inspected
@@ -135,11 +141,13 @@ The visitor must maintain a dict of `{var_name: ast_node}` for `ast.Assign` / `a
 ## Phase 2: Collection Name Whitelist Scan
 
 ### What It Does
+
 Adds a test that extracts all literal collection names referenced in static AQL strings and validates them against a whitelist derived from migration files.
 
 ### Implementation Approach
 
 **Collection extraction regexes** (extend existing `_RE_*` patterns):
+
 ```python
 _RE_COLLECTION_REFS = re.compile(
     r'(?:'
@@ -160,15 +168,18 @@ The `_scan_aql_execute_calls` helper must be enhanced to resolve variable-assign
 **Sub-scan: Bind-var constant resolution for `@@collection` patterns**
 
 Files like `navidrome_playcounts_aql.py` and `navidrome_tracks_aql.py` use module-level constants passed as `@@collection` bind vars instead of literal collection names in AQL strings:
+
 ```python
 _PLAYCOUNTS = "navidrome_playcounts"
 _HAS_PLAYS = "has_plays"
 _TRACKS = "navidrome_tracks"
 _HAS_ND_ID = "has_nd_id"
 ```
+
 These are invisible to the collection-extraction regex (which skips `@`-prefixed references by design).
 
 Add a supplementary scan:
+
 1. In each `aql.execute()` call, inspect `bind_vars` keyword argument for keys starting with `@` (the `@@collection` pattern surfaces as `"@collection": value` in Python)
 2. Resolve the value — if it's a `ast.Name` referencing a module-level constant, look up that constant's string value
 3. Validate the resolved collection name against `DOCUMENT_COLLECTIONS | EDGE_COLLECTIONS`
@@ -178,6 +189,7 @@ This can be a separate test function (`test_bind_var_collection_names_are_valid`
 **Canonical whitelist (25 document + 13 edge = 38 static collections):**
 
 Document collections:
+
 ```python
 DOCUMENT_COLLECTIONS = {
     "applied_migrations", "calibration_history", "calibration_state",
@@ -191,6 +203,7 @@ DOCUMENT_COLLECTIONS = {
 ```
 
 Edge collections:
+
 ```python
 EDGE_COLLECTIONS = {
     "file_has_state", "file_has_segment_stats", "file_has_vectors",
@@ -202,11 +215,13 @@ EDGE_COLLECTIONS = {
 ```
 
 **Dynamic collection exclusion:**
+
 ```python
 _RE_DYNAMIC_COLLECTION = re.compile(r'^vectors_track_(hot|cold)__')
 ```
 
 **Test function: `test_aql_collection_names_are_valid`**
+
 - Scan all AQL strings via enhanced `_scan_aql_execute_calls` (with variable provenance resolution)
 - Extract collection name references via regex from resolved query strings
 - Skip bind variables (`@coll`, `@@coll`)
@@ -215,9 +230,11 @@ _RE_DYNAMIC_COLLECTION = re.compile(r'^vectors_track_(hot|cold)__')
 - Additionally, resolve `@@collection` bind-var values from module-level constants and validate those against the whitelist
 
 ### Files Touched
+
 - `tests/unit/test_aql_safety.py` — add whitelist constants and test function
 
 ### Acceptance Criteria
+
 - Test passes on current codebase
 - A typo like `file_has_states` would be flagged
 - Adding a new collection requires updating migration AND whitelist (fail-fast on drift)
@@ -227,26 +244,31 @@ _RE_DYNAMIC_COLLECTION = re.compile(r'^vectors_track_(hot|cold)__')
 ## Phase 3: Edge INSERT Completeness Scan
 
 ### What It Does
+
 Adds a test that verifies every `INSERT` statement targeting a known edge collection includes both `_from` and `_to` fields.
 
 ### Implementation Approach
 
 **Detection logic:**
+
 1. For each AQL string (resolved via enhanced `_scan_aql_execute_calls` with variable provenance), find `INSERT { ... } INTO <collection>` patterns
 2. If `<collection>` is in `EDGE_COLLECTIONS`, extract the dict literal
 3. Assert both `_from` and `_to` appear as keys in the dict literal
 4. Also check `UPSERT { ... } INSERT { ... } IN <edge_collection>` — the INSERT portion must have `_from`/`_to`
 
 **Regex approach:**
+
 ```python
 _RE_INSERT_EDGE = re.compile(
     r'INSERT\s+\{([^}]+)\}\s+IN(?:TO)?\s+(\w+)',
     re.IGNORECASE | re.DOTALL,
 )
 ```
+
 For each match: if group(2) is in `EDGE_COLLECTIONS`, verify `_from` and `_to` appear in group(1).
 
 **Known edge collections for enforcement:**
+
 ```python
 EDGE_COLLECTIONS  # same set as Phase 2
 ```
@@ -256,9 +278,11 @@ EDGE_COLLECTIONS  # same set as Phase 2
 **Test function: `test_edge_inserts_have_from_and_to`**
 
 ### Files Touched
+
 - `tests/unit/test_aql_safety.py` — add test function (reuses whitelist from Phase 2)
 
 ### Acceptance Criteria
+
 - Test passes on current codebase (all current edge INSERTs have `_from`/`_to`)
 - An `INSERT { _from: @x } INTO file_has_state` missing `_to` would fail
 - UPSERT patterns with edge collections also validated
@@ -268,11 +292,13 @@ EDGE_COLLECTIONS  # same set as Phase 2
 ## Phase 4: Shared conftest.py Extraction
 
 ### What It Does
+
 Creates `tests/unit/persistence/database/conftest.py` with shared fixtures, then migrates all 6 existing test files to use them. Purely mechanical — no behavior changes.
 
 ### Implementation Approach
 
 **New file: `tests/unit/persistence/database/conftest.py`**
+
 ```python
 from unittest.mock import MagicMock
 import pytest
@@ -286,11 +312,13 @@ def mock_db() -> MagicMock:
 ```
 
 **Migration steps for each of 6 test files:**
+
 1. Remove the local `mock_db` fixture definition
 2. The `ops` fixture remains in each file (it's specific to the operations class under test)
 3. Verify tests still pass — pytest auto-discovers conftest fixtures
 
 **Files affected:**
+
 - `tests/unit/persistence/database/conftest.py` — CREATE
 - `tests/unit/persistence/database/test_file_states_aql.py` — remove mock_db fixture
 - `tests/unit/persistence/database/test_library_pipeline_states_aql.py` — remove mock_db fixture
@@ -302,6 +330,7 @@ def mock_db() -> MagicMock:
 **Out of scope:** Service-level test files (`test_worker_system_svc_restart.py`, `test_pipeline_svc.py`, `test_file_watcher_svc.py`, `test_discovery_worker_deferred_writes.py`) also define `mock_db` fixtures, but those are structurally different (e.g., `test_file_watcher_svc.py` takes a `temp_library` parameter). They are not part of this deduplication.
 
 ### Acceptance Criteria
+
 - No test file under `tests/unit/persistence/database/` defines its own `mock_db` fixture
 - All existing tests pass unchanged
 - `conftest.py` is the single source of truth for the `mock_db` fixture in the persistence/database test directory
@@ -312,7 +341,9 @@ def mock_db() -> MagicMock:
 ## Phase 5: Schema-Aware MockDB (Optional / Phase 2)
 
 ### What It Does
+
 Creates a `SchemaAwareMockDB` test utility that wraps `MagicMock` and intercepts `aql.execute()` calls to provide runtime validation of:
+
 - Collection name against whitelist
 - Edge INSERT completeness (`_from`/`_to` presence)
 - `_from`/`_to` vertex collection format matching graph edge definitions
@@ -345,6 +376,7 @@ class SchemaAwareMockDB:
 ```
 
 **Validation on `aql.execute()` interception:**
+
 1. Parse the AQL string (regex, not full parser)
 2. Extract collection references → validate against whitelist (allow dynamic `vectors_track_*`)
 3. If INSERT/UPSERT targets an edge collection and `bind_vars` are provided, check `_from`/`_to` keys exist in bind_vars
@@ -353,6 +385,7 @@ class SchemaAwareMockDB:
 **Primary use case:** Testing `VectorsTrackHotOperations` and `VectorsTrackColdOperations` — the classes with zero test coverage that use dynamic collection names.
 
 **Add to conftest.py:**
+
 ```python
 @pytest.fixture
 def schema_mock_db() -> SchemaAwareMockDB:
@@ -361,17 +394,20 @@ def schema_mock_db() -> SchemaAwareMockDB:
 ```
 
 ### Files Touched
+
 - `tests/unit/persistence/database/schema_aware_mock.py` — CREATE
 - `tests/unit/persistence/database/conftest.py` — add `schema_mock_db` fixture
 - `tests/unit/persistence/database/test_vectors_track_aql.py` — CREATE (new test file for VectorsTrack* classes)
 
 ### Acceptance Criteria
+
 - `SchemaAwareMockDB` raises `AssertionError` when AQL references unknown collection
 - `SchemaAwareMockDB` raises `AssertionError` when edge INSERT missing `_from`/`_to`
 - Basic test coverage exists for `VectorsTrackHotOperations.upsert_vector` and `.delete_by_file_id`
 - Basic test coverage exists for `VectorsTrackColdOperations.search_similar`
 
 ### Priority Note
+
 This phase is OPTIONAL and lower priority than Phases 1–4. Static AST scans (Phases 1–3) cover the majority of the safety surface. Phase 5 adds runtime validation where static analysis cannot reach (dynamic collection names, bind_var content). Implement only after Phases 1–4 are complete and validated.
 
 ---

@@ -14,6 +14,7 @@ description: Use when checking code quality, finding violations, detecting compl
 **Purpose:** Run all automated QC checks and generate a report.
 
 **Use when:**
+
 - Before committing changes
 - After significant refactoring
 - Periodic quality audits
@@ -25,6 +26,7 @@ python scripts/run_qc.py
 ```
 
 **Runs:**
+
 - ruff check (linting)
 - mypy (type checking)
 - Naming convention checks
@@ -39,6 +41,7 @@ python scripts/run_qc.py
 **Purpose:** Find complexity hotspots, architecture violations, and refactor targets.
 
 **Use when:**
+
 - Evaluating a file's maintainability
 - Finding where to focus refactoring
 - Checking for AI-generated "slop" patterns
@@ -63,6 +66,7 @@ python scripts/detect_slop.py --format md
 ```
 
 **Detects:**
+
 - High cyclomatic complexity (radon)
 - Architecture violations (import-linter)
 - Code smells (flake8 plugins)
@@ -78,6 +82,7 @@ python scripts/detect_slop.py --format md
 **Purpose:** Enforce Nomarr's naming conventions across the codebase.
 
 **Use when:**
+
 - Reviewing new code for naming compliance
 - Finding naming violations before commit
 - Verifying refactored code follows conventions
@@ -93,6 +98,7 @@ python scripts/check_naming.py --format=json
 ```
 
 **Checks (based on `scripts/configs/naming_rules.yaml`):**
+
 - Service method naming (`<verb>_<noun>`)
 - Module naming conventions
 - Forbidden patterns (`api_*`, `*_for_admin`)
@@ -104,6 +110,7 @@ python scripts/check_naming.py --format=json
 **Purpose:** Find unreachable code (functions, classes, methods not called from entrypoints).
 
 **Use when:**
+
 - Cleaning up unused code
 - After major refactoring
 - Periodic maintenance
@@ -125,6 +132,7 @@ python scripts/check_dead_nodes.py --format=json
 **Requires:** Run `build_code_graph.py` first to generate the graph.
 
 **Output shows:**
+
 - Nodes not reachable from interface entrypoints
 - Analysis of whether they're truly dead (checks imports, type usage, grep hits)
 
@@ -137,6 +145,7 @@ python scripts/check_dead_nodes.py --format=json
 **Why:** Nomarr is alpha. There should be NO legacy code or compatibility layers (forward-only migrations only).
 
 **Use when:**
+
 - Ensuring no one added migration/shim code
 - Cleaning up TODO comments about removing old code
 - Pre-release quality check
@@ -154,6 +163,7 @@ python scripts/find_legacy.py nomarr/services tests/unit
 ```
 
 **Detects patterns:**
+
 - `legacy`
 - `backwards compatibility`
 - `deprecated`

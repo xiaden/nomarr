@@ -7,6 +7,7 @@
 **Amendment source:** `agent#L4` (round 1), `rnd-manager#L63` (Improver), PatternEnforcer, `agent#L5` (round 2), `agent#L6` (round 3 — range modifiers, lock cleanup, upsert simplification, order_by, unique enforcement, cascade registry), `agent#L7` + `rnd-manager#L72` (round 4 — range operators as .in() overload, Op enum)  
 
 **Related Documents:**
+
 - [ADR-003](../decisions/ADR-003-pure-boolean-state-graph-for-file-processing-pipeline.md) — State graph constraint
 - [ADR-004](../decisions/ADR-004-schema-refactor-v1-graph-normalization.md) — Graph normalization
 - [DD-discovery-worker-err1579-fix](../designs/archive/DD-discovery-worker-err1579-fix.md) — ERR 1579 pattern
@@ -32,6 +33,7 @@ The persistence layer in `nomarr/persistence/database/` has grown to **287 publi
 - **Edge traversal** patterns (OUTBOUND/INBOUND for library filtering, tag enrichment) are copy-pasted across query modules
 
 This creates three problems:
+
 1. **Maintenance cost:** Adding a field to a collection requires updating every query that touches it. Adding a new collection requires writing 5-15 methods from scratch.
 2. **Inconsistency:** Identical operations have different error handling, different return shapes, and different AQL patterns across collections (some use `DOCUMENT()`, some use `FOR ... FILTER`, some use `FIRST()`).
 3. **Scale:** The 287-method surface makes API completion (ASR-0013) impractical by hand — the persistence layer would grow to 400+ methods.
@@ -143,6 +145,7 @@ SCHEMA = {
 ```
 
 **Schema-to-API mapping:**
+
 - Collection `"capabilities": ["insert", ...]` → `db.library_files.insert(doc)`
 - Field `"capabilities": ["get", "update"]` → `db.library_files.status.get(value)`, `db.library_files.status.update(value, fields)`
 - Field `"capabilities": ["delete"]` → `db.library_files.path.delete(value)` — bulk delete all docs where field matches
@@ -150,6 +153,7 @@ SCHEMA = {
 - Cascade list → what `db.library_files.cascade(ids)` walks
 
 **Field properties:**
+
 - `type`: Python type annotation string (used in type stubs)
 - `capabilities`: List of verbs this field supports — maps directly to methods on the field namespace
 - `unique`: Whether the field has a unique index (affects return cardinality: unique → `dict | None`, non-unique → `list[dict]`). Also controls whether `.get.one()` is generated — see §3.6.
@@ -184,6 +188,7 @@ Edges are declared per-collection with explicit direction:
 **Direction is always explicit.** The `direction` field is mandatory on every edge declaration. The constructor reads it directly — no inference from naming conventions or edge collection position.
 
 Edges needing BOTH directions are declared on both collections:
+
 - `song_has_tags` is OUTBOUND on `library_files`, INBOUND on `tags`
 - `library_contains_file` is OUTBOUND on `libraries`, INBOUND on `library_files`
 
@@ -253,10 +258,12 @@ class Op(str, Enum):
 ```
 
 The `.in()` method's `values` parameter accepts either:
+
 - `list[str]` — standard IN operator: `FILTER field IN @values`
 - `FilterDict` (`dict[Op, FilterValue]`) — range/comparison filter: each `Op` key emits the corresponding AQL comparison operator
 
 **Usage examples:**
+
 ```python
 # Standard IN — list of exact values
 db.locks.lock_type.get.in(["capacity_probe", "vector_promote"], limit=10)
@@ -272,6 +279,7 @@ db.locks.status.get.in({Op.NEQ: "completed"})
 ```
 
 **Constructor behavior:** The `.in()` method checks the type of `values` at runtime:
+
 - If `list` → emit `FOR doc IN @@collection FILTER doc.@field IN @values` AQL
 - If `dict` → iterate Op keys, emit appropriate comparison per key (e.g., `Op.LT` → `FILTER doc.@field < @value`, `Op.GTE` → `FILTER doc.@field >= @value`). Multiple Op keys in one dict produce `AND`-combined filters.
 
@@ -286,6 +294,7 @@ db.locks.status.get.in({Op.NEQ: "completed"})
 The API uses **nested descriptor/namespace objects**, NOT flat methods. Each level is a descriptor that returns the next namespace. The constructor builds these namespaces from the schema at import time.
 
 **Collection-level** (verb directly on collection namespace):
+
 ```python
 db.collection.insert(doc)           # collection-level insert
 db.collection.delete(ids)           # collection-level delete by ID
@@ -298,6 +307,7 @@ db.collection.traversal(start, edge, ...)  # traversal
 ```
 
 **Field-level** (verb on field namespace):
+
 ```python
 db.collection.field.get(value)        # get by field
 db.collection.field.count(value)      # count by field
@@ -309,6 +319,7 @@ db.collection.field.delete(value)     # bulk delete by field (returns count dele
 ```
 
 **Modifier nesting** (on get verbs):
+
 ```python
 db.collection.get.one.id(_id)         # explicit: one doc by _id
 db.collection.get.many.id([ids])      # explicit: many docs by _id list
@@ -319,12 +330,14 @@ db.collection.field.get.like(pattern) # LIKE operator
 ```
 
 **Shorthands** (implicit defaults):
+
 ```python
 db.collection.get(id)     # = get.one.id(id) — simplest form
 db.collection.get.one     # = get.one.id — default accessor is _id
 ```
 
 **Key design decisions:**
+
 - The constructor builds **namespace objects**, not named methods
 - Each level is a descriptor that returns the next namespace
 - No Django-style double-underscore operators (`__in`, `__like`) — operators are explicit method names in the accessor chain (`.in()`, `.like()`)
@@ -332,28 +345,28 @@ db.collection.get.one     # = get.one.id — default accessor is _id
 
 ### 3.2 Verb Scope Table
 
-| Scope | Verbs | Accessor Pattern |
-|-------|-------|-----------------|
-| **Collection-level** | `insert`, `delete`, `cascade`, `count` (no field), `get` (shorthand) | `db.collection.verb(...)` |
-| **Field-level** | `get`, `count`, `collect`, `aggregate`, `update`, `upsert`, `delete` | `db.collection.field.verb(...)` |
-| **Specialized** | `transition`, `traversal`, `ann_search` | `db.collection.verb(...)` |
+ | Scope | Verbs | Accessor Pattern |
+ | ------- | ------- | ----------------- |
+ | **Collection-level** | `insert`, `delete`, `cascade`, `count` (no field), `get` (shorthand) | `db.collection.verb(...)` |
+ | **Field-level** | `get`, `count`, `collect`, `aggregate`, `update`, `upsert`, `delete` | `db.collection.field.verb(...)` |
+ | **Specialized** | `transition`, `traversal`, `ann_search` | `db.collection.verb(...)` |
 
 ### 3.3 Complete Verb Table (12 verbs)
 
-| # | Verb | Scope | Accessor Pattern |
-|---|------|-------|-----------------|
-| 1 | **get** | Collection + Field | `db.col.get(id)`, `db.col.field.get(value)`, `db.col.field.get.one(v)`, `.many(v)`, `.in([v] or {Op: v})`, `.like(p)` |
-| 2 | **insert** | Collection | `db.col.insert(doc)` |
-| 3 | **upsert** | Field | `db.col.field.upsert(doc, match_field)` |
-| 4 | **update** | Field | `db.col.field.update(match_value, fields)` |
-| 5 | **delete** | Collection + Field | `db.col.delete(ids)`, `db.col.field.delete(value)` |
-| 6 | **count** | Collection + Field | `db.col.count()`, `db.col.field.count(value)` |
-| 7 | **collect** | Field | `db.col.field.collect()` |
-| 8 | **aggregate** | Field | `db.col.field.aggregate()` |
-| 9 | **traversal** | Collection | `db.col.traversal(start, edge=...)` |
-| 10 | **transition** | Collection | `db.col.transition(ids, from_edge, to_edge)` |
-| 11 | **cascade** | Collection | `db.col.cascade(ids)` |
-| 12 | **ann_search** | Collection | `db.col.ann_search(vector, limit, nprobe, filter?)` |
+ | # | Verb | Scope | Accessor Pattern |
+ | --- | ------ | ------- | ----------------- |
+ | 1 | **get** | Collection + Field | `db.col.get(id)`, `db.col.field.get(value)`, `db.col.field.get.one(v)`, `.many(v)`, `.in([v] or {Op: v})`, `.like(p)` |
+ | 2 | **insert** | Collection | `db.col.insert(doc)` |
+ | 3 | **upsert** | Field | `db.col.field.upsert(doc, match_field)` |
+ | 4 | **update** | Field | `db.col.field.update(match_value, fields)` |
+ | 5 | **delete** | Collection + Field | `db.col.delete(ids)`, `db.col.field.delete(value)` |
+ | 6 | **count** | Collection + Field | `db.col.count()`, `db.col.field.count(value)` |
+ | 7 | **collect** | Field | `db.col.field.collect()` |
+ | 8 | **aggregate** | Field | `db.col.field.aggregate()` |
+ | 9 | **traversal** | Collection | `db.col.traversal(start, edge=...)` |
+ | 10 | **transition** | Collection | `db.col.transition(ids, from_edge, to_edge)` |
+ | 11 | **cascade** | Collection | `db.col.cascade(ids)` |
+ | 12 | **ann_search** | Collection | `db.col.ann_search(vector, limit, nprobe, filter?)` |
 
 ### 3.4 Implicit Bulk
 
@@ -385,6 +398,7 @@ db.library_files.traversal("library_files/abc", edge="song_has_tags", limit=50, 
 ```
 
 The pagination parameters are:
+
 - `limit: int | None = None` — maximum results to return (None = configured default, NOT unbounded)
 - `offset: int = 0` — skip this many results
 
@@ -525,6 +539,7 @@ db.locks.status.get.in({Op.NEQ: "completed"})                      # → list[di
 - **`_key`/`_id` lookups** use python-arango direct access (no AQL). All others use AQL `FOR ... FILTER`.
 
 #### INSERT verb
+
 ```python
 db.library_files.insert({"path": "/music/song.flac", "library_key": "abc", ...})
 # → "library_files/abc123"
@@ -534,6 +549,7 @@ db.library_files.insert([{"path": "/music/a.flac"}, {"path": "/music/b.flac"}])
 ```
 
 #### UPSERT verb
+
 ```python
 db.library_files.path.upsert(
     {"path": "/music/song.flac", "library_key": "abc", ...},
@@ -543,12 +559,14 @@ db.library_files.path.upsert(
 ```
 
 #### UPDATE verb
+
 ```python
 db.library_files.status.update("pending", {"status": "processed"})
 # Updates all docs where status == "pending", setting status to "processed"
 ```
 
 #### DELETE verb (collection-level and field-level)
+
 ```python
 # Collection-level: delete by ID
 db.library_files.delete("library_files/abc123")
@@ -560,6 +578,7 @@ db.library_files.library_key.delete("old_library")
 ```
 
 #### COUNT verb
+
 ```python
 # Collection-level: total count
 db.library_files.count()  # → int
@@ -569,11 +588,13 @@ db.library_files.library_key.count("abc")  # → int
 ```
 
 #### COLLECT verb
+
 ```python
 db.tags.rel.collect(limit=100, offset=0)  # → ["genre", "mood", "era", ...]
 ```
 
 #### AGGREGATE verb
+
 ```python
 db.tags.rel.aggregate(limit=100)  # → [{"value": "genre", "count": 42}, ...]
 ```
@@ -618,12 +639,14 @@ def transition(self, ids: list[str], from_edge_target: str, to_edge_target: str)
 ```
 
 **Design decisions:**
+
 - **Three separate `aql.execute()` calls** (read, remove, insert) — never combine read+write on the same edge collection in one statement. This is the ERR 1579 rule.
 - **REMOVE+INSERT, not REMOVE+UPSERT.** ADR-003 requires singleton edge per axis. INSERT after REMOVE makes the singleton guarantee explicit.
 - **Generic signature:** `transition(ids, from_edge_target, to_edge_target)` — persistence does not encode domain concepts like "tagged" or "calibrated". The component layer maps domain terms to edge targets.
 - **Accepts list of IDs:** Bulk is implicit. Single ID = list of one.
 
 **Axis definitions in schema (for validation, not for method naming):**
+
 ```python
 "file_states": {
     "type": "state_graph",
@@ -651,6 +674,7 @@ db.library_files.cascade(["library_files/abc", "library_files/def"])
 ```
 
 Cascade walks the declared cascade targets for the collection:
+
 1. For each target edge collection, find edges connected to the document(s)
 2. Remove those edges
 3. Check if removing the edge creates an island (orphaned document with no remaining edges to ANY collection)
@@ -692,6 +716,7 @@ collection.traversal(
 ```
 
 ### Mode 1: Start from document ID
+
 ```python
 # Get all tags for a specific file
 db.library_files.traversal("library_files/abc123", edge="song_has_tags")
@@ -699,6 +724,7 @@ db.library_files.traversal("library_files/abc123", edge="song_has_tags")
 ```
 
 ### Mode 2: Source collection filter → connected docs
+
 ```python
 # Get all tags for files in a library
 db.library_files.traversal(
@@ -711,6 +737,7 @@ db.library_files.traversal(
 ```
 
 ### Mode 3: Source filter → connected docs with target filter
+
 ```python
 # Get genre tags for files in a library
 db.library_files.traversal(
@@ -736,43 +763,43 @@ All modes support `limit`/`offset` pagination. Direction is read from the edge d
 
 The Improver analysis (`rnd-manager#L63`) established that 100% schema-driven coverage is achievable:
 
-| Stage | Coverage | What's added |
-|-------|----------|---------------|
-| 10 verbs (base: 8 original + transition + cascade) | ~78% | Standard CRUD, queries, state graph, cascade |
-| + Modifier chain operators (IN, LIKE on get) | ~91% | Complex queries become expressible via `.get.in()`, `.get.like()` |
-| + `ann_search` verb | ~95% | Vector similarity search |
-| + Dynamic collection templates | ~98% | Parameterized vector collections |
-| + Move 3 orchestration violations out | ~99.5% | Not persistence → not counted |
-| + Field-level delete | ~100% | Bulk delete by field value |
+ | Stage | Coverage | What's added |
+ | ------- | ---------- | --------------- |
+ | 10 verbs (base: 8 original + transition + cascade) | ~78% | Standard CRUD, queries, state graph, cascade |
+ | + Modifier chain operators (IN, LIKE on get) | ~91% | Complex queries become expressible via `.get.in()`, `.get.like()` |
+ | + `ann_search` verb | ~95% | Vector similarity search |
+ | + Dynamic collection templates | ~98% | Parameterized vector collections |
+ | + Move 3 orchestration violations out | ~99.5% | Not persistence → not counted |
+ | + Field-level delete | ~100% | Bulk delete by field value |
 
 ### 5.2 Formerly-Custom Operations: Disposition
 
 Every operation that was previously considered "non-generatable" has been re-analyzed:
 
-| Operation | Old Classification | New Disposition |
-|-----------|-------------------|----------------|
-| State graph transitions (~40 methods) | custom_op | `transition` verb ✓ |
-| Cascade orphan cleanup (5 methods) | custom_op | `cascade` verb ✓ |
-| Batch variants (~8 methods) | separate verbs | Implicit bulk ✓ |
-| `relink_tag_edges` | custom_op | Component-layer composition: get→upsert→delete→cascade |
-| `set_song_tags` | custom_op | delete(edges) → upsert(tags) → upsert(edges) — needs IN-operator filter |
-| `search_library_files_with_tags` | custom_op | get with LIKE operator + edge expand |
-| Lock helpers (8 methods) | custom_op | Standard CRUD on `locks` collection (get/upsert/update/delete) — no lock-specific verb needed |
-| `drain_to_cold` | custom_op | **Orchestration violation** → workflow layer |
-| `backfill_genres` | custom_op | **Orchestration violation** → workflow layer |
-| `claim_files_for_reconciliation` | custom_op | **Orchestration violation** → component layer |
-| Vector ANN search | custom_op | `ann_search` verb ✓ |
-| Discovery queries | custom_op | get with operator modifiers + traversal |
+ | Operation | Old Classification | New Disposition |
+ | ----------- | ------------------- | ---------------- |
+ | State graph transitions (~40 methods) | custom_op | `transition` verb ✓ |
+ | Cascade orphan cleanup (5 methods) | custom_op | `cascade` verb ✓ |
+ | Batch variants (~8 methods) | separate verbs | Implicit bulk ✓ |
+ | `relink_tag_edges` | custom_op | Component-layer composition: get→upsert→delete→cascade |
+ | `set_song_tags` | custom_op | delete(edges) → upsert(tags) → upsert(edges) — needs IN-operator filter |
+ | `search_library_files_with_tags` | custom_op | get with LIKE operator + edge expand |
+ | Lock helpers (8 methods) | custom_op | Standard CRUD on `locks` collection (get/upsert/update/delete) — no lock-specific verb needed |
+ | `drain_to_cold` | custom_op | **Orchestration violation** → workflow layer |
+ | `backfill_genres` | custom_op | **Orchestration violation** → workflow layer |
+ | `claim_files_for_reconciliation` | custom_op | **Orchestration violation** → component layer |
+ | Vector ANN search | custom_op | `ann_search` verb ✓ |
+ | Discovery queries | custom_op | get with operator modifiers + traversal |
 
 ### 5.3 Operations That Move OUT of Persistence
 
 Three operations are orchestration violations — they don't belong in persistence regardless of verb coverage:
 
-| Method | Why It's Not Persistence | Target Layer |
-|--------|--------------------------|-------------|
-| `drain_to_cold` | Workflow-level lifecycle management (hot→cold promotion with edge migration) | Workflow |
-| `backfill_genres` | Multi-hop traversal data migration | Workflow |
-| `claim_files_for_reconciliation` | Cross-module orchestration with claim mechanics | Component |
+ | Method | Why It's Not Persistence | Target Layer |
+ | -------- | -------------------------- | ------------- |
+ | `drain_to_cold` | Workflow-level lifecycle management (hot→cold promotion with edge migration) | Workflow |
+ | `backfill_genres` | Multi-hop traversal data migration | Workflow |
+ | `claim_files_for_reconciliation` | Cross-module orchestration with claim mechanics | Component |
 
 ### 5.4 Component-Layer Compositions
 
@@ -890,12 +917,12 @@ class GetModifierNamespace:
 
 Shorthands allow ergonomic access for common operations:
 
-| Shorthand Call | Resolves To | Rule |
-|---|---|---|
-| `db.collection.get(id)` | `db.collection.get.one.id(id)` | Collection-level get defaults to _id lookup |
-| `db.collection.get.one` | `db.collection.get.one.id` | Default accessor is _id |
-| `db.collection.field.get(value)` | `db.collection.field.get.one(value)` | If field is `unique: True` |
-| `db.collection.field.get(value)` | `db.collection.field.get.many(value)` | If field is NOT unique |
+ | Shorthand Call | Resolves To | Rule |
+ | --- | --- | --- |
+ | `db.collection.get(id)` | `db.collection.get.one.id(id)` | Collection-level get defaults to _id lookup |
+ | `db.collection.get.one` | `db.collection.get.one.id` | Default accessor is _id |
+ | `db.collection.field.get(value)` | `db.collection.field.get.one(value)` | If field is `unique: True` |
+ | `db.collection.field.get(value)` | `db.collection.field.get.many(value)` | If field is NOT unique |
 
 The collection-level `get` namespace is simultaneously callable (shorthand) and an attribute container (for `.one`, `.many`). This is implemented via `__call__` on the namespace object.
 
@@ -928,22 +955,23 @@ class SchemaConstructor:
 
         return ns
 ```
+
 - **Descriptors:** Verb methods as descriptor objects that generate AQL on first access
 - **`__getattr__`:** Lazy method construction on first attribute access
 - **`type()` with closures:** Direct class construction with closure-captured AQL templates
 
 ### 6.5 Why Runtime, Not Build-Time
 
-| Concern | Build-time codegen | Runtime constructor |
-|---------|-------------------|--------------------|
-| Build step required | Yes — must run generator, commit output | No — schema IS the code |
-| Generated files to maintain | ~52 files in output directory | Zero generated files |
-| Schema-code drift | Possible if someone forgets to regenerate | Impossible — schema is read every import |
-| Pre-commit hooks | Required to catch stale generated code | Not needed |
-| IDE/mypy support | Native (real .py files) | Via type stubs or Protocol classes |
-| Debugger stepping | Real source files | Step into dynamically-built closures |
-| Git diff noise | Every schema change produces large diffs in generated files | Only schema.py changes |
-| Single source of truth | Schema + generated files (two copies) | Schema only (one copy) |
+ | Concern | Build-time codegen | Runtime constructor |
+ | --------- | ------------------- | -------------------- |
+ | Build step required | Yes — must run generator, commit output | No — schema IS the code |
+ | Generated files to maintain | ~52 files in output directory | Zero generated files |
+ | Schema-code drift | Possible if someone forgets to regenerate | Impossible — schema is read every import |
+ | Pre-commit hooks | Required to catch stale generated code | Not needed |
+ | IDE/mypy support | Native (real .py files) | Via type stubs or Protocol classes |
+ | Debugger stepping | Real source files | Step into dynamically-built closures |
+ | Git diff noise | Every schema change produces large diffs in generated files | Only schema.py changes |
+ | Single source of truth | Schema + generated files (two copies) | Schema only (one copy) |
 
 The key insight: **the persistence layer IS the schema file + the constructor library.** There is no second copy of the truth. The tradeoff is IDE/mypy support, which is addressed with type stubs.
 
@@ -952,6 +980,7 @@ The key insight: **the persistence layer IS the schema file + the constructor li
 Since namespace objects are built dynamically, mypy and IDEs cannot infer their methods. Two approaches (choose during implementation):
 
 **Option A: Protocol classes** (preferred)
+
 ```python
 # persistence/stubs/library_files.pyi
 class LibraryFilesPathGet(Protocol):
@@ -1000,12 +1029,12 @@ A script reads `SCHEMA` and writes `.pyi` files. This is a convenience tool, not
 - **Connection management:** Same `create_arango_client`, `close()`, password loading
 - **Facade-level methods preserved as-is:**
 
-| Method | Disposition |
-|--------|------------|
-| `delete_vectors_by_file_id` | Facade method: iterates registered dynamic vector collections, calls `collection._from.delete(file_id)` on each + edge cleanup on `file_has_vectors` |
-| `delete_vectors_by_file_ids` | Facade method: bulk variant of above |
-| `get_version` | Facade method: delegates to `meta.key.get("version")` — the meta collection uses a `key` field (not `_key`) as the lookup/filter field |
-| `set_version` | Facade method: delegates to `meta.key.upsert({key: "version", value: version}, match_field="key")` |
+ | Method | Disposition |
+ | -------- | ------------ |
+ | `delete_vectors_by_file_id` | Facade method: iterates registered dynamic vector collections, calls `collection._from.delete(file_id)` on each + edge cleanup on `file_has_vectors` |
+ | `delete_vectors_by_file_ids` | Facade method: bulk variant of above |
+ | `get_version` | Facade method: delegates to `meta.key.get("version")` — the meta collection uses a `key` field (not `_key`) as the lookup/filter field |
+ | `set_version` | Facade method: delegates to `meta.key.upsert({key: "version", value: version}, match_field="key")` |
 
 ### 7.3 Facade Auto-Wiring
 
@@ -1032,28 +1061,33 @@ The facade wires dynamically at startup. Callers use `db.library_files.path.get(
 The transition is **per-collection, not big-bang:**
 
 **Phase 1 — Schema + Constructor Infrastructure**
+
 - Create `persistence/schema.py` with schema for all collections
 - Build the constructor library in `persistence/constructor/`
 - Create type stubs in `persistence/stubs/` (if using Protocol approach)
 - No caller changes yet
 
 **Phase 2 — Simple Collections First**
+
 - Start with infrastructure collections (meta, migrations, health, sessions, locks, etc.)
 - These have simple CRUD patterns
 - Replace hand-written modules, verify tests pass
 - ~10 collections, building confidence in the constructor
 
 **Phase 3 — Complex Collections**
+
 - library_files, tags, file_states (with transition, cascade, operator modifiers)
 - This is where the full verb set is exercised
 - Verify all methods are accounted for in the schema
 
 **Phase 4 — Dynamic Collections**
+
 - vectors_track with template collection support
 - ann_search verb exercised here
 - Factory pattern in schema for dynamic naming
 
 **Phase 5 — Cleanup**
+
 - Delete all hand-written AQL modules in `persistence/database/`
 - Remove `persistence/database/` directory entirely
 - Final structure: `persistence/schema.py` + `persistence/constructor/` + `persistence/stubs/` + `persistence/db.py`
@@ -1078,61 +1112,61 @@ All orchestration violations categorized:
 
 #### Category A: Full Orchestration — Extract to Component/Workflow (7 methods)
 
-| Method | Target |
-|--------|--------|
-| `claim_files_for_reconciliation` | `components/library/reconciliation_comp.py` |
-| `set_file_written` | Same |
-| `release_claim` | Same |
-| `count_files_needing_reconciliation` | Same |
-| `drain_to_cold` | Workflow layer |
-| `backfill_genres` | Workflow layer |
-| `delete_capacity_estimate` | Component layer (delete estimate → delete lock = delete→delete composition) |
+ | Method | Target |
+ | -------- | -------- |
+ | `claim_files_for_reconciliation` | `components/library/reconciliation_comp.py` |
+ | `set_file_written` | Same |
+ | `release_claim` | Same |
+ | `count_files_needing_reconciliation` | Same |
+ | `drain_to_cold` | Workflow layer |
+ | `backfill_genres` | Workflow layer |
+ | `delete_capacity_estimate` | Component layer (delete estimate → delete lock = delete→delete composition) |
 
 #### Category B: Delegation Wrappers — Remove (9 methods)
 
-| Removed Method | Callers Migrate To |
-|---------------|-------------------|
-| `db.libraries.update_scan_status(...)` | `db.library_scans.update(...)` |
-| `db.libraries.mark_scan_started(...)` | `db.library_scans.update(...)` |
-| `db.libraries.mark_scan_completed(...)` | `db.library_scans.update(...)` |
-| `db.libraries.get_scan_state(...)` | `db.library_scans.get(...)` |
-| `db.libraries.check_interrupted_scan(...)` | `db.library_scans.get(...)` |
-| `db.ml_capacity.try_acquire_probe_lock(...)` | `db.locks.lock_type.upsert(...)` |
-| `db.ml_capacity.get_probe_lock_status(...)` | `db.locks.lock_type.get(...)` |
-| `db.ml_capacity.complete_probe_lock(...)` | `db.locks.lock_type.update(...)` |
-| `db.ml_capacity.release_probe_lock(...)` | `db.locks.lock_type.delete(...)` |
+ | Removed Method | Callers Migrate To |
+ | --------------- | ------------------- |
+ | `db.libraries.update_scan_status(...)` | `db.library_scans.update(...)` |
+ | `db.libraries.mark_scan_started(...)` | `db.library_scans.update(...)` |
+ | `db.libraries.mark_scan_completed(...)` | `db.library_scans.update(...)` |
+ | `db.libraries.get_scan_state(...)` | `db.library_scans.get(...)` |
+ | `db.libraries.check_interrupted_scan(...)` | `db.library_scans.get(...)` |
+ | `db.ml_capacity.try_acquire_probe_lock(...)` | `db.locks.lock_type.upsert(...)` |
+ | `db.ml_capacity.get_probe_lock_status(...)` | `db.locks.lock_type.get(...)` |
+ | `db.ml_capacity.complete_probe_lock(...)` | `db.locks.lock_type.update(...)` |
+ | `db.ml_capacity.release_probe_lock(...)` | `db.locks.lock_type.delete(...)` |
 
 #### Category C: Cascade Side Effects — Schema-Driven (5 methods)
 
 Methods that previously called `self.parent_db.*` for referential integrity are now expressed as cascade targets in the schema:
 
-| Method | New Expression |
-|--------|---------------|
-| `delete_library_file` + cascade | `delete` verb + schema cascade targets |
-| `bulk_delete_files` + cascade | Same (bulk implicit) |
-| `delete_files_for_library` + cascade | Same |
-| `upsert_library_file` + state init | `upsert` + `transition` (component orchestrates the pair) |
-| `upsert_batch` + state init | Same (bulk implicit) |
+ | Method | New Expression |
+ | -------- | --------------- |
+ | `delete_library_file` + cascade | `delete` verb + schema cascade targets |
+ | `bulk_delete_files` + cascade | Same (bulk implicit) |
+ | `delete_files_for_library` + cascade | Same |
+ | `upsert_library_file` + state init | `upsert` + `transition` (component orchestrates the pair) |
+ | `upsert_batch` + state init | Same (bulk implicit) |
 
 #### Category D: Business Logic — Extract to Component (2 methods)
 
-| Method | Target |
-|--------|--------|
-| `get_mood_coverage` | `components/ml/mood_analysis_comp.py` — multi-collection aggregation with business logic |
-| `get_mood_balance` | Same |
+ | Method | Target |
+ | -------- | -------- |
+ | `get_mood_coverage` | `components/ml/mood_analysis_comp.py` — multi-collection aggregation with business logic |
+ | `get_mood_balance` | Same |
 
 #### Category E: Facade Vector Wrappers — Become Dynamic Verb Calls (2 methods)
 
-| Method | Disposition |
-|--------|------------|
-| `delete_vectors_by_file_id` | Iterates registered dynamic vector collections, calls `collection._from.delete(file_id)` on each + edge cleanup on `file_has_vectors` |
-| `delete_vectors_by_file_ids` | Bulk variant of above |
+ | Method | Disposition |
+ | -------- | ------------ |
+ | `delete_vectors_by_file_id` | Iterates registered dynamic vector collections, calls `collection._from.delete(file_id)` on each + edge cleanup on `file_has_vectors` |
+ | `delete_vectors_by_file_ids` | Bulk variant of above |
 
 #### Category F: Retained Facade Methods (1 method)
 
-| Method | Disposition |
-|--------|------------|
-| `get_library_stats` | Keep — single subquery, not multi-step orchestration |
+ | Method | Disposition |
+ | -------- | ------------ |
+ | `get_library_stats` | Keep — single subquery, not multi-step orchestration |
 
 ### 8.4 Directory Structure
 
@@ -1182,48 +1216,48 @@ This design interacts with several existing ADRs. Some are compatible; others ar
 
 ### Audited Surface
 
-| Metric | Value | Notes |
-|--------|-------|-------|
-| **Public methods** | **287** | Excluding `__init__`, private (`_`-prefixed), and static helpers |
-| **Classes** | **46** | 25 distinct operation classes; composite classes (e.g., `LibraryFilesOperations`) aggregate multiple mixins counted separately |
-| **Files** | **52** | Includes `__init__.py` files, `_constants.py`, `_helpers.py` |
-| **Lines of code** | **~11,300** | All `.py` files combined |
+ | Metric | Value | Notes |
+ | -------- | ------- | ------- |
+ | **Public methods** | **287** | Excluding `__init__`, private (`_`-prefixed), and static helpers |
+ | **Classes** | **46** | 25 distinct operation classes; composite classes (e.g., `LibraryFilesOperations`) aggregate multiple mixins counted separately |
+ | **Files** | **52** | Includes `__init__.py` files, `_constants.py`, `_helpers.py` |
+ | **Lines of code** | **~11,300** | All `.py` files combined |
 
 ### Method Categorization
 
-| Category | Count | % of 287 | Schema-Driven Mapping |
-|----------|-------|----------|-----------------------|
-| **CRUD** | ~65 | ~23% | `get`, `insert`, `upsert`, `update`, `delete` verbs |
-| **Query** | ~80 | ~28% | `get` verb with field accessors + `.in()`, `.like()` modifiers + `traversal` |
-| **Batch** | ~40 | ~14% | Implicit bulk (same verb, list input) — no separate batch verbs |
-| **Stats** | ~30 | ~10% | `count` (collection + field level), `collect`, `aggregate` verbs |
-| **Edge/Traversal** | ~20 | ~7% | `traversal` verb (3 modes) + edge declarations in schema |
-| **Vector** | ~20 | ~7% | `ann_search` verb + template collection CRUD verbs |
-| **Lock** | ~18 | ~6% | Standard CRUD on `locks` collection (`get`/`upsert`/`update`/`delete`) — no lock-specific verb |
-| **Meta** | ~10 | ~3% | Infrastructure collection type — minimal key-value operations |
-| **Orchestration/Facade** | ~4 | ~1% | Moved to component/workflow layer (not persistence) |
-| **TOTAL** | **~287** | **~100%** | |
+ | Category | Count | % of 287 | Schema-Driven Mapping |
+ | ---------- | ------- | ---------- | ----------------------- |
+ | **CRUD** | ~65 | ~23% | `get`, `insert`, `upsert`, `update`, `delete` verbs |
+ | **Query** | ~80 | ~28% | `get` verb with field accessors + `.in()`, `.like()` modifiers + `traversal` |
+ | **Batch** | ~40 | ~14% | Implicit bulk (same verb, list input) — no separate batch verbs |
+ | **Stats** | ~30 | ~10% | `count` (collection + field level), `collect`, `aggregate` verbs |
+ | **Edge/Traversal** | ~20 | ~7% | `traversal` verb (3 modes) + edge declarations in schema |
+ | **Vector** | ~20 | ~7% | `ann_search` verb + template collection CRUD verbs |
+ | **Lock** | ~18 | ~6% | Standard CRUD on `locks` collection (`get`/`upsert`/`update`/`delete`) — no lock-specific verb |
+ | **Meta** | ~10 | ~3% | Infrastructure collection type — minimal key-value operations |
+ | **Orchestration/Facade** | ~4 | ~1% | Moved to component/workflow layer (not persistence) |
+ | **TOTAL** | **~287** | **~100%** | |
 
 ### Coverage Progression
 
-| Stage | Cumulative Coverage | What's Added |
-|-------|---------------------|--------------|
-| 12 verbs as-is | ~78% | Standard CRUD, queries, state graph (`transition`), `cascade`, stats (`count`/`collect`/`aggregate`) |
-| + operator modifiers (`.in()`, `.like()`) | ~91% | Complex queries become expressible via modifier chain on `get` |
-| + `ann_search` verb | ~95% | Vector similarity search on template collections |
-| + dynamic collection templates | ~98% | Parameterized vector collections (`vectors_track_{tier}__{backbone}__{library}`) |
-| + move orchestration to component layer | 100% | `drain_to_cold`, `backfill_genres`, `claim_files_for_reconciliation`, delegation wrappers — not persistence, not counted |
+ | Stage | Cumulative Coverage | What's Added |
+ | ------- | --------------------- | -------------- |
+ | 12 verbs as-is | ~78% | Standard CRUD, queries, state graph (`transition`), `cascade`, stats (`count`/`collect`/`aggregate`) |
+ | + operator modifiers (`.in()`, `.like()`) | ~91% | Complex queries become expressible via modifier chain on `get` |
+ | + `ann_search` verb | ~95% | Vector similarity search on template collections |
+ | + dynamic collection templates | ~98% | Parameterized vector collections (`vectors_track_{tier}__{backbone}__{library}`) |
+ | + move orchestration to component layer | 100% | `drain_to_cold`, `backfill_genres`, `claim_files_for_reconciliation`, delegation wrappers — not persistence, not counted |
 
 ### Disposition Summary
 
-| Disposition | Count | % of 287 |
-|-------------|-------|----------|
-| Schema-driven verbs (CRUD/query/traversal/transition/cascade/ann_search) | ~263 | ~92% |
-| Component-layer compositions (`relink_tag_edges`, `set_song_tags`, etc.) | ~8 | ~3% |
-| Facade methods (vector cleanup, version, dynamic dispatch) | 4 | ~1% |
-| Moved to component/workflow (orchestration violations) | 10 | ~3% |
-| Removed delegation wrappers (callers migrate directly) | 9 | ~3% |
-| **Total accounted** | **~294** | ≥287 (total exceeds 287 because schema-driven verbs include new methods that don't exist today, e.g., `cascade` for collections that previously had hand-written cascade logic, pagination variants) |
+ | Disposition | Count | % of 287 |
+ | ------------- | ------- | ---------- |
+ | Schema-driven verbs (CRUD/query/traversal/transition/cascade/ann_search) | ~263 | ~92% |
+ | Component-layer compositions (`relink_tag_edges`, `set_song_tags`, etc.) | ~8 | ~3% |
+ | Facade methods (vector cleanup, version, dynamic dispatch) | 4 | ~1% |
+ | Moved to component/workflow (orchestration violations) | 10 | ~3% |
+ | Removed delegation wrappers (callers migrate directly) | 9 | ~3% |
+ | **Total accounted** | **~294** | ≥287 (total exceeds 287 because schema-driven verbs include new methods that don't exist today, e.g., `cascade` for collections that previously had hand-written cascade logic, pagination variants) |
 
 ---
 
@@ -1263,19 +1297,20 @@ The mapping document is a companion artifact, NOT part of this design document.
 
 Complete cascade relationships verified against the codebase. The matrix has two columns per behavior: **Current** (what the persistence layer actually does today) and **Schema-Driven Target** (what the cascade verb WILL do). Rows marked **NEW** indicate cascade relationships that don't exist in the current persistence code; **EXISTING** rows map behavior already implemented as direct deletes.
 
-| Source Collection | Edge Collections Removed | Current Behavior | Schema-Driven Target | Status |
-|---|---|---|---|---|
-| `library_files` | `file_has_state`, `song_has_tags`, `file_has_vectors`, `file_has_segment_stats` | `delete_library_file()` directly removes `song_has_tags` edges (AQL FOR/REMOVE), delegates to `parent_db` for vectors, segment_scores_stats, and file_states cleanup. Does NOT remove `library_contains_file` edges — that cleanup only happens in the bulk `delete_files_for_library()` path. No orphan detection — edges are removed unconditionally. | `cascade` verb walks all 5 edge collections (including `library_contains_file`), removes edges, detects orphaned target documents (tags with zero remaining `song_has_tags` AND zero `tag_model_output` edges), recursively cascades into orphaned targets. | EXISTING (direct deletes) → **enhanced** with orphan detection + `library_contains_file` cleanup added to per-file path |
-| `tags` | `tag_model_output`, `song_has_tags` (inbound edges TO this tag) | `cleanup_orphaned_tags()` is a **standalone cleanup routine** — not triggered by cascade. It finds tags with zero `song_has_tags` AND zero `tag_model_output` edges, deletes their `tag_model_output` edges, then removes the tag vertices. Runs periodically or after bulk deletions, not on individual tag delete. | `cascade` verb on tag deletion removes `tag_model_output` edges. Under the new schema, orphan detection on `library_files` cascade triggers tag deletion automatically (replacing the standalone `cleanup_orphaned_tags` routine). | **NEW** — `cleanup_orphaned_tags` becomes a cascade triggered by edge removal that creates orphans, rather than a standalone periodic routine |
-| `calibration_state` | `model_has_calibration` | Deletes `model_has_calibration` edges before deleting calibration_state documents | `cascade` verb removes `model_has_calibration` edges | EXISTING |
-| `ml_model_outputs` | `model_has_output` | `delete_outputs_for_model()` deletes `model_has_output` edges then removes output documents — this IS persistence-layer cascade behavior (not caller-side). | `cascade` verb removes `model_has_output` edges. Caller-side: `tag_model_output` edges referencing this output must also be cleaned (declared on `tags` cascade, not here, because edge direction is tags→ml_model_outputs) | EXISTING (direct deletes) |
-| `library_folders` | `library_contains_folder` | Direct REMOVE, no cascade logic | `cascade` verb removes `library_contains_folder` edges | EXISTING |
-| `navidrome_tracks` | `has_nd_id`, `has_plays` | `delete_tracks_cascade()` removes `has_plays` edges (filter `edge._to IN full_ids`), removes `has_nd_id` edges, then deletes track documents | `cascade` verb removes edges + detects orphaned `navidrome_playcounts` | EXISTING → **enhanced** with orphan detection |
-| vector collections (hot/cold) | `file_has_vectors` | Vectors deleted by `delete_vectors_by_file_id` facade method iterating registered collections | `cascade` verb on vector documents removes `file_has_vectors` edges | EXISTING |
-| `segment_scores_stats` | `file_has_segment_stats` | `delete_by_file_id` via graph traversal (OUTBOUND from file, then REMOVE) | `cascade` verb removes `file_has_segment_stats` edges | EXISTING |
-| `libraries` | `library_contains_file`, `library_contains_folder`, `library_has_scan`, `library_has_pipeline_state` | `delete_library()` removes ONLY the library document — no cascade. The **component layer** (`library_admin_comp.delete_library()`) orchestrates file deletion first by calling `delete_library_file` per file, then deletes the library. | `cascade` verb recursively deletes: walks `library_contains_file` edges → cascades into `library_files` (which triggers its own cascade), walks `library_contains_folder` → deletes folders, walks `library_has_scan` → deletes scans, walks `library_has_pipeline_state` → deletes pipeline states. | **NEW** — moves orchestration from component layer into schema-driven cascade |
+ | Source Collection | Edge Collections Removed | Current Behavior | Schema-Driven Target | Status |
+ | --- | --- | --- | --- | --- |
+ | `library_files` | `file_has_state`, `song_has_tags`, `file_has_vectors`, `file_has_segment_stats` | `delete_library_file()` directly removes `song_has_tags` edges (AQL FOR/REMOVE), delegates to `parent_db` for vectors, segment_scores_stats, and file_states cleanup. Does NOT remove `library_contains_file` edges — that cleanup only happens in the bulk `delete_files_for_library()` path. No orphan detection — edges are removed unconditionally. | `cascade` verb walks all 5 edge collections (including `library_contains_file`), removes edges, detects orphaned target documents (tags with zero remaining `song_has_tags` AND zero `tag_model_output` edges), recursively cascades into orphaned targets. | EXISTING (direct deletes) → **enhanced** with orphan detection + `library_contains_file` cleanup added to per-file path |
+ | `tags` | `tag_model_output`, `song_has_tags` (inbound edges TO this tag) | `cleanup_orphaned_tags()` is a **standalone cleanup routine** — not triggered by cascade. It finds tags with zero `song_has_tags` AND zero `tag_model_output` edges, deletes their `tag_model_output` edges, then removes the tag vertices. Runs periodically or after bulk deletions, not on individual tag delete. | `cascade` verb on tag deletion removes `tag_model_output` edges. Under the new schema, orphan detection on `library_files` cascade triggers tag deletion automatically (replacing the standalone `cleanup_orphaned_tags` routine). | **NEW** — `cleanup_orphaned_tags` becomes a cascade triggered by edge removal that creates orphans, rather than a standalone periodic routine |
+ | `calibration_state` | `model_has_calibration` | Deletes `model_has_calibration` edges before deleting calibration_state documents | `cascade` verb removes `model_has_calibration` edges | EXISTING |
+ | `ml_model_outputs` | `model_has_output` | `delete_outputs_for_model()` deletes `model_has_output` edges then removes output documents — this IS persistence-layer cascade behavior (not caller-side). | `cascade` verb removes `model_has_output` edges. Caller-side: `tag_model_output` edges referencing this output must also be cleaned (declared on `tags` cascade, not here, because edge direction is tags→ml_model_outputs) | EXISTING (direct deletes) |
+ | `library_folders` | `library_contains_folder` | Direct REMOVE, no cascade logic | `cascade` verb removes `library_contains_folder` edges | EXISTING |
+ | `navidrome_tracks` | `has_nd_id`, `has_plays` | `delete_tracks_cascade()` removes `has_plays` edges (filter `edge._to IN full_ids`), removes `has_nd_id` edges, then deletes track documents | `cascade` verb removes edges + detects orphaned `navidrome_playcounts` | EXISTING → **enhanced** with orphan detection |
+ | vector collections (hot/cold) | `file_has_vectors` | Vectors deleted by `delete_vectors_by_file_id` facade method iterating registered collections | `cascade` verb on vector documents removes `file_has_vectors` edges | EXISTING |
+ | `segment_scores_stats` | `file_has_segment_stats` | `delete_by_file_id` via graph traversal (OUTBOUND from file, then REMOVE) | `cascade` verb removes `file_has_segment_stats` edges | EXISTING |
+ | `libraries` | `library_contains_file`, `library_contains_folder`, `library_has_scan`, `library_has_pipeline_state` | `delete_library()` removes ONLY the library document — no cascade. The **component layer** (`library_admin_comp.delete_library()`) orchestrates file deletion first by calling `delete_library_file` per file, then deletes the library. | `cascade` verb recursively deletes: walks `library_contains_file` edges → cascades into `library_files` (which triggers its own cascade), walks `library_contains_folder` → deletes folders, walks `library_has_scan` → deletes scans, walks `library_has_pipeline_state` → deletes pipeline states. | **NEW** — moves orchestration from component layer into schema-driven cascade |
 
 **Notes:**
+
 - `library_files` cascade is the most complex — 5 edge collections. Current code handles this via direct edge removal + `parent_db` delegation. The schema-driven cascade **adds** orphan detection (especially for tags).
 - `libraries` cascade is the biggest behavioral change: currently the persistence layer only deletes the library document itself; the component layer orchestrates all related cleanup. Under the new schema, `cascade` on libraries handles the full recursive teardown.
 - `cleanup_orphaned_tags` is currently a standalone periodic routine that checks BOTH `song_has_tags` AND `tag_model_output` edges before declaring a tag orphaned. Under the new schema, this becomes automatic: when `library_files` cascade removes `song_has_tags` edges, orphan detection checks remaining edges on the tag; if none remain, the tag is recursively cascade-deleted.
@@ -1288,23 +1323,24 @@ Complete cascade relationships verified against the codebase. The matrix has two
 
 Complete inventory of all edge collections, verified against the codebase.
 
-| Edge Collection | From Collection | To Collection | Direction(s) Used | Applicable Patterns
-|---|---|---|---|---|
-| `file_has_state` | `library_files` | `file_states` | OUTBOUND, INBOUND | traversal (state lookup), cascade (file deletion), transition (state changes) |
-| `song_has_tags` | `library_files` | `tags` | OUTBOUND, INBOUND | traversal (tags for file, files for tag), cascade (file deletion, tag orphan cleanup), filter (tag drill-down) |
-| `tag_model_output` | `tags` | `ml_model_outputs` | OUTBOUND | traversal (provenance lookup), cascade (tag deletion) |
-| `library_contains_file` | `libraries` | `library_files` | OUTBOUND, INBOUND | traversal (files in library), filter (library-scoped queries), cascade (library deletion) |
-| `library_contains_folder` | `libraries` | `library_folders` | OUTBOUND | traversal (folders in library), cascade (library deletion) |
-| `library_has_scan` | `libraries` | `library_scans` | OUTBOUND | traversal (scans for library), cascade (library deletion) |
-| `file_has_vectors` | `library_files` | vector collections (hot/cold) | OUTBOUND | traversal (vectors for file), cascade (file deletion, vector cleanup) |
-| `file_has_segment_stats` | `library_files` | `segment_scores_stats` | OUTBOUND | traversal (stats for file), cascade (file deletion) |
-| `model_has_output` | `ml_models` | `ml_model_outputs` | OUTBOUND | traversal (outputs for model), cascade (model deletion) |
-| `model_has_calibration` | `ml_models` | `calibration_state` | OUTBOUND | traversal (calibration for model), cascade (model deletion) |
-| `library_has_pipeline_state` | `libraries` | `library_pipeline_states` | OUTBOUND | traversal (pipeline state for library), cascade (library deletion) |
-| `has_nd_id` | `navidrome_tracks` | `library_files` | OUTBOUND, INBOUND | traversal (Navidrome↔file mapping), cascade (Navidrome track deletion) |
-| `has_plays` | `navidrome_tracks` | `navidrome_playcounts` | OUTBOUND | traversal (play counts for track), cascade (Navidrome track deletion) |
+ | Edge Collection | From Collection | To Collection | Direction(s) Used | Applicable Patterns
+ | --- | --- | --- | --- | --- |
+ | `file_has_state` | `library_files` | `file_states` | OUTBOUND, INBOUND | traversal (state lookup), cascade (file deletion), transition (state changes) |
+ | `song_has_tags` | `library_files` | `tags` | OUTBOUND, INBOUND | traversal (tags for file, files for tag), cascade (file deletion, tag orphan cleanup), filter (tag drill-down) |
+ | `tag_model_output` | `tags` | `ml_model_outputs` | OUTBOUND | traversal (provenance lookup), cascade (tag deletion) |
+ | `library_contains_file` | `libraries` | `library_files` | OUTBOUND, INBOUND | traversal (files in library), filter (library-scoped queries), cascade (library deletion) |
+ | `library_contains_folder` | `libraries` | `library_folders` | OUTBOUND | traversal (folders in library), cascade (library deletion) |
+ | `library_has_scan` | `libraries` | `library_scans` | OUTBOUND | traversal (scans for library), cascade (library deletion) |
+ | `file_has_vectors` | `library_files` | vector collections (hot/cold) | OUTBOUND | traversal (vectors for file), cascade (file deletion, vector cleanup) |
+ | `file_has_segment_stats` | `library_files` | `segment_scores_stats` | OUTBOUND | traversal (stats for file), cascade (file deletion) |
+ | `model_has_output` | `ml_models` | `ml_model_outputs` | OUTBOUND | traversal (outputs for model), cascade (model deletion) |
+ | `model_has_calibration` | `ml_models` | `calibration_state` | OUTBOUND | traversal (calibration for model), cascade (model deletion) |
+ | `library_has_pipeline_state` | `libraries` | `library_pipeline_states` | OUTBOUND | traversal (pipeline state for library), cascade (library deletion) |
+ | `has_nd_id` | `navidrome_tracks` | `library_files` | OUTBOUND, INBOUND | traversal (Navidrome↔file mapping), cascade (Navidrome track deletion) |
+ | `has_plays` | `navidrome_tracks` | `navidrome_playcounts` | OUTBOUND | traversal (play counts for track), cascade (Navidrome track deletion) |
 
 **Direction notes:**
+
 - Edges needing BOTH directions are those used in library-scoping (INBOUND from library to file) AND file-centric queries (OUTBOUND from file).
 - `has_nd_id` uses BOTH: OUTBOUND to find the library_file for a Navidrome track, INBOUND to find the Navidrome track for a library_file.
 - `song_has_tags` uses BOTH: OUTBOUND for "get tags for song", INBOUND for "get songs for tag".

@@ -36,6 +36,7 @@ Use Context7 proactively. **Do not wait for the user to say "use context7."**
 ## Failure handling
 
 If Context7 can't find a reliable source:
+
 1. State what you tried.
 2. Proceed with a conservative, clearly-labeled assumption.
 3. Suggest a quick validation step (e.g., `--help`, official docs page).

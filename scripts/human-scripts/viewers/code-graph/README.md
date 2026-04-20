@@ -20,24 +20,28 @@ scripts/viewers/code-graph/
 ## Module Responsibilities
 
 ### `graph-loader.js` - Data Management
+
 - Load graph from URL or file
 - Validate JSON structure
 - Build interface connection map (BFS from each entrypoint)
 - Provide data access methods
 
 ### `graph-filters.js` - Filtering Logic
+
 - Manage filter state (layers, kinds, edges, search, interface)
 - Apply filters to nodes and edges
 - Compute transitive edges through hidden nodes
 - Generate filtered graph data for visualization
 
 ### `graph-network.js` - Network Visualization
+
 - Initialize and manage vis.js network
 - Handle network events (click, double-click)
 - Update graph data
 - Control network view (fit, focus, selection)
 
 ### `graph-ui.js` - User Interface
+
 - Initialize filter controls (dropdowns, checkboxes)
 - Handle user interactions
 - Update statistics display
@@ -45,6 +49,7 @@ scripts/viewers/code-graph/
 - Manage loading/error states
 
 ### `main.js` - Orchestration
+
 - Wire all modules together
 - Coordinate initialization flow
 - Handle file loading fallback
@@ -55,6 +60,7 @@ scripts/viewers/code-graph/
 ### Running the Viewer
 
 **Option 1: Local server (recommended)**
+
 ```bash
 cd scripts/viewers/code-graph
 python -m http.server 8000
@@ -67,6 +73,7 @@ Open `index.html` directly in browser and use file picker to load `../../outputs
 ### Generating Graph Data
 
 Run the code graph builder:
+
 ```bash
 python scripts/build_code_graph.py
 ```

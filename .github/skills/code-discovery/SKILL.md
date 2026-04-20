@@ -16,6 +16,7 @@ description: Use when exploring codebase structure, discovering module APIs, und
 **Purpose:** Inspect real module APIs—functions, classes, constants, signatures.
 
 **Use when:**
+
 - About to call a function but unsure of its parameters
 - Exploring a module's public surface
 - Verifying an API exists before using it
@@ -49,6 +50,7 @@ python scripts/discover_api.py nomarr.components.ml --format=json
 **Purpose:** Trace import dependencies from a module and detect architecture violations.
 
 **Use when:**
+
 - Checking if a new import would violate layering rules
 - Debugging circular imports
 - Understanding what a module depends on
@@ -67,6 +69,7 @@ python scripts/discover_import_chains.py nomarr/interfaces/api/v1/library.py
 ```
 
 **Output shows:**
+
 - Full import chain (what imports what)
 - Architecture violations (e.g., "workflow imports service")
 - Depth-limited to prevent infinite recursion
@@ -78,6 +81,7 @@ python scripts/discover_import_chains.py nomarr/interfaces/api/v1/library.py
 **Purpose:** Build a complete code graph for dead code detection and reachability analysis.
 
 **Use when:**
+
 - Checking if code is reachable from entrypoints
 - Finding unused functions/classes
 - Understanding call relationships
@@ -89,6 +93,7 @@ python scripts/build_code_graph.py
 ```
 
 **Output:** Writes to `scripts/outputs/code_graph.json` with:
+
 - Nodes: All modules, classes, functions
 - Edges: CONTAINS, IMPORTS, CALLS relationships
 - Reachability from interface entrypoints
@@ -100,16 +105,19 @@ python scripts/build_code_graph.py
 ## Workflow: Discovering an Unfamiliar Module
 
 1. **Find the module's API:**
+
    ```bash
    python scripts/discover_api.py nomarr.components.tagging
    ```
 
 2. **Check its dependencies:**
+
    ```bash
    python scripts/discover_import_chains.py nomarr.components.tagging
    ```
 
 3. **Verify no violations before adding imports:**
+
    ```bash
    python scripts/discover_import_chains.py nomarr.workflows.new_workflow_wf
    ```
@@ -153,6 +161,7 @@ python scripts/discover_api.py nomarr.components.ml.ml_inference_comp
 **Never guess function names, parameters, or return types.**
 
 Use `discover_api.py` to verify APIs before calling them. This prevents:
+
 - Inventing non-existent functions
 - Wrong parameter orders
 - Type mismatches

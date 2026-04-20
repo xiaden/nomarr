@@ -34,6 +34,7 @@ failure:
 ### 1. Understand the Symptom
 
 Parse the failure report. Identify:
+
 - **What failed:** Test? Runtime? Lint? Behavior?
 - **Where:** File, line, function if known
 - **When:** During execution, import, test run?
@@ -60,17 +61,20 @@ hypotheses:
 For each hypothesis, systematically collect evidence:
 
 **For code issues:**
+
 - Use `read_file_symbol_at_line` to get full context around error
 - Use `trace_module_calls` to see call chain
 - Use `read_module_source` for exact method signatures
 - Use `find_referencing_symbols` to find all callers
 
 **For runtime issues:**
+
 - Run the failing test with `runTests` to capture output
 - Check imports with `py_introspect` if needed
 - Trace the endpoint with `trace_project_endpoint` for API issues
 
 **For lint issues:**
+
 - Run `lint_project_backend` to get full error context
 - Read the specific rule being violated
 
@@ -143,24 +147,28 @@ openQuestions:
 ## Diagnosing Different Failure Types
 
 ### TEST_FAILURE
+
 1. Run the failing test to capture exact output
 2. Read the test to understand expectations
 3. Read the code under test
 4. Compare expected vs actual behavior
 
 ### RUNTIME_ERROR
+
 1. Parse the stack trace
 2. Read each frame in the stack
 3. Identify where bad state originated
 4. Trace backwards to root cause
 
 ### UNEXPECTED_BEHAVIOR
+
 1. Understand expected behavior from plan/design
 2. Understand actual behavior from code
 3. Find divergence point
 4. Identify why code differs from expectation
 
 ### LINT_ERROR
+
 1. Parse the lint message
 2. Read the violating code
 3. Understand the rule being violated
@@ -188,13 +196,13 @@ Your diagnoses are critical institutional knowledge. Log everything — future d
 
 ### When to Log
 
-| Situation | Category |
-|-----------|----------|
-| Root cause identified | `discovery` — **always log root causes** |
-| Hypothesis eliminated with evidence | `dead-end` |
-| The failure reveals a systemic issue | `observation` |
-| Diagnosis is uncertain or partial | `observation` + tag `uncertainty` |
-| Something blocks the diagnosis | `blocker` |
+ | Situation | Category |
+ | ----------- | ---------- |
+ | Root cause identified | `discovery` — **always log root causes** |
+ | Hypothesis eliminated with evidence | `dead-end` |
+ | The failure reveals a systemic issue | `observation` |
+ | Diagnosis is uncertain or partial | `observation` + tag `uncertainty` |
+ | Something blocks the diagnosis | `blocker` |
 
 **Always log your diagnosis**, even if it seems obvious. The next debugger may face the same symptom from a different angle.
 
@@ -203,6 +211,7 @@ Log your agent name as `support-debugger`.
 ## Log Access
 
 `log_read` is scoped to:
+
 - Own logs (`support-debugger`)
 - Manager-level: `director`, `rnd-manager`, `exec-manager`
 - Audit target: `exec-executor`

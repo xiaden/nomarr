@@ -13,16 +13,16 @@ Workflows for library scanning, file synchronization, tag I/O, path reconciliati
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|---------|
-| `scan_library_full_wf.py` | Full scan — walks every folder ignoring cache, re-examines all files |
-| `scan_library_quick_wf.py` | Quick (incremental) scan — skips unchanged folders via mtime/file_count cache |
-| `scan_setup_wf.py` | Pre-scan validation — checks library exists, not already scanning; runs synchronously before dispatch |
-| `sync_file_to_library_wf.py` | Canonical file sync — upserts `library_files`, parses tags, seeds entity graph, rebuilds cache |
-| `file_tags_io_wf.py` | Read/remove namespaced tags from audio files on disk |
-| `reconcile_paths_wf.py` | Re-validate all library paths after config changes (mark/delete invalid) |
-| `cleanup_orphaned_tags_wf.py` | Remove orphaned tags with no file edges |
-| `validate_library_tags_wf.py` | Verify tag completeness for all ML heads; optionally mark incomplete files for re-tagging |
+ | Module | Purpose |
+ | -------- | --------- |
+ | `scan_library_full_wf.py` | Full scan — walks every folder ignoring cache, re-examines all files |
+ | `scan_library_quick_wf.py` | Quick (incremental) scan — skips unchanged folders via mtime/file_count cache |
+ | `scan_setup_wf.py` | Pre-scan validation — checks library exists, not already scanning; runs synchronously before dispatch |
+ | `sync_file_to_library_wf.py` | Canonical file sync — upserts `library_files`, parses tags, seeds entity graph, rebuilds cache |
+ | `file_tags_io_wf.py` | Read/remove namespaced tags from audio files on disk |
+ | `reconcile_paths_wf.py` | Re-validate all library paths after config changes (mark/delete invalid) |
+ | `cleanup_orphaned_tags_wf.py` | Remove orphaned tags with no file edges |
+ | `validate_library_tags_wf.py` | Verify tag completeness for all ML heads; optionally mark incomplete files for re-tagging |
 
 ## Patterns
 

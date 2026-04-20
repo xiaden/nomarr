@@ -46,6 +46,7 @@ For each step in the phase:
 5. **Mark complete** — `plan_complete_step(plan_name, step_id)` with annotation
 
 **If a step cannot be completed:**
+
 - Annotate what blocked it
 - Mark it as blocked (do not mark complete)
 - Continue to next step if possible
@@ -98,13 +99,13 @@ You are the agent closest to the code. You encounter surprises, dead ends, and u
 
 ### When to Log
 
-| Situation | Category |
-|-----------|----------|
-| Something in the codebase surprises you | `discovery` |
-| You try an approach and it fails | `dead-end` |
-| You're unsure about an implementation choice but proceed | `observation` + tag `uncertainty` |
-| You find a pattern violation or inconsistency while working | `observation` |
-| A step's intent is ambiguous and you interpret it | `observation` + tag `needs-review` |
+ | Situation | Category |
+ | ----------- | ---------- |
+ | Something in the codebase surprises you | `discovery` |
+ | You try an approach and it fails | `dead-end` |
+ | You're unsure about an implementation choice but proceed | `observation` + tag `uncertainty` |
+ | You find a pattern violation or inconsistency while working | `observation` |
+ | A step's intent is ambiguous and you interpret it | `observation` + tag `needs-review` |
 
 **Threshold:** If you spent >2 minutes figuring something out, log it. The next executor shouldn't repeat that work.
 

@@ -18,11 +18,11 @@ Attempting to find cases that parse but produce wrong output.
 ### Phase 2: Indentation Chaos
 
 - [ ] Step with tabs
-	- tabbed bullet under step
-	**Notes:** tabbed marker
+  - tabbed bullet under step
+ **Notes:** tabbed marker
 - [ ] Normal step
-    - 4-space bullet
-      - 6-space bullet (nested?)
+  - 4-space bullet
+    - 6-space bullet (nested?)
 
 ### Phase 3: Checkbox Variations
 
@@ -42,6 +42,7 @@ Attempting to find cases that parse but produce wrong output.
 
 1. First thing
 2. Second thing
+
 - [ ] Actual step after numbered list
 
 ### Phase 6: Bare Bullets at Step Level
@@ -57,9 +58,10 @@ Attempting to find cases that parse but produce wrong output.
 
 ### Phase 8: Wrong Bullet Markers
 
-* [ ] Asterisk checkbox
-+ [ ] Plus checkbox
-* [x] Completed asterisk
+- [ ] Asterisk checkbox
+- [ ] Plus checkbox
+- [x] Completed asterisk
+
 - [ ] Valid step for comparison
 
 ## Completion Criteria

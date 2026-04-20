@@ -11,9 +11,9 @@ File-level write operations for persisting ML results to the database.
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|----------|
-| `file_write_comp` | File lookup (`get_file_for_writing`), library root resolution, mood tag read/write (single + batch), write claim release, and projection state recording |
+ | Module | Purpose |
+ | -------- | ---------- |
+ | `file_write_comp` | File lookup (`get_file_for_writing`), library root resolution, mood tag read/write (single + batch), write claim release, and projection state recording |
 
 ## Patterns
 

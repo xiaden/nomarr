@@ -30,15 +30,15 @@ All phases of this plan are complete. Review the full implementation for quality
 ## Layer Docs
 {Include ALL that apply to layers touched by this plan. Copy the relevant rows from the table below.}
 
-| Layer | File | Purpose |
-|---|---|---|
-| Interfaces | `.github/instructions/interfaces.instructions.md` | Route handlers, auth, Pydantic-only-here rule |
-| Services | `.github/instructions/services.instructions.md` | DI wiring, thinness, no business logic |
-| Workflows | `.github/instructions/workflows.instructions.md` | Use-case orchestration, one public function per file |
-| Components | `.github/instructions/components.instructions.md` | Domain logic, stateless functions, ML isolation |
-| Persistence | `.github/instructions/persistence.instructions.md` | AQL queries, db.module.method() access pattern |
-| Helpers | `.github/instructions/helpers.instructions.md` | Pure utilities, DTOs, no nomarr imports |
-| Frontend | `.github/instructions/frontend.instructions.md` | React/TS conventions, MUI sx prop, no `any` |
+ | Layer | File | Purpose | 
+ | --- | --- | --- | 
+ | Interfaces | `.github/instructions/interfaces.instructions.md` | Route handlers, auth, Pydantic-only-here rule | 
+ | Services | `.github/instructions/services.instructions.md` | DI wiring, thinness, no business logic | 
+ | Workflows | `.github/instructions/workflows.instructions.md` | Use-case orchestration, one public function per file | 
+ | Components | `.github/instructions/components.instructions.md` | Domain logic, stateless functions, ML isolation | 
+ | Persistence | `.github/instructions/persistence.instructions.md` | AQL queries, db.module.method() access pattern | 
+ | Helpers | `.github/instructions/helpers.instructions.md` | Pure utilities, DTOs, no nomarr imports | 
+ | Frontend | `.github/instructions/frontend.instructions.md` | React/TS conventions, MUI sx prop, no `any` | 
 
 Also include:
 - Target plan: `artifacts/plans/pending/TASK-{feature}-{letter}-*.md`
@@ -159,8 +159,8 @@ For each issue:
 
 ### Contract Drift (if any)
 
-| Method/DTO | Planned Signature | Actual Signature | Difference |
-|---|---|---|---|
+ | Method/DTO | Planned Signature | Actual Signature | Difference | 
+ | --- | --- | --- | --- | 
 
 ### Files Reviewed
 {List every file you actually inspected}
@@ -232,11 +232,11 @@ After the fix plan is created and validated (PLAN_NEEDED path), execute it using
 
 ## Fix Cycle Limits
 
-| Round | Action |
-|---|---|
-| Review 1 → Issues found | Generate fix plan, execute, review again |
-| Review 2 → Issues found | Generate fix-2 plan, execute, review again |
-| Review 3 → Still issues | **STOP.** Escalate to user. Something systemic is wrong. |
+ | Round | Action |
+ | --- | --- |
+ | Review 1 → Issues found | Generate fix plan, execute, review again |
+ | Review 2 → Issues found | Generate fix-2 plan, execute, review again |
+ | Review 3 → Still issues | **STOP.** Escalate to user. Something systemic is wrong. |
 
 More than 2 fix rounds means the original plan or the architecture understanding is flawed. The orchestrator should present all remaining issues to the user and discuss before continuing.
 

@@ -70,16 +70,19 @@ All four curation operations (rename, merge, split, single-song edit) continue t
 ## Consequences
 
 **Positive:**
+
 - Three ADRs collapsed into one coherent decision — reduces cognitive overhead for contributors
 - Eliminates an entire class of organizational debates (naming, origination, module boundaries) by making them structurally impossible
 - Component-layer compositions are explicit, testable, and layer-compliant by construction
 - Schema-as-source-of-truth enables automated testing (test_schema_output.py validates constructor output against schema)
 
 **Negative:**
+
 - ADR-024's origination principle was a useful mental model — now it's implicit in the schema rather than documented as a rule. Contributors must understand the schema to know "where does this query go?" (answer: it doesn't "go" anywhere, it's constructed)
 - Component-layer compositions have slightly different error semantics than the old AQL primitives (each step is a separate DB call rather than a batched AQL query). For alpha with single-user, this is acceptable.
 
 **Migration:**
+
 - Old AQL files remain until Plan E (cleanup phase) deletes them
 - Callers of `set_song_tags_batch` and `relink_tag_edges` migrate during Plan C (complex collections)
 - ADR-024's naming convention becomes irrelevant as AQL files are deleted

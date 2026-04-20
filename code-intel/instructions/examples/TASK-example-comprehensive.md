@@ -7,6 +7,7 @@ This is a reference plan demonstrating all formatting elements recognized by the
 **Context for fresh models:** Plans are structured markdown files that enable cross-session task continuity. A model starting fresh should be able to read this plan and understand exactly what's been done, what's next, and any blockers or warnings accumulated along the way.
 
 Key elements:
+
 - **Phases** group steps by semantic outcome (not by file or method)
 - **Steps** are atomic, verifiable actions with auto-generated IDs (P1-S1, P1-S2, etc.)
 - **Annotations** capture decisions, warnings, and blockers at phase or step level

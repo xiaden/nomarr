@@ -9,10 +9,10 @@ Workflows for entity (tag) graph maintenance — orphan cleanup and metadata cac
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|---------|
-| `cleanup_orphaned_entities_wf.py` | Count and optionally delete orphaned tags; supports dry-run mode |
-| `rebuild_metadata_cache_wf.py` | Re-derive embedded cache fields from `song_has_tags` edges for all songs |
+ | Module | Purpose |
+ | -------- | --------- |
+ | `cleanup_orphaned_entities_wf.py` | Count and optionally delete orphaned tags; supports dry-run mode |
+ | `rebuild_metadata_cache_wf.py` | Re-derive embedded cache fields from `song_has_tags` edges for all songs |
 
 ## Patterns
 

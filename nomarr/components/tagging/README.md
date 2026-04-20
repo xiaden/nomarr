@@ -14,17 +14,17 @@ Tag reading, writing, normalization, aggregation, and mood tier computation for 
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|----------|
-| `tagging_reader_comp` | Read namespaced tags from audio files, infer write mode from existing tags |
-| `tagging_writer_comp` | Format-aware `TagWriter` with direct and safe (atomic) write modes |
-| `safe_write_comp` | Copy-modify-verify-replace write pattern with audio property validation |
-| `tagging_remove_comp` | Remove all namespaced tags from a file (MP3 TXXX, MP4 freeform, Vorbis) |
-| `tag_normalization_comp` | Normalize format-specific tags (ID3, MP4, Vorbis) to canonical names |
-| `tag_parsing_comp` | Parse tag value strings into typed lists (JSON, semicolons, floats, ints) |
-| `tagging_aggregation_comp` | Aggregate HeadOutputs into mood-strict/regular/loose with conflict suppression |
-| `tagging_reconstruction_comp` | Reconstruct HeadOutputs from DB statistics for re-aggregation after calibration |
-| `mood_labels_comp` | Normalize model labels (non_* → not_*) |
+ | Module | Purpose |
+ | -------- | ---------- |
+ | `tagging_reader_comp` | Read namespaced tags from audio files, infer write mode from existing tags |
+ | `tagging_writer_comp` | Format-aware `TagWriter` with direct and safe (atomic) write modes |
+ | `safe_write_comp` | Copy-modify-verify-replace write pattern with audio property validation |
+ | `tagging_remove_comp` | Remove all namespaced tags from a file (MP3 TXXX, MP4 freeform, Vorbis) |
+ | `tag_normalization_comp` | Normalize format-specific tags (ID3, MP4, Vorbis) to canonical names |
+ | `tag_parsing_comp` | Parse tag value strings into typed lists (JSON, semicolons, floats, ints) |
+ | `tagging_aggregation_comp` | Aggregate HeadOutputs into mood-strict/regular/loose with conflict suppression |
+ | `tagging_reconstruction_comp` | Reconstruct HeadOutputs from DB statistics for re-aggregation after calibration |
+ | `mood_labels_comp` | Normalize model labels (non_*→ not_*) |
 
 ## Patterns
 

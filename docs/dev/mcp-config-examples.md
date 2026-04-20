@@ -277,6 +277,7 @@ include_patterns = ["myapp.*"]
 All configs are validated against [config_schema.json](../../scripts/mcp/config_schema.json). Use JSON Schema validation in your editor for autocomplete and error checking.
 
 Add to your workspace settings:
+
 ```json
 {
   "json.schemas": [

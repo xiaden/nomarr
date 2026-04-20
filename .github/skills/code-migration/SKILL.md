@@ -31,14 +31,14 @@ If you can't check all boxes, the migration isn't done.
 
 Every responsibility has exactly ONE canonical owner:
 
-| Responsibility | Canonical Owner | NOT |
-|---------------|-----------------|-----|
-| Library path construction | `path_comp.py` | `files_helper.py` |
-| Wall-clock timestamps | `time_helper.now_ms()` | `time.time()` |
-| Monotonic intervals | `time_helper.internal_ms()` | `time.monotonic()` |
-| Essentia calls | `ml_backend_essentia_comp.py` | anywhere else |
-| Logging setup | `logging_helper.get_logger()` | `logging.getLogger()` |
-| Config access | Injected `AppConfig` | `os.environ`, `config.yaml` |
+ | Responsibility | Canonical Owner | NOT |
+ | --------------- | ----------------- | ----- |
+ | Library path construction | `path_comp.py` | `files_helper.py` |
+ | Wall-clock timestamps | `time_helper.now_ms()` | `time.time()` |
+ | Monotonic intervals | `time_helper.internal_ms()` | `time.monotonic()` |
+ | Essentia calls | `ml_backend_essentia_comp.py` | anywhere else |
+ | Logging setup | `logging_helper.get_logger()` | `logging.getLogger()` |
+ | Config access | Injected `AppConfig` | `os.environ`, `config.yaml` |
 
 **If two places can do the same thing, one of them is wrong.**
 
@@ -229,6 +229,7 @@ python scripts/check_migration.py nomarr.old.pattern
 ```
 
 The script validates:
+
 - [ ] Old code is **deleted**, not deprecated
 - [ ] No imports of the old module remain
 - [ ] No skill references to old pattern
@@ -236,6 +237,7 @@ The script validates:
 - [ ] (With `--expect-ban`) Ruff ban exists
 
 Manual checks:
+
 - [ ] No wrapper/shim functions exist
 - [ ] Tests pass
 

@@ -141,12 +141,12 @@ Planning reveals gaps and makes decisions. Record both.
 
 ### When to Log
 
-| Situation | Category |
-|-----------|----------|
-| Research reveals a gap in the design doc | `observation` |
-| You choose between plan structures | `decision` |
-| Uncertain about phase ordering or step granularity | `observation` + tag `uncertainty` |
-| A design doc assumption doesn't match codebase reality | `discovery` |
+ | Situation | Category |
+ | ----------- | ---------- |
+ | Research reveals a gap in the design doc | `observation` |
+ | You choose between plan structures | `decision` |
+ | Uncertain about phase ordering or step granularity | `observation` + tag `uncertainty` |
+ | A design doc assumption doesn't match codebase reality | `discovery` |
 
 ### When to Create ADRs
 

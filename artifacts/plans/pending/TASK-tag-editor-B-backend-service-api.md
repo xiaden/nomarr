@@ -9,8 +9,9 @@ With persistence primitives and DTOs in place (Plan A), the tag curation tool ne
 ## Phases
 
 ### Phase 1: Expand TaggingService
+
 - [x] Add curation methods to `TaggingService` in `nomarr/services/domain/tagging_svc.py`: `rename_tag(tag_id, new_value) -> RenameResult`, `merge_tags(source_tag_ids, canonical_tag_id) -> MergeResult`, `split_tag(source_tag_id, song_ids, new_value) -> SplitResult`, `update_file_tags(file_id, rel, values) -> dict`. Each method: (1) validates `nom:` prefix rejection with `ValueError`, (2) calls persistence primitives (`relink_tag_edges`, `find_or_create_tag`, `set_song_tags`), (3) sets affected files to `tags_not_written` via `self.db.file_states.set_tags_not_written(file_id)`.
-    **executor:** Added rename_tag, merge_tags, split_tag, update_file_tags with nom: prefix rejection via _reject_nom_prefix static helper. Each calls persistence primitives and sets tags_not_written state.
+    **executor:** Added rename_tag, merge_tags, split_tag, update_file_tags with nom: prefix rejection via_reject_nom_prefix static helper. Each calls persistence primitives and sets tags_not_written state.
 - [x] Add query methods to `TaggingService`: `list_tag_values(rel, prefix, limit, offset) -> TagListResult` wrapping `self.db.tags.list_tags_by_rel` + `count_tags_by_rel`; `get_tag_songs(tag_id, limit, offset) -> dict` wrapping `self.db.tags.get_tag_songs_with_metadata` + `count_songs_for_tag`.
     **executor:** Added list_tag_values wrapping list_tags_by_rel+count_tags_by_rel, and get_tag_songs wrapping get_tag_songs_with_metadata+count_songs_for_tag.
 - [x] Add commit methods to `TaggingService`: `get_pending_commit_count() -> int` wrapping `self.db.file_states.count_pending_tag_writes()`; `commit_pending_tags(library_id=None) -> CommitResult` delegating to existing `self.reconcile_library()` for files in `tags_not_written` state.
@@ -25,6 +26,7 @@ With persistence primitives and DTOs in place (Plan A), the tag curation tool ne
     **executor:** Both files pass lint with zero errors (ruff + mypy clean).
 
 ### Phase 2: New API Endpoints
+
 - [x] Create `nomarr/interfaces/api/web/tag_curation_if.py` with `APIRouter(prefix="/tag-curation", tags=["Tag Curation"])`. Add curation endpoints: `POST /rename` (body: `{tag_id, new_value}`), `POST /merge` (body: `{source_tag_ids, canonical_tag_id}`), `POST /split` (body: `{source_tag_id, song_ids, new_value}`). Each calls corresponding `TaggingService` method via `Depends(get_tagging_service)`. All require `Depends(verify_session)`.
     **executor:** Created tag_curation_if.py with APIRouter(prefix="/tag-curation", tags=["Tag Curation"]) and 3 POST curation endpoints: /rename, /merge, /split. Each uses asyncio.to_thread, Depends(verify_session), Pydantic request models, and ValueError->400 error handling for nom: prefix rejection.
 - [x] Add query endpoints to `tag_curation_if.py`: `GET /values` (query params: `rel`, `prefix`, `limit`, `offset`) and `GET /{tag_id}/songs` (query params: `limit`, `offset`). Both call `TaggingService` query methods.
@@ -37,6 +39,7 @@ With persistence primitives and DTOs in place (Plan A), the tag curation tool ne
     **executor:** Both tag_curation_if.py and router.py pass lint_project_backend with zero errors (ruff + mypy clean).
 
 ## Completion Criteria
+
 - `TaggingService` has all curation methods (rename, merge, split, update_file_tags) with `nom:` enforcement
 - `TaggingService` has query/commit methods (list_tag_values, get_tag_songs, get_pending_commit_count, commit_pending_tags)
 - 6 migrated methods exist on `TaggingService` and `library_if.py` endpoints call them via `tagging_service`
@@ -45,6 +48,7 @@ With persistence primitives and DTOs in place (Plan A), the tag curation tool ne
 - `lint_project_backend` passes with zero errors
 
 ## References
+
 - Design doc: `artifacts/designs/pending/DD-tag-editor.md`
 - ADR-009: `nom:` prefix exclusion (three-layer guard)
 - ADR-013: TaggingService as vertical slice

@@ -7,16 +7,16 @@ The G6 built-in extensions and registered types are as follows:
 
 ## Animations
 
-| Extension     | Registration Type |
+| Extension | Registration Type |
 | ------------- | ----------------- |
-| ComboCollapse | 'combo-collapse'  |
-| ComboExpand   | 'combo-expand'    |
-| NodeCollapse  | 'node-collapse'   |
-| NodeExpand    | 'node-expand'     |
-| PathIn        | 'path-in'         |
-| PathOut       | 'path-out'        |
-| Fade          | 'fade'            |
-| Translate     | 'translate'       |
+| ComboCollapse | 'combo-collapse' |
+| ComboExpand | 'combo-expand' |
+| NodeCollapse | 'node-collapse' |
+| NodeExpand | 'node-expand' |
+| PathIn | 'path-in' |
+| PathOut | 'path-out' |
+| Fade | 'fade' |
+| Translate | 'translate' |
 
 Usage:
 
@@ -35,22 +35,22 @@ const graph = new Graph({
 
 ## Behaviors
 
-| Extension                 | Registration Type             | Description                                    |
+| Extension | Registration Type | Description |
 | ------------------------- | ----------------------------- | ---------------------------------------------- |
-| BrushSelect               | 'brush-select'                | /                                              |
-| ClickSelect               | 'click-select'                | /                                              |
-| CollapseExpand            | 'collapse-expand'             | /                                              |
-| CreateEdge                | 'create-edge'                 | /                                              |
-| DragCanvas                | 'drag-canvas'                 | /                                              |
-| DragElementForce          | 'drag-element-force'          | Drag element when use d3-force layout          |
-| DragElement               | 'drag-element'                | /                                              |
-| FixElementSize            | 'fix-element-size'            | Keep the size of element during zooming canvas |
-| FocusElement              | 'focus-element'               | /                                              |
-| HoverActivate             | 'hover-activate'              | /                                              |
-| LassoSelect               | 'lasso-select'                | /                                              |
-| OptimizeViewportTransform | 'optimize-viewport-transform' | Hide elements during manipulate the canvas     |
-| ScrollCanvas              | 'scroll-canvas'               | /                                              |
-| ZoomCanvas                | 'zoom-canvas'                 | /                                              |
+| BrushSelect | 'brush-select' | / |
+| ClickSelect | 'click-select' | / |
+| CollapseExpand | 'collapse-expand' | / |
+| CreateEdge | 'create-edge' | / |
+| DragCanvas | 'drag-canvas' | / |
+| DragElementForce | 'drag-element-force' | Drag element when use d3-force layout |
+| DragElement | 'drag-element' | / |
+| FixElementSize | 'fix-element-size' | Keep the size of element during zooming canvas |
+| FocusElement | 'focus-element' | / |
+| HoverActivate | 'hover-activate' | / |
+| LassoSelect | 'lasso-select' | / |
+| OptimizeViewportTransform | 'optimize-viewport-transform' | Hide elements during manipulate the canvas |
+| ScrollCanvas | 'scroll-canvas' | / |
+| ZoomCanvas | 'zoom-canvas' | / |
 
 Usage:
 
@@ -69,16 +69,16 @@ const graph = new Graph({
 
 | Extension | Registration Type |
 | --------- | ----------------- |
-| circle    | Circle            |
-| diamond   | Diamond           |
-| ellipse   | Ellipse           |
-| hexagon   | Hexagon           |
-| html      | HTML              |
-| image     | Image             |
-| rect      | Rect              |
-| star      | Star              |
-| donut     | Donut             |
-| triangle  | Triangle          |
+| circle | Circle |
+| diamond | Diamond |
+| ellipse | Ellipse |
+| hexagon | Hexagon |
+| html | HTML |
+| image | Image |
+| rect | Rect |
+| star | Star |
+| donut | Donut |
+| triangle | Triangle |
 
 Usage:
 
@@ -99,15 +99,15 @@ const graph = new Graph({
 
 ### Edges
 
-| Extension       | Registration Type  | Description                   |
+| Extension | Registration Type | Description |
 | --------------- | ------------------ | ----------------------------- |
-| Cubic           | 'cubic'            | Cubic Bezier Curve            |
-| Line            | 'line'             | /                             |
-| Polyline        | 'polyline'         | /                             |
-| Quadratic       | 'quadratic'        | Quadratic Bezier Curve        |
+| Cubic | 'cubic' | Cubic Bezier Curve |
+| Line | 'line' | / |
+| Polyline | 'polyline' | / |
+| Quadratic | 'quadratic' | Quadratic Bezier Curve |
 | CubicHorizontal | 'cubic-horizontal' | Horizontal Cubic Bezier Curve |
-| CubicVertical   | 'cubic-vertical'   | Vertical Cubic Bezier Curve   |
-| CubicRadial     | 'cubic-radial'     | Radial Cubic Bezier Curve     |
+| CubicVertical | 'cubic-vertical' | Vertical Cubic Bezier Curve |
+| CubicRadial | 'cubic-radial' | Radial Cubic Bezier Curve |
 
 Usage(like `Nodes`):
 
@@ -116,10 +116,10 @@ Usage(like `Nodes`):
 
 ### Combos
 
-| Extension   | Registration Type |
+| Extension | Registration Type |
 | ----------- | ----------------- |
-| CircleCombo | 'circle'          |
-| RectCombo   | 'rect'            |
+| CircleCombo | 'circle' |
+| RectCombo | 'rect' |
 
 Usage(like `Nodes`):
 
@@ -128,25 +128,25 @@ Usage(like `Nodes`):
 
 ## Layouts
 
-| Extension           | Registration Type | Description                     |
+| Extension | Registration Type | Description |
 | ------------------- | ----------------- | ------------------------------- |
-| AntVDagreLayout     | 'antv-dagre'      | /                               |
-| ComboCombinedLayout | 'combo-combined'  | /                               |
-| CompactBoxLayout    | 'compact-box'     | /                               |
-| ForceAtlas2Layout   | 'force-atlas2'    | /                               |
-| CircularLayout      | 'circular'        | /                               |
-| ConcentricLayout    | 'concentric'      | /                               |
-| D3ForceLayout       | 'd3-force'        | /                               |
-| DagreLayout         | 'dagre'           | /                               |
-| DendrogramLayout    | 'dendrogram'      | /                               |
-| ForceLayout         | 'force'           | /                               |
-| FruchtermanLayout   | 'fruchterman'     | /                               |
-| GridLayout          | 'grid'            | /                               |
-| IndentedLayout      | 'indented'        | /                               |
-| MDSLayout           | 'mds'             | Multidimensional Scaling Layout |
-| MindmapLayout       | 'mindmap'         | /                               |
-| RadialLayout        | 'radial'          | /                               |
-| RandomLayout        | 'random'          | /                               |
+| AntVDagreLayout | 'antv-dagre' | / |
+| ComboCombinedLayout | 'combo-combined' | / |
+| CompactBoxLayout | 'compact-box' | / |
+| ForceAtlas2Layout | 'force-atlas2' | / |
+| CircularLayout | 'circular' | / |
+| ConcentricLayout | 'concentric' | / |
+| D3ForceLayout | 'd3-force' | / |
+| DagreLayout | 'dagre' | / |
+| DendrogramLayout | 'dendrogram' | / |
+| ForceLayout | 'force' | / |
+| FruchtermanLayout | 'fruchterman' | / |
+| GridLayout | 'grid' | / |
+| IndentedLayout | 'indented' | / |
+| MDSLayout | 'mds' | Multidimensional Scaling Layout |
+| MindmapLayout | 'mindmap' | / |
+| RadialLayout | 'radial' | / |
+| RandomLayout | 'random' | / |
 
 Usage:
 
@@ -182,8 +182,8 @@ const graph = new Graph({
 
 | Registration Type |
 | ----------------- |
-| dark              |
-| light             |
+| dark |
+| light |
 
 Usage:
 
@@ -198,24 +198,24 @@ const graph = new Graph({
 
 ## Plugins
 
-| Extension      | Registration Type  |
+| Extension | Registration Type |
 | -------------- | ------------------ |
-| BubbleSets     | 'bubble-sets'      |
+| BubbleSets | 'bubble-sets' |
 | EdgeFilterLens | 'edge-filter-lens' |
-| GridLine       | 'grid-line'        |
-| Background     | 'background'       |
-| Contextmenu    | 'contextmenu'      |
-| Fisheye        | 'fisheye'          |
-| Fullscreen     | 'fullscreen'       |
-| History        | 'history'          |
-| Hull           | 'hull'             |
-| Legend         | 'legend'           |
-| Minimap        | 'minimap'          |
-| Snapline       | 'snapline'         |
-| Timebar        | 'timebar'          |
-| Toolbar        | 'toolbar'          |
-| Tooltip        | 'tooltip'          |
-| Watermark      | 'watermark'        |
+| GridLine | 'grid-line' |
+| Background | 'background' |
+| Contextmenu | 'contextmenu' |
+| Fisheye | 'fisheye' |
+| Fullscreen | 'fullscreen' |
+| History | 'history' |
+| Hull | 'hull' |
+| Legend | 'legend' |
+| Minimap | 'minimap' |
+| Snapline | 'snapline' |
+| Timebar | 'timebar' |
+| Toolbar | 'toolbar' |
+| Tooltip | 'tooltip' |
+| Watermark | 'watermark' |
 
 Usage:
 
@@ -230,10 +230,10 @@ const graph = new Graph({
 
 ## Transforms
 
-| Extension            | Registration Type        | Description |
+| Extension | Registration Type | Description |
 | -------------------- | ------------------------ | ----------- |
-| ProcessParallelEdges | 'process-parallel-edges' | /           |
-| PlaceRadialLabels    | 'place-radial-labels'    | 径向标签    |
+| ProcessParallelEdges | 'process-parallel-edges' | / |
+| PlaceRadialLabels | 'place-radial-labels' | 径向标签 |
 
 Usage:
 
@@ -250,19 +250,19 @@ const graph = new Graph({
 
 | Registration Type |
 | ----------------- |
-| circle            |
-| ellipse           |
-| group             |
-| html              |
-| image             |
-| line              |
-| path              |
-| polygon           |
-| polyline          |
-| rect              |
-| text              |
-| label             |
-| badge             |
+| circle |
+| ellipse |
+| group |
+| html |
+| image |
+| line |
+| path |
+| polygon |
+| polyline |
+| rect |
+| text |
+| label |
+| badge |
 
 Usage:
 

@@ -77,6 +77,7 @@ Search logs for prior experience:
 - `log_read(category="blocker")` — known blockers
 
 Filter by agent when scope is clear:
+
 - `log_read(agent="rnd-dd-author")` for design history
 - `log_read(agent="exec-executor")` for implementation history
 - `log_read(agent="support-debugger")` for prior diagnoses
@@ -91,6 +92,7 @@ Check for existing or archived designs:
 ### 5. Cross-Reference
 
 Artifacts reference each other. Follow links:
+
 - ADRs reference `source_log` entries
 - Logs reference ADR IDs
 - Design docs reference ADRs they comply with
@@ -160,6 +162,7 @@ no_relevant_artifacts:
 Log your agent name as `support-librarian`.
 
 Log when:
+
 - You find contradictory artifacts (observation)
 - An ADR references a superseded decision that was never updated (observation)
 - The corpus has obvious gaps for a major feature area (observation)

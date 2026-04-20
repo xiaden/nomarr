@@ -14,15 +14,15 @@ Navidrome/Subsonic integration — API communication, play data crawling, playli
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|----------|
-| `subsonic_client_comp` | `SubsonicClient` — synchronous HTTP client with token auth, covers ping, album listing, playlist CRUD, scan triggering |
-| `subsonic_crawl_comp` | Walk all Navidrome albums via paginated API, collect song IDs, paths, and play data |
-| `taste_profile_comp` | Compute recency-weighted taste centroid from top-N played tracks using embedding vectors |
-| `playlist_builder_comp` | Build personalized playlists — Familiar, Discovery, Hidden Gems, Universal, and per-genre via ANN search |
-| `tag_query_comp` | Tag-based playlist queries — find files by tag conditions, resolve short names to versioned keys, fetch preview tracks |
-| `m3u_comp` | Build and save M3U files with relative paths and sanitized filenames |
-| `templates_comp` | Predefined `.nsp` playlist templates (mood, style, quality, mixed categories) |
+ | Module | Purpose |
+ | -------- | ---------- |
+ | `subsonic_client_comp` | `SubsonicClient` — synchronous HTTP client with token auth, covers ping, album listing, playlist CRUD, scan triggering |
+ | `subsonic_crawl_comp` | Walk all Navidrome albums via paginated API, collect song IDs, paths, and play data |
+ | `taste_profile_comp` | Compute recency-weighted taste centroid from top-N played tracks using embedding vectors |
+ | `playlist_builder_comp` | Build personalized playlists — Familiar, Discovery, Hidden Gems, Universal, and per-genre via ANN search |
+ | `tag_query_comp` | Tag-based playlist queries — find files by tag conditions, resolve short names to versioned keys, fetch preview tracks |
+ | `m3u_comp` | Build and save M3U files with relative paths and sanitized filenames |
+ | `templates_comp` | Predefined `.nsp` playlist templates (mood, style, quality, mixed categories) |
 
 ## Patterns
 

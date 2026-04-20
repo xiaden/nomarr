@@ -9,6 +9,7 @@ The file state graph refactor (Plans A + C) introduced a new `db.file_states.*` 
 ## Phases
 
 ### Phase 1: Calibration caller migration
+
 - [x] In `ml_calibration_state_comp.py`, update `update_file_calibration_hash` to call `db.file_states.set_calibrated(file_id)` — drop the `calibration_hash` parameter from the function signature
     **executor:** Changed signature to (db, file_id) — calls db.file_states.set_calibrated(file_id)
 - [x] In `ml_calibration_state_comp.py`, update `update_file_calibration_hashes_batch` to iterate items and call `db.file_states.set_calibrated(file_id)` per item — drop hash from signature, keep batch semantics
@@ -23,6 +24,7 @@ The file state graph refactor (Plans A + C) introduced a new `db.file_states.*` 
     **executor:** Updated write_calibrated_tags_wf.py: single-file call drops hash arg, batch accumulates str instead of tuple. apply_calibration_wf.py flush call unchanged (passes list to updated batch function).
 
 ### Phase 2: Scanner pipeline and tagging caller migration
+
 - [x] In `file_batch_scanner_comp.py` `scan_folder_files`, remove `has_nomarr_namespace` / `last_written_mode` / `infer_write_mode_from_tags` computation, remove the `reconciled` type from `edge_bootstraps`, and remove the `infer_write_mode_from_tags` import
     **executor:** Removed infer_write_mode_from_tags import, has_nomarr_namespace/last_written_mode computation, and reconciled edge_bootstrap block from scan_folder_files.
 - [x] In `scan_lifecycle_comp.py` `bootstrap_file_state_edges`, replace `db.file_states.set_ml_tagged(file_id, version=...)` with `db.file_states.set_tagged(file_id)`, remove the `reconciled` branch entirely (no more `set_reconciled` calls with `mode`/`has_namespace`)
@@ -44,11 +46,12 @@ The file state graph refactor (Plans A + C) introduced a new `db.file_states.*` 
     **executor:** Added tagging_service.db.file_states.bulk_set_tags_stale(library_id) after update_library() and before get_reconcile_status(). Left in interface layer per plan note.
   **Notes:** Layer note — ideally this side effect lives in the service layer (e.g., `library_service.update_library` triggers it). If time allows, move the `bulk_set_tags_stale` call into the service method instead of the interface handler.
 - [x] Update `__init__.py` exports in `nomarr/components/library/` to reflect the changed `mark_file_tagged` signature (no `tagged_version`)
-    **executor:** No changes needed — __init__.py exports mark_file_tagged by name, signature change is internal to file_sync_comp.py.
+    **executor:** No changes needed — **init**.py exports mark_file_tagged by name, signature change is internal to file_sync_comp.py.
 - [x] Run `lint_project_backend` and fix any remaining import or type errors across all changed files
     **executor:** All changed files pass lint. Only pre-existing mypy errors (library_has_tagged_files — Phase 4 scope). Zero errors from Phase 2.
 
 ### Phase 3: Discovery and work-status caller migration
+
 - [x] In `worker_discovery_comp.py`, update `discover_next_file` to call `db.file_states.discover_next_untagged_file(exclude_claimed=True)` instead of `db.library_files.discover_next_unprocessed_file(min_duration_s=..., allow_short=...)` — drop `min_duration_s` and `allow_short` parameters from both `discover_next_file` and `discover_and_claim_file` signatures (too_short exclusion is now handled internally by the discovery query)
     **executor:** Changed discover_next_file(db) to call db.file_states.discover_next_untagged_file(exclude_claimed=True). Dropped min_duration_s and allow_short from both discover_next_file and discover_and_claim_file signatures.
 - [x] In `discovery_worker.py`, update the `discover_and_claim_file(db, self.worker_id, min_duration_s=config.min_duration_s, allow_short=config.allow_short)` call to `discover_and_claim_file(db, self.worker_id)` — drop `min_duration_s` and `allow_short` keyword args (params removed from function signature in previous step)
@@ -60,6 +63,7 @@ The file state graph refactor (Plans A + C) introduced a new `db.file_states.*` 
   **Notes:** Semantic shift: old method accepted a `calibration_hash` and returned paths globally. New API is library-scoped and boolean (`tagged AND not_calibrated`). The caller `tagging_svc.tag_library()` uses this; verify the path-resolution step works with the workflow.
 
 ### Phase 4: library_has_tagged_files caller migration
+
 - [x] In `scan_lifecycle_comp.py`, change `db.library_files.library_has_tagged_files(library_id)` to `db.file_states.library_has_tagged_files(library_id)`
     **executor:** Changed db.library_files.library_has_tagged_files to db.file_states.library_has_tagged_files in scan_lifecycle_comp.py
 - [x] In `scan_library_quick_wf.py`, change `db.library_files.library_has_tagged_files(library_id)` to `db.file_states.library_has_tagged_files(library_id)`
@@ -68,6 +72,7 @@ The file state graph refactor (Plans A + C) introduced a new `db.file_states.*` 
     **executor:** Changed db.library_files.library_has_tagged_files to db.file_states.library_has_tagged_files in scan_library_full_wf.py
 
 ### Phase 5: Reconciliation and file-write caller migration
+
 - [x] In `tagging_svc.py` `reconcile_library`, update `claim_files_for_reconciliation` call to drop `target_mode` and `calibration_hash` params — new signature is `(library_id, worker_id, batch_size)`
     **executor:** Dropped target_mode and calibration_hash params from claim_files_for_reconciliation call in reconcile_library. New call: (library_id, worker_id, batch_size).
 - [x] In `tagging_svc.py` `reconcile_library`, update `count_files_needing_reconciliation` call to drop `target_mode` and `calibration_hash` params — new signature is `(library_id)` — also remove local `target_mode` and `calibration_hash` variables if no longer needed
@@ -82,6 +87,7 @@ The file state graph refactor (Plans A + C) introduced a new `db.file_states.*` 
     **executor:** lint_project_backend on nomarr/ passes with zero errors. All code-intel/ errors are pre-existing and unrelated.
 
 ## Completion Criteria
+
 - Zero calls to removed `db.library_files` methods: `mark_file_tagged`, `update_calibration_hash`, `update_calibration_hashes_batch`, `clear_all_calibration_hashes`, `get_calibration_status_by_library`, `discover_next_unprocessed_file`, `count_recently_tagged`, `get_tagged_paths_needing_calibration`, `library_has_tagged_files`
 - Zero references to `set_ml_tagged`, `set_reconciled` in component/workflow/service/interface layers
 - Zero computation of `has_nomarr_namespace` or calls to `infer_write_mode_from_tags` in scanner pipeline
@@ -97,6 +103,7 @@ The file state graph refactor (Plans A + C) introduced a new `db.file_states.*` 
 - `get_calibration_status_by_library` calls pass no arguments (param removed)
 
 ## References
+
 - Design doc: `artifacts/designs/pending/DD-file-state-graph-completion.md` (Callers Update Map section)
 - Contracts: `artifacts/designs/parts/file-state-graph/CONTRACTS.md` (Plan A API, Plan C removed methods)
 - Parts breakdown: `artifacts/designs/parts/file-state-graph/README.md`

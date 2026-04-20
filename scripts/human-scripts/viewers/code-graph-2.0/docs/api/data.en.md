@@ -49,10 +49,10 @@ getNodeData(ids: ID[]): NodeData[];
 
 **Parameters**:
 
-| Parameter | Description   | Type     | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ------------- | -------- | ------- | -------- |
-| id        | Node ID       | string   | -       |          |
-| ids       | Node ID array | string[] | -       |          |
+| id | Node ID | string | - | |
+| ids | Node ID array | string[] | - | |
 
 **Return Value**:
 
@@ -90,10 +90,10 @@ getEdgeData(ids: ID[]): EdgeData[];
 
 **Parameters**:
 
-| Parameter | Description   | Type     | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ------------- | -------- | ------- | -------- |
-| id        | Edge ID       | string   | -       |          |
-| ids       | Edge ID array | string[] | -       |          |
+| id | Edge ID | string | - | |
+| ids | Edge ID array | string[] | - | |
 
 **Return Value**:
 
@@ -131,10 +131,10 @@ getComboData(ids: ID[]): ComboData[];
 
 **Parameters**:
 
-| Parameter | Description    | Type     | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | -------------- | -------- | ------- | -------- |
-| id        | Combo ID       | string   | -       |          |
-| ids       | Combo ID array | string[] | -       |          |
+| id | Combo ID | string | - | |
+| ids | Combo ID array | string[] | - | |
 
 **Return Value**:
 
@@ -171,10 +171,10 @@ getElementData(ids: ID[]): ElementDatum[];
 
 **Parameters**:
 
-| Parameter | Description      | Type     | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ---------------- | -------- | ------- | -------- |
-| id        | Element ID       | string   | -       |          |
-| ids       | Element ID array | string[] | -       |          |
+| id | Element ID | string | - | |
+| ids | Element ID array | string[] | - | |
 
 **Return Value**:
 
@@ -208,10 +208,10 @@ getElementDataByState(elementType: 'combo', state: string): ComboData[];
 
 **Parameters**:
 
-| Parameter   | Description  | Type                              | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | ----------- | ------------ | --------------------------------- | ------- | -------- |
-| elementType | Element type | `'node'` \| `'edge'` \| `'combo'` | -       | ✓        |
-| state       | State        | string                            | -       | ✓        |
+| elementType | Element type | `'node'` \| `'edge'` \| `'combo'` | - | ✓ |
+| state | State | string | - | ✓ |
 
 **Return Value**:
 
@@ -249,9 +249,9 @@ getNeighborNodesData(id: ID): NodeData[];
 
 **Parameters**:
 
-| Parameter | Description      | Type   | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ---------------- | ------ | ------- | -------- |
-| id        | Node or combo ID | string | -       | ✓        |
+| id | Node or combo ID | string | - | ✓ |
 
 **Return Value**:
 
@@ -275,10 +275,10 @@ getRelatedEdgesData(id: ID, direction?: EdgeDirection): EdgeData[];
 
 **Parameters**:
 
-| Parameter | Description      | Type                          | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ---------------- | ----------------------------- | ------- | -------- |
-| id        | Node or combo ID | string                        | -       | ✓        |
-| direction | Edge direction   | `'in'` \| `'out'` \| `'both'` | -       |          |
+| id | Node or combo ID | string | - | ✓ |
+| direction | Edge direction | `'in'` \| `'out'` \| `'both'` | - | |
 
 **Return Value**:
 
@@ -302,10 +302,10 @@ getParentData(id: ID, hierarchy: HierarchyKey): NodeLikeData | undefined;
 
 **Parameters**:
 
-| Parameter | Description            | Type                  | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ---------------------- | --------------------- | ------- | -------- |
-| id        | Node or combo ID       | string                | -       | ✓        |
-| hierarchy | Specify hierarchy type | `'tree'` \| `'combo'` | -       |          |
+| id | Node or combo ID | string | - | ✓ |
+| hierarchy | Specify hierarchy type | `'tree'` \| `'combo'` | - | |
 
 **Return Value**:
 
@@ -332,9 +332,9 @@ getChildrenData(id: ID): (NodeData \| ComboData)[];
 
 **Parameters**:
 
-| Parameter | Description      | Type   | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ---------------- | ------ | ------- | -------- |
-| id        | Node or combo ID | string | -       | ✓        |
+| id | Node or combo ID | string | - | ✓ |
 
 **Return Value**:
 
@@ -369,10 +369,10 @@ getAncestorsData(id: ID, hierarchy: HierarchyKey): NodeLikeData[];
 
 **Parameters**:
 
-| Parameter | Description            | Type                  | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ---------------------- | --------------------- | ------- | -------- |
-| id        | Node or combo ID       | string                | -       | ✓        |
-| hierarchy | Specify hierarchy type | `'tree'` \| `'combo'` | -       | ✓        |
+| id | Node or combo ID | string | - | ✓ |
+| hierarchy | Specify hierarchy type | `'tree'` \| `'combo'` | - | ✓ |
 
 **Return Value**:
 
@@ -403,9 +403,9 @@ getDescendantsData(id: ID): NodeLikeData[];
 
 **Parameters**:
 
-| Parameter | Description      | Type   | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ---------------- | ------ | ------- | -------- |
-| id        | Node or combo ID | string | -       | ✓        |
+| id | Node or combo ID | string | - | ✓ |
 
 **Return Value**:
 
@@ -435,9 +435,9 @@ setData(data: GraphData | ((prev: GraphData) => GraphData)): void;
 
 **Parameters**:
 
-| Parameter | Description                                           | Type                                                        | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------------------------------------------------- | ----------------------------------------------------------- | ------- | -------- |
-| data      | New graph data or a function returning new graph data | [GraphData](#graphdata) \| ((prev: GraphData) => GraphData) | -       | ✓        |
+| data | New graph data or a function returning new graph data | [GraphData](#graphdata) \| ((prev: GraphData) => GraphData) | - | ✓ |
 
 **Example**:
 
@@ -468,9 +468,9 @@ addData(data: GraphData | ((prev: GraphData) => GraphData)): void;
 
 **Parameters**:
 
-| Parameter | Description                                              | Type                                                        | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | -------------------------------------------------------- | ----------------------------------------------------------- | ------- | -------- |
-| data      | Graph data to add or a function returning new graph data | [GraphData](#graphdata) \| ((prev: GraphData) => GraphData) | -       | ✓        |
+| data | Graph data to add or a function returning new graph data | [GraphData](#graphdata) \| ((prev: GraphData) => GraphData) | - | ✓ |
 
 **Example**:
 
@@ -491,9 +491,9 @@ addNodeData(data: NodeData[] | ((prev: NodeData[]) => NodeData[])): void;
 
 **Parameters**:
 
-| Parameter | Description                                        | Type                                                        | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | -------------------------------------------------- | ----------------------------------------------------------- | ------- | -------- |
-| data      | Node data to add or a function returning node data | [NodeData](#nodedata)[] \| (prev: NodeData[]) => NodeData[] | -       | ✓        |
+| data | Node data to add or a function returning node data | [NodeData](#nodedata)[] \| (prev: NodeData[]) => NodeData[] | - | ✓ |
 
 **Example**:
 
@@ -527,9 +527,9 @@ addEdgeData(data: EdgeData[] | ((prev: EdgeData[]) => EdgeData[])): void;
 
 **Parameters**:
 
-| Parameter | Description                                        | Type                                                          | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | -------------------------------------------------- | ------------------------------------------------------------- | ------- | -------- |
-| data      | Edge data to add or a function returning edge data | [EdgeData](#edgedata)[] \| ((prev: EdgeData[]) => EdgeData[]) | -       | ✓        |
+| data | Edge data to add or a function returning edge data | [EdgeData](#edgedata)[] \| ((prev: EdgeData[]) => EdgeData[]) | - | ✓ |
 
 **Example**:
 
@@ -567,9 +567,9 @@ addComboData(data: ComboData[] | ((prev: ComboData[]) => ComboData[])): void;
 
 **Parameters**:
 
-| Parameter | Description                                          | Type                                                            | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ---------------------------------------------------- | --------------------------------------------------------------- | ------- | -------- |
-| data      | Combo data to add or a function returning combo data | [ComboData](#combodata)[] \| (prev: ComboData[]) => ComboData[] | -       | ✓        |
+| data | Combo data to add or a function returning combo data | [ComboData](#combodata)[] \| (prev: ComboData[]) => ComboData[] | - | ✓ |
 
 **Example**:
 
@@ -589,10 +589,10 @@ addChildrenData(parentId: ID, childrenData: NodeData[]): void;
 
 **Parameters**:
 
-| Parameter    | Description     | Type                    | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | ------------ | --------------- | ----------------------- | ------- | -------- |
-| parentId     | Parent node ID  | string                  | -       | ✓        |
-| childrenData | Child node data | [NodeData](#nodedata)[] | -       | ✓        |
+| parentId | Parent node ID | string | - | ✓ |
+| childrenData | Child node data | [NodeData](#nodedata)[] | - | ✓ |
 
 **Example**:
 
@@ -610,9 +610,9 @@ removeData(ids: DataID | ((data: GraphData) => DataID)): void;
 
 **Parameters**:
 
-| Parameter | Description                                               | Type                                               | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | --------------------------------------------------------- | -------------------------------------------------- | ------- | -------- |
-| ids       | Element IDs to remove or a function returning element IDs | [DataID](#dataid) \| ((data: GraphData) => DataID) | -       | ✓        |
+| ids | Element IDs to remove or a function returning element IDs | [DataID](#dataid) \| ((data: GraphData) => DataID) | - | ✓ |
 
 **Return Value**:
 
@@ -637,9 +637,9 @@ removeNodeData(ids: ID[] | ((data: NodeData[]) => ID[])): void;
 
 **Parameters**:
 
-| Parameter | Description                                         | Type                                                            | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | --------------------------------------------------- | --------------------------------------------------------------- | ------- | -------- |
-| ids       | Node IDs to remove or a function returning node IDs | [ID](#id)[] \| ((data: [NodeData](#nodedata)[]) => [ID](#id)[]) | -       | ✓        |
+| ids | Node IDs to remove or a function returning node IDs | [ID](#id)[] \| ((data: [NodeData](#nodedata)[]) => [ID](#id)[]) | - | ✓ |
 
 **Return Value**:
 
@@ -661,9 +661,9 @@ removeEdgeData(ids: ID[] | ((data: EdgeData[]) => ID[])): void;
 
 **Parameters**:
 
-| Parameter | Description                                         | Type                                                            | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | --------------------------------------------------- | --------------------------------------------------------------- | ------- | -------- |
-| ids       | Edge IDs to remove or a function returning edge IDs | [ID](#id)[] \| ((data: [EdgeData](#edgedata)[]) => [ID](#id)[]) | -       | ✓        |
+| ids | Edge IDs to remove or a function returning edge IDs | [ID](#id)[] \| ((data: [EdgeData](#edgedata)[]) => [ID](#id)[]) | - | ✓ |
 
 **Return Value**:
 
@@ -685,9 +685,9 @@ removeComboData(ids: ID[] | ((data: ComboData[]) => ID[])): void;
 
 **Parameters**:
 
-| Parameter | Description                                           | Type                                                            | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------------------------------------------------- | --------------------------------------------------------------- | ------- | -------- |
-| ids       | Combo IDs to remove or a function returning combo IDs | [ID](#id)[] \| (data: [ComboData](#combodata)[]) => [ID](#id)[] | -       | ✓        |
+| ids | Combo IDs to remove or a function returning combo IDs | [ID](#id)[] \| (data: [ComboData](#combodata)[]) => [ID](#id)[] | - | ✓ |
 
 **Return Value**:
 
@@ -711,9 +711,9 @@ updateData(data: PartialGraphData | ((prev: GraphData) => PartialGraphData)): vo
 
 **Parameters**:
 
-| Parameter | Description                                                 | Type                                                                             | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------- | ------- | -------- |
-| data      | Element data to update or a function returning element data | [PartialGraphData](#partialgraphdata) \| ((prev: GraphData) => PartialGraphData) | -       | ✓        |
+| data | Element data to update or a function returning element data | [PartialGraphData](#partialgraphdata) \| ((prev: GraphData) => PartialGraphData) | - | ✓ |
 
 **Return Value**:
 
@@ -740,9 +740,9 @@ updateNodeData(data: NodeData[] | ((prev: NodeData[]) => NodeData[])): void;
 
 **Parameters**:
 
-| Parameter | Description                                           | Type                                           | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------------------------------------------------- | ---------------------------------------------- | ------- | -------- |
-| data      | Node data to update or a function returning node data | NodeData[] \| (prev: NodeData[]) => NodeData[] | -       | ✓        |
+| data | Node data to update or a function returning node data | NodeData[] \| (prev: NodeData[]) => NodeData[] | - | ✓ |
 
 **Return Value**:
 
@@ -766,9 +766,9 @@ updateEdgeData(data: (PartialEdgeData<EdgeData>[] | ((prev: EdgeData[]) => Parti
 
 **Parameters**:
 
-| Parameter | Description                                           | Type                                                                                                                         | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------- | -------- |
-| data      | Edge data to update or a function returning edge data | [PartialEdgeData\<EdgeData\>](#partialedgedata)[] \| (prev: EdgeData[]) => [PartialEdgeData\<EdgeData\>](#partialedgedata)[] | -       | ✓        |
+| data | Edge data to update or a function returning edge data | [PartialEdgeData\<EdgeData\>](#partialedgedata)[] \| (prev: EdgeData[]) => [PartialEdgeData\<EdgeData\>](#partialedgedata)[] | - | ✓ |
 
 **Return Value**:
 
@@ -792,9 +792,9 @@ updateComboData(data: (ComboData[] | ((prev: ComboData[]) => ComboData[]))): voi
 
 **Parameters**:
 
-| Parameter | Description                                             | Type                                                            | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ------------------------------------------------------- | --------------------------------------------------------------- | ------- | -------- |
-| data      | Combo data to update or a function returning combo data | [ComboData](#combodata)[] \| (prev: ComboData[]) => ComboData[] | -       | ✓        |
+| data | Combo data to update or a function returning combo data | [ComboData](#combodata)[] \| (prev: ComboData[]) => ComboData[] | - | ✓ |
 
 **Return Value**:
 
@@ -815,6 +815,7 @@ hasNode(id:ID): boolean;
 ```
 
 **参数**:
+
 | Parameter | Description | Type | Default | Required |
 | ---- | -------------------- | --------- | ------ | ---- |
 | id | Node ID to be judged | [ID](#id) | - | ✓ |
@@ -838,9 +839,9 @@ hasEdge(id:ID): boolean;
 
 **参数**:
 
-| Parameter | Description          | Type      | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | -------------------- | --------- | ------- | -------- |
-| id        | Edge ID to be judged | [ID](#id) | -       | ✓        |
+| id | Edge ID to be judged | [ID](#id) | - | ✓ |
 
 **返回值**:
 
@@ -861,9 +862,9 @@ hasCombo(id:ID): boolean;
 
 **参数**:
 
-| Parameter | Description           | Type      | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | --------------------- | --------- | ------- | -------- |
-| id        | Combo ID to be judged | [ID](#id) | -       | ✓        |
+| id | Combo ID to be judged | [ID](#id) | - | ✓ |
 
 **返回值**:
 

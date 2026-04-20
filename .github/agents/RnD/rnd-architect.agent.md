@@ -60,14 +60,15 @@ Research before architecting. You can't propose where code should live if you do
 
 Produce 2–4 concrete approaches:
 
-| Option Type | When to Include |
-|-------------|-----------------|
-| Inline | Modify existing code minimally |
-| New Component | Clean separation, more code |
-| Pattern Reuse | Extend existing pattern |
-| External | Use library or external service |
+ | Option Type | When to Include |
+ | ------------- | ----------------- |
+ | Inline | Modify existing code minimally |
+ | New Component | Clean separation, more code |
+ | Pattern Reuse | Extend existing pattern |
+ | External | Use library or external service |
 
 For each option, specify:
+
 - **Architecture:** Which layers, which modules, which functions
 - **Data flow:** How information moves through the system
 - **Integration points:** What existing code gets modified
@@ -77,15 +78,15 @@ For each option, specify:
 
 This is the core deliverable. A recommendation without a tradeoff matrix is just an opinion.
 
-| Criterion | Option A | Option B | Option C |
-|-----------|----------|----------|----------|
-| Lines of code | ~50 | ~150 | ~80 |
-| Files touched | 2 | 5 | 3 |
-| New dependencies | 0 | 1 | 0 |
-| Test complexity | Low | Medium | Low |
-| Migration needed | No | Yes | No |
-| Future flexibility | Low | High | Medium |
-| Risk of regression | Low | Medium | Low |
+ | Criterion | Option A | Option B | Option C |
+ | ----------- | ---------- | ---------- | ---------- |
+ | Lines of code | ~50 | ~150 | ~80 |
+ | Files touched | 2 | 5 | 3 |
+ | New dependencies | 0 | 1 | 0 |
+ | Test complexity | Low | Medium | Low |
+ | Migration needed | No | Yes | No |
+ | Future flexibility | Low | High | Medium |
+ | Risk of regression | Low | Medium | Low |
 
 ### 4. Detailed Analysis
 
@@ -103,9 +104,9 @@ For each option:
 {Pseudocode or high-level steps — NOT actual code}
 
 ### Integration Points
-| Existing Code | Change Type | Risk |
-|---------------|-------------|------|
-| ... | modify | low |
+ | Existing Code | Change Type | Risk | 
+ | --------------- | ------------- | ------ | 
+ | ... | modify | low | 
 
 ### Pros
 - ...
@@ -168,12 +169,12 @@ Your analysis directly informs architectural decisions. Log your findings so the
 
 ### When to Log
 
-| Situation | Category |
-|-----------|----------|
-| Analysis reveals tradeoffs worth preserving | `research` |
-| An option is viable but risky in non-obvious ways | `observation` |
-| A codebase pattern influences the analysis | `discovery` |
-| An option that seems good is actually problematic | `dead-end` |
+ | Situation | Category |
+ | ----------- | ---------- |
+ | Analysis reveals tradeoffs worth preserving | `research` |
+ | An option is viable but risky in non-obvious ways | `observation` |
+ | A codebase pattern influences the analysis | `discovery` |
+ | An option that seems good is actually problematic | `dead-end` |
 
 ### When to Create ADRs
 

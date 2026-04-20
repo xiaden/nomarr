@@ -9,6 +9,7 @@ applyTo: nomarr/interfaces/**
 **Purpose:** Expose Nomarr to the outside world via HTTP (FastAPI), CLI (Typer), and web handlers.
 
 Interfaces are **thin adapters**. They do three things:
+
 1. Validate inputs
 2. Call **one** service method (see [services.instructions.md](./services.instructions.md))
 3. Serialize outputs
@@ -78,11 +79,13 @@ def process(library_id: str, library_service: LibraryService = Depends(...), tag
 ## Data Flow
 
 ### Request Flow
+
 ```
 JSON → Pydantic Request Model → .to_dto() → Service (DTO)
 ```
 
 ### Response Flow
+
 ```
 Service (DTO) → .from_dto() → Pydantic Response Model → JSON
 ```
@@ -96,21 +99,23 @@ Pydantic models live **only** in interfaces. Never let them leak into services.
 **MANDATORY: All API endpoints require authentication except login.**
 
 ### Web API (`/api/web/*`)
+
 - Uses `verify_session` for session token authentication
 - All routes MUST include `dependencies=[Depends(verify_session)]` or `_session: dict = Depends(verify_session)` as a parameter
 - **Exception:** `/api/web/authentication/login` is the only unauthenticated endpoint
 
 ### v1 API (`/api/v1/*`)
+
 - Uses `verify_key` for API key authentication
 - All routes MUST include `dependencies=[Depends(verify_key)]`
 - **Exception:** `/api/v1/public/*` is intentionally public (version info)
 
 ### API Consumer Separation — DO NOT MIX
 
-| Router | Auth Method | Consumer | Frontend Calls? |
-|--------|-------------|----------|-----------------|
-| `/api/web/*` | Session token (`verify_session`) | Web frontend | **YES** |
-| `/api/v1/*` | API key (`verify_key`) | External tools (Navidrome, scripts) | **NEVER** |
+ | Router | Auth Method | Consumer | Frontend Calls? |
+ | -------- | ------------- | ---------- | ----------------- |
+ | `/api/web/*` | Session token (`verify_session`) | Web frontend | **YES** |
+ | `/api/v1/*` | API key (`verify_key`) | External tools (Navidrome, scripts) | **NEVER** |
 
 **The web frontend MUST ONLY call `/api/web/*` endpoints.**
 

@@ -50,13 +50,13 @@ Plans are parsed by `mcp_code_intel.helpers.plan_md`. Invalid structure causes `
 
 ## Format Rules
 
-| Element | Pattern | Note |
-|---------|---------|------|
-| Title | `# Task: <title>` | |
-| Section | `## <name>` | Any `## Header` becomes a parsed key |
-| Phase | `### Phase N: <title>` | N must be sequential integer (1, 2, 3...) |
-| Step | `- [ ] <text>` or `- [x] <text>` | **Must be flat — no indented checkboxes** |
-| Annotation | `**Notes:**`, `**Warning:**`, `**Blocked:**` | Phase-level (after steps) or step-level (indented under step) |
+ | Element | Pattern | Note |
+ | --------- | --------- | ------ |
+ | Title | `# Task: <title>` | |
+ | Section | `## <name>` | Any `## Header` becomes a parsed key |
+ | Phase | `### Phase N: <title>` | N must be sequential integer (1, 2, 3...) |
+ | Step | `- [ ] <text>` or `- [x] <text>` | **Must be flat — no indented checkboxes** |
+ | Annotation | `**Notes:**`, `**Warning:**`, `**Blocked:**` | Phase-level (after steps) or step-level (indented under step) |
 
 **Step IDs** auto-generate as `P{phase}-S{step}` (e.g., `P1-S1`, `P2-S3`).
 
@@ -64,12 +64,12 @@ Plans are parsed by `mcp_code_intel.helpers.plan_md`. Invalid structure causes `
 
 ## Writing Good Steps
 
-| ❌ Bad | ✅ Good |
-|--------|---------|
-| Fix auth | Implement SessionAuthMiddleware in interfaces/api/middleware/ |
-| Test stuff | Verify lint_project_backend passes on nomarr/services |
-| Add imports | Create config_service module with ConfigService class |
-| Make it work | Update all callers of get_library() to use new signature |
+ | ❌ Bad | ✅ Good |
+ | -------- | --------- |
+ | Fix auth | Implement SessionAuthMiddleware in interfaces/api/middleware/ |
+ | Test stuff | Verify lint_project_backend passes on nomarr/services |
+ | Add imports | Create config_service module with ConfigService class |
+ | Make it work | Update all callers of get_library() to use new signature |
 
 **Steps must be:** Actionable (clear action), Verifiable (can confirm done), Atomic (one outcome).
 
@@ -80,6 +80,7 @@ Plans are parsed by `mcp_code_intel.helpers.plan_md`. Invalid structure causes `
 ## Splitting Large Tasks
 
 Split a plan into sequential parts if ANY condition is true:
+
 - More than 4 phases
 - More than 16 steps total
 - `plan_read` returns a resource link instead of inline content
@@ -99,6 +100,7 @@ TASK-<feature>-C-<outcome>.md     (third part)
 The naming convention carries the sequencing: A before B before C.
 
 Each plan should include:
+
 - Full Problem Statement (assume reader has zero context)
 - `**Prerequisite:** TASK-<feature>-A-<outcome>` if it depends on a prior part
 - Its own Completion Criteria (not "all parts done")
@@ -119,19 +121,23 @@ After:  TASK-feature-A1-discovery-scope.md
 ## Parser Rejection Rules
 
 ### Nested Steps ❌
+
 ```markdown
 - [ ] Create files
   - [ ] Create auth.py    ← REJECTED: indented checkbox
 ```
+
 Fix: Unnest as flat steps, move to `**Notes:**`, or split into phases.
 
 ### Non-Sequential Phases ❌
+
 ```markdown
 ### Phase 1: Discovery
 ### Phase 3: Implementation   ← REJECTED: skipped 2
 ```
 
 ### Invalid Phase Format ❌
+
 ```markdown
 ### Phase One: Discovery      ← REJECTED: must be integer
 ### Phase 1 - Discovery       ← REJECTED: must use colon
@@ -148,19 +154,20 @@ Fix: Unnest as flat steps, move to `**Notes:**`, or split into phases.
 ## Complete Examples
 
 See `artifacts/scratch/examples/`:
+
 - `TASK-example-A-discovery.md` through `D-cleanup.md` — Split plan set
 
 ---
 
 ## Common Mistakes
 
-| Don't | Do Instead |
-|-------|------------|
-| Indent checkboxes | Flat steps only |
-| Skip phase numbers (1→3) | Sequential: 1, 2, 3 |
-| `### Phase One:` | `### Phase 1:` |
-| Vague steps ("fix auth") | Concrete ("Implement AuthMiddleware in X") |
-| Skip problem statement | Always include context |
-| Manual checkbox edits | Use `plan_complete_step` |
-| Micro-steps ("add import") | Meaningful units |
-| Create orchestrator plans | Just use A→B→C naming |
+ | Don't | Do Instead |
+ | ------- | ------------ |
+ | Indent checkboxes | Flat steps only |
+ | Skip phase numbers (1→3) | Sequential: 1, 2, 3 |
+ | `### Phase One:` | `### Phase 1:` |
+ | Vague steps ("fix auth") | Concrete ("Implement AuthMiddleware in X") |
+ | Skip problem statement | Always include context |
+ | Manual checkbox edits | Use `plan_complete_step` |
+ | Micro-steps ("add import") | Meaningful units |
+ | Create orchestrator plans | Just use A→B→C naming |

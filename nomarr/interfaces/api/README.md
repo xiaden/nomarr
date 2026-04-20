@@ -11,20 +11,20 @@ FastAPI application setup, authentication, and ID encoding for HTTP transport.
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|--------|
-| `api_app.py` | FastAPI app factory — lifespan, exception handler, SPA serving, health check |
-| `auth.py` | `verify_key`, `verify_session`, password hashing, session create/validate/invalidate |
-| `id_codec.py` | `encode_id`/`decode_id` for ArangoDB IDs, recursive `encode_ids` for response data |
-| `INTERFACE_STATUS.md` | Tracks API endpoint completion status |
+ | Module | Purpose |
+ | -------- | -------- |
+ | `api_app.py` | FastAPI app factory — lifespan, exception handler, SPA serving, health check |
+ | `auth.py` | `verify_key`, `verify_session`, password hashing, session create/validate/invalidate |
+ | `id_codec.py` | `encode_id`/`decode_id` for ArangoDB IDs, recursive `encode_ids` for response data |
+ | `INTERFACE_STATUS.md` | Tracks API endpoint completion status |
 
 ## Subfolders
 
-| Folder | Purpose |
-|--------|--------|
-| `types/` | Pydantic request/response models (13 domain-specific type files) |
-| `v1/` | Versioned public API routes (admin, navidrome, public info) |
-| `web/` | Internal web dashboard endpoints (16 endpoint files + router + DI) |
+ | Folder | Purpose |
+ | -------- | -------- |
+ | `types/` | Pydantic request/response models (13 domain-specific type files) |
+ | `v1/` | Versioned public API routes (admin, navidrome, public info) |
+ | `web/` | Internal web dashboard endpoints (16 endpoint files + router + DI) |
 
 ## Patterns
 

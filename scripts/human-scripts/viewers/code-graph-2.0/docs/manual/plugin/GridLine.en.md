@@ -39,18 +39,18 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Property        | Description                                                                                         | Type                                              | Default     | Required |
+| Property | Description | Type | Default | Required |
 | --------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ----------- | -------- |
-| type            | Plugin type                                                                                         | string                                            | `grid-line` | ✓        |
-| key             | Unique identifier for the plugin, used to get the plugin instance or update plugin options          | string                                            | -           |          |
-| border          | Whether to display the border                                                                       | boolean                                           | true        |          |
-| borderLineWidth | Border line width                                                                                   | number                                            | 1           |          |
-| borderStroke    | Border color, see [CSS border-color](https://developer.mozilla.org/en-US/docs/Web/CSS/border-color) | string                                            | `#eee`      |          |
-| borderStyle     | Border style, see [CSS border-style](https://developer.mozilla.org/en-US/docs/Web/CSS/border-style) | string                                            | `solid`     |          |
-| follow          | Whether to follow canvas movements                                                                  | boolean \| {translate ?: boolean, zoom?: boolean} | false       |          |
-| lineWidth       | Grid line width                                                                                     | number \| string                                  | 1           |          |
-| size            | Grid unit size in pixels                                                                            | number                                            | 20          |          |
-| stroke          | Grid line color                                                                                     | string                                            | `#eee`      |          |
+| type | Plugin type | string | `grid-line` | ✓ |
+| key | Unique identifier for the plugin, used to get the plugin instance or update plugin options | string | - | |
+| border | Whether to display the border | boolean | true | |
+| borderLineWidth | Border line width | number | 1 | |
+| borderStroke | Border color, see [CSS border-color](https://developer.mozilla.org/en-US/docs/Web/CSS/border-color) | string | `#eee` | |
+| borderStyle | Border style, see [CSS border-style](https://developer.mozilla.org/en-US/docs/Web/CSS/border-style) | string | `solid` | |
+| follow | Whether to follow canvas movements | boolean \| {translate ?: boolean, zoom?: boolean} | false | |
+| lineWidth | Grid line width | number \| string | 1 | |
+| size | Grid unit size in pixels | number | 20 | |
+| stroke | Grid line color | string | `#eee` | |
 
 ### follow
 
@@ -70,7 +70,7 @@ const graph = new Graph({
 });
 ```
 
-2. **Object Configuration**: Allows more precise control over the grid line following behavior.
+1. **Object Configuration**: Allows more precise control over the grid line following behavior.
 
 ```js
 // Follow translation only, not zoom

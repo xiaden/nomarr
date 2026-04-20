@@ -52,17 +52,17 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Option        | Description                                 | Type                                           | Default          | Required |
+| Option | Description | Type | Default | Required |
 | ------------- | ------------------------------------------- | ---------------------------------------------- | ---------------- | -------- |
-| type          | Behavior type name                          | string                                         | `hover-activate` | ✓        |
-| animation     | Whether to enable animation                 | boolean                                        | true             |          |
-| enable        | Whether to enable hover feature             | boolean \| ((event: IPointerEvent) => boolean) | true             |          |
-| degree        | Degree of relationship to activate elements | number \| ((event: IPointerEvent) => number);  | 0                |          |
-| direction     | Specify edge direction                      | `both` \| `in` \| `out`                        | `both`           |          |
-| state         | State of activated elements                 | string                                         | `active`         |          |
-| inactiveState | State of inactive elements                  | string                                         | -                |          |
-| onHover       | Callback when element is hovered            | (event: IPointerEvent) => void                 | -                |          |
-| onHoverEnd    | Callback when hover ends                    | (event: IPointerEvent) => void                 | -                |          |
+| type | Behavior type name | string | `hover-activate` | ✓ |
+| animation | Whether to enable animation | boolean | true | |
+| enable | Whether to enable hover feature | boolean \| ((event: IPointerEvent) => boolean) | true | |
+| degree | Degree of relationship to activate elements | number \| ((event: IPointerEvent) => number); | 0 | |
+| direction | Specify edge direction | `both` \| `in` \| `out` | `both` | |
+| state | State of activated elements | string | `active` | |
+| inactiveState | State of inactive elements | string | - | |
+| onHover | Callback when element is hovered | (event: IPointerEvent) => void | - | |
+| onHoverEnd | Callback when hover ends | (event: IPointerEvent) => void | - | |
 
 ### enable
 

@@ -21,11 +21,11 @@ Use cases:
 
 > If the element has specific attributes, we will list them below. For all general style attributes, see [BaseEdge](/en/manual/element/edge/base-edge)
 
-| Attribute     | Description                                                                                                                                                 | Type                               | Default | Required |
+| Attribute | Description | Type | Default | Required |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ------- | -------- |
-| controlPoints | Array of control points used to define the shape of the curve. If not specified, control points will be calculated using `curveOffset` and `curvePosition`. | [[Point](#point), [Point](#point)] | -       |          |
-| curvePosition | Relative position of the control point on the line connecting the two endpoints, ranging from `0-1`.                                                        | number &#124; number[]             | 0.5     |          |
-| curveOffset   | Distance of the control point from the line connecting the two endpoints, understood as the degree of curve bending.                                        | number &#124; number[]             | 20      |          |
+| controlPoints | Array of control points used to define the shape of the curve. If not specified, control points will be calculated using `curveOffset` and `curvePosition`. | [[Point](#point), [Point](#point)] | - | |
+| curvePosition | Relative position of the control point on the line connecting the two endpoints, ranging from `0-1`. | number &#124; number[] | 0.5 | |
+| curveOffset | Distance of the control point from the line connecting the two endpoints, understood as the degree of curve bending. | number &#124; number[] | 20 | |
 
 #### Point
 

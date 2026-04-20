@@ -25,5 +25,5 @@ Files already correct (no `from __future__ import annotations`): `analytics_if.p
 
 ## References
 
-- Pydantic error: https://errors.pydantic.dev/2.12/u/class-not-fully-defined
+- Pydantic error: <https://errors.pydantic.dev/2.12/u/class-not-fully-defined>
 - Layer rules: interfaces → services → workflows → components → persistence/helpers

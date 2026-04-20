@@ -161,35 +161,37 @@ Classes should be rare; prefer **stateless, pure functions** unless state is tru
 
 The ML backend is **ONNX Runtime** (`components/ml/onnx/`). Essentia is **not** the ML backend — it provides only two thin functions:
 
-| Module | Essentia Usage |
-|---|---|
-| `ml/audio/ml_audio_comp.py` | `MonoLoader` for audio loading |
-| `ml/audio/ml_preprocess_comp.py` | Mel spectrogram preprocessing |
+ | Module | Essentia Usage |
+ | --- | --- |
+ | `ml/audio/ml_audio_comp.py` | `MonoLoader` for audio loading |
+ | `ml/audio/ml_preprocess_comp.py` | Mel spectrogram preprocessing |
 
 > **⚠️ Essentia Isolation:** `essentia` must **only** be imported in `ml_audio_comp.py` and `ml_preprocess_comp.py`. All ML inference runs through ONNX Runtime.
 
 **ML subdirectory organization:**
 
-| Subdirectory | Responsibility |
-|---|---|
-| `audio/` | Audio I/O and preprocessing (Essentia + chromaprint) |
-| `calibration/` | Score calibration and state |
-| `inference/` | Backbone + head inference pipeline |
-| `onnx/` | ONNX Runtime session management, model wrappers |
-| `resources/` | VRAM coordination, capacity probing, tier selection |
-| `vectors/` | Vector persistence, retrieval, maintenance, promotion |
+ | Subdirectory | Responsibility |
+ | --- | --- |
+ | `audio/` | Audio I/O and preprocessing (Essentia + chromaprint) |
+ | `calibration/` | Score calibration and state |
+ | `inference/` | Backbone + head inference pipeline |
+ | `onnx/` | ONNX Runtime session management, model wrappers |
+ | `resources/` | VRAM coordination, capacity probing, tier selection |
+ | `vectors/` | Vector persistence, retrieval, maintenance, promotion |
 
 ---
 
 ## 4. Boundaries & Import Rules
 
 **Allowed:**
+
 - ✅ Persistence (`nomarr.persistence.*`) — components are the only layer that may
 - ✅ Helpers (`nomarr.helpers.*`)
 - ✅ Other components (`nomarr.components.*`) — lateral imports
 - ✅ Standard library, numpy, etc.
 
 **Forbidden:**
+
 - ❌ Services (`nomarr.services.*`)
 - ❌ Workflows (`nomarr.workflows.*`)
 - ❌ Interfaces (`nomarr.interfaces.*`)

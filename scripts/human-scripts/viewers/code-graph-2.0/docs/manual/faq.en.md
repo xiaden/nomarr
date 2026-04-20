@@ -132,7 +132,7 @@ text
 GENERATE_SOURCEMAP=false
 text
 
-2. Disable sourcemapping for specific modules
+1. Disable sourcemapping for specific modules
 
 Disabling sourcemapping directly is too simple and crude, and is not user-friendly for developers who may have debugging needs. Therefore, sourcemapping can be disabled for specific modules by configuring the build tool separately.
 

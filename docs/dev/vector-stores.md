@@ -104,7 +104,6 @@ backbones.
 Subsequent sections describe operational guidance, search semantics, and upgrade
 paths for existing deployments.
 
-
 ```
 [ ML Workers ] --upsert--> [ vectors_track_hot__* ] --promote & rebuild--> [ vectors_track_cold__* ] --search--> [ API Clients ]
 ```

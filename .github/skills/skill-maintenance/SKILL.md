@@ -30,6 +30,7 @@ python scripts/validate_skills.py --check-refs
 ```
 
 **Checks performed:**
+
 - YAML frontmatter starts with `---`
 - Required fields: `name`, `description`
 - `name` matches directory name, lowercase with hyphens
@@ -69,7 +70,7 @@ Instructions...
 - [ ] Check 2 **→ Consequence**
 ```
 
-3. **Validate:** `python scripts/validate_skills.py skill-name`
+1. **Validate:** `python scripts/validate_skills.py skill-name`
 
 ---
 
@@ -86,6 +87,7 @@ Instructions...
 5. **Test:** Does the skill trigger correctly? Are examples still valid?
 
 **Rules:**
+
 - Keep changes minimal and precise
 - Don't add historical context or migration notes
 - Update validation checklists if rules changed
@@ -97,10 +99,10 @@ Instructions...
 
 ### Frontmatter (Required)
 
-| Field | Required | Constraints |
-|-------|----------|-------------|
-| `name` | Yes | 1-64 chars, lowercase alphanumeric + hyphens, must match directory |
-| `description` | Yes | 1-1024 chars, describe WHAT and WHEN |
+ | Field | Required | Constraints |
+ | ------- | ---------- | ------------- |
+ | `name` | Yes | 1-64 chars, lowercase alphanumeric + hyphens, must match directory |
+ | `description` | Yes | 1-1024 chars, describe WHAT and WHEN |
 
 ### Name Rules
 
@@ -112,11 +114,13 @@ Instructions...
 ### Description Guidelines
 
 Good:
+
 ```yaml
 description: Use when creating or modifying code in nomarr/helpers/. Helpers are pure utilities with NO nomarr.* imports.
 ```
 
 Poor:
+
 ```yaml
 description: Helper layer rules.
 ```
@@ -144,6 +148,7 @@ python scripts/validate_skills.py layer-components --check-refs
 ```
 
 **Fix invalid references:**
+
 1. Identify the new location of the referenced code
 2. Update the reference in the skill
 3. Re-run validation to confirm
@@ -170,13 +175,13 @@ python scripts/validate_skills.py
 
 Nomarr skills are organized by purpose:
 
-| Skill | Purpose |
-|-------|---------|
-| `layer-*` | Architecture layer guidance |
-| `code-discovery` | Codebase exploration tools |
-| `code-generation` | Boilerplate generation |
-| `quality-analysis` | QC and linting tools |
-| `skill-maintenance` | This skill (meta) |
+ | Skill | Purpose |
+ | ------- | --------- |
+ | `layer-*` | Architecture layer guidance |
+ | `code-discovery` | Codebase exploration tools |
+ | `code-generation` | Boilerplate generation |
+ | `quality-analysis` | QC and linting tools |
+ | `skill-maintenance` | This skill (meta) |
 
 ---
 

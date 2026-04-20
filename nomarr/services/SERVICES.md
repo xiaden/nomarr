@@ -94,13 +94,13 @@ Service methods are the primary programmable surface. All public methods use the
 
 ### Allowed Verbs
 
-| Category | Verbs |
-|---|---|
-| **Read** | `get_`, `list_`, `exists_`, `count_`, `fetch_` |
-| **Create/Update/Delete** | `create_`, `update_`, `delete_`, `set_`, `rename_` |
-| **Domain Ops** | `scan_`, `tag_`, `recalibrate_`, `start_`, `stop_`, `sync_`, `reindex_`, `import_`, `export_` |
-| **Boolean Toggles** | `enable_`, `disable_`, `activate_`, `deactivate_` |
-| **Command** | `apply_`, `execute_` |
+ | Category | Verbs |
+ | --- | --- |
+ | **Read** | `get_`, `list_`, `exists_`, `count_`, `fetch_` |
+ | **Create/Update/Delete** | `create_`, `update_`, `delete_`, `set_`, `rename_` |
+ | **Domain Ops** | `scan_`, `tag_`, `recalibrate_`, `start_`, `stop_`, `sync_`, `reindex_`, `import_`, `export_` |
+ | **Boolean Toggles** | `enable_`, `disable_`, `activate_`, `deactivate_` |
+ | **Command** | `apply_`, `execute_` |
 
 **Forbidden:** `api_*`, `web_*`, `cli_*`, `for_admin` — no transport semantics in service names.
 
@@ -109,17 +109,18 @@ Service methods are the primary programmable surface. All public methods use the
 ## 4. Responsibilities
 
 A service method should:
+
 1. Gather dependencies (DB, config, ML backends)
 2. Call one or more workflows (or components for simple ops)
 3. Return a DTO or simple primitive
 
-| Services DO | Services DON'T |
-|---|---|
-| Wire config, DB, ML backends | Parse HTTP/CLI input |
-| Call workflows and components | Raise `HTTPException` |
-| Own long-lived resources | Contain domain rules or heavy branching |
-| Return DTOs | Embed Pydantic models |
-| Skip workflows for simple ops | Call persistence directly |
+ | Services DO | Services DON'T |
+ | --- | --- |
+ | Wire config, DB, ML backends | Parse HTTP/CLI input |
+ | Call workflows and components | Raise `HTTPException` |
+ | Own long-lived resources | Contain domain rules or heavy branching |
+ | Return DTOs | Embed Pydantic models |
+ | Skip workflows for simple ops | Call persistence directly |
 
 ---
 
@@ -128,11 +129,13 @@ A service method should:
 ### Rule: DI + Orchestration Only
 
 A service method should:
+
 - Collect dependencies
 - Call workflow(s) or component(s)
 - Return result
 
 **Extract to a workflow when:**
+
 - Multi-step logic with coordination
 - Loops or branching over business rules
 - Complex transformations
@@ -159,10 +162,10 @@ def scan_library(self, library_id: str) -> ScanResult:
 
 ## 6. DTO Policies
 
-| Scope | Placement |
-|---|---|
-| Cross-layer DTOs (used by multiple services/workflows) | `helpers/dto/<domain>.py` |
-| Single-service DTOs (internal to one service) | Local to that service |
+ | Scope | Placement |
+ | --- | --- |
+ | Cross-layer DTOs (used by multiple services/workflows) | `helpers/dto/<domain>.py` |
+ | Single-service DTOs (internal to one service) | Local to that service |
 
 Public methods returning structured data **must** return DTOs. DTOs not needed for: `bool`, `int`, `float`, `str`, `None`, or lists of primitives.
 
@@ -186,6 +189,7 @@ Config is loaded once by `ConfigService` and passed via parameters. No global si
 ## 8. Boundaries & Import Rules
 
 **Allowed:**
+
 - ✅ Workflows (`nomarr.workflows.*`)
 - ✅ Components (`nomarr.components.*`) — for simple direct operations
 - ✅ Helpers (`nomarr.helpers.*`)
@@ -193,6 +197,7 @@ Config is loaded once by `ConfigService` and passed via parameters. No global si
 - ✅ Standard library, third-party
 
 **Forbidden:**
+
 - ❌ Interfaces (`nomarr.interfaces.*`)
 - ❌ FastAPI, Pydantic
 - ❌ HTTP or CLI frameworks
@@ -202,11 +207,11 @@ Config is loaded once by `ConfigService` and passed via parameters. No global si
 
 ## 9. Anti-Patterns
 
-| Anti-Pattern | Why It's Wrong | Fix |
-|---|---|---|
-| Business logic in services | Domain rules belong in workflows/components | Extract to workflow |
-| Returning raw dicts | Untyped contracts | Return a DTO |
-| Transport logic (`status_code`, `HTTPException`) | Interface concern | Keep HTTP in interfaces |
-| Calling `db.tags.*`, `db.libraries.*` directly | Only components access persistence | Route through workflow → component |
-| Global state or singletons | Hidden dependency, test-unfriendly | Use constructor injection |
-| Embedding Pydantic models | Interface concern | Use DTOs from `helpers/dto/` |
+ | Anti-Pattern | Why It's Wrong | Fix |
+ | --- | --- | --- |
+ | Business logic in services | Domain rules belong in workflows/components | Extract to workflow |
+ | Returning raw dicts | Untyped contracts | Return a DTO |
+ | Transport logic (`status_code`, `HTTPException`) | Interface concern | Keep HTTP in interfaces |
+ | Calling `db.tags.*`, `db.libraries.*` directly | Only components access persistence | Route through workflow → component |
+ | Global state or singletons | Hidden dependency, test-unfriendly | Use constructor injection |
+ | Embedding Pydantic models | Interface concern | Use DTOs from `helpers/dto/` |

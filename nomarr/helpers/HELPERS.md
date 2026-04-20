@@ -69,6 +69,7 @@ helpers/
 ### 3.1 Pure Utility Functions
 
 Functions that:
+
 - Have no side effects
 - Don't perform I/O
 - Don't access databases or networks
@@ -83,11 +84,13 @@ Functions that:
 **Purpose:** Type-safe contracts for data flowing between layers.
 
 **Rules:**
+
 1. Pure dataclasses (no methods beyond `__init__`)
 2. Only stdlib and typing imports
 3. No business logic, no validation
 
 **Placement decision tree:**
+
 - **Cross-layer DTOs** (used by multiple services or workflows): must live in `helpers/dto/<domain>.py`
 - **Single-service DTOs** (only used within one service file): keep local to that service
 
@@ -125,11 +128,13 @@ class PlaylistQueryError(Exception):
 ### Import Rules
 
 **Allowed:**
+
 - ✅ Standard library (`os`, `pathlib`, `datetime`, `json`, etc.)
 - ✅ Typing (`typing`, `typing_extensions`)
 - ✅ Third-party libraries (`mutagen`, `numpy`, etc.)
 
 **Forbidden:**
+
 - ❌ Any `nomarr.*` modules
 - ❌ Any imports that would create circular dependencies
 
@@ -172,9 +177,9 @@ class LibraryDict:
 
 ## 6. Anti-Patterns
 
-| Anti-Pattern | Why It's Wrong | Fix |
-|---|---|---|
-| Business logic in helpers | Contains rules, reads config | Move to component or workflow |
-| Hidden I/O (`load_config_file()`) | Not pure, hidden dependency | Pass as parameter or move to service |
-| Mutable global state (`_cache = {}`) | Side effects between calls | Use cache decorator or pass cache object |
-| Importing `nomarr.*` | Violates layer boundary | Keep helpers self-contained |
+ | Anti-Pattern | Why It's Wrong | Fix |
+ | --- | --- | --- |
+ | Business logic in helpers | Contains rules, reads config | Move to component or workflow |
+ | Hidden I/O (`load_config_file()`) | Not pure, hidden dependency | Pass as parameter or move to service |
+ | Mutable global state (`_cache = {}`) | Side effects between calls | Use cache decorator or pass cache object |
+ | Importing `nomarr.*` | Violates layer boundary | Keep helpers self-contained |

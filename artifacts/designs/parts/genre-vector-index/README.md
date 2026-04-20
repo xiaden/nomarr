@@ -8,6 +8,7 @@ supports `storedValues` on ANN indexes — a single collection with genre data s
 is the correct approach. Songs can have **multiple genres** (array field).
 
 This feature:
+
 1. Populates a `genres: list[str]` array field on cold vector documents at drain time (via tag join)
 2. Adds `storedValues` for `genres` to the ANN index definition
 3. Adds a genre-filtered ANN search method to `VectorsTrackColdOperations`
@@ -15,10 +16,10 @@ This feature:
 
 ## Parts
 
-| Part | Title | Depends On | Layers |
-|---|---|---|---|
-| A | Genre Enrichment on Vector Documents | None | persistence, maintenance_comp |
-| B | Genre Playlist via Indexed Filter | A | component, workflow |
+ | Part | Title | Depends On | Layers |
+ | --- | --- | --- | --- |
+ | A | Genre Enrichment on Vector Documents | None | persistence, maintenance_comp |
+ | B | Genre Playlist via Indexed Filter | A | component, workflow |
 
 ## Dependency Graph
 

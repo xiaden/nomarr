@@ -32,23 +32,23 @@ const graph = new Graph({
 
 ## Options
 
-| Property    | Description                                                                                                       | Type                                          | Default                                   | Required |
+| Property | Description | Type | Default | Required |
 | ----------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ----------------------------------------- | -------- |
-| type        | Layout type                                                                                                       | circular                                      | -                                         | ✓        |
-| angleRatio  | How many 2\*PI between the first and last node                                                                    | number                                        | 1                                         |          |
-| center      | Center of the layout                                                                                              | [number, number]\|[number, number, number]    | [`layout width` / 2, `layout height` / 2] |          |
-| clockwise   | Whether to arrange clockwise                                                                                      | boolean                                       | true                                      |          |
-| divisions   | Number of segments on the ring (segments will be evenly distributed, effective when endRadius - startRadius != 0) | number                                        | 1                                         |          |
-| nodeSize    | Node size (diameter), used for collision detection                                                                | Size \| ((nodeData: Node) => Size)            | 10                                        |          |
-| nodeSpacing | Minimum spacing between rings, used to adjust radius                                                              | number \| ((nodeData: Node) => number)        | 10                                        |          |
-| ordering    | Node ordering on the ring, [see details](#ordering)                                                               | `topology` \| `topology-directed` \| `degree` | -                                         |          |
-| radius      | Circle radius, if set, spiral layout configs `startRadius` and `endRadius` are ignored, [see details](#radius)    | number                                        | -                                         |          |
-| startAngle  | Start angle of the layout                                                                                         | number                                        | 0                                         |          |
-| endAngle    | End angle of the layout                                                                                           | number                                        | 2 \* Math.PI                              |          |
-| startRadius | Start radius for spiral layout, [usage](#spiral-layout)                                                           | number                                        | -                                         |          |
-| endRadius   | End radius for spiral layout                                                                                      | number                                        | -                                         |          |
-| width       | Layout width                                                                                                      | number                                        | canvas width                              |          |
-| height      | Layout height                                                                                                     | number                                        | canvas height                             |          |
+| type | Layout type | circular | - | ✓ |
+| angleRatio | How many 2\*PI between the first and last node | number | 1 | |
+| center | Center of the layout | [number, number]\|[number, number, number] | [`layout width` / 2, `layout height` / 2] | |
+| clockwise | Whether to arrange clockwise | boolean | true | |
+| divisions | Number of segments on the ring (segments will be evenly distributed, effective when endRadius - startRadius != 0) | number | 1 | |
+| nodeSize | Node size (diameter), used for collision detection | Size \| ((nodeData: Node) => Size) | 10 | |
+| nodeSpacing | Minimum spacing between rings, used to adjust radius | number \| ((nodeData: Node) => number) | 10 | |
+| ordering | Node ordering on the ring, [see details](#ordering) | `topology` \| `topology-directed` \| `degree` | - | |
+| radius | Circle radius, if set, spiral layout configs `startRadius` and `endRadius` are ignored, [see details](#radius) | number | - | |
+| startAngle | Start angle of the layout | number | 0 | |
+| endAngle | End angle of the layout | number | 2 \* Math.PI | |
+| startRadius | Start radius for spiral layout, [usage](#spiral-layout) | number | - | |
+| endRadius | End radius for spiral layout | number | - | |
+| width | Layout width | number | canvas width | |
+| height | Layout height | number | canvas height | |
 
 ### ordering
 

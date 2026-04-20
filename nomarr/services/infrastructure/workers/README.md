@@ -12,9 +12,9 @@ Discovery-based ML processing worker that runs as a separate OS process, claimin
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|---------|
-| `discovery_worker.py` | `DiscoveryWorker` (multiprocessing.Process) — main worker loop, health frames, ONNX cache management, deferred DB writes |
+ | Module | Purpose |
+ | -------- | --------- |
+ | `discovery_worker.py` | `DiscoveryWorker` (multiprocessing.Process) — main worker loop, health frames, ONNX cache management, deferred DB writes |
 
 ## Patterns
 

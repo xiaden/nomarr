@@ -10,16 +10,16 @@ Command-line interface for Nomarr administration tasks that run outside the serv
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|--------|
-| `cli_main.py` | `build_parser()` — argparse setup; `main()` — CLI entry point |
-| `cli_ui.py` | `InfoPanel`, `show_spinner`, `print_success/error/warning/info` — Rich UI helpers |
+ | Module | Purpose |
+ | -------- | -------- |
+ | `cli_main.py` | `build_parser()` — argparse setup; `main()` — CLI entry point |
+ | `cli_ui.py` | `InfoPanel`, `show_spinner`, `print_success/error/warning/info` — Rich UI helpers |
 
 ## Subfolder
 
-| Folder | Purpose |
-|--------|--------|
-| `commands/` | Individual CLI command implementations (cleanup, password management) |
+ | Folder | Purpose |
+ | -------- | -------- |
+ | `commands/` | Individual CLI command implementations (cleanup, password management) |
 
 ## Patterns
 

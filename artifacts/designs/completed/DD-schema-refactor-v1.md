@@ -5,6 +5,7 @@
 **Created:** 2026-03-27
 
 **Related Documents:**
+
 - [design-cascade-delete.md](design-cascade-delete.md) — Graph-based cascade patterns (separate refactor)
 - [design-db-issues-investigation.md](design-db-issues-investigation.md) — TTL bugs, empty collections, data issues
 
@@ -13,6 +14,7 @@
 ## Scope
 
 This document covers:
+
 1. Converting FK-as-property patterns to proper edges
 2. Field cleanup and renaming
 3. Collection restructuring (vertex vs edge)
@@ -47,16 +49,16 @@ The ArangoDB schema has accumulated technical debt through organic growth:
 
 ## Design Goals
 
-| Goal | Rationale |
-|------|----------|
-| Edge-first relationships | Leverage ArangoDB graph capabilities |
-| Named graph definitions | Enable `GRAPH 'name'` traversal syntax |
-| Single source of truth | No manual denormalization; use views for query optimization |
-| Consolidated lock semantics | One `locks` collection for actual locks |
-| Separate work distribution | `worker_claims` remains distinct |
-| Complete state vocabulary | Workers discover work via missing state edges |
-| Generic persistence returns | Reduce coupling between persistence and business logic |
-| Forward-only migrations | All changes via migration scripts |
+ | Goal | Rationale |
+ | ------ | ---------- |
+ | Edge-first relationships | Leverage ArangoDB graph capabilities |
+ | Named graph definitions | Enable `GRAPH 'name'` traversal syntax |
+ | Single source of truth | No manual denormalization; use views for query optimization |
+ | Consolidated lock semantics | One `locks` collection for actual locks |
+ | Separate work distribution | `worker_claims` remains distinct |
+ | Complete state vocabulary | Workers discover work via missing state edges |
+ | Generic persistence returns | Reduce coupling between persistence and business logic |
+ | Forward-only migrations | All changes via migration scripts |
 
 ---
 
@@ -64,40 +66,40 @@ The ArangoDB schema has accumulated technical debt through organic growth:
 
 ### Vertex Collections
 
-| Collection | Purpose | Key Strategy |
-|------------|---------|-------------|
-| `libraries` | Library identity (immutable after creation) | Auto |
-| `library_files` | Audio file records | Auto |
-| `library_folders` | Folder hierarchy | Auto |
-| `library_scans` | Scan state (one per library) | `{library_key}` |
-| `tags` | Tag definitions | SHA256(`{rel}:{value}`) |
-| `file_states` | State vertices (fixed set) | `ml_tagged`, `calibrated`, etc. |
-| `ml_models` | ML model definitions | Auto |
-| `ml_model_outputs` | Model output definitions | Auto |
-| `calibration_state` | Calibration data per head/label | `{head_name}:{label_hash}` |
-| `segment_score_stats` | Per-file segment statistics | Auto |
-| `vectors_hot_{backbone}` | Hot vectors per backbone | SHA1(`{file_id}|{hash}`) |
-| `vectors_cold_{backbone}` | Cold vectors per backbone | SHA1(`{file_id}|{hash}`) |
-| `locks` | Resource locks (consolidated) | `{lock_type}:{target_key}` |
-| `worker_claims` | Work distribution (NOT locks) | `claim_{file_key}` |
-| `health` | Worker health/heartbeat | `{component_type}:{worker_id}` |
-| `sessions` | Auth sessions | Auto |
-| `meta` | Key-value metadata | Direct `_key` (e.g., `version`) |
+ | Collection | Purpose | Key Strategy |
+ | ------------ | --------- | ------------- |
+ | `libraries` | Library identity (immutable after creation) | Auto |
+ | `library_files` | Audio file records | Auto |
+ | `library_folders` | Folder hierarchy | Auto |
+ | `library_scans` | Scan state (one per library) | `{library_key}` |
+ | `tags` | Tag definitions | SHA256(`{rel}:{value}`) |
+ | `file_states` | State vertices (fixed set) | `ml_tagged`, `calibrated`, etc. |
+ | `ml_models` | ML model definitions | Auto |
+ | `ml_model_outputs` | Model output definitions | Auto |
+ | `calibration_state` | Calibration data per head/label | `{head_name}:{label_hash}` |
+ | `segment_score_stats` | Per-file segment statistics | Auto |
+ | `vectors_hot_{backbone}` | Hot vectors per backbone | SHA1(`{file_id} | {hash}`) |
+ | `vectors_cold_{backbone}` | Cold vectors per backbone | SHA1(`{file_id} | {hash}`) |
+ | `locks` | Resource locks (consolidated) | `{lock_type}:{target_key}` |
+ | `worker_claims` | Work distribution (NOT locks) | `claim_{file_key}` |
+ | `health` | Worker health/heartbeat | `{component_type}:{worker_id}` |
+ | `sessions` | Auth sessions | Auto |
+ | `meta` | Key-value metadata | Direct `_key` (e.g., `version`) |
 
 ### Edge Collections
 
-| Collection | From | To | Purpose |
-|------------|------|----|---------|
-| `library_contains_file` | `libraries` | `library_files` | Library membership |
-| `library_contains_folder` | `libraries` | `library_folders` | Folder membership |
-| `library_has_scan` | `libraries` | `library_scans` | Current scan state |
-| `file_has_state` | `library_files` | `file_states` | Processing state machine |
-| `song_has_tags` | `library_files` | `tags` | Tag associations |
-| `tag_model_output` | `tags` | `ml_model_outputs` | Tag provenance |
-| `model_has_output` | `ml_models` | `ml_model_outputs` | Model → output |
-| `file_has_vectors` | `library_files` | `vectors_*` | Vector associations |
-| `file_has_segment_stats` | `library_files` | `segment_score_stats` | Segment statistics |
-| `model_has_calibration` | `ml_models` | `calibration_state` | Calibration per model |
+ | Collection | From | To | Purpose |
+ | ------------ | ------ | ---- | --------- |
+ | `library_contains_file` | `libraries` | `library_files` | Library membership |
+ | `library_contains_folder` | `libraries` | `library_folders` | Folder membership |
+ | `library_has_scan` | `libraries` | `library_scans` | Current scan state |
+ | `file_has_state` | `library_files` | `file_states` | Processing state machine |
+ | `song_has_tags` | `library_files` | `tags` | Tag associations |
+ | `tag_model_output` | `tags` | `ml_model_outputs` | Tag provenance |
+ | `model_has_output` | `ml_models` | `ml_model_outputs` | Model → output |
+ | `file_has_vectors` | `library_files` | `vectors_*` | Vector associations |
+ | `file_has_segment_stats` | `library_files` | `segment_score_stats` | Segment statistics |
+ | `model_has_calibration` | `ml_models` | `calibration_state` | Calibration per model |
 
 ### Named Graph Definitions
 
@@ -136,11 +138,13 @@ GRAPHS = {
 ### 1. Locks Consolidation
 
 **Current:**
+
 - `ml_capacity_probe_locks` — lock collection for GPU/CPU probes
 - `vector_promotion_locks` — lock collection for vector promotion  
 - `worker_claims` — work distribution (fundamentally different, NOT a lock)
 
 **Target:**
+
 ```
 locks (document collection) — for actual resource locks only
 ├── _key: "{lock_type}:{target_key}"
@@ -173,16 +177,16 @@ locks (document collection) — for actual resource locks only
 
 **Target vocabulary:**
 
-| State | Meaning | Created by |
-|-------|---------|------------|
-| `scanned` | File discovered and metadata extracted | Scan workflow |
-| `too_short` | Duration below processing threshold | Scan workflow |
-| `vectors_extracted` | Embeddings computed | ML worker |
-| `ml_tagged` | ML tags applied | ML worker |
-| `calibrated` | Calibration applied to scores | Calibration workflow |
-| `tags_written` | Tags written to file | Tag write workflow |
-| `reconciled` | Synced with external source | Reconciliation workflow |
-| `errored` | Processing failed, needs retry | Any worker |
+ | State | Meaning | Created by |
+ | ------- | --------- | ------------ |
+ | `scanned` | File discovered and metadata extracted | Scan workflow |
+ | `too_short` | Duration below processing threshold | Scan workflow |
+ | `vectors_extracted` | Embeddings computed | ML worker |
+ | `ml_tagged` | ML tags applied | ML worker |
+ | `calibrated` | Calibration applied to scores | Calibration workflow |
+ | `tags_written` | Tags written to file | Tag write workflow |
+ | `reconciled` | Synced with external source | Reconciliation workflow |
+ | `errored` | Processing failed, needs retry | Any worker |
 
 **Migration:** Insert new state vertices. No code changes needed for edge-based queries.
 
@@ -196,14 +200,14 @@ locks (document collection) — for actual resource locks only
 
 **Field cleanup on `library_files`:**
 
-| Field | Action | Rationale |
-|-------|--------|----------|
-| `path` | Rename to `absolute_path` | Clarity |
-| `normalized_path` | Rename to `relative_path` | Clarity |
-| `library_id` | Remove | Replaced by edge |
-| `title`, `album`, `artist`, `artists`, `genres`, `year` | Remove | Denormalized from edges |
-| `chromaprint` | Rename to `spectral_hash` | Actually MD5 of quantized FFT |
-| `labels` | Remove | Dead field |
+ | Field | Action | Rationale |
+ | ------- | -------- | ---------- |
+ | `path` | Rename to `absolute_path` | Clarity |
+ | `normalized_path` | Rename to `relative_path` | Clarity |
+ | `library_id` | Remove | Replaced by edge |
+ | `title`, `album`, `artist`, `artists`, `genres`, `year` | Remove | Denormalized from edges |
+ | `chromaprint` | Rename to `spectral_hash` | Actually MD5 of quantized FFT |
+ | `labels` | Remove | Dead field |
 
 **Migration:** Create edge collection, migrate `library_id` to edges, update queries.
 
@@ -258,11 +262,11 @@ library_has_scan (edge collection)
 
 **Field cleanup:**
 
-| Field | Action |
-|-------|--------|
-| `model_id` | Remove (edge replaces) |
-| `created_at`, `updated_at` | Remove |
-| `fully_labeled` | Keep | State flag for labeled vs unlabeled outputs — required for inference |
+ | Field | Action |
+ | ------- | -------- |
+ | `model_id` | Remove (edge replaces) |
+ | `created_at`, `updated_at` | Remove |
+ | `fully_labeled` | Keep | State flag for labeled vs unlabeled outputs — required for inference |
 
 ---
 
@@ -270,7 +274,8 @@ library_has_scan (edge collection)
 
 **Current:** `vectors_track_*` with `file_id` as string property.
 
-**Target:** 
+**Target:**
+
 - Rename to `vectors_{hot|cold}_{backbone}`
 - Single edge collection `file_has_vectors` with polymorphic `_to` (points to any vector collection)
 
@@ -287,12 +292,12 @@ library_has_scan (edge collection)
 
 **Field cleanup:**
 
-| Field | Action |
-|-------|--------|
-| `file_id` | Remove (edge replaces) |
-| `created_at` | Remove |
-| `embed_dim` | Keep |
-| `model_suite_hash` | Keep |
+ | Field | Action |
+ | ------- | -------- |
+ | `file_id` | Remove (edge replaces) |
+ | `created_at` | Remove |
+ | `embed_dim` | Keep |
+ | `model_suite_hash` | Keep |
 
 ---
 
@@ -304,15 +309,15 @@ library_has_scan (edge collection)
 
 **Preserved fields:**
 
-| Field | Action | Rationale |
-|-------|--------|-----------|
-| `file_id` | Remove | Replaced by edge `_from` |
-| `head_name` | Keep | Query filter + part of `_key` hash |
-| `tagger_version` | Keep | Part of `_key` hash, enables multi-version stats |
-| `num_segments` | Keep | Required metadata |
-| `pooling_strategy` | Keep | Required metadata |
-| `label_stats` | Keep | Core payload |
-| `processed_at` | Keep | Audit |
+ | Field | Action | Rationale |
+ | ------- | -------- | ----------- |
+ | `file_id` | Remove | Replaced by edge `_from` |
+ | `head_name` | Keep | Query filter + part of `_key` hash |
+ | `tagger_version` | Keep | Part of `_key` hash, enables multi-version stats |
+ | `num_segments` | Keep | Required metadata |
+ | `pooling_strategy` | Keep | Required metadata |
+ | `label_stats` | Keep | Core payload |
+ | `processed_at` | Keep | Audit |
 
 **Uniqueness mechanism:** The deterministic `_key = SHA1(file_id|head_name|tagger_version)` already ensures business uniqueness. At insert time, `file_id` comes from the edge's `_from`. Edge index `(_from, _to)` unique prevents duplicate edges. No additional constraints needed.
 
@@ -341,6 +346,7 @@ model_has_calibration (edge collection)
 ```
 
 **Benefits:**
+
 - Model identity is the model document, not a constructed string
 - Referential integrity via edge
 - No need to infer/create version info that doesn't exist
@@ -363,6 +369,7 @@ model_has_calibration (edge collection)
 ### Current Pattern
 
 Indexes are created in two places:
+
 - **Bootstrap** (`arango_bootstrap_comp.py`) — idempotent startup, handles most indexes via `_ensure_index()`
 - **Migrations** (`nomarr/migrations/`) — new indexes for schema changes
 
@@ -379,28 +386,28 @@ _ensure_index(db, "edge_name", "persistent", ["_to"])    # Reverse lookup
 
 ### New Indexes Required
 
-| Collection | Index Fields | Type | Rationale |
-|------------|--------------|------|-----------|
-| `library_contains_file` | `["_from", "_to"]` | Unique | Prevent duplicate membership |
-| `library_contains_file` | `["_from"]` | Persistent | Fast "files in library" query |
-| `library_contains_file` | `["_to"]` | Persistent | Fast "which library owns file" |
-| `library_contains_folder` | Same pattern | — | — |
-| `library_has_scan` | `["_from"]` | Unique | 1:1 library→scan |
-| `model_has_output` | Same as edge pattern | — | — |
-| `file_has_vectors` | Same as edge pattern | — | — |
-| `file_has_segment_stats` | Same as edge pattern | — | — |
-| `locks` | `["lock_type", "target_key"]` | Unique | Composite key alternative |
-| `locks` | `["expires_at"]` | TTL | Auto-cleanup |
+ | Collection | Index Fields | Type | Rationale |
+ | ------------ | -------------- | ------ | ----------- |
+ | `library_contains_file` | `["_from", "_to"]` | Unique | Prevent duplicate membership |
+ | `library_contains_file` | `["_from"]` | Persistent | Fast "files in library" query |
+ | `library_contains_file` | `["_to"]` | Persistent | Fast "which library owns file" |
+ | `library_contains_folder` | Same pattern | — | — |
+ | `library_has_scan` | `["_from"]` | Unique | 1:1 library→scan |
+ | `model_has_output` | Same as edge pattern | — | — |
+ | `file_has_vectors` | Same as edge pattern | — | — |
+ | `file_has_segment_stats` | Same as edge pattern | — | — |
+ | `locks` | `["lock_type", "target_key"]` | Unique | Composite key alternative |
+ | `locks` | `["expires_at"]` | TTL | Auto-cleanup |
 
 ### Renamed Field Indexes
 
 When renaming fields, indexes must be recreated:
 
-| Collection | Old Index | New Index |
-|------------|-----------|-----------|
-| `library_files` | `["library_id"]` | Drop (edge replaces) |
-| `library_files` | `["library_id", "path"]` | `["absolute_path"]` unique per edge |
-| `library_files` | `["chromaprint"]` sparse | `["spectral_hash"]` sparse |
+ | Collection | Old Index | New Index |
+ | ------------ | ----------- | ----------- |
+ | `library_files` | `["library_id"]` | Drop (edge replaces) |
+ | `library_files` | `["library_id", "path"]` | `["absolute_path"]` unique per edge |
+ | `library_files` | `["chromaprint"]` sparse | `["spectral_hash"]` sparse |
 
 ### Migration Order
 
@@ -416,6 +423,7 @@ When renaming fields, indexes must be recreated:
 ### Decision: Pydantic for Database I/O
 
 Pydantic models will be used for database operations. This provides:
+
 - Runtime validation on writes (prevent garbage data entering DB)
 - Clear contracts for document shapes
 - Easier refactoring (pydantic raises on schema violations)
@@ -522,25 +530,25 @@ class ArangoEdge(ArangoDocument):
 
 ### Models Required
 
-| Collection | Model Name | Inherits |
-|------------|------------|----------|
-| `libraries` | `Library` | `ArangoDocument` |
-| `library_files` | `LibraryFile` | `ArangoDocument` |
-| `library_folders` | `LibraryFolder` | `ArangoDocument` |
-| `library_scans` | `LibraryScan` | `ArangoDocument` |
-| `tags` | `Tag` | `ArangoDocument` |
-| `file_states` | `FileState` | `ArangoDocument` |
-| `ml_models` | `MLModel` | `ArangoDocument` |
-| `ml_model_outputs` | `MLModelOutput` | `ArangoDocument` |
-| `calibration_state` | `CalibrationState` | `ArangoDocument` |
-| `segment_score_stats` | `SegmentScoreStats` | `ArangoDocument` |
-| `vectors_*` | `VectorDoc` | `ArangoDocument` |
-| `locks` | `Lock` | `ArangoDocument` |
-| `worker_claims` | `WorkerClaim` | `ArangoDocument` |
-| `health` | `HealthRecord` | `ArangoDocument` |
-| `sessions` | `Session` | `ArangoDocument` |
-| `meta` | `MetaEntry` | `ArangoDocument` |
-| All edge collections | `*Edge` | `ArangoEdge` |
+ | Collection | Model Name | Inherits |
+ | ------------ | ------------ | ---------- |
+ | `libraries` | `Library` | `ArangoDocument` |
+ | `library_files` | `LibraryFile` | `ArangoDocument` |
+ | `library_folders` | `LibraryFolder` | `ArangoDocument` |
+ | `library_scans` | `LibraryScan` | `ArangoDocument` |
+ | `tags` | `Tag` | `ArangoDocument` |
+ | `file_states` | `FileState` | `ArangoDocument` |
+ | `ml_models` | `MLModel` | `ArangoDocument` |
+ | `ml_model_outputs` | `MLModelOutput` | `ArangoDocument` |
+ | `calibration_state` | `CalibrationState` | `ArangoDocument` |
+ | `segment_score_stats` | `SegmentScoreStats` | `ArangoDocument` |
+ | `vectors_*` | `VectorDoc` | `ArangoDocument` |
+ | `locks` | `Lock` | `ArangoDocument` |
+ | `worker_claims` | `WorkerClaim` | `ArangoDocument` |
+ | `health` | `HealthRecord` | `ArangoDocument` |
+ | `sessions` | `Session` | `ArangoDocument` |
+ | `meta` | `MetaEntry` | `ArangoDocument` |
+ | All edge collections | `*Edge` | `ArangoEdge` |
 
 ---
 
@@ -550,11 +558,11 @@ class ArangoEdge(ArangoDocument):
 
 Current persistence functions return tightly-coupled DTOs or raw dicts. Target: return generic types that reduce coupling.
 
-| Current | Target | Rationale |
-|---------|--------|-----------|
-| `LibraryDict` with scan fields | `LibraryDoc` + separate `ScanStateDoc` | Separation of concerns |
-| Raw ArangoDB cursor results | Typed `*Doc` TypedDicts | Type safety |
-| FK property in return | Edge info or omit | Don't leak FK implementation |
+ | Current | Target | Rationale |
+ | --------- | -------- | ----------- |
+ | `LibraryDict` with scan fields | `LibraryDoc` + separate `ScanStateDoc` | Separation of concerns |
+ | Raw ArangoDB cursor results | Typed `*Doc` TypedDicts | Type safety |
+ | FK property in return | Edge info or omit | Don't leak FK implementation |
 
 ### Query Pattern Standardization
 
@@ -578,23 +586,27 @@ FOR file IN OUTBOUND @library_id GRAPH 'library_graph'
 All changes implemented as forward-only migrations in `nomarr/migrations/`.
 
 ### Phase 1: Additive (Non-breaking)
+
 1. Create new edge collections
 2. Create named graphs
 3. Add new state vertices
 4. Create `locks` collection
 
 ### Phase 2: Data Migration
+
 1. Migrate FK properties to edges
 2. Migrate lock data to consolidated collection
 3. Migrate scan state to separate collection
 4. Rewrite `meta` with `_key`
 
 ### Phase 3: Code Updates
+
 1. Update persistence layer queries to use graphs
 2. Update return types to generic
 3. Remove denormalized tag fields from queries
 
 ### Phase 4: Cleanup
+
 1. Remove FK property fields
 2. Remove denormalized fields
 3. Drop old lock collections

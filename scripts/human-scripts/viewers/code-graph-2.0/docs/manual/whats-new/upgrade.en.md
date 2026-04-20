@@ -46,7 +46,7 @@ Since we have redesigned and implemented the elements, please refer to the corre
 - [Edge](/en/api/elements/edges/base-edge)
 - [Combo](/en/api/elements/combos/base-combo)
 
-2. If you need to specify the element type in the data, you can use the `type` attribute:
+1. If you need to specify the element type in the data, you can use the `type` attribute:
 
 ```typescript
 {

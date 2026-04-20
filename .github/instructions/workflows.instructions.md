@@ -9,6 +9,7 @@ applyTo: nomarr/workflows/**
 **Purpose:** Implement core use cases ("what Nomarr does").
 
 Workflows contain the **story** of how Nomarr performs operations. They are recipes that:
+
 1. Accept dependencies as parameters (DB, config, ML backends)
 2. Orchestrate [components](./components.instructions.md) to perform work
 3. Return [DTOs](./helpers.instructions.md)

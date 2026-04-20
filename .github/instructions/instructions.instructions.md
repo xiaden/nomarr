@@ -15,6 +15,7 @@ Instructions files customize how Copilot behaves when working with specific file
 ## File Structure
 
 All instruction files must:
+
 - Use `.instructions.md` extension
 - Be stored in `.github/instructions/` (workspace-level)
 - Follow Markdown format with optional YAML frontmatter
@@ -32,6 +33,7 @@ applyTo: glob/pattern/**/*.ext
 ```
 
 **Fields:**
+
 - `name`: Human-readable name displayed in VS Code UI (defaults to filename if omitted)
 - `description`: Short summary of the instructions' purpose
 - `applyTo`: Glob pattern for automatic application (e.g., `**/*.py`, `nomarr/services/**`)
@@ -42,6 +44,7 @@ applyTo: glob/pattern/**/*.ext
 ### Body (Markdown Content)
 
 The instructions themselves. Should contain:
+
 - Clear, specific guidelines Copilot should follow
 - Architecture rules or constraints
 - Naming conventions
@@ -49,6 +52,7 @@ The instructions themselves. Should contain:
 - References to other files or tools
 
 **Syntax for referencing agent tools:**
+
 ```markdown
 #tool:githubRepo
 #tool:search/codebase
@@ -67,6 +71,7 @@ The instructions themselves. Should contain:
 ### Use Multiple Files for Specificity
 
 Instead of one massive instructions file:
+
 - Create layer-specific files (services, workflows, components)
 - Create language-specific files (Python, TypeScript, etc.)
 - Create task-specific files (testing, documentation, etc.)
@@ -245,7 +250,9 @@ lint_project_backend(path="nomarr/services")
 ## Dependency Flow
 
 ```
+
 interfaces → services → workflows → components → (persistence / helpers)
+
 ```
 
 **This file must only import:**
@@ -282,12 +289,14 @@ Avoid these in instruction files:
 ## When NOT to Use Instruction Files
 
 Avoid instruction files for:
+
 - One-off tasks or temporary project-specific notes
 - Complex procedural knowledge better suited for documentation
 - Highly dynamic rules that change frequently
 - Information already covered by linters, type checkers, or CI
 
 Instead:
+
 - Use linters/formatters for style enforcement
 - Use documentation for architecture explanations
 - Use code comments for implementation-specific notes
@@ -298,12 +307,14 @@ Instead:
 ## Maintenance
 
 **Keep instructions up-to-date:**
+
 - Review when architectural patterns change
 - Update when naming conventions evolve
 - Remove obsolete or contradictory rules
 - Test with actual Copilot interactions
 
 **Version control:**
+
 - Commit instruction files to git
 - Share workspace instructions with team
 - Document changes in commit messages

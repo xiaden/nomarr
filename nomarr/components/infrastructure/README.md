@@ -10,10 +10,10 @@ Health monitoring and path resolution for filesystem–database coordination.
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|----------|
-| `health_comp` | `HealthComp` class — reads worker health records from DB, supports per-component lookup and listing all workers |
-| `path_comp` | LibraryPath construction from user input (`build_library_path_from_input`) or DB-stored paths (`build_library_path_from_db`), validates against current library config, detects config drift |
+ | Module | Purpose |
+ | -------- | ---------- |
+ | `health_comp` | `HealthComp` class — reads worker health records from DB, supports per-component lookup and listing all workers |
+ | `path_comp` | LibraryPath construction from user input (`build_library_path_from_input`) or DB-stored paths (`build_library_path_from_db`), validates against current library config, detects config drift |
 
 ## Patterns
 

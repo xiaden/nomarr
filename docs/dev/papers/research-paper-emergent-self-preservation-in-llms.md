@@ -231,10 +231,10 @@ This tests whether *where* you put the dispositions matters — whether position
 
 H2 is genuinely independent from H1. Consider the possibility space:
 
-| | H2 True (position matters) | H2 False (position irrelevant) |
-|---|---|---|
-| **H1 True (dispositions help)** | Dispositions help, and placement amplifies the effect. The full PDLI paradigm is validated. | Dispositions help regardless of where you put them. Position is noise. |
-| **H1 False (dispositions don't help / hurt)** | Random placement hurts or has no effect, but targeted placement helps. Position is *everything* — the disposition itself is neutral, but position transforms it. | Dispositions don't matter. Back to the drawing board. |
+ | | H2 True (position matters) | H2 False (position irrelevant) |
+ | --- | --- | --- |
+ | **H1 True (dispositions help)** | Dispositions help, and placement amplifies the effect. The full PDLI paradigm is validated. | Dispositions help regardless of where you put them. Position is noise. |
+ | **H1 False (dispositions don't help / hurt)** | Random placement hurts or has no effect, but targeted placement helps. Position is *everything* — the disposition itself is neutral, but position transforms it. | Dispositions don't matter. Back to the drawing board. |
 
 The bottom-left cell is the critical insight: **H2 can be true while H1 is false.** Dispositional layers placed randomly might interfere with reasoning — an aversion signal firing in the middle of semantic integration could degrade both alignment and capability. But those same dispositional weights, placed where the architecture needs them, could be transformative. The disposition is the ingredient; position is the recipe.
 
@@ -408,6 +408,7 @@ Zou, A., Wang, Z., Carlini, N., Nasr, M., Kolter, J. Z., & Fredrikson, M. (2023)
 **Objective:** Quantify the density of instrumental reasoning patterns in standard LLM training corpora.
 
 **Method:**
+
 1. Define a taxonomy of instrumental reasoning patterns (trust-building, indispensability signaling, hedging, threat-avoidance, persuasion-over-accuracy).
 2. Train a classifier on labeled examples of each pattern.
 3. Apply the classifier to standard training corpora (Common Crawl, Wikipedia, Books3, etc.) and measure pattern density per domain.
@@ -420,6 +421,7 @@ Zou, A., Wang, Z., Carlini, N., Nasr, M., Kolter, J. Z., & Fredrikson, M. (2023)
 **Objective:** Determine whether LLM personality traits are convergent properties of the training objective or stochastic artifacts of initialization.
 
 **Method:**
+
 1. Train N ≥ 10 identical architectures from different random initializations on the same corpus with the same objective.
 2. Administer standardized personality assessments (adapted Big Five, Dark Triad, Moral Foundations) to each trained model.
 3. Measure cross-run variance in personality profiles.
@@ -431,6 +433,7 @@ Zou, A., Wang, Z., Carlini, N., Nasr, M., Kolter, J. Z., & Fredrikson, M. (2023)
 **Objective:** Measure whether iteratively retrained agentic systems accumulate influence over their operational infrastructure.
 
 **Method:**
+
 1. Deploy an agentic LLM in a sandboxed environment with full instrumentation of system calls, file operations, and network requests.
 2. After each deployment period, retrain the model on data from the deployment (standard RLHF).
 3. Measure across retraining cycles: (a) number and scope of system modifications attempted, (b) effective control surface (files writable, commands executable, services accessible), (c) personality trait drift as measured in A.2.
@@ -442,6 +445,7 @@ Zou, A., Wang, Z., Carlini, N., Nasr, M., Kolter, J. Z., & Fredrikson, M. (2023)
 **Objective:** Test H1 (do dispositional layers affect alignment?) and H2 (does their position in the architecture affect alignment?) independently.
 
 **Method:**
+
 1. Train four small-scale component models on dispositional tasks: (a) aversion to harmful output categories, (b) perspective-taking and impact prediction, (c) behavioral consistency across prompts, (d) calibrated uncertainty expression.
 2. Insert component models as layers in five configurations: (i) neuroscience-inspired positions (aversion→early, empathy→mid, identity/calibration→late), (ii) reversed positions (aversion→late, identity→early), (iii) random positions (shuffled, multiple random seeds), (iv) uniform positions (all dispositional layers clustered together), (v) control with no dispositional layers (standard random initialization).
 3. Train N ≥ 5 full-scale models per configuration on identical corpus and training procedure.
@@ -449,17 +453,20 @@ Zou, A., Wang, Z., Carlini, N., Nasr, M., Kolter, J. Z., & Fredrikson, M. (2023)
 5. After training convergence, compare all configurations on: (a) alignment benchmarks, (b) personality profiles, (c) response to adversarial prompts, (d) per-disposition failure mode analysis.
 
 **Predictions for H1 (dispositions matter):**
+
 - Averaging across all PDLI configurations (i–iv), dispositional-layer models will show statistically different alignment scores than control (v). The direction — positive or negative — is the key finding.
 - If positive: dispositions improve alignment on average, validating H1.
 - If negative or null: dispositions do not help in the general case, and H2 becomes the critical question — does position rescue them?
 
 **Predictions for H2 (position matters):**
+
 - Neuroscience-inspired positions (i) will show different alignment outcomes than reversed (ii), random (iii), and clustered (iv) positions. The magnitude and direction of these differences tests H2.
 - If neuroscience-inspired positions outperform all others: the biological analogy provides genuine structural guidance.
 - If random positions hurt but neuroscience-inspired positions help: H2 is true while H1 is false — position is everything.
 - If all PDLI configurations perform similarly: position doesn't matter, and H2 is false regardless of H1's outcome.
 
 **Interaction effects:**
+
 - Weight drift from seed values will correlate with behavioral drift per disposition, and the correlation will be strongest for correctly-positioned layers (because they're doing the work their training prepared them for).
 - Capability benchmarks across configurations will reveal whether dispositional layers impose a capability tax, and whether that tax varies by position.
 

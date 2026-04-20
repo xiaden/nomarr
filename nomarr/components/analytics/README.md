@@ -11,11 +11,11 @@ Pure computation for collection statistics, mood analysis, and tag analytics.
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|----------|
-| `analytics_comp` | Tag frequency counting, correlation matrices, co-occurrence analysis, artist tag profiles, dominant vibe computation |
-| `collection_overview_comp` | Library-level stats — total files, year distribution, genre distribution (queries DB directly) |
-| `mood_analysis_comp` | Mood coverage rates, tier balance, top mood pairs, dominant vibes per library (queries DB directly) |
+ | Module | Purpose |
+ | -------- | ---------- |
+ | `analytics_comp` | Tag frequency counting, correlation matrices, co-occurrence analysis, artist tag profiles, dominant vibe computation |
+ | `collection_overview_comp` | Library-level stats — total files, year distribution, genre distribution (queries DB directly) |
+ | `mood_analysis_comp` | Mood coverage rates, tier balance, top mood pairs, dominant vibes per library (queries DB directly) |
 
 ## Patterns
 

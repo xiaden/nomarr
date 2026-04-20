@@ -46,13 +46,13 @@ return CallToolResult(
 
 ### Content vs StructuredContent Design Intent
 
-| Aspect | `content` (TextContent[]) | `structuredContent` (JSON object) |
-|--------|---------------------------|----------------------------------|
-| **Purpose** | Human/LLM consumption | Machine processing |
-| **Format** | Plain text, markdown | JSON-serializable dict |
-| **Audience** | Controllable via annotations | No audience tag (always available) |
-| **Best for** | Code snippets, prose, details | Metadata, paths, counts, IDs |
-| **Size impact** | Direct (text as-is) | Higher (JSON encoding overhead) |
+ | Aspect | `content` (TextContent[]) | `structuredContent` (JSON object) |
+ | -------- | --------------------------- | ---------------------------------- |
+ | **Purpose** | Human/LLM consumption | Machine processing |
+ | **Format** | Plain text, markdown | JSON-serializable dict |
+ | **Audience** | Controllable via annotations | No audience tag (always available) |
+ | **Best for** | Code snippets, prose, details | Metadata, paths, counts, IDs |
+ | **Size impact** | Direct (text as-is) | Higher (JSON encoding overhead) |
 
 ### Audience Annotation
 
@@ -73,6 +73,7 @@ return CallToolResult(
 - Applies to: **Any tool result**, regardless of format
 
 **This means**:
+
 - Moving code from structuredContent to content doesn't prevent file writes
 - BUT: Reduces total size by eliminating JSON encoding overhead
 - AND: Puts content where LLM can actually use it
@@ -86,6 +87,7 @@ return CallToolResult(
 - **Savings: ~800 bytes per tool call**
 
 For tools that return multiple code blocks (like `locate_symbol` with 5 matches), this compounds:
+
 - Current: 5 × 4.8KB = 24KB → **written to file**
 - Proposed: 5 × 4KB + 1KB metadata = 21KB → closer to threshold, fewer file writes
 
@@ -279,21 +281,25 @@ if is_python_file and using_fallback_tool:
 ## Migration Strategy
 
 ### Phase 1: Foundation (wrapper changes)
+
 1. Update `wrap_mcp_result_with_file_link` to extract text blobs
 2. Update `wrap_mcp_result` to support multiple content items
 3. Add helper: `extract_text_blobs(result: dict, keys: list[str]) -> tuple[dict, list[str]]`
 
 ### Phase 2: High-Impact Tools (tools with large payloads)
+
 1. `read_module_source` - most common, returns single large code block
 2. `read_file_symbol_at_line` - similar to above
 3. `search_file_text` - returns multiple matches with content
 4. `locate_symbol` - returns multiple symbol bodies
 
 ### Phase 3: Small Tools (5-50 line reads)
+
 1. `read_file_line` - probably fine as-is, payload is tiny
 2. `read_file_range` - validate behavior with 50-100 line ranges
 
 ### Phase 4: Validation
+
 1. Monitor Copilot file-write behavior in real usage
 2. Measure payload sizes before/after
 3. Verify LLM can parse content correctly
@@ -302,7 +308,8 @@ if is_python_file and using_fallback_tool:
 
 ### Risk 1: Breaking existing clients
 
-**Mitigation**: 
+**Mitigation**:
+
 - Keep structuredContent for backward compatibility
 - All existing keys remain (except large text blobs)
 - Clients reading structuredContent still get file paths, line numbers, etc.
@@ -310,6 +317,7 @@ if is_python_file and using_fallback_tool:
 ### Risk 2: LLM parsing changes
 
 **Mitigation**:
+
 - audience=["assistant"] is standard MCP
 - Copilot already handles multi-item content arrays
 - Test with small tools first
@@ -317,6 +325,7 @@ if is_python_file and using_fallback_tool:
 ### Risk 3: Doesn't prevent file writes (threshold is 10KB)
 
 **Mitigation**:
+
 - This is correct - large results should be written to files
 - Goal is to reduce unnecessary file writes for small-medium results
 - Pagination/chunking is the real solution for large queries
@@ -326,6 +335,7 @@ if is_python_file and using_fallback_tool:
 ### ✅ RECOMMENDED: Implement Hybrid Content Model
 
 **Rationale**:
+
 1. **Follows MCP spec correctly**: Content for text, structuredContent for metadata
 2. **Reduces payload size**: 15-20% savings from eliminating JSON encoding
 3. **Better LLM integration**: Code in LLM context, not hidden in structured data
@@ -333,11 +343,13 @@ if is_python_file and using_fallback_tool:
 5. **Aligns with industry practice**: Other MCP servers use this pattern
 
 **Expected impact**:
+
 - 20-30% fewer file writes for medium-sized results (20-50 lines)
 - Better LLM context utilization (code actually in context)
 - Cleaner separation of concerns (presentation vs data)
 
 **Not expected to solve**:
+
 - Large query results (100+ matches) will still write to files
 - This is correct behavior per MCP design
 - Solution for large results: pagination (separate task)
@@ -360,6 +372,7 @@ if is_python_file and using_fallback_tool:
 **Input**: 80-line function with docstring
 
 **Current payload**:
+
 ```json
 {
   "content": [{"text": "[read_module_source] Read file.py, line 42"}],
@@ -372,9 +385,11 @@ if is_python_file and using_fallback_tool:
   }
 }
 ```
+
 **Size**: ~4.2KB
 
 **Proposed payload**:
+
 ```json
 {
   "content": [
@@ -390,6 +405,7 @@ if is_python_file and using_fallback_tool:
   }
 }
 ```
+
 **Size**: ~3.6KB  
 **Savings**: 600 bytes (14%)
 

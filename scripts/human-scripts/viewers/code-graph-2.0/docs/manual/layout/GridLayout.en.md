@@ -115,21 +115,21 @@ const graph = new Graph({
 
 ## Options
 
-| Property              | Description                                                                                                                     | Type                                             | Default   | Required |
+| Property | Description | Type | Default | Required |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | --------- | -------- |
-| type                  | Layout type                                                                                                                     | `grid`                                           | -         | ✓        |
-| begin                 | Grid start position (top-left corner), default is `[0, 0]`                                                                      | [number, number]                                 | [0, 0]    |          |
-| cols                  | Number of columns. If undefined, the algorithm calculates it automatically based on node count, layout space, and rows (if set) | number                                           | undefined |          |
-| rows                  | Number of rows. If undefined, the algorithm calculates it automatically based on node count, layout space, and cols (if set)    | number                                           | 10        |          |
-| width                 | Layout area width. In G6, the container width is used as the default value                                                      | number                                           | 300       |          |
-| height                | Layout area height. In G6, the container height is used as the default value                                                    | number                                           | 300       |          |
-| condense              | If false, uses all available canvas space; if true, uses the minimum canvas space                                               | boolean                                          | false     |          |
-| nodeSize              | Node size (diameter), used for collision detection when preventing overlap                                                      | Size \| ((nodeData: Node) => Size)               | -         |          |
-| nodeSpacing           | Node spacing, used to adjust the gap between nodes                                                                              | ((node?: Node) => number) \| number              | -         |          |
-| position              | Specify the row and column for each node                                                                                        | (node?: Node) => { row?: number; col?: number; } | undefined |          |
-| preventOverlap        | Whether to prevent node overlap. Requires nodeSize or size property in node data                                                | boolean                                          | false     |          |
-| preventOverlapPadding | Padding when preventing overlap. Effective when preventOverlap is true                                                          | number                                           | 10        |          |
-| sortBy                | Sort basis (node property name). Higher values are placed more centrally. If undefined, degree is used for sorting              | string                                           | undefined |          |
+| type | Layout type | `grid` | - | ✓ |
+| begin | Grid start position (top-left corner), default is `[0, 0]` | [number, number] | [0, 0] | |
+| cols | Number of columns. If undefined, the algorithm calculates it automatically based on node count, layout space, and rows (if set) | number | undefined | |
+| rows | Number of rows. If undefined, the algorithm calculates it automatically based on node count, layout space, and cols (if set) | number | 10 | |
+| width | Layout area width. In G6, the container width is used as the default value | number | 300 | |
+| height | Layout area height. In G6, the container height is used as the default value | number | 300 | |
+| condense | If false, uses all available canvas space; if true, uses the minimum canvas space | boolean | false | |
+| nodeSize | Node size (diameter), used for collision detection when preventing overlap | Size \| ((nodeData: Node) => Size) | - | |
+| nodeSpacing | Node spacing, used to adjust the gap between nodes | ((node?: Node) => number) \| number | - | |
+| position | Specify the row and column for each node | (node?: Node) => { row?: number; col?: number; } | undefined | |
+| preventOverlap | Whether to prevent node overlap. Requires nodeSize or size property in node data | boolean | false | |
+| preventOverlapPadding | Padding when preventing overlap. Effective when preventOverlap is true | number | 10 | |
+| sortBy | Sort basis (node property name). Higher values are placed more centrally. If undefined, degree is used for sorting | string | undefined | |
 
 ### preventOverlap
 

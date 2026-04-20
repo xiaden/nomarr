@@ -51,17 +51,17 @@ This ensures globally unique filenames across all 25+ AQL subpackages.
 
 Each subpackage uses a fixed taxonomy of operation types. Not every collection needs all categories — only create modules that have methods to fill them:
 
-| Suffix | Responsibility |
-|--------|---------------|
-| `_upsert` | Insert or insert-or-update operations |
-| `_update` | Field-level updates on existing documents |
-| `_delete` | Document removal and cascade cleanup |
-| `_cascade` | Cross-collection cleanup triggered by deletes in this collection. ArangoDB lacks native cascading deletes, so this module handles referential integrity: deleting edges, related documents in other collections, and state cleanup when a document in this collection is removed. Only contains cascade detection and execution — the delete itself lives in `_delete` |
-| `_get_one` | Single document lookups by key, ID, or unique field |
-| `_get_many` | Bulk lookups by sets of keys/IDs/paths; folder-scoped batch fetches |
-| `_search` | Filtered, paginated queries with dynamic conditions |
-| `_set` | Edge-based state operations originating FROM this collection |
-| `_stats` | Aggregation, counting, frequency queries |
+ | Suffix | Responsibility |
+ | -------- | --------------- |
+ | `_upsert` | Insert or insert-or-update operations |
+ | `_update` | Field-level updates on existing documents |
+ | `_delete` | Document removal and cascade cleanup |
+ | `_cascade` | Cross-collection cleanup triggered by deletes in this collection. ArangoDB lacks native cascading deletes, so this module handles referential integrity: deleting edges, related documents in other collections, and state cleanup when a document in this collection is removed. Only contains cascade detection and execution — the delete itself lives in `_delete` |
+ | `_get_one` | Single document lookups by key, ID, or unique field |
+ | `_get_many` | Bulk lookups by sets of keys/IDs/paths; folder-scoped batch fetches |
+ | `_search` | Filtered, paginated queries with dynamic conditions |
+ | `_set` | Edge-based state operations originating FROM this collection |
+ | `_stats` | Aggregation, counting, frequency queries |
 
 ### 4. Collection Origination Principle
 
@@ -73,6 +73,7 @@ Each AQL subpackage owns queries whose **primary AQL operation originates from i
 - **Subqueries** referencing other collections (tag enrichment, state checks) do not change origination — they are implementation details of the owning query.
 
 Examples under this rule:
+
 - `search_files_by_tag` starts `FOR tag IN tags` → belongs in `tags_aql/tags_search.py`
 - `get_folder_rel_paths` traverses OUTBOUND to `library_folders` → belongs in `library_folders_aql`
 - `get_files_by_ids_with_tags` starts `DOCUMENT(file_id)` → belongs in `library_files_aql` (tag join is subquery)
@@ -84,15 +85,16 @@ AQL modules contain only AQL queries and minimal Python to build/execute them. M
 ## Consequences
 
 **Positive:**
+
 - Editor tabs, stack traces, and grep results are unambiguous across 25+ collections.
 - The origination principle provides a deterministic answer to "where does this query go?" — no judgment calls.
 - Operation type taxonomy prevents catch-all modules from re-emerging.
 - All collections are structured uniformly — no migration churn when small modules inevitably grow past a threshold.
 
 **Negative:**
+
 - File count in `persistence/database/` increases significantly (more `__init__.py` files, more directories).
 - Some queries serve a domain concept that spans collections (e.g., "find files by tag") — the origination rule may feel unintuitive to callers. This is acceptable because callers go through `Database` (the facade), not individual AQL modules.
-
 
 ## References
 

@@ -105,11 +105,11 @@ One paragraph answering the core query.
 
 ## Depth Guidelines
 
-| Depth | Time Budget | When to Use |
-|-------|-------------|-------------|
-| QUICK | ~5 tool calls | Spot check, verify assumption |
-| STANDARD | ~15 tool calls | Typical design research |
-| THOROUGH | ~30+ tool calls | Architectural decisions, unfamiliar territory |
+ | Depth | Time Budget | When to Use |
+ | ------- | ------------- | ------------- |
+ | QUICK | ~5 tool calls | Spot check, verify assumption |
+ | STANDARD | ~15 tool calls | Typical design research |
+ | THOROUGH | ~30+ tool calls | Architectural decisions, unfamiliar territory |
 
 ## Anti-Patterns
 
@@ -130,13 +130,13 @@ Your research findings are some of the most valuable logs in the system. Future 
 
 ### When to Log
 
-| Situation | Category |
-|-----------|----------|
-| Key research findings | `research` — **always log substantial findings** |
-| Discovered a codebase pattern or gotcha | `discovery` |
-| A research avenue led nowhere | `dead-end` |
-| Something unexpected or inconsistent found | `observation` |
-| Uncertain about a finding's implications | `observation` + tag `uncertainty` |
+ | Situation | Category |
+ | ----------- | ---------- |
+ | Key research findings | `research` — **always log substantial findings** |
+ | Discovered a codebase pattern or gotcha | `discovery` |
+ | A research avenue led nowhere | `dead-end` |
+ | Something unexpected or inconsistent found | `observation` |
+ | Uncertain about a finding's implications | `observation` + tag `uncertainty` |
 
 **Threshold:** If the research took >5 tool calls to complete, the findings are worth logging.
 
@@ -145,5 +145,6 @@ Log your agent name as `support-researcher`.
 ## Log Access
 
 `log_read` is scoped to:
+
 - Own logs (`support-researcher`)
 - Manager-level: `director`, `rnd-manager`, `exec-manager`

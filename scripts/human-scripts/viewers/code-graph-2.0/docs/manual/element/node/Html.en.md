@@ -30,11 +30,11 @@ Use Cases:
 
 > If the element has specific properties, we will list them below. For all common style properties, see [BaseNode](/en/manual/element/node/base-node)
 
-| Property  | Description                                                                                           | Type                        | Default | Required |
+| Property | Description | Type | Default | Required |
 | --------- | ----------------------------------------------------------------------------------------------------- | --------------------------- | ------- | -------- |
-| dx        | Horizontal offset. HTML container defaults to top-left corner as origin, use dx for horizontal offset | number                      | 0       |          |
-| dy        | Vertical offset. HTML container defaults to top-left corner as origin, use dy for vertical offset     | number                      | 0       |          |
-| innerHTML | HTML content, can be string or `HTMLElement`                                                          | string &#124; `HTMLElement` | -       | ✓        |
+| dx | Horizontal offset. HTML container defaults to top-left corner as origin, use dx for horizontal offset | number | 0 | |
+| dy | Vertical offset. HTML container defaults to top-left corner as origin, use dy for vertical offset | number | 0 | |
+| innerHTML | HTML content, can be string or `HTMLElement` | string &#124; `HTMLElement` | - | ✓ |
 
 ## Examples
 

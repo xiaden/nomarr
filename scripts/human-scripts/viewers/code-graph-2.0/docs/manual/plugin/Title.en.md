@@ -26,17 +26,17 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Option    | Description                                                   | Type                          | Default      | Required |
+| Option | Description | Type | Default | Required |
 | --------- | ------------------------------------------------------------- | ----------------------------- | ------------ | -------- |
-| type      | Plugin type                                                   | string                        | `title`      | ✓        |
-| key       | Unique identifier for the plugin, used for subsequent updates | string                        | -            |          |
-| title     | title content [style config](#title)                          | `TitleStyle`                  | -            | ✓        |
-| subtitle  | subtitle content [style config](#subtitle)                    | `SubTitleStyle`               | -            |          |
-| spacing   | Vertical spacing between main title and subtitle              | number                        | 8            |          |
-| className | Class name of the title canvas                                | string                        | -            |          |
-| align     | Graph title alignment                                         | `left` \| `center` \| `right` | `left`       |          |
-| size      | Height of the title plugin                                    | number                        | 44           |          |
-| padding   | Padding                                                       | number \| number[]            | [16,24,0,24] |          |
+| type | Plugin type | string | `title` | ✓ |
+| key | Unique identifier for the plugin, used for subsequent updates | string | - | |
+| title | title content [style config](#title) | `TitleStyle` | - | ✓ |
+| subtitle | subtitle content [style config](#subtitle) | `SubTitleStyle` | - | |
+| spacing | Vertical spacing between main title and subtitle | number | 8 | |
+| className | Class name of the title canvas | string | - | |
+| align | Graph title alignment | `left` \| `center` \| `right` | `left` | |
+| size | Height of the title plugin | number | 44 | |
+| padding | Padding | number \| number[] | [16,24,0,24] | |
 
 ### size
 
@@ -96,57 +96,57 @@ Used to configure the spacing between the chart main title and subtitle. Default
 
 The title, specifically the main title, can be customized with the following configurations for various title styles.
 
-| Attr               | Desc                                               | Type       | Default               |
+| Attr | Desc | Type | Default |
 | ------------------ | -------------------------------------------------- | ---------- | --------------------- |
-| title              | Title text content                                 | `string`   | -                     |
-| titleFontSize      | Title text size                                    | `number`   | 16                    |
-| titleFontFamily    | Title text font                                    | `string`   | system-ui, sans-serif |
-| titleFontWeight    | Title font weight                                  | `number`   | bold                  |
-| titleLineHeight    | Title text line height                             | `number`   | 16                    |
-| titleTextAlign     | Horizontal alignment of content in title text line | `string`   | left                  |
-| titleTextBaseline  | Vertical baseline of title text                    | `string`   | top                   |
-| titleFill          | Fill color of title text                           | `string`   | #1D2129               |
-| titleFillOpacity   | Fill transparency of title text                    | `number`   | 0.9                   |
-| titleStroke        | Stroke color of title text                         | `string`   | transparent           |
-| titleStrokeOpacity | Stroke transparency of title text                  | `number`   | 1                     |
-| titleLineWidth     | Stroke width of title text                         | `number`   | 0                     |
-| titleLineDash      | Dash style of title text                           | `number[]` | []                    |
-| titleOpacity       | Overall transparency of title text                 | `number`   | 1                     |
-| titleShadowColor   | Shadow color of title text                         | `string`   | transparent           |
-| titleShadowBlur    | Gaussian blur coefficient of title text shadow     | `number`   | 0                     |
-| titleShadowOffsetX | Horizontal offset of title text shadow             | `number`   | 0                     |
-| titleShadowOffsetY | Vertical offset of title text shadow               | `number`   | 0                     |
-| titleCursor        | Mouse style of title text                          | `string`   | default               |
-| titleDx            | Horizontal offset of title text                    | `number`   | 0                     |
-| titleDy            | Vertical offset of title text                      | `number`   | 0                     |
+| title | Title text content | `string` | - |
+| titleFontSize | Title text size | `number` | 16 |
+| titleFontFamily | Title text font | `string` | system-ui, sans-serif |
+| titleFontWeight | Title font weight | `number` | bold |
+| titleLineHeight | Title text line height | `number` | 16 |
+| titleTextAlign | Horizontal alignment of content in title text line | `string` | left |
+| titleTextBaseline | Vertical baseline of title text | `string` | top |
+| titleFill | Fill color of title text | `string` | #1D2129 |
+| titleFillOpacity | Fill transparency of title text | `number` | 0.9 |
+| titleStroke | Stroke color of title text | `string` | transparent |
+| titleStrokeOpacity | Stroke transparency of title text | `number` | 1 |
+| titleLineWidth | Stroke width of title text | `number` | 0 |
+| titleLineDash | Dash style of title text | `number[]` | [] |
+| titleOpacity | Overall transparency of title text | `number` | 1 |
+| titleShadowColor | Shadow color of title text | `string` | transparent |
+| titleShadowBlur | Gaussian blur coefficient of title text shadow | `number` | 0 |
+| titleShadowOffsetX | Horizontal offset of title text shadow | `number` | 0 |
+| titleShadowOffsetY | Vertical offset of title text shadow | `number` | 0 |
+| titleCursor | Mouse style of title text | `string` | default |
+| titleDx | Horizontal offset of title text | `number` | 0 |
+| titleDy | Vertical offset of title text | `number` | 0 |
 
 ### subtitle
 
 The subtitle, which can be customized with the following configurations for various subtitle styles.
 
-| Attr                  | Desc                                            | Type       | Default               |
+| Attr | Desc | Type | Default |
 | --------------------- | ----------------------------------------------- | ---------- | --------------------- |
-| subtitle              | Subtitle text content                           | `string`   | -                     |
-| subtitleFontSize      | Subtitle text size                              | `number`   | 12                    |
-| subtitleFontFamily    | Subtitle text font                              | `string`   | system-ui, sans-serif |
-| subtitleFontWeight    | Subtitle font weight                            | `number`   | normal                |
-| subtitleLineHeight    | Subtitle text line height                       | `number`   | 12                    |
-| subtitleTextAlign     | Subtitle text line content horizontal alignment | `string`   | left                  |
-| subtitleTextBaseline  | Subtitle text vertical baseline                 | `string`   | top                   |
-| subtitleFill          | Subtitle text fill color                        | `string`   | #1D2129               |
-| subtitleFillOpacity   | Subtitle text fill transparency                 | `number`   | 0.65                  |
-| subtitleStroke        | Subtitle text stroke color                      | `string`   | transparent           |
-| subtitleStrokeOpacity | Subtitle text stroke transparency               | `number`   | 1                     |
-| subtitleLineWidth     | Subtitle text stroke width                      | `number`   | 0                     |
-| subtitleLineDash      | Subtitle text dashed line style                 | `number[]` | []                    |
-| subtitleOpacity       | Subtitle text overall transparency              | `number`   | 1                     |
-| subtitleShadowColor   | Subtitle text shadow color                      | `string`   | transparent           |
-| subtitleShadowBlur    | Subtitle text shadow Gaussian blur coefficient  | `number`   | 0                     |
-| subtitleShadowOffsetX | Subtitle text shadow horizontal offset          | `number`   | 0                     |
-| subtitleShadowOffsetY | Subtitle text shadow vertical offset            | `number`   | 0                     |
-| subtitleCursor        | Subtitle text mouse style                       | `string`   | default               |
-| subtitleDx            | Subtitle text horizontal offset                 | `number`   | 0                     |
-| subtitleDy            | Subtitle text vertical offset                   | `number`   | 0                     |
+| subtitle | Subtitle text content | `string` | - |
+| subtitleFontSize | Subtitle text size | `number` | 12 |
+| subtitleFontFamily | Subtitle text font | `string` | system-ui, sans-serif |
+| subtitleFontWeight | Subtitle font weight | `number` | normal |
+| subtitleLineHeight | Subtitle text line height | `number` | 12 |
+| subtitleTextAlign | Subtitle text line content horizontal alignment | `string` | left |
+| subtitleTextBaseline | Subtitle text vertical baseline | `string` | top |
+| subtitleFill | Subtitle text fill color | `string` | #1D2129 |
+| subtitleFillOpacity | Subtitle text fill transparency | `number` | 0.65 |
+| subtitleStroke | Subtitle text stroke color | `string` | transparent |
+| subtitleStrokeOpacity | Subtitle text stroke transparency | `number` | 1 |
+| subtitleLineWidth | Subtitle text stroke width | `number` | 0 |
+| subtitleLineDash | Subtitle text dashed line style | `number[]` | [] |
+| subtitleOpacity | Subtitle text overall transparency | `number` | 1 |
+| subtitleShadowColor | Subtitle text shadow color | `string` | transparent |
+| subtitleShadowBlur | Subtitle text shadow Gaussian blur coefficient | `number` | 0 |
+| subtitleShadowOffsetX | Subtitle text shadow horizontal offset | `number` | 0 |
+| subtitleShadowOffsetY | Subtitle text shadow vertical offset | `number` | 0 |
+| subtitleCursor | Subtitle text mouse style | `string` | default |
+| subtitleDx | Subtitle text horizontal offset | `number` | 0 |
+| subtitleDy | Subtitle text vertical offset | `number` | 0 |
 
 ## Try it
 

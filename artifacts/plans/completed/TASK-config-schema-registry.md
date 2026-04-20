@@ -3,6 +3,7 @@
 ## Problem Statement
 
 Nomarr's configuration has 18 keys defined across 5 independent sources that have drifted apart:
+
 - `_default_config()` — dict literal with defaults
 - `_ALLOWED_CONFIG_KEYS` — manually maintained set
 - `WEB_EDITABLE_KEYS` — manually maintained frozenset
@@ -26,12 +27,13 @@ The fix: a single co-located schema file that is the **sole source of truth** fo
 ## Phases
 
 ### Phase 1: Create Config Schema File
+
 - [x] Create `nomarr/helpers/config_schema.py` with `StaticConfig` frozen dataclass (fields: models_dir, db_path, library_root, admin_password with typed defaults)
     **Notes:** Created nomarr/helpers/config_schema.py with StaticConfig frozen dataclass: models_dir="/app/models", db_path="/app/config/db/nomarr.db", library_root="/media", admin_password=None. lint_project_backend: 0 errors.
 - [x] Add `DynamicConfig` mutable dataclass to same file (fields: calibrate_heads, tagger_worker_count, library_auto_tag, library_ignore_patterns, spotify_client_id, spotify_client_secret, navidrome_api_url, navidrome_api_user, navidrome_api_password, navidrome_path_prefix_map — with typed defaults matching current `_default_config()`)
     **Notes:** Added DynamicConfig mutable dataclass with 10 fields matching _default_config() defaults: calibrate_heads=False, tagger_worker_count=None, library_auto_tag=True, library_ignore_patterns="", spotify_client_id=None, spotify_client_secret=None, navidrome_api_url=None, navidrome_api_user=None, navidrome_api_password=None, navidrome_path_prefix_map="". lint: 0 errors.
 - [x] Add `DYNAMIC_FIELD_META: dict[str, FieldMeta]` with label/description/ui_type for each DynamicConfig field, co-located in same file
-    **Notes:** Added FieldMeta TypedDict and DYNAMIC_FIELD_META dict with 10 entries matching DynamicConfig fields. Labels/descriptions ported from frontend CONFIG_METADATA + navidrome ApiSettingsPanel. Removed from __future__ import annotations (breaks TypedDict class syntax). Fixed Literal string quotes. lint: 0 errors.
+    **Notes:** Added FieldMeta TypedDict and DYNAMIC_FIELD_META dict with 10 entries matching DynamicConfig fields. Labels/descriptions ported from frontend CONFIG_METADATA + navidrome ApiSettingsPanel. Removed from **future** import annotations (breaks TypedDict class syntax). Fixed Literal string quotes. lint: 0 errors.
 - [x] Add `LibraryConfigFields` TypedDict with `file_write_mode: Literal["none", "minimal", "full"]` and a `validate_library_config()` function
     **Notes:** Added LibraryConfigFields TypedDict with file_write_mode: Literal["none", "minimal", "full"] and validate_library_config() function with frozenset validation. type: ignore[typeddict-item] on narrowed assignment (runtime-validated but mypy can't prove Literal narrowing from object). lint: 0 errors.
 - [x] Add module-level assertion: `assert set(DYNAMIC_FIELD_META) == {f.name for f in dataclasses.fields(DynamicConfig)}` to prevent drift
@@ -40,16 +42,18 @@ The fix: a single co-located schema file that is the **sole source of truth** fo
     **Notes:** Added STATIC_KEYS (4), DYNAMIC_KEYS (10), ALL_CONFIG_KEYS (14), WEB_EDITABLE_KEYS (=DYNAMIC_KEYS) as frozensets derived from dataclasses.fields(). Verified via import: 4 static keys, 10 dynamic keys, 14 total. Dead keys correctly absent. lint: 0 errors.
 
 ### Phase 2: Refactor ConfigService to Use Schema
+
 - [x] Replace `_default_config()` method body with construction from `StaticConfig` and `DynamicConfig` field defaults via `dataclasses.fields()` + `dataclasses.asdict()`
     **Notes:** Replaced _default_config() body (lines 343-356) with dataclasses.asdict(StaticConfig()) + dataclasses.asdict(DynamicConfig()). Added import of dataclasses, StaticConfig, DynamicConfig, ALL_CONFIG_KEYS, WEB_EDITABLE_KEYS from config_schema. Lint shows expected F811/no-redef for WEB_EDITABLE_KEYS (old manual definition still present — removed in P2-S2).
 - [x] Remove manual `_ALLOWED_CONFIG_KEYS` set and `WEB_EDITABLE_KEYS` frozenset from config_svc.py — import derived versions from config_schema
-    **Notes:** Removed manual WEB_EDITABLE_KEYS frozenset (14 keys) and _ALLOWED_CONFIG_KEYS set (18 keys). Replaced with _ALLOWED_CONFIG_KEYS = ALL_CONFIG_KEYS (imported from config_schema). WEB_EDITABLE_KEYS also imported from config_schema. 44 lines of manual key lists replaced with 3-line derived assignment. lint: 0 errors.
+    **Notes:** Removed manual WEB_EDITABLE_KEYS frozenset (14 keys) and _ALLOWED_CONFIG_KEYS set (18 keys). Replaced with_ALLOWED_CONFIG_KEYS = ALL_CONFIG_KEYS (imported from config_schema). WEB_EDITABLE_KEYS also imported from config_schema. 44 lines of manual key lists replaced with 3-line derived assignment. lint: 0 errors.
 - [x] Refactor `_apply_env_overrides()` to iterate `dataclasses.fields()` on both dataclasses with unified type-aware parsing (reuse `_parse_db_value` logic), fixing the negative-int parser bug
-    **Notes:** Replaced _apply_env_overrides() body: removed inline parser (buggy with negative ints) and replaced with self._parse_db_value(env_value) call. Removed stale docstring listing 12 hardcoded env vars. Now uses _ALLOWED_CONFIG_KEYS (derived from schema) for the whitelist. Fixed f-string to %-format for logger. lint: 0 errors.
+    **Notes:** Replaced _apply_env_overrides() body: removed inline parser (buggy with negative ints) and replaced with self._parse_db_value(env_value) call. Removed stale docstring listing 12 hardcoded env vars. Now uses_ALLOWED_CONFIG_KEYS (derived from schema) for the whitelist. Fixed f-string to %-format for logger. lint: 0 errors.
 - [x] Update `config_if.py` import to use `WEB_EDITABLE_KEYS` from `nomarr.helpers.config_schema` instead of `nomarr.services.infrastructure.config_svc`
     **Notes:** Changed config_if.py line 12: import WEB_EDITABLE_KEYS from nomarr.helpers.config_schema instead of nomarr.services.infrastructure.config_svc. This is a proper downward import (interfaces → helpers) instead of lateral (interfaces → services). lint: 0 errors.
 
 ### Phase 3: Remove Dead Keys
+
 - [x] Remove `overwrite_tags` from schema (do NOT add to either dataclass), remove from `_apply_env_overrides` docstring, remove from `build_resources/config/config.yaml`
     **Notes:** overwrite_tags was already absent from both dataclasses. Removed from build_resources/config/config.yaml (line 32). Cleaned docstring references in config_svc.py (line 104) and processing_dto.py (line 66). Updated config.yaml header comment. Verified via search_for_pattern: no remaining code references. lint: 0 errors.
 - [x] Remove `file_write_mode` as a global config key (it lives on `LibraryDict.file_write_mode` per-library only — do NOT add to DynamicConfig); remove from `_apply_env_overrides` docstring and `config.yaml` global section
@@ -59,6 +63,7 @@ The fix: a single co-located schema file that is the **sole source of truth** fo
       Removed cache_idle_timeout (Model Cache section) and calibration_repo from config.yaml. Updated header comments. ConfigService already has no references to these keys.
 
 ### Phase 4: Frontend Alignment
+
 - [x] Remove `overwrite_tags`, `cache_idle_timeout`, and `calibration_repo` entries from frontend `CONFIG_METADATA` in ConfigField.tsx
     **Notes:** Removed overwrite_tags, cache_idle_timeout, and calibration_repo entries from CONFIG_METADATA in ConfigField.tsx.
 - [x] Remove `file_write_mode` from `CONFIG_METADATA` (it's per-library, not global config)
@@ -69,6 +74,7 @@ The fix: a single co-located schema file that is the **sole source of truth** fo
     **Notes:** ESLint + TypeScript both clean.
 
 ### Phase 5: Validation
+
 - [x] Run `lint_project_backend` on full workspace — zero errors
     **Notes:** lint_project_backend check_all=True: zero errors.
 - [x] Run `lint-imports` to verify no layer violations (config_schema is in helpers, imported by services and interfaces)

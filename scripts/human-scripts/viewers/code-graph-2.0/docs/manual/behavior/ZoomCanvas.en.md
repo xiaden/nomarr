@@ -52,16 +52,16 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Option         | Description                                                                                            | Type                                                                                | Default             | Required |
+| Option | Description | Type | Default | Required |
 | -------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- | ------------------- | -------- |
-| type           | Behavior type name                                                                                     | string                                                                              | `zoom-canvas`       | ✓        |
-| animation      | Zoom animation effect settings                                                                         | [ViewportAnimationEffectTiming](/manual/graph/option#viewportanimationeffecttiming) | `{ duration: 200 }` |          |
-| enable         | Whether to enable this behavior                                                                        | boolean \| ((event: Event) => boolean)                                              | true                |          |
-| origin         | Zoom center point (viewport coordinates)                                                               | [Point](/api/viewport#point)                                                        | -                   |          |
-| onFinish       | Callback function when zooming is finished                                                             | () => void                                                                          | -                   |          |
-| preventDefault | Whether to prevent the browser's default event                                                         | boolean                                                                             | true                |          |
-| sensitivity    | Zoom sensitivity, the larger the value, the faster the zoom                                            | number                                                                              | 1                   |          |
-| trigger        | How to trigger zooming, supports mouse wheel and keyboard shortcuts, [configuration options](#trigger) | string[] \| object                                                                  | -                   |          |
+| type | Behavior type name | string | `zoom-canvas` | ✓ |
+| animation | Zoom animation effect settings | [ViewportAnimationEffectTiming](/manual/graph/option#viewportanimationeffecttiming) | `{ duration: 200 }` | |
+| enable | Whether to enable this behavior | boolean \| ((event: Event) => boolean) | true | |
+| origin | Zoom center point (viewport coordinates) | [Point](/api/viewport#point) | - | |
+| onFinish | Callback function when zooming is finished | () => void | - | |
+| preventDefault | Whether to prevent the browser's default event | boolean | true | |
+| sensitivity | Zoom sensitivity, the larger the value, the faster the zoom | number | 1 | |
+| trigger | How to trigger zooming, supports mouse wheel and keyboard shortcuts, [configuration options](#trigger) | string[] \| object | - | |
 
 ### Trigger
 

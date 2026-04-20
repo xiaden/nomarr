@@ -8,6 +8,7 @@
 **Slug:** ml-pipeline-automation
 
 **Related Documents:**
+
 - [ADR-003](../../decisions/ADR-003-pure-boolean-state-graph-for-file-processing-pipeline.md) — Pure Boolean State Graph for File Processing Pipeline
 - [ADR-004](../../decisions/ADR-004-schema-refactor-v1-graph-normalization.md) — Schema Refactor V1 — Graph Normalization
 - [ADR-008](../../decisions/ADR-008-database-only-tag-writes-no-audio-file-writeback.md) — Two-Phase Tag Curation — Deferred File Writeback
@@ -29,14 +30,14 @@ After a library scan, Nomarr's ML pipeline requires manual API calls to complete
 
 **Current pipeline (6 stages):**
 
-| Stage | Name | Automation Status |
-|-------|------|-------------------|
-| 1 | Library Scan | AUTOMATED — background task via BTS |
-| 2 | ML Processing | AUTOMATED — workers poll for untagged files |
-| 3 | Vector Promotion | AUTOMATED — workers auto-promote on idle |
-| 4 | Histogram Calibration | **MANUAL** — user must call `CalibrationService.start_histogram_calibration_background()` |
-| 5 | Apply Calibration | SEMI-AUTO — fires via `post_generation_hook` after stage 4 |
-| 6 | Write Tags to Files | **MANUAL** — user must call `TaggingService.start_write_tags_background()` |
+ | Stage | Name | Automation Status |
+ | ------- | ------ | ------------------- |
+ | 1 | Library Scan | AUTOMATED — background task via BTS |
+ | 2 | ML Processing | AUTOMATED — workers poll for untagged files |
+ | 3 | Vector Promotion | AUTOMATED — workers auto-promote on idle |
+ | 4 | Histogram Calibration | **MANUAL** — user must call `CalibrationService.start_histogram_calibration_background()` |
+ | 5 | Apply Calibration | SEMI-AUTO — fires via `post_generation_hook` after stage 4 |
+ | 6 | Write Tags to Files | **MANUAL** — user must call `TaggingService.start_write_tags_background()` |
 
 Stages 4 and 6 are manual. Stage 5 auto-fires after 4 via `post_generation_hook`, but stage 4 must be triggered first. The goal: add a library → everything completes automatically, with an optional gate before file writing.
 
@@ -68,20 +69,21 @@ Stages 4 and 6 are manual. Stage 5 auto-fires after 4 via `post_generation_hook`
 The pipeline is **per-library**. Each library's pipeline progress is tracked via a **stored state edge** in the graph database, mirroring the `file_has_state` pattern from ADR-003. There is no poll loop. All state transitions are event-driven — triggered by completion callbacks from existing services and workers.
 
 All pipeline stages that need background execution use the merged **ManagedTask + BackgroundTaskService** pattern:
+
 - `ManagedTask` (`nomarr/helpers/managed_task.py`): dataclass wrapping `task_id`, `fn`, `stop_event`, `on_complete`, `daemon`
 - `BackgroundTaskService` (`nomarr/services/infrastructure/background_tasks_svc.py`): thread-based task registry with `start_task()`, `cancel_task()`, `get_task_status()`
 
 ### Layer Mapping
 
-| Component | Layer | File Path | Responsibility |
-|-----------|-------|-----------|----------------|
-| `LibraryPipelineStatesOps` | persistence | `nomarr/persistence/database/library_pipeline_states_aql.py` | State edge CRUD: transitions, queries, bulk transitions |
-| `LibraryPipelineService` | services/infrastructure | `nomarr/services/infrastructure/pipeline_svc.py` | Startup recovery, calibration trigger, event callback wiring |
-| Post-tagging library check | components/workers | Inline in worker after `set_tagged()` | Query untagged count → transition `ml_running → ml_complete` → fire trigger |
-| `CalibrationService` | services/domain | `nomarr/services/domain/calibration_svc.py` | Existing — add state transitions in `post_generation_hook` |
-| `TaggingService` | services/domain | `nomarr/services/domain/tagging_svc.py` | Existing — rename `reconcile_library` → `write_tags_to_files`; add state transitions on completion |
-| `library_if.py` | interfaces/api/web | `nomarr/interfaces/api/web/library_if.py` | New `GET /{id}/pipeline` endpoint; rename `/reconcile-tags` → `/write-tag`; remove `/reconcile-status` |
-| `LibraryPipelineStatusDTO` | helpers/dto | `nomarr/helpers/dto/library_dto.py` | Pipeline status response DTO |
+ | Component | Layer | File Path | Responsibility |
+ | ----------- | ------- | ----------- | ---------------- |
+ | `LibraryPipelineStatesOps` | persistence | `nomarr/persistence/database/library_pipeline_states_aql.py` | State edge CRUD: transitions, queries, bulk transitions |
+ | `LibraryPipelineService` | services/infrastructure | `nomarr/services/infrastructure/pipeline_svc.py` | Startup recovery, calibration trigger, event callback wiring |
+ | Post-tagging library check | components/workers | Inline in worker after `set_tagged()` | Query untagged count → transition `ml_running → ml_complete` → fire trigger |
+ | `CalibrationService` | services/domain | `nomarr/services/domain/calibration_svc.py` | Existing — add state transitions in `post_generation_hook` |
+ | `TaggingService` | services/domain | `nomarr/services/domain/tagging_svc.py` | Existing — rename `reconcile_library` → `write_tags_to_files`; add state transitions on completion |
+ | `library_if.py` | interfaces/api/web | `nomarr/interfaces/api/web/library_if.py` | New `GET /{id}/pipeline` endpoint; rename `/reconcile-tags` → `/write-tag`; remove `/reconcile-status` |
+ | `LibraryPipelineStatusDTO` | helpers/dto | `nomarr/helpers/dto/library_dto.py` | Pipeline status response DTO |
 
 **`LibraryPipelineService` placement justification:** Infrastructure services coordinate cross-domain orchestration that doesn't belong to any single domain service. `LibraryPipelineService` wires callbacks across `CalibrationService`, `TaggingService`, and `BackgroundTaskService` — the same cross-cutting coordination pattern used by `BackgroundTaskService` itself in `services/infrastructure`. It owns no domain logic; it owns wiring and lifecycle.
 
@@ -117,18 +119,18 @@ Where `on_calibration_complete` bulk-transitions `calibrating → applying` and 
 
 ### States
 
-| State | Key | Meaning |
-|-------|-----|---------|
-| Idle | `idle` | Pipeline not started or no files in library |
-| Scanning | `scanning` | Library scan in progress |
-| ML Running | `ml_running` | Workers processing untagged files |
-| Too Small | `too_small` | **Blocking** — file count < `INTERNAL_CALIBRATION_MIN_FILES`. Pipeline halts here until more files are added and scanned. |
-| Awaiting Calibration | `awaiting_calibration` | All files tagged, enough files present, waiting for calibration to start |
-| Calibrating | `calibrating` | Histogram calibration generation in progress |
-| Applying | `applying` | Applying calibration thresholds to tagged files |
-| Write Ready | `write_ready` | Apply complete, `library_auto_write=false`; user must trigger write |
-| Writing | `writing` | Tag write to disk in progress |
-| Done | `done` | All stages complete |
+ | State | Key | Meaning |
+ | ------- | ----- | --------- |
+ | Idle | `idle` | Pipeline not started or no files in library |
+ | Scanning | `scanning` | Library scan in progress |
+ | ML Running | `ml_running` | Workers processing untagged files |
+ | Too Small | `too_small` | **Blocking** — file count < `INTERNAL_CALIBRATION_MIN_FILES`. Pipeline halts here until more files are added and scanned. |
+ | Awaiting Calibration | `awaiting_calibration` | All files tagged, enough files present, waiting for calibration to start |
+ | Calibrating | `calibrating` | Histogram calibration generation in progress |
+ | Applying | `applying` | Applying calibration thresholds to tagged files |
+ | Write Ready | `write_ready` | Apply complete, `library_auto_write=false`; user must trigger write |
+ | Writing | `writing` | Tag write to disk in progress |
+ | Done | `done` | All stages complete |
 
 ### State Diagram
 
@@ -156,35 +158,35 @@ stateDiagram-v2
 
 ### Transition Table
 
-| From | To | Trigger | Guard |
-|------|----|---------|-------|
-| (none) | `idle` | Library created | — |
-| `idle` | `scanning` | Scan starts | — |
-| `scanning` | `ml_running` | Scan completes | Library has files |
-| `scanning` | `idle` | Scan completes | Library is empty (0 files) |
-| `ml_running` | `too_small` | All files tagged | `tagged_count < INTERNAL_CALIBRATION_MIN_FILES` |
-| `ml_running` | `awaiting_calibration` | All files tagged | `tagged_count >= INTERNAL_CALIBRATION_MIN_FILES` |
-| `too_small` | `scanning` | Scan starts (user-initiated or watch-mode) | — |
-| `awaiting_calibration` | `calibrating` | Calibration trigger fires | `!is_generation_running()` AND `calibration_state` collection is empty |
-| `awaiting_calibration` | `applying` | Calibration data exists in DB | `calibration_state` collection has documents (DB-backed, survives restart) |
-| `calibrating` | `applying` | `post_generation_hook` fires | Generation succeeded |
-| `applying` | `writing` | Apply completes | `library_auto_write=true` AND `file_write_mode != "none"` |
-| `applying` | `write_ready` | Apply completes | `library_auto_write=false` OR `file_write_mode == "none"` |
-| `write_ready` | `writing` | User triggers write OR `library_auto_write` enabled reactively | — |
-| `writing` | `done` | Write completes | — |
-| `writing` | `write_ready` | `library_auto_write` toggled false while writing | Current batch completes gracefully via `ManagedTask.stop_event` |
-| `done` | `scanning` | New files added (rescan via watch-mode or user-initiated scan) | — |
+ | From | To | Trigger | Guard |
+ | ------ | ---- | --------- | ------- |
+ | (none) | `idle` | Library created | — |
+ | `idle` | `scanning` | Scan starts | — |
+ | `scanning` | `ml_running` | Scan completes | Library has files |
+ | `scanning` | `idle` | Scan completes | Library is empty (0 files) |
+ | `ml_running` | `too_small` | All files tagged | `tagged_count < INTERNAL_CALIBRATION_MIN_FILES` |
+ | `ml_running` | `awaiting_calibration` | All files tagged | `tagged_count >= INTERNAL_CALIBRATION_MIN_FILES` |
+ | `too_small` | `scanning` | Scan starts (user-initiated or watch-mode) | — |
+ | `awaiting_calibration` | `calibrating` | Calibration trigger fires | `!is_generation_running()` AND `calibration_state` collection is empty |
+ | `awaiting_calibration` | `applying` | Calibration data exists in DB | `calibration_state` collection has documents (DB-backed, survives restart) |
+ | `calibrating` | `applying` | `post_generation_hook` fires | Generation succeeded |
+ | `applying` | `writing` | Apply completes | `library_auto_write=true` AND `file_write_mode != "none"` |
+ | `applying` | `write_ready` | Apply completes | `library_auto_write=false` OR `file_write_mode == "none"` |
+ | `write_ready` | `writing` | User triggers write OR `library_auto_write` enabled reactively | — |
+ | `writing` | `done` | Write completes | — |
+ | `writing` | `write_ready` | `library_auto_write` toggled false while writing | Current batch completes gracefully via `ManagedTask.stop_event` |
+ | `done` | `scanning` | New files added (rescan via watch-mode or user-initiated scan) | — |
 
 ### Startup Recovery
 
 On application startup, `LibraryPipelineService` scans for libraries stuck in states that require an active background task. Since background tasks do not survive restarts, these libraries are recovered to safe states:
 
-| Stuck State | Recovery Target | Rationale |
-|-------------|----------------|-----------|
-| `scanning` with no active scan task | `idle` | Scan will restart on next user-initiated or watch-mode trigger |
-| `calibrating` with no BTS task | `awaiting_calibration` | Calibration trigger will re-fire on next idle-path evaluation |
-| `applying` with no BTS task | `awaiting_calibration` | Apply depends on calibration output; re-trigger from calibration check |
-| `writing` with no BTS task | `write_ready` | User can re-trigger write, or auto-write will re-fire if enabled |
+ | Stuck State | Recovery Target | Rationale |
+ | ------------- | ---------------- | ----------- |
+ | `scanning` with no active scan task | `idle` | Scan will restart on next user-initiated or watch-mode trigger |
+ | `calibrating` with no BTS task | `awaiting_calibration` | Calibration trigger will re-fire on next idle-path evaluation |
+ | `applying` with no BTS task | `awaiting_calibration` | Apply depends on calibration output; re-trigger from calibration check |
+ | `writing` with no BTS task | `write_ready` | User can re-trigger write, or auto-write will re-fire if enabled |
 
 Recovery uses `BackgroundTaskService.get_task_status()` to determine whether the expected task is still running. Bulk transitions are used per state (e.g., all `calibrating` libraries with no active calibration task → `awaiting_calibration`).
 
@@ -195,6 +197,7 @@ Recovery uses `BackgroundTaskService.get_task_status()` to determine whether the
 ### Pattern: Mirrors `file_has_state`
 
 The existing `file_has_state` pattern (ADR-003, implemented in `nomarr/persistence/database/file_states_aql.py`):
+
 - **Vertex collection** `file_states` with 16 singleton vertices (8 axes × 2 poles)
 - **Edge collection** `file_has_state` connecting `library_files/{id}` → `file_states/{state}`
 - **Atomic transitions** via `_transition_state()`: REMOVE old edge + INSERT new edge in single AQL
@@ -312,6 +315,7 @@ for result in completed_libraries:
 ### `too_small` Blocking State
 
 When a library has fewer tagged files than `INTERNAL_CALIBRATION_MIN_FILES` (defined in `nomarr/services/infrastructure/config_svc.py`), the pipeline blocks at `too_small`. The library stays in this state until:
+
 - User adds more files and triggers a scan (manually via the UI or automatically via watch-mode) → `too_small → scanning → ml_running → ...`
 - After the new files are ML-tagged, the idle-path re-evaluates the count normally. If still below the threshold → back to `too_small`.
 
@@ -345,7 +349,9 @@ Calibration is **global** — one generation applies to all libraries. The initi
 After the first calibration completes, subsequent calibrations are **user-triggered only**. New libraries on an established system skip calibration entirely — the `awaiting_calibration → applying` guard queries the `calibration_state` collection in ArangoDB:
 
 `python
+
 # DB-backed check — survives restarts (unlike in-memory get_generation_result())
+
 has_calibration = len(db.calibration_state.get_all_calibration_states()) > 0
 if has_calibration:
     pipeline_states.transition_state(lib_id, PIPELINE_APPLYING)
@@ -363,6 +369,7 @@ After initial calibration, users re-trigger calibration through the existing rou
 ### Elimination of `initial_calibration_done`
 
 No `initial_calibration_done` boolean field is needed. The library's position in the state graph encodes this:
+
 - State is `applying`, `write_ready`, `writing`, or `done` → calibration has occurred
 - The state graph captures this structurally
 
@@ -372,23 +379,25 @@ No `initial_calibration_done` boolean field is needed. The library's position in
 
 ### `library_auto_write` Field
 
-| Property | Value |
-|----------|-------|
-| Type | `bool` |
-| Default | `false` |
-| Settable at create time | Yes |
-| Changeable after creation | Yes |
-| Storage | Field on library document (NOT in state graph) |
+ | Property | Value |
+ | ---------- | ------- |
+ | Type | `bool` |
+ | Default | `false` |
+ | Settable at create time | Yes |
+ | Changeable after creation | Yes |
+ | Storage | Field on library document (NOT in state graph) |
 
 ### Reactive Behavior
 
 Changing `library_auto_write` takes effect **immediately**:
 
 **Enabling (`false → true`):**
+
 - If library is in `write_ready` state: immediately transition `write_ready → writing` and start `write_tags_to_files` via BTS
 - If library is in any other state: setting is stored, will take effect when `applying` completes
 
 **Disabling (`true → false`):**
+
 - If library is in `writing` state: stops writes at next safe checkpoint via `ManagedTask.stop_event`. No new file writes start. Library transitions `writing → write_ready` when the current batch completes or stops gracefully.
 - If library is in any other state: setting is stored, will prevent auto-write when `applying` completes
 
@@ -428,6 +437,7 @@ Response body:
 `
 
 Counts are selectively populated based on state:
+
 - `untagged_count`: populated when `state == "ml_running"`
 - `uncalibrated_count`: populated when `state == "applying"`
 - `pending_write_count`: populated when `state in ("write_ready", "writing")`
@@ -445,6 +455,7 @@ Current implementation already uses `start_write_tags_background()`. Rename the 
 ### Modified Endpoints
 
 **`POST /api/web/library`** (create) and **`PATCH /api/web/library/{id}`** (update):
+
 - Accept `library_auto_write: bool` field
 
 ---
@@ -454,6 +465,7 @@ Current implementation already uses `start_write_tags_background()`. Rename the 
 ### Library Card: Pipeline State Badge
 
 Each library card displays its current pipeline state as a chip/badge:
+
 - `idle` → gray
 - `scanning`, `ml_running` → blue (processing)
 - `too_small` → orange (attention needed)
@@ -467,6 +479,7 @@ Each library card displays its current pipeline state as a chip/badge:
 Dashboard shows all libraries with their pipeline states. Libraries needing attention (`too_small`, `write_ready`) are visually highlighted.
 
 Files touched for dashboard integration:
+
 - `nomarr/interfaces/api/web/info_if.py` — `GET /api/web/work-status` needs per-library pipeline state data
 - `nomarr/interfaces/api/types/info_types.py` — `WorkStatusResponse` needs per-library pipeline fields
 - `nomarr/helpers/dto/info_dto.py` — `WorkStatusResult` needs pipeline payload
@@ -482,14 +495,14 @@ Files touched for dashboard integration:
 
 ### API Renames
 
-| Old | New |
-|-----|-----|
-| `reconcileTags()` | `writeTags()` |
-| `getReconcileStatus()` | `getPipelineStatus()` |
-| Route `/{id}/reconcile-tags` | Route `/{id}/write-tag` |
-| Route `/{id}/reconcile-status` | Route `/{id}/pipeline` |
-| `ReconcileStatusResponse` | Deleted (replaced by `PipelineStatusResponse`) |
-| UI copy "Reconcile Tags" | "Write Tags" |
+ | Old | New |
+ | ----- | ----- |
+ | `reconcileTags()` | `writeTags()` |
+ | `getReconcileStatus()` | `getPipelineStatus()` |
+ | Route `/{id}/reconcile-tags` | Route `/{id}/write-tag` |
+ | Route `/{id}/reconcile-status` | Route `/{id}/pipeline` |
+ | `ReconcileStatusResponse` | Deleted (replaced by `PipelineStatusResponse`) |
+ | UI copy "Reconcile Tags" | "Write Tags" |
 
 ---
 
@@ -543,11 +556,11 @@ Same fields, new name. Currently defined in `nomarr/helpers/dto/library_dto.py`.
 
 ### Renames
 
-| Layer | Old | New |
-|-------|-----|-----|
-| Service method | `TaggingService.reconcile_library()` | `TaggingService.write_tags_to_files()` |
-| DTO | `ReconcileTagsResult` | `WriteTagsResult` |
-| Response type | `ReconcileTagsResponse` / `ReconcileStatusResponse` | `WriteTagsResponse` / deleted (`PipelineStatusResponse` replaces) |
+ | Layer | Old | New |
+ | ------- | ----- | ----- |
+ | Service method | `TaggingService.reconcile_library()` | `TaggingService.write_tags_to_files()` |
+ | DTO | `ReconcileTagsResult` | `WriteTagsResult` |
+ | Response type | `ReconcileTagsResponse` / `ReconcileStatusResponse` | `WriteTagsResponse` / deleted (`PipelineStatusResponse` replaces) |
 
 The underlying workflow `write_file_tags_workflow` already has the correct name. The `start_write_tags_background()` method name is already correct (BTS work renamed it).
 
@@ -573,13 +586,14 @@ Forward-only migration. Latest existing migration is V022 (version 0.2.2). This 
 
 ### Constants Cleanup
 
-| Constant | Action | Notes |
-|----------|--------|-------|
-| `INTERNAL_CALIBRATION_AUTO_RUN` | DELETE from `nomarr/services/infrastructure/config_svc.py` | Replaced by event-driven pipeline |
-| `INTERNAL_CALIBRATION_CHECK_INTERVAL` | DELETE from `nomarr/services/infrastructure/config_svc.py` | Replaced by event-driven pipeline |
-| `INTERNAL_CALIBRATION_MIN_FILES` | KEEP in `nomarr/services/infrastructure/config_svc.py` | Threshold for `too_small` → `awaiting_calibration` gate |
+ | Constant | Action | Notes |
+ | ---------- | -------- | ------- |
+ | `INTERNAL_CALIBRATION_AUTO_RUN` | DELETE from `nomarr/services/infrastructure/config_svc.py` | Replaced by event-driven pipeline |
+ | `INTERNAL_CALIBRATION_CHECK_INTERVAL` | DELETE from `nomarr/services/infrastructure/config_svc.py` | Replaced by event-driven pipeline |
+ | `INTERNAL_CALIBRATION_MIN_FILES` | KEEP in `nomarr/services/infrastructure/config_svc.py` | Threshold for `too_small` → `awaiting_calibration` gate |
 
 Re-exports of `INTERNAL_CALIBRATION_AUTO_RUN` and `INTERNAL_CALIBRATION_CHECK_INTERVAL` must also be removed from:
+
 - `nomarr/services/__init__.py`
 - `nomarr/services/infrastructure/__init__.py`
 
@@ -589,38 +603,39 @@ Re-exports of `INTERNAL_CALIBRATION_AUTO_RUN` and `INTERNAL_CALIBRATION_CHECK_IN
 
 ### Unit Tests
 
-| Area | Tests |
-|------|-------|
-| `LibraryPipelineStatesOps` | `transition_state` atomic behavior, idempotent no-op on same state, `get_state`, `get_libraries_in_state`, `bulk_transition` |
-| `LibraryPipelineService` | Startup recovery scan corrects stale states, calibration trigger logic (fires/skips), callback wiring |
-| Worker idle-path check | Returns correct libraries needing transition, handles empty result, idempotent |
-| `library_auto_write` reactive behavior | Enable triggers write from `write_ready`, disable signals stop, no-op from other states |
-| State transition guards | `too_small` blocks pipeline, `awaiting_calibration` skips if calibration exists (DB check), `applying` branches on auto_write + write_mode |
+ | Area | Tests |
+ | ------ | ------- |
+ | `LibraryPipelineStatesOps` | `transition_state` atomic behavior, idempotent no-op on same state, `get_state`, `get_libraries_in_state`, `bulk_transition` |
+ | `LibraryPipelineService` | Startup recovery scan corrects stale states, calibration trigger logic (fires/skips), callback wiring |
+ | Worker idle-path check | Returns correct libraries needing transition, handles empty result, idempotent |
+ | `library_auto_write` reactive behavior | Enable triggers write from `write_ready`, disable signals stop, no-op from other states |
+ | State transition guards | `too_small` blocks pipeline, `awaiting_calibration` skips if calibration exists (DB check), `applying` branches on auto_write + write_mode |
 
 ### Integration Tests
 
-| Area | Tests |
-|------|-------|
-| Full pipeline flow | `idle → scanning → ml_running → awaiting_calibration → calibrating → applying → write_ready → done` with mocked ML |
-| `too_small` blocking | Library with < `INTERNAL_CALIBRATION_MIN_FILES` files blocks at `too_small`, adding files + rescan resumes |
-| Concurrent workers | Two workers finishing last files simultaneously — one transition succeeds, other is no-op |
-| New library on established system | Skips calibration (DB check), goes `awaiting_calibration → applying` directly |
-| Reactive auto_write | Toggle on during `write_ready` → immediately starts writing |
-| Startup recovery | Libraries stuck in `calibrating` after restart → recovered to `awaiting_calibration` |
+ | Area | Tests |
+ | ------ | ------- |
+ | Full pipeline flow | `idle → scanning → ml_running → awaiting_calibration → calibrating → applying → write_ready → done` with mocked ML |
+ | `too_small` blocking | Library with < `INTERNAL_CALIBRATION_MIN_FILES` files blocks at `too_small`, adding files + rescan resumes |
+ | Concurrent workers | Two workers finishing last files simultaneously — one transition succeeds, other is no-op |
+ | New library on established system | Skips calibration (DB check), goes `awaiting_calibration → applying` directly |
+ | Reactive auto_write | Toggle on during `write_ready` → immediately starts writing |
+ | Startup recovery | Libraries stuck in `calibrating` after restart → recovered to `awaiting_calibration` |
 
 ### Frontend Tests
 
-| Area | Tests |
-|------|-------|
-| Pipeline status badge | Renders correct color/label for each state |
-| Auto-write toggle | Confirmation dialog appears, setting persists |
-| API client renames | `writeTags()` and `getPipelineStatus()` call correct endpoints |
+ | Area | Tests |
+ | ------ | ------- |
+ | Pipeline status badge | Renders correct color/label for each state |
+ | Auto-write toggle | Confirmation dialog appears, setting persists |
+ | API client renames | `writeTags()` and `getPipelineStatus()` call correct endpoints |
 
 ---
 
 ## Affected Files: Scan Lifecycle
 
 Scan → pipeline state transitions touch these existing files:
+
 - `nomarr/workflows/library/scan_setup_wf.py` — scan start marks; add pipeline state transition `* → scanning` on scan initiation
 - `nomarr/components/library/scan_lifecycle_comp.py` — scan lifecycle hooks; scan completion triggers `scanning → ml_running` or `scanning → idle` pipeline transition
 
@@ -630,16 +645,16 @@ Scan → pipeline state transitions touch these existing files:
 
 ### Docs to Update
 
-| Document | Change |
-|----------|--------|
-| `docs/user/` | New section on pipeline automation, auto-write setting explanation |
-| `docs/dev/migrations.md` | Reference new V023 migration |
-| `docs/dev/architecture.md` | Update: references to `/reconcile-tags` and `/reconcile-status` must be replaced with `/write-tag` and `/pipeline` |
-| `docs/dev/workers.md` | Update: describes worker behavior around old write-tag path — add idle-path pipeline trigger documentation |
-| `docs/dev/domains.md` | Update: domain mapping will be stale with new `LibraryPipelineService` in infrastructure — add pipeline service entry |
-| `nomarr/persistence/PERSISTENCE.md` | Add `library_pipeline_states_aql.py` to persistence map |
-| API docs (if generated) | New endpoint, removed endpoint, renamed endpoint |
-| `frontend/README.md` | Updated library management features |
+ | Document | Change |
+ | ---------- | -------- |
+ | `docs/user/` | New section on pipeline automation, auto-write setting explanation |
+ | `docs/dev/migrations.md` | Reference new V023 migration |
+ | `docs/dev/architecture.md` | Update: references to `/reconcile-tags` and `/reconcile-status` must be replaced with `/write-tag` and `/pipeline` |
+ | `docs/dev/workers.md` | Update: describes worker behavior around old write-tag path — add idle-path pipeline trigger documentation |
+ | `docs/dev/domains.md` | Update: domain mapping will be stale with new `LibraryPipelineService` in infrastructure — add pipeline service entry |
+ | `nomarr/persistence/PERSISTENCE.md` | Add `library_pipeline_states_aql.py` to persistence map |
+ | API docs (if generated) | New endpoint, removed endpoint, renamed endpoint |
+ | `frontend/README.md` | Updated library management features |
 
 ### Inline Documentation
 
@@ -717,19 +732,19 @@ Ordered for the Exec-Planner. Each phase is independently testable.
 
 ## References
 
-| Reference | Location |
-|-----------|----------|
-| ManagedTask dataclass | `nomarr/helpers/managed_task.py` |
-| BackgroundTaskService | `nomarr/services/infrastructure/background_tasks_svc.py` |
-| file_has_state pattern | `nomarr/persistence/database/file_states_aql.py` — `FileStatesOperations`, `_transition_state()`, state vertex constants |
-| CalibrationService | `nomarr/services/domain/calibration_svc.py` — `start_histogram_calibration_background()`, `is_generation_running()`, `set_post_generation_hook()` |
-| CalibrationStateOperations | `nomarr/persistence/database/calibration_state_aql.py` — `get_all_calibration_states()` (DB-backed calibration existence check) |
-| TaggingService | `nomarr/services/domain/tagging_svc.py` — `reconcile_library()` (to be renamed), `start_write_tags_background()` |
-| Current reconcile-status endpoint | `nomarr/interfaces/api/web/library_if.py` — `get_reconcile_status()` (to be removed) |
-| Calibration min files | `nomarr/services/infrastructure/config_svc.py` — `INTERNAL_CALIBRATION_MIN_FILES` |
-| Scan lifecycle | `nomarr/workflows/library/scan_setup_wf.py`, `nomarr/components/library/scan_lifecycle_comp.py` |
-| Work-status backend | `nomarr/interfaces/api/web/info_if.py`, `nomarr/components/library/work_status_comp.py` |
-| Manual calibration routes | `nomarr/interfaces/api/web/calibration_if.py` — independent of pipeline, `post_generation_hook` fires regardless |
-| ADR-003 | `artifacts/decisions/ADR-003-pure-boolean-state-graph-for-file-processing-pipeline.md` |
-| ADR-004 | `artifacts/decisions/ADR-004-schema-refactor-v1-graph-normalization.md` |
-| Latest migration | `nomarr/migrations/V022_seed_pp_max_genre_playlists.py` (V022 / version 0.2.2) |
+ | Reference | Location |
+ | ----------- | ---------- |
+ | ManagedTask dataclass | `nomarr/helpers/managed_task.py` |
+ | BackgroundTaskService | `nomarr/services/infrastructure/background_tasks_svc.py` |
+ | file_has_state pattern | `nomarr/persistence/database/file_states_aql.py` — `FileStatesOperations`, `_transition_state()`, state vertex constants |
+ | CalibrationService | `nomarr/services/domain/calibration_svc.py` — `start_histogram_calibration_background()`, `is_generation_running()`, `set_post_generation_hook()` |
+ | CalibrationStateOperations | `nomarr/persistence/database/calibration_state_aql.py` — `get_all_calibration_states()` (DB-backed calibration existence check) |
+ | TaggingService | `nomarr/services/domain/tagging_svc.py` — `reconcile_library()` (to be renamed), `start_write_tags_background()` |
+ | Current reconcile-status endpoint | `nomarr/interfaces/api/web/library_if.py` — `get_reconcile_status()` (to be removed) |
+ | Calibration min files | `nomarr/services/infrastructure/config_svc.py` — `INTERNAL_CALIBRATION_MIN_FILES` |
+ | Scan lifecycle | `nomarr/workflows/library/scan_setup_wf.py`, `nomarr/components/library/scan_lifecycle_comp.py` |
+ | Work-status backend | `nomarr/interfaces/api/web/info_if.py`, `nomarr/components/library/work_status_comp.py` |
+ | Manual calibration routes | `nomarr/interfaces/api/web/calibration_if.py` — independent of pipeline, `post_generation_hook` fires regardless |
+ | ADR-003 | `artifacts/decisions/ADR-003-pure-boolean-state-graph-for-file-processing-pipeline.md` |
+ | ADR-004 | `artifacts/decisions/ADR-004-schema-refactor-v1-graph-normalization.md` |
+ | Latest migration | `nomarr/migrations/V022_seed_pp_max_genre_playlists.py` (V022 / version 0.2.2) |

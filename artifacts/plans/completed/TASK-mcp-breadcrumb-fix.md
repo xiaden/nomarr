@@ -13,6 +13,7 @@ After unifying tools onto `ToolOutput`, the breadcrumb text displayed to users h
 The fix has two parts: (A) change `_build_breadcrumb` / `_format_file_link_lines` to suppress action/line-info when a header is present, and (B) update each tool's `breadcrumb=` and `action=` values in `server.py` to produce clean output.
 
 **Target format examples:**
+
 ```
 [read_module_source] Read source:
 file:///path/to/file.py#L74-L80
@@ -38,8 +39,8 @@ file:///path/to/file.py 3 lines
     **Notes:** Removed `_format_line_info` call from `_format_file_link_lines` (lines 161-172). URIs already encode line info via `#L` fragments. `_format_line_info` function itself kept (defined at L30, now unused — plan says keep).
 - [x] When `breadcrumb` is set (non-empty) and file_links exist, render links as bare `make_file_markdown_link()` URIs without action prefix. When breadcrumb is empty, keep action prefix on links for the auto-generated case.
     **Notes:** Added `bare: bool = False` parameter to `_format_file_link_lines`. When bare=True, action prefixes are suppressed. Updated `_build_breadcrumb` to pass `bare=True` when breadcrumb header is set, keeping action prefix only for the auto-generated (no breadcrumb) case.
-- [x] For edit tools that report total lines (create, replace_content): add a `line_count` field to `FileLink` (optional int, default None). When set and breadcrumb is present, append ` {line_count} lines` after the URI instead of the line range fragment.
-    **Notes:** Added `line_count: int | None = None` to FileLink (L80). Updated `_format_file_link_lines` to append ` {line_count} lines` suffix when line_count is set (L176).
+- [x] For edit tools that report total lines (create, replace_content): add a `line_count` field to `FileLink` (optional int, default None). When set and breadcrumb is present, append `{line_count} lines` after the URI instead of the line range fragment.
+    **Notes:** Added `line_count: int | None = None` to FileLink (L80). Updated `_format_file_link_lines` to append `{line_count} lines` suffix when line_count is set (L176).
 - [x] Run `lint_project_backend(path="code-intel")` to verify changes
     **Notes:** lint_project_backend(path="code-intel") — 0 errors, 5 files checked.
 

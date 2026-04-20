@@ -21,13 +21,13 @@ const graph = new Graph({
 });
 ```
 
-| Property  | Description                                               | Type                    | Default  | Required |
-| --------- | --------------------------------------------------------- | ----------------------- | -------- | -------- |
-| type      | Combo type, built-in combo type name or custom combo name | [Type](#type)           | `circle` |          |
-| style     | Combo style configuration, including color, size, etc.    | [Style](#style)         | -        |          |
-| state     | Style configuration for different states                  | [State](#state)         | -        |          |
-| palette   | Define combo palette for mapping colors based on data     | [Palette](#palette)     | -        |          |
-| animation | Define combo animation effects                            | [Animation](#animation) | -        |          |
+ | Property | Description | Type | Default | Required |
+ | --------- | --------------------------------------------------------- | ----------------------- | -------- | -------- |
+ | type | Combo type, built-in combo type name or custom combo name | [Type](#type) | `circle` | |
+ | style | Combo style configuration, including color, size, etc. | [Style](#style) | - | |
+ | state | Style configuration for different states | [State](#state) | - | |
+ | palette | Define combo palette for mapping colors based on data | [Palette](#palette) | - | |
+ | animation | Define combo animation effects | [Animation](#animation) | - | |
 
 ## Type
 
@@ -216,35 +216,35 @@ graph.render();
 
 Here is the complete main graphic style configuration:
 
-| Property                        | Description                                                                                                                              | Type                          | Default   | Required |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | --------- | -------- |
-| collapsed                       | Whether the current combo is collapsed                                                                                                   | boolean                       | false     |          |
-| cursor                          | Combo mouse hover style, [options](#cursor)                                                                                              | string                        | default   |          |
-| fill                            | Combo fill color                                                                                                                         | string                        | `#99ADD1` |          |
-| fillOpacity                     | Combo fill opacity                                                                                                                       | number \| string              | 0.04      |          |
-| increasedLineWidthForHitTesting | When lineWidth is small, the interactive area becomes small. Sometimes we want to increase this area to make "thin lines" easier to pick | number                        | 0         |          |
-| lineCap                         | Combo stroke end cap style                                                                                                               | `round` \| `square` \| `butt` | `butt`    |          |
-| lineDash                        | Combo stroke dash style                                                                                                                  | number[]                      | -         |          |
-| lineDashOffset                  | Combo stroke dash offset                                                                                                                 | number                        | -         |          |
-| lineJoin                        | Combo stroke join style                                                                                                                  | `round` \| `bevel` \| `miter` | `miter`   |          |
-| lineWidth                       | Combo stroke width                                                                                                                       | number                        | 1         |          |
-| opacity                         | Combo opacity                                                                                                                            | number \| string              | 1         |          |
-| pointerEvents                   | How combo responds to pointer events, [options](#pointerevents)                                                                          | string                        | `auto`    |          |
-| shadowBlur                      | Combo shadow blur                                                                                                                        | number                        | -         |          |
-| shadowColor                     | Combo shadow color                                                                                                                       | string                        | -         |          |
-| shadowOffsetX                   | Combo shadow offset in x direction                                                                                                       | number \| string              | -         |          |
-| shadowOffsetY                   | Combo shadow offset in y direction                                                                                                       | number \| string              | -         |          |
-| shadowType                      | Combo shadow type                                                                                                                        | `inner` \| `outer`            | `outer`   |          |
-| size                            | Combo size, quick setting for combo width and height, [options](#size)                                                                   | number \| number[]            | -         |          |
-| stroke                          | Combo stroke color                                                                                                                       | string                        | `#99ADD1` |          |
-| strokeOpacity                   | Combo stroke opacity                                                                                                                     | number \| string              | 1         |          |
-| transform                       | Transform property allows you to rotate, scale, skew or translate the given combo                                                        | string                        | -         |          |
-| transformOrigin                 | Rotation and scaling center, also called transformation center                                                                           | string                        | -         |          |
-| visibility                      | Whether combo is visible                                                                                                                 | `visible` \| `hidden`         | `visible` |          |
-| x                               | Combo x coordinate                                                                                                                       | number                        | 0         |          |
-| y                               | Combo y coordinate                                                                                                                       | number                        | 0         |          |
-| z                               | Combo z coordinate                                                                                                                       | number                        | 0         |          |
-| zIndex                          | Combo rendering layer                                                                                                                    | number                        | 0         |          |
+ | Property | Description | Type | Default | Required |
+ | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | --------- | -------- |
+ | collapsed | Whether the current combo is collapsed | boolean | false | |
+ | cursor | Combo mouse hover style, [options](#cursor) | string | default | |
+ | fill | Combo fill color | string | `#99ADD1` | |
+ | fillOpacity | Combo fill opacity | number \ | string | 0.04 | |
+ | increasedLineWidthForHitTesting | When lineWidth is small, the interactive area becomes small. Sometimes we want to increase this area to make "thin lines" easier to pick | number | 0 | |
+ | lineCap | Combo stroke end cap style | `round` \ | `square` \ | `butt` | `butt` | |
+ | lineDash | Combo stroke dash style | number[] | - | |
+ | lineDashOffset | Combo stroke dash offset | number | - | |
+ | lineJoin | Combo stroke join style | `round` \ | `bevel` \ | `miter` | `miter` | |
+ | lineWidth | Combo stroke width | number | 1 | |
+ | opacity | Combo opacity | number \ | string | 1 | |
+ | pointerEvents | How combo responds to pointer events, [options](#pointerevents) | string | `auto` | |
+ | shadowBlur | Combo shadow blur | number | - | |
+ | shadowColor | Combo shadow color | string | - | |
+ | shadowOffsetX | Combo shadow offset in x direction | number \ | string | - | |
+ | shadowOffsetY | Combo shadow offset in y direction | number \ | string | - | |
+ | shadowType | Combo shadow type | `inner` \ | `outer` | `outer` | |
+ | size | Combo size, quick setting for combo width and height, [options](#size) | number \ | number[] | - | |
+ | stroke | Combo stroke color | string | `#99ADD1` | |
+ | strokeOpacity | Combo stroke opacity | number \ | string | 1 | |
+ | transform | Transform property allows you to rotate, scale, skew or translate the given combo | string | - | |
+ | transformOrigin | Rotation and scaling center, also called transformation center | string | - | |
+ | visibility | Whether combo is visible | `visible` \ | `hidden` | `visible` | |
+ | x | Combo x coordinate | number | 0 | |
+ | y | Combo y coordinate | number | 0 | |
+ | z | Combo z coordinate | number | 0 | |
+ | zIndex | Combo rendering layer | number | 0 | |
 
 #### Size
 
@@ -320,32 +320,32 @@ Available values: `auto` | `default` | `none` | `context-menu` | `help` | `point
 
 Main graphic style when the combo is expanded
 
-| Attribute                       | Description                                                                                                                                       | Type                                                                            | Default   | Required |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | --------- | -------- |
-| collapsed                       | Whether the combo is currently collapsed                                                                                                          | boolean                                                                         | false     |          |
-| cursor                          | Combo mouse hover style, [configuration item](#cursor)                                                                                            | string                                                                          | default   |          |
-| fill                            | Combo fill color                                                                                                                                  | string                                                                          | `#99ADD1` |          |
-| fillOpacity                     | Combo fill color opacity                                                                                                                          | number  string                                                                 | 0.04      |          |
-| increasedLineWidthForHitTesting | When lineWidth is small, the interactive area also becomes smaller. Sometimes we want to enlarge this area to make "thin lines" easier to pick up | number                                                                          | 0         |          |
-| lineCap                         | Combo stroke end style                                                                                                                            | `round`  `square`  `butt`                                                     | `butt`    |          |
-| lineDash                        | Combo stroke dash style                                                                                                                           | number[]                                                                        | -         |          |
-| lineDashOffset                  | Combo stroke dash offset                                                                                                                          | number                                                                          | -         |          |
-| lineJoin                        | Combo stroke join style                                                                                                                           | `round`  `bevel`  `miter`                                                     | `miter`   |          |
-| lineWidth                       | Combo stroke width                                                                                                                                | number                                                                          | 1         |          |
-| opacity                         | Combo opacity                                                                                                                                     | number  string                                                                 | 1         |          |
-| shadowBlur                      | Combo shadow blur                                                                                                                                 | number                                                                          | -         |          |
-| shadowColor                     | Combo shadow color                                                                                                                                | string                                                                          | -         |          |
-| shadowOffsetX                   | Combo shadow offset in the x-axis direction                                                                                                       | number  string                                                                 | -         |          |
-| shadowOffsetY                   | Combo shadow offset in the y-axis direction                                                                                                       | number  string                                                                 | -         |          |
-| shadowType                      | Combo shadow type                                                                                                                                 | `inner`  `outer`                                                               | `outer`   |          |
-| stroke                          | Combo stroke color                                                                                                                                | string                                                                          | `#99add1` |          |
-| strokeOpacity                   | Combo stroke color opacity                                                                                                                        | number  string                                                                 | 1         |          |
-| visibility                      | Whether the combo is visible                                                                                                                      | `visible`  `hidden`                                                            | `visible` |          |
-| x                               | Combo x coordinate                                                                                                                                | number                                                                          | 0         |          |
-| y                               | Combo y coordinate                                                                                                                                | number                                                                          | 0         |          |
-| z                               | Combo z coordinate                                                                                                                                | number                                                                          | 0         |          |
-| zIndex                          | Combo rendering layer                                                                                                                             | number                                                                          | 0         |          |
-| `{styleProps}`                  | More graphic configurations, refer to [BaseStyleProps](https://g.antv.antgroup.com/api/basic/display-object#绘图属性) configuration items         | [BaseStyleProps](https://g.antv.antgroup.com/api/basic/display-object#绘图属性) | -         |          |
+ | Attribute | Description | Type | Default | Required |
+ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | --------- | -------- |
+ | collapsed | Whether the combo is currently collapsed | boolean | false | |
+ | cursor | Combo mouse hover style, [configuration item](#cursor) | string | default | |
+ | fill | Combo fill color | string | `#99ADD1` | |
+ | fillOpacity | Combo fill color opacity | number  string | 0.04 | |
+ | increasedLineWidthForHitTesting | When lineWidth is small, the interactive area also becomes smaller. Sometimes we want to enlarge this area to make "thin lines" easier to pick up | number | 0 | |
+ | lineCap | Combo stroke end style | `round`  `square`  `butt` | `butt` | |
+ | lineDash | Combo stroke dash style | number[] | - | |
+ | lineDashOffset | Combo stroke dash offset | number | - | |
+ | lineJoin | Combo stroke join style | `round`  `bevel`  `miter` | `miter` | |
+ | lineWidth | Combo stroke width | number | 1 | |
+ | opacity | Combo opacity | number  string | 1 | |
+ | shadowBlur | Combo shadow blur | number | - | |
+ | shadowColor | Combo shadow color | string | - | |
+ | shadowOffsetX | Combo shadow offset in the x-axis direction | number  string | - | |
+ | shadowOffsetY | Combo shadow offset in the y-axis direction | number  string | - | |
+ | shadowType | Combo shadow type | `inner`  `outer` | `outer` | |
+ | stroke | Combo stroke color | string | `#99add1` | |
+ | strokeOpacity | Combo stroke color opacity | number  string | 1 | |
+ | visibility | Whether the combo is visible | `visible`  `hidden` | `visible` | |
+ | x | Combo x coordinate | number | 0 | |
+ | y | Combo y coordinate | number | 0 | |
+ | z | Combo z coordinate | number | 0 | |
+ | zIndex | Combo rendering layer | number | 0 | |
+ | `{styleProps}` | More graphic configurations, refer to [BaseStyleProps](https://g.antv.antgroup.com/api/basic/display-object#绘图属性) configuration items | [BaseStyleProps](https://g.antv.antgroup.com/api/basic/display-object#绘图属性) | - | |
 
 #### Cursor
 
@@ -392,29 +392,29 @@ graph.render();
 
 Effective when `collapsed` is `true`
 
-| Attribute                                | Description                                                                                                                                                                  | Type                                                                            | Default                                  | Required |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------- | -------- |
-| collapsedCursor                          | Mouse hover style when the combo is collapsed, [configuration item](#cursor)                                                                                                 | string                                                                          | Same as the cursor when expanded         |          |
-| collapsedFill                            | Fill color when the combo is collapsed                                                                                                                                       | string                                                                          | Same as the fill when expanded           |          |
-| collapsedFillOpacity                     | Fill color opacity when the combo is collapsed                                                                                                                               | number  string                                                                 | 1                                        |          |
-| collapsedIncreasedLineWidthForHitTesting | When the combo is collapsed, if lineWidth is small, the interactive area also becomes smaller. Sometimes we want to enlarge this area to make "thin lines" easier to pick up | number                                                                          | 0                                        |          |
-| collapsedLineCap                         | Stroke end style when the combo is collapsed                                                                                                                                 | `round`  `square`  `butt`                                                     | Same as the lineCap when expanded        |          |
-| collapsedLineDash                        | Stroke dash style when the combo is collapsed                                                                                                                                | number[]                                                                        | Same as the lineDash when expanded       |          |
-| collapsedLineDashOffset                  | Stroke dash offset when the combo is collapsed                                                                                                                               | number                                                                          | Same as the lineDashOffset when expanded |          |
-| collapsedLineJoin                        | Stroke join style when the combo is collapsed                                                                                                                                | `round`  `bevel`  `miter`                                                     | Same as the lineJoin when expanded       |          |
-| collapsedLineWidth                       | Stroke width when the combo is collapsed                                                                                                                                     | number                                                                          | Same as the lineWidth when expanded      |          |
-| collapsedMarker                          | Whether to display the marker when the combo is collapsed, [configuration item](#collapsedMarkerStyle)                                                                       | boolean                                                                         | true                                     |          |
-| collapsedOpacity                         | Opacity when the combo is collapsed                                                                                                                                          | number  string                                                                 | Same as the opacity when expanded        |          |
-| collapsedShadowBlur                      | Shadow blur when the combo is collapsed                                                                                                                                      | number                                                                          | Same as the shadowBlur when expanded     |          |
-| collapsedShadowColor                     | Shadow color when the combo is collapsed                                                                                                                                     | string                                                                          | Same as the shadowColor when expanded    |          |
-| collapsedShadowOffsetX                   | Shadow offset in the x-axis direction when the combo is collapsed                                                                                                            | number  string                                                                 | Same as the shadowOffsetX when expanded  |          |
-| collapsedShadowOffsetY                   | Shadow offset in the y-axis direction when the combo is collapsed                                                                                                            | number  string                                                                 | Same as the shadowOffsetY when expanded  |          |
-| collapsedShadowType                      | Shadow type when the combo is collapsed                                                                                                                                      | `inner`  `outer`                                                               | Same as the shadowType when expanded     |          |
-| collapsedSize                            | Size when the combo is collapsed                                                                                                                                             | number &#124; [number, number] &#124; [number, number, number]                  | 32                                       |          |
-| collapsedStroke                          | Stroke color when the combo is collapsed                                                                                                                                     | string                                                                          | Same as the stroke when expanded         |          |
-| collapsedStrokeOpacity                   | Stroke color opacity when the combo is collapsed                                                                                                                             | number  string                                                                 | Same as the strokeOpacity when expanded  |          |
-| collapsedVisibility                      | Whether the combo is visible when collapsed                                                                                                                                  | `visible`  `hidden`                                                            | Same as the visibility when expanded     |          |
-| `collapsed{styleProps}`                  | More graphic configurations, refer to [BaseStyleProps](https://g.antv.antgroup.com/api/basic/display-object#绘图属性) configuration items                                    | [BaseStyleProps](https://g.antv.antgroup.com/api/basic/display-object#绘图属性) | -                                        |          |
+ | Attribute | Description | Type | Default | Required |
+ | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------- | -------- |
+ | collapsedCursor | Mouse hover style when the combo is collapsed, [configuration item](#cursor) | string | Same as the cursor when expanded | |
+ | collapsedFill | Fill color when the combo is collapsed | string | Same as the fill when expanded | |
+ | collapsedFillOpacity | Fill color opacity when the combo is collapsed | number  string | 1 | |
+ | collapsedIncreasedLineWidthForHitTesting | When the combo is collapsed, if lineWidth is small, the interactive area also becomes smaller. Sometimes we want to enlarge this area to make "thin lines" easier to pick up | number | 0 | |
+ | collapsedLineCap | Stroke end style when the combo is collapsed | `round`  `square`  `butt` | Same as the lineCap when expanded | |
+ | collapsedLineDash | Stroke dash style when the combo is collapsed | number[] | Same as the lineDash when expanded | |
+ | collapsedLineDashOffset | Stroke dash offset when the combo is collapsed | number | Same as the lineDashOffset when expanded | |
+ | collapsedLineJoin | Stroke join style when the combo is collapsed | `round`  `bevel`  `miter` | Same as the lineJoin when expanded | |
+ | collapsedLineWidth | Stroke width when the combo is collapsed | number | Same as the lineWidth when expanded | |
+ | collapsedMarker | Whether to display the marker when the combo is collapsed, [configuration item](#collapsedMarkerStyle) | boolean | true | |
+ | collapsedOpacity | Opacity when the combo is collapsed | number  string | Same as the opacity when expanded | |
+ | collapsedShadowBlur | Shadow blur when the combo is collapsed | number | Same as the shadowBlur when expanded | |
+ | collapsedShadowColor | Shadow color when the combo is collapsed | string | Same as the shadowColor when expanded | |
+ | collapsedShadowOffsetX | Shadow offset in the x-axis direction when the combo is collapsed | number  string | Same as the shadowOffsetX when expanded | |
+ | collapsedShadowOffsetY | Shadow offset in the y-axis direction when the combo is collapsed | number  string | Same as the shadowOffsetY when expanded | |
+ | collapsedShadowType | Shadow type when the combo is collapsed | `inner`  `outer` | Same as the shadowType when expanded | |
+ | collapsedSize | Size when the combo is collapsed | number &#124; [number, number] &#124; [number, number, number] | 32 | |
+ | collapsedStroke | Stroke color when the combo is collapsed | string | Same as the stroke when expanded | |
+ | collapsedStrokeOpacity | Stroke color opacity when the combo is collapsed | number  string | Same as the strokeOpacity when expanded | |
+ | collapsedVisibility | Whether the combo is visible when collapsed | `visible`  `hidden` | Same as the visibility when expanded | |
+ | `collapsed{styleProps}` | More graphic configurations, refer to [BaseStyleProps](https://g.antv.antgroup.com/api/basic/display-object#绘图属性) configuration items | [BaseStyleProps](https://g.antv.antgroup.com/api/basic/display-object#绘图属性) | - | |
 
 **Example:**
 
@@ -457,22 +457,22 @@ graph.render();
 
 Effective when `collapsedMarker` is `true`
 
-| Attribute                     | Description                                                                                                                                                                                                                                                                                                                                                         | Type                                                                                                                               | Default       | Required |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------- | -------- |
-| collapsedMarkerType           | Marker type displayed when the combo is collapsed <br> - `'child-count'`: Number of child elements (including Node and Combo) <br>- `'descendant-count'`: Number of descendant elements (including Node and Combo) <br>- `'node-count'`: Number of descendant elements (only including Node) <br> - `(children: NodeLikeData[]) => string`: Custom processing logic | `child-count` \| `descendant-count` \| `node-count` \| ((children: NodeData \| ComboData[]) => string)                             | `child-count` |          |
-| collapsedMarkerFill           | Icon text color                                                                                                                                                                                                                                                                                                                                                     | string                                                                                                                             | #fff          |          |
-| collapsedMarkerFillOpacity    | Icon text color opacity                                                                                                                                                                                                                                                                                                                                             | number                                                                                                                             | 1             |          |
-| collapsedMarkerFontSize       | Icon font size                                                                                                                                                                                                                                                                                                                                                      | number                                                                                                                             | 12            |          |
-| collapsedMarkerFontWeight     | Icon font weight                                                                                                                                                                                                                                                                                                                                                    | number \| string                                                                                                                   | `normal`      |          |
-| collapsedMarkerRadius         | Icon corner radius                                                                                                                                                                                                                                                                                                                                                  | number                                                                                                                             | 0             |          |
-| collapsedMarkerSrc            | Image source. Its priority is higher than `collapsedMarkerText`                                                                                                                                                                                                                                                                                                     | string                                                                                                                             | -             |          |
-| collapsedMarkerText           | Icon text                                                                                                                                                                                                                                                                                                                                                           | string                                                                                                                             | -             |          |
-| collapsedMarkerTextAlign      | Icon text horizontal alignment                                                                                                                                                                                                                                                                                                                                      | `center`  `end`  `left`  `right`  `start`                                                                                      | `center`      |          |
-| collapsedMarkerTextBaseline   | Icon text alignment baseline                                                                                                                                                                                                                                                                                                                                        | `alphabetic`  `bottom`  `hanging`  `ideographic`  `middle`  `top`                                                             | `middle`      |          |
-| collapsedMarkerWidth          | Icon width                                                                                                                                                                                                                                                                                                                                                          | number                                                                                                                             | -             |          |
-| collapsedMarkerHeight         | Icon height                                                                                                                                                                                                                                                                                                                                                         | number                                                                                                                             | -             |          |
-| collapsedMarkerZIndex         | Icon rendering layer                                                                                                                                                                                                                                                                                                                                                | number                                                                                                                             | 1             |          |
-| `collapsedMarker{StyleProps}` | More icon style configurations, refer to [TextStyleProps](https://g.antv.antgroup.com/api/basic/text), [ImageStyleProps](https://g.antv.antgroup.com/api/basic/image) configuration items. For example, collapsedMarkerFontSize represents the font size of the text icon                                                                                           | [TextStyleProps](https://g.antv.antgroup.com/api/basic/text) &#124; [ImageStyleProps](https://g.antv.antgroup.com/api/basic/image) | -             |          |
+ | Attribute | Description | Type | Default | Required |
+ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------- | -------- |
+ | collapsedMarkerType | Marker type displayed when the combo is collapsed <br> - `'child-count'`: Number of child elements (including Node and Combo) <br>- `'descendant-count'`: Number of descendant elements (including Node and Combo) <br>- `'node-count'`: Number of descendant elements (only including Node) <br> - `(children: NodeLikeData[]) => string`: Custom processing logic | `child-count` \ | `descendant-count` \ | `node-count` \ | ((children: NodeData \ | ComboData[]) => string) | `child-count` | |
+ | collapsedMarkerFill | Icon text color | string | #fff | |
+ | collapsedMarkerFillOpacity | Icon text color opacity | number | 1 | |
+ | collapsedMarkerFontSize | Icon font size | number | 12 | |
+ | collapsedMarkerFontWeight | Icon font weight | number \ | string | `normal` | |
+ | collapsedMarkerRadius | Icon corner radius | number | 0 | |
+ | collapsedMarkerSrc | Image source. Its priority is higher than `collapsedMarkerText` | string | - | |
+ | collapsedMarkerText | Icon text | string | - | |
+ | collapsedMarkerTextAlign | Icon text horizontal alignment | `center`  `end`  `left`  `right`  `start` | `center` | |
+ | collapsedMarkerTextBaseline | Icon text alignment baseline | `alphabetic`  `bottom`  `hanging`  `ideographic`  `middle`  `top` | `middle` | |
+ | collapsedMarkerWidth | Icon width | number | - | |
+ | collapsedMarkerHeight | Icon height | number | - | |
+ | collapsedMarkerZIndex | Icon rendering layer | number | 1 | |
+ | `collapsedMarker{StyleProps}` | More icon style configurations, refer to [TextStyleProps](https://g.antv.antgroup.com/api/basic/text), [ImageStyleProps](https://g.antv.antgroup.com/api/basic/image) configuration items. For example, collapsedMarkerFontSize represents the font size of the text icon | [TextStyleProps](https://g.antv.antgroup.com/api/basic/text) &#124; [ImageStyleProps](https://g.antv.antgroup.com/api/basic/image) | - | |
 
 **Example:**
 
@@ -615,37 +615,37 @@ graph.render();
 
 Here are the complete label style configurations:
 
-| Property                 | Description                                                                                                                                                                | Type                                                                        | Default   | Required |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------- | -------- |
-| label                    | Whether to show combo label                                                                                                                                                | boolean                                                                     | true      |          |
-| labelCursor              | Cursor style when hovering over combo label, [options](#cursor)                                                                                                            | string                                                                      | `default` |          |
-| labelFill                | Combo label text color                                                                                                                                                     | string                                                                      | #000      |          |
-| labelFillOpacity         | Combo label text color opacity                                                                                                                                             | number                                                                      | 1         |          |
-| labelFontFamily          | Combo label font family                                                                                                                                                    | string                                                                      | -         |          |
-| labelFontSize            | Combo label font size                                                                                                                                                      | number                                                                      | 12        |          |
-| labelFontStyle           | Combo label font style                                                                                                                                                     | `normal` \| `italic` \| `oblique`                                           | -         |          |
-| labelFontVariant         | Combo label font variant                                                                                                                                                   | `normal` \| `small-caps` \| string                                          | -         |          |
-| labelFontWeight          | Combo label font weight                                                                                                                                                    | `normal` \| `bold` \| `bolder` \| `lighter` \| number                       | 400       |          |
-| labelLeading             | Line spacing                                                                                                                                                               | number                                                                      | 0         |          |
-| labelLetterSpacing       | Combo label letter spacing                                                                                                                                                 | number \| string                                                            | -         |          |
-| labelLineHeight          | Combo label line height                                                                                                                                                    | number \| string                                                            | -         |          |
-| labelMaxLines            | Combo label maximum lines                                                                                                                                                  | number                                                                      | 1         |          |
-| labelMaxWidth            | Combo label maximum width, [options](#labelmaxwidth)                                                                                                                       | number \| string                                                            | `200%`    |          |
-| labelOffsetX             | Combo label X offset                                                                                                                                                       | number                                                                      | 0         |          |
-| labelOffsetY             | Combo label Y offset                                                                                                                                                       | number                                                                      | 0         |          |
-| labelPadding             | Combo label padding                                                                                                                                                        | number \| number[]                                                          | 0         |          |
-| labelPlacement           | Combo label position relative to combo main graphic, [options](#labelplacement)                                                                                            | string                                                                      | `bottom`  |          |
-| labelText                | Combo label text content                                                                                                                                                   | string                                                                      | -         |          |
-| labelTextAlign           | Combo label text horizontal alignment                                                                                                                                      | `start` \| `center` \| `middle` \| `end` \| `left` \| `right`               | `left`    |          |
-| labelTextBaseline        | Combo label text baseline                                                                                                                                                  | `top` \| `hanging` \| `middle` \| `alphabetic` \| `ideographic` \| `bottom` | -         |          |
-| labelTextDecorationColor | Combo label text decoration color                                                                                                                                          | string                                                                      | -         |          |
-| labelTextDecorationLine  | Combo label text decoration line                                                                                                                                           | string                                                                      | -         |          |
-| labelTextDecorationStyle | Combo label text decoration style                                                                                                                                          | `solid` \| `double` \| `dotted` \| `dashed` \| `wavy`                       | -         |          |
-| labelTextOverflow        | Combo label text overflow handling                                                                                                                                         | `clip` \| `ellipsis` \| string                                              | -         |          |
-| labelTextPath            | Combo label text path                                                                                                                                                      | Path                                                                        | -         |          |
-| labelWordWrap            | Whether combo label enables auto line wrapping. When labelWordWrap is enabled, parts exceeding labelMaxWidth automatically wrap                                            | boolean                                                                     | false     |          |
-| labelZIndex              | Combo label rendering layer                                                                                                                                                | number                                                                      | 0         |          |
-| `label{StyleProps}`      | More label style configurations, refer to [TextStyleProps](https://g.antv.antgroup.com/api/basic/text) property values. For example, labelOpacity represents label opacity | [TextStyleProps](https://g.antv.antgroup.com/api/basic/text)                | -         |          |
+ | Property | Description | Type | Default | Required |
+ | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------- | -------- |
+ | label | Whether to show combo label | boolean | true | |
+ | labelCursor | Cursor style when hovering over combo label, [options](#cursor) | string | `default` | |
+ | labelFill | Combo label text color | string | #000 | |
+ | labelFillOpacity | Combo label text color opacity | number | 1 | |
+ | labelFontFamily | Combo label font family | string | - | |
+ | labelFontSize | Combo label font size | number | 12 | |
+ | labelFontStyle | Combo label font style | `normal` \ | `italic` \ | `oblique` | - | |
+ | labelFontVariant | Combo label font variant | `normal` \ | `small-caps` \ | string | - | |
+ | labelFontWeight | Combo label font weight | `normal` \ | `bold` \ | `bolder` \ | `lighter` \ | number | 400 | |
+ | labelLeading | Line spacing | number | 0 | |
+ | labelLetterSpacing | Combo label letter spacing | number \ | string | - | |
+ | labelLineHeight | Combo label line height | number \ | string | - | |
+ | labelMaxLines | Combo label maximum lines | number | 1 | |
+ | labelMaxWidth | Combo label maximum width, [options](#labelmaxwidth) | number \ | string | `200%` | |
+ | labelOffsetX | Combo label X offset | number | 0 | |
+ | labelOffsetY | Combo label Y offset | number | 0 | |
+ | labelPadding | Combo label padding | number \ | number[] | 0 | |
+ | labelPlacement | Combo label position relative to combo main graphic, [options](#labelplacement) | string | `bottom` | |
+ | labelText | Combo label text content | string | - | |
+ | labelTextAlign | Combo label text horizontal alignment | `start` \ | `center` \ | `middle` \ | `end` \ | `left` \ | `right` | `left` | |
+ | labelTextBaseline | Combo label text baseline | `top` \ | `hanging` \ | `middle` \ | `alphabetic` \ | `ideographic` \ | `bottom` | - | |
+ | labelTextDecorationColor | Combo label text decoration color | string | - | |
+ | labelTextDecorationLine | Combo label text decoration line | string | - | |
+ | labelTextDecorationStyle | Combo label text decoration style | `solid` \ | `double` \ | `dotted` \ | `dashed` \ | `wavy` | - | |
+ | labelTextOverflow | Combo label text overflow handling | `clip` \ | `ellipsis` \ | string | - | |
+ | labelTextPath | Combo label text path | Path | - | |
+ | labelWordWrap | Whether combo label enables auto line wrapping. When labelWordWrap is enabled, parts exceeding labelMaxWidth automatically wrap | boolean | false | |
+ | labelZIndex | Combo label rendering layer | number | 0 | |
+ | `label{StyleProps}` | More label style configurations, refer to [TextStyleProps](https://g.antv.antgroup.com/api/basic/text) property values. For example, labelOpacity represents label opacity | [TextStyleProps](https://g.antv.antgroup.com/api/basic/text) | - | |
 
 #### LabelPlacement
 
@@ -778,27 +778,27 @@ graph.render();
 
 Here are the complete label background style configurations:
 
-| Property                      | Description                                                                                                                                                                                                | Type                                                         | Default      |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------ |
-| labelBackground               | Whether to show combo label background                                                                                                                                                                     | boolean                                                      | false        |
-| labelBackgroundCursor         | Combo label background cursor style, [options](#cursor)                                                                                                                                                    | string                                                       | `default`    |
-| labelBackgroundFill           | Combo label background fill color                                                                                                                                                                          | string                                                       | #000         |
-| labelBackgroundFillOpacity    | Combo label background opacity                                                                                                                                                                             | number                                                       | 0.75         |
-| labelBackgroundHeight         | Combo label background height                                                                                                                                                                              | string \| number                                             | -            |
-| labelBackgroundLineDash       | Combo label background dash configuration                                                                                                                                                                  | number \| string \|(number \| string )[]                     | -            |
-| labelBackgroundLineDashOffset | Combo label background dash offset                                                                                                                                                                         | number                                                       | -            |
-| labelBackgroundLineWidth      | Combo label background stroke line width                                                                                                                                                                   | number                                                       | -            |
-| labelBackgroundPadding        | Combo label background padding                                                                                                                                                                             | number \| number[]                                           | [2, 4, 2, 4] |
-| labelBackgroundRadius         | Combo label background border radius <br> - number: Set all four corner radius uniformly <br> - number[]: Set four corner radius separately, missing values auto-filled                                    | number \| number[]                                           | 0            |
-| labelBackgroundShadowBlur     | Combo label background shadow blur                                                                                                                                                                         | number                                                       | -            |
-| labelBackgroundShadowColor    | Combo label background shadow color                                                                                                                                                                        | string                                                       | -            |
-| labelBackgroundShadowOffsetX  | Combo label background shadow X offset                                                                                                                                                                     | number                                                       | -            |
-| labelBackgroundShadowOffsetY  | Combo label background shadow Y offset                                                                                                                                                                     | number                                                       | -            |
-| labelBackgroundStroke         | Combo label background stroke color                                                                                                                                                                        | string                                                       | -            |
-| labelBackgroundStrokeOpacity  | Combo label background stroke opacity                                                                                                                                                                      | number \| string                                             | 1            |
-| labelBackgroundVisibility     | Whether combo label background is visible                                                                                                                                                                  | `visible` \| `hidden`                                        | -            |
-| labelBackgroundZIndex         | Combo label background rendering layer                                                                                                                                                                     | number                                                       | 1            |
-| `labelBackground{StyleProps}` | More label background style configurations, refer to [RectStyleProps](https://g.antv.antgroup.com/api/basic/rect) property values. For example, labelBackgroundOpacity represents label background opacity | [RectStyleProps](https://g.antv.antgroup.com/api/basic/rect) | -            |
+ | Property | Description | Type | Default |
+ | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------ |
+ | labelBackground | Whether to show combo label background | boolean | false |
+ | labelBackgroundCursor | Combo label background cursor style, [options](#cursor) | string | `default` |
+ | labelBackgroundFill | Combo label background fill color | string | #000 |
+ | labelBackgroundFillOpacity | Combo label background opacity | number | 0.75 |
+ | labelBackgroundHeight | Combo label background height | string \ | number | - |
+ | labelBackgroundLineDash | Combo label background dash configuration | number \ | string \ | (number \ | string )[] | - |
+ | labelBackgroundLineDashOffset | Combo label background dash offset | number | - |
+ | labelBackgroundLineWidth | Combo label background stroke line width | number | - |
+ | labelBackgroundPadding | Combo label background padding | number \ | number[] | [2, 4, 2, 4] |
+ | labelBackgroundRadius | Combo label background border radius <br> - number: Set all four corner radius uniformly <br> - number[]: Set four corner radius separately, missing values auto-filled | number \ | number[] | 0 |
+ | labelBackgroundShadowBlur | Combo label background shadow blur | number | - |
+ | labelBackgroundShadowColor | Combo label background shadow color | string | - |
+ | labelBackgroundShadowOffsetX | Combo label background shadow X offset | number | - |
+ | labelBackgroundShadowOffsetY | Combo label background shadow Y offset | number | - |
+ | labelBackgroundStroke | Combo label background stroke color | string | - |
+ | labelBackgroundStrokeOpacity | Combo label background stroke opacity | number \ | string | 1 |
+ | labelBackgroundVisibility | Whether combo label background is visible | `visible` \ | `hidden` | - |
+ | labelBackgroundZIndex | Combo label background rendering layer | number | 1 |
+ | `labelBackground{StyleProps}` | More label background style configurations, refer to [RectStyleProps](https://g.antv.antgroup.com/api/basic/rect) property values. For example, labelBackgroundOpacity represents label background opacity | [RectStyleProps](https://g.antv.antgroup.com/api/basic/rect) | - |
 
 ### Badge Style
 
@@ -903,56 +903,56 @@ graph.render();
 
 Here are the complete badge style configurations:
 
-| Property     | Description                    | Type                                  | Default                           |
-| ------------ | ------------------------------ | ------------------------------------- | --------------------------------- |
-| badge        | Whether to show combo badge    | boolean                               | true                              |
-| badgePalette | Combo badge background palette | string[]                              | [`#7E92B5`, `#F4664A`, `#FFBE3A`] |
-| badges       | Combo badge settings           | [BadgeStyleProps](#badgestyleprops)[] | -                                 |
+ | Property | Description | Type | Default |
+ | ------------ | ------------------------------ | ------------------------------------- | --------------------------------- |
+ | badge | Whether to show combo badge | boolean | true |
+ | badgePalette | Combo badge background palette | string[] | [`#7E92B5`, `#F4664A`, `#FFBE3A`] |
+ | badges | Combo badge settings | [BadgeStyleProps](#badgestyleprops)[] | - |
 
 #### BadgeStyleProps
 
-| Property                 | Description                                                                                                                                                                                                                                                                                            | Type                                                                                                                                                                   | Default      |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| background               | Whether to show combo badge background                                                                                                                                                                                                                                                                 | boolean                                                                                                                                                                | true         |
-| backgroundCursor         | Combo badge background cursor style, [options](#cursor)                                                                                                                                                                                                                                                | string                                                                                                                                                                 | `default`    |
-| backgroundFill           | Combo badge background fill color. If not specified, consider badgePalette for sequential allocation                                                                                                                                                                                                   | string                                                                                                                                                                 | -            |
-| backgroundFillOpacity    | Combo badge background fill opacity                                                                                                                                                                                                                                                                    | number                                                                                                                                                                 | 1            |
-| backgroundFilter         | Combo badge background filter                                                                                                                                                                                                                                                                          | string                                                                                                                                                                 | -            |
-| backgroundHeight         | Combo badge background height                                                                                                                                                                                                                                                                          | number \| string                                                                                                                                                       | -            |
-| backgroundLineDash       | Combo badge background dash configuration                                                                                                                                                                                                                                                              | number \| string \|(number \| string )[]                                                                                                                               | -            |
-| backgroundLineDashOffset | Combo badge background dash offset                                                                                                                                                                                                                                                                     | number                                                                                                                                                                 | -            |
-| backgroundLineWidth      | Combo badge background stroke line width                                                                                                                                                                                                                                                               | number                                                                                                                                                                 | -            |
-| backgroundRadius         | Combo badge background border radius <br> - number: Set all four corner radius uniformly <br> - number[]: Set four corner radius separately, missing values will be filled <br> - string: Similar to [CSS padding](https://developer.mozilla.org/en-US/docs/Web/CSS/padding) property, space-separated | number \| number[] \| string                                                                                                                                           | 0            |
-| backgroundShadowBlur     | Combo badge background shadow blur                                                                                                                                                                                                                                                                     | number                                                                                                                                                                 | -            |
-| backgroundShadowColor    | Combo badge background shadow color                                                                                                                                                                                                                                                                    | string                                                                                                                                                                 | -            |
-| backgroundShadowOffsetX  | Combo badge background shadow X offset                                                                                                                                                                                                                                                                 | number                                                                                                                                                                 | -            |
-| backgroundShadowOffsetY  | Combo badge background shadow Y offset                                                                                                                                                                                                                                                                 | number                                                                                                                                                                 | -            |
-| backgroundStroke         | Combo badge background stroke color                                                                                                                                                                                                                                                                    | string                                                                                                                                                                 | -            |
-| backgroundStrokeOpacity  | Combo badge background stroke opacity                                                                                                                                                                                                                                                                  | number \| string                                                                                                                                                       | 1            |
-| backgroundVisibility     | Whether combo badge background is visible                                                                                                                                                                                                                                                              | `visible` \| `hidden`                                                                                                                                                  | -            |
-| fill                     | Combo badge text color                                                                                                                                                                                                                                                                                 | string                                                                                                                                                                 | -            |
-| fontFamily               | Combo badge font family                                                                                                                                                                                                                                                                                | string                                                                                                                                                                 | -            |
-| fontSize                 | Combo badge font size                                                                                                                                                                                                                                                                                  | number                                                                                                                                                                 | 8            |
-| fontStyle                | Combo badge font style                                                                                                                                                                                                                                                                                 | `normal` \| `italic` \| `oblique`                                                                                                                                      | `normal`     |
-| fontVariant              | Combo badge font variant                                                                                                                                                                                                                                                                               | `normal` \| `small-caps` \| string                                                                                                                                     | `normal`     |
-| fontWeight               | Combo badge font weight                                                                                                                                                                                                                                                                                | number \| string                                                                                                                                                       | `normal`     |
-| lineHeight               | Combo badge line height                                                                                                                                                                                                                                                                                | string \| number                                                                                                                                                       | -            |
-| lineWidth                | Combo badge line width                                                                                                                                                                                                                                                                                 | string \| number                                                                                                                                                       | -            |
-| maxLines                 | Combo badge text maximum lines                                                                                                                                                                                                                                                                         | number                                                                                                                                                                 | 1            |
-| offsetX                  | Combo badge X offset                                                                                                                                                                                                                                                                                   | number                                                                                                                                                                 | 0            |
-| offsetY                  | Combo badge Y offset                                                                                                                                                                                                                                                                                   | number                                                                                                                                                                 | 0            |
-| padding                  | Combo badge padding                                                                                                                                                                                                                                                                                    | number \| number[]                                                                                                                                                     | 0            |
-| placement                | Combo badge position relative to combo main graphic. If not specified, defaults to clockwise placement starting from top-right                                                                                                                                                                         | `left` \| `right` \| `top` \| `bottom` \| `left-top` \| `left-bottom` \| `right-top` \| `right-bottom` \| `top-left` \| `top-right` \| `bottom-left` \| `bottom-right` | -            |
-| text                     | Combo badge text content                                                                                                                                                                                                                                                                               | string                                                                                                                                                                 | -            |
-| textAlign                | Combo badge text horizontal alignment                                                                                                                                                                                                                                                                  | `start` \| `center` \| `middle` \| `end` \| `left` \| `right`                                                                                                          | `left`       |
-| textBaseline             | Combo badge text baseline                                                                                                                                                                                                                                                                              | `top` \| `hanging` \| `middle` \| `alphabetic` \| `ideographic` \| `bottom`                                                                                            | `alphabetic` |
-| textDecorationColor      | Combo badge text decoration color                                                                                                                                                                                                                                                                      | string                                                                                                                                                                 | -            |
-| textDecorationLine       | Combo badge text decoration line                                                                                                                                                                                                                                                                       | string                                                                                                                                                                 | -            |
-| textDecorationStyle      | Combo badge text decoration style                                                                                                                                                                                                                                                                      | `solid` \| `double` \| `dotted` \| `dashed` \| `wavy`                                                                                                                  | `solid`      |
-| textOverflow             | Combo badge text overflow handling                                                                                                                                                                                                                                                                     | `clip` \| `ellipsis` \| string                                                                                                                                         | `clip`       |
-| visibility               | Whether combo badge is visible                                                                                                                                                                                                                                                                         | `visible` \| `hidden`                                                                                                                                                  | -            |
-| wordWrap                 | Whether combo badge text auto-wraps                                                                                                                                                                                                                                                                    | boolean                                                                                                                                                                | -            |
-| zIndex                   | Combo badge rendering layer                                                                                                                                                                                                                                                                            | number                                                                                                                                                                 | 3            |
+ | Property | Description | Type | Default |
+ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+ | background | Whether to show combo badge background | boolean | true |
+ | backgroundCursor | Combo badge background cursor style, [options](#cursor) | string | `default` |
+ | backgroundFill | Combo badge background fill color. If not specified, consider badgePalette for sequential allocation | string | - |
+ | backgroundFillOpacity | Combo badge background fill opacity | number | 1 |
+ | backgroundFilter | Combo badge background filter | string | - |
+ | backgroundHeight | Combo badge background height | number \ | string | - |
+ | backgroundLineDash | Combo badge background dash configuration | number \ | string \ | (number \ | string )[] | - |
+ | backgroundLineDashOffset | Combo badge background dash offset | number | - |
+ | backgroundLineWidth | Combo badge background stroke line width | number | - |
+ | backgroundRadius | Combo badge background border radius <br> - number: Set all four corner radius uniformly <br> - number[]: Set four corner radius separately, missing values will be filled <br> - string: Similar to [CSS padding](https://developer.mozilla.org/en-US/docs/Web/CSS/padding) property, space-separated | number \ | number[] \ | string | 0 |
+ | backgroundShadowBlur | Combo badge background shadow blur | number | - |
+ | backgroundShadowColor | Combo badge background shadow color | string | - |
+ | backgroundShadowOffsetX | Combo badge background shadow X offset | number | - |
+ | backgroundShadowOffsetY | Combo badge background shadow Y offset | number | - |
+ | backgroundStroke | Combo badge background stroke color | string | - |
+ | backgroundStrokeOpacity | Combo badge background stroke opacity | number \ | string | 1 |
+ | backgroundVisibility | Whether combo badge background is visible | `visible` \ | `hidden` | - |
+ | fill | Combo badge text color | string | - |
+ | fontFamily | Combo badge font family | string | - |
+ | fontSize | Combo badge font size | number | 8 |
+ | fontStyle | Combo badge font style | `normal` \ | `italic` \ | `oblique` | `normal` |
+ | fontVariant | Combo badge font variant | `normal` \ | `small-caps` \ | string | `normal` |
+ | fontWeight | Combo badge font weight | number \ | string | `normal` |
+ | lineHeight | Combo badge line height | string \ | number | - |
+ | lineWidth | Combo badge line width | string \ | number | - |
+ | maxLines | Combo badge text maximum lines | number | 1 |
+ | offsetX | Combo badge X offset | number | 0 |
+ | offsetY | Combo badge Y offset | number | 0 |
+ | padding | Combo badge padding | number \ | number[] | 0 |
+ | placement | Combo badge position relative to combo main graphic. If not specified, defaults to clockwise placement starting from top-right | `left` \ | `right` \ | `top` \ | `bottom` \ | `left-top` \ | `left-bottom` \ | `right-top` \ | `right-bottom` \ | `top-left` \ | `top-right` \ | `bottom-left` \ | `bottom-right` | - |
+ | text | Combo badge text content | string | - |
+ | textAlign | Combo badge text horizontal alignment | `start` \ | `center` \ | `middle` \ | `end` \ | `left` \ | `right` | `left` |
+ | textBaseline | Combo badge text baseline | `top` \ | `hanging` \ | `middle` \ | `alphabetic` \ | `ideographic` \ | `bottom` | `alphabetic` |
+ | textDecorationColor | Combo badge text decoration color | string | - |
+ | textDecorationLine | Combo badge text decoration line | string | - |
+ | textDecorationStyle | Combo badge text decoration style | `solid` \ | `double` \ | `dotted` \ | `dashed` \ | `wavy` | `solid` |
+ | textOverflow | Combo badge text overflow handling | `clip` \ | `ellipsis` \ | string | `clip` |
+ | visibility | Whether combo badge is visible | `visible` \ | `hidden` | - |
+ | wordWrap | Whether combo badge text auto-wraps | boolean | - |
+ | zIndex | Combo badge rendering layer | number | 3 |
 
 ### Halo Style
 
@@ -1062,22 +1062,22 @@ graph.render();
 
 Here are the complete halo style configurations:
 
-| Property           | Description                                                                                                                                                                       | Type                                                                  | Default                         | Required |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------- | -------- |
-| halo               | Whether to show combo halo                                                                                                                                                        | boolean                                                               | false                           |          |
-| haloCursor         | Combo halo cursor style, [options](#cursor)                                                                                                                                       | string                                                                | `default`                       |          |
-| haloDraggable      | Whether combo halo allows dragging                                                                                                                                                | boolean                                                               | true                            |          |
-| haloDroppable      | Whether combo halo allows receiving dragged elements                                                                                                                              | boolean                                                               | false                           |          |
-| haloFill           | Halo fill color                                                                                                                                                                   | string                                                                | Same as main graphic fill color |          |
-| haloFillRule       | Combo halo fill rule                                                                                                                                                              | `nonzero` \| `evenodd`                                                | -                               |          |
-| haloFilter         | Combo halo filter effect, such as 'blur(2px)' for blur effect                                                                                                                     | string                                                                | -                               |          |
-| haloLineWidth      | Combo halo stroke width, controls halo thickness                                                                                                                                  | number                                                                | 12                              |          |
-| haloPointerEvents  | Whether combo halo effect responds to pointer events, [options](#pointerevents)                                                                                                   | string                                                                | `none`                          |          |
-| haloStroke         | Combo halo stroke color, **this property is used to set the color of halo around combo, helping to highlight the combo**                                                          | string                                                                | `#99add1`                       |          |
-| haloStrokeOpacity  | Combo halo stroke opacity, recommended to use 0.2-0.6 values for natural halo effect                                                                                              | number                                                                | 0.25                            |          |
-| haloVisibility     | Combo halo visibility                                                                                                                                                             | `visible` \| `hidden`                                                 | `visible`                       |          |
-| haloZIndex         | Combo halo rendering layer, usually set to negative value to ensure halo is below combo main graphic                                                                              | number                                                                | -1                              |          |
-| `halo{StyleProps}` | More halo style configurations, refer to [DisplayObject](https://g.antv.antgroup.com/api/basic/display-object) options. For example, haloFillOpacity represents halo fill opacity | [DisplayObject](https://g.antv.antgroup.com/api/basic/display-object) | -                               |          |
+ | Property | Description | Type | Default | Required |
+ | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------- | -------- |
+ | halo | Whether to show combo halo | boolean | false | |
+ | haloCursor | Combo halo cursor style, [options](#cursor) | string | `default` | |
+ | haloDraggable | Whether combo halo allows dragging | boolean | true | |
+ | haloDroppable | Whether combo halo allows receiving dragged elements | boolean | false | |
+ | haloFill | Halo fill color | string | Same as main graphic fill color | |
+ | haloFillRule | Combo halo fill rule | `nonzero` \ | `evenodd` | - | |
+ | haloFilter | Combo halo filter effect, such as 'blur(2px)' for blur effect | string | - | |
+ | haloLineWidth | Combo halo stroke width, controls halo thickness | number | 12 | |
+ | haloPointerEvents | Whether combo halo effect responds to pointer events, [options](#pointerevents) | string | `none` | |
+ | haloStroke | Combo halo stroke color, **this property is used to set the color of halo around combo, helping to highlight the combo** | string | `#99add1` | |
+ | haloStrokeOpacity | Combo halo stroke opacity, recommended to use 0.2-0.6 values for natural halo effect | number | 0.25 | |
+ | haloVisibility | Combo halo visibility | `visible` \ | `hidden` | `visible` | |
+ | haloZIndex | Combo halo rendering layer, usually set to negative value to ensure halo is below combo main graphic | number | -1 | |
+ | `halo{StyleProps}` | More halo style configurations, refer to [DisplayObject](https://g.antv.antgroup.com/api/basic/display-object) options. For example, haloFillOpacity represents halo fill opacity | [DisplayObject](https://g.antv.antgroup.com/api/basic/display-object) | - | |
 
 **Halo Usage Recommendations:**
 
@@ -1179,38 +1179,38 @@ graph.render();
 
 Here are the complete icon style configurations:
 
-| Property                | Description                                                                                                               | Type                                                                        | Default                     |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------- |
-| icon                    | Whether to show combo icon                                                                                                | boolean                                                                     | true                        |
-| iconCursor              | Combo icon cursor style, [options](#cursor)                                                                               | string                                                                      | `default`                   |
-| iconFill                | Combo icon text color                                                                                                     | string                                                                      | -                           |
-| iconFillOpacity         | Combo icon text color opacity                                                                                             | number                                                                      | 1                           |
-| iconFontFamily          | Combo icon font family                                                                                                    | string                                                                      | -                           |
-| iconFontSize            | Combo icon font size                                                                                                      | number                                                                      | 16                          |
-| iconFontStyle           | Combo icon font style                                                                                                     | `normal` \| `italic` \| `oblique`                                           | `normal`                    |
-| iconFontVariant         | Combo icon font variant                                                                                                   | `normal` \| `small-caps` \| string                                          | `normal`                    |
-| iconFontWeight          | Combo icon font weight                                                                                                    | number \| string                                                            | `normal`                    |
-| iconHeight              | Combo icon height, used to control image size when using image icon                                                       | number                                                                      | Half of main graphic height |
-| iconLetterSpacing       | Combo icon text letter spacing                                                                                            | number \| string                                                            | -                           |
-| iconLineHeight          | Combo icon text line height                                                                                               | number \| string                                                            | -                           |
-| iconMaxLines            | Combo icon text maximum lines                                                                                             | number                                                                      | 1                           |
-| iconOffsetX             | Combo icon X offset                                                                                                       | number                                                                      | 0                           |
-| iconOffsetY             | Combo icon Y offset                                                                                                       | number                                                                      | 0                           |
-| iconOpacity             | Combo icon opacity                                                                                                        | number                                                                      | 1                           |
-| iconRadius              | Combo icon border radius (only effective for rectangular icons)                                                           | number                                                                      | 0                           |
-| iconSrc                 | Combo image source. Has higher priority than iconText, supports local and network images                                  | string                                                                      | -                           |
-| iconText                | Combo icon text content, supports text, Unicode characters, etc.                                                          | string                                                                      | -                           |
-| iconTextAlign           | Combo icon text horizontal alignment                                                                                      | `start` \| `center` \| `middle` \| `end` \| `left` \| `right`               | `center`                    |
-| iconTextBaseline        | Combo icon text baseline                                                                                                  | `top` \| `hanging` \| `middle` \| `alphabetic` \| `ideographic` \| `bottom` | `middle`                    |
-| iconTextDecorationColor | Combo icon text decoration color                                                                                          | string                                                                      | -                           |
-| iconTextDecorationLine  | Combo icon text decoration line, such as underline, strikethrough, etc.                                                   | string                                                                      | -                           |
-| iconTextDecorationStyle | Combo icon text decoration style                                                                                          | `solid` \| `double` \| `dotted` \| `dashed` \| `wavy`                       | `solid`                     |
-| iconTextOverflow        | Combo icon text overflow handling                                                                                         | `clip` \| `ellipsis` \| string                                              | `clip`                      |
-| iconVisibility          | Whether combo icon is visible                                                                                             | `visible` \| `hidden`                                                       | `visible`                   |
-| iconWidth               | Combo icon width, used to control image size when using image icon                                                        | number                                                                      | Half of main graphic width  |
-| iconWordWrap            | Whether combo icon text auto-wraps                                                                                        | boolean                                                                     | false                       |
-| iconZIndex              | Combo icon rendering layer                                                                                                | number                                                                      | 1                           |
-| `icon{StyleProps}`      | More icon style configurations, refer to specific icon type options. For example, iconStroke represents icon stroke color | -                                                                           | -                           |
+ | Property | Description | Type | Default |
+ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------- |
+ | icon | Whether to show combo icon | boolean | true |
+ | iconCursor | Combo icon cursor style, [options](#cursor) | string | `default` |
+ | iconFill | Combo icon text color | string | - |
+ | iconFillOpacity | Combo icon text color opacity | number | 1 |
+ | iconFontFamily | Combo icon font family | string | - |
+ | iconFontSize | Combo icon font size | number | 16 |
+ | iconFontStyle | Combo icon font style | `normal` \ | `italic` \ | `oblique` | `normal` |
+ | iconFontVariant | Combo icon font variant | `normal` \ | `small-caps` \ | string | `normal` |
+ | iconFontWeight | Combo icon font weight | number \ | string | `normal` |
+ | iconHeight | Combo icon height, used to control image size when using image icon | number | Half of main graphic height |
+ | iconLetterSpacing | Combo icon text letter spacing | number \ | string | - |
+ | iconLineHeight | Combo icon text line height | number \ | string | - |
+ | iconMaxLines | Combo icon text maximum lines | number | 1 |
+ | iconOffsetX | Combo icon X offset | number | 0 |
+ | iconOffsetY | Combo icon Y offset | number | 0 |
+ | iconOpacity | Combo icon opacity | number | 1 |
+ | iconRadius | Combo icon border radius (only effective for rectangular icons) | number | 0 |
+ | iconSrc | Combo image source. Has higher priority than iconText, supports local and network images | string | - |
+ | iconText | Combo icon text content, supports text, Unicode characters, etc. | string | - |
+ | iconTextAlign | Combo icon text horizontal alignment | `start` \ | `center` \ | `middle` \ | `end` \ | `left` \ | `right` | `center` |
+ | iconTextBaseline | Combo icon text baseline | `top` \ | `hanging` \ | `middle` \ | `alphabetic` \ | `ideographic` \ | `bottom` | `middle` |
+ | iconTextDecorationColor | Combo icon text decoration color | string | - |
+ | iconTextDecorationLine | Combo icon text decoration line, such as underline, strikethrough, etc. | string | - |
+ | iconTextDecorationStyle | Combo icon text decoration style | `solid` \ | `double` \ | `dotted` \ | `dashed` \ | `wavy` | `solid` |
+ | iconTextOverflow | Combo icon text overflow handling | `clip` \ | `ellipsis` \ | string | `clip` |
+ | iconVisibility | Whether combo icon is visible | `visible` \ | `hidden` | `visible` |
+ | iconWidth | Combo icon width, used to control image size when using image icon | number | Half of main graphic width |
+ | iconWordWrap | Whether combo icon text auto-wraps | boolean | false |
+ | iconZIndex | Combo icon rendering layer | number | 1 |
+ | `icon{StyleProps}` | More icon style configurations, refer to specific icon type options. For example, iconStroke represents icon stroke color | - | - |
 
 **Icon Usage Recommendations:**
 
@@ -1333,7 +1333,7 @@ Defines the animation effects for combos, supporting the following two configura
 }
 ```
 
-2. Configure stage animations
+1. Configure stage animations
 
 Stage animations refer to animation effects when combos enter the canvas, update, or leave the canvas. Currently supported stages include:
 
@@ -1478,16 +1478,16 @@ You can pass `false` to disable specific stage animations:
 
 **Animation Configuration Options:**
 
-| Property  | Description                             | Type                                                        | Default  |
-| --------- | --------------------------------------- | ----------------------------------------------------------- | -------- |
-| fields    | Properties to animate                   | string[]                                                    | -        |
-| from      | Starting value                          | number \| string                                            | -        |
-| to        | Ending value                            | number \| string                                            | -        |
-| duration  | Animation duration (milliseconds)       | number                                                      | 1000     |
-| easing    | Easing function                         | string                                                      | 'ease'   |
-| delay     | Animation delay (milliseconds)          | number                                                      | 0        |
-| repeat    | Number of repetitions (-1 for infinite) | number                                                      | 0        |
-| direction | Animation direction                     | 'normal' \| 'reverse' \| 'alternate' \| 'alternate-reverse' | 'normal' |
+ | Property | Description | Type | Default |
+ | --------- | --------------------------------------- | ----------------------------------------------------------- | -------- |
+ | fields | Properties to animate | string[] | - |
+ | from | Starting value | number \ | string | - |
+ | to | Ending value | number \ | string | - |
+ | duration | Animation duration (milliseconds) | number | 1000 |
+ | easing | Easing function | string | 'ease' |
+ | delay | Animation delay (milliseconds) | number | 0 |
+ | repeat | Number of repetitions (-1 for infinite) | number | 0 |
+ | direction | Animation direction | 'normal' \ | 'reverse' \ | 'alternate' \ | 'alternate-reverse' | 'normal' |
 
 ## Palette
 
@@ -1495,12 +1495,12 @@ Defines combo color palette, i.e., predefined combo color pool, and allocates ac
 
 > For palette definition, please refer to [Palette](/en/manual/theme/palette).
 
-| Property | Description                                                                                                          | Type                              | Default |
-| -------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------- | ------- |
-| type     | Specifies current palette type. <br> - `group`: Discrete palette <br> - `value`: Continuous palette                  | `group` &#124; `value`            | `group` |
-| field    | Specifies grouping field in element data. If not specified, defaults to id as grouping field                         | string &#124; ((datum) => string) | `id`    |
-| color    | Palette colors. If palette is registered, you can directly specify its registration name, also accepts a color array | string &#124; string[]            | -       |
-| invert   | Whether to invert the palette                                                                                        | boolean                           | false   |
+ | Property | Description | Type | Default |
+ | -------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------- | ------- |
+ | type | Specifies current palette type. <br> - `group`: Discrete palette <br> - `value`: Continuous palette | `group` &#124; `value` | `group` |
+ | field | Specifies grouping field in element data. If not specified, defaults to id as grouping field | string &#124; ((datum) => string) | `id` |
+ | color | Palette colors. If palette is registered, you can directly specify its registration name, also accepts a color array | string &#124; string[] | - |
+ | invert | Whether to invert the palette | boolean | false |
 
 For example, assign combo colors to a group of data by `category` field, so that combos of the same category have the same color:
 

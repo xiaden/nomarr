@@ -19,9 +19,9 @@ toDataURL(options?: Partial<DataURLOptions>): Promise<string>;
 
 **Parameters**
 
-| Parameter | Description                | Type                      | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | -------------------------- | ------------------------- | ------- | -------- |
-| options   | Export image configuration | Partial\<DataURLOptions\> | -       |          |
+| options | Export image configuration | Partial\<DataURLOptions\> | - | |
 
 **Return Value**
 
@@ -29,11 +29,11 @@ Returns a Promise that resolves to a DataURL string representing the image.
 
 **DataURLOptions Type Definition**
 
-| Parameter      | Type                                        | Required | Description                                                                                              |
+| Parameter | Type | Required | Description |
 | -------------- | ------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------- |
-| mode           | 'viewport' \| 'overall'                     | No       | Export mode <br/> - viewport: Export viewport content <br/> - overall: Export entire canvas              |
-| type           | 'image/png' \| 'image/jpeg' \| 'image/webp' | No       | Image type <br/> - image/png: PNG format <br/> - image/jpeg: JPEG format <br/> - image/webp: WebP format |
-| encoderOptions | number                                      | No       | Image quality, only effective for image/jpeg and image/webp, range 0 ~ 1                                 |
+| mode | 'viewport' \| 'overall' | No | Export mode <br/> - viewport: Export viewport content <br/> - overall: Export entire canvas |
+| type | 'image/png' \| 'image/jpeg' \| 'image/webp' | No | Image type <br/> - image/png: PNG format <br/> - image/jpeg: JPEG format <br/> - image/webp: WebP format |
+| encoderOptions | number | No | Image quality, only effective for image/jpeg and image/webp, range 0 ~ 1 |
 
 ## Download Image
 

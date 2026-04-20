@@ -34,11 +34,11 @@ zoomTo(zoom: number, animation?: ViewportAnimationEffectTiming, origin?: Point):
 
 **Parameters**
 
-| Parameter | Description                                                    | Type                                                            | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | -------------------------------------------------------------- | --------------------------------------------------------------- | ------- | -------- |
-| zoom      | Target zoom scale (1 = original size, >1 zoom in, <1 zoom out) | number                                                          | -       | ✓        |
-| animation | Animation configuration                                        | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | -       |          |
-| origin    | Zoom center point (viewport coordinates)                       | [Point](#point)                                                 | -       |          |
+| zoom | Target zoom scale (1 = original size, >1 zoom in, <1 zoom out) | number | - | ✓ |
+| animation | Animation configuration | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | - | |
+| origin | Zoom center point (viewport coordinates) | [Point](#point) | - | |
 
 **Example**
 
@@ -66,11 +66,11 @@ zoomBy(ratio: number, animation?: ViewportAnimationEffectTiming, origin?: Point)
 
 **Parameters**
 
-| Parameter | Description                              | Type                                                            | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ---------------------------------------- | --------------------------------------------------------------- | ------- | -------- |
-| ratio     | Zoom ratio (>1 zoom in, <1 zoom out)     | number                                                          | -       | ✓        |
-| animation | Animation configuration                  | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | -       |          |
-| origin    | Zoom center point (viewport coordinates) | [Point](#point)                                                 | -       |          |
+| ratio | Zoom ratio (>1 zoom in, <1 zoom out) | number | - | ✓ |
+| animation | Animation configuration | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | - | |
+| origin | Zoom center point (viewport coordinates) | [Point](#point) | - | |
 
 **Example**
 
@@ -94,10 +94,10 @@ translateTo(position: Point, animation?: ViewportAnimationEffectTiming): Promise
 
 **Parameters**
 
-| Parameter | Description                 | Type                                                            | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | --------------------------- | --------------------------------------------------------------- | ------- | -------- |
-| position  | Target position coordinates | [Point](#point)                                                 | -       | ✓        |
-| animation | Animation configuration     | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | -       |          |
+| position | Target position coordinates | [Point](#point) | - | ✓ |
+| animation | Animation configuration | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | - | |
 
 **Example**
 
@@ -122,10 +122,10 @@ translateBy(offset: Point, animation?: ViewportAnimationEffectTiming): Promise<v
 
 **Parameters**
 
-| Parameter | Description             | Type                                                            | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------------------- | --------------------------------------------------------------- | ------- | -------- |
-| offset    | Pan offset              | [Point](#point)                                                 | -       | ✓        |
-| animation | Animation configuration | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | -       |          |
+| offset | Pan offset | [Point](#point) | - | ✓ |
+| animation | Animation configuration | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | - | |
 
 **Example**
 
@@ -149,11 +149,11 @@ rotateTo(angle: number, animation?: ViewportAnimationEffectTiming, origin?: Poin
 
 **Parameters**
 
-| Parameter | Description                                  | Type                                                            | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | -------------------------------------------- | --------------------------------------------------------------- | ------- | -------- |
-| angle     | Target rotation angle (radians)              | number                                                          | -       | ✓        |
-| animation | Animation configuration                      | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | -       |          |
-| origin    | Rotation center point (viewport coordinates) | [Point](#point)                                                 | -       |          |
+| angle | Target rotation angle (radians) | number | - | ✓ |
+| animation | Animation configuration | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | - | |
+| origin | Rotation center point (viewport coordinates) | [Point](#point) | - | |
 
 **Example**
 
@@ -177,11 +177,11 @@ rotateBy(angle: number, animation?: ViewportAnimationEffectTiming, origin?: Poin
 
 **Parameters**
 
-| Parameter | Description                                  | Type                                                            | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | -------------------------------------------- | --------------------------------------------------------------- | ------- | -------- |
-| angle     | Rotation angle increment (radians)           | number                                                          | -       | ✓        |
-| animation | Animation configuration                      | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | -       |          |
-| origin    | Rotation center point (viewport coordinates) | [Point](#point)                                                 | -       |          |
+| angle | Rotation angle increment (radians) | number | - | ✓ |
+| animation | Animation configuration | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | - | |
+| origin | Rotation center point (viewport coordinates) | [Point](#point) | - | |
 
 **Example**
 
@@ -206,17 +206,17 @@ fitView(options?: FitViewOptions, animation?: ViewportAnimationEffectTiming): Pr
 
 **Parameters**
 
-| Parameter | Description             | Type                                                            | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------------------- | --------------------------------------------------------------- | ------- | -------- |
-| options   | Fit options             | FitViewOptions                                                  | -       |          |
-| animation | Animation configuration | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | -       |          |
+| options | Fit options | FitViewOptions | - | |
+| animation | Animation configuration | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | - | |
 
 **FitViewOptions Type Description**
 
-| Property  | Type                   | Default    | Description                                       |
+| Property | Type | Default | Description |
 | --------- | ---------------------- | ---------- | ------------------------------------------------- |
-| when      | 'overflow' \| 'always' | 'overflow' | Fit timing: only when overflow or always          |
-| direction | 'x' \| 'y' \| 'both'   | 'both'     | Fit direction: x-axis, y-axis, or both directions |
+| when | 'overflow' \| 'always' | 'overflow' | Fit timing: only when overflow or always |
+| direction | 'x' \| 'y' \| 'both' | 'both' | Fit direction: x-axis, y-axis, or both directions |
 
 **Example**
 
@@ -252,9 +252,9 @@ fitCenter(animation?: ViewportAnimationEffectTiming): Promise<void>;
 
 **Parameters**
 
-| Parameter | Description             | Type                                                            | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------------------- | --------------------------------------------------------------- | ------- | -------- |
-| animation | Animation configuration | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | -       |          |
+| animation | Animation configuration | [ViewportAnimationEffectTiming](#viewportanimationeffecttiming) | - | |
 
 **Example**
 
@@ -355,9 +355,9 @@ setZoomRange(zoomRange: [number, number]): void;
 
 **Parameters**
 
-| Parameter | Description | Type                          | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------- | ----------------------------- | ------- | -------- |
-| zoomRange | Zoom range  | [number, number] \| undefined | -       | ✓        |
+| zoomRange | Zoom range | [number, number] \| undefined | - | ✓ |
 
 **Example**
 
@@ -402,10 +402,10 @@ resize(width: number, height: number): void;
 
 **Parameters**
 
-| Parameter | Description   | Type   | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ------------- | ------ | ------- | -------- |
-| width     | Target width  | number | -       | ✓        |
-| height    | Target height | number | -       | ✓        |
+| width | Target width | number | - | ✓ |
+| height | Target height | number | - | ✓ |
 
 **Example**
 
@@ -422,8 +422,8 @@ Viewport animation configuration type.
 
 ```typescript
 type ViewportAnimationEffectTiming =
-  | boolean // Whether to enable animation
-  | {
+ | boolean // Whether to enable animation
+ | {
       easing?: string; // Easing function
       duration?: number; // Animation duration (ms)
     };

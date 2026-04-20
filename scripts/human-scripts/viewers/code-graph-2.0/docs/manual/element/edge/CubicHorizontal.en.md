@@ -23,10 +23,10 @@ Use cases:
 
 > If the element has specific attributes, we will list them below. For all general style attributes, see [BaseEdge](/en/manual/element/edge/base-edge)
 
-| Attribute     | Description                                                                                                          | Type                   | Default   | Required |
+| Attribute | Description | Type | Default | Required |
 | ------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------- | --------- | -------- |
-| curvePosition | Relative position of the control point on the line connecting the two endpoints, ranging from `0-1`.                 | number &#124; number[] | [0.5,0.5] |          |
-| curveOffset   | Distance of the control point from the line connecting the two endpoints, understood as the degree of curve bending. | number &#124; number[] | [0,0]     |          |
+| curvePosition | Relative position of the control point on the line connecting the two endpoints, ranging from `0-1`. | number &#124; number[] | [0.5,0.5] | |
+| curveOffset | Distance of the control point from the line connecting the two endpoints, understood as the degree of curve bending. | number &#124; number[] | [0,0] | |
 
 ## Example
 

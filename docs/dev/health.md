@@ -9,6 +9,7 @@
 Nomarr uses a **pipe/FD-based health monitoring system** for worker process lifecycle tracking and crash detection. The `HealthMonitorService` is the single source of truth for component status.
 
 **Key properties:**
+
 - Real-time health via OS pipes (not database polling)
 - In-memory status registry owned by `HealthMonitorService`
 - Domain services receive status change callbacks and own restart/recovery decisions
@@ -20,14 +21,14 @@ Nomarr uses a **pipe/FD-based health monitoring system** for worker process life
 
 ### Ownership Split
 
-| Concern | Owner |
-|---------|-------|
-| Status tracking | `HealthMonitorService` (services/infrastructure) |
-| Status types | `ComponentStatus` (helpers/dto/health_dto.py) |
-| Monitoring policy | `ComponentPolicy` (helpers/dto/health_dto.py) |
-| Lifecycle callbacks | `ComponentLifecycleHandler` protocol (helpers/dto/health_dto.py) |
-| Restart/failure decisions | Domain services (e.g., `WorkerSystemService`) |
-| Pipe creation | `WorkerSystemService` (at worker spawn time) |
+ | Concern | Owner |
+ | --------- | ------- |
+ | Status tracking | `HealthMonitorService` (services/infrastructure) |
+ | Status types | `ComponentStatus` (helpers/dto/health_dto.py) |
+ | Monitoring policy | `ComponentPolicy` (helpers/dto/health_dto.py) |
+ | Lifecycle callbacks | `ComponentLifecycleHandler` protocol (helpers/dto/health_dto.py) |
+ | Restart/failure decisions | Domain services (e.g., `WorkerSystemService`) |
+ | Pipe creation | `WorkerSystemService` (at worker spawn time) |
 
 ### Data Flow
 
@@ -57,14 +58,14 @@ ComponentStatus = Literal["pending", "healthy", "unhealthy", "recovering", "dead
 
 ### Status Definitions
 
-| Status | Meaning |
-|--------|--------|
-| `pending` | Registered but no health frame received yet (startup phase) |
-| `healthy` | Receiving regular health frames, operating normally |
-| `unhealthy` | Missed one or more health frames but below death threshold |
-| `recovering` | Component reported it's recovering (e.g., reloading ONNX models); has a deadline |
-| `dead` | Pipe closed or missed too many frames; eligible for restart |
-| `failed` | Permanently failed; no further monitoring or callbacks |
+ | Status | Meaning |
+ | -------- | -------- |
+ | `pending` | Registered but no health frame received yet (startup phase) |
+ | `healthy` | Receiving regular health frames, operating normally |
+ | `unhealthy` | Missed one or more health frames but below death threshold |
+ | `recovering` | Component reported it's recovering (e.g., reloading ONNX models); has a deadline |
+ | `dead` | Pipe closed or missed too many frames; eligible for restart |
+ | `failed` | Permanently failed; no further monitoring or callbacks |
 
 ### State Machine
 
@@ -105,6 +106,7 @@ class ComponentPolicy:
 Domain services provide a `ComponentPolicy` at registration time to configure monitoring behavior per component. If omitted, defaults apply.
 
 **Worker default policy** (from `WorkerSystemService`):
+
 ```python
 DEFAULT_WORKER_POLICY = ComponentPolicy(
     startup_timeout_s=60.0,     # Workers load ONNX models at startup (slow)
@@ -135,6 +137,7 @@ class ComponentLifecycleHandler(Protocol):
 Domain services implement this protocol to receive callbacks when component status changes. The `HealthMonitorService` owns status tracking; the domain owns restart/backoff/failure decisions.
 
 **`StatusChangeContext`** provides additional information:
+
 ```python
 @dataclass
 class StatusChangeContext:
@@ -144,6 +147,7 @@ class StatusChangeContext:
 ```
 
 **Example handler** (`WorkerSystemService.on_status_change`):
+
 - `dead` → unregister component, apply backoff delay, spawn replacement worker
 - `failed` → log permanent failure, no restart
 - `unhealthy` → log warning, wait for automatic recovery or death
@@ -169,6 +173,7 @@ health_monitor.register_component(
 **Component ID format:** `worker:discovery:{index}` (e.g., `worker:discovery:0`, `worker:discovery:1`)
 
 **Lifecycle:**
+
 1. `WorkerSystemService` creates an OS pipe per worker
 2. Worker subprocess gets the write-end; parent keeps the read-end
 3. Parent calls `health_monitor.register_component()` with read-end
@@ -187,16 +192,18 @@ HEALTH|{"component_id":"worker:discovery:0","status":"healthy","current_job":"li
 ```
 
 **Frame fields:**
-| Field | Type | Description |
-|-------|------|-------------|
-| `component_id` | `str` | Worker identifier |
-| `status` | `str` | `"healthy"` or `"recovering"` |
-| `current_job` | `str \| null` | File document ID if processing, null if idle |
-| `recover_for_s` | `float \| null` | Requested recovery duration (only with `status="recovering"`) |
+
+ | Field | Type | Description |
+ | ------- | ------ | ------------- |
+ | `component_id` | `str` | Worker identifier |
+ | `status` | `str` | `"healthy"` or `"recovering"` |
+ | `current_job` | `str \ | null` | File document ID if processing, null if idle |
+ | `recover_for_s` | `float \ | null` | Requested recovery duration (only with `status="recovering"`) |
 
 **Frame frequency:** Every 3 seconds (`HEALTH_FRAME_INTERVAL_S = 3.0` in `discovery_worker.py`)
 
 **Frame processing:**
+
 - `status="healthy"` → resets consecutive misses, transitions to `healthy`
 - `status="recovering"` → sets recovery deadline, transitions to `recovering`
 - Other status values in frames are ignored
@@ -217,6 +224,7 @@ HealthMonitorService(
 ```
 
 `HealthMonitorConfig`:
+
 ```python
 @dataclass
 class HealthMonitorConfig:
@@ -226,20 +234,21 @@ class HealthMonitorConfig:
 
 ### Key Methods
 
-| Method | Purpose |
-|--------|--------|
-| `register_component(id, handler, pipe, policy)` | Start monitoring a component |
-| `unregister_component(id)` | Stop monitoring, close pipe |
-| `set_failed(id)` | Permanently mark as failed (terminal, idempotent) |
-| `get_status(id)` | Get current status for one component |
-| `get_all_statuses()` | Get all component statuses |
-| `get_component_ids()` | List registered component IDs |
-| `start()` | Start monitoring background thread |
-| `stop()` | Stop monitoring background thread |
+ | Method | Purpose |
+ | -------- | -------- |
+ | `register_component(id, handler, pipe, policy)` | Start monitoring a component |
+ | `unregister_component(id)` | Stop monitoring, close pipe |
+ | `set_failed(id)` | Permanently mark as failed (terminal, idempotent) |
+ | `get_status(id)` | Get current status for one component |
+ | `get_all_statuses()` | Get all component statuses |
+ | `get_component_ids()` | List registered component IDs |
+ | `start()` | Start monitoring background thread |
+ | `stop()` | Stop monitoring background thread |
 
 ### Internal Architecture
 
 A single consolidated monitor thread:
+
 1. Polls all pipes using `multiprocessing.connection.wait()` with timeout
 2. Reads frames from ready pipes
 3. Checks startup timeouts, staleness intervals, and recovery deadlines
@@ -248,6 +257,7 @@ A single consolidated monitor thread:
 A separate history thread periodically writes status snapshots to `db.health` (best-effort, write-only).
 
 **Design constraints:**
+
 - Never calls `Process`/`Thread` lifecycle methods
 - Never holds `Process`/`Thread` references (tracks by component_id string)
 - DB writes are history-only; if DB is unavailable, health monitoring still works
@@ -295,16 +305,19 @@ docker exec -it nomarr-arangodb arangosh \
 ### Common Issues
 
 **Worker stuck in `pending`:**
+
 - Worker is loading ONNX models (can take 30–60s on first run)
 - Check GPU accessibility (`nvidia-smi` in container)
 - If exceeds `startup_timeout_s`, transitions to `dead` automatically
 
 **Worker flapping between `healthy` and `unhealthy`:**
+
 - Health frames arriving inconsistently (GC pauses, I/O contention)
 - Check `staleness_interval_s` relative to `HEALTH_FRAME_INTERVAL_S`
 - Increase `max_consecutive_misses` in policy if needed
 
 **Worker `dead` but process still running:**
+
 - Pipe may be blocked (full buffer)
 - Worker may be deadlocked
 - `WorkerSystemService` will force-kill after timeout and spawn replacement

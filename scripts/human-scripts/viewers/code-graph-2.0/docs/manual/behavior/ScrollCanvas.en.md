@@ -54,16 +54,16 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Option         | Description                                                                         | Type                                                                                                                                                                                          | Default                          | Required |
+| Option | Description | Type | Default | Required |
 | -------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | -------- |
-| type           | Behavior type name                                                                  | string                                                                                                                                                                                        | `scroll-canvas`                  | ✓        |
-| enable         | Whether to enable this behavior                                                     | boolean \| ((event: [WheelEvent](https://developer.mozilla.org/en-US/docs/Web/API/WheelEvent) \| [KeyboardEvent](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent)) => boolean) | true                             |          |
-| direction      | Allowed scrolling direction, [configuration options](#direction)                    | `'x'` \| `'y'` \| `undefined`                                                                                                                                                                 | `undefined` (no direction limit) |          |
-| range          | Scrollable viewport range (in viewport size units), [configuration options](#range) | number \| number[]                                                                                                                                                                            | 1                                |          |
-| sensitivity    | Scrolling sensitivity, the larger the value, the faster the scrolling               | number                                                                                                                                                                                        | 1                                |          |
-| trigger        | Keyboard shortcuts to trigger scrolling, [configuration options](#trigger)          | object                                                                                                                                                                                        | -                                |          |
-| onFinish       | Callback function when scrolling is finished                                        | () => void                                                                                                                                                                                    | -                                |          |
-| preventDefault | Whether to prevent the browser's default event                                      | boolean                                                                                                                                                                                       | true                             |          |
+| type | Behavior type name | string | `scroll-canvas` | ✓ |
+| enable | Whether to enable this behavior | boolean \| ((event: [WheelEvent](https://developer.mozilla.org/en-US/docs/Web/API/WheelEvent) \| [KeyboardEvent](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent)) => boolean) | true | |
+| direction | Allowed scrolling direction, [configuration options](#direction) | `'x'` \| `'y'` \| `undefined` | `undefined` (no direction limit) | |
+| range | Scrollable viewport range (in viewport size units), [configuration options](#range) | number \| number[] | 1 | |
+| sensitivity | Scrolling sensitivity, the larger the value, the faster the scrolling | number | 1 | |
+| trigger | Keyboard shortcuts to trigger scrolling, [configuration options](#trigger) | object | - | |
+| onFinish | Callback function when scrolling is finished | () => void | - | |
+| preventDefault | Whether to prevent the browser's default event | boolean | true | |
 
 ### Direction
 

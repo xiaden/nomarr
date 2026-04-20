@@ -32,12 +32,12 @@ const graph = new Graph({
 
 ## Options
 
-| Property | Description   | Type                                         | Default                                   | Required |
+| Property | Description | Type | Default | Required |
 | -------- | ------------- | -------------------------------------------- | ----------------------------------------- | -------- |
-| type     | Layout type   | random                                       | -                                         | ✓        |
-| center   | Layout center | [number, number] \| [number, number, number] | [`layout width` / 2, `layout height` / 2] |          |
-| height   | Layout height | number                                       | canvas height                             |          |
-| width    | Layout width  | number                                       | canvas width                              |          |
+| type | Layout type | random | - | ✓ |
+| center | Layout center | [number, number] \| [number, number, number] | [`layout width` / 2, `layout height` / 2] | |
+| height | Layout height | number | canvas height | |
+| width | Layout width | number | canvas width | |
 
 ## Example
 

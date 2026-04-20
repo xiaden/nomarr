@@ -3,6 +3,7 @@
 ## Problem Statement
 
 Vector search quality degrades silently as library size grows because:
+
 1. `nLists` uses N/15 formula but creates fewer, coarser clusters than optimal
 2. `nProbe` is hardcoded at 20 everywhere — doesn't scale with nLists, so search thoroughness drops from 100% at 300 tracks to ~1% at 25k tracks
 3. No user-facing controls for search quality/speed tradeoff
@@ -11,6 +12,7 @@ Vector search quality degrades silently as library size grows because:
 Part A covers backend foundation: helper functions that convert user-friendly settings to nLists/nProbe, config schema additions (global + per-library), and fixing the immediate nProbe auto-scaling bug in existing search paths. Does NOT cover per-library collections (Part B) or frontend UI (Part C).
 
 **User-facing concepts:**
+
 - `vector_group_size` (int, default 15, range 5–100): "Each similarity neighborhood contains ~N songs." Backend converts: `nLists = doc_count // group_size`.
 - `vector_search_thoroughness` (int, default 10, range 1–100): "Check N% of neighborhoods when searching." Backend converts: `nProbe = max(1, nLists * thoroughness // 100)`.
 
@@ -55,9 +57,9 @@ Part A covers backend foundation: helper functions that convert user-friendly se
 - [x] Update `VectorMaintenanceService.calculate_optimal_nlists()` to delegate to `compute_nlists` from vector_params_helper
     **Notes:** Replaced inline N/15 formula with delegation to compute_nlists(doc_count). Added import for compute_nlists from vector_params_helper. Lint clean (0 errors).
 - [x] Update `VectorSearchService.search_similar_tracks()` to auto-calculate nprobe using `compute_nprobe` when not explicitly provided, reading `vector_search_thoroughness` from global config
-    **Notes:** Changed nprobe param from int=20 to int|None=None. Added ConfigService injection to __init__. When nprobe is None, auto-calculates from cold_ops.count(), vector_group_size, and vector_search_thoroughness via compute_nlists/compute_nprobe. Updated app.py wiring and two integration test constructors. Lint clean (0 errors).
+    **Notes:** Changed nprobe param from int=20 to int|None=None. Added ConfigService injection to **init**. When nprobe is None, auto-calculates from cold_ops.count(), vector_group_size, and vector_search_thoroughness via compute_nlists/compute_nprobe. Updated app.py wiring and two integration test constructors. Lint clean (0 errors).
 - [x] Update `find_similar_tracks` workflow to resolve effective config (per-library override or global default) and pass computed nprobe to `cold_ops.search_similar()`
-    **Notes:** Added vector_group_size and vector_search_thoroughness params to find_similar_tracks (defaults 15, 10). Workflow now calls cold_ops.count(), computes nlists/nprobe via helpers, and passes nprobe to cold_ops.search_similar(). Updated NavidromeService.get_similar_tracks to read config and pass values. Updated test _make_db to set cold_ops.count.return_value=300. All 3 files lint clean.
+    **Notes:** Added vector_group_size and vector_search_thoroughness params to find_similar_tracks (defaults 15, 10). Workflow now calls cold_ops.count(), computes nlists/nprobe via helpers, and passes nprobe to cold_ops.search_similar(). Updated NavidromeService.get_similar_tracks to read config and pass values. Updated test_make_db to set cold_ops.count.return_value=300. All 3 files lint clean.
 - [x] Verify `cold_ops.search_similar()` signature accepts the nprobe argument correctly (it already has `nprobe=20` default)
     **Notes:** Confirmed: VectorsTrackColdOperations.search_similar(vector, limit, nprobe=20) already accepts nprobe kwarg. Both workflow and service callers pass nprobe=<computed> as keyword argument — fully compatible, no changes needed.
 - [x] Run lint_project_backend on changed service and workflow files

@@ -11,11 +11,11 @@ Audio loading and preprocessing — the entry point of the ML pipeline.
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|----------|
-| `ml_audio_comp` | Audio loading via Essentia MonoLoader (ffmpeg-backed), shutdown handling, duration checks |
-| `ml_preprocess_comp` | Mel spectrogram computation (Essentia Windowing → Spectrum → MelBands), patch extraction with per-backbone parameters |
-| `ml_chromaprint_comp` | Content-based audio fingerprinting (spectral hash) for file move detection |
+ | Module | Purpose |
+ | -------- | ---------- |
+ | `ml_audio_comp` | Audio loading via Essentia MonoLoader (ffmpeg-backed), shutdown handling, duration checks |
+ | `ml_preprocess_comp` | Mel spectrogram computation (Essentia Windowing → Spectrum → MelBands), patch extraction with per-backbone parameters |
+ | `ml_chromaprint_comp` | Content-based audio fingerprinting (spectral hash) for file move detection |
 
 ## Patterns
 

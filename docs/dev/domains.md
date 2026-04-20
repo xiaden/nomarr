@@ -21,7 +21,7 @@ Layers define **dependency direction** and **what kind of code**. See [Architect
 
 ```
 library | tagging | ml | metadata | analytics | navidrome | ...
-   |        |       |       |           |           |
+ | | | | | | 
    v        v       v       v           v           v
 [Data Ownership + Invariants + Public API]
 ```
@@ -35,15 +35,19 @@ Domains define **data ownership** and **invariant enforcement**.
 A domain is a **vertical slice** through the layers that encapsulates:
 
 ### 1. Data Ownership
+
 The domain owns specific ArangoDB collections.
 
 ### 2. Invariants
+
 Rules that MUST stay true about that data.
 
 ### 3. Public API
+
 **Components** that enforce invariants when reading/writing data.
 
 ### 4. Private Implementation
+
 Direct persistence access is **private** to the domain. Other domains CANNOT call `db.library_files` directly — they MUST call library domain components.
 
 **Metaphor:** Domains are like in-process microservices. You call their API (components), you never touch their database directly.
@@ -106,18 +110,21 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 **Components:** `components/library/`
 
 **Owns:**
+
 - `libraries` — Library definitions, root paths
 - `library_files` — File records, paths, audio metadata, tagging state
 - `library_folders` — Folder cache for quick scanning
 - `file_states` — Edge collection for file lifecycle state (e.g., `ml_tagged`)
 
 **Invariants:**
+
 - File paths must be under library root
 - File paths unique within a library
 - Scan progress 0–100%
 - Folder mtimes determine staleness
 
 **Key components:**
+
 - `file_library_comp.py` — Add/update files with path validation
 - `file_batch_scanner_comp.py` — Batch file discovery
 - `scan_lifecycle_comp.py` — Scan state management
@@ -132,13 +139,16 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 **Components:** `components/metadata/`
 
 **Owns:**
+
 - Entity data seeded from file tags (artists, albums, genres)
 
 **Invariants:**
+
 - Entity keys must be normalized (deduplication)
 - Edges must reference valid vertices
 
 **Key components:**
+
 - `entity_seeding_comp.py` — Create entity vertices and edges from tags
 - `entity_cleanup_comp.py` — Remove orphaned entities
 - `metadata_cache_comp.py` — Metadata cache management
@@ -150,14 +160,17 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 **Components:** `components/tagging/`
 
 **Owns:**
+
 - `tags` — Edge collection linking files to tag labels with scores
 - `tag_model_output` — Edge collection linking files to model outputs
 
 **Invariants:**
+
 - Tags must reference valid files and valid model outputs
 - Tag scores are normalized floats
 
 **Key components:**
+
 - `tagging_writer_comp.py` — Write tags to audio files
 - `tagging_reader_comp.py` — Read tags from audio files
 - `tagging_aggregation_comp.py` — Aggregate ML predictions into tags
@@ -173,6 +186,7 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 **Components:** `components/ml/`
 
 **Owns:**
+
 - `ml_models` — Registered model definitions (backbone + heads)
 - `ml_model_outputs` — Raw model output storage
 - `calibration_state` — Current calibration parameters per model
@@ -182,6 +196,7 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 - `vram_promises` — VRAM allocation tracking
 
 **Subpackages:**
+
 - `audio/` — Audio loading (`ml_audio_comp.py` via Essentia MonoLoader), chromaprint, mel preprocessing
 - `calibration/` — Per-label calibration computation and state
 - `inference/` — Backbone embedding, head pipeline, segment stats
@@ -190,6 +205,7 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 - `vectors/` — Vector persistence, retrieval, idle promotion, maintenance
 
 **Invariants:**
+
 - Models must be discoverable ONNX files in the models directory
 - Sessions are managed with VRAM-aware eviction
 - Calibration is per-model and per-label
@@ -201,9 +217,11 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 **Components:** `components/analytics/`
 
 **Owns:**
+
 - No persistent collections (computes on-demand from other domains)
 
 **Key components:**
+
 - `analytics_comp.py` — Tag frequency statistics
 - `collection_overview_comp.py` — Library-wide collection metrics
 - `mood_analysis_comp.py` — Mood-based analysis
@@ -217,14 +235,17 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 **Components:** `components/navidrome/`
 
 **Owns:**
+
 - `navidrome_tracks` — Track mapping between Nomarr and Navidrome
 - `navidrome_playcounts` — Playcount/scrobble data from Navidrome
 
 **Invariants:**
+
 - Track mappings must reference valid library files
 - Playcounts are append-only
 
 **Key components:**
+
 - `subsonic_client_comp.py` — Subsonic API client
 - `subsonic_crawl_comp.py` — Crawl Navidrome library
 - `playlist_builder_comp.py` — Build playlists from tag queries
@@ -240,14 +261,17 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 **Components:** `components/workers/`
 
 **Owns:**
+
 - `worker_claims` — Ephemeral claim documents (work leases)
 - `worker_restart_policy` — Per-worker restart policy tracking
 
 **Invariants:**
+
 - Claims use deterministic `_key` based on file `_key` (one claim per file)
 - Claims are ephemeral (represent active work, not scheduled work)
 
 **Key components:**
+
 - `worker_discovery_comp.py` — Find next file needing processing
 - `worker_crash_comp.py` — Crash recovery and claim cleanup
 
@@ -260,12 +284,14 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 **Components:** `components/platform/`
 
 **Owns:**
+
 - `meta` — Key-value store for system metadata (schema version, worker_enabled flag, etc.)
 - `health` — Health status snapshots (history-only, written by `HealthMonitorService`)
 - `sessions` — API session data
 - `applied_migrations` — Migration tracking
 
 **Key components:**
+
 - `arango_bootstrap_comp.py` — Database schema creation
 - `arango_first_run_comp.py` — First-run provisioning
 - `migration_runner_comp.py` — Migration execution
@@ -282,9 +308,11 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 **Components:** `components/playlist_import/`
 
 **Owns:**
+
 - No persistent collections (processes external playlists into library references)
 
 **Key components:**
+
 - `spotify_fetcher_comp.py` — Fetch playlist data from Spotify
 - `deezer_fetcher_comp.py` — Fetch playlist data from Deezer
 - `track_matcher_comp.py` — Match external tracks to library files
@@ -298,9 +326,11 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 **Components:** `components/processing/`
 
 **Owns:**
+
 - No persistent collections (coordinates file writing)
 
 **Key components:**
+
 - `file_write_comp.py` — Safe file write operations
 
 ---
@@ -310,13 +340,16 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 **Components:** `components/infrastructure/`
 
 **Owns:**
+
 - No persistent collections
 
 **Key components:**
+
 - `health_comp.py` — Health status helpers
 - `path_comp.py` — Path resolution utilities
 
 **Related infrastructure services:**
+
 - `HealthMonitorService` — Reads worker health and pipeline frames from OS pipes
 - `WorkerSystemService` — Owns worker process lifecycle and health callback wiring
 - `LibraryPipelineService` — Coordinates startup recovery, calibration triggers, apply callbacks, and file-write transitions for the per-library automation pipeline
@@ -341,13 +374,13 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 
 ### Quick Examples
 
-| Question | Answer |
-|----------|--------|
-| Where does "normalize tag label" belong? | `components/tagging/tag_normalization_comp.py` — enforces tagging invariants |
-| Where does "discover next file to process" belong? | `components/workers/worker_discovery_comp.py` — queries library_files |
-| Where does "load audio file" belong? | `components/ml/audio/ml_audio_comp.py` — ML domain audio I/O |
-| Where does "bootstrap database" belong? | `components/platform/arango_bootstrap_comp.py` — infrastructure |
-| Where does "match Spotify tracks" belong? | `components/playlist_import/track_matcher_comp.py` — playlist_import domain |
+ | Question | Answer |
+ | ---------- | -------- |
+ | Where does "normalize tag label" belong? | `components/tagging/tag_normalization_comp.py` — enforces tagging invariants |
+ | Where does "discover next file to process" belong? | `components/workers/worker_discovery_comp.py` — queries library_files |
+ | Where does "load audio file" belong? | `components/ml/audio/ml_audio_comp.py` — ML domain audio I/O |
+ | Where does "bootstrap database" belong? | `components/platform/arango_bootstrap_comp.py` — infrastructure |
+ | Where does "match Spotify tracks" belong? | `components/playlist_import/track_matcher_comp.py` — playlist_import domain |
 
 ---
 

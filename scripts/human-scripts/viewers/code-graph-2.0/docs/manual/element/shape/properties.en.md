@@ -20,29 +20,29 @@ Elements (nodes/edges) in G6 are composed of **one or more [shapes](/en/manual/e
 
 ### BaseShapeStyle
 
-| Property       | Description                                                                                      | Type                                     | Required |
+| Property | Description | Type | Required |
 | -------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------- | -------- |
-| x              | x coordinate                                                                                     | number                                   | ✓        |
-| y              | y coordinate                                                                                     | number                                   | ✓        |
-| width          | Width                                                                                            | number                                   | ✓        |
-| height         | Height                                                                                           | number                                   | ✓        |
-| fill           | Fill color                                                                                       | string \| Pattern \| null                |          |
-| stroke         | Stroke color                                                                                     | string \| Pattern \| null                |          |
-| opacity        | Overall opacity                                                                                  | number \| string                         |          |
-| fillOpacity    | Fill opacity                                                                                     | number \| string                         |          |
-| strokeOpacity  | Stroke opacity                                                                                   | number \| string                         |          |
-| lineWidth      | Line width                                                                                       | number \| string                         |          |
-| lineCap        | Line cap style                                                                                   | `butt` \| `round` \| `square`            |          |
-| lineJoin       | Line join style                                                                                  | `miter` \| `round` \| `bevel`            |          |
-| lineDash       | Dash array                                                                                       | number \| string \| (string \| number)[] |          |
-| lineDashOffset | Dash offset                                                                                      | number                                   |          |
-| shadowBlur     | Shadow blur                                                                                      | number                                   |          |
-| shadowColor    | Shadow color                                                                                     | string                                   |          |
-| shadowOffsetX  | Shadow X offset                                                                                  | number                                   |          |
-| shadowOffsetY  | Shadow Y offset                                                                                  | number                                   |          |
-| cursor         | Mouse cursor, supports all [CSS cursor](https://developer.mozilla.org/en-US/docs/Web/CSS/cursor) | string                                   |          |
-| zIndex         | Render z-index                                                                                   | number                                   |          |
-| visibility     | Visibility                                                                                       | `visible` \| `hidden`                    |          |
+| x | x coordinate | number | ✓ |
+| y | y coordinate | number | ✓ |
+| width | Width | number | ✓ |
+| height | Height | number | ✓ |
+| fill | Fill color | string \| Pattern \| null | |
+| stroke | Stroke color | string \| Pattern \| null | |
+| opacity | Overall opacity | number \| string | |
+| fillOpacity | Fill opacity | number \| string | |
+| strokeOpacity | Stroke opacity | number \| string | |
+| lineWidth | Line width | number \| string | |
+| lineCap | Line cap style | `butt` \| `round` \| `square` | |
+| lineJoin | Line join style | `miter` \| `round` \| `bevel` | |
+| lineDash | Dash array | number \| string \| (string \| number)[] | |
+| lineDashOffset | Dash offset | number | |
+| shadowBlur | Shadow blur | number | |
+| shadowColor | Shadow color | string | |
+| shadowOffsetX | Shadow X offset | number | |
+| shadowOffsetY | Shadow Y offset | number | |
+| cursor | Mouse cursor, supports all [CSS cursor](https://developer.mozilla.org/en-US/docs/Web/CSS/cursor) | string | |
+| zIndex | Render z-index | number | |
+| visibility | Visibility | `visible` \| `hidden` | |
 
 **Example:**
 
@@ -94,14 +94,14 @@ shape.attr({
 
 ### CircleStyleProps
 
-| Property          | Description                               | Type             | Required |
+| Property | Description | Type | Required |
 | ----------------- | ----------------------------------------- | ---------------- | -------- |
-| cx                | Center x coordinate                       | number \| string | ✓        |
-| cy                | Center y coordinate                       | number \| string | ✓        |
-| cz                | Center z coordinate                       | number \| string |          |
-| r                 | Radius                                    | number \| string | ✓        |
-| isBillboard       | Billboard mode (always faces camera)      | boolean          |          |
-| isSizeAttenuation | Size attenuation (size changes with view) | boolean          |          |
+| cx | Center x coordinate | number \| string | ✓ |
+| cy | Center y coordinate | number \| string | ✓ |
+| cz | Center z coordinate | number \| string | |
+| r | Radius | number \| string | ✓ |
+| isBillboard | Billboard mode (always faces camera) | boolean | |
+| isSizeAttenuation | Size attenuation (size changes with view) | boolean | |
 
 **Example:**
 
@@ -123,16 +123,16 @@ BaseShape.upsert(
 
 ### RectStyleProps
 
-| Property          | Description       | Type                         | Required |
+| Property | Description | Type | Required |
 | ----------------- | ----------------- | ---------------------------- | -------- |
-| x                 | Rect x coordinate | number \| string             |          |
-| y                 | Rect y coordinate | number \| string             |          |
-| z                 | Rect z coordinate | number                       |          |
-| width             | Rect width        | number \| string             | ✓        |
-| height            | Rect height       | number \| string             | ✓        |
-| isBillboard       | Billboard mode    | boolean                      |          |
-| isSizeAttenuation | Size attenuation  | boolean                      |          |
-| radius            | Border radius     | number \| string \| number[] |          |
+| x | Rect x coordinate | number \| string | |
+| y | Rect y coordinate | number \| string | |
+| z | Rect z coordinate | number | |
+| width | Rect width | number \| string | ✓ |
+| height | Rect height | number \| string | ✓ |
+| isBillboard | Billboard mode | boolean | |
+| isSizeAttenuation | Size attenuation | boolean | |
+| radius | Border radius | number \| string \| number[] | |
 
 **Example:**
 
@@ -156,15 +156,15 @@ BaseShape.upsert(
 
 ### EllipseStyleProps
 
-| Property          | Description         | Type             | Required |
+| Property | Description | Type | Required |
 | ----------------- | ------------------- | ---------------- | -------- |
-| cx                | Center x coordinate | number \| string | ✓        |
-| cy                | Center y coordinate | number \| string | ✓        |
-| cz                | Center z coordinate | number \| string |          |
-| rx                | X-axis radius       | number \| string | ✓        |
-| ry                | Y-axis radius       | number \| string | ✓        |
-| isBillboard       | Billboard mode      | boolean          |          |
-| isSizeAttenuation | Size attenuation    | boolean          |          |
+| cx | Center x coordinate | number \| string | ✓ |
+| cy | Center y coordinate | number \| string | ✓ |
+| cz | Center z coordinate | number \| string | |
+| rx | X-axis radius | number \| string | ✓ |
+| ry | Y-axis radius | number \| string | ✓ |
+| isBillboard | Billboard mode | boolean | |
+| isSizeAttenuation | Size attenuation | boolean | |
 
 **Example:**
 
@@ -187,13 +187,13 @@ BaseShape.upsert(
 
 ### HTMLStyleProps
 
-| Property  | Description       | Type                  | Required |
+| Property | Description | Type | Required |
 | --------- | ----------------- | --------------------- | -------- |
-| x         | HTML x coordinate | number \| string      |          |
-| y         | HTML y coordinate | number \| string      |          |
-| innerHTML | HTML content      | string \| HTMLElement | ✓        |
-| width     | HTML width        | number \| string      |          |
-| height    | HTML height       | number \| string      |          |
+| x | HTML x coordinate | number \| string | |
+| y | HTML y coordinate | number \| string | |
+| innerHTML | HTML content | string \| HTMLElement | ✓ |
+| width | HTML width | number \| string | |
+| height | HTML height | number \| string | |
 
 **Example:**
 
@@ -214,18 +214,18 @@ BaseShape.upsert(
 
 ### ImageStyleProps
 
-| Property          | Description                      | Type                       | Required |
+| Property | Description | Type | Required |
 | ----------------- | -------------------------------- | -------------------------- | -------- |
-| x                 | Image x coordinate               | number \| string           |          |
-| y                 | Image y coordinate               | number \| string           |          |
-| z                 | Image z coordinate               | number                     |          |
-| src               | Image source or HTMLImageElement | string \| HTMLImageElement | ✓        |
-| width             | Image width                      | number \| string           |          |
-| height            | Image height                     | number \| string           |          |
-| isBillboard       | Billboard mode                   | boolean                    |          |
-| isSizeAttenuation | Size attenuation                 | boolean                    |          |
-| billboardRotation | Billboard rotation angle         | number                     |          |
-| keepAspectRatio   | Keep original aspect ratio       | boolean                    |          |
+| x | Image x coordinate | number \| string | |
+| y | Image y coordinate | number \| string | |
+| z | Image z coordinate | number | |
+| src | Image source or HTMLImageElement | string \| HTMLImageElement | ✓ |
+| width | Image width | number \| string | |
+| height | Image height | number \| string | |
+| isBillboard | Billboard mode | boolean | |
+| isSizeAttenuation | Size attenuation | boolean | |
+| billboardRotation | Billboard rotation angle | number | |
+| keepAspectRatio | Keep original aspect ratio | boolean | |
 
 **Example:**
 
@@ -246,20 +246,20 @@ BaseShape.upsert(
 
 ### LineStyleProps
 
-| Property          | Description         | Type                  | Required |
+| Property | Description | Type | Required |
 | ----------------- | ------------------- | --------------------- | -------- |
-| x1                | Start x coordinate  | number                | ✓        |
-| y1                | Start y coordinate  | number                | ✓        |
-| x2                | End x coordinate    | number                | ✓        |
-| y2                | End y coordinate    | number                | ✓        |
-| z1                | Start z coordinate  | number                |          |
-| z2                | End z coordinate    | number                |          |
-| isBillboard       | Billboard mode      | boolean               |          |
-| isSizeAttenuation | Size attenuation    | boolean               |          |
-| markerStart       | Marker at start     | DisplayObject \| null |          |
-| markerEnd         | Marker at end       | DisplayObject \| null |          |
-| markerStartOffset | Start marker offset | number                |          |
-| markerEndOffset   | End marker offset   | number                |          |
+| x1 | Start x coordinate | number | ✓ |
+| y1 | Start y coordinate | number | ✓ |
+| x2 | End x coordinate | number | ✓ |
+| y2 | End y coordinate | number | ✓ |
+| z1 | Start z coordinate | number | |
+| z2 | End z coordinate | number | |
+| isBillboard | Billboard mode | boolean | |
+| isSizeAttenuation | Size attenuation | boolean | |
+| markerStart | Marker at start | DisplayObject \| null | |
+| markerEnd | Marker at end | DisplayObject \| null | |
+| markerStartOffset | Start marker offset | number | |
+| markerEndOffset | End marker offset | number | |
 
 **Example:**
 
@@ -282,17 +282,17 @@ BaseShape.upsert(
 
 ### PathStyleProps
 
-| Property          | Description          | Type                   | Required |
+| Property | Description | Type | Required |
 | ----------------- | -------------------- | ---------------------- | -------- |
-| d                 | Path string or array | string \| PathArray    | ✓        |
-| markerStart       | Marker at start      | DisplayObject \| null  |          |
-| markerEnd         | Marker at end        | DisplayObject \| null  |          |
-| markerMid         | Marker at middle     | DisplayObject \| null  |          |
-| markerStartOffset | Start marker offset  | number                 |          |
-| markerEndOffset   | End marker offset    | number                 |          |
-| isBillboard       | Billboard mode       | boolean                |          |
-| isSizeAttenuation | Size attenuation     | boolean                |          |
-| fillRule          | Fill rule            | `nonzero` \| `evenodd` |          |
+| d | Path string or array | string \| PathArray | ✓ |
+| markerStart | Marker at start | DisplayObject \| null | |
+| markerEnd | Marker at end | DisplayObject \| null | |
+| markerMid | Marker at middle | DisplayObject \| null | |
+| markerStartOffset | Start marker offset | number | |
+| markerEndOffset | End marker offset | number | |
+| isBillboard | Billboard mode | boolean | |
+| isSizeAttenuation | Size attenuation | boolean | |
+| fillRule | Fill rule | `nonzero` \| `evenodd` | |
 
 **Example:**
 
@@ -312,17 +312,17 @@ BaseShape.upsert(
 
 ### PolygonStyleProps
 
-| Property          | Description             | Type                                             | Required |
+| Property | Description | Type | Required |
 | ----------------- | ----------------------- | ------------------------------------------------ | -------- |
-| points            | Array of polygon points | ([number, number] \| [number, number, number])[] | ✓        |
-| markerStart       | Marker at start         | DisplayObject \| null                            |          |
-| markerEnd         | Marker at end           | DisplayObject \| null                            |          |
-| markerMid         | Marker at middle        | DisplayObject \| null                            |          |
-| markerStartOffset | Start marker offset     | number                                           |          |
-| markerEndOffset   | End marker offset       | number                                           |          |
-| isClosed          | Is polygon closed       | boolean                                          |          |
-| isBillboard       | Billboard mode          | boolean                                          |          |
-| isSizeAttenuation | Size attenuation        | boolean                                          |          |
+| points | Array of polygon points | ([number, number] \| [number, number, number])[] | ✓ |
+| markerStart | Marker at start | DisplayObject \| null | |
+| markerEnd | Marker at end | DisplayObject \| null | |
+| markerMid | Marker at middle | DisplayObject \| null | |
+| markerStartOffset | Start marker offset | number | |
+| markerEndOffset | End marker offset | number | |
+| isClosed | Is polygon closed | boolean | |
+| isBillboard | Billboard mode | boolean | |
+| isSizeAttenuation | Size attenuation | boolean | |
 
 **Example:**
 
@@ -347,16 +347,16 @@ BaseShape.upsert(
 
 ### PolylineStyleProps
 
-| Property          | Description              | Type                                             | Required |
+| Property | Description | Type | Required |
 | ----------------- | ------------------------ | ------------------------------------------------ | -------- |
-| points            | Array of polyline points | ([number, number] \| [number, number, number])[] | ✓        |
-| markerStart       | Marker at start          | DisplayObject \| null                            |          |
-| markerEnd         | Marker at end            | DisplayObject \| null                            |          |
-| markerMid         | Marker at middle         | DisplayObject \| null                            |          |
-| markerStartOffset | Start marker offset      | number                                           |          |
-| markerEndOffset   | End marker offset        | number                                           |          |
-| isBillboard       | Billboard mode           | boolean                                          |          |
-| isSizeAttenuation | Size attenuation         | boolean                                          |          |
+| points | Array of polyline points | ([number, number] \| [number, number, number])[] | ✓ |
+| markerStart | Marker at start | DisplayObject \| null | |
+| markerEnd | Marker at end | DisplayObject \| null | |
+| markerMid | Marker at middle | DisplayObject \| null | |
+| markerStartOffset | Start marker offset | number | |
+| markerEndOffset | End marker offset | number | |
+| isBillboard | Billboard mode | boolean | |
+| isSizeAttenuation | Size attenuation | boolean | |
 
 **Example:**
 
@@ -381,36 +381,36 @@ BaseShape.upsert(
 
 ### TextStyleProps
 
-| Property            | Description              | Type                                                                        | Required |
+| Property | Description | Type | Required |
 | ------------------- | ------------------------ | --------------------------------------------------------------------------- | -------- |
-| x                   | Text x coordinate        | number \| string                                                            |          |
-| y                   | Text y coordinate        | number \| string                                                            |          |
-| z                   | Text z coordinate        | number \| string                                                            |          |
-| text                | Text content             | number \| string                                                            | ✓        |
-| fontSize            | Font size                | number \| string                                                            |          |
-| fontFamily          | Font family              | string                                                                      |          |
-| fontStyle           | Font style               | `normal` \| `italic` \| `oblique`                                           |          |
-| fontWeight          | Font weight              | `normal` \| `bold` \| `bolder` \| `lighter` \| number                       |          |
-| fontVariant         | Font variant             | `normal` \| `small-caps` \| string                                          |          |
-| textAlign           | Text horizontal align    | `start` \| `center` \| `middle` \| `end` \| `left` \| `right`               |          |
-| textBaseline        | Text baseline            | `top` \| `hanging` \| `middle` \| `alphabetic` \| `ideographic` \| `bottom' |          |
-| textOverflow        | Text overflow            | `clip` \| `ellipsis` \| string                                              |          |
-| lineHeight          | Line height              | number \| string                                                            |          |
-| letterSpacing       | Letter spacing           | number \| string                                                            |          |
-| maxLines            | Max lines                | number                                                                      |          |
-| textPath            | Text path                | Path                                                                        |          |
-| textPathSide        | Text path side           | `left` \| `right`                                                           |          |
-| textPathStartOffset | Text path start offset   | number \| string                                                            |          |
-| textDecorationLine  | Text decoration line     | string                                                                      |          |
-| textDecorationColor | Text decoration color    | string                                                                      |          |
-| textDecorationStyle | Text decoration style    | `solid` \| `double` \| `dotted` \| `dashed` \| `wavy`                       |          |
-| isBillboard         | Billboard mode           | boolean                                                                     |          |
-| billboardRotation   | Billboard rotation angle | number                                                                      |          |
-| isSizeAttenuation   | Size attenuation         | boolean                                                                     |          |
-| wordWrap            | Word wrap                | boolean                                                                     |          |
-| wordWrapWidth       | Word wrap width          | number                                                                      |          |
-| dx                  | X offset                 | number \| string                                                            |          |
-| dy                  | Y offset                 | number \| string                                                            |          |
+| x | Text x coordinate | number \| string | |
+| y | Text y coordinate | number \| string | |
+| z | Text z coordinate | number \| string | |
+| text | Text content | number \| string | ✓ |
+| fontSize | Font size | number \| string | |
+| fontFamily | Font family | string | |
+| fontStyle | Font style | `normal` \| `italic` \| `oblique` | |
+| fontWeight | Font weight | `normal` \| `bold` \| `bolder` \| `lighter` \| number | |
+| fontVariant | Font variant | `normal` \| `small-caps` \| string | |
+| textAlign | Text horizontal align | `start` \| `center` \| `middle` \| `end` \| `left` \| `right` | |
+| textBaseline | Text baseline | `top` \| `hanging` \| `middle` \| `alphabetic` \| `ideographic` \| `bottom' | |
+| textOverflow | Text overflow | `clip` \| `ellipsis` \| string | |
+| lineHeight | Line height | number \| string | |
+| letterSpacing | Letter spacing | number \| string | |
+| maxLines | Max lines | number | |
+| textPath | Text path | Path | |
+| textPathSide | Text path side | `left` \| `right` | |
+| textPathStartOffset | Text path start offset | number \| string | |
+| textDecorationLine | Text decoration line | string | |
+| textDecorationColor | Text decoration color | string | |
+| textDecorationStyle | Text decoration style | `solid` \| `double` \| `dotted` \| `dashed` \| `wavy` | |
+| isBillboard | Billboard mode | boolean | |
+| billboardRotation | Billboard rotation angle | number | |
+| isSizeAttenuation | Size attenuation | boolean | |
+| wordWrap | Word wrap | boolean | |
+| wordWrapWidth | Word wrap width | number | |
+| dx | X offset | number \| string | |
+| dy | Y offset | number \| string | |
 
 **Example:**
 

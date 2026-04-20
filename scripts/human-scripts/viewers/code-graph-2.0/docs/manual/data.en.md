@@ -38,15 +38,15 @@ interface GraphData {
 
 A node is the basic building block of a graph and represents an entity within the graph. Each node has a unique `id` used to identify it, and nodes can also have data, styles, and states.
 
-| Attribute                                 | Type               | Description                                                                                                        |
+| Attribute | Type | Description |
 | ----------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| <Badge type="success">Required</Badge> id | _string_           | Unique identifier for the node, used to distinguish different nodes                                                |
-| type                                      | _string_           | Node type. It can be the type of built-in Node, or the custom Node                                                 |
-| data                                      | _Object_           | Custom data for the node, such as name, description, etc. Can be accessed in style mappings via callback functions |
-| style                                     | _Object_           | Node style, including position, size, color, and other visual properties                                           |
-| states                                    | _string[]_         | Initial states for the node, such as selected, active, hover, etc.                                                 |
-| combo                                     | _string_ \| _null_ | ID of the combo the node belongs to. Used to organize hierarchical relationships. If none, it is null              |
-| children                                  | _string[]_         | Collection of child node IDs, used only in tree diagrams                                                           |
+| <Badge type="success">Required</Badge> id | _string_ | Unique identifier for the node, used to distinguish different nodes |
+| type | _string_ | Node type. It can be the type of built-in Node, or the custom Node |
+| data | _Object_ | Custom data for the node, such as name, description, etc. Can be accessed in style mappings via callback functions |
+| style | _Object_ | Node style, including position, size, color, and other visual properties |
+| states | _string[]_ | Initial states for the node, such as selected, active, hover, etc. |
+| combo | _string_ \| _null_ | ID of the combo the node belongs to. Used to organize hierarchical relationships. If none, it is null |
+| children | _string[]_ | Collection of child node IDs, used only in tree diagrams |
 
 **Example:**
 
@@ -65,15 +65,15 @@ A node is the basic building block of a graph and represents an entity within th
 
 An edge connects nodes and represents the relationship between them. Each edge is associated with two nodes (source and target), and edges themselves can have data, styles, and states. Edge data is often used to represent logical relationships, such as user connections in social networks or step flows in flowcharts.
 
-| Attribute                                     | Type       | Description                                                                                                             |
+| Attribute | Type | Description |
 | --------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------- |
-| <Badge type="success">Required</Badge> source | _string_   | Source node ID                                                                                                          |
-| <Badge type="success">Required</Badge> target | _string_   | Target node ID                                                                                                          |
-| id                                            | _string_   | Unique identifier for the edge. If not specified, `id` is automatically generated with the format `${source}-${target}` |
-| type                                          | _string_   | Edge type.It can be the type of built-in Edge, or the custom Edge                                                       |
-| data                                          | _Object_   | Custom data for the edge, accessible in style mappings via callback functions                                           |
-| style                                         | _Object_   | Edge style, including stroke color, line width, arrowhead, etc.                                                         |
-| states                                        | _string[]_ | Initial states for the edge                                                                                             |
+| <Badge type="success">Required</Badge> source | _string_ | Source node ID |
+| <Badge type="success">Required</Badge> target | _string_ | Target node ID |
+| id | _string_ | Unique identifier for the edge. If not specified, `id` is automatically generated with the format `${source}-${target}` |
+| type | _string_ | Edge type.It can be the type of built-in Edge, or the custom Edge |
+| data | _Object_ | Custom data for the edge, accessible in style mappings via callback functions |
+| style | _Object_ | Edge style, including stroke color, line width, arrowhead, etc. |
+| states | _string[]_ | Initial states for the edge |
 
 **Example:**
 
@@ -92,14 +92,14 @@ An edge connects nodes and represents the relationship between them. Each edge i
 
 Combos allow you to create a logical unit for multiple nodes, used for layering, grouping, or other structural purposes. A combo can contain child nodes or other combos, forming a nested structure.
 
-| Attribute                                 | Type               | Description                                                                    |
+| Attribute | Type | Description |
 | ----------------------------------------- | ------------------ | ------------------------------------------------------------------------------ |
-| <Badge type="success">Required</Badge> id | _string_           | Unique identifier for the combo                                                |
-| type                                      | _string_           | Combo type.It can be the type of built-in Combo, or the custom Combo           |
-| data                                      | _Object_           | Custom data for the combo, accessible in style mappings via callback functions |
-| style                                     | _Object_           | Combo style                                                                    |
-| states                                    | _string[]_         | Initial states for the combo                                                   |
-| combo                                     | _string_ \| _null_ | Parent combo ID. If there is no parent combo, it is null                       |
+| <Badge type="success">Required</Badge> id | _string_ | Unique identifier for the combo |
+| type | _string_ | Combo type.It can be the type of built-in Combo, or the custom Combo |
+| data | _Object_ | Custom data for the combo, accessible in style mappings via callback functions |
+| style | _Object_ | Combo style |
+| states | _string[]_ | Initial states for the combo |
+| combo | _string_ \| _null_ | Parent combo ID. If there is no parent combo, it is null |
 
 **Example:**
 

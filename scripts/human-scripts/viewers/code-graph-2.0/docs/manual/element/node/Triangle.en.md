@@ -23,9 +23,9 @@ Applicable scenarios:
 
 > If the element has specific attributes, we will list them below. For all general style attributes, see [BaseNode](/en/manual/element/node/base-node)
 
-| Attribute | Description               | Type                                | Default | Required |
+| Attribute | Description | Type | Default | Required |
 | --------- | ------------------------- | ----------------------------------- | ------- | -------- |
-| direction | Direction of the triangle | `up` \| `left` \| `right` \| `down` | `up`    |
+| direction | Direction of the triangle | `up` \| `left` \| `right` \| `down` | `up` |
 
 ## Example
 

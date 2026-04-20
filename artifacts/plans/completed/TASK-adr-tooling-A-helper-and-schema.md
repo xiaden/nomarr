@@ -16,26 +16,31 @@ This plan covers helper-layer and schema changes only. Tool changes (`adr_sugges
 ## Phases
 
 ### Phase 1: ADR Dataclass Update
+
 - [x] Add `supersedes: list[str] = field(default_factory=list)` field to the `ADR` dataclass in `code-intel/src/mcp_code_intel/helpers/adr_md.py`, positioned after `source_log` and before `sections`
     **Note:** Added `supersedes: list[str] = field(default_factory=list)` after `source_log` and before `sections` in the ADR dataclass.
 
 ### Phase 2: Parser Updates
+
 - [x] In `parse_adr()`, add handling for `**Supersedes:**` metadata key — parse comma-separated values into a `list[str]`, stripping whitespace from each entry. Pass the result as `supersedes` to the `ADR` constructor
     **Note:** Added `elif key == "Supersedes"` branch in parse_adr() metadata handling. Comma-separated values parsed into list[str]. Passed as `supersedes=supersedes` to ADR constructor.
 - [x] In `parse_adr_metadata()`, add the same `**Supersedes:**` extraction logic and include `supersedes` in the returned dict (default to empty list when absent)
     **Note:** Added `elif key == "Supersedes"` branch in parse_adr_metadata(). Added `supersedes` key to returned dict with default empty list.
 
 ### Phase 3: Generator Updates
-- [x] In `generate_adr()`, when `adr.supersedes` is non-empty, emit `**Supersedes:** {comma-separated values}  ` line after the Source Log line (or after Tags if no Source Log)
+
+- [x] In `generate_adr()`, when `adr.supersedes` is non-empty, emit `**Supersedes:** {comma-separated values}` line after the Source Log line (or after Tags if no Source Log)
     **Note:** Added `if adr.supersedes:` block after Source Log in generate_adr() metadata section. Emits comma-separated values with trailing two-space line break.
 - [x] In `generate_adr()`, when `adr.number == 0`, emit `# ADR-DRAFT: {title}` instead of `# ADR-000: {title}`
     **Note:** Changed title generation: `adr.number == 0` now emits `# ADR-DRAFT: {title}` instead of `# ADR-000: {title}`.
 
 ### Phase 4: Unescape Helper Function
+
 - [x] Add `_unescape_literal_newlines(text: str) -> str` function to `adr_md.py` that replaces literal two-character `\n` with actual newline (`\x0a`) and literal `\t` with actual tab (`\x09`)
     **Note:** Added `_unescape_literal_newlines(text: str) -> str` in the helpers section. Also added `DRAFT_TITLE_PATTERN` and updated both parsers to handle `ADR-DRAFT:` titles for round-trip compatibility.
 
 ### Phase 5: ADR Markdown Schema
+
 - [x] Create `code-intel/schemas/ADR_MARKDOWN_SCHEMA.json` defining the ADR markdown format per DD §4. Use `PLAN_MARKDOWN_SCHEMA.json` as a style reference. Include: title pattern (`ADR-NNN` and `ADR-DRAFT`), required metadata (status enum, date, tags), optional metadata (source_log, supersedes), required sections (Context, Decision, Consequences), optional sections (References, custom headings), and advisory word count minimum (100 words across body sections)
     **Note:** Created ADR_MARKDOWN_SCHEMA.json (draft-07) with title pattern supporting ADR-NNN and ADR-DRAFT, required metadata (status enum, date, tags), optional metadata (source_log, supersedes), required sections (Context, Decision, Consequences), optional sections (References, custom headings), and advisory word count minimum definition (100 words).
 

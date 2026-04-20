@@ -11,11 +11,11 @@ Versioned routes for external integrations — Navidrome plugin, admin automatio
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|--------|
-| `admin_if.py` | Worker pause/resume, calibration trigger (3 endpoints) |
-| `navidrome_v1_if.py` | Similar tracks via ANN search, scrobble ingestion, playlist generation (3 endpoints) |
-| `public_if.py` | Unauthenticated system info endpoint (1 endpoint) |
+ | Module | Purpose |
+ | -------- | -------- |
+ | `admin_if.py` | Worker pause/resume, calibration trigger (3 endpoints) |
+ | `navidrome_v1_if.py` | Similar tracks via ANN search, scrobble ingestion, playlist generation (3 endpoints) |
+ | `public_if.py` | Unauthenticated system info endpoint (1 endpoint) |
 
 ## Patterns
 

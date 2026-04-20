@@ -35,6 +35,7 @@ def delete_library(library_id):
 ```
 
 Problems:
+
 1. **Fragile** — Adding new relationships requires updating delete code
 2. **Incomplete** — Easy to miss relationships, leaving orphans
 3. **Not self-documenting** — Relationships scattered across code
@@ -44,12 +45,12 @@ Problems:
 
 ## Design Goals
 
-| Goal | Rationale |
-|------|----------|
-| Graph-based cascades | Traverse edges to find related documents |
-| Declarative relationships | Define once in graph, delete logic follows |
-| Orphan prevention | Systematic traversal catches all descendants |
-| Auditable | Clear delete order, can log what's being removed |
+ | Goal | Rationale |
+ | ------ | ---------- |
+ | Graph-based cascades | Traverse edges to find related documents |
+ | Declarative relationships | Define once in graph, delete logic follows |
+ | Orphan prevention | Systematic traversal catches all descendants |
+ | Auditable | Clear delete order, can log what's being removed |
 
 ---
 
@@ -159,15 +160,15 @@ ml_models/{id}
 
 Some cascades delete edges only, not the target documents:
 
-| Edge Collection | Delete Target Document? | Reason |
-|-----------------|------------------------|--------|
-| `library_contains_file` | Yes | Files belong to one library |
-| `library_contains_folder` | Yes | Folders belong to one library |
-| `library_has_scan` | Yes | Scans are 1:1 with library |
-| `file_has_state` | **No** | States are shared vertices |
-| `song_has_tags` | **No** | Tags may be shared across files |
-| `file_has_vectors` | Yes | Vectors are per-file |
-| `tag_model_output` | **No** | ML outputs may be shared |
+ | Edge Collection | Delete Target Document? | Reason |
+ | ----------------- | ------------------------ | -------- |
+ | `library_contains_file` | Yes | Files belong to one library |
+ | `library_contains_folder` | Yes | Folders belong to one library |
+ | `library_has_scan` | Yes | Scans are 1:1 with library |
+ | `file_has_state` | **No** | States are shared vertices |
+ | `song_has_tags` | **No** | Tags may be shared across files |
+ | `file_has_vectors` | Yes | Vectors are per-file |
+ | `tag_model_output` | **No** | ML outputs may be shared |
 
 ### Orphan Cleanup
 

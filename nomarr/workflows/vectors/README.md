@@ -8,9 +8,9 @@ Workflow for retrieving track vectors from cold (promoted) collections.
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|---------|
-| `get_track_vector_wf.py` | Resolve file → library → cold collection → vector document; returns `None` if not found |
+ | Module | Purpose |
+ | -------- | --------- |
+ | `get_track_vector_wf.py` | Resolve file → library → cold collection → vector document; returns `None` if not found |
 
 ## Patterns
 

@@ -192,12 +192,14 @@ def get_library(
 ## 7. Boundaries & Import Rules
 
 **Allowed:**
+
 - ✅ Services (`nomarr.services.*`)
 - ✅ Helpers (`nomarr.helpers.*`) — DTOs, exceptions
 - ✅ FastAPI, Pydantic (this is the only layer that uses them)
 - ✅ Standard library
 
 **Forbidden:**
+
 - ❌ Workflows (`nomarr.workflows.*`)
 - ❌ Components (`nomarr.components.*`)
 - ❌ Persistence (`nomarr.persistence.*`)
@@ -207,11 +209,11 @@ def get_library(
 
 ## 8. Anti-Patterns
 
-| Anti-Pattern | Why It's Wrong | Fix |
-|---|---|---|
-| Direct DB access (`db.tracks.*`) | Interfaces never touch persistence | Call a service method |
-| Calling workflows directly | Skips service wiring/DI | Route through service |
-| Business logic in route | Domain rules belong lower | Move to service or workflow |
-| Multiple service calls per route | Composition belongs in service | Extract combined service method |
-| Pydantic models in services | Leaks interface concern | Use DTOs from `helpers/dto/` |
-| Returning raw dicts | Untyped, undocumented response | Return Pydantic response model |
+ | Anti-Pattern | Why It's Wrong | Fix |
+ | --- | --- | --- |
+ | Direct DB access (`db.tracks.*`) | Interfaces never touch persistence | Call a service method |
+ | Calling workflows directly | Skips service wiring/DI | Route through service |
+ | Business logic in route | Domain rules belong lower | Move to service or workflow |
+ | Multiple service calls per route | Composition belongs in service | Extract combined service method |
+ | Pydantic models in services | Leaks interface concern | Use DTOs from `helpers/dto/` |
+ | Returning raw dicts | Untyped, undocumented response | Return Pydantic response model |

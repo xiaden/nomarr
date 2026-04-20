@@ -105,10 +105,12 @@ V{NNN}_{description}.py
 ```
 
 Where:
+
 - `NNN` is a zero-padded 3-digit **target** schema version
 - `description` is snake_case describing what the migration does
 
 Examples:
+
 - `V020_add_playlist_collection.py`
 - `V021_normalize_tag_values.py`
 - `V022_drop_legacy_collection.py`
@@ -151,12 +153,12 @@ def upgrade(db: DatabaseLike) -> None:
 
 ### Metadata Fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `SCHEMA_VERSION_BEFORE` | `int` | Schema version this migration expects to find |
-| `SCHEMA_VERSION_AFTER` | `int` | Schema version after this migration completes |
-| `DESCRIPTION` | `str` | Human-readable description for logs |
-| `upgrade(db)` | function | The migration logic |
+ | Field | Type | Description |
+ | ------- | ------ | ------------- |
+ | `SCHEMA_VERSION_BEFORE` | `int` | Schema version this migration expects to find |
+ | `SCHEMA_VERSION_AFTER` | `int` | Schema version after this migration completes |
+ | `DESCRIPTION` | `str` | Human-readable description for logs |
+ | `upgrade(db)` | function | The migration logic |
 
 The runner validates the version chain: each migration's `SCHEMA_VERSION_BEFORE` must
 match the previous migration's `SCHEMA_VERSION_AFTER` (or the current DB version for
@@ -178,12 +180,14 @@ All operations should be idempotent — guard creation with existence checks and
 
 1. **Make migrations idempotent** where possible. If a migration partially completes
    and fails, it will re-run on next startup. Guard destructive operations:
+
    ```python
    if db.has_collection("old_collection"):
        db.delete_collection("old_collection")
    ```
 
 2. **Use AQL for bulk data operations** — it's faster than document-by-document:
+
    ```python
    db.aql.execute("""
        FOR doc IN library_files
@@ -196,6 +200,7 @@ All operations should be idempotent — guard creation with existence checks and
    unrelated schema changes.
 
 4. **Log progress** for long-running migrations:
+
    ```python
    import logging
    logger = logging.getLogger(__name__)
@@ -213,6 +218,7 @@ These rules were learned from production migration failures (V021/V022 fix cycle
 1. **Never read and write the same collection in a single AQL statement** (beyond the document being modified). ArangoDB raises `ERR 1579` ("access after data-modification") when a query reads a collection that was already modified by an earlier operation in the same statement. The simple `FOR doc IN X UPDATE doc IN X` pattern is safe, but any cross-operation read (subqueries, LET lookups after INSERT/REMOVE) is not.
 
    Split into sequential Python calls — first a read-only query to collect data into a Python variable, then a write-only query using bind vars:
+
    ```python
    # WRONG — reads library_files after INSERT into library_files
    db.aql.execute("""
@@ -232,6 +238,7 @@ These rules were learned from production migration failures (V021/V022 fix cycle
 2. **Drop conflicting indexes BEFORE any UPDATE/UPSERT that changes indexed fields.** If a unique index exists on fields being nullified or modified, the UPDATE will hit `ERR 1210` (unique constraint violated) when two documents collapse to the same indexed values (e.g., multiple documents with `field: null`).
 
    Use a broad match — drop any index where the modified field appears in the fields array, not just exact field-list matches. This future-proofs against compound indexes you don't know about:
+
    ```python
    for idx in coll.indexes():
        if idx.get("type") == "persistent" and "field_name" in (idx.get("fields") or []):
@@ -243,6 +250,7 @@ These rules were learned from production migration failures (V021/V022 fix cycle
 4. **Guard against empty collections on fresh databases.** Migrations run on both existing databases (with data) and fresh databases (empty collections after `ensure_schema`). Every AQL query should handle empty result sets gracefully — don't assume documents exist. Use `FILTER != null` guards and test both paths.
 
 5. **Never UPSERT with user-generated or external data as `_key`.** ArangoDB `_key` has strict character restrictions (no `/`, `?`, `#`, etc.). If source data may contain these characters, use a different field for lookup and let ArangoDB auto-generate `_key`:
+
    ```python
    # WRONG — path may contain forbidden characters
    db.aql.execute('UPSERT { _key: @path } INSERT { ... } UPDATE { ... } IN files', bind_vars={"path": path})

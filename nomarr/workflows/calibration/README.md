@@ -12,14 +12,14 @@ Multi-step workflows for generating, applying, importing, and exporting histogra
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|---------|
-| `generate_calibration_wf.py` | Single-pass histogram generation across all model labels; drift metrics (APD, SRD, JSD, median/IQR) |
-| `apply_calibration_wf.py` | Batch apply calibration to file paths with chunked prefetch and concurrent file writes |
-| `write_calibrated_tags_wf.py` | Per-file calibration apply — reconstructs `HeadOutput` from DB tags + calibration, re-aggregates mood tags |
-| `calibration_loader_wf.py` | Load calibrations from `calibration_state` collection; version-hash-based caching |
-| `export_calibration_bundle_wf.py` | Export to bundle JSON (single file or per-model directory structure) |
-| `import_calibration_bundle_wf.py` | Import from bundle JSON; upserts to `calibration_state`, updates global version |
+ | Module | Purpose |
+ | -------- | --------- |
+ | `generate_calibration_wf.py` | Single-pass histogram generation across all model labels; drift metrics (APD, SRD, JSD, median/IQR) |
+ | `apply_calibration_wf.py` | Batch apply calibration to file paths with chunked prefetch and concurrent file writes |
+ | `write_calibrated_tags_wf.py` | Per-file calibration apply — reconstructs `HeadOutput` from DB tags + calibration, re-aggregates mood tags |
+ | `calibration_loader_wf.py` | Load calibrations from `calibration_state` collection; version-hash-based caching |
+ | `export_calibration_bundle_wf.py` | Export to bundle JSON (single file or per-model directory structure) |
+ | `import_calibration_bundle_wf.py` | Import from bundle JSON; upserts to `calibration_state`, updates global version |
 
 ## Patterns
 

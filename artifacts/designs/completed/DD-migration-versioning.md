@@ -56,10 +56,10 @@ The `applied_migrations` collection is **preserved** for audit history. Recordin
 
 ## DB Version Storage
 
-| Key | Old value | New value |
-|---|---|---|
-| `meta.schema_version` | `"19"` | removed by V020 |
-| `meta.version` | absent | `"0.2.0"` (string) |
+ | Key | Old value | New value |
+ | --- | --- | --- |
+ | `meta.schema_version` | `"19"` | removed by V020 |
+ | `meta.version` | absent | `"0.2.0"` (string) |
 
 `db.py` loses `ensure_schema_version(int)` and `update_schema_version(int)`. Gains `get_version() -> str | None` and `set_version(version: str) -> None`.
 
@@ -131,10 +131,12 @@ This is the first version where the DB stores semver. The bump signals the schem
 ## Test Coverage
 
 ### New tests
+
 - `tests/unit/components/test_migration_runner_comp.py` — full rewrite for new API
 - `tests/unit/migrations/test_migration_uniqueness.py` — `@pytest.mark.code_smell`: asserts no two migration files in `nomarr/migrations/` share the same `MIGRATION_VERSION`
 
 ### Updated tests
+
 - Any test that constructs `MigrationOperations.record_migration_started(schema_version_before=..., schema_version_after=...)` → update to new signature
 - Any test using `db.ensure_schema_version()` or `db.update_schema_version()` → update to `get_version()` / `set_version()`
 
@@ -142,16 +144,16 @@ This is the first version where the DB stores semver. The bump signals the schem
 
 ## Files Touched
 
-| File | Change |
-|---|---|
-| `nomarr/__version__.py` | bump to `0.2.0` |
-| `nomarr/persistence/db.py` | `get_version()`, `set_version()` replace integer methods |
-| `nomarr/persistence/database/migrations_aql.py` | remove int fields from record methods |
-| `nomarr/components/platform/migration_runner_comp.py` | full rewrite |
-| `nomarr/workflows/platform/prepare_database_wf.py` | simplify, use new runner |
-| `nomarr/migrations/V004–V019` | `MIGRATION_VERSION = "0.0.X"` (16 files) |
-| `nomarr/migrations/V020_*.py` | new bridge migration |
-| `scripts/consolidate_migrations/consolidator.py` | emit new format |
-| `tests/unit/components/test_migration_runner_comp.py` | full rewrite |
-| `tests/unit/migrations/test_migration_uniqueness.py` | new |
-| Various test files | update int signatures |
+ | File | Change |
+ | --- | --- |
+ | `nomarr/__version__.py` | bump to `0.2.0` |
+ | `nomarr/persistence/db.py` | `get_version()`, `set_version()` replace integer methods |
+ | `nomarr/persistence/database/migrations_aql.py` | remove int fields from record methods |
+ | `nomarr/components/platform/migration_runner_comp.py` | full rewrite |
+ | `nomarr/workflows/platform/prepare_database_wf.py` | simplify, use new runner |
+ | `nomarr/migrations/V004–V019` | `MIGRATION_VERSION = "0.0.X"` (16 files) |
+ | `nomarr/migrations/V020_*.py` | new bridge migration |
+ | `scripts/consolidate_migrations/consolidator.py` | emit new format |
+ | `tests/unit/components/test_migration_runner_comp.py` | full rewrite |
+ | `tests/unit/migrations/test_migration_uniqueness.py` | new |
+ | Various test files | update int signatures |

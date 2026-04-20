@@ -10,19 +10,19 @@ Pydantic request and response models for all API endpoints.
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|--------|
-| `analytics_types.py` | Tag frequencies, mood distribution, correlations, collection overview |
-| `api_key_types.py` | API key management requests/responses |
-| `config_types.py` | Config read/update requests and responses |
-| `info_types.py` | System info, health status, GPU health, models info |
-| `library_types.py` | Library CRUD, scan, search, file tags, reconciliation |
-| `metadata_types.py` | Entity counts, entity list/detail responses |
-| `ml_types.py` | ML model listing, output labels, VRAM probe |
-| `navidrome_types.py` | Navidrome config, playlist generation, template management |
-| `playlist_import_types.py` | Spotify/Deezer playlist import, preview, smart filters |
-| `processing_types.py` | File processing requests and batch results |
-| `vector_types.py` | Vector search, promote, rebuild, stats responses |
+ | Module | Purpose |
+ | -------- | -------- |
+ | `analytics_types.py` | Tag frequencies, mood distribution, correlations, collection overview |
+ | `api_key_types.py` | API key management requests/responses |
+ | `config_types.py` | Config read/update requests and responses |
+ | `info_types.py` | System info, health status, GPU health, models info |
+ | `library_types.py` | Library CRUD, scan, search, file tags, reconciliation |
+ | `metadata_types.py` | Entity counts, entity list/detail responses |
+ | `ml_types.py` | ML model listing, output labels, VRAM probe |
+ | `navidrome_types.py` | Navidrome config, playlist generation, template management |
+ | `playlist_import_types.py` | Spotify/Deezer playlist import, preview, smart filters |
+ | `processing_types.py` | File processing requests and batch results |
+ | `vector_types.py` | Vector search, promote, rebuild, stats responses |
 
 ## Patterns
 

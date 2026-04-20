@@ -9,10 +9,10 @@ Standalone CLI command implementations for database maintenance and admin tasks.
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|--------|
-| `cleanup_cli.py` | `cmd_cleanup` — remove orphaned entities (artists, albums, genres, labels, years) with no songs |
-| `manage_password_cli.py` | `cmd_manage_password` — show/verify/reset admin password hash via `KeyManagementService` |
+ | Module | Purpose |
+ | -------- | -------- |
+ | `cleanup_cli.py` | `cmd_cleanup` — remove orphaned entities (artists, albums, genres, labels, years) with no songs |
+ | `manage_password_cli.py` | `cmd_manage_password` — show/verify/reset admin password hash via `KeyManagementService` |
 
 ## Patterns
 

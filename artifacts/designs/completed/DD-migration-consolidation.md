@@ -17,6 +17,7 @@ The core safety invariant:
 ### Shape Model
 
 A "shape" represents the database schema as a set of:
+
 - **Collections**: name, edge (bool)
 - **Indexes**: collection name, index type (persistent/ttl/vector), fields, unique, sparse, extra params
 - **Graphs**: name, edge definitions (edge collection → from/to vertex collections)
@@ -25,6 +26,7 @@ A "shape" represents the database schema as a set of:
 ### Shape A: Extract from ensure_schema()
 
 Parse `nomarr/components/platform/arango_bootstrap_comp.py` via Python AST. Walk calls to:
+
 - `db.create_collection(name)` / `db.create_collection(name, edge=True)` → collection
 - `_ensure_index(db, collection, type, fields, **kwargs)` → index
 - `db.create_graph(name, edge_definitions=[...])` → graph
@@ -38,20 +40,21 @@ This is a static, limited extraction — the helper functions `_create_collectio
 2. For each migration V004–V019, parse the `upgrade()` function via AST
 3. For each recognized operation, apply it to Shape B:
 
-| Operation | Replay Action |
-|---|---|
-| `db.create_collection(name)` | Add collection (skip if exists) |
-| `db.delete_collection(name)` | Remove collection (create-then-remove if missing) |
-| `coll.rename(new_name)` | Rename; if old doesn't exist, create phantom then rename; if new exists, merge |
-| `add_persistent_index(coll, fields, ...)` | Add index |
-| `add_ttl_index(coll, fields, ...)` | Add index |
-| `delete_index(coll, ...)` | Remove index (create phantom if missing) |
-| `db.create_graph(name, ...)` | Add graph |
-| AQL UPDATE/INSERT/REMOVE | Track field-level document changes (best-effort) |
+ | Operation | Replay Action |
+ | --- | --- |
+ | `db.create_collection(name)` | Add collection (skip if exists) |
+ | `db.delete_collection(name)` | Remove collection (create-then-remove if missing) |
+ | `coll.rename(new_name)` | Rename; if old doesn't exist, create phantom then rename; if new exists, merge |
+ | `add_persistent_index(coll, fields, ...)` | Add index |
+ | `add_ttl_index(coll, fields, ...)` | Add index |
+ | `delete_index(coll, ...)` | Remove index (create phantom if missing) |
+ | `db.create_graph(name, ...)` | Add graph |
+ | AQL UPDATE/INSERT/REMOVE | Track field-level document changes (best-effort) |
 
 #### Phantom Creation Rule
 
 When a migration references something not in Shape B (rename a collection that doesn't exist, delete an index that doesn't exist), the replay engine:
+
 1. Creates a phantom entry for the missing item
 2. Applies the operation
 3. If the result merges into an existing item (rename to existing name), merge them
@@ -61,6 +64,7 @@ This ensures that things migrations touched but `ensure_schema()` created under 
 #### Dynamic/Blacklisted Collections
 
 Some collections are created dynamically at runtime based on ML model discovery and library configuration:
+
 - `vectors_track_hot__{backbone}__{library_key}`
 - `vectors_track_cold__{backbone}__{library_key}`
 
@@ -71,6 +75,7 @@ Similarly, migrations V007, V008, V018 operate on dynamically-named vector colle
 ### Comparison
 
 After replay, diff Shape A and Shape B:
+
 - Collections in A but not B (or vice versa)
 - Index differences per collection
 - Graph definition differences
@@ -83,6 +88,7 @@ If shapes match → safe to consolidate. If not → report differences and abort
 Based on static analysis of V004–V019:
 
 ### DDL Operations Used
+
 ```
 db.has_collection(name)      — conditional guard
 db.create_collection(name)   — create doc collection
@@ -99,6 +105,7 @@ db.create_graph(name, edge_definitions)
 ```
 
 ### Data Operations (not replayed for schema shape, but logged)
+
 ```
 db.aql.execute(...)  — various INSERT/UPDATE/REMOVE queries
 coll.insert(doc)     — document inserts
@@ -107,12 +114,12 @@ coll.count()         — read-only
 
 ### Migration Categories
 
-| Category | Migrations | Replay Strategy |
-|---|---|---|
-| Verification-only | V004, V005, V006 | Skip (no state change) |
-| DDL-only | V007, V010, V011, V012, V013, V014, V015 | Full AST replay |
-| Data-transform | V009, V017 | Log as "data transform, not validated" |
-| Mixed (DDL + data) | V008, V016, V018, V019 | Replay DDL ops, log data ops |
+ | Category | Migrations | Replay Strategy |
+ | --- | --- | --- |
+ | Verification-only | V004, V005, V006 | Skip (no state change) |
+ | DDL-only | V007, V010, V011, V012, V013, V014, V015 | Full AST replay |
+ | Data-transform | V009, V017 | Log as "data transform, not validated" |
+ | Mixed (DDL + data) | V008, V016, V018, V019 | Replay DDL ops, log data ops |
 
 ## Consolidation (Post-Validation)
 
@@ -124,6 +131,7 @@ Once shapes match:
 4. Optional `--execute-db-reset` flag to run the AQL against a live ArangoDB
 
 The baseline migration:
+
 - `SCHEMA_VERSION_BEFORE = 0`, `SCHEMA_VERSION_AFTER = 1`
 - `upgrade()` checks all expected collections exist (from Shape A)
 - Future migrations start at V002
@@ -145,6 +153,7 @@ scripts/consolidate_migrations/
 ## Future Use
 
 This tool is designed to be run between major version changes:
+
 1. Run shape validation to confirm all migrations are captured in ensure_schema
 2. If valid, consolidate to reset the migration counter
 3. Continue development with a clean slate

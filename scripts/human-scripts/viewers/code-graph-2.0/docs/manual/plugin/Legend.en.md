@@ -40,33 +40,33 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Property          | Description                                                                                                                                                                                    | Type                                                                                        | Default Value | Required |
+| Property | Description | Type | Default Value | Required |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------- | -------- |
-| type              | Plugin type                                                                                                                                                                                    | string                                                                                      | `legend`      | ✓        |
-| key               | Unique identifier for the plugin, used for subsequent updates                                                                                                                                  | string                                                                                      | -             |          |
-| trigger           | How the legend item triggers the corresponding item highlight: <br/>- `hover`: Triggered when the mouse enters the legend item <br/>- `click`: Triggered when the mouse clicks the legend item | `hover` \| `click`                                                                          | `hover`       |          |
-| position          | Relative position of the legend on the canvas, [optional values](#cardinalplacement)                                                                                                           | [CardinalPlacement](#cardinalplacement)                                                     | `bottom`      |          |
-| container         | Container to which the legend is mounted, if not provided, it is mounted to the container where the Graph is located                                                                           | HTMLElement \| string                                                                       | -             |          |
-| className         | Legend canvas class name, not effective when an external container is passed                                                                                                                   | string                                                                                      | -             |          |
-| containerStyle    | Style of the legend container, not effective when an external container is passed                                                                                                              | [CSSStyleDeclaration](https://developer.mozilla.org/en-US/docs/Web/API/CSSStyleDeclaration) | -             |          |
-| nodeField         | Node classification identifier                                                                                                                                                                 | string \| (item: ElementDatum) => string                                                    | -             |          |
-| edgeField         | Edge classification identifier                                                                                                                                                                 | string \| (item: ElementDatum) => string                                                    | -             |          |
-| comboField        | Combo classification identifier                                                                                                                                                                | string \| (item: ElementDatum) => string                                                    | -             |          |
-| orientation       | Layout direction of legend items: <br/>- `horizontal`: Horizontal direction <br/>- `vertical`: Vertical direction                                                                              | `horizontal` \| `vertical`                                                                  | 'horizontal'  |          |
-| layout            | Layout method: <br/>- `flex`: Flexible layout <br/>- `grid`: Grid layout                                                                                                                       | `flex` \| `grid`                                                                            | `flex`        |          |
-| showTitle         | Whether to display the title                                                                                                                                                                   | boolean                                                                                     | false         |
-| titleText         | Title content                                                                                                                                                                                  | string                                                                                      | ""            |
-| x                 | Relative horizontal position of the legend on the canvas, higher priority than position                                                                                                        | number                                                                                      | -             |          |
-| y                 | Relative vertical position of the legend on the canvas, higher priority than position                                                                                                          | number                                                                                      | -             |          |
-| width             | Width of the legend                                                                                                                                                                            | number                                                                                      | 240           |          |
-| height            | Height of the legend                                                                                                                                                                           | number                                                                                      | 160           |          |
-| itemSpacing       | Spacing between the text of the legend item and the corresponding marker                                                                                                                       | number                                                                                      | 4             |          |
-| rowPadding        | Spacing between each row in the legend                                                                                                                                                         | number                                                                                      | 10            |          |
-| colPadding        | Spacing between each column in the legend                                                                                                                                                      | number                                                                                      | 10            |          |
-| itemMarkerSize    | Size of the legend item marker                                                                                                                                                                 | number                                                                                      | 16            |          |
-| itemLabelFontSize | Font size of the legend item text                                                                                                                                                              | number                                                                                      | 16            |          |
-| gridCol           | Maximum number of columns allowed for legend items when width permits                                                                                                                          | number                                                                                      | -             |          |
-| gridRow           | Maximum number of rows allowed for legend items when height permits                                                                                                                            | number                                                                                      | -             |          |
+| type | Plugin type | string | `legend` | ✓ |
+| key | Unique identifier for the plugin, used for subsequent updates | string | - | |
+| trigger | How the legend item triggers the corresponding item highlight: <br/>- `hover`: Triggered when the mouse enters the legend item <br/>- `click`: Triggered when the mouse clicks the legend item | `hover` \| `click` | `hover` | |
+| position | Relative position of the legend on the canvas, [optional values](#cardinalplacement) | [CardinalPlacement](#cardinalplacement) | `bottom` | |
+| container | Container to which the legend is mounted, if not provided, it is mounted to the container where the Graph is located | HTMLElement \| string | - | |
+| className | Legend canvas class name, not effective when an external container is passed | string | - | |
+| containerStyle | Style of the legend container, not effective when an external container is passed | [CSSStyleDeclaration](https://developer.mozilla.org/en-US/docs/Web/API/CSSStyleDeclaration) | - | |
+| nodeField | Node classification identifier | string \| (item: ElementDatum) => string | - | |
+| edgeField | Edge classification identifier | string \| (item: ElementDatum) => string | - | |
+| comboField | Combo classification identifier | string \| (item: ElementDatum) => string | - | |
+| orientation | Layout direction of legend items: <br/>- `horizontal`: Horizontal direction <br/>- `vertical`: Vertical direction | `horizontal` \| `vertical` | 'horizontal' | |
+| layout | Layout method: <br/>- `flex`: Flexible layout <br/>- `grid`: Grid layout | `flex` \| `grid` | `flex` | |
+| showTitle | Whether to display the title | boolean | false |
+| titleText | Title content | string | "" |
+| x | Relative horizontal position of the legend on the canvas, higher priority than position | number | - | |
+| y | Relative vertical position of the legend on the canvas, higher priority than position | number | - | |
+| width | Width of the legend | number | 240 | |
+| height | Height of the legend | number | 160 | |
+| itemSpacing | Spacing between the text of the legend item and the corresponding marker | number | 4 | |
+| rowPadding | Spacing between each row in the legend | number | 10 | |
+| colPadding | Spacing between each column in the legend | number | 10 | |
+| itemMarkerSize | Size of the legend item marker | number | 16 | |
+| itemLabelFontSize | Font size of the legend item text | number | 16 | |
+| gridCol | Maximum number of columns allowed for legend items when width permits | number | - | |
+| gridRow | Maximum number of rows allowed for legend items when height permits | number | - | |
 
 ### CardinalPlacement
 

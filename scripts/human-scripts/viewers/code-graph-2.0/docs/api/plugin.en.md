@@ -21,9 +21,9 @@ getPluginInstance<T extends Plugin>(key: string): T;
 
 **Parameters**
 
-| Parameter | Description                     | Type   | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ------------------------------- | ------ | ------- | -------- |
-| key       | Unique identifier of the plugin | string | -       | ✓        |
+| key | Unique identifier of the plugin | string | - | ✓ |
 
 **Return Value**
 
@@ -82,9 +82,9 @@ setPlugins(plugins: PluginOptions | ((prev: PluginOptions) => PluginOptions)): v
 
 **Parameters**
 
-| Parameter | Description                                                                                     | Type                                                                        | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------- | -------- |
-| plugins   | New plugin configurations, or a function returning new configurations based on the current ones | [PluginOptions](#pluginoptions) \| ((prev: PluginOptions) => PluginOptions) | -       | ✓        |
+| plugins | New plugin configurations, or a function returning new configurations based on the current ones | [PluginOptions](#pluginoptions) \| ((prev: PluginOptions) => PluginOptions) | - | ✓ |
 
 **Note**
 
@@ -158,9 +158,9 @@ updatePlugin(plugin: UpdatePluginOption): void;
 
 **Parameters**
 
-| Parameter | Description                               | Type                                      | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ----------------------------------------- | ----------------------------------------- | ------- | -------- |
-| plugin    | Configuration of the plugin to be updated | [UpdatePluginOption](#updatepluginoption) | -       | ✓        |
+| plugin | Configuration of the plugin to be updated | [UpdatePluginOption](#updatepluginoption) | - | ✓ |
 
 **Note**
 

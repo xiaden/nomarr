@@ -26,6 +26,7 @@ Tools should "just work" for the 80% use case (FastAPI + React/Vue) with **zero 
 ### Config File Discovery
 
 Search order (stop at first found):
+
 1. `mcp_config.json` in workspace root
 2. `.mcp/config.json` in workspace root
 3. `pyproject.toml` `[tool.mcp]` section
@@ -34,11 +35,13 @@ Search order (stop at first found):
 ## Override Strategy
 
 Config values **merge** with defaults:
+
 - Arrays are **replaced** (not merged) - explicit control
 - Objects are **deep merged** - partial overrides allowed
 - `null` disables a feature
 
 Example:
+
 ```json
 {
   "backend": {
@@ -52,6 +55,7 @@ Example:
 ## Framework Presets
 
 ### FastAPI + React (Default)
+
 ```json
 {
   "backend": { "framework": "fastapi" },
@@ -61,6 +65,7 @@ Example:
 ```
 
 ### Flask + Vue
+
 ```json
 {
   "backend": {
@@ -79,6 +84,7 @@ Example:
 ```
 
 ### Django + Svelte
+
 ```json
 {
   "backend": {
@@ -107,12 +113,14 @@ Example:
 ## Migration Path
 
 For tools currently hardcoded:
+
 1. Extract hardcoded values to `DEFAULT_CONFIG` constant
 2. Load user config, merge with defaults
 3. Pass merged config to tool functions
 4. Tool reads from config, never hardcoded
 
 Example:
+
 ```python
 # Before
 ROUTE_DECORATORS = ["@router.get", "@router.post"]

@@ -23,10 +23,10 @@ Applicable scenarios:
 
 > If the element has specific attributes, we will list them below. For all general style attributes, see [BaseNode](/en/manual/element/node/base-node)
 
-| Attribute | Description                          | Type   | Default | Required |
+| Attribute | Description | Type | Default | Required |
 | --------- | ------------------------------------ | ------ | ------- | -------- |
-| img       | Alias for the img attribute          | string | -       |          |
-| src       | Image source, i.e., image URL string | string | -       | ✓        |
+| img | Alias for the img attribute | string | - | |
+| src | Image source, i.e., image URL string | string | - | ✓ |
 
 ## Example
 

@@ -25,26 +25,29 @@ Expand the existing `TaggingService` to own the full tags vertical slice — fil
 
 **Ownership model:**
 
-| Question | Owner |
-|----------|-------|
-| "What tags does this file have?" | LibraryService (file metadata perspective) |
-| "What files have this specific tag?" | TaggingService (tag domain perspective) |
-| "Set/update tags on a file" | Library workflow (orchestration) |
-| "Create/manage tag documents in DB" | Tagging component (persistence domain logic) |
-| "Tag curation (rename/merge/split)" | TaggingService (new curation operations) |
+ | Question | Owner |
+ | ---------- | ------- |
+ | "What tags does this file have?" | LibraryService (file metadata perspective) |
+ | "What files have this specific tag?" | TaggingService (tag domain perspective) |
+ | "Set/update tags on a file" | Library workflow (orchestration) |
+ | "Create/manage tag documents in DB" | Tagging component (persistence domain logic) |
+ | "Tag curation (rename/merge/split)" | TaggingService (new curation operations) |
 
 **Expanded TaggingService scope:**
+
 - Retains existing ML tagging: `tag_files`, `retag_files`, calibration
 - Adds user-facing tag curation: rename, merge, split, single-song edit
 - Owns tag query methods migrated from LibraryService: `get_unique_tag_keys`, `get_unique_tag_values`, `get_unique_mood_values`, `cleanup_orphaned_tags`, `search_files_by_tag`
 - Enforces `nom:` prefix rejection at the service layer (defense-in-depth per ADR-009)
 
 **What stays where:**
+
 - `LibraryService` retains library management + file queries only. The `LibraryTagEditMixin` from ADR-007 is NOT created.
 - TaggingService gets tag query methods migrated from LibraryService
 - TaggingService calls `TagOperations` persistence directly for curation operations
 
 **New curation methods on TaggingService:**
+
 - `rename_tag(tag_id, new_value) → RenameResult`
 - `merge_tags(source_tag_ids, canonical_tag_id) → MergeResult`
 - `split_tag(source_tag_id, song_ids, new_value) → SplitResult`
@@ -57,6 +60,7 @@ Expand the existing `TaggingService` to own the full tags vertical slice — fil
 ## Consequences
 
 **Positive:**
+
 - Single service owns the entire tag domain — no split between ML tagging and user curation
 - Tag query methods move to the service that actually operates on tags
 - LibraryService stops growing — sheds responsibilities it shouldn't own
@@ -65,11 +69,13 @@ Expand the existing `TaggingService` to own the full tags vertical slice — fil
 - No new service to wire — reduces DI complexity vs. standalone TagCurationService
 
 **Negative:**
+
 - TaggingService grows larger (but cohesively — all tag-domain operations)
 - LibraryService callers that use `get_unique_tag_keys` etc. must be updated to use TaggingService
 - Migration effort to move methods from LibraryService to TaggingService
 
 **Neutral:**
+
 - TagOperations persistence is unchanged — TaggingService calls it for both ML and curation ops
 - No impact on scan pipeline
 

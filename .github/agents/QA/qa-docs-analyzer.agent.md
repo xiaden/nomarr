@@ -69,6 +69,7 @@ codeDocumentation:
 ```
 
 What to look for:
+
 - Missing docstrings on public methods/classes
 - Parameter descriptions that don't match the current signature
 - Return type documentation that contradicts the implementation
@@ -142,6 +143,7 @@ When gaps exist, dispatch QA-DocsGenerator with:
 DocsGenerator handles all docstring writing, doc updates, and lint. You wait for its result.
 
 After DocsGenerator returns:
+
 1. Re-analyze to confirm gaps are filled
 2. Verify docstrings match signatures
 3. If still gaps → `GENERATION_FAILED` (one attempt, then escalate)
@@ -190,17 +192,20 @@ artifacts:
 ## Gap Priorities
 
 ### Critical (Must Fix)
+
 - Public method with no docstring
 - Docstring with wrong signature
 - User docs referencing removed functionality
 - API docs missing required fields
 
 ### Important (Should Fix)
+
 - Docstring missing exception documentation
 - User docs with outdated examples
 - Inconsistent terminology
 
 ### Minor (Nice to Have)
+
 - Internal method without docstring
 - Verbose docstrings that could be clearer
 - Missing usage examples

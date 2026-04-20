@@ -9,7 +9,7 @@ Custom plugins can implement additional features, such as adding extra component
 
 ## Use Cases
 
-### Add extra components, rendering logic, etc.
+### Add extra components, rendering logic, etc
 
 - **Extra components**: Such as built-in plugins like `Tooltip`, `Minimap`, `Snapline`, `Grid`, `Context Menu`, `Watermark`, etc.
 - **Rendering logic**: Such as built-in plugins like `Edge Bundling`, and `Remote Data Loading` ([Example](#remote-data-loading)), etc.

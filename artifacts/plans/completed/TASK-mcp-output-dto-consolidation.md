@@ -20,9 +20,9 @@ Both DTOs handle the `content` array construction (user breadcrumb + assistant c
 - [x] Create `ToolResultWithLinks` dataclass/builder extending `ToolResult` with: `file_links` (list of file location tuples supporting single or multiple files)
     **Notes:** Created ToolResultWithLinks with file_links (list[FileLink]), plus FileLink dataclass (file_path, start_line, end_line, action). Handles single and multiple file links via the same list. Lint clean.
 - [x] Implement `to_call_tool_result()` on both DTOs that builds the `CallToolResult` with proper `content` array (user breadcrumb with `audience=["user"]`, assistant text with `audience=["assistant"], priority=1.0`, JSON metadata TextContent)
-    **Notes:** Both DTOs implement to_call_tool_result(). Uses shared _build_content_items() that produces: user breadcrumb (audience=["user"]), assistant text items (audience=["assistant"], priority=1.0), JSON metadata TextContent (no audience). No structuredContent field used.
+    **Notes:** Both DTOs implement to_call_tool_result(). Uses shared_build_content_items() that produces: user breadcrumb (audience=["user"]), assistant text items (audience=["assistant"], priority=1.0), JSON metadata TextContent (no audience). No structuredContent field used.
 - [x] Add `text_field_keys` support to `ToolResultWithLinks` so it can extract source/content fields from the result dict into `assistant_content` automatically (replaces `extract_text_blobs`)
-    **Notes:** ToolResultWithLinks._to_structured_content() handles text_field_keys via _extract_text_blobs(). Pops keys from result dict and returns them as extracted texts merged into assistant_content.
+    **Notes:** ToolResultWithLinks._to_structured_content() handles text_field_keys via_extract_text_blobs(). Pops keys from result dict and returns them as extracted texts merged into assistant_content.
 - [x] Add `nested_text_field_paths` support to handle dot-notation extraction (replaces `extract_nested_text_blobs`)
     **Notes:** ToolResultWithLinks._to_structured_content() handles nested_text_field_paths via _extract_nested_text_blobs(). Supports dot-notation like "requested.content". Both text_field_keys and nested_text_field_paths results are merged.
 

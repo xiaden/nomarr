@@ -37,24 +37,26 @@ Plans are parsed according to a strict schema. Invalid structure causes `ValueEr
 
 ### Format Rules
 
-| Element | Pattern | Example |
-|---------|---------|---------|
-| Title | `# Task: <title>` or `# <title>` | `# Task: Refactor Auth` |
-| Section | `## <name>` | `## Problem Statement` |
-| Phase | `### Phase N: <title>` | `### Phase 1: Discovery` |
-| Step (incomplete) | `- [ ] <text>` | `- [ ] Run lint_backend` |
-| Step (complete) | `- [x] <text>` | `- [x] Run lint_backend` |
-| Annotation | `**Marker:** <text>` | `**Notes:** Found 3 issues` |
+ | Element | Pattern | Example |
+ | --------- | --------- | --------- |
+ | Title | `# Task: <title>` or `# <title>` | `# Task: Refactor Auth` |
+ | Section | `## <name>` | `## Problem Statement` |
+ | Phase | `### Phase N: <title>` | `### Phase 1: Discovery` |
+ | Step (incomplete) | `- [ ] <text>` | `- [ ] Run lint_backend` |
+ | Step (complete) | `- [x] <text>` | `- [x] Run lint_backend` |
+ | Annotation | `**Marker:** <text>` | `**Notes:** Found 3 issues` |
 
 **Phase numbers MUST be integers.** The parser uses regex `### Phase (\d+): (.+)`.
 
 **Step IDs are auto-generated** as `P<phase>-S<step>`:
+
 - Phase 1, Step 1 → `P1-S1`
 - Phase 2, Step 3 → `P2-S3`
 
 ### Supported Sections
 
 Any `## Header` becomes a key in the parsed output. Common sections:
+
 - `Problem Statement` - Context for fresh models (can be multi-line)
 - `Completion Criteria` - Success conditions (parsed as bullet list if formatted that way)
 - `References` - Related issues, ADRs, previous attempts
@@ -87,26 +89,32 @@ These are parsed and returned by `plan_read`.
 Annotations are returned as either **strings** or **arrays** depending on content:
 
 - **Pure bullet lists** → Array of strings:
+
   ```markdown
   **Notes:**
   - First point
   - Second point
   ```
+
   Parses to: `{"Notes": ["First point", "Second point"]}`
 
 - **Mixed content** (text + bullets, or multiple blocks) → String with `\n`:
+
   ```markdown
   **Notes:** Context paragraph.
   - Detail 1
   - Detail 2
   ```
+
   Parses to: `{"Notes": "Context paragraph.\n- Detail 1\n- Detail 2"}`
 
 - **Multiple markers with same name** → Combined into array:
+
   ```markdown
   **Notes:** First observation
   **Notes:** Second observation
   ```
+
   Parses to: `{"Notes": ["First observation", "Second observation"]}`
 
 ---
@@ -114,6 +122,7 @@ Annotations are returned as either **strings** or **arrays** depending on conten
 ## Writing Quality Steps
 
 **Good steps are:**
+
 - **Actionable** - Clear what needs doing (`Run lint_backend on helpers/`)
 - **Verifiable** - Can confirm completion (`All tests pass`, not "improve tests")
 - **Atomic** - One logical outcome per step
@@ -121,15 +130,16 @@ Annotations are returned as either **strings** or **arrays** depending on conten
 
 **Examples:**
 
-| ❌ Bad | ✅ Good |
-|--------|---------|
-| Work on auth middleware | Implement SessionAuthMiddleware class in interfaces/api/middleware/ |
-| Fix issues | Resolve mypy errors in persistence/models/library.py |
-| Add imports | Create config_service module with ConfigService class |
-| Test stuff | Verify lint_backend passes on nomarr/services |
-| Make it work | Update all callers of get_library() to use new signature |
+ | ❌ Bad | ✅ Good |
+ | -------- | --------- |
+ | Work on auth middleware | Implement SessionAuthMiddleware class in interfaces/api/middleware/ |
+ | Fix issues | Resolve mypy errors in persistence/models/library.py |
+ | Add imports | Create config_service module with ConfigService class |
+ | Test stuff | Verify lint_backend passes on nomarr/services |
+ | Make it work | Update all callers of get_library() to use new signature |
 
 **Phase Design:**
+
 - Phases represent **semantic outcomes**, not file boundaries
 - Example: "Discovery", "Implementation", "Validation" not "Edit file 1", "Edit file 2"
 - Group related steps by what they accomplish, not how they're implemented
@@ -141,6 +151,7 @@ Annotations are returned as either **strings** or **arrays** depending on conten
 The parser will **reject with `ValueError`** if:
 
 ### Nested Steps (CRITICAL)
+
 ```markdown
 ### Phase 1: Setup
 - [ ] Create files
@@ -148,11 +159,13 @@ The parser will **reject with `ValueError`** if:
 ```
 
 Nested steps are rejected because they create ambiguous execution. If substeps are needed:
+
 - Distinct outcomes → unnest as separate flat steps
 - Implementation details → convert to `**Notes:**` annotation
 - Need grouping → create new phase
 
 ### Non-Sequential Phase Numbers
+
 ```markdown
 ### Phase 1: Discovery
 ### Phase 3: Implementation    # ❌ Skipped Phase 2
@@ -161,6 +174,7 @@ Nested steps are rejected because they create ambiguous execution. If substeps a
 Parser expects phases numbered 1, 2, 3... with no gaps.
 
 ### Invalid Phase Header Format
+
 ```markdown
 ### Phase One: Discovery       # ❌ Must be integer
 ### Phase 1 - Discovery        # ❌ Must use colon
@@ -175,6 +189,7 @@ Parser expects phases numbered 1, 2, 3... with no gaps.
 If available, `plans/examples/TASK-example-comprehensive.md` demonstrates all patterns.
 
 **Key characteristics of a good plan:**
+
 - Problem statement assumes reader has no context
 - Phases are outcome-oriented ("Validation" not "Phase 3")
 - Steps are concrete and verifiable
@@ -185,15 +200,15 @@ If available, `plans/examples/TASK-example-comprehensive.md` demonstrates all pa
 
 ## Common Mistakes
 
-| Don't | Do Instead | Why |
-|-------|------------|-----|
-| Indent checkboxes | Keep all steps flat | Parser rejects nested structure |
-| Skip phase numbers (1→3) | Sequential numbering | Parser validation |
-| Use `### Phase One:` | Use `### Phase 1:` | Regex requires integer |
-| Write vague steps ("fix auth") | Concrete outcomes ("Implement AuthMiddleware in interfaces/api/") | Steps must be verifiable |
-| Skip problem statement | Context for fresh models | Cross-session continuity |
-| Manual checkbox edits | Use `plan_complete_step` | Preserves annotations |
-| Steps like "add import X" | Group into meaningful units | Avoid over-granularity |
+ | Don't | Do Instead | Why |
+ | ------- | ------------ | ----- |
+ | Indent checkboxes | Keep all steps flat | Parser rejects nested structure |
+ | Skip phase numbers (1→3) | Sequential numbering | Parser validation |
+ | Use `### Phase One:` | Use `### Phase 1:` | Regex requires integer |
+ | Write vague steps ("fix auth") | Concrete outcomes ("Implement AuthMiddleware in interfaces/api/") | Steps must be verifiable |
+ | Skip problem statement | Context for fresh models | Cross-session continuity |
+ | Manual checkbox edits | Use `plan_complete_step` | Preserves annotations |
+ | Steps like "add import X" | Group into meaningful units | Avoid over-granularity |
 
 ---
 
@@ -287,4 +302,3 @@ The parser validates plans against this JSON schema. Each field's `description` 
   }
 }
 ```
-

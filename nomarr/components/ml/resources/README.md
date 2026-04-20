@@ -12,14 +12,14 @@ GPU/VRAM coordination, capacity probing, and execution tier selection for the ML
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|----------|
-| `ml_vram_coordinator_comp` | Fleet-wide VRAM promise management — atomic register/release via DB, live GPU telemetry |
-| `ml_vram_probe_comp` | Per-model VRAM measurement (load + inference on GPU), OOM correction, CUDA context warmup |
-| `ml_capacity_probe_comp` | One-time capacity estimation (backbone VRAM + worker RAM), DB-locked to prevent duplicate probes |
-| `ml_tier_selection_comp` | Deterministic tier selection (Tier 0–4) based on VRAM/RAM budgets and worker count |
-| `ml_timing_comp` | Compact per-file timing summary strings for logging |
-| `ml_worker_context_comp` | Process-local registry mapping worker identity to DB handle for VRAM coordinator access |
+ | Module | Purpose |
+ | -------- | ---------- |
+ | `ml_vram_coordinator_comp` | Fleet-wide VRAM promise management — atomic register/release via DB, live GPU telemetry |
+ | `ml_vram_probe_comp` | Per-model VRAM measurement (load + inference on GPU), OOM correction, CUDA context warmup |
+ | `ml_capacity_probe_comp` | One-time capacity estimation (backbone VRAM + worker RAM), DB-locked to prevent duplicate probes |
+ | `ml_tier_selection_comp` | Deterministic tier selection (Tier 0–4) based on VRAM/RAM budgets and worker count |
+ | `ml_timing_comp` | Compact per-file timing summary strings for logging |
+ | `ml_worker_context_comp` | Process-local registry mapping worker identity to DB handle for VRAM coordinator access |
 
 ## Patterns
 

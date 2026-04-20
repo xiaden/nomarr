@@ -1,22 +1,24 @@
 # E2E Test Suite Implementation Summary
 
 ## Overview
+
 Created a comprehensive end-to-end test suite for Nomarr using Playwright that covers all major user workflows and API integrations.
 
 ## Test Files Created
 
 ### Core Infrastructure
+
 1. **`e2e/fixtures/auth.ts`** - Authentication helpers and test fixtures
    - `login()` helper function
    - `authenticatedPage` fixture for tests requiring login
-   
+
 2. **`e2e/fixtures/api-helpers.ts`** - API testing utilities
    - `ApiHelpers` class with methods for waiting/asserting API calls
    - `waitForApiCall()`, `assertApiSuccess()`, `getApiResponse()`
 
 ### Test Suites
 
-3. **`e2e/smoke.spec.ts`** - Fast smoke tests for critical functionality ✅
+1. **`e2e/smoke.spec.ts`** - Fast smoke tests for critical functionality ✅
    - App loads and responds
    - Login page accessible
    - Successful login redirects
@@ -24,53 +26,53 @@ Created a comprehensive end-to-end test suite for Nomarr using Playwright that c
    - Navigation works
    - No critical console errors
 
-4. **`e2e/auth.spec.ts`** - Authentication flow tests
+2. **`e2e/auth.spec.ts`** - Authentication flow tests
    - Show login page when not authenticated
    - Login with correct password
    - Show error with incorrect password
    - Logout functionality
 
-5. **`e2e/libraries.spec.ts`** - Library management tests
+3. **`e2e/libraries.spec.ts`** - Library management tests
    - Load libraries list
    - Display library stats
    - Navigate to library management
    - Show create library form
    - Create new library (skipped - requires valid path)
 
-6. **`e2e/calibration.spec.ts`** - Calibration workflow tests
+4. **`e2e/calibration.spec.ts`** - Calibration workflow tests
    - Load calibration status
    - Show calibration history
    - Display generate calibration button
    - Generate calibration (skipped - requires data)
    - Show convergence status
 
-7. **`e2e/analytics.spec.ts`** - Analytics and insights tests
+5. **`e2e/analytics.spec.ts`** - Analytics and insights tests
    - Navigate to analytics section
    - Load tag frequencies
    - Load mood distribution
    - Load tag correlations
 
-8. **`e2e/metadata.spec.ts`** - Metadata browsing tests
+6. **`e2e/metadata.spec.ts`** - Metadata browsing tests
    - Load entity counts
    - Browse artists
    - Browse albums
    - Display artist details (skipped - requires data)
    - Display albums for artist (skipped - requires data)
 
-9. **`e2e/worker.spec.ts`** - Worker control tests
+7. **`e2e/worker.spec.ts`** - Worker control tests
    - Display worker status
    - Pause worker (skipped - modifies state)
    - Resume worker (skipped - modifies state)
    - Load processing status
 
-10. **`e2e/info-health.spec.ts`** - System info and health checks
+8. **`e2e/info-health.spec.ts`** - System info and health checks
     - Load system info
     - Load health status
     - Load GPU health if available
     - Load work status
     - Display system info in UI
 
-11. **`e2e/README.md`** - Comprehensive documentation
+9. **`e2e/README.md`** - Comprehensive documentation
     - Test structure overview
     - Running instructions
     - Prerequisites
@@ -82,6 +84,7 @@ Created a comprehensive end-to-end test suite for Nomarr using Playwright that c
 ## Configuration Updates
 
 ### `playwright.config.ts`
+
 - ✅ Set `baseURL` to `http://localhost:8356`
 - ✅ Enabled screenshots on failure
 - ✅ Enabled video recording on failure
@@ -92,6 +95,7 @@ Created a comprehensive end-to-end test suite for Nomarr using Playwright that c
 ## Test Coverage
 
 ### API Endpoints Covered
+
 - ✅ Authentication: `/api/web/authentication/login`, `/api/web/authentication/logout`
 - ✅ Libraries: `/api/web/library`, `/api/web/library/{id}`, `/api/web/library/stats`
 - ✅ Calibration: `/api/web/calibration/*` (status, history, generate, convergence)
@@ -114,6 +118,7 @@ Created a comprehensive end-to-end test suite for Nomarr using Playwright that c
 ## Running the Tests
 
 ### Quick Start
+
 ```bash
 # Run all tests
 npx playwright test
@@ -132,7 +137,9 @@ npx playwright test --project=chromium
 ```
 
 ### Test Results
+
 Initial smoke test run shows:
+
 - ✅ 12 tests passing across 3 browsers
 - ⚠️ 3 tests need title adjustment (app title)
 - ⚠️ 3 API timeout tests need investigation
@@ -167,17 +174,20 @@ Initial smoke test run shows:
 ## Next Steps
 
 ### Immediate
+
 1. ✅ Verify all smoke tests pass consistently
 2. ⚠️ Adjust app title expectation in smoke test
 3. ⚠️ Investigate API timeout in login test
 
 ### Short Term
+
 1. Add tests for file upload/scanning workflows
 2. Add tests for tag editing workflows
 3. Add tests for Navidrome integration
 4. Create visual regression tests for UI components
 
 ### Long Term
+
 1. Add performance testing with Lighthouse
 2. Create load testing scenarios
 3. Add accessibility testing with axe-core
@@ -187,6 +197,7 @@ Initial smoke test run shows:
 ## Documentation
 
 All tests include:
+
 - ✅ Descriptive test names
 - ✅ Clear test structure
 - ✅ Helpful comments
@@ -197,6 +208,7 @@ All tests include:
 ## Integration with CI/CD
 
 The test suite is ready for CI/CD integration:
+
 - ✅ Retries configured for flaky tests
 - ✅ Parallel execution disabled in CI
 - ✅ Dev server auto-starts if needed
@@ -204,6 +216,7 @@ The test suite is ready for CI/CD integration:
 - ✅ HTML report generation
 
 To add to CI, use:
+
 ```yaml
 - name: Run Playwright tests
   run: npx playwright test
@@ -221,6 +234,7 @@ To add to CI, use:
 ## Conclusion
 
 ✅ **Complete e2e test suite implemented**
+
 - 10 test files covering all major workflows
 - 50+ test cases across authentication, libraries, calibration, analytics, metadata, workers, and system info
 - Reusable fixtures and helpers

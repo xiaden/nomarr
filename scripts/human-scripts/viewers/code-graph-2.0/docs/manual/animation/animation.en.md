@@ -116,17 +116,17 @@ If the built-in animations do not meet your requirements, you can create custom 
 
 Animation priority refers to the precedence between global animation configuration and element-specific animation configuration. It can be summarized as follows:
 
-| Global Animation Config | Local Animation Config | Whether to Execute Animation                                                                     |
+| Global Animation Config | Local Animation Config | Whether to Execute Animation |
 | ----------------------- | ---------------------- | ------------------------------------------------------------------------------------------------ |
-| ✅ true                 | ✅ true                | ✅ Execute animation with default configuration                                                  |
-| ✅ true                 | ❌ false               | ❌ Won't execute animation                                                                       |
-| ✅ true                 | ✅ Custom Animation    | ✅ Execute animation with local animation configuration                                          |
-| ❌ false                | ✅ true                | ❌ Won't execute animation                                                                       |
-| ❌ false                | ❌ false               | ❌ Won't execute animation                                                                       |
-| ❌ false                | ✅ Custom Animation    | ❌ Won't execute animation                                                                       |
-| ✅ Custom Animation     | ✅ true                | ✅ Execute animation with global animation configuration                                         |
-| ✅ Custom Animation     | ✅ Custom Animation    | ✅ Execute animation, local animation configuration overrides the global animation configuration |
-| ✅ Custom Animation     | ❌ false               | ❌ Won't execute animation                                                                       |
+| ✅ true | ✅ true | ✅ Execute animation with default configuration |
+| ✅ true | ❌ false | ❌ Won't execute animation |
+| ✅ true | ✅ Custom Animation | ✅ Execute animation with local animation configuration |
+| ❌ false | ✅ true | ❌ Won't execute animation |
+| ❌ false | ❌ false | ❌ Won't execute animation |
+| ❌ false | ✅ Custom Animation | ❌ Won't execute animation |
+| ✅ Custom Animation | ✅ true | ✅ Execute animation with global animation configuration |
+| ✅ Custom Animation | ✅ Custom Animation | ✅ Execute animation, local animation configuration overrides the global animation configuration |
+| ✅ Custom Animation | ❌ false | ❌ Won't execute animation |
 
 ## Persistent Animation
 

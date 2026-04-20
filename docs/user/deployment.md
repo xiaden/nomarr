@@ -159,11 +159,11 @@ Most settings have sensible defaults. Libraries are configured via the Web UI.
 
 **Optional settings you may want to tune** (via `config/nomarr.yaml` or environment variables):
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `tagger_worker_count` | auto (1) | Number of ML worker processes (1–8) |
-| `library_auto_tag` | `true` | Automatically process discovered files |
-| `calibrate_heads` | `false` | Enable calibration for tag thresholds |
+ | Setting | Default | Description |
+ | --------- | --------- | ------------- |
+ | `tagger_worker_count` | auto (1) | Number of ML worker processes (1–8) |
+ | `library_auto_tag` | `true` | Automatically process discovered files |
+ | `calibrate_heads` | `false` | Enable calibration for tag thresholds |
 
 All settings can also be changed via the Web UI’s Settings page at runtime.
 
@@ -509,11 +509,11 @@ Start with the default worker count (1) and increase via the Web UI’s Settings
 
 **Typical configurations:**
 
-| GPU | Workers | Notes |
-|-----|---------|-------|
-| 6 GB (GTX 1660) | 1 | Default is fine |
-| 12 GB (RTX 3060) | 1–2 | Monitor GPU memory |
-| 24 GB (RTX 4090) | 2–4 | Can handle more parallel work |
+ | GPU | Workers | Notes |
+ | ----- | --------- | ------- |
+ | 6 GB (GTX 1660) | 1 | Default is fine |
+ | 12 GB (RTX 3060) | 1–2 | Monitor GPU memory |
+ | 24 GB (RTX 4090) | 2–4 | Can handle more parallel work |
 
 ---
 

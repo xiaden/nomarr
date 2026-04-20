@@ -52,15 +52,15 @@ The `## Notes` section is omitted entirely from generated files when `notes` is 
 
 ### Field rules
 
-| Field | Type | Required | Validation |
-|-------|------|----------|------------|
-| H1 title | `# ASR-{N:04d}` — no text after the ID | Yes | Must match `r"^#\s+ASR-(\d+)\s*$"` |
-| Priority | Non-negative integer | Yes | `>= 0`; lower value = higher importance; gaps allowed |
-| Status | String | Yes | `"Active"`, `"Archived"`, or `r"^Superseded by ASR-\d{4}$"` |
-| Created | ISO date `YYYY-MM-DD` | Yes | Set at creation; never changed by `asr_create` logic |
-| Updated | ISO date `YYYY-MM-DD` | Yes | Set at creation; updated on any future edit |
-| `## Requirement` | String | Yes | Non-empty body text; scoped and measurable |
-| `## Notes` | String | No | When present: ADR references and background only |
+ | Field | Type | Required | Validation |
+ | ------- | ------ | ---------- | ------------ |
+ | H1 title | `# ASR-{N:04d}` — no text after the ID | Yes | Must match `r"^#\s+ASR-(\d+)\s*$"` |
+ | Priority | Non-negative integer | Yes | `>= 0`; lower value = higher importance; gaps allowed |
+ | Status | String | Yes | `"Active"`, `"Archived"`, or `r"^Superseded by ASR-\d{4}$"` |
+ | Created | ISO date `YYYY-MM-DD` | Yes | Set at creation; never changed by `asr_create` logic |
+ | Updated | ISO date `YYYY-MM-DD` | Yes | Set at creation; updated on any future edit |
+ | `## Requirement` | String | Yes | Non-empty body text; scoped and measurable |
+ | `## Notes` | String | No | When present: ADR references and background only |
 
 ### Removed fields (compared to current format)
 
@@ -448,6 +448,7 @@ def asr_search(
 ### Filter logic
 
 For each ASR file:
+
 1. `status`: skip if `meta["status"] != status` (exact match, non-empty filter only)
 2. `priority_min`: skip if `meta["priority"] < priority_min`
 3. `priority_max`: skip if `meta["priority"] > priority_max`
@@ -603,6 +604,7 @@ def asr_search(
 The 16 existing files in `artifacts/requirements/` use the old format (`ASR-NNN-slug.md` with old schema fields). They are **not renamed or rewritten** as part of this work. They are kept as-is and treated as garbage data / parser test fixtures.
 
 The new tools coexist with them safely:
+
 - `asr_search` skips all files that fail to parse (old format files will fail the `TITLE_PATTERN` match and raise, triggering the skip)
 - `asr_read` returns a structured error dict for any file that fails to parse
 - `next_asr_number` only matches `ASR-NNNN.md` (4-digit, no slug) — old files are naturally excluded, so new files start at `ASR-0001.md` without collision
@@ -673,11 +675,13 @@ This agent definition describes how to use ASR tools and references two contract
 **Section: "1. ASR Search"**
 
 Current bullet to remove:
+
 ```
 - `asr_search(quality_attribute="{attr}")` — by quality attribute (performance, security, etc.)
 ```
 
 Remove this bullet entirely. The `quality_attribute` parameter does not exist in the new `asr_search` signature. Replace it with:
+
 ```
 - `asr_search(priority_min=N, priority_max=N)` — by priority range (optional)
 ```
@@ -687,6 +691,7 @@ Remove this bullet entirely. The `quality_attribute` parameter does not exist in
 **Section: "5. Cross-Reference"**
 
 Current bullet to remove:
+
 ```
 - ASRs list `linked_adrs` that satisfy them
 ```
@@ -726,17 +731,17 @@ Remove this bullet entirely. ASRs no longer carry a `linked_adrs` field. ADR ref
 
 All changes are within `code-intel/src/mcp_code_intel/`:
 
-| File | Change type | Layer |
-|------|-------------|-------|
-| `helpers/asr_md.py` | Full rewrite | Helper |
-| `tools/asr_create.py` | Full rewrite | Tool |
-| `tools/asr_read.py` | Resolver + return schema update | Tool |
-| `tools/asr_search.py` | Full rewrite | Tool |
-| `server.py` | Wrapper parameter updates (3 functions) | Server |
-| `code-intel/tests/test_asr_md.py` | New file | Tests |
-| `code-intel/tests/test_asr_tools.py` | New file | Tests |
-| `.github/copilot-instructions.md` | 3 targeted string replacements | Docs |
-| `.github/agents/Support/support-librarian.agent.md` | 2 targeted removals (quality_attribute bullet, linked_adrs bullet) | Docs |
+ | File | Change type | Layer |
+ | ------ | ------------- | ------- |
+ | `helpers/asr_md.py` | Full rewrite | Helper |
+ | `tools/asr_create.py` | Full rewrite | Tool |
+ | `tools/asr_read.py` | Resolver + return schema update | Tool |
+ | `tools/asr_search.py` | Full rewrite | Tool |
+ | `server.py` | Wrapper parameter updates (3 functions) | Server |
+ | `code-intel/tests/test_asr_md.py` | New file | Tests |
+ | `code-intel/tests/test_asr_tools.py` | New file | Tests |
+ | `.github/copilot-instructions.md` | 3 targeted string replacements | Docs |
+ | `.github/agents/Support/support-librarian.agent.md` | 2 targeted removals (quality_attribute bullet, linked_adrs bullet) | Docs |
 
 Dependency direction: `asr_md.py` (helper) ← `asr_create/read/search.py` (tools) ← `server.py`. No upward imports.
 

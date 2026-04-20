@@ -16,19 +16,19 @@ Platform-level services that manage configuration, workers, health monitoring, M
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|---------|
-| `config_svc.py` | `ConfigService` — defaults→YAML→ENV→DB bootstrap, write-through cache, web-editable subset |
-| `worker_system_svc.py` | `WorkerSystemService` — discovery worker pool, GPU admission control, tier selection, auto-restart |
-| `health_monitor_svc.py` | `HealthMonitorService` — pipe-based health frames, startup/staleness/recovery deadlines, status callbacks |
-| `ml_svc.py` | `MLService` — backbone listing, head discovery, ONNX model registry, VRAM measurement management |
-| `file_watcher_svc.py` | `FileWatcherService` — per-library watchers (event/poll modes), debounced scan triggers |
-| `background_tasks_svc.py` | `BackgroundTaskService` — thread-based task execution with status tracking and eviction |
-| `cli_bootstrap_svc.py` | CLI factory functions — `get_database()`, `get_keys_service()`, `get_config_service()`, `get_metadata_service()` |
-| `keys_svc.py` | `KeyManagementService` — API keys, bcrypt passwords, session tokens, write-through session cache |
-| `info_svc.py` | `InfoService` — system info, health status, public info, GPU monitor subprocess lifecycle |
-| `calibration_download_svc.py` | Calibration bundle download, missing-check, and availability verification (stub) |
-| `workers/` | Worker subprocess implementations — see subfolder README |
+ | Module | Purpose |
+ | -------- | --------- |
+ | `config_svc.py` | `ConfigService` — defaults→YAML→ENV→DB bootstrap, write-through cache, web-editable subset |
+ | `worker_system_svc.py` | `WorkerSystemService` — discovery worker pool, GPU admission control, tier selection, auto-restart |
+ | `health_monitor_svc.py` | `HealthMonitorService` — pipe-based health frames, startup/staleness/recovery deadlines, status callbacks |
+ | `ml_svc.py` | `MLService` — backbone listing, head discovery, ONNX model registry, VRAM measurement management |
+ | `file_watcher_svc.py` | `FileWatcherService` — per-library watchers (event/poll modes), debounced scan triggers |
+ | `background_tasks_svc.py` | `BackgroundTaskService` — thread-based task execution with status tracking and eviction |
+ | `cli_bootstrap_svc.py` | CLI factory functions — `get_database()`, `get_keys_service()`, `get_config_service()`, `get_metadata_service()` |
+ | `keys_svc.py` | `KeyManagementService` — API keys, bcrypt passwords, session tokens, write-through session cache |
+ | `info_svc.py` | `InfoService` — system info, health status, public info, GPU monitor subprocess lifecycle |
+ | `calibration_download_svc.py` | Calibration bundle download, missing-check, and availability verification (stub) |
+ | `workers/` | Worker subprocess implementations — see subfolder README |
 
 ## Patterns
 

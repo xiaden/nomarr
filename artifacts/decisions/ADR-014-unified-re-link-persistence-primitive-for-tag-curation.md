@@ -25,18 +25,21 @@ Directly mutating tag vertex values (e.g., renaming by updating the `value` fiel
 All four curation operations use a single persistence primitive: `relink_tag_edges(source_tag_id, target_tag_id, song_ids=None)`.
 
 **Semantics:**
+
 - If `song_ids` is None → re-link ALL edges from source to target
 - If `song_ids` is provided → re-link only edges for those songs
 - Handles duplicates: songs already linked to target are skipped (no duplicate edges)
 - Returns `RelinkResult(moved=int, skipped=int, source_orphaned=bool)`
 
 **Operation mapping:**
+
 - **Rename:** source = old tag vertex, target = find_or_create(same rel, new value), song_ids = None
 - **Merge:** source = each tag to merge, target = canonical tag (already exists), song_ids = None
 - **Split:** source = current tag, target = find_or_create(same rel, new value), song_ids = selected subset
 - **Single-song:** source = current tag, target = find_or_create(same rel, new value), song_ids = [one_song]
 
 **AQL implementation (2-3 round trips):**
+
 1. Find or create target tag vertex (UPSERT on `(rel, value)`)
 2. Re-link edges: UPDATE `song_has_tags` WHERE `_to == source_tag_id` (AND `_from IN song_ids` if scoped), SET `_to = target_tag_id`. Use UPSERT to skip duplicates.
 3. Cleanup: run `cleanup_orphaned_tags()` to delete source vertex if zero edges remain
@@ -48,6 +51,7 @@ All four curation operations use a single persistence primitive: `relink_tag_edg
 ## Consequences
 
 **Positive:**
+
 - Single primitive handles all four curation operations — minimal persistence surface area
 - Avoids unique index conflicts by never mutating tag vertex values
 - Duplicate-safe: UPSERT semantics prevent double-edges during merge
@@ -55,11 +59,13 @@ All four curation operations use a single persistence primitive: `relink_tag_edg
 - Idempotent: safe to retry on partial failure
 
 **Negative:**
+
 - 2-3 AQL round trips per operation (not single-query). Acceptable for user-initiated curation.
 - `cleanup_orphaned_tags()` after every operation adds overhead — could be batched/deferred for bulk merges. Acceptable for alpha.
 - Re-linking edges (rather than updating vertex value) means ArangoDB edge `_key` changes for moved edges — no external consumers depend on edge keys today.
 
 **Neutral:**
+
 - Does not replace `set_song_tags_batch` — both primitives coexist for their respective use cases
 
 ## References

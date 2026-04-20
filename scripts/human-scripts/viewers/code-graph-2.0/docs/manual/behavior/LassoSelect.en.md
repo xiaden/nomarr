@@ -53,18 +53,18 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Option                      | Description                                                                                                                                                                                                                               | Type                                                                                                                           | Default                   | Required |
+| Option | Description | Type | Default | Required |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------- | -------- |
-| type                        | Behavior type name. This plugin is built-in, you can use it by `type: 'lasso-select'`.                                                                                                                                                    | `lasso-select` \| string                                                                                                       | `lasso-select`            | ✓        |
-| animation                   | Whether to enable animation                                                                                                                                                                                                               | boolean                                                                                                                        | false                     |          |
-| enable                      | Whether to enable lasso selection                                                                                                                                                                                                         | boolean \| ((event: [Event](/api/event#event-object-properties)) => boolean)                                                   | true                      |          |
-| enableElements              | Types of elements that can be selected                                                                                                                                                                                                    | ( `node` \| `edge` \| `combo` )[]                                                                                              | [`node`, `combo`, `edge`] |          |
-| [immediately](#immediately) | Whether to select immediately, only effective when [selection mode](#mode) is `default`                                                                                                                                                   | boolean                                                                                                                        | false                     |          |
-| [mode](#mode)               | Selection mode                                                                                                                                                                                                                            | `union` \| `intersect` \| `diff` \| `default`                                                                                  | `default`                 |          |
-| onSelect                    | Callback for selected element state                                                                                                                                                                                                       | (states:Record&lt;string,string\|string[]>) =>Record&lt;string,string\|string[]>                                               |                           |          |
-| state                       | State to switch to when selected                                                                                                                                                                                                          | string \| `selected` \| `active` \| `inactive` \| `disabled` \| `highlight`                                                    | `selected`                |          |
-| [style](#style)             | Style of the box during selection                                                                                                                                                                                                         | <a href="/manual/element/shape/properties" target="_blank" rel="noopener noreferrer">RectStyleProps extends BaseStyleProps</a> | [Default](#style)         |          |
-| trigger                     | Press this shortcut key along with mouse click to select **Key reference:** _<a href="https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_key_values" target="_blank" rel="noopener noreferrer">MDN Key Values</a>_ | string[] \| (`Control` \| `Shift`\| `Alt` \| `......`)[]                                                                       | [`shift`]                 |          |
+| type | Behavior type name. This plugin is built-in, you can use it by `type: 'lasso-select'`. | `lasso-select` \| string | `lasso-select` | ✓ |
+| animation | Whether to enable animation | boolean | false | |
+| enable | Whether to enable lasso selection | boolean \| ((event: [Event](/api/event#event-object-properties)) => boolean) | true | |
+| enableElements | Types of elements that can be selected | ( `node` \| `edge` \| `combo` )[] | [`node`, `combo`, `edge`] | |
+| [immediately](#immediately) | Whether to select immediately, only effective when [selection mode](#mode) is `default` | boolean | false | |
+| [mode](#mode) | Selection mode | `union` \| `intersect` \| `diff` \| `default` | `default` | |
+| onSelect | Callback for selected element state | (states:Record&lt;string,string\|string[]>) =>Record&lt;string,string\|string[]> | | |
+| state | State to switch to when selected | string \| `selected` \| `active` \| `inactive` \| `disabled` \| `highlight` | `selected` | |
+| [style](#style) | Style of the box during selection | <a href="/manual/element/shape/properties" target="_blank" rel="noopener noreferrer">RectStyleProps extends BaseStyleProps</a> | [Default](#style) | |
+| trigger | Press this shortcut key along with mouse click to select **Key reference:** _<a href="https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_key_values" target="_blank" rel="noopener noreferrer">MDN Key Values</a>_ | string[] \| (`Control` \| `Shift`\| `Alt` \| `......`)[] | [`shift`] | |
 
 ### immediately
 
@@ -214,28 +214,28 @@ createGraph(
 
 ### style
 
-| Property          | Description             | Type                                     | Default   |
+| Property | Description | Type | Default |
 | ----------------- | ----------------------- | ---------------------------------------- | --------- |
-| cursor            | Mouse style             | string                                   |           |
-| fill              | Fill color              | string \| Pattern \| null                | `#1677FF` |
-| fillOpacity       | Fill opacity            | number \| string                         | 0.1       |
-| isBillboard       | Billboard mode          | boolean                                  |           |
-| isSizeAttenuation | Size attenuation        | boolean                                  |           |
-| lineCap           | Line cap style          | `butt` \| `round` \| `square`            |           |
-| lineDash          | Dash line config        | number \| string \| (string \| number)[] |           |
-| lineDashOffset    | Dash line offset        | number                                   |           |
-| lineJoin          | Line join style         | `miter` \| `round` \| `bevel`            |           |
-| lineWidth         | Line width              | number \| string                         | 1         |
-| opacity           | Overall opacity         | number \| string                         |           |
-| radius            | Rectangle corner radius | number \| string \| number[]             |           |
-| shadowBlur        | Shadow blur level       | number                                   |           |
-| shadowColor       | Shadow color            | string                                   |           |
-| shadowOffsetX     | Shadow X offset         | number                                   |           |
-| shadowOffsetY     | Shadow Y offset         | number                                   |           |
-| stroke            | Stroke color            | string \| Pattern \| null                | `#1677FF` |
-| strokeOpacity     | Stroke opacity          | number \| string                         |           |
-| visibility        | Visibility              | `visible` \| `hidden`                    |           |
-| zIndex            | Rendering level         | number                                   | 2         |
+| cursor | Mouse style | string | |
+| fill | Fill color | string \| Pattern \| null | `#1677FF` |
+| fillOpacity | Fill opacity | number \| string | 0.1 |
+| isBillboard | Billboard mode | boolean | |
+| isSizeAttenuation | Size attenuation | boolean | |
+| lineCap | Line cap style | `butt` \| `round` \| `square` | |
+| lineDash | Dash line config | number \| string \| (string \| number)[] | |
+| lineDashOffset | Dash line offset | number | |
+| lineJoin | Line join style | `miter` \| `round` \| `bevel` | |
+| lineWidth | Line width | number \| string | 1 |
+| opacity | Overall opacity | number \| string | |
+| radius | Rectangle corner radius | number \| string \| number[] | |
+| shadowBlur | Shadow blur level | number | |
+| shadowColor | Shadow color | string | |
+| shadowOffsetX | Shadow X offset | number | |
+| shadowOffsetY | Shadow Y offset | number | |
+| stroke | Stroke color | string \| Pattern \| null | `#1677FF` |
+| strokeOpacity | Stroke opacity | number \| string | |
+| visibility | Visibility | `visible` \| `hidden` | |
+| zIndex | Rendering level | number | 2 |
 
 **Example**:
 

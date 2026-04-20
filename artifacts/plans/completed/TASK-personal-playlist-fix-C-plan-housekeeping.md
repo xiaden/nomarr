@@ -9,6 +9,7 @@ Plans A through G for the personal playlist feature are fully implemented (code 
 ## Phases
 
 ### Phase 1: Mark and Archive
+
 - [x] Mark all steps `[x]` in `plans/TASK-personal-playlist-C-sync-rewrite.md` (7 steps across 2 phases).
     **Notes:** Verified: All steps marked [x] in plans/completed/TASK-personal-playlist-C-sync-rewrite.md.
 - [x] Mark all steps `[x]` in `plans/TASK-personal-playlist-E-playlist-generation.md` (11 steps across 2 phases).
@@ -21,11 +22,13 @@ Plans A through G for the personal playlist feature are fully implemented (code 
     **Notes:** Verified: All 7 plan files (A through G) are in plans/completed/. Zero TASK-personal-playlist-[A-G] files in plans/ root.
 
 ## Completion Criteria
+
 - All steps in all 7 plan files show `[x]`
 - All 7 files live under `plans/completed/`
 - No `TASK-personal-playlist-[A-G]` files remain in `plans/` root
 
 ## References
+
 - Plans A, B, D: Already marked `[x]` but not moved
 - Plans C, E, F, G: Steps still `[ ]` despite code being implemented
 - Audit results: All 7 plans passed ALL CHECKS in prior session

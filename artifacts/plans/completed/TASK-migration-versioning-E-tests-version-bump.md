@@ -1,6 +1,7 @@
 # Task: Tests & Version Bump (Migration Versioning Part E)
 
 ## Problem Statement
+
 Plans A–D replaced the integer migration chain with a semver-based runner. This final part confirms
 everything works: bump `__version__` to `"0.2.0"`, add the `packaging` runtime dependency that the
 new runner relies on for semver comparison, delete or fix tests that reference removed APIs
@@ -11,6 +12,7 @@ full test suite passes with zero regressions.
 ## Phases
 
 ### Phase 1: Cleanup, Dependencies, and Version Bump
+
 - [x] Delete `tests/unit/persistence/test_migration_v016.py` — V016 was removed by Plan D; this file will fail to import after that plan executes
 - [x] Search the entire `tests/` tree for references to `SCHEMA_VERSION_BEFORE`, `SCHEMA_VERSION_AFTER`, `ensure_schema_version`, `update_schema_version`, `schema_version_before=`, `schema_version_after=`, and `record_migration_started(schema_version`; update or delete each file found so no test references the removed APIs
     **Note:** grep search confirmed zero matches for all listed patterns across tests/. No files needed updating.
@@ -23,6 +25,7 @@ full test suite passes with zero regressions.
     **Note:** lint_project_backend() reported 0 errors across 20 files checked.
 
 ### Phase 2: New Tests and Full Suite Validation
+
 - [x] Create `tests/unit/migrations/test_migration_uniqueness.py`: single test class `TestMigrationVersionUniqueness`, method `test_no_duplicate_migration_versions`, marked `@pytest.mark.code_smell`; scan `nomarr/migrations/` for `V*.py` files via `pathlib.Path.glob`, import each with `importlib.import_module`, collect `MIGRATION_VERSION` values into a list, assert `len(versions) == len(set(versions))` with a message showing which version is duplicated; no fixture needed; file-level `pytestmark = pytest.mark.code_smell`
 - [x] Create `tests/unit/components/platform/test_migration_runner_comp.py` covering the new runner API from Plan A: `discover_migrations` (returns sorted list, raises `MigrationError` on invalid module), `check_duplicate_versions` (raises on duplicate `MIGRATION_VERSION`, passes on unique), `get_pending_migrations` (skips applied when `current_db_version` is set, returns all on fresh `None`), `apply_migration` (calls `module.upgrade`, calls `migration_ops.record_migration_started` with `name` and `migration_version` kwargs, calls `migration_ops.mark_migration_applied`), `run_pending_migrations` (calls `db.get_version`, calls `db.set_version` after each migration); each test method carries `@pytest.mark.unit`
 - [x] Run `lint_project_backend path="tests/"` and confirm zero ruff/mypy errors on the new test files
@@ -33,6 +36,7 @@ full test suite passes with zero regressions.
     **Note:** 2 passed, 433 deselected in 1.74s. test_no_duplicate_migration_versions PASSED — V001_baseline (0.0.0) and V020_rename_schema_version_key (0.2.0) are unique.
 
 ## Completion Criteria
+
 - `nomarr/__version__.py` reads `"0.2.0"`
 - `pyproject.toml` lists `packaging>=24.0` in `[project.dependencies]`
 - `tests/unit/persistence/test_migration_v016.py` is deleted
@@ -43,6 +47,7 @@ full test suite passes with zero regressions.
 - `lint_project_backend` exits zero
 
 ## References
+
 - Design doc: `plans/dev/design-migration-versioning.md`
 - Contracts ledger: see prior plans `TASK-migration-versioning-A` through `D`
 - New runner API: `nomarr/components/platform/migration_runner_comp.py` (Plan A output)

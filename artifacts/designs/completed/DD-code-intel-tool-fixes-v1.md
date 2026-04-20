@@ -17,6 +17,7 @@ Fix reliability issues in 5 code-intel MCP tools: `edit_file_move_by_content`, `
 Five code-intel MCP tools routinely fail when called by AI agents. Research identified these root causes:
 
 **Shared infrastructure (content-boundary tools):**
+
 1. **`expected_line_count` must be exact** — agents frequently miscount by ±1, causing "No matching range" errors with confusing diagnostics
 2. **Tab rejection in `read_file_with_metadata()`** — hard blocks editing any file with tab indentation (Go, Makefiles, some JS)
 3. **Short boundaries** like `return`, `};` match too many lines via substring — paired with strict line-count, produces zero candidates
@@ -42,10 +43,12 @@ Five code-intel MCP tools routinely fail when called by AI agents. Research iden
 Changes are scoped to `code-intel/src/mcp_code_intel/`:
 
 **Layer 1 — Shared helpers** (`helpers/`)
+
 - `content_boundaries.py`: Add line-count tolerance (±2 with warning), improve diagnostics
 - `file_helpers.py`: Remove tab rejection (or convert to warning), fix EOL handling in insert path
 
 **Layer 2 — Tool implementations** (`tools/`)
+
 - `edit_file_insert_text.py`: Fix `content.split("\n")` → `splitlines()`, fix trailing newline stripping
 - `edit_file_move_by_content.py`: Benefits from Layer 1 fixes, no direct changes needed
 - `edit_file_replace_by_content.py`: Benefits from Layer 1 fixes, no direct changes needed
@@ -53,6 +56,7 @@ Changes are scoped to `code-intel/src/mcp_code_intel/`:
 - `locate_module_symbol.py`: Fix parent_filter gap, use path-segment matching, fix disambiguation
 
 **Layer 3 — Server wrappers** (`server.py`)
+
 - No changes expected — wrappers are thin
 
 **Dependency direction:** helpers → tools → server (no circular deps)

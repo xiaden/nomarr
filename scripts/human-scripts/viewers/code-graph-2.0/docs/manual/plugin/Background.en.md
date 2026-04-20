@@ -36,20 +36,20 @@ const graph = new Graph({
 
 The configuration options for the Background plugin inherit all CSS style properties ([CSSStyleDeclaration](https://developer.mozilla.org/en-US/docs/Web/API/CSSStyleDeclaration)), so you can use any valid CSS property to configure the background. Here are some common configurations:
 
-| Property           | Description                   | Type   | Default Value     | Required |
+| Property | Description | Type | Default Value | Required |
 | ------------------ | ----------------------------- | ------ | ----------------- | -------- |
-| type               | Plugin type                   | string | `background`      | ✓        |
-| key                | Unique identifier for updates | string | -                 |          |
-| width              | Background width              | string | `100%`            |          |
-| height             | Background height             | string | `100%`            |          |
-| backgroundColor    | Background color              | string | -                 |          |
-| backgroundImage    | Background image              | string | -                 |          |
-| backgroundSize     | Background size               | string | `cover`           |          |
-| backgroundPosition | Background position           | string | -                 |          |
-| backgroundRepeat   | Background repeat             | string | -                 |          |
-| opacity            | Background opacity            | string | -                 |          |
-| transition         | Transition animation          | string | `background 0.5s` |          |
-| zIndex             | Stacking order                | string | -1                |          |
+| type | Plugin type | string | `background` | ✓ |
+| key | Unique identifier for updates | string | - | |
+| width | Background width | string | `100%` | |
+| height | Background height | string | `100%` | |
+| backgroundColor | Background color | string | - | |
+| backgroundImage | Background image | string | - | |
+| backgroundSize | Background size | string | `cover` | |
+| backgroundPosition | Background position | string | - | |
+| backgroundRepeat | Background repeat | string | - | |
+| opacity | Background opacity | string | - | |
+| transition | Transition animation | string | `background 0.5s` | |
+| zIndex | Stacking order | string | -1 | |
 
 > Note: The `zIndex` is set to -1 by default to prevent the background from covering other plugin DOM elements, such as grid lines.
 

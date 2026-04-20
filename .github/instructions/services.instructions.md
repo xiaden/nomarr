@@ -9,6 +9,7 @@ applyTo: nomarr/services/**
 **Purpose:** Own runtime wiring and long-lived resources (config, DB, workers) and expose a clean API for interfaces.
 
 Services are:
+
 - **Dependency coordinators** (wire config, DB, ML backends, workers)
 - **Thin orchestrators** (call [workflows](./workflows.instructions.md), aggregate results)
 - **DTO providers** (shape data for interfaces using [helpers DTOs](./helpers.instructions.md))
@@ -45,6 +46,7 @@ nomarr/services/domain/library_svc/
 ```
 
 **Rules for service packages:**
+
 - Package folder must end in `_svc`
 - Internal files do NOT need `_svc.py` suffix
 - The `__init__.py` exports the composed `<Domain>Service` class
@@ -69,6 +71,7 @@ These are exempt from `_svc.py` naming since they're not services themselves.
 `services/infrastructure/workers/` contains **runner processes** — `multiprocessing.Process` subclasses that execute work in separate subprocesses.
 
 **Why they live here:**
+
 - Spawned and managed by `WorkerSystemService` (co-location with their manager)
 - Not components (they call workflows, which components cannot do)
 - Not workflows (they contain the execution loop, not just orchestration)
@@ -76,16 +79,17 @@ These are exempt from `_svc.py` naming since they're not services themselves.
 
 **Architectural exemptions for workers:**
 
-| Normal Service Rule | Worker Exemption |
-|---------------------|------------------|
-| Services are thin orchestrators | Workers contain execution loops |
-| Services call workflows, not components directly | Workers may call both |
-| Files must end in `_svc.py` | Worker files end in `_worker.py` |
-| Classes must end in `Service` | Worker classes end in `Worker` |
+ | Normal Service Rule | Worker Exemption |
+ | --------------------- | ------------------ |
+ | Services are thin orchestrators | Workers contain execution loops |
+ | Services call workflows, not components directly | Workers may call both |
+ | Files must end in `_svc.py` | Worker files end in `_worker.py` |
+ | Classes must end in `Service` | Worker classes end in `Worker` |
 
 **Rationale:** The subprocess boundary requires self-contained, picklable process classes. Fragmenting them to "follow the rules" would increase complexity without benefit. The architecture rules exist to improve maintainability and code reuse — workers don't need reuse, they need reliability.
 
 **Worker file naming:**
+
 - `*_worker.py` — Process subclass definitions
 - Classes should be named `<Domain>Worker` (e.g., `DiscoveryWorker`)
 
@@ -172,11 +176,13 @@ get_library_for_admin()  # No audience suffixes
 ## Complexity Rule: DI + Orchestration Only
 
 A service method should:
+
 1. Collect dependencies
 2. Call workflow(s)
 3. Return result
 
 **Extract to workflow when you see:**
+
 - Loops
 - Branching logic
 - Multi-step operations
@@ -229,6 +235,7 @@ def get_job(self, job_id: int) -> dict[str, Any]: ...
 ## Long-Lived Resources
 
 Services own:
+
 - DB connections (`Database`)
 - Config snapshots (`ConfigService`)
 - ML backends

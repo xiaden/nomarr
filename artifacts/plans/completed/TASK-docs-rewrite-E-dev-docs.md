@@ -7,13 +7,14 @@ The `docs/dev/` folder contains 17 files and a `skills/` subdirectory totaling ~
 ## Phases
 
 ### Phase 1: Triage and Cleanup
+
 - [x] Read all 17 files plus 3 `skills/` files against the current codebase; classify each as full-rewrite, delete, freshen, or out-of-scope; record classifications as a triage table in a scratch note for reference during subsequent phases
     **Triage:** | # | File | Classification | Rationale |
 |---|------|---------------|-----------|
 | 1 | architecture.md | full-rewrite | References QueueService, ProcessingService, queue_service, ml/backend_essentia.py, events/, queue/ components, SQL-style persistence patterns |
 | 2 | calibration-troubleshooting.md | freshen | Core per-label calibration content accurate; verify cross-refs and stale terms |
 | 3 | domains.md | full-rewrite | Stale domain catalog (lists events/, queue/ as components), references entity_keys_comp, outdated examples |
-| 4 | health.md | full-rewrite | Describes SQL-table health system with worker:processing:* IDs; actual system uses pipe/FD HealthMonitorService with worker:discovery:* IDs and ComponentStatus enum |
+| 4 | health.md | full-rewrite | Describes SQL-table health system with worker:processing:*IDs; actual system uses pipe/FD HealthMonitorService with worker:discovery:* IDs and ComponentStatus enum |
 | 5 | mcp-config-defaults.md | out-of-scope | MCP/code-intel documentation |
 | 6 | mcp-config-examples.md | out-of-scope | MCP/code-intel documentation |
 | 7 | migrations.md | freshen | Already describes current baseline+delta system accurately; verify cross-refs after Phase 1 deletions |
@@ -26,7 +27,7 @@ The `docs/dev/` folder contains 17 files and a `skills/` subdirectory totaling ~
 | 14 | vector-stores.md | freshen | Hot/cold architecture doc is current; verify cross-refs |
 | 15 | versioning.md | freshen | General versioning strategy accurate; verify migration cross-refs |
 | 16 | workers.md | full-rewrite | Still references health table DB writes alongside pipe/FD; needs sharper focus on single DiscoveryWorker type with claim-based processing |
-| 17 | skills/README.md | full-rewrite | Lists deleted layer-* skills in directory tree example |
+| 17 | skills/README.md | full-rewrite | Lists deleted layer-*skills in directory tree example |
 | 18 | skills/nomarr-skills.md | full-rewrite | Lists 10 skills including 6 deleted layer-* skills; actual count is 12 different skills |
 | 19 | skills/specification.md | freshen | Agent Skills format spec is reference material; verify against current format |
 Summary: 2 delete, 7 full-rewrite, 4 freshen, 4 out-of-scope, 2 deleted in this phase
@@ -34,6 +35,7 @@ Summary: 2 delete, 7 full-rewrite, 4 freshen, 4 out-of-scope, 2 deleted in this 
     **Done:** Deleted services.md and statebroker.md. Removed both from mkdocs.yml nav. Out-of-scope files (mui-integration.md, server-file-picker.md, mcp-config-defaults.md, mcp-config-examples.md) left unchanged.
 
 ### Phase 2: Core Architecture Rewrites
+
 - [x] Rewrite `architecture.md` — document current layer structure (interfaces → services → workflows → components → persistence/helpers), DI via constructor injection and FastAPI `Depends`, ONNX inference backend, discovery-based workers, persistence-only-via-components rule; remove all references to queues, TensorFlow, Essentia-as-ML-backend, and `ml/backend_essentia.py`
     **Done:** Rewrote architecture.md: 1015 lines → 466 lines. Documented current 5-layer structure, DI via constructor injection + FastAPI Depends, ONNX inference backend, discovery-based workers, persistence-only-via-components rule. Added full Database facade collection table. Removed all stale references (queues, TensorFlow, Essentia-as-ML, StateBroker, SSE).
 - [x] Rewrite `domains.md` — update domain inventory to match current `components/` subfolders (library, metadata, tagging, analytics, ml, workers, navidrome, platform, playlist_import, processing, infrastructure), fix data ownership examples with actual ArangoDB collections, remove references to deleted modules (`events/`, `queue/`, `entity_keys_comp.py`)
@@ -44,10 +46,11 @@ Summary: 2 delete, 7 full-rewrite, 4 freshen, 4 out-of-scope, 2 deleted in this 
     **Done:** Rewrote workers.md: 400 lines → 279 lines. Focused on single DiscoveryWorker type with claim-based work discovery via worker_claims_aql. Documented WorkerSystemService lifecycle (admission control, spawn, pause/resume, graceful stop), crash recovery flow (HealthMonitorService callback → claim release → VRAM release → restart policy → backoff). Cross-references health.md for monitoring details. Removed all multi-worker-type, queue-based, and services.md references.
 
 ### Phase 3: Remaining Doc Updates
+
 - [x] Rewrite `naming.md` and `qc.md` — in `naming.md`, replace stale examples (`QueueService`, `ProcessingService`, `WorkersCoordinator`) with actual service names from `services/domain/` and `services/infrastructure/`; in `qc.md`, update tooling section to reference `lint_project_backend` as primary Python QC tool, remove references to obsolete scripts, align architecture checks with current layer rules
     **Done:** **naming.md:** 554→370 lines. Replaced QueueService/ProcessingService/WorkersCoordinator/StateBroker with actual services (domain: AnalyticsService, CalibrationService, LibraryService, MetadataService, NavidromeService, TaggingService, VectorSearchService, VectorMaintenanceService; infra: ConfigService, HealthMonitorService, InfoService, KeyManagementService, MLService, WorkerSystemService). Updated module naming to _svc/_wf/_comp suffixes. Replaced check_naming.py with lint_project_backend. Removed services.md cross-ref.
 **qc.md:** 649→300 lines. lint_project_backend is now primary QC tool. Removed all obsolete scripts (check_naming.py, discover_import_chains.py, discover_api.py, qc_quick.sh, qc_full.sh). Replaced TensorFlow/essentia-tensorflow with ONNX. Updated SQL examples to AQL. Updated priority modules to actual paths. Added MCP tools table. Removed services.md cross-ref.
-- [x] Rewrite `skills/` directory — update `README.md` and `nomarr-skills.md` to reflect the actual 12 skills in `.github/skills/` (code-discovery, code-generation, code-migration, doc-coauthoring, feature-execution, feature-planning, mcp-builder, playwright-cli, quality-analysis, skill-creator, skill-maintenance); remove references to deleted layer-* skills; verify `specification.md` against current Agent Skills format and update if needed
+- [x] Rewrite `skills/` directory — update `README.md` and `nomarr-skills.md` to reflect the actual 12 skills in `.github/skills/` (code-discovery, code-generation, code-migration, doc-coauthoring, feature-execution, feature-planning, mcp-builder, playwright-cli, quality-analysis, skill-creator, skill-maintenance); remove references to deleted layer-*skills; verify `specification.md` against current Agent Skills format and update if needed
     **Done:** **README.md:** Updated directory tree to show actual 11 active skills (removed layer-helpers, layer-components, layer-workflows, layer-services, layer-interfaces, layer-persistence). Added all current skills: code-discovery, code-generation, code-migration, doc-coauthoring, feature-execution, feature-planning, mcp-builder, playwright-cli, quality-analysis, skill-creator, skill-maintenance.
 **nomarr-skills.md:** Full rewrite. Replaced 10-skill list (6 deleted layer-* + 4 tooling) with actual 11 active skills. Each skill has trigger conditions and description from actual SKILL.md frontmatter. Removed all layer-specific skill sections. Updated dependency direction to match current rules (services may skip workflows, lateral imports allowed). Removed references to obsolete scripts (check_naming.py, discover_import_chains.py, etc.) and ml_backend_essentia_comp.py.
 **specification.md:** Verified against current Agent Skills format — no changes needed. Content is a reference spec with no Nomarr-specific stale terms.
@@ -58,6 +61,7 @@ Summary: 2 delete, 7 full-rewrite, 4 freshen, 4 out-of-scope, 2 deleted in this 
 **calibration-troubleshooting.md:** Fixed 4 instances of incorrect "22" → "23" calibration document count (table correctly totals 23: 10 binary heads × 2 + 3 regression heads × 1). Verified cross-references to existing files (calibration_state_aql.py, generate_calibration_wf.py, calibration_if.py, CalibrationDisplay.tsx) are valid.
 
 ### Phase 4: Validation
+
 - [x] Grep all `docs/dev/` files for every banned stale term from the contracts ledger (TensorFlow, QueueService, sql_helper, queue_svc, base.py worker, scan_library_direct_wf, start_scan_wf, entity_keys_comp, events/ components, pages/ directory, ml_backend_essentia_comp as ML entry, StateBroker) — zero matches required
     **Results:** Grepped all docs/dev/ files (14 files + skills/) for all 12 banned stale terms. Initial scan found 1 match: "TensorFlow" in architecture.md line 106 as a negation ("There is no TensorFlow dependency"). Fixed by rephrasing to "All ML inference runs exclusively through ONNX Runtime." Confirmation sweep: 0 matches for all 12 terms (TensorFlow, QueueService, sql_helper, queue_svc, base.py worker, scan_library_direct_wf, start_scan_wf, entity_keys_comp, events/ components, pages/ directory, ml_backend_essentia_comp, StateBroker). Also verified zero matches for services.md, statebroker.md, calibration.md, queues.md links. Note: WorkersCoordinator appears once in naming.md as an anti-pattern example (❌) — not on the banned list and valid documentation use.
 - [x] Cross-reference each surviving `docs/dev/` file against the 6 LAYER.md files and `copilot-instructions.md` — verify no contradictions in dependency direction, persistence access rules, worker/health architecture, or ML backend identity; verify all internal cross-links between docs/dev/ files resolve to files that exist
@@ -67,6 +71,7 @@ CORE FACTS VERIFIED CONSISTENT: (1) Dependency direction `interfaces → service
 CROSS-LINKS: All 41 internal markdown links between docs/dev/ files resolve to existing files. Zero links to deleted files (services.md, statebroker.md, calibration.md, queues.md). One link in skills/specification.md to `references/REFERENCE.md` is inside a code block example (not an actual link). External links to docs/user/deployment.md and docs/user/getting_started.md both resolve.
 
 ## Completion Criteria
+
 - `services.md` and `statebroker.md` deleted; no docs/dev/ file references a removed system as if it exists
 - `architecture.md` and `domains.md` accurately describe current layers, domains, and module hierarchy
 - `health.md` documents pipe/FD-based HealthMonitorService, not SQL health table

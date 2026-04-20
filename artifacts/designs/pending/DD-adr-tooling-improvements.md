@@ -5,6 +5,7 @@
 **Created:** 2026-04-04  
 
 **Related Documents:**
+
 - [ADR-001](artifacts/decisions/ADR-001-use-onnx-runtime-for-ml-inference.md) — Demonstrates stub quality (3 one-liner sections)
 - [ADR-002](artifacts/decisions/ADR-002-normalize-all-code-intel-file-reads-to-lf-only.md) — Missing `source_log` field
 - [ADR-007](artifacts/decisions/ADR-007-tag-editor-service-home-libraryservice-extension-via-mixin.md) — Contains literal `\n` in body text (serialization bug)
@@ -51,15 +52,15 @@ The ADR tooling produces structurally valid but qualitatively poor ADRs. Inspect
 
 ### Layer Mapping
 
-| Component | Layer | Responsibility |
-|-----------|-------|----------------|
-| `helpers/adr_md.py` | Helper | ADR dataclass, parser, generator |
-| `tools/adr_suggest.py` | Tool | Preview generation (unnumbered), unescape, word count, draft ID |
-| `tools/adr_commit.py` | Tool | Disk write, numbering, unescape, warnings, draft ID correlation |
-| `tools/adr_read.py` | Tool | No changes |
-| `tools/adr_search.py` | Tool | No changes |
-| `server.py` | Server | Registration updates |
-| `schemas/ADR_MARKDOWN_SCHEMA.json` | Schema | Format definition (documentation for agents) |
+ | Component | Layer | Responsibility |
+ | ----------- | ------- | ---------------- |
+ | `helpers/adr_md.py` | Helper | ADR dataclass, parser, generator |
+ | `tools/adr_suggest.py` | Tool | Preview generation (unnumbered), unescape, word count, draft ID |
+ | `tools/adr_commit.py` | Tool | Disk write, numbering, unescape, warnings, draft ID correlation |
+ | `tools/adr_read.py` | Tool | No changes |
+ | `tools/adr_search.py` | Tool | No changes |
+ | `server.py` | Server | Registration updates |
+ | `schemas/ADR_MARKDOWN_SCHEMA.json` | Schema | Format definition (documentation for agents) |
 
 Dependency direction: `server.py` → `tools/*` → `helpers/adr_md.py` (unchanged).
 
@@ -79,14 +80,14 @@ Dependency direction: `server.py` → `tools/*` → `helpers/adr_md.py` (unchang
 
 **Return value change:**
 
-| Field | Before | After |
-|-------|--------|-------|
-| `number` | `int` (real number) | Removed from response |
-| `filename` | `str` (real filename) | Removed from response |
-| `markdown` | Preview with real number | Preview with `ADR-DRAFT` |
-| `title` | `str` | `str` (unchanged) |
-| `draft_id` | — | `str` (new, slug derived from title) |
-| `word_count` | — | `int` (new, see §5) |
+ | Field | Before | After |
+ | ------- | -------- | ------- |
+ | `number` | `int` (real number) | Removed from response |
+ | `filename` | `str` (real filename) | Removed from response |
+ | `markdown` | Preview with real number | Preview with `ADR-DRAFT` |
+ | `title` | `str` | `str` (unchanged) |
+ | `draft_id` | — | `str` (new, slug derived from title) |
+ | `word_count` | — | `int` (new, see §5) |
 
 **`adr_commit` change:** Accepts an optional `draft_id: str = ""` parameter. This is for caller-side correlation only — `adr_commit` does not use it internally. It already calls `next_adr_number()` independently in its retry loop.
 
@@ -133,7 +134,7 @@ class ADR:
 
 **Parser changes (`parse_adr` and `parse_adr_metadata`):** Recognize `**Supersedes:**` as a metadata key. Parse comma-separated values into the `supersedes` list (matching how Tags works). Example: `**Supersedes:** ADR-007, ADR-012` → `["ADR-007", "ADR-012"]`.
 
-**Generator change (`generate_adr`):** If `adr.supersedes` is non-empty, emit `**Supersedes:** {comma-separated values}  ` after `Source Log` in the metadata block. Single `**Supersedes:**` line with comma-separated values.
+**Generator change (`generate_adr`):** If `adr.supersedes` is non-empty, emit `**Supersedes:** {comma-separated values}` after `Source Log` in the metadata block. Single `**Supersedes:**` line with comma-separated values.
 
 **Tool signature changes:** Both `adr_suggest` and `adr_commit` gain an optional `supersedes: list[str] = []` parameter (a list of ADR identifiers). When non-empty, it is passed through to the ADR dataclass.
 
@@ -188,25 +189,25 @@ class ADR:
 
 ## Files to Modify
 
-| File | Changes |
-|------|---------|
-| `code-intel/src/mcp_code_intel/helpers/adr_md.py` | Add `supersedes: list[str]` to ADR dataclass. Add `_unescape_literal_newlines()`. Update `parse_adr()` and `parse_adr_metadata()` to extract Supersedes as comma-separated list. Update `generate_adr()` to emit Supersedes and handle `number == 0` for draft titles. |
-| `code-intel/src/mcp_code_intel/tools/adr_suggest.py` | Remove `next_adr_number()` call. Set `number=0`. Add `supersedes` param (`list[str]`). Call `_unescape_literal_newlines()` on body fields. Add `word_count` and `draft_id` to response. Remove `number` and `filename` from response. |
-| `code-intel/src/mcp_code_intel/tools/adr_commit.py` | Add `supersedes` param (`list[str]`). Add optional `draft_id` param (correlation only). Call `_unescape_literal_newlines()` on body fields. Add `markdown` to success response. Add content warning logic. Add source_log duplicate check. |
-| `code-intel/src/mcp_code_intel/server.py` | Update `adr_suggest` and `adr_commit` wrapper signatures to include `supersedes` and `draft_id`. Remove any `adr_create` references. |
-| `code-intel/tests/test_adr_tools.py` | Update existing tests for changed return values (no `number`/`filename` in suggest, new `draft_id`). Add tests for: unescape, supersedes field (multi-value), word count, source_log warning, markdown in commit response, draft title format, draft_id generation and correlation. |
+ | File | Changes |
+ | ------ | --------- |
+ | `code-intel/src/mcp_code_intel/helpers/adr_md.py` | Add `supersedes: list[str]` to ADR dataclass. Add `_unescape_literal_newlines()`. Update `parse_adr()` and `parse_adr_metadata()` to extract Supersedes as comma-separated list. Update `generate_adr()` to emit Supersedes and handle `number == 0` for draft titles. |
+ | `code-intel/src/mcp_code_intel/tools/adr_suggest.py` | Remove `next_adr_number()` call. Set `number=0`. Add `supersedes` param (`list[str]`). Call `_unescape_literal_newlines()` on body fields. Add `word_count` and `draft_id` to response. Remove `number` and `filename` from response. |
+ | `code-intel/src/mcp_code_intel/tools/adr_commit.py` | Add `supersedes` param (`list[str]`). Add optional `draft_id` param (correlation only). Call `_unescape_literal_newlines()` on body fields. Add `markdown` to success response. Add content warning logic. Add source_log duplicate check. |
+ | `code-intel/src/mcp_code_intel/server.py` | Update `adr_suggest` and `adr_commit` wrapper signatures to include `supersedes` and `draft_id`. Remove any `adr_create` references. |
+ | `code-intel/tests/test_adr_tools.py` | Update existing tests for changed return values (no `number`/`filename` in suggest, new `draft_id`). Add tests for: unescape, supersedes field (multi-value), word count, source_log warning, markdown in commit response, draft title format, draft_id generation and correlation. |
 
 ## Files to Create
 
-| File | Purpose |
-|------|---------|
-| `code-intel/schemas/ADR_MARKDOWN_SCHEMA.json` | ADR format JSON schema (documentation for agents) |
+ | File | Purpose |
+ | ------ | --------- |
+ | `code-intel/schemas/ADR_MARKDOWN_SCHEMA.json` | ADR format JSON schema (documentation for agents) |
 
 ## Files to Delete
 
-| File | Reason |
-|------|---------|
-| `code-intel/src/mcp_code_intel/tools/adr_create.py` | Empty file, dead code from pre-two-phase refactor |
+ | File | Reason |
+ | ------ | --------- |
+ | `code-intel/src/mcp_code_intel/tools/adr_create.py` | Empty file, dead code from pre-two-phase refactor |
 
 ---
 

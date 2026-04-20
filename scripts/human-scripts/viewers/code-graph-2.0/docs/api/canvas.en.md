@@ -78,10 +78,10 @@ setSize(width: number, height: number): void;
 
 **Parameters**
 
-| Parameter | Description            | Type   | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ---------------------- | ------ | ------- | -------- |
-| width     | Canvas width (pixels)  | number | -       | ✓        |
-| height    | Canvas height (pixels) | number | -       | ✓        |
+| width | Canvas width (pixels) | number | - | ✓ |
+| height | Canvas height (pixels) | number | - | ✓ |
 
 **Example**
 

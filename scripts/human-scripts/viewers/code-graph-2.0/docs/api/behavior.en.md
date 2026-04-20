@@ -42,9 +42,9 @@ setBehaviors(behaviors: BehaviorOptions | ((prev: BehaviorOptions) => BehaviorOp
 
 **Parameters**
 
-| Parameter | Description                                                                                    | Type                                                                              | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------- | -------- |
-| behaviors | New behavior configuration, or a function returning new configuration based on the current one | [BehaviorOptions](#behavioroptions) \| (prev: BehaviorOptions) => BehaviorOptions | -       | ✓        |
+| behaviors | New behavior configuration, or a function returning new configuration based on the current one | [BehaviorOptions](#behavioroptions) \| (prev: BehaviorOptions) => BehaviorOptions | - | ✓ |
 
 **Note**
 
@@ -130,9 +130,9 @@ updateBehavior(behavior: UpdateBehaviorOption): void;
 
 **Parameters**
 
-| Parameter | Description                             | Type                                          | Default | Required |
+| Parameter | Description | Type | Default | Required |
 | --------- | --------------------------------------- | --------------------------------------------- | ------- | -------- |
-| behavior  | Configuration of the behavior to update | [UpdateBehaviorOption](#updatebehavioroption) | -       | ✓        |
+| behavior | Configuration of the behavior to update | [UpdateBehaviorOption](#updatebehavioroption) | - | ✓ |
 
 **Note**
 

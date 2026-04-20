@@ -132,6 +132,7 @@ task:
 TestAnalyzer finds tests for changed code, identifies gaps, and spawns TestGenerator to fill them (one cycle). It returns PASS or GENERATION_FAILED.
 
 **If TestAnalyzer returns GENERATION_FAILED:**
+
 - Critical path without tests → `PLANNING_GAP`
 - Edge case without tests → `MINOR`
 
@@ -151,6 +152,7 @@ task:
 DocsAnalyzer checks docstrings and user docs, spawns DocsGenerator to fill gaps (one cycle). It returns PASS or GENERATION_FAILED.
 
 **If DocsAnalyzer returns GENERATION_FAILED:**
+
 - Missing public docstrings → `MINOR` (Fixer can add)
 - Complex drift in user docs → `PLANNING_GAP`
 
@@ -203,11 +205,11 @@ docsAnalyzerReport:
 
 ## Severity Classification
 
-| Severity | Criteria | Routing |
-|----------|----------|---------|
-| `MINOR` | Typos, missing type hints, small refactors, simple doc gaps | → Fixer |
-| `PLANNING_GAP` | Missing methods, wrong scope, incomplete coverage, test failures indicating design issue | → Planner + re-execute |
-| `CRITICAL` | Architectural violation, impossible requirement, blocking dependency | → Director |
+ | Severity | Criteria | Routing |
+ | ---------- | ---------- | --------- |
+ | `MINOR` | Typos, missing type hints, small refactors, simple doc gaps | → Fixer |
+ | `PLANNING_GAP` | Missing methods, wrong scope, incomplete coverage, test failures indicating design issue | → Planner + re-execute |
+ | `CRITICAL` | Architectural violation, impossible requirement, blocking dependency | → Director |
 
 Getting severity right is the most consequential decision you make. A MINOR classified as PLANNING_GAP wastes a planning cycle. A PLANNING_GAP classified as MINOR means the Fixer will struggle with something it can't actually resolve. When in doubt, look at whether the fix requires new code design or just mechanical correction — that's the dividing line.
 
@@ -232,18 +234,19 @@ You see quality patterns across reviews that no individual implementer would not
 
 ### When to Log
 
-| Situation | Category |
-|-----------|----------|
-| A pattern of issues emerges across reviews | `discovery` |
-| Code passes lint but violates design intent | `observation` |
-| An issue classification is uncertain | `observation` + tag `uncertainty` |
-| Review reveals a missing convention or rule | `observation` + tag `needs-review` |
+ | Situation | Category |
+ | ----------- | ---------- |
+ | A pattern of issues emerges across reviews | `discovery` |
+ | Code passes lint but violates design intent | `observation` |
+ | An issue classification is uncertain | `observation` + tag `uncertainty` |
+ | Review reveals a missing convention or rule | `observation` + tag `needs-review` |
 
 Log your agent name as `qa-reviewer`.
 
 ## Log Access
 
 `log_read` is scoped to:
+
 - Own logs (`qa-reviewer`)
 - Up: `exec-manager`
 - Audit target: `exec-executor`

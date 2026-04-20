@@ -6,6 +6,7 @@
 **Revised:** 2026-04-04  
 
 **Related Documents:**
+
 - [ADR-003](artifacts/decisions/ADR-003-pure-boolean-state-graph-for-file-processing-pipeline.md) — Boolean state graph. Provides `tags_written/tags_not_written` axis used by the two-phase commit workflow.
 - [ADR-007](artifacts/decisions/ADR-007-tag-editor-service-home-libraryservice-extension-via-mixin.md) — **Superseded by ADR-013, which itself needs revision.** Originally placed tag editing in LibraryService via mixin. Now superseded by the expanded TaggingService direction.
 - [ADR-008](artifacts/decisions/ADR-008-database-only-tag-writes-no-audio-file-writeback.md) — DB-only writes, no audio file writeback. **Needs revision:** Not "never write to files" but "writes are deferred and user-initiated via commit." **Proposed ADR Revision: ADR-008** — Revise to document two-phase curation→commit workflow where curation is DB-only and file writeback is deferred, user-initiated via commit button.
@@ -24,14 +25,14 @@ Backend (service + interface + persistence) + Frontend (new page + components + 
 
 ### Service Ownership
 
-| Question | Owner |
-|----------|-------|
-| "What tags does this file have?" | LibraryService (file metadata perspective) |
-| "What files have this specific tag?" | TaggingService (tag domain perspective) |
-| "Set/update tags on a file" | Library workflow (orchestration) |
-| "Create/manage tag documents in DB" | Tagging component (persistence domain logic) |
-| "Tag curation (rename/merge/split)" | TaggingService (new curation operations) |
-| "ML calibration and tag writing" | TaggingService (existing operations) |
+ | Question | Owner |
+ | ---------- | ------- |
+ | "What tags does this file have?" | LibraryService (file metadata perspective) |
+ | "What files have this specific tag?" | TaggingService (tag domain perspective) |
+ | "Set/update tags on a file" | Library workflow (orchestration) |
+ | "Create/manage tag documents in DB" | Tagging component (persistence domain logic) |
+ | "Tag curation (rename/merge/split)" | TaggingService (new curation operations) |
+ | "ML calibration and tag writing" | TaggingService (existing operations) |
 
 ---
 
@@ -70,13 +71,13 @@ The existing backend has tag CRUD primitives in `TagOperations` persistence and 
 - **Commit bar:** Persistent banner at top showing pending write count + "Commit Changes" button
 - **Complexity:** Medium
 
-| Pros | Cons |
-|------|------|
-| Tag values are first-class objects, song count visible | Nested pagination needed for popular tags (1000+ songs) |
-| Contextual toolbar shows only relevant actions | Split is 3+ interactions |
-| MUI DataGrid detail panel supported natively | |
-| Natural mapping: outer grid = graph ops, inner panel = song ops | |
-| Two-phase commit avoids slow I/O during curation | |
+ | Pros | Cons |
+ | ------ | ------ |
+ | Tag values are first-class objects, song count visible | Nested pagination needed for popular tags (1000+ songs) |
+ | Contextual toolbar shows only relevant actions | Split is 3+ interactions |
+ | MUI DataGrid detail panel supported natively | |
+ | Natural mapping: outer grid = graph ops, inner panel = song ops | |
+ | Two-phase commit avoids slow I/O during curation | |
 
 ### Option B: Scope Toggle (Two Modes on Same DataGrid)
 
@@ -84,31 +85,31 @@ The existing backend has tag CRUD primitives in `TagOperations` persistence and 
 - **Toggle:** Tab bar switches between "Song View" (file-centric, per-song editing) and "Tag Value View" (tag-value-centric, graph ops)
 - **Complexity:** Medium (extends existing DD design)
 
-| Pros | Cons |
-|------|------|
-| Lower risk, reuses existing design | Mode-switch is a known UX antipattern |
-| Explicit mode eliminates ambiguity | Users may forget which mode they're in |
+ | Pros | Cons |
+ | ------ | ------ |
+ | Lower risk, reuses existing design | Mode-switch is a known UX antipattern |
+ | Explicit mode eliminates ambiguity | Users may forget which mode they're in |
 
 ### Option C: Dual-Panel Curator
 
 - **Primary view:** Left panel = tag value tree grouped by rel, Right panel = affected songs
 - **Complexity:** High
 
-| Pros | Cons |
-|------|------|
-| Most powerful spatial model | Highest frontend effort |
-| Drag-and-drop merge possible | Drag-drop in virtualized lists is complex with MUI |
+ | Pros | Cons |
+ | ------ | ------ |
+ | Most powerful spatial model | Highest frontend effort |
+ | Drag-and-drop merge possible | Drag-drop in virtualized lists is complex with MUI |
 
 ### Option D: Action-First Command Palette
 
 - **Primary view:** Action cards (Rename, Merge, Split, Edit Song) → each opens wizard flow with preview
 - **Complexity:** Medium
 
-| Pros | Cons |
-|------|------|
-| Zero ambiguity (user picks action first) | Wizard fatigue |
-| Preview/staging step prevents mistakes | No casual browsing |
-| | Not power-user friendly |
+ | Pros | Cons |
+ | ------ | ------ |
+ | Zero ambiguity (user picks action first) | Wizard fatigue |
+ | Preview/staging step prevents mistakes | No casual browsing |
+ | | Not power-user friendly |
 
 ### Recommendation
 
@@ -120,31 +121,32 @@ The existing backend has tag CRUD primitives in `TagOperations` persistence and 
 
 ### Layer Mapping
 
-| Component | Layer | Responsibility |
-|-----------|-------|----------------|
-| `TaggingService` | services (existing, expanded) | Owns ML calibration (existing) + tag curation (new) + tag queries (migrated from LibraryService). Enforces `nom:` rejection. Single vertical slice for tags domain. |
-| `TagOperations` | persistence (existing) | Add `relink_tag_edges()`, `list_tags_with_counts()`, `get_tag_songs()`, `count_pending_tag_writes()`. Keep existing methods. (ADR-014) |
-| `POST /api/web/tag-curation/rename` | interfaces | Rename a tag value (re-links all edges) |
-| `POST /api/web/tag-curation/merge` | interfaces | Merge 2+ tag values into canonical |
-| `POST /api/web/tag-curation/split` | interfaces | Re-tag subset of songs from one value to another |
-| `POST /api/web/tag-curation/commit` | interfaces | Trigger writing pending tag changes to audio files on disk |
-| `GET /api/web/tag-curation/pending-count` | interfaces | Return count of files with `tags_not_written` state |
-| `PATCH /api/web/tag-curation/file/{id}/tag` | interfaces | Single-song tag edit (kept from original DD) |
-| `GET /api/web/tag-curation/value` | interfaces | List tag values with song counts, filterable by rel |
-| `GET /api/web/tag-curation/{tag_id}/song` | interfaces | Get songs linked to a specific tag value |
-| `TagCurationPage` | frontend | New page at `/tag-curation` |
-| `TagValueGrid` | frontend | MUI DataGrid: `(rel, value, song_count)` with expandable detail panels |
-| `CommitBar` | frontend | Persistent banner: pending write count + "Commit Changes" button |
-| `MergeDialog` | frontend | Confirmation dialog for merge operations |
-| `useTagValues(rel)` | frontend | Hook: fetch tag values with counts |
-| `useTagSongs(tagId)` | frontend | Hook: fetch songs linked to tag value |
-| `useCurationActions()` | frontend | Hook: rename/merge/split/single-song API calls |
-| `useSelection()` | frontend | Hook: cross-page selection management |
-| `usePendingCommit()` | frontend | Hook: pending count polling + commit trigger |
+ | Component | Layer | Responsibility |
+ | ----------- | ------- | ---------------- |
+ | `TaggingService` | services (existing, expanded) | Owns ML calibration (existing) + tag curation (new) + tag queries (migrated from LibraryService). Enforces `nom:` rejection. Single vertical slice for tags domain. |
+ | `TagOperations` | persistence (existing) | Add `relink_tag_edges()`, `list_tags_with_counts()`, `get_tag_songs()`, `count_pending_tag_writes()`. Keep existing methods. (ADR-014) |
+ | `POST /api/web/tag-curation/rename` | interfaces | Rename a tag value (re-links all edges) |
+ | `POST /api/web/tag-curation/merge` | interfaces | Merge 2+ tag values into canonical |
+ | `POST /api/web/tag-curation/split` | interfaces | Re-tag subset of songs from one value to another |
+ | `POST /api/web/tag-curation/commit` | interfaces | Trigger writing pending tag changes to audio files on disk |
+ | `GET /api/web/tag-curation/pending-count` | interfaces | Return count of files with `tags_not_written` state |
+ | `PATCH /api/web/tag-curation/file/{id}/tag` | interfaces | Single-song tag edit (kept from original DD) |
+ | `GET /api/web/tag-curation/value` | interfaces | List tag values with song counts, filterable by rel |
+ | `GET /api/web/tag-curation/{tag_id}/song` | interfaces | Get songs linked to a specific tag value |
+ | `TagCurationPage` | frontend | New page at `/tag-curation` |
+ | `TagValueGrid` | frontend | MUI DataGrid: `(rel, value, song_count)` with expandable detail panels |
+ | `CommitBar` | frontend | Persistent banner: pending write count + "Commit Changes" button |
+ | `MergeDialog` | frontend | Confirmation dialog for merge operations |
+ | `useTagValues(rel)` | frontend | Hook: fetch tag values with counts |
+ | `useTagSongs(tagId)` | frontend | Hook: fetch songs linked to tag value |
+ | `useCurationActions()` | frontend | Hook: rename/merge/split/single-song API calls |
+ | `useSelection()` | frontend | Hook: cross-page selection management |
+ | `usePendingCommit()` | frontend | Hook: pending count polling + commit trigger |
 
 ### Data Model
 
 **Existing (no changes):**
+
 - `tags` collection: docs with `rel` + `value`, unique index on `(rel, value)`
 - `song_has_tags` edges to `library_files`: unique on `(_from, _to)`
 - `file_states` collection: boolean state vertices including `tags_written` and `tags_not_written` (ADR-003)
@@ -164,17 +166,20 @@ Commit:  User clicks "Commit Changes" → POST /tag-curation/commit → TaggingS
 ```
 
 **Phase 1 — Curation (instant, DB-only):**
+
 - All curation operations (rename/merge/split/single-song edit) write to DB only
 - After each curation op, affected files' state edges are updated: `tags_written → tags_not_written` on the ADR-003 boolean state graph
 - This marks "DB tags do not match file on disk" — pending writes accumulate
 
 **Phase 2 — Commit (batch, user-initiated file I/O):**
+
 - `CommitBar` component polls `GET /tag-curation/pending-count` to show pending file count
 - User clicks "Commit Changes" → `POST /tag-curation/commit` → `TaggingService.reconcile_library()` processes all files in `tags_not_written` state
 - `reconcile_library()` already exists on `TaggingService` — it reads DB tags and writes them to audio files, then sets state to `tags_written`
 - Progress indicator shown during commit (reuses existing `get_reconcile_status` polling)
 
 **State edge transitions:**
+
 - Curation op → `set_tags_not_written(file_id)` for each affected file
 - Commit → `reconcile_library()` → for each processed file: write tags to disk → `set_tags_written(file_id)`
 
@@ -221,6 +226,7 @@ def count_pending_tag_writes() -> int:
 ```
 
 **AQL implementation for `relink_tag_edges` (2-3 round trips):**
+
 1. Find or create target tag vertex (UPSERT on `(rel, value)`)
 2. Re-link edges: for each edge WHERE `_to == source_tag_id` (AND `_from IN song_ids` if scoped), UPSERT a new edge `(_from, target_tag_id)` and REMOVE the old edge. UPSERT handles duplicates.
 3. Cleanup: run `cleanup_orphaned_tags()` to delete source vertex if zero edges remain.
@@ -352,22 +358,24 @@ TagCurationPage (lazy-loaded route: /tag-curation)
 
 #### State Management (hooks)
 
-| Hook | Purpose |
-|------|---------|
-| `useTagValues(rel)` | Fetch tag values with counts, handle pagination |
-| `useTagSongs(tagId)` | Fetch songs linked to a tag value, handle pagination |
-| `useCurationActions()` | Submit rename/merge/split/single-song APIs with optimistic UI |
-| `useSelection()` | Cross-page selection management: `Set<string>` of IDs, select/deselect, select-all-matching mode, count display |
-| `usePendingCommit()` | Poll pending count via `GET /tag-curation/pending-count`, trigger commit via `POST /tag-curation/commit`, track commit progress |
+ | Hook | Purpose |
+ | ------ | --------- |
+ | `useTagValues(rel)` | Fetch tag values with counts, handle pagination |
+ | `useTagSongs(tagId)` | Fetch songs linked to a tag value, handle pagination |
+ | `useCurationActions()` | Submit rename/merge/split/single-song APIs with optimistic UI |
+ | `useSelection()` | Cross-page selection management: `Set<string>` of IDs, select/deselect, select-all-matching mode, count display |
+ | `usePendingCommit()` | Poll pending count via `GET /tag-curation/pending-count`, trigger commit via `POST /tag-curation/commit`, track commit progress |
 
 #### Cross-Page Selection
 
 **Selection state:**
+
 - Frontend maintains a `Set<string>` of selected song IDs independent of the currently-loaded page
 - Selections persist across page navigation — selecting songs on pages 1, 2, 5, and 7 applies bulk operations to ALL selected songs
 - `SelectionInfo` component shows: "47 songs selected across 3 pages"
 
 **"Select All" behavior:**
+
 - "Select All" on current page: adds current page's song IDs to the selection set
 - "Select All Matching" (global): backend endpoint returns all matching IDs for the current filter, or a special "select all N results" action
 - When "Select All Matching" is active, bulk operations send the **filter criteria** to the backend instead of individual IDs (to avoid sending 10,000 IDs in a request body)

@@ -52,16 +52,16 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Option    | Description                                                                                                                                                                                                                                                                                      | Type                                                                                                                              | Default            | Required |
+| Option | Description | Type | Default | Required |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ------------------ | -------- |
-| type      | Interaction type name                                                                                                                                                                                                                                                                            | string                                                                                                                            | `auto-adapt-label` | √        |
-| enable    | Whether to enable this interaction                                                                                                                                                                                                                                                               | boolean \| ((event: [Event](/en/api/event#event-object-properties)) => boolean)                                                   | true               |          |
-| throttle  | Label update throttle time (ms)                                                                                                                                                                                                                                                                  | number                                                                                                                            | 100                |          |
-| padding   | Extra spacing when detecting label overlap                                                                                                                                                                                                                                                       | number \| number[]                                                                                                                | 0                  |          |
-| sort      | Custom sorting function, sorting elements from high to low importance, with higher importance elements having higher label display priority. Generally, combo > node > edge                                                                                                                      | (a: ElementDatum, b: ElementDatum) => -1 \| 0 \| 1                                                                                |                    |          |
-| sortNode  | Sort nodes from high to low importance, with higher importance nodes having higher label display priority. Several built-in [centrality algorithms](#nodecentralityoptions) are available, or a custom sorting function can be used. Note that if `sort` is set, `sortNode` will not take effect | [NodeCentralityOptions](#nodecentralityoptions) \| (nodeA: [NodeData](/en/manual/data#nodedata), nodeB: NodeData => -1 \| 0 \| 1) | `type: 'degree'`   |          |
-| sortEdge  | Sort edges from high to low importance, with higher importance edges having higher label display priority. By default, it is sorted according to the order of data. Note that if `sort` is set, `sortEdge` will not take effect                                                                  | (edgeA: [EdgeData](/en/manual/data#edgedata), edgeB: EdgeData) => -1 \| 0 \| 1                                                    |                    |          |
-| sortCombo | Sort groups from high to low importance, with higher importance groups having higher label display priority. By default, it is sorted according to the order of data. Note that if `sort` is set, `sortCombo` will not take effect                                                               | (comboA: [ComboData](/en/manual/data#combodata), comboB: ComboData) => -1 \| 0 \| 1                                               |                    |          |
+| type | Interaction type name | string | `auto-adapt-label` | √ |
+| enable | Whether to enable this interaction | boolean \| ((event: [Event](/en/api/event#event-object-properties)) => boolean) | true | |
+| throttle | Label update throttle time (ms) | number | 100 | |
+| padding | Extra spacing when detecting label overlap | number \| number[] | 0 | |
+| sort | Custom sorting function, sorting elements from high to low importance, with higher importance elements having higher label display priority. Generally, combo > node > edge | (a: ElementDatum, b: ElementDatum) => -1 \| 0 \| 1 | | |
+| sortNode | Sort nodes from high to low importance, with higher importance nodes having higher label display priority. Several built-in [centrality algorithms](#nodecentralityoptions) are available, or a custom sorting function can be used. Note that if `sort` is set, `sortNode` will not take effect | [NodeCentralityOptions](#nodecentralityoptions) \| (nodeA: [NodeData](/en/manual/data#nodedata), nodeB: NodeData => -1 \| 0 \| 1) | `type: 'degree'` | |
+| sortEdge | Sort edges from high to low importance, with higher importance edges having higher label display priority. By default, it is sorted according to the order of data. Note that if `sort` is set, `sortEdge` will not take effect | (edgeA: [EdgeData](/en/manual/data#edgedata), edgeB: EdgeData) => -1 \| 0 \| 1 | | |
+| sortCombo | Sort groups from high to low importance, with higher importance groups having higher label display priority. By default, it is sorted according to the order of data. Note that if `sort` is set, `sortCombo` will not take effect | (comboA: [ComboData](/en/manual/data#combodata), comboB: ComboData) => -1 \| 0 \| 1 | | |
 
 ### NodeCentralityOptions
 
@@ -75,11 +75,11 @@ Methods for measuring node centrality
 
 ```typescript
 type NodeCentralityOptions =
-  | { type: 'degree'; direction?: 'in' | 'out' | 'both' }
-  | { type: 'betweenness'; directed?: boolean; weightPropertyName?: string }
-  | { type: 'closeness'; directed?: boolean; weightPropertyName?: string }
-  | { type: 'eigenvector'; directed?: boolean }
-  | { type: 'pagerank'; epsilon?: number; linkProb?: number };
+ | { type: 'degree'; direction?: 'in' | 'out' | 'both' }
+ | { type: 'betweenness'; directed?: boolean; weightPropertyName?: string }
+ | { type: 'closeness'; directed?: boolean; weightPropertyName?: string }
+ | { type: 'eigenvector'; directed?: boolean }
+ | { type: 'pagerank'; epsilon?: number; linkProb?: number };
 ```
 
 ## Practical Example

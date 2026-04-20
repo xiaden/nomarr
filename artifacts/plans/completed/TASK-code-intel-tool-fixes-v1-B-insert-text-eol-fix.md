@@ -15,6 +15,7 @@ Additionally, Part A changed `read_file_with_metadata()` to return `tab_warning`
 ## Phases
 
 ### Phase 1: Fix line splitting bugs
+
 - [x] In `_apply_insertions_to_file()` in `code-intel/src/mcp_code_intel/tools/edit_file_insert_text.py`, replace `lines = content.split("\n")` with `lines = content.replace("\r\n", "\n").replace("\r", "\n").split("\n")` to normalize CRLF before splitting
     **executor:** Replaced `content.split("\n")` with `content.replace("\r\n", "\n").replace("\r", "\n").split("\n")` in `_apply_insertions_to_file()`.
 - [x] In `_insert_at_boundary()`, replace `content.rstrip("\n").split("\n")` with `content.split("\n")` followed by removing only a single trailing empty string if present (i.e., `if insert_lines and insert_lines[-1] == "": insert_lines.pop()`), so that `"a\nb\n\n"` preserves the blank line as `["a", "b", ""]`
@@ -27,6 +28,7 @@ Additionally, Part A changed `read_file_with_metadata()` to return `tab_warning`
     **executor:** Lint passes (0 errors). No terminal tool available to run pytest. Manual verification needed: `cd code-intel && python -m pytest tests/test_file_insert_text.py -x`
 
 ### Phase 2: Add regression tests
+
 - [x] Add test `test_insert_crlf_file` — create a file with `\r\n` line endings, insert content, verify the output has correct content without `\r` corruption
     **executor:** Added test_insert_crlf_file — writes CRLF bytes, inserts via anchor, verifies no \\r corruption and correct line order.
 - [x] Add test `test_insert_preserves_blank_lines_bof` — insert `"line1\nline2\n\n"` at bof, verify the blank line is preserved in the output
@@ -41,6 +43,7 @@ Additionally, Part A changed `read_file_with_metadata()` to return `tab_warning`
     **executor:** Lint clean (0 errors) on both edit_file_insert_text.py and test_file_insert_text.py.
 
 ## Completion Criteria
+
 - All existing `test_file_insert_text.py` tests pass (zero regressions)
 - New CRLF test proves Windows EOL bug is fixed
 - New blank-line tests prove trailing newline stripping is fixed
@@ -48,6 +51,7 @@ Additionally, Part A changed `read_file_with_metadata()` to return `tab_warning`
 - Lint passes on modified files
 
 ## References
+
 - Design doc: `artifacts/designs/pending/DD-code-intel-tool-fixes-v1.md`
 - Contracts: `artifacts/designs/parts/code-intel-tool-fixes-v1/CONTRACTS.md`
 - Part A plan: `artifacts/plans/pending/TASK-code-intel-tool-fixes-v1-A-shared-helper-fixes.md`

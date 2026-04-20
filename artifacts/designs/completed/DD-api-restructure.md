@@ -5,11 +5,12 @@
 **Created:** 2026-04-05  
 
 **Related Documents:**
-- [DD-api-endpoint-cleanup (incremental fixes — now superseded by this full restructure)](artifacts/designs/pending/DD-api-endpoint-cleanup.md) — 
-- [DD-ml-pipeline-automation (reconcile-tags → write-tag, reconcile-status deletion, pipeline endpoint)](artifacts/designs/pending/DD-ml-pipeline-automation.md) — 
-- [ADR-006: Runtime Imports for FastAPI Depends Types](artifacts/decisions/ADR-006-runtime-imports-for-fastapi-depends-types.md) — 
-- [ADR-012: Server-Side Pagination](artifacts/decisions/ADR-012-server-side-pagination-for-tag-editor-results.md) — 
-- [ADR-013: TaggingService Owns Tags Vertical](artifacts/decisions/ADR-013-expand-taggingservice-as-full-tags-vertical-slice.md) — 
+
+- [DD-api-endpoint-cleanup (incremental fixes — now superseded by this full restructure)](artifacts/designs/pending/DD-api-endpoint-cleanup.md) —
+- [DD-ml-pipeline-automation (reconcile-tags → write-tag, reconcile-status deletion, pipeline endpoint)](artifacts/designs/pending/DD-ml-pipeline-automation.md) —
+- [ADR-006: Runtime Imports for FastAPI Depends Types](artifacts/decisions/ADR-006-runtime-imports-for-fastapi-depends-types.md) —
+- [ADR-012: Server-Side Pagination](artifacts/decisions/ADR-012-server-side-pagination-for-tag-editor-results.md) —
+- [ADR-013: TaggingService Owns Tags Vertical](artifacts/decisions/ADR-013-expand-taggingservice-as-full-tags-vertical-slice.md) —
 
 ---
 
@@ -42,49 +43,51 @@ This creates maintenance burden, confusing API documentation, and makes it hard 
 
 ### Rules
 
-| Aspect | Convention | Example |
-|--------|-----------|---------|
-| URL segments | **kebab-case, full words — no abbreviations** | `/vram-probe`, `/write-mode`, `/machine-learning`, `/file-system` |
-| Resource nouns | **always singular** | `/library`, `/model`, `/vector`, `/tag` |
-| Collection listing | HTTP method differentiates | `GET /library` = list, `GET /library/{id}` = get one |
-| Actions | explicit verb sub-paths | `POST /library/{id}/scan/quick`, `POST /calibration/apply/start` |
-| Query params | **snake_case** | `?page_size=20&library_id=abc` |
-| API prefix | keep `/api/v1/` and `/api/web/` split | different auth models |
+ | Aspect | Convention | Example |
+ | -------- | ----------- | --------- |
+ | URL segments | **kebab-case, full words — no abbreviations** | `/vram-probe`, `/write-mode`, `/machine-learning`, `/file-system` |
+ | Resource nouns | **always singular** | `/library`, `/model`, `/vector`, `/tag` |
+ | Collection listing | HTTP method differentiates | `GET /library` = list, `GET /library/{id}` = get one |
+ | Actions | explicit verb sub-paths | `POST /library/{id}/scan/quick`, `POST /calibration/apply/start` |
+ | Query params | **snake_case** | `?page_size=20&library_id=abc` |
+ | API prefix | keep `/api/v1/` and `/api/web/` split | different auth models |
 
 ### Singular Rule Scope
 
 Singularize **resource entity nouns** in URL paths:
+
 - `libraries` → `library`, `models` → `model`, `vectors` → `vector`
 - `files` → `file`, `tags` → `tag`, `playlists` → `playlist`
 - `templates` → `template`, `albums` → `album`, `artists` → `artist`
 - `songs` → `song`, `outputs` → `output`, `backbones` → `backbone`
 
 **Clarifications:**
+
 - Process/domain groups use their natural name — `/analytics`, `/authentication`, `/tag-curation`, `/calibration`, `/playlist-import` — these are not plurals, no singularization needed
 - Sub-path report names: `stats`, `tag-frequencies`, `mood-distribution`, etc. — these describe data, not entities
 - `/metadata/{collection}` — the `{collection}` path parameter takes plural values (`artists`, `albums`, `labels`, `genres`, `years`), but this is a **parameterized path**, not a resource plural. The plural appears in the runtime value, not in the URL template. No convention violation.
 
 ### Router Prefix Mapping
 
-| Old Prefix | New Prefix | Rationale |
-|------------|-----------|-----------|
-| `/libraries` | `/library` | Singular resource |
-| `/vectors` | `/vector` | Singular resource |
-| `/tags` | `/tag` | Singular resource |
-| `/calibration` | `/calibration` | Already singular |
-| `/analytics` | `/analytics` | Domain term exception |
-| `/ml` | `/machine-learning` | Full word, no abbreviation |
-| `/navidrome` | `/navidrome` | Already singular |
-| `/metadata` | `/metadata` | Already singular |
-| `/auth` | `/authentication` | Full word, no abbreviation |
-| `/config` | `/config` | Already singular |
-| `/fs` | `/file-system` | Full word, no abbreviation |
-| `/api-key` | `/api-key` | Already singular compound |
-| `/tag-curation` | `/tag-curation` | Process noun |
-| `/playlist-import` | `/playlist-import` | Process noun |
-| `/worker` | *(deleted)* | Endpoint moves to `/admin` |
-| `/processing` | *(deleted)* | Endpoint deleted |
-| *(none — info_if)* | *(unchanged)* | Empty prefix stays |
+ | Old Prefix | New Prefix | Rationale |
+ | ------------ | ----------- | ----------- |
+ | `/libraries` | `/library` | Singular resource |
+ | `/vectors` | `/vector` | Singular resource |
+ | `/tags` | `/tag` | Singular resource |
+ | `/calibration` | `/calibration` | Already singular |
+ | `/analytics` | `/analytics` | Domain term exception |
+ | `/ml` | `/machine-learning` | Full word, no abbreviation |
+ | `/navidrome` | `/navidrome` | Already singular |
+ | `/metadata` | `/metadata` | Already singular |
+ | `/auth` | `/authentication` | Full word, no abbreviation |
+ | `/config` | `/config` | Already singular |
+ | `/fs` | `/file-system` | Full word, no abbreviation |
+ | `/api-key` | `/api-key` | Already singular compound |
+ | `/tag-curation` | `/tag-curation` | Process noun |
+ | `/playlist-import` | `/playlist-import` | Process noun |
+ | `/worker` | *(deleted)* | Endpoint moves to `/admin` |
+ | `/processing` | *(deleted)* | Endpoint deleted |
+ | *(none — info_if)* | *(unchanged)* | Empty prefix stays |
 
 ### New Router: `/admin`
 
@@ -96,45 +99,45 @@ Created to hold server management actions. Absorbs `POST /worker/restart` as `PO
 
 ### Legend
 
-| Action | Meaning |
-|--------|---------|
-| UNCHANGED | URL stays the same |
-| RENAME | URL changes (singular/kebab-case/grouping) |
-| MOVE | Endpoint moves to a different router |
-| MERGE | Two endpoints consolidated into one |
-| DELETE | Endpoint removed |
-| FIX | Bug fix applied (may also RENAME) |
+ | Action | Meaning |
+ | -------- | --------- |
+ | UNCHANGED | URL stays the same |
+ | RENAME | URL changes (singular/kebab-case/grouping) |
+ | MOVE | Endpoint moves to a different router |
+ | MERGE | Two endpoints consolidated into one |
+ | DELETE | Endpoint removed |
+ | FIX | Bug fix applied (may also RENAME) |
 
 ---
 
 ### V1 Integration API (`/api/v1/*`) — 7→4
 
-| # | Method | Old URL | New URL | Action | Notes |
-|---|--------|---------|---------|--------|-------|
-| 1 | GET | `/api/v1/info` | `/api/v1/info` | UNCHANGED | |
-| 2 | POST | `/api/v1/admin/worker/pause` | — | DELETE | Dead, no callers |
-| 3 | POST | `/api/v1/admin/worker/resume` | — | DELETE | Dead, no callers |
-| 4 | POST | `/api/v1/admin/calibration/run` | — | DELETE | Web has async equivalent via `/calibration/histogram/start` + `/calibration/apply/start` |
-| 5 | POST | `/api/v1/navidrome/similar-tracks` | `/api/v1/navidrome/similar-track` | RENAME | Singular |
-| 6 | POST | `/api/v1/navidrome/scrobble` | `/api/v1/navidrome/scrobble` | UNCHANGED | |
-| 7 | POST | `/api/v1/navidrome/generate-playlists` | `/api/v1/navidrome/playlist/generate` | RENAME | Singular + grouped |
+ | # | Method | Old URL | New URL | Action | Notes |
+ | --- | -------- | --------- | --------- | -------- | ------- |
+ | 1 | GET | `/api/v1/info` | `/api/v1/info` | UNCHANGED | |
+ | 2 | POST | `/api/v1/admin/worker/pause` | — | DELETE | Dead, no callers |
+ | 3 | POST | `/api/v1/admin/worker/resume` | — | DELETE | Dead, no callers |
+ | 4 | POST | `/api/v1/admin/calibration/run` | — | DELETE | Web has async equivalent via `/calibration/histogram/start` + `/calibration/apply/start` |
+ | 5 | POST | `/api/v1/navidrome/similar-tracks` | `/api/v1/navidrome/similar-track` | RENAME | Singular |
+ | 6 | POST | `/api/v1/navidrome/scrobble` | `/api/v1/navidrome/scrobble` | UNCHANGED | |
+ | 7 | POST | `/api/v1/navidrome/generate-playlists` | `/api/v1/navidrome/playlist/generate` | RENAME | Singular + grouped |
 
 ---
 
 ### Web Authentication (`/api/web/authentication/*`) — 2→2
 
-| # | Method | Old URL | New URL | Action |
-|---|--------|---------|---------|--------|
-| 8 | POST | `/auth/login` | `/authentication/login` | RENAME |
-| 9 | POST | `/auth/logout` | `/authentication/logout` | RENAME |
+ | # | Method | Old URL | New URL | Action |
+ | --- | -------- | --------- | --------- | -------- |
+ | 8 | POST | `/auth/login` | `/authentication/login` | RENAME |
+ | 9 | POST | `/auth/logout` | `/authentication/logout` | RENAME |
 
 ---
 
 ### Web Admin (`/api/web/admin/*`) — NEW ROUTER (1 endpoint)
 
-| # | Method | Old URL | New URL | Action | Notes |
-|---|--------|---------|---------|--------|-------|
-| 10 | POST | `/worker/restart` | `/admin/restart` | MOVE | Restarts the API server, not a "worker" — belongs under admin |
+ | # | Method | Old URL | New URL | Action | Notes |
+ | --- | -------- | --------- | --------- | -------- | ------- |
+ | 10 | POST | `/worker/restart` | `/admin/restart` | MOVE | Restarts the API server, not a "worker" — belongs under admin |
 
 ---
 
@@ -142,23 +145,23 @@ Created to hold server management actions. Absorbs `POST /worker/restart` as `PO
 
 All already kebab-case. Sub-paths are analytics report names, not resource entities — no singularization needed.
 
-| # | Method | Old URL | New URL | Action |
-|---|--------|---------|---------|--------|
-| 11 | GET | `/analytics/tag-frequencies` | `/analytics/tag-frequencies` | UNCHANGED |
-| 12 | GET | `/analytics/mood-distribution` | `/analytics/mood-distribution` | UNCHANGED |
-| 13 | GET | `/analytics/tag-correlations` | `/analytics/tag-correlations` | UNCHANGED |
-| 14 | POST | `/analytics/tag-co-occurrences` | `/analytics/tag-co-occurrences` | UNCHANGED |
-| 15 | GET | `/analytics/collection-overview` | `/analytics/collection-overview` | UNCHANGED |
-| 16 | GET | `/analytics/mood-analysis` | `/analytics/mood-analysis` | UNCHANGED |
+ | # | Method | Old URL | New URL | Action |
+ | --- | -------- | --------- | --------- | -------- |
+ | 11 | GET | `/analytics/tag-frequencies` | `/analytics/tag-frequencies` | UNCHANGED |
+ | 12 | GET | `/analytics/mood-distribution` | `/analytics/mood-distribution` | UNCHANGED |
+ | 13 | GET | `/analytics/tag-correlations` | `/analytics/tag-correlations` | UNCHANGED |
+ | 14 | POST | `/analytics/tag-co-occurrences` | `/analytics/tag-co-occurrences` | UNCHANGED |
+ | 15 | GET | `/analytics/collection-overview` | `/analytics/collection-overview` | UNCHANGED |
+ | 16 | GET | `/analytics/mood-analysis` | `/analytics/mood-analysis` | UNCHANGED |
 
 ---
 
 ### Web API Key (`/api/web/api-key/*`) — 2→2
 
-| # | Method | Old URL | New URL | Action |
-|---|--------|---------|---------|--------|
-| 17 | GET | `/api-key` | `/api-key` | UNCHANGED |
-| 18 | POST | `/api-key/regenerate` | `/api-key/regenerate` | UNCHANGED |
+ | # | Method | Old URL | New URL | Action |
+ | --- | -------- | --------- | --------- | -------- |
+ | 17 | GET | `/api-key` | `/api-key` | UNCHANGED |
+ | 18 | POST | `/api-key/regenerate` | `/api-key/regenerate` | UNCHANGED |
 
 ---
 
@@ -166,23 +169,24 @@ All already kebab-case. Sub-paths are analytics report names, not resource entit
 
 Deleted: 4 dead endpoints. Merged: 2 pairs (status+progress). Grouped actions under `apply/` and `histogram/` sub-paths.
 
-| # | Method | Old URL | New URL | Action | Notes |
-|---|--------|---------|---------|--------|-------|
-| 19 | DELETE | `/calibration` | `/calibration` | UNCHANGED | Clear calibration data |
-| 20 | GET | `/calibration/status` | `/calibration/status` | UNCHANGED | Overall calibration status |
-| 21 | GET | `/calibration/histogram` | `/calibration/histogram` | UNCHANGED | Get all histogram data |
-| 22 | POST | `/calibration/start-histogram` | `/calibration/histogram/start` | RENAME | Grouped under histogram/ |
-| 23 | GET | `/calibration/histogram-status` | `/calibration/histogram/status` | MERGE+RENAME | Merge histogram-status + histogram-progress |
-| 24 | GET | `/calibration/histogram-progress` | — | MERGE | Absorbed into `/calibration/histogram/status` |
-| 25 | POST | `/calibration/start-apply` | `/calibration/apply/start` | RENAME | Grouped under apply/ |
-| 26 | GET | `/calibration/apply-status` | `/calibration/apply/status` | MERGE+RENAME | Merge apply-status + apply-progress |
-| 27 | GET | `/calibration/apply-progress` | — | MERGE | Absorbed into `/calibration/apply/status` |
-| 28 | GET | `/calibration/history` | — | DELETE | Dead, legacy collection |
-| 29 | GET | `/calibration/history/{calibration_key}` | — | DELETE | Dead, legacy collection |
-| 30 | GET | `/calibration/convergence` | — | DELETE | Deprecated, no backend value |
-| 31 | GET | `/calibration/histogram/{model_key}/{head_name}/{label}` | — | DELETE | No callers, overly specific |
+ | # | Method | Old URL | New URL | Action | Notes |
+ | --- | -------- | --------- | --------- | -------- | ------- |
+ | 19 | DELETE | `/calibration` | `/calibration` | UNCHANGED | Clear calibration data |
+ | 20 | GET | `/calibration/status` | `/calibration/status` | UNCHANGED | Overall calibration status |
+ | 21 | GET | `/calibration/histogram` | `/calibration/histogram` | UNCHANGED | Get all histogram data |
+ | 22 | POST | `/calibration/start-histogram` | `/calibration/histogram/start` | RENAME | Grouped under histogram/ |
+ | 23 | GET | `/calibration/histogram-status` | `/calibration/histogram/status` | MERGE+RENAME | Merge histogram-status + histogram-progress |
+ | 24 | GET | `/calibration/histogram-progress` | — | MERGE | Absorbed into `/calibration/histogram/status` |
+ | 25 | POST | `/calibration/start-apply` | `/calibration/apply/start` | RENAME | Grouped under apply/ |
+ | 26 | GET | `/calibration/apply-status` | `/calibration/apply/status` | MERGE+RENAME | Merge apply-status + apply-progress |
+ | 27 | GET | `/calibration/apply-progress` | — | MERGE | Absorbed into `/calibration/apply/status` |
+ | 28 | GET | `/calibration/history` | — | DELETE | Dead, legacy collection |
+ | 29 | GET | `/calibration/history/{calibration_key}` | — | DELETE | Dead, legacy collection |
+ | 30 | GET | `/calibration/convergence` | — | DELETE | Deprecated, no backend value |
+ | 31 | GET | `/calibration/histogram/{model_key}/{head_name}/{label}` | — | DELETE | No callers, overly specific |
 
 **Merge specification for status endpoints:**
+
 - The merged `/calibration/histogram/status` returns a single response containing: `is_running`, `progress_percent`, `current_step`, `total_steps`, `started_at`, `error` (union of fields from both old endpoints)
 - Same for `/calibration/apply/status`
 
@@ -190,29 +194,29 @@ Deleted: 4 dead endpoints. Merged: 2 pairs (status+progress). Grouped actions un
 
 ### Web Config (`/api/web/config/*`) — 2→2
 
-| # | Method | Old URL | New URL | Action |
-|---|--------|---------|---------|--------|
-| 32 | GET | `/config` | `/config` | UNCHANGED |
-| 33 | POST | `/config` | `/config` | UNCHANGED |
+ | # | Method | Old URL | New URL | Action |
+ | --- | -------- | --------- | --------- | -------- |
+ | 32 | GET | `/config` | `/config` | UNCHANGED |
+ | 33 | POST | `/config` | `/config` | UNCHANGED |
 
 ---
 
 ### Web Filesystem (`/api/web/file-system/*`) — 1→1
 
-| # | Method | Old URL | New URL | Action |
-|---|--------|---------|---------|--------|
-| 34 | GET | `/fs/list` | `/file-system/list` | RENAME |
+ | # | Method | Old URL | New URL | Action |
+ | --- | -------- | --------- | --------- | -------- |
+ | 34 | GET | `/fs/list` | `/file-system/list` | RENAME |
 
 ---
 
 ### Web Info & Health (`/api/web/*` — empty prefix router) — 4→3
 
-| # | Method | Old URL | New URL | Action | Notes |
-|---|--------|---------|---------|--------|-------|
-| 35 | GET | `/info` | `/info` | UNCHANGED | |
-| 36 | GET | `/health` | `/health` | UNCHANGED | |
-| 37 | GET | `/health/gpu` | `/health/gpu` | UNCHANGED | |
-| 38 | GET | `/work-status` | — | MOVE | → `/machine-learning/work-status` (tracks ML pipeline state) |
+ | # | Method | Old URL | New URL | Action | Notes |
+ | --- | -------- | --------- | --------- | -------- | ------- |
+ | 35 | GET | `/info` | `/info` | UNCHANGED | |
+ | 36 | GET | `/health` | `/health` | UNCHANGED | |
+ | 37 | GET | `/health/gpu` | `/health/gpu` | UNCHANGED | |
+ | 38 | GET | `/work-status` | — | MOVE | → `/machine-learning/work-status` (tracks ML pipeline state) |
 
 ---
 
@@ -220,49 +224,49 @@ Deleted: 4 dead endpoints. Merged: 2 pairs (status+progress). Grouped actions un
 
 Prefix rename: `/libraries` → `/library`. Sub-resource singularization: `files` → `file`, `tags` → `tag`. Coordinates with DD-ml-pipeline-automation for reconcile-tags → write-tag rename and reconcile-status deletion.
 
-| # | Method | Old URL | New URL | Action | Notes |
-|---|--------|---------|---------|--------|-------|
-| 39 | GET | `/libraries` | `/library` | RENAME | List libraries |
-| 40 | POST | `/libraries` | `/library` | RENAME | Create library |
-| 41 | GET | `/libraries/{id}` | `/library/{id}` | RENAME | Get library |
-| 42 | PATCH | `/libraries/{id}` | `/library/{id}` | RENAME | Update library |
-| 43 | DELETE | `/libraries/{id}` | `/library/{id}` | RENAME+FIX | Fix layer violation: extract file-watcher stop to service method |
-| 44 | GET | `/libraries/stats` | `/library/stats` | RENAME | |
-| 45 | GET | `/libraries/recent-activity` | — | MOVE | → `/machine-learning/recent-activity` (ML pipeline activity, not library CRUD) |
-| 46 | GET | `/libraries/files/search` | `/library/file/search` | RENAME | |
-| 47 | POST | `/libraries/files/by-ids` | `/library/file/by-ids` | RENAME | |
-| 48 | POST | `/libraries/files/by-tag` | `/library/file/by-tag` | RENAME+FIX | Fix broken pagination total — must use real total from DB, not `len(results)` |
-| 49 | GET | `/libraries/files/tags/unique-keys` | `/library/file/tag/unique-keys` | RENAME | |
-| 50 | GET | `/libraries/files/tags/values` | `/library/file/tag/values` | RENAME | |
-| 51 | GET | `/libraries/files/tags/mood-values` | `/library/file/tag/mood-values` | RENAME | |
-| 52 | GET | `/libraries/files/{file_id}/tags` | `/library/file/{file_id}/tag` | RENAME | |
-| 53 | POST | `/libraries/cleanup-tags` | `/library/cleanup-tag` | RENAME | |
-| 54 | POST | `/libraries/cleanup-entities` | — | DELETE | Duplicate of cleanup-tags |
-| 55 | POST | `/libraries/{id}/scan/quick` | `/library/{id}/scan/quick` | RENAME | |
-| 56 | POST | `/libraries/{id}/scan/full` | `/library/{id}/scan/full` | RENAME | |
-| 57 | POST | `/libraries/{id}/reconcile` | `/library/{id}/reconcile` | RENAME+FIX | Fix: `library_id` from path currently silently dropped — must be passed to service |
-| 58 | POST | `/libraries/{id}/reconcile-tags` | `/library/{id}/write-tag` | RENAME | Per DD-ml-pipeline-automation: reconcile-tags → write-tag |
-| 59 | GET | `/libraries/{id}/reconcile-status` | — | DELETE | Per DD-ml-pipeline-automation: replaced by pipeline status |
-| 60 | PATCH | `/libraries/{id}/write-mode` | `/library/{id}/write-mode` | RENAME | |
-| 61 | POST | `/libraries/{id}/validate-tags` | `/library/{id}/validate-tag` | RENAME | |
-| 62 | GET | `/libraries/{id}/vector-config` | `/library/{id}/vector-config` | RENAME | |
-| 63 | PUT | `/libraries/{id}/vector-config` | `/library/{id}/vector-config` | RENAME | |
-| 64 | GET | `/libraries/{id}/vector-stats` | `/library/{id}/vector-stats` | RENAME+FIX | Fix layer violation: extract multi-service orchestration to service method |
-| 65 | GET | `/libraries/{id}/errored-files` | `/library/{id}/errored-file` | RENAME | |
-| 66 | POST | `/libraries/{id}/retry-errored` | `/library/{id}/retry-errored` | RENAME | |
+ | # | Method | Old URL | New URL | Action | Notes |
+ | --- | -------- | --------- | --------- | -------- | ------- |
+ | 39 | GET | `/libraries` | `/library` | RENAME | List libraries |
+ | 40 | POST | `/libraries` | `/library` | RENAME | Create library |
+ | 41 | GET | `/libraries/{id}` | `/library/{id}` | RENAME | Get library |
+ | 42 | PATCH | `/libraries/{id}` | `/library/{id}` | RENAME | Update library |
+ | 43 | DELETE | `/libraries/{id}` | `/library/{id}` | RENAME+FIX | Fix layer violation: extract file-watcher stop to service method |
+ | 44 | GET | `/libraries/stats` | `/library/stats` | RENAME | |
+ | 45 | GET | `/libraries/recent-activity` | — | MOVE | → `/machine-learning/recent-activity` (ML pipeline activity, not library CRUD) |
+ | 46 | GET | `/libraries/files/search` | `/library/file/search` | RENAME | |
+ | 47 | POST | `/libraries/files/by-ids` | `/library/file/by-ids` | RENAME | |
+ | 48 | POST | `/libraries/files/by-tag` | `/library/file/by-tag` | RENAME+FIX | Fix broken pagination total — must use real total from DB, not `len(results)` |
+ | 49 | GET | `/libraries/files/tags/unique-keys` | `/library/file/tag/unique-keys` | RENAME | |
+ | 50 | GET | `/libraries/files/tags/values` | `/library/file/tag/values` | RENAME | |
+ | 51 | GET | `/libraries/files/tags/mood-values` | `/library/file/tag/mood-values` | RENAME | |
+ | 52 | GET | `/libraries/files/{file_id}/tags` | `/library/file/{file_id}/tag` | RENAME | |
+ | 53 | POST | `/libraries/cleanup-tags` | `/library/cleanup-tag` | RENAME | |
+ | 54 | POST | `/libraries/cleanup-entities` | — | DELETE | Duplicate of cleanup-tags |
+ | 55 | POST | `/libraries/{id}/scan/quick` | `/library/{id}/scan/quick` | RENAME | |
+ | 56 | POST | `/libraries/{id}/scan/full` | `/library/{id}/scan/full` | RENAME | |
+ | 57 | POST | `/libraries/{id}/reconcile` | `/library/{id}/reconcile` | RENAME+FIX | Fix: `library_id` from path currently silently dropped — must be passed to service |
+ | 58 | POST | `/libraries/{id}/reconcile-tags` | `/library/{id}/write-tag` | RENAME | Per DD-ml-pipeline-automation: reconcile-tags → write-tag |
+ | 59 | GET | `/libraries/{id}/reconcile-status` | — | DELETE | Per DD-ml-pipeline-automation: replaced by pipeline status |
+ | 60 | PATCH | `/libraries/{id}/write-mode` | `/library/{id}/write-mode` | RENAME | |
+ | 61 | POST | `/libraries/{id}/validate-tags` | `/library/{id}/validate-tag` | RENAME | |
+ | 62 | GET | `/libraries/{id}/vector-config` | `/library/{id}/vector-config` | RENAME | |
+ | 63 | PUT | `/libraries/{id}/vector-config` | `/library/{id}/vector-config` | RENAME | |
+ | 64 | GET | `/libraries/{id}/vector-stats` | `/library/{id}/vector-stats` | RENAME+FIX | Fix layer violation: extract multi-service orchestration to service method |
+ | 65 | GET | `/libraries/{id}/errored-files` | `/library/{id}/errored-file` | RENAME | |
+ | 66 | POST | `/libraries/{id}/retry-errored` | `/library/{id}/retry-errored` | RENAME | |
 
 ---
 
 ### Web Metadata (`/api/web/metadata/*`) — 6→6
 
-| # | Method | Old URL | New URL | Action | Notes |
-|---|--------|---------|---------|--------|-------|
-| 67 | GET | `/metadata/counts` | `/metadata/count` | RENAME | Singular |
-| 68 | GET | `/metadata/{collection}` | `/metadata/{collection}` | UNCHANGED | |
-| 69 | GET | `/metadata/{collection}/{id}` | `/metadata/{collection}/{id}` | UNCHANGED | |
-| 70 | GET | `/metadata/{collection}/{id}/songs` | `/metadata/{collection}/{id}/song` | RENAME | Singular |
-| 71 | GET | `/metadata/albums/{id}/artists` | `/metadata/album/{id}/artist` | RENAME | Singular |
-| 72 | GET | `/metadata/artists/{id}/albums` | `/metadata/artist/{id}/album` | RENAME | Singular |
+ | # | Method | Old URL | New URL | Action | Notes |
+ | --- | -------- | --------- | --------- | -------- | ------- |
+ | 67 | GET | `/metadata/counts` | `/metadata/count` | RENAME | Singular |
+ | 68 | GET | `/metadata/{collection}` | `/metadata/{collection}` | UNCHANGED | |
+ | 69 | GET | `/metadata/{collection}/{id}` | `/metadata/{collection}/{id}` | UNCHANGED | |
+ | 70 | GET | `/metadata/{collection}/{id}/songs` | `/metadata/{collection}/{id}/song` | RENAME | Singular |
+ | 71 | GET | `/metadata/albums/{id}/artists` | `/metadata/album/{id}/artist` | RENAME | Singular |
+ | 72 | GET | `/metadata/artists/{id}/albums` | `/metadata/artist/{id}/album` | RENAME | Singular |
 
 ---
 
@@ -270,123 +274,123 @@ Prefix rename: `/libraries` → `/library`. Sub-resource singularization: `files
 
 Absorbs `work-status` from info router and `recent-activity` from library router.
 
-| # | Method | Old URL | New URL | Action | Notes |
-|---|--------|---------|---------|--------|-------|
-| 73 | GET | `/ml/models` | `/machine-learning/model` | RENAME | Singular + full word prefix |
-| 74 | GET | `/ml/models/{id}/outputs` | `/machine-learning/model/{id}/output` | RENAME | Singular + full word prefix |
-| 75 | PATCH | `/ml/models/{id}/outputs/{output_id}` | `/machine-learning/model/{id}/output/{output_id}` | RENAME | Singular + full word prefix |
-| 76 | POST | `/ml/models/{id}/mark-configured` | `/machine-learning/model/{id}/mark-configured` | RENAME | Singular + full word prefix |
-| 77 | POST | `/ml/vram-probe` | `/machine-learning/vram-probe` | RENAME | Full word prefix |
-| 78 | GET | `/work-status` | `/machine-learning/work-status` | MOVE | From info_if empty-prefix router |
-| 79 | GET | `/libraries/recent-activity` | `/machine-learning/recent-activity` | MOVE | ML pipeline activity, not library CRUD |
+ | # | Method | Old URL | New URL | Action | Notes |
+ | --- | -------- | --------- | --------- | -------- | ------- |
+ | 73 | GET | `/ml/models` | `/machine-learning/model` | RENAME | Singular + full word prefix |
+ | 74 | GET | `/ml/models/{id}/outputs` | `/machine-learning/model/{id}/output` | RENAME | Singular + full word prefix |
+ | 75 | PATCH | `/ml/models/{id}/outputs/{output_id}` | `/machine-learning/model/{id}/output/{output_id}` | RENAME | Singular + full word prefix |
+ | 76 | POST | `/ml/models/{id}/mark-configured` | `/machine-learning/model/{id}/mark-configured` | RENAME | Singular + full word prefix |
+ | 77 | POST | `/ml/vram-probe` | `/machine-learning/vram-probe` | RENAME | Full word prefix |
+ | 78 | GET | `/work-status` | `/machine-learning/work-status` | MOVE | From info_if empty-prefix router |
+ | 79 | GET | `/libraries/recent-activity` | `/machine-learning/recent-activity` | MOVE | ML pipeline activity, not library CRUD |
 
 ---
 
 ### Web Navidrome (`/api/web/navidrome/*`) — 12→12
 
-| # | Method | Old URL | New URL | Action | Notes |
-|---|--------|---------|---------|--------|-------|
-| 80 | GET | `/navidrome/preview` | `/navidrome/preview` | UNCHANGED | |
-| 81 | GET | `/navidrome/tag-values` | `/navidrome/tag-value` | RENAME | Singular |
-| 82 | GET | `/navidrome/config` | `/navidrome/config` | UNCHANGED | |
-| 83 | POST | `/navidrome/playlists/preview` | `/navidrome/playlist/preview` | RENAME | Singular |
-| 84 | POST | `/navidrome/playlists/generate` | `/navidrome/playlist/generate` | RENAME | Singular |
-| 85 | GET | `/navidrome/templates` | `/navidrome/template` | RENAME | Singular |
-| 86 | POST | `/navidrome/templates` | `/navidrome/template` | RENAME | Singular |
-| 87 | POST | `/navidrome/playlists/static` | `/navidrome/playlist/static` | RENAME | Singular |
-| 88 | POST | `/navidrome/playlists/push` | `/navidrome/playlist/push` | RENAME | Singular |
-| 89 | POST | `/navidrome/sync-songs` | `/navidrome/sync-song` | RENAME | Singular; frontend caller in navidrome.ts |
-| 90 | POST | `/navidrome/ping` | `/navidrome/ping` | UNCHANGED | Health-check style action verb |
-| 91 | GET | `/navidrome/status` | `/navidrome/status` | UNCHANGED | Navidrome connection status |
+ | # | Method | Old URL | New URL | Action | Notes |
+ | --- | -------- | --------- | --------- | -------- | ------- |
+ | 80 | GET | `/navidrome/preview` | `/navidrome/preview` | UNCHANGED | |
+ | 81 | GET | `/navidrome/tag-values` | `/navidrome/tag-value` | RENAME | Singular |
+ | 82 | GET | `/navidrome/config` | `/navidrome/config` | UNCHANGED | |
+ | 83 | POST | `/navidrome/playlists/preview` | `/navidrome/playlist/preview` | RENAME | Singular |
+ | 84 | POST | `/navidrome/playlists/generate` | `/navidrome/playlist/generate` | RENAME | Singular |
+ | 85 | GET | `/navidrome/templates` | `/navidrome/template` | RENAME | Singular |
+ | 86 | POST | `/navidrome/templates` | `/navidrome/template` | RENAME | Singular |
+ | 87 | POST | `/navidrome/playlists/static` | `/navidrome/playlist/static` | RENAME | Singular |
+ | 88 | POST | `/navidrome/playlists/push` | `/navidrome/playlist/push` | RENAME | Singular |
+ | 89 | POST | `/navidrome/sync-songs` | `/navidrome/sync-song` | RENAME | Singular; frontend caller in navidrome.ts |
+ | 90 | POST | `/navidrome/ping` | `/navidrome/ping` | UNCHANGED | Health-check style action verb |
+ | 91 | GET | `/navidrome/status` | `/navidrome/status` | UNCHANGED | Navidrome connection status |
 
 ---
 
 ### Web Playlist Import (`/api/web/playlist-import/*`) — 2→2
 
-| # | Method | Old URL | New URL | Action |
-|---|--------|---------|---------|--------|
-| 92 | POST | `/playlist-import/convert` | `/playlist-import/convert` | UNCHANGED |
-| 93 | GET | `/playlist-import/spotify-status` | `/playlist-import/spotify-status` | UNCHANGED |
+ | # | Method | Old URL | New URL | Action |
+ | --- | -------- | --------- | --------- | -------- |
+ | 92 | POST | `/playlist-import/convert` | `/playlist-import/convert` | UNCHANGED |
+ | 93 | GET | `/playlist-import/spotify-status` | `/playlist-import/spotify-status` | UNCHANGED |
 
 ---
 
 ### Web Processing (`/api/web/processing/*`) — 1→0
 
-| # | Method | Old URL | New URL | Action | Notes |
-|---|--------|---------|---------|--------|-------|
-| 94 | GET | `/processing/status` | — | DELETE | Superseded by `GET /machine-learning/work-status` |
+ | # | Method | Old URL | New URL | Action | Notes |
+ | --- | -------- | --------- | --------- | -------- | ------- |
+ | 94 | GET | `/processing/status` | — | DELETE | Superseded by `GET /machine-learning/work-status` |
 
 ---
 
 ### Web Tag Curation (`/api/web/tag-curation/*`) — 8→8
 
-| # | Method | Old URL | New URL | Action | Notes |
-|---|--------|---------|---------|--------|-------|
-| 95 | POST | `/tag-curation/rename` | `/tag-curation/rename` | UNCHANGED | |
-| 96 | POST | `/tag-curation/merge` | `/tag-curation/merge` | UNCHANGED | |
-| 97 | POST | `/tag-curation/split` | `/tag-curation/split` | UNCHANGED | |
-| 98 | GET | `/tag-curation/values` | `/tag-curation/value` | RENAME | Singular |
-| 99 | GET | `/tag-curation/{tag_id}/songs` | `/tag-curation/{tag_id}/song` | RENAME | Singular |
-| 100 | POST | `/tag-curation/commit` | `/tag-curation/commit` | UNCHANGED | |
-| 101 | GET | `/tag-curation/pending-count` | `/tag-curation/pending-count` | UNCHANGED | |
-| 102 | PATCH | `/tag-curation/files/{file_id}/tags` | `/tag-curation/file/{file_id}/tag` | RENAME | Singular |
+ | # | Method | Old URL | New URL | Action | Notes |
+ | --- | -------- | --------- | --------- | -------- | ------- |
+ | 95 | POST | `/tag-curation/rename` | `/tag-curation/rename` | UNCHANGED | |
+ | 96 | POST | `/tag-curation/merge` | `/tag-curation/merge` | UNCHANGED | |
+ | 97 | POST | `/tag-curation/split` | `/tag-curation/split` | UNCHANGED | |
+ | 98 | GET | `/tag-curation/values` | `/tag-curation/value` | RENAME | Singular |
+ | 99 | GET | `/tag-curation/{tag_id}/songs` | `/tag-curation/{tag_id}/song` | RENAME | Singular |
+ | 100 | POST | `/tag-curation/commit` | `/tag-curation/commit` | UNCHANGED | |
+ | 101 | GET | `/tag-curation/pending-count` | `/tag-curation/pending-count` | UNCHANGED | |
+ | 102 | PATCH | `/tag-curation/files/{file_id}/tags` | `/tag-curation/file/{file_id}/tag` | RENAME | Singular |
 
 ---
 
 ### Web Tags (`/api/web/tag/*`) — 2→2
 
-| # | Method | Old URL | New URL | Action | Notes |
-|---|--------|---------|---------|--------|-------|
-| 103 | GET | `/tags/show-tags` | `/tag/show` | RENAME | Singular prefix + remove redundant `-tags` suffix |
-| 104 | DELETE | `/tags/remove-tags` | `/tag/remove` | RENAME | Singular prefix + remove redundant `-tags` suffix |
+ | # | Method | Old URL | New URL | Action | Notes |
+ | --- | -------- | --------- | --------- | -------- | ------- |
+ | 103 | GET | `/tags/show-tags` | `/tag/show` | RENAME | Singular prefix + remove redundant `-tags` suffix |
+ | 104 | DELETE | `/tags/remove-tags` | `/tag/remove` | RENAME | Singular prefix + remove redundant `-tags` suffix |
 
 ---
 
 ### Web Vectors (`/api/web/vector/*`) — 6→6
 
-| # | Method | Old URL | New URL | Action | Notes |
-|---|--------|---------|---------|--------|-------|
-| 105 | GET | `/vectors/backbones` | `/vector/backbone` | RENAME | Singular |
-| 106 | POST | `/vectors/search` | `/vector/search` | RENAME | |
-| 107 | GET | `/vectors/track` | `/vector/track` | RENAME | |
-| 108 | GET | `/vectors/stats` | `/vector/stats` | RENAME | |
-| 109 | POST | `/vectors/promote` | `/vector/promote` | RENAME | |
-| 110 | POST | `/vectors/rebuild-index` | `/vector/rebuild-index` | RENAME | |
+ | # | Method | Old URL | New URL | Action | Notes |
+ | --- | -------- | --------- | --------- | -------- | ------- |
+ | 105 | GET | `/vectors/backbones` | `/vector/backbone` | RENAME | Singular |
+ | 106 | POST | `/vectors/search` | `/vector/search` | RENAME | |
+ | 107 | GET | `/vectors/track` | `/vector/track` | RENAME | |
+ | 108 | GET | `/vectors/stats` | `/vector/stats` | RENAME | |
+ | 109 | POST | `/vectors/promote` | `/vector/promote` | RENAME | |
+ | 110 | POST | `/vectors/rebuild-index` | `/vector/rebuild-index` | RENAME | |
 
 ---
 
 ### Web Worker (`/api/web/worker/*`) — 1→0 (moved to admin)
 
-| # | Method | Old URL | New URL | Action | Notes |
-|---|--------|---------|---------|--------|-------|
-| — | POST | `/worker/restart` | — | MOVE | See Web Admin section (#10) |
+ | # | Method | Old URL | New URL | Action | Notes |
+ | --- | -------- | --------- | --------- | -------- | ------- |
+ | — | POST | `/worker/restart` | — | MOVE | See Web Admin section (#10) |
 
 ---
 
 ## Summary Statistics
 
-| Metric | Count |
-|--------|-------|
-| Endpoints before | 108 |
-| Deleted | 10 |
-| Merged (4→2) | -2 |
-| **Endpoints after** | **96** |
-| Renamed (URL changed) | 62 |
-| Moved to different router | 3 |
-| Bug-fixed | 2 |
-| Layer-violation-fixed | 2 |
-| Unchanged | 31 |
-| Routers removed | 2 (processing_if.py, worker_if.py) |
-| Routers added | 1 (admin_if.py) |
+ | Metric | Count |
+ | -------- | ------- |
+ | Endpoints before | 108 |
+ | Deleted | 10 |
+ | Merged (4→2) | -2 |
+ | **Endpoints after** | **96** |
+ | Renamed (URL changed) | 62 |
+ | Moved to different router | 3 |
+ | Bug-fixed | 2 |
+ | Layer-violation-fixed | 2 |
+ | Unchanged | 31 |
+ | Routers removed | 2 (processing_if.py, worker_if.py) |
+ | Routers added | 1 (admin_if.py) |
 
 ### Deletion Breakdown
 
-| Category | Count | Endpoints |
-|----------|-------|-----------|
-| Dead (no callers) | 8 | v1 admin pause, v1 admin resume, v1 admin calibration/run, calibration/history, calibration/history/{key}, calibration/convergence, calibration/histogram/{m}/{h}/{l}, processing/status |
-| Duplicate-bug delete | 1 | libraries/cleanup-entities (duplicate of cleanup-tags) |
-| Overlap-driven delete | 1 | libraries/{id}/reconcile-status (replaced by pipeline status per DD-ml-pipeline-automation) |
-| **Total deleted** | **10** | |
+ | Category | Count | Endpoints |
+ | ---------- | ------- | ----------- |
+ | Dead (no callers) | 8 | v1 admin pause, v1 admin resume, v1 admin calibration/run, calibration/history, calibration/history/{key}, calibration/convergence, calibration/histogram/{m}/{h}/{l}, processing/status |
+ | Duplicate-bug delete | 1 | libraries/cleanup-entities (duplicate of cleanup-tags) |
+ | Overlap-driven delete | 1 | libraries/{id}/reconcile-status (replaced by pipeline status per DD-ml-pipeline-automation) |
+ | **Total deleted** | **10** | |
 
 ---
 
@@ -423,12 +427,14 @@ Absorbs `work-status` from info router and `recent-activity` from library router
 ### MERGE-1: Calibration Apply Status
 
 **Old endpoints:**
+
 - `GET /calibration/apply-status` → returns `{is_running, error}`
 - `GET /calibration/apply-progress` → returns `{progress_percent, current_step, total_steps}`
 
 **New endpoint:** `GET /calibration/apply/status`
 
 **Response shape:**
+
 ```json
 {
   "is_running": true,
@@ -442,6 +448,7 @@ Absorbs `work-status` from info router and `recent-activity` from library router
 ### MERGE-2: Calibration Histogram Status
 
 **Old endpoints:**
+
 - `GET /calibration/histogram-status` → returns `{is_running, error}`
 - `GET /calibration/histogram-progress` → returns `{progress_percent, current_step, total_steps}`
 
@@ -455,11 +462,11 @@ Absorbs `work-status` from info router and `recent-activity` from library router
 
 DD-ml-pipeline-automation (APPROVED) makes three route changes that overlap with this restructure:
 
-| DD-ml-pipeline-automation Change | This DD's Handling |
-|----------------------------------|--------------------|
-| Rename `/libraries/{id}/reconcile-tags` → `/libraries/{id}/write-tags` | Absorbed: becomes `/library/{id}/write-tag` (singular applied on top) |
-| Delete `GET /libraries/{id}/reconcile-status` | Absorbed: deleted here too |
-| Add `GET /libraries/{id}/pipeline` | NOT in this DD — added by that DD's implementation. This DD names it `/library/{id}/pipeline` for naming consistency. |
+ | DD-ml-pipeline-automation Change | This DD's Handling |
+ | ---------------------------------- | -------------------- |
+ | Rename `/libraries/{id}/reconcile-tags` → `/libraries/{id}/write-tags` | Absorbed: becomes `/library/{id}/write-tag` (singular applied on top) |
+ | Delete `GET /libraries/{id}/reconcile-status` | Absorbed: deleted here too |
+ | Add `GET /libraries/{id}/pipeline` | NOT in this DD — added by that DD's implementation. This DD names it `/library/{id}/pipeline` for naming consistency. |
 
 **Implementation ordering:** This DD should execute its Phase 1-2 (deletions + bug fixes) before or independently of DD-ml-pipeline-automation. Phase 3 (renames) can run in any order relative to that DD, but the rename of `reconcile-tags` → `write-tag` must happen once, not twice.
 
@@ -471,30 +478,31 @@ Every renamed/moved/deleted endpoint requires a corresponding frontend API clien
 
 ### Files Requiring Updates
 
-| Frontend File | Endpoints Affected | Change Type |
-|--------------|-------------------|-------------|
-| `frontend/src/shared/api/library.ts` | ~17 endpoint URLs | URL prefix `/libraries` → `/library`, sub-paths singularized |
-| `frontend/src/shared/api/library.test.ts` | 2 hardcoded URLs | Has hardcoded `/libraries/{id}/reconcile-tags` and `/libraries/{id}/reconcile-status` assertions |
-| `frontend/src/shared/api/files.ts` | 6 endpoints | URL prefix `/libraries/files` → `/library/file`, tag paths singularized |
-| `frontend/src/shared/api/vectors.ts` | 6 endpoints | URL prefix `/vectors` → `/vector`, sub-paths singularized |
-| `frontend/src/shared/api/calibration.ts` | 12 → 7 | Remove deleted endpoints, update merged URLs, restructure paths |
-| `frontend/src/shared/api/ml.ts` | 5 endpoints | URL `/ml/models` → `/machine-learning/model`, sub-paths singularized |
-| `frontend/src/shared/api/navidrome.ts` | 9 endpoint URLs | Plurals → singular (playlists→playlist, templates→template, sync-songs→sync-song), plus 2 unchanged (ping, status) |
-| `frontend/src/shared/api/processing.ts` | 2 endpoints | Delete `/processing/status` call, move `/work-status` → `/machine-learning/work-status` |
-| `frontend/src/shared/api/worker.ts` | 1 endpoint | `/worker/restart` → `/admin/restart` |
-| `frontend/src/shared/api/tagCuration.ts` | ~5 renamed paths | Singularize sub-paths (values→value, songs→song, files→file, tags→tag) + commit/pending-count unchanged |
-| `frontend/src/shared/api/tags.ts` | 2 endpoints | `/tags/show-tags` → `/tag/show`, `/tags/remove-tags` → `/tag/remove` |
-| `frontend/src/shared/api/metadata.ts` | 5 endpoint patterns | Singularize (counts→count, songs→song, albums→album, artists→artist) + parameterized `{collection}` paths |
-| `frontend/src/shared/api/analytics.ts` | 0 backend changes | UNCHANGED — but see dead function note below |
-| `frontend/src/shared/api/auth.ts` | 2 endpoint URLs | `/auth/login` → `/authentication/login`, `/auth/logout` → `/authentication/logout` |
-| `frontend/src/shared/api/apiKey.ts` | 0 | UNCHANGED |
-| `frontend/src/shared/api/config.ts` | 0 | UNCHANGED |
-| `frontend/src/shared/api/filesystem.ts` | 1 endpoint URL | `/fs/list` → `/file-system/list` |
-| `frontend/src/shared/api/playlistImport.ts` | 0 | UNCHANGED |
+ | Frontend File | Endpoints Affected | Change Type |
+ | -------------- | ------------------- | ------------- |
+ | `frontend/src/shared/api/library.ts` | ~17 endpoint URLs | URL prefix `/libraries` → `/library`, sub-paths singularized |
+ | `frontend/src/shared/api/library.test.ts` | 2 hardcoded URLs | Has hardcoded `/libraries/{id}/reconcile-tags` and `/libraries/{id}/reconcile-status` assertions |
+ | `frontend/src/shared/api/files.ts` | 6 endpoints | URL prefix `/libraries/files` → `/library/file`, tag paths singularized |
+ | `frontend/src/shared/api/vectors.ts` | 6 endpoints | URL prefix `/vectors` → `/vector`, sub-paths singularized |
+ | `frontend/src/shared/api/calibration.ts` | 12 → 7 | Remove deleted endpoints, update merged URLs, restructure paths |
+ | `frontend/src/shared/api/ml.ts` | 5 endpoints | URL `/ml/models` → `/machine-learning/model`, sub-paths singularized |
+ | `frontend/src/shared/api/navidrome.ts` | 9 endpoint URLs | Plurals → singular (playlists→playlist, templates→template, sync-songs→sync-song), plus 2 unchanged (ping, status) |
+ | `frontend/src/shared/api/processing.ts` | 2 endpoints | Delete `/processing/status` call, move `/work-status` → `/machine-learning/work-status` |
+ | `frontend/src/shared/api/worker.ts` | 1 endpoint | `/worker/restart` → `/admin/restart` |
+ | `frontend/src/shared/api/tagCuration.ts` | ~5 renamed paths | Singularize sub-paths (values→value, songs→song, files→file, tags→tag) + commit/pending-count unchanged |
+ | `frontend/src/shared/api/tags.ts` | 2 endpoints | `/tags/show-tags` → `/tag/show`, `/tags/remove-tags` → `/tag/remove` |
+ | `frontend/src/shared/api/metadata.ts` | 5 endpoint patterns | Singularize (counts→count, songs→song, albums→album, artists→artist) + parameterized `{collection}` paths |
+ | `frontend/src/shared/api/analytics.ts` | 0 backend changes | UNCHANGED — but see dead function note below |
+ | `frontend/src/shared/api/auth.ts` | 2 endpoint URLs | `/auth/login` → `/authentication/login`, `/auth/logout` → `/authentication/logout` |
+ | `frontend/src/shared/api/apiKey.ts` | 0 | UNCHANGED |
+ | `frontend/src/shared/api/config.ts` | 0 | UNCHANGED |
+ | `frontend/src/shared/api/filesystem.ts` | 1 endpoint URL | `/fs/list` → `/file-system/list` |
+ | `frontend/src/shared/api/playlistImport.ts` | 0 | UNCHANGED |
 
 ### Frontend Deletion Checklist
 
 Remove dead frontend functions that call deleted backend endpoints:
+
 - Calibration: `getConvergenceStatus()`, `getCalibrationHistory()`, `getCalibrationHistorySingle()`, `getHistogramForHead()`
 - Processing: `getProcessingStatus()` (if separate from work-status)
 - Library: `cleanupOrphanedEntities()` (if exists)
@@ -513,39 +521,40 @@ Remove dead frontend functions that call deleted backend endpoints:
 
 ### Files to Modify
 
-| File | Changes |
-|------|---------|
-| `nomarr/interfaces/api/web/library_if.py` | Rename prefix to `/library`, update all paths, remove 3 endpoints, fix 2 bugs |
-| `nomarr/interfaces/api/web/calibration_if.py` | Restructure paths under `apply/` and `histogram/`, delete 4 endpoints, merge 2 pairs |
-| `nomarr/interfaces/api/web/ml_if.py` | Singularize paths, add `work-status` + `recent-activity` handlers |
-| `nomarr/interfaces/api/web/vectors_if.py` | Rename prefix to `/vector`, singularize sub-paths |
-| `nomarr/interfaces/api/web/tags_if.py` | Rename prefix to `/tag`, clean up redundant path suffixes |
-| `nomarr/interfaces/api/web/navidrome_if.py` | Singularize sub-paths (playlists→playlist, templates→template) |
-| `nomarr/interfaces/api/web/metadata_if.py` | Singularize sub-paths |
-| `nomarr/interfaces/api/web/tag_curation_if.py` | Singularize sub-paths |
-| `nomarr/interfaces/api/web/info_if.py` | Remove `work-status` handler (moved to ml_if) |
-| `nomarr/interfaces/api/web/router.py` | Update include_router calls for renamed prefixes, add admin router, remove processing + worker |
-| `nomarr/interfaces/api/v1/admin_if.py` | Delete file entirely (all 3 endpoints removed) |
-| `nomarr/interfaces/api/v1/navidrome_v1_if.py` | Singularize paths |
-| `nomarr/interfaces/api/api_app.py` | Remove v1 admin router include |
+ | File | Changes |
+ | ------ | --------- |
+ | `nomarr/interfaces/api/web/library_if.py` | Rename prefix to `/library`, update all paths, remove 3 endpoints, fix 2 bugs |
+ | `nomarr/interfaces/api/web/calibration_if.py` | Restructure paths under `apply/` and `histogram/`, delete 4 endpoints, merge 2 pairs |
+ | `nomarr/interfaces/api/web/ml_if.py` | Singularize paths, add `work-status` + `recent-activity` handlers |
+ | `nomarr/interfaces/api/web/vectors_if.py` | Rename prefix to `/vector`, singularize sub-paths |
+ | `nomarr/interfaces/api/web/tags_if.py` | Rename prefix to `/tag`, clean up redundant path suffixes |
+ | `nomarr/interfaces/api/web/navidrome_if.py` | Singularize sub-paths (playlists→playlist, templates→template) |
+ | `nomarr/interfaces/api/web/metadata_if.py` | Singularize sub-paths |
+ | `nomarr/interfaces/api/web/tag_curation_if.py` | Singularize sub-paths |
+ | `nomarr/interfaces/api/web/info_if.py` | Remove `work-status` handler (moved to ml_if) |
+ | `nomarr/interfaces/api/web/router.py` | Update include_router calls for renamed prefixes, add admin router, remove processing + worker |
+ | `nomarr/interfaces/api/v1/admin_if.py` | Delete file entirely (all 3 endpoints removed) |
+ | `nomarr/interfaces/api/v1/navidrome_v1_if.py` | Singularize paths |
+ | `nomarr/interfaces/api/api_app.py` | Remove v1 admin router include |
 
 ### Files to Delete
 
-| File | Reason |
-|------|--------|
-| `nomarr/interfaces/api/web/processing_if.py` | Sole endpoint deleted |
-| `nomarr/interfaces/api/web/worker_if.py` | Sole endpoint moved to admin |
-| `nomarr/interfaces/api/v1/admin_if.py` | All endpoints deleted |
+ | File | Reason |
+ | ------ | -------- |
+ | `nomarr/interfaces/api/web/processing_if.py` | Sole endpoint deleted |
+ | `nomarr/interfaces/api/web/worker_if.py` | Sole endpoint moved to admin |
+ | `nomarr/interfaces/api/v1/admin_if.py` | All endpoints deleted |
 
 ### Files to Create
 
-| File | Purpose |
-|------|---------|
-| `nomarr/interfaces/api/web/admin_if.py` | New admin router with `POST /admin/restart` |
+ | File | Purpose |
+ | ------ | --------- |
+ | `nomarr/interfaces/api/web/admin_if.py` | New admin router with `POST /admin/restart` |
 
 ### Type Files Impact
 
 Type files under `nomarr/interfaces/api/types/` may need renaming if router files are renamed, but since type files are named by domain (not by URL), most stay unchanged. Check:
+
 - `types/processing.py` → delete if no types remain after endpoint deletion
 - `types/worker.py` → delete or rename to `types/admin.py`
 
@@ -558,6 +567,7 @@ Type files under `nomarr/interfaces/api/types/` may need renaming if router file
 **Scope:** Remove endpoints, handlers, and any dead service methods they exclusively serve.
 
 **Endpoints deleted:**
+
 1. `POST /api/v1/admin/worker/pause`
 2. `POST /api/v1/admin/worker/resume`
 3. `POST /api/v1/admin/calibration/run`
@@ -601,6 +611,7 @@ Type files under `nomarr/interfaces/api/types/` may need renaming if router file
 **Scope:** Apply the naming convention to all remaining endpoints in a single coordinated pass.
 
 **Sub-phases (can be done per-router or all at once):**
+
 1. Rename router prefixes: `libraries→library`, `vectors→vector`, `tags→tag`
 2. Singularize sub-paths across all routers
 3. Move `work-status` from `info_if.py` to `ml_if.py`
@@ -620,6 +631,7 @@ Type files under `nomarr/interfaces/api/types/` may need renaming if router file
 ### Phase 6: Cleanup & Documentation
 
 **Scope:**
+
 1. Delete unused type files (`types/processing.py`, `types/worker.py` if empty)
 2. Update OpenAPI tags and descriptions
 3. Update any documentation referencing old URLs
@@ -632,15 +644,15 @@ Type files under `nomarr/interfaces/api/types/` may need renaming if router file
 
 ## Constraints
 
-| Constraint | Impact |
-|-----------|--------|
-| Alpha software — breaking changes allowed | No backward-compat layer needed |
-| No schema migrations required | This is route-level only; no DB changes |
-| ADR-006: Runtime imports for Depends types | New/moved router files must import service types at runtime, not under TYPE_CHECKING |
-| ADR-013: TaggingService owns tag vertical | Tag-domain endpoints must not drift back into LibraryService during reorganization |
-| ADR-012: Server-side pagination | BUG-2 fix must comply — return real total count |
-| DD-ml-pipeline-automation coordination | reconcile-tags→write-tag rename happens once; reconcile-status deletion coordinated |
-| Frontend lockstep deployment | Backend URL changes + frontend URL changes must deploy together |
+ | Constraint | Impact |
+ | ----------- | -------- |
+ | Alpha software — breaking changes allowed | No backward-compat layer needed |
+ | No schema migrations required | This is route-level only; no DB changes |
+ | ADR-006: Runtime imports for Depends types | New/moved router files must import service types at runtime, not under TYPE_CHECKING |
+ | ADR-013: TaggingService owns tag vertical | Tag-domain endpoints must not drift back into LibraryService during reorganization |
+ | ADR-012: Server-side pagination | BUG-2 fix must comply — return real total count |
+ | DD-ml-pipeline-automation coordination | reconcile-tags→write-tag rename happens once; reconcile-status deletion coordinated |
+ | Frontend lockstep deployment | Backend URL changes + frontend URL changes must deploy together |
 
 ---
 

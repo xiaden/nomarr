@@ -42,14 +42,14 @@ const graph = new Graph({
 
 ## Configuration Options
 
-| Property | Description                                                                                                      | Type                                 | Default Value | Required |
+| Property | Description | Type | Default Value | Required |
 | -------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ------------- | -------- |
-| type     | Plugin type                                                                                                      | string                               | `fullscreen`  | ✓        |
-| key      | Unique identifier for the plugin, can be used to get the plugin instance or update plugin options                | string                               | -             |          |
-| autoFit  | Whether to auto-fit the canvas size, the canvas size will automatically adapt to the screen size when fullscreen | boolean                              | true          |          |
-| trigger  | Method to trigger fullscreen, [example](#trigger)                                                                | { request?: string; exit?: string; } | -             |          |
-| onEnter  | Callback after entering fullscreen                                                                               | () => void                           | -             |          |
-| onExit   | Callback after exiting fullscreen                                                                                | () => void                           | -             |          |
+| type | Plugin type | string | `fullscreen` | ✓ |
+| key | Unique identifier for the plugin, can be used to get the plugin instance or update plugin options | string | - | |
+| autoFit | Whether to auto-fit the canvas size, the canvas size will automatically adapt to the screen size when fullscreen | boolean | true | |
+| trigger | Method to trigger fullscreen, [example](#trigger) | { request?: string; exit?: string; } | - | |
+| onEnter | Callback after entering fullscreen | () => void | - | |
+| onExit | Callback after exiting fullscreen | () => void | - | |
 
 ### trigger
 

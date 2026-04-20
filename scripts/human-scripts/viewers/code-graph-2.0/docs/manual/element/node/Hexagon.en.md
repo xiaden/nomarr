@@ -23,9 +23,9 @@ Applicable scenarios:
 
 > If the element has specific attributes, we will list them below. For all general style attributes, see [BaseNode](/en/manual/element/node/base-node)
 
-| Attribute | Description                                                        | Type   | Default                                 | Required |
+| Attribute | Description | Type | Default | Required |
 | --------- | ------------------------------------------------------------------ | ------ | --------------------------------------- | -------- |
-| outerR    | Outer radius, the distance from the hexagon's center to any vertex | number | Half of the minimum of width and height |          |
+| outerR | Outer radius, the distance from the hexagon's center to any vertex | number | Half of the minimum of width and height | |
 
 ## Example
 

@@ -5,6 +5,7 @@
 The `nomarr/components/ml/` directory contains 27 files (26 listed in the task + `ml_backend_onnx_comp.py`). Most are 80-150 line single-concern modules that are too granular to navigate efficiently. The goal is to reduce the file count to ~13 logically grouped files by merging files that share the same concern boundary, change at the same rate, and have no circular import risk. Files that are volatile or conceptually distinct must remain separate.
 
 Design constraints established by research:
+
 - No circular imports exist within the ML layer today. All intra-layer imports flow one direction.
 - External callers (workflows, services, other components) import directly from specific modules, not only through `__init__.py`. Every caller must be updated when a module is renamed or merged.
 - `ml_preprocess_comp.py` is Essentia-restricted and has a distinct concern from audio I/O; it stays separate.
@@ -14,21 +15,21 @@ Design constraints established by research:
 
 ## Target File Map (27 → 13)
 
-| New file | Source files merged |
-|---|---|
-| `ml_onnx_base.py` (expanded) | absorbs `ml_backend_onnx_comp.py` + `ml_onnx_types.py` |
-| `ml_onnx_models.py` | `ml_onnx_backbone.py` + `ml_onnx_head.py` + `ml_inference_comp.py` |
-| `ml_model_catalog.py` | `ml_onnx_cache.py` + `ml_discovery_comp.py` |
-| `ml_preprocess_comp.py` | unchanged |
-| `ml_audio_io.py` | `ml_audio_comp.py` + `chromaprint_comp.py` |
-| `ml_segment_ops.py` | `ml_embed_comp.py` + `segment_stats_comp.py` |
-| `ml_embedding_pipeline.py` | `ml_backbone_embed_comp.py` + `ml_timing_comp.py` |
-| `ml_head_scoring.py` | `ml_head_pipeline_comp.py` + `ml_heads_comp.py` |
-| `ml_vram_context.py` | `ml_vram_coordinator_comp.py` + `ml_worker_context_comp.py` |
-| `ml_resource_probes.py` | `ml_vram_probe_comp.py` + `ml_capacity_probe_comp.py` + `ml_tier_selection_comp.py` |
-| `ml_vector_ops.py` | `ml_vector_pool_comp.py` + `ml_vector_persist_comp.py` |
-| `ml_vector_maintenance_comp.py` | unchanged |
-| `ml_calibration.py` | `ml_calibration_comp.py` + `calibration_state_comp.py` |
+ | New file | Source files merged |
+ | --- | --- |
+ | `ml_onnx_base.py` (expanded) | absorbs `ml_backend_onnx_comp.py` + `ml_onnx_types.py` |
+ | `ml_onnx_models.py` | `ml_onnx_backbone.py` + `ml_onnx_head.py` + `ml_inference_comp.py` |
+ | `ml_model_catalog.py` | `ml_onnx_cache.py` + `ml_discovery_comp.py` |
+ | `ml_preprocess_comp.py` | unchanged |
+ | `ml_audio_io.py` | `ml_audio_comp.py` + `chromaprint_comp.py` |
+ | `ml_segment_ops.py` | `ml_embed_comp.py` + `segment_stats_comp.py` |
+ | `ml_embedding_pipeline.py` | `ml_backbone_embed_comp.py` + `ml_timing_comp.py` |
+ | `ml_head_scoring.py` | `ml_head_pipeline_comp.py` + `ml_heads_comp.py` |
+ | `ml_vram_context.py` | `ml_vram_coordinator_comp.py` + `ml_worker_context_comp.py` |
+ | `ml_resource_probes.py` | `ml_vram_probe_comp.py` + `ml_capacity_probe_comp.py` + `ml_tier_selection_comp.py` |
+ | `ml_vector_ops.py` | `ml_vector_pool_comp.py` + `ml_vector_persist_comp.py` |
+ | `ml_vector_maintenance_comp.py` | unchanged |
+ | `ml_calibration.py` | `ml_calibration_comp.py` + `calibration_state_comp.py` |
 
 ## Phases
 

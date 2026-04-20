@@ -28,11 +28,11 @@ const graph = new Graph({
 
 ## Options
 
-| Option           | Description                            | Type              | Default | Required |
+| Option | Description | Type | Default | Required |
 | :--------------- | :------------------------------------- | :---------------- | :------ | :------- |
-| **type**         | Layout type                            | `mds`             | -       | Yes      |
-| **center**       | Center position of the circular layout | `[number,number]` | [0,0]   | No       |
-| **linkDistance** | Ideal length of edges (spring length)  | `number`          | 50      | No       |
+| **type** | Layout type | `mds` | - | Yes |
+| **center** | Center position of the circular layout | `[number,number]` | [0,0] | No |
+| **linkDistance** | Ideal length of edges (spring length) | `number` | 50 | No |
 
 **center**
 

@@ -23,14 +23,14 @@ audio/ → onnx/ (backbone) → inference/ → onnx/ (heads) → vectors/
 
 ## Subfolders
 
-| Folder | Purpose |
-|--------|----------|
-| `audio/` | Audio loading (Essentia MonoLoader), mel spectrogram preprocessing, chromaprint |
-| `calibration/` | Score calibration (p5/p95 normalization), calibration state persistence |
-| `inference/` | Backbone embedding, head predictions, segment statistics, mood decisions |
-| `onnx/` | ONNX Runtime session management, model discovery, caching, base classes |
-| `resources/` | VRAM coordination, capacity probing, tier selection, worker context |
-| `vectors/` | Embedding pooling, hot/cold vector storage, promotion, index maintenance |
+ | Folder | Purpose |
+ | -------- | ---------- |
+ | `audio/` | Audio loading (Essentia MonoLoader), mel spectrogram preprocessing, chromaprint |
+ | `calibration/` | Score calibration (p5/p95 normalization), calibration state persistence |
+ | `inference/` | Backbone embedding, head predictions, segment statistics, mood decisions |
+ | `onnx/` | ONNX Runtime session management, model discovery, caching, base classes |
+ | `resources/` | VRAM coordination, capacity probing, tier selection, worker context |
+ | `vectors/` | Embedding pooling, hot/cold vector storage, promotion, index maintenance |
 
 ## Architectural Rules
 

@@ -34,13 +34,13 @@ approach: "{implementation approach, if known}"
    - Files deleted (if refactor)
 3. **Size it:**
 
-| Size | Files | Typical Scope |
-|------|-------|---------------|
-| TRIVIAL | 1-2 | Bug fix, config change |
-| SMALL | 3-5 | Single component, one layer |
-| MEDIUM | 6-15 | Multi-layer, one workflow |
-| LARGE | 16-30 | Multi-workflow, schema change |
-| EPIC | 30+ | Cross-cutting, breaking changes |
+ | Size | Files | Typical Scope |
+ | ------ | ------- | --------------- |
+ | TRIVIAL | 1-2 | Bug fix, config change |
+ | SMALL | 3-5 | Single component, one layer |
+ | MEDIUM | 6-15 | Multi-layer, one workflow |
+ | LARGE | 16-30 | Multi-workflow, schema change |
+ | EPIC | 30+ | Cross-cutting, breaking changes |
 
 ## Output
 

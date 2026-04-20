@@ -7,6 +7,7 @@
 ## Overview
 
 Nomarr enforces naming rules to ensure:
+
 - **Predictability** — Names indicate purpose and behavior
 - **Discoverability** — Tools and developers can find what they need
 - **Clean Architecture** — Names reflect layer boundaries
@@ -26,11 +27,13 @@ This document defines public-facing naming rules for all code.
 ```
 
 **Rules:**
+
 - End with `Service`
 - Singular noun (not plural)
 - Describes the domain or infrastructure concern
 
 **Domain services** (in `services/domain/`):
+
 ```python
 ✅ LibraryService
 ✅ AnalyticsService
@@ -46,6 +49,7 @@ This document defines public-facing naming rules for all code.
 ```
 
 **Infrastructure services** (in `services/infrastructure/`):
+
 ```python
 ✅ ConfigService
 ✅ HealthMonitorService
@@ -69,6 +73,7 @@ This document defines public-facing naming rules for all code.
 ```
 
 **Rules:**
+
 - Snake_case
 - Start with allowed verb
 - End with noun describing what's operated on
@@ -78,6 +83,7 @@ This document defines public-facing naming rules for all code.
 ### Allowed Verbs
 
 **Read Operations:**
+
 ```python
 get_      # Retrieve single item (get_library, get_config)
 list_     # Retrieve multiple items (list_libraries, list_models)
@@ -86,6 +92,7 @@ count_    # Count items (count_pending_files)
 ```
 
 **Write Operations:**
+
 ```python
 create_   # Create new item (create_library)
 add_      # Add item (add_library)
@@ -96,6 +103,7 @@ set_      # Set value (set_threshold)
 ```
 
 **Domain Operations:**
+
 ```python
 scan_     # Scan library (scan_library)
 process_  # Process file (process_file)
@@ -107,6 +115,7 @@ promote_  # Promote vectors (promote_and_rebuild)
 ```
 
 **State Operations:**
+
 ```python
 start_    # Start workers (start_workers)
 stop_     # Stop workers (stop_workers)
@@ -118,6 +127,7 @@ disable_  # Disable feature (disable_calibration)
 ```
 
 **Complex Operations:**
+
 ```python
 generate_ # Generate data (generate_calibration)
 apply_    # Apply changes (apply_calibration)
@@ -129,6 +139,7 @@ rebuild_  # Rebuild index or cache (rebuild_vector_index)
 ### Examples
 
 **Good:**
+
 ```python
 def get_library(self, library_id: str) -> LibraryDict | None
 def list_libraries(self) -> list[LibraryDict]
@@ -139,6 +150,7 @@ def promote_and_rebuild(self, backbone: str) -> PromoteResultDict
 ```
 
 **Bad:**
+
 ```python
 ❌ def api_get_library(...)  # No transport prefix
 ❌ def fetch_library(...)    # Use get_
@@ -150,6 +162,7 @@ def promote_and_rebuild(self, backbone: str) -> PromoteResultDict
 ### Adding New Verbs
 
 New verbs require:
+
 1. Clear justification (why existing verbs insufficient)
 2. Documentation update
 3. Consistent usage across codebase
@@ -165,6 +178,7 @@ New verbs require:
 ```
 
 **Rules:**
+
 - CamelCase
 - End with `Dict` (TypedDict) or `DTO` (dataclass)
 - Descriptive name indicating contents
@@ -173,6 +187,7 @@ New verbs require:
 ### Examples
 
 **TypedDict (preferred for simple DTOs):**
+
 ```python
 class LibraryDict(TypedDict):
     """Library metadata."""
@@ -194,6 +209,7 @@ class CalibrationResultDict(TypedDict):
 ```
 
 **Dataclass (for DTOs with methods or defaults):**
+
 ```python
 @dataclass
 class MLModelConfig:
@@ -206,15 +222,18 @@ class MLModelConfig:
 ### DTO Placement
 
 **Single-service DTOs:**
+
 - Define at top of service file
 - Not exported from `helpers/dto/`
 
 **Cross-layer DTOs:**
+
 - Define in `helpers/dto/<domain>.py`
 - Export from `helpers/dto/__init__.py`
 - Used by multiple services OR used by interfaces
 
 **Example structure:**
+
 ```
 helpers/dto/
 ├── __init__.py
@@ -328,6 +347,7 @@ nomarr/services/domain/library_svc/
 ```
 
 **Rules:**
+
 - Package folder ends in `_svc` (e.g., `library_svc/`)
 - Internal files do NOT need `_svc.py` suffix
 - Internal classes (mixins, config) don't follow `<Domain>Service` pattern
@@ -347,6 +367,7 @@ class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin):
 ### Avoid Ad-Hoc Splitting
 
 **Bad — splitting without a package:**
+
 ```python
 # library_svc.py
 class LibraryService:
@@ -358,6 +379,7 @@ class LibraryService:
 ```
 
 **Good — simple service in one file:**
+
 ```python
 # analytics_svc.py
 class AnalyticsService:
@@ -366,6 +388,7 @@ class AnalyticsService:
 ```
 
 **Good — complex service in a package:**
+
 ```
 library_svc/
 ├── __init__.py     # Exports composed LibraryService
@@ -381,11 +404,13 @@ library_svc/
 ### Predictability
 
 **Given a service name, you know:**
+
 - It's in `services/domain/<name>_svc.py` or `services/infrastructure/<name>_svc.py`
 - It has a class `<Name>Service`
 - Methods follow `<verb>_<noun>` pattern
 
 **Example:**
+
 ```python
 # I need to scan a library
 # → LibraryService → services/domain/library_svc/ → scan_library()
@@ -394,6 +419,7 @@ library_svc/
 ### Discoverability
 
 **MCP tools work well with consistent names:**
+
 - `read_module_api` shows exported classes/functions
 - `locate_module_symbol` finds any symbol by name
 - `lint_project_backend` catches naming violations via import-linter
@@ -401,6 +427,7 @@ library_svc/
 ### Clean Boundaries
 
 **Names encode layer information:**
+
 - `*Service` → Service layer (domain or infrastructure)
 - `*Dict` → DTO (crosses layers)
 - `db.<collection>` / `*Namespace` → Persistence layer
@@ -408,12 +435,14 @@ library_svc/
 - `*_comp` → Component layer
 
 **You can't accidentally:**
+
 - Call workflow from interface (no direct import)
 - Mix service and persistence logic (different patterns)
 
 ### Refactor Safety
 
 **Consistent names make refactoring easier:**
+
 - Rename service method → all callers found via search
 - Move DTO → import paths consistent
 - Split service → naming pattern preserved
@@ -425,6 +454,7 @@ library_svc/
 ### Automated
 
 **`lint_project_backend`** is the primary QC tool:
+
 - **ruff** — linting and formatting
 - **mypy** — type checking
 - **import-linter** — layer boundary enforcement
@@ -442,6 +472,7 @@ import-linter
 ### Manual Review
 
 **Code review checklist:**
+
 - [ ] Service names end with `Service`
 - [ ] Methods use allowed verbs
 - [ ] DTOs end with `Dict` or `DTO`
@@ -458,6 +489,7 @@ import-linter
 **Pre-alpha:** No backward compatibility required. Refactor aggressively.
 
 **When renaming:**
+
 1. Update service/method name
 2. Update all call sites (use `find_referencing_symbols`)
 3. Update tests
@@ -467,6 +499,7 @@ import-linter
 ### Example Refactor
 
 **Before:**
+
 ```python
 class LibraryManager:  # ❌ Not "Service"
     def api_get_library(self, library_id):  # ❌ api_ prefix
@@ -474,6 +507,7 @@ class LibraryManager:  # ❌ Not "Service"
 ```
 
 **After:**
+
 ```python
 class LibraryService:  # ✅
     def get_library(self, library_id: str) -> LibraryDict | None:  # ✅
@@ -517,6 +551,7 @@ helpers/dto/<domain>_dto.py         # dto/library_dto.py
 ## Summary
 
 **Follow these rules for all new code:**
+
 1. Services: `<Noun>Service`
 2. Methods: `<verb>_<noun>` (snake_case, allowed verbs only)
 3. DTOs: `<Name>Dict` or `<Name>DTO`

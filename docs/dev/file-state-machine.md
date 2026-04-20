@@ -16,16 +16,16 @@ Import from there everywhere. Never hard-code `"file_states/tagged"` strings in 
 
 Each axis has exactly two poles: a **positive** vertex and a **negative** vertex. A file holds one pole per axis at any given time.
 
-| Axis | Positive vertex | Negative vertex |
-|------|----------------|----------------|
-| `tagged` | `file_states/tagged` | `file_states/not_tagged` |
-| `too_short` | `file_states/too_short` | `file_states/not_too_short` |
-| `calibrated` | `file_states/calibrated` | `file_states/not_calibrated` |
-| `tags_written` | `file_states/tags_written` | `file_states/tags_not_written` |
-| `tags_current` | `file_states/tags_current` | `file_states/tags_stale` |
-| `scanned` | `file_states/scanned` | `file_states/not_scanned` |
-| `vectors_extracted` | `file_states/vectors_extracted` | `file_states/not_vectors_extracted` |
-| `errored` | `file_states/errored` | `file_states/not_errored` |
+ | Axis | Positive vertex | Negative vertex |
+ | ------ | ---------------- | ---------------- |
+ | `tagged` | `file_states/tagged` | `file_states/not_tagged` |
+ | `too_short` | `file_states/too_short` | `file_states/not_too_short` |
+ | `calibrated` | `file_states/calibrated` | `file_states/not_calibrated` |
+ | `tags_written` | `file_states/tags_written` | `file_states/tags_not_written` |
+ | `tags_current` | `file_states/tags_current` | `file_states/tags_stale` |
+ | `scanned` | `file_states/scanned` | `file_states/not_scanned` |
+ | `vectors_extracted` | `file_states/vectors_extracted` | `file_states/not_vectors_extracted` |
+ | `errored` | `file_states/errored` | `file_states/not_errored` |
 
 These are exposed as `AXIS_PAIRS: dict[StateAxis, tuple[str, str]]` — a dict from axis name to `(positive_vertex, negative_vertex)`.
 

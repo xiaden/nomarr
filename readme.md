@@ -32,10 +32,10 @@ Quality over quantity. Your playlists will thank you.
 
 Real numbers, real hardware:
 
-| Library size | Setup | Time |
-|--------------|-------|------|
-| 30k songs | Nomarr, 2 workers, 2080 Ti | ~8 hours |
-| 30k songs | Audiomuse, CPU only (default) | 56+ hours |
+ | Library size | Setup | Time |
+ | -------------- | ------- | ------ |
+ | 30k songs | Nomarr, 2 workers, 2080 Ti | ~8 hours |
+ | 30k songs | Audiomuse, CPU only (default) | 56+ hours |
 
 GPU inference isn't optional if you value your time.
 
@@ -149,15 +149,15 @@ Once running, the API docs live at **`/docs`** (FastAPI's built-in OpenAPI UI).
 
 ## Repository structure
 
-| Path | What's there |
-|------|------|
-| `nomarr/` | Python backend — interfaces, services, workflows, components, persistence |
-| `frontend/` | React + TypeScript web UI |
-| `docker/` | Compose files, environment examples, deployment assets |
-| `docs/` | User and developer docs |
-| `tests/` | Backend tests |
-| `e2e/` | End-to-end tests |
-| `scripts/` | Build and dev tooling |
+ | Path | What's there |
+ | ------ | ------ |
+ | `nomarr/` | Python backend — interfaces, services, workflows, components, persistence |
+ | `frontend/` | React + TypeScript web UI |
+ | `docker/` | Compose files, environment examples, deployment assets |
+ | `docs/` | User and developer docs |
+ | `tests/` | Backend tests |
+ | `e2e/` | End-to-end tests |
+ | `scripts/` | Build and dev tooling |
 
 ---
 

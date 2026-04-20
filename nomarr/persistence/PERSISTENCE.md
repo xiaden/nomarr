@@ -134,21 +134,21 @@ All **collection-level mutation verbs** accept `list[...]` inputs only.
 Pass `[item]` for single-item operations. There are no scalar overloads, and no
 separate `_batch` or `bulk_` variants for these collection verbs.
 
-| Verb | Input | Return |
-|------|-------|--------|
-| `insert(docs)` | `list[dict]` | `list[str]` |
-| `upsert(docs, match_field)` | `list[dict]` | `list[str]` |
-| `delete(ids)` | `list[str]` | `None` |
-| `cascade(ids)` | `list[str]` | `int` |
-| `transition(ids, from_edge_target, to_edge_target)` | `list[str]` | `None` |
-| `truncate()` | *(none)* | `None` |
+ | Verb | Input | Return |
+ | ------ | ------- | -------- |
+ | `insert(docs)` | `list[dict]` | `list[str]` |
+ | `upsert(docs, match_field)` | `list[dict]` | `list[str]` |
+ | `delete(ids)` | `list[str]` | `None` |
+ | `cascade(ids)` | `list[str]` | `int` |
+ | `transition(ids, from_edge_target, to_edge_target)` | `list[str]` | `None` |
+ | `truncate()` | *(none)* | `None` |
 
 Field-level deletion is intentionally different:
 
-| Scope | Form | Return |
-|------|------|--------|
-| Collection-level | `db.worker_claims.delete(["worker_claims/abc123"])` | `None` |
-| Field-level | `db.song_has_tags._from.delete(file_id)` | `int` |
+ | Scope | Form | Return |
+ | ------ | ------ | -------- |
+ | Collection-level | `db.worker_claims.delete(["worker_claims/abc123"])` | `None` |
+ | Field-level | `db.song_has_tags._from.delete(file_id)` | `int` |
 
 That distinction matters:
 
@@ -161,20 +161,20 @@ That distinction matters:
 
 Persistence owns **data access** and nothing more.
 
-| Belongs here | Examples |
-|---|---|
-| CRUD and lookup verbs | `insert`, `delete`, `get`, `count`, `upsert` |
-| Field-scoped queries | `db.tags.rel.get.many(...)`, `db.library_files.path.get(...)` |
-| Collection traversal and ANN access | `traversal(...)`, `ann_search(...)` |
-| Graph cleanup primitives | `cascade(...)`, field-level edge deletion |
-| Import-time schema validation and namespace construction | `SchemaConstructor`, schema-backed namespace wiring |
+ | Belongs here | Examples |
+ | --- | --- |
+ | CRUD and lookup verbs | `insert`, `delete`, `get`, `count`, `upsert` |
+ | Field-scoped queries | `db.tags.rel.get.many(...)`, `db.library_files.path.get(...)` |
+ | Collection traversal and ANN access | `traversal(...)`, `ann_search(...)` |
+ | Graph cleanup primitives | `cascade(...)`, field-level edge deletion |
+ | Import-time schema validation and namespace construction | `SchemaConstructor`, schema-backed namespace wiring |
 
-| Does **not** belong here | Why |
-|---|---|
-| Business rules | Those belong in components/workflows/services |
-| Cross-step orchestration | Persistence should not coordinate use cases |
-| API/interface concerns | Interfaces format requests and responses |
-| Higher-layer imports | Dependency direction forbids it |
+ | Does **not** belong here | Why |
+ | --- | --- |
+ | Business rules | Those belong in components/workflows/services |
+ | Cross-step orchestration | Persistence should not coordinate use cases |
+ | API/interface concerns | Interfaces format requests and responses |
+ | Higher-layer imports | Dependency direction forbids it |
 
 A good persistence function answers **how to read or mutate data**, not **what
 business outcome should happen next**.

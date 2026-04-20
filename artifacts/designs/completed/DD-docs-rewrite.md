@@ -20,42 +20,46 @@ Nomarr's documentation is ~3 months and hundreds of commits behind the codebase.
 
 ### What Changed (Known Stale Patterns)
 
-| Old (in docs) | Current (in code) |
-|---|---|
-| TensorFlow ML backend | ONNX inference via `components/ml/onnx/` |
-| `ml_backend_essentia_comp.py` as sole ML entry | Custom Essentia build for audio loading (`ml_audio_comp.py`) and preprocessing (`ml_preprocess_comp.py`) only |
-| Queue-based job processing | Discovery-based workers claiming from `library_files` |
-| `queue/` components and workflows | Removed entirely |
-| `events/` components (event_broker, SSE) | Removed or restructured |
-| `sql_helper.py` | Doesn't exist (AQL-only) |
-| `base.py` worker class | `discovery_worker.py` only |
-| Processing workers, calibration workers | Single discovery worker type |
-| `scan_library_direct_wf.py`, `start_scan_wf.py` | `scan_library_full_wf.py`, `scan_library_quick_wf.py` |
-| `entity_keys_comp.py` | Doesn't exist |
-| `pages/` directory in frontend | `features/` directory |
-| `shared/api.ts`, `shared/auth.ts` | Restructured under `shared/api/`, `shared/utils/` |
+ | Old (in docs) | Current (in code) |
+ | --- | --- |
+ | TensorFlow ML backend | ONNX inference via `components/ml/onnx/` |
+ | `ml_backend_essentia_comp.py` as sole ML entry | Custom Essentia build for audio loading (`ml_audio_comp.py`) and preprocessing (`ml_preprocess_comp.py`) only |
+ | Queue-based job processing | Discovery-based workers claiming from `library_files` |
+ | `queue/` components and workflows | Removed entirely |
+ | `events/` components (event_broker, SSE) | Removed or restructured |
+ | `sql_helper.py` | Doesn't exist (AQL-only) |
+ | `base.py` worker class | `discovery_worker.py` only |
+ | Processing workers, calibration workers | Single discovery worker type |
+ | `scan_library_direct_wf.py`, `start_scan_wf.py` | `scan_library_full_wf.py`, `scan_library_quick_wf.py` |
+ | `entity_keys_comp.py` | Doesn't exist |
+ | `pages/` directory in frontend | `features/` directory |
+ | `shared/api.ts`, `shared/auth.ts` | Restructured under `shared/api/`, `shared/utils/` |
 
 ---
 
 ## Audiences
 
 ### 1. AI Agents / LLM Contexts (Primary for in-codebase docs)
+
 - Consume `.md` files in `nomarr/` directories and `.github/instructions/`
 - Need: accurate directory trees, clear rules, file-level descriptions, decision rationale
 - Format: concise, structured, no prose fluff — facts and rules
 
 ### 2. End Users (Primary for `docs/user/`)
+
 - Deploy via Docker, use web UI, configure integrations
 - **Do NOT understand coding at all**
 - Need: step-by-step guides, screenshots, troubleshooting, plain language
 - Format: task-oriented with visual aids
 
 ### 3. Developers / Contributors (Primary for `docs/dev/`)
+
 - Understand or want to understand Nomarr's architecture
 - Need: philosophy, patterns, conventions, architectural decisions, roadmap
 - Format: conceptual explanations with code examples, decision rationale
 
 ### 4. ML Models / Agent Contexts (Primary for `docs/upstream/`)
+
 - Consume upstream technology documentation when making changes involving those technologies
 - Need: reference material from Essentia, ArangoDB, ONNX, etc.
 - Location question: currently in `docs/upstream/`, may be better in `build_resources/` or `nomarr/docs/`
@@ -71,6 +75,7 @@ Nomarr's documentation is ~3 months and hundreds of commits behind the codebase.
 **Purpose:** Guide developers and AI agents on what lives in each folder, what the rules are, and how to add new code there.
 
 **Existing files that need rewrite:**
+
 - `nomarr/components/COMPONENTS.md` (443 lines, very stale)
 - `nomarr/services/SERVICES.md` (259 lines, stale)
 - `nomarr/workflows/WORKFLOWS.md` (247 lines, stale)
@@ -79,6 +84,7 @@ Nomarr's documentation is ~3 months and hundreds of commits behind the codebase.
 - `nomarr/helpers/HELPERS.md` (348 lines, stale)
 
 **Missing files (need creation):**
+
 - Subdomain README.md files for each component subfolder:
   - `components/analytics/README.md`
   - `components/infrastructure/README.md`
@@ -118,6 +124,7 @@ Nomarr's documentation is ~3 months and hundreds of commits behind the codebase.
   - `helpers/dto/README.md`
 
 **Template for subdomain README.md:**
+
 ```markdown
 # {Subdomain Name}
 
@@ -125,9 +132,9 @@ Nomarr's documentation is ~3 months and hundreds of commits behind the codebase.
 
 ## Files
 
-| File | Purpose |
-|---|---|
-| `file_name.py` | {One-line description} |
+ | File | Purpose | 
+ | --- | --- | 
+ | `file_name.py` | {One-line description} | 
 
 ## Key Rules
 - {Rule specific to this subdomain}
@@ -149,6 +156,7 @@ Nomarr's documentation is ~3 months and hundreds of commits behind the codebase.
 **Existing files (15):** All need review for the persistence rule and stale references. Primary fix: ensure the persistence-only-via-components rule is present in every layer instruction file that might tempt someone to use the DB directly.
 
 **Scope:** Light refresh, not rewrite. Focus on:
+
 - Adding missing persistence access rule to `services.instructions.md`, `workflows.instructions.md`, `interfaces.instructions.md`
 - Removing any stale references (queues, TensorFlow, SQL)
 - Cross-checking that directory structures mentioned are current
@@ -158,6 +166,7 @@ Nomarr's documentation is ~3 months and hundreds of commits behind the codebase.
 **Location:** `docs/`
 
 **Structure (target):**
+
 ```
 docs/
 ├── index.md                    # Landing page, navigation hub
@@ -200,6 +209,7 @@ docs/
 **Location:** `readme.md`
 
 **Scope:** Refresh, not rewrite. Fix:
+
 - Stale feature descriptions
 - VRAM warning (verify accuracy)
 - Quick start steps (verify against current docker setup)
@@ -238,9 +248,11 @@ docs/
 Given the scale (~50+ files to create/rewrite), this splits into three implementation rounds with 6 parts:
 
 ### Round 1: Infrastructure Foundation
+
 **Parts A + B** (no dependencies, can be parallel)
 
 **Part A: MkDocs Setup + Root Documents**
+
 - Install mkdocs-material, create `mkdocs.yml` at project root
 - Create target folder structure in `docs/`
 - Delete `docs/user/api_reference.md`
@@ -250,31 +262,38 @@ Given the scale (~50+ files to create/rewrite), this splits into three implement
 - Verify site builds and serves
 
 **Part B: Instruction Files Refresh**
+
 - Audit all 15 `.github/instructions/` files for stale references
 - Add persistence-only-via-components rule to all relevant instruction files
 - Remove references to queues, TensorFlow, SQL, Essentia-as-backend
 - Verify directory structures mentioned are current
 
 ### Round 2: In-Codebase Documentation
+
 **Parts C + D** (depend on Round 1 for accurate rules established in instruction files)
 
 **Part C: Layer Document Rewrites**
+
 - Rewrite all 6 `{LAYER}.md` files with accurate directory trees, rules, patterns
 - Ensure persistence-only-via-components rule in every relevant doc
 - Ensure every stale reference (queues, TF, SQL, Essentia-as-backend) is removed
 
 **Part D: Subdomain README.md Files**
+
 - Create ~35-40 README.md files across all subfolders
 - Each follows the template: summary, files table, rules, relationships
 
 ### Round 3: Public Documentation
+
 **Parts E + F** (depend on Round 2 for architecture accuracy)
 
 **Part E: Developer Documentation Rewrite**
+
 - Rewrite all `docs/dev/` files
 - Must reference current architecture from Round 2's layer docs for consistency
 
 **Part F: User Documentation Rewrite**
+
 - Rewrite all `docs/user/` files except removed api_reference.md
 - Create `troubleshooting.md`
 - Write for non-technical end users

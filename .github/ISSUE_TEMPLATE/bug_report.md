@@ -28,10 +28,12 @@ What actually happened.
 ## Environment
 
 **Nomarr Version:**
+
 - Check `docker compose logs nomarr | grep version` or `config/nomarr.yaml`
 - Commit hash: (if building from source)
 
 **System:**
+
 - OS: [e.g. Ubuntu 22.04, Windows 11, macOS 14]
 - Docker version: [e.g. 24.0.7]
 - Docker Compose version: [e.g. 2.23.0]
@@ -39,6 +41,7 @@ What actually happened.
 - CUDA version: [e.g. 12.3, N/A]
 
 **Configuration:**
+
 - Music library location: [e.g. local disk, NFS mount, SMB share]
 - Watch mode: [e.g. event, poll, disabled]
 - Any custom environment variables:

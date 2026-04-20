@@ -99,10 +99,10 @@ Also: now captures `tab_warning` from `read_file_with_metadata()` and propagates
 
 ## Decisions Made
 
-| Decision | Rationale | Plan |
-|---|---|---|
-| ±2 tolerance for expected_line_count | Agents commonly miscount by 1-2 lines (blank lines at boundaries); ±2 catches most errors while still rejecting genuinely wrong inputs | initial |
-| Tab rejection → warning, not hard error | Tab indentation is valid in many languages (Go, Makefiles, JS); blocking edits entirely is wrong | initial |
-| Fix insert text EOL before other insert improvements | Windows EOL bug is data corruption, higher priority than anchor ambiguity improvements | initial |
-| Don't change MCP tool API signatures | Backward compatibility — agents already know these tool interfaces | initial |
-| Scope out anchor ambiguity improvements | Better error messages are sufficient for now; `match_index` is a follow-up feature | initial |
+ | Decision | Rationale | Plan |
+ | --- | --- | --- |
+ | ±2 tolerance for expected_line_count | Agents commonly miscount by 1-2 lines (blank lines at boundaries); ±2 catches most errors while still rejecting genuinely wrong inputs | initial |
+ | Tab rejection → warning, not hard error | Tab indentation is valid in many languages (Go, Makefiles, JS); blocking edits entirely is wrong | initial |
+ | Fix insert text EOL before other insert improvements | Windows EOL bug is data corruption, higher priority than anchor ambiguity improvements | initial |
+ | Don't change MCP tool API signatures | Backward compatibility — agents already know these tool interfaces | initial |
+ | Scope out anchor ambiguity improvements | Better error messages are sufficient for now; `match_index` is a follow-up feature | initial |

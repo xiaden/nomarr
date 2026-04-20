@@ -1,6 +1,6 @@
 # Agent Skills Specification
 
-Reference: https://agentskills.io/specification
+Reference: <https://agentskills.io/specification>
 
 Agent Skills are folders of instructions, scripts, and resources that agents can discover and use to perform tasks more accurately and efficiently.
 
@@ -50,14 +50,14 @@ allowed-tools: Bash(git:*) Read
 
 ### Field Reference
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `name` | Yes | Max 64 characters. Lowercase letters, numbers, and hyphens only. Must not start or end with a hyphen. **Must match parent directory name.** |
-| `description` | Yes | Max 1024 characters. Non-empty. Describes what the skill does and when to use it. |
-| `license` | No | License name or reference to a bundled license file. |
-| `compatibility` | No | Max 500 characters. Environment requirements (system packages, network access, etc.). |
-| `metadata` | No | Arbitrary key-value mapping for additional metadata. |
-| `allowed-tools` | No | Space-delimited list of pre-approved tools. (Experimental) |
+ | Field | Required | Description |
+ | ------- | ---------- | ------------- |
+ | `name` | Yes | Max 64 characters. Lowercase letters, numbers, and hyphens only. Must not start or end with a hyphen. **Must match parent directory name.** |
+ | `description` | Yes | Max 1024 characters. Non-empty. Describes what the skill does and when to use it. |
+ | `license` | No | License name or reference to a bundled license file. |
+ | `compatibility` | No | Max 500 characters. Environment requirements (system packages, network access, etc.). |
+ | `metadata` | No | Arbitrary key-value mapping for additional metadata. |
+ | `allowed-tools` | No | Space-delimited list of pre-approved tools. (Experimental) |
 
 ### Name Field Rules
 
@@ -68,6 +68,7 @@ allowed-tools: Bash(git:*) Read
 - **Must match the parent directory name**
 
 Valid:
+
 ```yaml
 name: pdf-processing
 name: data-analysis
@@ -75,6 +76,7 @@ name: code-review
 ```
 
 Invalid:
+
 ```yaml
 name: PDF-Processing  # uppercase not allowed
 name: -pdf            # cannot start with hyphen
@@ -88,11 +90,13 @@ name: pdf--processing # consecutive hyphens not allowed
 - Should include specific keywords that help agents identify relevant tasks
 
 Good:
+
 ```yaml
 description: Extracts text and tables from PDF files, fills PDF forms, and merges multiple PDFs. Use when working with PDF documents or when the user mentions PDFs, forms, or document extraction.
 ```
 
 Poor:
+
 ```yaml
 description: Helps with PDFs.
 ```
@@ -110,6 +114,7 @@ The Markdown body after the frontmatter contains the skill instructions. Write c
 - Common edge cases
 
 **Recommended sections:**
+
 - Step-by-step instructions
 - Examples of inputs and outputs
 - Common edge cases
@@ -122,6 +127,7 @@ The Markdown body after the frontmatter contains the skill instructions. Write c
 ### scripts/
 
 Contains executable code that agents can run. Scripts should:
+
 - Be self-contained or clearly document dependencies
 - Include helpful error messages
 - Handle edge cases gracefully
@@ -129,6 +135,7 @@ Contains executable code that agents can run. Scripts should:
 ### references/
 
 Contains additional documentation that agents can read when needed:
+
 - `REFERENCE.md` - Detailed technical reference
 - Domain-specific files (`api.md`, `patterns.md`, etc.)
 
@@ -137,6 +144,7 @@ Keep individual reference files focused. Agents load these on demand.
 ### assets/
 
 Contains static resources:
+
 - Templates (document templates, configuration templates)
 - Data files (lookup tables, schemas)
 
@@ -198,7 +206,7 @@ This checks that `SKILL.md` frontmatter is valid and follows all naming conventi
 
 ## References
 
-- Specification: https://agentskills.io/specification
-- VS Code docs: https://code.visualstudio.com/docs/copilot/customization/agent-skills
-- Example skills: https://github.com/anthropics/skills
-- Community skills: https://github.com/github/awesome-copilot
+- Specification: <https://agentskills.io/specification>
+- VS Code docs: <https://code.visualstudio.com/docs/copilot/customization/agent-skills>
+- Example skills: <https://github.com/anthropics/skills>
+- Community skills: <https://github.com/github/awesome-copilot>

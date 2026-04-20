@@ -12,13 +12,13 @@ Workflows for database preparation, ML model registration, and vector index life
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|---------|
-| `prepare_database_wf.py` | Startup sequence — ensure schema, apply migrations, register models; fail-fast on error |
-| `register_ml_models_wf.py` | Walk models directory, introspect ONNX sessions, upsert model + output vertices, seed known labels |
-| `promote_and_rebuild_vectors_wf.py` | UPSERT hot→cold drain + vector index rebuild; convergent and idempotent |
-| `rebuild_vector_index_wf.py` | Drop and rebuild vector index on existing cold collection (no promotion) |
-| `idle_promotion_vectors_wf.py` | Worker idle-time promotion — find pending pairs, acquire DB locks, promote + rebuild |
+ | Module | Purpose |
+ | -------- | --------- |
+ | `prepare_database_wf.py` | Startup sequence — ensure schema, apply migrations, register models; fail-fast on error |
+ | `register_ml_models_wf.py` | Walk models directory, introspect ONNX sessions, upsert model + output vertices, seed known labels |
+ | `promote_and_rebuild_vectors_wf.py` | UPSERT hot→cold drain + vector index rebuild; convergent and idempotent |
+ | `rebuild_vector_index_wf.py` | Drop and rebuild vector index on existing cold collection (no promotion) |
+ | `idle_promotion_vectors_wf.py` | Worker idle-time promotion — find pending pairs, acquire DB locks, promote + rebuild |
 
 ## Patterns
 

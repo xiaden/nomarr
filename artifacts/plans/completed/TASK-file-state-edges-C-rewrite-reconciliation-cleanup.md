@@ -10,6 +10,7 @@ documents.
 The reconciliation mixin has 6 methods that use compound filters across `tagged`,
 `is_valid`, `last_written_mode`, `last_written_calibration_hash`, `write_claimed_by`,
 `write_claimed_at`, and `has_nomarr_namespace`. These must be rewritten to use:
+
 - `file_has_state` edges for state checks (ml_tagged, reconciled)
 - `worker_claims` collection for write claim locking (replacing inline claim fields)
 
@@ -21,12 +22,14 @@ from the `upsert_library_file` INSERT/UPDATE templates via a cleanup migration.
 ## Phases
 
 ### Phase 1: Migrate Write Claims to worker_claims
+
 - [x] Extend `worker_claims` collection usage to support reconciliation claims — add a `claim_type` field ("ml" vs "reconcile") to distinguish claim types, update claim creation in `claim_files_for_reconciliation` to use `worker_claims` instead of inline `write_claimed_by`/`write_claimed_at` fields
 - [x] Update `set_file_written` to clear the `worker_claims` entry (not inline fields) and call `db.file_states.set_reconciled(file_id, mode, calibration_hash, has_namespace)` to create/update the reconciled edge
 - [x] Update `release_claim` to remove the `worker_claims` entry instead of nulling inline fields
 - [x] Run `lint_project_backend` on reconciliation.py and all modified callers
 
 ### Phase 2: Rewrite Reconciliation Queries
+
 - [x] Rewrite `claim_files_for_reconciliation` to find files with `ml_tagged` edge but no `reconciled` edge (or reconciled edge with wrong `mode`/`calibration_hash`), excluding files with active reconciliation claims in `worker_claims`, instead of the current 5-field compound filter
 - [x] Rewrite `count_files_needing_reconciliation` to use the same edge-based filter pattern
 - [x] Rewrite `update_nomarr_namespace_flag` to update the `has_namespace` attribute on the `reconciled` edge (or store it as a scan-time attribute on the file document if the file has no reconciled edge yet)
@@ -36,6 +39,7 @@ from the `upsert_library_file` INSERT/UPDATE templates via a cleanup migration.
 - [x] Run `lint_project_backend` on all modified files
 
 ### Phase 3: Remove Dead Fields from CRUD
+
 - [x] Remove all dead state fields from `upsert_library_file` INSERT template: `tagged`, `tagged_version`, `needs_tagging`, `last_tagged_at`, `calibration_hash`, `is_valid`, `last_written_mode`, `last_written_calibration_hash`, `last_written_at`, `has_nomarr_namespace`, `write_claimed_by`, `write_claimed_at`; keep only identity and metadata fields
 - [x] Remove dead state fields from `upsert_library_file` UPDATE template and `upsert_batch` similarly
     **Notes:** UPDATE template already cleaned in upsert_library_file during P3-S1. `upsert_batch` is a transparent pass-through. Scan workflows (full_wf and quick_wf) updated to pass edge_bootstraps to upsert_scanned_files calls. Accumulator pattern added for truly_new entries across folder batches.
@@ -49,6 +53,7 @@ from the `upsert_library_file` INSERT/UPDATE templates via a cleanup migration.
     **Notes:** All lint clean (only pre-existing navidrome_song_map_aql mypy errors). Full test suite: 388 passed, 2 pre-existing failures (essentia QC + hash collision). Zero new regressions.
 
 ## Completion Criteria
+
 - Reconciliation uses `file_has_state` edges and `worker_claims` — no inline claim fields
 - All compound state filters replaced with graph-native edge presence/absence queries
 - `library_files` documents contain only identity, filesystem, and metadata fields
@@ -58,6 +63,7 @@ from the `upsert_library_file` INSERT/UPDATE templates via a cleanup migration.
 - No persistence method reads or writes any of the 13 removed state fields
 
 ## References
+
 - Prerequisite: `plans/TASK-file-state-edges-B-rewrite-status-calibration.md`
 - Reconciliation mixin: `nomarr/persistence/database/library_files_aql/reconciliation.py`
 - CRUD: `nomarr/persistence/database/library_files_aql/crud.py`

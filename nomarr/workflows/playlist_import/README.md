@@ -11,9 +11,9 @@ Workflow for converting streaming service playlists (Spotify, Deezer) to local M
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|---------|
-| `convert_playlist_wf.py` | End-to-end conversion — parse URL → fetch tracks → match against library → generate M3U |
+ | Module | Purpose |
+ | -------- | --------- |
+ | `convert_playlist_wf.py` | End-to-end conversion — parse URL → fetch tracks → match against library → generate M3U |
 
 ## Patterns
 

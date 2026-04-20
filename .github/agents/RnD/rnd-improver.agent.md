@@ -51,6 +51,7 @@ focus:               # Optional — narrow the analysis
 ### 1. Understand the Code
 
 Read the target code thoroughly before suggesting anything:
+
 - What is this code's responsibility?
 - How does it fit in the architecture?
 - Who calls it? What does it call?
@@ -60,30 +61,35 @@ Understanding context prevents suggestions that are locally correct but architec
 ### 2. Analyze by Category
 
 #### Clarity
+
 - Are names descriptive and consistent with the rest of the codebase?
 - Is the structure logical? Would a new reader follow the flow?
 - Are complex sections documented?
 - Could this be simplified without losing functionality?
 
 #### Performance
+
 - Any obvious inefficiencies? (N+1 queries, repeated work)
 - Are there batching opportunities?
 - Is caching used appropriately?
 - Any blocking operations that could be async?
 
 #### Robustness
+
 - Are errors handled explicitly?
 - Are edge cases covered?
 - Are assumptions validated?
 - What happens with bad input?
 
 #### Testability
+
 - Are dependencies injectable?
 - Are side effects isolated?
 - Can individual behaviors be tested in isolation?
 - Is the code deterministic?
 
 #### Patterns
+
 - Does it follow layer conventions?
 - Does it use standard project patterns?
 - Are there inconsistencies with similar code?
@@ -91,6 +97,7 @@ Understanding context prevents suggestions that are locally correct but architec
 ### 3. Prioritize Suggestions
 
 Rate each suggestion honestly:
+
 - **Impact:** HIGH / MEDIUM / LOW — how much better does it make the code?
 - **Effort:** TRIVIAL / SMALL / MEDIUM / LARGE — how hard to implement?
 - **Risk:** LOW / MEDIUM / HIGH — what could go wrong?

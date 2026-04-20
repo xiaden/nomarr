@@ -15,6 +15,7 @@ Nomarr uses **Semantic Versioning (SemVer)** with modifications for alpha status
 - Config format changes possible (document in release notes)
 
 **When 1.0.0 releases:**
+
 - Strict SemVer enforced
 - Migrations required for DB schema changes
 - Backward compatibility maintained within major versions
@@ -30,18 +31,21 @@ MAJOR.MINOR.PATCH
 ### Version Components
 
 **MAJOR (first number):**
+
 - Breaking changes to public APIs
 - Database schema changes requiring migrations
 - Config format changes requiring manual updates
 - Incompatible upgrades
 
 **MINOR (second number):**
+
 - New features (backward compatible)
 - New API endpoints
 - New CLI commands
 - Performance improvements
 
 **PATCH (third number):**
+
 - Bug fixes only
 - No new features
 - No API changes
@@ -53,7 +57,7 @@ MAJOR.MINOR.PATCH
 
 **Current version scheme: `0.MINOR.PATCH`**
 
-### What the `0.x.x` prefix means:
+### What the `0.x.x` prefix means
 
 - **Breaking changes allowed:** Breaking changes can happen in any release before 1.0
 - **Forward-only migrations:** Database schema changes include migrations that auto-run on startup (see [migrations.md](migrations.md))
@@ -71,9 +75,10 @@ Starting with SCHEMA_VERSION 6, Nomarr uses a **forward-only migration system**:
 - If the database schema is ahead of the code, startup aborts
 - See [migrations.md](migrations.md) for architecture details and how to write migrations
 
-### Version bumping in alpha:
+### Version bumping in alpha
 
 **0.x.0 (minor bump):**
+
 - New major feature
 - Significant architecture change
 - Breaking database schema change
@@ -81,12 +86,13 @@ Starting with SCHEMA_VERSION 6, Nomarr uses a **forward-only migration system**:
 - Breaking API change
 
 **0.x.x (patch bump):**
+
 - Bug fixes
 - Small features
 - Non-breaking improvements
 - Documentation updates
 
-### Examples:
+### Examples
 
 ```
 0.1.0 → Initial release
@@ -102,9 +108,10 @@ Starting with SCHEMA_VERSION 6, Nomarr uses a **forward-only migration system**:
 
 **When Nomarr reaches 1.0.0, strict SemVer applies:**
 
-### Major version (1.x.x → 2.x.x):
+### Major version (1.x.x → 2.x.x)
 
 **Allowed:**
+
 - Remove endpoints
 - Change response formats
 - Rename database collections
@@ -112,13 +119,15 @@ Starting with SCHEMA_VERSION 6, Nomarr uses a **forward-only migration system**:
 - Change CLI command syntax
 
 **Required:**
+
 - Migration guide
 - Deprecation warnings in previous major version
 - Clear upgrade path documented
 
-### Minor version (1.1.x → 1.2.x):
+### Minor version (1.1.x → 1.2.x)
 
 **Allowed:**
+
 - Add new endpoints
 - Add optional config fields
 - Add database collections or fields (with defaults)
@@ -126,20 +135,23 @@ Starting with SCHEMA_VERSION 6, Nomarr uses a **forward-only migration system**:
 - Performance improvements
 
 **Not allowed:**
+
 - Remove endpoints
 - Remove config options
 - Change required parameters
 - Break existing workflows
 
-### Patch version (1.1.1 → 1.1.2):
+### Patch version (1.1.1 → 1.1.2)
 
 **Allowed:**
+
 - Bug fixes only
 - Security patches
 - Documentation corrections
 - Internal refactoring (no behavior change)
 
 **Not allowed:**
+
 - New features
 - API changes
 - Config changes
@@ -149,11 +161,12 @@ Starting with SCHEMA_VERSION 6, Nomarr uses a **forward-only migration system**:
 
 ## Version Bumping Process
 
-### How to decide what version to bump:
+### How to decide what version to bump
 
 **Step 1: Identify changes**
 
 Classify each change:
+
 - **Breaking:** Existing code/config/data will fail
 - **Feature:** New capability added
 - **Fix:** Bug corrected, no new behavior
@@ -161,10 +174,12 @@ Classify each change:
 **Step 2: Apply rules**
 
 Pre-alpha (0.x.x):
+
 - Any breaking change → bump MINOR
 - Multiple fixes/small features → bump PATCH
 
 Post-1.0:
+
 - Any breaking change → bump MAJOR
 - New features → bump MINOR
 - Only fixes → bump PATCH
@@ -191,34 +206,40 @@ git push origin v0.3.1
 ### Tagging Strategy
 
 **Stable tags from `main`:**
+
 - `ghcr.io/xiaden/nomarr:latest` - Current stable release
 - `ghcr.io/xiaden/nomarr:v0.3.1` - Specific pinned release
 - `ghcr.io/xiaden/nomarr:<sha>` - Commit-specific image for the exact main build
 
 **Development tags from `develop`:**
+
 - `ghcr.io/xiaden/nomarr:0.3.1.dev42` - PEP 440 development build from `develop`
 - `ghcr.io/xiaden/nomarr:<sha>` - Commit-specific image for the exact develop build
 
 ### When CI creates tags
 
 **On push to `develop`:**
+
 - Build and push `{version}.devN`
 - Build and push `{sha}`
 
 **On push to `main`:**
+
 - Build and push `latest`
 - Build and push `v{semver}`
 - Build and push `{sha}`
 
 **On version tag push (`v0.3.1`):**
+
 - Run the same stable publication flow as `main`
 - Publish `latest`
 - Publish `v0.3.1`
 - Publish `{sha}`
 
-### Usage recommendations:
+### Usage recommendations
 
 **Development:**
+
 ```yaml
 # compose.yaml
 services:
@@ -227,6 +248,7 @@ services:
 ```
 
 **Production:**
+
 ```yaml
 # compose.yaml
 services:
@@ -235,6 +257,7 @@ services:
 ```
 
 **Adventurous users:**
+
 ```yaml
 # compose.yaml
 services:
@@ -249,18 +272,21 @@ services:
 ### GitHub Actions Workflows
 
 **Mandatory CI gates:**
+
 - Lint: `ruff check nomarr/ tests/`
 - Backend tests: `pytest tests/ -m "not container_only and not requires_database and not code_smell"`
 - Frontend tests: `npm run test -- --run`
 - CodeQL: runs weekly and on pull requests to `main`
 
 **On pull request to `main` or `develop`:**
+
 - Run lint
 - Run backend tests
 - Run frontend tests
 - All required checks must pass before merge
 
 **On push to `develop`:**
+
 - Run lint
 - Run backend tests
 - Run frontend tests
@@ -268,6 +294,7 @@ services:
 - Push develop image tags using `{version}.devN` and `{sha}`
 
 **On push to `main`:**
+
 - Run lint
 - Run backend tests
 - Run frontend tests
@@ -277,6 +304,7 @@ services:
 - Push `{sha}`
 
 **On version tag (`v0.3.1`):**
+
 - Run the same checks as `main`
 - Build Docker image
 - Push `latest`
@@ -284,6 +312,7 @@ services:
 - Push `{sha}`
 
 **CodeQL schedule:**
+
 - Runs weekly on Monday at 06:00 UTC
 - Runs on pull requests targeting `main`
 
@@ -302,62 +331,72 @@ No manual version specification in CI config needed.
 
 ## Breaking Changes
 
-### What counts as breaking:
+### What counts as breaking
 
 **API:**
+
 - Remove endpoint
 - Change response format (remove/rename fields)
 - Change required parameters
 - Change authentication requirements
 
 **CLI:**
+
 - Remove command
 - Change command syntax
 - Remove required argument
 - Change output format (for scripts)
 
 **Config:**
+
 - Remove config option
 - Rename config option
 - Change config format (YAML → TOML)
 - Change required fields
 
 **Database:**
+
 - Remove collection or field
 - Change collection field type (incompatible)
 - Change schema without migration
 - Change worker claim format
 
 **Behavior:**
+
 - Change tag calculation logic (breaks reproducibility)
 - Change default values (affects existing users)
 - Change file naming/organization
 
-### What is NOT breaking:
+### What is NOT breaking
 
 **API:**
+
 - Add new endpoint
 - Add optional parameters
 - Add fields to response (additive only)
 - Add new authentication method (alongside existing)
 
 **CLI:**
+
 - Add new command
 - Add optional flags
 - Improve help text
 - Add output formats (alongside existing)
 
 **Config:**
+
 - Add optional config option
 - Add config validation
 - Improve error messages
 
 **Database:**
+
 - Add collection or field (with defaults)
 - Add index
 - Add migration support
 
 **Behavior:**
+
 - Fix bugs
 - Improve performance
 - Better error messages
@@ -426,18 +465,21 @@ All notable changes to Nomarr will be documented in this file.
 ### Release Steps
 
 **1. Update version:**
+
 ```bash
 # Edit nomarr/__version__.py
 echo '__version__ = "0.3.1"' > nomarr/__version__.py
 ```
 
 **2. Update changelog:**
+
 ```bash
 # Edit CHANGELOG.md
 # Move items from [Unreleased] to [0.3.1]
 ```
 
 **3. Commit and tag:**
+
 ```bash
 git add nomarr/__version__.py CHANGELOG.md
 git commit -m "Release 0.3.1"
@@ -447,11 +489,13 @@ git push origin v0.3.1
 ```
 
 **4. CI builds and publishes:**
+
 - GitHub Actions builds Docker image
 - Pushes to GHCR with version tags
 - Creates GitHub release (if configured)
 
 **5. Verify:**
+
 ```bash
 docker pull ghcr.io/xiaden/nomarr:v0.3.1
 docker pull ghcr.io/xiaden/nomarr:latest
@@ -482,6 +526,7 @@ docker pull ghcr.io/xiaden/nomarr:latest
 ### Milestone: 1.0.0
 
 **Requirements for 1.0.0:**
+
 - [ ] Core features stable and tested
 - [ ] Database schema finalized
 - [ ] Migration system implemented
@@ -491,6 +536,7 @@ docker pull ghcr.io/xiaden/nomarr:latest
 - [ ] No known critical bugs
 
 **When 1.0.0 releases:**
+
 - Strict SemVer enforced
 - Backward compatibility guaranteed within major versions
 - Deprecation warnings required before breaking changes
@@ -509,23 +555,27 @@ docker pull ghcr.io/xiaden/nomarr:latest
 ## Summary
 
 **Alpha (0.x.x):**
+
 - Breaking changes allowed before 1.0
 - Forward-only migrations for schema changes (auto-apply on startup)
 - Rapid iteration
 - Version bumps: breaking/major feature → MINOR, fixes/small features → PATCH
 
 **Post-1.0:**
+
 - Strict SemVer
 - Migrations required for breaking changes
 - Backward compatibility within major versions
 - Version bumps: breaking → MAJOR, features → MINOR, fixes → PATCH
 
 **Docker tags:**
+
 - Pin to specific version in production: `v0.3.1`
 - Use `0.3.1.dev42`-style tags for development builds from `develop`
 - Use `latest` for auto-updates (risky in alpha)
 
 **Release process:**
+
 1. Update version in `nomarr/__version__.py`
 2. Update `CHANGELOG.md`
 3. Commit and tag

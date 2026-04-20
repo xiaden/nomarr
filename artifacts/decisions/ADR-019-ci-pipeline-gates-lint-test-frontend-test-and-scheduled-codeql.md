@@ -25,11 +25,13 @@ Gate ordering: Lint and frontend tests run in parallel with backend tests. Build
 ## Consequences
 
 **Positive:**
+
 - PRs cannot merge with lint failures, broken backend tests, or failing frontend tests.
 - CodeQL scans on a schedule catch regressions that a single post-merge scan would miss.
 - Gates are explicit and documented — contributors know exactly what must pass.
 
 **Negative:**
+
 - CI wall time increases by ~2–3 min (frontend Vitest + lint jobs run in parallel with test, negligible on matrix).
 - Scheduled CodeQL scans consume GitHub Actions minutes on a fixed cadence regardless of code churn.
 - Lint gate requires ruff config to be stable; rule changes must be coordinated with a fix pass.

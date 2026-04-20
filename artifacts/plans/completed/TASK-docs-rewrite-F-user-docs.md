@@ -7,6 +7,7 @@ The 4 surviving `docs/user/` files (854 + 938 + 804 + 311 = ~2,900 lines) contai
 ## Phases
 
 ### Phase 1: Audit and Stale Content Inventory
+
 - [x] Read all 4 user docs against the current codebase and produce a stale content catalog as a scratch note — must identify every instance of: TensorFlow references (→ ONNX Runtime), queue/job language (→ discovery-based workers), dead CLI commands (`admin-reset`, `cache-refresh`, `remove` — actual CLI has only `cleanup` and `manage-password`), `api_reference.md` links (deleted in Plan A → replace with `/docs` FastAPI interactive docs), wrong port 8888 (→ 8356), stale config keys (`processing.workers`, `processing.batch_size`, `navidrome.export_dir`, `navidrome.auto_export`), dead cross-refs to `../dev/services.md` (deleted Plan E) and `../dev/calibration.md`
     **Catalog:** **getting_started.md (854 lines):**
 TENSORFLOW → ONNX: L32 "Nomarr uses TensorFlow models for audio analysis", L210 "pip install tensorflow[and-cuda]==2.15.0", L624 "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))", L186-195 CUDA 11.8 install instructions (ONNX uses different CUDA).
@@ -46,6 +47,7 @@ KEY DIFFERENCES (docs vs reality):
 CONCLUSION: navidrome.md needs a near-complete rewrite. The TOML export + file copy + Navidrome rescan model is entirely fictional. The actual model is: configure Navidrome connection → sync songs → build smart playlists via rule builder → preview → generate .nsp or push directly via Subsonic API.
 
 ### Phase 2: Rewrite All User Documentation
+
 - [x] Rewrite `getting_started.md` — replace TensorFlow with ONNX Runtime throughout; remove native installation section (Docker-only for user docs); replace all queue/job language with discovery worker model; fix CLI reference table to only `cleanup` and `manage-password`; replace `api_reference.md` links with `/docs` endpoint; remove stale config keys; fix cross-references to files surviving Plan E; keep tone approachable and step-by-step for non-technical users
     **Notes:** Rewrote from 854 lines to ~545 lines. Removed native installation section entirely (Docker-only). Replaced all TensorFlow references with ONNX Runtime. Replaced queue/job language with discovery worker model. Fixed CLI table to only cleanup and manage-password with accurate subcommands. Replaced api_reference.md links with /docs endpoint and troubleshooting.md. Removed stale config keys (processing.workers, batch_size, navidrome.export_dir). Fixed cross-references: calibration-troubleshooting.md, removed ../dev/services.md. Removed Performance Tips section with stale config. Updated compose.yaml to match actual (arangodb:latest, --vector-index command, stop_grace_period).
 - [x] Rewrite `deployment.md` — remove stale `queue.compact()` ArangoDB reference; replace processing worker/batch_size config with current config model; fix `api_reference.md` and `../dev/workers.md`/`../dev/architecture.md` cross-references; scale back over-engineered production ops sections (Prometheus/Grafana/DCGM monitoring) to match alpha software status; verify compose.yaml snippets against actual `docker/compose.yaml`; keep security hardening and backup sections but verify accuracy
@@ -60,12 +62,14 @@ CONCLUSION: navidrome.md needs a near-complete rewrite. The TOML export + file c
     **Notes:** Added "Troubleshooting: user/troubleshooting.md" to mkdocs.yml nav under User Guide section, after Playlist Import. All 5 user guide pages now listed: Getting Started, Deployment, Navidrome Integration, Playlist Import, Troubleshooting.
 
 ### Phase 3: Validation
+
 - [x] Grep all `docs/user/` files for every stale term: `TensorFlow`, `tensorflow`, `queue` (in processing context), `batch_size`, `admin-reset`, `cache-refresh`, `nom remove`, `api_reference.md`, `config/config.yaml`, `export_dir`, `auto_export`, `8888`, `../dev/services.md`, `TOML` (in Navidrome context) — zero matches required except where `queue` appears in non-processing contexts
     **Notes:** All 14 stale terms verified with zero prohibited matches. Searched: TensorFlow, tensorflow, batch_size, admin-reset, cache-refresh, nom remove, api_reference.md, config/config.yaml, export_dir, auto_export, 8888, ../dev/services.md, queue (all contexts). TOML in navidrome.md confirmed NOT stale — endpoint actually produces TOML config (verified via web_navidrome_config source: NavidromeConfigResponse.from_toml()).
 - [x] Verify all internal cross-references resolve: every `[text](target.md)` link in `docs/user/` must point to a file that exists; every `../dev/` reference must point to a file surviving Plan E; confirm `mkdocs.yml` nav lists all 5 user guide pages and each file exists at the listed path
     **Notes:** All cross-references validated. Internal user→user links: all resolve (getting_started.md, deployment.md, navidrome.md, playlist_import.md, troubleshooting.md). Dev references: ../dev/workers.md ✓, ../dev/architecture.md ✓, ../dev/calibration-troubleshooting.md ✓ (all confirmed in docs/dev/). mkdocs.yml nav lists all 5 user guide pages at correct paths. No broken links found — zero fixes needed.
 
 ## Completion Criteria
+
 - All 4 existing user docs rewritten with zero stale terms from the contracts ledger
 - No references to TensorFlow, queue-based processing, deleted `api_reference.md`, or nonexistent CLI commands
 - `navidrome.md` describes the actual Subsonic API-based integration, not a TOML file export workflow

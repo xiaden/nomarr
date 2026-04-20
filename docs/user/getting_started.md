@@ -283,10 +283,10 @@ Once a library is added and initially scanned, Nomarr automatically monitors the
 
 **Watch Modes:**
 
-| Mode | How it works | Best for |
-|------|-------------|----------|
-| **Event** (default) | Real-time filesystem events via watchdog | Local filesystems |
-| **Polling** | Periodic full scans at fixed intervals | Network mounts (NFS/SMB) |
+ | Mode | How it works | Best for |
+ | ------ | ------------- | ---------- |
+ | **Event** (default) | Real-time filesystem events via watchdog | Local filesystems |
+ | **Polling** | Periodic full scans at fixed intervals | Network mounts (NFS/SMB) |
 
 **Enabling Polling Mode** (for network-mounted libraries):
 
@@ -380,13 +380,13 @@ See [Navidrome Integration](navidrome.md) for detailed instructions.
 
 Nomarr provides a small set of CLI commands for maintenance tasks that run **outside** the main application:
 
-| Command | Description |
-|---------|-------------|
-| `nom cleanup` | Remove orphaned entities (artists, albums, genres, labels, years) with no songs |
-| `nom cleanup --dry-run` | Preview what would be cleaned up without deleting |
-| `nom manage-password show` | Display current password hash |
-| `nom manage-password verify` | Test if a password is correct |
-| `nom manage-password reset` | Change the admin password |
+ | Command | Description |
+ | --------- | ------------- |
+ | `nom cleanup` | Remove orphaned entities (artists, albums, genres, labels, years) with no songs |
+ | `nom cleanup --dry-run` | Preview what would be cleaned up without deleting |
+ | `nom manage-password show` | Display current password hash |
+ | `nom manage-password verify` | Test if a password is correct |
+ | `nom manage-password reset` | Change the admin password |
 
 **Running CLI commands in Docker:**
 

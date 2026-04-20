@@ -214,6 +214,7 @@ Remove `backbone_id` from plugin config (stays on Nomarr side).
 **File: `navidrome-plugin/src/main.go`**
 
 Major changes:
+
 1. Add `subsonicCall()` helper that prepends `?u=username` to SubsonicAPICall URIs
    (follow pattern from LBZ plugin: `url := fmt.Sprintf("/rest/%s?u=%s", endpoint, user)`)
 2. Add playlist find-and-replace: search for existing playlist by name, update or create
@@ -271,6 +272,7 @@ For array/object config, the raw JSON string is returned and must be unmarshalle
 
 Plugin config is defined via static JSON Schema in `manifest.json`. There is no
 mechanism for the plugin to:
+
 - Query an external service for available options at config-render time
 - Populate dropdowns dynamically based on runtime data
 - Negotiate config schema with the backend

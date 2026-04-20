@@ -4,11 +4,11 @@
 
 ## Parts
 
-| Part | Title | Depends On | Layers |
-|------|-------|------------|--------|
-| A | Backend Persistence & DTOs | None | persistence, helpers |
-| B | Backend Service & API | A | services, interfaces |
-| C | Frontend Tag Editor | B | frontend |
+ | Part | Title | Depends On | Layers |
+ | ------ | ------- | ------------ | -------- |
+ | A | Backend Persistence & DTOs | None | persistence, helpers |
+ | B | Backend Service & API | A | services, interfaces |
+ | C | Frontend Tag Editor | B | frontend |
 
 ## Dependency Graph
 

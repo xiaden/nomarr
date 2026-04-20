@@ -62,6 +62,7 @@ read_module_source("nomarr.persistence.database.foo_aql.delete_foo")
 ```
 
 What you need to understand:
+
 - Parameters and their types
 - Return type and what it represents
 - Exceptions raised and when

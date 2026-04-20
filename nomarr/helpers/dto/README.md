@@ -10,26 +10,26 @@ Typed dataclasses and TypedDicts shared across all layers — the canonical data
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|--------|
-| `admin_dto.py` | `JobRemovalResult`, `WorkerOperationResult`, `RunCalibrationResult`, `RetagAllResult` |
-| `analytics_dto.py` | `TagCoOccurrenceData`, `TagCorrelationData`, `MoodDistributionData` |
-| `calibration_dto.py` | Calibration run parameters and result containers |
-| `config_dto.py` | `ProcessorConfig` — ML processing configuration passed through layers |
-| `health_dto.py` | `ComponentPolicy`, `ComponentStatus`, `StatusChangeContext`, `ComponentLifecycleHandler` |
-| `info_dto.py` | System info aggregation types |
-| `library_dto.py` | `LibraryPath`, `LibraryDict`, `SearchFilesResult`, `StartScanResult`, `WriteTagsResult` (largest — 14 types) |
-| `metadata_dto.py` | Entity cleanup and metadata seeding types |
-| `ml_dto.py` | `LoadAudioMonoResult`, `AnalyzeWithSegmentsResult`, `SingleHeadResult`, `ProcessHeadPredictionsResult` |
-| `ml_edge_dto.py` | ML model→output edge types for graph operations |
-| `navidrome_dto.py` | `NdSyncResult`, `TasteProfile`, `TasteCluster`, `NavidromePersonalPlaylistContext` |
-| `path_dto.py` | `LibraryPath` — validated file path with status tracking |
-| `playlist_import_dto.py` | `PlaylistMetadata`, `PlaylistTrackInput`, `MatchResult`, `PlaylistConversionResult` |
-| `processing_dto.py` | `ProcessFileResult` — single-file processing outcome |
-| `recalibration_dto.py` | Recalibration workflow parameters and results |
-| `tagging_dto.py` | `TagWriteProfile`, `TagSpec`, `TagCondition` — tag write and filter types |
-| `tags_dto.py` | `Tag`, `Tags`, `TagValue` — core tag data model (frozen, sorted, tuple-based) |
-| `vector_config_dto.py` | `VectorConfigResult` — per-library vector configuration with inheritance |
+ | Module | Purpose |
+ | -------- | -------- |
+ | `admin_dto.py` | `JobRemovalResult`, `WorkerOperationResult`, `RunCalibrationResult`, `RetagAllResult` |
+ | `analytics_dto.py` | `TagCoOccurrenceData`, `TagCorrelationData`, `MoodDistributionData` |
+ | `calibration_dto.py` | Calibration run parameters and result containers |
+ | `config_dto.py` | `ProcessorConfig` — ML processing configuration passed through layers |
+ | `health_dto.py` | `ComponentPolicy`, `ComponentStatus`, `StatusChangeContext`, `ComponentLifecycleHandler` |
+ | `info_dto.py` | System info aggregation types |
+ | `library_dto.py` | `LibraryPath`, `LibraryDict`, `SearchFilesResult`, `StartScanResult`, `WriteTagsResult` (largest — 14 types) |
+ | `metadata_dto.py` | Entity cleanup and metadata seeding types |
+ | `ml_dto.py` | `LoadAudioMonoResult`, `AnalyzeWithSegmentsResult`, `SingleHeadResult`, `ProcessHeadPredictionsResult` |
+ | `ml_edge_dto.py` | ML model→output edge types for graph operations |
+ | `navidrome_dto.py` | `NdSyncResult`, `TasteProfile`, `TasteCluster`, `NavidromePersonalPlaylistContext` |
+ | `path_dto.py` | `LibraryPath` — validated file path with status tracking |
+ | `playlist_import_dto.py` | `PlaylistMetadata`, `PlaylistTrackInput`, `MatchResult`, `PlaylistConversionResult` |
+ | `processing_dto.py` | `ProcessFileResult` — single-file processing outcome |
+ | `recalibration_dto.py` | Recalibration workflow parameters and results |
+ | `tagging_dto.py` | `TagWriteProfile`, `TagSpec`, `TagCondition` — tag write and filter types |
+ | `tags_dto.py` | `Tag`, `Tags`, `TagValue` — core tag data model (frozen, sorted, tuple-based) |
+ | `vector_config_dto.py` | `VectorConfigResult` — per-library vector configuration with inheritance |
 
 ## Patterns
 

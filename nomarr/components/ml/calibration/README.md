@@ -12,10 +12,10 @@ Score calibration normalizes raw model outputs so scores from different models a
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|----------|
-| `ml_calibration_comp` | Histogram-based percentile derivation, min-max calibration application, sidecar export/import, global hash computation |
-| `ml_calibration_state_comp` | Persistence of calibration state documents, version tracking, batch file hash updates, convergence status, reconciliation info |
+ | Module | Purpose |
+ | -------- | ---------- |
+ | `ml_calibration_comp` | Histogram-based percentile derivation, min-max calibration application, sidecar export/import, global hash computation |
+ | `ml_calibration_state_comp` | Persistence of calibration state documents, version tracking, batch file hash updates, convergence status, reconciliation info |
 
 ## Patterns
 

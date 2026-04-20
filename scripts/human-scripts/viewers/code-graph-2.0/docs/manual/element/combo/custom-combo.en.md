@@ -360,10 +360,10 @@ Before customizing Combos, you need to understand some important properties and 
 
 #### Properties
 
-| Property   | Type                          | Description                                               |
+| Property | Type | Description |
 | ---------- | ----------------------------- | --------------------------------------------------------- |
-| shapeMap   | Record<string, DisplayObject> | Mapping table of all graphics under the current element   |
-| animateMap | Record<string, IAnimation>    | Mapping table of all animations under the current element |
+| shapeMap | Record<string, DisplayObject> | Mapping table of all graphics under the current element |
+| animateMap | Record<string, IAnimation> | Mapping table of all animations under the current element |
 
 #### Methods
 
@@ -375,12 +375,12 @@ When creating custom Combos, you will frequently use the `upsert` method. It is 
 upsert(key: string, Ctor: { new (...args: any[]): DisplayObject }, style: Record<string, any>, container: DisplayObject);
 ```
 
-| Parameter | Type                                    | Description                                                                                                                                                                                                                                                                                                                    |
+| Parameter | Type | Description |
 | --------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| key       | string                                  | Key of the graphic, corresponding to the key in `shapeMap`. Built-in keys include `'key'`, `'label'`, `'halo'`, `'icon'`, `'port'`, `'badge'`<br/> Keys should not use special symbols, and will be converted to camel case to call `getXxxStyle` and `drawXxxShape` methods (see [Element Conventions](#element-conventions)) |
-| Ctor      | { new (...args: any[]): DisplayObject } | Graphic class                                                                                                                                                                                                                                                                                                                  |
-| style     | Record<string, any>                     | Graphic style                                                                                                                                                                                                                                                                                                                  |
-| container | DisplayObject                           | Container to mount the graphic                                                                                                                                                                                                                                                                                                 |
+| key | string | Key of the graphic, corresponding to the key in `shapeMap`. Built-in keys include `'key'`, `'label'`, `'halo'`, `'icon'`, `'port'`, `'badge'`<br/> Keys should not use special symbols, and will be converted to camel case to call `getXxxStyle` and `drawXxxShape` methods (see [Element Conventions](#element-conventions)) |
+| Ctor | { new (...args: any[]): DisplayObject } | Graphic class |
+| style | Record<string, any> | Graphic style |
+| container | DisplayObject | Container to mount the graphic |
 
 For example, insert a fixed-position purple circle:
 
@@ -407,10 +407,10 @@ Every custom combo class must implement the `render(attributes, container)` meth
 render(style: Record<string, any>, container: Group): void;
 ```
 
-| Parameter | Type                | Description   |
+| Parameter | Type | Description |
 | --------- | ------------------- | ------------- |
-| style     | Record<string, any> | Element style |
-| container | Group               | Container     |
+| style | Record<string, any> | Element style |
+| container | Group | Container |
 
 #### `getShape(name)`: Get Created Graphics
 
@@ -440,11 +440,11 @@ The convention properties in combos include:
 
 The following lifecycle hook functions are provided, and you can override these methods in custom combos to execute specific logic at key moments:
 
-| Hook Function | Trigger Timing                                                     | Typical Use Cases                                                                |
+| Hook Function | Trigger Timing | Typical Use Cases |
 | ------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| `onCreate`    | After the combo is created and the entrance animation is completed | Bind interactive events, initialize combo state, add external listeners          |
-| `onUpdate`    | After the combo is updated and the update animation is completed   | Update dependent data, adjust related elements, trigger linkage effects          |
-| `onDestroy`   | After the combo is destroyed and the exit animation is completed   | Clean up resources, remove external listeners, execute destruction notifications |
+| `onCreate` | After the combo is created and the entrance animation is completed | Bind interactive events, initialize combo state, add external listeners |
+| `onUpdate` | After the combo is updated and the update animation is completed | Update dependent data, adjust related elements, trigger linkage effects |
+| `onDestroy` | After the combo is destroyed and the exit animation is completed | Clean up resources, remove external listeners, execute destruction notifications |
 
 ### State Response
 

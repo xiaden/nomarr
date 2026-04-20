@@ -14,22 +14,22 @@ The Fruchterman layout is a force-directed layout based on the algorithm from [G
 
 ## Options
 
-| Property | Description                                                                                                                                                                                        | Type                                                                                                       | Default          | Required |
+| Property | Description | Type | Default | Required |
 | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------- | -------- |
-| type     | Layout type                                                                                                                                                                                        | `'fruchterman'`                                                                                            | -                | ✓        |
-| height   | Layout height                                                                                                                                                                                      | `number`                                                                                                   | container height |          |
-| width    | Layout width                                                                                                                                                                                       | `number`                                                                                                   | container width  |          |
-| gravity  | Central force, i.e., the force attracting all nodes to the [center](https://github.com/antvis/layout/blob/v5/packages/layout/src/types.ts#L915). The larger the value, the more compact the layout | `number`                                                                                                   | 10               |          |
-| speed    | Node movement speed per iteration. Too high a speed may cause strong oscillation                                                                                                                   | `number`                                                                                                   | 5                |          |
-| onTick   | Callback for each iteration                                                                                                                                                                        | (data: [LayoutMapping](https://github.com/antvis/layout/blob/v5/packages/layout/src/types.ts#L69)) => void | -                |          |
+| type | Layout type | `'fruchterman'` | - | ✓ |
+| height | Layout height | `number` | container height | |
+| width | Layout width | `number` | container width | |
+| gravity | Central force, i.e., the force attracting all nodes to the [center](https://github.com/antvis/layout/blob/v5/packages/layout/src/types.ts#L915). The larger the value, the more compact the layout | `number` | 10 | |
+| speed | Node movement speed per iteration. Too high a speed may cause strong oscillation | `number` | 5 | |
+| onTick | Callback for each iteration | (data: [LayoutMapping](https://github.com/antvis/layout/blob/v5/packages/layout/src/types.ts#L69)) => void | - | |
 
 ### Cluster Layout
 
-| Property       | Description                                                                               | Type      | Default     | Required |
+| Property | Description | Type | Default | Required |
 | -------------- | ----------------------------------------------------------------------------------------- | --------- | ----------- | -------- |
-| clustering     | Whether to use cluster layout                                                             | `boolean` | `false`     |          |
-| nodeClusterBy  | Field name in node data for clustering, effective when `clustering` is true               | `string`  | `'cluster'` |          |
-| clusterGravity | Gravity within clusters, affects cluster compactness, effective when `clustering` is true | `number`  | 10          |          |
+| clustering | Whether to use cluster layout | `boolean` | `false` | |
+| nodeClusterBy | Field name in node data for clustering, effective when `clustering` is true | `string` | `'cluster'` | |
+| clusterGravity | Gravity within clusters, affects cluster compactness, effective when `clustering` is true | `number` | 10 | |
 
 ## Example Code
 

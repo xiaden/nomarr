@@ -15,14 +15,15 @@
 
 **Files to update:**
 
-| File | Current | Target |
-|------|---------|--------|
-| `features/admin/AdminPage.tsx` | Raw `<div>`, `<h1>`, inline styles | `PageContainer`, MUI `Typography`, `Stack` |
-| `features/analytics/AnalyticsPage.tsx` | Raw `<div>`, inline styles | `PageContainer`, MUI components |
-| `features/calibration/CalibrationPage.tsx` | Raw `<div>`, inline styles | `PageContainer`, MUI components |
-| `features/config/ConfigPage.tsx` | Raw `<div>`, inline styles | `PageContainer`, MUI components |
+ | File | Current | Target |
+ | ------ | --------- | -------- |
+ | `features/admin/AdminPage.tsx` | Raw `<div>`, `<h1>`, inline styles | `PageContainer`, MUI `Typography`, `Stack` |
+ | `features/analytics/AnalyticsPage.tsx` | Raw `<div>`, inline styles | `PageContainer`, MUI components |
+ | `features/calibration/CalibrationPage.tsx` | Raw `<div>`, inline styles | `PageContainer`, MUI components |
+ | `features/config/ConfigPage.tsx` | Raw `<div>`, inline styles | `PageContainer`, MUI components |
 
 **Pattern to follow (from DashboardPage/TaggerStatusPage):**
+
 ```tsx
 import { Stack, Typography } from "@mui/material";
 import { PageContainer, Panel, SectionHeader } from "@shared/components/ui";
@@ -42,6 +43,7 @@ export function ExamplePage() {
 ```
 
 **Checklist:**
+
 - [ ] AdminPage.tsx - Replace div/h1 with PageContainer/Typography
 - [ ] AnalyticsPage.tsx - Replace div with PageContainer, wrap sections in Panel
 - [ ] CalibrationPage.tsx - Replace div with PageContainer
@@ -56,6 +58,7 @@ export function ExamplePage() {
 **Current:** `shared/api.ts` (1169 lines, all endpoints)
 
 **Target structure:**
+
 ```
 shared/api/
 ├── index.ts           # Re-exports all domain modules
@@ -79,6 +82,7 @@ shared/api/
 **File:** `shared/api/client.ts`
 
 Contains all cross-cutting request logic:
+
 - Base URL resolution
 - Auth header injection (Bearer token)
 - Consistent error normalization
@@ -266,6 +270,7 @@ export function del<T>(path: string, options?: Omit<RequestOptions, "method">): 
 Each domain module exports named functions directly:
 
 **Example - shared/api/queue.ts:**
+
 ```typescript
 /**
  * Queue API functions.
@@ -347,6 +352,7 @@ export { ApiError, snakeToCamel, API_BASE_URL } from "./client";
 ```
 
 **Migration approach:**
+
 1. Create `shared/api/` directory with all domain modules
 2. Delete `shared/api.ts` immediately
 3. Run `npm run build` — TypeScript errors show every broken import
@@ -354,6 +360,7 @@ export { ApiError, snakeToCamel, API_BASE_URL } from "./client";
 5. Commit when build passes
 
 **Checklist:**
+
 - [ ] Create shared/api/ directory
 - [ ] Create client.ts with request, get, post, put, del, ApiError, snakeToCamel
 - [ ] Create auth.ts (login, logout)
@@ -383,6 +390,7 @@ export { ApiError, snakeToCamel, API_BASE_URL } from "./client";
 **Action:** Move `shared/components/ServerFilePicker.README.md` to `docs/dev/server-file-picker.md`
 
 **Checklist:**
+
 - [ ] Move file
 - [ ] Update any references
 
@@ -521,6 +529,7 @@ export function createPanelBoundary(PanelComponent: React.ComponentType<{ childr
 ```
 
 **Usage in AppRouter.tsx:**
+
 ```tsx
 <ProtectedRoute>
   <ErrorBoundary>
@@ -532,6 +541,7 @@ export function createPanelBoundary(PanelComponent: React.ComponentType<{ childr
 ```
 
 **Checklist:**
+
 - [ ] Create ErrorBoundary.tsx with createPanelBoundary helper
 - [ ] Export from shared/components/ui/index.ts
 - [ ] Wrap routes in AppRouter.tsx
@@ -757,6 +767,7 @@ export function useConfirm(): ConfirmContextType {
 ```
 
 **Update App.tsx:**
+
 ```tsx
 import { ConfirmProvider } from "@shared/components/ui";
 
@@ -772,6 +783,7 @@ function App() {
 ```
 
 **New usage in components (preferred):**
+
 ```tsx
 import { useConfirm } from "@shared/components/ui";
 
@@ -794,6 +806,7 @@ function LibraryManagement() {
 ```
 
 **Migration strategy:**
+
 1. Create ConfirmProvider with hardened implementation
 2. Add to App.tsx
 3. Keep existing useConfirmDialog + ConfirmDialog working (backward compatible)
@@ -801,6 +814,7 @@ function LibraryManagement() {
 5. Eventually remove old useConfirmDialog hook
 
 **Checklist:**
+
 - [ ] Create ConfirmProvider.tsx with hardened implementation
 - [ ] Export useConfirm from index.ts
 - [ ] Add ConfirmProvider to App.tsx
@@ -836,11 +850,13 @@ export function PageSkeleton({ title = "Loading..." }: { title?: string }) {
 ```
 
 **Update Suspense fallback in AppRouter.tsx:**
+
 ```tsx
 <Suspense fallback={<PageSkeleton />}>
 ```
 
 **Update individual pages to use loading skeletons:**
+
 ```tsx
 if (loading) {
   return (
@@ -855,6 +871,7 @@ if (loading) {
 ```
 
 **Checklist:**
+
 - [ ] Create PageSkeleton.tsx
 - [ ] Update AppRouter Suspense fallback
 - [ ] Add skeleton states to DashboardPage
@@ -872,6 +889,7 @@ if (loading) {
 **Goal:** After Phase 1.2 is complete and stable, enable `transformCase: true` by default in client.ts.
 
 **Steps:**
+
 1. Verify all API calls work with current opt-in approach
 2. Identify any APIs that break with case transformation
 3. Update types to use camelCase (if not already)
@@ -879,6 +897,7 @@ if (loading) {
 5. Remove explicit `transformCase: true` from individual calls
 
 **Checklist:**
+
 - [ ] Audit all API response types for case consistency
 - [ ] Update types that still use snake_case
 - [ ] Enable transformCase by default
@@ -893,12 +912,14 @@ if (loading) {
 **Note:** This is a larger undertaking. Consider for v1.0.
 
 **Benefits:**
+
 - Automatic caching (library stats shared between Dashboard and Library pages)
 - Background refetching
 - Loading/error states built-in
 - Optimistic updates for mutations
 
 **Would require:**
+
 - Adding @tanstack/react-query dependency
 - Creating query hooks for each API domain
 - Migrating all useEffect-based data fetching
@@ -912,11 +933,13 @@ if (loading) {
 **Goal:** Test critical paths.
 
 **Would require:**
+
 - Adding vitest, @testing-library/react dependencies
 - Creating test files alongside components
 - CI integration
 
 **Priority tests:**
+
 - API client error handling
 - Auth state management
 - ConfirmProvider behavior (especially double-click prevention)
@@ -971,6 +994,7 @@ Phase 3: Code Quality (Future)
 ## Definition of Done
 
 Each task is complete when:
+
 1. Code compiles without errors (`npm run build`)
 2. ESLint passes (`npm run lint`)
 3. Feature works as expected in browser
@@ -986,4 +1010,3 @@ Each task is complete when:
 - **ConfirmProvider prevents double-resolve** - busy state + ref cleanup
 - **ErrorBoundary at router level** - Panel-level helper ready for future use
 - **snakeToCamel is opt-in initially** - Enable by default after testing
-

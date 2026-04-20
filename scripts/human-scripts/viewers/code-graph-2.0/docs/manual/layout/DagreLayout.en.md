@@ -32,16 +32,16 @@ const graph = new Graph({
 
 <img src="https://img.alicdn.com/imgextra/i3/O1CN01OpQHBZ1HcpZuWZLS7_!!6000000000779-0-tps-1274-1234.jpg" width="400" alt="Dagre Layout Options Illustration" />
 
-| Property      | Description                                                                                                                                | Type                                                | Default           | Required |
+| Property | Description | Type | Default | Required |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- | ----------------- | -------- |
-| type          | Layout type                                                                                                                                | `dagre`                                             | -                 | ✓        |
-| rankdir       | Layout direction, options                                                                                                                  | `TB` \| `BT` \| `LR` \| `RL`                        | `TB`              |          |
-| align         | Node alignment, options                                                                                                                    | `UL` \| `UR` \| `DL` \| `DR`                        | `UL`              |          |
-| nodesep       | Node spacing (px). For `TB` or `BT`, it's the horizontal spacing; for `LR` or `RL`, it's the vertical spacing                              | number                                              | 50                |          |
-| ranksep       | Rank spacing (px). For `TB` or `BT`, it's the vertical spacing between ranks; for `LR` or `RL`, it's the horizontal spacing between ranks  | number                                              | 100               |          |
-| ranker        | Algorithm for assigning ranks to nodes: `longest-path`, `tight-tree`, or `network-simplex`                                                 | `network-simplex` \| `tight-tree` \| `longest-path` | `network-simplex` |          |
-| nodeSize      | G6 custom property, specify node size for all or each node. If a single number, width and height are the same; if array: `[width, height]` | number \| number[] \| () => (number \| number[])    |                   |          |
-| controlPoints | Whether to retain edge control points                                                                                                      | boolean                                             | false             |          |
+| type | Layout type | `dagre` | - | ✓ |
+| rankdir | Layout direction, options | `TB` \| `BT` \| `LR` \| `RL` | `TB` | |
+| align | Node alignment, options | `UL` \| `UR` \| `DL` \| `DR` | `UL` | |
+| nodesep | Node spacing (px). For `TB` or `BT`, it's the horizontal spacing; for `LR` or `RL`, it's the vertical spacing | number | 50 | |
+| ranksep | Rank spacing (px). For `TB` or `BT`, it's the vertical spacing between ranks; for `LR` or `RL`, it's the horizontal spacing between ranks | number | 100 | |
+| ranker | Algorithm for assigning ranks to nodes: `longest-path`, `tight-tree`, or `network-simplex` | `network-simplex` \| `tight-tree` \| `longest-path` | `network-simplex` | |
+| nodeSize | G6 custom property, specify node size for all or each node. If a single number, width and height are the same; if array: `[width, height]` | number \| number[] \| () => (number \| number[]) | | |
+| controlPoints | Whether to retain edge control points | boolean | false | |
 
 ### rankdir
 

@@ -58,15 +58,18 @@ tests/
 ### Core Test Type Markers
 
 #### `@pytest.mark.unit`
+
 Fast, isolated tests for individual functions/classes with minimal mocking.
 
 **When to use:**
+
 - Testing pure functions
 - Testing single methods with mocked dependencies
 - No database, no filesystem, no network
 - Should run in milliseconds
 
 **Example:**
+
 ```python
 @pytest.mark.unit
 def test_normalize_tag_key():
@@ -75,15 +78,18 @@ def test_normalize_tag_key():
 ```
 
 #### `@pytest.mark.integration`
+
 Tests multiple components working together with real dependencies.
 
 **When to use:**
+
 - Testing workflows that call multiple components
 - Testing service layer orchestration
 - Using real database (ArangoDB test instance)
 - Testing file I/O with test fixtures
 
 **Example:**
+
 ```python
 @pytest.mark.integration
 def test_library_scan_workflow(test_db, tmp_audio_files):
@@ -97,9 +103,11 @@ def test_library_scan_workflow(test_db, tmp_audio_files):
 ```
 
 #### `@pytest.mark.e2e`
+
 End-to-end tests that exercise full pipelines through API/CLI.
 
 **When to use:**
+
 - Testing complete user workflows
 - API endpoint → service → workflow → components → database
 - CLI command execution
@@ -108,15 +116,18 @@ End-to-end tests that exercise full pipelines through API/CLI.
 ### Resource Requirement Markers
 
 #### `@pytest.mark.slow`
+
 Tests that take >1 second to complete.
 
 **When to use:**
+
 - Model loading/inference
 - Heavy computation
 - Processing multiple files
 - May be skipped in watch mode
 
 **Example:**
+
 ```python
 @pytest.mark.slow
 @pytest.mark.requires_models
@@ -126,42 +137,52 @@ def test_embedding_generation(audio_file):
 ```
 
 #### `@pytest.mark.requires_models`
+
 Tests that need model files (embeddings, heads) to be present.
 
 **When to use:**
+
 - ML inference tests
 - Embedding generation
 - Head prediction
 - Should be skipped if models not downloaded
 
 #### `@pytest.mark.requires_audio`
+
 Tests that need real audio files (not just fixtures).
 
 **When to use:**
+
 - Audio metadata extraction
 - Audio file validation
 - Processing real-world audio files
 
 #### `@pytest.mark.requires_essentia`
+
 Tests that need the Essentia library (optional dependency).
 
 **When to use:**
+
 - Tests importing `essentia` or `essentia_tensorflow`
 - Audio analysis using Essentia
 - Should be skipped if Essentia not installed
 
 #### `@pytest.mark.requires_tensorflow`
+
 Tests that need TensorFlow (optional ML dependency).
 
 **When to use:**
+
 - Tests using TensorFlow models
 - Tests importing `tensorflow`
 - Should be skipped if TensorFlow not installed
 
 #### `@pytest.mark.container_only`
+
 Tests designed to run only in Docker container environment.
 
 **When to use:**
+
 - Tests requiring GPU (containers provide GPU access)
 - Tests requiring specific container setup
 - Tests with models/data only available in container
@@ -172,15 +193,18 @@ Tests designed to run only in Docker container environment.
 ### Informational Markers
 
 #### `@pytest.mark.code_smell`
+
 Architecture/style tests that don't indicate broken functionality.
 
 **When to use:**
+
 - Import-linter checks
 - Code structure validation
 - Naming convention checks
 - Should be skipped in CI (doesn't block merges)
 
 **Example:**
+
 ```python
 @pytest.mark.code_smell
 def test_no_circular_imports():
@@ -190,17 +214,21 @@ def test_no_circular_imports():
 ```
 
 #### `@pytest.mark.mocked`
+
 Informational marker indicating test uses mocked dependencies.
 
 **When to use:**
+
 - Optional, for documentation
 - Helps identify tests that might need integration equivalents
 - Not used for test selection
 
 #### `@pytest.mark.real_db`
+
 Informational marker indicating test uses real database (not in-memory).
 
 **When to use:**
+
 - Tests using persistent ArangoDB instance
 - Helps identify tests that need cleanup
 - Usually combined with `@pytest.mark.integration`
@@ -208,6 +236,7 @@ Informational marker indicating test uses real database (not in-memory).
 ## Running Tests
 
 ### By Test Type
+
 ```bash
 # Fast unit tests only
 pytest -m unit
@@ -223,6 +252,7 @@ pytest -m "not slow"
 ```
 
 ### By Resource Requirements
+
 ```bash
 # Skip tests needing models
 pytest -m "not requires_models"
@@ -238,6 +268,7 @@ pytest -m "not code_smell"
 ```
 
 ### Common Combinations
+
 ```bash
 # Fast local development (unit tests, no external deps)
 pytest -m "unit and not slow and not requires_models"
@@ -255,34 +286,40 @@ pytest -m "container_only"
 ## Test Development Guidelines
 
 ### 1. Start with Unit Tests
+
 - Test individual functions/methods in isolation
 - Mock external dependencies (DB, filesystem, ML models)
 - Aim for 100% coverage of business logic
 
 ### 2. Add Integration Tests for Complex Flows
+
 - Test workflows that orchestrate multiple components
 - Use real database (ArangoDB test instance)
 - Test actual file operations with fixtures
 
 ### 3. Use Appropriate Markers
+
 - Always mark tests with at least one type marker (`unit`/`integration`/`e2e`)
 - Add resource markers (`slow`, `requires_*`) as needed
 - Use `container_only` for tests that need GPU or container setup
 - Mark architecture tests with `code_smell`
 
 ### 4. Keep Tests Fast
+
 - Unit tests should run in milliseconds
 - Integration tests should run in <1 second
 - Mark anything slower with `@pytest.mark.slow`
 - Consider mocking expensive operations
 
 ### 5. Make Tests Deterministic
+
 - No reliance on system time (mock `datetime.now()`)
 - No network calls (mock API clients)
 - Use fixtures for test data
 - Clean up after tests (temp files, DB state)
 
 ### 6. Structure Tests by Behavior
+
 ```python
 class TestLibraryService:
     """Tests for LibraryService."""
@@ -309,6 +346,7 @@ The following markers have been removed to avoid duplication:
 ## Future Considerations
 
 As the test suite grows, consider adding:
+
 - Performance benchmarking marks
 - Flaky test identification
 - Test ownership/team tags

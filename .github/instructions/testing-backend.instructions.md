@@ -88,30 +88,30 @@ Every test MUST have at least one type marker.
 
 ### Type Markers (required — pick one)
 
-| Marker | Speed | Dependencies | Use When |
-|--------|-------|--------------|----------|
-| `@pytest.mark.unit` | ms | None (mocked) | Testing pure functions, single methods |
-| `@pytest.mark.integration` | <1s | Real DB, filesystem | Testing workflows, multi-component flows |
-| `@pytest.mark.e2e` | seconds | Full stack running | Testing API → service → DB pipelines |
+ | Marker | Speed | Dependencies | Use When |
+ | -------- | ------- | -------------- | ---------- |
+ | `@pytest.mark.unit` | ms | None (mocked) | Testing pure functions, single methods |
+ | `@pytest.mark.integration` | <1s | Real DB, filesystem | Testing workflows, multi-component flows |
+ | `@pytest.mark.e2e` | seconds | Full stack running | Testing API → service → DB pipelines |
 
 ### Resource Markers (add as needed)
 
-| Marker | Meaning |
-|--------|---------|
-| `@pytest.mark.slow` | Takes >1 second |
-| `@pytest.mark.requires_models` | Needs ML model files on disk |
-| `@pytest.mark.requires_audio` | Needs real audio files (not just fixtures) |
-| `@pytest.mark.requires_database` | Needs ArangoDB running |
-| `@pytest.mark.requires_essentia` | Needs Essentia library installed |
-| `@pytest.mark.requires_onnx` | Needs ONNX Runtime installed |
-| `@pytest.mark.container_only` | Must run inside Docker (GPU, prod-like env) |
+ | Marker | Meaning |
+ | -------- | --------- |
+ | `@pytest.mark.slow` | Takes >1 second |
+ | `@pytest.mark.requires_models` | Needs ML model files on disk |
+ | `@pytest.mark.requires_audio` | Needs real audio files (not just fixtures) |
+ | `@pytest.mark.requires_database` | Needs ArangoDB running |
+ | `@pytest.mark.requires_essentia` | Needs Essentia library installed |
+ | `@pytest.mark.requires_onnx` | Needs ONNX Runtime installed |
+ | `@pytest.mark.container_only` | Must run inside Docker (GPU, prod-like env) |
 
 ### Informational Markers (optional)
 
-| Marker | Meaning |
-|--------|---------|
-| `@pytest.mark.code_smell` | Architecture/style check, not functionality |
-| `@pytest.mark.mocked` | Uses mocked dependencies (documentation only) |
+ | Marker | Meaning |
+ | -------- | --------- |
+ | `@pytest.mark.code_smell` | Architecture/style check, not functionality |
+ | `@pytest.mark.mocked` | Uses mocked dependencies (documentation only) |
 
 ---
 
@@ -172,6 +172,7 @@ class TestMyComponent:
 ### Mock Patterns for Nomarr Layers
 
 **Mocking `Database`:**
+
 ```python
 mock_db = MagicMock()
 mock_db.calibration_state.get_all_calibration_states.return_value = [...]
@@ -181,6 +182,7 @@ mock_db.library_files.get_calibration_status_by_library.return_value = [...]
 ```
 
 **Mocking filesystem:**
+
 ```python
 # Prefer tmp_path (pytest built-in) over manual tempfile
 @pytest.mark.unit
@@ -193,6 +195,7 @@ def test_discovers_audio_files(tmp_path) -> None:
 ```
 
 **Mocking config:**
+
 ```python
 from dataclasses import dataclass
 
@@ -227,6 +230,7 @@ def test_library_scan_discovers_files(test_db, good_library_root) -> None:
 ### Root conftest.py
 
 Shared fixtures live in `tests/conftest.py`:
+
 - `good_library_root` — path to `tests/fixtures/library/good/`
 - `good_library_paths` — dict of known fixture file paths
 
@@ -253,14 +257,14 @@ def mock_arango():
 
 ## What to Test per Layer
 
-| Layer | What to Test | What to Mock |
-|-------|-------------|---------------|
-| **Helpers** | Pure functions, DTOs, exceptions | Nothing (no external deps) |
-| **Components** | Domain logic, data transformation | Database, filesystem, ML backends |
-| **Workflows** | Orchestration flow, error handling | Components (or use real components with mocked DB) |
-| **Services** | DI wiring, delegation correctness | Workflows, components |
-| **Persistence** | Query correctness, data shapes | ArangoDB client (or use real test DB) |
-| **Interfaces** | Request/response shapes, auth | Services |
+ | Layer | What to Test | What to Mock |
+ | ------- | ------------- | --------------- |
+ | **Helpers** | Pure functions, DTOs, exceptions | Nothing (no external deps) |
+ | **Components** | Domain logic, data transformation | Database, filesystem, ML backends |
+ | **Workflows** | Orchestration flow, error handling | Components (or use real components with mocked DB) |
+ | **Services** | DI wiring, delegation correctness | Workflows, components |
+ | **Persistence** | Query correctness, data shapes | ArangoDB client (or use real test DB) |
+ | **Interfaces** | Request/response shapes, auth | Services |
 
 ### Priority Order
 

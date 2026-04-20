@@ -25,14 +25,14 @@ pattern with typed exceptions.
 - [x] Update `resolve_library_for_scan` in `scan_lifecycle_comp.py` to raise `LibraryNotFoundError` instead of plain `ValueError`.
     **Notes:** Added `from nomarr.helpers.exceptions import LibraryNotFoundError` import and changed raise to `raise LibraryNotFoundError(msg)` in scan_lifecycle_comp.py line 43. lint_project_backend on the component reports 0 errors in scan_lifecycle_comp.py; 1 pre-existing mypy error in metadata_extraction_comp.py line 411 (unrelated return type mismatch).
 - [x] Update `nomarr/helpers/__init__.py` (or wherever exceptions are re-exported) to export both new types if other modules import from the helpers package top-level.
-    **Notes:** Inspected nomarr/helpers/__init__.py — only re-exports sanitize_exception_message, no exception classes. New types will be imported directly from nomarr.helpers.exceptions. No changes needed.
+    **Notes:** Inspected nomarr/helpers/**init**.py — only re-exports sanitize_exception_message, no exception classes. New types will be imported directly from nomarr.helpers.exceptions. No changes needed.
 
 ### Phase 2: Create scan_setup_wf.py
 
 - [x] Create `nomarr/workflows/library/scan_setup_wf.py` with `scan_setup_workflow(db, library_id, scan_type)` that calls `resolve_library_for_scan` (propagates `LibraryNotFoundError`), raises `LibraryAlreadyScanningError` if `library['scan_status'] == 'scanning'`, calls `check_interrupted_scan` and logs a warning if interrupted, calls `update_scan_progress(db, library_id, status='scanning', progress=0, total=0)`, and returns the library dict.
     **Notes:** Created nomarr/workflows/library/scan_setup_wf.py (75 lines). Calls resolve_library_for_scan (propagates LibraryNotFoundError), raises LibraryAlreadyScanningError if already scanning, logs interrupted scan warning, calls update_scan_progress, returns library dict. lint_project_backend — 0 new errors (1 pre-existing in metadata_extraction_comp.py).
 - [x] Export `scan_setup_workflow` from `nomarr/workflows/library/__init__.py` (import line and `__all__` entry).
-    **Notes:** Added `from .scan_setup_wf import scan_setup_workflow` and `"scan_setup_workflow"` to __all__ in nomarr/workflows/library/__init__.py. lint_project_backend on library workflows — 0 new errors.
+    **Notes:** Added `from .scan_setup_wf import scan_setup_workflow` and `"scan_setup_workflow"` to **all** in nomarr/workflows/library/**init**.py. lint_project_backend on library workflows — 0 new errors.
 
 ### Phase 3: Update LibraryScanMixin with two explicit methods
 
@@ -57,9 +57,9 @@ pattern with typed exceptions.
 - [x] Delete `nomarr/workflows/library/start_library_scan_wf.py`.
     **Notes:** File deleted: nomarr/workflows/library/start_library_scan_wf.py. Lint on workflows/ shows only pre-existing metadata_extraction_comp error.
 - [x] Remove `start_library_scan_workflow` from `nomarr/workflows/library/__init__.py` (import line and `__all__` entry).
-    **Notes:** Removed from .start_library_scan_wf import start_library_scan_workflow and "start_library_scan_workflow" from __all__ in nomarr/workflows/library/__init__.py.
+    **Notes:** Removed from .start_library_scan_wf import start_library_scan_workflow and "start_library_scan_workflow" from **all** in nomarr/workflows/library/**init**.py.
 - [x] Remove `start_library_scan_workflow` from `nomarr/workflows/__init__.py` (import line and `__all__` entry).
-    **Notes:** Removed from .library.start_library_scan_wf import start_library_scan_workflow and "start_library_scan_workflow" from __all__ in nomarr/workflows/__init__.py.
+    **Notes:** Removed from .library.start_library_scan_wf import start_library_scan_workflow and "start_library_scan_workflow" from **all** in nomarr/workflows/**init**.py.
 
 ### Phase 6: Update frontend API client
 

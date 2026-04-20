@@ -29,15 +29,15 @@ const graph = new Graph({
 
 <img src="https://img.alicdn.com/imgextra/i4/O1CN014J5e691gxm5GSrwD2_!!6000000004209-0-tps-1163-832.jpg" width="400" alt="Mindmap tree options diagram" />
 
-| Property  | Description                                                                                             | Type                                | Default | Required |
+| Property | Description | Type | Default | Required |
 | --------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------- | ------- | -------- |
-| type      | Layout type                                                                                             | `mindmap`                           | -       | ✓        |
-| direction | Layout direction, [options](#direction)                                                                 | `H` \| `LR` \| `RL` \| `TB` \| `BT` | `LR`    |          |
-| getHeight | Function to calculate the height of each node                                                           | (d?: Node) => number                |         | ✓        |
-| getWidth  | Function to calculate the width of each node                                                            | (d?: Node) => number                |         | ✓        |
-| getVGap   | Vertical gap for each node. Note: the actual vertical gap between two nodes is twice the vgap           | (d?: Node) => number                |         |          |
-| getHGap   | Horizontal gap for each node. Note: the actual horizontal gap between two nodes is twice the hgap       | (d?: Node) => number                |         |          |
-| getSide   | Set whether the node is placed on the left or right of the root. Only effective when `direction` is `H` | (d?: Node) => string                |         |          |
+| type | Layout type | `mindmap` | - | ✓ |
+| direction | Layout direction, [options](#direction) | `H` \| `LR` \| `RL` \| `TB` \| `BT` | `LR` | |
+| getHeight | Function to calculate the height of each node | (d?: Node) => number | | ✓ |
+| getWidth | Function to calculate the width of each node | (d?: Node) => number | | ✓ |
+| getVGap | Vertical gap for each node. Note: the actual vertical gap between two nodes is twice the vgap | (d?: Node) => number | | |
+| getHGap | Horizontal gap for each node. Note: the actual horizontal gap between two nodes is twice the hgap | (d?: Node) => number | | |
+| getSide | Set whether the node is placed on the left or right of the root. Only effective when `direction` is `H` | (d?: Node) => string | | |
 
 ### direction
 

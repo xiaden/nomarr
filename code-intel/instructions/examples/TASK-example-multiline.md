@@ -14,9 +14,9 @@ Testing how multi-line content is handled in various contexts.
         - harm
         - general badness
 - [ ] Step with inline bullets
-    - oven temp: 400
-    - pan heated
-    - basted before putting in oven
+  - oven temp: 400
+  - pan heated
+  - basted before putting in oven
 
 **Notes:** Phase-level marker with continuation:
     - first thing

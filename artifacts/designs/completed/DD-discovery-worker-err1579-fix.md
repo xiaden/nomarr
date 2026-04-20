@@ -5,9 +5,10 @@
 **Created:** 2026-04-06  
 
 **Related Documents:**
-- [](artifacts/decisions/ADR-003-pure-boolean-state-graph-for-file-processing-pipeline.md) — 
-- [](artifacts/decisions/ADR-008-deferred-write-pattern-for-discovery-worker.md) — 
-- [](artifacts/designs/completed/DD-file-state-graph-completion.md) — 
+
+- [](artifacts/decisions/ADR-003-pure-boolean-state-graph-for-file-processing-pipeline.md) —
+- [](artifacts/decisions/ADR-008-deferred-write-pattern-for-discovery-worker.md) —
+- [](artifacts/designs/completed/DD-file-state-graph-completion.md) —
 
 ---
 
@@ -52,20 +53,20 @@ Two additional files outside `file_states_aql.py` share the same read+write-same
 
 ### Complete ERR 1579 Hazard Map
 
-| # | Method | Lines | Hazard | Pattern |
-|---|--------|-------|--------|---------|
-| 1 | `_transition_state` | 94-126 | **CONFIRMED** | LET-read → REMOVE → INSERT |
-| 2 | `bulk_set_not_calibrated` | 188-209 | HIGH | FOR-read → REMOVE → INSERT in same loop |
-| 3 | `bulk_set_tags_stale` (lib_id) | 211-245 | HIGH | FOR-read → REMOVE → INSERT in same loop |
-| 4 | `bulk_set_tags_stale` (global) | 211-245 | HIGH | FOR-read → REMOVE → INSERT in same loop |
-| 5 | `bulk_set_scanned` | 247-269 | HIGH | FOR-read → REMOVE → INSERT in same loop |
-| 6 | `bulk_set_not_vectors_extracted` | 271-292 | HIGH | FOR-read → REMOVE → INSERT in same loop |
-| 7 | `bulk_set_not_errored` | 294-316 | HIGH | FOR-read → REMOVE → INSERT in same loop |
-| 8 | `clear_tagged_batch` | 793-832 | HIGH | Separate FOR blocks but both touch @@coll |
-| 9 | `clear_all_states` | 838-863 | SAFE | Remove-only (no insert), write-only pattern |
-| 10 | `clear_all_states_batch` | 865-894 | SAFE | Remove-only (no insert), write-only pattern |
-| 11 | `NavidromePlaycountsOperations.increment_play` | navidrome_playcounts_aql.py:105-167 | HIGH | LET-read `@@has_plays` → REMOVE → INSERT in same statement; also UPSERT on `@@playcounts` |
-| 12 | `VramPromisesOperations.try_register` | vram_promises_aql.py:80-151 | HIGH | LET-read `vram_promises` (SUM aggregate) → INSERT into `vram_promises` in same statement |
+ | # | Method | Lines | Hazard | Pattern |
+ | --- | -------- | ------- | -------- | --------- |
+ | 1 | `_transition_state` | 94-126 | **CONFIRMED** | LET-read → REMOVE → INSERT |
+ | 2 | `bulk_set_not_calibrated` | 188-209 | HIGH | FOR-read → REMOVE → INSERT in same loop |
+ | 3 | `bulk_set_tags_stale` (lib_id) | 211-245 | HIGH | FOR-read → REMOVE → INSERT in same loop |
+ | 4 | `bulk_set_tags_stale` (global) | 211-245 | HIGH | FOR-read → REMOVE → INSERT in same loop |
+ | 5 | `bulk_set_scanned` | 247-269 | HIGH | FOR-read → REMOVE → INSERT in same loop |
+ | 6 | `bulk_set_not_vectors_extracted` | 271-292 | HIGH | FOR-read → REMOVE → INSERT in same loop |
+ | 7 | `bulk_set_not_errored` | 294-316 | HIGH | FOR-read → REMOVE → INSERT in same loop |
+ | 8 | `clear_tagged_batch` | 793-832 | HIGH | Separate FOR blocks but both touch @@coll |
+ | 9 | `clear_all_states` | 838-863 | SAFE | Remove-only (no insert), write-only pattern |
+ | 10 | `clear_all_states_batch` | 865-894 | SAFE | Remove-only (no insert), write-only pattern |
+ | 11 | `NavidromePlaycountsOperations.increment_play` | navidrome_playcounts_aql.py:105-167 | HIGH | LET-read `@@has_plays` → REMOVE → INSERT in same statement; also UPSERT on `@@playcounts` |
+ | 12 | `VramPromisesOperations.try_register` | vram_promises_aql.py:80-151 | HIGH | LET-read `vram_promises` (SUM aggregate) → INSERT into `vram_promises` in same statement |
 
 ---
 
@@ -223,10 +224,12 @@ A pytest test that statically scans all Python source for AQL queries that read 
 2. **Detect UNSAFE read/write conflicts**: The detection must distinguish safe single-pass modification from hazardous cross-operation read+write patterns:
 
    **SAFE — single-pass modification (whitelist, do NOT flag):**
+
    ```aql
    FOR doc IN collection FILTER ... UPDATE doc WITH { ... } IN collection
    FOR doc IN collection FILTER ... REMOVE doc IN collection
    ```
+
    These modify the document being iterated — standard ArangoDB pattern with no cross-operation hazard.
 
    **UNSAFE — cross-operation read then write (flag as violations):**
@@ -265,6 +268,7 @@ A pytest test that statically scans all Python source for AQL queries that read 
    ```
 
    The conflict detection function:
+
    ```python
    def _find_read_write_conflicts(aql: str) -> set[str]:
        """Return collection names involved in unsafe read+write patterns."""
@@ -311,6 +315,7 @@ Two files outside `file_states_aql.py` have the same read+write-same-collection 
 **Current hazard:** Single AQL statement reads `@@has_plays` via `LET existing = FIRST(FOR e IN @@has_plays ...)`, then writes `@@has_plays` via `REMOVE { _key: existing.edge_key } IN @@has_plays` and `INSERT ... IN @@has_plays`. Also performs `UPSERT ... IN @@playcounts` (separate collection, safe by itself).
 
 **Fix:** Split into three Python-level `aql.execute()` calls:
+
 1. **READ** — Find the existing edge key and old playcount from `@@has_plays`
 2. **WRITE (upsert bucket + remove old edge)** — UPSERT the new bucket vertex in `@@playcounts` and REMOVE old edge from `@@has_plays` (both are writes, safe to combine since they target different collections, or split further for maximum safety)
 3. **WRITE (insert new edge)** — INSERT new edge into `@@has_plays`
@@ -322,6 +327,7 @@ Note: UPSERT on `@@playcounts` is a write-only operation (no prior read of that 
 **Current hazard:** Single AQL statement reads `vram_promises` via `LET sum_promised = FIRST(FOR p IN vram_promises COLLECT AGGREGATE ...)`, then writes `vram_promises` via `INSERT { ... } INTO vram_promises OPTIONS { overwriteMode: "replace" }`.
 
 **Fix:** Split into two Python-level `aql.execute()` calls:
+
 1. **READ** — Compute the aggregate sum of promised VRAM from `vram_promises`
 2. **WRITE** — If headroom check passes (in Python), INSERT/REPLACE the promise document into `vram_promises`
 
@@ -335,19 +341,19 @@ These fixes should be included in **Phase 2** alongside bulk method fixes, or as
 
 Fixing `_transition_state` (Phase 1) automatically fixes ALL 16 single-file `set_*` methods and their ~20 production callers. Bulk method fixes (Phase 2) cover the remaining ~15 callers. No caller-side code changes are needed — the API contracts are unchanged.
 
-| Caller Group | Methods Called | Call Sites | Fixed By |
-|---|---|---|---|
-| **Discovery worker** | `set_tagged` ×2, `set_vectors_extracted`, `set_errored` ×2 | 5 | Phase 1 (`_transition_state`) |
-| **Tagging service** | `bulk_set_tags_stale`, `set_tags_not_written` ×3 | 4 | Phase 2 (bulk) + Phase 1 |
-| **Library service/files** | `bulk_set_not_errored`, `clear_tagged_batch` | 2 | Phase 2 (bulk) |
-| **Scan workflows** (full/quick) | `bulk_set_scanned` ×6, `bulk_set_not_errored` ×6 | 12 | Phase 2 (bulk) |
-| **Calibration state component** | `set_calibrated` ×2, `bulk_set_not_calibrated`, `bulk_set_not_vectors_extracted` | ~5 | Phase 1 + Phase 2 |
-| **Library components** | `set_too_short`, `set_tagged` ×2 | 3 | Phase 1 (`_transition_state`) |
-| **Validate library tags workflow** | `clear_tagged_batch` | 1 | Phase 2 (bulk) |
-| **Reconciliation persistence** | `set_tags_written`, `set_tags_current` | 2 | Phase 1 (`_transition_state`) |
-| **Library files CRUD** | `set_tagged` | 1 | Phase 1 (`_transition_state`) |
-| **Navidrome playcounts callers** | `increment_play` | TBD | Phase 2/2b |
-| **VRAM promise callers** | `try_register` | TBD | Phase 2/2b |
+ | Caller Group | Methods Called | Call Sites | Fixed By |
+ | --- | --- | --- | --- |
+ | **Discovery worker** | `set_tagged` ×2, `set_vectors_extracted`, `set_errored` ×2 | 5 | Phase 1 (`_transition_state`) |
+ | **Tagging service** | `bulk_set_tags_stale`, `set_tags_not_written` ×3 | 4 | Phase 2 (bulk) + Phase 1 |
+ | **Library service/files** | `bulk_set_not_errored`, `clear_tagged_batch` | 2 | Phase 2 (bulk) |
+ | **Scan workflows** (full/quick) | `bulk_set_scanned` ×6, `bulk_set_not_errored` ×6 | 12 | Phase 2 (bulk) |
+ | **Calibration state component** | `set_calibrated` ×2, `bulk_set_not_calibrated`, `bulk_set_not_vectors_extracted` | ~5 | Phase 1 + Phase 2 |
+ | **Library components** | `set_too_short`, `set_tagged` ×2 | 3 | Phase 1 (`_transition_state`) |
+ | **Validate library tags workflow** | `clear_tagged_batch` | 1 | Phase 2 (bulk) |
+ | **Reconciliation persistence** | `set_tags_written`, `set_tags_current` | 2 | Phase 1 (`_transition_state`) |
+ | **Library files CRUD** | `set_tagged` | 1 | Phase 1 (`_transition_state`) |
+ | **Navidrome playcounts callers** | `increment_play` | TBD | Phase 2/2b |
+ | **VRAM promise callers** | `try_register` | TBD | Phase 2/2b |
 
 **Key insight:** Phase 1 alone fixes the immediate ERR 1579 crash in the discovery worker AND all ~20 callers that route through `_transition_state`. Phase 2 is preventive — those bulk methods haven't triggered ERR 1579 yet but are statically hazardous.
 

@@ -12,13 +12,13 @@ Embedding computation, head predictions, and score decision logic — the core o
 
 ## Key Modules
 
-| Module | Purpose |
-|--------|----------|
-| `ml_backbone_embed_comp` | Multi-backbone embedding computation with thread-parallel execution when ≥2 backbones |
-| `ml_embed_comp` | Waveform segmentation, segment-level scoring, and score pooling (mean/median/trimmed_mean) |
-| `ml_head_pipeline_comp` | Head prediction pipeline with reusable thread pool, versioned tag key building |
-| `ml_heads_comp` | Core decision logic: multilabel cascade, binary multiclass, regression; tier assignment with stability gating |
-| `ml_segment_stats_comp` | Per-label mean/std/min/max statistics across audio segments |
+ | Module | Purpose |
+ | -------- | ---------- |
+ | `ml_backbone_embed_comp` | Multi-backbone embedding computation with thread-parallel execution when ≥2 backbones |
+ | `ml_embed_comp` | Waveform segmentation, segment-level scoring, and score pooling (mean/median/trimmed_mean) |
+ | `ml_head_pipeline_comp` | Head prediction pipeline with reusable thread pool, versioned tag key building |
+ | `ml_heads_comp` | Core decision logic: multilabel cascade, binary multiclass, regression; tier assignment with stability gating |
+ | `ml_segment_stats_comp` | Per-label mean/std/min/max statistics across audio segments |
 
 ## Patterns
 
