@@ -6,6 +6,7 @@ updates:
   # Backend - Python dependencies via pip
   - package-ecosystem: "pip"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -16,8 +17,6 @@ updates:
       - "backend"
     commit-message:
       prefix: "deps(backend)"
-    reviewers:
-      - "xiaden"
     # Group minor/patch updates for common packages
     groups:
       fastapi-ecosystem:
@@ -45,6 +44,7 @@ updates:
   # Frontend - npm dependencies
   - package-ecosystem: "npm"
     directory: "/frontend"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -55,8 +55,7 @@ updates:
       - "frontend"
     commit-message:
       prefix: "deps(frontend)"
-    reviewers:
-      - "xiaden"
+
     groups:
       react-ecosystem:
         patterns:
@@ -79,6 +78,7 @@ updates:
   # GitHub Actions - workflow dependencies
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -88,12 +88,11 @@ updates:
       - "ci"
     commit-message:
       prefix: "ci"
-    reviewers:
-      - "xiaden"
 
   # Docker - Dockerfile base images
   - package-ecosystem: "docker"
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -103,8 +102,6 @@ updates:
       - "docker"
     commit-message:
       prefix: "docker"
-    reviewers:
-      - "xiaden"
 
   # code-intel - Independent MCP server (will be split to separate repo)
   - package-ecosystem: "pip"
@@ -113,12 +110,12 @@ updates:
       interval: "weekly"
       day: "monday"
       time: "03:00"
+    target-branch: "develop"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "code-intel"
     commit-message:
       prefix: "deps(code-intel)"
-    reviewers:
-      - "xiaden"
+
     versioning-strategy: increase
