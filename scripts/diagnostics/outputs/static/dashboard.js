@@ -210,10 +210,70 @@ function buildRadarSelector(data, allAgentNames) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Compute top tools per agent per category from session invocation data
+// ---------------------------------------------------------------------------
+
+let _topToolsCache = null;
+
+const TOOL_CATEGORY_MAP = {
+    management: ['runSubagent', 'manage_todo_list', 'vscode_askQuestions', 'mcp_gitkraken_git_add_or_commit', 'mcp_gitkraken_git_push', 'mcp_gitkraken_git_status', 'mcp_gitkraken_git_blame'],
+    editing: ['replace_string_in_file', 'multi_replace_string_in_file', 'create_file', 'mcp_nomarr_dev_edit_file_create', 'mcp_nomarr_dev_edit_file_replace_content', 'mcp_nomarr_dev_edit_file_replace_string', 'mcp_nomarr_dev_edit_file_insert_at_boundary', 'mcp_nomarr_dev_edit_file_move', 'mcp_nomarr_dev_edit_file_replace_by_content', 'mcp_nomarr_dev_edit_file_move_by_content', 'mcp_nomarr_dev_edit_file_copy_paste_text', 'mcp_oraios_serena_replace_symbol_body', 'mcp_oraios_serena_insert_after_symbol', 'mcp_oraios_serena_insert_before_symbol', 'mcp_oraios_serena_rename_symbol', 'vscode_renameSymbol'],
+    exploration: ['semantic_search', 'file_search', 'read_file', 'view_image', 'vscode_listCodeUsages', 'mcp_nomarr_dev_read_file_line', 'mcp_nomarr_dev_read_file_line_range', 'mcp_nomarr_dev_read_file_symbol_at_line', 'mcp_nomarr_dev_read_module_api', 'mcp_nomarr_dev_read_module_source', 'mcp_nomarr_dev_locate_module_symbol', 'mcp_nomarr_dev_trace_module_calls', 'mcp_nomarr_dev_trace_project_endpoint', 'mcp_nomarr_dev_list_project_directory_tree', 'mcp_nomarr_dev_search_file_text', 'mcp_nomarr_dev_py_introspect', 'mcp_oraios_serena_get_symbols_overview', 'mcp_oraios_serena_find_symbol', 'mcp_oraios_serena_find_referencing_symbols', 'run_in_terminal', 'get_terminal_output'],
+    qa: ['mcp_nomarr_dev_lint_project_backend', 'mcp_nomarr_dev_lint_project_frontend'],
+    logging: ['mcp_nomarr_dev_log_write', 'mcp_nomarr_dev_log_read', 'mcp_nomarr_dev_adr_suggest', 'mcp_nomarr_dev_adr_commit', 'mcp_nomarr_dev_asr_create', 'mcp_nomarr_dev_dd_create', 'mcp_nomarr_dev_dd_archive'],
+    research: ['mcp_nomarr_dev_adr_read', 'mcp_nomarr_dev_adr_search', 'mcp_nomarr_dev_asr_read', 'mcp_nomarr_dev_asr_search', 'mcp_nomarr_dev_dd_read', 'mcp_nomarr_dev_plan_read', 'mcp_nomarr_dev_plan_complete_step', 'mcp_context7_resolve_library_id', 'mcp_context7_get_library_docs', 'fetch_webpage', 'tool_search'],
+};
+
+function toolToCategory(toolName) {
+    for (const [cat, tools] of Object.entries(TOOL_CATEGORY_MAP)) {
+        if (tools.includes(toolName)) return cat;
+    }
+    return 'other';
+}
+
+function computeTopToolsByAgent(data) {
+    if (_topToolsCache) return _topToolsCache;
+    // agent -> category -> { toolName: count }
+    const agentCatTools = {};
+
+    function walkInvocation(inv) {
+        const agent = inv.agent_name;
+        if (!agentCatTools[agent]) agentCatTools[agent] = {};
+        for (const tc of (inv.tool_calls || [])) {
+            const cat = toolToCategory(tc.name);
+            if (!agentCatTools[agent][cat]) agentCatTools[agent][cat] = {};
+            agentCatTools[agent][cat][tc.name] = (agentCatTools[agent][cat][tc.name] || 0) + 1;
+        }
+        for (const child of (inv.children || [])) walkInvocation(child);
+    }
+
+    for (const session of (data.sessions || [])) {
+        if (session.root) walkInvocation(session.root);
+    }
+
+    // Convert to sorted top-3 arrays
+    const result = {};
+    for (const [agent, cats] of Object.entries(agentCatTools)) {
+        result[agent] = {};
+        for (const [cat, tools] of Object.entries(cats)) {
+            result[agent][cat] = Object.entries(tools)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 3)
+                .map(([name, count]) => ({ name: shortenToolName(name), count }));
+        }
+    }
+    _topToolsCache = result;
+    return result;
+}
+
+const RADAR_CAT_KEYS = ['management', 'editing', 'exploration', 'qa', 'logging', 'research'];
+
 function renderRadarChart(data, selectedNames) {
     if (radarChart) { radarChart.destroy(); charts = charts.filter(c => c !== radarChart); }
     const categories = ['total_management_calls', 'total_editing_calls', 'total_exploration_calls', 'total_qa_calls', 'total_logging_calls', 'total_research_calls'];
     const categoryLabels = ['Mgmt', 'Edit', 'Explore', 'QA', 'Log', 'Research'];
+    const topTools = computeTopToolsByAgent(data);
     // Each agent: compute real %, normalize to own max, then sqrt scale
     const datasets = selectedNames.map(name => {
         const agg = data.agent_aggregates[name] || {};
@@ -227,6 +287,7 @@ function renderRadarChart(data, selectedNames) {
             label: name,
             data: display,
             _realPcts: pcts, // stash for tooltip
+            _topTools: topTools[name] || {}, // per-category top tools
             borderColor: roleColor(name),
             backgroundColor: roleColor(name) + '22',
             pointRadius: 3,
@@ -244,7 +305,13 @@ function renderRadarChart(data, selectedNames) {
                     callbacks: {
                         label: (ctx) => {
                             const real = ctx.dataset._realPcts[ctx.dataIndex];
-                            return `${ctx.dataset.label}: ${real.toFixed(1)}%`;
+                            const catKey = RADAR_CAT_KEYS[ctx.dataIndex];
+                            const tools = ctx.dataset._topTools[catKey] || [];
+                            const lines = [`${ctx.dataset.label}: ${real.toFixed(1)}%`];
+                            for (const t of tools) {
+                                lines.push(`  ${t.name}: ${t.count}`);
+                            }
+                            return lines;
                         }
                     }
                 }
