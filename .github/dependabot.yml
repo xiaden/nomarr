@@ -10,7 +10,7 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-      time: "03:00"
+      time: "05:00"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -48,7 +48,7 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-      time: "03:00"
+      time: "05:00"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -82,7 +82,7 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-      time: "03:00"
+      time: "05:00"
     labels:
       - "dependencies"
       - "ci"
@@ -96,7 +96,7 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-      time: "03:00"
+      time: "05:00"
     labels:
       - "dependencies"
       - "docker"
@@ -109,7 +109,7 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-      time: "03:00"
+      time: "05:00"
     target-branch: "develop"
     open-pull-requests-limit: 5
     labels:
