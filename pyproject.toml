@@ -255,11 +255,6 @@ name = "Helpers must be pure (no upward dependencies)"
 type = "forbidden"
 source_modules = ["nomarr.helpers"]
 forbidden_modules = ["nomarr.services", "nomarr.workflows", "nomarr.interfaces", "nomarr.components", "nomarr.persistence"]
-# ml_dto.py imports HeadInfo from components under TYPE_CHECKING only.
-# import-linter cannot distinguish TYPE_CHECKING from runtime imports.
-ignore_imports = [
-    "nomarr.helpers.dto.ml_dto -> nomarr.components.ml.onnx.ml_discovery_comp",
-]
 
 [[tool.importlinter.contracts]]
 name = "Only components and services may import persistence"

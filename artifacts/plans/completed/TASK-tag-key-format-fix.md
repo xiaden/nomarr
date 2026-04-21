@@ -10,14 +10,14 @@ Reference: `docs/dev/tag-key-format-and-cleanup.md` (scope reduced — no migrat
 
 ### Phase 1: Simplify tag key format
 
-- [x] In `nomarr/components/ml/onnx/ml_discovery_comp.py`, rewrite `HeadInfo.build_versioned_tag_key` to produce `model_key = f"{label}_{self.backbone}_{self.model_stem}"` — remove all date/version logic from the method body, keep the `calibration_id` return unchanged
+- [x] Rewrite `HeadInfo.build_versioned_tag_key` (now in `nomarr/helpers/dto/ml_head_dto.py`; formerly in `nomarr/components/ml/onnx/ml_discovery_comp.py`) to produce `model_key = f"{label}_{self.backbone}_{self.model_stem}"` — remove all date/version logic from the method body, keep the `calibration_id` return unchanged
     **NOTE:** Rewrote HeadInfo.build_versioned_tag_key to produce model_key = f"{label}_{self.backbone}_{self.model_stem}", removed all date/version logic, kept calibration_id return unchanged.
-- [x] In `nomarr/components/ml/onnx/ml_head.py`, rewrite `ONNXHeadModel.build_versioned_tag_key` to produce `model_key = f"{label}_{self.backbone_name}_{self.model_name}"` — same treatment, keep `calibration_id` return unchanged
-    **NOTE:** Rewrote ONNXHeadModel.build_versioned_tag_key to produce model_key = f"{label}_{self.backbone_name}_{self.model_name}", removed all date/version logic, kept calibration_id return unchanged.
+- [x] Update ONNX head key usage sites to consume `HeadInfo.build_versioned_tag_key(...)` (the legacy `ONNXHeadModel.build_versioned_tag_key` shim was removed during ADR-028 composition cleanup)
+    **NOTE:** Call sites now use `head.meta.build_versioned_tag_key(...)`; no ONNXHeadModel tag-key shim remains.
 - [x] Remove the `MODEL_SUITE_VERSION` import from `ml_discovery_comp.py` and `ml_head.py`
     **NOTE:** Removed MODEL_SUITE_VERSION import from both ml_discovery_comp.py and ml_head.py.
-- [x] Update docstrings on both methods to document the new format and give a correct example
-    **NOTE:** Updated docstrings on both methods to document new {label}_{backbone}_{model} format with example "happy_yamnet_mood_happy".
+- [x] Update tag-key docstrings to document the new format and give a correct example
+    **NOTE:** Updated relevant tag-key docstrings to document new {label}_{backbone}_{model} format with example "happy_yamnet_mood_happy".
 - [x] Verify `python -m py_compile nomarr/components/ml/onnx/ml_discovery_comp.py` and `python -m py_compile nomarr/components/ml/onnx/ml_head.py` pass
     **NOTE:** Both files parse cleanly via AST (read_module_api succeeded). No MODEL_SUITE_VERSION references remain.
 
@@ -27,8 +27,8 @@ Reference: `docs/dev/tag-key-format-and-cleanup.md` (scope reduced — no migrat
     **NOTE:** Deleted MODEL_SUITE_VERSION constant and docstring from ml_constants.py. File now contains only `from __future__ import annotations`.
 - [x] Use `find_referencing_symbols` on `MODEL_SUITE_VERSION` in `ml_constants.py` to confirm no remaining importers exist after Phase 1 changes
     **NOTE:** Confirmed zero remaining importers of MODEL_SUITE_VERSION via locate_module_symbol and grep_search.
-- [x] Remove `embedder_release_date` and `head_release_date` parameters and instance attributes from `HeadInfo.__init__` in `ml_discovery_comp.py`
-    **NOTE:** Removed head_release_date and embedder_release_date params and attrs from HeadInfo.**init** in ml_discovery_comp.py.
+- [x] Remove `embedder_release_date` and `head_release_date` parameters and instance attributes from `HeadInfo.__init__` (now in `helpers/dto/ml_head_dto.py`; previously in `ml_discovery_comp.py`)
+    **NOTE:** Removed head_release_date and embedder_release_date params and attrs from HeadInfo.__init__ (current location: helpers/dto/ml_head_dto.py).
 - [x] Remove `head_release_date` and `embedder_release_date` parameters and the `_head_release_date` / `_embedder_release_date` instance attributes from `ONNXHeadModel.__init__` in `ml_head.py`
     **NOTE:** Removed head_release_date and embedder_release_date params and _head_release_date/_embedder_release_date attrs from ONNXHeadModel.**init** in ml_head.py.
 - [x] Use `find_referencing_symbols` on `HeadInfo` to find all construction sites — remove any `head_release_date=` and `embedder_release_date=` keyword arguments passed to the constructor (callers in discovery/persistence that read dates from DB or JSON sidecar)
@@ -51,7 +51,7 @@ Reference: `docs/dev/tag-key-format-and-cleanup.md` (scope reduced — no migrat
 
 ## Completion Criteria
 
-- `HeadInfo.build_versioned_tag_key` and `ONNXHeadModel.build_versioned_tag_key` produce keys in `{label}_{backbone}_{model}` format
+- `HeadInfo.build_versioned_tag_key` produces keys in `{label}_{backbone}_{model}` format, and ONNX call sites consume it via `head.meta.build_versioned_tag_key(...)`
 - `MODEL_SUITE_VERSION` constant no longer exists or is imported anywhere
 - `HeadInfo` and `ONNXHeadModel` no longer carry release-date fields
 - All `.toFixed(2)` calls in `LibraryBrowser.tsx` are `.toFixed(4)`

@@ -37,7 +37,6 @@ from nomarr.helpers.time_helper import internal_ms
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
-    from nomarr.helpers.dto.path_dto import LibraryPath
     from nomarr.persistence.db import Database
 
 
@@ -45,7 +44,7 @@ def process_file_workflow(
     path: str,
     config: ProcessorConfig,
     cache: ONNXModelCache,
-    db: Database | None = None,
+    db: Database,
     file_id: str | None = None,
 ) -> ProcessFileResult:
     """Run the full ML tagging pipeline for one audio file.
@@ -56,9 +55,9 @@ def process_file_workflow(
     Args:
         path: Path to the audio file.
         config: Processing configuration (models_dir, namespace, tagger_version, etc.).
-        db: Optional database instance. If provided, results are persisted.
+        db: Database instance. Required for path resolution and metadata writes.
         file_id: library_files document _id. Avoids path-based lookup when provided.
-        cache: Pre-warmed ONNXModelCache. Created on demand if not provided.
+        cache: ONNXModelCache instance. Required; auto-warmed if not already warm.
 
     Returns:
         ProcessFileResult with elapsed time, head outcomes, mood aggregations, and tags.
@@ -68,23 +67,16 @@ def process_file_workflow(
         RuntimeError: If no heads are found or all heads fail.
 
     """
-    library_path: LibraryPath | None = None
-    if db is not None:
-        library_path = build_library_path_from_db(stored_path=path, db=db, library_id=None, check_disk=True)
-        if not library_path.is_valid():
-            error_message = f"Path validation failed ({library_path.status}): {library_path.reason}"
-            logger.error(f"[process_file_workflow] {error_message} - {path}")
-            raise ValueError(error_message)
-        path = str(library_path.absolute)
-        logger.debug(f"[process_file_workflow] Path validated for library_id={library_path.library_id}: {path}")
-    else:
-        error_message = "Database not available!"
-        logger.error(f"[process_file_workflow] {error_message}")
+    library_path = build_library_path_from_db(stored_path=path, db=db, library_id=None, check_disk=True)
+    if not library_path.is_valid():
+        error_message = f"Path validation failed ({library_path.status}): {library_path.reason}"
+        logger.error(f"[process_file_workflow] {error_message} - {path}")
         raise ValueError(error_message)
+    path = str(library_path.absolute)
+    logger.debug(f"[process_file_workflow] Path validated for library_id={library_path.library_id}: {path}")
     start_all = internal_ms()
     timings: dict[str, float] = {}  # operation_name -> duration_ms
-    # Use the caller-provided ONNXModelCache; fall back to on-demand discovery
-    # only during the transition period (no caller passes a cache yet).
+    # Ensure cache is warm before processing.
     if not cache.warm:
         cache.warm = True  # Blocking: loads all ONNX sessions via setter
     heads_by_backbone = cache.heads
@@ -93,10 +85,7 @@ def process_file_workflow(
         raise RuntimeError(msg)
     timings["model_discovery"] = internal_ms().value - start_all.value
 
-    class TagAccumulator(dict):
-        pass
-
-    tags_accum = TagAccumulator()
+    tags_accum: dict[str, Any] = {}
     all_head_results: dict[str, Any] = {}
     all_head_outputs: list[Any] = []
     regression_heads: list[tuple[Any, list[float]]] = []
@@ -104,8 +93,6 @@ def process_file_workflow(
     all_raw_segments: dict[str, tuple[np.ndarray, list[str]]] = {}
     # Compute model suite hash once for vector persistence (not per backbone)
     model_suite_hash = compute_model_suite_hash(config.models_dir)
-    if library_path is None:
-        raise ValueError("Cannot process file without database connection (library_path is None)")
 
     # Load audio ONCE before the backbone loop (both backbones use same sample rate)
     # This eliminates redundant fork-isolated loads + chromaprint computations
@@ -118,9 +105,8 @@ def process_file_workflow(
         raise
     except AudioLoadCrashError as e:
         logger.error(f"[processor] Audio load crashed for {path}: {e}")
-        if db:
-            bulk_delete_files(db, [path])
-            logger.info(f"[processor] Deleted invalid file: {path}")
+        bulk_delete_files(db, [path])
+        logger.info(f"[processor] Deleted invalid file: {path}")
         elapsed = round((internal_ms().value - start_all.value) / 1000, 2)
         return ProcessFileResult(
             file_path=path,
@@ -156,7 +142,7 @@ def process_file_workflow(
     # Mark skipped heads from failed backbones
     for bb, error_message in embed_result.errors.items():
         for head in heads_by_backbone[bb]:
-            all_head_results[head.name] = {"status": "skipped", "reason": error_message}
+            all_head_results[head.meta.name] = {"status": "skipped", "reason": error_message}
 
     # Process head predictions sequentially (cheap, mutates shared state)
     for item in embed_result.embeddings:
@@ -173,7 +159,7 @@ def process_file_workflow(
         all_head_outputs.extend(result.all_head_outputs)
         all_raw_segments.update(result.raw_segments_per_head)
         # Persist pooled track-level embedding vector for this backbone
-        if db is not None and file_id is not None:
+        if file_id is not None:
             assert library_path.library_id is not None  # validated above
             library_key = library_path.library_id.split("/")[-1]
             elapsed_store = persist_backbone_vector(
@@ -211,10 +197,10 @@ def process_file_workflow(
     # Build tag→output edge mapping for deferred tag_model_output writes.
     # Queries the graph once to map model ONNX path+label → output vertex _id.
     output_edges: dict[str, tuple[str, float]] = {}
-    if db is not None and all_head_outputs:
+    if all_head_outputs:
         output_id_map = build_model_output_id_map(db)
         for ho in all_head_outputs:
-            path_map = output_id_map.get(ho.head._path)
+            path_map = output_id_map.get(ho.head.model_path)
             if path_map is not None:
                 output_id = path_map.get(ho.label)
                 if output_id is not None:
@@ -224,7 +210,7 @@ def process_file_workflow(
     tags_accum[config.version_tag_key] = config.tagger_version
     db_tags = dict(tags_accum)
     deferred: DeferredFileWrites | None = None
-    if db is not None and file_id is not None:
+    if file_id is not None:
         deferred = DeferredFileWrites(
             file_id=file_id,
             path=path,
@@ -239,9 +225,7 @@ def process_file_workflow(
     elapsed = round(elapsed_ms / 1000, 2)
 
     # Build timing summary string (attached to result, logged by worker)
-    timing_summary: str | None = None
-    if db is not None:
-        timing_summary = build_timing_summary(timings, elapsed_ms, heads_by_backbone)
+    timing_summary = build_timing_summary(timings, elapsed_ms, heads_by_backbone)
     mood_info = {}
     for key in ["mood-strict", "mood-regular", "mood-loose"]:
         if key in tags_accum:

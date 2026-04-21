@@ -5,7 +5,7 @@ Structure: ``models/<backbone>/embeddings/*.onnx`` and
 ``models/<backbone>/heads/<type>/*.onnx``.
 
 When a :class:`~nomarr.persistence.db.Database` is available,
-:func:`discover_heads` resolves labels and release dates from
+:func:`discover_heads` resolves labels from
 ``ml_models`` / ``ml_model_outputs`` vertices.  JSON sidecar files are
 **not** read at runtime — they are irrelevant for ONNX-only deployments.
 """
@@ -17,7 +17,7 @@ import hashlib
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nomarr.components.ml.onnx.ml_backbone import ONNXBackboneModel
 from nomarr.components.ml.onnx.ml_head import ONNXHeadModel
@@ -25,88 +25,12 @@ from nomarr.components.ml.onnx.ml_model_registry_comp import (
     list_fully_labeled_model_outputs,
     list_registered_models,
 )
+from nomarr.helpers.dto.ml_head_dto import HeadInfo
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
-
-
-class HeadInfo:
-    """Container for a head model with its associated embedding model info.
-
-    All metadata is sourced from the ``ml_models`` / ``ml_model_outputs``
-    DB vertices (or from JSON sidecars as a fallback when no DB handle is
-    available).  Structured metadata eliminates fragile substring matching
-    in tag keys.
-    """
-
-    def __init__(
-        self,
-        *,
-        name: str,
-        labels: list[str],
-        backbone: str,
-        head_type: str,
-        model_stem: str,
-        model_path: str,
-        embedding_graph: str,
-        is_regression_head: bool = False,
-    ) -> None:
-        self.name = name
-        self._labels = list(labels)
-        self.backbone = backbone
-        self.head_type = head_type
-        self.model_stem = model_stem
-        self.model_path = model_path
-        self.embedding_graph = embedding_graph
-        self.is_regression_head = is_regression_head
-
-    @property
-    def kind(self) -> str:
-        """Return head kind: 'regression', 'multilabel', 'multiclass', or 'embedding'."""
-        head_type_lower = self.head_type.lower()
-        if "regression" in head_type_lower:
-            return "regression"
-        if "multilabel" in head_type_lower:
-            return "multilabel"
-        if "multiclass" in head_type_lower or "classification" in head_type_lower:
-            return "multiclass"
-        return "multiclass"
-
-    @property
-    def labels(self) -> list[str]:
-        """Return output labels."""
-        return self._labels
-
-    def build_versioned_tag_key(
-        self,
-        label: str,
-        calib_method: str = "none",
-        calib_version: int = 0,
-    ) -> tuple[str, str]:
-        """Build a tag key from model metadata.
-
-        Format:
-        - model_key: ``{label}_{backbone}_{model_stem}``
-        - calibration_id: ``{calib_method}_{calib_version}``
-
-        Example:
-        - model_key: ``"happy_yamnet_mood_happy"``
-        - calibration_id: ``"platt_1"``
-
-        Args:
-            label: Friendly label (e.g., ``"happy"``, ``"approachable"``)
-            calib_method: Calibration method (``"platt"``, ``"isotonic"``, ``"none"``)
-            calib_version: Calibration version number
-
-        Returns:
-            Tuple of ``(model_tag_key, calibration_id)``
-
-        """
-        model_key = f"{label}_{self.backbone}_{self.model_stem}"
-        calibration_id = f"{calib_method}_{calib_version}"
-        return (model_key, calibration_id)
 
 
 def get_embedding_output_node(backbone: str) -> str:
@@ -297,7 +221,7 @@ def discover_heads(
     """Discover all classification/regression heads from the database.
 
     Queries ``ml_models`` (filtered to ``fully_configured=True``) and
-    ``ml_model_outputs`` for labels and release dates, producing a list of
+    ``ml_model_outputs`` for labels, producing a list of
     :class:`HeadInfo` objects ready for inference.
 
     Use :func:`discover_heads_no_db` for capacity-probe / hashing paths
@@ -398,7 +322,7 @@ def compute_model_suite_hash(
         return "unknown"
 
 
-def discover_backbone_models(models_dir: str) -> list[Any]:
+def discover_backbone_models(models_dir: str) -> list[ONNXBackboneModel]:
     """Discover backbone ONNX models and return ready-to-use ONNXBackboneModel instances.
 
     Walks ``models/<backbone>/embeddings/*.onnx`` (``embedding/`` variant for
@@ -434,12 +358,11 @@ def discover_backbone_models(models_dir: str) -> list[Any]:
     return models
 
 
-def discover_head_models_no_db(models_dir: str) -> list[Any]:
+def discover_head_models_no_db(models_dir: str) -> list[ONNXHeadModel]:
     """Discover head ONNX models with empty labels — no database required.
 
     Walks ``models/<backbone>/heads/<type>/*.onnx`` and constructs one
-    :class:`ONNXHeadModel` per ``.onnx`` file found, with no labels or
-    release dates populated.
+    :class:`ONNXHeadModel` per ``.onnx`` file found, with empty labels.
 
     **For VRAM probing and capacity checks only.**  Inference-path code
     must use :func:`discover_head_models` with a real database handle.
@@ -449,7 +372,7 @@ def discover_head_models_no_db(models_dir: str) -> list[Any]:
 
     Returns:
         List of :class:`ONNXHeadModel` instances sorted by
-        ``(backbone_name, head_type, model_name)``.
+        ``(meta.backbone, meta.head_type, meta.model_stem)``.
     """
     models: list[ONNXHeadModel] = []
 
@@ -465,23 +388,36 @@ def discover_head_models_no_db(models_dir: str) -> list[Any]:
             if not os.path.isdir(head_type_dir):
                 continue
 
-            models.extend(
-                ONNXHeadModel(onnx_path) for onnx_path in sorted(glob.glob(os.path.join(head_type_dir, "*.onnx")))
-            )
+            backbone = os.path.basename(backbone_dir)
+            head_type = os.path.basename(head_type_dir)
 
-    models.sort(key=lambda m: (m.backbone_name, m.head_type, m.model_name))
+            for onnx_path in sorted(glob.glob(os.path.join(head_type_dir, "*.onnx"))):
+                model_stem = Path(onnx_path).stem
+                meta = HeadInfo(
+                    name=model_stem,
+                    labels=[],
+                    backbone=backbone,
+                    head_type=head_type,
+                    model_stem=model_stem,
+                    model_path=onnx_path,
+                    embedding_graph="",
+                    is_regression_head=model_stem in _REGRESSION_HEADS,
+                )
+                models.append(ONNXHeadModel(onnx_path, meta=meta))
+
+    models.sort(key=lambda m: (m.meta.backbone, m.meta.head_type, m.meta.model_stem))
     return models
 
 
 def discover_head_models(
     models_dir: str,
     db: Database,
-) -> list[Any]:
+) -> list[ONNXHeadModel]:
     """Discover head ONNX models with labels sourced from the database.
 
     Walks ``models/<backbone>/heads/<type>/*.onnx`` and constructs one
-    :class:`ONNXHeadModel` per ``.onnx`` file found.  Labels and release
-    dates are injected from the database via :func:`discover_heads`.
+    :class:`ONNXHeadModel` per ``.onnx`` file found. Labels are injected
+    from the database via :func:`discover_heads`.
 
     Use :func:`discover_head_models_no_db` for VRAM probing and capacity
     checks that do not require label data.
@@ -492,14 +428,15 @@ def discover_head_models(
 
     Returns:
         List of :class:`ONNXHeadModel` instances sorted by
-        ``(backbone_name, head_type, model_name)``.
+        ``(meta.backbone, meta.head_type, meta.model_stem)``.
     """
     # Build metadata lookup from HeadInfo (DB-backed).
-    head_info_map: dict[str, HeadInfo] = {}
+    head_info_map: dict[tuple[str, str, str], HeadInfo] = {}
     try:
         heads = discover_heads(models_dir, db)
         for hi in heads:
-            head_info_map[hi.model_stem] = hi
+            key = (hi.backbone, hi.head_type, hi.model_stem)
+            head_info_map[key] = hi
     except Exception:
         logger.warning("Failed to load HeadInfo from DB; labels will be empty")
 
@@ -516,18 +453,28 @@ def discover_head_models(
         for head_type_dir in sorted(glob.glob(os.path.join(heads_dir, "*"))):
             if not os.path.isdir(head_type_dir):
                 continue
+            backbone = os.path.basename(backbone_dir)
+            head_type = os.path.basename(head_type_dir)
 
             for onnx_path in sorted(glob.glob(os.path.join(head_type_dir, "*.onnx"))):
                 stem = Path(onnx_path).stem
-                info = head_info_map.get(stem)
-                if info is not None:
-                    model = ONNXHeadModel(
-                        onnx_path,
-                        labels=list(info.labels),
+                info = head_info_map.get((backbone, head_type, stem))
+                if info is None:
+                    info = HeadInfo(
+                        name=stem,
+                        labels=[],
+                        backbone=backbone,
+                        head_type=head_type,
+                        model_stem=stem,
+                        model_path=onnx_path,
+                        embedding_graph="",
+                        is_regression_head=stem in _REGRESSION_HEADS,
                     )
-                else:
-                    model = ONNXHeadModel(onnx_path)
+                model = ONNXHeadModel(
+                    onnx_path,
+                    meta=info,
+                )
                 models.append(model)
 
-    models.sort(key=lambda m: (m.backbone_name, m.head_type, m.model_name))
+    models.sort(key=lambda m: (m.meta.backbone, m.meta.head_type, m.meta.model_stem))
     return models

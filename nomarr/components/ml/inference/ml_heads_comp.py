@@ -16,8 +16,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from nomarr.components.ml.onnx.ml_discovery_comp import HeadInfo
-    from nomarr.components.ml.onnx.ml_head import ONNXHeadModel
+    from nomarr.helpers.dto.ml_head_dto import HeadInfo
 
 
 def _as_float_list(element: Any) -> list[float]:
@@ -60,6 +59,8 @@ class Cascade:
 
 @dataclass
 class HeadSpec:
+    """Specification for a single head model used by decision and pipeline functions."""
+
     name: str
     kind: str
     labels: list[str] = field(default_factory=list)
@@ -327,7 +328,7 @@ class HeadDecision:
 
     def to_head_outputs(
         self,
-        head_info: ONNXHeadModel,
+        head_info: HeadInfo,
         prefix: str = "",
         key_builder: Callable[[str], str] | None = None,
     ) -> list[HeadOutput]:
@@ -339,7 +340,7 @@ class HeadDecision:
         For regression heads, this should not be called (regression uses add_regression_mood_tiers).
 
         Args:
-            head_info: HeadInfo object from discovery
+            head_info: HeadInfo providing label and tag key metadata
             prefix: Legacy simple prefix (fallback)
             key_builder: Optional function(label) -> versioned_key
 
@@ -353,7 +354,7 @@ class HeadDecision:
         for label, value in self.details.items():
             if key_builder:
                 tag_key = key_builder(label)
-                calibration_id = getattr(head_info, "calibration_id", None)
+                _, calibration_id = head_info.build_versioned_tag_key(label)
             else:
                 tag_key = f"{prefix}{label}"
                 calibration_id = None
@@ -378,7 +379,7 @@ class HeadDecision:
                 continue
             if key_builder:
                 tag_key = key_builder(label)
-                calibration_id = getattr(head_info, "calibration_id", None)
+                _, calibration_id = head_info.build_versioned_tag_key(label)
             else:
                 tag_key = f"{prefix}{label}"
                 calibration_id = None
@@ -396,10 +397,12 @@ class HeadDecision:
 
 
 def head_is_regression(spec: HeadSpec) -> bool:
+    """Return True if the head spec represents a regression head."""
     return "regression" in spec.kind.lower()
 
 
 def head_is_multiclass(spec: HeadSpec) -> bool:
+    """Return True if the head spec represents a multiclass head."""
     return "multiclass" in spec.kind.lower() or "multi-class" in spec.kind.lower()
 
 

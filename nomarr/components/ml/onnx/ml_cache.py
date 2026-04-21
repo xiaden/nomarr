@@ -89,18 +89,16 @@ class ONNXModelCache:
         self._models_dir = models_dir
         self._device: DevicePlacement = device
 
-        backbone_list: list[ONNXBackboneModel] = discover_backbone_models(models_dir)  # type: ignore[assignment]
+        backbone_list: list[ONNXBackboneModel] = discover_backbone_models(models_dir)
         head_list: list[ONNXHeadModel] = (
-            discover_head_models(models_dir, db)  # type: ignore[assignment]
-            if db is not None
-            else discover_head_models_no_db(models_dir)  # type: ignore[assignment]
+            discover_head_models(models_dir, db) if db is not None else discover_head_models_no_db(models_dir)
         )
 
         self.backbones = {m.backbone_name: m for m in backbone_list}
 
         self.heads = {}
         for head in head_list:
-            self.heads.setdefault(head.backbone_name, []).append(head)
+            self.heads.setdefault(head.meta.backbone, []).append(head)
 
         logger.debug(
             "[cache] Discovered %d backbone(s), %d head(s) in %s (device=%s)",

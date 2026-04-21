@@ -19,6 +19,7 @@ from nomarr.components.ml.onnx.ml_session_comp import _run_in_batches
 
 if TYPE_CHECKING:
     from nomarr.components.ml.onnx.ml_base import DevicePlacement
+    from nomarr.helpers.dto.ml_head_dto import HeadInfo
 
 logger = logging.getLogger(__name__)
 
@@ -65,31 +66,19 @@ class ONNXHeadModel(BaseONNXModel):
     and returns a float32 activation matrix of shape
     ``(n_patches, num_classes)``.
 
-    Node names, tensor dimensions, and regression flag are resolved at
+    Node names and tensor dimensions are resolved at
     :meth:`load` time; the attributes are ``None`` until the model is loaded.
 
     Example usage::
 
-        model = ONNXHeadModel("/models/effnet/heads/sigmoid/happy.onnx")
+        model = ONNXHeadModel("/models/effnet/heads/sigmoid/happy.onnx", meta=head_info)
         model.load("cpu")
         scores = model.run(embeddings)  # shape: (n_patches, num_classes)
         model.unload()
     """
 
-    backbone_name: str
-    """Backbone the head was trained against (e.g. ``"effnet"``)"""
-
-    head_type: str
-    """ONNX activation type directory name (e.g. ``"sigmoid"``, ``"identity"``)"""
-
-    model_name: str
-    """Stem of the ONNX filename (e.g. ``"happy"``)."""
-
-    labels: list[str]
-    """Class label strings; injected via constructor or empty."""
-
-    is_regression: bool
-    """True when *head_type* is ``"identity"`` (linear activation → regression)."""
+    meta: HeadInfo
+    """Head model metadata."""
 
     input_node: str | None
     """ONNX input tensor name; resolved by :meth:`load`, ``None`` before then."""
@@ -107,20 +96,16 @@ class ONNXHeadModel(BaseONNXModel):
         self,
         path: str,
         *,
-        labels: list[str] | None = None,
+        meta: HeadInfo,
     ) -> None:
         """Initialise the head model wrapper.
 
         Args:
             path: Absolute path to the head ``.onnx`` file.
-            labels: Class label strings.  When ``None`` (default) labels
-                are left empty — the caller is responsible for injecting
-                labels read from the database.
+            meta: Head metadata describing labels, backbone, and model identity.
         """
         super().__init__(path)
-        self.backbone_name, self.head_type, self.model_name = head_parts_from_path(path)
-        self.labels = list(labels) if labels is not None else []
-        self.is_regression = self.head_type == "identity"
+        self.meta = meta
         self.input_node = None
         self.output_node = None
         self.input_dim = None
@@ -133,10 +118,10 @@ class ONNXHeadModel(BaseONNXModel):
         ``input_dim``, and ``num_classes`` are all populated from the session.
 
         Args:
-            request: Load parameters forwarded to :meth:`BaseONNXModel.load`.
+            device: Device placement for the ONNX session (e.g. ``"cpu"`` or ``"gpu"``).
 
         Raises:
-            VramFitError: If ``request.device == "gpu"`` and the VRAM
+            VramFitError: If ``device == "gpu"`` and the VRAM
                 coordinator rejects the GPU placement request.
         """
         super().load(device)
@@ -151,9 +136,9 @@ class ONNXHeadModel(BaseONNXModel):
         self.num_classes = int(output_shape[1]) if len(output_shape) >= 2 else None
         logger.debug(
             "[head] Loaded %s/%s/%s: input=%s(%s) output=%s(%s) device=%s",
-            self.backbone_name,
-            self.head_type,
-            self.model_name,
+            self.meta.backbone,
+            self.meta.head_type,
+            self.meta.model_stem,
             self.input_node,
             self.input_dim,
             self.output_node,
@@ -197,34 +182,3 @@ class ONNXHeadModel(BaseONNXModel):
             return np.asarray(result[0], dtype=np.float32)
 
         return _run_in_batches(_session_fn, embeddings, _HEAD_BATCH_SIZE)
-
-    @property
-    def name(self) -> str:
-        """Display name derived from the ONNX filename stem."""
-        return self.model_name
-
-    def build_versioned_tag_key(
-        self,
-        label: str,
-        calib_method: str = "none",
-        calib_version: int = 0,
-    ) -> tuple[str, str]:
-        """Build a tag key mirroring :meth:`HeadInfo.build_versioned_tag_key`.
-
-        Format::
-
-            {label}_{backbone}_{model}
-
-        Example: ``"happy_yamnet_mood_happy"``
-
-        Args:
-            label: Normalised tag label (e.g. ``"happy"``).
-            calib_method: Calibration method string (default ``"none"``).
-            calib_version: Calibration version integer (default ``0``).
-
-        Returns:
-            ``(model_key, calibration_id)`` tuple matching the HeadInfo convention.
-        """
-        model_key = f"{label}_{self.backbone_name}_{self.model_name}"
-        calibration_id = f"{calib_method}_{calib_version}"
-        return (model_key, calibration_id)

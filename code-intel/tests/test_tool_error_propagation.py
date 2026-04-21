@@ -13,13 +13,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from mcp_code_intel.tools.asr_search import asr_search
 from mcp_code_intel.tools.locate_module_symbol import locate_module_symbol
 from mcp_code_intel.tools.read_module_api import read_module_api
 from mcp_code_intel.tools.read_module_source import read_module_source
-
 
 # ---------------------------------------------------------------------------
 # _extract_tool_error helper
@@ -30,7 +27,13 @@ def _extract_tool_error(result: dict[str, Any]) -> str | None:
     """Mirror of the server helper for testing."""
     if "error" not in result:
         return None
-    return result.get("message") or result["error"]
+
+    message = result.get("message")
+    if isinstance(message, str) and message:
+        return message
+
+    error = result["error"]
+    return error if isinstance(error, str) else str(error)
 
 
 class TestExtractToolError:

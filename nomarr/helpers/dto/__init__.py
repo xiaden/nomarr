@@ -57,6 +57,7 @@ from nomarr.helpers.dto.ml_dto import (
     SegmentWaveformParams,
     SingleHeadResult,
 )
+from nomarr.helpers.dto.ml_head_dto import HeadInfo
 from nomarr.helpers.dto.navidrome_dto import (
     NavidromeGeneratePlaylistsResult,
     NavidromePersonalPlaylistContext,
@@ -105,6 +106,7 @@ __all__ = [
     "ComponentStatus",
     "ComputeEmbeddingsForBackboneParams",
     "GenerateMinmaxCalibrationResult",
+    "HeadInfo",
     "LibraryPath",
     "LibraryPipelineStatusDTO",
     "LoadAudioMonoResult",

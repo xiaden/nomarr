@@ -47,12 +47,24 @@
 
 <h2>Agent Efficiency Summary</h2>
 <div style="overflow-x:auto">
-<table>
+<table id="agent-table">
     <thead>
         <tr>
-            <th>Agent</th><th>Runs</th><th>Total Tokens</th><th>Avg Tokens</th>
-            <th>Avg Tools</th><th>Mgmt%</th><th>Edit%</th><th>Explore%</th><th>QA%</th><th>Log%</th><th>Research%</th>
-            <th>Fail%</th><th>Pre-dispatch</th><th>Avg Turns</th><th>Models</th>
+            <th data-sort-key="name" class="sortable">Agent</th>
+            <th data-sort-key="count" class="sortable">Runs</th>
+            <th data-sort-key="total_tokens" class="sortable">Total Tokens</th>
+            <th data-sort-key="avg_tokens" class="sortable">Avg Tokens</th>
+            <th data-sort-key="avg_tool_calls" class="sortable">Avg Tools</th>
+            <th data-sort-key="avg_management_ratio" class="sortable">Mgmt%</th>
+            <th data-sort-key="avg_editing_ratio" class="sortable">Edit%</th>
+            <th data-sort-key="avg_exploration_ratio" class="sortable">Explore%</th>
+            <th data-sort-key="avg_qa_ratio" class="sortable">QA%</th>
+            <th data-sort-key="avg_logging_ratio" class="sortable">Log%</th>
+            <th data-sort-key="avg_research_ratio" class="sortable">Research%</th>
+            <th data-sort-key="avg_failure_rate" class="sortable">Fail%</th>
+            <th data-sort-key="avg_calls_before_dispatch" class="sortable">Pre-dispatch</th>
+            <th data-sort-key="avg_turns" class="sortable">Avg Turns</th>
+            <th>Models</th>
         </tr>
     </thead>
     <tbody id="agent-tbody"></tbody>
@@ -62,11 +74,19 @@
 <h2>Tool Health</h2>
 <p style="color:var(--text-dim);font-size:0.85em;margin-bottom:12px">Per-tool failure rates and performance across all agents.</p>
 <div style="overflow-x:auto">
-<table>
+<table id="tool-table">
     <thead>
         <tr>
-            <th>Tool</th><th>Category</th><th>Calls</th><th>Failures</th>
-            <th>Fail%</th><th>Repeats</th><th>Repeat%</th><th>Avg Duration</th><th>Agents</th><th>Used By</th>
+            <th data-sort-key="name" class="sortable">Tool</th>
+            <th data-sort-key="category" class="sortable">Category</th>
+            <th data-sort-key="total_calls" class="sortable">Calls</th>
+            <th data-sort-key="failures" class="sortable">Failures</th>
+            <th data-sort-key="failure_rate" class="sortable">Fail%</th>
+            <th data-sort-key="repeats" class="sortable">Repeats</th>
+            <th data-sort-key="repeat_rate" class="sortable">Repeat%</th>
+            <th data-sort-key="avg_duration_ms" class="sortable">Avg Duration</th>
+            <th data-sort-key="agent_count" class="sortable">Agents</th>
+            <th>Used By</th>
         </tr>
     </thead>
     <tbody id="tool-tbody"></tbody>

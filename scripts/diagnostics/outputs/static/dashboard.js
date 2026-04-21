@@ -216,24 +216,18 @@ function buildRadarSelector(data, allAgentNames) {
 
 let _topToolsCache = null;
 
-const TOOL_CATEGORY_MAP = {
-    management: ['runSubagent', 'manage_todo_list', 'vscode_askQuestions', 'mcp_gitkraken_git_add_or_commit', 'mcp_gitkraken_git_push', 'mcp_gitkraken_git_status', 'mcp_gitkraken_git_blame'],
-    editing: ['replace_string_in_file', 'multi_replace_string_in_file', 'create_file', 'mcp_nomarr_dev_edit_file_create', 'mcp_nomarr_dev_edit_file_replace_content', 'mcp_nomarr_dev_edit_file_replace_string', 'mcp_nomarr_dev_edit_file_insert_at_boundary', 'mcp_nomarr_dev_edit_file_move', 'mcp_nomarr_dev_edit_file_replace_by_content', 'mcp_nomarr_dev_edit_file_move_by_content', 'mcp_nomarr_dev_edit_file_copy_paste_text', 'mcp_oraios_serena_replace_symbol_body', 'mcp_oraios_serena_insert_after_symbol', 'mcp_oraios_serena_insert_before_symbol', 'mcp_oraios_serena_rename_symbol', 'vscode_renameSymbol'],
-    exploration: ['semantic_search', 'file_search', 'read_file', 'view_image', 'vscode_listCodeUsages', 'mcp_nomarr_dev_read_file_line', 'mcp_nomarr_dev_read_file_line_range', 'mcp_nomarr_dev_read_file_symbol_at_line', 'mcp_nomarr_dev_read_module_api', 'mcp_nomarr_dev_read_module_source', 'mcp_nomarr_dev_locate_module_symbol', 'mcp_nomarr_dev_trace_module_calls', 'mcp_nomarr_dev_trace_project_endpoint', 'mcp_nomarr_dev_list_project_directory_tree', 'mcp_nomarr_dev_search_file_text', 'mcp_nomarr_dev_py_introspect', 'mcp_oraios_serena_get_symbols_overview', 'mcp_oraios_serena_find_symbol', 'mcp_oraios_serena_find_referencing_symbols', 'run_in_terminal', 'get_terminal_output'],
-    qa: ['mcp_nomarr_dev_lint_project_backend', 'mcp_nomarr_dev_lint_project_frontend'],
-    logging: ['mcp_nomarr_dev_log_write', 'mcp_nomarr_dev_log_read', 'mcp_nomarr_dev_adr_suggest', 'mcp_nomarr_dev_adr_commit', 'mcp_nomarr_dev_asr_create', 'mcp_nomarr_dev_dd_create', 'mcp_nomarr_dev_dd_archive'],
-    research: ['mcp_nomarr_dev_adr_read', 'mcp_nomarr_dev_adr_search', 'mcp_nomarr_dev_asr_read', 'mcp_nomarr_dev_asr_search', 'mcp_nomarr_dev_dd_read', 'mcp_nomarr_dev_plan_read', 'mcp_nomarr_dev_plan_complete_step', 'mcp_context7_resolve_library_id', 'mcp_context7_get_library_docs', 'fetch_webpage', 'tool_search'],
-};
-
-function toolToCategory(toolName) {
-    for (const [cat, tools] of Object.entries(TOOL_CATEGORY_MAP)) {
-        if (tools.includes(toolName)) return cat;
+// Build tool→category lookup from the JSON's tool_aggregates (Python is the authority)
+function buildToolCategoryLookup(toolAggs) {
+    const lookup = {};
+    for (const ta of toolAggs) {
+        lookup[ta.name] = ta.category;
     }
-    return 'other';
+    return lookup;
 }
 
 function computeTopToolsByAgent(data) {
     if (_topToolsCache) return _topToolsCache;
+    const catLookup = buildToolCategoryLookup(data.tool_aggregates);
     // agent -> category -> { toolName: count }
     const agentCatTools = {};
 
@@ -241,7 +235,8 @@ function computeTopToolsByAgent(data) {
         const agent = inv.agent_name;
         if (!agentCatTools[agent]) agentCatTools[agent] = {};
         for (const tc of (inv.tool_calls || [])) {
-            const cat = toolToCategory(tc.name);
+            const cat = catLookup[tc.name];
+            if (!cat || cat === 'excluded') continue;
             if (!agentCatTools[agent][cat]) agentCatTools[agent][cat] = {};
             agentCatTools[agent][cat][tc.name] = (agentCatTools[agent][cat][tc.name] || 0) + 1;
         }
@@ -323,35 +318,78 @@ function renderRadarChart(data, selectedNames) {
 }
 
 // ---------------------------------------------------------------------------
+// Generic sortable table support
+// ---------------------------------------------------------------------------
+
+function setupSortableTable(tableId, dataArray, sortKeyExtractor, renderFn) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const state = { key: null, dir: 'desc', data: dataArray };
+
+    table.querySelectorAll('th.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const key = th.dataset.sortKey;
+            if (state.key === key) {
+                state.dir = state.dir === 'desc' ? 'asc' : 'desc';
+            } else {
+                state.key = key;
+                state.dir = 'desc';
+            }
+            // Update header indicators
+            table.querySelectorAll('th.sortable').forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+            th.classList.add(state.dir === 'desc' ? 'sort-desc' : 'sort-asc');
+            // Sort and re-render
+            const sorted = [...state.data].sort((a, b) => {
+                const av = sortKeyExtractor(a, key);
+                const bv = sortKeyExtractor(b, key);
+                if (av == null && bv == null) return 0;
+                if (av == null) return 1;
+                if (bv == null) return -1;
+                const cmp = typeof av === 'string' ? av.localeCompare(bv) : av - bv;
+                return state.dir === 'desc' ? -cmp : cmp;
+            });
+            renderFn(sorted);
+        });
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Render: Agent efficiency table
 // ---------------------------------------------------------------------------
 
 function renderAgentTable(agentAggs) {
+    // Convert object to array of [name, agg] for sortable rendering
+    const entries = Array.isArray(agentAggs) ? agentAggs : Object.entries(agentAggs).map(([name, agg]) => ({ name, ...agg }));
+    renderAgentRows(entries);
+}
+
+function renderAgentRows(rows) {
     const tbody = document.getElementById('agent-tbody');
     tbody.innerHTML = '';
-    for (const [name, agg] of Object.entries(agentAggs)) {
+    for (const row of rows) {
+        const name = row.name;
         const role = getAgentRole(name);
-        const cbd = agg.avg_calls_before_dispatch;
+        const cbd = row.avg_calls_before_dispatch;
         const cbdStr = cbd != null ? cbd.toFixed(1) : '—';
         const cbdBadge = preDispatchBadge(cbd, name);
-        const fBadge = failBadge(agg.avg_failure_rate);
-        const models = (agg.models_used || []).join(', ') || '—';
+        const fBadge = failBadge(row.avg_failure_rate);
+        const models = (row.models_used || []).join(', ') || '—';
         tbody.innerHTML += `<tr>
             <td><span style="color:${ROLE_COLORS[role]};font-weight:600">${esc(name)}</span>
                 <span class="role-tag role-${role}">${role}</span></td>
-            <td class="num">${agg.count}</td>
-            <td class="num">${formatTokens(agg.total_tokens)}</td>
-            <td class="num">${formatTokens(agg.avg_tokens)}</td>
-            <td class="num">${agg.avg_tool_calls.toFixed(1)}</td>
-            <td class="num">${pct(agg.avg_management_ratio)}</td>
-            <td class="num">${pct(agg.avg_editing_ratio)}</td>
-            <td class="num">${pct(agg.avg_exploration_ratio)}</td>
-            <td class="num">${pct(agg.avg_qa_ratio)}</td>
-            <td class="num">${pct(agg.avg_logging_ratio)}</td>
-            <td class="num">${pct(agg.avg_research_ratio)}</td>
-            <td class="num">${fBadge}${pct(agg.avg_failure_rate)}</td>
+            <td class="num">${row.count}</td>
+            <td class="num">${formatTokens(row.total_tokens)}</td>
+            <td class="num">${formatTokens(row.avg_tokens)}</td>
+            <td class="num">${row.avg_tool_calls.toFixed(1)}</td>
+            <td class="num">${pct(row.avg_management_ratio)}</td>
+            <td class="num">${pct(row.avg_editing_ratio)}</td>
+            <td class="num">${pct(row.avg_exploration_ratio)}</td>
+            <td class="num">${pct(row.avg_qa_ratio)}</td>
+            <td class="num">${pct(row.avg_logging_ratio)}</td>
+            <td class="num">${pct(row.avg_research_ratio)}</td>
+            <td class="num">${fBadge}${pct(row.avg_failure_rate)}</td>
             <td class="num">${cbdBadge}${cbdStr}</td>
-            <td class="num">${agg.avg_turns.toFixed(1)}</td>
+            <td class="num">${row.avg_turns.toFixed(1)}</td>
             <td class="num" style="font-size:0.8em">${esc(models)}</td>
         </tr>`;
     }
@@ -371,10 +409,14 @@ function shortenToolName(name) {
 function repeatBadge(rate) { return healthBadge(rate, 0.1, 0.25); }
 
 function renderToolTable(toolAggs) {
+    const rows = Array.isArray(toolAggs) ? toolAggs : toolAggs.filter(t => t.total_calls >= 1);
+    renderToolRows(rows);
+}
+
+function renderToolRows(rows) {
     const tbody = document.getElementById('tool-tbody');
     tbody.innerHTML = '';
-    for (const ta of toolAggs) {
-        if (ta.total_calls < 1) continue;
+    for (const ta of rows) {
         const catColor = TOOL_CAT_COLORS[ta.category] || TOOL_CAT_COLORS.other;
         const fBadge = failBadge(ta.failure_rate);
         const rBadge = repeatBadge(ta.repeat_rate || 0);
@@ -510,8 +552,17 @@ function renderDashboard(data) {
     data.summary.generated_at = data.generated_at;
     renderKPIs(data.summary);
     renderCharts(data);
-    renderAgentTable(data.agent_aggregates);
-    renderToolTable(data.tool_aggregates);
+
+    // Agent table — convert to flat array for sorting
+    const agentRows = Object.entries(data.agent_aggregates).map(([name, agg]) => ({ name, ...agg }));
+    renderAgentTable(agentRows);
+    setupSortableTable('agent-table', agentRows, (row, key) => row[key], renderAgentRows);
+
+    // Tool table
+    const toolRows = data.tool_aggregates.filter(t => t.total_calls >= 1);
+    renderToolTable(toolRows);
+    setupSortableTable('tool-table', toolRows, (row, key) => row[key], renderToolRows);
+
     renderSessionCards(data.sessions);
 }
 

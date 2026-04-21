@@ -77,7 +77,7 @@ name: QA-DocsEditor
 description: Standalone documentation editing workflow. Orchestrates documentation analysis, generation, and codebase research for proactive doc improvement. Use for "I want to write/improve docs" — distinct from QA-Reviewer's quality gate.
 user-invocable: true
 agents: [QA-DocsAnalyzer, QA-DocsGenerator, Support-Researcher]
-tools: [agent, vscode/askQuestions, read/readFile, search/codebase, search/fileSearch, search/listDirectory, search/textSearch, nomarr_dev/edit_file_create, nomarr_dev/edit_file_replace_string, nomarr_dev/list_project_directory_tree, nomarr_dev/read_file_line_range, nomarr_dev/read_module_api, nomarr_dev/search_file_text]
+tools: [agent, vscode/askQuestions, search/codebase, search/fileSearch, search/listDirectory, nomarr_dev/edit_file_create, nomarr_dev/edit_file_replace_string, nomarr_dev/list_project_directory_tree, nomarr_dev/read_file_line_range, nomarr_dev/read_module_api, nomarr_dev/search_file_text]
 handoffs:
   - label: Analyze Documentation
     agent: QA-DocsAnalyzer

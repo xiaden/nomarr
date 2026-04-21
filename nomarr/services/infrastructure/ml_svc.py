@@ -25,7 +25,7 @@ from nomarr.components.ml.resources.ml_vram_probe_comp import clear_model_vram_m
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
-    from nomarr.components.ml.onnx.ml_discovery_comp import HeadInfo
+    from nomarr.helpers.dto.ml_head_dto import HeadInfo
 
 logger = logging.getLogger(__name__)
 

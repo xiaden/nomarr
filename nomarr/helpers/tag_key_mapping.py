@@ -1,37 +1,33 @@
 """Tag key mapping utilities for Navidrome integration.
 
-Maps between versioned storage keys (reproducibility) and short display names (UX).
+Maps between model-tag storage keys and short display names (UX).
 
-Versioned key pattern (from ml_discovery_comp.HeadInfo.build_versioned_tag_key):
-    {label}_{framework}_{embedder}_{head}
-    Example: happy_essentia21-beta6-dev_musicnn20200331_happy20220825
+Model key pattern (from ml_head_dto.HeadInfo.build_versioned_tag_key):
+    {label}_{backbone}_{model_stem}
+    Example: happy_yamnet_mood_happy
 
 Stored with nom: prefix:
-    nom:happy_essentia21-beta6-dev_musicnn20200331_happy20220825
+    nom:happy_yamnet_mood_happy
 
 Short name pattern:
     nom-{label} for string tags
     nom-{label}-raw for numeric tags (ML model outputs)
 
 Examples:
-    nom:happy_essentia21-beta6-dev_musicnn20200331_happy20220825 → nom-happy-raw
+    nom:happy_yamnet_mood_happy → nom-happy-raw
     nom:mood-strict → nom-mood-strict (already short, pass through)
 """
 
 from __future__ import annotations
 
 import logging
-import re
 
 logger = logging.getLogger(__name__)
 
-# Pattern for versioned ML model keys:
-# {label}_essentia{version}_{backbone}{date}_{label}{date}
-# The label appears twice: at start and in the head component
-_VERSIONED_KEY_PATTERN = re.compile(
-    r"^(?P<label>[a-z_]+)_essentia[\w.-]+_[a-z]+\d+_[a-z_]+\d+$",
-    re.IGNORECASE,
-)
+# Known backbone tokens used as field boundary markers in model keys.
+# The key format is `{label}_{backbone}_{model_stem}`, where label and
+# model_stem may contain underscores. We parse by locating backbone token.
+_KNOWN_BACKBONES = ("effnet", "musicnn", "yamnet", "vggish")
 
 # Tags that are already short (not versioned ML outputs)
 _PASSTHROUGH_PREFIXES = (
@@ -44,38 +40,52 @@ _PASSTHROUGH_PREFIXES = (
 
 
 def is_versioned_ml_key(tag_rel: str) -> bool:
-    """Check if a tag rel is a versioned ML model key.
+    """Check if a tag rel is a model-tag key.
 
     Args:
-        tag_rel: Full tag rel (e.g., "nom:happy_essentia21-beta6-dev_...")
+        tag_rel: Full tag rel (e.g., "nom:happy_yamnet_mood_happy")
 
     Returns:
-        True if this is a versioned ML key that needs short name mapping.
+        True if this is a model-tag key that needs short name mapping.
 
     """
-    # Strip nom: prefix if present
-    key = tag_rel.removeprefix("nom:")
-
-    # Check if it matches the versioned pattern
-    return _VERSIONED_KEY_PATTERN.match(key) is not None
+    return _parse_model_key(tag_rel) is not None
 
 
 def extract_label_from_versioned_key(tag_rel: str) -> str | None:
-    """Extract the semantic label from a versioned ML tag key.
+    """Extract the semantic label from a model-tag key.
 
     Args:
-        tag_rel: Full tag rel (e.g., "nom:happy_essentia21-beta6-dev_...")
+        tag_rel: Full tag rel (e.g., "nom:happy_yamnet_mood_happy")
 
     Returns:
-        Label string (e.g., "happy") or None if not a versioned key.
+        Label string (e.g., "happy") or None if not a model-tag key.
 
     """
-    # Strip nom: prefix if present
-    key = tag_rel.removeprefix("nom:")
+    parsed = _parse_model_key(tag_rel)
+    if parsed is None:
+        return None
+    label, _, _ = parsed
+    return label
 
-    match = _VERSIONED_KEY_PATTERN.match(key)
-    if match:
-        return match.group("label")
+
+def _parse_model_key(tag_rel: str) -> tuple[str, str, str] | None:
+    """Parse `{label}_{backbone}_{model_stem}` using known backbones as anchors."""
+    key = tag_rel.removeprefix("nom:")
+    parts = key.split("_")
+    if len(parts) < 3:
+        return None
+
+    for idx, part in enumerate(parts):
+        if part.lower() not in _KNOWN_BACKBONES:
+            continue
+        if idx == 0:
+            continue
+        label = "_".join(parts[:idx])
+        model_stem = "_".join(parts[idx + 1 :])
+        if not model_stem:
+            continue
+        return (label, part, model_stem)
     return None
 
 
@@ -83,7 +93,7 @@ def make_short_tag_name(tag_rel: str, is_numeric: bool = True) -> str:
     """Convert a tag rel to a short display name for Navidrome.
 
     Args:
-        tag_rel: Full tag rel (e.g., "nom:happy_essentia21-beta6-dev_...")
+        tag_rel: Full tag rel (e.g., "nom:happy_yamnet_mood_happy")
         is_numeric: Whether the tag value is numeric (adds -raw suffix)
 
     Returns:
@@ -100,7 +110,7 @@ def make_short_tag_name(tag_rel: str, is_numeric: bool = True) -> str:
             short = key.replace("_", "-")
             return f"nom-{short}"
 
-    # Extract label from versioned key
+    # Extract label from model key
     label = extract_label_from_versioned_key(tag_rel)
     if label:
         # Versioned ML key → short name

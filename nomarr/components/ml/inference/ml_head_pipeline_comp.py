@@ -52,7 +52,7 @@ def shutdown_head_pool(*, timeout: float = 5.0) -> None:
 
 def _build_tag_key(label: str, *, head_model: ONNXHeadModel) -> str:
     """Build a versioned tag key for a label — module-level to avoid per-head closure creation."""
-    model_key, _ = head_model.build_versioned_tag_key(
+    model_key, _ = head_model.meta.build_versioned_tag_key(
         normalize_tag_label(label),
         calib_method="none",
         calib_version=0,
@@ -83,12 +83,12 @@ def run_single_head(
     ONNX inference releases the GIL so multiple heads get real parallelism.
 
     Args:
-        head_model: ONNX head model wrapper (provides labels, sidecar, name, etc.).
+        head_model: ONNX head model wrapper with required HeadInfo metadata.
         predict_fn: Pre-resolved cached predictor closure that calls head_model.run().
             Hoisting resolution to the caller avoids per-thread cache lookup + lock contention.
 
     """
-    head_name = head_model.name
+    head_name = head_model.meta.name
     t_head = internal_ms()
     # Phase 1: ONNX inference (GPU/CPU, releases GIL)
     try:
@@ -108,20 +108,20 @@ def run_single_head(
     # Phase 2: Decision + tag generation (pure Python/numpy)
     try:
         spec = HeadSpec(
-            name=head_model.name,
-            kind=head_model.head_type,
-            labels=head_model.labels,
+            name=head_model.meta.name,
+            kind=head_model.meta.head_type,
+            labels=head_model.meta.labels,
         )
         decision = run_head_decision(spec, pooled_vec, prefix="", segment_std=seg_std)
 
         key_builder = partial(_build_tag_key, head_model=head_model)
 
         head_outputs = decision.to_head_outputs(
-            head_info=head_model,
+            head_info=head_model.meta,
             key_builder=key_builder,
         )
         head_tags = decision.as_tags(key_builder=key_builder)
-        logger.debug(f"[processor] Head {head_name} ({head_model.head_type}) produced {len(head_tags)} tags")
+        logger.debug(f"[processor] Head {head_name} ({head_model.meta.head_type}) produced {len(head_tags)} tags")
         if head_tags:
             sample_keys = list(head_tags.keys())[:3]
             logger.debug(f"[processor]   Sample keys: {sample_keys}")
@@ -133,12 +133,12 @@ def run_single_head(
             logger.warning(f"[processor] Head {head_name} produced ZERO tags")
         # Regression data
         regression_data: tuple[Any, list[float]] | None = None
-        if head_model.is_regression:
+        if head_model.meta.is_regression_head:
             if segment_scores.ndim == 2:
                 raw_values = [float(x) for x in segment_scores[:, 0]]
             else:
                 raw_values = [float(x) for x in segment_scores]
-            regression_data = (head_model, raw_values)
+            regression_data = (head_model.meta, raw_values)
             logger.debug(
                 f"[processor] Captured {len(raw_values)} segment predictions for {head_name} (mean={np.mean(raw_values):.3f}, std={np.std(raw_values):.3f})",
             )
@@ -146,9 +146,9 @@ def run_single_head(
         # Keep raw scores alive (numpy ref, no copy needed — it's from vstack).
         raw_segment_scores: np.ndarray | None = None
         segment_labels: list[str] | None = None
-        if segment_scores.ndim == 2 and len(head_model.labels) > 0:
+        if segment_scores.ndim == 2 and len(head_model.meta.labels) > 0:
             raw_segment_scores = segment_scores
-            segment_labels = head_model.labels
+            segment_labels = head_model.meta.labels
         return SingleHeadResult(
             head_name=head_name,
             status="success",
@@ -194,17 +194,19 @@ def run_heads(
     # Pre-resolve cached predictors on the main thread (no lock contention).
     # Each predict_fn is a lightweight closure binding the ONNX session + embeddings.
     predict_fns: dict[str, Callable[[], np.ndarray]] = {
-        hm.name: _make_predict(hm, embeddings_2d) for hm in backbone_heads
+        hm.meta.name: _make_predict(hm, embeddings_2d) for hm in backbone_heads
     }
 
     head_results_list: list[SingleHeadResult] = []
     n_heads = len(backbone_heads)
     if n_heads > 1:
-        futures = {_HEAD_POOL.submit(run_single_head, hm, predict_fns[hm.name]): hm.name for hm in backbone_heads}
+        futures = {
+            _HEAD_POOL.submit(run_single_head, hm, predict_fns[hm.meta.name]): hm.meta.name for hm in backbone_heads
+        }
         head_results_list.extend(fut.result() for fut in as_completed(futures))
         logger.debug("[processor] Parallel heads complete (%d heads)", n_heads)
     else:
-        head_results_list.extend(run_single_head(hm, predict_fns[hm.name]) for hm in backbone_heads)
+        head_results_list.extend(run_single_head(hm, predict_fns[hm.meta.name]) for hm in backbone_heads)
 
     # Merge results sequentially (safe dict mutations)
     heads_succeeded = 0
