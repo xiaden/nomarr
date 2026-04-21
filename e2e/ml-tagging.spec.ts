@@ -8,7 +8,7 @@ const TEST_LIBRARY_PATH = 'E:/Test-Music';
  */
 test.describe('ML and Tagging Tests', () => {
   
-  test.beforeAll(async ({ page }) => {
+  test.beforeEach(async ({ page }) => {
     // Login
     await page.goto('http://localhost:8356');
     await page.waitForSelector('input[type="password"]', { timeout: 5000 });

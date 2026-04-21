@@ -7,12 +7,83 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .models import (
+    EDITING_TOOLS,
+    EXCLUDED_TOOLS,
+    EXPLORATION_TOOLS,
+    LOGGING_TOOLS,
+    MANAGEMENT_TOOLS,
+    QA_TOOLS,
+    RESEARCH_TOOLS,
     AgentInvocation,
     Session,
     collect_all_invocations,
     compute_aggregates,
     compute_tool_aggregates,
 )
+
+
+def _tool_category(tool_name: str) -> str:
+    if tool_name in EXCLUDED_TOOLS:
+        return "excluded"
+    if tool_name in MANAGEMENT_TOOLS:
+        return "management"
+    if tool_name in EDITING_TOOLS:
+        return "editing"
+    if tool_name in EXPLORATION_TOOLS:
+        return "exploration"
+    if tool_name in QA_TOOLS:
+        return "qa"
+    if tool_name in LOGGING_TOOLS:
+        return "logging"
+    if tool_name in RESEARCH_TOOLS:
+        return "research"
+    return "other"
+
+
+def _build_agent_tool_profiles(sessions: list[Session]) -> dict[str, dict]:
+    """Build per-agent tool usage profile and inferred tool schema from observed calls."""
+    profiles: dict[str, dict[str, int]] = {}
+    failures: dict[str, dict[str, int]] = {}
+
+    for session in sessions:
+        if not session.root:
+            continue
+        for inv in collect_all_invocations(session.root):
+            profiles.setdefault(inv.agent_name, {})
+            failures.setdefault(inv.agent_name, {})
+            for tc in inv.tool_calls:
+                profiles[inv.agent_name][tc.name] = profiles[inv.agent_name].get(tc.name, 0) + 1
+                if tc.status == "error":
+                    failures[inv.agent_name][tc.name] = failures[inv.agent_name].get(tc.name, 0) + 1
+
+    result: dict[str, dict] = {}
+    for agent_name, counts in profiles.items():
+        total_calls = sum(counts.values())
+        tools = []
+        for tool_name, count in sorted(counts.items(), key=lambda kv: kv[1], reverse=True):
+            category = _tool_category(tool_name)
+            fail_count = failures[agent_name].get(tool_name, 0)
+            tools.append(
+                {
+                    "name": tool_name,
+                    "category": category,
+                    "count": count,
+                    "ratio": round(count / total_calls, 4) if total_calls else 0.0,
+                    "failures": fail_count,
+                    "failure_rate": round(fail_count / count, 4) if count else 0.0,
+                }
+            )
+
+        result[agent_name] = {
+            "total_calls": total_calls,
+            "tools": tools,
+            # Inferred schema from observed behavior in logs.
+            "schema": {
+                "allowed_tools": [t["name"] for t in tools],
+                "allowed_categories": sorted({t["category"] for t in tools}),
+            },
+        }
+    return result
 
 
 def _invocation_to_dict(inv: AgentInvocation) -> dict:
@@ -47,6 +118,7 @@ def _invocation_to_dict(inv: AgentInvocation) -> dict:
         "calls_before_first_dispatch": inv.calls_before_first_dispatch,
         "models_used": sorted(inv.models_used),
         "avg_ttft_ms": round(inv.avg_ttft_ms, 1),
+        "final_response": inv.final_response,
         "tool_calls": [
             {
                 "name": tc.name,
@@ -54,6 +126,8 @@ def _invocation_to_dict(inv: AgentInvocation) -> dict:
                 "status": tc.status,
                 "timestamp": tc.timestamp,
                 "args_summary": tc.args_summary,
+                "args_preview": tc.args_preview,
+                "result_preview": tc.result_preview,
             }
             for tc in inv.tool_calls
         ],
@@ -73,6 +147,7 @@ def serialize_dashboard_data(sessions: list[Session]) -> dict:
     """Convert all session data into a JSON-serializable dict for the static dashboard."""
     aggregates = compute_aggregates(sessions)
     tool_aggs = compute_tool_aggregates(sessions)
+    agent_tool_profiles = _build_agent_tool_profiles(sessions)
 
     # Global stats
     total_tokens_all = sum(s.root.tree_tokens for s in sessions if s.root)
@@ -152,6 +227,7 @@ def serialize_dashboard_data(sessions: list[Session]) -> dict:
             "failure_rate": round(total_failures / total_tool_calls, 4) if total_tool_calls else 0,
         },
         "agent_aggregates": agent_aggs,
+        "agent_tool_profiles": agent_tool_profiles,
         "tool_aggregates": tool_agg_list,
         "sessions": [
             _session_to_dict(s)

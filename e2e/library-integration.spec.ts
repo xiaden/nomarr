@@ -15,7 +15,7 @@ const TEST_SONG_RENAMED = 'test-rename-modified.mp3';
 test.describe('Library Integration Tests', () => {
   let libraryId: string | null = null;
   
-  test.beforeAll(async ({ page, dockerLogs }) => {
+  test.beforeEach(async ({ page, dockerLogs }) => {
     // Login
     await page.goto('http://localhost:8356');
     await page.waitForSelector('input[type="password"]', { timeout: 5000 });

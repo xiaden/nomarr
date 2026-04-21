@@ -169,6 +169,8 @@ class ToolCall:
     status: str
     timestamp: int
     args_summary: str = ""
+    args_preview: str = ""
+    result_preview: str = ""
 
 
 @dataclass
@@ -186,6 +188,7 @@ class AgentInvocation:
     children: list[AgentInvocation] = field(default_factory=list)
     turn_count: int = 0
     wall_time_ms: int = 0
+    final_response: str = ""
 
     # --- Token metrics ---
 

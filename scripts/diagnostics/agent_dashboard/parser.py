@@ -3,9 +3,41 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from .models import AgentInvocation, LLMCall, Session, ToolCall
+
+
+def _summarize_text(value: str, max_len: int = 180) -> str:
+    compact = " ".join(value.split())
+    if len(compact) <= max_len:
+        return compact
+    return compact[: max_len - 1] + "…"
+
+
+def _extract_final_response_text(response_raw: str) -> str:
+    """Extract the latest assistant text content from Copilot's response payload."""
+    if not response_raw:
+        return ""
+    try:
+        payload = json.loads(response_raw)
+    except json.JSONDecodeError:
+        return _summarize_text(response_raw)
+
+    latest_text = ""
+    if isinstance(payload, list):
+        for msg in payload:
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("role") != "assistant":
+                continue
+            for part in msg.get("parts", []):
+                if isinstance(part, dict) and part.get("type") == "text":
+                    text = part.get("content", "")
+                    if isinstance(text, str) and text.strip():
+                        latest_text = text
+    return _summarize_text(latest_text)
 
 
 def _parse_jsonl(path: Path) -> list[dict]:
@@ -22,11 +54,20 @@ def _parse_jsonl(path: Path) -> list[dict]:
 
 
 def _extract_agent_name_from_filename(filename: str) -> str:
-    """Extract agent name from 'runSubagent-AgentName-toolCallId.jsonl'."""
-    if filename.startswith("runSubagent-"):
-        parts = filename[len("runSubagent-") :].rsplit("-toolu_", 1)
-        if parts:
-            return parts[0]
+    """Extract agent name from subagent log files.
+
+    Supports both historical and current formats:
+    - runSubagent-AgentName-toolu_<id>.jsonl
+    - runSubagent-AgentName-call_<id>.jsonl
+    """
+    match = re.match(r"^runSubagent-(.+?)-(?:toolu_|call_)[^.]+\.jsonl$", filename)
+    if match:
+        return match.group(1)
+
+    # Fallback for unexpected suffixes: keep only stem after runSubagent-
+    if filename.startswith("runSubagent-") and filename.endswith(".jsonl"):
+        stem = filename[len("runSubagent-") : -len(".jsonl")]
+        return stem
     return "Unknown"
 
 
@@ -77,6 +118,7 @@ def _parse_single_file(
             args_raw = attrs.get("args", "{}")
             args_summary = ""
             spawn_prompt = ""
+            result_raw = attrs.get("result", "")
             if ev_name == "runSubagent":
                 try:
                     parsed = json.loads(args_raw)
@@ -95,8 +137,16 @@ def _parse_single_file(
                     status=ev.get("status", ""),
                     timestamp=ts,
                     args_summary=args_summary,
+                    args_preview=_summarize_text(str(args_raw)),
+                    result_preview=_summarize_text(str(result_raw)),
                 )
             )
+
+        elif ev_type == "agent_response" and ev_name == "agent_response":
+            response_raw = attrs.get("response", "")
+            final_text = _extract_final_response_text(response_raw)
+            if final_text:
+                inv.final_response = final_text
 
         elif ev_name.startswith("turn_start:"):
             inv.turn_count += 1
