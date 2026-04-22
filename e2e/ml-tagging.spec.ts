@@ -1,3 +1,4 @@
+import { login } from './fixtures/auth';
 import { expect, test } from './fixtures/docker-logs';
 
 const TEST_LIBRARY_PATH = 'E:/Test-Music';
@@ -9,26 +10,21 @@ const TEST_LIBRARY_PATH = 'E:/Test-Music';
 test.describe('ML and Tagging Tests', () => {
   
   test.beforeEach(async ({ page }) => {
-    // Login
-    await page.goto('http://localhost:8356');
-    await page.waitForSelector('input[type="password"]', { timeout: 5000 });
-    await page.fill('input[type="password"]', 'nomarr');
-    await page.click('button[type="submit"]');
-    await page.waitForLoadState('networkidle');
+    await login(page);
   });
   
   test('should flag songs with nom: tags correctly', async ({ page, dockerLogs }) => {
     console.log('🏷️  Checking nom: tag detection...');
     
     // Navigate to metadata/tracks view
-    const metadataNav = page.locator('text=/metadata/i, text=/browse/i, [href*="metadata"]').first();
+    const metadataNav = page.locator('a:has-text("Metadata"), a:has-text("Browse"), [href*="metadata"]').first();
     if (await metadataNav.isVisible({ timeout: 3000 })) {
       await metadataNav.click();
       await page.waitForTimeout(1000);
     }
     
     // Look for tracks view
-    const tracksTab = page.locator('text=/tracks/i, [href*="tracks"]').first();
+    const tracksTab = page.locator('a:has-text("Tracks"), [href*="tracks"]').first();
     if (await tracksTab.isVisible({ timeout: 2000 })) {
       await tracksTab.click();
       await page.waitForTimeout(1000);
@@ -54,7 +50,7 @@ test.describe('ML and Tagging Tests', () => {
     dockerLogs.clearErrors();
     
     // Navigate to worker/queue view
-    const workerNav = page.locator('text=/worker/i, text=/queue/i, [href*="worker"]').first();
+    const workerNav = page.locator('a:has-text("Worker"), a:has-text("Queue"), [href*="worker"]').first();
     if (await workerNav.isVisible({ timeout: 3000 })) {
       await workerNav.click();
       await page.waitForTimeout(1000);

@@ -1,3 +1,4 @@
+import { login } from './fixtures/auth';
 import { expect, test } from './fixtures/docker-logs';
 
 /**
@@ -8,11 +9,7 @@ test.describe('Smoke Test - Full Application Navigation', () => {
   test('should navigate through all tabs without errors', async ({ page, dockerLogs }) => {
     // Login first
     console.log('🔐 Logging in...');
-    await page.goto('http://localhost:8356');
-    await page.waitForSelector('input[type="password"]', { timeout: 5000 });
-    await page.fill('input[type="password"]', 'nomarr');
-    await page.click('button[type="submit"]');
-    await page.waitForLoadState('networkidle');
+    await login(page);
     
     // Track console errors
     const consoleErrors: string[] = [];
@@ -34,12 +31,12 @@ test.describe('Smoke Test - Full Application Navigation', () => {
     
     // Define all tabs to navigate through
     const tabs = [
-      { name: 'Libraries', selector: 'text=/libraries/i, [href*="library"], [href*="libraries"]' },
-      { name: 'Calibration', selector: 'text=/calibration/i, [href*="calibration"]' },
-      { name: 'Analytics', selector: 'text=/analytics/i, text=/insights/i, [href*="analytics"]' },
-      { name: 'Metadata', selector: 'text=/metadata/i, text=/browse/i, [href*="metadata"]' },
-      { name: 'Worker/Queue', selector: 'text=/worker/i, text=/queue/i, text=/processing/i, [href*="worker"]' },
-      { name: 'Settings/Config', selector: 'text=/settings/i, text=/config/i, [href*="settings"]' }
+      { name: 'Libraries', selector: 'a:has-text("Libraries"), a:has-text("Library"), [href*="library"], [href*="libraries"]' },
+      { name: 'Calibration', selector: 'a:has-text("Calibration"), [href*="calibration"]' },
+      { name: 'Analytics', selector: 'a:has-text("Analytics"), a:has-text("Insights"), [href*="analytics"]' },
+      { name: 'Metadata', selector: 'a:has-text("Metadata"), a:has-text("Browse"), [href*="metadata"]' },
+      { name: 'Worker/Queue', selector: 'a:has-text("Worker"), a:has-text("Queue"), a:has-text("Processing"), [href*="worker"]' },
+      { name: 'Settings/Config', selector: 'a:has-text("Settings"), a:has-text("Config"), [href*="settings"]' }
     ];
     
     console.log('\n🚀 Starting full application navigation test...\n');

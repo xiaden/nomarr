@@ -1,5 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import type { Page } from '@playwright/test';
+import { login } from './fixtures/auth';
 import { expect, test } from './fixtures/docker-logs';
 
 // Test configuration
@@ -7,6 +9,46 @@ const TEST_LIBRARY_PATH = 'E:/Test-Music';
 const TEST_SONGS_DIR = 'E:/Test-Music/Test-Songs';
 const TEST_SONG_ORIGINAL = 'test-rename.mp3'; // Will use first available mp3
 const TEST_SONG_RENAMED = 'test-rename-modified.mp3';
+const LIBRARIES_NAV_SELECTOR = 'a:has-text("Libraries"), a:has-text("Library"), [href*="library"], [href*="libraries"]';
+
+async function openLibrariesSection(page: Page): Promise<void> {
+  const librariesNav = page.locator(LIBRARIES_NAV_SELECTOR).first();
+  if (await librariesNav.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await librariesNav.click();
+    await page.waitForTimeout(500);
+  }
+}
+
+async function ensureLibraryExists(page: Page): Promise<void> {
+  await openLibrariesSection(page);
+
+  const existingLibrary = page.locator(`text="${TEST_LIBRARY_PATH}"`).first();
+  if (await existingLibrary.isVisible({ timeout: 2000 }).catch(() => false)) {
+    return;
+  }
+
+  const addButton = page
+    .locator('button:has-text("Add Library"), button:has-text("Create Library"), button:has-text("New Library")')
+    .first();
+
+  if (!await addButton.isVisible({ timeout: 3000 }).catch(() => false)) {
+    throw new Error('Add library button not found');
+  }
+
+  await addButton.click();
+  await page.waitForTimeout(500);
+
+  const pathInput = page.locator('input[name="path"], input[placeholder*="path"], input[type="text"]').first();
+  await pathInput.fill(TEST_LIBRARY_PATH);
+
+  const submitButton = page
+    .locator('button[type="submit"], button:has-text("Create"), button:has-text("Add")')
+    .first();
+  await submitButton.click();
+
+  await page.waitForTimeout(1500);
+  await page.waitForLoadState('networkidle');
+}
 
 /**
  * Comprehensive library integration tests
@@ -16,12 +58,7 @@ test.describe('Library Integration Tests', () => {
   let libraryId: string | null = null;
   
   test.beforeEach(async ({ page, dockerLogs }) => {
-    // Login
-    await page.goto('http://localhost:8356');
-    await page.waitForSelector('input[type="password"]', { timeout: 5000 });
-    await page.fill('input[type="password"]', 'nomarr');
-    await page.click('button[type="submit"]');
-    await page.waitForLoadState('networkidle');
+    await login(page);
     
     dockerLogs.clearErrors();
   });
@@ -29,32 +66,7 @@ test.describe('Library Integration Tests', () => {
   test('1. should add library successfully', async ({ page, dockerLogs }) => {
     console.log('📁 Adding library:', TEST_LIBRARY_PATH);
     
-    // Navigate to libraries/config section
-    const librariesNav = page.locator('text=/libraries/i, [href*="library"]').first();
-    await librariesNav.click();
-    await page.waitForTimeout(500);
-    
-    // Look for create/add library button
-    const addButton = page.locator('button:has-text("Add Library"), button:has-text("Create Library"), button:has-text("New Library")').first();
-    
-    if (!await addButton.isVisible({ timeout: 3000 })) {
-      throw new Error('Add library button not found');
-    }
-    
-    await addButton.click();
-    await page.waitForTimeout(500);
-    
-    // Fill in library details
-    const pathInput = page.locator('input[name="path"], input[placeholder*="path"], input[type="text"]').first();
-    await pathInput.fill(TEST_LIBRARY_PATH);
-    
-    // Submit the form
-    const submitButton = page.locator('button[type="submit"], button:has-text("Create"), button:has-text("Add")').first();
-    await submitButton.click();
-    
-    // Wait for library to be created
-    await page.waitForTimeout(2000);
-    await page.waitForLoadState('networkidle');
+    await ensureLibraryExists(page);
     
     // Verify library appears in list
     const libraryItem = page.locator(`text="${TEST_LIBRARY_PATH}"`).first();
@@ -95,9 +107,13 @@ test.describe('Library Integration Tests', () => {
     console.log('🔄 Starting full scan...');
     
     dockerLogs.clearErrors();
+    await ensureLibraryExists(page);
+    await openLibrariesSection(page);
     
     // Find and click full scan button
-    const fullScanButton = page.locator('button:has-text("Full Scan")').first();
+    const fullScanButton = page
+      .locator('button:has-text("Full Scan"), button:has-text("Scan"), button[aria-label*="scan" i]')
+      .first();
     
     if (!await fullScanButton.isVisible({ timeout: 3000 })) {
       throw new Error('Full scan button not found');

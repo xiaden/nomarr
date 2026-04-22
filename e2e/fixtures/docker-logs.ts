@@ -46,7 +46,10 @@ export const test = base.extend<{ dockerLogs: DockerLogMonitor }>({
             for (const line of lines) {
               if (line.match(/ERROR|CRITICAL|Exception|Traceback|Failed|failed/i)) {
                 // Filter out known non-critical errors
-                if (!line.includes('404') && !line.includes('favicon')) {
+                const isKnownAuthWarning =
+                  line.includes('[Auth]') && line.includes('Failed login attempt');
+
+                if (!line.includes('404') && !line.includes('favicon') && !isKnownAuthWarning) {
                   monitor.errors.push(line);
                   console.error('🔴 Backend error:', line);
                 }

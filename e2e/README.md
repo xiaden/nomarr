@@ -61,7 +61,9 @@ npx playwright test --debug
 ## Prerequisites
 
 - Dev server must be running on `http://localhost:8356`
-- Default password is `nomarr` (configured in auth.ts fixture)
+- Default password is `nomarr` (configured in auth helper fallback)
+- In Docker first-run environments, E2E auto-discovers the one-time generated admin password from `docker logs`
+- If your runtime admin password differs, set `E2E_WEB_PASSWORD` (or `NOMARR_WEB_PASSWORD`) for Playwright
 - Backend and database must be accessible
 
 ## Test Categories
@@ -178,7 +180,23 @@ webServer: {
 
 ### Authentication failing
 
-Check the password in `e2e/fixtures/auth.ts`:
+Check the password in `e2e/fixtures/auth.ts` and/or set an env override:
+
+```bash
+E2E_WEB_PASSWORD=<your-admin-password> npx playwright test
+```
+
+Password resolution order in E2E:
+
+1. `E2E_WEB_PASSWORD`
+2. `NOMARR_WEB_PASSWORD`
+3. Auto-discovered Docker first-run password from startup logs (`AUTO-GENERATED ADMIN PASSWORD` block)
+4. Fallback default `nomarr`
+
+The backend admin password is sourced from `admin_password` config (or `NOMARR_ADMIN_PASSWORD` during first-run bootstrap), then persisted as a hash in DB.
+So on existing environments, the effective password may no longer be the default `nomarr`.
+
+Helper behavior:
 
 ```typescript
 export async function login(page: Page, password: string = 'nomarr') {
