@@ -59,5 +59,5 @@ export interface WorkStatus {
  * Use this for polling - poll at 1s when busy, 30s when idle.
  */
 export async function getWorkStatus(): Promise<WorkStatus> {
-  return get<WorkStatus>("/api/web/machine-learning/work-status");
+  return get<WorkStatus>("/api/web/work-status");
 }

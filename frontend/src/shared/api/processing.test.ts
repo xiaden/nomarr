@@ -16,7 +16,7 @@ describe("getWorkStatus", () => {
     vi.clearAllMocks();
   });
 
-  it("calls the machine-learning work-status endpoint", async () => {
+  it("calls the canonical work-status endpoint", async () => {
     const response = {
       is_scanning: false,
       scanning_libraries: [],
@@ -32,6 +32,6 @@ describe("getWorkStatus", () => {
 
     await expect(getWorkStatus()).resolves.toEqual(response);
 
-    expect(get).toHaveBeenCalledWith("/api/web/machine-learning/work-status");
+    expect(get).toHaveBeenCalledWith("/api/web/work-status");
   });
 });

@@ -1,70 +1,22 @@
 import { test as base, Page } from '@playwright/test';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 
-const execAsync = promisify(exec);
-let cachedDiscoveredPassword: Promise<string | null> | null = null;
 
-async function discoverFirstRunPasswordFromDockerLogs(): Promise<string | null> {
-  try {
-    const { stdout: containerStdout } = await execAsync('docker ps --filter "name=nomarr" --format "{{.Names}}"', {
-      timeout: 10_000,
-    });
-
-    const containerName = containerStdout.trim().split('\n')[0];
-    if (!containerName) {
-      return null;
-    }
-
-    const { stdout: logs } = await execAsync(`docker logs --since 24h ${containerName} 2>&1`, {
-      timeout: 10_000,
-      maxBuffer: 4 * 1024 * 1024,
-    });
-
-    const lines = logs.split(/\r?\n/);
-    for (let i = lines.length - 1; i >= 0; i -= 1) {
-      if (!lines[i].includes('AUTO-GENERATED ADMIN PASSWORD')) {
-        continue;
-      }
-
-      for (let j = i + 1; j < Math.min(i + 6, lines.length); j += 1) {
-        const match = lines[j].match(/\[KeyManagement\]\s+([^\s]+)\s*$/);
-        const candidate = match?.[1]?.trim();
-        if (candidate && candidate.length >= 16) {
-          return candidate;
-        }
-      }
-    }
-  } catch {
-    return null;
+function resolveWebPassword(): string {
+  const envPassword = process.env.E2E_WEB_PASSWORD;
+  if (!envPassword) {
+    throw new Error(
+      'E2E_WEB_PASSWORD is required for Playwright authentication. Set E2E_WEB_PASSWORD before running the E2E suite.'
+    );
   }
 
-  return null;
-}
-
-async function resolveWebPassword(defaultPassword: string): Promise<string> {
-  const envPassword = process.env.E2E_WEB_PASSWORD ?? process.env.NOMARR_WEB_PASSWORD;
-  if (envPassword) {
-    return envPassword;
-  }
-
-  if (!cachedDiscoveredPassword) {
-    cachedDiscoveredPassword = discoverFirstRunPasswordFromDockerLogs();
-  }
-
-  const discovered = await cachedDiscoveredPassword;
-  if (discovered) {
-    return discovered;
-  }
-
-  return defaultPassword;
+  return envPassword;
 }
 
 /**
  * Authentication helper for tests
  */
-export async function login(page: Page, password: string = 'nomarr') {
-  const effectivePassword = await resolveWebPassword(password);
+export async function login(page: Page, password: string = resolveWebPassword()) {
+  const effectivePassword = password;
 
   await page.goto('/');
   await page.waitForSelector('input[type="password"]', { timeout: 5000 });
@@ -79,7 +31,7 @@ export async function login(page: Page, password: string = 'nomarr') {
 
   if (stillOnLogin) {
     throw new Error(
-      'Web UI login failed. E2E tries E2E_WEB_PASSWORD/NOMARR_WEB_PASSWORD, then Docker first-run log discovery, then default nomarr. If this is not a fresh first-run container or logs are unavailable, set E2E_WEB_PASSWORD explicitly.'
+      'Web UI login failed. Verify that E2E_WEB_PASSWORD matches the configured Nomarr web password.'
     );
   }
 }

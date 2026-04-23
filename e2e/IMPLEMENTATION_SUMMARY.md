@@ -2,241 +2,140 @@
 
 ## Overview
 
-Created a comprehensive end-to-end test suite for Nomarr using Playwright that covers all major user workflows and API integrations.
+The Playwright E2E redesign trimmed the browser suite down to a deterministic, CI-friendly core:
 
-## Test Files Created
+- **3 spec files**
+- **11 tests total**
+- **Chromium-only CI execution**
+- **PR-blocking workflow** on `pull_request` to `develop` and `main`, plus `workflow_dispatch`
+- **API-first oracles** using `/api/v1/info`, `/api/web/work-status`, and `/api/web/health/gpu`
+- **No container log scraping** as a readiness or assertion signal
 
-### Core Infrastructure
+## Active files
 
-1. **`e2e/fixtures/auth.ts`** - Authentication helpers and test fixtures
-   - `login()` helper function
-   - `authenticatedPage` fixture for tests requiring login
+### Shared fixtures
 
-2. **`e2e/fixtures/api-helpers.ts`** - API testing utilities
-   - `ApiHelpers` class with methods for waiting/asserting API calls
-   - `waitForApiCall()`, `assertApiSuccess()`, `getApiResponse()`
+1. **`e2e/fixtures/auth.ts`**
+   - Provides the authenticated Playwright fixture
+   - Centralizes browser login handling for authenticated specs
 
-### Test Suites
+2. **`e2e/fixtures/api-helpers.ts`**
+   - Provides authenticated API requests from browser sessions
+   - Implements bounded polling against `/api/web/work-status`
+   - Reads `E2E_WORK_STATUS_POLL_MS` and `E2E_WORK_STATUS_TIMEOUT_MS`
 
-1. **`e2e/smoke.spec.ts`** - Fast smoke tests for critical functionality ✅
-   - App loads and responds
-   - Login page accessible
-   - Successful login redirects
-   - API accessible after login
-   - Navigation works
-   - No critical console errors
+3. **`e2e/fixtures/container-mutation.ts`**
+   - Provides `docker exec` helpers for in-container file mutation
+   - Used by watch-mode mutation tests (tests 5 and 7 in `library-integration.spec.ts`)
+   - Reads `NOMARR_CONTAINER_NAME`; skipped when `SKIP_CONTAINER_MUTATION` is set
 
-2. **`e2e/auth.spec.ts`** - Authentication flow tests
-   - Show login page when not authenticated
-   - Login with correct password
-   - Show error with incorrect password
-   - Logout functionality
+4. **`e2e/fixtures/test-library.ts`**
+   - Defines the canonical library fixture path contract
+   - Uses `E2E_TEST_LIBRARY_PATH`
+   - Defaults to `/app/tests/fixtures/library/good`
 
-3. **`e2e/libraries.spec.ts`** - Library management tests
-   - Load libraries list
-   - Display library stats
-   - Navigate to library management
-   - Show create library form
-   - Create new library (skipped - requires valid path)
+### Active specs
 
-4. **`e2e/calibration.spec.ts`** - Calibration workflow tests
-   - Load calibration status
-   - Show calibration history
-   - Display generate calibration button
-   - Generate calibration (skipped - requires data)
-   - Show convergence status
+1. **`e2e/smoke.spec.ts`** — 3 tests
+   - Verifies public startup information via `GET /api/v1/info`
+   - Verifies authenticated GPU health via `GET /api/web/health/gpu`
+   - Verifies core navigation without critical frontend errors
 
-5. **`e2e/analytics.spec.ts`** - Analytics and insights tests
-   - Navigate to analytics section
-   - Load tag frequencies
-   - Load mood distribution
-   - Load tag correlations
+2. **`e2e/library-integration.spec.ts`** — 7 tests
+   - Creates the fixture library using the canonical container-side path
+   - Verifies quick scan is disabled before the first full scan
+   - Runs a full scan and waits for completion with bounded work-status polling
+   - Switches watch mode between event and poll in the UI
+   - Confirms watch mode UI switching is reflected in the library card (event and poll)
+   - Detects in-container file mutations via `docker exec` for both watch modes; skippable with `SKIP_CONTAINER_MUTATION`
 
-6. **`e2e/metadata.spec.ts`** - Metadata browsing tests
-   - Load entity counts
-   - Browse artists
-   - Browse albums
-   - Display artist details (skipped - requires data)
-   - Display albums for artist (skipped - requires data)
+3. **`e2e/no-gpu-fallback.spec.ts`** — 1 test
+   - Confirms `GET /api/web/health/gpu` returns HTTP 200 with a valid non-error contract in CPU-only or degraded environments
 
-7. **`e2e/worker.spec.ts`** - Worker control tests
-   - Display worker status
-   - Pause worker (skipped - modifies state)
-   - Resume worker (skipped - modifies state)
-   - Load processing status
+## Current suite totals
 
-8. **`e2e/info-health.spec.ts`** - System info and health checks
-    - Load system info
-    - Load health status
-    - Load GPU health if available
-    - Load work status
-    - Display system info in UI
+| Scope | Count |
+| --- | ---: |
+| Spec files | 3 |
+| Tests | 11 |
+| Browsers used in CI | 1 |
+| CI workflow triggers | 2 event types |
 
-9. **`e2e/README.md`** - Comprehensive documentation
-    - Test structure overview
-    - Running instructions
-    - Prerequisites
-    - Test categories
-    - Test patterns
-    - Configuration details
-    - Troubleshooting guide
+## API contracts exercised
 
-## Configuration Updates
+### Primary deterministic oracles
 
-### `playwright.config.ts`
+- `/api/v1/info`
+- `/api/web/work-status`
+- `/api/web/health/gpu`
 
-- ✅ Set `baseURL` to `http://localhost:8356`
-- ✅ Enabled screenshots on failure
-- ✅ Enabled video recording on failure
-- ✅ Configured `webServer` to auto-start dev server
-- ✅ Set 2-minute timeout for server startup
-- ✅ Configured to reuse existing server in development
+### Supporting authenticated endpoints used by integration flow
 
-## Test Coverage
+- `/api/web/libraries`
+- `/api/web/libraries/{library_id}`
 
-### API Endpoints Covered
+## Execution model
 
-- ✅ Authentication: `/api/web/authentication/login`, `/api/web/authentication/logout`
-- ✅ Libraries: `/api/web/library`, `/api/web/library/{id}`, `/api/web/library/stats`
-- ✅ Calibration: `/api/web/calibration/*` (status, history, generate, convergence)
-- ✅ Analytics: `/api/web/analytics/*` (frequencies, mood, correlations)
-- ✅ Metadata: `/api/web/metadata/*` (counts, artist, album)
-- ✅ Worker: `/api/web/admin/*` (pause, resume)
-- ✅ Processing: `[REMOVED - endpoint no longer exists]` (previously `/api/web/processing/status`)
-- ✅ Info/Health: `/api/web/info`, `/api/web/health`, `/api/web/health/gpu`, `/api/web/work-status`
+### Local execution
 
-### Test Strategies Used
-
-1. **Smoke Tests** - Fast, critical path validation
-2. **Authenticated Fixtures** - Reusable login state
-3. **API Helpers** - Structured API response validation
-4. **Conditional Tests** - Graceful handling of missing data/features
-5. **Skipped Tests** - Marked destructive or data-dependent tests
-6. **Error Handling** - Try-catch for non-critical API calls
-7. **Timeout Configuration** - Appropriate waits for async operations
-
-## Running the Tests
-
-### Quick Start
+Typical deterministic local run:
 
 ```bash
-# Run all tests
-npx playwright test
-
-# Run smoke tests only
-npx playwright test e2e/smoke.spec.ts
-
-# Run with UI mode
-npx playwright test --ui
-
-# Run in headed mode
-npx playwright test --headed
-
-# Run specific browser
 npx playwright test --project=chromium
 ```
 
-### Test Results
+Recommended environment variables:
 
-Initial smoke test run shows:
-
-- ✅ 12 tests passing across 3 browsers
-- ⚠️ 3 tests need title adjustment (app title)
-- ⚠️ 3 API timeout tests need investigation
-
-## Key Features
-
-1. **Fixtures for Authentication**
-   - Reusable `authenticatedPage` fixture eliminates login boilerplate
-   - Configurable password via `login()` helper
-
-2. **API Testing Utilities**
-   - Wait for specific API calls
-   - Assert success responses
-   - Get typed JSON responses
-   - Pattern matching for dynamic URLs
-
-3. **Graceful Degradation**
-   - Tests adapt to missing data/features
-   - Conditional skipping for data-dependent tests
-   - Try-catch for optional API calls
-
-4. **Cross-Browser Testing**
-   - Runs on Chromium, Firefox, and WebKit
-   - Consistent test behavior across browsers
-
-5. **Debug Capabilities**
-   - Screenshots on failure
-   - Video recording on failure
-   - Trace viewer on retry
-   - HTML report generation
-
-## Next Steps
-
-### Immediate
-
-1. ✅ Verify all smoke tests pass consistently
-2. ⚠️ Adjust app title expectation in smoke test
-3. ⚠️ Investigate API timeout in login test
-
-### Short Term
-
-1. Add tests for file upload/scanning workflows
-2. Add tests for tag editing workflows
-3. Add tests for Navidrome integration
-4. Create visual regression tests for UI components
-
-### Long Term
-
-1. Add performance testing with Lighthouse
-2. Create load testing scenarios
-3. Add accessibility testing with axe-core
-4. Create mobile viewport tests
-5. Add API contract testing
-
-## Documentation
-
-All tests include:
-
-- ✅ Descriptive test names
-- ✅ Clear test structure
-- ✅ Helpful comments
-- ✅ Comprehensive README
-- ✅ Usage examples
-- ✅ Troubleshooting guide
-
-## Integration with CI/CD
-
-The test suite is ready for CI/CD integration:
-
-- ✅ Retries configured for flaky tests
-- ✅ Parallel execution disabled in CI
-- ✅ Dev server auto-starts if needed
-- ✅ Artifacts (screenshots, videos, traces) captured
-- ✅ HTML report generation
-
-To add to CI, use:
-
-```yaml
-- name: Run Playwright tests
-  run: npx playwright test
-  env:
-    CI: true
-    
-- name: Upload test results
-  if: always()
-  uses: actions/upload-artifact@v3
-  with:
-    name: playwright-report
-    path: playwright-report/
+```bash
+E2E_WEB_PASSWORD=nomarr
+E2E_TEST_LIBRARY_PATH=/app/tests/fixtures/library/good
+E2E_WORK_STATUS_POLL_MS=2000
+E2E_WORK_STATUS_TIMEOUT_MS=60000
 ```
 
-## Conclusion
+### CI execution
 
-✅ **Complete e2e test suite implemented**
+The GitHub Actions workflow:
 
-- 10 test files covering all major workflows
-- 50+ test cases across authentication, libraries, calibration, analytics, metadata, workers, and system info
-- Reusable fixtures and helpers
-- Comprehensive documentation
-- Ready for immediate use and CI/CD integration
+- runs on `pull_request` to `develop` and `main`
+- also supports `workflow_dispatch`
+- installs **Chromium only**
+- runs `npx playwright test --project=chromium --reporter=list,html`
+- exports `E2E_WEB_PASSWORD` from GitHub secrets and feeds the same value into `NOMARR_ADMIN_PASSWORD` for the Nomarr container
+- exports the library-path and polling env vars explicitly
+- uploads Playwright HTML and raw test-results artifacts
+
+## What changed in the redesign
+
+### Removed from the old model
+
+- Startup-log based readiness and password-discovery documentation
+- Ambiguous multi-browser CI claims that no longer match the workflow
+- Stale references to removed legacy spec files from the pre-redesign suite
+- Stale pre-redesign work-status endpoint references
+- External filesystem mutation assumptions for watch-mode coverage
+
+### Kept and improved
+
+- Authenticated browser fixtures
+- API helper utilities
+- Failure artifacts such as Playwright HTML reports and test results
+- Explicit bounded polling for asynchronous backend work
+
+## Validation snapshot
+
+The redesigned docs and suite now align on these facts:
+
+- **11 tests passing in Chromium** is the intended suite shape
+- CI coverage is **Chromium-only**, not multi-browser
+- The canonical async status endpoint is `/api/web/work-status`
+- GPU checks validate degraded-but-usable behavior rather than requiring a GPU
+
+## Follow-up boundaries
+
+This suite is intentionally narrow. It does not claim comprehensive browser coverage for every Nomarr feature area. Additional E2E expansion should keep the same deterministic rules:
+
+- prefer API-backed oracles over log scraping
+- avoid host-environment coupling
+- keep CI browser scope explicit
+- use bounded waits with documented env knobs

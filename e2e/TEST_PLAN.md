@@ -1,298 +1,138 @@
 # Nomarr E2E Test Plan
 
-## Test Suite Overview
+## Suite overview
 
-This document outlines the complete e2e test coverage for Nomarr.
+Nomarr's active Playwright E2E suite is intentionally small and deterministic. It validates the browser flows and backend contracts that are most useful for blocking regressions in CI.
 
-## Test Matrix
+## Test matrix
 
- | Test File | Tests | Browsers | Status | Priority |
- | ----------- | ------- | ---------- | -------- | ---------- |
- | smoke.spec.ts | 6 | All | ✅ Ready | P0 |
- | auth.spec.ts | 4 | All | ✅ Ready | P0 |
- | libraries.spec.ts | 5 | All | ✅ Ready | P1 |
- | calibration.spec.ts | 5 | All | ✅ Ready | P1 |
- | analytics.spec.ts | 4 | All | ✅ Ready | P2 |
- | metadata.spec.ts | 5 | All | ✅ Ready | P2 |
- | worker.spec.ts | 4 | All | ✅ Ready | P2 |
- | info-health.spec.ts | 5 | All | ✅ Ready | P1 |
- | workflows.spec.ts | 5 | All | ✅ Ready | P1 |
+| Test File | Tests | Browser | Status | Priority | Notes |
+| --- | ---: | --- | --- | --- | --- |
+| `smoke.spec.ts` | 3 | Chromium | ✅ Active | P0 | Startup, GPU-health, and navigation smoke checks |
+| `library-integration.spec.ts` | 7 | Chromium | ✅ Active | P0 | Library creation, scan completion, and watch-mode behavior |
+| `no-gpu-fallback.spec.ts` | 1 | Chromium | ✅ Active | P1 | Degraded CPU/no-GPU contract canary |
 
-**Total: 43 test cases across 9 test files**
+**Total: 11 tests across 3 spec files**
 
-## Test Coverage by Feature
+## Coverage by scenario
 
-### Authentication (P0)
+### Smoke coverage (P0)
 
-- ✅ Show login page when not authenticated
-- ✅ Login with correct password
-- ✅ Show error with incorrect password
-- ✅ Logout successfully
-- **API Coverage**: `/api/web/authentication/login`, `/api/web/authentication/logout`
+- ✅ `GET /api/v1/info` returns the expected public-info contract
+- ✅ `GET /api/web/health/gpu` returns HTTP 200 with a valid response contract
+- ✅ Core UI navigation loads without critical frontend console or page errors
 
-### Library Management (P1)
+### Library integration coverage (P0)
 
-- ✅ Load libraries list
-- ✅ Display library stats
-- ✅ Navigate to library management section
-- ✅ Show create library form
-- ⏭️ Create new library (skipped - requires valid path)
-- **API Coverage**: `/api/web/library`, `/api/web/library/stats`, `/api/web/library/{id}`
+- ✅ Create a library using `E2E_TEST_LIBRARY_PATH`
+- ✅ Verify quick scan is disabled before the first full scan
+- ✅ Run a full scan and wait for idle completion
+- ✅ Switch file watching to event mode in the UI
+- ✅ Confirm event mode remains stable with bounded work-status polling
+- ✅ Switch file watching to polling mode in the UI
+- ✅ Confirm polling mode remains stable with bounded work-status polling
 
-### Calibration (P1)
+### No-GPU fallback coverage (P1)
 
-- ✅ Load calibration status
-- ✅ Show calibration history
-- ✅ Display generate calibration button
-- ⏭️ Generate calibration (skipped - requires data)
-- ✅ Show convergence status
-- **API Coverage**: `/api/web/calibration/*`
+- ✅ Verify `/api/web/health/gpu` remains non-fatal in degraded CPU-only environments
+- ✅ Reject top-level API error wrappers for the GPU health endpoint
 
-### Analytics (P2)
+## Primary endpoint coverage
 
-- ✅ Navigate to analytics section
-- ✅ Load tag frequencies
-- ✅ Load mood distribution
-- ✅ Load tag correlations
-- **API Coverage**: `/api/web/analytics/*`
+The redesigned suite intentionally centers on these stable oracles:
 
-### Metadata (P2)
-
-- ✅ Load entity counts
-- ✅ Browse artists
-- ✅ Browse albums
-- ⏭️ Display artist details (skipped - requires data)
-- ⏭️ Display albums for artist (skipped - requires data)
-- **API Coverage**: `/api/web/metadata/*`
-
-### Worker Control (P2)
-
-- ✅ Display worker status
-- ⏭️ Pause worker (skipped - modifies state)
-- ⏭️ Resume worker (skipped - modifies state)
-- ✅ Load processing status
-- **API Coverage**: `/api/web/admin/*`, `[REMOVED - endpoint no longer exists]` (previously `/api/web/processing/status`)
-
-### System Info (P1)
-
-- ✅ Load system info
-- ✅ Load health status
-- ✅ Load GPU health if available
-- ✅ Load work status
-- ✅ Display system info in UI
-- **API Coverage**: `/api/web/info`, `/api/web/health`, `/api/web/health/gpu`, `/api/web/work-status`
-
-### End-to-End Workflows (P1)
-
-- ✅ Complete application startup and navigation flow
-- ✅ Library workflow from list to details
-- ✅ Calibration workflow exploration
-- ✅ Metadata and analytics availability
-- ✅ Responsive UI and error handling
-- **Comprehensive**: Tests multiple features together
-
-## API Endpoint Coverage
-
-### Fully Covered (✅)
-
-- `/api/web/authentication/login`
-- `/api/web/authentication/logout`
-- `/api/web/info`
-- `/api/web/health`
-- `/api/web/health/gpu`
+- `/api/v1/info`
 - `/api/web/work-status`
-- `/api/web/library`
-- `/api/web/library/stats`
-- `/api/web/library/{id}`
-- `/api/web/calibration/status`
-- `/api/web/calibration/history`
-- `/api/web/calibration/convergence`
-- `/api/web/analytics/tag-frequencies`
-- `/api/web/analytics/mood-distribution`
-- `/api/web/analytics/tag-correlations`
-- `/api/web/metadata/counts`
-- `/api/web/metadata/artist`
-- `/api/web/metadata/album`
-- `[REMOVED - endpoint no longer exists]` (previously `/api/web/processing/status`)
+- `/api/web/health/gpu`
 
-### Partially Covered (⚠️)
+Supporting integration operations also touch authenticated library endpoints during setup and verification:
 
-- `/api/web/calibration/generate` (test exists but skipped)
-- `/api/web/calibration/apply` (not tested yet)
-- `/api/web/library` POST (test exists but skipped)
-- `/api/web/library/{id}` PATCH, DELETE (not tested yet)
-- `/api/web/library/{id}/scan` (not tested yet)
-- `/api/web/admin/pause` (test exists but skipped)
-- `/api/web/admin/resume` (test exists but skipped)
+- `/api/web/libraries`
+- `/api/web/libraries/{library_id}`
 
-### Not Covered (❌)
+## What this suite does not cover
 
-- `/api/web/config` (GET/POST)
-- `/api/web/file-system/list`
-- `/api/web/library/cleanup-*`
-- `/api/web/library/files/*`
-- `/api/web/library/{id}/reconcile*`
-- `/api/web/navidrome/*`
-- `/api/web/tag/*`
-- `/api/web/admin/restart`
+The suite does **not** currently attempt to cover:
 
-## Test Execution Strategy
+- broad multi-feature browser exploration across every Nomarr page
+- additional CI browser compatibility beyond the documented runner
+- external filesystem mutation workflows
+- startup-log based readiness or assertion flows
+- the removed legacy 9-file / 43-test suite model
 
-### Development
+## Execution strategy
+
+### Local development
+
+Preferred deterministic runs:
 
 ```bash
-# Run all tests
-npx playwright test
-
-# Run critical tests only
-npx playwright test e2e/smoke.spec.ts e2e/auth.spec.ts
-
-# Run with UI for debugging
-npx playwright test --ui
-```
-
-### CI/CD
-
-```bash
-# Full suite with retries
-npx playwright test --retries=2
-
-# Generate HTML report
-npx playwright test --reporter=html
-```
-
-### Pre-Commit
-
-```bash
-# Fast smoke tests
+npx playwright test --project=chromium
 npx playwright test e2e/smoke.spec.ts --project=chromium
+npx playwright test e2e/library-integration.spec.ts --project=chromium
+npx playwright test e2e/no-gpu-fallback.spec.ts --project=chromium
 ```
 
-## Test Data Requirements
+Helpful debug variants:
 
-### Minimal (Smoke Tests)
+```bash
+npx playwright test --project=chromium --headed
+npx playwright test --project=chromium --ui
+npx playwright test --project=chromium --debug
+```
 
-- Running dev server on port 8356
-- Default password: `nomarr`
-- Database accessible
+### CI execution
 
-### Standard (Most Tests)
+GitHub Actions executes the suite on:
 
-- At least one library configured
-- Some files scanned
-- Basic metadata extracted
+- `pull_request` to `develop`
+- `pull_request` to `main`
+- `workflow_dispatch`
 
-### Full (All Tests)
+CI run characteristics:
 
-- Multiple libraries
-- Files tagged
-- Calibration completed
-- Analytics data available
+- installs Chromium only
+- runs `npx playwright test --project=chromium --reporter=list,html`
+- exports `E2E_WEB_PASSWORD` from secrets and mirrors it into `NOMARR_ADMIN_PASSWORD` for the Nomarr container
+- exports `E2E_TEST_LIBRARY_PATH=/app/tests/fixtures/library/good`
+- exports `NOMARR_E2E_WATCH_POLL_INTERVAL_SECONDS`, `E2E_WORK_STATUS_POLL_MS`, and `E2E_WORK_STATUS_TIMEOUT_MS`
+- uploads Playwright report and raw test-result artifacts
 
-## Known Limitations
+## Test data and environment requirements
 
-### Skipped Tests
+### Required runtime pieces
 
-1. **Create Library** - Requires valid filesystem path
-2. **Generate Calibration** - Requires libraries with files
-3. **Artist/Album Details** - Requires metadata to exist
-4. **Worker Control** - Skipped to avoid modifying state during test runs
+- Nomarr available at `http://localhost:8356`
+- Backend services and ArangoDB available
+- Valid admin password deterministically configured in CI via matching `E2E_WEB_PASSWORD` and `NOMARR_ADMIN_PASSWORD`
+- Fixture library path (`E2E_TEST_LIBRARY_PATH`) must exist inside the running Nomarr container — not only on the host via a bind mount
+- Docker CLI available on the host when running mutation tests (tests 5 and 7); set `SKIP_CONTAINER_MUTATION=true` when Docker is unavailable
+- `NOMARR_CONTAINER_NAME` must match the running container name (default: `nomarr`) for `docker exec` to succeed
 
-### Future Test Additions
+### Timing knobs
 
-#### High Priority
+| Variable | Default | Role |
+| --- | --- | --- |
+| `NOMARR_E2E_WATCH_POLL_INTERVAL_SECONDS` | CI sets `1` | Watch-mode polling cadence inside the runtime environment |
+| `E2E_WORK_STATUS_POLL_MS` | `2000` | How often Playwright polls `/api/web/work-status` |
+| `E2E_WORK_STATUS_TIMEOUT_MS` | `60000` | Maximum time Playwright waits for idle completion |
 
-- [ ] File upload and scanning workflow
-- [ ] Tag editing and management
-- [ ] Library deletion and updates
-- [ ] Error state handling
-- [ ] Form validation
+## Validation strategy
 
-#### Medium Priority
+When validating this suite or future updates, confirm:
 
-- [ ] Navidrome integration
-- [ ] Config updates
-- [ ] File search and filtering
-- [ ] Bulk operations
-- [ ] Export functionality
+1. The active spec list is still `smoke.spec.ts`, `library-integration.spec.ts`, and `no-gpu-fallback.spec.ts`.
+2. CI documentation remains Chromium-only unless the workflow changes.
+3. Work-status references use `/api/web/work-status`.
+4. Docs do not reintroduce log-scraping or external-filesystem mutation assumptions.
+5. The suite description remains aligned with the real 11-test total.
 
-#### Low Priority
+## Future expansion guardrails
 
-- [ ] Performance testing
-- [ ] Accessibility testing
-- [ ] Mobile viewport testing
-- [ ] Dark mode testing
-- [ ] Internationalization
+If the suite grows again, keep the redesign rules intact:
 
-## Test Maintenance
-
-### Regular Tasks
-
-- ✅ Update tests when APIs change
-- ✅ Add tests for new features
-- ✅ Review and update skipped tests
-- ✅ Monitor flaky tests
-- ✅ Keep fixtures DRY
-
-### Quality Metrics
-
-- Test execution time: ~30s (smoke) to ~5min (full)
-- Flakiness rate: Target < 1%
-- Coverage: 65+ API endpoints
-- Browser compatibility: Chromium, Firefox, WebKit
-
-## Test Environment
-
-### Requirements
-
-- Node.js 18+
-- Playwright installed
-- Backend running on localhost:8356
-- ArangoDB accessible
-- Python backend services running
-
-### Configuration
-
-- Base URL: `http://localhost:8356`
-- Test timeout: 30s (default)
-- Retries: 0 (dev), 2 (CI)
-- Parallel workers: 8 (dev), 1 (CI)
-
-## Reporting
-
-### Available Reports
-
-- HTML Report: `npx playwright show-report`
-- List Report: `--reporter=list`
-- JSON Report: `--reporter=json`
-- JUnit XML: `--reporter=junit`
-
-### Artifacts
-
-- Screenshots on failure
-- Videos on failure
-- Traces on retry
-- Test logs
-
-## Success Criteria
-
-### Test Stability
-
-- ✅ All P0 tests pass consistently
-- ✅ P1 tests pass with <1% flakiness
-- ✅ P2 tests documented and maintained
-
-### Coverage Goals
-
-- ✅ All critical user paths tested
-- ✅ All public APIs covered
-- 🎯 90% UI component coverage (future)
-- 🎯 Error states validated (future)
-
-## Contact
-
-For test-related questions:
-
-- Review test documentation in `e2e/README.md`
-- Check quick reference in `e2e/QUICK_REFERENCE.md`
-- See implementation details in `e2e/IMPLEMENTATION_SUMMARY.md`
+- prefer API-backed readiness and async status checks over log scraping
+- document browser scope explicitly
+- keep environment contracts in one place
+- avoid over-claiming product coverage
+- add coverage only when it remains deterministic enough to block PRs

@@ -1,6 +1,10 @@
-name: E2E Tests (Manual)
+name: E2E Tests
 
 on:
+  pull_request:
+    branches:
+      - develop
+      - main
   # Manual trigger with optional image tag override
   workflow_dispatch:
     inputs:
@@ -33,10 +37,13 @@ jobs:
           echo "Using image tag: ${TAG}"
 
       - name: Create Docker environment files
+        env:
+          E2E_WEB_PASSWORD: ${{ secrets.E2E_WEB_PASSWORD }}
         run: |
-          cat > docker/nomarr.env <<'EOF'
+          cat > docker/nomarr.env <<EOF
           ARANGO_HOST=http://nomarr-arangodb:8529
           ARANGO_ROOT_PASSWORD=e2e_test_password
+          NOMARR_ADMIN_PASSWORD=${E2E_WEB_PASSWORD}
           EOF
 
           cat > docker/nomarr-arangodb.env <<'EOF'
@@ -140,6 +147,13 @@ jobs:
         run: npx playwright test --project=chromium --reporter=list,html
         env:
           CI: true
+          E2E_TEST_LIBRARY_PATH: /app/tests/fixtures/library/good
+          NOMARR_CONTAINER_NAME: nomarr
+          # Requires the repository secret E2E_WEB_PASSWORD to match the app admin password used in CI.
+          E2E_WEB_PASSWORD: ${{ secrets.E2E_WEB_PASSWORD }}
+          NOMARR_E2E_WATCH_POLL_INTERVAL_SECONDS: "1"
+          E2E_WORK_STATUS_POLL_MS: "2000"
+          E2E_WORK_STATUS_TIMEOUT_MS: "60000"
 
       - name: Dump container logs on failure
         if: failure()

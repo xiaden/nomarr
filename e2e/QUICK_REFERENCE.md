@@ -1,271 +1,92 @@
-# Playwright Test Quick Reference
+# Playwright E2E Quick Reference
 
-## Quick Commands
+## Current suite at a glance
 
-```bash
-# Run all tests
-npx playwright test
-
-# Run specific test file
-npx playwright test e2e/smoke.spec.ts
-npx playwright test e2e/auth.spec.ts
-npx playwright test e2e/libraries.spec.ts
-
-# Run tests matching a pattern
-npx playwright test --grep "login"
-npx playwright test --grep "library"
-
-# Run in headed mode (see browser)
-npx playwright test --headed
-
-# Run in UI mode (interactive)
-npx playwright test --ui
-
-# Run in debug mode
-npx playwright test --debug
-
-# Run specific browser
-npx playwright test --project=chromium
-npx playwright test --project=firefox
-npx playwright test --project=webkit
-
-# Run with different reporters
-npx playwright test --reporter=list
-npx playwright test --reporter=dot
-npx playwright test --reporter=html
-
-# View last test report
-npx playwright show-report
-
-# Run only failed tests
-npx playwright test --last-failed
-```
-
-## Test Organization
-
-```
+```text
 e2e/
-├── smoke.spec.ts         # Fast critical path tests
-├── auth.spec.ts          # Login/logout
-├── libraries.spec.ts     # Library management
-├── calibration.spec.ts   # Calibration workflows
-├── analytics.spec.ts     # Analytics features
-├── metadata.spec.ts      # Browse artists/albums
-├── worker.spec.ts        # Worker control
-├── info-health.spec.ts   # System status
-└── workflows.spec.ts     # End-to-end scenarios
+├── smoke.spec.ts             # 3 tests
+├── library-integration.spec.ts
+│                            # 7 tests
+└── no-gpu-fallback.spec.ts  # 1 test
 ```
 
-## Writing Tests
+**Total:** 3 spec files, 11 tests, Chromium-only in CI.
 
-### Basic test
-
-```typescript
-import { test, expect } from '@playwright/test';
-
-test('my test', async ({ page }) => {
-  await page.goto('/');
-  await expect(page.locator('h1')).toBeVisible();
-});
-```
-
-### Authenticated test
-
-```typescript
-import { test, expect } from './fixtures/auth';
-
-test('my test', async ({ authenticatedPage: page }) => {
-  // Already logged in
-  await expect(page.locator('nav')).toBeVisible();
-});
-```
-
-### API testing
-
-```typescript
-import { test, expect } from './fixtures/auth';
-import { createApiHelpers } from './fixtures/api-helpers';
-
-test('my test', async ({ authenticatedPage: page }) => {
-  const api = createApiHelpers(page);
-  
-  const response = await api.waitForApiCall('/api/web/info', 'GET');
-  expect(response.status()).toBe(200);
-  
-  const data = await api.getApiResponse('/api/web/libraries', 'GET');
-  expect(data).toBeDefined();
-});
-```
-
-## Debugging Tips
-
-### Take screenshots
-
-```typescript
-await page.screenshot({ path: 'screenshot.png' });
-```
-
-### Wait for specific state
-
-```typescript
-await page.waitForLoadState('networkidle');
-await page.waitForTimeout(1000);
-await page.waitForSelector('button[type="submit"]');
-```
-
-### Console logging
-
-```typescript
-page.on('console', msg => console.log('Browser:', msg.text()));
-```
-
-### Pause execution
-
-```typescript
-await page.pause(); // Opens inspector
-```
-
-## Selectors
-
-### By role
-
-```typescript
-page.getByRole('button', { name: 'Submit' })
-page.getByRole('textbox', { name: 'Email' })
-```
-
-### By text
-
-```typescript
-page.locator('text=Login')
-page.locator('text=/login/i') // regex
-```
-
-### By test ID
-
-```typescript
-page.locator('[data-testid="my-element"]')
-```
-
-### By CSS
-
-```typescript
-page.locator('button[type="submit"]')
-page.locator('.my-class')
-page.locator('#my-id')
-```
-
-## Assertions
-
-### Visibility
-
-```typescript
-await expect(page.locator('h1')).toBeVisible();
-await expect(page.locator('h1')).not.toBeVisible();
-```
-
-### Text content
-
-```typescript
-await expect(page.locator('h1')).toHaveText('Welcome');
-await expect(page.locator('h1')).toContainText('Welcome');
-```
-
-### Count
-
-```typescript
-await expect(page.locator('.item')).toHaveCount(5);
-```
-
-### Value
-
-```typescript
-await expect(page.locator('input')).toHaveValue('test');
-```
-
-### URL
-
-```typescript
-await expect(page).toHaveURL('/dashboard');
-await expect(page).toHaveURL(/dashboard/);
-```
-
-## Best Practices
-
-1. ✅ Use `baseURL` in config, then `page.goto('/')`
-2. ✅ Use `data-testid` attributes for stable selectors
-3. ✅ Wait for specific conditions, not fixed timeouts
-4. ✅ Use fixtures for common setup (like auth)
-5. ✅ Keep tests independent - no shared state
-6. ✅ Use page object pattern for complex pages
-7. ✅ Tag tests with `.skip()` for data-dependent tests
-8. ✅ Capture screenshots/videos on failure
-9. ✅ Test one thing per test
-10. ✅ Use descriptive test names
-
-## CI/CD Integration
-
-### GitHub Actions example
-
-```yaml
-- name: Install dependencies
-  run: npm ci
-  
-- name: Install Playwright Browsers
-  run: npx playwright install --with-deps
-  
-- name: Run Playwright tests
-  run: npx playwright test
-  env:
-    CI: true
-    
-- name: Upload test results
-  if: always()
-  uses: actions/upload-artifact@v3
-  with:
-    name: playwright-report
-    path: playwright-report/
-```
-
-## Environment Variables
+## Quick commands
 
 ```bash
-# Skip browser install
-PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+# Run the full suite in the supported CI browser
+npx playwright test --project=chromium
 
-# Set browser
-BROWSER=chromium
+# Run a single spec
+npx playwright test e2e/smoke.spec.ts --project=chromium
+npx playwright test e2e/library-integration.spec.ts --project=chromium
+npx playwright test e2e/no-gpu-fallback.spec.ts --project=chromium
 
-# Set base URL
-PLAYWRIGHT_BASE_URL=http://localhost:8356
+# Helpful local variants
+npx playwright test --project=chromium --headed
+npx playwright test --project=chromium --ui
+npx playwright test --project=chromium --debug
 
-# Enable debug logging
-DEBUG=pw:api
+# Reports
+npx playwright show-report
 ```
 
-## Troubleshooting
+## Environment variables
 
-### Tests timing out
+```bash
+E2E_WEB_PASSWORD=nomarr
+E2E_TEST_LIBRARY_PATH=/app/tests/fixtures/library/good
+NOMARR_CONTAINER_NAME=nomarr
+# SKIP_CONTAINER_MUTATION=true   # uncomment if Docker CLI is unavailable locally
+NOMARR_E2E_WATCH_POLL_INTERVAL_SECONDS=1
+E2E_WORK_STATUS_POLL_MS=2000
+E2E_WORK_STATUS_TIMEOUT_MS=60000
+```
 
-- Increase timeout in test: `test.setTimeout(60000)`
-- Check if server is running
-- Look for network issues
+| Variable | Purpose |
+| --- | --- |
+| `E2E_WEB_PASSWORD` | Auth password for Playwright login; required in all environments and must match the app admin password |
+| `E2E_TEST_LIBRARY_PATH` | Canonical fixture library path for library integration coverage |
+| `NOMARR_CONTAINER_NAME` | Container name used by watch-mode mutation tests via `docker exec`; default `nomarr` |
+| `SKIP_CONTAINER_MUTATION` | Set to skip watch-mode mutation tests when Docker CLI is unavailable locally |
+| `NOMARR_E2E_WATCH_POLL_INTERVAL_SECONDS` | Runtime watch polling knob used in the containerized environment |
+| `E2E_WORK_STATUS_POLL_MS` | Interval between work-status polls |
+| `E2E_WORK_STATUS_TIMEOUT_MS` | Maximum wait for work-status completion |
 
-### Selector not found
+## Canonical API oracles
 
-- Use `await page.pause()` to inspect
-- Check if element is in shadow DOM
-- Verify element actually exists in UI
+- `GET /api/v1/info`
+- `GET /api/web/work-status`
+- `GET /api/web/health/gpu`
 
-### Flaky tests
+## Test organization
 
-- Add explicit waits
-- Use `waitForLoadState('networkidle')`
-- Check for race conditions
-- Use `test.retry()` for known flaky tests
+| Spec | Tests | Coverage summary |
+| --- | ---: | --- |
+| `e2e/smoke.spec.ts` | 3 | Startup contract, GPU health contract, and core navigation smoke |
+| `e2e/library-integration.spec.ts` | 7 | Library creation, full scan, quick-scan enablement, and watch-mode UI coverage |
+| `e2e/no-gpu-fallback.spec.ts` | 1 | CPU-only / degraded GPU health contract canary |
 
-### Browser not launching
+## CI facts
 
-- Run `npx playwright install`
-- Check system dependencies
-- Verify no port conflicts
+- Runs on `pull_request` to `develop` and `main`
+- Also supports `workflow_dispatch`
+- Installs and runs **Chromium only**
+- Uses `E2E_WEB_PASSWORD` from GitHub Actions secrets and mirrors it into `NOMARR_ADMIN_PASSWORD` for the Nomarr container
+- Uses `/app/tests/fixtures/library/good` as the default fixture path
+- Uploads Playwright report artifacts after each run
+
+## Deterministic rules
+
+- Do **not** use container log output as a test oracle.
+- Do **not** assume unsupported CI browser coverage.
+- Do **not** rely on external filesystem mutation assumptions for watch-mode assertions.
+- Do use bounded polling via `E2E_WORK_STATUS_POLL_MS` and `E2E_WORK_STATUS_TIMEOUT_MS`.
+
+## When something fails
+
+- Re-run the failing spec with `--project=chromium` first.
+- Check the Playwright HTML report.
+- Verify the app password and fixture library path env vars.
+- If async work is slow, inspect the work-status endpoint behavior before increasing timeouts.

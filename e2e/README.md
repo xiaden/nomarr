@@ -1,215 +1,138 @@
 # E2E Test Suite
 
-Comprehensive end-to-end test suite for Nomarr using Playwright.
+Playwright covers a small, deterministic Nomarr browser suite that is intended to block regressions in GitHub Actions without depending on log scraping, external filesystem-coupled mutation tricks, or ambiguous CI browser scope.
 
-## Structure
+## Current suite
 
-```
+```text
 e2e/
 ├── fixtures/
-│   ├── auth.ts              # Authentication helpers and fixtures
-│   └── api-helpers.ts       # API testing utilities
-├── auth.spec.ts             # Authentication flow tests
-├── libraries.spec.ts        # Library management tests
-├── calibration.spec.ts      # Calibration workflow tests
-├── analytics.spec.ts        # Analytics and insights tests
-├── metadata.spec.ts         # Metadata browsing tests
-├── worker.spec.ts           # Worker control tests
-└── info-health.spec.ts      # System info and health checks
+│   ├── api-helpers.ts        # Authenticated API requests + bounded work-status polling
+│   ├── auth.ts               # Login helper and authenticated Playwright fixture
+│   ├── container-mutation.ts # Docker exec helpers for in-container file mutation (watch-mode tests)
+│   └── test-library.ts       # Canonical container-side fixture library path
+├── smoke.spec.ts            # 3 smoke tests for startup, GPU health, and core navigation
+├── library-integration.spec.ts
+│                           # 7 library lifecycle and watch-mode tests
+└── no-gpu-fallback.spec.ts # 1 degraded CPU/no-GPU contract canary
 ```
 
-## Running Tests
+The redesigned suite currently contains **3 spec files** and **11 tests total**:
 
-### Run all tests
+| Spec file | Tests | What it validates |
+| --- | ---: | --- |
+| `e2e/smoke.spec.ts` | 3 | Public startup contract via `/api/v1/info`, authenticated GPU health via `/api/web/health/gpu`, and core tab navigation without critical frontend failures |
+| `e2e/library-integration.spec.ts` | 7 | Library creation using the canonical fixture path, full scan completion, and UI watch-mode switching with bounded `/api/web/work-status` polling |
+| `e2e/no-gpu-fallback.spec.ts` | 1 | `/api/web/health/gpu` stays usable in degraded CPU-only or no-GPU environments |
 
-```bash
-npx playwright test
-```
+## Approved API oracles
 
-### Run specific test file
+The suite is intentionally anchored on a short list of stable backend checks:
 
-```bash
-npx playwright test e2e/auth.spec.ts
-```
+- `/api/v1/info`
+- `/api/web/work-status`
+- `/api/web/health/gpu`
 
-### Run tests in headed mode (see browser)
+Those endpoints replace older startup-log and "guess from container startup" style oracles.
 
-```bash
-npx playwright test --headed
-```
+## Local prerequisites
 
-### Run tests in UI mode (interactive)
+- Nomarr reachable at `http://localhost:8356`
+- Backend services and ArangoDB running
+- Playwright dependencies installed
+- A usable admin password exposed to the tests
+- The container-side fixture library available at the configured path when running `library-integration.spec.ts`
 
-```bash
-npx playwright test --ui
-```
+## Environment variables
 
-### Run tests in a specific browser
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `E2E_WEB_PASSWORD` | Required | none | Password used for authenticated browser login; in CI it must match `NOMARR_ADMIN_PASSWORD` configured for the Nomarr container |
+| `E2E_TEST_LIBRARY_PATH` | Optional | `/app/tests/fixtures/library/good` | Canonical fixture library path used by library integration coverage; this path must exist inside the running Nomarr container image, not only on the host via a bind mount |
+| `NOMARR_CONTAINER_NAME` | Optional | `nomarr` | Container name used by the watch-mode mutation helper when calling `docker exec` |
+| `SKIP_CONTAINER_MUTATION` | Optional | unset | Skips the two watch-mode mutation tests when Docker CLI/container access is unavailable locally |
+| `NOMARR_E2E_WATCH_POLL_INTERVAL_SECONDS` | Optional | app/runtime default | Watch-mode timing knob used by the containerized test environment |
+| `E2E_WORK_STATUS_POLL_MS` | Optional | `2000` | Poll interval for `/api/web/work-status` |
+| `E2E_WORK_STATUS_TIMEOUT_MS` | Optional | `60000` | Upper bound for work-status polling waits |
+
+## Running locally
+
+### Run the full suite
 
 ```bash
 npx playwright test --project=chromium
-npx playwright test --project=firefox
-npx playwright test --project=webkit
 ```
 
-### Debug tests
+### Run individual specs
 
 ```bash
-npx playwright test --debug
+npx playwright test e2e/smoke.spec.ts --project=chromium
+npx playwright test e2e/library-integration.spec.ts --project=chromium
+npx playwright test e2e/no-gpu-fallback.spec.ts --project=chromium
 ```
 
-## Prerequisites
+### Useful local variants
 
-- Dev server must be running on `http://localhost:8356`
-- Default password is `nomarr` (configured in auth helper fallback)
-- In Docker first-run environments, E2E auto-discovers the one-time generated admin password from `docker logs`
-- If your runtime admin password differs, set `E2E_WEB_PASSWORD` (or `NOMARR_WEB_PASSWORD`) for Playwright
-- Backend and database must be accessible
-
-## Test Categories
-
-### Authentication (`auth.spec.ts`)
-
-- Login with correct/incorrect password
-- Logout functionality
-- Protected route access
-
-### Libraries (`libraries.spec.ts`)
-
-- List libraries
-- View library stats
-- Navigate library management
-- Create library form
-- Create new library (skipped by default - requires valid path)
-
-### Calibration (`calibration.spec.ts`)
-
-- Load calibration status
-- View calibration history
-- Generate calibration UI
-- Generate calibration (skipped - requires data)
-- Convergence status
-
-### Analytics (`analytics.spec.ts`)
-
-- Navigate to analytics
-- Load tag frequencies
-- Load mood distribution
-- Load tag correlations
-
-### Metadata (`metadata.spec.ts`)
-
-- Load entity counts
-- Browse artists
-- Browse albums
-- View artist details (skipped - requires data)
-- View artist albums (skipped - requires data)
-
-### Worker Control (`worker.spec.ts`)
-
-- Display worker status
-- Pause worker (skipped - modifies state)
-- Resume worker (skipped - modifies state)
-- Load processing status
-
-### System Info (`info-health.spec.ts`)
-
-- Load system info
-- Load health status
-- Load GPU health
-- Load work status
-- Display system info in UI
-
-## Test Patterns
-
-### Using authenticated fixture
-
-```typescript
-test('my test', async ({ authenticatedPage: page }) => {
-  // Already logged in
-});
+```bash
+npx playwright test --project=chromium --headed
+npx playwright test --project=chromium --ui
+npx playwright test --project=chromium --debug
+npx playwright show-report
 ```
 
-### Using API helpers
+### Local setup example
 
-```typescript
-const api = createApiHelpers(page);
-
-// Wait for specific API call
-const response = await api.waitForApiCall('/api/web/library', 'GET');
-
-// Assert API success
-await api.assertApiSuccess('/api/web/info', 'GET');
-
-// Get JSON response
-const data = await api.getApiResponse('/api/web/library', 'GET');
+```bash
+E2E_WEB_PASSWORD=nomarr
+E2E_TEST_LIBRARY_PATH=/app/tests/fixtures/library/good
+NOMARR_CONTAINER_NAME=nomarr
+E2E_WORK_STATUS_POLL_MS=2000
+E2E_WORK_STATUS_TIMEOUT_MS=60000
 ```
 
-### Skipping tests conditionally
+`E2E_WEB_PASSWORD` is required in all environments — the login helper throws immediately if it is not set. Set it before running any spec locally, e.g. `export E2E_WEB_PASSWORD=nomarr` if that matches your local admin password. In CI, the workflow sets the Nomarr container's `NOMARR_ADMIN_PASSWORD` to the same secret so browser auth stays deterministic on fresh volumes.
 
-Some tests are skipped by default because they:
+Watch-mode change-detection coverage mutates files inside the running container and therefore requires Docker CLI access via `docker exec`. If Docker is unavailable in your local environment, set `SKIP_CONTAINER_MUTATION=true` to skip those mutation-dependent tests.
 
-- Require specific data (e.g., libraries, artists)
-- Modify system state (e.g., pause worker)
-- Need valid file paths (e.g., create library)
+## CI behavior
 
-Use `test.skip()` to skip tests conditionally or remove `.skip` to enable them when appropriate.
+GitHub Actions runs the E2E workflow on:
 
-## Configuration
+- `pull_request` targeting `develop`
+- `pull_request` targeting `main`
+- `workflow_dispatch`
 
-Tests are configured in `playwright.config.ts`:
+Current CI characteristics:
 
-- Base URL: `http://localhost:8356`
-- Runs across Chromium, Firefox, and WebKit
-- Screenshots and videos captured on failure
-- Reuses an existing server by default (no implicit startup command)
-- Optional auto-start via `PLAYWRIGHT_WEB_SERVER_COMMAND`
-- Traces captured on retry
+- **PR-blocking** for `develop` and `main`
+- **Chromium-only** Playwright execution in CI
+- `E2E_WEB_PASSWORD` provided from GitHub Actions secrets and mirrored into `NOMARR_ADMIN_PASSWORD` for the Nomarr container
+- `E2E_TEST_LIBRARY_PATH` set to `/app/tests/fixtures/library/good`
+- Polling knobs exported explicitly for deterministic async waits
+- HTML report and test-results artifacts uploaded on every run
+
+## What the suite intentionally does not do
+
+- It does **not** use container-startup log output as an assertion oracle.
+- It does **not** claim unsupported CI browser coverage.
+- It does **not** mutate external filesystem paths from the test runner.
+- It does **not** try to prove full product coverage; it focuses on deterministic blocking checks.
 
 ## Troubleshooting
 
-### Server not starting
+### Login failures
 
-If you want Playwright to auto-start a server, set:
+- Verify `E2E_WEB_PASSWORD` matches the app admin password or the container's `NOMARR_ADMIN_PASSWORD`.
+- Confirm the app is reachable at `http://localhost:8356`.
+- Re-run a single spec first to isolate whether the failure is auth-specific or app startup-related.
 
-```typescript
-PLAYWRIGHT_WEB_SERVER_COMMAND="<your startup command>"
-```
+### Library integration failures
 
-### Authentication failing
+- Confirm `E2E_TEST_LIBRARY_PATH` exists inside the runtime environment.
+- Check whether the fixture library path is mounted where the app can read it.
+- Set `NOMARR_CONTAINER_NAME` if your local container is not named `nomarr`, or set `SKIP_CONTAINER_MUTATION=1` when running outside Docker.
+- Increase `E2E_WORK_STATUS_TIMEOUT_MS` only if your environment is genuinely slower.
 
-Check the password in `e2e/fixtures/auth.ts` and/or set an env override:
+### CPU-only runners
 
-```bash
-E2E_WEB_PASSWORD=<your-admin-password> npx playwright test
-```
-
-Password resolution order in E2E:
-
-1. `E2E_WEB_PASSWORD`
-2. `NOMARR_WEB_PASSWORD`
-3. Auto-discovered Docker first-run password from startup logs (`AUTO-GENERATED ADMIN PASSWORD` block)
-4. Fallback default `nomarr`
-
-The backend admin password is sourced from `admin_password` config (or `NOMARR_ADMIN_PASSWORD` during first-run bootstrap), then persisted as a hash in DB.
-So on existing environments, the effective password may no longer be the default `nomarr`.
-
-Helper behavior:
-
-```typescript
-export async function login(page: Page, password: string = 'nomarr') {
-```
-
-### Timeouts
-
-Some operations may take longer than default timeouts. Increase timeouts as needed:
-
-```typescript
-await page.waitForSelector('selector', { timeout: 10000 });
-```
-
-### Viewing test results
-
-```bash
-npx playwright show-report
-```
+`e2e/no-gpu-fallback.spec.ts` and the GPU-health smoke assertion expect `/api/web/health/gpu` to return HTTP 200 with a valid response body even when GPU hardware is unavailable. A missing GPU is not itself a test failure.
