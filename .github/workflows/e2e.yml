@@ -37,13 +37,10 @@ jobs:
           echo "Using image tag: ${TAG}"
 
       - name: Create Docker environment files
-        env:
-          E2E_WEB_PASSWORD: ${{ secrets.E2E_WEB_PASSWORD }}
         run: |
-          cat > docker/nomarr.env <<EOF
+          cat > docker/nomarr.env <<'EOF'
           ARANGO_HOST=http://nomarr-arangodb:8529
           ARANGO_ROOT_PASSWORD=e2e_test_password
-          NOMARR_ADMIN_PASSWORD=${E2E_WEB_PASSWORD}
           EOF
 
           cat > docker/nomarr-arangodb.env <<'EOF'
@@ -133,6 +130,20 @@ jobs:
           '
           kill $LOG_PID 2>/dev/null || true
 
+      - name: Scrape admin password from container logs
+        run: |
+          # Nomarr auto-generates a cryptographically random admin password on
+          # first boot and logs it plaintext exactly once.  Capture it here so
+          # the test runner authenticates via the same path a real user would.
+          ADMIN_PASSWORD=$(docker logs nomarr 2>&1 | grep '\[KeyManagement\]   ' | awk '{print $NF}')
+          if [ -z "${ADMIN_PASSWORD}" ]; then
+            echo "❌ Could not find auto-generated admin password in container logs"
+            docker logs nomarr 2>&1 | tail -50
+            exit 1
+          fi
+          echo "✅ Admin password scraped from container logs"
+          echo "E2E_WEB_PASSWORD=${ADMIN_PASSWORD}" >> "$GITHUB_ENV"
+
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
@@ -149,8 +160,8 @@ jobs:
           CI: true
           E2E_TEST_LIBRARY_PATH: /app/tests/fixtures/library/good
           NOMARR_CONTAINER_NAME: nomarr
-          # Requires the repository secret E2E_WEB_PASSWORD to match the app admin password used in CI.
-          E2E_WEB_PASSWORD: ${{ secrets.E2E_WEB_PASSWORD }}
+          # Set by the 'Create Docker environment files' step via GITHUB_ENV.
+          E2E_WEB_PASSWORD: ${{ env.E2E_WEB_PASSWORD }}
           NOMARR_E2E_WATCH_POLL_INTERVAL_SECONDS: "1"
           E2E_WORK_STATUS_POLL_MS: "2000"
           E2E_WORK_STATUS_TIMEOUT_MS: "60000"
