@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": "python .github/hooks/shared-context-pretooluse.py",
+        "windows": "py -3 .github/hooks/shared-context-pretooluse.py",
+        "timeout": 15
+      }
+    ]
+  }
+}
