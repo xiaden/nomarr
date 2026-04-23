@@ -162,20 +162,18 @@ Tests are configured in `playwright.config.ts`:
 - Base URL: `http://localhost:8356`
 - Runs across Chromium, Firefox, and WebKit
 - Screenshots and videos captured on failure
-- Dev server auto-starts if not running
+- Reuses an existing server by default (no implicit startup command)
+- Optional auto-start via `PLAYWRIGHT_WEB_SERVER_COMMAND`
 - Traces captured on retry
 
 ## Troubleshooting
 
 ### Server not starting
 
-Ensure the dev server command in `playwright.config.ts` is correct:
+If you want Playwright to auto-start a server, set:
 
 ```typescript
-webServer: {
-  command: 'npm run dev',
-  url: 'http://localhost:8356',
-}
+PLAYWRIGHT_WEB_SERVER_COMMAND="<your startup command>"
 ```
 
 ### Authentication failing

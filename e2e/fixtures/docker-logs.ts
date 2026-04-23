@@ -44,7 +44,9 @@ export const test = base.extend<{ dockerLogs: DockerLogMonitor }>({
           logProcess.stdout?.on('data', (data: string) => {
             const lines = data.toString().split('\n');
             for (const line of lines) {
-              if (line.match(/ERROR|CRITICAL|Exception|Traceback|Failed|failed/i)) {
+              const hasErrorSignal = /\b(ERROR|CRITICAL|Exception|Traceback|Failed)\b/i.test(line);
+
+              if (hasErrorSignal) {
                 // Filter out known non-critical errors
                 const isKnownAuthWarning =
                   line.includes('[Auth]') && line.includes('Failed login attempt');

@@ -56,6 +56,7 @@ jobs:
                 - "8356:8356"
               volumes:
                 - nomarr-config:/app/config
+                - nomarr-media:/media
               env_file:
                 - nomarr.env
               depends_on:
@@ -88,6 +89,7 @@ jobs:
 
           volumes:
             nomarr-config:
+            nomarr-media:
             arangodb-data:
           EOF
 
