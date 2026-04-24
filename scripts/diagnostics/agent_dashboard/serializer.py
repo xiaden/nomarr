@@ -241,7 +241,7 @@ def write_json(sessions: list[Session], output_path: Path) -> None:
     """Serialize session data and write to a JSON file."""
     data = serialize_dashboard_data(sessions)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    output_path.write_text(json.dumps(data, indent=2), encoding="utf-8", newline="\n")
 
     summary = data["summary"]
     print(f"JSON data written to: {output_path}")
