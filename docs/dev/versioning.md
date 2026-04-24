@@ -218,7 +218,7 @@ git push origin v0.3.1
 
 ### When CI creates tags
 
-**On push to `develop`:**
+**On PR merge to `develop`:**
 
 - Build and push `{version}.devN`
 - Build and push `{sha}`
@@ -285,7 +285,7 @@ services:
 - Run frontend tests
 - All required checks must pass before merge
 
-**On push to `develop`:**
+**On PR merge to `develop`:**
 
 - Run lint
 - Run backend tests

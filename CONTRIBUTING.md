@@ -27,7 +27,12 @@ Thank you for your interest in contributing to Nomarr! This document provides gu
 
 ### Submitting Pull Requests
 
-> **Pull requests target `develop`, not `main`.** Nomarr now uses a two-branch workflow: feature branches merge into `develop` first, and `develop` is squash-merged into `main` for stable releases. See [ADR-017](artifacts/decisions/ADR-017-adopt-main-develop-two-branch-model-with-squash-merge-policy.md) for the full branching model.
+> **Nomarr uses a three-tier GitFlow-lite branching strategy** (see [ADR-029](artifacts/decisions/ADR-029-adopt-gitflow-lite-branching-strategy.md)):
+> - **`feat/*`, `fix/*`, `chore/*`** — short-lived work branches. Squash-merged into `develop` via PR.
+> - **`develop`** — integration branch. Working at every commit. PR-only, no direct push. Merged into `main` via PR.
+> - **`main`** — stable releases only. PR-only, no direct push.
+>
+> **Your PR targets `develop`.** Open your branch from `develop`, do your work, then open a PR back to `develop`.
 
 **Before starting work on a PR:**
 
@@ -38,7 +43,7 @@ Thank you for your interest in contributing to Nomarr! This document provides gu
 **PR Requirements:**
 
 - Code follows the existing architecture patterns (see below)
-- Pull requests should target `develop` unless you are coordinating an approved hotfix flow
+- Pull requests target `develop` (hotfixes targeting `main` require explicit coordination)
 - CI must pass before merge on `develop` or `main`, including all required gates:
   - Lint: `ruff check nomarr/ tests/`
   - Backend tests: `pytest tests/ -m "not container_only and not requires_database and not code_smell"`
