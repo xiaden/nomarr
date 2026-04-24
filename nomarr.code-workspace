@@ -43,12 +43,28 @@
 		],
 		"git.scanRepositories": [],
 		"chat.agentFilesLocations": {
-			".github/agents/Exec": true,
-			".github/agents/QA": true,
-			".github/agents/RnD": true,
-			".github/agents/Support": true
+			"code-intel/agents": true,
+			"code-intel/agents/Exec": true,
+			"code-intel/agents/QA": true,
+			"code-intel/agents/RnD": true,
+			"code-intel/agents/Support": true
 		},
+		"chat.hookFilesLocations": {
+			"code-intel/hooks": true
+		},
+		"chat.agentSkillsLocations": {
+			"code-intel/skills": true
+		},
+		"chat.instructionsFilesLocations": {
+			"code-intel/instructions/copilot": true
+		},
+		"chat.useCustomAgentHooks": true,
 		"chat.subagents.allowInvocationsFromSubagents": true,
+		"github.copilot.chat.codeGeneration.instructions": [
+			{
+				"file": "code-intel/instructions/copilot-base.md"
+			}
+		],
 		"python.analysis.typeCheckingMode": "basic"
 	},
 	"extensions": {
@@ -63,4 +79,3 @@
 		"tasks": []
 	}
 }
-

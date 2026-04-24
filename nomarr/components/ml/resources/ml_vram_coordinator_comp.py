@@ -37,22 +37,15 @@ def _promise_key(worker_id: str, model_path: str) -> str:
 
 def _get_worker_promises(db: Any, worker_id: str) -> list[dict[str, Any]]:
     """Return all VRAM promises currently held by one worker."""
-    total = db.vram_promises.count()  # type: ignore[union-attr]
-    if total == 0:
-        return []
-    return list(db.vram_promises.worker_id.get(worker_id, limit=total))  # type: ignore[union-attr]
+    return list(db.vram_promises.worker_id.get.many(worker_id, limit=None))  # type: ignore[union-attr]
 
 
 def _get_all_promises(db: Any) -> list[dict[str, Any]]:
     """Return all VRAM promise documents via constructor-backed accessors."""
-    total = db.vram_promises.count()  # type: ignore[union-attr]
-    if total == 0:
-        return []
-
+    worker_ids = db.vram_promises.worker_id.collect()  # type: ignore[union-attr]
     promises: list[dict[str, Any]] = []
-    worker_ids = db.vram_promises.worker_id.collect(limit=total)  # type: ignore[union-attr]
     for current_worker_id in worker_ids:
-        promises.extend(db.vram_promises.worker_id.get(current_worker_id, limit=total))  # type: ignore[union-attr]
+        promises.extend(db.vram_promises.worker_id.get.many(current_worker_id, limit=None))  # type: ignore[union-attr]
     return promises
 
 

@@ -50,6 +50,7 @@ class TestInsert:
         db.collection.return_value.insert_many.assert_called_once_with(
             [{"title": "foo"}, {"title": "bar"}],
             return_new=True,
+            raise_on_document_error=True,
         )
 
     def test_insert_empty_list_returns_empty_list(self) -> None:
@@ -61,7 +62,9 @@ class TestInsert:
 
         assert result == []
         db.collection.assert_called_once_with("items")
-        db.collection.return_value.insert_many.assert_called_once_with([], return_new=True)
+        db.collection.return_value.insert_many.assert_called_once_with(
+            [], return_new=True, raise_on_document_error=True
+        )
 
 
 @pytest.mark.unit
@@ -134,7 +137,7 @@ class TestDeleteByIds:
         delete_by_ids(db, "items", ["items/1", "items/2"])
 
         db.aql.execute.assert_called_once_with(
-            "FOR id IN @ids REMOVE {_id: id} IN @@col",
+            "FOR id IN @ids REMOVE {_key: PARSE_IDENTIFIER(id).key} IN @@col",
             bind_vars={"@col": "items", "ids": ["items/1", "items/2"]},
         )
 
@@ -145,7 +148,7 @@ class TestDeleteByIds:
         delete_by_ids(db, "items", [])
 
         db.aql.execute.assert_called_once_with(
-            "FOR id IN @ids REMOVE {_id: id} IN @@col",
+            "FOR id IN @ids REMOVE {_key: PARSE_IDENTIFIER(id).key} IN @@col",
             bind_vars={"@col": "items", "ids": []},
         )
 

@@ -66,8 +66,7 @@ def _extract_agent_name_from_filename(filename: str) -> str:
 
     # Fallback for unexpected suffixes: keep only stem after runSubagent-
     if filename.startswith("runSubagent-") and filename.endswith(".jsonl"):
-        stem = filename[len("runSubagent-") : -len(".jsonl")]
-        return stem
+        return filename[len("runSubagent-") : -len(".jsonl")]
     return "Unknown"
 
 
@@ -250,6 +249,8 @@ def parse_session(session_dir: Path) -> Session | None:
                 "Slash Commands Discovery",
                 "Instructions Discovery",
                 "Hook Discovery",
+                "PreToolUse",
+                "PostToolUse",
             )
         ):
             root_agent = ev_name

@@ -138,16 +138,13 @@ def _folder_doc(
 
 
 def _ensure_edge(
-    db: Database,
+    _db: Database,
     edge_namespace: Any,
     source_id: str,
     target_id: str,
 ) -> None:
     """Ensure a graph edge exists between the supplied source and target ids."""
-    edges = cast("list[dict[str, Any]]", edge_namespace._to.get(target_id))
-    if any(str(edge.get("_from")) == source_id for edge in edges):
-        return
-    edge_namespace.insert([{"_from": source_id, "_to": target_id}])
+    edge_namespace._to.upsert([{"_from": source_id, "_to": target_id}], match_field=["_from", "_to"])
 
 
 def ensure_scan_state(db: Database, library_id: str) -> dict[str, Any]:

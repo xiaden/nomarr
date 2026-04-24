@@ -230,8 +230,9 @@ class TestScanStateHelpers:
         inserted_doc = mock_db.library_scans.insert.call_args.args[0][0]
         assert inserted_doc["_key"] == "test"
         assert inserted_doc["library_key"] == "test"
-        mock_db.library_has_scan.insert.assert_called_once_with(
-            [{"_from": "libraries/test", "_to": "library_scans/test"}]
+        mock_db.library_has_scan._to.upsert.assert_called_once_with(
+            [{"_from": "libraries/test", "_to": "library_scans/test"}],
+            match_field=["_from", "_to"],
         )
         assert result["library_key"] == "test"
 
@@ -355,8 +356,9 @@ class TestFolderCacheHelpers:
         assert inserted_doc["library_key"] == "test"
         assert inserted_doc["mtime"] == 123
         assert inserted_doc["file_count"] == 7
-        mock_db.library_contains_folder.insert.assert_called_once_with(
-            [{"_from": "libraries/test", "_to": inserted_folder_id}]
+        mock_db.library_contains_folder._to.upsert.assert_called_once_with(
+            [{"_from": "libraries/test", "_to": inserted_folder_id}],
+            match_field=["_from", "_to"],
         )
 
     @pytest.mark.unit

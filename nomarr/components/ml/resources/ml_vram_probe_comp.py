@@ -54,7 +54,7 @@ def _fmt_bytes(n: int) -> str:
 # Pre-built minimal identity ONNX model for CUDA context warming.
 # Generated via onnx/onnx-ecosystem image; no onnx package needed at runtime.
 _WARMUP_FIXTURE_PATH: pathlib.Path = (
-    pathlib.Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "ml_cuda_warmup.onnx"
+    pathlib.Path(__file__).resolve().parents[4] / "tests" / "fixtures" / "ml_cuda_warmup.onnx"
 )
 
 

@@ -196,12 +196,12 @@ class TestSimpleStateLookups:
     @pytest.mark.unit
     def test_count_pending_tag_writes_uses_state_edge_counter(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.file_has_state._to.count.return_value = 2
+        mock_db.file_has_state._to.get.many.return_value = [{"_from": "library_files/1"}, {"_from": "library_files/2"}]
 
         result = count_pending_tag_writes(mock_db)
 
         assert result == 2
-        mock_db.file_has_state._to.count.assert_called_once_with(STATE_TAGS_NOT_WRITTEN)
+        mock_db.file_has_state._to.get.many.assert_called_once_with(STATE_TAGS_NOT_WRITTEN, limit=None)
 
     @pytest.mark.unit
     def test_file_has_tagged_state_uses_count_by_filter(self) -> None:

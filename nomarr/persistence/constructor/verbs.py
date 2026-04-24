@@ -227,7 +227,9 @@ def get_like_by_field(
 
 def insert(db: SafeDatabase, collection: str, docs: list[Document]) -> list[str]:
     """Insert documents and return their ``_id`` values."""
-    results = cast("list[Document]", db.collection(collection).insert_many(docs, return_new=True))
+    results = cast(
+        "list[Document]", db.collection(collection).insert_many(docs, return_new=True, raise_on_document_error=True)
+    )
     return [cast("str", result["new"]["_id"]) for result in results]
 
 
@@ -311,7 +313,7 @@ def delete_by_ids(db: SafeDatabase, collection: str, ids: list[str]) -> None:
     """Delete documents by ``_id`` list."""
     _execute_aql(
         db,
-        "FOR id IN @ids REMOVE {_id: id} IN @@col",
+        "FOR id IN @ids REMOVE {_key: PARSE_IDENTIFIER(id).key} IN @@col",
         bind_vars={"@col": collection, "ids": ids},
     )
 

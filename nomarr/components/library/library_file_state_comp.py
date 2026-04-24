@@ -185,7 +185,7 @@ def count_untagged_files(db: Database, library_id: str | None = None) -> int:
 
 def count_pending_tag_writes(db: Database) -> int:
     """Count files still waiting for file-tag writeback."""
-    return db.file_has_state._to.count(STATE_TAGS_NOT_WRITTEN)
+    return len(db.file_has_state._to.get.many(STATE_TAGS_NOT_WRITTEN, limit=None))
 
 
 def get_errored_file_ids(db: Database, library_id: str, limit: int | None = 500) -> list[str]:

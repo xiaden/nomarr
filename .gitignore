@@ -138,3 +138,7 @@ fpcalc.exe
 /playwright/.auth/
 
 build_resources/models-prepatch/
+
+# Code graph database (generated)
+.codegraph/
+.codegraphrc.json
