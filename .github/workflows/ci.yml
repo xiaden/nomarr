@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, 'feat/**']
     paths:
       - "nomarr/**"
       - "tests/**"
@@ -189,7 +189,7 @@ jobs:
             DEV_TAG="${VERSION_BASE}.dev${{ github.run_number }}"
             PROMOTE_TAGS="${REPO}:develop,${REPO}:${DEV_TAG}"
           else
-            PROMOTE_TAGS=""
+            PROMOTE_TAGS="${REPO}:preview"
           fi
           BASE_TAG="v${BASE_VERSION}"
 
