@@ -467,6 +467,7 @@ class TestCollectionNamespaceMutationDispatch:
         db.collection.return_value.insert_many.assert_called_once_with(
             [{"title": "foo"}],
             return_new=True,
+            raise_on_document_error=True,
         )
         assert result == ["items/1"]
 
@@ -485,6 +486,7 @@ class TestCollectionNamespaceMutationDispatch:
         db.collection.return_value.insert_many.assert_called_once_with(
             [{"title": "foo"}, {"title": "bar"}],
             return_new=True,
+            raise_on_document_error=True,
         )
         assert result == ["items/1", "items/2"]
 

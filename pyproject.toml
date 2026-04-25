@@ -181,6 +181,8 @@ ignore = [
 "debug_vram.py" = ["E722"]
 "nomarr/helpers/time_helper.py" = ["TID251"]
 "nomarr/components/workers/worker_crash_comp.py" = ["TID251"]
+# Evaluation harness scripts are standalone runners — not nomarr package code
+"code-intel/skills/mcp-builder/scripts/evaluation.py" = ["TID251"]
 # Migration files use V-prefix naming convention (V006_*, V007_*, etc.)
 "nomarr/migrations/V*.py" = ["N999"]
 # ML components use intentional lazy imports to avoid loading TF/numpy until needed
