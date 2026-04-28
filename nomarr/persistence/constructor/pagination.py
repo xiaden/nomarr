@@ -13,11 +13,20 @@ _RETURN_RE = re.compile(r"(\bRETURN\b)", re.IGNORECASE)
 def inject_pagination(query: str, limit: int | None, offset: int) -> tuple[str, dict[str, Any]]:
     """Insert LIMIT/OFFSET clauses before the final RETURN in an AQL query.
 
+    Semantics:
+    - ``limit=None`` and ``offset=0`` → no LIMIT clause is injected (unbounded).
+    - ``limit=None`` and ``offset>0`` → LIMIT offset, DEFAULT_LIMIT injected
+      (offset requires a limit in AQL).
+    - explicit ``limit`` → LIMIT clause injected with that limit.
+
     Returns a (query, bind_vars) tuple. The caller must merge
     the returned bind_vars into their own bind_vars before executing.
     """
-    effective_limit = limit if limit is not None else DEFAULT_LIMIT
     stripped = query.rstrip()
+
+    # Unbounded: no limit and no offset → return query unchanged.
+    if limit is None and offset == 0:
+        return (stripped, {})
 
     # Find the last RETURN keyword and insert LIMIT before it
     match = list(_RETURN_RE.finditer(stripped))
@@ -28,6 +37,8 @@ def inject_pagination(query: str, limit: int | None, offset: int) -> tuple[str, 
     last_return_pos = match[-1].start()
     before_return = stripped[:last_return_pos]
     return_clause = stripped[last_return_pos:]
+
+    effective_limit = limit if limit is not None else DEFAULT_LIMIT
 
     if offset > 0:
         limit_clause = "LIMIT @pagination_offset, @pagination_limit "

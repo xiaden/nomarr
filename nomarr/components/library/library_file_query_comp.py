@@ -437,11 +437,13 @@ def get_library_stats(db: Database, library_id: str | None = None) -> dict[str, 
     """Get aggregate library-file statistics."""
     if library_id is not None:
         file_docs = _library_file_docs_for_library(db, library_id)
+        total_files = count_library_files(db, library_id)
     else:
-        file_docs = db.library_files.get.many.by_filter({}, limit=DEFAULT_LIMIT)
+        file_docs = db.library_files.get.many.by_filter({}, limit=None)
+        total_files = db.library_files.count()
 
     result: dict[str, Any] = {
-        "total_files": len(file_docs),
+        "total_files": total_files,
         "total_artists": len({file_doc.get("artist") for file_doc in file_docs}),
         "total_albums": len({file_doc.get("album") for file_doc in file_docs}),
         "total_duration": sum(_numeric_value(file_doc.get("duration_seconds")) for file_doc in file_docs),

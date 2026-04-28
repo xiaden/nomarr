@@ -386,6 +386,7 @@ class TestPhaseOneQueryHelpers:
             {"artist": "Artist A", "album": "Album A", "duration_seconds": 10.5, "file_size": 100},
             {"artist": "Artist B", "album": "Album A", "duration_seconds": 9.5, "file_size": 200},
         ]
+        mock_db.library_files.count.return_value = 2
 
         with patch(
             "nomarr.components.library.library_file_query_comp.count_untagged_files",

@@ -15,12 +15,11 @@ class TestInjectPagination:
     BASE_QUERY = "FOR doc IN col RETURN doc"
 
     def test_no_offset_default_limit(self) -> None:
-        """limit=None and offset=0 inserts LIMIT before RETURN."""
+        """limit=None and offset=0 → no LIMIT clause injected (unbounded)."""
         query, bind_vars = inject_pagination(self.BASE_QUERY, limit=None, offset=0)
 
-        assert query == "FOR doc IN col LIMIT @pagination_limit RETURN doc"
-        assert bind_vars["pagination_limit"] == DEFAULT_LIMIT
-        assert "pagination_offset" not in bind_vars
+        assert query == self.BASE_QUERY
+        assert bind_vars == {}
 
     def test_explicit_limit_no_offset(self) -> None:
         """Explicit limit with offset=0 inserts LIMIT n before RETURN."""
@@ -50,7 +49,7 @@ class TestInjectPagination:
         """Trailing whitespace in the query is stripped."""
         query, _ = inject_pagination("FOR doc IN col RETURN doc   ", limit=None, offset=0)
 
-        assert query == "FOR doc IN col LIMIT @pagination_limit RETURN doc"
+        assert query == self.BASE_QUERY
 
     def test_zero_offset_does_not_produce_comma_form(self) -> None:
         """offset=0 always produces the single-argument LIMIT form."""

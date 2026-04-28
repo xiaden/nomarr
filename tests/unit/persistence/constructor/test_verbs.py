@@ -296,7 +296,6 @@ class TestFilteredCollectAndAggregate:
         assert call_args.kwargs["bind_vars"] == {
             "@col": "tags",
             "field": "value",
-            "pagination_limit": 1000,
         }
 
     def test_aggregate_field_with_filter_places_filter_before_collect(self) -> None:
@@ -334,7 +333,6 @@ class TestFilteredCollectAndAggregate:
         assert call_args.kwargs["bind_vars"] == {
             "@col": "tags",
             "field": "value",
-            "pagination_limit": 1000,
         }
 
 
