@@ -81,7 +81,6 @@ class LibraryPipelineService:
                     update_scan_progress(
                         self.db,
                         library_id,
-                        status="idle",
                         scan_error="Scan interrupted by server restart",
                     )
             else:
@@ -90,7 +89,6 @@ class LibraryPipelineService:
                     update_scan_progress(
                         self.db,
                         library_id,
-                        status="idle",
                         scan_error="Scan interrupted by server restart",
                     )
                 recovery_counts["scanning"] = len(stale_scanning)

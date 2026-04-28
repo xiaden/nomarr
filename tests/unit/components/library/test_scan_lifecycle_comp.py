@@ -119,7 +119,6 @@ class TestGetLibraryScanHistories:
                 "_id": "libraries/one",
                 "name": "Main Library",
                 "scanned_at": 123,
-                "scan_status": "complete",
                 "ignored": "value",
             },
             {
@@ -128,10 +127,16 @@ class TestGetLibraryScanHistories:
             },
         ]
 
-        with patch(
-            "nomarr.components.library.scan_lifecycle_comp._list_library_records",
-            return_value=libraries,
-        ) as mock_list_library_records:
+        with (
+            patch(
+                "nomarr.components.library.scan_lifecycle_comp._list_library_records",
+                return_value=libraries,
+            ) as mock_list_library_records,
+            patch(
+                "nomarr.components.library.scan_lifecycle_comp.get_scan_state",
+                side_effect=[{"completed_at": 123}, None],
+            ) as mock_get_scan_state,
+        ):
             result = get_library_scan_histories(mock_db)
 
         assert result == [
@@ -149,21 +154,28 @@ class TestGetLibraryScanHistories:
             },
         ]
         mock_list_library_records.assert_called_once_with(mock_db)
+        assert mock_get_scan_state.call_count == 2
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_applies_limit_before_projection(self) -> None:
         mock_db = MagicMock()
         libraries = [
-            {"_id": "libraries/one", "name": "One", "scan_status": "idle"},
-            {"_id": "libraries/two", "name": "Two", "scan_status": "scanning"},
-            {"_id": "libraries/three", "name": "Three", "scan_status": "complete"},
+            {"_id": "libraries/one", "name": "One"},
+            {"_id": "libraries/two", "name": "Two"},
+            {"_id": "libraries/three", "name": "Three"},
         ]
 
-        with patch(
-            "nomarr.components.library.scan_lifecycle_comp._list_library_records",
-            return_value=libraries,
-        ) as mock_list_library_records:
+        with (
+            patch(
+                "nomarr.components.library.scan_lifecycle_comp._list_library_records",
+                return_value=libraries,
+            ) as mock_list_library_records,
+            patch(
+                "nomarr.components.library.scan_lifecycle_comp.get_scan_state",
+                side_effect=[None, {"error": "boom"}],
+            ) as mock_get_scan_state,
+        ):
             result = get_library_scan_histories(mock_db, limit=2)
 
         assert result == [
@@ -177,10 +189,11 @@ class TestGetLibraryScanHistories:
                 "library_id": "libraries/two",
                 "name": "Two",
                 "scanned_at": None,
-                "scan_status": "scanning",
+                "scan_status": "error",
             },
         ]
         mock_list_library_records.assert_called_once_with(mock_db)
+        assert mock_get_scan_state.call_count == 2
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -303,7 +316,6 @@ class TestScanStateHelpers:
         update_scan_progress(
             mock_db,
             "libraries/test",
-            status="scanning",
             progress=5,
             total=12,
             scan_error="boom",
@@ -312,7 +324,6 @@ class TestScanStateHelpers:
         mock_db.library_scans.library_key.update.assert_called_once_with(
             "test",
             {
-                "status": "scanning",
                 "files_processed": 5,
                 "files_total": 12,
                 "error": "boom",

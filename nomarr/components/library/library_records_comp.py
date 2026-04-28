@@ -12,7 +12,11 @@ from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_file_query_comp import get_library_counts
 from nomarr.components.library.library_file_state_comp import count_untagged_files
-from nomarr.components.library.scan_lifecycle_comp import get_scan_state
+from nomarr.components.library.scan_lifecycle_comp import (
+    _pipeline_state_to_scan_status,
+    get_pipeline_state,
+    get_scan_state,
+)
 from nomarr.helpers.constants.pipeline_states import PIPELINE_ML_RUNNING
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.constructor import SchemaConstructor
@@ -264,28 +268,22 @@ def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, A
 
 def _merge_scan_state(db: Database, library: dict[str, Any]) -> dict[str, Any]:
     """Merge library scan state into a library document for API compatibility."""
-    scan_doc = get_scan_state(db, str(library["_id"]))
-    if scan_doc is None:
-        return {
-            **library,
-            "scan_status": "idle",
-            "scan_progress": 0,
-            "scan_total": 0,
-            "scanned_at": None,
-            "scan_error": None,
-            "last_scan_started_at": None,
-            "scan_type_in_progress": None,
-        }
+    library_id = str(library["_id"])
+    scan_doc = get_scan_state(db, library_id)
+    try:
+        pipeline_state = get_pipeline_state(db, library_id)
+    except ValueError:
+        pipeline_state = None
 
     return {
         **library,
-        "scan_status": scan_doc.get("status", "idle"),
-        "scan_progress": scan_doc.get("files_processed", 0),
-        "scan_total": scan_doc.get("files_total", 0),
-        "scanned_at": scan_doc.get("completed_at"),
-        "scan_error": scan_doc.get("error"),
-        "last_scan_started_at": scan_doc.get("started_at"),
-        "scan_type_in_progress": scan_doc.get("scan_type"),
+        "scan_status": _pipeline_state_to_scan_status(pipeline_state, scan_doc),
+        "scan_progress": 0 if scan_doc is None else scan_doc.get("files_processed", 0),
+        "scan_total": 0 if scan_doc is None else scan_doc.get("files_total", 0),
+        "scanned_at": None if scan_doc is None else scan_doc.get("completed_at"),
+        "scan_error": None if scan_doc is None else scan_doc.get("error"),
+        "last_scan_started_at": None if scan_doc is None else scan_doc.get("started_at"),
+        "scan_type_in_progress": None if scan_doc is None else scan_doc.get("scan_type"),
     }
 
 

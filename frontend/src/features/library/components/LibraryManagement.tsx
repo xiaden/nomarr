@@ -717,7 +717,7 @@ export function LibraryManagement() {
                     </Typography>
                   </Stack>
                   {/* Scan Progress Indicator */}
-                  {lib.scanStatus === "scanning" && (
+                  {pipelineState === "scanning" && (
                     <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 0.5 }}>
                       <Chip 
                         label="Scanning..." 
@@ -830,21 +830,21 @@ export function LibraryManagement() {
                   disabled={
                     !lib.isEnabled || 
                     scanningId === lib.library_id || 
-                    lib.scanStatus === "scanning" ||
+                    pipelineState === "scanning" ||
                     isOutsideLibraryRoot(lib.rootPath) ||
                     !lib.scannedAt  // Disable if never scanned
                   }
                   title={
                     !lib.scannedAt
                       ? "Run a Full Scan first before using Quick Scan"
-                      : lib.scanStatus === "scanning"
+                      : pipelineState === "scanning"
                       ? "Scan already in progress"
                       : isOutsideLibraryRoot(lib.rootPath)
                       ? "Cannot scan: library is outside library_root"
                       : "Scan only new and modified files"
                   }
                 >
-                  {scanningId === lib.library_id || lib.scanStatus === "scanning"
+                  {scanningId === lib.library_id || pipelineState === "scanning"
                     ? "Scanning..."
                     : "Quick Scan"}
                 </Button>
@@ -856,18 +856,18 @@ export function LibraryManagement() {
                   disabled={
                     !lib.isEnabled || 
                     scanningId === lib.library_id || 
-                    lib.scanStatus === "scanning" ||
+                    pipelineState === "scanning" ||
                     isOutsideLibraryRoot(lib.rootPath)
                   }
                   title={
-                    lib.scanStatus === "scanning"
+                    pipelineState === "scanning"
                       ? "Scan already in progress"
                       : isOutsideLibraryRoot(lib.rootPath)
                       ? "Cannot scan: library is outside library_root"
                       : "Rescan all files in the library"
                   }
                 >
-                  {scanningId === lib.library_id || lib.scanStatus === "scanning"
+                  {scanningId === lib.library_id || pipelineState === "scanning"
                     ? "Scanning..."
                     : "Full Scan"}
                 </Button>
@@ -878,7 +878,7 @@ export function LibraryManagement() {
                   onClick={() => handleWriteTags(lib.library_id)}
                   disabled={
                     !lib.isEnabled || 
-                    lib.scanStatus === "scanning"
+                    pipelineState === "scanning"
                   }
                   title="Write tags from database to audio files"
                 >

@@ -45,9 +45,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+_UNSET: object = object()
 _PIPELINE_SCANNING_KEY: str = PIPELINE_SCANNING.rsplit("/", 1)[-1]
 _DEFAULT_SCAN_FIELDS: dict[str, Any] = {
-    "status": "idle",
     "files_processed": 0,
     "files_total": 0,
     "completed_at": None,
@@ -55,6 +55,24 @@ _DEFAULT_SCAN_FIELDS: dict[str, Any] = {
     "error": None,
     "scan_type": None,
 }
+
+
+def _pipeline_state_to_scan_status(pipeline_state: str | None, scan_doc: dict[str, Any] | None) -> str:
+    """Derive legacy scan_status string from pipeline state and scan doc.
+
+    Rules:
+        - pipeline_state == "scanning" -> "scanning"
+        - scan_doc.error present       -> "error"
+        - scan_doc.completed_at set    -> "complete"
+        - otherwise                    -> "idle"
+    """
+    if pipeline_state == "scanning":
+        return "scanning"
+    if scan_doc and scan_doc.get("error"):
+        return "error"
+    if scan_doc and scan_doc.get("completed_at"):
+        return "complete"
+    return "idle"
 
 
 def get_folder_rel_paths(db: Database, library_id: str) -> set[str]:
@@ -268,32 +286,23 @@ def _list_library_records(db: Database) -> list[dict[str, Any]]:
 
     enriched_docs: list[dict[str, Any]] = []
     for doc in docs:
-        scan_doc = get_scan_state(db, str(doc["_id"]))
-        if scan_doc is None:
-            enriched_docs.append(
-                {
-                    **doc,
-                    "scan_status": "idle",
-                    "scan_progress": 0,
-                    "scan_total": 0,
-                    "scanned_at": None,
-                    "scan_error": None,
-                    "last_scan_started_at": None,
-                    "scan_type_in_progress": None,
-                }
-            )
-            continue
+        library_id = str(doc["_id"])
+        scan_doc = get_scan_state(db, library_id)
+        try:
+            pipeline_state = get_pipeline_state(db, library_id)
+        except ValueError:
+            pipeline_state = None
 
         enriched_docs.append(
             {
                 **doc,
-                "scan_status": scan_doc.get("status", "idle"),
-                "scan_progress": scan_doc.get("files_processed", 0),
-                "scan_total": scan_doc.get("files_total", 0),
-                "scanned_at": scan_doc.get("completed_at"),
-                "scan_error": scan_doc.get("error"),
-                "last_scan_started_at": scan_doc.get("started_at"),
-                "scan_type_in_progress": scan_doc.get("scan_type"),
+                "scan_status": _pipeline_state_to_scan_status(pipeline_state, scan_doc),
+                "scan_progress": 0 if scan_doc is None else scan_doc.get("files_processed", 0),
+                "scan_total": 0 if scan_doc is None else scan_doc.get("files_total", 0),
+                "scanned_at": None if scan_doc is None else scan_doc.get("completed_at"),
+                "scan_error": None if scan_doc is None else scan_doc.get("error"),
+                "last_scan_started_at": None if scan_doc is None else scan_doc.get("started_at"),
+                "scan_type_in_progress": None if scan_doc is None else scan_doc.get("scan_type"),
             }
         )
 
@@ -448,15 +457,28 @@ def get_library_scan_histories(
     if limit is not None:
         libraries = libraries[:limit]
 
-    return [
-        {
-            "library_id": library["_id"],
-            "name": library.get("name", "Unknown"),
-            "scanned_at": library.get("scanned_at"),
-            "scan_status": library.get("scan_status", "idle"),
-        }
-        for library in libraries
-    ]
+    histories: list[dict[str, Any]] = []
+    for library in libraries:
+        library_id = str(library["_id"])
+        scan_doc = get_scan_state(db, library_id)
+        try:
+            pipeline_state: str | None = get_pipeline_state(db, library_id)
+        except ValueError:
+            pipeline_state = None
+
+        histories.append(
+            {
+                "library_id": library_id,
+                "name": library.get("name", "Unknown"),
+                "scanned_at": library.get("scanned_at"),
+                "scan_status": _pipeline_state_to_scan_status(
+                    pipeline_state,
+                    scan_doc,
+                ),
+            }
+        )
+
+    return histories
 
 
 # ---------------------------------------------------------------------------
@@ -502,37 +524,38 @@ def update_scan_progress(
     db: Database,
     library_id: str,
     *,
-    status: str | None = None,
     progress: int | None = None,
     total: int | None = None,
-    scan_error: str | None = None,
+    scan_error: str | None | object = _UNSET,
+    completed_at: int | None | object = _UNSET,
+    started_at: int | None | object = _UNSET,
 ) -> None:
-    """Update scan progress counters and/or status.
+    """Update persisted scan progress fields on the scan document.
 
-    Only updates fields that are explicitly provided.
+    Only updates fields that are explicitly provided. Pass ``None`` for
+    ``scan_error``, ``completed_at``, or ``started_at`` to clear that field.
 
     Args:
         db: Database instance
         library_id: Library document ``_id``
-        status: Scan status (``'idle'``, ``'scanning'``, ``'complete'``, ``'error'``)
         progress: Files processed so far
         total: Total files to scan
-        scan_error: Error message (only when ``status='error'``)
+        scan_error: Error message to persist on the scan document, or ``None`` to clear it
+        completed_at: Completion timestamp in milliseconds, or ``None`` to clear it
+        started_at: Start timestamp in milliseconds, or ``None`` to clear it
 
     """
     update_fields: dict[str, Any] = {}
-    if status is not None:
-        update_fields["status"] = status
-        if status == "complete":
-            update_fields["completed_at"] = now_ms().value
-            if scan_error is None:
-                update_fields["error"] = None
     if progress is not None:
         update_fields["files_processed"] = progress
     if total is not None:
         update_fields["files_total"] = total
-    if scan_error is not None:
+    if scan_error is not _UNSET:
         update_fields["error"] = scan_error
+    if completed_at is not _UNSET:
+        update_fields["completed_at"] = completed_at
+    if started_at is not _UNSET:
+        update_fields["started_at"] = started_at
 
     if update_fields:
         update_scan_state(db, library_id, **update_fields)

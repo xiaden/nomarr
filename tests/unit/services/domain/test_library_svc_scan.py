@@ -101,24 +101,23 @@ class TestScanStateQueries:
     def test_get_status_library_running_jobs_ignores_scan_status_field(self) -> None:
         """Per-library running_jobs should come from pipeline state, not scan_status text."""
         service = _make_service()
-        library = {
-            "_id": "libraries/lib1",
-            "_key": "lib1",
-            "_rev": "_abc",
-            "name": "Rock Library",
-            "root_path": "/music",
-            "is_enabled": True,
-            "created_at": "2024-01-01T00:00:00",
-            "updated_at": "2024-01-01T00:00:00",
-            "scan_status": "scanning",
-            "scan_progress": 5,
-            "scan_total": 10,
-            "scan_error": None,
-            "scanned_at": None,
+        scan_state = {
+            "files_processed": 5,
+            "files_total": 10,
+            "error": None,
+            "completed_at": None,
         }
 
         with (
-            patch("nomarr.services.domain.library_svc.scan.resolve_library_for_scan", return_value=library),
+            patch("nomarr.services.domain.library_svc.scan.resolve_library_for_scan"),
+            patch(
+                "nomarr.services.domain.library_svc.scan.get_scan_state",
+                return_value=scan_state,
+            ),
+            patch(
+                "nomarr.services.domain.library_svc.scan.get_pipeline_state",
+                return_value="scanning",
+            ),
             patch(
                 "nomarr.services.domain.library_svc.scan.get_scanning_library_ids",
                 return_value={"libraries/lib2"},
@@ -134,24 +133,23 @@ class TestScanStateQueries:
     def test_get_status_library_running_jobs_reflects_pipeline_state_even_when_scan_status_is_idle(self) -> None:
         """Per-library running_jobs should be 1 when the requested library is in the scanning pipeline state."""
         service = _make_service()
-        library = {
-            "_id": "libraries/lib1",
-            "_key": "lib1",
-            "_rev": "_abc",
-            "name": "Rock Library",
-            "root_path": "/music",
-            "is_enabled": True,
-            "created_at": "2024-01-01T00:00:00",
-            "updated_at": "2024-01-01T00:00:00",
-            "scan_status": "idle",
-            "scan_progress": 0,
-            "scan_total": 0,
-            "scan_error": None,
-            "scanned_at": None,
+        scan_state = {
+            "files_processed": 0,
+            "files_total": 0,
+            "error": None,
+            "completed_at": None,
         }
 
         with (
-            patch("nomarr.services.domain.library_svc.scan.resolve_library_for_scan", return_value=library),
+            patch("nomarr.services.domain.library_svc.scan.resolve_library_for_scan"),
+            patch(
+                "nomarr.services.domain.library_svc.scan.get_scan_state",
+                return_value=scan_state,
+            ),
+            patch(
+                "nomarr.services.domain.library_svc.scan.get_pipeline_state",
+                return_value="idle",
+            ),
             patch(
                 "nomarr.services.domain.library_svc.scan.get_scanning_library_ids",
                 return_value={"libraries/lib1"},

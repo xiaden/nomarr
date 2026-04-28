@@ -894,7 +894,7 @@ SCHEMA: dict[str, Any] = {
         "capabilities": ["insert", "delete", "count"],
         "fields": {
             "_from": {"type": "str", "capabilities": ["get"]},
-            "_to": {"type": "str", "capabilities": ["get", "delete"]},
+            "_to": {"type": "str", "capabilities": ["get", "delete", "upsert"]},
         },
     },
     "library_has_scan": {
@@ -983,7 +983,7 @@ SCHEMA: dict[str, Any] = {
             },
             "cold": {
                 "fields": {
-                    "_key": {"type": "str", "capabilities": ["get"], "unique": True},
+                    "_key": {"type": "str", "capabilities": ["get", "upsert"], "unique": True},
                     "_id": {"type": "str", "capabilities": ["get", "collect"], "unique": True},
                     "file_id": {"type": "str", "capabilities": ["get", "delete"]},
                     "vector": {"type": "list[float]", "capabilities": ["get"]},

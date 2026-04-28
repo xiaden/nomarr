@@ -104,7 +104,6 @@ class TestComputeWorkStatus:
             {
                 "_id": "libraries/1",
                 "name": "Rock Library",
-                "scan_status": "idle",
                 "scan_progress": 50,
                 "scan_total": 200,
                 "library_auto_write": False,
@@ -128,7 +127,6 @@ class TestComputeWorkStatus:
             {
                 "_id": "libraries/1",
                 "name": "Rock Library",
-                "scan_status": "scanning",
                 "scan_progress": 50,
                 "scan_total": 200,
                 "library_auto_write": False,
@@ -150,7 +148,6 @@ class TestComputeWorkStatus:
             {
                 "_id": "libraries/1",
                 "name": "Rock Library",
-                "scan_status": "scanning",
                 "scan_progress": 50,
                 "scan_total": 200,
                 "library_auto_write": False,

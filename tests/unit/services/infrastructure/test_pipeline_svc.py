@@ -61,20 +61,23 @@ def pipeline_state_helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
         db: MagicMock,
         library_id: str,
         *,
-        status: str | None = None,
         progress: int | None = None,
         total: int | None = None,
         scan_error: str | None = None,
+        completed_at: int | None = None,
+        started_at: int | None = None,
     ) -> None:
         kwargs: dict[str, object] = {}
-        if status is not None:
-            kwargs["status"] = status
         if progress is not None:
             kwargs["progress"] = progress
         if total is not None:
             kwargs["total"] = total
         if scan_error is not None:
             kwargs["error"] = scan_error
+        if completed_at is not None:
+            kwargs["completed_at"] = completed_at
+        if started_at is not None:
+            kwargs["started_at"] = started_at
         db.libraries.update_scan_status(library_id, **kwargs)
 
     monkeypatch.setattr(
@@ -158,7 +161,6 @@ class TestRecoverStaleStates:
         mock_db.library_pipeline_states.bulk_transition.assert_any_call(PIPELINE_SCANNING, PIPELINE_IDLE)
         mock_db.libraries.update_scan_status.assert_called_once_with(
             library_id,
-            status="idle",
             error="Scan interrupted by server restart",
         )
 
@@ -421,7 +423,6 @@ class TestRecoverStaleStatesAdditional:
         ]
         mock_db.libraries.update_scan_status.assert_called_once_with(
             stale_library_id,
-            status="idle",
             error="Scan interrupted by server restart",
         )
 

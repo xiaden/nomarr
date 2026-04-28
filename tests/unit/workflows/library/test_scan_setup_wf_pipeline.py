@@ -40,7 +40,6 @@ class TestScanSetupWorkflowPipeline:
         mock_update.assert_called_once_with(
             mock_db,
             "libraries/abc123",
-            status="scanning",
             progress=0,
             total=0,
         )
@@ -73,7 +72,6 @@ class TestScanSetupWorkflowPipeline:
         mock_update.assert_called_once_with(
             mock_db,
             "libraries/abc123",
-            status="scanning",
             progress=0,
             total=0,
         )

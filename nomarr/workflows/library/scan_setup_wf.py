@@ -1,8 +1,9 @@
 """Pre-scan setup workflow.
 
 Validates the library is ready to scan, guards against concurrent scans,
-and sets scan progress status to 'scanning' before the background task is launched.
-Raises typed exceptions so the HTTP layer can map them to the correct status codes.
+initializes scan progress counters, and moves the pipeline into scanning
+before the background task is launched. Raises typed exceptions so the HTTP
+layer can map them to the correct status codes.
 """
 
 from __future__ import annotations
@@ -71,7 +72,7 @@ def scan_setup_workflow(
         library["name"],
     )
 
-    update_scan_progress(db, library_id, status="scanning", progress=0, total=0)
+    update_scan_progress(db, library_id, progress=0, total=0)
     transition_to_scanning(db, library_id)
 
     return library

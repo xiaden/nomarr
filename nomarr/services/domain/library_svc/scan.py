@@ -16,7 +16,12 @@ from nomarr.components.library import (
     get_scanning_library_ids,
     resolve_library_for_scan,
 )
-from nomarr.components.library.scan_lifecycle_comp import on_scan_complete_pipeline_hook
+from nomarr.components.library.scan_lifecycle_comp import (
+    _pipeline_state_to_scan_status,
+    get_pipeline_state,
+    get_scan_state,
+    on_scan_complete_pipeline_hook,
+)
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.dto.library_dto import LibraryScanStatusResult, StartScanResult
 from nomarr.services.infrastructure.config_svc import INTERNAL_MIN_DURATION_S
@@ -178,12 +183,17 @@ class LibraryScanMixin:
                 pending_jobs=0,
                 running_jobs=len(scanning_library_ids),
             )
-        library = resolve_library_for_scan(self.db, library_id)
-        scan_status = library.get("scan_status", "idle")
-        scan_progress = library.get("scan_progress", 0)
-        scan_total = library.get("scan_total", 0)
-        scanned_at = library.get("scanned_at")
-        scan_error = library.get("scan_error")
+        resolve_library_for_scan(self.db, library_id)  # Validate library exists
+        scan_state = get_scan_state(self.db, library_id)
+        try:
+            pipeline_state = get_pipeline_state(self.db, library_id)
+        except ValueError:
+            pipeline_state = None
+        scan_status = _pipeline_state_to_scan_status(pipeline_state, scan_state)
+        scan_progress = 0 if scan_state is None else int(scan_state.get("files_processed", 0) or 0)
+        scan_total = 0 if scan_state is None else int(scan_state.get("files_total", 0) or 0)
+        scanned_at = None if scan_state is None else scan_state.get("completed_at")
+        scan_error = None if scan_state is None else scan_state.get("error")
         enabled = self.background_tasks is not None
         return LibraryScanStatusResult(
             configured=True,
