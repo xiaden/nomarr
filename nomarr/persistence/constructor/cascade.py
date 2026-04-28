@@ -95,7 +95,7 @@ class CascadeEngine:
                     )
 
                 db.aql.execute(
-                    "FOR doc_id IN @ids REMOVE {_id: doc_id} IN @@col",
+                    "FOR doc_id IN @ids REMOVE PARSE_IDENTIFIER(doc_id).key IN @@col",
                     bind_vars={"@col": orphan_collection, "ids": orphan_collection_ids},
                 )
                 total_deleted += len(orphan_collection_ids)
