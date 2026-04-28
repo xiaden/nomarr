@@ -26,7 +26,7 @@ from nomarr.persistence.constructor.namespaces import (
     FieldNamespace,
     GetModifierNamespace,
 )
-from nomarr.persistence.schema import SCHEMA, CollectionType
+from nomarr.persistence.schema import SCHEMA, CapabilityError, CollectionType
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -74,6 +74,30 @@ def _expected_field_verbs(field_spec: dict[str, Any]) -> set[str]:
     """Derive the set of field-level verbs that should be attached."""
     declared = set(field_spec.get("capabilities", []))
     return declared & _FIELD_VERBS
+
+
+# Dummy arguments for invoking each capability-gated verb. The capability
+# check happens before any real work, so these placeholder values never
+# reach a backend; they only need to satisfy the method signature so Python
+# can dispatch into the body where ``_require_capability`` raises.
+_COLLECTION_VERB_ARGS: dict[str, tuple[Any, ...]] = {
+    "insert": ([{"x": 1}],),
+    "delete": (["col/1"],),
+    "cascade": (["col/1"],),
+    "count": (),
+    "transition": (["col/1"], "from/1", "to/1"),
+    "traversal": ("col/1", "edge"),
+    "ann_search": ([0.0], 1, 1),
+}
+
+_FIELD_VERB_ARGS: dict[str, tuple[Any, ...]] = {
+    "count": ("v",),
+    "collect": (),
+    "aggregate": (),
+    "update": ("v", {"x": 1}),
+    "upsert": ([{"x": 1}], "_key"),
+    "delete": ("v",),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -155,13 +179,15 @@ class TestCollectionVerbPresence:
         col_name: str,
         built_namespaces: dict[str, CollectionNamespace],
     ) -> None:
-        """Verbs NOT in capabilities must NOT be on the namespace."""
+        """Verbs NOT in capabilities must raise CapabilityError when invoked."""
         ns = built_namespaces[col_name]
         expected = _expected_collection_verbs(_BUILDABLE_SCHEMA[col_name])
         absent = _COLLECTION_VERBS - expected
 
         for verb in absent:
-            assert not hasattr(ns, verb), f"{col_name}: has verb '{verb}' but it's not in capabilities"
+            method = getattr(ns, verb)
+            with pytest.raises(CapabilityError):
+                method(*_COLLECTION_VERB_ARGS[verb])
 
     @pytest.mark.parametrize(
         "col_name",
@@ -269,13 +295,21 @@ class TestFieldVerbPresence:
         field_spec: dict[str, Any],
         built_namespaces: dict[str, CollectionNamespace],
     ) -> None:
-        """Verbs NOT in field capabilities must NOT be on the FieldNamespace."""
+        """Verbs NOT in field capabilities must raise CapabilityError when invoked."""
         field_ns = getattr(built_namespaces[col_name], field_name)
         expected = _expected_field_verbs(field_spec)
         absent = _FIELD_VERBS - expected
 
         for verb in absent:
-            assert not hasattr(field_ns, verb), f"{col_name}.{field_name}: has verb '{verb}' but not in capabilities"
+            if verb == "get":
+                # `get` is always a GetModifierNamespace; calling it raises
+                # CapabilityError when the capability is not declared.
+                with pytest.raises(CapabilityError):
+                    field_ns.get("v")
+                continue
+            method = getattr(field_ns, verb)
+            with pytest.raises(CapabilityError):
+                method(*_FIELD_VERB_ARGS[verb])
 
 
 # ---------------------------------------------------------------------------
@@ -339,13 +373,13 @@ class TestGetModifierUniqueness:
         field_spec: dict[str, Any],
         built_namespaces: dict[str, CollectionNamespace],
     ) -> None:
-        """Non-unique fields must NOT expose .get.one."""
+        """Non-unique fields must raise CapabilityError when .one is invoked."""
         if field_spec.get("unique", False):
             pytest.skip("Unique field")
 
         get_ns = getattr(built_namespaces[col_name], field_name).get
-        with pytest.raises(AttributeError):
-            _ = get_ns.one
+        with pytest.raises(CapabilityError):
+            get_ns.one("v")
 
     @pytest.mark.parametrize(
         ("col_name", "field_name", "field_spec"),
@@ -401,7 +435,8 @@ class TestGetModifierUniqueness:
             assert callable(get_ns.like)
             return
 
-        assert not hasattr(get_ns, "like")
+        with pytest.raises(CapabilityError):
+            get_ns.like("%v%")
 
 
 # ---------------------------------------------------------------------------

@@ -24,6 +24,18 @@ class SchemaValidationError(RuntimeError):
     """Raised at import time when SCHEMA contains invalid declarations."""
 
 
+class CapabilityError(RuntimeError):
+    """Raised when a namespace method is called without the required capability.
+
+    Capability gating in the persistence constructor is enforced at call time,
+    not by conditional attribute binding. Every method on a namespace is always
+    present; calling a method whose capability is not declared in the schema
+    raises this error with the offending collection/field/capability in the
+    message. This makes the contract explicit, statically discoverable, and
+    impossible to bypass via direct attribute access.
+    """
+
+
 # ---------------------------------------------------------------------------
 # SCHEMA — the complete persistence API declaration
 # ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@ from nomarr.helpers.filter_types import AggResult, FilterDict
 from nomarr.persistence.arango_client import SafeDatabase
 from nomarr.persistence.constructor import verbs
 from nomarr.persistence.constructor.cascade import CascadeEngine
-from nomarr.persistence.schema import SchemaValidationError
+from nomarr.persistence.schema import CapabilityError, SchemaValidationError
 
 Document = dict[str, Any]
 FieldSpec = dict[str, Any]
@@ -83,7 +83,15 @@ class CollectionGetNamespace:
 
 
 class GetModifierNamespace:
-    """Field-level `get` namespace with cardinality and operator modifiers."""
+    """Field-level `get` namespace with cardinality and operator modifiers.
+
+    All accessors (``__call__``, ``one``, ``many``, ``in_``, ``like``) are
+    always bound. Capability and uniqueness constraints are enforced at call
+    time: invoking a method that is not declared in the field's capabilities
+    or operators raises :class:`CapabilityError`. Calling ``.one`` on a
+    non-unique field raises :class:`CapabilityError` since uniqueness is a
+    structural prerequisite for single-document lookup.
+    """
 
     def __init__(
         self,
@@ -92,51 +100,49 @@ class GetModifierNamespace:
         field_name: str,
         field_spec: FieldSpec,
         collection_operators: dict[str, list[str]] | None = None,
+        *,
+        get_enabled: bool = True,
     ) -> None:
-        """Initialize field-level ``get`` access for a schema field.
-
-        ``field_spec["unique"]`` determines whether shorthand lookups use
-        ``.one`` or dispatch to ``.many`` and whether ``.one`` is exposed at
-        all. ``collection_operators`` gates optional operator helpers on this
-        namespace: when omitted or ``None``, ``.like`` is always attached; when
-        provided, ``.like`` is attached only if ``"like"`` appears in
-        ``collection_operators["get"]``.
-        """
         self._db = db
         self._collection_name = collection_name
         self._field_name = field_name
         self._unique = bool(field_spec.get("unique", False))
+        self._get_enabled = get_enabled
 
         get_ops: list[str] | None = (collection_operators or {}).get("get", None)
-        if get_ops is None or "like" in get_ops:
-            self.like = self._like_impl
+        # ``None`` operators dict means "all operators allowed". An explicit
+        # list gates each operator individually.
+        self._like_enabled = get_ops is None or "like" in get_ops
+
+    def _require_get(self) -> None:
+        if not self._get_enabled:
+            raise CapabilityError(f"field {self._collection_name}.{self._field_name} does not declare 'get' capability")
+
+    def __getattr__(self, name: str) -> Any:
+        """Alias `.in` (Python keyword) to `.in_`."""
+        if name == "in":
+            return self.in_
+        msg = f"{type(self).__name__!s} has no attribute {name!r}"
+        raise AttributeError(msg)
 
     def __call__(self, value: Any) -> Document | None | list[Document]:
         """Dispatch shorthand lookups by field uniqueness."""
         if self._unique:
-            return self._one(value)
+            return self.one(value)
         return self.many(value)
 
-    def __getattr__(self, name: str) -> Any:
-        """Expose `.one` only for unique fields and alias `.in` to `.in_`."""
-        if name == "one":
-            if self._unique:
-                return self._one
-            msg = f"'{self._field_name}' is not unique; .one is unavailable"
-            raise AttributeError(msg)
-
-        if name == "in":
-            return self.in_
-
-        msg = f"{type(self).__name__!s} has no attribute {name!r}"
-        raise AttributeError(msg)
-
-    def _one(self, value: Any) -> Document | None:
+    def one(self, value: Any) -> Document | None:
         """Get one document by a unique field value."""
+        self._require_get()
+        if not self._unique:
+            raise CapabilityError(
+                f"field {self._collection_name}.{self._field_name} is not unique; .one is unavailable"
+            )
         return verbs.get_one_by_field(self._db, self._collection_name, self._field_name, value)
 
     def many(self, value: Any, *, limit: int | None = None, offset: int = 0) -> list[Document]:
         """Get many documents by field equality."""
+        self._require_get()
         return verbs.get_many_by_field(
             self._db,
             self._collection_name,
@@ -154,6 +160,7 @@ class GetModifierNamespace:
         offset: int = 0,
     ) -> list[Document]:
         """Dispatch `.in()` to either IN-list or comparison-filter behavior."""
+        self._require_get()
         if isinstance(values, list):
             return verbs.get_in_by_field(
                 self._db,
@@ -173,7 +180,7 @@ class GetModifierNamespace:
             offset=offset,
         )
 
-    def _like_impl(
+    def like(
         self,
         pattern: str,
         *,
@@ -181,6 +188,9 @@ class GetModifierNamespace:
         offset: int = 0,
     ) -> list[Document]:
         """Run a LIKE query against the field."""
+        self._require_get()
+        if not self._like_enabled:
+            raise CapabilityError(f"field {self._collection_name}.{self._field_name} does not declare 'like' operator")
         return verbs.get_like_by_field(
             self._db,
             self._collection_name,
@@ -192,7 +202,16 @@ class GetModifierNamespace:
 
 
 class FieldNamespace:
-    """Field namespace built dynamically from a field schema spec."""
+    """Field namespace built dynamically from a field schema spec.
+
+    Every accessor (``get``, ``count``, ``collect``, ``aggregate``, ``update``,
+    ``upsert``, ``delete``) is always attached. Capability gating happens at
+    call time via :meth:`_require_capability`, which raises
+    :class:`CapabilityError` for any verb not declared in the field's
+    ``capabilities`` list. The ``get`` accessor is always a
+    :class:`GetModifierNamespace`; if ``get`` is not declared, every method on
+    that sub-namespace also raises :class:`CapabilityError`.
+    """
 
     def __init__(
         self,
@@ -202,48 +221,33 @@ class FieldNamespace:
         field_spec: FieldSpec,
         collection_operators: dict[str, list[str]] | None = None,
     ) -> None:
-        """Wire capability-based accessors for a single schema field.
-
-        Dynamically attaches ``get``, ``count``, ``collect``, ``aggregate``,
-        ``update``, ``upsert``, and ``delete`` methods based on the
-        capabilities declared in ``field_spec``. When ``get`` is enabled,
-        ``collection_operators`` is forwarded to ``GetModifierNamespace`` to
-        gate operator helpers such as ``.like`` on the field's ``get``
-        accessor.
-        """
         self._db = db
         self._collection_name = collection_name
         self._field_name = field_name
         self._field_spec = field_spec
+        self._capabilities = set(cast("list[str]", field_spec.get("capabilities", [])))
 
-        capabilities = set(cast("list[str]", field_spec.get("capabilities", [])))
+        self.get = GetModifierNamespace(
+            db,
+            collection_name,
+            field_name,
+            field_spec,
+            collection_operators,
+            get_enabled="get" in self._capabilities,
+        )
 
-        if "get" in capabilities:
-            self.get = GetModifierNamespace(
-                db,
-                collection_name,
-                field_name,
-                field_spec,
-                collection_operators,
+    def _require_capability(self, name: str) -> None:
+        if name not in self._capabilities:
+            raise CapabilityError(
+                f"field {self._collection_name}.{self._field_name} does not declare {name!r} capability"
             )
-        if "count" in capabilities:
-            self.count = self._count
-        if "collect" in capabilities:
-            self.collect = self._collect
-        if "aggregate" in capabilities:
-            self.aggregate = self._aggregate
-        if "update" in capabilities:
-            self.update = self._update
-        if "upsert" in capabilities:
-            self.upsert = self._upsert
-        if "delete" in capabilities:
-            self.delete = self._delete
 
-    def _count(self, value: Any) -> int:
+    def count(self, value: Any) -> int:
         """Count documents where this field matches a value."""
+        self._require_capability("count")
         return verbs.count_by_field(self._db, self._collection_name, self._field_name, value)
 
-    def _collect(
+    def collect(
         self,
         *,
         filter: dict[str, Any] | None = None,
@@ -251,6 +255,7 @@ class FieldNamespace:
         offset: int = 0,
     ) -> list[Any]:
         """Collect distinct values for this field."""
+        self._require_capability("collect")
         return verbs.collect_field(
             self._db,
             self._collection_name,
@@ -260,7 +265,7 @@ class FieldNamespace:
             offset=offset,
         )
 
-    def _aggregate(
+    def aggregate(
         self,
         *,
         filter: dict[str, Any] | None = None,
@@ -268,6 +273,7 @@ class FieldNamespace:
         offset: int = 0,
     ) -> list[AggResult]:
         """Aggregate this field into value/count pairs."""
+        self._require_capability("aggregate")
         return verbs.aggregate_field(
             self._db,
             self._collection_name,
@@ -277,21 +283,37 @@ class FieldNamespace:
             offset=offset,
         )
 
-    def _update(self, match_value: Any, fields: Document) -> None:
+    def update(self, match_value: Any, fields: Document) -> None:
         """Update documents matching this field value."""
+        self._require_capability("update")
         verbs.update_by_field(self._db, self._collection_name, self._field_name, match_value, fields)
 
-    def _upsert(self, docs: list[Document], match_field: str | list[str]) -> list[str]:
+    def upsert(self, docs: list[Document], match_field: str | list[str]) -> list[str]:
         """Upsert documents using the supplied match field or fields."""
+        self._require_capability("upsert")
         return verbs.upsert_by_field(self._db, self._collection_name, match_field, docs)
 
-    def _delete(self, value: Any) -> int:
+    def delete(self, value: Any) -> int:
         """Delete documents where this field equals the provided value."""
+        self._require_capability("delete")
         return verbs.delete_by_field(self._db, self._collection_name, self._field_name, value)
 
 
 class CollectionNamespace:
-    """Collection namespace built dynamically from a collection schema spec."""
+    """Collection namespace built dynamically from a collection schema spec.
+
+    Every collection-level method (``insert``, ``delete``, ``cascade``,
+    ``count``, ``count_by_filter``, ``delete_by_filter``, ``update_by_filter``,
+    ``truncate``, ``transition``, ``traversal``, ``ann_search``,
+    ``get_vector``, ``get_vectors_by_file_ids``, ``upsert_vector``) is always
+    bound. Capability gating is enforced at call time via
+    :meth:`_require_capability`, which raises :class:`CapabilityError` when
+    the verb is not declared in ``spec["capabilities"]``. Vectors-track
+    helpers are gated on ``template_family`` / ``template_tier`` instead of
+    capabilities and raise :class:`CapabilityError` for non-matching
+    collections. Each field in ``spec["fields"]`` is wired as a
+    :class:`FieldNamespace`.
+    """
 
     def __init__(
         self,
@@ -301,55 +323,18 @@ class CollectionNamespace:
         schema: dict[str, Any],
         registry: dict[str, Any] | None = None,
     ) -> None:
-        """Wire collection-level and field-level namespaces from a schema spec.
-
-        Always attaches a ``get`` accessor. Conditionally attaches ``insert``,
-        ``delete``, ``cascade``, ``count``, ``transition``, ``traversal``, and
-        ``ann_search`` based on ``spec["capabilities"]``. Creates a
-        ``FieldNamespace`` for each field in ``spec["fields"]`` and forwards
-        ``spec["operators"]`` so each field's ``get`` accessor exposes only
-        the allowed operators, such as ``.like``.
-        """
         self._db = db
         self._collection_name = collection_name
         self._spec = spec
         self._schema = schema
         self._registry = registry
+        self._capabilities = set(cast("list[str]", spec.get("capabilities", [])))
+        self._template_family = cast("str | None", spec.get("template_family"))
+        self._template_tier = cast("str | None", spec.get("template_tier"))
+
         self.get = CollectionGetNamespace(db, collection_name)
 
-        capabilities = set(cast("list[str]", spec.get("capabilities", [])))
         collection_operators = cast("dict[str, list[str]] | None", spec.get("operators"))
-
-        if "insert" in capabilities:
-            self.insert = self._insert
-        if "delete" in capabilities:
-            self.delete = self._delete
-        if "cascade" in capabilities:
-            self.cascade = self._cascade
-        if "count" in capabilities:
-            self.count = self._count
-            self.count_by_filter = self._count_by_filter
-        if "delete" in capabilities:
-            self.delete_by_filter = self._delete_by_filter
-        if "update" in capabilities:
-            self.update_by_filter = self._update_by_filter
-        if "truncate" in capabilities:
-            self.truncate = self._truncate
-        if "transition" in capabilities:
-            self.transition = self._transition
-        if "traversal" in capabilities:
-            self.traversal = self._traversal
-        if "ann_search" in capabilities:
-            self.ann_search = self._ann_search
-
-        template_family = cast("str | None", spec.get("template_family"))
-        template_tier = cast("str | None", spec.get("template_tier"))
-        if template_family == "vectors_track":
-            self.get_vector = self._get_vector
-            self.get_vectors_by_file_ids = self._get_vectors_by_file_ids
-            if template_tier == "hot":
-                self.upsert_vector = self._upsert_vector
-
         for field_name, field_spec in cast("dict[str, FieldSpec]", spec.get("fields", {})).items():
             setattr(
                 self,
@@ -363,36 +348,54 @@ class CollectionNamespace:
                 ),
             )
 
-    def _insert(self, docs: list[Document]) -> list[str]:
+    def _require_capability(self, name: str) -> None:
+        if name not in self._capabilities:
+            raise CapabilityError(f"collection {self._collection_name!r} does not declare {name!r} capability")
+
+    def _require_vectors_track(self, hot_only: bool = False) -> None:
+        if self._template_family != "vectors_track":
+            raise CapabilityError(f"collection {self._collection_name!r} is not a vectors_track collection")
+        if hot_only and self._template_tier != "hot":
+            raise CapabilityError(f"collection {self._collection_name!r} is not a hot vectors_track collection")
+
+    def insert(self, docs: list[Document]) -> list[str]:
         """Insert documents into the collection."""
+        self._require_capability("insert")
         return verbs.insert(self._db, self._collection_name, docs)
 
-    def _delete(self, ids: list[str]) -> None:
+    def delete(self, ids: list[str]) -> None:
         """Delete documents by `_id`."""
+        self._require_capability("delete")
         verbs.delete_by_ids(self._db, self._collection_name, ids)
 
-    def _count(self) -> int:
+    def count(self) -> int:
         """Count all documents in the collection."""
+        self._require_capability("count")
         return verbs.count_all(self._db, self._collection_name)
 
-    def _count_by_filter(self, filter_dict: dict[str, Any]) -> int:
+    def count_by_filter(self, filter_dict: dict[str, Any]) -> int:
         """Count documents matching a multi-field equality filter."""
+        self._require_capability("count")
         return verbs.count_by_filter(self._db, self._collection_name, filter_dict)
 
-    def _truncate(self) -> None:
+    def truncate(self) -> None:
         """Remove all documents from the collection."""
+        self._require_capability("truncate")
         verbs.truncate(self._db, self._collection_name)
 
-    def _delete_by_filter(self, filter_dict: dict[str, Any]) -> int:
+    def delete_by_filter(self, filter_dict: dict[str, Any]) -> int:
         """Delete documents matching a multi-field equality filter."""
+        self._require_capability("delete")
         return verbs.delete_by_filter(self._db, self._collection_name, filter_dict)
 
-    def _update_by_filter(self, filter_dict: dict[str, Any], fields: Document) -> None:
+    def update_by_filter(self, filter_dict: dict[str, Any], fields: Document) -> None:
         """Update documents matching a multi-field equality filter."""
+        self._require_capability("update")
         verbs.update_by_filter(self._db, self._collection_name, filter_dict, fields)
 
-    def _transition(self, ids: list[str], from_edge_target: str, to_edge_target: str) -> None:
+    def transition(self, ids: list[str], from_edge_target: str, to_edge_target: str) -> None:
         """Three-phase state transition per DD §3.7, ADR-003, and ERR 1579."""
+        self._require_capability("transition")
         edge_col = cast("str | None", self._spec.get("edge_collection"))
         if not edge_col:
             raise SchemaValidationError(
@@ -413,12 +416,18 @@ class CollectionNamespace:
                 )
 
             self._db.aql.execute(
-                "INSERT {_from: @fid, _to: @to} INTO @@ec",
+                """
+                UPSERT { _from: @fid, _to: @to }
+                INSERT { _from: @fid, _to: @to }
+                UPDATE {}
+                IN @@ec
+                """,
                 bind_vars={"@ec": edge_col, "fid": doc_id, "to": to_edge_target},
             )
 
-    def _cascade(self, ids: list[str]) -> int:
+    def cascade(self, ids: list[str]) -> int:
         """Cascade delete across schema-declared edge targets."""
+        self._require_capability("cascade")
         cascade_targets = cast("list[str]", self._spec.get("cascade", []))
         if not cascade_targets:
             return 0
@@ -433,7 +442,7 @@ class CollectionNamespace:
             self._registry,
         )
 
-    def _ann_search(
+    def ann_search(
         self,
         query_vector: list[float],
         limit: int,
@@ -442,6 +451,7 @@ class CollectionNamespace:
         filter: dict[str, Any] | None = None,
     ) -> list[Document]:
         """Run ANN search on a constructed template collection."""
+        self._require_capability("ann_search")
         return verbs.ann_search(
             self._db,
             self._collection_name,
@@ -451,8 +461,9 @@ class CollectionNamespace:
             filter=filter,
         )
 
-    def _get_vector(self, file_id: str) -> Document | None:
+    def get_vector(self, file_id: str) -> Document | None:
         """Get the latest vector document for a file from this template collection."""
+        self._require_vectors_track()
         cursor = self._db.aql.execute(
             """
             FOR doc IN @@col
@@ -465,8 +476,9 @@ class CollectionNamespace:
         )
         return cast("Document | None", next(cursor, None))
 
-    def _get_vectors_by_file_ids(self, file_ids: list[str]) -> list[Document]:
+    def get_vectors_by_file_ids(self, file_ids: list[str]) -> list[Document]:
         """Get vector documents for multiple files from this template collection."""
+        self._require_vectors_track()
         if not file_ids:
             return []
         cursor = self._db.aql.execute(
@@ -479,7 +491,7 @@ class CollectionNamespace:
         )
         return [cast("Document", row) for row in cursor]
 
-    def _upsert_vector(
+    def upsert_vector(
         self,
         file_id: str,
         model_suite_hash: str,
@@ -488,6 +500,7 @@ class CollectionNamespace:
         num_segments: int,
     ) -> None:
         """Upsert a hot vectors_track document plus its file_has_vectors edge."""
+        self._require_vectors_track(hot_only=True)
         _key = _make_vector_key(file_id, model_suite_hash)
         norm = math.sqrt(math.fsum(x * x for x in vector))
         vector_n = [x / norm for x in vector] if norm > 0.0 else list(vector)
@@ -520,7 +533,7 @@ class CollectionNamespace:
             bind_vars={"file_id": file_id, "vector_id": vector_id},
         )
 
-    def _traversal(
+    def traversal(
         self,
         start: str | dict[str, Any],
         edge: str,
@@ -530,6 +543,7 @@ class CollectionNamespace:
         offset: int = 0,
     ) -> list[Document]:
         """Traverse an edge in one of the DD-defined modes."""
+        self._require_capability("traversal")
         edge_spec = cast("dict[str, str] | None", self._spec.get("edges", {}).get(edge))
         if edge_spec is None:
             msg = f"Edge '{edge}' is not declared on collection '{self._collection_name}'"

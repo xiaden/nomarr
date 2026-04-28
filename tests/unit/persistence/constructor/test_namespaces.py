@@ -15,7 +15,7 @@ from nomarr.persistence.constructor.namespaces import (
     IdGetManyNamespace,
     IdGetNamespace,
 )
-from nomarr.persistence.schema import CollectionType
+from nomarr.persistence.schema import CapabilityError, CollectionType
 
 
 def _build_ns(
@@ -147,7 +147,7 @@ class TestGetModifierNamespace:
     def test_call_dispatches_to_one_for_unique_field(self) -> None:
         modifier = self._build_get_modifier(unique=True)
 
-        with patch.object(modifier, "_one", return_value={"_id": "test_col/1"}) as mock_one:
+        with patch.object(modifier, "one", return_value={"_id": "test_col/1"}) as mock_one:
             modifier("some_value")
 
         mock_one.assert_called_once_with("some_value")
@@ -188,11 +188,11 @@ class TestGetModifierNamespace:
         assert result == []
 
     def test_one_not_available_on_non_unique_field(self) -> None:
-        """Accessing .one on a non-unique field should raise AttributeError."""
+        """Calling .one on a non-unique field should raise CapabilityError."""
         modifier = self._build_get_modifier(unique=False)
 
-        with pytest.raises(AttributeError):
-            _ = modifier.one
+        with pytest.raises(CapabilityError):
+            modifier.one("v")
 
 
 @pytest.mark.unit
@@ -236,7 +236,7 @@ class TestGetModifierNamespaceLike:
         assert bind_vars["pagination_limit"] == 5
 
     def test_like_not_available_when_operators_excludes_it(self) -> None:
-        """like() must not exist when operators.get does not include 'like'."""
+        """like() must raise CapabilityError when operators.get does not include 'like'."""
         modifier = GetModifierNamespace(
             db=MagicMock(),
             collection_name="test_col",
@@ -245,7 +245,8 @@ class TestGetModifierNamespaceLike:
             collection_operators={"get": ["in"]},
         )
 
-        assert not hasattr(modifier, "like")
+        with pytest.raises(CapabilityError):
+            modifier.like("%v%")
 
     def test_like_available_when_operators_includes_it(self) -> None:
         """like() must exist when operators.get explicitly includes 'like'."""
