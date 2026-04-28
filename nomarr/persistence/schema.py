@@ -549,7 +549,7 @@ SCHEMA: dict[str, Any] = {
         "capabilities": ["insert", "delete", "cascade", "count"],
         "fields": {
             "_key": {"type": "str", "capabilities": ["get"], "unique": True},
-            "_id": {"type": "str", "capabilities": ["get"], "unique": True},
+            "_id": {"type": "str", "capabilities": ["get", "collect"], "unique": True},
             "rel": {
                 "type": "str",
                 "capabilities": ["get", "count", "collect", "aggregate"],
@@ -845,7 +845,7 @@ SCHEMA: dict[str, Any] = {
         "capabilities": ["insert", "delete", "count", "truncate"],
         "fields": {
             "_from": {"type": "str", "capabilities": ["get", "delete"]},
-            "_to": {"type": "str", "capabilities": ["get", "delete", "collect"]},
+            "_to": {"type": "str", "capabilities": ["get", "delete", "collect", "count"]},
         },
     },
     "file_has_state": {
@@ -890,7 +890,7 @@ SCHEMA: dict[str, Any] = {
         "capabilities": ["insert", "delete", "count"],
         "fields": {
             "_from": {"type": "str", "capabilities": ["get"]},
-            "_to": {"type": "str", "capabilities": ["get", "delete"]},
+            "_to": {"type": "str", "capabilities": ["get", "delete", "upsert"]},
         },
     },
     "file_has_vectors": {
