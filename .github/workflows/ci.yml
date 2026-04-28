@@ -244,10 +244,8 @@ jobs:
       - name: Promote image with release tags
         run: |
           SHA_TAG="${{ needs.build-and-push.outputs.sha_tag }}"
-          docker pull "${SHA_TAG}"
           IFS=',' read -ra TAGS <<< "${{ needs.build-and-push.outputs.promote_tags }}"
           for TAG in "${TAGS[@]}"; do
             echo "Tagging ${SHA_TAG} -> ${TAG}"
-            docker tag "${SHA_TAG}" "${TAG}"
-            docker push "${TAG}"
+            docker buildx imagetools create --tag "${TAG}" "${SHA_TAG}"
           done
