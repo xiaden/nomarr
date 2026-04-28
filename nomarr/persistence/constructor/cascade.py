@@ -39,11 +39,9 @@ class CascadeEngine:
             registry: Optional dict of registered template collection instances.
 
         Returns:
-            Total count of documents deleted (edges + orphaned vertices).
+            Total count of documents deleted (seed vertices + edges + orphaned vertices).
 
         """
-        del collection_name
-
         normalized_ids = list(dict.fromkeys(ids))
         if not normalized_ids:
             return 0
@@ -84,21 +82,20 @@ class CascadeEngine:
                     active_registry,
                 )
                 orphan_cascade_targets = list(orphan_spec.get("cascade", []))
-                if orphan_cascade_targets:
-                    total_deleted += self.cascade(
-                        db,
-                        orphan_collection,
-                        orphan_collection_ids,
-                        orphan_cascade_targets,
-                        schema,
-                        active_registry,
-                    )
-
-                db.aql.execute(
-                    "FOR doc_id IN @ids REMOVE PARSE_IDENTIFIER(doc_id).key IN @@col",
-                    bind_vars={"@col": orphan_collection, "ids": orphan_collection_ids},
+                total_deleted += self.cascade(
+                    db,
+                    orphan_collection,
+                    orphan_collection_ids,
+                    orphan_cascade_targets,
+                    schema,
+                    active_registry,
                 )
-                total_deleted += len(orphan_collection_ids)
+
+        db.aql.execute(
+            "FOR doc_id IN @ids REMOVE PARSE_IDENTIFIER(doc_id).key IN @@col",
+            bind_vars={"@col": collection_name, "ids": normalized_ids},
+        )
+        total_deleted += len(normalized_ids)
 
         return total_deleted
 

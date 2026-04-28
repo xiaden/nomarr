@@ -69,14 +69,14 @@ class TestCascadeEngine:
         },
     }
 
-    def test_no_edges_returns_zero(self) -> None:
-        """Cascade with no connected edges returns 0."""
+    def test_no_edges_returns_seed_count(self) -> None:
+        """Cascade with no connected edges still deletes the seed document."""
         db = _make_db_mock(edge_docs=[])
         engine = CascadeEngine()
 
         result = engine.cascade(db, "source_col", ["source_col/1"], ["test_edge"], self.SCHEMA)
 
-        assert result == 0
+        assert result == 1
 
     def test_edge_removal_counted(self) -> None:
         """Cascade counts removed edge documents even when targets are not orphaned."""
@@ -89,7 +89,8 @@ class TestCascadeEngine:
 
         result = engine.cascade(db, "source_col", ["source_col/1"], ["test_edge"], self.SCHEMA)
 
-        assert result == 2
+        # 2 edges removed + 1 seed deleted
+        assert result == 3
 
     def test_orphaned_target_document_is_counted(self) -> None:
         """Cascade removes now-orphaned target documents after edge cleanup."""
@@ -99,7 +100,8 @@ class TestCascadeEngine:
 
         result = engine.cascade(db, "source_col", ["source_col/1"], ["test_edge"], self.SCHEMA)
 
-        assert result == 2
+        # 1 edge removed + 1 orphan target + 1 seed
+        assert result == 3
 
     def test_deduplicates_ids_from_input_list(self) -> None:
         """Cascade deduplicates id lists before querying edge collections."""
@@ -114,9 +116,35 @@ class TestCascadeEngine:
             self.SCHEMA,
         )
 
-        assert result == 0
+        # 1 deduplicated seed deleted
+        assert result == 1
         first_call = db.aql.execute.call_args_list[0]
         assert first_call.kwargs["bind_vars"]["ids"] == ["source_col/1"]
+
+    def test_target_with_remaining_edges_is_not_deleted(self) -> None:
+        """A target connected to OTHER non-deleted documents must survive cascade.
+
+        Regression guard: cascade must never delete shared/linked documents that
+        still have at least one remaining edge after seed-edge cleanup.
+        """
+        edges = [{"_key": "e1", "_from": "source_col/1", "_to": "target_col/shared"}]
+        # orphan_counts=[5] => target still has 5 remaining edges to other docs
+        db = _make_db_mock(edge_docs=edges, orphan_counts=[5])
+        engine = CascadeEngine()
+
+        result = engine.cascade(db, "source_col", ["source_col/1"], ["test_edge"], self.SCHEMA)
+
+        # 1 edge removed + 1 seed deleted; target_col/shared is NOT deleted
+        assert result == 2
+
+        remove_calls = [
+            call
+            for call in db.aql.execute.call_args_list
+            if "REMOVE" in call.args[0] and "PARSE_IDENTIFIER" in call.args[0]
+        ]
+        # Only the seed collection should see a vertex REMOVE, never target_col
+        for call in remove_calls:
+            assert call.kwargs["bind_vars"]["@col"] == "source_col"
 
     def test_empty_ids_returns_zero(self) -> None:
         """Cascade with empty ids list returns 0 immediately."""
