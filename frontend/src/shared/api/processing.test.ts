@@ -32,6 +32,6 @@ describe("getWorkStatus", () => {
 
     await expect(getWorkStatus()).resolves.toEqual(response);
 
-    expect(get).toHaveBeenCalledWith("/api/web/work-status");
+    expect(get).toHaveBeenCalledWith("/api/web/machine-learning/work-status");
   });
 });
