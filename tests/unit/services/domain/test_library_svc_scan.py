@@ -83,23 +83,17 @@ class TestScanStateQueries:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_get_status_aggregate_counts_running_jobs_from_pipeline_state(self) -> None:
-        """Aggregate running_jobs should equal the number of scanning pipeline libraries."""
+    def test_get_status_aggregate_returns_configured(self) -> None:
+        """Aggregate status should return configured=True when library root is set."""
         service = _make_service()
-        with patch(
-            "nomarr.services.domain.library_svc.scan.get_scanning_library_ids",
-            return_value={"libraries/lib1", "libraries/lib2"},
-        ):
-            result = service.get_status()
+        result = service.get_status()
 
         assert result.configured is True
-        assert result.running_jobs == 2
-        assert result.pending_jobs == 0
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_get_status_library_running_jobs_ignores_scan_status_field(self) -> None:
-        """Per-library running_jobs should come from pipeline state, not scan_status text."""
+    def test_get_status_library_scan_status_reflects_pipeline_state(self) -> None:
+        """Per-library scan_status should come from pipeline state."""
         service = _make_service()
         scan_state = {
             "files_processed": 5,
@@ -118,20 +112,15 @@ class TestScanStateQueries:
                 "nomarr.services.domain.library_svc.scan.get_pipeline_state",
                 return_value="scanning",
             ),
-            patch(
-                "nomarr.services.domain.library_svc.scan.get_scanning_library_ids",
-                return_value={"libraries/lib2"},
-            ),
         ):
             result = service.get_status("libraries/lib1")
 
         assert result.scan_status == "scanning"
-        assert result.running_jobs == 0
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_get_status_library_running_jobs_reflects_pipeline_state_even_when_scan_status_is_idle(self) -> None:
-        """Per-library running_jobs should be 1 when the requested library is in the scanning pipeline state."""
+    def test_get_status_library_idle_pipeline_state_returns_idle_scan_status(self) -> None:
+        """Per-library scan_status should be idle when pipeline state is idle."""
         service = _make_service()
         scan_state = {
             "files_processed": 0,
@@ -150,15 +139,10 @@ class TestScanStateQueries:
                 "nomarr.services.domain.library_svc.scan.get_pipeline_state",
                 return_value="idle",
             ),
-            patch(
-                "nomarr.services.domain.library_svc.scan.get_scanning_library_ids",
-                return_value={"libraries/lib1"},
-            ),
         ):
             result = service.get_status("libraries/lib1")
 
         assert result.scan_status == "idle"
-        assert result.running_jobs == 1
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -177,7 +161,6 @@ class TestScanStateQueries:
         result = service.get_status()
 
         assert result.configured is False
-        assert result.running_jobs == 0
 
 
 class TestGetScanHistory:

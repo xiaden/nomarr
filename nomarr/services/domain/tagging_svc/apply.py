@@ -5,18 +5,13 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import asdict
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 
-from nomarr.components.library.library_file_state_comp import get_calibration_status_by_library
-from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.helpers import ManagedTask
-from nomarr.helpers.dto.calibration_dto import (
-    GlobalCalibrationStatus,
-    LibraryCalibrationStatus,
-    WriteCalibratedTagsParams,
-)
+from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
 from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult
 from nomarr.workflows.calibration.apply_calibration_wf import apply_calibration_wf
+from nomarr.workflows.calibration.get_calibration_status_wf import get_calibration_status_workflow
 from nomarr.workflows.calibration.write_calibrated_tags_wf import write_calibrated_tags_wf
 
 from .config import (
@@ -273,41 +268,6 @@ class TaggingApplyMixin:
             Dict representation of GlobalCalibrationStatus DTO
 
         """
-        global_version_doc = cast("dict[str, Any] | None", self.db.meta.key.get("calibration_version"))
-        global_version = None if global_version_doc is None else global_version_doc.get("value")
-        last_run_doc = cast("dict[str, Any] | None", self.db.meta.key.get("calibration_last_run"))
-        last_run_str = None if last_run_doc is None else last_run_doc.get("value")
-        last_run = int(last_run_str) if last_run_str else None
-
-        library_status_list = []
-        if global_version and self.library_service:
-            status_data = get_calibration_status_by_library(self.db)
-
-            for status in status_data:
-                library_id = status["library_id"]
-                library_doc = get_library_record(self.db, library_id, include_scan=False)
-
-                if library_doc:
-                    calibrated = status["calibrated_count"]
-                    not_calibrated = status["not_calibrated_count"]
-                    total = calibrated + not_calibrated
-                    percentage = (calibrated / total * 100) if total > 0 else 0.0
-
-                    library_status_list.append(
-                        LibraryCalibrationStatus(
-                            library_id=library_id,
-                            library_name=library_doc.get("name", "Unknown"),
-                            total_files=total,
-                            current_count=calibrated,
-                            outdated_count=not_calibrated,
-                            percentage=round(percentage, 1),
-                        ),
-                    )
-
-        result = GlobalCalibrationStatus(
-            global_version=global_version,
-            last_run=last_run,
-            libraries=library_status_list,
-        )
+        result = get_calibration_status_workflow(db=self.db)
         result_dict: dict[str, Any] = asdict(result)
         return result_dict

@@ -28,8 +28,6 @@ class LibraryScanStatusResult:
     configured: bool
     library_path: str | None
     enabled: bool
-    pending_jobs: int  # Legacy (deprecated, always 0)
-    running_jobs: int  # Legacy (deprecated, 1 if scanning else 0)
     scan_status: str | None = None  # "idle", "scanning", "complete", "error"
     scan_progress: int | None = None  # Number of files processed
     scan_total: int | None = None  # Total files to process
@@ -88,7 +86,7 @@ class StartScanResult:
     files_queued: int
     files_skipped: int
     files_removed: int
-    job_ids: list[int] | list[str]  # Can be int (legacy queue IDs) or str (task IDs)
+    job_ids: list[str]
 
 
 @dataclass

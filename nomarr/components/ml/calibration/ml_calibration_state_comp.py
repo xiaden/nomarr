@@ -261,6 +261,13 @@ def set_calibration_version(db: Database, version_hash: str) -> None:
     db.meta.key.upsert([{"key": "calibration_version", "value": version_hash}], match_field="key")
 
 
+def get_calibration_last_run(db: Database) -> int | None:
+    """Return the timestamp (ms) of the last calibration run, or ``None``."""
+    last_run_doc = cast("dict[str, Any] | None", db.meta.key.get("calibration_last_run"))
+    last_run_str = None if last_run_doc is None else last_run_doc.get("value")
+    return int(last_run_str) if last_run_str else None
+
+
 def set_calibration_last_run(db: Database, timestamp: str) -> None:
     """Record the timestamp of the last calibration run."""
     db.meta.key.upsert([{"key": "calibration_last_run", "value": timestamp}], match_field="key")

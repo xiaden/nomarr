@@ -170,18 +170,3 @@ def _format_aliases_json(aliases: list[str]) -> str:
     """Format aliases list as JSON array for TOML."""
     escaped = [f'"{a}"' for a in aliases]
     return f"[{', '.join(escaped)}]"
-
-
-# Legacy function for backwards compatibility
-def _generate_aliases(tag_key: str, namespace: str) -> str:
-    """Generate the three tag format aliases for a tag key.
-
-    Args:
-        tag_key: Full tag key (e.g., "nom:mood-strict")
-        namespace: Namespace portion (e.g., "nom")
-
-    Returns:
-        JSON array string for TOML
-
-    """
-    return _format_aliases_json(_generate_alias_list(tag_key, namespace))

@@ -34,11 +34,6 @@ class MigrationError(Exception):
     """Raised when a migration fails during execution."""
 
 
-# TODO: remove MigrationChainError — no callers
-class MigrationChainError(Exception):
-    """Raised when the migration version chain is broken."""
-
-
 class SchemaVersionMismatchError(Exception):
     """Raised when the database schema is newer than the code."""
 

@@ -149,7 +149,7 @@ class StartScanResponse(BaseModel):
     files_queued: int
     files_skipped: int
     files_removed: int
-    job_ids: list[int] | list[str]  # Can be int (legacy queue IDs) or str (task IDs)
+    job_ids: list[str]
 
     @classmethod
     def from_dto(cls, result: StartScanResult) -> Self:

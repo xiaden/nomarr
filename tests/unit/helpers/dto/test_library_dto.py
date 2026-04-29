@@ -58,8 +58,6 @@ class TestLibraryScanStatusResult:
             configured=False,
             library_path=None,
             enabled=False,
-            pending_jobs=0,
-            running_jobs=0,
         )
         assert not status.configured
         assert status.library_path is None
@@ -72,8 +70,6 @@ class TestLibraryScanStatusResult:
             configured=True,
             library_path="/music",
             enabled=True,
-            pending_jobs=0,
-            running_jobs=1,
             scan_status="scanning",
             scan_progress=50,
             scan_total=100,
@@ -90,8 +86,6 @@ class TestLibraryScanStatusResult:
             configured=True,
             library_path="/music",
             enabled=True,
-            pending_jobs=0,
-            running_jobs=0,
             scan_status="complete",
             scanned_at=1700000000000,
         )
@@ -105,8 +99,6 @@ class TestLibraryScanStatusResult:
             configured=True,
             library_path="/music",
             enabled=True,
-            pending_jobs=0,
-            running_jobs=0,
             scan_status="error",
             scan_error="Path not found",
         )
@@ -284,15 +276,3 @@ class TestStartScanResult:
             job_ids=[],
         )
         assert result.files_discovered == result.files_queued + result.files_skipped
-
-    @pytest.mark.unit
-    def test_scan_result_accepts_int_job_ids(self) -> None:
-        """Should accept legacy integer job IDs."""
-        result = StartScanResult(
-            files_discovered=10,
-            files_queued=10,
-            files_skipped=0,
-            files_removed=0,
-            job_ids=[1, 2, 3],
-        )
-        assert result.job_ids == [1, 2, 3]

@@ -339,9 +339,8 @@ class ConfigService:
     def _apply_env_overrides(self, cfg: dict[str, Any]) -> None:
         """Apply NOMARR_* environment variable overrides to the config dict.
 
-        Scans os.environ for keys prefixed with NOMARR_ (primary) or legacy
-        TAGGER_/AUTOTAG_ prefixes.  Only keys present in ALL_CONFIG_KEYS
-        (derived from StaticConfig + DynamicConfig) are accepted.
+        Scans os.environ for keys prefixed with NOMARR_.  Only keys present in
+        ALL_CONFIG_KEYS (derived from StaticConfig + DynamicConfig) are accepted.
 
         Values are parsed with the same ``_parse_db_value`` logic used for
         DB reads, which correctly handles booleans, negative integers, floats,
@@ -350,12 +349,11 @@ class ConfigService:
         Internal constants cannot be overridden via environment.
         """
         for env_key, env_value in os.environ.items():
-            # Support NOMARR_* prefix (primary), TAGGER_* and AUTOTAG_* (legacy)
-            if not env_key.startswith(("NOMARR_", "TAGGER_", "AUTOTAG_")):
+            if not env_key.startswith("NOMARR_"):
                 continue
 
             # Normalize to lowercase key name
-            key = env_key.replace("NOMARR_", "").replace("TAGGER_", "").replace("AUTOTAG_", "").lower()
+            key = env_key.replace("NOMARR_", "").lower()
 
             # Only allow whitelisted keys
             if key not in _ALLOWED_CONFIG_KEYS:

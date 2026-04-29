@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library import (
     get_library_scan_histories,
-    get_scanning_library_ids,
     resolve_library_for_scan,
 )
 from nomarr.components.library.scan_lifecycle_comp import (
@@ -163,7 +162,7 @@ class LibraryScanMixin:
             library_id: Library ID to check scan status for
 
         Returns:
-            LibraryScanStatusResult with configured, library_path, enabled, scan_status, progress, total, and running_jobs, where ``running_jobs`` counts libraries whose pipeline state is ``scanning``
+            LibraryScanStatusResult with configured, library_path, enabled, scan_status, progress, total
 
         """
         if not self.cfg.library_root:
@@ -171,17 +170,12 @@ class LibraryScanMixin:
                 configured=False,
                 library_path=None,
                 enabled=False,
-                pending_jobs=0,
-                running_jobs=0,
             )
-        scanning_library_ids = get_scanning_library_ids(self.db)
         if library_id is None:
             return LibraryScanStatusResult(
                 configured=True,
                 library_path=self.cfg.library_root,
                 enabled=self.background_tasks is not None,
-                pending_jobs=0,
-                running_jobs=len(scanning_library_ids),
             )
         resolve_library_for_scan(self.db, library_id)  # Validate library exists
         scan_state = get_scan_state(self.db, library_id)
@@ -199,8 +193,6 @@ class LibraryScanMixin:
             configured=True,
             library_path=self.cfg.library_root,
             enabled=enabled,
-            pending_jobs=0,
-            running_jobs=1 if library_id in scanning_library_ids else 0,
             scan_status=scan_status,
             scan_progress=scan_progress,
             scan_total=scan_total,
