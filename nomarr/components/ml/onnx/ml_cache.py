@@ -19,6 +19,7 @@ eviction is implemented by the worker setting ``cache.warm = False``.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Generator
 from typing import TYPE_CHECKING
@@ -144,13 +145,8 @@ class ONNXModelCache:
             for m in self._all_models():
                 if m._session is not None:
                     continue
-                try:
+                with contextlib.suppress(VramFitError):
                     m.device = self._device
-                except VramFitError:
-                    logger.info(
-                        "[cache] VRAM coordinator rejected GPU for %s — loaded on CPU instead",
-                        m._path,
-                    )
                 loaded += 1
             logger.debug(
                 "[cache] Warmed %d model(s) (preferred device=%s)",

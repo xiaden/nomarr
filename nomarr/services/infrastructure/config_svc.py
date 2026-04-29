@@ -362,7 +362,8 @@ class ConfigService:
 
             try:
                 cfg[key] = self._parse_db_value(env_value)
-            except Exception:
+            except Exception as e:
+                self._logger.warning("Failed to parse env override %s=%r: %s", env_key, env_value, e)
                 continue
 
     def make_processor_config(self) -> ProcessorConfig:

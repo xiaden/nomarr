@@ -82,8 +82,8 @@ def compute_tag_correlation_matrix(params: ComputeTagCorrelationMatrixParams) ->
             if isinstance(moods, list):
                 for mood in moods:
                     mood_counter[str(mood).strip()] += 1
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            logger.debug("[analytics] Skipping malformed mood tag JSON: %s (value=%r)", e, tag_value[:80])
     top_moods = [mood for mood, _ in mood_counter.most_common(params.top_n)]
     if not top_moods:
         return TagCorrelationData(mood_correlations={}, mood_tier_correlations={})
@@ -96,8 +96,8 @@ def compute_tag_correlation_matrix(params: ComputeTagCorrelationMatrixParams) ->
                     mood_str = str(mood).strip()
                     if mood_str in mood_file_sets:
                         mood_file_sets[mood_str].add(file_id)
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            logger.debug("[analytics] Skipping malformed mood tag JSON in file sets: %s (value=%r)", e, tag_value[:80])
     mood_correlations: dict[str, dict[str, float]] = {}
     for mood_a in top_moods:
         files_a = mood_file_sets[mood_a]
@@ -163,8 +163,8 @@ def compute_mood_distribution(mood_rows: Sequence[tuple[str, str]]) -> MoodDistr
             if isinstance(moods, list):
                 for mood in moods:
                     counter[str(mood).strip()] += 1
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            logger.debug("[analytics] Skipping malformed mood distribution JSON: %s (value=%r)", e, tag_value[:80])
     all_moods: Counter = Counter()
     all_moods.update(mood_strict_counts)
     all_moods.update(mood_regular_counts)
@@ -210,8 +210,10 @@ def compute_artist_tag_profile(params: ComputeArtistTagProfileParams) -> ArtistT
                         tag_values[tag_name].append(numeric_value)
                     except (ValueError, TypeError):
                         pass
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            logger.debug(
+                "[analytics] Skipping malformed artist tag JSON for %r: %s (value=%r)", tag_name, e, tag_value[:80]
+            )
     top_tags = []
     for tag, count in tag_counts.most_common(params.limit):
         values = tag_values.get(tag)

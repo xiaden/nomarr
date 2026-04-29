@@ -348,6 +348,35 @@ Before spawning workers, `WorkerSystemService` runs admission control:
 
 ---
 
+## VRAM Probe & OOM Self-Healing
+
+On first startup (and after model files change), Nomarr measures how much VRAM each ONNX model actually consumes before allowing GPU placement. Results are stored in `meta` under `ml_model_vram:<model_path>` keys and reused across restarts.
+
+### Initial Probe
+
+`_warm_onnx_cache()` in the discovery worker calls `has_model_vram_measurements()` before the cache is warmed. If no measurements exist, it runs `probe_all_models()`, which:
+
+1. Warms the CUDA context with a minimal identity model (~400–600 MB overhead, not attributed to any backbone)
+2. Loads each backbone and head model on GPU sequentially (only one live at a time)
+3. Records peak VRAM delta with 10% headroom (`measured_bytes * 1.1`)
+4. Writes the result to `meta.ml_model_vram:<path>` (bytes as string)
+
+If a model fails to load or falls back to CPU (silent CUDA EP rejection), it is recorded as `sys.maxsize` — the coordinator will then immediately reject GPU placement for that model without wasting a real attempt.
+
+### OOM Self-Healing During Inference
+
+ONNX Runtime's BFC arena grows dynamically and can OOM mid-inference even if the initial load succeeded (e.g. model needs more memory for a longer input sequence than the probe used). When this happens inside `BaseONNXModel.run()`:
+
+1. The BFC error message is parsed to extract the **requested byte count**
+2. The stored probe value is bumped by **25%** via `update_model_vram_from_oom()`
+3. The model is unloaded and reloaded on GPU with the updated VRAM cap
+4. If the coordinator rejects the new (larger) promise — not enough free headroom — the model falls back to **CPU** automatically
+5. The loop repeats until inference succeeds or the model is running on CPU
+
+This means the first few processing runs after a fresh install (or after models change) may trigger OOM → reprobe cycles. **This is expected behavior.** Each cycle produces a `[vram_probe] OOM self-heal` warning log and progressively converges the stored limit toward the model's true peak requirement. Once stabilized, the measurements are reused and no further OOM cycles occur under normal conditions.
+
+---
+
 ## Debugging
 
 ### Check Worker Status
@@ -381,6 +410,13 @@ docker logs nomarr 2>&1 | grep "worker:discovery:0"
 - Verify VRAM availability (effnet backbone requires significant GPU memory)
 - Check restart count via `worker_restart_policy` collection
 - Inspect problematic files with `ffprobe`
+
+**`[vram_probe] OOM self-heal` warnings on startup:**
+
+- Expected on first run or after model files change — see [VRAM Probe & OOM Self-Healing](#vram-probe--oom-self-healing)
+- Each warning bumps the stored VRAM cap by 25% and reloads
+- Cycles converge within a few files; logs should stop once limits stabilize
+- If a model consistently ends up on CPU after several cycles, the GPU simply does not have enough free headroom for it at that time
 
 **Workers not processing files:**
 

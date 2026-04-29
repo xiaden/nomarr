@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import TYPE_CHECKING, Any, cast
 
@@ -366,8 +367,8 @@ class Database:
                     password: str | None = config.get("arango_password")
                     if password:
                         return password
-                except Exception:
-                    pass
+                except Exception as e:
+                    logging.getLogger(__name__).debug("[db] Failed to read config file %s: %s", path, e)
 
         return None
 

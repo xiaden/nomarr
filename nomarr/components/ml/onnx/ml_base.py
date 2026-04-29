@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Literal
 
@@ -104,6 +105,8 @@ class BaseONNXModel(ABC):
                 raw = None if raw_doc is None else raw_doc.get("value")
                 if raw is not None:
                     vram_limit_bytes = int(raw)
+                    if vram_limit_bytes == sys.maxsize:
+                        raise VramFitError(f"VRAM probe marked {self._path} as GPU-incompatible")
                 logger.debug(
                     "[model] load(%s) gpu: DB key=%s%s raw=%r vram_limit_bytes=%s",
                     self._path,

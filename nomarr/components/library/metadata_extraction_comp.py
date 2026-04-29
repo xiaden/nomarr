@@ -362,8 +362,8 @@ def _extract_mp3_metadata(file_path: LibraryPath, metadata: dict[str, Any], name
         for key in keys_to_remove:
             del metadata["all_tags"][key]
         metadata["nom_tags"] = nom_tags
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("[metadata_extraction] Failed to extract MP3 tags from %s: %s", file_path, e)
 
 
 def _get_first(tags: Any, key: str) -> str | None:

@@ -87,7 +87,8 @@ def decide_regression(values: np.ndarray, labels: list[str]) -> dict[str, float]
     for i, lab in enumerate(labels):
         try:
             out[lab] = float(values[i])
-        except Exception:
+        except Exception as e:
+            logger.debug("[ml_heads] Failed to cast regression output for label %r at index %d: %s", lab, i, e)
             continue
     return out
 

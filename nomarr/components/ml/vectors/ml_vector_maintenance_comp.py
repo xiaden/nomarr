@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+DRAIN_BATCH_SIZE: int = 500
+
 
 def _load_vector_docs(vector_ops: Any) -> list[dict[str, Any]]:
     """Load all vector documents from a hot or cold namespace."""
@@ -134,37 +136,51 @@ def drain_hot_to_cold(db: Database, backbone_id: str, library_key: str) -> int:
 
     maintenance.ensure_cold_collection()
 
-    hot_docs = _load_vector_docs(cast("Any", hot_ops))
-    enriched_docs: list[dict[str, Any]] = []
-    hot_doc_ids: list[str] = []
+    # Collect all IDs upfront — just ID strings, small even for large libraries
+    all_hot_ids = cast("list[str]", cast("Any", hot_ops)._id.collect(limit=hot_count))
+    if not all_hot_ids:
+        return 0
 
-    for hot_doc in hot_docs:
-        file_id = hot_doc.get("file_id")
-        hot_doc_id = hot_doc.get("_id")
-        genres = _get_file_genres(db, file_id) if isinstance(file_id, str) else []
-        enriched_docs.append({**hot_doc, "genres": genres})
-        if isinstance(hot_doc_id, str):
-            hot_doc_ids.append(hot_doc_id)
+    drained = 0
+    total_batches = (len(all_hot_ids) + DRAIN_BATCH_SIZE - 1) // DRAIN_BATCH_SIZE
 
-    cold_doc_ids = cast(
-        "list[str]",
-        cast("Any", cold_ops)._key.upsert(enriched_docs, match_field="_key"),
-    )
+    for batch_num, offset in enumerate(range(0, len(all_hot_ids), DRAIN_BATCH_SIZE), start=1):
+        batch_ids = all_hot_ids[offset : offset + DRAIN_BATCH_SIZE]
+        hot_docs = cast("list[dict[str, Any]]", cast("Any", hot_ops).get.many(batch_ids))
 
-    edge_docs: list[dict[str, str]] = []
-    for hot_doc, cold_doc_id in zip(hot_docs, cold_doc_ids, strict=False):
-        hot_doc_id = hot_doc.get("_id")
-        file_id = hot_doc.get("file_id")
-        if isinstance(hot_doc_id, str):
-            db.file_has_vectors._to.delete(hot_doc_id)
-        if isinstance(file_id, str):
-            edge_docs.append({"_from": file_id, "_to": cold_doc_id})
+        enriched_docs: list[dict[str, Any]] = []
+        for hot_doc in hot_docs:
+            file_id = hot_doc.get("file_id")
+            genres = _get_file_genres(db, file_id) if isinstance(file_id, str) else []
+            enriched_docs.append({**hot_doc, "genres": genres})
 
-    if edge_docs:
-        db.file_has_vectors.insert(edge_docs)
+        cold_doc_ids = cast(
+            "list[str]",
+            cast("Any", cold_ops)._key.upsert(enriched_docs, match_field="_key"),
+        )
+
+        edge_docs: list[dict[str, str]] = []
+        for hot_doc, cold_doc_id in zip(hot_docs, cold_doc_ids, strict=False):
+            hot_doc_id = hot_doc.get("_id")
+            file_id = hot_doc.get("file_id")
+            if isinstance(hot_doc_id, str):
+                db.file_has_vectors._to.delete(hot_doc_id)
+            if isinstance(file_id, str):
+                edge_docs.append({"_from": file_id, "_to": cold_doc_id})
+
+        if edge_docs:
+            db.file_has_vectors.insert(edge_docs)
+
+        drained += len(hot_docs)
+        logger.debug(
+            "Drained batch %d/%d (%d docs) from %s",
+            batch_num,
+            total_batches,
+            len(hot_docs),
+            hot_name,
+        )
 
     cast("Any", hot_ops).truncate()
-    drained = len(hot_docs)
 
     logger.info(
         "Drained %d documents from %s to %s",

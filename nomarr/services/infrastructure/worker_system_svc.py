@@ -150,6 +150,30 @@ class WorkerSystemService(ComponentLifecycleHandler):
             logger.warning(
                 "[WorkerSystemService] Worker %s unhealthy (%d misses)", component_id, context.consecutive_misses
             )
+        elif new_status == "healthy" and old_status == "pending":
+            self._reset_restart_count(component_id)
+
+    def _reset_restart_count(self, component_id: str) -> None:
+        """Reset the restart counter once a worker has confirmed healthy after starting.
+
+        A worker that starts and runs successfully should not carry forward crash
+        counts from earlier sessions or restart cycles.
+        """
+        try:
+            restart_state = self.db.worker_restart_policy.component_id.get(component_id)
+            if restart_state and int(restart_state.get("restart_count", 0)) > 0:
+                timestamp = now_ms().value
+                self.db.worker_restart_policy.component_id.update(
+                    component_id,
+                    {
+                        "restart_count": 0,
+                        "last_restart_wall_ms": None,
+                        "updated_at_wall_ms": timestamp,
+                    },
+                )
+                logger.info("[WorkerSystemService] Reset restart count for %s (worker confirmed healthy)", component_id)
+        except Exception:
+            logger.debug("[WorkerSystemService] Failed to reset restart count for %s", component_id, exc_info=True)
 
     def _handle_worker_death(self, component_id: str) -> None:
         released_file_ids = release_claims_for_worker(self.db, component_id)
@@ -301,7 +325,9 @@ class WorkerSystemService(ComponentLifecycleHandler):
             new_worker.start()
             child_conn.close()
             if self.health_monitor:
-                self.health_monitor.register_component(new_worker.worker_id, self, parent_conn)
+                self.health_monitor.register_component(
+                    new_worker.worker_id, self, parent_conn, policy=DEFAULT_WORKER_POLICY
+                )
             if worker_index < len(self._workers):
                 self._workers[worker_index] = new_worker
             else:
