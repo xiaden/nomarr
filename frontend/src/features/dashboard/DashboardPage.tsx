@@ -389,7 +389,7 @@ export function DashboardPage() {
                       secondaryTypographyProps={{ variant: "caption" }}
                     />
                     <Typography variant="caption" color="text.secondary">
-                      {formatTimeAgo(file.scanned_at)}
+                      {file.activity_event} {formatTimeAgo(file.activity_at)}
                     </Typography>
                   </ListItem>
                 ))}

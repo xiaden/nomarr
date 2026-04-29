@@ -244,7 +244,8 @@ export interface RecentFile {
   title: string | null;
   artist: string | null;
   album: string | null;
-  scanned_at: number;
+  activity_at: number;
+  activity_event: string;
 }
 
 export interface RecentFilesResult {

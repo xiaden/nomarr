@@ -83,13 +83,25 @@ def _matches_folder_rel_path(normalized_path: Any, folder_rel_path: str) -> bool
 
 
 def _project_recently_processed_row(file_doc: dict[str, Any]) -> dict[str, Any]:
+    scanned_at: int | None = file_doc.get("scanned_at")
+    last_tagged_at: int | None = file_doc.get("last_tagged_at")
+    candidates: list[tuple[int, str]] = []
+    if isinstance(scanned_at, int):
+        candidates.append((scanned_at, "scanned"))
+    if isinstance(last_tagged_at, int):
+        candidates.append((last_tagged_at, "tagged"))
+    if candidates:
+        activity_at, activity_event = max(candidates, key=lambda t: t[0])
+    else:
+        activity_at, activity_event = 0, "scanned"
     return {
         "file_id": file_doc.get("_id"),
         "path": file_doc.get("normalized_path"),
         "title": file_doc.get("title"),
         "artist": file_doc.get("artist"),
         "album": file_doc.get("album"),
-        "scanned_at": file_doc.get("scanned_at"),
+        "activity_at": activity_at,
+        "activity_event": activity_event,
     }
 
 
@@ -400,7 +412,15 @@ def get_recently_processed(
             if isinstance(edge.get("_to"), str)
         }
         tagged_file_docs = [file_doc for file_doc in tagged_file_docs if file_doc.get("_id") in library_file_ids]
-    tagged_file_docs.sort(key=lambda file_doc: _sort_key(file_doc.get("scanned_at")), reverse=True)
+    tagged_file_docs.sort(
+        key=lambda file_doc: _sort_key(
+            max(
+                (v for v in (file_doc.get("scanned_at"), file_doc.get("last_tagged_at")) if isinstance(v, int)),
+                default=None,
+            )
+        ),
+        reverse=True,
+    )
     return [_project_recently_processed_row(file_doc) for file_doc in tagged_file_docs[:limit]]
 
 

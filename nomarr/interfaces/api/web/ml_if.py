@@ -32,7 +32,8 @@ class RecentFileItem(BaseModel):
     title: str | None
     artist: str | None
     album: str | None
-    scanned_at: int
+    activity_at: int
+    activity_event: str
 
 
 class RecentFilesResponse(BaseModel):

@@ -46,7 +46,7 @@ repos:
     hooks:
       - id: frontend-build
         name: frontend-build
-        entry: bash -c "cd frontend && npm run build && git add nomarr/public_html/"
+        entry: bash -c "cd frontend && npm run build && git -C .. add nomarr/public_html/"
         language: system
         pass_filenames: false
         files: ^frontend/src/
