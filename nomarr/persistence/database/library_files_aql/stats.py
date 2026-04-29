@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.helpers.time_helper import now_ms
+from nomarr.helpers.time_helper import MS_PER_SECOND, now_ms
 from nomarr.persistence.arango_client import DatabaseLike
 
 if TYPE_CHECKING:
@@ -158,7 +158,7 @@ class LibraryFilesStatsMixin:
             Number of files with ``last_tagged_at`` within the window.
 
         """
-        cutoff_ms = now_ms().value - window_seconds * 1000
+        cutoff_ms = now_ms().value - window_seconds * MS_PER_SECOND
         cursor = cast(
             "Cursor",
             self.db.aql.execute(

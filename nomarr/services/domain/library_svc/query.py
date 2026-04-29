@@ -177,7 +177,7 @@ class LibraryQueryMixin:
         """
         libraries = self.db.libraries.list_libraries(enabled_only=False)
         stats = self.get_library_stats()
-        velocity_window_seconds = 300
+        velocity_window_seconds = 300  # 5-minute rolling window for files/min calculation
         recently_tagged = self.db.library_files.count_recently_tagged(window_seconds=velocity_window_seconds)
         return compute_work_status(libraries, stats, recently_tagged, velocity_window_seconds=velocity_window_seconds)
 
