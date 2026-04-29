@@ -17,3 +17,9 @@ class TestMarkFileTagged:
         mock_db = MagicMock()
         mark_file_tagged(mock_db, "library_files/xyz")
         mock_db.file_states.set_tagged.assert_called_once_with("library_files/xyz")
+
+    @pytest.mark.unit
+    def test_also_updates_last_tagged_at(self) -> None:
+        mock_db = MagicMock()
+        mark_file_tagged(mock_db, "library_files/xyz")
+        mock_db.library_files.update_last_tagged_at.assert_called_once_with("library_files/xyz")

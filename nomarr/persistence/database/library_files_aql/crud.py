@@ -177,6 +177,26 @@ class LibraryFilesCrudMixin:
             bind_vars={"file_id": file_id},
         )
 
+    def update_last_tagged_at(self, file_id: str) -> None:
+        """Record the current wall-clock timestamp as the last tagging time for a file.
+
+        Used to track when ML tagging completed so that velocity (files/min) and
+        ETA can be computed from recent activity.
+
+        Args:
+            file_id: Document _id (e.g., "library_files/12345")
+
+        """
+        tagged_at = now_ms().value
+        self.db.aql.execute(
+            """
+            UPDATE PARSE_IDENTIFIER(@file_id).key
+                WITH { last_tagged_at: @tagged_at }
+                IN library_files
+            """,
+            bind_vars=cast("dict[str, Any]", {"file_id": file_id, "tagged_at": tagged_at}),
+        )
+
     def upsert_batch(self, file_docs: list[dict[str, Any]]) -> list[str]:
         """Batch upsert file documents to ArangoDB.
 

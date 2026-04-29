@@ -177,8 +177,9 @@ class LibraryQueryMixin:
         """
         libraries = self.db.libraries.list_libraries(enabled_only=False)
         stats = self.get_library_stats()
-        recently_tagged = 0  # count_recently_tagged removed — deferred to model versioning
-        return compute_work_status(libraries, stats, recently_tagged)
+        velocity_window_seconds = 300
+        recently_tagged = self.db.library_files.count_recently_tagged(window_seconds=velocity_window_seconds)
+        return compute_work_status(libraries, stats, recently_tagged, velocity_window_seconds=velocity_window_seconds)
 
     def get_recently_processed(
         self,

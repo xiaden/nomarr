@@ -2,6 +2,7 @@
 
 from typing import TYPE_CHECKING, Any, cast
 
+from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.arango_client import DatabaseLike
 
 if TYPE_CHECKING:
@@ -140,6 +141,36 @@ class LibraryFilesStatsMixin:
                 )
                 """,
                 bind_vars=cast("dict[str, Any]", {"namespace": namespace}),
+            ),
+        )
+        result = next(cursor, 0)
+        return int(result)
+
+    def count_recently_tagged(self, window_seconds: int = 300) -> int:
+        """Count files that had ML tagging completed within the given time window.
+
+        Used to compute processing velocity (files/min) for the work-status endpoint.
+
+        Args:
+            window_seconds: Look-back window in seconds (default 5 minutes).
+
+        Returns:
+            Number of files with ``last_tagged_at`` within the window.
+
+        """
+        cutoff_ms = now_ms().value - window_seconds * 1000
+        cursor = cast(
+            "Cursor",
+            self.db.aql.execute(
+                """
+                RETURN LENGTH(
+                    FOR file IN library_files
+                        FILTER file.last_tagged_at != null
+                        FILTER file.last_tagged_at >= @cutoff_ms
+                        RETURN 1
+                )
+                """,
+                bind_vars=cast("dict[str, Any]", {"cutoff_ms": cutoff_ms}),
             ),
         )
         result = next(cursor, 0)

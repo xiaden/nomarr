@@ -122,6 +122,7 @@ def mark_file_tagged(db: Database, file_id: str) -> None:
 
     """
     db.file_states.set_tagged(file_id)
+    db.library_files.update_last_tagged_at(file_id)
 
 
 # ---------------------------------------------------------------------------
