@@ -345,7 +345,8 @@ class TestPhaseOneQueryHelpers:
                 "title": "Newer",
                 "artist": "Artist",
                 "album": "Album",
-                "scanned_at": 20,
+                "activity_at": 20,
+                "activity_event": "scanned",
             },
         ]
 

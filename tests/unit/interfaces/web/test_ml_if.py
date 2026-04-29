@@ -107,7 +107,8 @@ class TestMlIfRoutes:
                 "title": "Test Song",
                 "artist": "Test Artist",
                 "album": "Test Album",
-                "scanned_at": 1_712_345_678,
+                "activity_at": 1_712_345_678,
+                "activity_event": "scanned",
             },
         ]
 
@@ -122,7 +123,8 @@ class TestMlIfRoutes:
                     "title": "Test Song",
                     "artist": "Test Artist",
                     "album": "Test Album",
-                    "scanned_at": 1_712_345_678,
+                    "activity_at": 1_712_345_678,
+                    "activity_event": "scanned",
                 },
             ],
         }

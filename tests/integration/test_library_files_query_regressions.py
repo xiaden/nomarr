@@ -57,7 +57,8 @@ class TestGetRecentlyProcessed:
         ]
         rows = get_recently_processed(mock_db, limit=5)
 
-        assert rows[0]["scanned_at"] == 1_710_000_000
+        assert rows[0]["activity_at"] == 1_710_000_000
+        assert rows[0]["activity_event"] == "scanned"
 
     @pytest.mark.integration
     @pytest.mark.mocked
