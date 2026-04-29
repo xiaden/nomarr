@@ -23,7 +23,7 @@ classifiers = [
 
 dependencies = [
     "mcp>=1.9.0",
-    "pydantic>=2.0",
+    "pydantic>=2.13.3",
     "fastmcp>=0.1.0",
     "tree-sitter>=0.21.0",
     "tree-sitter-markdown>=0.2.0",
