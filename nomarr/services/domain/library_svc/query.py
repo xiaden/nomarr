@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_file_query_comp import (
     count_files_by_tag,
+    count_recently_tagged,
     get_all_library_paths,
     get_files_by_ids_with_tags,
     get_library_stats,
@@ -225,7 +226,7 @@ class LibraryQueryMixin:
         """
         libraries = list_library_records(self.db, enabled_only=False)
         stats = self.get_library_stats()
-        recently_tagged = 0  # count_recently_tagged removed — deferred to model versioning
+        recently_tagged = count_recently_tagged(self.db)
         pipeline_states: dict[str, str] = {}
         for state_doc_id in _PIPELINE_STATE_DOC_IDS:
             state_key = state_doc_id.rsplit("/", 1)[-1]
