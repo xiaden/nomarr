@@ -16,17 +16,21 @@ class TestLibraryFilesQueryRegressions:
     @pytest.mark.mocked
     def test_search_results_include_edge_derived_library_id_after_constructor_migration(self) -> None:
         """Search results should still hydrate ``library_id`` via ownership edges."""
+        file_doc = {
+            "_id": "library_files/1",
+            "path": "D:/Music/Test Song.flac",
+            "normalized_path": "Test Song.flac",
+            "artist": "Test Artist",
+            "album": "Test Album",
+            "title": "Test Song",
+        }
         mock_db = MagicMock()
-        mock_db.library_files.get.many.by_filter.return_value = [
-            {
-                "_id": "library_files/1",
-                "path": "D:/Music/Test Song.flac",
-                "normalized_path": "Test Song.flac",
-                "artist": "Test Artist",
-                "album": "Test Album",
-                "title": "Test Song",
-            },
-        ]
+        # query_text-only search: OR across artist/album/title via .get.like()
+        mock_db.library_files.artist.get.like.return_value = []
+        mock_db.library_files.album.get.like.return_value = []
+        mock_db.library_files.title.get.like.return_value = [file_doc]
+        # final hydration fetch by sorted IDs
+        mock_db.library_files.get.many.return_value = [file_doc]
         mock_db.library_files.traversal.return_value = []
         mock_db.library_contains_file._to.get.many.return_value = [{"_from": "libraries/1"}]
 
@@ -34,7 +38,6 @@ class TestLibraryFilesQueryRegressions:
 
         assert total == 1
         assert files[0]["library_id"] == "libraries/1"
-        mock_db.library_files.get.many.by_filter.assert_called_once_with({}, limit=1000)
 
 
 class TestGetRecentlyProcessed:
