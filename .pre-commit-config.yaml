@@ -52,6 +52,16 @@ repos:
         files: ^frontend/src/
         stages: [pre-commit]
 
+  # --- Pytest: unit tests ---
+  - repo: local
+    hooks:
+      - id: pytest-unit
+        name: pytest-unit
+        entry: bash -c ".venv/Scripts/python.exe -m pytest tests/unit -q --tb=short"
+        language: system
+        pass_filenames: false
+        files: ^(nomarr|tests/unit)/
+
   # --- Agent dashboard: update metrics on every commit ---
   - repo: local
     hooks:
