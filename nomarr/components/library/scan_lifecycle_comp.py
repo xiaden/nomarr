@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_file_query_comp import (
     count_library_files,
+    get_existing_file_paths,
     list_library_files,
 )
 from nomarr.components.library.library_file_query_comp import (
@@ -330,6 +331,15 @@ def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
 
     library_ids = [doc.get("library_id") for doc in file_docs]
     clean_docs = [{key: value for key, value in doc.items() if key != "library_id"} for doc in file_docs]
+
+    # Identify which paths already exist before upserting so state edges are
+    # only initialised for genuinely new files.  Re-initialising an existing
+    # file would silently re-insert the negative-side edges for every axis
+    # (e.g. not_tagged), overwriting transitions that have already occurred
+    # and pushing those files backwards through the pipeline.
+    paths = [d["path"] for d in clean_docs if "path" in d]
+    existing_paths = get_existing_file_paths(db, paths)
+
     file_ids = cast("list[str]", db.library_files.path.upsert(clean_docs, match_field="path"))
 
     edge_docs = [
@@ -340,7 +350,12 @@ def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
     if edge_docs:
         db.library_contains_file._to.upsert(edge_docs, match_field=["_from", "_to"])
 
-    initialize_file_states_batch(db, file_ids)
+    new_file_ids = [
+        file_id
+        for file_id, doc in zip(file_ids, clean_docs, strict=True)
+        if doc.get("path") not in existing_paths
+    ]
+    initialize_file_states_batch(db, new_file_ids)
     return file_ids
 
 

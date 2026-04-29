@@ -240,9 +240,15 @@ class TestUpsertBatch:
             }
         ]
 
-        with patch(
-            "nomarr.components.library.library_file_mutation_comp.initialize_file_states_batch"
-        ) as mock_initialize_file_states_batch:
+        with (
+            patch(
+                "nomarr.components.library.library_file_mutation_comp.get_existing_file_paths",
+                return_value=set(),
+            ),
+            patch(
+                "nomarr.components.library.library_file_mutation_comp.initialize_file_states_batch"
+            ) as mock_initialize_file_states_batch,
+        ):
             result = upsert_batch(mock_db, file_docs)
 
         assert result == ["library_files/1"]
@@ -261,6 +267,75 @@ class TestUpsertBatch:
             match_field=["_from", "_to"],
         )
         mock_initialize_file_states_batch.assert_called_once_with(mock_db, ["library_files/1"])
+
+    @pytest.mark.unit
+    def test_skips_state_initialization_for_existing_files(self) -> None:
+        """Skips ``initialize_file_states_batch`` for files that already exist in the DB.
+
+        Re-initialising an existing file would silently re-insert the negative-side
+        edges for every axis (e.g. not_tagged), reverting transitions that have already
+        occurred and pushing those files backwards through the ML pipeline.
+        """
+        mock_db = MagicMock()
+        mock_db.library_files.path.upsert.return_value = ["library_files/1"]
+        file_docs = [
+            {
+                "library_id": "libraries/1",
+                "path": "D:/Music/song.flac",
+                "file_size": 4096,
+                "modified_time": 123456789,
+            }
+        ]
+
+        with (
+            patch(
+                "nomarr.components.library.library_file_mutation_comp.get_existing_file_paths",
+                return_value={"D:/Music/song.flac"},
+            ),
+            patch(
+                "nomarr.components.library.library_file_mutation_comp.initialize_file_states_batch"
+            ) as mock_initialize_file_states_batch,
+        ):
+            result = upsert_batch(mock_db, file_docs)
+
+        assert result == ["library_files/1"]
+        mock_initialize_file_states_batch.assert_called_once_with(mock_db, [])
+
+    @pytest.mark.unit
+    def test_initializes_state_only_for_new_files_in_mixed_batch(self) -> None:
+        """Only new files get state initialisation when a batch contains both new and existing files."""
+        mock_db = MagicMock()
+        mock_db.library_files.path.upsert.return_value = ["library_files/1", "library_files/2"]
+        file_docs = [
+            {
+                "library_id": "libraries/1",
+                "path": "D:/Music/existing.flac",
+                "file_size": 4096,
+                "modified_time": 111,
+            },
+            {
+                "library_id": "libraries/1",
+                "path": "D:/Music/new.flac",
+                "file_size": 8192,
+                "modified_time": 222,
+            },
+        ]
+
+        with (
+            patch(
+                "nomarr.components.library.library_file_mutation_comp.get_existing_file_paths",
+                # Only the first file already exists in DB.
+                return_value={"D:/Music/existing.flac"},
+            ),
+            patch(
+                "nomarr.components.library.library_file_mutation_comp.initialize_file_states_batch"
+            ) as mock_initialize_file_states_batch,
+        ):
+            result = upsert_batch(mock_db, file_docs)
+
+        assert result == ["library_files/1", "library_files/2"]
+        # Only library_files/2 (the new file) should be initialised.
+        mock_initialize_file_states_batch.assert_called_once_with(mock_db, ["library_files/2"])
 
 
 class TestBulkDeleteFiles:
@@ -471,7 +546,7 @@ class TestUpsertLibraryFile:
             [{"_from": "libraries/2", "_to": "library_files/2"}],
             match_field=["_from", "_to"],
         )
-        mock_initialize_file_states.assert_called_once_with(mock_db, "library_files/2")
+        mock_initialize_file_states.assert_not_called()
         mock_db.file_states.transition.assert_not_called()
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+from nomarr.components.library.library_file_query_comp import get_existing_file_paths
 from nomarr.components.library.library_file_state_comp import (
     clear_all_states,
     clear_all_states_batch,
@@ -90,6 +91,7 @@ def upsert_library_file(
             "chromaprint": None,
         }
         file_id = db.library_files.insert([full_doc])[0]
+        initialize_file_states(db, file_id)
     else:
         file_id = str(existing["_id"])
         db.library_files._id.update(file_id, update_fields)
@@ -98,7 +100,6 @@ def upsert_library_file(
         [{"_from": library_id, "_to": file_id}],
         match_field=["_from", "_to"],
     )
-    initialize_file_states(db, file_id)
     if last_tagged_at is not None:
         transition_file_state(db, [file_id], STATE_NOT_TAGGED, STATE_TAGGED)
     return file_id
@@ -134,6 +135,15 @@ def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
         return []
     library_ids = [doc.get("library_id") for doc in file_docs]
     clean_docs = [{k: v for k, v in doc.items() if k != "library_id"} for doc in file_docs]
+
+    # Identify which paths already exist before upserting so state edges are
+    # only initialised for genuinely new files.  Re-initialising an existing
+    # file would silently re-insert the negative-side edges for every axis
+    # (e.g. not_tagged), overwriting transitions that have already occurred
+    # and pushing those files backwards through the pipeline.
+    paths = [d["path"] for d in clean_docs if "path" in d]
+    existing_paths = get_existing_file_paths(db, paths)
+
     result = db.library_files.path.upsert(clean_docs, match_field="path")
 
     edge_docs = [
@@ -146,7 +156,12 @@ def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
             edge_docs,
             match_field=["_from", "_to"],
         )
-    initialize_file_states_batch(db, result)
+    new_file_ids = [
+        file_id
+        for file_id, doc in zip(result, clean_docs, strict=True)
+        if doc.get("path") not in existing_paths
+    ]
+    initialize_file_states_batch(db, new_file_ids)
     return result
 
 

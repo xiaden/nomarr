@@ -21,6 +21,28 @@ def get_file_by_id(db: Database, file_id: str) -> dict[str, Any] | None:
     return cast("dict[str, Any] | None", db.library_files.get(file_id))
 
 
+def get_existing_file_paths(db: Database, paths: list[str]) -> set[str]:
+    """Return the subset of *paths* that already have a record in the library-files collection.
+
+    Used before batch-upsert operations to identify genuinely new files so that
+    state initialisation is only applied once per file — on first insertion.
+
+    Args:
+        db: Database instance.
+        paths: Absolute file paths to check.
+
+    Returns:
+        Set of paths (subset of *paths*) that exist in the database.
+    """
+    if not paths:
+        return set()
+    return {
+        str(doc["path"])
+        for doc in cast("list[dict[str, Any]]", db.library_files.path.get.in_(paths))
+        if "path" in doc
+    }
+
+
 def _normalize_library_id(library_id: str) -> str:
     return library_id if "/" in library_id else f"libraries/{library_id}"
 
