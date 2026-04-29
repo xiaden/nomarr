@@ -12,6 +12,8 @@ from typing import Any, Literal, cast
 
 from nomarr.components.library.library_file_state_comp import count_untagged_files
 from nomarr.helpers.constants.file_states import STATE_TAGGED
+from nomarr.helpers.filter_types import Op
+from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.constructor.pagination import DEFAULT_LIMIT
 from nomarr.persistence.db import Database
 
@@ -19,6 +21,25 @@ from nomarr.persistence.db import Database
 def get_file_by_id(db: Database, file_id: str) -> dict[str, Any] | None:
     """Get one library-file document by ``_id``."""
     return cast("dict[str, Any] | None", db.library_files.get(file_id))
+
+
+def count_recently_tagged(db: Database, window_seconds: int = 300) -> int:
+    """Count files whose ``last_tagged_at`` timestamp falls within the recent window.
+
+    Args:
+        db: Database instance.
+        window_seconds: How far back to look (default 5 minutes).
+
+    Returns:
+        Number of files tagged within the window.
+
+    """
+    cutoff_ms = now_ms().value - window_seconds * 1000
+    docs = cast(
+        "list[dict[str, Any]]",
+        db.library_files.last_tagged_at.get.in_({Op.GTE: cutoff_ms}),
+    )
+    return len(docs)
 
 
 def get_existing_file_paths(db: Database, paths: list[str]) -> set[str]:
@@ -37,9 +58,7 @@ def get_existing_file_paths(db: Database, paths: list[str]) -> set[str]:
     if not paths:
         return set()
     return {
-        str(doc["path"])
-        for doc in cast("list[dict[str, Any]]", db.library_files.path.get.in_(paths))
-        if "path" in doc
+        str(doc["path"]) for doc in cast("list[dict[str, Any]]", db.library_files.path.get.in_(paths)) if "path" in doc
     }
 
 

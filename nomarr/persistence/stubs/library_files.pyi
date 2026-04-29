@@ -97,6 +97,7 @@ class LibraryFilesNamespace(Protocol):
     scanned_at: LibraryFilesGetUpdateNamespace
     chromaprint: LibraryFilesGetUpdateNamespace
     is_valid: LibraryFilesGetUpdateNamespace
+    last_tagged_at: LibraryFilesGetUpdateNamespace
 
     def count(self) -> int: ...
     def count_by_filter(self, filter_dict: dict[str, Any]) -> int: ...

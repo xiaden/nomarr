@@ -157,9 +157,7 @@ def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
             match_field=["_from", "_to"],
         )
     new_file_ids = [
-        file_id
-        for file_id, doc in zip(result, clean_docs, strict=True)
-        if doc.get("path") not in existing_paths
+        file_id for file_id, doc in zip(result, clean_docs, strict=True) if doc.get("path") not in existing_paths
     ]
     initialize_file_states_batch(db, new_file_ids)
     return result
@@ -277,3 +275,14 @@ def set_chromaprint(db: Database, file_id: str, chromaprint: str) -> None:
     """Persist a chromaprint fingerprint for one file."""
     doc_key = file_id.split("/", 1)[1] if "/" in file_id else file_id
     db.library_files._key.update(doc_key, {"chromaprint": chromaprint})
+
+
+def update_last_tagged_at(db: Database, file_id: str) -> None:
+    """Record the wall-clock time at which a file was tagged.
+
+    Args:
+        db: Database handle.
+        file_id: Document ``_id`` of the library-file to update.
+
+    """
+    db.library_files._id.update(file_id, {"last_tagged_at": now_ms().value})

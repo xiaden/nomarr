@@ -351,9 +351,7 @@ def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
         db.library_contains_file._to.upsert(edge_docs, match_field=["_from", "_to"])
 
     new_file_ids = [
-        file_id
-        for file_id, doc in zip(file_ids, clean_docs, strict=True)
-        if doc.get("path") not in existing_paths
+        file_id for file_id, doc in zip(file_ids, clean_docs, strict=True) if doc.get("path") not in existing_paths
     ]
     initialize_file_states_batch(db, new_file_ids)
     return file_ids
