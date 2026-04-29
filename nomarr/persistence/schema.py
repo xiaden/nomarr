@@ -537,6 +537,7 @@ SCHEMA: dict[str, Any] = {
             "genres": {"type": "list[str] | None", "capabilities": ["get", "update"]},
             "year": {"type": "int | None", "capabilities": ["get", "update"]},
             "scanned_at": {"type": "int | None", "capabilities": ["get", "update"]},
+            "last_tagged_at": {"type": "int | None", "capabilities": ["get", "update"]},
             "chromaprint": {"type": "str | None", "capabilities": ["get", "update"]},
             "is_valid": {"type": "bool | None", "capabilities": ["get", "update"]},
         },

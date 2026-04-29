@@ -14,6 +14,9 @@ from nomarr.components.library.library_file_mutation_comp import (
     set_chromaprint as persist_chromaprint,
 )
 from nomarr.components.library.library_file_mutation_comp import (
+    update_last_tagged_at as persist_last_tagged_at,
+)
+from nomarr.components.library.library_file_mutation_comp import (
     upsert_library_file as persist_library_file,
 )
 from nomarr.components.library.library_file_query_comp import get_library_file as fetch_library_file
@@ -135,6 +138,7 @@ def mark_file_tagged(db: Database, file_id: str) -> None:
 
     """
     transition_file_state(db, [file_id], STATE_NOT_TAGGED, STATE_TAGGED)
+    persist_last_tagged_at(db, file_id)
 
 
 # ---------------------------------------------------------------------------

@@ -277,3 +277,17 @@ def set_chromaprint(db: Database, file_id: str, chromaprint: str) -> None:
     """Persist a chromaprint fingerprint for one file."""
     doc_key = file_id.split("/", 1)[1] if "/" in file_id else file_id
     db.library_files._key.update(doc_key, {"chromaprint": chromaprint})
+
+
+def update_last_tagged_at(db: Database, file_id: str) -> None:
+    """Record the current wall-clock timestamp as the last tagging time for a file.
+
+    Used to track when ML tagging completed so that velocity (files/min) and
+    ETA can be computed from recent activity.
+
+    Args:
+        db: Database handle.
+        file_id: Document ``_id`` (e.g., ``"library_files/12345"``).
+
+    """
+    db.library_files._id.update(file_id, {"last_tagged_at": now_ms().value})

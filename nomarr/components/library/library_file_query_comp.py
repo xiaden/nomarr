@@ -12,6 +12,8 @@ from typing import Any, Literal, cast
 
 from nomarr.components.library.library_file_state_comp import count_untagged_files
 from nomarr.helpers.constants.file_states import STATE_TAGGED
+from nomarr.helpers.filter_types import Op
+from nomarr.helpers.time_helper import MS_PER_SECOND, now_ms
 from nomarr.persistence.constructor.pagination import DEFAULT_LIMIT
 from nomarr.persistence.db import Database
 
@@ -453,6 +455,23 @@ def get_files_for_folders(
 def count_library_files(db: Database, library_id: str) -> int:
     """Count total files attached to one library via ownership edges."""
     return db.library_contains_file._from.count(_normalize_library_id(library_id))
+
+
+def count_recently_tagged(db: Database, window_seconds: int = 300) -> int:
+    """Count files whose ML tagging completed within the given look-back window.
+
+    Used to compute processing velocity (files/min) for the work-status endpoint.
+
+    Args:
+        db: Database handle.
+        window_seconds: Look-back window in seconds (default 5 minutes).
+
+    Returns:
+        Number of files with ``last_tagged_at`` within the window.
+
+    """
+    cutoff_ms = now_ms().value - window_seconds * MS_PER_SECOND
+    return len(db.library_files.last_tagged_at.get.in_({Op.GTE: cutoff_ms}, limit=None))
 
 
 def get_library_stats(db: Database, library_id: str | None = None) -> dict[str, Any]:

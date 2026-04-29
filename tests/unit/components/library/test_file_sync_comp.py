@@ -18,3 +18,12 @@ class TestMarkFileTagged:
         mock_db = MagicMock()
         mark_file_tagged(mock_db, "library_files/xyz")
         mock_db.file_states.transition.assert_called_once_with(["library_files/xyz"], STATE_NOT_TAGGED, STATE_TAGGED)
+
+    @pytest.mark.unit
+    def test_also_updates_last_tagged_at(self) -> None:
+        mock_db = MagicMock()
+        mark_file_tagged(mock_db, "library_files/xyz")
+        mock_db.library_files._id.update.assert_called_once_with("library_files/xyz", mock_db.library_files._id.update.call_args[0][1])
+        _, fields = mock_db.library_files._id.update.call_args[0]
+        assert "last_tagged_at" in fields
+        assert isinstance(fields["last_tagged_at"], int)

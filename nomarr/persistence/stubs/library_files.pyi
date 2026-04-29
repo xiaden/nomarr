@@ -95,6 +95,7 @@ class LibraryFilesNamespace(Protocol):
     genres: LibraryFilesGetUpdateNamespace
     year: LibraryFilesGetUpdateNamespace
     scanned_at: LibraryFilesGetUpdateNamespace
+    last_tagged_at: LibraryFilesGetUpdateNamespace
     chromaprint: LibraryFilesGetUpdateNamespace
     is_valid: LibraryFilesGetUpdateNamespace
 
