@@ -231,6 +231,8 @@ class TestUpsertBatch:
         """Removes ``library_id`` from docs before calling the path upsert constructor verb."""
         mock_db = MagicMock()
         mock_db.library_files.path.upsert.return_value = ["library_files/1"]
+        # No pre-existing files — the new file should have its state initialised.
+        mock_db.library_files.path.get.in_.return_value = []
         file_docs = [
             {
                 "library_id": "libraries/1",
@@ -261,6 +263,35 @@ class TestUpsertBatch:
             match_field=["_from", "_to"],
         )
         mock_initialize_file_states_batch.assert_called_once_with(mock_db, ["library_files/1"])
+
+    @pytest.mark.unit
+    def test_skips_state_initialization_for_existing_files(self) -> None:
+        """Skips ``initialize_file_states_batch`` for files that already exist in the DB.
+
+        Re-initialising an existing file would silently re-insert the negative-side
+        edges for every axis (e.g. not_tagged), reverting transitions that have already
+        occurred and pushing those files backwards through the ML pipeline.
+        """
+        mock_db = MagicMock()
+        mock_db.library_files.path.upsert.return_value = ["library_files/1"]
+        # File already exists — path.get.in_ returns the pre-existing document.
+        mock_db.library_files.path.get.in_.return_value = [{"path": "D:/Music/song.flac"}]
+        file_docs = [
+            {
+                "library_id": "libraries/1",
+                "path": "D:/Music/song.flac",
+                "file_size": 4096,
+                "modified_time": 123456789,
+            }
+        ]
+
+        with patch(
+            "nomarr.components.library.library_file_mutation_comp.initialize_file_states_batch"
+        ) as mock_initialize_file_states_batch:
+            result = upsert_batch(mock_db, file_docs)
+
+        assert result == ["library_files/1"]
+        mock_initialize_file_states_batch.assert_called_once_with(mock_db, [])
 
 
 class TestBulkDeleteFiles:
@@ -471,7 +502,7 @@ class TestUpsertLibraryFile:
             [{"_from": "libraries/2", "_to": "library_files/2"}],
             match_field=["_from", "_to"],
         )
-        mock_initialize_file_states.assert_called_once_with(mock_db, "library_files/2")
+        mock_initialize_file_states.assert_not_called()
         mock_db.file_states.transition.assert_not_called()
 
 
