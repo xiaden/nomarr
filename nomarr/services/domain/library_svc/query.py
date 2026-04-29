@@ -54,8 +54,8 @@ from nomarr.helpers.dto.library_dto import (
     SearchFilesQuery,
     SearchFilesResult,
     UniqueTagKeysResult,
+    map_file_with_tags_to_dto,
 )
-from nomarr.services.domain._library_mapping import map_file_with_tags_to_dto
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database

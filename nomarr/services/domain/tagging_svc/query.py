@@ -21,9 +21,9 @@ from nomarr.helpers.dto.library_dto import (
     SearchFilesResult,
     TagCleanupResult,
     UniqueTagKeysResult,
+    map_file_with_tags_to_dto,
 )
 from nomarr.helpers.dto.tag_curation_dto import CommitResult, TagListResult, TagSongItem, TagValueItem
-from nomarr.services.domain._library_mapping import map_file_with_tags_to_dto
 from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
 
 if TYPE_CHECKING:

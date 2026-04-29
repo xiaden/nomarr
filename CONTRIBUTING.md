@@ -28,6 +28,7 @@ Thank you for your interest in contributing to Nomarr! This document provides gu
 ### Submitting Pull Requests
 
 > **Nomarr uses a three-tier GitFlow-lite branching strategy** (see [ADR-029](artifacts/decisions/ADR-029-adopt-gitflow-lite-branching-strategy.md)):
+>
 > - **`feat/*`, `fix/*`, `chore/*`** — short-lived work branches. Squash-merged into `develop` via PR.
 > - **`develop`** — integration branch. Working at every commit. PR-only, no direct push. Merged into `main` via PR.
 > - **`main`** — stable releases only. PR-only, no direct push.

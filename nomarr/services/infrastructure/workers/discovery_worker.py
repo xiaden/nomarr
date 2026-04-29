@@ -13,6 +13,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from multiprocessing import Event
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.library.library_file_mutation_comp import update_last_tagged_at
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
     STATE_NOT_ERRORED,
@@ -124,6 +125,7 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
             if stats_entries:
                 upsert_segment_stats_batch(db, stats_entries)
         transition_file_state(db, [file_id], STATE_NOT_TAGGED, STATE_TAGGED)
+        update_last_tagged_at(db, file_id)
         transition_file_state(db, [file_id], STATE_NOT_VECTORS_EXTRACTED, STATE_VECTORS_EXTRACTED)
         logger.debug("[%s] Async writes done for %s (%d tags)", worker_id, writes.path, len(writes.db_tags))
     except Exception:
@@ -205,7 +207,7 @@ class DiscoveryWorker(multiprocessing.Process):
         """Run worker startup, connect to the database, and return initialized runtime state."""
         import faulthandler
 
-        import setproctitle
+        import setproctitle  # type: ignore[import-untyped]
 
         from nomarr.components.ml.audio.ml_audio_comp import set_stop_event
         from nomarr.components.ml.onnx.ml_session_comp import is_available as ml_is_available
@@ -408,6 +410,7 @@ class DiscoveryWorker(multiprocessing.Process):
         if result.heads_processed == 0 and result.tags_written == 0:
             logger.info("[%s] Skipped %s (all heads skipped - likely too short)", self.worker_id, file_path)
             transition_file_state(db, [file_id], STATE_NOT_TAGGED, STATE_TAGGED)
+            update_last_tagged_at(db, file_id)
             release_claim(db, file_id)
             return None, True
         if result.deferred_writes is not None:

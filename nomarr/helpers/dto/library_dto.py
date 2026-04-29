@@ -158,8 +158,40 @@ class SearchFilesResult:
 
     files: list[LibraryFileWithTags]
     total: int
-    limit: int
-    offset: int
+    limit: int = 100
+    offset: int = 0
+
+
+def map_file_with_tags_to_dto(file_dict: dict[str, Any]) -> LibraryFileWithTags:
+    """Convert a raw file dictionary (with tags) to LibraryFileWithTags DTO."""
+    return LibraryFileWithTags(
+        _id=file_dict["_id"],
+        path=file_dict["path"],
+        library_id=file_dict["library_id"],
+        file_size=file_dict.get("file_size"),
+        modified_time=file_dict.get("modified_time"),
+        duration_seconds=file_dict.get("duration_seconds"),
+        artist=file_dict.get("artist"),
+        album=file_dict.get("album"),
+        title=file_dict.get("title"),
+        calibration=file_dict.get("calibration"),
+        scanned_at=file_dict.get("scanned_at"),
+        last_tagged_at=file_dict.get("last_tagged_at"),
+        tagged=file_dict.get("tagged", False),
+        tagged_version=file_dict.get("tagged_version"),
+        skip_auto_tag=file_dict.get("skip_auto_tag", 0),
+        created_at=file_dict.get("created_at"),
+        updated_at=file_dict.get("updated_at"),
+        tags=[
+            FileTag(
+                key=tag["key"],
+                value=tag["value"],
+                tag_type=tag["type"],
+                is_nomarr=tag["is_nomarr"],
+            )
+            for tag in file_dict.get("tags", [])
+        ],
+    )
 
 
 @dataclass
