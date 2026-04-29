@@ -21,9 +21,9 @@ The redesigned suite currently contains **3 spec files** and **11 tests total**:
 
 | Spec file | Tests | What it validates |
 | --- | ---: | --- |
-| `e2e/smoke.spec.ts` | 3 | Public startup contract via `/api/v1/info`, authenticated GPU health via `/api/web/health/gpu`, and core tab navigation without critical frontend failures |
-| `e2e/library-integration.spec.ts` | 7 | Library creation using the canonical fixture path, full scan completion, and UI watch-mode switching with bounded `/api/web/work-status` polling |
-| `e2e/no-gpu-fallback.spec.ts` | 1 | `/api/web/health/gpu` stays usable in degraded CPU-only or no-GPU environments |
+| `smoke.spec.ts` | 3 | Public startup contract via `/api/v1/info`, authenticated GPU health via `/api/web/health/gpu`, and core tab navigation without critical frontend failures |
+| `library-integration.spec.ts` | 7 | Library creation using the canonical fixture path, full scan completion, and UI watch-mode switching with bounded `/api/web/work-status` polling |
+| `no-gpu-fallback.spec.ts` | 1 | `/api/web/health/gpu` stays usable in degraded CPU-only or no-GPU environments |
 
 ## Approved API oracles
 
@@ -66,9 +66,9 @@ npx playwright test --project=chromium
 ### Run individual specs
 
 ```bash
-npx playwright test e2e/smoke.spec.ts --project=chromium
-npx playwright test e2e/library-integration.spec.ts --project=chromium
-npx playwright test e2e/no-gpu-fallback.spec.ts --project=chromium
+npx playwright test smoke.spec.ts --project=chromium
+npx playwright test library-integration.spec.ts --project=chromium
+npx playwright test no-gpu-fallback.spec.ts --project=chromium
 ```
 
 ### Useful local variants

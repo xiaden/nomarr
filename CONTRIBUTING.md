@@ -172,8 +172,8 @@ lint-imports  # Check layer boundaries
 # Frontend linting
 cd frontend && npm run lint
 
-# End-to-end tests (requires Docker environment)
-npx playwright test
+# End-to-end tests (requires Docker environment; run from e2e/)
+cd e2e && npx playwright test
 ```
 
 ## 📝 Code Style

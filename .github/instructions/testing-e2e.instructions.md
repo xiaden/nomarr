@@ -14,12 +14,14 @@ applyTo: "e2e/**/*.ts"
 
 ## Quick Reference
 
+> **Run these commands from `e2e/`** (`cd e2e` first, or use `working-directory: e2e` in CI).
+
 ```powershell
 # Run all E2E tests
 npx playwright test
 
 # Run a specific spec file
-npx playwright test e2e/smoke.spec.ts
+npx playwright test smoke.spec.ts
 
 # Run tests matching a pattern
 npx playwright test --grep "login"
@@ -31,7 +33,7 @@ npx playwright test --headed
 npx playwright test --ui
 
 # Debug a specific test
-npx playwright test e2e/smoke.spec.ts --debug
+npx playwright test smoke.spec.ts --debug
 
 # Run in a specific browser
 npx playwright test --project=chromium
@@ -89,9 +91,9 @@ e2e/
 
 ## Configuration
 
-Playwright config lives at [playwright.config.ts](../../playwright.config.ts):
+Playwright config lives at [e2e/playwright.config.ts](../../e2e/playwright.config.ts):
 
-- **testDir:** `./e2e`
+- **testDir:** `.`
 - **baseURL:** `http://localhost:8356`
 - **browsers:** Chromium, Firefox, WebKit
 - **fullyParallel:** `true`

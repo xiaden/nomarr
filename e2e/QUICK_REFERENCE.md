@@ -19,9 +19,9 @@ e2e/
 npx playwright test --project=chromium
 
 # Run a single spec
-npx playwright test e2e/smoke.spec.ts --project=chromium
-npx playwright test e2e/library-integration.spec.ts --project=chromium
-npx playwright test e2e/no-gpu-fallback.spec.ts --project=chromium
+npx playwright test smoke.spec.ts --project=chromium
+npx playwright test library-integration.spec.ts --project=chromium
+npx playwright test no-gpu-fallback.spec.ts --project=chromium
 
 # Helpful local variants
 npx playwright test --project=chromium --headed
@@ -64,9 +64,9 @@ E2E_WORK_STATUS_TIMEOUT_MS=60000
 
 | Spec | Tests | Coverage summary |
 | --- | ---: | --- |
-| `e2e/smoke.spec.ts` | 3 | Startup contract, GPU health contract, and core navigation smoke |
-| `e2e/library-integration.spec.ts` | 7 | Library creation, full scan, quick-scan enablement, and watch-mode UI coverage |
-| `e2e/no-gpu-fallback.spec.ts` | 1 | CPU-only / degraded GPU health contract canary |
+| `smoke.spec.ts` | 3 | Startup contract, GPU health contract, and core navigation smoke |
+| `library-integration.spec.ts` | 7 | Library creation, full scan, quick-scan enablement, and watch-mode UI coverage |
+| `no-gpu-fallback.spec.ts` | 1 | CPU-only / degraded GPU health contract canary |
 
 ## CI facts
 
