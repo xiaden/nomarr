@@ -231,8 +231,6 @@ class TestUpsertBatch:
         """Removes ``library_id`` from docs before calling the path upsert constructor verb."""
         mock_db = MagicMock()
         mock_db.library_files.path.upsert.return_value = ["library_files/1"]
-        # No pre-existing files — the new file should have its state initialised.
-        mock_db.library_files.path.get.in_.return_value = []
         file_docs = [
             {
                 "library_id": "libraries/1",
@@ -242,9 +240,15 @@ class TestUpsertBatch:
             }
         ]
 
-        with patch(
-            "nomarr.components.library.library_file_mutation_comp.initialize_file_states_batch"
-        ) as mock_initialize_file_states_batch:
+        with (
+            patch(
+                "nomarr.components.library.library_file_mutation_comp.get_existing_file_paths",
+                return_value=set(),
+            ),
+            patch(
+                "nomarr.components.library.library_file_mutation_comp.initialize_file_states_batch"
+            ) as mock_initialize_file_states_batch,
+        ):
             result = upsert_batch(mock_db, file_docs)
 
         assert result == ["library_files/1"]
@@ -274,8 +278,6 @@ class TestUpsertBatch:
         """
         mock_db = MagicMock()
         mock_db.library_files.path.upsert.return_value = ["library_files/1"]
-        # File already exists — path.get.in_ returns the pre-existing document.
-        mock_db.library_files.path.get.in_.return_value = [{"path": "D:/Music/song.flac"}]
         file_docs = [
             {
                 "library_id": "libraries/1",
@@ -285,13 +287,55 @@ class TestUpsertBatch:
             }
         ]
 
-        with patch(
-            "nomarr.components.library.library_file_mutation_comp.initialize_file_states_batch"
-        ) as mock_initialize_file_states_batch:
+        with (
+            patch(
+                "nomarr.components.library.library_file_mutation_comp.get_existing_file_paths",
+                return_value={"D:/Music/song.flac"},
+            ),
+            patch(
+                "nomarr.components.library.library_file_mutation_comp.initialize_file_states_batch"
+            ) as mock_initialize_file_states_batch,
+        ):
             result = upsert_batch(mock_db, file_docs)
 
         assert result == ["library_files/1"]
         mock_initialize_file_states_batch.assert_called_once_with(mock_db, [])
+
+    @pytest.mark.unit
+    def test_initializes_state_only_for_new_files_in_mixed_batch(self) -> None:
+        """Only new files get state initialisation when a batch contains both new and existing files."""
+        mock_db = MagicMock()
+        mock_db.library_files.path.upsert.return_value = ["library_files/1", "library_files/2"]
+        file_docs = [
+            {
+                "library_id": "libraries/1",
+                "path": "D:/Music/existing.flac",
+                "file_size": 4096,
+                "modified_time": 111,
+            },
+            {
+                "library_id": "libraries/1",
+                "path": "D:/Music/new.flac",
+                "file_size": 8192,
+                "modified_time": 222,
+            },
+        ]
+
+        with (
+            patch(
+                "nomarr.components.library.library_file_mutation_comp.get_existing_file_paths",
+                # Only the first file already exists in DB.
+                return_value={"D:/Music/existing.flac"},
+            ),
+            patch(
+                "nomarr.components.library.library_file_mutation_comp.initialize_file_states_batch"
+            ) as mock_initialize_file_states_batch,
+        ):
+            result = upsert_batch(mock_db, file_docs)
+
+        assert result == ["library_files/1", "library_files/2"]
+        # Only library_files/2 (the new file) should be initialised.
+        mock_initialize_file_states_batch.assert_called_once_with(mock_db, ["library_files/2"])
 
 
 class TestBulkDeleteFiles:

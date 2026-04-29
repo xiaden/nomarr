@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_file_query_comp import (
     count_library_files,
+    get_existing_file_paths,
     list_library_files,
 )
 from nomarr.components.library.library_file_query_comp import (
@@ -336,11 +337,8 @@ def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
     # file would silently re-insert the negative-side edges for every axis
     # (e.g. not_tagged), overwriting transitions that have already occurred
     # and pushing those files backwards through the pipeline.
-    existing_paths: set[str] = {
-        str(doc["path"])
-        for doc in cast("list[dict[str, Any]]", db.library_files.path.get.in_([d["path"] for d in clean_docs if "path" in d]))
-        if "path" in doc
-    }
+    paths = [d["path"] for d in clean_docs if "path" in d]
+    existing_paths = get_existing_file_paths(db, paths)
 
     file_ids = cast("list[str]", db.library_files.path.upsert(clean_docs, match_field="path"))
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+from nomarr.components.library.library_file_query_comp import get_existing_file_paths
 from nomarr.components.library.library_file_state_comp import (
     clear_all_states,
     clear_all_states_batch,
@@ -140,11 +141,8 @@ def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
     # file would silently re-insert the negative-side edges for every axis
     # (e.g. not_tagged), overwriting transitions that have already occurred
     # and pushing those files backwards through the pipeline.
-    existing_paths: set[str] = {
-        str(doc["path"])
-        for doc in cast("list[dict[str, Any]]", db.library_files.path.get.in_([d["path"] for d in clean_docs if "path" in d]))
-        if "path" in doc
-    }
+    paths = [d["path"] for d in clean_docs if "path" in d]
+    existing_paths = get_existing_file_paths(db, paths)
 
     result = db.library_files.path.upsert(clean_docs, match_field="path")
 
