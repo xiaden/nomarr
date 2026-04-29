@@ -416,7 +416,7 @@ class DiscoveryWorker(multiprocessing.Process):
         if result.deferred_writes is not None:
             pending_write = write_executor.submit(_execute_deferred_writes, db, result.deferred_writes, self.worker_id)
             timing = f" | {result.timing_summary}" if result.timing_summary else ""
-            logger.info(
+            logger.debug(
                 "[%s] Completed %s in %.2fs (%d heads, %d tags)%s",
                 self.worker_id,
                 result.file_path,
