@@ -59,6 +59,7 @@ FastMCP provides decorator-based APIs - much simpler than low-level handlers.
 ### Keep Tools Focused
 
 **Good:**
+
 ```python
 @mcp.tool()
 def get_source(qualified_name: str) -> dict:
@@ -68,6 +69,7 @@ def get_source(qualified_name: str) -> dict:
 ```
 
 **Bad:**
+
 ```python
 @mcp.tool()
 def analyze_code(action: str, target: str, options: dict) -> Any:
@@ -138,6 +140,7 @@ for logger_name in ["asyncio", "urllib3", "httpcore"]:
 ```
 
 **Never:**
+
 - `print()` statements
 - `sys.stdout.write()`
 - Loggers configured to stdout
@@ -193,17 +196,20 @@ if __name__ == "__main__":
 **Nomarr's MCP server provides read-only static analysis tools.**
 
 This means:
+
 - **No code execution** - Parse AST, don't run code
 - **No file modifications** - Read-only operations
 - **No side effects** - Idempotent queries
 - **Fast responses** - Cache where possible
 
 Tools should:
+
 1. Parse source files (AST analysis)
 2. Return structured metadata
 3. Let AI agents make decisions
 
 **We don't:**
+
 - Execute Python code in tools
 - Modify files (that's for other layers)
 - Infer runtime behavior (unless explicitly tracing)
@@ -228,6 +234,7 @@ def search_text(file_path, search_string):  # No schema generated!
 ```
 
 **Always include:**
+
 - Parameter types
 - Return type
 - Pydantic models for complex structures

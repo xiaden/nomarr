@@ -44,9 +44,9 @@ jobs:
           if [ "${{ github.ref_name }}" = "main" ]; then
             TAGS="${REPO}:latest,${REPO}:v${BASE_VERSION},${REPO}:sha-${SHORT_SHA}"
           elif [ "${{ github.ref_name }}" = "develop" ]; then
-            TAGS="${REPO}:develop,${REPO}:v${BASE_VERSION},${REPO}:sha-${SHORT_SHA}"
+            TAGS="${REPO}:develop,${REPO}:preview-base,${REPO}:v${BASE_VERSION},${REPO}:sha-${SHORT_SHA}"
           else
-            TAGS="${REPO}:sha-${SHORT_SHA}"
+            TAGS="${REPO}:preview-base,${REPO}:sha-${SHORT_SHA}"
           fi
 
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
