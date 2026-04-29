@@ -72,6 +72,9 @@ class LibraryDict:
     last_scan_started_at: int | None = None  # Timestamp (ms) when scan started
     last_scan_at: int | None = None  # Timestamp (ms) of last scan completion
     scan_type_in_progress: str | None = None  # "quick" or "full" if a scan is running
+    # Vector search settings (per-library overrides)
+    vector_search_thoroughness: int | None = None  # Percentage of neighbourhoods to probe (1-100)
+    vector_group_size: int | None = None  # Number of tracks per FAISS group
     # Statistics (populated by service layer, not stored in DB)
     file_count: int = 0
     folder_count: int = 0
