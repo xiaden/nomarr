@@ -40,7 +40,7 @@ def resolve_tag_ids(
 def _find_song_rel_edge_ids(db: Database, song_id: str, rel: str) -> list[str]:
     """Return ``song_has_tags`` edge ids for one song + rel pair."""
     edge_ids: list[str] = []
-    for edge in db.song_has_tags._from.get.many(song_id, limit=db.song_has_tags.count()):
+    for edge in db.song_has_tags._from.get.many(song_id, limit=None):
         tag_id = edge.get("_to")
         if tag_id is None:
             continue
@@ -64,7 +64,7 @@ def set_song_tags(db: Database, song_id: str, rel: str, values: list[TagValue]) 
     tag_id_map = {value: find_or_create_tag(db, rel, value) for value in values}
     edge_docs = [{"_from": song_id, "_to": tag_id_map[value]} for value in values if value in tag_id_map]
     if edge_docs:
-        db.song_has_tags.insert(edge_docs)
+        db.song_has_tags._to.upsert(edge_docs, match_field=["_from", "_to"])
 
 
 def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
@@ -72,7 +72,7 @@ def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
 
     This supersedes the old persistence primitive from ADR-010. The operation is
     now expressed as component-layer coordination of constructor-backed verbs:
-    targeted edge deletion, tag upsert, then edge insert.
+    targeted edge deletion, tag upsert, then edge upsert (idempotent).
 
     Args:
         db: Database handle used to replace tag edges and upsert referenced tags.
@@ -103,19 +103,23 @@ def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
     tag_ids = {(rel, value): find_or_create_tag(db, rel, value) for rel, value in upsert_pairs}
 
     edge_docs: list[dict[str, str]] = []
+    seen_edges: set[tuple[str, str]] = set()
     for song_id, rel, values in entry_pairs:
         for value in values:
             tag_id = tag_ids.get((rel, value))
             if tag_id is not None:
-                edge_docs.append({"_from": song_id, "_to": tag_id})
+                edge_key = (song_id, tag_id)
+                if edge_key not in seen_edges:
+                    seen_edges.add(edge_key)
+                    edge_docs.append({"_from": song_id, "_to": tag_id})
     if edge_docs:
-        db.song_has_tags.insert(edge_docs)
+        db.song_has_tags._to.upsert(edge_docs, match_field=["_from", "_to"])
 
 
 def add_song_tag(db: Database, song_id: str, rel: str, value: TagValue) -> None:
     """Add one tag value to a song without replacing other values for the rel."""
     tag_id = find_or_create_tag(db, rel, value)
-    db.song_has_tags.insert([{"_from": song_id, "_to": tag_id}])
+    db.song_has_tags._to.upsert([{"_from": song_id, "_to": tag_id}], match_field=["_from", "_to"])
 
 
 def delete_song_tags(db: Database, song_id: str) -> None:
@@ -152,7 +156,7 @@ def relink_tag_edges(
     """
     source_edges = cast(
         "list[dict[str, Any]]",
-        db.song_has_tags._to.get.many(source_tag_id, limit=db.song_has_tags.count()),
+        db.song_has_tags._to.get.many(source_tag_id, limit=None),
     )
     if song_ids is not None:
         allowed = set(song_ids)
@@ -164,7 +168,7 @@ def relink_tag_edges(
         str(edge.get("_from"))
         for edge in cast(
             "list[dict[str, Any]]",
-            db.song_has_tags._to.get.many(target_tag_id, limit=db.song_has_tags.count()),
+            db.song_has_tags._to.get.many(target_tag_id, limit=None),
         )
     }
     edges_to_insert = [
@@ -181,7 +185,7 @@ def relink_tag_edges(
 
     remaining_source_edges = cast(
         "list[dict[str, Any]]",
-        db.song_has_tags._to.get.many(source_tag_id, limit=db.song_has_tags.count()),
+        db.song_has_tags._to.get.many(source_tag_id, limit=None),
     )
     source_orphaned = len(remaining_source_edges) == 0
     if source_orphaned:

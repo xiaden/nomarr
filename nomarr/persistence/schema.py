@@ -857,7 +857,7 @@ SCHEMA: dict[str, Any] = {
         "capabilities": ["insert", "delete", "count", "truncate"],
         "fields": {
             "_from": {"type": "str", "capabilities": ["get", "delete"]},
-            "_to": {"type": "str", "capabilities": ["get", "delete", "collect", "count"]},
+            "_to": {"type": "str", "capabilities": ["get", "delete", "collect", "count", "upsert"]},
         },
     },
     "file_has_state": {
