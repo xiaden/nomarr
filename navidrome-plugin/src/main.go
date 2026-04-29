@@ -291,9 +291,10 @@ func (p *nomarrPlugin) GetSimilarSongsByTrack(req metadata.SimilarSongsByTrackRe
 		return empty, nil
 	}
 
-	endpoint := strings.TrimRight(nomarrURL, "/") + "/api/v1/navidrome/similar-tracks"
+	endpoint := strings.TrimRight(nomarrURL, "/") + "/api/v1/navidrome/similar-track"
 
-	pdk.Log(pdk.LogDebug, fmt.Sprintf("nomarr: querying %s for song %s (count=%d, backbone=%s)", endpoint, req.ID, count, backbone))
+	pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: querying %s for song %s (count=%d, backbone=%s)", endpoint, req.ID, count, backbone))
+	pdk.Log(pdk.LogDebug, fmt.Sprintf("nomarr: similar-track request body: %s", string(bodyBytes)))
 
 	// Send HTTP POST via Extism PDK.
 	httpReq := extismpdk.NewHTTPRequest(extismpdk.MethodPost, endpoint)
@@ -377,7 +378,8 @@ func (p *nomarrPlugin) Scrobble(req scrobbler.ScrobbleRequest) error {
 
 	endpoint := strings.TrimRight(nomarrURL, "/") + "/api/v1/navidrome/scrobble"
 
-	pdk.Log(pdk.LogDebug, fmt.Sprintf("nomarr: scrobbling track %s for user %s", req.Track.ID, req.Username))
+	pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: scrobbling track %s (%s) for user %s", req.Track.ID, req.Track.Title, req.Username))
+	pdk.Log(pdk.LogDebug, fmt.Sprintf("nomarr: scrobble request body: %s", string(bodyBytes)))
 
 	httpReq := extismpdk.NewHTTPRequest(extismpdk.MethodPost, endpoint)
 	httpReq.SetHeader("Content-Type", "application/json")
@@ -439,7 +441,7 @@ func generateAndPushPlaylists() {
 		return
 	}
 
-	endpoint := strings.TrimRight(nomarrURL, "/") + "/api/v1/navidrome/generate-playlists"
+	endpoint := strings.TrimRight(nomarrURL, "/") + "/api/v1/navidrome/playlist/generate"
 
 	for _, user := range users {
 		if user.Username == "" {
@@ -464,11 +466,15 @@ func generateAndPushPlaylists() {
 			continue
 		}
 
+		pdk.Log(pdk.LogDebug, fmt.Sprintf("nomarr: generate-playlists request body for user %s: %s", user.Username, string(bodyBytes)))
+
 		httpReq := extismpdk.NewHTTPRequest(extismpdk.MethodPost, endpoint)
 		httpReq.SetHeader("Content-Type", "application/json")
 		httpReq.SetHeader("X-API-Key", apiKey)
 		httpReq.SetBody(bodyBytes)
 		resp := httpReq.Send()
+
+		pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: generate-playlists API responded with status %d for user %s", resp.Status(), user.Username))
 
 		if resp.Status() != 200 {
 			pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: generate-playlists API returned status %d for user %s: %s", resp.Status(), user.Username, string(resp.Body())))
