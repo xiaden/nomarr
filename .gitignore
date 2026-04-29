@@ -51,6 +51,12 @@ build.ps1
 # Serena IDE files
 .serena/
 
+# Obsidian vault
+.obsidian/
+
+# Playwright MCP
+.playwright-mcp/
+
 # Copilot memory (local agent state)
 memories/
 

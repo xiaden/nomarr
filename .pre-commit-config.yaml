@@ -41,6 +41,17 @@ repos:
         pass_filenames: false
         files: ^frontend/src/
 
+  # --- Frontend: build and stage dist output ---
+  - repo: local
+    hooks:
+      - id: frontend-build
+        name: frontend-build
+        entry: bash -c "cd frontend && npm run build && git add nomarr/public_html/"
+        language: system
+        pass_filenames: false
+        files: ^frontend/src/
+        stages: [pre-commit]
+
   # --- Agent dashboard: update metrics on every commit ---
   - repo: local
     hooks:
