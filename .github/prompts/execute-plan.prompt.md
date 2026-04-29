@@ -69,6 +69,7 @@ For each step:
      - an annotation that records evidence, not intent
 
 Example annotation payload:
+
 ```
   plan_complete_step
     plan_name: ${fileBasenameNoExtension}
@@ -86,6 +87,7 @@ Example annotation payload:
 ## Phase 3: Failure Protocol
 
 If any of the following occur:
+
 - an error is encountered
 - required context is missing
 - behavior is ambiguous
@@ -97,6 +99,7 @@ You must:
 2. Mark the step as FAILED via `plan_complete_step`
 
 Failure annotation payload:
+
 ```
   annotation:
     marker: Blocked
@@ -106,7 +109,7 @@ Failure annotation payload:
       Unable to proceed without clarification.
 ```
 
-3. Do not continue to later steps.
+1. Do not continue to later steps.
 
 No recovery. No skipping. No assumptions.
 
@@ -138,9 +141,11 @@ After ALL steps in the plan are marked complete:
    - All phases have been executed
 
 2. **Move to completed directory**
+
    ```
    edit_file_move(old_path="artifacts/plans/pending/<plan-name>.md", new_path="artifacts/plans/completed/<plan-name>.md")
    ```
+
    This creates the `completed/` directory automatically if needed.
 
 3. **Confirm archival**
@@ -152,5 +157,6 @@ After ALL steps in the plan are marked complete:
 ## Start Condition
 
 Begin now by reading the plan:
+
 - If attached in context → parse the markdown directly
 - Otherwise → call `plan_read`
