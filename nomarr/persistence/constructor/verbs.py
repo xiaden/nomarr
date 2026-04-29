@@ -32,6 +32,9 @@ _RETRY_BASE_DELAY = 0.05  # 50ms, doubles each retry
 logger = logging.getLogger(__name__)
 
 
+_CURSOR_TTL = 3600  # seconds — prevents ERR 1600 on large multi-batch result sets
+
+
 def _execute_aql(
     db: SafeDatabase,
     query: str,
@@ -41,18 +44,22 @@ def _execute_aql(
 ) -> Any:
     """Execute AQL via python-arango, logging the query at DEBUG level.
 
+    A server-side cursor TTL of ``_CURSOR_TTL`` seconds is set on every query
+    so that large result sets fetched in multiple batches never hit the default
+    30-second expiry (ArangoDB ERR 1600).
+
     When *retry_on_conflict* is ``True``, transient ArangoDB write-write
     conflicts (error 1200) are retried up to ``_MAX_RETRIES`` times with
     exponential back-off.
     """
     logger.debug("AQL: %s | bind_vars: %s", query, bind_vars)
     if not retry_on_conflict:
-        return db.aql.execute(query, bind_vars=bind_vars)
+        return db.aql.execute(query, bind_vars=bind_vars, ttl=_CURSOR_TTL)
 
     last_exc: AQLQueryExecuteError | None = None
     for attempt in range(_MAX_RETRIES + 1):
         try:
-            return db.aql.execute(query, bind_vars=bind_vars)
+            return db.aql.execute(query, bind_vars=bind_vars, ttl=_CURSOR_TTL)
         except AQLQueryExecuteError as exc:
             if exc.error_code != _WRITE_WRITE_CONFLICT_CODE or attempt == _MAX_RETRIES:
                 raise

@@ -1,0 +1,1 @@
+import{Er as e,St as t,wr as n}from"./index-dtlKHUd7.js";var r=e(n(),1);function i(){let e=(0,r.useContext)(t);if(!e)throw Error(`useNotification must be used within NotificationProvider`);return e}export{i as t};

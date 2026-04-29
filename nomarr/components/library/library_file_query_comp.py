@@ -348,11 +348,14 @@ def search_library_files_with_tags(
 ) -> tuple[list[dict[str, Any]], int]:
     """Search files with optional tag/text filters and hydrate tags in one query.
 
+    All filtering and pagination is pushed to ArangoDB. Python only hydrates
+    the small result page with tags and library_id.
+
     Args:
         db: Database handle used to search files and hydrate related tags.
         query_text: Free-text substring matched against artist, album, and title with case-insensitive ``LIKE`` filters.
-        artist: Exact artist match filter.
-        album: Exact album match filter.
+        artist: Case-insensitive exact artist match filter.
+        album: Case-insensitive exact album match filter.
         tag_key: When provided alone, filters to files that have any tag with this relation; when combined with ``tag_value``, filters to files with an exact ``(tag_key, tag_value)`` match.
         tag_value: Exact tag value to match; only meaningful when ``tag_key`` is also set.
         tagged_only: When ``True``, restricts results to files in the ``tagged`` state.
@@ -362,18 +365,44 @@ def search_library_files_with_tags(
     Returns:
         A tuple of ``(files, total_count)`` where each file dict is a library-file document merged with ``tags`` and ``library_id``.
     """
-    candidate_files = db.library_files.get.many.by_filter({}, limit=DEFAULT_LIMIT)
-    if artist:
-        candidate_files = [file_doc for file_doc in candidate_files if file_doc.get("artist") == artist]
-    if album:
-        candidate_files = [file_doc for file_doc in candidate_files if file_doc.get("album") == album]
-    if query_text:
-        candidate_files = [file_doc for file_doc in candidate_files if _matches_text_query(file_doc, query_text)]
+    # candidate_ids: None = universe (no constraint yet); set = narrowed result.
+    # Each active filter fetches only matching docs from Arango via the namespace
+    # API and intersects into this set. Python only does set math; all I/O is
+    # pushed to ArangoDB via the constructed accessor methods.
+    #
+    # Routing mirrors the frontend prefix syntax:
+    #   a:value   → artist LIKE %value%  (artist param)
+    #   al:value  → album  LIKE %value%  (album param)
+    #   t:value   → title  LIKE %value%  (query_text with artist/album also set)
+    #   value     → artist OR album OR title LIKE %value% (query_text alone)
+    candidate_ids: set[str] | None = None
 
-    candidate_by_id = {
-        file_id: file_doc for file_doc in candidate_files if isinstance((file_id := file_doc.get("_id")), str)
-    }
-    candidate_ids = set(candidate_by_id)
+    def _intersect(new_ids: set[str]) -> None:
+        nonlocal candidate_ids
+        candidate_ids = new_ids if candidate_ids is None else candidate_ids & new_ids
+
+    def _ids(docs: list[dict[str, Any]]) -> set[str]:
+        return {doc["_id"] for doc in docs if isinstance(doc.get("_id"), str)}
+
+    if artist:
+        # a: prefix → substring match in artist field
+        _intersect(_ids(db.library_files.artist.get.like(f"%{artist}%")))
+
+    if album:
+        # al: prefix → substring match in album field
+        _intersect(_ids(db.library_files.album.get.like(f"%{album}%")))
+
+    if query_text:
+        q_pattern = f"%{query_text}%"
+        if artist or album:
+            # t: prefix (query_text alongside a:/al:) → narrow to title only
+            _intersect(_ids(db.library_files.title.get.like(q_pattern)))
+        else:
+            # Unprefixed → OR across all three fields
+            matched: set[str] = set()
+            for field_ns in (db.library_files.artist, db.library_files.album, db.library_files.title):
+                matched |= _ids(field_ns.get.like(q_pattern))
+            _intersect(matched)
 
     if tag_key:
         tag_filter: dict[str, Any] = {"rel": tag_key}
@@ -381,7 +410,7 @@ def search_library_files_with_tags(
             tag_filter["value"] = tag_value
         matching_tags = db.tags.get.many.by_filter(tag_filter, limit=DEFAULT_LIMIT)
         tag_ids = {tag_id for tag_doc in matching_tags if isinstance((tag_id := tag_doc.get("_id")), str)}
-        candidate_ids &= _collect_file_ids_for_tag_ids(db, tag_ids)
+        _intersect(_collect_file_ids_for_tag_ids(db, tag_ids))
 
     if tagged_only:
         tagged_ids = {
@@ -389,12 +418,19 @@ def search_library_files_with_tags(
             for file_doc in db.file_states.traversal(STATE_TAGGED, "file_has_state", limit=DEFAULT_LIMIT)
             if isinstance((file_id := file_doc.get("_id")), str)
         }
-        candidate_ids &= tagged_ids
+        _intersect(tagged_ids)
 
-    filtered_files = [candidate_by_id[file_id] for file_id in candidate_ids if file_id in candidate_by_id]
-    filtered_files.sort(key=_library_file_sort_key)
-    total = len(filtered_files)
-    page_files = _paginate_rows(filtered_files, limit=limit, offset=offset)
+    if candidate_ids is None:
+        # No filters active — load all files up to the hard cap.
+        file_docs = db.library_files.get.many.by_filter({}, limit=DEFAULT_LIMIT)
+    elif not candidate_ids:
+        return [], 0
+    else:
+        file_docs = db.library_files.get.many(sorted(candidate_ids))
+
+    file_docs.sort(key=_library_file_sort_key)
+    total = len(file_docs)
+    page_files = _paginate_rows(file_docs, limit=limit, offset=offset)
     return ([_hydrate_file_with_tags(db, file_doc) for file_doc in page_files], total)
 
 

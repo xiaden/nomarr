@@ -202,7 +202,7 @@ export function useLibrarySearch(
     setLoading(true); // Show loading immediately for responsiveness
     debounceRef.current = setTimeout(() => {
       executeSearch(query);
-    }, 300);
+    }, 500);
 
     return () => {
       if (debounceRef.current !== null) clearTimeout(debounceRef.current);

@@ -464,7 +464,12 @@ class TestPhaseTwoQueryHelpers:
                 "path": "D:/Music/two.flac",
             },
         ]
-        mock_db.library_files.get.many.by_filter.return_value = file_docs
+        # artist/album LIKE queries each return both files; title LIKE (t: prefix) narrows to file 1
+        mock_db.library_files.artist.get.like.return_value = file_docs
+        mock_db.library_files.album.get.like.return_value = file_docs
+        mock_db.library_files.title.get.like.return_value = [file_docs[0]]
+        # final by-id fetch returns the narrowed page
+        mock_db.library_files.get.many.return_value = [file_docs[0]]
         mock_db.tags.get.many.by_filter.return_value = [{"_id": "tags/1"}]
         mock_db.song_has_tags._to.get.many.return_value = [{"_from": "library_files/1"}]
         mock_db.file_states.traversal.return_value = [{"_id": "library_files/1"}]
@@ -495,7 +500,6 @@ class TestPhaseTwoQueryHelpers:
                 "library_id": "libraries/1",
             }
         ]
-        mock_db.library_files.get.many.by_filter.assert_called_once_with({}, limit=DEFAULT_LIMIT)
 
     @pytest.mark.unit
     def test_search_files_by_tag_numeric_sorts_by_distance_and_hydrates_tags(self) -> None:
