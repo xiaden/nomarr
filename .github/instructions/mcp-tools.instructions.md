@@ -173,6 +173,7 @@ def read_file(
 ### Use Consistent Schemas
 
 **Good:**
+
 ```python
 from pydantic import BaseModel, Field
 
@@ -191,6 +192,7 @@ def locate_symbol(symbol_name: str) -> list[SymbolInfo]:
 ```
 
 **Bad:**
+
 ```python
 @mcp.tool()
 def locate_symbol(symbol_name: str) -> str:
@@ -254,6 +256,7 @@ def get_source(qualified_name: str) -> dict:
 ### Helpful Error Messages
 
 Include:
+
 - What went wrong
 - What was expected
 - How to fix it
@@ -397,6 +400,7 @@ def trace_module_calls(function: str) -> dict:
 ```
 
 AI agents can chain tools:
+
 1. `read_module_api("nomarr.services")` → see available services
 2. `read_module_source("nomarr.services.ConfigService")` → see implementation
 3. `trace_module_calls("ConfigService.load_config")` → see how it's used

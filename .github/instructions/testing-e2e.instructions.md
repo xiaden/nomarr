@@ -54,6 +54,7 @@ E2E tests run against the **Docker environment**, not native dev:
 4. Playwright browsers installed: `npx playwright install`
 
 **Start the environment:**
+
 ```powershell
 Push-Location .docker; docker compose up -d; Pop-Location
 ```
@@ -117,6 +118,7 @@ test('my test', async ({ authenticatedPage: page }) => {
 ```
 
 For tests that need unauthenticated access:
+
 ```typescript
 import { test, expect } from '@playwright/test';
 
@@ -137,7 +139,7 @@ test('my test', async ({ authenticatedPage: page }) => {
   const api = createApiHelpers(page);
 
   // Wait for API call triggered by navigation
-  const response = await api.waitForApiCall('/api/web/libraries', 'GET');
+  const response = await api.waitForApiCall('/api/web/library', 'GET');
   expect(response.status()).toBe(200);
 
   // Wait and get parsed JSON
@@ -255,6 +257,7 @@ Prefer selectors in this priority order:
 5. **data-testid** (last resort): `page.locator('[data-testid="my-element"]')`
 
 **Avoid:**
+
 - CSS class selectors (`.MuiButton-root`) — brittle, MUI-internal
 - Deep DOM path selectors — break on layout changes
 - XPath — unreadable
@@ -335,17 +338,17 @@ await expect(page.locator('text=/12 heads calibrated/')).toBeVisible();
 
 ## When to Use E2E vs Backend/Frontend Tests
 
-| Test This With... | E2E (Playwright) | Backend (pytest) | Frontend (Vitest) |
-|---|---|---|---|
-| Login flow works end-to-end | ✅ | | |
-| API returns correct JSON shape | | ✅ | |
-| Component renders correctly for given props | | | ✅ |
-| Navigation between pages works | ✅ | | |
-| Business logic computes correct result | | ✅ | |
-| Button click triggers correct API call | ✅ | | |
-| Form validation shows error messages | | | ✅ |
-| Full library scan → ML tagging pipeline | ✅ | | |
-| Utility function handles edge cases | | ✅ | ✅ |
+ | Test This With... | E2E (Playwright) | Backend (pytest) | Frontend (Vitest) |
+ | --- | --- | --- | --- |
+ | Login flow works end-to-end | ✅ | | |
+ | API returns correct JSON shape | | ✅ | |
+ | Component renders correctly for given props | | | ✅ |
+ | Navigation between pages works | ✅ | | |
+ | Business logic computes correct result | | ✅ | |
+ | Button click triggers correct API call | ✅ | | |
+ | Form validation shows error messages | | | ✅ |
+ | Full library scan → ML tagging pipeline | ✅ | | |
+ | Utility function handles edge cases | | ✅ | ✅ |
 
 ---
 

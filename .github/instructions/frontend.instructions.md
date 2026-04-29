@@ -104,6 +104,7 @@ import { getProcessingStatus, list } from "@/shared/api";
 ```
 
 Adding endpoints:
+
 1. Add TypeScript interfaces to `shared/types.ts` (or co-locate in the domain module)
 2. Add the fetch function to the appropriate `shared/api/<domain>.ts` module
 3. Re-export from `shared/api/index.ts` if not already covered by a wildcard re-export

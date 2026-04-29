@@ -9,9 +9,10 @@ applyTo: nomarr/persistence/**
 **Purpose:** Own all database access. Provide a clean data access API for higher layers.
 
 Persistence is the **data access layer**:
-- `Database` class owns the connection
-- `*AQL` classes own AQL queries for specific collections
-- External code accesses via `db.tags.get_track_tags()`, `db.library_files.get_pending_files()`
+
+- `Database` class owns the connection and exposes collection namespaces
+- `constructor/` builds `*Namespace` objects dynamically from the collection schema
+- External code accesses via constructor-backed namespaces: `db.tags.rel.get.many(...)`, `db.library_files.path.get(...)`
 - Returns [DTOs defined in helpers](./helpers.instructions.md)
 
 ---
@@ -20,14 +21,23 @@ Persistence is the **data access layer**:
 
 ```
 persistence/
-├── db.py                   # Database class (connection owner)
+├── db.py                   # Database facade (connection + namespace wiring)
 ├── arango_client.py        # ArangoDB client wrapper
-├── database/               # *_aql.py modules (AQL queries)
-│   ├── file_tags_aql.py    # Tag query operations
-│   ├── library_files_aql.py # Library file operations
-│   ├── worker_claims_aql.py # Worker claim operations
-│   └── ...
-└── __init__.py
+├── constructor/            # Schema-driven namespace builder
+│   ├── builder.py          # SchemaConstructor (reads schema, builds namespaces)
+│   ├── namespaces.py       # CollectionNamespace, FieldNamespace, GetModifierNamespace
+│   ├── verbs.py            # AQL verb templates (insert, delete, get_one_by_field, etc.)
+│   ├── cascade.py          # CascadeEngine for graph cleanup
+│   ├── filters.py          # Filter/pagination helpers
+│   └── pagination.py
+├── stubs/                  # Type stubs (*Namespace Protocols) for IDE + mypy
+│   ├── _base.pyi           # Base protocols (GetModifierProtocol, CollectionGetProtocol, AggResult)
+│   ├── library_files.pyi
+│   ├── tags.pyi
+│   └── ...                 # One .pyi per collection
+├── database/               # Empty legacy namespace stub (no modules, kept for import compat)
+│   └── __init__.py
+└── schema.py               # Collection schema definitions (SCHEMA dict, CollectionType, Op enums)
 ```
 
 ---
@@ -56,9 +66,9 @@ from nomarr.interfaces import ...    # No interfaces
 
 **Use the Nomarr MCP server to navigate this layer efficiently:**
 
-- `read_module_api(module_name)` - See AQL operations before reading full files
+- `read_module_api(module_name)` - See constructor namespace API before reading full files
 - `locate_module_symbol(symbol_name)` - Find where database operations are defined
-- `read_module_source(qualified_name)` - Get exact query method source with line numbers
+- `read_module_source(qualified_name)` - Get exact constructor or verb source with line numbers
 
 **Before modifying database operations, run `read_module_api` to understand the interface.**
 
@@ -69,12 +79,17 @@ from nomarr.interfaces import ...    # No interfaces
 External code **never** imports from `persistence/database/` directly:
 
 ```python
-# ✅ Correct - access via Database instance
+# ✅ Correct - access via Database instance and constructor-backed namespaces
 def some_workflow(db: Database):
-    files = db.library_files.get_pending_files(library_key)
-    tags = db.tags.get_song_tags(file_id)
+    # Field accessor chain: db.<collection>.<field>.get(value)
+    file = db.library_files.path.get("/music/track.flac")
+    tags = db.tags.rel.get.many("genre", limit=100, offset=0)
 
-# ❌ Wrong - direct import
+    # Collection-level verbs
+    db.library_files.insert([{"path": "/music/track.flac", ...}])
+    db.worker_claims.delete(["claims/abc123"])
+
+# ❌ Wrong - direct import of deleted *_aql modules
 from nomarr.persistence.database.library_files_aql import LibraryFilesAQL
 ```
 
@@ -85,6 +100,7 @@ from nomarr.persistence.database.library_files_aql import LibraryFilesAQL
 **Never rename `_id` or `_key`.**
 
 These are ArangoDB-native identifiers:
+
 - `_key`: Document key (unique within collection)
 - `_id`: Full document ID (`collection/_key`)
 
@@ -98,26 +114,38 @@ These are ArangoDB-native identifiers:
 
 ---
 
-## Operations Class Pattern
+## Constructor Pattern
 
-Each `*AQL` class owns all queries for a related set of collections:
+The constructor builds namespace objects from the schema at import time.
+Each collection is accessible as an attribute of the `Database` instance.
+There are no hand-written `*AQL` classes.
+
+### Always-List Rule
+
+All **collection-level** mutation verbs accept `list[...]` inputs — never a scalar, never a union.
+Pass `[item]` for single values. No separate `_batch` or `bulk_` variants.
+
+ | Verb | Input | Return |
+ | ------ | ------- | -------- |
+ | `insert(docs)` | `list[dict]` | `list[str]` |
+ | `upsert(docs, match_field)` | `list[dict]` | `list[str]` |
+ | `delete(ids)` | `list[str]` | `None` |
+ | `cascade(ids)` | `list[str]` | `int` |
+ | `transition(ids, from_edge, to_edge)` | `list[str]` | `None` |
+ | `truncate()` | *(none)* | `None` |
+
+**Field-level** `delete(value) -> int` is different — it takes a single field value (WHERE clause) and returns a count. This is not subject to the always-list rule.
 
 ```python
-class LibraryFilesAQL:
-    def __init__(self, arango: ArangoClient):
-        self._arango = arango
-    
-    def get_pending_files(self, library_key: str, limit: int = 100) -> list[FileDict]:
-        """Get pending files for processing."""
-        ...
-    
-    def mark_discovered(self, file_key: str, discovered_at: int) -> None:
-        """Mark file as discovered."""
-        ...
-    
-    def update_status(self, file_key: str, status: str) -> None:
-        """Update file processing status."""
-        ...
+# ✅ Correct — always-list for collection-level verbs
+db.worker_claims.delete(["claims/abc123"])
+db.library_files.insert([{"path": "/music/track.flac", ...}])
+
+# ✅ Correct — field-level delete takes a single value
+db.song_has_tags._from.delete(file_id)  # returns int (count deleted)
+
+# ❌ Wrong — scalar at collection-level
+db.ml_models.delete(model_id)  # Must be db.ml_models.delete([model_id])
 ```
 
 ---
@@ -127,18 +155,18 @@ class LibraryFilesAQL:
 Persistence **only** performs data access. No business decisions:
 
 ```python
-# ✅ Correct - pure data access
-def get_pending_files(self, library_key: str, limit: int = 100) -> list[FileDict]:
-    return self._arango.execute_query(
-        "FOR file IN library_files FILTER file.library_key == @lib AND file.status == 'pending' LIMIT @limit RETURN file",
-        bind_vars={"lib": library_key, "limit": limit},
-    )
+# ✅ Correct - pure data access via constructor-backed verbs
+def get_library_files(db: Database, library_key: str, limit: int = 100) -> list[dict[str, object]]:
+    return db.library_files.library_key.get.many(library_key, limit=limit, offset=0)
+
+def delete_stale_claims(db: Database, stale_ids: list[str]) -> None:
+    db.worker_claims.delete(stale_ids)
 
 # ❌ Wrong - business logic in persistence
-def get_files_to_process(self, library_key: str) -> list[FileDict]:
-    files = self.get_pending_files(library_key)
+def get_files_to_process(db: Database, library_key: str) -> list[dict[str, object]]:
+    files = db.library_files.library_key.get.many(library_key, limit=100, offset=0)
     # ❌ Business logic - this belongs in a workflow
-    if len(files) > 10 and self._is_overloaded():
+    if len(files) > 10 and is_system_overloaded():
         return files[:5]
     return files
 ```
@@ -162,6 +190,15 @@ def is_component_healthy(self, component_id: str) -> bool:
     heartbeat = self.get_last_heartbeat(component_id)
     return heartbeat is not None and (now_ms() - heartbeat) < 30000
 ```
+
+---
+
+## Size Guidelines
+
+- **Consider splitting** at 400 LOC — review whether queries and mutations have grown independently
+- **MUST split** at 600 LOC — no exceptions; separate queries from mutations or split by sub-domain
+
+Constructor modules (`verbs.py`, `namespaces.py`) may grow large due to method coverage. If a constructor module exceeds 600 LOC, review whether it can be split by concern (e.g., edge verbs vs. document verbs).
 
 ---
 

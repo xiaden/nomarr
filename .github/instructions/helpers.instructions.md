@@ -9,6 +9,7 @@ applyTo: nomarr/helpers/**
 **Purpose:** Provide pure utilities and shared data types used across all layers.
 
 Helpers are **stateless utilities** that:
+
 - Perform generic operations (file handling, time, data formatting)
 - Define DTOs (data transfer objects)
 - Define exceptions
@@ -171,16 +172,16 @@ class ConfigurationError(NomarrError):
 
 ## What Belongs Here vs Elsewhere
 
-| If it... | Put it in... |
-|----------|-------------|
-| Does file path manipulation | `helpers/files_helper.py` |
-| Formats time/timestamps | `helpers/time_helper.py` |
-| Is a cross-layer DTO | `helpers/dto/<domain>.py` |
-| Is a domain exception | `helpers/exceptions.py` |
-| Does tag parsing logic | `components/tagging/` (not helper) |
-| Does DB queries | `persistence/` (not helper) |
-| Has any business logic | `components/` (not helper) |
-| Constructs/validates library paths | `components/infrastructure/path_comp.py` (not helper) |
+ | If it... | Put it in... |
+ | ---------- | ------------- |
+ | Does file path manipulation | `helpers/files_helper.py` |
+ | Formats time/timestamps | `helpers/time_helper.py` |
+ | Is a cross-layer DTO | `helpers/dto/<domain>.py` |
+ | Is a domain exception | `helpers/exceptions.py` |
+ | Does tag parsing logic | `components/tagging/` (not helper) |
+ | Does DB queries | `persistence/` (not helper) |
+ | Has any business logic | `components/` (not helper) |
+ | Constructs/validates library paths | `components/infrastructure/path_comp.py` (not helper) |
 
 ---
 

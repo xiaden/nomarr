@@ -9,6 +9,7 @@ applyTo: nomarr/workflows/**
 **Purpose:** Implement core use cases ("what Nomarr does").
 
 Workflows contain the **story** of how Nomarr performs operations. They are recipes that:
+
 1. Accept dependencies as parameters (DB, config, ML backends)
 2. Orchestrate [components](./components.instructions.md) to perform work
 3. Return [DTOs](./helpers.instructions.md)
@@ -213,11 +214,10 @@ If you find yourself writing a private helper in a workflow, stop and ask:
 
 ## Size Guidelines
 
-- Soft limit: ~300–400 LOC per workflow module
-- If multiple exported workflows with different user stories → split files
-- Exception: analytics-style modules can group related read-only workflows
-- A workflow function body over ~150 lines likely contains logic that should
-  be in components
+- **Consider splitting** at 300 LOC — review whether multiple user stories are coexisting in one module
+- **MUST split** at 500 LOC — no exceptions; split by user story before committing
+
+A workflow function body over ~150 lines almost always contains logic that belongs in components. Analytics-style modules may group related read-only workflows, but the per-file hard limit still applies.
 
 ---
 

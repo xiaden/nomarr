@@ -277,15 +277,15 @@ Consider adding this as a shared test utility in `frontend/src/test/render.tsx`.
 
 ## What to Test
 
-| Category | Priority | Examples |
-|----------|----------|----------|
-| **Shared utilities** | High | Formatters, parsers, transformers |
-| **Custom hooks** | High | Polling, debounce, API state management |
-| **API client functions** | Medium | Request construction, response parsing |
-| **Display components** | Medium | Conditional rendering, data formatting |
-| **Interactive components** | Medium | Form validation, button states |
-| **Page-level components** | Low | Better covered by E2E tests |
-| **Layout/styling** | Skip | Visual regression (not worth unit testing) |
+ | Category | Priority | Examples |
+ | ---------- | ---------- | ---------- |
+ | **Shared utilities** | High | Formatters, parsers, transformers |
+ | **Custom hooks** | High | Polling, debounce, API state management |
+ | **API client functions** | Medium | Request construction, response parsing |
+ | **Display components** | Medium | Conditional rendering, data formatting |
+ | **Interactive components** | Medium | Form validation, button states |
+ | **Page-level components** | Low | Better covered by E2E tests |
+ | **Layout/styling** | Skip | Visual regression (not worth unit testing) |
 
 ### What NOT to Test
 
