@@ -35,11 +35,11 @@ dev = [
     "pytest>=7.0",
     "pytest-cov",
     "ruff>=0.1.0",
-    "mypy>=1.0",
+    "mypy>=1.20.2",
 ]
 lint = [
     "ruff>=0.1.0",
-    "mypy>=1.0",
+    "mypy>=1.20.2",
     "import-linter>=2.0",
 ]
 
