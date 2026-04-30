@@ -102,11 +102,12 @@ class TestDrainHotToCold:
             match_field="_key",
         )
         assert mock_db.file_has_vectors._to.delete.call_count == 2
-        mock_db.file_has_vectors.insert.assert_called_once_with(
+        mock_db.file_has_vectors.upsert.assert_called_once_with(
             [
                 {"_from": "library_files/f1", "_to": "vectors_track_cold__ast__lib1/k1"},
                 {"_from": "library_files/f2", "_to": "vectors_track_cold__ast__lib1/k2"},
-            ]
+            ],
+            match_field=["_from", "_to"],
         )
         hot_ops.truncate.assert_called_once_with()
 

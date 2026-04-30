@@ -169,7 +169,7 @@ def drain_hot_to_cold(db: Database, backbone_id: str, library_key: str) -> int:
                 edge_docs.append({"_from": file_id, "_to": cold_doc_id})
 
         if edge_docs:
-            db.file_has_vectors.insert(edge_docs)
+            db.file_has_vectors.upsert(edge_docs, match_field=["_from", "_to"])
 
         drained += len(hot_docs)
         logger.debug(

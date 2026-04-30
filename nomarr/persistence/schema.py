@@ -908,7 +908,7 @@ SCHEMA: dict[str, Any] = {
     },
     "file_has_vectors": {
         "type": CollectionType.EDGE,
-        "capabilities": ["insert", "delete", "count"],
+        "capabilities": ["insert", "upsert", "delete", "count"],
         "fields": {
             "_from": {"type": "str", "capabilities": ["get"]},
             "_to": {"type": "str", "capabilities": ["get", "delete"]},
