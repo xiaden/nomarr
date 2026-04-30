@@ -246,36 +246,32 @@ def upsert_by_field(
     field: str | list[str],
     docs: list[Document],
 ) -> list[str]:
-    """Upsert documents matching ``field`` or a compound key and return their ``_id`` values."""
-    ids: list[str] = []
-    for doc in docs:
-        if isinstance(field, list):
-            for f in field:
-                _validate_field_name(f)
-            upsert_fields = ", ".join(f"`{f}`: @kv{i}" for i, f in enumerate(field))
-            bind_vars: dict[str, Any] = {"@col": collection, "doc": doc}
-            for i, f in enumerate(field):
-                bind_vars[f"kv{i}"] = doc.get(f)
-            cursor = _execute_aql(
-                db,
-                f"UPSERT {{ {upsert_fields} }} INSERT @doc UPDATE @doc IN @@col RETURN NEW._id",
-                bind_vars=bind_vars,
-                retry_on_conflict=True,
-            )
-        else:
-            _validate_field_name(field)
-            cursor = _execute_aql(
-                db,
-                f"UPSERT {{ `{field}`: @key_val }} INSERT @doc UPDATE @doc IN @@col RETURN NEW._id",
-                bind_vars={
-                    "@col": collection,
-                    "key_val": doc.get(field),
-                    "doc": doc,
-                },
-                retry_on_conflict=True,
-            )
-        ids.append(cast("str", next(cursor)))
-    return ids
+    """Upsert documents matching ``field`` or a compound key and return their ``_id`` values.
+
+    Executes a single AQL query for the entire ``docs`` list regardless of
+    size, replacing the previous per-document loop.
+    """
+    if not docs:
+        return []
+
+    if isinstance(field, list):
+        for f in field:
+            _validate_field_name(f)
+        cursor = _execute_aql(
+            db,
+            "FOR doc IN @docs UPSERT KEEP(doc, @fields) INSERT doc UPDATE doc IN @@col RETURN NEW._id",
+            bind_vars={"@col": collection, "docs": docs, "fields": field},
+            retry_on_conflict=True,
+        )
+    else:
+        _validate_field_name(field)
+        cursor = _execute_aql(
+            db,
+            f"FOR doc IN @docs UPSERT {{`{field}`: doc[`{field}`]}} INSERT doc UPDATE doc IN @@col RETURN NEW._id",
+            bind_vars={"@col": collection, "docs": docs},
+            retry_on_conflict=True,
+        )
+    return [cast("str", _id) for _id in cursor]
 
 
 def update_by_field(

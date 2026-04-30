@@ -73,9 +73,9 @@ class TestUpsertByField:
     """Tests for upsert_by_field."""
 
     def test_single_field_returns_id_list_for_docs_list(self) -> None:
-        """Single-field upsert iterates docs and returns a list of ``_id`` values."""
+        """Single-field upsert executes one AQL query for all docs and returns a list of ``_id`` values."""
         db = MagicMock()
-        db.aql.execute.side_effect = [iter(["items/1"]), iter(["items/2"])]
+        db.aql.execute.return_value = iter(["items/1", "items/2"])
 
         result = upsert_by_field(
             db,
@@ -85,19 +85,19 @@ class TestUpsertByField:
         )
 
         assert result == ["items/1", "items/2"]
-        first_call = db.aql.execute.call_args_list[0]
-        assert "UPSERT" in first_call.args[0]
-        assert "`slug`" in first_call.args[0]
-        assert first_call.kwargs["bind_vars"] == {
+        assert db.aql.execute.call_count == 1
+        call = db.aql.execute.call_args_list[0]
+        assert "UPSERT" in call.args[0]
+        assert "`slug`" in call.args[0]
+        assert call.kwargs["bind_vars"] == {
             "@col": "items",
-            "key_val": "foo",
-            "doc": {"slug": "foo"},
+            "docs": [{"slug": "foo"}, {"slug": "bar"}],
         }
 
-    def test_compound_key_builds_indexed_bind_vars(self) -> None:
-        """Compound-key upsert emits indexed field bind vars and compound UPSERT AQL."""
+    def test_compound_key_uses_keep_and_single_query(self) -> None:
+        """Compound-key upsert uses KEEP() and issues a single AQL query for all docs."""
         db = MagicMock()
-        db.aql.execute.side_effect = [iter(["tags/1"]), iter(["tags/2"])]
+        db.aql.execute.return_value = iter(["tags/1", "tags/2"])
         docs = [
             {"rel": "genre", "value": "rock", "weight": 1.0},
             {"rel": "mood", "value": "energetic", "weight": 0.8},
@@ -106,13 +106,13 @@ class TestUpsertByField:
         result = upsert_by_field(db, "tags", ["rel", "value"], docs)
 
         assert result == ["tags/1", "tags/2"]
-        first_call = db.aql.execute.call_args_list[0]
-        assert "UPSERT { `rel`: @kv0, `value`: @kv1 }" in first_call.args[0]
-        assert first_call.kwargs["bind_vars"] == {
+        assert db.aql.execute.call_count == 1
+        call = db.aql.execute.call_args_list[0]
+        assert "KEEP" in call.args[0]
+        assert call.kwargs["bind_vars"] == {
             "@col": "tags",
-            "doc": docs[0],
-            "kv0": "genre",
-            "kv1": "rock",
+            "docs": docs,
+            "fields": ["rel", "value"],
         }
 
     def test_empty_docs_list_returns_empty_list_without_db_call(self) -> None:
