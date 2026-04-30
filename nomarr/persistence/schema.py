@@ -972,7 +972,17 @@ SCHEMA: dict[str, Any] = {
         "type": CollectionType.TEMPLATE,
         "name_pattern": "vectors_track_{tier}__{backbone_id}__{library_key}",
         "collection_suffix": True,  # Supports optional __{suffix} for test/staging
-        "capabilities": ["insert", "upsert", "update", "delete", "cascade", "count", "ann_search", "truncate"],
+        "capabilities": [
+            "insert",
+            "upsert",
+            "update",
+            "update_many",
+            "delete",
+            "cascade",
+            "count",
+            "ann_search",
+            "truncate",
+        ],
         "tiers": {
             "hot": {
                 "fields": {

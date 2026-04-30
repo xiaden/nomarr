@@ -289,6 +289,26 @@ def update_by_field(
     )
 
 
+def update_many_by_key(
+    db: SafeDatabase,
+    collection: str,
+    docs: list[Document],
+) -> None:
+    """Update each document in ``docs`` in-place, matched by ``_key``.
+
+    Each element must contain a ``_key`` field. All other fields in the element
+    are merged into the stored document (MERGE semantics — existing fields not
+    present in the element are preserved).
+    """
+    if not docs:
+        return
+    _execute_aql(
+        db,
+        "FOR doc IN @docs UPDATE {_key: doc._key} WITH doc IN @@col",
+        bind_vars={"@col": collection, "docs": docs},
+    )
+
+
 def update_by_filter(
     db: SafeDatabase,
     collection: str,

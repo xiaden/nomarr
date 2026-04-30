@@ -393,6 +393,15 @@ class CollectionNamespace:
         self._require_capability("update")
         verbs.update_by_filter(self._db, self._collection_name, filter_dict, fields)
 
+    def update_many(self, docs: list[Document]) -> None:
+        """Update each document in ``docs`` in-place, matched by ``_key``.
+
+        Each element must include a ``_key`` field. Other fields are merged into
+        the stored document (existing fields not in the element are preserved).
+        """
+        self._require_capability("update_many")
+        verbs.update_many_by_key(self._db, self._collection_name, docs)
+
     def transition(self, ids: list[str], from_edge_target: str, to_edge_target: str) -> None:
         """Three-phase state transition per DD §3.7, ADR-003, and ERR 1579."""
         self._require_capability("transition")

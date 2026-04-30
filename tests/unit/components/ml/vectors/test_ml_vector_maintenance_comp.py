@@ -68,20 +68,22 @@ class TestDrainHotToCold:
             "vectors_track_cold__ast__lib1/k1",
             "vectors_track_cold__ast__lib1/k2",
         ]
-        mock_db.song_has_tags.count.return_value = 10
-        mock_db.song_has_tags._from.get.many.side_effect = [
-            [{"_to": "tags/g1"}, {"_to": "tags/skip"}],
-            [{"_to": "tags/g2"}],
+        # Batch genre fetch: single in_ call returns all edges for both files
+        mock_db.song_has_tags._from.get.in_.return_value = [
+            {"_from": "library_files/f1", "_to": "tags/g1"},
+            {"_from": "library_files/f1", "_to": "tags/skip"},
+            {"_from": "library_files/f2", "_to": "tags/g2"},
         ]
-        mock_db.tags.get.side_effect = [
-            {"rel": "genre", "value": "ambient"},
-            {"rel": "mood", "value": "calm"},
-            {"rel": "genre", "value": "jazz"},
+        mock_db.tags.get.many.return_value = [
+            {"_id": "tags/g1", "rel": "genre", "value": "ambient"},
+            {"_id": "tags/skip", "rel": "mood", "value": "calm"},
+            {"_id": "tags/g2", "rel": "genre", "value": "jazz"},
         ]
 
         drained = drain_hot_to_cold(mock_db, "ast", "lib1")
 
         assert drained == 2
+        mock_db.song_has_tags._from.get.in_.assert_called_once_with(["library_files/f1", "library_files/f2"])
         cold_ops._key.upsert.assert_called_once_with(
             [
                 {
@@ -133,22 +135,27 @@ class TestBackfillGenres:
             {"_key": "k1", "file_id": "library_files/f1"},
             {"_key": "k2", "file_id": "library_files/f2"},
         ]
-        mock_db.song_has_tags.count.return_value = 10
-        mock_db.song_has_tags._from.get.many.side_effect = [
-            [{"_to": "tags/g1"}],
-            [{"_to": "tags/g2"}, {"_to": "tags/g3"}],
+        # Batch genre fetch
+        mock_db.song_has_tags._from.get.in_.return_value = [
+            {"_from": "library_files/f1", "_to": "tags/g1"},
+            {"_from": "library_files/f2", "_to": "tags/g2"},
+            {"_from": "library_files/f2", "_to": "tags/g3"},
         ]
-        mock_db.tags.get.side_effect = [
-            {"rel": "genre", "value": "ambient"},
-            {"rel": "genre", "value": "jazz"},
-            {"rel": "genre", "value": "fusion"},
+        mock_db.tags.get.many.return_value = [
+            {"_id": "tags/g1", "rel": "genre", "value": "ambient"},
+            {"_id": "tags/g2", "rel": "genre", "value": "jazz"},
+            {"_id": "tags/g3", "rel": "genre", "value": "fusion"},
         ]
 
         result = backfill_genres(mock_db, "ast", "lib1")
 
         assert result == 2
-        cold_ops._key.update.assert_any_call("k1", {"genres": ["ambient"]})
-        cold_ops._key.update.assert_any_call("k2", {"genres": ["jazz", "fusion"]})
+        cold_ops.update_many.assert_called_once_with(
+            [
+                {"_key": "k1", "genres": ["ambient"]},
+                {"_key": "k2", "genres": ["jazz", "fusion"]},
+            ]
+        )
 
     @pytest.mark.unit
     def test_returns_zero_when_cursor_empty(self) -> None:
@@ -159,7 +166,7 @@ class TestBackfillGenres:
         result = backfill_genres(mock_db, "ast", "lib1")
 
         assert result == 0
-        cold_ops._key.update.assert_not_called()
+        cold_ops.update_many.assert_not_called()
 
 
 class TestVerifyHotEmpty:

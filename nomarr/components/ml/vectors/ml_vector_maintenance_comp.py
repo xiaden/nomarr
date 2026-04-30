@@ -32,30 +32,44 @@ def _load_vector_docs(vector_ops: Any) -> list[dict[str, Any]]:
     return cast("list[dict[str, Any]]", vector_ops.get.many(doc_ids))
 
 
-def _get_file_genres(db: Database, file_id: str) -> list[str]:
-    """Resolve distinct genre tag values for a file via constructor verbs."""
+def _get_genres_for_files(db: Database, file_ids: list[str]) -> dict[str, list[str]]:
+    """Resolve distinct genre tag values for a batch of files.
+
+    Returns a mapping of file_id → list[genre_value].
+    One edge query + one tag batch fetch; O(1) round trips regardless of batch size.
+    """
+    if not file_ids:
+        return {}
+
     tag_edges = cast(
         "list[dict[str, Any]]",
-        db.song_has_tags._from.get.many(file_id, limit=db.song_has_tags.count()),
+        db.song_has_tags._from.get.in_(file_ids),
     )
 
-    genres: list[str] = []
-    seen: set[str] = set()
+    tag_ids = list({edge["_to"] for edge in tag_edges if isinstance(edge.get("_to"), str)})
+    if not tag_ids:
+        return {fid: [] for fid in file_ids}
+
+    tag_docs = cast("list[dict[str, Any]]", db.tags.get.many(tag_ids))
+    genre_by_tag_id: dict[str, str] = {
+        doc["_id"]: doc["value"]
+        for doc in tag_docs
+        if doc.get("rel") == "genre" and isinstance(doc.get("_id"), str) and isinstance(doc.get("value"), str)
+    }
+
+    result: dict[str, list[str]] = {fid: [] for fid in file_ids}
+    seen: dict[str, set[str]] = {fid: set() for fid in file_ids}
     for edge in tag_edges:
+        fid = edge.get("_from")
         tag_id = edge.get("_to")
-        if not isinstance(tag_id, str):
+        if not isinstance(fid, str) or not isinstance(tag_id, str):
             continue
+        genre = genre_by_tag_id.get(tag_id)
+        if genre and genre not in seen[fid]:
+            seen[fid].add(genre)
+            result[fid].append(genre)
 
-        tag_doc = db.tags.get(tag_id)
-        if not isinstance(tag_doc, dict) or tag_doc.get("rel") != "genre":
-            continue
-
-        genre_value = tag_doc.get("value")
-        if isinstance(genre_value, str) and genre_value not in seen:
-            seen.add(genre_value)
-            genres.append(genre_value)
-
-    return genres
+    return result
 
 
 def derive_embed_dim(models_dir: str, backbone_id: str) -> int:
@@ -148,10 +162,13 @@ def drain_hot_to_cold(db: Database, backbone_id: str, library_key: str) -> int:
         batch_ids = all_hot_ids[offset : offset + DRAIN_BATCH_SIZE]
         hot_docs = cast("list[dict[str, Any]]", cast("Any", hot_ops).get.many(batch_ids))
 
+        file_ids = [doc["file_id"] for doc in hot_docs if isinstance(doc.get("file_id"), str)]
+        genres_by_file = _get_genres_for_files(db, file_ids)
+
         enriched_docs: list[dict[str, Any]] = []
         for hot_doc in hot_docs:
             file_id = hot_doc.get("file_id")
-            genres = _get_file_genres(db, file_id) if isinstance(file_id, str) else []
+            genres = genres_by_file.get(file_id, []) if isinstance(file_id, str) else []
             enriched_docs.append({**hot_doc, "genres": genres})
 
         cold_doc_ids = cast(
@@ -363,14 +380,20 @@ def backfill_genres(db: Database, backbone_id: str, library_key: str) -> int:
             "Run drain_hot_to_cold first to create and populate the cold collection."
         ) from exc
 
+    file_ids = [doc["file_id"] for doc in cold_docs if isinstance(doc.get("file_id"), str)]
+    genres_by_file = _get_genres_for_files(db, file_ids)
+
+    update_docs: list[dict[str, Any]] = []
     for cold_doc in cold_docs:
-        file_id = cold_doc.get("file_id")
         doc_key = cold_doc.get("_key")
+        file_id = cold_doc.get("file_id")
         if not isinstance(doc_key, str):
             continue
+        genres = genres_by_file.get(file_id, []) if isinstance(file_id, str) else []
+        update_docs.append({"_key": doc_key, "genres": genres})
 
-        genres = _get_file_genres(db, file_id) if isinstance(file_id, str) else []
-        cast("Any", cold_ops)._key.update(doc_key, {"genres": genres})
+    if update_docs:
+        cast("Any", cold_ops).update_many(update_docs)
 
     count = len(cold_docs)
 
