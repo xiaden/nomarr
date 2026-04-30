@@ -24,94 +24,39 @@ class TestDrainHotToCold:
     @pytest.mark.unit
     def test_raises_when_hot_collection_missing(self) -> None:
         mock_db = MagicMock()
-        mock_db.register_vectors_track_backbone.return_value.count.side_effect = RuntimeError("missing")
+        hot_ops = mock_db.register_vectors_track_backbone.return_value
+        hot_ops.move_collection.side_effect = ValueError(
+            "Source collection 'vectors_track_hot__ast__lib1' does not exist"
+        )
 
-        with pytest.raises(ValueError, match="Hot collection 'vectors_track_hot__ast__lib1' does not exist"):
+        with pytest.raises(ValueError, match="Source collection 'vectors_track_hot__ast__lib1' does not exist"):
             drain_hot_to_cold(mock_db, "ast", "lib1")
 
     @pytest.mark.unit
     def test_returns_zero_when_hot_collection_empty(self) -> None:
         mock_db = MagicMock()
         hot_ops = mock_db.register_vectors_track_backbone.return_value
-        cold_ops = mock_db.get_vectors_track_cold.return_value
-        hot_ops.count.return_value = 0
+        hot_ops.move_collection.return_value = 0
+        mock_db.get_vectors_track_cold.side_effect = Exception("collection does not exist")
 
         result = drain_hot_to_cold(mock_db, "ast", "lib1")
 
         assert result == 0
+        hot_ops.move_collection.assert_called_once_with("vectors_track_cold__ast__lib1")
         mock_db.get_vectors_track_cold.assert_called_once_with("ast", "lib1")
-        cold_ops._key.upsert.assert_not_called()
 
     @pytest.mark.unit
-    def test_creates_cold_collection_and_truncates_hot(self) -> None:
+    def test_delegates_to_move_collection(self) -> None:
         mock_db = MagicMock()
         hot_ops = mock_db.register_vectors_track_backbone.return_value
-        cold_ops = mock_db.get_vectors_track_cold.return_value
-
-        hot_ops.count.return_value = 2
-        hot_ops._id.collect.return_value = ["vectors_track_hot__ast__lib1/k1", "vectors_track_hot__ast__lib1/k2"]
-        hot_ops.get.many.return_value = [
-            {
-                "_id": "vectors_track_hot__ast__lib1/k1",
-                "_key": "k1",
-                "file_id": "library_files/f1",
-                "vector_n": [0.1, 0.2],
-            },
-            {
-                "_id": "vectors_track_hot__ast__lib1/k2",
-                "_key": "k2",
-                "file_id": "library_files/f2",
-                "vector_n": [0.3, 0.4],
-            },
-        ]
-        cold_ops._key.upsert.return_value = [
-            "vectors_track_cold__ast__lib1/k1",
-            "vectors_track_cold__ast__lib1/k2",
-        ]
-        # Batch genre fetch: single in_ call returns all edges for both files
-        mock_db.song_has_tags._from.get.in_.return_value = [
-            {"_from": "library_files/f1", "_to": "tags/g1"},
-            {"_from": "library_files/f1", "_to": "tags/skip"},
-            {"_from": "library_files/f2", "_to": "tags/g2"},
-        ]
-        mock_db.tags.get.many.return_value = [
-            {"_id": "tags/g1", "rel": "genre", "value": "ambient"},
-            {"_id": "tags/skip", "rel": "mood", "value": "calm"},
-            {"_id": "tags/g2", "rel": "genre", "value": "jazz"},
-        ]
+        hot_ops.move_collection.return_value = 2
 
         drained = drain_hot_to_cold(mock_db, "ast", "lib1")
 
         assert drained == 2
-        mock_db.song_has_tags._from.get.in_.assert_called_once_with(["library_files/f1", "library_files/f2"])
-        cold_ops._key.upsert.assert_called_once_with(
-            [
-                {
-                    "_id": "vectors_track_hot__ast__lib1/k1",
-                    "_key": "k1",
-                    "file_id": "library_files/f1",
-                    "vector_n": [0.1, 0.2],
-                    "genres": ["ambient"],
-                },
-                {
-                    "_id": "vectors_track_hot__ast__lib1/k2",
-                    "_key": "k2",
-                    "file_id": "library_files/f2",
-                    "vector_n": [0.3, 0.4],
-                    "genres": ["jazz"],
-                },
-            ],
-            match_field="_key",
-        )
-        assert mock_db.file_has_vectors._to.delete.call_count == 2
-        mock_db.file_has_vectors.upsert.assert_called_once_with(
-            [
-                {"_from": "library_files/f1", "_to": "vectors_track_cold__ast__lib1/k1"},
-                {"_from": "library_files/f2", "_to": "vectors_track_cold__ast__lib1/k2"},
-            ],
-            match_field=["_from", "_to"],
-        )
-        hot_ops.truncate.assert_called_once_with()
+        mock_db.register_vectors_track_backbone.assert_called_once_with("ast", "lib1")
+        hot_ops.move_collection.assert_called_once_with("vectors_track_cold__ast__lib1")
+        mock_db.get_vectors_track_cold.assert_called_once_with("ast", "lib1")
 
 
 class TestBackfillGenres:

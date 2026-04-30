@@ -8,6 +8,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any, cast
 
+from nomarr.persistence.arango_client import SafeDatabase
+from nomarr.persistence.constructor.verbs import _execute_aql
 from nomarr.persistence.schema import CollectionType
 
 
@@ -21,7 +23,7 @@ class CascadeEngine:
 
     def cascade(
         self,
-        db: Any,
+        db: SafeDatabase,
         collection_name: str,
         ids: list[str],
         cascade_targets: list[str],
@@ -50,7 +52,8 @@ class CascadeEngine:
         active_registry = registry or {}
 
         for edge_col in cascade_targets:
-            cursor = db.aql.execute(
+            cursor = _execute_aql(
+                db,
                 """
                 FOR e IN @@edge_col
                     FILTER e._from IN @ids OR e._to IN @ids
@@ -67,7 +70,8 @@ class CascadeEngine:
             target_ids = list(dict.fromkeys(self._extract_connected_target_ids(edges=edges, source_ids=id_set)))
 
             edge_keys = [edge["_key"] for edge in edges]
-            db.aql.execute(
+            _execute_aql(
+                db,
                 "FOR key IN @keys REMOVE key IN @@edge_col",
                 bind_vars={"@edge_col": edge_col, "keys": edge_keys},
             )
@@ -91,7 +95,8 @@ class CascadeEngine:
                     active_registry,
                 )
 
-        db.aql.execute(
+        _execute_aql(
+            db,
             "FOR doc_id IN @ids REMOVE PARSE_IDENTIFIER(doc_id).key IN @@col",
             bind_vars={"@col": collection_name, "ids": normalized_ids},
         )
@@ -101,7 +106,7 @@ class CascadeEngine:
 
     def _find_orphans(
         self,
-        db: Any,
+        db: SafeDatabase,
         candidate_ids: list[str],
         schema: dict[str, Any],
         registry: dict[str, Any],
@@ -131,8 +136,9 @@ class CascadeEngine:
             for doc_id in dict.fromkeys(collection_ids):
                 remaining = 0
                 for edge_col in referencing_edges:
-                    cursor = db.aql.execute(
-                        ("RETURN LENGTH(FOR e IN @@ec FILTER e._from == @id OR e._to == @id RETURN 1)"),
+                    cursor = _execute_aql(
+                        db,
+                        "RETURN LENGTH(FOR e IN @@ec FILTER e._from == @id OR e._to == @id RETURN 1)",
                         bind_vars={"@ec": edge_col, "id": doc_id},
                     )
                     remaining += next(cursor, 0)

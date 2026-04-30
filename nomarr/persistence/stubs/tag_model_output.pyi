@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from nomarr.persistence.stubs._base import CollectionGetProtocol, GetModifierProtocol
+from nomarr.persistence.stubs._base import CollectionGetProtocol, DeleteModifierProtocol, GetModifierProtocol
 
 @runtime_checkable
 class TagModelOutputGetOnlyNamespace(Protocol):
@@ -17,8 +17,7 @@ class TagModelOutputKeyNamespace(Protocol):
 @runtime_checkable
 class TagModelOutputDeleteNamespace(Protocol):
     get: GetModifierProtocol
-
-    def delete(self, value: str) -> int: ...
+    delete: DeleteModifierProtocol
 
 @runtime_checkable
 class TagModelOutputFromNamespace(Protocol):
@@ -53,5 +52,6 @@ class TagModelOutputNamespace(Protocol):
     def count(self) -> int: ...
     def count_by_filter(self, filter_dict: dict[str, Any]) -> int: ...
     def insert(self, docs: list[dict[str, Any]]) -> list[str]: ...
+    def update_many(self, docs: list[dict[str, Any]]) -> None: ...
     def delete(self, ids: list[str]) -> None: ...
     def delete_by_filter(self, filter_dict: dict[str, Any]) -> int: ...

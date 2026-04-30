@@ -65,3 +65,26 @@ class GetModifierProtocol(Protocol):
         limit: int | None = ...,
         offset: int = ...,
     ) -> list[dict[str, Any]]: ...
+
+class DeleteModifierProtocol(Protocol):
+    def __call__(self, value: Any) -> int: ...
+    def in_(self, values: list[Any]) -> int: ...
+
+class TraversalProtocol(Protocol):
+    def __call__(
+        self,
+        start: str | dict[str, Any],
+        edge: str,
+        *,
+        target_filter: dict[str, Any] | None = ...,
+        limit: int | None = ...,
+        offset: int = ...,
+    ) -> list[dict[str, Any]]: ...
+    def by_ids(
+        self,
+        start_ids: list[str],
+        edge: str,
+        *,
+        target_filter: dict[str, Any] | None = ...,
+        target_like_starts_with: tuple[str, str] | None = ...,
+    ) -> list[dict[str, Any]]: ...

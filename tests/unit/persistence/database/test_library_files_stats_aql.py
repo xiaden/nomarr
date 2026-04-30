@@ -18,7 +18,7 @@ class TestCountFilesByTag:
         """String target values should use constructor exact-match lookups and return an int."""
         mock_db = MagicMock()
         mock_db.tags.get.many.by_filter.return_value = [{"_id": "tags/1"}]
-        mock_db.song_has_tags._to.get.many.return_value = [
+        mock_db.song_has_tags._to.get.in_.return_value = [
             {"_from": "library_files/1"},
             {"_from": "library_files/2"},
         ]
@@ -34,7 +34,7 @@ class TestCountFilesByTag:
         """Float target values should use the numeric constructor branch and return an int."""
         mock_db = MagicMock()
         mock_db.tags.rel.get.many.return_value = [{"_id": "tags/1", "value": 120.5}]
-        mock_db.song_has_tags._to.get.many.return_value = [{"_from": "library_files/7"}]
+        mock_db.song_has_tags._to.get.in_.return_value = [{"_from": "library_files/7"}]
 
         result = count_files_by_tag(mock_db, "nom:bpm", 120.5)
 
@@ -47,7 +47,7 @@ class TestCountFilesByTag:
         """Integers should follow the numeric branch rather than exact string matching."""
         mock_db = MagicMock()
         mock_db.tags.rel.get.many.return_value = [{"_id": "tags/1", "value": 7}]
-        mock_db.song_has_tags._to.get.many.return_value = [{"_from": "library_files/3"}]
+        mock_db.song_has_tags._to.get.in_.return_value = [{"_from": "library_files/3"}]
 
         result = count_files_by_tag(mock_db, "nom:rating", 7)
 
@@ -60,7 +60,7 @@ class TestCountFilesByTag:
         """Booleans are excluded from the numeric branch and should be stringified."""
         mock_db = MagicMock()
         mock_db.tags.get.many.by_filter.return_value = [{"_id": "tags/1"}]
-        mock_db.song_has_tags._to.get.many.return_value = [{"_from": "library_files/5"}]
+        mock_db.song_has_tags._to.get.in_.return_value = [{"_from": "library_files/5"}]
 
         result = count_files_by_tag(mock_db, "flag", True)
 

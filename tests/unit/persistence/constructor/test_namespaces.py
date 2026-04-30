@@ -405,6 +405,91 @@ class TestCollectionNamespaceTraversal:
 
 @pytest.mark.unit
 @pytest.mark.mocked
+class TestCollectionNamespaceTraversalByIds:
+    """Tests for TraversalNamespace.by_ids dispatch."""
+
+    SPEC_WITH_TRAVERSAL: ClassVar[dict[str, Any]] = {
+        "type": CollectionType.DOCUMENT,
+        "capabilities": ["traversal"],
+        "edges": {
+            "tracks_edge": {"target": "tracks", "direction": "OUTBOUND"},
+        },
+        "fields": {},
+    }
+
+    def test_by_ids_dispatches_to_verbs_traversal_by_ids(self) -> None:
+        """by_ids calls verbs.traversal_by_ids with correct positional args."""
+        db = MagicMock()
+        ns = _build_ns(db, "albums", self.SPEC_WITH_TRAVERSAL)
+
+        with patch("nomarr.persistence.constructor.verbs.traversal_by_ids") as mock_traversal:
+            mock_traversal.return_value = [{"start_id": "albums/1", "v": {"_id": "tracks/1"}}]
+            result = ns.traversal.by_ids(["albums/1", "albums/2"], "tracks_edge")
+
+        mock_traversal.assert_called_once_with(
+            db,
+            "albums",
+            ["albums/1", "albums/2"],
+            "tracks_edge",
+            "OUTBOUND",
+            target_filter=None,
+            target_like_starts_with=None,
+        )
+        assert result == [{"start_id": "albums/1", "v": {"_id": "tracks/1"}}]
+
+    def test_by_ids_passes_target_filter_through(self) -> None:
+        """by_ids forwards target_filter kwarg to verbs.traversal_by_ids."""
+        db = MagicMock()
+        ns = _build_ns(db, "albums", self.SPEC_WITH_TRAVERSAL)
+
+        with patch("nomarr.persistence.constructor.verbs.traversal_by_ids") as mock_traversal:
+            mock_traversal.return_value = []
+            ns.traversal.by_ids(["albums/1"], "tracks_edge", target_filter={"genre": "jazz"})
+
+        mock_traversal.assert_called_once_with(
+            db,
+            "albums",
+            ["albums/1"],
+            "tracks_edge",
+            "OUTBOUND",
+            target_filter={"genre": "jazz"},
+            target_like_starts_with=None,
+        )
+
+    def test_by_ids_passes_target_like_starts_with_through(self) -> None:
+        """by_ids forwards target_like_starts_with kwarg to verbs.traversal_by_ids."""
+        db = MagicMock()
+        ns = _build_ns(db, "albums", self.SPEC_WITH_TRAVERSAL)
+
+        with patch("nomarr.persistence.constructor.verbs.traversal_by_ids") as mock_traversal:
+            mock_traversal.return_value = []
+            ns.traversal.by_ids(
+                ["albums/1"],
+                "tracks_edge",
+                target_like_starts_with=("title", "The"),
+            )
+
+        mock_traversal.assert_called_once_with(
+            db,
+            "albums",
+            ["albums/1"],
+            "tracks_edge",
+            "OUTBOUND",
+            target_filter=None,
+            target_like_starts_with=("title", "The"),
+        )
+
+    def test_by_ids_raises_attribute_error_for_undeclared_edge(self) -> None:
+        """by_ids on an undeclared edge name raises AttributeError."""
+        db = MagicMock()
+        ns = _build_ns(db, "albums", self.SPEC_WITH_TRAVERSAL)
+
+        with pytest.raises(AttributeError, match="undeclared_edge"):
+            ns.traversal.by_ids(["albums/1"], "undeclared_edge")
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
 class TestIdGetNamespace:
     """Tests for IdGetNamespace.id() delegation to get_one_by_id verb."""
 

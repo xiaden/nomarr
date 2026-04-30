@@ -351,6 +351,17 @@ def delete_by_field(db: SafeDatabase, collection: str, field: str, value: Any) -
     return sum(1 for _ in cursor)
 
 
+def delete_in_by_field(db: SafeDatabase, collection: str, field: str, values: list[Any]) -> int:
+    """Delete all documents where field IN values. Returns count deleted."""
+    filter_clause, filter_vars = build_in_filter(field, values)
+    cursor = _execute_aql(
+        db,
+        f"FOR doc IN @@col {filter_clause} REMOVE doc IN @@col RETURN 1",
+        bind_vars={"@col": collection, **filter_vars},
+    )
+    return sum(1 for _ in cursor)
+
+
 def delete_by_filter(db: SafeDatabase, collection: str, filter_dict: dict[str, Any]) -> int:
     """Delete all documents matching an equality filter dict. Returns count deleted."""
     filter_fragment, filter_vars = build_equality_filter(filter_dict)
@@ -602,6 +613,55 @@ def traversal_by_filter_with_target_filter(
     return _cursor_to_documents(cursor)
 
 
+def traversal_by_ids(
+    db: Any,
+    collection: str,
+    start_ids: list[str],
+    edge: str,
+    direction: str,
+    *,
+    target_filter: dict[str, Any] | None = None,
+    target_like_starts_with: tuple[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """Graph traversal starting from multiple known document IDs."""
+    del collection
+
+    bind_vars: dict[str, Any] = {"start_ids": start_ids, "@edge": edge}
+    filter_clauses: list[str] = []
+
+    if target_filter is not None:
+        for index, (field_name, value) in enumerate(target_filter.items()):
+            bind_vars[f"tgt_field_{index}"] = field_name
+            bind_vars[f"tgt_val_{index}"] = value
+            filter_clauses.append(f"v[@tgt_field_{index}] == @tgt_val_{index}")
+
+    if target_like_starts_with is not None:
+        bind_vars["sw_field"] = target_like_starts_with[0]
+        bind_vars["sw_prefix"] = target_like_starts_with[1]
+        filter_clauses.append("STARTS_WITH(v[@sw_field], @sw_prefix)")
+
+    if direction == "OUTBOUND":
+        traversal_direction = "OUTBOUND"
+    elif direction == "INBOUND":
+        traversal_direction = "INBOUND"
+    else:
+        msg = f"Unsupported traversal direction: {direction}"
+        raise ValueError(msg)
+
+    filter_block = ""
+    if filter_clauses:
+        filter_block = f" FILTER {' AND '.join(filter_clauses)}"
+
+    aql = (
+        f"FOR start_id IN @start_ids "
+        f"FOR v IN 1..1 {traversal_direction} start_id @@edge"
+        f"{filter_block} "
+        "RETURN {start_id: start_id, v: v}"
+    )
+    cursor = _execute_aql(db, aql, bind_vars=bind_vars)
+    return list(cursor)
+
+
 def ann_search(
     db: SafeDatabase,
     collection: str,
@@ -661,3 +721,228 @@ def truncate(db: SafeDatabase, collection_name: str) -> None:
     Uses python-arango's native ``Collection.truncate()`` — no AQL needed.
     """
     db.collection(collection_name).truncate()
+
+
+# ---------------------------------------------------------------------------
+# MOVE COLLECTION verb
+# ---------------------------------------------------------------------------
+
+_EDGE_BATCH = 2_000
+
+
+def move_collection(db: SafeDatabase, source: str, dest: str) -> int:
+    """Move all documents from ``source`` to ``dest``, re-pointing every edge, then removing only the copied documents from source.
+
+    Discovers all non-system edge collections at runtime via AQL — no hardcoded
+    names. UPSERT semantics on ``_key`` make the document copy idempotent.
+    Creates ``dest`` if it does not exist.
+
+    Edge re-pointing is fully server-side (no Python materialization).
+    Both the document copy and edge re-pointing run in batches of ``_EDGE_BATCH``
+    using ``SORT _key / LIMIT offset, batch`` pagination so no single query
+    handles large vector payloads. Phase 1 inserts new edges, Phase 2 removes
+    old edges using a shrinking-set ``LIMIT`` loop.
+
+    Args:
+        db: Database handle.
+        source: Source collection name.
+        dest: Destination collection name.
+
+    Returns:
+        Number of documents moved (count before truncate).
+
+    Raises:
+        ValueError: If source collection does not exist.
+
+    """
+    if not db.has_collection(source):
+        msg = f"Source collection '{source}' does not exist"
+        raise ValueError(msg)
+
+    count = cast("int", db.collection(source).count())
+    if count == 0:
+        return 0
+
+    if not db.has_collection(dest):
+        db.create_collection(dest)
+
+    # Copy documents in batches — idempotent UPSERT by _key.
+    # SORT + LIMIT offset, batch is stable because the source collection is
+    # not mutated during this phase.
+    doc_offset = 0
+    while True:
+        cursor = _execute_aql(
+            db,
+            "FOR doc IN @@src SORT doc._key LIMIT @offset, @batch UPSERT {_key: doc._key} INSERT doc UPDATE doc IN @@dest RETURN 1",
+            bind_vars={"@src": source, "@dest": dest, "offset": doc_offset, "batch": _EDGE_BATCH},
+        )
+        copied = sum(1 for _ in cursor)
+        if copied == 0:
+            break
+        doc_offset += copied
+
+    src_prefix = f"{source}/"
+    dest_prefix = f"{dest}/"
+
+    # Discover all non-system edge collections (ArangoDB type==3)
+    edge_name_cursor = _execute_aql(
+        db,
+        "FOR c IN _collections FILTER c.type == 3 AND NOT STARTS_WITH(c.name, '_') RETURN c.name",
+        bind_vars={},
+    )
+
+    for edge_name in edge_name_cursor:
+        # Phase 1: INSERT new edges in sorted batches.
+        # LIMIT @offset, @batch over an unchanged source set is stable — source
+        # edges are not touched until Phase 2, so offsets do not shift.
+        offset = 0
+        while True:
+            cursor = _execute_aql(
+                db,
+                """
+                FOR e IN @@ec
+                    FILTER STARTS_WITH(e._from, @src) OR STARTS_WITH(e._to, @src)
+                    SORT e._key
+                    LIMIT @offset, @batch
+                    LET new_from = STARTS_WITH(e._from, @src) ? CONCAT(@dest, SUBSTRING(e._from, LENGTH(@src))) : e._from
+                    LET new_to   = STARTS_WITH(e._to,   @src) ? CONCAT(@dest, SUBSTRING(e._to,   LENGTH(@src))) : e._to
+                    INSERT MERGE(UNSET(e, '_id', '_rev', '_from', '_to'), {_key: CONCAT("mv_", e._key), _from: new_from, _to: new_to}) IN @@ec OPTIONS {overwriteMode: "replace"}
+                    RETURN 1
+                """,
+                bind_vars={
+                    "@ec": edge_name,
+                    "src": src_prefix,
+                    "dest": dest_prefix,
+                    "offset": offset,
+                    "batch": _EDGE_BATCH,
+                },
+            )
+            inserted = sum(1 for _ in cursor)
+            if inserted == 0:
+                break
+            offset += inserted
+
+        if offset == 0:
+            continue
+
+        # Phase 2: REMOVE old edges in batches.
+        # New edges have _from/_to pointing to @dest so the filter only hits
+        # old edges; no offset tracking needed since removals shrink the set.
+        while True:
+            cursor = _execute_aql(
+                db,
+                "FOR e IN @@ec FILTER STARTS_WITH(e._from, @src) OR STARTS_WITH(e._to, @src) LIMIT @batch REMOVE e IN @@ec RETURN 1",
+                bind_vars={"@ec": edge_name, "src": src_prefix, "batch": _EDGE_BATCH},
+            )
+            if sum(1 for _ in cursor) == 0:
+                break
+
+    # Delete only documents that were successfully copied to dest — do not
+    # truncate. Truncate would destroy any documents written to source after
+    # the copy loop started. Filter to keys that still exist in source so the
+    # loop is idempotent on crash + resume: already-removed docs are simply
+    # skipped rather than erroring.
+    del_offset = 0
+    while True:
+        cursor = _execute_aql(
+            db,
+            "FOR doc IN @@dest SORT doc._key LIMIT @offset, @batch FILTER DOCUMENT(@@src, doc._key) != null REMOVE {_key: doc._key} IN @@src RETURN 1",
+            bind_vars={"@dest": dest, "@src": source, "offset": del_offset, "batch": _EDGE_BATCH},
+        )
+        removed = sum(1 for _ in cursor)
+        if removed == 0:
+            break
+        del_offset += removed
+
+    return count
+
+
+# ---------------------------------------------------------------------------
+# TRANSITION verb
+# ---------------------------------------------------------------------------
+
+
+def transition(
+    db: SafeDatabase,
+    edge_col: str,
+    ids: list[str],
+    from_edge_target: str,
+    to_edge_target: str,
+) -> None:
+    """Three-phase state transition: remove old edge, upsert new edge, per ADR-003."""
+    for doc_id in ids:
+        cursor = _execute_aql(
+            db,
+            "FOR e IN @@ec FILTER e._from == @fid AND e._to == @from RETURN e._key",
+            bind_vars={"@ec": edge_col, "fid": doc_id, "from": from_edge_target},
+        )
+        old_key = next(cursor, None)
+
+        if old_key is not None:
+            _execute_aql(
+                db,
+                "REMOVE @key IN @@ec",
+                bind_vars={"@ec": edge_col, "key": old_key},
+            )
+
+        _execute_aql(
+            db,
+            """
+            UPSERT { _from: @fid, _to: @to }
+            INSERT { _from: @fid, _to: @to }
+            UPDATE {}
+            IN @@ec
+            """,
+            bind_vars={"@ec": edge_col, "fid": doc_id, "to": to_edge_target},
+        )
+
+
+# ---------------------------------------------------------------------------
+# VECTORS TRACK verbs
+# ---------------------------------------------------------------------------
+
+
+def get_vector(db: SafeDatabase, collection: str, file_id: str) -> Document | None:
+    """Get the latest vector document for a file from a vectors_track collection."""
+    cursor = _execute_aql(
+        db,
+        """
+        FOR doc IN @@col
+            FILTER doc.file_id == @file_id
+            SORT doc.created_at DESC
+            LIMIT 1
+            RETURN doc
+        """,
+        bind_vars={"@col": collection, "file_id": file_id},
+    )
+    return cast("Document | None", next(cursor, None))
+
+
+def get_vectors_by_file_ids(db: SafeDatabase, collection: str, file_ids: list[str]) -> list[Document]:
+    """Get vector documents for multiple files from a vectors_track collection."""
+    if not file_ids:
+        return []
+    cursor = _execute_aql(
+        db,
+        """
+        FOR doc IN @@col
+            FILTER doc.file_id IN @file_ids
+            RETURN doc
+        """,
+        bind_vars={"@col": collection, "file_ids": file_ids},
+    )
+    return _cursor_to_documents(cursor)
+
+
+def upsert_file_has_vectors_edge(db: SafeDatabase, file_id: str, vector_id: str) -> None:
+    """Upsert the file_has_vectors edge between a file and its vector document."""
+    _execute_aql(
+        db,
+        """
+        UPSERT { _from: @file_id, _to: @vector_id }
+        INSERT { _from: @file_id, _to: @vector_id }
+        UPDATE {}
+        IN file_has_vectors
+        """,
+        bind_vars={"file_id": file_id, "vector_id": vector_id},
+    )

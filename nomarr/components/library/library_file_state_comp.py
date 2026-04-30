@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
 from arango.exceptions import DocumentInsertError
@@ -87,6 +88,7 @@ def _extract_matching_head_keys(
     expected_heads: list[dict[str, Any]],
     namespace_prefix: str,
 ) -> list[str]:
+    """Return expected `head_key` values matched by namespace-prefixed tags on label and model key."""
     matched_heads: list[str] = []
     seen_heads: set[str] = set()
     for tag in tags:
@@ -286,10 +288,28 @@ def get_files_with_incomplete_tags(
     if normalized_library_id is not None:
         library_file_ids = _library_file_ids(db, normalized_library_id)
         tagged_files = [file_doc for file_doc in tagged_files if file_doc["_id"] in library_file_ids]
+    file_ids = [file_doc["_id"] for file_doc in tagged_files]
+    all_rows = (
+        db.library_files.traversal.by_ids(
+            file_ids,
+            "song_has_tags",
+            target_like_starts_with=("rel", namespace_prefix),
+        )
+        if file_ids
+        else []
+    )
+    tags_by_file: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in all_rows:
+        start_id = row.get("start_id")
+        tag = row.get("v")
+        if not isinstance(start_id, str) or not isinstance(tag, dict):
+            continue
+        tags_by_file[start_id].append(tag)
+
     results: list[dict[str, Any]] = []
     for file_doc in tagged_files:
         matched_heads = _extract_matching_head_keys(
-            db.library_files.traversal(file_doc["_id"], "song_has_tags", limit=None),
+            tags_by_file.get(file_doc["_id"], []),
             expected_heads,
             namespace_prefix,
         )

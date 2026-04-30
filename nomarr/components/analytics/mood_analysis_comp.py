@@ -63,28 +63,29 @@ def _get_tag_docs_for_rel(db: Database, rel: str) -> list[dict[str, Any]]:
 def _get_tag_edge_rows(db: Database, rel: str, library_id: str | None = None) -> list[tuple[str, str]]:
     """Return ``(file_id, tag_value)`` rows for one tag relation."""
     library_file_ids = _get_library_file_ids(db, library_id)
-    rows: list[tuple[str, str]] = []
-    for tag_doc in _get_tag_docs_for_rel(db, rel):
+
+    tag_docs = _get_tag_docs_for_rel(db, rel)
+    tag_id_to_value: dict[str, str] = {}
+    for tag_doc in tag_docs:
         tag_id = tag_doc.get("_id")
         tag_value = tag_doc.get("value")
-        if not isinstance(tag_id, str) or tag_value is None:
-            continue
+        if isinstance(tag_id, str) and tag_value is not None:
+            tag_id_to_value[tag_id] = str(tag_value)
 
-        edge_offset = 0
-        while True:
-            edge_page = db.song_has_tags._to.get.many(tag_id, limit=_PAGE_SIZE, offset=edge_offset)
-            if not edge_page:
-                break
-            for edge_doc in edge_page:
-                file_id = edge_doc.get("_from")
-                if not isinstance(file_id, str):
-                    continue
-                if library_file_ids is not None and file_id not in library_file_ids:
-                    continue
-                rows.append((file_id, str(tag_value)))
-            if len(edge_page) < _PAGE_SIZE:
-                break
-            edge_offset += len(edge_page)
+    if not tag_id_to_value:
+        return []
+
+    # Fetch all song→tag edges for the entire relation in a single IN query.
+    edge_docs = db.song_has_tags._to.get.in_(list(tag_id_to_value))
+    rows: list[tuple[str, str]] = []
+    for edge_doc in edge_docs:
+        file_id = edge_doc.get("_from")
+        to_id = edge_doc.get("_to")
+        if not isinstance(file_id, str) or to_id not in tag_id_to_value:
+            continue
+        if library_file_ids is not None and file_id not in library_file_ids:
+            continue
+        rows.append((file_id, tag_id_to_value[str(to_id)]))
 
     return rows
 

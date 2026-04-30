@@ -18,6 +18,7 @@ from nomarr.persistence.constructor.verbs import (
     traversal_by_filter,
     traversal_by_filter_with_target_filter,
     traversal_by_id,
+    traversal_by_ids,
     update_by_filter,
     upsert_by_field,
 )
@@ -466,6 +467,116 @@ class TestTraversalByFilterWithTargetFilter:
 
         with pytest.raises(ValueError, match="DIAGONAL"):
             traversal_by_filter_with_target_filter(db, "col", {"f": "v"}, "edge", "DIAGONAL", {"g": "w"})
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestTraversalByIds:
+    """Tests for traversal_by_ids."""
+
+    def test_outbound_builds_outbound_aql(self) -> None:
+        """Returns documents; AQL contains OUTBOUND with start_ids bind var."""
+        db = _mock_db([{"_id": "target/1"}])
+
+        result = traversal_by_ids(db, "src_col", ["src_col/1", "src_col/2"], "my_edge", "OUTBOUND")
+
+        assert result == [{"_id": "target/1"}]
+        call_args = db.aql.execute.call_args
+        assert "OUTBOUND" in call_args[0][0]
+        assert call_args[1]["bind_vars"]["start_ids"] == ["src_col/1", "src_col/2"]
+        assert call_args[1]["bind_vars"]["@edge"] == "my_edge"
+
+    def test_inbound_builds_inbound_aql(self) -> None:
+        """INBOUND direction produces AQL with INBOUND keyword."""
+        db = _mock_db()
+
+        traversal_by_ids(db, "src_col", ["src_col/1"], "my_edge", "INBOUND")
+
+        assert "INBOUND" in db.aql.execute.call_args[0][0]
+
+    def test_invalid_direction_raises_value_error(self) -> None:
+        """Unsupported direction raises ValueError with the direction name."""
+        db = _mock_db()
+
+        with pytest.raises(ValueError, match="SIDEWAYS"):
+            traversal_by_ids(db, "src_col", ["src_col/1"], "my_edge", "SIDEWAYS")
+
+    def test_empty_result_returns_empty_list(self) -> None:
+        """No documents returned from db produces empty list."""
+        db = _mock_db([])
+
+        result = traversal_by_ids(db, "src_col", ["src_col/1"], "my_edge", "OUTBOUND")
+
+        assert result == []
+
+    def test_target_filter_adds_filter_clause_and_bind_vars(self) -> None:
+        """target_filter encodes field/value as tgt_field_N/tgt_val_N bind vars."""
+        db = _mock_db()
+
+        traversal_by_ids(db, "col", ["col/1"], "edge", "OUTBOUND", target_filter={"genre": "rock"})
+
+        bind_vars = db.aql.execute.call_args[1]["bind_vars"]
+        assert bind_vars["tgt_val_0"] == "rock"
+        assert bind_vars["tgt_field_0"] == "genre"
+        assert "FILTER" in db.aql.execute.call_args[0][0]
+
+    def test_target_like_starts_with_adds_starts_with_filter(self) -> None:
+        """target_like_starts_with encodes sw_field/sw_prefix and adds STARTS_WITH to AQL."""
+        db = _mock_db()
+
+        traversal_by_ids(
+            db,
+            "col",
+            ["col/1"],
+            "edge",
+            "OUTBOUND",
+            target_like_starts_with=("name", "Ar"),
+        )
+
+        bind_vars = db.aql.execute.call_args[1]["bind_vars"]
+        assert bind_vars["sw_field"] == "name"
+        assert bind_vars["sw_prefix"] == "Ar"
+        assert "STARTS_WITH" in db.aql.execute.call_args[0][0]
+
+    def test_combined_target_filter_and_target_like_starts_with_generates_and_clause(self) -> None:
+        """Both target_filter and target_like_starts_with produce FILTER joined with AND."""
+        db = _mock_db()
+
+        traversal_by_ids(
+            db,
+            "col",
+            ["col/1"],
+            "edge",
+            "OUTBOUND",
+            target_filter={"genre": "rock"},
+            target_like_starts_with=("name", "Ar"),
+        )
+
+        aql = db.aql.execute.call_args[0][0]
+        bind_vars = db.aql.execute.call_args[1]["bind_vars"]
+        assert "tgt_val_0" in bind_vars
+        assert "sw_prefix" in bind_vars
+        assert "AND" in aql
+        assert "FILTER" in aql
+
+    def test_multiple_target_filter_entries_produce_multiple_bind_vars(self) -> None:
+        """Multiple target_filter entries produce indexed tgt_field_N/tgt_val_N bind vars."""
+        db = _mock_db()
+
+        traversal_by_ids(
+            db,
+            "col",
+            ["col/1"],
+            "edge",
+            "OUTBOUND",
+            target_filter={"genre": "rock", "year": 2020},
+        )
+
+        bind_vars = db.aql.execute.call_args[1]["bind_vars"]
+        assert "tgt_field_0" in bind_vars
+        assert "tgt_val_0" in bind_vars
+        assert "tgt_field_1" in bind_vars
+        assert "tgt_val_1" in bind_vars
 
 
 @pytest.mark.unit

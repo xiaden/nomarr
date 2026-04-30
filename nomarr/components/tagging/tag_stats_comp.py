@@ -113,8 +113,10 @@ def get_unique_rels(db: Database, nomarr_only: bool = False) -> list[str]:
 
 def get_tag_value_counts(db: Database, rel: str) -> dict[Any, int]:
     """Return value → song-count mapping for one relation."""
+    counts_raw = db.song_has_tags._to.aggregate()
+    count_by_tag_id = {row["value"]: row["count"] for row in counts_raw}
     return {
-        tag["value"]: _song_count_for_tag(db, tag_id)
+        tag["value"]: count_by_tag_id.get(tag_id, 0)
         for tag in _tags_for_rel(db, rel)
         if isinstance(tag_id := tag.get("_id"), str) and "value" in tag
     }
@@ -127,10 +129,13 @@ def get_all_tag_stats_batched(db: Database) -> dict[str, dict[str, Any]]:
     if total_tags <= 0:
         return result
 
+    counts_raw = db.song_has_tags._to.aggregate()
+    count_by_tag_id = {row["value"]: row["count"] for row in counts_raw}
+
     for rel_value in db.tags.rel.collect(limit=total_tags):
         rel = str(rel_value)
         values: dict[Any, int] = {
-            tag["value"]: _song_count_for_tag(db, tag_id)
+            tag["value"]: count_by_tag_id.get(tag_id, 0)
             for tag in db.tags.rel.get.many(rel, limit=total_tags)
             if isinstance(tag_id := tag.get("_id"), str) and "value" in tag
         }

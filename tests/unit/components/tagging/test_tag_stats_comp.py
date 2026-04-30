@@ -9,6 +9,7 @@ import pytest
 from nomarr.components.tagging.tag_stats_comp import (
     _coerce_sum_value,
     _numeric_value,
+    get_all_tag_stats_batched,
     get_genre_distribution,
     get_library_stats,
     get_tag_value_counts,
@@ -151,14 +152,15 @@ class TestGetTagValueCounts:
             {"_id": 3, "value": "Skip"},
         ]
 
-        def count_by_filter(filter_doc: dict[str, str]) -> int:
-            return {"tags/1": 4, "tags/2": 2}[filter_doc["_to"]]
-
-        mock_db.song_has_tags.count_by_filter.side_effect = count_by_filter
+        mock_db.song_has_tags._to.aggregate.return_value = [
+            {"value": "tags/1", "count": 4},
+            {"value": "tags/2", "count": 2},
+        ]
 
         result = get_tag_value_counts(mock_db, "genre")
 
         assert result == {"Rock": 4, "Jazz": 2}
+        mock_db.song_has_tags._to.aggregate.assert_called_once_with()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -169,7 +171,59 @@ class TestGetTagValueCounts:
         result = get_tag_value_counts(mock_db, "genre")
 
         assert result == {}
-        mock_db.song_has_tags.count_by_filter.assert_not_called()
+        mock_db.song_has_tags._to.aggregate.assert_called_once_with()
+
+
+class TestGetAllTagStatsBatched:
+    """Tests for get_all_tag_stats_batched."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_empty_dict_when_no_tags_exist(self) -> None:
+        mock_db = MagicMock()
+        mock_db.tags.count.return_value = 0
+
+        result = get_all_tag_stats_batched(mock_db)
+
+        assert result == {}
+        mock_db.song_has_tags._to.aggregate.assert_not_called()
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_uses_aggregate_counts_for_relation_summaries(self) -> None:
+        mock_db = MagicMock()
+        mock_db.tags.count.return_value = 3
+        mock_db.tags.rel.collect.return_value = ["genre", "year"]
+        mock_db.tags.rel.get.many.side_effect = [
+            [
+                {"_id": "tags/1", "value": "Rock"},
+                {"_id": "tags/2", "value": "Jazz"},
+            ],
+            [{"_id": "tags/3", "value": 1999}],
+        ]
+        mock_db.song_has_tags._to.aggregate.return_value = [
+            {"value": "tags/1", "count": 4},
+            {"value": "tags/2", "count": 2},
+            {"value": "tags/3", "count": 1},
+        ]
+
+        result = get_all_tag_stats_batched(mock_db)
+
+        assert result == {
+            "genre": {
+                "type": "string",
+                "is_multivalue": True,
+                "summary": "unique=2",
+                "total_count": 6,
+            },
+            "year": {
+                "type": "integer",
+                "is_multivalue": False,
+                "summary": "min=1999, max=1999, unique=1",
+                "total_count": 1,
+            },
+        }
+        mock_db.song_has_tags._to.aggregate.assert_called_once_with()
 
 
 class TestGetYearDistribution:

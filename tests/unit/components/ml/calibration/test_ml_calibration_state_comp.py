@@ -219,15 +219,20 @@ class TestCalibrationStateCrud:
                 "label": "happy",
             }
         ]
-        mock_db.model_has_calibration._key.get.return_value = {
-            "_from": "ml_models/model-1",
-            "_to": "calibration_state/mood_happy:happy",
-        }
-        mock_db.ml_models.get.return_value = {
-            "_id": "ml_models/model-1",
-            "backbone": "ast",
-            "embedder_release_date": "2026-01-01",
-        }
+        mock_db.model_has_calibration.get.many.id.return_value = [
+            {
+                "_key": "mood_happy:happy",
+                "_from": "ml_models/model-1",
+                "_to": "calibration_state/mood_happy:happy",
+            }
+        ]
+        mock_db.ml_models.get.many.id.return_value = [
+            {
+                "_id": "ml_models/model-1",
+                "backbone": "ast",
+                "embedder_release_date": "2026-01-01",
+            }
+        ]
 
         result = load_all_calibration_states(mock_db)
 
@@ -240,8 +245,8 @@ class TestCalibrationStateCrud:
                 "model": {"backbone": "ast", "embedder_release_date": "2026-01-01"},
             }
         ]
-        mock_db.model_has_calibration._key.get.assert_called_once_with("mood_happy:happy")
-        mock_db.ml_models.get.assert_called_once_with("ml_models/model-1")
+        mock_db.model_has_calibration.get.many.id.assert_called_once_with(["model_has_calibration/mood_happy:happy"])
+        mock_db.ml_models.get.many.id.assert_called_once_with(["ml_models/model-1"])
 
     @pytest.mark.unit
     def test_delete_removes_edge_and_state_by_constructor_ids(self) -> None:

@@ -63,3 +63,6 @@ Import-linter enforces layer boundaries.
 - Rename `_id` or `_key` (ArangoDB-native identifiers)
 - Let workflows import services or interfaces
 - Let helpers import any `nomarr.*` modules
+- Read files when directed to dispatch them to subagents. **Pass the file paths — the subagent reads them itself.** Reading the content first wastes tokens and delays dispatch without adding value, while risking adding misaligned intent to the dispatch.
+- Read files when given the contents or summary already.
+- Read files when tool returns give the context of their use.

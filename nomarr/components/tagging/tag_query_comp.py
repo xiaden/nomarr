@@ -49,11 +49,6 @@ def _filter_tags_by_search(tags: list[dict[str, Any]], search: str | None) -> li
     return [tag for tag in tags if search_lower in str(tag.get("value", "")).lower()]
 
 
-def _song_count_for_tag(db: Database, tag_id: str) -> int:
-    """Count the number of song edges targeting one tag."""
-    return int(db.song_has_tags.count_by_filter({"_to": tag_id}))
-
-
 def _enrich_tag(tag: dict[str, Any], song_count: int) -> dict[str, Any]:
     """Return the public tag payload with computed song count."""
     return {
@@ -121,16 +116,11 @@ def _matches_tag_operator(tag_value: Any, operator: str, value: TagValue) -> boo
 
 def _file_ids_for_tag_docs(db: Database, tags: list[dict[str, Any]]) -> set[str]:
     """Traverse from tags to linked file ids and return the union set."""
-    file_ids: set[str] = set()
-    for tag in tags:
-        tag_id = tag.get("_id")
-        if not isinstance(tag_id, str):
-            continue
-        for file_doc in db.tags.traversal(tag_id, "song_has_tags"):
-            file_id = file_doc.get("_id")
-            if isinstance(file_id, str):
-                file_ids.add(file_id)
-    return file_ids
+    edges = db.song_has_tags._to.get.in_(
+        [tag["_id"] for tag in tags if isinstance(tag.get("_id"), str)],
+        limit=None,
+    )
+    return {edge["_from"] for edge in edges if isinstance(edge.get("_from"), str)}
 
 
 def _library_file_ids(db: Database, library_id: str | None) -> set[str] | None:
@@ -199,10 +189,11 @@ def list_tags_by_rel(
 ) -> list[dict[str, Any]]:
     """List tag values, optionally filtered by relation and search text."""
     matched_tags = _filter_tags_by_search(_tags_for_rel(db, rel), search)
+    count_by_tag_id = {row["value"]: row["count"] for row in db.song_has_tags._to.aggregate()}
 
     if sort_by_count:
         counted_tags = [
-            (tag, _song_count_for_tag(db, str(tag["_id"]))) for tag in matched_tags if isinstance(tag.get("_id"), str)
+            (tag, count_by_tag_id.get(str(tag["_id"]), 0)) for tag in matched_tags if isinstance(tag.get("_id"), str)
         ]
         counted_tags.sort(key=lambda item: (-item[1], str(item[0].get("value", "")).lower()))
         return [_enrich_tag(tag, song_count) for tag, song_count in counted_tags[offset : offset + limit]]
@@ -210,7 +201,7 @@ def list_tags_by_rel(
     matched_tags.sort(key=lambda tag: str(tag.get("value", "")).lower())
     page = matched_tags[offset : offset + limit]
     return [
-        _enrich_tag(tag, _song_count_for_tag(db, tag_id)) for tag in page if isinstance(tag_id := tag.get("_id"), str)
+        _enrich_tag(tag, count_by_tag_id.get(tag_id, 0)) for tag in page if isinstance(tag_id := tag.get("_id"), str)
     ]
 
 
@@ -240,14 +231,21 @@ def get_nomarr_tags_bulk(db: Database, file_ids: list[str]) -> dict[str, Tags]:
     if not file_ids:
         return {}
 
+    rows = db.library_files.traversal.by_ids(
+        list(file_ids),
+        "song_has_tags",
+        target_like_starts_with=("rel", "nom:"),
+    )
     rows_by_file: dict[str, list[dict[str, Any]]] = {}
-    for file_id in file_ids:
-        tag_docs = db.library_files.traversal(file_id, "song_has_tags")
-        for tag in tag_docs:
-            tag_rel = tag.get("rel")
-            if not isinstance(tag_rel, str) or not tag_rel.startswith("nom:") or "value" not in tag:
-                continue
-            rows_by_file.setdefault(str(file_id), []).append({"rel": tag_rel, "value": tag["value"]})
+    for row in rows:
+        start_id = row.get("start_id")
+        tag = row.get("v")
+        if not isinstance(start_id, str) or not isinstance(tag, dict):
+            continue
+        tag_rel = tag.get("rel")
+        if not isinstance(tag_rel, str) or "value" not in tag:
+            continue
+        rows_by_file.setdefault(start_id, []).append({"rel": tag_rel, "value": tag["value"]})
     return {file_id: Tags.from_db_rows(rows) for file_id, rows in rows_by_file.items()}
 
 
@@ -319,11 +317,13 @@ def get_distinct_tag_values_for_files(db: Database, file_ids: list[str], rel: st
     if not file_ids:
         return []
 
+    rows = db.library_files.traversal.by_ids(
+        list(file_ids),
+        "song_has_tags",
+        target_filter={"rel": rel},
+    )
     values = {
-        value
-        for file_id in file_ids
-        for tag in db.library_files.traversal(file_id, "song_has_tags")
-        if tag.get("rel") == rel and isinstance(value := tag.get("value"), str)
+        value for row in rows if isinstance(tag := row.get("v"), dict) and isinstance(value := tag.get("value"), str)
     }
     return sorted(values)
 
@@ -333,15 +333,21 @@ def get_tag_values_grouped_by_file(db: Database, file_ids: list[str], rel: str) 
     if not file_ids:
         return {}
 
+    rows = db.library_files.traversal.by_ids(
+        list(file_ids),
+        "song_has_tags",
+        target_filter={"rel": rel},
+    )
     result: dict[str, set[str]] = {}
-    for file_id in file_ids:
-        values = {
-            value
-            for tag in db.library_files.traversal(file_id, "song_has_tags")
-            if tag.get("rel") == rel and isinstance(value := tag.get("value"), str)
-        }
-        if values:
-            result[str(file_id)] = values
+    for row in rows:
+        start_id = row.get("start_id")
+        tag = row.get("v")
+        if not isinstance(start_id, str) or not isinstance(tag, dict):
+            continue
+        value = tag.get("value")
+        if not isinstance(value, str):
+            continue
+        result.setdefault(start_id, set()).add(value)
     return result
 
 

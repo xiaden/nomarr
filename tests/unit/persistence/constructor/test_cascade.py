@@ -21,7 +21,7 @@ def _make_db_mock(
     edge_documents = edge_docs or []
     remaining_edge_counts = orphan_counts or []
 
-    def fake_execute(query: str, bind_vars: dict[str, Any] | None = None) -> object:
+    def fake_execute(query: str, bind_vars: dict[str, Any] | None = None, **kwargs: object) -> object:
         del bind_vars
         normalized_query = query.strip()
         if "e._from IN @ids OR e._to IN @ids" in normalized_query:

@@ -60,6 +60,9 @@ build.ps1
 # Copilot memory (local agent state)
 memories/
 
+# Local-only Copilot hooks (machine-specific)
+.github/hooks/
+
 # Old/deprecated models
 models_old/
 

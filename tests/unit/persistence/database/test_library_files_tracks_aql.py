@@ -27,7 +27,9 @@ class TestGetTracksForMatching:
                 "is_valid": True,
             }
         ]
-        mock_db.library_files.traversal.return_value = [{"rel": "isrc", "value": "ABC123"}]
+        mock_db.library_files.traversal.by_ids.return_value = [
+            {"start_id": "library_files/1", "v": {"rel": "isrc", "value": "ABC123"}}
+        ]
 
         result = get_tracks_for_matching(mock_db, library_id="libraries/123")
 

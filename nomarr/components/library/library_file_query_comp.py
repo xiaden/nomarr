@@ -205,13 +205,9 @@ def _paginate_rows(rows: list[dict[str, Any]], limit: int, offset: int) -> list[
 
 
 def _collect_file_ids_for_tag_ids(db: Database, tag_ids: set[str]) -> set[str]:
-    file_ids: set[str] = set()
-    for tag_id in tag_ids:
-        for edge in db.song_has_tags._to.get.many(tag_id, limit=DEFAULT_LIMIT):
-            file_id = edge.get("_from")
-            if isinstance(file_id, str):
-                file_ids.add(file_id)
-    return file_ids
+    """Return file ids from a single batch read of `song_has_tags` edges targeting `tag_ids`."""
+    edges = db.song_has_tags._to.get.in_(list(tag_ids), limit=None)
+    return {edge["_from"] for edge in edges if isinstance(edge.get("_from"), str)}
 
 
 def get_files_by_ids_with_tags(db: Database, file_ids: list[str]) -> list[dict[str, Any]]:
@@ -726,19 +722,21 @@ def get_tracks_for_matching(db: Database, library_id: str | None = None) -> list
     else:
         file_docs = db.library_files.get.many.by_filter({"is_valid": True}, limit=DEFAULT_LIMIT)
 
+    file_ids = [file_id for file_doc in file_docs if isinstance(file_id := file_doc.get("_id"), str)]
+    isrc_rows = (
+        db.library_files.traversal.by_ids(file_ids, "song_has_tags", target_filter={"rel": "isrc"}) if file_ids else []
+    )
+    isrc_by_file = {
+        row["start_id"]: tag_doc.get("value")
+        for row in isrc_rows
+        if isinstance(row.get("start_id"), str) and isinstance(tag_doc := row.get("v"), dict)
+    }
+
     results: list[dict[str, Any]] = []
     for file_doc in file_docs:
         file_id = file_doc.get("_id")
         if not isinstance(file_id, str):
             continue
-        isrc_value = next(
-            (
-                tag_doc.get("value")
-                for tag_doc in db.library_files.traversal(file_id, "song_has_tags", limit=DEFAULT_LIMIT)
-                if tag_doc.get("rel") == "isrc"
-            ),
-            None,
-        )
         results.append(
             {
                 "_id": file_id,
@@ -746,7 +744,7 @@ def get_tracks_for_matching(db: Database, library_id: str | None = None) -> list
                 "title": file_doc.get("title"),
                 "artist": file_doc.get("artist"),
                 "album": file_doc.get("album"),
-                "isrc": isrc_value,
+                "isrc": isrc_by_file.get(file_id),
             }
         )
     return results

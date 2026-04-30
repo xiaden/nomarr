@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from nomarr.persistence.stubs._base import GetModifierProtocol
+from nomarr.persistence.stubs._base import CollectionGetProtocol, GetModifierProtocol
 
 @runtime_checkable
 class ModelHasCalibrationKeyNamespace(Protocol):
@@ -25,8 +25,8 @@ class ModelHasCalibrationNamespace(Protocol):
     _key: ModelHasCalibrationKeyNamespace
     _from: ModelHasCalibrationFromNamespace
     _to: ModelHasCalibrationToNamespace
+    get: CollectionGetProtocol
 
     def count(self) -> int: ...
-    def get(self, id: str) -> dict[str, Any] | None: ...
     def insert(self, docs: list[dict[str, Any]]) -> list[str]: ...
     def delete(self, ids: list[str]) -> None: ...

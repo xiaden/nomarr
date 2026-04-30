@@ -16,8 +16,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DRAIN_BATCH_SIZE: int = 500
-
 
 def _load_vector_docs(vector_ops: Any) -> list[dict[str, Any]]:
     """Load all vector documents from a hot or cold namespace."""
@@ -116,12 +114,8 @@ def derive_embed_dim(models_dir: str, backbone_id: str) -> int:
 def drain_hot_to_cold(db: Database, backbone_id: str, library_key: str) -> int:
     """Drain all vectors from hot to cold collection (convergent UPSERT + truncate).
 
-    Copies all documents from hot to cold via AQL UPSERT (idempotent by _key),
-    then truncates hot. Safe to run multiple times.
-
-    Each drained document is enriched with a ``genres`` field (``list[str]``)
-    populated by joining ``song_has_tags`` edges and ``tags`` documents where
-    ``tag.rel == "genre"`` for the document's file (resolved via edge).
+    Moves all documents from hot to cold, re-pointing every edge, then truncates hot.
+    Safe to run multiple times (UPSERT semantics on ``_key``).
 
     Args:
         db: Database façade.
@@ -135,76 +129,16 @@ def drain_hot_to_cold(db: Database, backbone_id: str, library_key: str) -> int:
         ValueError: If the hot collection does not exist.
 
     """
-    hot_name = f"vectors_track_hot__{backbone_id}__{library_key}"
-    maintenance = db.get_vectors_track_maintenance(backbone_id, library_key)
+    cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
     hot_ops = db.register_vectors_track_backbone(backbone_id, library_key)
-    cold_ops = db.get_vectors_track_cold(backbone_id, library_key)
-
+    drained = hot_ops.move_collection(cold_name)
     try:
-        hot_count = cast("int", hot_ops.count())
-    except Exception as exc:
-        raise ValueError(f"Hot collection '{hot_name}' does not exist") from exc
+        db.get_vectors_track_cold(backbone_id, library_key)
+    except Exception:
+        if drained == 0:
+            return 0
+        raise
 
-    if hot_count == 0:
-        return 0
-
-    maintenance.ensure_cold_collection()
-
-    # Collect all IDs upfront — just ID strings, small even for large libraries
-    all_hot_ids = cast("list[str]", cast("Any", hot_ops)._id.collect(limit=hot_count))
-    if not all_hot_ids:
-        return 0
-
-    drained = 0
-    total_batches = (len(all_hot_ids) + DRAIN_BATCH_SIZE - 1) // DRAIN_BATCH_SIZE
-
-    for batch_num, offset in enumerate(range(0, len(all_hot_ids), DRAIN_BATCH_SIZE), start=1):
-        batch_ids = all_hot_ids[offset : offset + DRAIN_BATCH_SIZE]
-        hot_docs = cast("list[dict[str, Any]]", cast("Any", hot_ops).get.many(batch_ids))
-
-        file_ids = [doc["file_id"] for doc in hot_docs if isinstance(doc.get("file_id"), str)]
-        genres_by_file = _get_genres_for_files(db, file_ids)
-
-        enriched_docs: list[dict[str, Any]] = []
-        for hot_doc in hot_docs:
-            file_id = hot_doc.get("file_id")
-            genres = genres_by_file.get(file_id, []) if isinstance(file_id, str) else []
-            enriched_docs.append({**hot_doc, "genres": genres})
-
-        cold_doc_ids = cast(
-            "list[str]",
-            cast("Any", cold_ops)._key.upsert(enriched_docs, match_field="_key"),
-        )
-
-        edge_docs: list[dict[str, str]] = []
-        for hot_doc, cold_doc_id in zip(hot_docs, cold_doc_ids, strict=False):
-            hot_doc_id = hot_doc.get("_id")
-            file_id = hot_doc.get("file_id")
-            if isinstance(hot_doc_id, str):
-                db.file_has_vectors._to.delete(hot_doc_id)
-            if isinstance(file_id, str):
-                edge_docs.append({"_from": file_id, "_to": cold_doc_id})
-
-        if edge_docs:
-            db.file_has_vectors.upsert(edge_docs, match_field=["_from", "_to"])
-
-        drained += len(hot_docs)
-        logger.debug(
-            "Drained batch %d/%d (%d docs) from %s",
-            batch_num,
-            total_batches,
-            len(hot_docs),
-            hot_name,
-        )
-
-    cast("Any", hot_ops).truncate()
-
-    logger.info(
-        "Drained %d documents from %s to %s",
-        drained,
-        hot_name,
-        f"vectors_track_cold__{backbone_id}__{library_key}",
-    )
     return drained
 
 

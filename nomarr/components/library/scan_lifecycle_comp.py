@@ -782,11 +782,13 @@ def cleanup_stale_folders(
     """
     try:
         cached_folders = get_cached_folders(db, library_id)
-        for rel_path, folder_doc in cached_folders.items():
-            if rel_path in existing_folder_rel_paths:
-                continue
-            folder_id = cast("str", folder_doc.get("_id", _folder_doc_id(library_id, rel_path)))
-            db.library_contains_folder._to.delete(folder_id)
-            db.library_folders.delete([folder_id])
+        stale_ids = [
+            cast("str", folder_doc.get("_id", _folder_doc_id(library_id, rel_path)))
+            for rel_path, folder_doc in cached_folders.items()
+            if rel_path not in existing_folder_rel_paths
+        ]
+        if stale_ids:
+            db.library_contains_folder._to.delete.in_(stale_ids)
+            db.library_folders.delete(stale_ids)
     except Exception as e:
         logger.warning("Failed to clean up folder records: %s", e)

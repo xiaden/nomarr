@@ -145,3 +145,10 @@ class TestSchemaValidation:
         constructor = _make_constructor(self.mock_db)
 
         constructor.validate_schema(SCHEMA)  # Must not raise
+
+    def test_song_has_tags_to_field_has_aggregate_capability(self) -> None:
+        """song_has_tags._to must declare aggregate capability (TASK-perf-batch-queries-A)."""
+        from nomarr.persistence.schema import SCHEMA
+
+        to_capabilities = SCHEMA["song_has_tags"]["fields"]["_to"]["capabilities"]
+        assert "aggregate" in to_capabilities

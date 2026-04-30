@@ -387,5 +387,5 @@ class TestFolderCacheHelpers:
 
         cleanup_stale_folders(mock_db, "libraries/test", {"Keep"})
 
-        mock_db.library_contains_folder._to.delete.assert_called_once_with("library_folders/b")
+        mock_db.library_contains_folder._to.delete.in_.assert_called_once_with(["library_folders/b"])
         mock_db.library_folders.delete.assert_called_once_with(["library_folders/b"])

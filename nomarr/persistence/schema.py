@@ -858,7 +858,7 @@ SCHEMA: dict[str, Any] = {
         "capabilities": ["insert", "delete", "count", "truncate"],
         "fields": {
             "_from": {"type": "str", "capabilities": ["get", "delete"]},
-            "_to": {"type": "str", "capabilities": ["get", "delete", "collect", "count", "upsert"]},
+            "_to": {"type": "str", "capabilities": ["get", "delete", "collect", "count", "upsert", "aggregate"]},
         },
     },
     "file_has_state": {
@@ -982,6 +982,7 @@ SCHEMA: dict[str, Any] = {
             "count",
             "ann_search",
             "truncate",
+            "move_collection",
         ],
         "tiers": {
             "hot": {
@@ -1004,7 +1005,7 @@ SCHEMA: dict[str, Any] = {
         "maintenance": {
             # Operations class that orchestrates across hot+cold collections
             "operates_on": ["hot", "cold"],
-            "verbs": ["drain_to_cold", "rebuild_index", "get_stats"],
+            "verbs": ["rebuild_index", "get_stats"],
         },
     },
 }

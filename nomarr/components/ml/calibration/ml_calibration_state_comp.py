@@ -132,15 +132,24 @@ def load_all_calibration_states(
     calibration_get = cast("Any", db.calibration_state.get)
     calibration_docs = cast("list[dict[str, Any]]", calibration_get.many(calibration_ids))
 
+    # Batch-fetch all edges and models instead of one query per calibration doc.
+    mhc_ids = [f"model_has_calibration/{doc['_key']}" for doc in calibration_docs if doc.get("_key")]
+    edge_docs = cast("list[dict[str, Any]]", db.model_has_calibration.get.many.id(mhc_ids))
+    edge_by_key: dict[str, dict[str, Any]] = {str(e["_key"]): e for e in edge_docs if "_key" in e}
+
+    unique_model_ids = list({str(e["_from"]) for e in edge_docs if e.get("_from")})
+    model_docs = cast("list[dict[str, Any]]", db.ml_models.get.many.id(unique_model_ids))
+    model_by_id: dict[str, dict[str, Any]] = {str(m["_id"]): m for m in model_docs if "_id" in m}
+
     enriched: list[dict[str, Any]] = []
     for calibration_doc in calibration_docs:
         model_info: dict[str, Any] | None = None
         calibration_key = calibration_doc.get("_key")
         if isinstance(calibration_key, str):
-            edge_doc = cast("dict[str, Any] | None", db.model_has_calibration._key.get(calibration_key))
-            model_id = edge_doc.get("_from") if edge_doc is not None else None
-            if isinstance(model_id, str):
-                model_doc = cast("dict[str, Any] | None", db.ml_models.get(model_id))
+            edge = edge_by_key.get(calibration_key)
+            model_id = str(edge["_from"]) if edge and edge.get("_from") else None
+            if model_id is not None:
+                model_doc = model_by_id.get(model_id)
                 if model_doc is not None:
                     model_info = {
                         "backbone": model_doc.get("backbone"),

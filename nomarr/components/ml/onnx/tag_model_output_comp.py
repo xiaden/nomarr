@@ -28,36 +28,40 @@ def write_tag_model_output_edges_batch(db: Database, edges: list[tuple[str, str,
 
     timestamp = now_ms().value
     unique_edges = {(tag_id, output_id): score for tag_id, output_id, score in edges}
-    edge_count = db.tag_model_output.count()
-    existing_by_tag: dict[str, dict[str, dict[str, Any]]] = {}
+    unique_tag_ids = list({tag_id for tag_id, _ in unique_edges})
 
-    for tag_id, _output_id in unique_edges:
-        if tag_id in existing_by_tag:
+    # Fetch all existing edges for all involved tags in one IN query.
+    all_existing = cast(
+        "list[dict[str, Any]]",
+        db.tag_model_output._from.get.in_(unique_tag_ids),
+    )
+    existing_by_tag: dict[str, dict[str, dict[str, Any]]] = {}
+    for edge in all_existing:
+        if "_to" not in edge or "_from" not in edge:
             continue
-        existing_edges = cast(
-            "list[dict[str, Any]]",
-            db.tag_model_output._from.get.many(tag_id, limit=edge_count or None),
-        )
-        existing_by_tag[tag_id] = {str(edge["_to"]): edge for edge in existing_edges if "_to" in edge}
+        existing_by_tag.setdefault(str(edge["_from"]), {})[str(edge["_to"])] = edge
 
     docs_to_insert: list[dict[str, Any]] = []
+    docs_to_update: list[dict[str, Any]] = []
     for (tag_id, output_id), score in unique_edges.items():
         edge_key = _edge_key(tag_id, output_id)
-        existing = existing_by_tag[tag_id].get(output_id)
+        existing = existing_by_tag.get(tag_id, {}).get(output_id)
         if existing is not None:
-            db.tag_model_output._key.update(edge_key, {"score": score, "updated_at": timestamp})
-            continue
-        docs_to_insert.append(
-            {
-                "_key": edge_key,
-                "_from": tag_id,
-                "_to": output_id,
-                "score": score,
-                "created_at": timestamp,
-                "updated_at": timestamp,
-            }
-        )
+            docs_to_update.append({"_key": edge_key, "score": score, "updated_at": timestamp})
+        else:
+            docs_to_insert.append(
+                {
+                    "_key": edge_key,
+                    "_from": tag_id,
+                    "_to": output_id,
+                    "score": score,
+                    "created_at": timestamp,
+                    "updated_at": timestamp,
+                }
+            )
 
+    if docs_to_update:
+        db.tag_model_output.update_many(docs_to_update)
     if docs_to_insert:
         db.tag_model_output.insert(docs_to_insert)
 
@@ -74,7 +78,6 @@ def tag_has_model_output_edges(db: Database, tag_id: str) -> bool:
 
 def delete_tag_model_output_edges_for_outputs(db: Database, output_ids: list[str]) -> int:
     """Delete all provenance edges that target the provided output vertices."""
-    deleted = 0
-    for output_id in output_ids:
-        deleted += int(db.tag_model_output._to.delete(output_id))
-    return deleted
+    if not output_ids:
+        return 0
+    return int(db.tag_model_output._to.delete.in_(output_ids))

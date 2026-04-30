@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from nomarr.persistence.stubs._base import AggResult, CollectionGetProtocol, GetModifierProtocol
+from nomarr.persistence.stubs._base import (
+    AggResult,
+    CollectionGetProtocol,
+    GetModifierProtocol,
+    TraversalProtocol,
+)
 
 @runtime_checkable
 class LibraryFilesGetUpdateNamespace(Protocol):
@@ -108,12 +113,4 @@ class LibraryFilesNamespace(Protocol):
     def update_by_filter(self, filter_dict: dict[str, Any], fields: dict[str, Any]) -> None: ...
     def cascade(self, ids: list[str]) -> int: ...
     def truncate(self) -> None: ...
-    def traversal(
-        self,
-        start: str | dict[str, Any],
-        edge: str,
-        *,
-        target_filter: dict[str, Any] | None = ...,
-        limit: int | None = ...,
-        offset: int = ...,
-    ) -> list[dict[str, Any]]: ...
+    traversal: TraversalProtocol
