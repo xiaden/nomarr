@@ -21,7 +21,7 @@ describe("getTagValues", () => {
 
     await expect(getTagValues("genre")).resolves.toEqual(["Rock"]);
 
-    expect(get).toHaveBeenCalledWith(expect.stringContaining("/tag-value?rel=genre"));
+    expect(get).toHaveBeenCalledWith(expect.stringContaining("/tag-value?name=genre"));
   });
 });
 
