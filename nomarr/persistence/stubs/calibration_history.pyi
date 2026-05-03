@@ -2,16 +2,25 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from nomarr.persistence.stubs._base import CollectionGetProtocol, GetModifierProtocol
+from nomarr.persistence.stubs._base import (
+    CollectionGetProtocol,
+    DeleteModifierProtocol,
+    GetModifierProtocol,
+    UniqueGetModifierProtocol,
+)
 
 @runtime_checkable
-class CalibrationHistoryGetOnlyNamespace(Protocol):
-    get: GetModifierProtocol
+class CalibrationHistoryUniqueGetOnlyNamespace(Protocol):
+    get: UniqueGetModifierProtocol
 
 @runtime_checkable
-class CalibrationHistoryCollectNamespace(Protocol):
+class CalibrationHistoryGetDeleteNamespace(Protocol):
     get: GetModifierProtocol
+    delete: DeleteModifierProtocol
 
+@runtime_checkable
+class CalibrationHistoryGetCollectNamespace(Protocol):
+    get: GetModifierProtocol
     def collect(
         self,
         *,
@@ -21,18 +30,16 @@ class CalibrationHistoryCollectNamespace(Protocol):
     ) -> list[Any]: ...
 
 @runtime_checkable
-class CalibrationHistoryDeleteNamespace(Protocol):
+class CalibrationHistoryGetOnlyNamespace(Protocol):
     get: GetModifierProtocol
-
-    def delete(self, value: str) -> int: ...
 
 @runtime_checkable
 class CalibrationHistoryNamespace(Protocol):
     get: CollectionGetProtocol
-    _key: CalibrationHistoryGetOnlyNamespace
-    _id: CalibrationHistoryGetOnlyNamespace
-    calibration_key: CalibrationHistoryDeleteNamespace
-    snapshot_at: CalibrationHistoryCollectNamespace
+    _key: CalibrationHistoryUniqueGetOnlyNamespace
+    _id: CalibrationHistoryUniqueGetOnlyNamespace
+    calibration_key: CalibrationHistoryGetDeleteNamespace
+    snapshot_at: CalibrationHistoryGetCollectNamespace
     p5: CalibrationHistoryGetOnlyNamespace
     p95: CalibrationHistoryGetOnlyNamespace
     n: CalibrationHistoryGetOnlyNamespace

@@ -2,15 +2,24 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from nomarr.persistence.stubs._base import CollectionGetProtocol, GetModifierProtocol
+from nomarr.persistence.stubs._base import (
+    CollectionGetProtocol,
+    DeleteModifierProtocol,
+    GetModifierProtocol,
+    UniqueGetModifierProtocol,
+)
 
 @runtime_checkable
 class VectorsTrackGetOnlyNamespace(Protocol):
     get: GetModifierProtocol
 
 @runtime_checkable
+class VectorsTrackUniqueGetOnlyNamespace(Protocol):
+    get: UniqueGetModifierProtocol
+
+@runtime_checkable
 class VectorsTrackIdNamespace(Protocol):
-    get: GetModifierProtocol
+    get: UniqueGetModifierProtocol
 
     def collect(
         self,
@@ -23,23 +32,22 @@ class VectorsTrackIdNamespace(Protocol):
 @runtime_checkable
 class VectorsTrackFileIdNamespace(Protocol):
     get: GetModifierProtocol
-
-    def delete(self, value: str) -> int: ...
+    delete: DeleteModifierProtocol
 
 @runtime_checkable
 class VectorsTrackHotNamespace(Protocol):
     get: CollectionGetProtocol
-    _key: VectorsTrackGetOnlyNamespace
-    _id: VectorsTrackIdNamespace
+    _key: VectorsTrackUniqueGetOnlyNamespace
+    _id: VectorsTrackUniqueGetOnlyNamespace
     file_id: VectorsTrackFileIdNamespace
     vector: VectorsTrackGetOnlyNamespace
 
     def count(self) -> int: ...
     def count_by_filter(self, filter_dict: dict[str, Any]) -> int: ...
     def insert(self, docs: list[dict[str, Any]]) -> list[str]: ...
+    def update_by_filter(self, filter_dict: dict[str, Any], fields: dict[str, Any]) -> None: ...
     def delete(self, ids: list[str]) -> None: ...
     def delete_by_filter(self, filter_dict: dict[str, Any]) -> int: ...
-    def update_by_filter(self, filter_dict: dict[str, Any], fields: dict[str, Any]) -> None: ...
     def cascade(self, ids: list[str]) -> int: ...
     def truncate(self) -> None: ...
     def move_collection(self, dest: str) -> int: ...
@@ -57,27 +65,28 @@ class VectorsTrackHotNamespace(Protocol):
 @runtime_checkable
 class VectorsTrackColdNamespace(Protocol):
     get: CollectionGetProtocol
-    _key: VectorsTrackGetOnlyNamespace
-    _id: VectorsTrackIdNamespace
+    _key: VectorsTrackUniqueGetOnlyNamespace
+    _id: VectorsTrackUniqueGetOnlyNamespace
     file_id: VectorsTrackFileIdNamespace
     vector: VectorsTrackGetOnlyNamespace
 
     def count(self) -> int: ...
     def count_by_filter(self, filter_dict: dict[str, Any]) -> int: ...
     def insert(self, docs: list[dict[str, Any]]) -> list[str]: ...
-    def delete(self, ids: list[str]) -> None: ...
-    def delete_by_filter(self, filter_dict: dict[str, Any]) -> int: ...
     def update_by_filter(self, filter_dict: dict[str, Any], fields: dict[str, Any]) -> None: ...
     def update_many(self, docs: list[dict[str, Any]]) -> None: ...
+    def delete(self, ids: list[str]) -> None: ...
+    def delete_by_filter(self, filter_dict: dict[str, Any]) -> int: ...
     def cascade(self, ids: list[str]) -> int: ...
     def truncate(self) -> None: ...
+    def move_collection(self, dest: str) -> int: ...
     def ann_search(
         self,
         query_vector: list[float],
         limit: int,
         nprobe: int,
         *,
-        filter: dict[str, Any] | None = None,
+        filter: dict[str, Any] | None = ...,
     ) -> list[dict[str, Any]]: ...
     def get_vector(self, file_id: str) -> dict[str, Any] | None: ...
     def get_vectors_by_file_ids(self, file_ids: list[str]) -> list[dict[str, Any]]: ...

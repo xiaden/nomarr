@@ -2,16 +2,21 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from nomarr.persistence.stubs._base import AggResult, CollectionGetProtocol, GetModifierProtocol
+from nomarr.persistence.stubs._base import (
+    AggResult,
+    CollectionGetProtocol,
+    GetModifierProtocol,
+    TraversalProtocol,
+    UniqueGetModifierProtocol,
+)
 
 @runtime_checkable
-class MlModelsGetOnlyNamespace(Protocol):
-    get: GetModifierProtocol
+class MlModelsUniqueGetOnlyNamespace(Protocol):
+    get: UniqueGetModifierProtocol
 
 @runtime_checkable
-class MlModelsCollectNamespace(Protocol):
-    get: GetModifierProtocol
-
+class MlModelsUniqueGetCollectNamespace(Protocol):
+    get: UniqueGetModifierProtocol
     def collect(
         self,
         *,
@@ -21,15 +26,13 @@ class MlModelsCollectNamespace(Protocol):
     ) -> list[Any]: ...
 
 @runtime_checkable
-class MlModelsUpdateNamespace(Protocol):
-    get: GetModifierProtocol
-
-    def update(self, match_value: Any, fields: dict[str, Any]) -> None: ...
+class MlModelsUniqueGetUpsertNamespace(Protocol):
+    get: UniqueGetModifierProtocol
+    def upsert(self, docs: list[dict[str, Any]], match_field: str | list[str]) -> list[str]: ...
 
 @runtime_checkable
-class MlModelsCollectUpdateNamespace(Protocol):
+class MlModelsGetCollectUpdateNamespace(Protocol):
     get: GetModifierProtocol
-
     def collect(
         self,
         *,
@@ -40,9 +43,13 @@ class MlModelsCollectUpdateNamespace(Protocol):
     def update(self, match_value: Any, fields: dict[str, Any]) -> None: ...
 
 @runtime_checkable
-class MlModelsAggregateUpdateNamespace(Protocol):
+class MlModelsGetUpdateNamespace(Protocol):
     get: GetModifierProtocol
+    def update(self, match_value: Any, fields: dict[str, Any]) -> None: ...
 
+@runtime_checkable
+class MlModelsGetAggregateCollectUpdateNamespace(Protocol):
+    get: GetModifierProtocol
     def collect(
         self,
         *,
@@ -60,42 +67,32 @@ class MlModelsAggregateUpdateNamespace(Protocol):
     def update(self, match_value: Any, fields: dict[str, Any]) -> None: ...
 
 @runtime_checkable
-class MlModelsPathNamespace(Protocol):
+class MlModelsGetOnlyNamespace(Protocol):
     get: GetModifierProtocol
-
-    def upsert(self, docs: list[dict[str, Any]], match_field: str | list[str]) -> list[str]: ...
 
 @runtime_checkable
 class MlModelsNamespace(Protocol):
     get: CollectionGetProtocol
-    _key: MlModelsGetOnlyNamespace
-    _id: MlModelsCollectNamespace
-    path: MlModelsPathNamespace
-    backbone: MlModelsCollectUpdateNamespace
-    head_type: MlModelsCollectUpdateNamespace
-    model_stem: MlModelsCollectUpdateNamespace
-    output_count: MlModelsUpdateNamespace
-    fully_configured: MlModelsAggregateUpdateNamespace
-    is_known: MlModelsAggregateUpdateNamespace
-    source: MlModelsCollectUpdateNamespace
-    head_release_date: MlModelsUpdateNamespace
-    embedder_release_date: MlModelsUpdateNamespace
+    _key: MlModelsUniqueGetOnlyNamespace
+    _id: MlModelsUniqueGetCollectNamespace
+    path: MlModelsUniqueGetUpsertNamespace
+    backbone: MlModelsGetCollectUpdateNamespace
+    head_type: MlModelsGetCollectUpdateNamespace
+    model_stem: MlModelsGetCollectUpdateNamespace
+    output_count: MlModelsGetUpdateNamespace
+    fully_configured: MlModelsGetAggregateCollectUpdateNamespace
+    is_known: MlModelsGetAggregateCollectUpdateNamespace
+    source: MlModelsGetCollectUpdateNamespace
+    head_release_date: MlModelsGetUpdateNamespace
+    embedder_release_date: MlModelsGetUpdateNamespace
     registered_at: MlModelsGetOnlyNamespace
-    updated_at: MlModelsUpdateNamespace
+    updated_at: MlModelsGetUpdateNamespace
 
     def count(self) -> int: ...
     def count_by_filter(self, filter_dict: dict[str, Any]) -> int: ...
     def insert(self, docs: list[dict[str, Any]]) -> list[str]: ...
+    def update_by_filter(self, filter_dict: dict[str, Any], fields: dict[str, Any]) -> None: ...
     def delete(self, ids: list[str]) -> None: ...
     def delete_by_filter(self, filter_dict: dict[str, Any]) -> int: ...
-    def update_by_filter(self, filter_dict: dict[str, Any], fields: dict[str, Any]) -> None: ...
     def cascade(self, ids: list[str]) -> int: ...
-    def traversal(
-        self,
-        start: str | dict[str, Any],
-        edge: str,
-        *,
-        target_filter: dict[str, Any] | None = ...,
-        limit: int | None = ...,
-        offset: int = ...,
-    ) -> list[dict[str, Any]]: ...
+    traversal: TraversalProtocol

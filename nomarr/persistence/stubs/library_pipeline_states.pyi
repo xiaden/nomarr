@@ -2,12 +2,22 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from nomarr.persistence.stubs._base import AggResult, CollectionGetProtocol, GetModifierProtocol
+from nomarr.persistence.stubs._base import (
+    AggResult,
+    CollectionGetProtocol,
+    DeleteModifierProtocol,
+    GetModifierProtocol,
+    UniqueGetModifierProtocol,
+)
 
 @runtime_checkable
-class LibraryPipelineStatesLibraryKeyNamespace(Protocol):
-    get: GetModifierProtocol
+class LibraryPipelineStatesUniqueGetOnlyNamespace(Protocol):
+    get: UniqueGetModifierProtocol
 
+@runtime_checkable
+class LibraryPipelineStatesUniqueGetCollectDeleteUpdateUpsertNamespace(Protocol):
+    get: UniqueGetModifierProtocol
+    delete: DeleteModifierProtocol
     def collect(
         self,
         *,
@@ -15,15 +25,12 @@ class LibraryPipelineStatesLibraryKeyNamespace(Protocol):
         limit: int | None = ...,
         offset: int = ...,
     ) -> list[Any]: ...
+    def update(self, match_value: Any, fields: dict[str, Any]) -> None: ...
     def upsert(self, docs: list[dict[str, Any]], match_field: str | list[str]) -> list[str]: ...
-    def update(self, match_value: str, fields: dict[str, Any]) -> None: ...
-    def delete(self, value: str) -> int: ...
 
 @runtime_checkable
-class LibraryPipelineStatesPipelineStateNamespace(Protocol):
+class LibraryPipelineStatesGetAggregateCollectUpdateNamespace(Protocol):
     get: GetModifierProtocol
-
-    def update(self, match_value: str, fields: dict[str, Any]) -> None: ...
     def collect(
         self,
         *,
@@ -38,16 +45,19 @@ class LibraryPipelineStatesPipelineStateNamespace(Protocol):
         limit: int | None = ...,
         offset: int = ...,
     ) -> list[AggResult]: ...
+    def update(self, match_value: Any, fields: dict[str, Any]) -> None: ...
 
 @runtime_checkable
 class LibraryPipelineStatesNamespace(Protocol):
     get: CollectionGetProtocol
-    library_key: LibraryPipelineStatesLibraryKeyNamespace
-    pipeline_state: LibraryPipelineStatesPipelineStateNamespace
+    _key: LibraryPipelineStatesUniqueGetOnlyNamespace
+    _id: LibraryPipelineStatesUniqueGetOnlyNamespace
+    library_key: LibraryPipelineStatesUniqueGetCollectDeleteUpdateUpsertNamespace
+    pipeline_state: LibraryPipelineStatesGetAggregateCollectUpdateNamespace
 
     def count(self) -> int: ...
     def count_by_filter(self, filter_dict: dict[str, Any]) -> int: ...
     def insert(self, docs: list[dict[str, Any]]) -> list[str]: ...
+    def update_by_filter(self, filter_dict: dict[str, Any], fields: dict[str, Any]) -> None: ...
     def delete(self, ids: list[str]) -> None: ...
     def delete_by_filter(self, filter_dict: dict[str, Any]) -> int: ...
-    def update_by_filter(self, filter_dict: dict[str, Any], fields: dict[str, Any]) -> None: ...

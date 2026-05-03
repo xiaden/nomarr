@@ -2,19 +2,26 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from nomarr.persistence.stubs._base import CollectionGetProtocol, GetModifierProtocol, GetOneProtocol
+from nomarr.persistence.stubs._base import (
+    CollectionGetProtocol,
+    DeleteModifierProtocol,
+    GetModifierProtocol,
+    UniqueGetModifierProtocol,
+)
 
 @runtime_checkable
-class LocksDocumentReferenceNamespace(Protocol):
-    get: GetOneProtocol
+class LocksUniqueGetOnlyNamespace(Protocol):
+    get: UniqueGetModifierProtocol
 
+@runtime_checkable
+class LocksUniqueGetDeleteUpsertNamespace(Protocol):
+    get: UniqueGetModifierProtocol
+    delete: DeleteModifierProtocol
     def upsert(self, docs: list[dict[str, Any]], match_field: str | list[str]) -> list[str]: ...
-    def delete(self, value: str) -> int: ...
 
 @runtime_checkable
-class LocksLockTypeNamespace(Protocol):
+class LocksGetCollectNamespace(Protocol):
     get: GetModifierProtocol
-
     def collect(
         self,
         *,
@@ -24,34 +31,25 @@ class LocksLockTypeNamespace(Protocol):
     ) -> list[Any]: ...
 
 @runtime_checkable
-class LocksAcquiredAtNamespace(Protocol):
+class LocksGetUpdateNamespace(Protocol):
     get: GetModifierProtocol
+    def update(self, match_value: Any, fields: dict[str, Any]) -> None: ...
 
 @runtime_checkable
-class LocksHolderNamespace(Protocol):
+class LocksGetOnlyNamespace(Protocol):
     get: GetModifierProtocol
-
-@runtime_checkable
-class LocksExpiresAtNamespace(Protocol):
-    get: GetModifierProtocol
-
-    def update(self, match_value: float, fields: dict[str, Any]) -> None: ...
-
-@runtime_checkable
-class LocksStatusNamespace(Protocol):
-    get: GetModifierProtocol
-
-    def update(self, match_value: str, fields: dict[str, Any]) -> None: ...
 
 @runtime_checkable
 class LocksNamespace(Protocol):
     get: CollectionGetProtocol
-    document_reference: LocksDocumentReferenceNamespace
-    lock_type: LocksLockTypeNamespace
-    acquired_at: LocksAcquiredAtNamespace
-    expires_at: LocksExpiresAtNamespace
-    holder: LocksHolderNamespace
-    status: LocksStatusNamespace
+    _key: LocksUniqueGetOnlyNamespace
+    _id: LocksUniqueGetOnlyNamespace
+    document_reference: LocksUniqueGetDeleteUpsertNamespace
+    lock_type: LocksGetCollectNamespace
+    expires_at: LocksGetUpdateNamespace
+    acquired_at: LocksGetOnlyNamespace
+    holder: LocksGetOnlyNamespace
+    status: LocksGetUpdateNamespace
 
     def count(self) -> int: ...
     def count_by_filter(self, filter_dict: dict[str, Any]) -> int: ...

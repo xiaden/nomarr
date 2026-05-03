@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from nomarr.persistence.stubs._base import CollectionGetProtocol, GetModifierProtocol
+from nomarr.persistence.stubs._base import (
+    CollectionGetProtocol,
+    GetModifierProtocol,
+    TraversalProtocol,
+    UniqueGetModifierProtocol,
+)
 
 @runtime_checkable
-class LibrariesIdNamespace(Protocol):
-    get: GetModifierProtocol
-
-    def update(self, match_value: str, fields: dict[str, Any]) -> None: ...
+class LibrariesUniqueGetCollectNamespace(Protocol):
+    get: UniqueGetModifierProtocol
     def collect(
         self,
         *,
@@ -18,9 +21,24 @@ class LibrariesIdNamespace(Protocol):
     ) -> list[Any]: ...
 
 @runtime_checkable
-class LibrariesKeyNamespace(Protocol):
-    get: GetModifierProtocol
+class LibrariesUniqueGetCollectUpdateNamespace(Protocol):
+    get: UniqueGetModifierProtocol
+    def collect(
+        self,
+        *,
+        filter: dict[str, Any] | None = ...,
+        limit: int | None = ...,
+        offset: int = ...,
+    ) -> list[Any]: ...
+    def update(self, match_value: Any, fields: dict[str, Any]) -> None: ...
 
+@runtime_checkable
+class LibrariesUniqueGetOnlyNamespace(Protocol):
+    get: UniqueGetModifierProtocol
+
+@runtime_checkable
+class LibrariesGetCollectNamespace(Protocol):
+    get: GetModifierProtocol
     def collect(
         self,
         *,
@@ -30,36 +48,24 @@ class LibrariesKeyNamespace(Protocol):
     ) -> list[Any]: ...
 
 @runtime_checkable
-class LibrariesUniqueGetNamespace(Protocol):
+class LibrariesGetOnlyNamespace(Protocol):
     get: GetModifierProtocol
-
-@runtime_checkable
-class LibrariesManyGetNamespace(Protocol):
-    get: GetModifierProtocol
-
-    def collect(
-        self,
-        *,
-        filter: dict[str, Any] | None = ...,
-        limit: int | None = ...,
-        offset: int = ...,
-    ) -> list[Any]: ...
 
 @runtime_checkable
 class LibrariesNamespace(Protocol):
     get: CollectionGetProtocol
-    _key: LibrariesKeyNamespace
-    _id: LibrariesIdNamespace
-    name: LibrariesUniqueGetNamespace
-    root_path: LibrariesUniqueGetNamespace
-    is_enabled: LibrariesManyGetNamespace
-    watch_mode: LibrariesManyGetNamespace
-    file_write_mode: LibrariesManyGetNamespace
-    library_auto_write: LibrariesManyGetNamespace
-    created_at: LibrariesManyGetNamespace
-    updated_at: LibrariesManyGetNamespace
-    vector_group_size: LibrariesManyGetNamespace
-    vector_search_thoroughness: LibrariesManyGetNamespace
+    _key: LibrariesUniqueGetCollectNamespace
+    _id: LibrariesUniqueGetCollectUpdateNamespace
+    name: LibrariesUniqueGetOnlyNamespace
+    root_path: LibrariesUniqueGetOnlyNamespace
+    is_enabled: LibrariesGetCollectNamespace
+    watch_mode: LibrariesGetCollectNamespace
+    file_write_mode: LibrariesGetOnlyNamespace
+    library_auto_write: LibrariesGetOnlyNamespace
+    created_at: LibrariesGetOnlyNamespace
+    updated_at: LibrariesGetOnlyNamespace
+    vector_group_size: LibrariesGetOnlyNamespace
+    vector_search_thoroughness: LibrariesGetOnlyNamespace
 
     def count(self) -> int: ...
     def count_by_filter(self, filter_dict: dict[str, Any]) -> int: ...
@@ -67,12 +73,4 @@ class LibrariesNamespace(Protocol):
     def delete(self, ids: list[str]) -> None: ...
     def delete_by_filter(self, filter_dict: dict[str, Any]) -> int: ...
     def cascade(self, ids: list[str]) -> int: ...
-    def traversal(
-        self,
-        start: str | dict[str, Any],
-        edge: str,
-        *,
-        target_filter: dict[str, Any] | None = ...,
-        limit: int | None = ...,
-        offset: int = ...,
-    ) -> list[dict[str, Any]]: ...
+    traversal: TraversalProtocol

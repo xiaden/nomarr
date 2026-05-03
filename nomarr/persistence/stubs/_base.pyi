@@ -41,6 +41,32 @@ class CollectionGetProtocol(Protocol):
 
     def __call__(self, doc_id: str) -> dict[str, Any] | None: ...
 
+class UniqueGetModifierProtocol(Protocol):
+    """GetModifierProtocol for unique fields: __call__ returns a single doc or None."""
+    def __call__(self, value: Any) -> dict[str, Any] | None: ...
+    def one(self, value: Any) -> dict[str, Any] | None: ...
+    def many(
+        self,
+        value: Any,
+        *,
+        limit: int | None = ...,
+        offset: int = ...,
+    ) -> list[dict[str, Any]]: ...
+    def in_(
+        self,
+        values: list[Any] | FilterDict,
+        *,
+        limit: int | None = ...,
+        offset: int = ...,
+    ) -> list[dict[str, Any]]: ...
+    def like(
+        self,
+        pattern: str,
+        *,
+        limit: int | None = ...,
+        offset: int = ...,
+    ) -> list[dict[str, Any]]: ...
+
 class GetModifierProtocol(Protocol):
     def __call__(self, value: Any) -> dict[str, Any] | None | list[dict[str, Any]]: ...
     def one(self, value: Any) -> dict[str, Any] | None: ...

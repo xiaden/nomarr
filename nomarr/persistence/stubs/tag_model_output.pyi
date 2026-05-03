@@ -2,27 +2,26 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from nomarr.persistence.stubs._base import CollectionGetProtocol, DeleteModifierProtocol, GetModifierProtocol
+from nomarr.persistence.stubs._base import (
+    CollectionGetProtocol,
+    DeleteModifierProtocol,
+    GetModifierProtocol,
+    UniqueGetModifierProtocol,
+)
 
 @runtime_checkable
-class TagModelOutputGetOnlyNamespace(Protocol):
-    get: GetModifierProtocol
+class TagModelOutputUniqueGetUpdateNamespace(Protocol):
+    get: UniqueGetModifierProtocol
+    def update(self, match_value: Any, fields: dict[str, Any]) -> None: ...
 
 @runtime_checkable
-class TagModelOutputKeyNamespace(Protocol):
-    get: GetModifierProtocol
-
-    def update(self, match_value: str, fields: dict[str, Any]) -> None: ...
+class TagModelOutputUniqueGetOnlyNamespace(Protocol):
+    get: UniqueGetModifierProtocol
 
 @runtime_checkable
-class TagModelOutputDeleteNamespace(Protocol):
+class TagModelOutputGetCollectDeleteNamespace(Protocol):
     get: GetModifierProtocol
     delete: DeleteModifierProtocol
-
-@runtime_checkable
-class TagModelOutputFromNamespace(Protocol):
-    get: GetModifierProtocol
-
     def collect(
         self,
         *,
@@ -30,24 +29,31 @@ class TagModelOutputFromNamespace(Protocol):
         limit: int | None = ...,
         offset: int = ...,
     ) -> list[Any]: ...
-    def delete(self, value: str) -> int: ...
 
 @runtime_checkable
-class TagModelOutputUpdateNamespace(Protocol):
+class TagModelOutputGetDeleteNamespace(Protocol):
     get: GetModifierProtocol
+    delete: DeleteModifierProtocol
 
+@runtime_checkable
+class TagModelOutputGetUpdateNamespace(Protocol):
+    get: GetModifierProtocol
     def update(self, match_value: Any, fields: dict[str, Any]) -> None: ...
+
+@runtime_checkable
+class TagModelOutputGetOnlyNamespace(Protocol):
+    get: GetModifierProtocol
 
 @runtime_checkable
 class TagModelOutputNamespace(Protocol):
     get: CollectionGetProtocol
-    _key: TagModelOutputKeyNamespace
-    _id: TagModelOutputGetOnlyNamespace
-    _from: TagModelOutputFromNamespace
-    _to: TagModelOutputDeleteNamespace
-    score: TagModelOutputUpdateNamespace
+    _key: TagModelOutputUniqueGetUpdateNamespace
+    _id: TagModelOutputUniqueGetOnlyNamespace
+    _from: TagModelOutputGetCollectDeleteNamespace
+    _to: TagModelOutputGetDeleteNamespace
+    score: TagModelOutputGetUpdateNamespace
     created_at: TagModelOutputGetOnlyNamespace
-    updated_at: TagModelOutputUpdateNamespace
+    updated_at: TagModelOutputGetUpdateNamespace
 
     def count(self) -> int: ...
     def count_by_filter(self, filter_dict: dict[str, Any]) -> int: ...

@@ -559,7 +559,7 @@ SCHEMA: dict[str, Any] = {
     },
     "tags": {
         "type": CollectionType.DOCUMENT,
-        "capabilities": ["insert", "delete", "cascade", "count"],
+        "capabilities": ["insert", "delete", "cascade", "count", "traversal"],
         "fields": {
             "_key": {"type": "str", "capabilities": ["get"], "unique": True},
             "_id": {"type": "str", "capabilities": ["get", "collect"], "unique": True},
@@ -871,7 +871,7 @@ SCHEMA: dict[str, Any] = {
     },
     "tag_model_output": {
         "type": CollectionType.EDGE,
-        "capabilities": ["insert", "delete", "count"],
+        "capabilities": ["insert", "update_many", "delete", "count"],
         "fields": {
             "_key": {"type": "str", "capabilities": ["get", "update"], "unique": True},
             "_id": {"type": "str", "capabilities": ["get"], "unique": True},

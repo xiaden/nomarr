@@ -2,12 +2,22 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from nomarr.persistence.stubs._base import CollectionGetProtocol, GetModifierProtocol
+from nomarr.persistence.stubs._base import (
+    AggResult,
+    CollectionGetProtocol,
+    DeleteModifierProtocol,
+    GetModifierProtocol,
+    UniqueGetModifierProtocol,
+)
 
 @runtime_checkable
-class VramPromisesWorkerIdNamespace(Protocol):
-    get: GetModifierProtocol
+class VramPromisesUniqueGetOnlyNamespace(Protocol):
+    get: UniqueGetModifierProtocol
 
+@runtime_checkable
+class VramPromisesGetCollectDeleteNamespace(Protocol):
+    get: GetModifierProtocol
+    delete: DeleteModifierProtocol
     def collect(
         self,
         *,
@@ -17,9 +27,13 @@ class VramPromisesWorkerIdNamespace(Protocol):
     ) -> list[Any]: ...
 
 @runtime_checkable
-class VramPromisesModelPathNamespace(Protocol):
+class VramPromisesGetUpdateNamespace(Protocol):
     get: GetModifierProtocol
+    def update(self, match_value: Any, fields: dict[str, Any]) -> None: ...
 
+@runtime_checkable
+class VramPromisesGetAggregateCollectNamespace(Protocol):
+    get: GetModifierProtocol
     def collect(
         self,
         *,
@@ -27,13 +41,26 @@ class VramPromisesModelPathNamespace(Protocol):
         limit: int | None = ...,
         offset: int = ...,
     ) -> list[Any]: ...
-    def delete(self, value: str) -> int: ...
+    def aggregate(
+        self,
+        *,
+        filter: dict[str, Any] | None = ...,
+        limit: int | None = ...,
+        offset: int = ...,
+    ) -> list[AggResult]: ...
 
 @runtime_checkable
 class VramPromisesNamespace(Protocol):
     get: CollectionGetProtocol
-    worker_id: VramPromisesWorkerIdNamespace
-    model_path: VramPromisesModelPathNamespace
+    _key: VramPromisesUniqueGetOnlyNamespace
+    _id: VramPromisesUniqueGetOnlyNamespace
+    worker_id: VramPromisesGetCollectDeleteNamespace
+    pid: VramPromisesGetUpdateNamespace
+    model_path: VramPromisesGetCollectDeleteNamespace
+    promised_mb: VramPromisesGetAggregateCollectNamespace
+    total_mb: VramPromisesGetUpdateNamespace
+    used_mb: VramPromisesGetUpdateNamespace
+    last_seen_ms: VramPromisesGetUpdateNamespace
 
     def count(self) -> int: ...
     def count_by_filter(self, filter_dict: dict[str, Any]) -> int: ...

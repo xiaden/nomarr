@@ -2,22 +2,25 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from nomarr.persistence.stubs._base import AggResult, CollectionGetProtocol, GetModifierProtocol
+from nomarr.persistence.stubs._base import (
+    AggResult,
+    CollectionGetProtocol,
+    GetModifierProtocol,
+    UniqueGetModifierProtocol,
+)
 
 @runtime_checkable
-class MlModelOutputsGetOnlyNamespace(Protocol):
-    get: GetModifierProtocol
+class MlModelOutputsUniqueGetUpdateNamespace(Protocol):
+    get: UniqueGetModifierProtocol
+    def update(self, match_value: Any, fields: dict[str, Any]) -> None: ...
 
 @runtime_checkable
-class MlModelOutputsKeyNamespace(Protocol):
-    get: GetModifierProtocol
-
-    def update(self, match_value: str, fields: dict[str, Any]) -> None: ...
+class MlModelOutputsUniqueGetOnlyNamespace(Protocol):
+    get: UniqueGetModifierProtocol
 
 @runtime_checkable
-class MlModelOutputsCollectUpdateNamespace(Protocol):
+class MlModelOutputsGetCollectUpdateNamespace(Protocol):
     get: GetModifierProtocol
-
     def collect(
         self,
         *,
@@ -28,9 +31,8 @@ class MlModelOutputsCollectUpdateNamespace(Protocol):
     def update(self, match_value: Any, fields: dict[str, Any]) -> None: ...
 
 @runtime_checkable
-class MlModelOutputsAggregateUpdateNamespace(Protocol):
+class MlModelOutputsGetAggregateCollectUpdateNamespace(Protocol):
     get: GetModifierProtocol
-
     def collect(
         self,
         *,
@@ -50,16 +52,16 @@ class MlModelOutputsAggregateUpdateNamespace(Protocol):
 @runtime_checkable
 class MlModelOutputsNamespace(Protocol):
     get: CollectionGetProtocol
-    _key: MlModelOutputsKeyNamespace
-    _id: MlModelOutputsGetOnlyNamespace
-    output_index: MlModelOutputsCollectUpdateNamespace
-    label: MlModelOutputsCollectUpdateNamespace
-    fully_labeled: MlModelOutputsAggregateUpdateNamespace
+    _key: MlModelOutputsUniqueGetUpdateNamespace
+    _id: MlModelOutputsUniqueGetOnlyNamespace
+    output_index: MlModelOutputsGetCollectUpdateNamespace
+    label: MlModelOutputsGetCollectUpdateNamespace
+    fully_labeled: MlModelOutputsGetAggregateCollectUpdateNamespace
 
     def count(self) -> int: ...
     def count_by_filter(self, filter_dict: dict[str, Any]) -> int: ...
     def insert(self, docs: list[dict[str, Any]]) -> list[str]: ...
+    def update_by_filter(self, filter_dict: dict[str, Any], fields: dict[str, Any]) -> None: ...
     def delete(self, ids: list[str]) -> None: ...
     def delete_by_filter(self, filter_dict: dict[str, Any]) -> int: ...
-    def update_by_filter(self, filter_dict: dict[str, Any], fields: dict[str, Any]) -> None: ...
     def cascade(self, ids: list[str]) -> int: ...
