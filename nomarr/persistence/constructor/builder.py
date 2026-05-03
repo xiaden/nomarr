@@ -104,45 +104,41 @@ class SchemaConstructor:
 
     def build_template_namespace(
         self,
-        name: str,
-        tier: str,
-        backbone_id: str,
-        library_key: str,
-        collection_suffix: str | None = None,
+        collection_name: str,
+        template_name: str,
         registry: dict[str, Any] | None = None,
     ) -> CollectionNamespace:
-        """Build a namespace for a dynamically-resolved template collection."""
-        template_spec = cast("dict[str, Any]", self._schema[name])
-        if template_spec.get("type") != CollectionType.TEMPLATE:
-            msg = f"Collection '{name}' is not a template collection"
-            raise SchemaValidationError(msg)
+        """Build a namespace for a dynamically-resolved template collection.
 
-        tiers = cast("dict[str, Any]", template_spec.get("tiers", {}))
-        if tier not in tiers:
-            msg = f"Template '{name}' does not define tier '{tier}'"
-            raise SchemaValidationError(msg)
+        Looks up ``template_name`` in the schema, deep-copies the spec, injects the
+        concrete ``collection_name``, and delegates to ``build_collection_namespace``.
 
-        resolved_name = cast("str", template_spec["name_pattern"]).format(
-            tier=tier,
-            backbone_id=backbone_id,
-            library_key=library_key,
-        )
-        if collection_suffix:
-            resolved_name = f"{resolved_name}__{collection_suffix}"
+        Args:
+            collection_name: Actual ArangoDB collection name (e.g. ``"vectors_track_hot__msd__lib1"``).
+            template_name: Schema key of the TEMPLATE definition to resolve
+                (e.g. ``"vectors_track_hot"``).
+            registry: Optional pre-built AQL registry to reuse. If ``None``, a new
+                registry is created by ``build_collection_namespace``.
+
+        Returns:
+            A fully-constructed ``CollectionNamespace`` bound to ``collection_name``.
+
+        Raises:
+            SchemaValidationError: If ``template_name`` is not found in the schema or
+                is not of type TEMPLATE.
+
+        """
+        template_spec = cast("dict[str, Any] | None", self._schema.get(template_name))
+        if template_spec is None or template_spec.get("type") != CollectionType.TEMPLATE:
+            msg = f"Collection '{template_name}' is not a template collection"
+            raise SchemaValidationError(msg)
 
         resolved_spec = deepcopy(template_spec)
-        resolved_spec["collection_name"] = resolved_name
-        resolved_spec["fields"] = deepcopy(tiers[tier]["fields"])
-        resolved_spec["template_family"] = name
-        resolved_spec["template_tier"] = tier
-        if tier != "cold":
-            resolved_spec["capabilities"] = [
-                capability
-                for capability in cast("list[str]", template_spec.get("capabilities", []))
-                if capability != "ann_search"
-            ]
+        resolved_spec["collection_name"] = collection_name
+        resolved_spec["template_family"] = template_name
+        resolved_spec["template_tier"] = template_name.rsplit("_", 1)[-1]
 
-        return self.build_collection_namespace(name, resolved_spec, registry=registry)
+        return self.build_collection_namespace(template_name, resolved_spec, registry=registry)
 
     def build(
         self,

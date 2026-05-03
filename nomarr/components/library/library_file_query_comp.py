@@ -582,15 +582,15 @@ def clear_library_data(db: Database) -> None:
     db.segment_scores_stats.truncate()
     db.song_has_tags.truncate()
 
-    delete_vectors_by_file_ids = getattr(db, "delete_vectors_by_file_ids", None)
     while True:
         file_ids = [
             file_id for file_id in db.library_files._id.collect(limit=DEFAULT_LIMIT) if isinstance(file_id, str)
         ]
         if not file_ids:
             return
-        if callable(delete_vectors_by_file_ids):
-            delete_vectors_by_file_ids(file_ids)
+        from nomarr.components.ml.vectors.ml_vector_registry_comp import delete_vectors_by_file_ids
+
+        delete_vectors_by_file_ids(db, file_ids)
         db.library_files.delete(file_ids)
 
 

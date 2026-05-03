@@ -483,9 +483,9 @@ class CollectionNamespace:
             raise CapabilityError(f"collection {self._collection_name!r} does not declare {name!r} capability")
 
     def _require_vectors_track(self, hot_only: bool = False) -> None:
-        if self._template_family != "vectors_track":
+        if self._template_family not in ("vectors_track_hot", "vectors_track_cold"):
             raise CapabilityError(f"collection {self._collection_name!r} is not a vectors_track collection")
-        if hot_only and self._template_tier != "hot":
+        if hot_only and self._template_family != "vectors_track_hot":
             raise CapabilityError(f"collection {self._collection_name!r} is not a hot vectors_track collection")
 
     def insert(self, docs: list[Document]) -> list[str]:

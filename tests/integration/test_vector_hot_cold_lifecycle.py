@@ -9,6 +9,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nomarr.components.ml.vectors.ml_vector_registry_comp import (
+    delete_vectors_by_file_id,
+    get_cold_namespace,
+    get_hot_namespace,
+)
 from nomarr.components.platform.arango_bootstrap_comp import (
     _create_vectors_track_collections,
 )
@@ -150,12 +155,28 @@ class FakeArangoCollection:
         parts = name.split("__")
         return parts[1] if len(parts) >= 2 else name
 
+    def count(self) -> int:
+        backbone = self._extract_backbone(self.name)
+        if "vectors_track_hot__" in self.name:
+            return self.harness.hot_count(backbone)
+        if "vectors_track_cold__" in self.name:
+            return self.harness.cold_count(backbone)
+        return 0
+
     def indexes(self) -> list[dict[str, Any]]:
         if "vectors_track_cold__" in self.name:
             backbone = self._extract_backbone(self.name)
             if self.harness.has_vector_index(backbone):
-                return [{"type": "vector"}]
+                return [{"type": "vector", "id": f"{self.name}/vector-index"}]
         return []
+
+    def add_index(self, spec: dict[str, Any]) -> None:
+        if spec.get("type") == "vector":
+            self.harness.install_vector_index(self._extract_backbone(self.name))
+
+    def delete_index(self, index_id: str) -> None:
+        del index_id
+        self.harness.vector_indexes.discard(self._extract_backbone(self.name))
 
     def truncate(self) -> None:
         backbone = self._extract_backbone(self.name)
@@ -260,44 +281,13 @@ class FakeColdOperations:
         return sum(self.delete_by_file_id(file_id) for file_id in file_ids)
 
 
-class FakeVectorsTrackMaintenance:
-    """Minimal maintenance namespace used by constructor-backed vector helpers."""
-
-    def __init__(self, harness: VectorLifecycleHarness, backbone_id: str) -> None:
-        self.harness = harness
-        self.backbone_id = backbone_id
-
-    def ensure_cold_collection(self) -> None:
-        self.harness.ensure_cold_collection(self.backbone_id)
-
-    def get_stats(self) -> dict[str, int | bool]:
-        return {
-            "hot_count": self.harness.hot_count(self.backbone_id),
-            "cold_count": self.harness.cold_count(self.backbone_id),
-            "index_exists": self.harness.has_vector_index(self.backbone_id),
-        }
-
-    def drop_index(self) -> None:
-        self.harness.vector_indexes.discard(self.backbone_id)
-
-    def build_index(self, *, embed_dim: int, nlists: int) -> None:
-        del embed_dim, nlists
-        self.harness.install_vector_index(self.backbone_id)
-
-    def rebuild_index(self, *, embed_dim: int, nlists: int) -> None:
-        self.drop_index()
-        self.build_index(embed_dim=embed_dim, nlists=nlists)
-
-
 class FakeDatabaseAdapter:
     """Provides the minimal Database interface needed by the services."""
 
     def __init__(self, harness: VectorLifecycleHarness) -> None:
         self.harness = harness
         self.db = FakeArangoHandle(harness)
-        self.vectors_track: dict[str, FakeHotOperations] = {}
-        self._vectors_track_cold: dict[str, FakeColdOperations] = {}
-        self._vectors_track_maintenance: dict[str, FakeVectorsTrackMaintenance] = {}
+        self._template_namespaces: dict[str, Any] = {}
         self.library_files = MagicMock()
         # Default: all file_ids belong to "test_lib"
         self.library_files.get_file_library_key.return_value = "test_lib"
@@ -317,26 +307,25 @@ class FakeDatabaseAdapter:
             return []
         return [{"_from": f"libraries/{library_key}", "_to": file_id}]
 
-    def register_vectors_track_backbone(self, backbone_id: str, library_key: str = "test_lib") -> FakeHotOperations:
-        self.harness.register_backbone(backbone_id)
-        self.db.register_collection(f"vectors_track_hot__{backbone_id}__{library_key}")
-        return self.vectors_track.setdefault(backbone_id, FakeHotOperations(self.harness, backbone_id))
+    def register(self, collection_name: str, template_name: str) -> Any:
+        parts = collection_name.split("__")
+        backbone_id = parts[1]
+        library_key = parts[2]
+        del library_key
 
-    def get_vectors_track_cold(self, backbone_id: str, library_key: str = "test_lib") -> FakeColdOperations:
-        self.harness.ensure_cold_collection(backbone_id)
-        self.db.register_collection(f"vectors_track_cold__{backbone_id}__{library_key}")
-        return self._vectors_track_cold.setdefault(backbone_id, FakeColdOperations(self.harness, backbone_id))
+        if template_name == "vectors_track_hot":
+            self.harness.register_backbone(backbone_id)
+            obj: Any = FakeHotOperations(self.harness, backbone_id)
+        elif template_name == "vectors_track_cold":
+            self.harness.ensure_cold_collection(backbone_id)
+            obj = FakeColdOperations(self.harness, backbone_id)
+        else:
+            raise ValueError(f"Unsupported template {template_name!r}")
 
-    def get_vectors_track_maintenance(
-        self,
-        backbone_id: str,
-        library_key: str = "test_lib",
-    ) -> FakeVectorsTrackMaintenance:
-        self.db.register_collection(f"vectors_track_hot__{backbone_id}__{library_key}")
-        return self._vectors_track_maintenance.setdefault(
-            backbone_id,
-            FakeVectorsTrackMaintenance(self.harness, backbone_id),
-        )
+        self.db.register_collection(collection_name)
+        self._template_namespaces[collection_name] = obj
+        setattr(self, collection_name, obj)
+        return obj
 
 
 @pytest.fixture
@@ -400,8 +389,8 @@ def test_upsert_vector_resides_in_hot_until_promotion(
 ) -> None:
     """Vectors stay in hot storage until maintenance promotes them."""
 
-    hot_ops = fake_database.register_vectors_track_backbone("effnet")
-    cold_ops = fake_database.get_vectors_track_cold("effnet")
+    hot_ops = get_hot_namespace(cast("Database", fake_database), "effnet", "test_lib")
+    cold_ops = get_cold_namespace(cast("Database", fake_database), "effnet", "test_lib")
 
     hot_ops.upsert_vector(
         file_id="library_files/1",
@@ -423,7 +412,7 @@ def test_promote_and_rebuild_moves_hot_vectors_to_cold(
     """Maintenance workflow drains hot vectors, builds index, and leaves cold ready."""
 
     service = VectorMaintenanceService(cast("Database", fake_database), models_dir="/ml-models", config_svc=MagicMock())
-    hot_ops = fake_database.register_vectors_track_backbone("effnet")
+    hot_ops = get_hot_namespace(cast("Database", fake_database), "effnet", "test_lib")
     hot_ops.upsert_vector(
         file_id="library_files/42",
         model_suite_hash="suite",
@@ -458,8 +447,8 @@ def test_search_similar_uses_cold_only(
 
     service = VectorSearchService(cast("Database", fake_database), config_svc=MagicMock())
     backbone = "effnet"
-    hot_ops = fake_database.register_vectors_track_backbone(backbone)
-    fake_database.get_vectors_track_cold(backbone)  # ensure cold fixture exists
+    hot_ops = get_hot_namespace(cast("Database", fake_database), backbone, "test_lib")
+    get_cold_namespace(cast("Database", fake_database), backbone, "test_lib")
 
     hot_ops.upsert_vector(
         file_id="library_files/hot_only",
@@ -502,8 +491,8 @@ def test_get_track_vector_cold_only(
 
     service = VectorSearchService(cast("Database", fake_database), config_svc=MagicMock())
     backbone = "effnet"
-    hot_ops = fake_database.register_vectors_track_backbone(backbone)
-    fake_database.get_vectors_track_cold(backbone)  # ensure cold fixture exists
+    hot_ops = get_hot_namespace(cast("Database", fake_database), backbone, "test_lib")
+    get_cold_namespace(cast("Database", fake_database), backbone, "test_lib")
 
     hot_ops.upsert_vector(
         file_id="library_files/hot_only",
@@ -536,7 +525,7 @@ def test_get_track_vector_cold_only(
 
 
 def test_cascade_delete_calls_hot_and_cold_ops() -> None:
-    """Database.delete_vectors_by_file_id should delete across hot/cold caches."""
+    """Vector registry delete should delete across hot/cold caches."""
 
     database = object.__new__(Database)
 
@@ -555,11 +544,16 @@ def test_cascade_delete_calls_hot_and_cold_ops() -> None:
 
     hot_namespace = _VectorNamespace(1)
     cold_namespace = _VectorNamespace(2)
-    database.vectors_track = cast("dict[str, Any]", {"effnet__lib": hot_namespace})
-    database._vectors_track_cold = cast("dict[str, Any]", {"effnet__lib": cold_namespace})
+    database._template_namespaces = cast(
+        "dict[str, Any]",
+        {
+            "vectors_track_hot__effnet__lib": hot_namespace,
+            "vectors_track_cold__effnet__lib": cold_namespace,
+        },
+    )
     database.db = MagicMock()
 
-    deleted = Database.delete_vectors_by_file_id(database, "library_files/7")
+    deleted = delete_vectors_by_file_id(database, "library_files/7")
 
     assert deleted == 3
     assert hot_namespace.file_id.calls == ["library_files/7"]
@@ -617,7 +611,7 @@ def test_promote_twice_keeps_cold_collection_convergent(
         fake_workflow,
     )
 
-    hot_ops = fake_database.register_vectors_track_backbone("effnet")
+    hot_ops = get_hot_namespace(cast("Database", fake_database), "effnet", "test_lib")
     hot_ops.upsert_vector(
         file_id="library_files/99",
         model_suite_hash="suite",

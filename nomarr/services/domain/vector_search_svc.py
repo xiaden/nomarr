@@ -6,6 +6,7 @@ from typing import Any
 from nomarr.components.library.file_library_comp import get_file_library_key
 from nomarr.components.library.library_records_comp import list_library_records
 from nomarr.components.ml.vectors.ml_vector_maintenance_comp import has_vector_index
+from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
 from nomarr.components.ml.vectors.ml_vector_retrieve_comp import get_cold_track_vector
 from nomarr.helpers.vector_params_helper import compute_nlists, compute_nprobe
 from nomarr.persistence.db import Database
@@ -111,7 +112,7 @@ class VectorSearchService:
             raise ValueError(msg)
 
         # Get cold operations and search
-        cold_ops = self.db.get_vectors_track_cold(backbone_id, target_library)
+        cold_ops = get_cold_namespace(self.db, backbone_id, target_library)
 
         # Auto-calculate nprobe from config when not explicitly provided
         if nprobe is None:
@@ -175,7 +176,7 @@ class VectorSearchService:
                 continue
 
             try:
-                cold_ops = self.db.get_vectors_track_cold(backbone_id, lib_key)
+                cold_ops = get_cold_namespace(self.db, backbone_id, lib_key)
                 doc_count = cold_ops.count()
                 if doc_count == 0:
                     continue

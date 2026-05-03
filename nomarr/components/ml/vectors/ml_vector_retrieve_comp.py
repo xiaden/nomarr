@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace, get_maintenance_namespace
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -35,7 +37,7 @@ def get_cold_track_vector(
 
     """
     cold_coll_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    maintenance_stats = db.get_vectors_track_maintenance(backbone_id, library_key).get_stats()
+    maintenance_stats = get_maintenance_namespace(db, backbone_id, library_key).get_stats()
 
     if int(maintenance_stats["cold_count"]) <= 0:
         logger.debug(
@@ -46,5 +48,5 @@ def get_cold_track_vector(
         )
         return None
 
-    cold_ops = db.get_vectors_track_cold(backbone_id, library_key)
+    cold_ops = get_cold_namespace(db, backbone_id, library_key)
     return cold_ops.get_vector(file_id)

@@ -37,21 +37,25 @@ class TestListHotVectorTargets:
             "musicnn__lib2": 10,
         }
 
-        def get_maintenance(backbone_id: str, library_key: str) -> MagicMock:
-            stats = MagicMock()
+        def get_maintenance(_db: MagicMock, backbone_id: str, library_key: str) -> MagicMock:
+            maintenance = MagicMock()
             hot_count = hot_ops_map.get(f"{backbone_id}__{library_key}")
-            stats.get_stats.return_value = {
+            maintenance.get_stats.return_value = {
                 "hot_count": 0 if hot_count is None else hot_count,
                 "cold_count": 0,
                 "index_exists": False,
             }
-            return stats
+            return maintenance
 
-        db.get_vectors_track_maintenance.side_effect = get_maintenance
-
-        with patch(
-            "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.list_library_records",
-            return_value=libraries,
+        with (
+            patch(
+                f"{ML_IDLE_PROMOTION_MODULE}.list_library_records",
+                return_value=libraries,
+            ),
+            patch(
+                f"{ML_IDLE_PROMOTION_MODULE}.get_maintenance_namespace",
+                side_effect=get_maintenance,
+            ),
         ):
             result = list_hot_vector_targets(db, "/models")
 
@@ -68,10 +72,11 @@ class TestListHotVectorTargets:
         mock_discover.return_value = []
         db = MagicMock()
 
-        result = list_hot_vector_targets(db, "/models")
+        with patch(f"{ML_IDLE_PROMOTION_MODULE}.get_maintenance_namespace") as mock_get_maintenance:
+            result = list_hot_vector_targets(db, "/models")
 
         assert result == []
-        db.get_vectors_track_maintenance.assert_not_called()
+        mock_get_maintenance.assert_not_called()
 
     @patch(f"{ML_IDLE_PROMOTION_MODULE}.discover_backbones")
     def test_returns_empty_when_no_libraries(self, mock_discover: MagicMock) -> None:
@@ -82,13 +87,17 @@ class TestListHotVectorTargets:
 
         mock_discover.return_value = ["effnet"]
         db = MagicMock()
-        with patch(
-            "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.list_library_records",
-            return_value=[],
+        with (
+            patch(
+                f"{ML_IDLE_PROMOTION_MODULE}.list_library_records",
+                return_value=[],
+            ),
+            patch(f"{ML_IDLE_PROMOTION_MODULE}.get_maintenance_namespace") as mock_get_maintenance,
         ):
             result = list_hot_vector_targets(db, "/models")
 
         assert result == []
+        mock_get_maintenance.assert_not_called()
 
 
 @pytest.mark.unit
@@ -100,24 +109,30 @@ class TestComputePromotionNlists:
         from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import compute_promotion_nlists
 
         db = MagicMock()
-        db.get_vectors_track_maintenance.return_value.get_stats.return_value = {
+        maintenance = MagicMock()
+        maintenance.get_stats.return_value = {
             "hot_count": 100,
             "cold_count": 200,
         }
 
         with (
             patch(
-                "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.get_library_record",
+                f"{ML_IDLE_PROMOTION_MODULE}.get_library_record",
                 return_value={"vector_group_size": 20},
             ),
             patch(
-                "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.compute_nlists",
+                f"{ML_IDLE_PROMOTION_MODULE}.get_maintenance_namespace",
+                return_value=maintenance,
+            ) as mock_get_maintenance,
+            patch(
+                f"{ML_IDLE_PROMOTION_MODULE}.compute_nlists",
                 return_value=37,
             ) as mock_compute_nlists,
         ):
             result = compute_promotion_nlists(db, "effnet", "lib1")
 
         assert result == 37
+        mock_get_maintenance.assert_called_once_with(db, "effnet", "lib1")
         mock_compute_nlists.assert_called_once_with(300, 20)
 
     @pytest.mark.mocked
@@ -125,24 +140,30 @@ class TestComputePromotionNlists:
         from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import compute_promotion_nlists
 
         db = MagicMock()
-        db.get_vectors_track_maintenance.return_value.get_stats.return_value = {
+        maintenance = MagicMock()
+        maintenance.get_stats.return_value = {
             "hot_count": 5,
             "cold_count": 7,
         }
 
         with (
             patch(
-                "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.get_library_record",
+                f"{ML_IDLE_PROMOTION_MODULE}.get_library_record",
                 return_value=None,
             ),
             patch(
-                "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.compute_nlists",
+                f"{ML_IDLE_PROMOTION_MODULE}.get_maintenance_namespace",
+                return_value=maintenance,
+            ) as mock_get_maintenance,
+            patch(
+                f"{ML_IDLE_PROMOTION_MODULE}.compute_nlists",
                 return_value=12,
             ) as mock_compute_nlists,
         ):
             result = compute_promotion_nlists(db, "effnet", "lib1")
 
         assert result == 12
+        mock_get_maintenance.assert_called_once_with(db, "effnet", "lib1")
         mock_compute_nlists.assert_called_once_with(12, 15)
 
     @pytest.mark.mocked
@@ -150,22 +171,28 @@ class TestComputePromotionNlists:
         from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import compute_promotion_nlists
 
         db = MagicMock()
-        db.get_vectors_track_maintenance.return_value.get_stats.return_value = {
+        maintenance = MagicMock()
+        maintenance.get_stats.return_value = {
             "hot_count": 2,
             "cold_count": 3,
         }
 
         with (
             patch(
-                "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.get_library_record",
+                f"{ML_IDLE_PROMOTION_MODULE}.get_library_record",
                 return_value={"_key": "lib1"},
             ),
             patch(
-                "nomarr.components.ml.vectors.ml_vector_idle_promotion_comp.compute_nlists",
+                f"{ML_IDLE_PROMOTION_MODULE}.get_maintenance_namespace",
+                return_value=maintenance,
+            ) as mock_get_maintenance,
+            patch(
+                f"{ML_IDLE_PROMOTION_MODULE}.compute_nlists",
                 return_value=9,
             ) as mock_compute_nlists,
         ):
             result = compute_promotion_nlists(db, "effnet", "lib1")
 
         assert result == 9
+        mock_get_maintenance.assert_called_once_with(db, "effnet", "lib1")
         mock_compute_nlists.assert_called_once_with(5, 15)

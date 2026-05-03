@@ -30,6 +30,10 @@ def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
         "nomarr.workflows.navidrome.find_similar_tracks_wf.bulk_resolve_files_to_navidrome_ids",
         lambda db, file_ids: db.navidrome_tracks.bulk_resolve_files_to_nd(file_ids),
     )
+    monkeypatch.setattr(
+        "nomarr.workflows.navidrome.find_similar_tracks_wf.get_cold_namespace",
+        lambda db, backbone_id, library_key: db.get_vectors_track_cold(backbone_id, library_key),
+    )
 
 
 # ---------------------------------------------------------------------------

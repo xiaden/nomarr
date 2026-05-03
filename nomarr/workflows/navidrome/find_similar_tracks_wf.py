@@ -10,8 +10,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, TypedDict
 
-from nomarr.components.library.library_file_mutation_comp import get_file_library_key
+from nomarr.components.library.file_library_comp import get_file_library_key
 from nomarr.components.library.library_file_query_comp import get_files_by_ids_with_tags
+from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
 from nomarr.components.navidrome.navidrome_graph_comp import (
     bulk_resolve_files_to_navidrome_ids,
     resolve_navidrome_track_to_file,
@@ -85,7 +86,7 @@ def find_similar_tracks(
     logger.debug("Resolved library_key=%s for file_id %s", library_key, seed_file_id)
 
     # 2. Get seed vector from cold collection
-    cold_ops = db.get_vectors_track_cold(backbone_id, library_key)
+    cold_ops = get_cold_namespace(db, backbone_id, library_key)
     seed_doc = cold_ops.get_vector(seed_file_id)
 
     if seed_doc is None:

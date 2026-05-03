@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from arango.exceptions import AQLQueryExecuteError
 
-from nomarr.components.platform.arango_bootstrap_comp import ensure_schema
+from nomarr.components.platform.arango_bootstrap_comp import ensure_schema, list_template_collection_names
 from nomarr.components.platform.migration_runner_comp import (
     MigrationError,
     SchemaVersionMismatchError,
@@ -51,6 +51,31 @@ def _is_fresh_database(db: Database) -> bool:
         raise
 
 
+def _discover_template_collections(db: Database) -> None:
+    """Scan ArangoDB and register all collections matching template name patterns."""
+    template_names = list_template_collection_names()
+    registered = 0
+
+    for collection_info in db.db.collections():
+        name = collection_info["name"]
+        if name.startswith("_"):
+            continue
+
+        for template_name in template_names:
+            if name.startswith(f"{template_name}__"):
+                try:
+                    db.register(name, template_name)
+                    registered += 1
+                except ValueError:
+                    logger.warning(
+                        "Skipping template collection %r: registration failed",
+                        name,
+                    )
+                break
+
+    logger.info("Discovered and registered %d template collection(s)", registered)
+
+
 def prepare_database_workflow(
     db: Database,
     *,
@@ -61,7 +86,8 @@ def prepare_database_workflow(
     Runs the full startup sequence:
     1. Ensure schema (collections, indexes, graphs) — only on fresh databases
     2. Discover and apply pending migrations
-    3. Register ML models and seed known labels
+    3. Discover and register existing dynamic template collections
+    4. Register ML models and seed known labels
 
     Args:
         db: Database instance (provides both raw db handle and operations).
@@ -97,6 +123,9 @@ def prepare_database_workflow(
         )
         raise SystemExit(1) from exc
 
-    # Step 3: Register ML models and seed known labels
+    # Step 3: Discover and register existing dynamic template collections
+    _discover_template_collections(db)
+
+    # Step 4: Register ML models and seed known labels
     if models_dir is not None:
         register_ml_models_workflow(db, models_dir)

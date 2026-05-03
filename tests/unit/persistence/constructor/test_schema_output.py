@@ -763,11 +763,12 @@ class TestSchemaCoverage:
             assert "fields" in spec, f"{col_name}: missing 'fields'"
             assert isinstance(spec["fields"], dict), f"{col_name}: fields must be a dict"
 
-    def test_template_collections_have_tiers(self) -> None:
-        """TEMPLATE collections use tiers instead of top-level fields."""
+    def test_template_collections_have_fields(self) -> None:
+        """TEMPLATE collections use flat top-level fields after the template split."""
         for col_name, spec in SCHEMA.items():
             if spec["type"] == CollectionType.TEMPLATE:
-                assert "tiers" in spec, f"{col_name}: TEMPLATE missing 'tiers'"
+                assert "fields" in spec, f"{col_name}: TEMPLATE missing 'fields'"
+                assert isinstance(spec["fields"], dict), f"{col_name}: TEMPLATE fields must be a dict"
 
     def test_every_field_has_capabilities(self) -> None:
         for col_name, spec in _BUILDABLE_SCHEMA.items():
@@ -797,3 +798,49 @@ class TestSchemaCoverage:
                 assert target_type == CollectionType.EDGE, (
                     f"{col_name}: cascade target '{target}' is {target_type}, not EDGE"
                 )
+
+
+# ---------------------------------------------------------------------------
+# Test: Template collection capability split (hot vs cold)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestTemplateCapabilitySplit:
+    """Verify the hot/cold template capability differences declared in SCHEMA."""
+
+    def _get_template_caps(self, template_name: str) -> set[str]:
+        from nomarr.persistence.schema import SCHEMA
+
+        return set(SCHEMA[template_name].get("capabilities", []))
+
+    def test_vectors_track_hot_lacks_ann_search(self) -> None:
+        """vectors_track_hot must NOT declare ann_search (search is cold-only)."""
+        caps = self._get_template_caps("vectors_track_hot")
+        assert "ann_search" not in caps
+
+    def test_vectors_track_cold_has_ann_search(self) -> None:
+        """vectors_track_cold MUST declare ann_search."""
+        caps = self._get_template_caps("vectors_track_cold")
+        assert "ann_search" in caps
+
+    def test_vectors_track_hot_lacks_upsert(self) -> None:
+        """vectors_track_hot must NOT declare upsert (writes go through insert only)."""
+        caps = self._get_template_caps("vectors_track_hot")
+        assert "upsert" not in caps
+
+    def test_vectors_track_cold_has_upsert(self) -> None:
+        """vectors_track_cold MUST declare upsert (cold allows idempotent writes)."""
+        caps = self._get_template_caps("vectors_track_cold")
+        assert "upsert" in caps
+
+    def test_vectors_track_hot_lacks_update_many(self) -> None:
+        """vectors_track_hot must NOT declare update_many."""
+        caps = self._get_template_caps("vectors_track_hot")
+        assert "update_many" not in caps
+
+    def test_vectors_track_cold_has_update_many(self) -> None:
+        """vectors_track_cold MUST declare update_many (used by backfill_genres)."""
+        caps = self._get_template_caps("vectors_track_cold")
+        assert "update_many" in caps

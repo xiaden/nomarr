@@ -20,6 +20,7 @@ from nomarr.components.ml.vectors.ml_vector_maintenance_comp import (
     has_vector_index,
     verify_hot_empty,
 )
+from nomarr.components.ml.vectors.ml_vector_registry_comp import get_maintenance_namespace
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -78,7 +79,7 @@ def promote_and_rebuild_workflow(
 
     # Step 2: Log starting state (hot count, cold count, index exists)
     # Use Database methods (hot for write, cold for read/search)
-    maintenance = db.get_vectors_track_maintenance(backbone_id, library_key)
+    maintenance = get_maintenance_namespace(db, backbone_id, library_key)
     stats_before = maintenance.get_stats()
     hot_count_before = int(stats_before["hot_count"])
     cold_count_before = int(stats_before["cold_count"])

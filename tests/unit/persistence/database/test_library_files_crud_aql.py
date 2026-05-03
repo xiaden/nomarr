@@ -346,11 +346,14 @@ class TestBulkDeleteFiles:
         """Returns immediately when there are no paths to delete."""
         mock_db = MagicMock()
 
-        result = bulk_delete_files(mock_db, [])
+        with patch(
+            "nomarr.components.library.library_file_mutation_comp.delete_vectors_by_file_ids"
+        ) as mock_delete_vectors:
+            result = bulk_delete_files(mock_db, [])
 
         assert result == 0
         mock_db.library_files.path.get.in_.assert_not_called()
-        mock_db.delete_vectors_by_file_ids.assert_not_called()
+        mock_delete_vectors.assert_not_called()
         mock_db.song_has_tags._from.delete.assert_not_called()
         mock_db.library_contains_file._to.delete.assert_not_called()
         mock_db.library_files.delete.assert_not_called()
@@ -382,15 +385,21 @@ class TestBulkDeleteFiles:
             {"_id": "library_files/2"},
         ]
 
-        with patch(
-            "nomarr.components.library.library_file_mutation_comp.clear_all_states_batch"
-        ) as mock_clear_all_states_batch:
+        with (
+            patch(
+                "nomarr.components.library.library_file_mutation_comp.delete_vectors_by_file_ids"
+            ) as mock_delete_vectors,
+            patch(
+                "nomarr.components.library.library_file_mutation_comp.clear_all_states_batch"
+            ) as mock_clear_all_states_batch,
+        ):
             result = bulk_delete_files(
                 mock_db,
                 ["D:/Music/song-1.flac", "D:/Music/song-2.flac"],
             )
 
         assert result == 2
+        mock_delete_vectors.assert_called_once_with(mock_db, ["library_files/1", "library_files/2"])
         mock_db.library_files.delete.assert_called_once_with(["library_files/1", "library_files/2"])
         assert mock_db.song_has_tags._from.delete.call_count == 2
         mock_db.song_has_tags._from.delete.assert_any_call("library_files/1")
@@ -559,6 +568,9 @@ class TestDeleteLibraryFile:
         mock_db = MagicMock()
 
         with (
+            patch(
+                "nomarr.components.library.library_file_mutation_comp.delete_vectors_by_file_id"
+            ) as mock_delete_vectors,
             patch("nomarr.components.library.library_file_mutation_comp.clear_all_states") as mock_clear_all_states,
             patch(
                 "nomarr.components.library.library_file_mutation_comp.delete_segment_stats_for_file"
@@ -566,7 +578,7 @@ class TestDeleteLibraryFile:
         ):
             delete_library_file(mock_db, "library_files/123")
 
-        mock_db.delete_vectors_by_file_id.assert_called_once_with("library_files/123")
+        mock_delete_vectors.assert_called_once_with(mock_db, "library_files/123")
         mock_delete_segment_stats.assert_called_once_with(mock_db, "library_files/123")
         mock_db.song_has_tags._from.delete.assert_called_once_with("library_files/123")
         mock_clear_all_states.assert_called_once_with(mock_db, "library_files/123")

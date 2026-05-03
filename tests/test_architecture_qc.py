@@ -396,6 +396,7 @@ def test_no_raw_aql_outside_persistence_and_migrations():
         Path("nomarr/components/tagging/tag_stats_comp.py"),
         Path("nomarr/components/tagging/tag_write_comp.py"),
         Path("nomarr/components/ml/vectors/ml_vector_maintenance_comp.py"),
+        Path("nomarr/components/ml/vectors/ml_vector_registry_comp.py"),
     }
     violations = []
 

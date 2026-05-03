@@ -16,6 +16,7 @@ from nomarr.components.ml.inference.ml_segment_stats_store_comp import (
     delete_segment_stats_for_file,
     delete_segment_stats_for_files,
 )
+from nomarr.components.ml.vectors.ml_vector_registry_comp import delete_vectors_by_file_id, delete_vectors_by_file_ids
 from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
 from nomarr.helpers.dto import LibraryPath
 from nomarr.helpers.time_helper import now_ms
@@ -113,7 +114,7 @@ def delete_library_file(db: Database, file_id: str) -> None:
             return
         file_id = str(file_doc["_id"])
 
-    db.delete_vectors_by_file_id(file_id)
+    delete_vectors_by_file_id(db, file_id)
     delete_segment_stats_for_file(db, file_id)
     db.song_has_tags._from.delete(file_id)
     clear_all_states(db, file_id)
@@ -248,7 +249,7 @@ def bulk_delete_files(db: Database, paths: list[str]) -> int:
     file_docs = db.library_files.path.get.in_(paths)
     file_ids = [str(d["_id"]) for d in file_docs]
     if file_ids:
-        db.delete_vectors_by_file_ids(file_ids)
+        delete_vectors_by_file_ids(db, file_ids)
         delete_segment_stats_for_files(db, file_ids)
         for file_id in file_ids:
             db.song_has_tags._from.delete(file_id)

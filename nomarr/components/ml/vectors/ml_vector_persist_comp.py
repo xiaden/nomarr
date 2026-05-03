@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from nomarr.components.ml.vectors.ml_vector_pool_comp import get_embedding_dimension, pool_embedding_for_storage
+from nomarr.components.ml.vectors.ml_vector_registry_comp import get_hot_namespace
 from nomarr.helpers.time_helper import internal_ms
 
 if TYPE_CHECKING:
@@ -46,7 +47,7 @@ def persist_backbone_vector(
     try:
         vector = pool_embedding_for_storage(embeddings_2d)
         embed_dim = get_embedding_dimension(embeddings_2d)
-        ops = db.register_vectors_track_backbone(backbone, library_key)
+        ops = get_hot_namespace(db, backbone, library_key)
         ops.upsert_vector(
             file_id=file_id,
             model_suite_hash=model_suite_hash,

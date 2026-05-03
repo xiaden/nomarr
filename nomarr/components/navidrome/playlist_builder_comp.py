@@ -1,8 +1,8 @@
 """Build personal playlist track lists from taste profiles and play history.
 
 Each public function encapsulates the domain logic for one playlist type:
-ANN search, exclusion filtering, and result assembly.  ANN search uses
-``db.get_vectors_track_cold`` for vector similarity queries; tag access
+ANN search, exclusion filtering, and result assembly. ANN search uses
+``get_cold_namespace(db, ...)`` for vector similarity queries; tag access
 delegates to ``tag_query_comp`` helpers.
 
 Every builder has the uniform signature::
@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
 from nomarr.components.tagging.tag_query_comp import (
     get_distinct_tag_values_for_files,
     get_tag_values_grouped_by_file,
@@ -78,7 +79,7 @@ def build_familiar_playlist(
     if not played:
         return []
 
-    cold_ops = db.get_vectors_track_cold(ctx["backbone_id"], ctx["library_key"])
+    cold_ops = get_cold_namespace(db, ctx["backbone_id"], ctx["library_key"])
     doc_count = cold_ops.count()
     if doc_count == 0:
         return []
@@ -118,7 +119,7 @@ def build_discovery_playlist(
     """
     played = set(ctx["played_file_ids"])
 
-    cold_ops = db.get_vectors_track_cold(ctx["backbone_id"], ctx["library_key"])
+    cold_ops = get_cold_namespace(db, ctx["backbone_id"], ctx["library_key"])
     doc_count = cold_ops.count()
     if doc_count == 0:
         return []
@@ -165,7 +166,7 @@ def build_hidden_gems_playlist(
     if not known_artists:
         logger.debug("No known artists for hidden gems, falling back to discovery-style")
 
-    cold_ops = db.get_vectors_track_cold(ctx["backbone_id"], ctx["library_key"])
+    cold_ops = get_cold_namespace(db, ctx["backbone_id"], ctx["library_key"])
     doc_count = cold_ops.count()
     if doc_count == 0:
         return []
@@ -214,7 +215,7 @@ def build_universal_playlist(
         if the cold collection is empty.
 
     """
-    cold_ops = db.get_vectors_track_cold(ctx["backbone_id"], ctx["library_key"])
+    cold_ops = get_cold_namespace(db, ctx["backbone_id"], ctx["library_key"])
     doc_count = cold_ops.count()
     if doc_count == 0:
         return []
@@ -274,7 +275,7 @@ def build_genre_playlists(
 
     played_file_ids = ctx["played_file_ids"]
 
-    cold_ops = db.get_vectors_track_cold(ctx["backbone_id"], ctx["library_key"])
+    cold_ops = get_cold_namespace(db, ctx["backbone_id"], ctx["library_key"])
     doc_count = cold_ops.count()
     if doc_count == 0:
         return []

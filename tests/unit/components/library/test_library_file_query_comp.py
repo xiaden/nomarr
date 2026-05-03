@@ -636,9 +636,12 @@ class TestPhaseTwoQueryHelpers:
         mock_db = MagicMock()
         mock_db.library_files._id.collect.side_effect = [["library_files/1"], []]
 
-        clear_library_data(mock_db)
+        with patch(
+            "nomarr.components.ml.vectors.ml_vector_registry_comp.delete_vectors_by_file_ids"
+        ) as mock_delete_vectors:
+            clear_library_data(mock_db)
 
         mock_db.segment_scores_stats.truncate.assert_called_once()
         mock_db.song_has_tags.truncate.assert_called_once()
-        mock_db.delete_vectors_by_file_ids.assert_called_once_with(["library_files/1"])
+        mock_delete_vectors.assert_called_once_with(mock_db, ["library_files/1"])
         mock_db.library_files.delete.assert_called_once_with(["library_files/1"])

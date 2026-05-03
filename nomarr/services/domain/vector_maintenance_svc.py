@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones
 from nomarr.components.ml.vectors.ml_vector_maintenance_comp import has_vector_index
+from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace, get_hot_namespace
 from nomarr.helpers.vector_params_helper import compute_nlists
 from nomarr.persistence.db import Database
 from nomarr.workflows.platform.promote_and_rebuild_vectors_wf import (
@@ -103,8 +104,8 @@ class VectorMaintenanceService:
                 - cold_count: Number of vectors in cold collection
                 - index_exists: Whether cold collection has vector index
         """
-        hot_ops = self.db.register_vectors_track_backbone(backbone_id, library_key)
-        cold_ops = self.db.get_vectors_track_cold(backbone_id, library_key)
+        hot_ops = get_hot_namespace(self.db, backbone_id, library_key)
+        cold_ops = get_cold_namespace(self.db, backbone_id, library_key)
 
         hot_coll_name = f"vectors_track_hot__{backbone_id}__{library_key}"
         cold_coll_name = f"vectors_track_cold__{backbone_id}__{library_key}"

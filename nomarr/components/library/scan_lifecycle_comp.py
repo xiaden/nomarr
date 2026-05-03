@@ -31,6 +31,7 @@ from nomarr.components.library.library_file_state_comp import (
     library_has_tagged_files,
     transition_file_state,
 )
+from nomarr.components.ml.vectors.ml_vector_registry_comp import delete_vectors_by_file_ids
 from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
 from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_IDLE,
@@ -367,7 +368,7 @@ def _bulk_delete_files(db: Database, paths: list[str]) -> int:
     if not file_ids:
         return 0
 
-    db.delete_vectors_by_file_ids(file_ids)
+    delete_vectors_by_file_ids(db, file_ids)
     _delete_segment_stats_for_files(db, file_ids)
     for file_id in file_ids:
         db.song_has_tags._from.delete(file_id)

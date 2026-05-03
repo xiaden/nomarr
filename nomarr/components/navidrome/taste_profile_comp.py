@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
 from nomarr.components.navidrome.navidrome_graph_comp import get_top_navidrome_plays
 from nomarr.helpers.time_helper import now_ms
 
@@ -75,7 +76,7 @@ def compute_taste_profile(
 
     # Step 3: Batch-fetch cold vectors for resolved file IDs
     file_ids = [p["file_id"] for p in resolved_plays]  # all non-None after filter
-    cold_ops = db.get_vectors_track_cold(backbone_id, library_key)
+    cold_ops = get_cold_namespace(db, backbone_id, library_key)
     vector_docs = cold_ops.get_vectors_by_file_ids(file_ids)  # type: ignore[arg-type]
 
     # Build file_id → vector mapping

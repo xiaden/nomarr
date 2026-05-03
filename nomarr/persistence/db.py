@@ -10,8 +10,8 @@ import yaml
 
 from nomarr.persistence.arango_client import SafeDatabase, create_arango_client
 from nomarr.persistence.constructor import SchemaConstructor
-from nomarr.persistence.constructor.namespaces import CollectionNamespace, VectorsTrackMaintenanceNamespace
-from nomarr.persistence.schema import SCHEMA
+from nomarr.persistence.constructor.namespaces import CollectionNamespace
+from nomarr.persistence.schema import SCHEMA, CollectionType
 
 if TYPE_CHECKING:
     from nomarr.persistence.stubs.calibration_history import CalibrationHistoryNamespace
@@ -39,11 +39,6 @@ if TYPE_CHECKING:
     from nomarr.persistence.stubs.sessions import SessionsNamespace
     from nomarr.persistence.stubs.tag_model_output import TagModelOutputNamespace
     from nomarr.persistence.stubs.tags import TagsNamespace
-    from nomarr.persistence.stubs.vectors_track import (
-        VectorsTrackColdNamespace,
-        VectorsTrackHotNamespace,
-        VectorsTrackMaintenanceProtocol,
-    )
     from nomarr.persistence.stubs.vram_promises import VramPromisesNamespace
     from nomarr.persistence.stubs.worker_claims import WorkerClaimsNamespace
     from nomarr.persistence.stubs.worker_restart_policy import WorkerRestartPolicyNamespace
@@ -222,107 +217,38 @@ class Database:
         )
         self.migrations: MigrationsNamespace = cast("MigrationsNamespace", self._build_namespace("migrations"))
 
-        self.vectors_track: dict[str, CollectionNamespace] = {}
-        self._vectors_track_cold: dict[str, CollectionNamespace] = {}
-        self._vectors_track_maintenance: dict[str, VectorsTrackMaintenanceNamespace] = {}
+        self._template_namespaces: dict[str, CollectionNamespace] = {}
 
-    def register_vectors_track_backbone(self, backbone_id: str, library_key: str) -> VectorsTrackHotNamespace:
-        """Get or create a hot vectors_track namespace for a backbone+library."""
-        cache_key = f"{backbone_id}__{library_key}"
-        if cache_key not in self.vectors_track:
-            self.vectors_track[cache_key] = SchemaConstructor(self.db).build_template_namespace(
-                "vectors_track",
-                "hot",
-                backbone_id,
-                library_key,
-            )
-        return cast("VectorsTrackHotNamespace", self.vectors_track[cache_key])
+    def register(self, collection_name: str, template_name: str) -> CollectionNamespace:
+        """Register a dynamic collection namespace on the database.
 
-    def get_vectors_track_cold(
-        self,
-        backbone_id: str,
-        library_key: str,
-        collection_suffix: str | None = None,
-    ) -> VectorsTrackColdNamespace:
-        """Get or create a cold vectors_track namespace for a backbone+library."""
-        cache_key = f"{backbone_id}__{library_key}"
-        if collection_suffix:
-            cache_key = f"{cache_key}__{collection_suffix}"
-        if cache_key not in self._vectors_track_cold:
-            self._vectors_track_cold[cache_key] = SchemaConstructor(self.db).build_template_namespace(
-                "vectors_track",
-                "cold",
-                backbone_id,
-                library_key,
-                collection_suffix=collection_suffix,
-            )
-        return cast("VectorsTrackColdNamespace", self._vectors_track_cold[cache_key])
+        If the collection is already registered, returns the cached namespace.
+        Validates that the collection exists in ArangoDB and that ``template_name``
+        is a TEMPLATE-type entry in the schema.
 
-    def get_vectors_track_maintenance(
-        self,
-        backbone_id: str,
-        library_key: str,
-    ) -> VectorsTrackMaintenanceProtocol:
-        """Get or create a maintenance namespace for a vectors hot/cold pair."""
-        cache_key = f"{backbone_id}__{library_key}"
-        if cache_key not in self._vectors_track_maintenance:
-            self._vectors_track_maintenance[cache_key] = VectorsTrackMaintenanceNamespace(
-                self.db,
-                hot_collection_name=f"vectors_track_hot__{backbone_id}__{library_key}",
-                cold_collection_name=f"vectors_track_cold__{backbone_id}__{library_key}",
-            )
-        return cast("VectorsTrackMaintenanceProtocol", self._vectors_track_maintenance[cache_key])
+        Args:
+            collection_name: Name of the ArangoDB collection to register.
+            template_name: Schema key identifying the template definition to use.
 
-    def delete_vectors_by_file_id(self, file_id: str) -> int:
-        """Delete vectors for a file from ALL backbones and libraries (both hot and cold)."""
-        total_deleted = 0
+        Returns:
+            The registered ``CollectionNamespace`` for the collection.
 
-        for hot_namespace in self.vectors_track.values():
-            deleted = cast("VectorsTrackHotNamespace", hot_namespace).file_id.delete(file_id)
-            total_deleted += deleted
+        Raises:
+            ValueError: If ``collection_name`` does not exist in ArangoDB.
+            ValueError: If ``template_name`` is not a TEMPLATE collection in SCHEMA.
 
-        for cold_namespace in self._vectors_track_cold.values():
-            deleted = cast("VectorsTrackColdNamespace", cold_namespace).file_id.delete(file_id)
-            total_deleted += deleted
-
-        self.db.aql.execute(
-            """
-            FOR e IN file_has_vectors
-                FILTER e._from == @file_id
-                REMOVE e IN file_has_vectors
-            """,
-            bind_vars={"file_id": file_id},
-        )
-
-        return total_deleted
-
-    def delete_vectors_by_file_ids(self, file_ids: list[str]) -> int:
-        """Delete vectors for multiple files from ALL backbones and libraries (both hot and cold)."""
-        if not file_ids:
-            return 0
-
-        total_deleted = 0
-
-        for hot_namespace in self.vectors_track.values():
-            typed_hot_namespace = cast("VectorsTrackHotNamespace", hot_namespace)
-            for file_id in file_ids:
-                total_deleted += typed_hot_namespace.file_id.delete(file_id)
-
-        for cold_namespace in self._vectors_track_cold.values():
-            typed_cold_namespace = cast("VectorsTrackColdNamespace", cold_namespace)
-            for file_id in file_ids:
-                total_deleted += typed_cold_namespace.file_id.delete(file_id)
-
-        self.db.aql.execute(
-            """
-            FOR e IN file_has_vectors
-                FILTER e._from IN @file_ids
-                REMOVE e IN file_has_vectors
-            """,
-            bind_vars=cast("dict[str, Any]", {"file_ids": file_ids}),
-        )
-
-        return total_deleted
+        """
+        if collection_name in self._template_namespaces:
+            return self._template_namespaces[collection_name]
+        if not self.db.has_collection(collection_name):
+            raise ValueError(f"Collection {collection_name!r} does not exist in ArangoDB")
+        template_spec = cast("dict[str, Any] | None", SCHEMA.get(template_name))
+        if template_spec is None or template_spec.get("type") != CollectionType.TEMPLATE:
+            raise ValueError(f"{template_name!r} is not a TEMPLATE collection in SCHEMA")
+        ns = SchemaConstructor(self.db).build_template_namespace(collection_name, template_name)
+        setattr(self, collection_name, ns)
+        self._template_namespaces[collection_name] = ns
+        return ns
 
     def get_version(self) -> str | None:
         """Read the current schema version from the meta store."""

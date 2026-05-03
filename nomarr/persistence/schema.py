@@ -545,7 +545,7 @@ SCHEMA: dict[str, Any] = {
         "edges": {
             "song_has_tags": {"target": "tags", "direction": "OUTBOUND"},
             "file_has_state": {"target": "file_states", "direction": "OUTBOUND"},
-            "file_has_vectors": {"target": "vectors_track", "direction": "OUTBOUND"},
+            "file_has_vectors": {"target": "vectors_track_cold", "direction": "OUTBOUND"},
             "file_has_segment_stats": {"target": "segment_scores_stats", "direction": "OUTBOUND"},
             "library_contains_file": {"target": "libraries", "direction": "INBOUND"},
         },
@@ -968,10 +968,28 @@ SCHEMA: dict[str, Any] = {
     # =========================================================================
     # TEMPLATE COLLECTION — dynamic naming for vector collections
     # =========================================================================
-    "vectors_track": {
+    "vectors_track_hot": {
         "type": CollectionType.TEMPLATE,
-        "name_pattern": "vectors_track_{tier}__{backbone_id}__{library_key}",
-        "collection_suffix": True,  # Supports optional __{suffix} for test/staging
+        "name_pattern": "vectors_track_hot__{backbone_id}__{library_key}",
+        "capabilities": [
+            "insert",
+            "update",
+            "delete",
+            "cascade",
+            "count",
+            "truncate",
+            "move_collection",
+        ],
+        "fields": {
+            "_key": {"type": "str", "capabilities": ["get"], "unique": True},
+            "_id": {"type": "str", "capabilities": ["get", "collect"], "unique": True},
+            "file_id": {"type": "str", "capabilities": ["get", "delete"]},
+            "vector": {"type": "list[float]", "capabilities": ["get"]},
+        },
+    },
+    "vectors_track_cold": {
+        "type": CollectionType.TEMPLATE,
+        "name_pattern": "vectors_track_cold__{backbone_id}__{library_key}",
         "capabilities": [
             "insert",
             "upsert",
@@ -984,28 +1002,11 @@ SCHEMA: dict[str, Any] = {
             "truncate",
             "move_collection",
         ],
-        "tiers": {
-            "hot": {
-                "fields": {
-                    "_key": {"type": "str", "capabilities": ["get"], "unique": True},
-                    "_id": {"type": "str", "capabilities": ["get", "collect"], "unique": True},
-                    "file_id": {"type": "str", "capabilities": ["get", "delete"]},
-                    "vector": {"type": "list[float]", "capabilities": ["get"]},
-                },
-            },
-            "cold": {
-                "fields": {
-                    "_key": {"type": "str", "capabilities": ["get", "upsert"], "unique": True},
-                    "_id": {"type": "str", "capabilities": ["get", "collect"], "unique": True},
-                    "file_id": {"type": "str", "capabilities": ["get", "delete"]},
-                    "vector": {"type": "list[float]", "capabilities": ["get"]},
-                },
-            },
-        },
-        "maintenance": {
-            # Operations class that orchestrates across hot+cold collections
-            "operates_on": ["hot", "cold"],
-            "verbs": ["rebuild_index", "get_stats"],
+        "fields": {
+            "_key": {"type": "str", "capabilities": ["get", "upsert"], "unique": True},
+            "_id": {"type": "str", "capabilities": ["get", "collect"], "unique": True},
+            "file_id": {"type": "str", "capabilities": ["get", "delete"]},
+            "vector": {"type": "list[float]", "capabilities": ["get"]},
         },
     },
 }

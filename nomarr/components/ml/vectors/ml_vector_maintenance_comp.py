@@ -10,6 +10,11 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.ml.onnx.ml_discovery_comp import _resolve_embedding_graph
+from nomarr.components.ml.vectors.ml_vector_registry_comp import (
+    get_cold_namespace,
+    get_hot_namespace,
+    get_maintenance_namespace,
+)
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -130,15 +135,9 @@ def drain_hot_to_cold(db: Database, backbone_id: str, library_key: str) -> int:
 
     """
     cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    hot_ops = db.register_vectors_track_backbone(backbone_id, library_key)
+    hot_ops = get_hot_namespace(db, backbone_id, library_key)
     drained = hot_ops.move_collection(cold_name)
-    try:
-        db.get_vectors_track_cold(backbone_id, library_key)
-    except Exception:
-        if drained == 0:
-            return 0
-        raise
-
+    db.register(cold_name, "vectors_track_cold")
     return drained
 
 
@@ -154,7 +153,7 @@ def verify_hot_empty(db: Database, backbone_id: str, library_key: str) -> None:
         RuntimeError: If hot collection is not empty.
 
     """
-    maintenance = db.get_vectors_track_maintenance(backbone_id, library_key)
+    maintenance = get_maintenance_namespace(db, backbone_id, library_key)
     hot_count = cast("int", maintenance.get_stats()["hot_count"])
 
     if hot_count > 0:
@@ -173,7 +172,7 @@ def drop_cold_vector_index(db: Database, backbone_id: str, library_key: str) -> 
         library_key: ArangoDB ``_key`` of the library document.
 
     """
-    maintenance = db.get_vectors_track_maintenance(backbone_id, library_key)
+    maintenance = get_maintenance_namespace(db, backbone_id, library_key)
     try:
         maintenance.drop_index()
     except ValueError:
@@ -192,7 +191,7 @@ def has_vector_index(db: Database, backbone_id: str, library_key: str) -> bool:
         True if cold collection has vector index, False otherwise.
 
     """
-    maintenance = db.get_vectors_track_maintenance(backbone_id, library_key)
+    maintenance = get_maintenance_namespace(db, backbone_id, library_key)
     return bool(maintenance.get_stats()["index_exists"])
 
 
@@ -218,7 +217,7 @@ def build_cold_vector_index(
 
     """
     cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    maintenance = db.get_vectors_track_maintenance(backbone_id, library_key)
+    maintenance = get_maintenance_namespace(db, backbone_id, library_key)
     doc_count = cast("int", maintenance.get_stats()["cold_count"])
 
     logger.info(
@@ -268,7 +267,7 @@ def rebuild_cold_vector_index(
 
     """
     cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    maintenance = db.get_vectors_track_maintenance(backbone_id, library_key)
+    maintenance = get_maintenance_namespace(db, backbone_id, library_key)
 
     logger.info(
         "[rebuild index] Starting for %s (dim=%d, nlists=%d)",
@@ -304,7 +303,7 @@ def backfill_genres(db: Database, backbone_id: str, library_key: str) -> int:
 
     """
     cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    cold_ops = db.get_vectors_track_cold(backbone_id, library_key)
+    cold_ops = get_cold_namespace(db, backbone_id, library_key)
 
     try:
         cold_docs = _load_vector_docs(cast("Any", cold_ops))
