@@ -8,7 +8,7 @@ import { CommitBar } from "./components/CommitBar";
 import { TagValueGrid } from "./components/TagValueGrid";
 
 export function TagCurationPage(): React.JSX.Element {
-  const [relFilter, setRelFilter] = useState<string>("");
+  const [nameFilter, setNameFilter] = useState<string>("");
   const [prefixFilter, setPrefixFilter] = useState<string>("");
   const [tagKeys, setTagKeys] = useState<string[]>([]);
 
@@ -16,7 +16,7 @@ export function TagCurationPage(): React.JSX.Element {
     getUniqueTagKeys()
       .then((result) => setTagKeys(result.tag_keys))
       .catch(() => {
-        // Non-critical; rel filter still usable with manual selection
+        // Non-critical; name filter still usable with manual selection
       });
   }, []);
 
@@ -28,16 +28,16 @@ export function TagCurationPage(): React.JSX.Element {
           Filter by:
         </Typography>
         <Select
-          value={relFilter}
+          value={nameFilter}
           onChange={(e) => {
-            setRelFilter(e.target.value);
+            setNameFilter(e.target.value);
             setPrefixFilter("");
           }}
           displayEmpty
           size="small"
           sx={{ minWidth: 160 }}
         >
-          <MenuItem value="">All rels</MenuItem>
+          <MenuItem value="">All names</MenuItem>
           {tagKeys.map((key) => (
             <MenuItem key={key} value={key}>
               {key}
@@ -50,7 +50,7 @@ export function TagCurationPage(): React.JSX.Element {
           displayEmpty
           size="small"
           sx={{ minWidth: 120 }}
-          disabled={!relFilter}
+          disabled={!nameFilter}
         >
           <MenuItem value="">All prefixes</MenuItem>
           {["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
@@ -64,7 +64,7 @@ export function TagCurationPage(): React.JSX.Element {
         </Select>
       </Stack>
       <TagValueGrid
-        rel={relFilter || undefined}
+        name={nameFilter || undefined}
         prefix={prefixFilter || undefined}
       />
     </PageContainer>

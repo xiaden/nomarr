@@ -13,39 +13,39 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def find_or_create_tag(db: Database, rel: str, value: TagValue) -> str:
+def find_or_create_tag(db: Database, name: str, value: TagValue) -> str:
     """Find or create one tag vertex and return its ``_id``."""
-    return db.tags.value.upsert([{"rel": rel, "value": value}], match_field=["rel", "value"])[0]
+    return db.tags.value.upsert([{"name": name, "value": value}], match_field=["name", "value"])[0]
 
 
 def resolve_tag_ids(
     db: Database,
     pairs: Sequence[tuple[str, TagValue]],
 ) -> dict[tuple[str, TagValue], str]:
-    """Batch-resolve tag ids for ``(rel, value)`` pairs."""
+    """Batch-resolve tag ids for ``(name, value)`` pairs."""
     if not pairs:
         return {}
 
     resolved: dict[tuple[str, TagValue], str] = {}
-    for rel, value in dict.fromkeys(pairs):
-        matches = db.tags.get.many.by_filter({"rel": rel, "value": value}, limit=1)
+    for name, value in dict.fromkeys(pairs):
+        matches = db.tags.get.many.by_filter({"name": name, "value": value}, limit=1)
         if not matches:
             continue
         tag_id = matches[0].get("_id")
         if tag_id is not None:
-            resolved[(rel, value)] = str(tag_id)
+            resolved[(name, value)] = str(tag_id)
     return resolved
 
 
-def _find_song_rel_edge_ids(db: Database, song_id: str, rel: str) -> list[str]:
-    """Return ``song_has_tags`` edge ids for one song + rel pair."""
+def _find_song_name_edge_ids(db: Database, song_id: str, name: str) -> list[str]:
+    """Return ``song_has_tags`` edge ids for one song + name pair."""
     edge_ids: list[str] = []
     for edge in db.song_has_tags._from.get.many(song_id, limit=None):
         tag_id = edge.get("_to")
         if tag_id is None:
             continue
         tag = db.tags.get(str(tag_id))
-        if tag is None or tag.get("rel") != rel:
+        if tag is None or tag.get("name") != name:
             continue
         edge_id = edge.get("_id")
         if edge_id is not None:
@@ -53,22 +53,22 @@ def _find_song_rel_edge_ids(db: Database, song_id: str, rel: str) -> list[str]:
     return edge_ids
 
 
-def set_song_tags(db: Database, song_id: str, rel: str, values: list[TagValue]) -> None:
-    """Replace all tags for one ``song_id`` + ``rel`` pair."""
-    edge_ids = _find_song_rel_edge_ids(db, song_id, rel)
+def set_song_tags(db: Database, song_id: str, name: str, values: list[TagValue]) -> None:
+    """Replace all tags for one ``song_id`` + ``name`` pair."""
+    edge_ids = _find_song_name_edge_ids(db, song_id, name)
     if edge_ids:
         db.song_has_tags.delete(edge_ids)
     if not values:
         return
 
-    tag_id_map = {value: find_or_create_tag(db, rel, value) for value in values}
+    tag_id_map = {value: find_or_create_tag(db, name, value) for value in values}
     edge_docs = [{"_from": song_id, "_to": tag_id_map[value]} for value in values if value in tag_id_map]
     if edge_docs:
         db.song_has_tags._to.upsert(edge_docs, match_field=["_from", "_to"])
 
 
 def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
-    """Replace tags for many ``(song_id, rel)`` pairs as component composition.
+    """Replace tags for many ``(song_id, name)`` pairs as component composition.
 
     This supersedes the old persistence primitive from ADR-010. The operation is
     now expressed as component-layer coordination of constructor-backed verbs:
@@ -77,7 +77,7 @@ def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
     Args:
         db: Database handle used to replace tag edges and upsert referenced tags.
         entries: Batch entries to apply. Each entry must contain ``song_id`` for
-            the song vertex id, ``rel`` for the tag relation being replaced, and
+            the song vertex id, ``name`` for the tag name being replaced, and
             ``values`` for the list of tag values to attach for that pair.
     """
     if not entries:
@@ -88,11 +88,11 @@ def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
     entry_pairs: list[tuple[str, str, list[TagValue]]] = []
     for entry in entries:
         song_id = str(entry["song_id"])
-        rel = str(entry["rel"])
+        name = str(entry["name"])
         values = [cast("TagValue", value) for value in entry["values"]]
-        entry_pairs.append((song_id, rel, values))
-        edge_ids.extend(_find_song_rel_edge_ids(db, song_id, rel))
-        upsert_pairs.extend((rel, value) for value in values)
+        entry_pairs.append((song_id, name, values))
+        edge_ids.extend(_find_song_name_edge_ids(db, song_id, name))
+        upsert_pairs.extend((name, value) for value in values)
 
     if edge_ids:
         db.song_has_tags.delete(edge_ids)
@@ -100,13 +100,13 @@ def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
     if not upsert_pairs:
         return
 
-    tag_ids = {(rel, value): find_or_create_tag(db, rel, value) for rel, value in upsert_pairs}
+    tag_ids = {(name, value): find_or_create_tag(db, name, value) for name, value in upsert_pairs}
 
     edge_docs: list[dict[str, str]] = []
     seen_edges: set[tuple[str, str]] = set()
-    for song_id, rel, values in entry_pairs:
+    for song_id, name, values in entry_pairs:
         for value in values:
-            tag_id = tag_ids.get((rel, value))
+            tag_id = tag_ids.get((name, value))
             if tag_id is not None:
                 edge_key = (song_id, tag_id)
                 if edge_key not in seen_edges:
@@ -116,9 +116,9 @@ def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
         db.song_has_tags._to.upsert(edge_docs, match_field=["_from", "_to"])
 
 
-def add_song_tag(db: Database, song_id: str, rel: str, value: TagValue) -> None:
-    """Add one tag value to a song without replacing other values for the rel."""
-    tag_id = find_or_create_tag(db, rel, value)
+def add_song_tag(db: Database, song_id: str, name: str, value: TagValue) -> None:
+    """Add one tag value to a song without replacing other values for the name."""
+    tag_id = find_or_create_tag(db, name, value)
     db.song_has_tags._to.upsert([{"_from": song_id, "_to": tag_id}], match_field=["_from", "_to"])
 
 

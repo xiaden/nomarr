@@ -25,7 +25,7 @@ Embedding vector storage with hot/cold tiered collections for similarity search.
 
 - **Hot/cold tiering:** Hot collections are write-only accumulation targets during ML processing. Cold collections hold promoted, indexed vectors for search. Hot is never searched.
 - **Convergent drain:** `drain_hot_to_cold` uses AQL UPSERT (idempotent by `_key`) then truncates hot — safe to run multiple times.
-- **Genre enrichment:** During drain, each vector document is enriched with genre tags from the graph (song_has_tags → tags where rel="genre").
+- **Genre enrichment:** During drain, each vector document is enriched with genre tags from the graph (song_has_tags → tags where name="genre").
 - **Per-backbone collections:** Each backbone (effnet, musicnn, etc.) has its own hot and cold vector collection, selected by backbone name.
 
 ## Dependencies

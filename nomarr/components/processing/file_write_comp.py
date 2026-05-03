@@ -82,10 +82,10 @@ def get_nomarr_tags(
     return get_song_tags(db, file_id, nomarr_only=True)
 
 
-# All three mood tier rels that must always be written (or cleared) together.
-# Writing an empty list for a rel deletes any existing edges for it,
+# All three mood tier names that must always be written (or cleared) together.
+# Writing an empty list for a name deletes any existing edges for it,
 # which prevents stale tiers from persisting when the tier count drops.
-_MOOD_TIER_RELS = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
+_MOOD_TIER_NAMES = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
 
 
 def save_mood_tags(
@@ -109,16 +109,16 @@ def save_mood_tags(
         Number of tiers written with non-empty values
 
     """
-    # Build lookup: normalised rel -> values
+    # Build lookup: normalised name -> values
     written: dict[str, list] = {}
     for tag in mood_tags:
-        nomarr_rel = f"nom:{tag.key}" if not tag.key.startswith("nom:") else tag.key
-        written[nomarr_rel] = tag.value
+        nomarr_name = f"nom:{tag.key}" if not tag.key.startswith("nom:") else tag.key
+        written[nomarr_name] = tag.value
 
     count = 0
-    for rel in _MOOD_TIER_RELS:
-        values = written.get(rel, [])
-        set_song_tags(db, file_id, rel, list(values))
+    for name in _MOOD_TIER_NAMES:
+        values = written.get(name, [])
+        set_song_tags(db, file_id, name, list(values))
         if values:
             count += 1
     return count
@@ -131,8 +131,8 @@ def save_mood_tags_batch(
     """Write mood tags for multiple files via constructor-backed verbs.
 
     Delegates to ``set_song_tags_batch`` which performs component-layer
-    coordination: edge discovery per ``(song_id, rel)`` pair, targeted edge
-    deletion, tag upsert per unique ``(rel, value)`` pair, and bulk edge
+    coordination: edge discovery per ``(song_id, name)`` pair, targeted edge
+    deletion, tag upsert per unique ``(name, value)`` pair, and bulk edge
     insert.  Query count scales with the number of files and distinct tag
     values.
 
@@ -141,7 +141,7 @@ def save_mood_tags_batch(
         items: List of (file_id, mood_tags) tuples
 
     Returns:
-        Number of (file_id, rel) pairs written
+        Number of (file_id, name) pairs written
 
     """
     if not items:
@@ -152,10 +152,10 @@ def save_mood_tags_batch(
         # Build a lookup for this file's non-empty tiers
         written: dict[str, list] = {}
         for tag in mood_tags:
-            nomarr_rel = f"nom:{tag.key}" if not tag.key.startswith("nom:") else tag.key
-            written[nomarr_rel] = tag.value
+            nomarr_name = f"nom:{tag.key}" if not tag.key.startswith("nom:") else tag.key
+            written[nomarr_name] = tag.value
         # Always emit all three tiers; absent ones get an empty list (→ delete)
-        entries.extend({"song_id": file_id, "rel": rel, "values": written.get(rel, [])} for rel in _MOOD_TIER_RELS)
+        entries.extend({"song_id": file_id, "name": name, "values": written.get(name, [])} for name in _MOOD_TIER_NAMES)
 
     set_song_tags_batch(db, entries)
     return sum(1 for e in entries if e["values"])

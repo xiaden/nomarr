@@ -127,7 +127,9 @@ def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
 
     Args:
         db: Database handle used for the batch document and edge upserts.
-        file_docs: Library-file payloads where each dict must include a ``library_id`` key plus the fields accepted by the single-file upsert schema, such as ``path``, ``file_size``, ``modified_time``, and optional metadata.
+        file_docs: Library-file payloads where each dict must include a ``library_id``
+            key plus the fields accepted by the single-file upsert schema, such as
+            ``path``, ``file_size``, ``modified_time``, and optional metadata.
 
     Returns:
         List of ``_id`` strings for the upserted files, in the same order as the input.

@@ -308,7 +308,8 @@ def scan_library_quick_workflow(
 
         scan_log = logger.info if has_changes or stats["files_failed"] else logger.debug
         scan_log(
-            "Quick scan complete in %.1fs: folders=%d/%d, added=%d, updated=%d, skipped=%d, moved=%d, removed=%d, failed=%d",
+            "Quick scan complete in %.1fs: "
+            "folders=%d/%d, added=%d, updated=%d, skipped=%d, moved=%d, removed=%d, failed=%d",
             scan_duration,
             stats["folders_scanned"],
             stats["folders_scanned"] + stats["folders_skipped"],

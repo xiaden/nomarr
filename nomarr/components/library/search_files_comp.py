@@ -8,8 +8,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_file_query_comp import search_library_files_with_tags
-from nomarr.components.tagging.tag_query_comp import list_tags_by_rel
-from nomarr.components.tagging.tag_stats_comp import get_unique_rels
+from nomarr.components.tagging.tag_query_comp import list_tags_by_name
+from nomarr.components.tagging.tag_stats_comp import get_unique_names
 from nomarr.helpers.dto.library_dto import SearchFilesQuery
 
 if TYPE_CHECKING:
@@ -45,31 +45,31 @@ def search_library_files(
 
 
 def get_unique_tag_keys(db: Database, nomarr_only: bool = False) -> list[str]:
-    """Get list of unique tag keys (rel values).
+    """Get list of unique tag keys (name values).
 
     Args:
         db: Database instance
-        nomarr_only: Only return Nomarr tags (rel starts with "nom:")
+        nomarr_only: Only return Nomarr tags (name starts with "nom:")
 
     Returns:
-        List of unique tag keys (rel values)
+        List of unique tag keys (name values)
 
     """
-    return get_unique_rels(db, nomarr_only=nomarr_only)
+    return get_unique_names(db, nomarr_only=nomarr_only)
 
 
 def get_unique_tag_values(db: Database, tag_key: str, nomarr_only: bool = False) -> list[str]:
-    """Get list of unique values for a specific tag key (rel).
+    """Get list of unique values for a specific tag key (name).
 
     Args:
         db: Database instance
-        tag_key: The tag rel to get values for
+        tag_key: The tag name to get values for
         nomarr_only: Ignored (key already determines if it's nomarr)
 
     Returns:
         List of unique tag values
 
     """
-    # Get all tags for this rel (limited to reasonable count)
-    tags = list_tags_by_rel(db, tag_key, limit=10000, sort_by_count=True)
+    # Get all tags for this name (limited to reasonable count)
+    tags = list_tags_by_name(db, tag_key, limit=10000, sort_by_count=True)
     return [str(t["value"]) for t in tags]

@@ -87,13 +87,13 @@ class Tags:
         Aggregates multiple rows with same key into single Tag.
 
         Args:
-            db_rows: List of ``{rel, value}`` dicts from a tag query helper
+            db_rows: List of ``{name, value}`` dicts from a tag query helper
 
         """
         # Group by key
         aggregated: dict[str, list[TagValue]] = {}
         for row in db_rows:
-            key = row["rel"]
+            key = row["name"]
             value = row["value"]
             if key not in aggregated:
                 aggregated[key] = []

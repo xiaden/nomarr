@@ -102,7 +102,7 @@ Each document in `docs` must contain all fields listed in `field`.
 
 ### Primary Use Case
 
-Tags have compound key `(rel, value)`:
+Tags have compound key `(name, value)`:
 
 ```python
 db.tags.rel.upsert([{"rel": "genre", "value": "rock"}], match_field=["rel", "value"])

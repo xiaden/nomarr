@@ -59,7 +59,8 @@ def create_library_record(
         root_path: Absolute root path scanned for this library.
         is_enabled: Whether the library is enabled for processing; defaults to ``True``.
         watch_mode: File watching mode; defaults to ``"off"`` and must be one of ``"off"``, ``"event"``, or ``"poll"``.
-        file_write_mode: Tag writeback mode; defaults to ``"full"`` and must be one of ``"none"``, ``"minimal"``, or ``"full"``.
+        file_write_mode: Tag writeback mode; defaults to ``"full"`` and must be one
+            of ``"none"``, ``"minimal"``, or ``"full"``.
         library_auto_write: Whether library-level automatic tag writing is enabled; defaults to ``False``.
 
     Returns:

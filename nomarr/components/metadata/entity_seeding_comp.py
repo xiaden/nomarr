@@ -116,11 +116,11 @@ def _extract_entity_tags(metadata: dict[str, Any]) -> dict[str, Any]:
 def _build_song_tag_entries(song_id: str, tags: dict[str, Any]) -> list[dict[str, Any]]:
     """Build tag entries for batch-seeding from raw entity tags.
 
-    Returns list of dicts with keys ``song_id``, ``rel``, ``values``
+    Returns list of dicts with keys ``song_id``, ``name``, ``values``
     suitable for :func:`nomarr.components.tagging.tag_write_comp.set_song_tags_batch`.
 
     Mirrors the normalization logic in :func:`seed_song_entities_from_tags`
-    but collects entries instead of calling the DB per-rel.
+    but collects entries instead of calling the DB per-name.
 
     """
     entries: list[dict[str, Any]] = []
@@ -135,7 +135,7 @@ def _build_song_tag_entries(song_id: str, tags: dict[str, Any]) -> list[dict[str
     elif artists_raw:
         primary_artist = (artists_raw[0] if artists_raw else None) if isinstance(artists_raw, list) else artists_raw
 
-    entries.append({"song_id": song_id, "rel": "artist", "values": [primary_artist] if primary_artist else []})
+    entries.append({"song_id": song_id, "name": "artist", "values": [primary_artist] if primary_artist else []})
 
     # — artists (multi) —
     all_artists: list[str] = []
@@ -144,37 +144,37 @@ def _build_song_tag_entries(song_id: str, tags: dict[str, Any]) -> list[dict[str
     elif primary_artist:
         all_artists = [str(primary_artist)]
 
-    entries.append({"song_id": song_id, "rel": "artists", "values": list(all_artists)})
+    entries.append({"song_id": song_id, "name": "artists", "values": list(all_artists)})
 
     # — album (singular) —
     album_raw = tags.get("album")
     if album_raw:
         album_str = album_raw[0] if isinstance(album_raw, list) else album_raw
-        entries.append({"song_id": song_id, "rel": "album", "values": [album_str]})
+        entries.append({"song_id": song_id, "name": "album", "values": [album_str]})
     else:
-        entries.append({"song_id": song_id, "rel": "album", "values": []})
+        entries.append({"song_id": song_id, "name": "album", "values": []})
 
     # — label (multi) —
     label_raw = tags.get("label")
     labels: list[str] = []
     if label_raw:
         labels = [str(lbl) for lbl in label_raw if lbl] if isinstance(label_raw, list) else [str(label_raw)]
-    entries.append({"song_id": song_id, "rel": "label", "values": list(labels)})
+    entries.append({"song_id": song_id, "name": "label", "values": list(labels)})
 
     # — genre (multi) —
     genre_raw = tags.get("genre")
     genres: list[str] = []
     if genre_raw:
         genres = [str(g) for g in genre_raw if g] if isinstance(genre_raw, list) else [str(genre_raw)]
-    entries.append({"song_id": song_id, "rel": "genre", "values": list(genres)})
+    entries.append({"song_id": song_id, "name": "genre", "values": list(genres)})
 
     # — year (singular) —
     year_raw = tags.get("year")
     if year_raw:
         year_int = year_raw if isinstance(year_raw, int) else int(year_raw)
-        entries.append({"song_id": song_id, "rel": "year", "values": [year_int]})
+        entries.append({"song_id": song_id, "name": "year", "values": [year_int]})
     else:
-        entries.append({"song_id": song_id, "rel": "year", "values": []})
+        entries.append({"song_id": song_id, "name": "year", "values": []})
 
     return entries
 

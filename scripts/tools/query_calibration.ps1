@@ -13,7 +13,7 @@ $r2 = Invoke-RestMethod -Uri "http://127.0.0.1:8529/_db/nomarr/_api/cursor" -Met
 Write-Host "Total segment_scores_stats docs: $($r2.result[0])"
 
 # Sample an engagement numeric tag to confirm the raw scores are stored
-$q3 = '{"query":"FOR t IN tags FILTER CONTAINS(t.rel, \"engagement\") LIMIT 3 RETURN {rel:t.rel, val:t.value}"}'
+$q3 = '{"query":"FOR t IN tags FILTER CONTAINS(t.name, \"engagement\") LIMIT 3 RETURN {name:t.name, val:t.value}"}'
 $r3 = Invoke-RestMethod -Uri "http://127.0.0.1:8529/_db/nomarr/_api/cursor" -Method Post -ContentType "application/json" -Headers $h -Body $q3
 Write-Host "=== Sample engagement tags in DB ==="
 $r3.result | ForEach-Object { Write-Host "  $($_.rel) = $($_.val)" }

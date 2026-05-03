@@ -310,10 +310,10 @@ def scan_library_full_workflow(
                         f"files incomplete ({validation['files_repaired']} auto-repaired)"
                     )
                     logger.warning(
-                        "Tag validation found %d incomplete files (repaired %d), missing rels: %s",
+                        "Tag validation found %d incomplete files (repaired %d), missing names: %s",
                         validation["incomplete_files"],
                         validation["files_repaired"],
-                        validation.get("missing_rels_summary", {}),
+                        validation.get("missing_names_summary", {}),
                     )
                 else:
                     logger.info(
@@ -344,7 +344,8 @@ def scan_library_full_workflow(
         )
 
         logger.info(
-            "Full scan complete in %.1fms: folders=%d, added=%d, updated=%d, skipped=%d, moved=%d, removed=%d, failed=%d",
+            "Full scan complete in %.1fms: "
+            "folders=%d, added=%d, updated=%d, skipped=%d, moved=%d, removed=%d, failed=%d",
             scan_duration,
             stats["folders_scanned"],
             stats["files_added"],

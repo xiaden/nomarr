@@ -17,7 +17,7 @@ def query(q):
 print("=== Raw engagement tag values (tags collection) ===")
 eng_vals = query("""
 FOR t IN tags
-FILTER CONTAINS(t.rel, 'engagement')
+FILTER CONTAINS(t.name, 'engagement')
 LIMIT 30
 RETURN t.value
 """)
@@ -79,9 +79,9 @@ print(f"Labels: {labels}")
 print("\n=== Sample of existing mood tags in DB ===")
 mood = query("""
 FOR t IN tags
-FILTER STARTS_WITH(t.rel, 'nom:mood-')
+FILTER STARTS_WITH(t.name, 'nom:mood-')
 LIMIT 20
-RETURN {rel: t.rel, value: t.value}
+RETURN {name: t.name, value: t.value}
 """)
 print(json.dumps(mood, indent=2))
 
@@ -105,8 +105,8 @@ if qualifying:
     FOR e IN song_has_tags
     FILTER e._from == '{file_id}'
     LET t = DOCUMENT(e._to)
-    FILTER STARTS_WITH(t.rel, 'nom:mood-')
-    RETURN {{rel: t.rel, value: t.value}}
+    FILTER STARTS_WITH(t.name, 'nom:mood-')
+    RETURN {{name: t.name, value: t.value}}
     """)
     print(json.dumps(mood_for_file, indent=2))
 
@@ -116,7 +116,7 @@ if qualifying:
     FILTER e._from == '{file_id}'
     LET t = DOCUMENT(e._to)
     FILTER t.vtype == 'number'
-    RETURN {{rel: t.rel, value: t.value}}
+    RETURN {{name: t.name, value: t.value}}
     """)
     print(json.dumps(num_tags, indent=2))
 

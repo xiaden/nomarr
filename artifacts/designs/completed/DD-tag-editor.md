@@ -62,7 +62,7 @@ The existing backend has tag CRUD primitives in `TagOperations` persistence and 
 
 ### Option A: Tag Value List with Inline Expansion (RECOMMENDED)
 
-- **Primary view:** Single DataGrid of `(rel, value, song_count)` rows, grouped by rel
+- **Primary view:** Single DataGrid of `(name, value, song_count)` rows, grouped by rel
 - **Rename:** Double-click value cell → inline edit → if target exists, prompt "Merge into existing?"
 - **Merge:** Multi-select 2+ rows (same rel) → contextual toolbar "Merge" → pick canonical → confirm with preview count
 - **Split:** Click expand chevron on a row → detail panel shows song list with checkboxes → select subset → "Re-tag as…" → autocomplete
@@ -92,7 +92,7 @@ The existing backend has tag CRUD primitives in `TagOperations` persistence and 
 
 ### Option C: Dual-Panel Curator
 
-- **Primary view:** Left panel = tag value tree grouped by rel, Right panel = affected songs
+- **Primary view:** Left panel = tag value tree grouped by name, Right panel = affected songs
 - **Complexity:** High
 
  | Pros | Cons |
@@ -134,7 +134,7 @@ The existing backend has tag CRUD primitives in `TagOperations` persistence and 
  | `GET /api/web/tag-curation/value` | interfaces | List tag values with song counts, filterable by rel |
  | `GET /api/web/tag-curation/{tag_id}/song` | interfaces | Get songs linked to a specific tag value |
  | `TagCurationPage` | frontend | New page at `/tag-curation` |
- | `TagValueGrid` | frontend | MUI DataGrid: `(rel, value, song_count)` with expandable detail panels |
+ | `TagValueGrid` | frontend | MUI DataGrid: `(name, value, song_count)` with expandable detail panels |
  | `CommitBar` | frontend | Persistent banner: pending write count + "Commit Changes" button |
  | `MergeDialog` | frontend | Confirmation dialog for merge operations |
  | `useTagValues(rel)` | frontend | Hook: fetch tag values with counts |
@@ -147,7 +147,7 @@ The existing backend has tag CRUD primitives in `TagOperations` persistence and 
 
 **Existing (no changes):**
 
-- `tags` collection: docs with `rel` + `value`, unique index on `(rel, value)`
+- `tags` collection: docs with `rel` + `value`, unique index on `(name, value)`
 - `song_has_tags` edges to `library_files`: unique on `(_from, _to)`
 - `file_states` collection: boolean state vertices including `tags_written` and `tags_not_written` (ADR-003)
 - `file_has_state` edges: one edge per file per axis linking to state vertices
@@ -203,14 +203,14 @@ def relink_tag_edges(
     """
 
 def list_tags_with_counts(
-    rel: str | None = None,
+    name: str | None = None,
     prefix: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> TagListResult:
     """List tag values with edge counts, optionally filtered by rel and value prefix.
 
-    Returns: TagListResult(tags=[{id, rel, value, song_count}], total=int)
+    Returns: TagListResult(tags=[{id, name, value, song_count}], total=int)
     """
 
 def get_tag_songs(
@@ -227,7 +227,7 @@ def count_pending_tag_writes() -> int:
 
 **AQL implementation for `relink_tag_edges` (2-3 round trips):**
 
-1. Find or create target tag vertex (UPSERT on `(rel, value)`)
+1. Find or create target tag vertex (UPSERT on `(name, value)`)
 2. Re-link edges: for each edge WHERE `_to == source_tag_id` (AND `_from IN song_ids` if scoped), UPSERT a new edge `(_from, target_tag_id)` and REMOVE the old edge. UPSERT handles duplicates.
 3. Cleanup: run `cleanup_orphaned_tags()` to delete source vertex if zero edges remain.
 
@@ -307,12 +307,12 @@ def cleanup_orphaned_tags(self, dry_run: bool = False) -> TagCleanupResult
 def search_files_by_tag(self, tag_key: str, target_value: float | str, limit: int, offset: int) -> SearchFilesResult
 
 # New curation operations:
-def list_tag_values(self, rel: str | None, prefix: str | None, limit: int, offset: int) -> TagListResult
+def list_tag_values(self, name: str | None, prefix: str | None, limit: int, offset: int) -> TagListResult
 def get_tag_songs(self, tag_id: str, limit: int, offset: int) -> list[dict]
 def rename_tag(self, tag_id: str, new_value: str) -> RenameResult
 def merge_tags(self, source_tag_ids: list[str], canonical_tag_id: str) -> MergeResult
 def split_tag(self, source_tag_id: str, song_ids: list[str], new_value: str) -> SplitResult
-def update_file_tags(self, file_id: str, rel: str, values: list[str]) -> FileTagsResult
+def update_file_tags(self, file_id: str, name: str, values: list[str]) -> FileTagsResult
 
 # New commit operations:
 def get_pending_commit_count(self) -> int
@@ -337,7 +337,7 @@ TagCurationPage (lazy-loaded route: /tag-curation)
 │   ├── MergeButton              # Opens MergeDialog (enabled when 2+ same-rel rows selected)
 │   └── RefreshButton
 ├── TagValueGrid                 # @mui/x-data-grid, paginationMode="server"
-│   ├── Columns: rel, value (editable), song_count
+│   ├── Columns: name, value (editable), song_count
 │   ├── Row grouping: by rel
 │   ├── Inline edit: double-click value → rename
 │   │   └── If target exists: prompt "Merge into existing 'post-punk' (45 songs)?"

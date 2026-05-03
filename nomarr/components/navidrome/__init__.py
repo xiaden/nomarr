@@ -9,7 +9,7 @@ from .playlist_builder_comp import (
 )
 from .tag_query_comp import (
     find_files_matching_tag,
-    get_nomarr_tag_rels,
+    get_nomarr_tag_names,
     get_playlist_preview_tracks,
     get_tag_value_counts,
 )
@@ -34,7 +34,7 @@ __all__ = [
     "get_all_templates",
     "get_mixed_templates",
     "get_mood_templates",
-    "get_nomarr_tag_rels",
+    "get_nomarr_tag_names",
     "get_playlist_preview_tracks",
     "get_quality_templates",
     "get_style_templates",

@@ -197,7 +197,7 @@ export async function getTagStats(): Promise<TagStatEntry[]> {
 // ── Tag Values (for rules engine combobox) ──
 
 interface TagValuesRawResponse {
-  rel: string;
+  name: string;
   values: string[];
 }
 
@@ -205,9 +205,9 @@ interface TagValuesRawResponse {
  * Get distinct values for a specific tag relationship.
  * Used by the rules engine combobox for autocomplete.
  */
-export async function getTagValues(rel: string): Promise<string[]> {
+export async function getTagValues(name: string): Promise<string[]> {
   const raw = await get<TagValuesRawResponse>(
-    `/api/web/navidrome/tag-value?rel=${encodeURIComponent(rel)}`,
+    `/api/web/navidrome/tag-value?name=${encodeURIComponent(name)}`,
   );
   return raw.values;
 }

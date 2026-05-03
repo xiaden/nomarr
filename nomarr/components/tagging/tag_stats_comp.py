@@ -10,12 +10,12 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def _tags_for_rel(db: Database, rel: str) -> list[dict[str, Any]]:
-    """Return all tags for one relation."""
+def _tags_for_name(db: Database, name: str) -> list[dict[str, Any]]:
+    """Return all tags for one tag name."""
     total = db.tags.count()
     if total <= 0:
         return []
-    return db.tags.rel.get.many(rel, limit=total)
+    return db.tags.name.get.many(name, limit=total)
 
 
 def _all_library_files(db: Database) -> list[dict[str, Any]]:
@@ -103,27 +103,27 @@ def _coerce_sum_value(value: Any) -> float:
     return 0.0
 
 
-def get_unique_rels(db: Database, nomarr_only: bool = False) -> list[str]:
-    """Return all unique tag rel values."""
-    rels = [str(value) for value in db.tags.rel.collect(limit=db.tags.count())]
+def get_unique_names(db: Database, nomarr_only: bool = False) -> list[str]:
+    """Return all unique tag name values."""
+    names = [str(value) for value in db.tags.name.collect(limit=db.tags.count())]
     if nomarr_only:
-        rels = [rel for rel in rels if rel.startswith("nom:")]
-    return rels
+        names = [name for name in names if name.startswith("nom:")]
+    return names
 
 
-def get_tag_value_counts(db: Database, rel: str) -> dict[Any, int]:
-    """Return value → song-count mapping for one relation."""
+def get_tag_value_counts(db: Database, name: str) -> dict[Any, int]:
+    """Return value → song-count mapping for one tag name."""
     counts_raw = db.song_has_tags._to.aggregate()
     count_by_tag_id = {row["value"]: row["count"] for row in counts_raw}
     return {
         tag["value"]: count_by_tag_id.get(tag_id, 0)
-        for tag in _tags_for_rel(db, rel)
+        for tag in _tags_for_name(db, name)
         if isinstance(tag_id := tag.get("_id"), str) and "value" in tag
     }
 
 
 def get_all_tag_stats_batched(db: Database) -> dict[str, dict[str, Any]]:
-    """Return summary stats for all tag relations in one query."""
+    """Return summary stats for all tag names in one query."""
     result: dict[str, dict[str, Any]] = {}
     total_tags = db.tags.count()
     if total_tags <= 0:
@@ -132,11 +132,11 @@ def get_all_tag_stats_batched(db: Database) -> dict[str, dict[str, Any]]:
     counts_raw = db.song_has_tags._to.aggregate()
     count_by_tag_id = {row["value"]: row["count"] for row in counts_raw}
 
-    for rel_value in db.tags.rel.collect(limit=total_tags):
-        rel = str(rel_value)
+    for name_value in db.tags.name.collect(limit=total_tags):
+        name = str(name_value)
         values: dict[Any, int] = {
             tag["value"]: count_by_tag_id.get(tag_id, 0)
-            for tag in db.tags.rel.get.many(rel, limit=total_tags)
+            for tag in db.tags.name.get.many(name, limit=total_tags)
             if isinstance(tag_id := tag.get("_id"), str) and "value" in tag
         }
         total_count = sum(values.values())
@@ -158,7 +158,7 @@ def get_all_tag_stats_batched(db: Database) -> dict[str, dict[str, Any]]:
             )
         else:
             summary = f"unique={len(values)}"
-        result[rel] = {
+        result[name] = {
             "type": tag_type,
             "is_multivalue": len(values) > 1,
             "summary": summary,
@@ -174,12 +174,12 @@ def get_tag_frequencies(db: Database, limit: int, namespace_prefix: str) -> dict
     genre_counts: defaultdict[str, int] = defaultdict(int)
 
     if total_tags > 0:
-        for rel_value in db.tags.rel.collect(limit=total_tags):
-            rel = str(rel_value)
-            if not rel.startswith("nom:"):
+        for name_value in db.tags.name.collect(limit=total_tags):
+            name = str(name_value)
+            if not name.startswith("nom:"):
                 continue
-            key_part = rel.removeprefix(namespace_prefix)
-            for tag in db.tags.rel.get.many(rel, limit=total_tags):
+            key_part = name.removeprefix(namespace_prefix)
+            for tag in db.tags.name.get.many(name, limit=total_tags):
                 tag_id = tag.get("_id")
                 if not isinstance(tag_id, str) or "value" not in tag:
                     continue
@@ -188,7 +188,7 @@ def get_tag_frequencies(db: Database, limit: int, namespace_prefix: str) -> dict
                     continue
                 nom_counts[f"{key_part}:{tag['value']}"] += song_count
 
-        for tag in db.tags.get.many.by_filter({"rel": "genre"}, limit=total_tags):
+        for tag in db.tags.get.many.by_filter({"name": "genre"}, limit=total_tags):
             tag_id = tag.get("_id")
             genre_value = tag.get("value")
             if not isinstance(tag_id, str) or not isinstance(genre_value, str):
@@ -234,7 +234,7 @@ def get_year_distribution(db: Database, library_id: str | None = None) -> list[d
     library_file_ids = _library_file_ids(db, library_id)
     edge_limit = db.song_has_tags.count() if library_file_ids is not None else 0
     rows: list[dict[str, Any]] = []
-    for tag in db.tags.get.many.by_filter({"rel": "year"}, limit=total_tags):
+    for tag in db.tags.get.many.by_filter({"name": "year"}, limit=total_tags):
         tag_id = tag.get("_id")
         if not isinstance(tag_id, str) or "value" not in tag:
             continue
@@ -266,7 +266,7 @@ def get_genre_distribution(
     library_file_ids = _library_file_ids(db, library_id)
     edge_limit = db.song_has_tags.count() if library_file_ids is not None else 0
     rows: list[dict[str, Any]] = []
-    for tag in db.tags.get.many.by_filter({"rel": "genre"}, limit=total_tags):
+    for tag in db.tags.get.many.by_filter({"name": "genre"}, limit=total_tags):
         tag_id = tag.get("_id")
         genre_value = tag.get("value")
         if not isinstance(tag_id, str) or not isinstance(genre_value, str):

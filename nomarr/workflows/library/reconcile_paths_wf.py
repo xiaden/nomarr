@@ -60,6 +60,8 @@ def reconcile_library_paths_workflow(
     logger.info(f"[reconcile_paths] Starting reconciliation: policy={policy}, batch_size={batch_size}")
     result = reconcile_library_paths(db=db, library_id=library_id, policy=policy, batch_size=batch_size)
     logger.info(
-        f"[reconcile_paths] Reconciliation complete: {result['total_files']} files checked, {result['valid_files']} valid, {result['deleted_files']} deleted"
+        f"[reconcile_paths] Reconciliation complete: "
+        f"{result['total_files']} files checked, {result['valid_files']} valid, "
+        f"{result['deleted_files']} deleted"
     )
     return result

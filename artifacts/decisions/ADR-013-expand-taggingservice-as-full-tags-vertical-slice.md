@@ -51,8 +51,8 @@ Expand the existing `TaggingService` to own the full tags vertical slice — fil
 - `rename_tag(tag_id, new_value) → RenameResult`
 - `merge_tags(source_tag_ids, canonical_tag_id) → MergeResult`
 - `split_tag(source_tag_id, song_ids, new_value) → SplitResult`
-- `update_file_tags(file_id, rel, values) → FileTagsResult`
-- `list_tag_values(rel, prefix, limit, offset) → TagListResult`
+- `update_file_tags(file_id, name, values) → FileTagsResult`
+- `list_tag_values(name, prefix, limit, offset) → TagListResult`
 - `get_tag_songs(tag_id, limit, offset) → list[dict]`
 
 **Supersedes ADR-007** which placed tag editing in LibraryService via mixin.

@@ -39,7 +39,7 @@ def rebuild_song_metadata_cache(db: Database, song_id: str) -> None:
     # Fetch all tags for this song as a dict
     tags_dict = get_song_tags(db, song_id).to_dict()
 
-    # Extract metadata from tags (using rel names directly)
+    # Extract metadata from tags (using name names directly)
     # to_dict() returns tuple | Iterable, so cast to list
     artists_raw = [str(v) for v in tags_dict.get("artists", [])]
     artist_raw = [str(v) for v in tags_dict.get("artist", [])]

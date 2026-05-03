@@ -139,17 +139,26 @@ DYNAMIC_FIELD_META: dict[str, FieldMeta] = {
     },
     "m3u_output_path": {
         "label": "M3U Output Path",
-        "description": "Directory path (relative to library root) where M3U playlist files are saved. Leave empty to disable M3U file output.",
+        "description": (
+            "Directory path (relative to library root) where M3U playlist files are "
+            "saved. Leave empty to disable M3U file output."
+        ),
         "ui_type": "text",
     },
     "vector_group_size": {
         "label": "Songs per Neighborhood",
-        "description": "Target number of songs in each similarity neighborhood (5-100). Lower values create more precise groupings but may slow index rebuilds.",
+        "description": (
+            "Target number of songs in each similarity neighborhood (5-100). "
+            "Lower values create more precise groupings but may slow index rebuilds."
+        ),
         "ui_type": "number",
     },
     "vector_search_thoroughness": {
         "label": "Search Thoroughness (%)",
-        "description": "Percentage of neighborhoods to scan per search (1-100). Higher values improve recall at the cost of latency.",
+        "description": (
+            "Percentage of neighborhoods to scan per search (1-100). "
+            "Higher values improve recall at the cost of latency."
+        ),
         "ui_type": "number",
     },
     # -- Personal playlists --

@@ -434,7 +434,8 @@ def collect_field(
     limit: int | None = None,
     offset: int = 0,
 ) -> list[Any]:
-    """Distinct values of field across collection, optionally narrowed by a multi-field equality ``filter`` passed to ``build_equality_filter``."""
+    """Distinct values of field across collection, optionally narrowed by a
+    multi-field equality ``filter`` passed to ``build_equality_filter``."""
     filter_fragment, filter_vars = build_equality_filter(filter or {})
     query_lines = ["FOR doc IN @@col"]
     if filter_fragment:
@@ -462,7 +463,8 @@ def aggregate_field(
     limit: int | None = None,
     offset: int = 0,
 ) -> list[AggResult]:
-    """Distinct values with occurrence counts, optionally narrowed by a multi-field equality ``filter`` passed to ``build_equality_filter``."""
+    """Distinct values with occurrence counts, optionally narrowed by a
+    multi-field equality ``filter`` passed to ``build_equality_filter``."""
     filter_fragment, filter_vars = build_equality_filter(filter or {})
     query_lines = ["FOR doc IN @@col"]
     if filter_fragment:
@@ -731,7 +733,8 @@ _EDGE_BATCH = 2_000
 
 
 def move_collection(db: SafeDatabase, source: str, dest: str) -> int:
-    """Move all documents from ``source`` to ``dest``, re-pointing every edge, then removing only the copied documents from source.
+    """Move all documents from ``source`` to ``dest``, re-pointing every edge,
+    then removing only the copied documents from source.
 
     Discovers all non-system edge collections at runtime via AQL — no hardcoded
     names. UPSERT semantics on ``_key`` make the document copy idempotent.
@@ -773,7 +776,8 @@ def move_collection(db: SafeDatabase, source: str, dest: str) -> int:
     while True:
         cursor = _execute_aql(
             db,
-            "FOR doc IN @@src SORT doc._key LIMIT @offset, @batch UPSERT {_key: doc._key} INSERT doc UPDATE doc IN @@dest RETURN 1",
+            "FOR doc IN @@src SORT doc._key LIMIT @offset, @batch "
+            "UPSERT {_key: doc._key} INSERT doc UPDATE doc IN @@dest RETURN 1",
             bind_vars={"@src": source, "@dest": dest, "offset": doc_offset, "batch": _EDGE_BATCH},
         )
         copied = sum(1 for _ in cursor)
@@ -804,9 +808,14 @@ def move_collection(db: SafeDatabase, source: str, dest: str) -> int:
                     FILTER STARTS_WITH(e._from, @src) OR STARTS_WITH(e._to, @src)
                     SORT e._key
                     LIMIT @offset, @batch
-                    LET new_from = STARTS_WITH(e._from, @src) ? CONCAT(@dest, SUBSTRING(e._from, LENGTH(@src))) : e._from
+                    LET new_from = STARTS_WITH(e._from, @src)
+                        ? CONCAT(@dest, SUBSTRING(e._from, LENGTH(@src)))
+                        : e._from
                     LET new_to   = STARTS_WITH(e._to,   @src) ? CONCAT(@dest, SUBSTRING(e._to,   LENGTH(@src))) : e._to
-                    INSERT MERGE(UNSET(e, '_id', '_rev', '_from', '_to'), {_key: CONCAT("mv_", e._key), _from: new_from, _to: new_to}) IN @@ec OPTIONS {overwriteMode: "replace"}
+                    INSERT MERGE(
+                        UNSET(e, '_id', '_rev', '_from', '_to'),
+                        {_key: CONCAT("mv_", e._key), _from: new_from, _to: new_to}
+                    ) IN @@ec OPTIONS {overwriteMode: "replace"}
                     RETURN 1
                 """,
                 bind_vars={
@@ -831,7 +840,9 @@ def move_collection(db: SafeDatabase, source: str, dest: str) -> int:
         while True:
             cursor = _execute_aql(
                 db,
-                "FOR e IN @@ec FILTER STARTS_WITH(e._from, @src) OR STARTS_WITH(e._to, @src) LIMIT @batch REMOVE e IN @@ec RETURN 1",
+                "FOR e IN @@ec "
+                "FILTER STARTS_WITH(e._from, @src) OR STARTS_WITH(e._to, @src) "
+                "LIMIT @batch REMOVE e IN @@ec RETURN 1",
                 bind_vars={"@ec": edge_name, "src": src_prefix, "batch": _EDGE_BATCH},
             )
             if sum(1 for _ in cursor) == 0:
@@ -846,7 +857,9 @@ def move_collection(db: SafeDatabase, source: str, dest: str) -> int:
     while True:
         cursor = _execute_aql(
             db,
-            "FOR doc IN @@dest SORT doc._key LIMIT @offset, @batch FILTER DOCUMENT(@@src, doc._key) != null REMOVE {_key: doc._key} IN @@src RETURN 1",
+            "FOR doc IN @@dest SORT doc._key LIMIT @offset, @batch "
+            "FILTER DOCUMENT(@@src, doc._key) != null "
+            "REMOVE {_key: doc._key} IN @@src RETURN 1",
             bind_vars={"@dest": dest, "@src": source, "offset": del_offset, "batch": _EDGE_BATCH},
         )
         removed = sum(1 for _ in cursor)

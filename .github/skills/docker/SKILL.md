@@ -84,7 +84,7 @@ foreach ($q in $queries) {
 
 - `libraries` — library config and scan state
 - `library_files` — scanned audio files (one doc per file)
-- `tags` — tag vertices `{rel, value}` (e.g. `{rel: "artist", value: "Beatles"}`)
+- `tags` — tag vertices `{name, value}` (e.g. `{name: "artist", value: "Beatles"}`)
 - `song_has_tags` — edges `library_files/*` → `tags/*`
 - `library_folders` — folder-level cache for quick scan skipping
 - `calibration_state`, `calibration_history` — calibration data
@@ -103,7 +103,7 @@ RETURN COLLECTIONS()[*].name
 RETURN LENGTH(library_files)
 
 -- Unique tag rels
-FOR t IN tags COLLECT rel = t.rel WITH COUNT INTO c SORT c DESC RETURN {rel, c}
+FOR t IN tags COLLECT name = t.name WITH COUNT INTO c SORT c DESC RETURN {name, c}
 
 -- Sample edges
 FOR edge IN song_has_tags LIMIT 3 RETURN { from: edge._from, to: edge._to }

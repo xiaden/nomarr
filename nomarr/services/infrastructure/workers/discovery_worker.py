@@ -92,16 +92,16 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
     try:
         parsed_nom_tags = parse_tag_values(writes.db_tags) if writes.db_tags else {}
         prefixed_nom_tags = {
-            (f"nom:{rel}" if not rel.startswith("nom:") else rel): values for rel, values in parsed_nom_tags.items()
+            (f"nom:{name}" if not name.startswith("nom:") else name): values for name, values in parsed_nom_tags.items()
         }
         save_file_tags(db, file_id, prefixed_nom_tags)
         if writes.ml_edges:
             output_edges = writes.ml_edges.output_edges
-            pairs = [(rel, score) for rel, (_, score) in output_edges.items()]
+            pairs = [(name, score) for name, (_, score) in output_edges.items()]
             tag_ids = resolve_tag_ids(db, pairs)
             edge_tuples: list[tuple[str, str, float]] = []
-            for tag_rel, (output_id, score) in output_edges.items():
-                tag_id = tag_ids.get((tag_rel, score))
+            for tag_name, (output_id, score) in output_edges.items():
+                tag_id = tag_ids.get((tag_name, score))
                 if tag_id is not None:
                     edge_tuples.append((tag_id, output_id, score))
             if edge_tuples:

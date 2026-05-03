@@ -92,19 +92,19 @@ def _extract_matching_head_keys(
     matched_heads: list[str] = []
     seen_heads: set[str] = set()
     for tag in tags:
-        rel = tag.get("rel")
-        if not isinstance(rel, str) or not rel.startswith(namespace_prefix):
+        name = tag.get("name")
+        if not isinstance(name, str) or not name.startswith(namespace_prefix):
             continue
-        rel_without_prefix = rel[4:]
-        first_underscore = rel_without_prefix.find("_")
-        label = rel_without_prefix[:first_underscore] if first_underscore >= 0 else rel_without_prefix
+        name_without_prefix = name[4:]
+        first_underscore = name_without_prefix.find("_")
+        label = name_without_prefix[:first_underscore] if first_underscore >= 0 else name_without_prefix
         for expected in expected_heads:
             head_key = expected.get("head_key")
             labels = expected.get("labels", [])
             model_key_for_tag = expected.get("model_key_for_tag")
             if not isinstance(head_key, str) or not isinstance(model_key_for_tag, str):
                 continue
-            if label not in labels or model_key_for_tag not in rel_without_prefix or head_key in seen_heads:
+            if label not in labels or model_key_for_tag not in name_without_prefix or head_key in seen_heads:
                 continue
             matched_heads.append(head_key)
             seen_heads.add(head_key)
@@ -156,7 +156,8 @@ def discover_next_untagged_file(
         exclude_claimed: When ``True``, skips files that already have a ``worker_claims`` entry; defaults to ``True``.
 
     Returns:
-        A single library-file document dict, or ``None`` if no eligible file exists; files in ``too_short`` or ``errored`` states are always excluded.
+        A single library-file document dict, or ``None`` if no eligible file exists;
+            files in ``too_short`` or ``errored`` states are always excluded.
     """
     untagged_files = _state_file_docs(db, STATE_NOT_TAGGED)
     candidate_ids = {doc["_id"] for doc in untagged_files}
@@ -275,13 +276,16 @@ def get_files_with_incomplete_tags(
     """Return tagged files missing one or more expected model heads.
 
     Args:
-        db: Database handle used to inspect tagged files and their tag relations.
-        expected_heads: List of dicts where each item defines ``head_key``, ``labels``, and ``model_key_for_tag`` for one expected model head.
-        namespace_prefix: Tag relation prefix used to identify model-generated tags, such as ``"nom:"``.
+        db: Database handle used to inspect tagged files and their tag names.
+        expected_heads: List of dicts where each item defines ``head_key``,
+            ``labels``, and ``model_key_for_tag`` for one expected model head.
+        namespace_prefix: Tag name prefix used to identify model-generated tags, such as ``"nom:"``.
         library_id: Optional library ``_id`` used to restrict the scan to one library.
 
     Returns:
-        List of dicts with ``file_id``, ``file_key``, ``library_id``, ``matched_count``, ``missing_count``, and ``missing_heads`` for each tagged file missing one or more expected heads.
+        List of dicts with ``file_id``, ``file_key``, ``library_id``,
+            ``matched_count``, ``missing_count``, and ``missing_heads`` for each
+            tagged file missing one or more expected heads.
     """
     tagged_files = _state_file_docs(db, STATE_TAGGED)
     normalized_library_id = _normalize_library_id(library_id) if library_id is not None else None
@@ -293,7 +297,7 @@ def get_files_with_incomplete_tags(
         db.library_files.traversal.by_ids(
             file_ids,
             "song_has_tags",
-            target_like_starts_with=("rel", namespace_prefix),
+            target_like_starts_with=("name", namespace_prefix),
         )
         if file_ids
         else []

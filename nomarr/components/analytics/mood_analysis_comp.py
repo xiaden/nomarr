@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 _PAGE_SIZE = 1000
-_MOOD_TAG_RELS = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
+_MOOD_TAG_NAMES = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
 _MOOD_TIER_MAP = {"strict": "nom:mood-strict", "regular": "nom:mood-regular", "loose": "nom:mood-loose"}
 
 
@@ -44,12 +44,12 @@ def _get_library_file_ids(db: Database, library_id: str | None) -> set[str] | No
     return file_ids
 
 
-def _get_tag_docs_for_rel(db: Database, rel: str) -> list[dict[str, Any]]:
-    """Return all tag documents for one relation via constructor verbs."""
+def _get_tag_docs_for_name(db: Database, name: str) -> list[dict[str, Any]]:
+    """Return all tag documents for one tag name via constructor verbs."""
     tags: list[dict[str, Any]] = []
     offset = 0
     while True:
-        tag_page = db.tags.rel.get.many(rel, limit=_PAGE_SIZE, offset=offset)
+        tag_page = db.tags.name.get.many(name, limit=_PAGE_SIZE, offset=offset)
         if not tag_page:
             break
         tags.extend(tag_page)
@@ -60,11 +60,11 @@ def _get_tag_docs_for_rel(db: Database, rel: str) -> list[dict[str, Any]]:
     return tags
 
 
-def _get_tag_edge_rows(db: Database, rel: str, library_id: str | None = None) -> list[tuple[str, str]]:
-    """Return ``(file_id, tag_value)`` rows for one tag relation."""
+def _get_tag_edge_rows(db: Database, name: str, library_id: str | None = None) -> list[tuple[str, str]]:
+    """Return ``(file_id, tag_value)`` rows for one tag name."""
     library_file_ids = _get_library_file_ids(db, library_id)
 
-    tag_docs = _get_tag_docs_for_rel(db, rel)
+    tag_docs = _get_tag_docs_for_name(db, name)
     tag_id_to_value: dict[str, str] = {}
     for tag_doc in tag_docs:
         tag_id = tag_doc.get("_id")
@@ -75,7 +75,7 @@ def _get_tag_edge_rows(db: Database, rel: str, library_id: str | None = None) ->
     if not tag_id_to_value:
         return []
 
-    # Fetch all song→tag edges for the entire relation in a single IN query.
+    # Fetch all song→tag edges for the entire tag name in a single IN query.
     edge_docs = db.song_has_tags._to.get.in_(list(tag_id_to_value))
     rows: list[tuple[str, str]] = []
     for edge_doc in edge_docs:
@@ -91,22 +91,22 @@ def _get_tag_edge_rows(db: Database, rel: str, library_id: str | None = None) ->
 
 
 def _get_tier_tag_keys(db: Database) -> list[str]:
-    """Return all distinct Nomarr tier relation names."""
+    """Return all distinct Nomarr tier tag names."""
     tier_tag_keys: list[str] = []
     seen: set[str] = set()
     offset = 0
     while True:
-        rel_page = db.tags.rel.collect(limit=_PAGE_SIZE, offset=offset)
-        if not rel_page:
+        name_page = db.tags.name.collect(limit=_PAGE_SIZE, offset=offset)
+        if not name_page:
             break
-        for rel_value in rel_page:
-            rel = str(rel_value)
-            if rel.startswith("nom:") and rel.endswith("_tier") and rel not in seen:
-                seen.add(rel)
-                tier_tag_keys.append(rel)
-        if len(rel_page) < _PAGE_SIZE:
+        for name_value in name_page:
+            name = str(name_value)
+            if name.startswith("nom:") and name.endswith("_tier") and name not in seen:
+                seen.add(name)
+                tier_tag_keys.append(name)
+        if len(name_page) < _PAGE_SIZE:
             break
-        offset += len(rel_page)
+        offset += len(name_page)
 
     return tier_tag_keys
 
@@ -139,20 +139,20 @@ def get_mood_and_tier_tags_for_correlation(db: Database) -> dict[str, Any]:
 
     Returns:
         A dictionary with three keys: ``mood_tag_rows`` containing ``(song_id,
-        tag_value)`` tuples for all mood-tag relations across the strict,
-        regular, and loose mood tiers; ``tier_tag_keys`` containing the tier tag
-        relation names discovered in ``tags``; and ``tier_tag_rows`` containing
-        a mapping from each tier relation name to its own list of ``(song_id,
+        tag_value)`` tuples for all mood-tag names across the strict,
+        regular, and loose mood tiers; ``tier_tag_keys`` containing the tier
+        tag names discovered in ``tags``; and ``tier_tag_rows`` containing
+        a mapping from each tier tag name to its own list of ``(song_id,
         tag_value)`` tuples.
     """
     mood_tag_rows: list[tuple[str, str]] = []
-    for rel in _MOOD_TAG_RELS:
-        mood_tag_rows.extend(_get_tag_edge_rows(db, rel))
+    for name in _MOOD_TAG_NAMES:
+        mood_tag_rows.extend(_get_tag_edge_rows(db, name))
 
     tier_tag_keys = _get_tier_tag_keys(db)
     tier_tag_rows: dict[str, list[tuple[str, str]]] = {}
-    for tier_rel in tier_tag_keys:
-        tier_tag_rows[tier_rel] = _get_tag_edge_rows(db, tier_rel)
+    for tier_name in tier_tag_keys:
+        tier_tag_rows[tier_name] = _get_tag_edge_rows(db, tier_name)
 
     return {"mood_tag_rows": mood_tag_rows, "tier_tag_keys": tier_tag_keys, "tier_tag_rows": tier_tag_rows}
 
@@ -166,13 +166,13 @@ def get_mood_distribution_data(db: Database, library_id: str | None = None) -> l
             tags attached to files contained in that library are included.
 
     Returns:
-        A list of ``(mood_rel, tag_value)`` tuples. ``mood_rel`` is one of
+        A list of ``(mood_name, tag_value)`` tuples. ``mood_name`` is one of
         ``"nom:mood-strict"``, ``"nom:mood-regular"``, or
         ``"nom:mood-loose"``, and ``tag_value`` is the stored mood tag value for
         one matching song-tag edge.
     """
     mood_rows: list[tuple[str, str]] = []
-    for mood_type in _MOOD_TAG_RELS:
+    for mood_type in _MOOD_TAG_NAMES:
         mood_rows.extend((mood_type, tag_value) for _, tag_value in _get_tag_edge_rows(db, mood_type, library_id))
     return mood_rows
 
@@ -204,8 +204,8 @@ def get_mood_coverage(db: Database, library_id: str | None = None) -> dict[str, 
         }
 
     tiers: dict[str, dict[str, Any]] = {}
-    for tier_name, rel in _MOOD_TIER_MAP.items():
-        tagged_count = len({file_id for file_id, _ in _get_tag_edge_rows(db, rel, library_id)})
+    for tier_name, name in _MOOD_TIER_MAP.items():
+        tagged_count = len({file_id for file_id, _ in _get_tag_edge_rows(db, name, library_id)})
         tiers[tier_name] = {
             "tagged": tagged_count,
             "percentage": round((tagged_count / total_files) * 100, 1) if total_files > 0 else 0.0,
@@ -229,8 +229,8 @@ def get_mood_balance(db: Database, library_id: str | None = None) -> dict[str, l
         single parsed mood value.
     """
     result: dict[str, list[dict[str, Any]]] = {}
-    for tier_name, rel in _MOOD_TIER_MAP.items():
-        mood_values = [mood_value for _, mood_value in _get_tag_edge_rows(db, rel, library_id)]
+    for tier_name, name in _MOOD_TIER_MAP.items():
+        mood_values = [mood_value for _, mood_value in _get_tag_edge_rows(db, name, library_id)]
         result[tier_name] = _count_moods(mood_values)
     return result
 
@@ -263,10 +263,10 @@ def get_top_mood_pairs(
         "regular": ["nom:mood-strict", "nom:mood-regular"],
         "loose": ["nom:mood-strict", "nom:mood-regular", "nom:mood-loose"],
     }
-    rels = tier_hierarchy.get(mood_tier, ["nom:mood-strict"])
+    names = tier_hierarchy.get(mood_tier, ["nom:mood-strict"])
     moods_by_song: dict[str, set[str]] = {}
-    for rel in rels:
-        for file_id, mood_value in _get_tag_edge_rows(db, rel, library_id):
+    for name in names:
+        for file_id, mood_value in _get_tag_edge_rows(db, name, library_id):
             if not mood_value:
                 continue
             moods_by_song.setdefault(file_id, set()).add(mood_value)

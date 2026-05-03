@@ -19,7 +19,7 @@ from nomarr.components.navidrome.tag_query_comp import (
     find_files_matching_tag,
     resolve_short_to_versioned_keys,
 )
-from nomarr.helpers.dto.navidrome_dto import STANDARD_TAG_RELS
+from nomarr.helpers.dto.navidrome_dto import STANDARD_TAG_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ def _resolve_tag_key(db: Database, tag_key: str) -> list[str]:
     raw_key = tag_key.removeprefix("nom:")
 
     # Standard tags (artist, album, year, etc.) - no prefix needed
-    if raw_key in STANDARD_TAG_RELS:
+    if raw_key in STANDARD_TAG_NAMES:
         return [raw_key]
 
     # Check if this looks like a short name (nom-something or nom_something)
@@ -151,18 +151,18 @@ def _execute_single_condition(db: Database, condition: TagCondition) -> set[str]
     # Union results from all resolved keys
     all_matching: set[str] = set()
 
-    for rel in storage_keys:
+    for name in storage_keys:
         if condition.operator == "contains":
             file_ids = find_files_matching_tag(
                 db,
-                rel=rel,
+                name=name,
                 operator="CONTAINS",
                 value=str(condition.value),
             )
         elif condition.operator == "notcontains":
             file_ids = find_files_matching_tag(
                 db,
-                rel=rel,
+                name=name,
                 operator="NOTCONTAINS",
                 value=str(condition.value),
             )
@@ -170,7 +170,7 @@ def _execute_single_condition(db: Database, condition: TagCondition) -> set[str]
             # Numeric comparison query
             file_ids = find_files_matching_tag(
                 db,
-                rel=rel,
+                name=name,
                 operator=condition.operator,
                 value=condition.value,
             )

@@ -11,7 +11,7 @@ import type { FileTag } from "./files";
 
 export interface TagValueItem {
   id: string;
-  rel: string;
+  name: string;
   value: string;
   song_count: number;
 }
@@ -208,11 +208,11 @@ export async function fetchPendingCount(): Promise<number> {
  */
 export async function updateFileTags(
   fileId: string,
-  rel: string,
+  name: string,
   values: string[]
 ): Promise<UpdateFileTagsResult> {
   return patch(
     `/api/web/tag-curation/file/${encodeURIComponent(fileId)}/tag`,
-    { rel, values }
+    { name, values }
   );
 }

@@ -18,17 +18,17 @@ from dataclasses import dataclass
 class MLEdgeWrites:
     """Payload for writing tag→output edges to the tag_model_output collection.
 
-    Carries the mapping from tag rel-key to ``(output_id, raw_score)`` pairs
+    Carries the mapping from tag name-key to ``(output_id, raw_score)`` pairs
     collected during ML inference.  Separated from :class:`DeferredFileWrites`
     so that generic per-file write DTOs carry no dependency on ML graph
     concepts.
 
     Attributes:
-        output_edges: Mapping of tag rel-key (e.g. ``"nom:mood-strict"``) to
+        output_edges: Mapping of tag name-key (e.g. ``"nom:mood-strict"``) to
             a ``(output_id, raw_score)`` tuple, where *output_id* is the
             ArangoDB ``_id`` of the ``ml_model_outputs`` vertex and *raw_score*
             is the activation score that produced this tag.
 
     """
 
-    output_edges: dict[str, tuple[str, float]]  # tag_rel -> (output_id, raw_score)
+    output_edges: dict[str, tuple[str, float]]  # tag_name -> (output_id, raw_score)

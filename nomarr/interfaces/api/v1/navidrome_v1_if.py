@@ -185,7 +185,8 @@ async def navidrome_generate_playlists(
 ) -> GeneratePlaylistsResponse:
     """Generate personal playlists for a Navidrome user."""
     logger.info(
-        "[navidrome] playlist/generate request: user_id=%s enabled_types=%s max_songs=%s min_songs=%s max_genre_playlists=%s",
+        "[navidrome] playlist/generate request: "
+        "user_id=%s enabled_types=%s max_songs=%s min_songs=%s max_genre_playlists=%s",
         body.user_id,
         body.enabled_types,
         body.max_songs,

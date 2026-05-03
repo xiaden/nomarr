@@ -465,7 +465,7 @@ class ValidateLibraryTagsResponse(BaseModel):
     incomplete_files: int
     files_repaired: int
     expected_heads: int
-    missing_rels_summary: dict[str, int]
+    missing_names_summary: dict[str, int]
 
 
 class ErroredFileItemResponse(BaseModel):

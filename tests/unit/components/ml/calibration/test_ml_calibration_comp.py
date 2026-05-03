@@ -20,7 +20,7 @@ class TestGetSparseHistogram:
             "backbone": "ast",
             "embedder_release_date": "2026-01-01",
         }
-        mock_db.tags.rel.collect.return_value = [
+        mock_db.tags.name.collect.return_value = [
             "nom:happy_sigmoid_ast20260101",
             "nom:sad_sigmoid_ast20260101",
             "genre",
@@ -48,9 +48,9 @@ class TestGetSparseHistogram:
             {"min_val": 0.1, "count": 2, "underflow_count": 0, "overflow_count": 0},
             {"min_val": 0.9, "count": 1, "underflow_count": 0, "overflow_count": 1},
         ]
-        mock_db.tags.rel.collect.assert_called_once_with(limit=10000)
+        mock_db.tags.name.collect.assert_called_once_with(limit=10000)
         mock_db.tags.get.many.by_filter.assert_called_once_with(
-            {"rel": "nom:happy_sigmoid_ast20260101"},
+            {"name": "nom:happy_sigmoid_ast20260101"},
             limit=50000,
         )
 
@@ -62,4 +62,4 @@ class TestGetSparseHistogram:
         result = get_sparse_histogram(mock_db, model_id="ml_models/missing", label="happy")
 
         assert result == []
-        mock_db.tags.rel.collect.assert_not_called()
+        mock_db.tags.name.collect.assert_not_called()

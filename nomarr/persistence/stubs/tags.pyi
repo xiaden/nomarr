@@ -35,7 +35,7 @@ class TagsNamespace(Protocol):
     get: CollectionGetProtocol
     _key: Any
     _id: Any
-    rel: TagsRelNamespace
+    name: TagsRelNamespace
     value: TagsValueNamespace
 
     def count(self) -> int: ...

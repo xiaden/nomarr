@@ -10,11 +10,11 @@ from nomarr.persistence.models.base import ArangoDocument, ArangoEdge
 class Tag(ArangoDocument):
     """Tag vertex document.
 
-    Represents a tag in the unified tag schema (rel, value pairs).
+    Represents a tag in the unified tag schema (name, value pairs).
     Examples: genre/rock, year/2023, mood/energetic
     """
 
-    rel: str = Field(..., description="Tag relation type (e.g., 'genre', 'year', 'mood')")
+    name: str = Field(..., description="Tag relation type (e.g., 'genre', 'year', 'mood')")
     value: str | int | float | bool = Field(..., description="Tag value")
 
 

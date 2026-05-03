@@ -46,7 +46,7 @@ class CommitRequest(BaseModel):
 
 
 class UpdateFileTagsRequest(BaseModel):
-    rel: str
+    name: str
     values: list[str]
 
 
@@ -133,7 +133,7 @@ async def split_tag(
 @router.get("/value", dependencies=[Depends(verify_session)])
 async def list_tag_values(
     tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
-    rel: Annotated[str | None, Query(description="Filter by tag rel (e.g. genre)")] = None,
+    name: Annotated[str | None, Query(description="Filter by tag name (e.g. genre)")] = None,
     prefix: Annotated[str | None, Query(description="Substring search on tag value")] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -142,7 +142,7 @@ async def list_tag_values(
     try:
         result = await asyncio.to_thread(
             tagging_service.list_tag_values,
-            rel=rel,
+            name=name,
             prefix=prefix,
             limit=limit,
             offset=offset,
@@ -234,13 +234,13 @@ async def update_file_tags(
     request: UpdateFileTagsRequest,
     tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
 ) -> dict[str, Any]:
-    """Replace all tags for a file+rel with new values."""
+    """Replace all tags for a file+name with new values."""
     file_id = decode_path_id(file_id)
     try:
         return await asyncio.to_thread(
             tagging_service.update_file_tags,
             file_id=file_id,
-            rel=request.rel,
+            name=request.name,
             values=request.values,
         )
     except ValueError as e:

@@ -12,7 +12,7 @@ Persistence is the **data access layer**:
 
 - `Database` class owns the connection and exposes collection namespaces
 - `constructor/` builds `*Namespace` objects dynamically from the collection schema
-- External code accesses via constructor-backed namespaces: `db.tags.rel.get.many(...)`, `db.library_files.path.get(...)`
+- External code accesses via constructor-backed namespaces: `db.tags.name.get.many(...)`, `db.library_files.path.get(...)`
 - Returns [DTOs defined in helpers](./helpers.instructions.md)
 
 ---
@@ -83,7 +83,7 @@ External code **never** imports from `persistence/database/` directly:
 def some_workflow(db: Database):
     # Field accessor chain: db.<collection>.<field>.get(value)
     file = db.library_files.path.get("/music/track.flac")
-    tags = db.tags.rel.get.many("genre", limit=100, offset=0)
+    tags = db.tags.name.get.many("genre", limit=100, offset=0)
 
     # Collection-level verbs
     db.library_files.insert([{"path": "/music/track.flac", ...}])

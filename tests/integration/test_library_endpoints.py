@@ -93,7 +93,7 @@ class TestLibraryEndpoints:
             "incomplete_files": 0,
             "files_repaired": 0,
             "expected_heads": 0,
-            "missing_rels_summary": {},
+            "missing_names_summary": {},
         }
 
         response = client.post("/api/web/library/libraries:test_lib/validate-tag")
@@ -105,7 +105,7 @@ class TestLibraryEndpoints:
             "incomplete_files": 0,
             "files_repaired": 0,
             "expected_heads": 0,
-            "missing_rels_summary": {},
+            "missing_names_summary": {},
         }
         mock_library_service.validate_library_tags.assert_called_once_with(
             library_id="libraries/test_lib",

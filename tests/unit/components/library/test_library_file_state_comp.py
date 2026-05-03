@@ -528,9 +528,9 @@ class TestIncompleteTags:
         ]
         mock_db.file_states.traversal.return_value = [{"_id": "library_files/1", "_key": "1"}]
         mock_db.library_files.traversal.by_ids.return_value = [
-            {"start_id": "library_files/1", "v": {"rel": "nom:mood_modelA_happy"}},
-            {"start_id": "library_files/1", "v": {"rel": "nom:energy_modelB_high"}},
-            {"start_id": "library_files/1", "v": {"rel": "nom:energy_other_model"}},
+            {"start_id": "library_files/1", "v": {"name": "nom:mood_modelA_happy"}},
+            {"start_id": "library_files/1", "v": {"name": "nom:energy_modelB_high"}},
+            {"start_id": "library_files/1", "v": {"name": "nom:energy_other_model"}},
         ]
 
         result = get_files_with_incomplete_tags(mock_db, expected_heads, namespace_prefix="nom:")
@@ -548,7 +548,7 @@ class TestIncompleteTags:
         mock_db.library_files.traversal.by_ids.assert_called_once_with(
             ["library_files/1"],
             "song_has_tags",
-            target_like_starts_with=("rel", "nom:"),
+            target_like_starts_with=("name", "nom:"),
         )
 
     @pytest.mark.unit
@@ -564,7 +564,7 @@ class TestIncompleteTags:
         ]
         mock_db.library_contains_file._from.get.many.return_value = [{"_to": "library_files/2"}]
         mock_db.library_files.traversal.by_ids.return_value = [
-            {"start_id": "library_files/2", "v": {"rel": "nom:mood_modelA_happy"}},
+            {"start_id": "library_files/2", "v": {"name": "nom:mood_modelA_happy"}},
         ]
 
         result = get_files_with_incomplete_tags(mock_db, expected_heads, namespace_prefix="nom:", library_id="main")
@@ -583,7 +583,7 @@ class TestIncompleteTags:
         mock_db.library_files.traversal.by_ids.assert_called_once_with(
             ["library_files/2"],
             "song_has_tags",
-            target_like_starts_with=("rel", "nom:"),
+            target_like_starts_with=("name", "nom:"),
         )
 
 

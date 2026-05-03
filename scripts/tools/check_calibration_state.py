@@ -48,8 +48,8 @@ if sample:
         db.conn.aql.execute(
             "FOR e IN song_has_tags FILTER e._from == @fid "
             "LET t = DOCUMENT(e._to) "
-            'FILTER STARTS_WITH(t.rel, "nom:mood-") '
-            "RETURN {rel: t.rel, val: t.value}",
+            'FILTER STARTS_WITH(t.name, "nom:mood-") '
+            "RETURN {name: t.name, val: t.value}",
             bind_vars={"fid": fid},
         )
     )
@@ -76,7 +76,7 @@ sample2 = list(
     db.conn.aql.execute(
         "FOR f IN library_files FILTER f.calibration_hash == null "
         "LET has_mood = (FOR e IN song_has_tags FILTER e._from == f._id "
-        '  LET t = DOCUMENT(e._to) FILTER STARTS_WITH(t.rel, "nom:mood-") LIMIT 1 RETURN 1) '
+        '  LET t = DOCUMENT(e._to) FILTER STARTS_WITH(t.name, "nom:mood-") LIMIT 1 RETURN 1) '
         "FILTER LENGTH(has_mood) > 0 LIMIT 1 RETURN f"
     )
 )
@@ -88,8 +88,8 @@ if sample2:
         db.conn.aql.execute(
             "FOR e IN song_has_tags FILTER e._from == @fid "
             "LET t = DOCUMENT(e._to) "
-            'FILTER STARTS_WITH(t.rel, "nom:mood-") '
-            "RETURN {rel: t.rel, val: t.value}",
+            'FILTER STARTS_WITH(t.name, "nom:mood-") '
+            "RETURN {name: t.name, val: t.value}",
             bind_vars={"fid": fid2},
         )
     )

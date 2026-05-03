@@ -57,7 +57,7 @@ def _get_genres_for_files(db: Database, file_ids: list[str]) -> dict[str, list[s
     genre_by_tag_id: dict[str, str] = {
         doc["_id"]: doc["value"]
         for doc in tag_docs
-        if doc.get("rel") == "genre" and isinstance(doc.get("_id"), str) and isinstance(doc.get("value"), str)
+        if doc.get("name") == "genre" and isinstance(doc.get("_id"), str) and isinstance(doc.get("value"), str)
     }
 
     result: dict[str, list[str]] = {fid: [] for fid in file_ids}
@@ -158,7 +158,8 @@ def verify_hot_empty(db: Database, backbone_id: str, library_key: str) -> None:
 
     if hot_count > 0:
         raise RuntimeError(
-            f"Hot collection 'vectors_track_hot__{backbone_id}__{library_key}' not empty after drain: {hot_count} documents remain. "
+            f"Hot collection 'vectors_track_hot__{backbone_id}__{library_key}' "
+            f"not empty after drain: {hot_count} documents remain. "
             "This indicates drain operation failed or concurrent writes occurred during promotion."
         )
 
@@ -288,7 +289,7 @@ def backfill_genres(db: Database, backbone_id: str, library_key: str) -> int:
     were drained before genre enrichment was added to ``drain_hot_to_cold``.
     Each document is updated in-place: a ``genres`` field is populated by joining
     via file_has_vectors edge to the file, then song_has_tags edges and tags
-    documents where ``tag.rel == "genre"`` for the associated file.
+    documents where ``tag.name == "genre"`` for the associated file.
 
     Args:
         db: Database façade.

@@ -64,11 +64,11 @@ export interface ListSongsOptions {
 export async function listSongsForEntity(
   collection: EntityCollection,
   entityId: string,
-  rel: string,
+  name: string,
   options?: ListSongsOptions
 ): Promise<SongListResult> {
   const params = new URLSearchParams();
-  params.append("rel", rel);
+  params.append("name", name);
   if (options?.limit) params.append("limit", options.limit.toString());
   if (options?.offset) params.append("offset", options.offset.toString());
 

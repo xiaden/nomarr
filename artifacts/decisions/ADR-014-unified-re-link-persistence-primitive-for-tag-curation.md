@@ -18,7 +18,7 @@ All four reduce to: "re-link edges from source tag to target tag for a set of so
 
 The existing `set_song_tags_batch()` from ADR-010 operates per-song: given a song, replace all its tags for a rel. This is correct for per-song multi-tag overwrites but is NOT the right primitive for graph-level curation where the operation is "given a tag, move its edges." The access pattern is inverted.
 
-Directly mutating tag vertex values (e.g., renaming by updating the `value` field) is not viable because the `(rel, value)` unique index would conflict if the target value already exists as a separate vertex.
+Directly mutating tag vertex values (e.g., renaming by updating the `value` field) is not viable because the `(name, value)` unique index would conflict if the target value already exists as a separate vertex.
 
 ## Decision
 
@@ -33,14 +33,14 @@ All four curation operations use a single persistence primitive: `relink_tag_edg
 
 **Operation mapping:**
 
-- **Rename:** source = old tag vertex, target = find_or_create(same rel, new value), song_ids = None
+- **Rename:** source = old tag vertex, target = find_or_create(same name, new value), song_ids = None
 - **Merge:** source = each tag to merge, target = canonical tag (already exists), song_ids = None
-- **Split:** source = current tag, target = find_or_create(same rel, new value), song_ids = selected subset
-- **Single-song:** source = current tag, target = find_or_create(same rel, new value), song_ids = [one_song]
+- **Split:** source = current tag, target = find_or_create(same name, new value), song_ids = selected subset
+- **Single-song:** source = current tag, target = find_or_create(same name, new value), song_ids = [one_song]
 
 **AQL implementation (2-3 round trips):**
 
-1. Find or create target tag vertex (UPSERT on `(rel, value)`)
+1. Find or create target tag vertex (UPSERT on `(name, value)`)
 2. Re-link edges: UPDATE `song_has_tags` WHERE `_to == source_tag_id` (AND `_from IN song_ids` if scoped), SET `_to = target_tag_id`. Use UPSERT to skip duplicates.
 3. Cleanup: run `cleanup_orphaned_tags()` to delete source vertex if zero edges remain
 

@@ -85,17 +85,17 @@ class NavidromeService:
         stats = preview_tag_stats_workflow(self._db, namespace=self.cfg.namespace)
         return PreviewTagStatsResult(stats=stats)
 
-    def get_tag_values(self, rel: str) -> list[str]:
-        """Get distinct values for a specific tag relationship.
+    def get_tag_values(self, name: str) -> list[str]:
+        """Get distinct values for a specific tag name.
 
         Args:
-            rel: Tag relationship key (e.g., 'artist', 'nom:mood-strict')
+            name: Tag name (e.g., 'artist', 'nom:mood-strict')
 
         Returns:
             Sorted list of distinct tag values as strings
 
         """
-        value_counts = get_tag_value_counts(self._db, rel)
+        value_counts = get_tag_value_counts(self._db, name)
         return sorted(str(v) for v in value_counts)
 
     def generate_navidrome_config(self) -> str:

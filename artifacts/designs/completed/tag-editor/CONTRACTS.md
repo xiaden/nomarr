@@ -32,8 +32,8 @@
 
  | Method | Signature | Notes | Plan |
  | -------- | ----------- | ------- | ------ |
- | `list_tags_by_rel` | `(self, rel: str \ | None = None, limit=100, offset=0, search=None, sort_by_count=False) -> list[dict]` | Enhanced: `rel=None` returns cross-rel listing | A |
- | `count_tags_by_rel` | `(self, rel: str \ | None = None, search=None) -> int` | Enhanced: `rel=None` counts cross-rel | A |
+ | `list_tags_by_rel` | `(self, name: str \ | None = None, limit=100, offset=0, search=None, sort_by_count=False) -> list[dict]` | Enhanced: `rel=None` returns cross-rel listing | A |
+ | `count_tags_by_rel` | `(self, name: str \ | None = None, search=None) -> int` | Enhanced: `rel=None` counts cross-rel | A |
  | `get_tag_songs_with_metadata` | `(self, tag_id: str, limit=50, offset=0) -> list[dict]` | Returns `{file_id, title, artist, album, path}` | A |
 
 ### `file_states_aql.py` — FileStatesOperations (Plan A)
@@ -52,7 +52,7 @@
  | DTO | Fields | Plan |
  | ----- | -------- | ------ |
  | `RelinkResult` | `moved: int, skipped: int, source_orphaned: bool` | A |
- | `TagValueItem` | `id: str, rel: str, value: str, song_count: int` | A |
+ | `TagValueItem` | `id: str, name: str, value: str, song_count: int` | A |
  | `TagListResult` | `tags: list[TagValueItem], total: int` | A |
  | `RenameResult` | `moved: int, merged_into_existing: bool` | A |
  | `MergeResult` | `total_moved: int, sources_removed: int` | A |
@@ -75,7 +75,7 @@
  | `/api/web/tag-curation/split` | POST | `{source_tag_id, song_ids, new_value}` | `SplitResult` | B |
  | `/api/web/tag-curation/commit` | POST | `{library_id?}` | `CommitResult` | B |
  | `/api/web/tag-curation/pending-count` | GET | — | `{count: int}` | B |
- | `/api/web/tag-curation/files/{file_id}/tags` | PATCH | `{rel, values}` | `{tags: list}` | B |
+ | `/api/web/tag-curation/files/{file_id}/tags` | PATCH | `{name, values}` | `{tags: list}` | B |
 
 ---
 
@@ -88,13 +88,13 @@
  | `rename_tag` | `(self, tag_id: str, new_value: str) -> RenameResult` | Rejects `nom:`. find_or_create target → relink_tag_edges → state updates | B |
  | `merge_tags` | `(self, source_tag_ids: list[str], canonical_tag_id: str) -> MergeResult` | Rejects `nom:`. Iterates sources through relink. | B |
  | `split_tag` | `(self, source_tag_id: str, song_ids: list[str], new_value: str) -> SplitResult` | Rejects `nom:`. Scoped relink. | B |
- | `update_file_tags` | `(self, file_id: str, rel: str, values: list[str]) -> dict` | Rejects `nom:`. Wraps set_song_tags + state update. | B |
+ | `update_file_tags` | `(self, file_id: str, name: str, values: list[str]) -> dict` | Rejects `nom:`. Wraps set_song_tags + state update. | B |
 
 ### `TaggingService` — New Query Methods
 
  | Method | Signature | Notes | Plan |
  | -------- | ----------- | ------- | ------ |
- | `list_tag_values` | `(self, rel: str \ | None, prefix: str \ | None, limit: int, offset: int) -> TagListResult` | Wraps enhanced list_tags_by_rel + count | B |
+ | `list_tag_values` | `(self, name: str \ | None, prefix: str \ | None, limit: int, offset: int) -> TagListResult` | Wraps enhanced list_tags_by_rel + count | B |
  | `get_tag_songs` | `(self, tag_id: str, limit: int, offset: int) -> dict` | Wraps get_tag_songs_with_metadata + count | B |
 
 ### `TaggingService` — New Commit Methods
@@ -121,7 +121,7 @@
 
  | Decision | Rationale | Plan |
  | ---------- | ----------- | ------ |
- | Enhance existing `list_tags_by_rel` instead of new method | Already returns `{_id, rel, value, song_count}` — just needs optional `rel` param | A |
+ | Enhance existing `list_tags_by_rel` instead of new method | Already returns `{_id, name, value, song_count}` — just needs optional `rel` param | A |
  | New `tag_curation_if.py` router, not expanding `tags_if.py` | `tags_if.py` handles file I/O (show/remove tags); curation is a different concern | B |
  | Migrate methods by adding to TaggingService + updating callers | Clean migration — TaggingService already has `self.db` for persistence access | B |
  | Keep migrated methods on LibraryService as deprecated forwarders | Prevents breakage of any indirect callers not found during migration | B |

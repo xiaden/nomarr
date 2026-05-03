@@ -164,6 +164,9 @@ def get_root_password_from_env() -> str:
     """
     root_password = os.getenv("ARANGO_ROOT_PASSWORD")
     if not root_password:
-        msg = "ARANGO_ROOT_PASSWORD environment variable not set. First-run provisioning requires root access to create database and user."
+        msg = (
+            "ARANGO_ROOT_PASSWORD environment variable not set. "
+            "First-run provisioning requires root access to create database and user."
+        )
         raise RuntimeError(msg)
     return root_password

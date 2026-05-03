@@ -54,7 +54,7 @@ class NdSyncResult(TypedDict):
 
 # Standard ID3/metadata tags that are NOT prefixed with "nom:"
 # These are stored directly by taglib without namespace
-STANDARD_TAG_RELS = frozenset(
+STANDARD_TAG_NAMES = frozenset(
     {
         "artist",
         "artists",

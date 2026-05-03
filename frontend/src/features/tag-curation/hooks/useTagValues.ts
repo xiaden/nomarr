@@ -4,7 +4,7 @@ import type { TagListResult, TagValueItem } from "../../../shared/api/tagCuratio
 import { fetchTagValues } from "../../../shared/api/tagCuration";
 
 interface UseTagValuesOptions {
-  rel?: string;
+  name?: string;
   prefix?: string;
   initialPageSize?: number;
 }
@@ -22,7 +22,7 @@ export interface UseTagValuesResult {
 }
 
 export function useTagValues({
-  rel,
+  name,
   prefix,
   initialPageSize = 100,
 }: UseTagValuesOptions = {}): UseTagValuesResult {
@@ -35,14 +35,14 @@ export function useTagValues({
 
   useEffect(() => {
     setPage(0);
-  }, [rel, prefix]);
+  }, [name, prefix]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const offset = page * pageSize;
-      const result: TagListResult = await fetchTagValues(rel, prefix, pageSize, offset);
+      const result: TagListResult = await fetchTagValues(name, prefix, pageSize, offset);
       setRows(result.tags);
       setTotal(result.total);
     } catch (err) {
@@ -50,7 +50,7 @@ export function useTagValues({
     } finally {
       setLoading(false);
     }
-  }, [rel, prefix, page, pageSize]);
+  }, [name, prefix, page, pageSize]);
 
   useEffect(() => {
     void load();

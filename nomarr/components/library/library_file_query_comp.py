@@ -167,20 +167,20 @@ def _is_numeric_target_value(value: float | str) -> bool:
 
 
 def _project_tag_row(tag_doc: dict[str, Any]) -> dict[str, Any]:
-    rel_value = tag_doc.get("rel")
+    name_value = tag_doc.get("name")
     tag_value = tag_doc.get("value")
     return {
-        "key": rel_value,
+        "key": name_value,
         "value": tag_value,
         "type": "float" if _is_numeric_tag_value(tag_value) else "string",
-        "is_nomarr": isinstance(rel_value, str) and rel_value.startswith("nom:"),
+        "is_nomarr": isinstance(name_value, str) and name_value.startswith("nom:"),
     }
 
 
 def _tags_for_file(db: Database, file_id: str) -> list[dict[str, Any]]:
     tag_docs = db.library_files.traversal(file_id, "song_has_tags", limit=DEFAULT_LIMIT)
     return [
-        _project_tag_row(tag_doc) for tag_doc in sorted(tag_docs, key=lambda tag_doc: _sort_key(tag_doc.get("rel")))
+        _project_tag_row(tag_doc) for tag_doc in sorted(tag_docs, key=lambda tag_doc: _sort_key(tag_doc.get("name")))
     ]
 
 
@@ -352,14 +352,17 @@ def search_library_files_with_tags(
         query_text: Free-text substring matched against artist, album, and title with case-insensitive ``LIKE`` filters.
         artist: Case-insensitive exact artist match filter.
         album: Case-insensitive exact album match filter.
-        tag_key: When provided alone, filters to files that have any tag with this relation; when combined with ``tag_value``, filters to files with an exact ``(tag_key, tag_value)`` match.
+        tag_key: When provided alone, filters to files that have any tag with this
+            relation; when combined with ``tag_value``, filters to files with an exact
+            ``(tag_key, tag_value)`` match.
         tag_value: Exact tag value to match; only meaningful when ``tag_key`` is also set.
         tagged_only: When ``True``, restricts results to files in the ``tagged`` state.
         limit: Maximum number of files to return.
         offset: Number of matching files to skip before returning results.
 
     Returns:
-        A tuple of ``(files, total_count)`` where each file dict is a library-file document merged with ``tags`` and ``library_id``.
+        A tuple of ``(files, total_count)`` where each file dict is a library-file
+            document merged with ``tags`` and ``library_id``.
     """
     # candidate_ids: None = universe (no constraint yet); set = narrowed result.
     # Each active filter fetches only matching docs from Arango via the namespace
@@ -401,7 +404,7 @@ def search_library_files_with_tags(
             _intersect(matched)
 
     if tag_key:
-        tag_filter: dict[str, Any] = {"rel": tag_key}
+        tag_filter: dict[str, Any] = {"name": tag_key}
         if tag_value is not None:
             tag_filter["value"] = tag_value
         matching_tags = db.tags.get.many.by_filter(tag_filter, limit=DEFAULT_LIMIT)
@@ -605,7 +608,7 @@ def search_files_by_tag(
     if _is_numeric_target_value(target_value):
         numeric_target = float(target_value)
         best_match_by_file_id: dict[str, dict[str, Any]] = {}
-        for tag_doc in db.tags.rel.get.many(tag_key, limit=DEFAULT_LIMIT):
+        for tag_doc in db.tags.name.get.many(tag_key, limit=DEFAULT_LIMIT):
             tag_id = tag_doc.get("_id")
             tag_value = tag_doc.get("value")
             if not isinstance(tag_id, str) or not _is_numeric_tag_value(tag_value):
@@ -642,7 +645,7 @@ def search_files_by_tag(
             results.append(hydrated_file)
         return results
 
-    matching_tags = db.tags.get.many.by_filter({"rel": tag_key, "value": str(target_value)}, limit=DEFAULT_LIMIT)
+    matching_tags = db.tags.get.many.by_filter({"name": tag_key, "value": str(target_value)}, limit=DEFAULT_LIMIT)
     file_ids = _collect_file_ids_for_tag_ids(
         db,
         {tag_id for tag_doc in matching_tags if isinstance((tag_id := tag_doc.get("_id")), str)},
@@ -663,14 +666,14 @@ def count_files_by_tag(db: Database, tag_key: str, target_value: float | str) ->
     if _is_numeric_target_value(target_value):
         matching_tag_ids = {
             tag_id
-            for tag_doc in db.tags.rel.get.many(tag_key, limit=DEFAULT_LIMIT)
+            for tag_doc in db.tags.name.get.many(tag_key, limit=DEFAULT_LIMIT)
             if isinstance((tag_id := tag_doc.get("_id")), str) and _is_numeric_tag_value(tag_doc.get("value"))
         }
         return len(_collect_file_ids_for_tag_ids(db, matching_tag_ids))
 
     matching_tag_ids = {
         tag_id
-        for tag_doc in db.tags.get.many.by_filter({"rel": tag_key, "value": str(target_value)}, limit=DEFAULT_LIMIT)
+        for tag_doc in db.tags.get.many.by_filter({"name": tag_key, "value": str(target_value)}, limit=DEFAULT_LIMIT)
         if isinstance((tag_id := tag_doc.get("_id")), str)
     }
     return len(_collect_file_ids_for_tag_ids(db, matching_tag_ids))
@@ -724,7 +727,7 @@ def get_tracks_for_matching(db: Database, library_id: str | None = None) -> list
 
     file_ids = [file_id for file_doc in file_docs if isinstance(file_id := file_doc.get("_id"), str)]
     isrc_rows = (
-        db.library_files.traversal.by_ids(file_ids, "song_has_tags", target_filter={"rel": "isrc"}) if file_ids else []
+        db.library_files.traversal.by_ids(file_ids, "song_has_tags", target_filter={"name": "isrc"}) if file_ids else []
     )
     isrc_by_file = {
         row["start_id"]: tag_doc.get("value")

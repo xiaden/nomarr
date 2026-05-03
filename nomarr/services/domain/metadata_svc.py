@@ -1,14 +1,14 @@
 """Metadata service - tag-based entity navigation.
 
 Provides read-only access to tag collections and song-tag relationships.
-Uses the unified tags schema where entities are just tags with specific rel values.
+Uses the unified tags schema where entities are just tags with specific name values.
 
-TAG_UNIFICATION_REFACTOR: Entities are now tags. Route collection values map to rel values:
-    - "artist" → rel="artist"
-    - "album" → rel="album"
-    - "label" → rel="label"
-    - "genre" → rel="genre"
-    - "year" → rel="year"
+TAG_UNIFICATION_REFACTOR: Entities are now tags. Route collection values map to name values:
+    - "artist" → name="artist"
+    - "album" → name="album"
+    - "label" → name="label"
+    - "genre" → name="genre"
+    - "year" → name="year"
 """
 
 import logging
@@ -16,11 +16,11 @@ from typing import Literal
 
 from nomarr.components.tagging.tag_cleanup_comp import cleanup_orphaned_tags, get_orphaned_tag_count
 from nomarr.components.tagging.tag_query_comp import (
-    count_tags_by_rel,
+    count_tags_by_name,
     get_song_tags,
     get_tag,
     list_songs_for_tag,
-    list_tags_by_rel,
+    list_tags_by_name,
 )
 from nomarr.components.tagging.tag_write_comp import find_or_create_tag
 from nomarr.helpers.dto.metadata_dto import EntityDict, EntityListResult, SongListForEntityResult
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # Type alias for entity collection names (for API compatibility)
 EntityCollection = Literal["artist", "album", "label", "genre", "year"]
 
-# Mapping of collection name to rel value(s) for queries
+# Mapping of collection name to name value(s) for queries
 COLLECTION_REL_MAP: dict[EntityCollection, str] = {
     "artist": "artist",
     "album": "album",
@@ -63,7 +63,7 @@ class MetadataService:
         """List entities (tags) from a collection.
 
         Args:
-            collection: Entity collection name (maps to rel)
+            collection: Entity collection name (maps to name)
             limit: Maximum results
             offset: Skip first N results
             search: Optional substring search on value
@@ -72,9 +72,9 @@ class MetadataService:
             EntityListResult with entities, total, limit, offset
 
         """
-        rel = COLLECTION_REL_MAP[collection]
-        tags = list_tags_by_rel(self.db, rel, limit=limit, offset=offset, search=search)
-        total = count_tags_by_rel(self.db, rel, search=search)
+        name = COLLECTION_REL_MAP[collection]
+        tags = list_tags_by_name(self.db, name, limit=limit, offset=offset, search=search)
+        total = count_tags_by_name(self.db, name, search=search)
 
         entity_dicts: list[EntityDict] = [
             {
@@ -120,7 +120,7 @@ class MetadataService:
     def list_songs_for_entity(
         self,
         entity_id: str,
-        rel: str,
+        name: str,
         limit: int = 100,
         offset: int = 0,
     ) -> SongListForEntityResult:
@@ -128,7 +128,7 @@ class MetadataService:
 
         Args:
             entity_id: Tag _id
-            rel: Ignored (kept for API compatibility, tag knows its rel)
+            name: Ignored (kept for API compatibility, tag knows its name)
             limit: Maximum results
             offset: Skip first N results
 
@@ -168,7 +168,7 @@ class MetadataService:
         artists: list[EntityDict] = []
 
         for song_id in song_ids:
-            artist_tags = get_song_tags(self.db, song_id, rel="artist")
+            artist_tags = get_song_tags(self.db, song_id, name="artist")
             for artist_tag in artist_tags:
                 # Get the first value from the tag (always a list now)
                 for value in artist_tag.value:
@@ -212,7 +212,7 @@ class MetadataService:
         albums: list[EntityDict] = []
 
         for song_id in song_ids:
-            album_tags = get_song_tags(self.db, song_id, rel="album")
+            album_tags = get_song_tags(self.db, song_id, name="album")
             for album_tag in album_tags:
                 # Get the first value from the tag (always a list now)
                 for value in album_tag.value:
@@ -225,7 +225,7 @@ class MetadataService:
                             album_song_count = sum(
                                 1
                                 for s in song_ids
-                                if any(value in t.value for t in get_song_tags(self.db, s, rel="album"))
+                                if any(value in t.value for t in get_song_tags(self.db, s, name="album"))
                             )
                             albums.append(
                                 EntityDict(
@@ -241,18 +241,18 @@ class MetadataService:
         return albums[:limit]
 
     def get_entity_counts(self) -> dict[str, int]:
-        """Get total counts for all entity types (tag rels).
+        """Get total counts for all entity types (tag names).
 
         Returns:
             Dict mapping collection name to count
 
         """
         return {
-            "artists": count_tags_by_rel(self.db, "artist"),
-            "albums": count_tags_by_rel(self.db, "album"),
-            "labels": count_tags_by_rel(self.db, "label"),
-            "genres": count_tags_by_rel(self.db, "genre"),
-            "years": count_tags_by_rel(self.db, "year"),
+            "artists": count_tags_by_name(self.db, "artist"),
+            "albums": count_tags_by_name(self.db, "album"),
+            "labels": count_tags_by_name(self.db, "label"),
+            "genres": count_tags_by_name(self.db, "genre"),
+            "years": count_tags_by_name(self.db, "year"),
         }
 
     def cleanup_orphaned_entities(self, dry_run: bool = False) -> dict[str, int | dict[str, int]]:

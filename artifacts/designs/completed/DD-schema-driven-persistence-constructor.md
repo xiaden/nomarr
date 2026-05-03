@@ -814,9 +814,9 @@ def relink_tag_edges(db, source_tag_id, target_tag_id, song_ids=None):
     db.tags.cascade([source_tag_id])  # Step 4: cascade if orphaned
 
 # set_song_tags — component layer
-def set_song_tags(db, song_id, rel, values):
+def set_song_tags(db, song_id, name, values):
     db.song_has_tags._from.delete(song_id)  # Delete old tag edges for song
-    db.tags.rel.upsert([{"rel": rel, "value": v} for v in values], match_field="value")  # Upsert tag vertices
+    db.tags.rel.upsert([{"rel": name, "value": v} for v in values], match_field="value")  # Upsert tag vertices
     db.song_has_tags.insert([{"_from": song_id, "_to": tag_id} for tag_id in new_tag_ids])  # Create edges
 ```
 

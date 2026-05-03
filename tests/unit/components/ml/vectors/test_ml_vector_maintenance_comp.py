@@ -106,9 +106,9 @@ class TestBackfillGenres:
             {"_from": "library_files/f2", "_to": "tags/g3"},
         ]
         mock_db.tags.get.many.return_value = [
-            {"_id": "tags/g1", "rel": "genre", "value": "ambient"},
-            {"_id": "tags/g2", "rel": "genre", "value": "jazz"},
-            {"_id": "tags/g3", "rel": "genre", "value": "fusion"},
+            {"_id": "tags/g1", "name": "genre", "value": "ambient"},
+            {"_id": "tags/g2", "name": "genre", "value": "jazz"},
+            {"_id": "tags/g3", "name": "genre", "value": "fusion"},
         ]
 
         with patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold:

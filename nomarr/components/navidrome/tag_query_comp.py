@@ -11,43 +11,43 @@ from typing import TYPE_CHECKING, Any, Literal
 from nomarr.components.library.library_file_query_comp import get_tracks_by_file_ids
 from nomarr.components.tagging.tag_query_comp import get_file_ids_matching_tag
 from nomarr.components.tagging.tag_stats_comp import get_tag_value_counts as get_tag_value_counts_map
-from nomarr.components.tagging.tag_stats_comp import get_unique_rels
+from nomarr.components.tagging.tag_stats_comp import get_unique_names
 from nomarr.helpers.tag_key_mapping import is_versioned_ml_key, make_short_tag_name
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def get_nomarr_tag_rels(db: Database) -> list[str]:
-    """Get all unique tag relationship names used by Nomarr.
+def get_nomarr_tag_names(db: Database) -> list[str]:
+    """Get all unique tag names used by Nomarr.
 
     Args:
         db: Database instance
 
     Returns:
-        List of tag relationship keys (e.g., ['nom:mood-strict', 'nom:energy'])
+        List of tag names (e.g., ['nom:mood-strict', 'nom:energy'])
 
     """
-    return get_unique_rels(db, nomarr_only=True)
+    return get_unique_names(db, nomarr_only=True)
 
 
-def get_tag_value_counts(db: Database, rel: str) -> dict[Any, int]:
-    """Get value distribution for a specific tag relationship.
+def get_tag_value_counts(db: Database, name: str) -> dict[Any, int]:
+    """Get value distribution for a specific tag name.
 
     Args:
         db: Database instance
-        rel: Tag relationship key (e.g., 'nom:mood-strict')
+        name: Tag name (e.g., 'nom:mood-strict')
 
     Returns:
         Dict mapping tag values to their occurrence counts
 
     """
-    return get_tag_value_counts_map(db, rel)
+    return get_tag_value_counts_map(db, name)
 
 
 def find_files_matching_tag(
     db: Database,
-    rel: str,
+    name: str,
     operator: str,
     value: Any,
 ) -> set[str]:
@@ -55,7 +55,7 @@ def find_files_matching_tag(
 
     Args:
         db: Database instance
-        rel: Tag relationship key (e.g., 'nom:mood-strict')
+        name: Tag name (e.g., 'nom:mood-strict')
         operator: Comparison operator ('>', '<', '>=', '<=', '=', '!=', 'CONTAINS')
         value: Value to compare against
 
@@ -63,7 +63,7 @@ def find_files_matching_tag(
         Set of file IDs matching the condition
 
     """
-    result = get_file_ids_matching_tag(db, rel=rel, operator=operator, value=value)
+    result = get_file_ids_matching_tag(db, name=name, operator=operator, value=value)
     return set(result) if not isinstance(result, set) else result
 
 
@@ -113,19 +113,19 @@ def get_short_to_versioned_mapping(
         could create multiple versions of the same label.
 
     """
-    all_rels = get_nomarr_tag_rels(db)
-    nom_rels = [rel for rel in all_rels if rel.startswith(f"{namespace}:")]
+    all_names = get_nomarr_tag_names(db)
+    nom_names = [name for name in all_names if name.startswith(f"{namespace}:")]
 
     mapping: dict[str, list[str]] = {}
 
-    for rel in nom_rels:
+    for name in nom_names:
         # Determine if numeric by checking if it's a versioned key
-        is_numeric = is_versioned_ml_key(rel)
-        short_name = make_short_tag_name(rel, is_numeric=is_numeric)
+        is_numeric = is_versioned_ml_key(name)
+        short_name = make_short_tag_name(name, is_numeric=is_numeric)
 
         if short_name not in mapping:
             mapping[short_name] = []
-        mapping[short_name].append(rel)
+        mapping[short_name].append(name)
 
     return mapping
 

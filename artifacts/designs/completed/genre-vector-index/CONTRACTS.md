@@ -17,7 +17,7 @@
 - `drain_hot_to_cold` is in `nomarr/components/ml/vectors/ml_vector_maintenance_comp.py`
 - `VectorsTrackColdOperations` is in `nomarr/persistence/database/vectors_track_aql.py`
 - Cold collection naming: `vectors_track_cold__{backbone_id}__{library_key}` (no suffix needed)
-- `song_has_tags` edges: `_from = library_files/_id`, `_to = tags/_id`; tags have `{rel, value}`
+- `song_has_tags` edges: `_from = library_files/_id`, `_to = tags/_id`; tags have `{name, value}`
 - `db.tags.get_distinct_tag_values_for_files(file_ids, "genre")` → `list[str]` (genre values)
 - Genre playlists builder signature pattern: `(db: Database, ctx: NavidromePersonalPlaylistContext) -> list[NavidromePersonalPlaylistEntry]`
 - `NavidromePersonalPlaylistContext` is in `nomarr/helpers/dto/navidrome_dto.py`; fields include `backbone_id`, `library_key`, `centroid`, `max_songs`, `played_file_ids`

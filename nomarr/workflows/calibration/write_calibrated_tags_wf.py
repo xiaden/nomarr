@@ -150,8 +150,8 @@ def _load_library_state(
 
     all_tags = {}
     for tag in tags:
-        rel = tag.key
-        key = rel.removeprefix("nom:")
+        name = tag.key
+        key = name.removeprefix("nom:")
         all_tags[key] = tag.value[0] if len(tag.value) == 1 else tag.value
     if not all_tags:
         logger.warning("[calibrated_tags] No tags found for %s", file_path)

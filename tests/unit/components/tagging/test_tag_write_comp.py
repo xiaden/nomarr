@@ -30,8 +30,8 @@ class TestFindOrCreateTag:
 
         assert result == "tags/abc"
         mock_db.tags.value.upsert.assert_called_once_with(
-            [{"rel": "genre", "value": "rock"}],
-            match_field=["rel", "value"],
+            [{"name": "genre", "value": "rock"}],
+            match_field=["name", "value"],
         )
 
 
@@ -52,13 +52,13 @@ class TestResolveTagIds:
     @pytest.mark.mocked
     def test_maps_pairs_to_tag_ids(self) -> None:
         mock_db = MagicMock()
-        mock_db.tags.get.many.by_filter.return_value = [{"_id": "tags/1", "rel": "genre", "value": "rock"}]
+        mock_db.tags.get.many.by_filter.return_value = [{"_id": "tags/1", "name": "genre", "value": "rock"}]
 
         result = resolve_tag_ids(mock_db, [("genre", "rock")])
 
         assert result == {("genre", "rock"): "tags/1"}
         mock_db.tags.get.many.by_filter.assert_called_once_with(
-            {"rel": "genre", "value": "rock"},
+            {"name": "genre", "value": "rock"},
             limit=1,
         )
 
@@ -73,7 +73,7 @@ class TestSetSongTags:
         mock_db.song_has_tags._from.get.many.return_value = [
             {"_id": "edges/old", "_to": "tags/old"},
         ]
-        mock_db.tags.get.side_effect = [{"_id": "tags/old", "rel": "genre"}, None]
+        mock_db.tags.get.side_effect = [{"_id": "tags/old", "name": "genre"}, None]
         mock_db.tags.value.upsert.return_value = ["tags/1"]
 
         set_song_tags(mock_db, "library_files/f1", "genre", ["rock"])
@@ -91,7 +91,7 @@ class TestSetSongTags:
         mock_db.song_has_tags._from.get.many.return_value = [
             {"_id": "edges/old", "_to": "tags/old"},
         ]
-        mock_db.tags.get.return_value = {"_id": "tags/old", "rel": "genre"}
+        mock_db.tags.get.return_value = {"_id": "tags/old", "name": "genre"}
 
         set_song_tags(mock_db, "library_files/f1", "genre", [])
 
@@ -134,16 +134,16 @@ class TestSetSongTagsBatch:
     def test_processes_multiple_entries(self) -> None:
         mock_db = MagicMock()
         entries = [
-            {"song_id": "library_files/a", "rel": "genre", "values": ["rock"]},
-            {"song_id": "library_files/b", "rel": "mood", "values": ["happy"]},
+            {"song_id": "library_files/a", "name": "genre", "values": ["rock"]},
+            {"song_id": "library_files/b", "name": "mood", "values": ["happy"]},
         ]
         mock_db.song_has_tags._from.get.many.side_effect = [
             [{"_id": "edges/genre", "_to": "tags/old-genre"}],
             [{"_id": "edges/mood", "_to": "tags/old-mood"}],
         ]
         mock_db.tags.get.side_effect = [
-            {"_id": "tags/old-genre", "rel": "genre"},
-            {"_id": "tags/old-mood", "rel": "mood"},
+            {"_id": "tags/old-genre", "name": "genre"},
+            {"_id": "tags/old-mood", "name": "mood"},
         ]
         mock_db.tags.value.upsert.side_effect = [["tags/1"], ["tags/2"]]
 
@@ -151,8 +151,8 @@ class TestSetSongTagsBatch:
 
         mock_db.song_has_tags.delete.assert_called_once_with(["edges/genre", "edges/mood"])
         assert mock_db.tags.value.upsert.call_args_list == [
-            (([{"rel": "genre", "value": "rock"}],), {"match_field": ["rel", "value"]}),
-            (([{"rel": "mood", "value": "happy"}],), {"match_field": ["rel", "value"]}),
+            (([{"name": "genre", "value": "rock"}],), {"match_field": ["name", "value"]}),
+            (([{"name": "mood", "value": "happy"}],), {"match_field": ["name", "value"]}),
         ]
         mock_db.song_has_tags._to.upsert.assert_called_once_with(
             [

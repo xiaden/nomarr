@@ -37,7 +37,7 @@ test_sources = [
 
 print("\nCopying and preparing test files...")
 
-for source_rel, category in test_sources:
+for source_name, category in test_sources:
     source = TEST_MUSIC_ROOT / source_rel
 
     if not source.exists():

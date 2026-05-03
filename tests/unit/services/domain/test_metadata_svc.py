@@ -36,7 +36,7 @@ class TestListEntities:
     @pytest.mark.unit
     @pytest.mark.mocked
     @pytest.mark.parametrize(
-        ("collection", "expected_rel"),
+        ("collection", "expected_name"),
         [
             ("artist", "artist"),
             ("album", "album"),
@@ -45,18 +45,18 @@ class TestListEntities:
             ("year", "year"),
         ],
     )
-    def test_uses_rel_mapped_from_collection(
+    def test_uses_name_mapped_from_collection(
         self,
         collection: EntityCollection,
-        expected_rel: str,
+        expected_name: str,
     ) -> None:
-        """Each singular collection should resolve to the correct rel query."""
+        """Each singular collection should resolve to the correct name query."""
         mock_db = MagicMock()
         service = _make_service(db=mock_db)
 
         with (
-            patch("nomarr.services.domain.metadata_svc.list_tags_by_rel", return_value=[]) as mock_list,
-            patch("nomarr.services.domain.metadata_svc.count_tags_by_rel", return_value=0) as mock_count,
+            patch("nomarr.services.domain.metadata_svc.list_tags_by_name", return_value=[]) as mock_list,
+            patch("nomarr.services.domain.metadata_svc.count_tags_by_name", return_value=0) as mock_count,
         ):
             result = service.list_entities(collection)
 
@@ -68,12 +68,12 @@ class TestListEntities:
         }
         mock_list.assert_called_once_with(
             mock_db,
-            expected_rel,
+            expected_name,
             limit=100,
             offset=0,
             search=None,
         )
-        mock_count.assert_called_once_with(mock_db, expected_rel, search=None)
+        mock_count.assert_called_once_with(mock_db, expected_name, search=None)
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -91,8 +91,8 @@ class TestListEntities:
         service = _make_service(db=mock_db)
 
         with (
-            patch("nomarr.services.domain.metadata_svc.list_tags_by_rel", return_value=listed_tags) as mock_list,
-            patch("nomarr.services.domain.metadata_svc.count_tags_by_rel", return_value=1) as mock_count,
+            patch("nomarr.services.domain.metadata_svc.list_tags_by_name", return_value=listed_tags) as mock_list,
+            patch("nomarr.services.domain.metadata_svc.count_tags_by_name", return_value=1) as mock_count,
         ):
             result = service.list_entities("artist", limit=10, offset=5, search="art")
 
@@ -167,10 +167,10 @@ class TestGetEntityCounts:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_calls_tags_persistence_for_all_singular_rels(self) -> None:
+    def test_calls_tags_persistence_for_all_singular_names(self) -> None:
         """Entity counts should be derived from the tags persistence layer."""
         mock_db = MagicMock()
-        counts_by_rel = {
+        counts_by_name = {
             "artist": 11,
             "album": 22,
             "label": 33,
@@ -180,8 +180,8 @@ class TestGetEntityCounts:
         service = _make_service(db=mock_db)
 
         with patch(
-            "nomarr.services.domain.metadata_svc.count_tags_by_rel",
-            side_effect=lambda _db, rel: counts_by_rel[rel],
+            "nomarr.services.domain.metadata_svc.count_tags_by_name",
+            side_effect=lambda _db, name: counts_by_name[name],
         ) as mock_count:
             result = service.get_entity_counts()
 

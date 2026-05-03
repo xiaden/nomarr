@@ -200,9 +200,9 @@ class TestSaveMoodTagsBatch:
         mock_set_song_tags_batch.assert_called_once_with(
             mock_db,
             [
-                {"song_id": "library_files/abc123", "rel": "nom:mood-strict", "values": ("happy",)},
-                {"song_id": "library_files/abc123", "rel": "nom:mood-regular", "values": []},
-                {"song_id": "library_files/abc123", "rel": "nom:mood-loose", "values": []},
+                {"song_id": "library_files/abc123", "name": "nom:mood-strict", "values": ("happy",)},
+                {"song_id": "library_files/abc123", "name": "nom:mood-regular", "values": []},
+                {"song_id": "library_files/abc123", "name": "nom:mood-loose", "values": []},
             ],
         )
 

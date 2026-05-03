@@ -13,7 +13,7 @@ from nomarr.components.tagging.tag_stats_comp import (
     get_genre_distribution,
     get_library_stats,
     get_tag_value_counts,
-    get_unique_rels,
+    get_unique_names,
     get_year_distribution,
 )
 
@@ -53,34 +53,34 @@ class TestCoerceSumValue:
         assert _coerce_sum_value(value) == 0.0
 
 
-class TestGetUniqueRels:
-    """Tests for get_unique_rels."""
+class TestGetUniqueNames:
+    """Tests for get_unique_names."""
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_all_rels_when_nomarr_only_is_false(self) -> None:
+    def test_returns_all_names_when_nomarr_only_is_false(self) -> None:
         mock_db = MagicMock()
         mock_db.tags.count.return_value = 3
-        mock_db.tags.rel.collect.return_value = ["genre", "nom:mood-tier-1", "year"]
+        mock_db.tags.name.collect.return_value = ["genre", "nom:mood-tier-1", "year"]
 
-        result = get_unique_rels(mock_db)
+        result = get_unique_names(mock_db)
 
         assert result == ["genre", "nom:mood-tier-1", "year"]
-        mock_db.tags.rel.collect.assert_called_once_with(limit=3)
+        mock_db.tags.name.collect.assert_called_once_with(limit=3)
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_filters_to_nomarr_prefixed_rels_when_requested(self) -> None:
+    def test_filters_to_nomarr_prefixed_names_when_requested(self) -> None:
         mock_db = MagicMock()
         mock_db.tags.count.return_value = 4
-        mock_db.tags.rel.collect.return_value = [
+        mock_db.tags.name.collect.return_value = [
             "genre",
             "nom:mood-tier-1",
             "year",
             "nom:embedding-cluster",
         ]
 
-        result = get_unique_rels(mock_db, nomarr_only=True)
+        result = get_unique_names(mock_db, nomarr_only=True)
 
         assert result == ["nom:mood-tier-1", "nom:embedding-cluster"]
 
@@ -89,9 +89,9 @@ class TestGetUniqueRels:
     def test_returns_empty_list_when_no_tags_exist(self) -> None:
         mock_db = MagicMock()
         mock_db.tags.count.return_value = 0
-        mock_db.tags.rel.collect.return_value = []
+        mock_db.tags.name.collect.return_value = []
 
-        result = get_unique_rels(mock_db)
+        result = get_unique_names(mock_db)
 
         assert result == []
 
@@ -146,7 +146,7 @@ class TestGetTagValueCounts:
     def test_returns_value_to_song_count_mapping(self) -> None:
         mock_db = MagicMock()
         mock_db.tags.count.return_value = 3
-        mock_db.tags.rel.get.many.return_value = [
+        mock_db.tags.name.get.many.return_value = [
             {"_id": "tags/1", "value": "Rock"},
             {"_id": "tags/2", "value": "Jazz"},
             {"_id": 3, "value": "Skip"},
@@ -193,8 +193,8 @@ class TestGetAllTagStatsBatched:
     def test_uses_aggregate_counts_for_relation_summaries(self) -> None:
         mock_db = MagicMock()
         mock_db.tags.count.return_value = 3
-        mock_db.tags.rel.collect.return_value = ["genre", "year"]
-        mock_db.tags.rel.get.many.side_effect = [
+        mock_db.tags.name.collect.return_value = ["genre", "year"]
+        mock_db.tags.name.get.many.side_effect = [
             [
                 {"_id": "tags/1", "value": "Rock"},
                 {"_id": "tags/2", "value": "Jazz"},

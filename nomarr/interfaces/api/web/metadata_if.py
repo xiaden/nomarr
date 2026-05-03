@@ -83,18 +83,18 @@ async def get_entity(
 async def list_songs_for_entity(
     collection: EntityCollection,
     entity_id: str,
-    rel: Annotated[str, Query(description="Relation type (artist, album, label, genre, year)")],
+    name: Annotated[str, Query(description="Relation type (artist, album, label, genre, year)")],
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
     metadata_service: MetadataService = Depends(get_metadata_service),
 ) -> SongListResponse:
     """List songs connected to an entity.
 
-    Example: GET /metadata/artist/artists:v1_abc.../song?rel=artist
+    Example: GET /metadata/artist/artists:v1_abc.../song?name=artist
     Returns all songs where this artist is the primary credited artist.
     """
     entity_id = decode_path_id(entity_id)
-    result = metadata_service.list_songs_for_entity(entity_id, rel, limit=limit, offset=offset)
+    result = metadata_service.list_songs_for_entity(entity_id, name, limit=limit, offset=offset)
     return SongListResponse.from_dto(result)
 
 

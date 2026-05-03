@@ -39,39 +39,39 @@ _PASSTHROUGH_PREFIXES = (
 )
 
 
-def is_versioned_ml_key(tag_rel: str) -> bool:
-    """Check if a tag rel is a model-tag key.
+def is_versioned_ml_key(tag_name: str) -> bool:
+    """Check if a tag name is a model-tag key.
 
     Args:
-        tag_rel: Full tag rel (e.g., "nom:happy_yamnet_mood_happy")
+        tag_name: Full tag name (e.g., "nom:happy_yamnet_mood_happy")
 
     Returns:
         True if this is a model-tag key that needs short name mapping.
 
     """
-    return _parse_model_key(tag_rel) is not None
+    return _parse_model_key(tag_name) is not None
 
 
-def extract_label_from_versioned_key(tag_rel: str) -> str | None:
+def extract_label_from_versioned_key(tag_name: str) -> str | None:
     """Extract the semantic label from a model-tag key.
 
     Args:
-        tag_rel: Full tag rel (e.g., "nom:happy_yamnet_mood_happy")
+        tag_name: Full tag name (e.g., "nom:happy_yamnet_mood_happy")
 
     Returns:
         Label string (e.g., "happy") or None if not a model-tag key.
 
     """
-    parsed = _parse_model_key(tag_rel)
+    parsed = _parse_model_key(tag_name)
     if parsed is None:
         return None
     label, _, _ = parsed
     return label
 
 
-def _parse_model_key(tag_rel: str) -> tuple[str, str, str] | None:
+def _parse_model_key(tag_name: str) -> tuple[str, str, str] | None:
     """Parse `{label}_{backbone}_{model_stem}` using known backbones as anchors."""
-    key = tag_rel.removeprefix("nom:")
+    key = tag_name.removeprefix("nom:")
     parts = key.split("_")
     if len(parts) < 3:
         return None
@@ -89,11 +89,11 @@ def _parse_model_key(tag_rel: str) -> tuple[str, str, str] | None:
     return None
 
 
-def make_short_tag_name(tag_rel: str, is_numeric: bool = True) -> str:
-    """Convert a tag rel to a short display name for Navidrome.
+def make_short_tag_name(tag_name: str, is_numeric: bool = True) -> str:
+    """Convert a tag name to a short display name for Navidrome.
 
     Args:
-        tag_rel: Full tag rel (e.g., "nom:happy_yamnet_mood_happy")
+        tag_name: Full tag name (e.g., "nom:happy_yamnet_mood_happy")
         is_numeric: Whether the tag value is numeric (adds -raw suffix)
 
     Returns:
@@ -101,7 +101,7 @@ def make_short_tag_name(tag_rel: str, is_numeric: bool = True) -> str:
 
     """
     # Strip nom: prefix
-    key = tag_rel.removeprefix("nom:")
+    key = tag_name.removeprefix("nom:")
 
     # Check if already short (passthrough)
     for prefix in _PASSTHROUGH_PREFIXES:
@@ -111,7 +111,7 @@ def make_short_tag_name(tag_rel: str, is_numeric: bool = True) -> str:
             return f"nom-{short}"
 
     # Extract label from model key
-    label = extract_label_from_versioned_key(tag_rel)
+    label = extract_label_from_versioned_key(tag_name)
     if label:
         # Versioned ML key → short name
         # Convert underscores to hyphens (not_happy → not-happy)

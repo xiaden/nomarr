@@ -120,7 +120,7 @@ class PreviewTagStatsResponse(BaseModel):
 class TagValuesResponse(BaseModel):
     """Response containing distinct values for a specific tag."""
 
-    rel: str = Field(..., description="Tag relationship key")
+    name: str = Field(..., description="Tag name")
     values: list[str] = Field(default_factory=list, description="Sorted distinct values")
 
 

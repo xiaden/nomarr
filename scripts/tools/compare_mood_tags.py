@@ -54,7 +54,7 @@ def _aql(query: str, bind_vars: dict | None = None, batch_size: int = 10000) -> 
 
 
 def load_db_mood_tags(limit: int | None) -> dict[str, dict[str, list[str]]]:
-    """Return {file_path: {tier_rel: [mood_label, ...]}} for all files with mood tags."""
+    """Return {file_path: {tier_name: [mood_label, ...]}} for all files with mood tags."""
     # Step 1: get distinct file IDs that have any mood tag (limit applies here = per file)
     limit_clause = f"LIMIT {limit}" if limit else ""
     file_rows = _aql(f"""
@@ -104,7 +104,7 @@ def _extract_nom_mood(tags_raw: dict) -> dict[str, list[str]]:
     (e.g. TXXX frame text = '["engaging","mainstream"]'). This unwraps
     any level of JSON encoding to get the raw label strings.
 
-    Returns {tier_rel: [mood_label, ...]}
+    Returns {tier_name: [mood_label, ...]}
     """
     def _unwrap(val: object) -> list[str]:
         if isinstance(val, list):

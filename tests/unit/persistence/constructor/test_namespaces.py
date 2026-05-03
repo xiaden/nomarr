@@ -122,12 +122,12 @@ class TestFieldNamespace:
         spec = {
             "type": CollectionType.DOCUMENT,
             "capabilities": [],
-            "fields": {"rel": {"type": "str", "capabilities": ["get", "collect"]}},
+            "fields": {"name": {"type": "str", "capabilities": ["get", "collect"]}},
         }
 
         namespace = _build_ns(db, "col", spec)
 
-        assert callable(namespace.rel.collect)
+        assert callable(namespace.name.collect)
 
 
 @pytest.mark.unit
@@ -582,7 +582,7 @@ class TestCollectionNamespaceMutationDispatch:
         spec = {
             "type": CollectionType.DOCUMENT,
             "capabilities": [],
-            "fields": {"rel": {"type": "str", "capabilities": ["upsert"]}},
+            "fields": {"name": {"type": "str", "capabilities": ["upsert"]}},
         }
         namespace = _build_ns(db, "tags", spec)
 
@@ -590,17 +590,17 @@ class TestCollectionNamespaceMutationDispatch:
             "nomarr.persistence.constructor.namespaces.verbs.upsert_by_field",
             return_value=["tags/1"],
         ) as mock_upsert:
-            result = namespace.rel.upsert(
-                [{"rel": "genre", "value": "rock"}],
-                match_field=["rel", "value"],
+            result = namespace.name.upsert(
+                [{"name": "genre", "value": "rock"}],
+                match_field=["name", "value"],
             )
 
         assert result == ["tags/1"]
         mock_upsert.assert_called_once_with(
             db,
             "tags",
-            ["rel", "value"],
-            [{"rel": "genre", "value": "rock"}],
+            ["name", "value"],
+            [{"name": "genre", "value": "rock"}],
         )
 
     def test_delete_forwards_ids_list_to_delete_verb(self) -> None:
@@ -683,7 +683,7 @@ class TestIdGetManyNamespace:
 
         ns = self._build_id_get_many(db)
         result = ns.by_filter(
-            {"rel": "genre", "value": "rock"},
+            {"name": "genre", "value": "rock"},
             limit=10,
             offset=5,
         )
@@ -696,7 +696,7 @@ class TestIdGetManyNamespace:
         assert "LIMIT @pagination_offset, @pagination_limit" in aql
         assert bind_vars == {
             "@col": "tags",
-            "f0": "rel",
+            "f0": "name",
             "v0": "genre",
             "f1": "value",
             "v1": "rock",
@@ -714,7 +714,7 @@ class TestIdGetManyNamespace:
 
         assert callable(namespace.get.many.by_filter)
         assert isinstance(namespace.get.many, IdGetManyNamespace)
-        assert namespace.get.many.by_filter({"rel": "genre"}) == []
+        assert namespace.get.many.by_filter({"name": "genre"}) == []
 
 
 @pytest.mark.unit
@@ -741,10 +741,10 @@ class TestCollectionNamespaceFilterCapabilities:
             "nomarr.persistence.constructor.namespaces.verbs.count_by_filter",
             return_value=3,
         ) as mock_count:
-            result = namespace.count_by_filter({"rel": "genre"})
+            result = namespace.count_by_filter({"name": "genre"})
 
         assert result == 3
-        mock_count.assert_called_once_with(db, "tags", {"rel": "genre"})
+        mock_count.assert_called_once_with(db, "tags", {"name": "genre"})
 
     def test_delete_by_filter_attached_when_delete_declared(self) -> None:
         """delete_by_filter() is attached when collection capabilities include delete."""
@@ -765,10 +765,10 @@ class TestCollectionNamespaceFilterCapabilities:
             "nomarr.persistence.constructor.namespaces.verbs.delete_by_filter",
             return_value=2,
         ) as mock_delete:
-            result = namespace.delete_by_filter({"rel": "genre"})
+            result = namespace.delete_by_filter({"name": "genre"})
 
         assert result == 2
-        mock_delete.assert_called_once_with(db, "tags", {"rel": "genre"})
+        mock_delete.assert_called_once_with(db, "tags", {"name": "genre"})
 
     def test_update_by_filter_attached_when_update_declared(self) -> None:
         """update_by_filter() is attached when collection capabilities include update."""
@@ -786,10 +786,10 @@ class TestCollectionNamespaceFilterCapabilities:
         namespace = _build_ns(db, "tags", spec)
 
         with patch("nomarr.persistence.constructor.namespaces.verbs.update_by_filter") as mock_update:
-            result = namespace.update_by_filter({"rel": "genre"}, {"value": "jazz"})
+            result = namespace.update_by_filter({"name": "genre"}, {"value": "jazz"})
 
         assert result is None
-        mock_update.assert_called_once_with(db, "tags", {"rel": "genre"}, {"value": "jazz"})
+        mock_update.assert_called_once_with(db, "tags", {"name": "genre"}, {"value": "jazz"})
 
 
 @pytest.mark.unit
@@ -809,7 +809,7 @@ class TestFieldNamespaceFilterForwarding:
             None,
         )
 
-        result = namespace.collect(filter={"rel": "genre"}, limit=10)
+        result = namespace.collect(filter={"name": "genre"}, limit=10)
 
         assert result == ["rock"]
         call_args = db.aql.execute.call_args
@@ -821,7 +821,7 @@ class TestFieldNamespaceFilterForwarding:
         assert bind_vars == {
             "@col": "tags",
             "field": "value",
-            "f0": "rel",
+            "f0": "name",
             "v0": "genre",
             "pagination_limit": 10,
         }
@@ -838,7 +838,7 @@ class TestFieldNamespaceFilterForwarding:
             None,
         )
 
-        result = namespace.aggregate(filter={"rel": "genre"}, limit=10)
+        result = namespace.aggregate(filter={"name": "genre"}, limit=10)
 
         assert result == [{"value": "rock", "count": 2}]
         call_args = db.aql.execute.call_args
@@ -850,7 +850,7 @@ class TestFieldNamespaceFilterForwarding:
         assert bind_vars == {
             "@col": "tags",
             "field": "value",
-            "f0": "rel",
+            "f0": "name",
             "v0": "genre",
             "pagination_limit": 10,
         }

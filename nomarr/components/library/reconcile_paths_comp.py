@@ -103,15 +103,21 @@ def reconcile_library_paths(
         offset += len(files)
         if offset % (batch_size * 5) == 0:
             logger.info(
-                f"[reconcile_library_paths] Progress: {offset}/{total_count} (valid={result['valid_files']}, invalid={result['invalid_config'] + result['not_found']})"
+                f"[reconcile_library_paths] Progress: {offset}/{total_count} "
+                f"(valid={result['valid_files']}, "
+                f"invalid={result['invalid_config'] + result['not_found']})"
             )
     total_invalid = result["invalid_config"] + result["not_found"]
     logger.info(
-        f"[reconcile_library_paths] Reconciliation complete: total={result['total_files']}, valid={result['valid_files']}, invalid_config={result['invalid_config']}, not_found={result['not_found']}, deleted={result['deleted_files']}, errors={result['errors']}"
+        f"[reconcile_library_paths] Reconciliation complete: "
+        f"total={result['total_files']}, valid={result['valid_files']}, "
+        f"invalid_config={result['invalid_config']}, not_found={result['not_found']}, "
+        f"deleted={result['deleted_files']}, errors={result['errors']}"
     )
     if policy == "dry_run":
         logger.info(
-            f"[reconcile_library_paths] DRY RUN: Would have affected {total_invalid} files (use policy='delete_invalid' to actually remove them)"
+            f"[reconcile_library_paths] DRY RUN: Would have affected "
+            f"{total_invalid} files (use policy='delete_invalid' to actually remove them)"
         )
     return result
 

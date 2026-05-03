@@ -36,9 +36,9 @@ The 3-step bulk tag edit operation moves to the component layer:
 
 ```python
 # nomarr/components/tags/tag_write_comp.py
-def set_song_tags(db, song_id, rel, values):
+def set_song_tags(db, song_id, name, values):
     db.song_has_tags._from.delete(song_id)
-    db.tags.rel.upsert([{"rel": rel, "value": v} for v in values], match_field="value")
+    db.tags.rel.upsert([{"rel": name, "value": v} for v in values], match_field="value")
     db.song_has_tags.insert([{"_from": song_id, "_to": tid} for tid in tag_ids])
 ```
 

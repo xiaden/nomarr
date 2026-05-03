@@ -30,7 +30,7 @@ export interface UseCurationActionsResult {
   ) => Promise<SplitResult>;
   updateFileTags: (
     fileId: string,
-    rel: string,
+    name: string,
     values: string[]
   ) => Promise<UpdateFileTagsResult>;
   loading: boolean;
@@ -81,8 +81,8 @@ export function useCurationActions({
   );
 
   const updateFileTags = useCallback(
-    (fileId: string, rel: string, values: string[]) =>
-      wrap(() => updateFileTagsApi(fileId, rel, values)),
+    (fileId: string, name: string, values: string[]) =>
+      wrap(() => updateFileTagsApi(fileId, name, values)),
     [wrap]
   );
 

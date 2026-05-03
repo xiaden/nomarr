@@ -563,7 +563,7 @@ SCHEMA: dict[str, Any] = {
         "fields": {
             "_key": {"type": "str", "capabilities": ["get"], "unique": True},
             "_id": {"type": "str", "capabilities": ["get", "collect"], "unique": True},
-            "rel": {
+            "name": {
                 "type": "str",
                 "capabilities": ["get", "count", "collect", "aggregate"],
             },

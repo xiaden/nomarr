@@ -100,11 +100,11 @@ class TestUpsertByField:
         db = MagicMock()
         db.aql.execute.return_value = iter(["tags/1", "tags/2"])
         docs = [
-            {"rel": "genre", "value": "rock", "weight": 1.0},
-            {"rel": "mood", "value": "energetic", "weight": 0.8},
+            {"name": "genre", "value": "rock", "weight": 1.0},
+            {"name": "mood", "value": "energetic", "weight": 0.8},
         ]
 
-        result = upsert_by_field(db, "tags", ["rel", "value"], docs)
+        result = upsert_by_field(db, "tags", ["name", "value"], docs)
 
         assert result == ["tags/1", "tags/2"]
         assert db.aql.execute.call_count == 1
@@ -113,7 +113,7 @@ class TestUpsertByField:
         assert call.kwargs["bind_vars"] == {
             "@col": "tags",
             "docs": docs,
-            "fields": ["rel", "value"],
+            "fields": ["name", "value"],
         }
 
     def test_empty_docs_list_returns_empty_list_without_db_call(self) -> None:
@@ -168,7 +168,7 @@ class TestFilterVerbs:
         result = get_many_by_filter(
             db,
             "tags",
-            {"rel": "genre"},
+            {"name": "genre"},
             limit=10,
             offset=5,
         )
@@ -181,7 +181,7 @@ class TestFilterVerbs:
         assert "LIMIT @pagination_offset, @pagination_limit" in aql
         assert bind_vars == {
             "@col": "tags",
-            "f0": "rel",
+            "f0": "name",
             "v0": "genre",
             "pagination_offset": 5,
             "pagination_limit": 10,
@@ -205,7 +205,7 @@ class TestFilterVerbs:
         """count_by_filter uses the equality filter and COLLECT WITH COUNT."""
         db = _mock_db([3])
 
-        result = count_by_filter(db, "tags", {"rel": "genre", "value": "rock"})
+        result = count_by_filter(db, "tags", {"name": "genre", "value": "rock"})
 
         assert result == 3
         call_args = db.aql.execute.call_args
@@ -215,7 +215,7 @@ class TestFilterVerbs:
         assert "COLLECT WITH COUNT INTO c" in aql
         assert bind_vars == {
             "@col": "tags",
-            "f0": "rel",
+            "f0": "name",
             "v0": "genre",
             "f1": "value",
             "v1": "rock",
@@ -225,7 +225,7 @@ class TestFilterVerbs:
         """delete_by_filter returns the number of removed rows."""
         db = _mock_db([1, 1])
 
-        result = delete_by_filter(db, "tags", {"rel": "genre"})
+        result = delete_by_filter(db, "tags", {"name": "genre"})
 
         assert result == 2
         call_args = db.aql.execute.call_args
@@ -236,7 +236,7 @@ class TestFilterVerbs:
         assert "RETURN 1" in aql
         assert bind_vars == {
             "@col": "tags",
-            "f0": "rel",
+            "f0": "name",
             "v0": "genre",
         }
 
@@ -244,7 +244,7 @@ class TestFilterVerbs:
         """update_by_filter uses the equality filter and forwards update fields."""
         db = MagicMock()
 
-        update_by_filter(db, "tags", {"rel": "genre"}, {"value": "jazz"})
+        update_by_filter(db, "tags", {"name": "genre"}, {"value": "jazz"})
 
         call_args = db.aql.execute.call_args
         aql = call_args.args[0]
@@ -254,7 +254,7 @@ class TestFilterVerbs:
         assert bind_vars == {
             "@col": "tags",
             "fields": {"value": "jazz"},
-            "f0": "rel",
+            "f0": "name",
             "v0": "genre",
         }
 
@@ -268,7 +268,7 @@ class TestFilteredCollectAndAggregate:
         """collect_field inserts FILTER before the COLLECT clause when provided."""
         db = _mock_db(["rock"])
 
-        result = collect_field(db, "tags", "value", filter={"rel": "genre"}, limit=10)
+        result = collect_field(db, "tags", "value", filter={"name": "genre"}, limit=10)
 
         assert result == ["rock"]
         call_args = db.aql.execute.call_args
@@ -280,7 +280,7 @@ class TestFilteredCollectAndAggregate:
         assert bind_vars == {
             "@col": "tags",
             "field": "value",
-            "f0": "rel",
+            "f0": "name",
             "v0": "genre",
             "pagination_limit": 10,
         }
@@ -305,7 +305,7 @@ class TestFilteredCollectAndAggregate:
         """aggregate_field inserts FILTER before COLLECT when provided."""
         db = _mock_db([{"value": "rock", "count": 2}])
 
-        result = aggregate_field(db, "tags", "value", filter={"rel": "genre"}, limit=10)
+        result = aggregate_field(db, "tags", "value", filter={"name": "genre"}, limit=10)
 
         assert result == [{"value": "rock", "count": 2}]
         call_args = db.aql.execute.call_args
@@ -317,7 +317,7 @@ class TestFilteredCollectAndAggregate:
         assert bind_vars == {
             "@col": "tags",
             "field": "value",
-            "f0": "rel",
+            "f0": "name",
             "v0": "genre",
             "pagination_limit": 10,
         }

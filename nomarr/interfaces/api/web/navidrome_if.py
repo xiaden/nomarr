@@ -51,13 +51,13 @@ async def web_navidrome_preview(
 
 @router.get("/tag-value", dependencies=[Depends(verify_session)])
 async def web_navidrome_tag_values(
-    rel: str,
+    name: str,
     navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> TagValuesResponse:
-    """Get distinct values for a specific tag relationship."""
+    """Get distinct values for a specific tag name."""
     try:
-        values = await asyncio.to_thread(navidrome_service.get_tag_values, rel)
-        return TagValuesResponse(rel=rel, values=values)
+        values = await asyncio.to_thread(navidrome_service.get_tag_values, name)
+        return TagValuesResponse(name=name, values=values)
     except Exception as e:
         logger.exception("[Web API] Error fetching tag values")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to fetch tag values")) from e

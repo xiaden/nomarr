@@ -205,7 +205,7 @@ async def validate_library_tags(
             incomplete_files=result["incomplete_files"],
             files_repaired=result["files_repaired"],
             expected_heads=result["expected_heads"],
-            missing_rels_summary=result.get("missing_rels_summary", {}),
+            missing_names_summary=result.get("missing_names_summary", {}),
         )
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None

@@ -29,15 +29,15 @@ def _all_tags(db: Database) -> list[dict[str, Any]]:
     return tags
 
 
-def _tags_for_rel(db: Database, rel: str | None) -> list[dict[str, Any]]:
-    """Return tags for one relation or all tags when relation is omitted."""
-    if rel is None:
+def _tags_for_name(db: Database, name: str | None) -> list[dict[str, Any]]:
+    """Return tags for one tag name or all tags when name is omitted."""
+    if name is None:
         return _all_tags(db)
 
     total = db.tags.count()
     if total <= 0:
         return []
-    return db.tags.rel.get.many(rel, limit=total)
+    return db.tags.name.get.many(name, limit=total)
 
 
 def _filter_tags_by_search(tags: list[dict[str, Any]], search: str | None) -> list[dict[str, Any]]:
@@ -54,7 +54,7 @@ def _enrich_tag(tag: dict[str, Any], song_count: int) -> dict[str, Any]:
     return {
         "_id": tag.get("_id"),
         "_key": tag.get("_key"),
-        "rel": tag.get("rel"),
+        "name": tag.get("name"),
         "value": tag.get("value"),
         "song_count": song_count,
     }
@@ -149,12 +149,12 @@ def _candidate_filter_values(value: str) -> list[TagValue]:
     return candidates
 
 
-def _exact_tags_for_rel_value(db: Database, rel: str, value: str) -> list[dict[str, Any]]:
-    """Return tags matching one relation/value pair, including numeric coercions."""
+def _exact_tags_for_name_value(db: Database, name: str, value: str) -> list[dict[str, Any]]:
+    """Return tags matching one name/value pair, including numeric coercions."""
     tags: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     for candidate in _candidate_filter_values(value):
-        for tag in db.tags.get.many.by_filter({"rel": rel, "value": candidate}, limit=db.tags.count()):
+        for tag in db.tags.get.many.by_filter({"name": name, "value": candidate}, limit=db.tags.count()):
             tag_id = tag.get("_id")
             if not isinstance(tag_id, str) or tag_id in seen_ids:
                 continue
@@ -163,10 +163,10 @@ def _exact_tags_for_rel_value(db: Database, rel: str, value: str) -> list[dict[s
     return tags
 
 
-def _first_rel_value(tag_docs: list[dict[str, Any]], rel: str) -> str:
-    """Return the first string value for a relation, or an empty string."""
+def _first_name_value(tag_docs: list[dict[str, Any]], name: str) -> str:
+    """Return the first string value for a tag name, or an empty string."""
     for tag in tag_docs:
-        if tag.get("rel") != rel:
+        if tag.get("name") != name:
             continue
         value = tag.get("value")
         if isinstance(value, str):
@@ -179,16 +179,16 @@ def get_tag(db: Database, tag_id: str) -> dict[str, Any] | None:
     return db.tags.get(tag_id)
 
 
-def list_tags_by_rel(
+def list_tags_by_name(
     db: Database,
-    rel: str | None = None,
+    name: str | None = None,
     limit: int = 100,
     offset: int = 0,
     search: str | None = None,
     sort_by_count: bool = False,
 ) -> list[dict[str, Any]]:
-    """List tag values, optionally filtered by relation and search text."""
-    matched_tags = _filter_tags_by_search(_tags_for_rel(db, rel), search)
+    """List tag values, optionally filtered by tag name and search text."""
+    matched_tags = _filter_tags_by_search(_tags_for_name(db, name), search)
     count_by_tag_id = {row["value"]: row["count"] for row in db.song_has_tags._to.aggregate()}
 
     if sort_by_count:
@@ -205,24 +205,24 @@ def list_tags_by_rel(
     ]
 
 
-def count_tags_by_rel(db: Database, rel: str | None = None, search: str | None = None) -> int:
-    """Count tags, optionally filtered by relation and search text."""
-    return len(_filter_tags_by_search(_tags_for_rel(db, rel), search))
+def count_tags_by_name(db: Database, name: str | None = None, search: str | None = None) -> int:
+    """Count tags, optionally filtered by tag name and search text."""
+    return len(_filter_tags_by_search(_tags_for_name(db, name), search))
 
 
-def get_song_tags(db: Database, song_id: str, rel: str | None = None, nomarr_only: bool = False) -> Tags:
+def get_song_tags(db: Database, song_id: str, name: str | None = None, nomarr_only: bool = False) -> Tags:
     """Return tags for one song as a ``Tags`` DTO."""
     tag_docs = db.library_files.traversal(song_id, "song_has_tags")
     rows: list[dict[str, Any]] = []
     for tag in tag_docs:
-        tag_rel = tag.get("rel")
-        if not isinstance(tag_rel, str) or "value" not in tag:
+        tag_name = tag.get("name")
+        if not isinstance(tag_name, str) or "value" not in tag:
             continue
-        if rel is not None and tag_rel != rel:
+        if name is not None and tag_name != name:
             continue
-        if nomarr_only and not tag_rel.startswith("nom:"):
+        if nomarr_only and not tag_name.startswith("nom:"):
             continue
-        rows.append({"rel": tag_rel, "value": tag["value"]})
+        rows.append({"name": tag_name, "value": tag["value"]})
     return Tags.from_db_rows(rows)
 
 
@@ -234,7 +234,7 @@ def get_nomarr_tags_bulk(db: Database, file_ids: list[str]) -> dict[str, Tags]:
     rows = db.library_files.traversal.by_ids(
         list(file_ids),
         "song_has_tags",
-        target_like_starts_with=("rel", "nom:"),
+        target_like_starts_with=("name", "nom:"),
     )
     rows_by_file: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
@@ -242,10 +242,10 @@ def get_nomarr_tags_bulk(db: Database, file_ids: list[str]) -> dict[str, Tags]:
         tag = row.get("v")
         if not isinstance(start_id, str) or not isinstance(tag, dict):
             continue
-        tag_rel = tag.get("rel")
-        if not isinstance(tag_rel, str) or "value" not in tag:
+        tag_name = tag.get("name")
+        if not isinstance(tag_name, str) or "value" not in tag:
             continue
-        rows_by_file.setdefault(start_id, []).append({"rel": tag_rel, "value": tag["value"]})
+        rows_by_file.setdefault(start_id, []).append({"name": tag_name, "value": tag["value"]})
     return {file_id: Tags.from_db_rows(rows) for file_id, rows in rows_by_file.items()}
 
 
@@ -255,9 +255,11 @@ def list_songs_for_tag(db: Database, tag_id: str, limit: int = 100, offset: int 
     return [str(edge["_from"]) for edge in edges if edge.get("_from")]
 
 
-def get_file_ids_matching_tag(db: Database, rel: str, operator: str, value: TagValue) -> set[str]:
+def get_file_ids_matching_tag(db: Database, name: str, operator: str, value: TagValue) -> set[str]:
     """Return file ids matching one tag comparison."""
-    matching_tags = [tag for tag in _tags_for_rel(db, rel) if _matches_tag_operator(tag.get("value"), operator, value)]
+    matching_tags = [
+        tag for tag in _tags_for_name(db, name) if _matches_tag_operator(tag.get("value"), operator, value)
+    ]
     return _file_ids_for_tag_docs(db, matching_tags)
 
 
@@ -266,20 +268,20 @@ def get_file_ids_for_tags(
     tag_specs: list[tuple[str, str]],
     library_id: str | None = None,
 ) -> dict[tuple[str, str], set[str]]:
-    """Get file-id sets for many ``(rel, value)`` tag specs."""
+    """Get file-id sets for many ``(name, value)`` tag specs."""
     result: dict[tuple[str, str], set[str]] = {}
     library_ids = _library_file_ids(db, library_id)
 
-    for rel, value in tag_specs:
+    for name, value in tag_specs:
         if value == "*":
-            tags = _tags_for_rel(db, rel)
+            tags = _tags_for_name(db, name)
         else:
-            tags = _exact_tags_for_rel_value(db, rel, value)
+            tags = _exact_tags_for_name_value(db, name, value)
 
         file_ids = _file_ids_for_tag_docs(db, tags)
         if library_ids is not None:
             file_ids &= library_ids
-        result[(rel, value)] = file_ids
+        result[(name, value)] = file_ids
 
     return result
 
@@ -292,11 +294,11 @@ def get_file_ids_for_mood_tags(
 ) -> dict[str, set[str]]:
     """Get file-id sets for many mood values within one mood tier."""
     result: dict[str, set[str]] = {}
-    rel = f"nom:{mood_tier}" if not mood_tier.startswith("nom:") else mood_tier
+    name = f"nom:{mood_tier}" if not mood_tier.startswith("nom:") else mood_tier
     library_ids = _library_file_ids(db, library_id)
 
     for mood_value in mood_values:
-        file_ids = _file_ids_for_tag_docs(db, _exact_tags_for_rel_value(db, rel, mood_value))
+        file_ids = _file_ids_for_tag_docs(db, _exact_tags_for_name_value(db, name, mood_value))
         if library_ids is not None:
             file_ids &= library_ids
         result[mood_value] = file_ids
@@ -306,21 +308,21 @@ def get_file_ids_for_mood_tags(
 
 def get_unique_mood_values(db: Database, mood_tier: str = "mood-strict", limit: int = 100) -> list[str]:
     """Return unique mood values for one tier."""
-    rel = f"nom:{mood_tier}" if not mood_tier.startswith("nom:") else mood_tier
-    tags = list_tags_by_rel(db, rel=rel, limit=limit, offset=0)
+    name = f"nom:{mood_tier}" if not mood_tier.startswith("nom:") else mood_tier
+    tags = list_tags_by_name(db, name=name, limit=limit, offset=0)
     values = sorted({str(tag["value"]) for tag in tags})
     return values[:limit]
 
 
-def get_distinct_tag_values_for_files(db: Database, file_ids: list[str], rel: str) -> list[str]:
-    """Return distinct values for one rel across many files."""
+def get_distinct_tag_values_for_files(db: Database, file_ids: list[str], name: str) -> list[str]:
+    """Return distinct values for one tag name across many files."""
     if not file_ids:
         return []
 
     rows = db.library_files.traversal.by_ids(
         list(file_ids),
         "song_has_tags",
-        target_filter={"rel": rel},
+        target_filter={"name": name},
     )
     values = {
         value for row in rows if isinstance(tag := row.get("v"), dict) and isinstance(value := tag.get("value"), str)
@@ -328,15 +330,15 @@ def get_distinct_tag_values_for_files(db: Database, file_ids: list[str], rel: st
     return sorted(values)
 
 
-def get_tag_values_grouped_by_file(db: Database, file_ids: list[str], rel: str) -> dict[str, set[str]]:
-    """Return tag values grouped by file for one relation."""
+def get_tag_values_grouped_by_file(db: Database, file_ids: list[str], name: str) -> dict[str, set[str]]:
+    """Return tag values grouped by file for one tag name."""
     if not file_ids:
         return {}
 
     rows = db.library_files.traversal.by_ids(
         list(file_ids),
         "song_has_tags",
-        target_filter={"rel": rel},
+        target_filter={"name": name},
     )
     result: dict[str, set[str]] = {}
     for row in rows:
@@ -363,8 +365,8 @@ def get_tag_songs_with_metadata(db: Database, tag_id: str, limit: int = 50, offs
             {
                 "file_id": file_id,
                 "title": str(file_doc.get("title", "")),
-                "artist": _first_rel_value(tag_docs, "artist"),
-                "album": _first_rel_value(tag_docs, "album"),
+                "artist": _first_name_value(tag_docs, "artist"),
+                "album": _first_name_value(tag_docs, "album"),
                 "path": str(file_doc.get("path", "")),
             },
         )

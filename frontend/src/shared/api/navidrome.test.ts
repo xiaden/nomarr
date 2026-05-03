@@ -17,7 +17,7 @@ describe("getTagValues", () => {
   });
 
   it("uses the singular navidrome tag-value endpoint", async () => {
-    vi.mocked(get).mockResolvedValue({ rel: "genre", values: ["Rock"] });
+    vi.mocked(get).mockResolvedValue({ name: "genre", values: ["Rock"] });
 
     await expect(getTagValues("genre")).resolves.toEqual(["Rock"]);
 

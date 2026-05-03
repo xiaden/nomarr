@@ -56,7 +56,7 @@ class TestGetFilesByIdsWithTags:
     def test_returns_hydrated_files_from_constructor_calls(self) -> None:
         mock_db = MagicMock()
         mock_db.library_files.get.many.return_value = [{"_id": "library_files/1", "path": "D:/Music/song.flac"}]
-        mock_db.library_files.traversal.return_value = [{"rel": "genre", "value": "rock"}]
+        mock_db.library_files.traversal.return_value = [{"name": "genre", "value": "rock"}]
         mock_db.library_contains_file._to.get.many.return_value = [{"_from": "libraries/1"}]
 
         result = get_files_by_ids_with_tags(mock_db, ["library_files/1"])
@@ -473,7 +473,7 @@ class TestPhaseTwoQueryHelpers:
         mock_db.tags.get.many.by_filter.return_value = [{"_id": "tags/1"}]
         mock_db.song_has_tags._to.get.in_.return_value = [{"_from": "library_files/1"}]
         mock_db.file_states.traversal.return_value = [{"_id": "library_files/1"}]
-        mock_db.library_files.traversal.return_value = [{"rel": "genre", "value": "rock"}]
+        mock_db.library_files.traversal.return_value = [{"name": "genre", "value": "rock"}]
         mock_db.library_contains_file._to.get.many.return_value = [{"_from": "libraries/1"}]
 
         rows, total = search_library_files_with_tags(
@@ -505,7 +505,7 @@ class TestPhaseTwoQueryHelpers:
     @pytest.mark.unit
     def test_search_files_by_tag_numeric_sorts_by_distance_and_hydrates_tags(self) -> None:
         mock_db = MagicMock()
-        mock_db.tags.rel.get.many.return_value = [
+        mock_db.tags.name.get.many.return_value = [
             {"_id": "tags/1", "value": 118.0},
             {"_id": "tags/2", "value": 121.0},
         ]
@@ -517,7 +517,7 @@ class TestPhaseTwoQueryHelpers:
             {"_id": "library_files/1", "artist": "B", "album": "A", "title": "Far"},
             {"_id": "library_files/2", "artist": "A", "album": "A", "title": "Near"},
         ]
-        mock_db.library_files.traversal.return_value = [{"rel": "nom:bpm", "value": 121.0}]
+        mock_db.library_files.traversal.return_value = [{"name": "nom:bpm", "value": 121.0}]
         mock_db.library_contains_file._to.get.many.return_value = [{"_from": "libraries/1"}]
 
         result = search_files_by_tag(mock_db, "nom:bpm", 120.0, limit=1, offset=0)
@@ -539,11 +539,11 @@ class TestPhaseTwoQueryHelpers:
         string_count = count_files_by_tag(mock_db, "genre", "rock")
 
         assert string_count == 2
-        mock_db.tags.get.many.by_filter.assert_called_once_with({"rel": "genre", "value": "rock"}, limit=DEFAULT_LIMIT)
+        mock_db.tags.get.many.by_filter.assert_called_once_with({"name": "genre", "value": "rock"}, limit=DEFAULT_LIMIT)
         mock_db.song_has_tags._to.get.in_.assert_called_once_with(["tags/1"], limit=None)
 
         mock_db = MagicMock()
-        mock_db.tags.rel.get.many.return_value = [
+        mock_db.tags.name.get.many.return_value = [
             {"_id": "tags/1", "value": 120.0},
             {"_id": "tags/2", "value": True},
         ]
@@ -552,7 +552,7 @@ class TestPhaseTwoQueryHelpers:
         numeric_count = count_files_by_tag(mock_db, "nom:bpm", 120.0)
 
         assert numeric_count == 1
-        mock_db.tags.rel.get.many.assert_called_once_with("nom:bpm", limit=DEFAULT_LIMIT)
+        mock_db.tags.name.get.many.assert_called_once_with("nom:bpm", limit=DEFAULT_LIMIT)
         mock_db.song_has_tags._to.get.in_.assert_called_once_with(["tags/1"], limit=None)
 
     @pytest.mark.unit
@@ -568,7 +568,7 @@ class TestPhaseTwoQueryHelpers:
             }
         ]
         mock_db.library_files.traversal.by_ids.return_value = [
-            {"start_id": "library_files/1", "v": {"rel": "isrc", "value": "ABC123"}},
+            {"start_id": "library_files/1", "v": {"name": "isrc", "value": "ABC123"}},
         ]
 
         result = get_tracks_for_matching(mock_db)
@@ -587,7 +587,7 @@ class TestPhaseTwoQueryHelpers:
         mock_db.library_files.traversal.by_ids.assert_called_once_with(
             ["library_files/1"],
             "song_has_tags",
-            target_filter={"rel": "isrc"},
+            target_filter={"name": "isrc"},
         )
 
     @pytest.mark.unit
@@ -604,7 +604,7 @@ class TestPhaseTwoQueryHelpers:
             }
         ]
         mock_db.library_files.traversal.by_ids.return_value = [
-            {"start_id": "library_files/1", "v": {"rel": "isrc", "value": "XYZ789"}},
+            {"start_id": "library_files/1", "v": {"name": "isrc", "value": "XYZ789"}},
         ]
 
         result = get_tracks_for_matching(mock_db, library_id="main")
@@ -628,7 +628,7 @@ class TestPhaseTwoQueryHelpers:
         mock_db.library_files.traversal.by_ids.assert_called_once_with(
             ["library_files/1"],
             "song_has_tags",
-            target_filter={"rel": "isrc"},
+            target_filter={"name": "isrc"},
         )
 
     @pytest.mark.unit

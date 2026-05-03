@@ -93,11 +93,11 @@ describe("updateFileTags", () => {
 
     expect(patch).toHaveBeenCalledWith(
       expect.stringContaining("/tag-curation/file/"),
-      expect.objectContaining({ rel: "genre", values: ["Rock"] }),
+      expect.objectContaining({ name: "genre", values: ["Rock"] }),
     );
     expect(patch).toHaveBeenCalledWith(
       expect.stringContaining("/tag"),
-      expect.objectContaining({ rel: "genre", values: ["Rock"] }),
+      expect.objectContaining({ name: "genre", values: ["Rock"] }),
     );
   });
 });

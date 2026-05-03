@@ -16,11 +16,11 @@ import { MergeDialog } from "./MergeDialog";
 import { SongListPanel } from "./SongListPanel";
 
 interface TagValueGridProps {
-  rel?: string;
+  name?: string;
   prefix?: string;
 }
 
-export function TagValueGrid({ rel, prefix }: TagValueGridProps): React.JSX.Element {
+export function TagValueGrid({ name, prefix }: TagValueGridProps): React.JSX.Element {
   const {
     rows,
     total,
@@ -30,7 +30,7 @@ export function TagValueGrid({ rel, prefix }: TagValueGridProps): React.JSX.Elem
     pageSize,
     setPageSize,
     refetch,
-  } = useTagValues({ rel, prefix, initialPageSize: 50 });
+  } = useTagValues({ name, prefix, initialPageSize: 50 });
 
   const {
     rename,
@@ -52,7 +52,7 @@ export function TagValueGrid({ rel, prefix }: TagValueGridProps): React.JSX.Elem
   const selectedTags = rows.filter((r) => selectedIds.includes(r.id));
   const canMerge =
     selectedTags.length >= 2 &&
-    selectedTags.every((t) => t.rel === selectedTags[0]?.rel);
+    selectedTags.every((t) => t.name === selectedTags[0]?.name);
 
   const handleToggleExpand = useCallback((tagId: string) => {
     setExpandedTagId((prev) => (prev === tagId ? null : tagId));
@@ -78,7 +78,7 @@ export function TagValueGrid({ rel, prefix }: TagValueGridProps): React.JSX.Elem
         disableColumnMenu: true,
         renderCell: (params) => {
           const row = params.row as TagValueItem;
-          if (row.rel.startsWith("nom:")) return null;
+          if (row.name.startsWith("nom:")) return null;
           const isExpanded = expandedTagId === row.id;
           return (
             <IconButton
@@ -99,8 +99,8 @@ export function TagValueGrid({ rel, prefix }: TagValueGridProps): React.JSX.Elem
         },
       },
       {
-        field: "rel",
-        headerName: "Rel",
+        field: "name",
+        headerName: "Name",
         width: 140,
         editable: false,
       },
@@ -159,11 +159,11 @@ export function TagValueGrid({ rel, prefix }: TagValueGridProps): React.JSX.Elem
         }}
         isRowSelectable={(params) => {
           const row = params.row as TagValueItem;
-          return !row.rel.startsWith("nom:");
+          return !row.name.startsWith("nom:");
         }}
         isCellEditable={(params) => {
           const row = params.row as TagValueItem;
-          return params.field === "value" && !row.rel.startsWith("nom:");
+          return params.field === "value" && !row.name.startsWith("nom:");
         }}
         processRowUpdate={processRowUpdate}
         onProcessRowUpdateError={() => {
@@ -171,7 +171,7 @@ export function TagValueGrid({ rel, prefix }: TagValueGridProps): React.JSX.Elem
         }}
         getRowClassName={(params) => {
           const row = params.row as TagValueItem;
-          return row.rel.startsWith("nom:") ? "nom-row" : "";
+          return row.name.startsWith("nom:") ? "nom-row" : "";
         }}
         loading={loading}
         sx={{

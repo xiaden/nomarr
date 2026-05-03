@@ -5,7 +5,7 @@ The **persistence layer** owns all database access for Nomarr.
 It is a schema-driven data access layer built around the `Database` facade and
 constructor-backed namespaces. The constructor reads `schema.py` at import time
 and dynamically exposes collection and field accessors such as
-`db.tags.rel.get.many(...)` and `db.library_files.insert([...])`.
+`db.tags.name.get.many(...)` and `db.library_files.insert([...])`.
 
 Persistence is:
 
@@ -82,7 +82,7 @@ Each collection becomes an attribute on `Database`:
 
 ```python
 file = db.library_files.path.get("/music/track.flac")
-tags = db.tags.rel.get.many("genre", limit=100, offset=0)
+tags = db.tags.name.get.many("genre", limit=100, offset=0)
 ```
 
 ### Collection-level verbs
@@ -103,7 +103,7 @@ Field namespaces expose field-scoped verbs and modifiers:
 ```python
 # Field accessor: db.<collection>.<field>.get(value)
 file = db.library_files.path.get("/music/track.flac")
-tags = db.tags.rel.get.many("genre", limit=100, offset=0)
+tags = db.tags.name.get.many("genre", limit=100, offset=0)
 
 # Collection-level verbs (always-list)
 db.library_files.insert([{"path": "/music/track.flac", "normalized_path": "/music/track.flac"}])
@@ -164,7 +164,7 @@ Persistence owns **data access** and nothing more.
  | Belongs here | Examples |
  | --- | --- |
  | CRUD and lookup verbs | `insert`, `delete`, `get`, `count`, `upsert` |
- | Field-scoped queries | `db.tags.rel.get.many(...)`, `db.library_files.path.get(...)` |
+ | Field-scoped queries | `db.tags.name.get.many(...)`, `db.library_files.path.get(...)` |
  | Collection traversal and ANN access | `traversal(...)`, `ann_search(...)` |
  | Graph cleanup primitives | `cascade(...)`, field-level edge deletion |
  | Import-time schema validation and namespace construction | `SchemaConstructor`, schema-backed namespace wiring |
@@ -217,7 +217,7 @@ When working in persistence:
 When using persistence from higher layers:
 
 - Accept `db: Database` via dependency injection
-- Call constructor-backed namespaces such as `db.tags.rel.get.many(...)`
+- Call constructor-backed namespaces such as `db.tags.name.get.many(...)`
 - Avoid direct imports from `nomarr.persistence.database`
 - Treat `database/__init__.py` as legacy compatibility scaffolding, not an API surface
 

@@ -10,10 +10,10 @@ from nomarr.components.library.library_file_state_comp import count_pending_tag_
 from nomarr.components.library.library_records_comp import list_library_records
 from nomarr.components.library.search_files_comp import get_unique_tag_keys, get_unique_tag_values
 from nomarr.components.tagging.tag_query_comp import (
-    count_tags_by_rel,
+    count_tags_by_name,
     get_tag_songs_with_metadata,
     get_unique_mood_values,
-    list_tags_by_rel,
+    list_tags_by_name,
 )
 from nomarr.helpers.dto.library_dto import (
     FileTag,
@@ -51,15 +51,15 @@ class TaggingQueryMixin:
 
     def list_tag_values(
         self,
-        rel: str | None = None,
+        name: str | None = None,
         prefix: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> TagListResult:
-        """List tag values with pagination, optionally filtered by rel and prefix.
+        """List tag values with pagination, optionally filtered by name and prefix.
 
         Args:
-            rel: Tag rel to filter by (e.g., "genre"). None = all rels.
+            name: Tag name to filter by (e.g., "genre"). None = all names.
             prefix: Substring search on tag value.
             limit: Max results per page.
             offset: Pagination offset.
@@ -68,13 +68,13 @@ class TaggingQueryMixin:
             TagListResult with tags list and total count.
 
         """
-        raw_tags = list_tags_by_rel(self.db, rel=rel, limit=limit, offset=offset, search=prefix)
-        total = count_tags_by_rel(self.db, rel=rel, search=prefix)
+        raw_tags = list_tags_by_name(self.db, name=name, limit=limit, offset=offset, search=prefix)
+        total = count_tags_by_name(self.db, name=name, search=prefix)
 
         tags: list[TagValueItem] = [
             TagValueItem(
                 id=t["_id"],
-                rel=t["rel"],
+                name=t["name"],
                 value=str(t["value"]),
                 song_count=t.get("song_count", 0),
             )

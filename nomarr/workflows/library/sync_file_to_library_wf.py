@@ -64,9 +64,9 @@ def _sync_tags_and_entities(
     # Persist all external tags
     save_file_tags(db, file_id, parsed_all_tags)
 
-    # Persist nomarr-namespaced tags (prefix rels with "nom:")
+    # Persist nomarr-namespaced tags (prefix names with "nom:")
     prefixed_nom_tags = {
-        (f"nom:{rel}" if not rel.startswith("nom:") else rel): values for rel, values in parsed_nom_tags.items()
+        (f"nom:{name}" if not name.startswith("nom:") else name): values for name, values in parsed_nom_tags.items()
     }
     save_file_tags(db, file_id, prefixed_nom_tags)
 

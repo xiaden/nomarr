@@ -23,11 +23,11 @@ def validate_library_tags_workflow(
     namespace: str = "nom",
     auto_repair: bool = True,
 ) -> dict[str, Any]:
-    """Validate per-file completeness of nom:* rels for all discovered heads.
+    """Validate per-file completeness of nom:* names for all discovered heads.
 
     A file with a ``tagged`` edge is considered *complete* only if it has
     at least one tag edge for every discovered head (model_key + label) under
-    the namespace.  Missing any head rel marks the file incomplete.  Auto-repair
+    the namespace.  Missing any head name marks the file incomplete.  Auto-repair
     removes the ``tagged`` edge so the file is rediscovered for tagging.
     """
     heads = discover_heads(models_dir, db)
@@ -38,7 +38,7 @@ def validate_library_tags_workflow(
             {
                 "head_key": f"{model_key}:{head.name}",
                 "labels": head.labels,
-                # Tag rel contains model_key without dashes (see calibration_state_aql)
+                # Tag name contains model_key without dashes (see calibration_state_aql)
                 "model_key_for_tag": model_key.replace("-", ""),
             }
         )
@@ -50,7 +50,7 @@ def validate_library_tags_workflow(
             "complete_files": 0,
             "incomplete_files": 0,
             "files_repaired": 0,
-            "missing_rels_summary": {},
+            "missing_names_summary": {},
             "expected_heads": 0,
         }
 
@@ -80,7 +80,7 @@ def validate_library_tags_workflow(
         "complete_files": len(results) - len(incomplete),
         "incomplete_files": len(incomplete),
         "files_repaired": repaired,
-        "missing_rels_summary": dict(missing_counter),
+        "missing_names_summary": dict(missing_counter),
         "expected_heads": expected_count,
         "details": incomplete,
     }

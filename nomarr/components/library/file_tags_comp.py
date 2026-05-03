@@ -17,11 +17,11 @@ def get_file_tags_with_path(db: Database, file_id: str, nomarr_only: bool = Fals
     Args:
         db: Database instance
         file_id: Library file ID
-        nomarr_only: If True, only return Nomarr-generated tags (rel starts with "nom:")
+        nomarr_only: If True, only return Nomarr-generated tags (name starts with "nom:")
 
     Returns:
         Dict with 'path' and 'tags' keys, or None if file not found.
-        'tags' is a list of dicts with 'rel', 'value', 'is_nomarr_tag'.
+        'tags' is a list of dicts with 'name', 'value', 'is_nomarr_tag'.
 
     """
     # Get file info from persistence
@@ -36,7 +36,7 @@ def get_file_tags_with_path(db: Database, file_id: str, nomarr_only: bool = Fals
     tags_data = [
         {
             "key": tag.key,  # API uses "key" for backward compat
-            "rel": tag.key,
+            "name": tag.key,
             "value": tag.value[0] if len(tag.value) == 1 else tag.value,  # Flatten single values for API
             "is_nomarr_tag": tag.key.startswith("nom:"),
         }

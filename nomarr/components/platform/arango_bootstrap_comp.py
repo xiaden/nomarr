@@ -101,7 +101,7 @@ def _create_collections(db: DatabaseLike) -> None:
         "libraries",
         "library_files",
         "library_folders",
-        "tags",  # Unified tag vertex collection (rel, value)
+        "tags",  # Unified tag vertex collection (name, value)
         "sessions",
         "calibration_state",
         "calibration_history",
@@ -253,12 +253,12 @@ def _create_indexes(db: DatabaseLike) -> None:
     # Unified tag schema indexes (TAG_UNIFICATION_REFACTOR)
     # ─────────────────────────────────────────────────────────────────────
 
-    # tags collection: filter by rel (browse), unique on (rel, value)
+    # tags collection: filter by name (browse), unique on (name, value)
     _ensure_index(
         db,
         "tags",
         "persistent",
-        ["rel"],  # Browse by type, Nomarr prefix filtering
+        ["name"],  # Browse by type, Nomarr prefix filtering
         unique=False,
         sparse=False,
     )
@@ -266,7 +266,7 @@ def _create_indexes(db: DatabaseLike) -> None:
         db,
         "tags",
         "persistent",
-        ["rel", "value"],  # Upsert deduplication
+        ["name", "value"],  # Upsert deduplication
         unique=True,
         sparse=False,
     )

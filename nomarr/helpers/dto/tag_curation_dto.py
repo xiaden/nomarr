@@ -13,7 +13,7 @@ class RelinkResult(TypedDict):
 
 class TagValueItem(TypedDict):
     id: str
-    rel: str
+    name: str
     value: str
     song_count: int
 

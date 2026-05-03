@@ -196,7 +196,7 @@ def main() -> None:
         FOR t IN tags
           FILTER t.rel IN ["nom:mood-strict","nom:mood-regular","nom:mood-loose"]
           LET n = LENGTH(FOR e IN INBOUND t song_has_tags RETURN 1)
-          RETURN {rel: t.rel, value: t.value, n: n}
+          RETURN {name: t.name, value: t.value, n: n}
     """)
     tier_hits: dict[str, dict[str,int]] = defaultdict(lambda: {"strict":0,"regular":0,"loose":0})
     for tr in tier_rows:

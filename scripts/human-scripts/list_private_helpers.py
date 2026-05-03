@@ -190,7 +190,7 @@ def scan_folder(
             helpers = [h for h in helpers if h["docstring"] is None]
 
         if helpers:
-            rel = str(py_file).replace("\\", "/")
+            name = str(py_file).replace("\\", "/")
             results[rel] = helpers
 
     return results

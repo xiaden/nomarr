@@ -20,15 +20,15 @@ class TaggingCurationMixin:
     db: Database
 
     @staticmethod
-    def _reject_nom_prefix(rel: str | None = None, *, tag_doc: dict[str, Any] | None = None) -> None:
-        """Raise ValueError if the tag or rel has the read-only nom: prefix (ADR-009)."""
-        if rel is not None and rel.startswith("nom:"):
-            msg = f"Tags with 'nom:' prefix are read-only and cannot be edited: rel={rel}"
+    def _reject_nom_prefix(name: str | None = None, *, tag_doc: dict[str, Any] | None = None) -> None:
+        """Raise ValueError if the tag or name has the read-only nom: prefix (ADR-009)."""
+        if name is not None and name.startswith("nom:"):
+            msg = f"Tags with 'nom:' prefix are read-only and cannot be edited: name={name}"
             raise ValueError(msg)
-        if tag_doc is not None and str(tag_doc.get("rel", "")).startswith("nom:"):
+        if tag_doc is not None and str(tag_doc.get("name", "")).startswith("nom:"):
             msg = (
                 "Tags with 'nom:' prefix are read-only and cannot be edited: "
-                f"{tag_doc.get('rel')}={tag_doc.get('value')}"
+                f"{tag_doc.get('name')}={tag_doc.get('value')}"
             )
             raise ValueError(msg)
 
@@ -60,7 +60,7 @@ class TaggingCurationMixin:
         source_tag = self._get_tag_or_error(tag_id)
         self._reject_nom_prefix(tag_doc=source_tag)
 
-        target_tag_id = find_or_create_tag(self.db, source_tag["rel"], new_value)
+        target_tag_id = find_or_create_tag(self.db, source_tag["name"], new_value)
         merged_into_existing = target_tag_id != tag_id
 
         relink = relink_tag_edges(self.db, tag_id, target_tag_id)
@@ -132,7 +132,7 @@ class TaggingCurationMixin:
         source_tag = self._get_tag_or_error(source_tag_id)
         self._reject_nom_prefix(tag_doc=source_tag)
 
-        target_tag_id = find_or_create_tag(self.db, source_tag["rel"], new_value)
+        target_tag_id = find_or_create_tag(self.db, source_tag["name"], new_value)
         new_tag_created = target_tag_id != source_tag_id
 
         relink = relink_tag_edges(self.db, source_tag_id, target_tag_id, song_ids=song_ids)
@@ -142,26 +142,26 @@ class TaggingCurationMixin:
 
         return SplitResult(moved=relink["moved"], new_tag_created=new_tag_created)
 
-    def update_file_tags(self, file_id: str, rel: str, values: list[str]) -> dict[str, Any]:
-        """Replace all tags for a file+rel with new values.
+    def update_file_tags(self, file_id: str, name: str, values: list[str]) -> dict[str, Any]:
+        """Replace all tags for a file+name with new values.
 
-        Rejects nom: prefix rels (ADR-009). Delegates to set_song_tags
+        Rejects nom: prefix names (ADR-009). Delegates to set_song_tags
         and marks the file for writeback.
 
         Args:
             file_id: Library file _id
-            rel: Tag key (e.g., "genre", "artist")
+            name: Tag key (e.g., "genre", "artist")
             values: New tag values
 
         Returns:
             Dict with updated tags
 
         Raises:
-            ValueError: If rel has nom: prefix
+            ValueError: If name has nom: prefix
 
         """
-        self._reject_nom_prefix(rel=rel)
-        set_song_tags(self.db, file_id, rel, list(values))
+        self._reject_nom_prefix(name=name)
+        set_song_tags(self.db, file_id, name, list(values))
         transition_file_state(self.db, [file_id], STATE_TAGS_WRITTEN, STATE_TAGS_NOT_WRITTEN)
-        tags = get_song_tags(self.db, file_id, rel=rel)
-        return {"file_id": file_id, "rel": rel, "tags": tags.to_dict()}
+        tags = get_song_tags(self.db, file_id, name=name)
+        return {"file_id": file_id, "name": name, "tags": tags.to_dict()}

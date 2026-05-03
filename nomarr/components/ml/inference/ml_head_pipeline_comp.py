@@ -127,7 +127,9 @@ def run_single_head(
             logger.debug(f"[processor]   Sample keys: {sample_keys}")
         elapsed_ms = internal_ms().value - t_head.value
         logger.debug(
-            f"[processor] Head {head_name} complete: {len(segment_scores)} patches \u2192 {len(head_tags)} tags in {elapsed_ms / 1000:.1f}s",
+            f"[processor] Head {head_name} complete: "
+            f"{len(segment_scores)} patches \u2192 {len(head_tags)} tags "
+            f"in {elapsed_ms / 1000:.1f}s",
         )
         if len(head_tags) == 0:
             logger.warning(f"[processor] Head {head_name} produced ZERO tags")
@@ -140,7 +142,8 @@ def run_single_head(
                 raw_values = [float(x) for x in segment_scores]
             regression_data = (head_model.meta, raw_values)
             logger.debug(
-                f"[processor] Captured {len(raw_values)} segment predictions for {head_name} (mean={np.mean(raw_values):.3f}, std={np.std(raw_values):.3f})",
+                f"[processor] Captured {len(raw_values)} segment predictions for "
+                f"{head_name} (mean={np.mean(raw_values):.3f}, std={np.std(raw_values):.3f})",
             )
         # Defer segment stats computation to async DB write thread.
         # Keep raw scores alive (numpy ref, no copy needed — it's from vstack).

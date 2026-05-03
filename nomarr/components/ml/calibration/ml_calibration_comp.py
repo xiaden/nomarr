@@ -29,21 +29,21 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def _extract_label_from_nom_rel(rel: str, model_key_for_tag: str) -> str | None:
-    """Extract the label portion from a Nomarr ML tag relation."""
-    if not rel.startswith("nom:"):
+def _extract_label_from_nom_name(name: str, model_key_for_tag: str) -> str | None:
+    """Extract the label portion from a Nomarr ML tag name."""
+    if not name.startswith("nom:"):
         return None
 
-    rel_without_prefix = rel[4:]
-    if model_key_for_tag not in rel_without_prefix:
+    name_without_prefix = name[4:]
+    if model_key_for_tag not in name_without_prefix:
         return None
 
     embedder_marker = f"_{model_key_for_tag}"
-    embedder_pos = rel_without_prefix.find(embedder_marker)
+    embedder_pos = name_without_prefix.find(embedder_marker)
     if embedder_pos > 0:
-        label_and_framework = rel_without_prefix[:embedder_pos]
+        label_and_framework = name_without_prefix[:embedder_pos]
     else:
-        label_and_framework = rel_without_prefix
+        label_and_framework = name_without_prefix
 
     framework_sep = label_and_framework.rfind("_")
     if framework_sep > 0:
@@ -78,20 +78,20 @@ def get_sparse_histogram(
     model_key_for_tag = f"{backbone}{release_date.replace('-', '')}"
     bin_width = (hi - lo) / bins
     max_bin = bins - 1
-    matching_rels: list[str] = []
-    all_rels = cast("list[Any]", db.tags.rel.collect(limit=10000))
-    for rel in all_rels:
-        if not isinstance(rel, str) or not rel.startswith("nom:"):
+    matching_names: list[str] = []
+    all_names = cast("list[Any]", db.tags.name.collect(limit=10000))
+    for name in all_names:
+        if not isinstance(name, str) or not name.startswith("nom:"):
             continue
-        extracted_label = _extract_label_from_nom_rel(rel, model_key_for_tag)
+        extracted_label = _extract_label_from_nom_name(name, model_key_for_tag)
         if extracted_label == label:
-            matching_rels.append(rel)
+            matching_names.append(name)
 
     histogram_by_bin: dict[int, dict[str, Any]] = {}
-    for matched_rel in matching_rels:
+    for matched_name in matching_names:
         tag_docs = cast(
             "list[dict[str, Any]]",
-            db.tags.get.many.by_filter({"rel": matched_rel}, limit=50000),
+            db.tags.get.many.by_filter({"name": matched_name}, limit=50000),
         )
         for tag_doc in tag_docs:
             value = tag_doc.get("value")

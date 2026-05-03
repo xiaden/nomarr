@@ -22,7 +22,10 @@ class LibraryAlreadyScanningError(ValueError):
 
 
 class MisconfiguredError(ValueError):
-    """Raised at request time when a required configuration value is absent or invalid. Interfaces should catch this and return HTTP 422."""
+    """Raised at request time when a required configuration value is absent or invalid.
+
+    Interfaces should catch this and return HTTP 422.
+    """
 
 
 class PlaylistConversionError(Exception):

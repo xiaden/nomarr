@@ -95,18 +95,18 @@ class TestBuildEqualityFilter:
 
     def test_single_field_dict_produces_one_filter_clause(self) -> None:
         """A one-field equality filter produces a single FILTER expression."""
-        aql, bind_vars = build_equality_filter({"rel": "genre"})
+        aql, bind_vars = build_equality_filter({"name": "genre"})
 
         assert aql == "FILTER doc[@f0] == @v0"
-        assert bind_vars == {"f0": "rel", "v0": "genre"}
+        assert bind_vars == {"f0": "name", "v0": "genre"}
 
     def test_multi_field_dict_produces_and_joined_filter_clause(self) -> None:
         """Multiple fields produce one FILTER clause joined with AND."""
-        aql, bind_vars = build_equality_filter({"rel": "genre", "value": "rock"})
+        aql, bind_vars = build_equality_filter({"name": "genre", "value": "rock"})
 
         assert aql == "FILTER doc[@f0] == @v0 AND doc[@f1] == @v1"
         assert bind_vars == {
-            "f0": "rel",
+            "f0": "name",
             "v0": "genre",
             "f1": "value",
             "v1": "rock",

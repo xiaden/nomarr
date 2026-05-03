@@ -80,7 +80,7 @@ class TestGetFileTagsWithPath:
             "tags": [
                 {
                     "key": "nom:mood",
-                    "rel": "nom:mood",
+                    "name": "nom:mood",
                     "value": "happy",
                     "is_nomarr_tag": True,
                 }
@@ -113,7 +113,7 @@ class TestGetFileTagsWithPath:
             "tags": [
                 {
                     "key": "genre",
-                    "rel": "genre",
+                    "name": "genre",
                     "value": ["a", "b"],
                     "is_nomarr_tag": False,
                 }
