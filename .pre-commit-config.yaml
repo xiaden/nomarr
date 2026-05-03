@@ -41,6 +41,16 @@ repos:
         pass_filenames: false
         files: ^frontend/src/
 
+  # --- Frontend: Vitest unit tests ---
+  - repo: local
+    hooks:
+      - id: frontend-test
+        name: frontend-test
+        entry: bash -c "cd frontend && npm run test"
+        language: system
+        pass_filenames: false
+        files: ^frontend/src/
+
   # --- Frontend: build and stage dist output ---
   - repo: local
     hooks:
