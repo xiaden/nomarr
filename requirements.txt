@@ -1,6 +1,6 @@
 # Production dependencies — minimum versions align with dockerfile.base
 numpy==1.26.4              # Pinned: onnxruntime compatibility
-scipy>=1.13.1
+scipy>=1.17.1
 # Use onnxruntime-gpu to match dockerfile.base; falls back to CPU automatically
 # if CUDA is unavailable (Windows dev without CUDA, or CI). Do NOT swap for the
 # CPU-only 'onnxruntime' package — that silently drops CUDAExecutionProvider.
