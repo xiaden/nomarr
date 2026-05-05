@@ -10,9 +10,10 @@ When all outputs for a model have labels, the model is marked
 Label strings are authoritative human-readable display terms, written
 directly to the tag system at inference time.
 
-Output indices follow filename-declared order: the first word of the stem
-is the class at index 0.  For example ``voice_instrumental`` → index 0 is
-"has vocals" (voice), index 1 is "instrumental only".
+Output indices match the class ordering declared in the upstream MTG Essentia
+model metadata.  For example ``voice_instrumental`` → index 0 is
+"instrumental only" (instrumental), index 1 is "has vocals" (voice).
+See ``docs/upstream/modelsinfo.md`` for the authoritative class lists.
 
 ``OPPONENT_MAP`` is derived at module load from ``KNOWN_MODELS``: for each
 model stem, all co-defined output labels are declared mutual opponents.  Any
@@ -28,8 +29,8 @@ from __future__ import annotations
 # - output_index: zero-based activation index in the ONNX output tensor
 # - label: human-readable tag label written to the tag system
 #
-# Output order follows filename declaration: the first named class in the
-# model stem corresponds to index 0.
+# Output order matches the upstream MTG Essentia model training.
+# See the module docstring and docs/upstream/modelsinfo.md for details.
 
 KNOWN_MODELS: dict[str, list[tuple[int, str]]] = {
     # -- effnet backbone ---------------------------------------------------
@@ -38,8 +39,8 @@ KNOWN_MODELS: dict[str, list[tuple[int, str]]] = {
         (1, "fringe"),
     ],
     "engagement_2c-discogs-effnet-1": [
-        (0, "engaging"),
-        (1, "mellow"),
+        (0, "mellow"),
+        (1, "engaging"),
     ],
     "timbre-discogs-effnet-1": [
         (0, "bright timbre"),
@@ -75,12 +76,12 @@ KNOWN_MODELS: dict[str, list[tuple[int, str]]] = {
         (1, "not sad"),
     ],
     "tonal_atonal-msd-musicnn-1": [
-        (0, "tonal"),
-        (1, "atonal"),
+        (0, "atonal"),
+        (1, "tonal"),
     ],
     "voice_instrumental-msd-musicnn-1": [
-        (0, "has vocals"),
-        (1, "instrumental only"),
+        (0, "instrumental only"),
+        (1, "has vocals"),
     ],
 }
 """Mapping of shipped model stems to their output label definitions."""
