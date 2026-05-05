@@ -241,7 +241,7 @@ class Application:
             return
         logger.debug("[Application] Starting...")
         logger.debug("[Application] Cleaning ephemeral runtime state...")
-        self.db.health.delete()
+        self.db.health.truncate()
         self.db.health.component_id.upsert(
             [
                 {
@@ -459,7 +459,7 @@ class Application:
                 {"status": "stopping", "exit_code": 0},
             )
             logger.info("[Application] Cleaning ephemeral runtime state...")
-            self.db.health.delete()
+            self.db.health.truncate()
         except Exception as e:
             logger.warning(f"[Application] DB unavailable during shutdown (expected if containers stopping): {e}")
         self._running = False

@@ -704,8 +704,8 @@ class TestBuilderAttachedBaseVerbs:
             offset=0,
         )
 
-    def test_construct_attaches_truncate_only_for_edge_collections(self, mock_db: MagicMock) -> None:
-        """truncate() is attached for edge collections but not documents."""
+    def test_construct_attaches_truncate_for_all_collections(self, mock_db: MagicMock) -> None:
+        """truncate() is attached for both document and edge collections."""
 
         class TestItems(DocumentCollection):
             _name = "test_items"
@@ -722,13 +722,16 @@ class TestBuilderAttachedBaseVerbs:
         builder.construct(docs)
         builder.construct(edges)
 
-        assert not hasattr(docs, "truncate")
+        assert callable(docs.truncate)
         assert callable(edges.truncate)
 
         with patch("nomarr.persistence.constructor.builder.verbs.truncate") as truncate_mock:
+            docs.truncate()
             edges.truncate()
 
-        truncate_mock.assert_called_once_with(mock_db, "test_edge_col")
+        assert truncate_mock.call_count == 2
+        truncate_mock.assert_any_call(mock_db, "test_items")
+        truncate_mock.assert_any_call(mock_db, "test_edge_col")
 
     def test_construct_attaches_vector_verbs_for_hot_tier(self, mock_db: MagicMock) -> None:
         """Hot vector collections receive ANN, get_vector, upsert_vector, and move_collection."""

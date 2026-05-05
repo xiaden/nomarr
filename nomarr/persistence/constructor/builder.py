@@ -277,6 +277,10 @@ class FieldAccessor:
         """Count documents where this field equals ``value``."""
         return verbs.count_by_field(self.db, self.collection_name, self.field_name, value)
 
+    def collect(self, *, limit: int | None = None, offset: int = 0) -> list[Any]:
+        """Return all distinct values of this field across the collection."""
+        return verbs.collect_field(self.db, self.collection_name, self.field_name, limit=limit, offset=offset)
+
 
 class _CollectionGetVerb:
     """Collection-level callable helper that exposes ``get`` plus flat modifiers."""
@@ -566,9 +570,7 @@ class Builder:
         collection_obj.upsert = self._build_upsert_callable(collection_name)
         collection_obj.update_many = lambda docs: verbs.update_many_by_key(self._db, collection_name, docs)
         collection_obj.aggregate = self._build_aggregate_callable(collection_name)
-
-        if isinstance(collection, EdgeCollection):
-            collection_obj.truncate = lambda: verbs.truncate(self._db, collection_name)
+        collection_obj.truncate = lambda: verbs.truncate(self._db, collection_name)
 
         if isinstance(collection, VectorCollection):
             collection_obj.ann_search = lambda query_vector, limit, nprobe, *, filter=None: verbs.ann_search(
