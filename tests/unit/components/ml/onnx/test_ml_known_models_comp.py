@@ -28,7 +28,9 @@ class TestKnownModelsLabelOrdering:
 
     def _label_at(self, stem: str, index: int) -> str:
         outputs = KNOWN_MODELS[stem]
-        return next(label for idx, label in outputs if idx == index)
+        label = next((label for idx, label in outputs if idx == index), None)
+        assert label is not None, f"No output at index {index} for model '{stem}'"
+        return label
 
     # -- voice/instrumental (upstream: "instrumental, voice") ----------------
 
