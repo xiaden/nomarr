@@ -12,8 +12,6 @@ import (
 	"net/url"
 	"strings"
 
-	extismpdk "github.com/extism/go-pdk"
-
 	"github.com/navidrome/navidrome/plugins/pdk/go/host"
 	"github.com/navidrome/navidrome/plugins/pdk/go/metadata"
 	"github.com/navidrome/navidrome/plugins/pdk/go/pdk"
@@ -296,22 +294,31 @@ func (p *nomarrPlugin) GetSimilarSongsByTrack(req metadata.SimilarSongsByTrackRe
 	pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: querying %s for song %s (count=%d, backbone=%s)", endpoint, req.ID, count, backbone))
 	pdk.Log(pdk.LogDebug, fmt.Sprintf("nomarr: similar-track request body: %s", string(bodyBytes)))
 
-	// Send HTTP POST via Extism PDK.
-	httpReq := extismpdk.NewHTTPRequest(extismpdk.MethodPost, endpoint)
-	httpReq.SetHeader("Content-Type", "application/json")
-	httpReq.SetHeader("X-API-Key", apiKey)
-	httpReq.SetBody(bodyBytes)
-	resp := httpReq.Send()
+	// Send HTTP POST via Navidrome host HTTP service.
+	resp, err := host.HTTPSend(host.HTTPRequest{
+		Method: "POST",
+		URL:    endpoint,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+			"X-API-Key":    apiKey,
+		},
+		Body:      bodyBytes,
+		TimeoutMs: 30000,
+	})
+	if err != nil {
+		pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: HTTP request failed: %v", err))
+		return empty, nil
+	}
 
 	// Check HTTP status.
-	if resp.Status() != 200 {
-		pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: API returned status %d: %s", resp.Status(), string(resp.Body())))
+	if resp.StatusCode != 200 {
+		pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: API returned status %d: %s", resp.StatusCode, string(resp.Body)))
 		return empty, nil
 	}
 
 	// Parse Nomarr response.
 	var nomarrResp nomarrResponse
-	if err := json.Unmarshal(resp.Body(), &nomarrResp); err != nil {
+	if err := json.Unmarshal(resp.Body, &nomarrResp); err != nil {
 		pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: failed to parse response: %v", err))
 		return empty, nil
 	}
@@ -381,14 +388,23 @@ func (p *nomarrPlugin) Scrobble(req scrobbler.ScrobbleRequest) error {
 	pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: scrobbling track %s (%s) for user %s", req.Track.ID, req.Track.Title, req.Username))
 	pdk.Log(pdk.LogDebug, fmt.Sprintf("nomarr: scrobble request body: %s", string(bodyBytes)))
 
-	httpReq := extismpdk.NewHTTPRequest(extismpdk.MethodPost, endpoint)
-	httpReq.SetHeader("Content-Type", "application/json")
-	httpReq.SetHeader("X-API-Key", apiKey)
-	httpReq.SetBody(bodyBytes)
-	resp := httpReq.Send()
+	resp, err := host.HTTPSend(host.HTTPRequest{
+		Method: "POST",
+		URL:    endpoint,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+			"X-API-Key":    apiKey,
+		},
+		Body:      bodyBytes,
+		TimeoutMs: 10000,
+	})
+	if err != nil {
+		pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: scrobble HTTP request failed: %v", err))
+		return nil
+	}
 
-	if resp.Status() != 204 && resp.Status() != 200 {
-		pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: scrobble API returned status %d: %s", resp.Status(), string(resp.Body())))
+	if resp.StatusCode != 204 && resp.StatusCode != 200 {
+		pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: scrobble API returned status %d: %s", resp.StatusCode, string(resp.Body)))
 	}
 
 	return nil
@@ -468,21 +484,30 @@ func generateAndPushPlaylists() {
 
 		pdk.Log(pdk.LogDebug, fmt.Sprintf("nomarr: generate-playlists request body for user %s: %s", user.Username, string(bodyBytes)))
 
-		httpReq := extismpdk.NewHTTPRequest(extismpdk.MethodPost, endpoint)
-		httpReq.SetHeader("Content-Type", "application/json")
-		httpReq.SetHeader("X-API-Key", apiKey)
-		httpReq.SetBody(bodyBytes)
-		resp := httpReq.Send()
+		resp, err := host.HTTPSend(host.HTTPRequest{
+			Method: "POST",
+			URL:    endpoint,
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+				"X-API-Key":    apiKey,
+			},
+			Body:      bodyBytes,
+			TimeoutMs: 60000,
+		})
+		if err != nil {
+			pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: generate-playlists HTTP request failed for user %s: %v", user.Username, err))
+			continue
+		}
 
-		pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: generate-playlists API responded with status %d for user %s", resp.Status(), user.Username))
+		pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: generate-playlists API responded with status %d for user %s", resp.StatusCode, user.Username))
 
-		if resp.Status() != 200 {
-			pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: generate-playlists API returned status %d for user %s: %s", resp.Status(), user.Username, string(resp.Body())))
+		if resp.StatusCode != 200 {
+			pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: generate-playlists API returned status %d for user %s: %s", resp.StatusCode, user.Username, string(resp.Body)))
 			continue
 		}
 
 		var genResp generatePlaylistsResponse
-		if err := json.Unmarshal(resp.Body(), &genResp); err != nil {
+		if err := json.Unmarshal(resp.Body, &genResp); err != nil {
 			pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: failed to parse generate-playlists response for user %s: %v", user.Username, err))
 			continue
 		}
