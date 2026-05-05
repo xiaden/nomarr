@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import TYPE_CHECKING, cast
+
+from arango.exceptions import IndexCreateError, IndexDeleteError
 
 from nomarr.persistence.arango_client import DatabaseLike
 
@@ -44,3 +47,18 @@ def upgrade(db: DatabaseLike) -> None:
     )
     updated = next(result, 0)
     logger.info("[V028] Renamed rel → name on %d tag documents", updated)
+
+    # Drop stale indexes referencing the old field name and replace with name-based ones.
+    coll = db.collection("tags")  # type: ignore[union-attr]
+    for idx in coll.indexes():  # type: ignore[union-attr]
+        if idx.get("type") == "persistent" and "rel" in (idx.get("fields") or []):
+            with contextlib.suppress(IndexDeleteError):
+                coll.delete_index(idx["id"])  # type: ignore[union-attr]
+                logger.info("[V028] Dropped stale index %s from tags", idx["fields"])
+
+    with contextlib.suppress(IndexCreateError):
+        coll.add_persistent_index(fields=["name"])  # type: ignore[union-attr]
+        logger.info("[V028] Added persistent index on tags.name")
+    with contextlib.suppress(IndexCreateError):
+        coll.add_persistent_index(fields=["name", "value"], unique=True)  # type: ignore[union-attr]
+        logger.info("[V028] Added unique persistent index on tags(name, value)")

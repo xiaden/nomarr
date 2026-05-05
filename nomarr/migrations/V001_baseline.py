@@ -238,9 +238,9 @@ def upgrade(db: DatabaseLike) -> None:
     with contextlib.suppress(IndexCreateError):
         db.collection("tag_model_output").add_persistent_index(fields=["_to"])  # type: ignore[union-attr]
     with contextlib.suppress(IndexCreateError):
-        db.collection("tags").add_persistent_index(fields=["name"])  # type: ignore[union-attr]
+        db.collection("tags").add_persistent_index(fields=["rel"])  # type: ignore[union-attr]
     with contextlib.suppress(IndexCreateError):
-        db.collection("tags").add_persistent_index(fields=["name", "value"], unique=True)  # type: ignore[union-attr]
+        db.collection("tags").add_persistent_index(fields=["rel", "value"], unique=True)  # type: ignore[union-attr]
     with contextlib.suppress(IndexCreateError):
         db.collection("worker_claims").add_persistent_index(fields=["claimed_at"])  # type: ignore[union-attr]
     with contextlib.suppress(IndexCreateError):
