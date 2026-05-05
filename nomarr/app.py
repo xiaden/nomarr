@@ -204,15 +204,12 @@ class Application:
             while self._running:
                 try:
                     heartbeat_db.health.component_id.upsert(
-                        [
-                            {
-                                "component_id": "app",
-                                "component_type": "app",
-                                "status": "healthy",
-                                "last_heartbeat": now_ms().value,
-                            }
-                        ],
-                        match_field="component_id",
+                        "app",
+                        {
+                            "component_type": "app",
+                            "status": "healthy",
+                            "last_heartbeat": now_ms().value,
+                        },
                     )
                 except Exception as e:
                     logger.exception(f"[Application] Heartbeat error: {e}")
@@ -243,15 +240,12 @@ class Application:
         logger.debug("[Application] Cleaning ephemeral runtime state...")
         self.db.health.truncate()
         self.db.health.component_id.upsert(
-            [
-                {
-                    "component_id": "app",
-                    "component_type": "app",
-                    "status": "starting",
-                    "last_heartbeat": now_ms().value,
-                }
-            ],
-            match_field="component_id",
+            "app",
+            {
+                "component_type": "app",
+                "status": "starting",
+                "last_heartbeat": now_ms().value,
+            },
         )
         logger.debug("[Application] Initializing authentication...")
         key_service = KeyManagementService(self.db)
