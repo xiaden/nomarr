@@ -1,18 +1,4 @@
-"""Analytics computation functions - pure data processing for tag statistics.
-
-PURE LEAF-DOMAIN - These functions operate on in-memory data only:
-- Take raw data (rows, dicts, lists) as input
-- Perform ONLY aggregation and transformation logic
-- Return structured results for presentation layers
-- Do NOT import nomarr.persistence, nomarr.services, nomarr.workflows, or nomarr.interfaces
-- Do NOT access databases or execute SQL
-
-ARCHITECTURE:
-- Analytics is a pure computation layer
-- Data is provided by persistence layer (nomarr.persistence.analytics_queries)
-- Services/workflows orchestrate: fetch data from persistence, pass to analytics
-- Interfaces call services, not analytics directly
-"""
+"""Analytics computation functions - pure in-memory aggregation for tag statistics."""
 
 from __future__ import annotations
 

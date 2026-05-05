@@ -37,7 +37,7 @@ def _get_all_claims(db: Database) -> list[dict[str, Any]]:
     claims: list[dict[str, Any]] = []
     worker_ids = [row["value"] for row in db.worker_claims.aggregate("worker_id", limit=total) if "value" in row]
     for worker_id in worker_ids:
-        claims.extend(db.worker_claims.get(worker_id=worker_id, limit=total))
+        claims.extend(db.worker_claims.get.many(worker_id=worker_id, limit=total))
     return claims
 
 
@@ -130,7 +130,7 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
         return 0
 
     heartbeat_cutoff = now_ms().value - heartbeat_timeout_ms
-    health_docs = db.health.get(component_type="worker", limit=db.health.count())
+    health_docs = db.health.get.many(component_type="worker", limit=db.health.count())
     active_workers = {
         str(doc.get("component_id")) for doc in health_docs if int(doc.get("last_heartbeat", 0)) > heartbeat_cutoff
     }
@@ -221,7 +221,7 @@ def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
         List of file_ids that were released
 
     """
-    claims = db.worker_claims.get(worker_id=worker_id, limit=db.worker_claims.count())
+    claims = db.worker_claims.get.many(worker_id=worker_id, limit=db.worker_claims.count())
     if not claims:
         return []
 

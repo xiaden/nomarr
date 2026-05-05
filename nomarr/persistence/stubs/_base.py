@@ -63,6 +63,8 @@ class FieldAccessorProtocol(Protocol):
 
     def count(self, value: Any) -> int: ...
 
+    def collect(self, *, limit: int | None = None, offset: int = 0) -> list[Any]: ...
+
 
 @runtime_checkable
 class CollectionGetVerbProtocol(Protocol):

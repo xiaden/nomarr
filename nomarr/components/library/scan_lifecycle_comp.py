@@ -321,7 +321,7 @@ def _delete_segment_stats_for_files(db: Database, file_ids: list[str]) -> int:
         stats_ids = [cast("str", doc["_id"]) for doc in stats_docs if "_id" in doc]
         if not stats_ids:
             continue
-        deleted += int(db.segment_scores_stats.delete.cascade(stats_ids))
+        deleted += int(db.segment_scores_stats.delete(stats_ids))
     return deleted
 
 
@@ -341,17 +341,15 @@ def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
     paths = [d["path"] for d in clean_docs if "path" in d]
     existing_paths = get_existing_file_paths(db, paths)
 
-    file_ids = [
-        db.library_files.upsert(
-            path=cast("str", doc["path"]),
-            fields={key: value for key, value in doc.items() if key != "path"},
-        )[0]
-        for doc in clean_docs
-    ]
+    file_ids = db.library_files.path.upsert_batch(clean_docs)
 
-    for library_id, file_id in zip(library_ids, file_ids, strict=True):
-        if library_id is not None:
-            db.library_contains_file.upsert(_from=library_id, _to=file_id, fields={})
+    edge_docs = [
+        {"_from": lib_id, "_to": file_id}
+        for lib_id, file_id in zip(library_ids, file_ids, strict=True)
+        if lib_id is not None
+    ]
+    if edge_docs:
+        db.library_contains_file.upsert_batch(edge_docs, match_fields=["_from", "_to"])
 
     new_file_ids = [
         file_id for file_id, doc in zip(file_ids, clean_docs, strict=True) if doc.get("path") not in existing_paths

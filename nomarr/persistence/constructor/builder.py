@@ -273,6 +273,14 @@ class FieldAccessor:
         doc = {self.field_name: value, **fields}
         return verbs.upsert_by_field(self.db, self.collection_name, self.field_name, [doc])
 
+    def upsert_batch(self, docs: list[Document]) -> list[str]:
+        """Upsert multiple documents using this field as the match key.
+
+        Each doc must already contain the bound field. Issues a single AQL query
+        regardless of batch size.
+        """
+        return verbs.upsert_by_field(self.db, self.collection_name, self.field_name, docs)
+
     def count(self, value: Any) -> int:
         """Count documents where this field equals ``value``."""
         return verbs.count_by_field(self.db, self.collection_name, self.field_name, value)
@@ -568,6 +576,7 @@ class Builder:
         collection_obj.count = self._build_count_callable(collection_name)
         collection_obj.update = self._build_update_callable(collection_name)
         collection_obj.upsert = self._build_upsert_callable(collection_name)
+        collection_obj.upsert_batch = self._build_upsert_batch_callable(collection_name)
         collection_obj.update_many = lambda docs: verbs.update_many_by_key(self._db, collection_name, docs)
         collection_obj.aggregate = self._build_aggregate_callable(collection_name)
         collection_obj.truncate = lambda: verbs.truncate(self._db, collection_name)
@@ -719,6 +728,16 @@ class Builder:
             return verbs.upsert_by_field(self._db, collection_name, list(criteria), [doc])
 
         return upsert
+
+    def _build_upsert_batch_callable(self, collection_name: str) -> Callable[..., list[str]]:
+        """Build a collection-level upsert_batch callable for bulk upserts."""
+
+        def upsert_batch(docs: list[Document], match_fields: str | list[str]) -> list[str]:
+            if not docs:
+                return []
+            return verbs.upsert_by_field(self._db, collection_name, match_fields, docs)
+
+        return upsert_batch
 
     def _build_aggregate_callable(self, collection_name: str) -> Callable[..., list[AggResult]]:
         """Build a collection-level aggregate callable."""

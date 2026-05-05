@@ -1,5 +1,9 @@
 # Copilot Instructions for Nomarr
 
+## MANDATORY FIRST ACTION
+
+Before any other tool call, invoke tool_search with query "nomarr_dev code navigation" to load the MCP toolset. This is required on every session start. Skipping it is a policy violation.
+
 > Generic agent policy (artifact logging, ADR workflow, hard rules for context
 > management, dependency injection, typed code) is in
 > `code-intel/instructions/copilot-base.md` and is loaded automatically via

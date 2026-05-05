@@ -278,6 +278,7 @@ class VectorsTrackCold(VectorCollection):
 class SongHasTags(EdgeCollection):
     FROM_COLLECTION = LibraryFiles
     TO_COLLECTION = Tags
+    _to: Field[str]
 
 
 class FileHasState(EdgeCollection):

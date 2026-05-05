@@ -789,14 +789,13 @@ def move_collection(db: SafeDatabase, source: str, dest: str) -> int:
     src_prefix = f"{source}/"
     dest_prefix = f"{dest}/"
 
-    # Discover all non-system edge collections (ArangoDB type==3)
-    edge_name_cursor = _execute_aql(
-        db,
-        "FOR c IN _collections FILTER c.type == 3 AND NOT STARTS_WITH(c.name, '_') RETURN c.name",
-        bind_vars={},
-    )
+    # Discover all non-system edge collections via Python driver.
+    # AQL _collections pseudo-collection is not reliably available in all
+    # ArangoDB versions; the HTTP API is the authoritative way to enumerate.
+    # type==3 is the ArangoDB integer code for edge collections.
+    edge_names = [c["name"] for c in db.collections() if c.get("type") == 3 and not c.get("system", False)]
 
-    for edge_name in edge_name_cursor:
+    for edge_name in edge_names:
         # Phase 1: INSERT new edges in sorted batches.
         # LIMIT @offset, @batch over an unchanged source set is stable — source
         # edges are not touched until Phase 2, so offsets do not shift.

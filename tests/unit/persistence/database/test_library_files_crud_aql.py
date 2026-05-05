@@ -587,18 +587,18 @@ class TestGetFileLibraryKey:
     def test_returns_library_key_when_edge_exists(self) -> None:
         """Extracts the trailing key from the owning library id."""
         mock_db = MagicMock()
-        mock_db.library_contains_file.get.return_value = [{"_from": "libraries/main"}]
+        mock_db.library_contains_file.get.many.return_value = [{"_from": "libraries/main"}]
 
         result = get_file_library_key(mock_db, "library_files/123")
 
         assert result == "main"
-        mock_db.library_contains_file.get.assert_called_once_with(_to="library_files/123", limit=1)
+        mock_db.library_contains_file.get.many.assert_called_once_with(_to="library_files/123", limit=1)
 
     @pytest.mark.unit
     def test_returns_none_when_no_owning_library_found(self) -> None:
         """Missing ownership rows should yield ``None``."""
         mock_db = MagicMock()
-        mock_db.library_contains_file.get.return_value = []
+        mock_db.library_contains_file.get.many.return_value = []
 
         result = get_file_library_key(mock_db, "library_files/missing")
 

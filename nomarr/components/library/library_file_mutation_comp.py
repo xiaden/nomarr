@@ -272,7 +272,7 @@ def bulk_delete_files(db: Database, paths: list[str]) -> int:
 
 def get_file_library_key(db: Database, file_id: str) -> str | None:
     """Return the owning library key for a file id."""
-    results = db.library_contains_file.get(_to=file_id, limit=1)
+    results = db.library_contains_file.get.many(_to=file_id, limit=1)
     if not results:
         return None
     edge = results[0]

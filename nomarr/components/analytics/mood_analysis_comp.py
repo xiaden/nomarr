@@ -37,7 +37,7 @@ def _get_tag_docs_for_name(db: Database, name: str) -> list[dict[str, Any]]:
     tags: list[dict[str, Any]] = []
     offset = 0
     while True:
-        tag_page = db.tags.get(name=name, limit=_PAGE_SIZE, offset=offset)
+        tag_page = db.tags.get.many(name=name, limit=_PAGE_SIZE, offset=offset)
         if not tag_page:
             break
         tags.extend(tag_page)
@@ -64,7 +64,7 @@ def _get_tag_edge_rows(db: Database, name: str, library_id: str | None = None) -
         return []
 
     # Fetch all song→tag edges for the entire tag name in a single IN query.
-    edge_docs = [edge_doc for tag_id in tag_id_to_value for edge_doc in db.song_has_tags.get(_to=tag_id, limit=None)]
+    edge_docs = [edge_doc for tag_id in tag_id_to_value for edge_doc in db.song_has_tags.get.many(_to=tag_id)]
     rows: list[tuple[str, str]] = []
     for edge_doc in edge_docs:
         file_id = edge_doc.get("_from")

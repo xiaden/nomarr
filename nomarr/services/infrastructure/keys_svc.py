@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 import bcrypt
 
-from nomarr.helpers.filter_types import Op
 from nomarr.helpers.time_helper import now_s
 
 logger = logging.getLogger(__name__)
@@ -263,8 +262,8 @@ class KeyManagementService:
         expired = [token for token, expiry in _session_cache.items() if expiry < now]
         for token in expired:
             _session_cache.pop(token, None)
-        expired_docs = self._db.sessions.expiry_timestamp.get.in_(
-            {Op.LT: int(now * 1000)},
+        expired_docs = self._db.sessions.expiry_timestamp.get.lte(
+            int(now * 1000),
             limit=self._db.sessions.count(),
         )
         if expired_docs:
@@ -281,8 +280,8 @@ class KeyManagementService:
             Number of sessions loaded
 
         """
-        sessions = self._db.sessions.expiry_timestamp.get.in_(
-            {Op.GT: int(now_s().value * 1000)},
+        sessions = self._db.sessions.expiry_timestamp.get.gte(
+            int(now_s().value * 1000),
             limit=self._db.sessions.count(),
         )
         _session_cache.update((s["session_id"], s["expiry_timestamp"] / 1000.0) for s in sessions)
