@@ -23,7 +23,8 @@ class TestAggregateSegmentScoresWeighted:
         assert result.dtype == np.float32
 
     def test_output_length_matches_num_labels(self) -> None:
-        scores = np.random.rand(10, 4).astype(np.float32)
+        rng = np.random.default_rng(seed=42)
+        scores = rng.random((10, 4)).astype(np.float32)
         result = aggregate_segment_scores_weighted(scores)
         assert len(result) == 4
 

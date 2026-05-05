@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
+from scipy.ndimage import uniform_filter1d
 
 # Local modules
 
@@ -289,14 +290,14 @@ def aggregate_segment_scores_weighted(
         # Not enough active segments — fall back to trimmed mean over all
         return _trimmed_mean(scores, 0.1, axis=0).astype(np.float32, copy=False)
 
-    # Step 2: centred rolling average
+    # Step 2: centred rolling average (vectorized via scipy uniform filter)
     w = min(rolling_window, n_active)
-    half = w // 2
-    rolled = np.empty_like(active_scores)
-    for i in range(n_active):
-        lo = max(0, i - half)
-        hi = min(n_active, i + half + 1)
-        rolled[i] = np.mean(active_scores[lo:hi], axis=0)
+    rolled = uniform_filter1d(
+        active_scores.astype(np.float64),
+        size=w,
+        axis=0,
+        mode="nearest",
+    ).astype(np.float32, copy=False)
 
     # Step 3: group detection — split on L-inf deviation in rolling average
     groups: list[list[int]] = []
@@ -333,11 +334,9 @@ def aggregate_segment_scores_weighted(
             pooled[j] = 0.5
         elif yes_weight >= no_weight:
             # "Yes" side dominates — use its weighted mean
-            w_yes = group_weights[yes_mask]
-            pooled[j] = float(np.sum(label_vals[yes_mask] * w_yes) / yes_weight) if yes_mask.any() else 0.5
+            pooled[j] = float(np.sum(label_vals[yes_mask] * group_weights[yes_mask]) / yes_weight)
         else:
             # "No" side dominates — use its weighted mean
-            w_no = group_weights[no_mask]
-            pooled[j] = float(np.sum(label_vals[no_mask] * w_no) / no_weight) if no_mask.any() else 0.5
+            pooled[j] = float(np.sum(label_vals[no_mask] * group_weights[no_mask]) / no_weight)
 
     return pooled
