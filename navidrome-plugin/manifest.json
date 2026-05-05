@@ -139,7 +139,35 @@
         },
         {
           "type": "Control",
-          "scope": "#/properties/users"
+          "scope": "#/properties/users",
+          "options": {
+            "elementLabelProp": "username",
+            "detail": {
+              "type": "VerticalLayout",
+              "elements": [
+                {
+                  "type": "Control",
+                  "scope": "#/properties/username"
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/enabled_types"
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/max_genre_playlists"
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/max_songs"
+                },
+                {
+                  "type": "Control",
+                  "scope": "#/properties/min_songs"
+                }
+              ]
+            }
+          }
         }
       ]
     }

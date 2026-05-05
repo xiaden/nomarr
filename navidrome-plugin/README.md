@@ -117,6 +117,9 @@ The **Users (JSON)** field accepts a JSON array of user configurations. Each
 entry maps a Navidrome username to the playlist types you want generated for
 that user:
 
+> **Tip:** In Navidrome's plugin settings UI, each playlist-user row is labeled
+> with that entry's `username`, making it easier to tell users apart at a glance.
+
 ```json
 [
   {
