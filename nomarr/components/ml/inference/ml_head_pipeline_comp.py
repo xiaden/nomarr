@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from nomarr.components.ml.inference.ml_embed_comp import pool_scores
+from nomarr.components.ml.inference.ml_embed_comp import aggregate_segment_scores_weighted, pool_scores
 from nomarr.components.ml.inference.ml_heads_comp import HeadSpec, run_head_decision
 from nomarr.components.tagging.mood_labels_comp import normalize_tag_label
 from nomarr.helpers.dto.ml_dto import ProcessHeadPredictionsResult, SingleHeadResult
@@ -93,7 +93,14 @@ def run_single_head(
     # Phase 1: ONNX inference (GPU/CPU, releases GIL)
     try:
         segment_scores = predict_fn()
-        pooled_vec = pool_scores(segment_scores, mode="trimmed_mean", trim_perc=0.1, nan_policy="omit")
+        # Classification heads use temporal-grouping aggregation to correctly
+        # weight dominant sections of a song (e.g. instrumental vs. vocal).
+        # Regression heads use the plain trimmed mean — their outputs are raw
+        # floats, not probabilities, so the 0.5 midpoint has no meaning.
+        if head_model.meta.is_regression_head:
+            pooled_vec = pool_scores(segment_scores, mode="trimmed_mean", trim_perc=0.1, nan_policy="omit")
+        else:
+            pooled_vec = aggregate_segment_scores_weighted(segment_scores)
         seg_std: np.ndarray | None = None
         if segment_scores.ndim == 2 and segment_scores.shape[0] > 1:
             seg_std = np.std(segment_scores, axis=0).astype(np.float32, copy=False)

@@ -207,3 +207,137 @@ def _trimmed_mean(scores: np.ndarray, trim_perc: float, axis: int = 0) -> np.nda
     if axis != 0:
         result = np.swapaxes(result, axis, 0)
     return result
+
+
+def aggregate_segment_scores_weighted(
+    scores: np.ndarray,
+    *,
+    silence_threshold: float = 0.05,
+    min_active_fraction: float = 0.3,
+    rolling_window: int = 3,
+    group_change_threshold: float = 0.10,
+    oscillation_fraction: float = 0.45,
+) -> np.ndarray:
+    """Aggregate segment-level classification head scores using temporal grouping.
+
+    More robust than a plain trimmed mean for binary / multiclass heads.
+    Inputs are assumed to be probabilities in ``[0, 1]``.
+
+    Steps:
+
+    1. **Silence filtering** — segments whose max probability is below
+       *silence_threshold* are excluded before grouping.  If silence
+       filtering would leave fewer than *min_active_fraction* of the
+       original segments, all segments are retained as a fallback.
+    2. **Rolling average** — a centred rolling mean with window
+       *rolling_window* is applied to each label independently to
+       smooth short-term fluctuation.
+    3. **Temporal grouping** — consecutive segments are placed in the
+       same group while the L-infinity distance between adjacent rolling-average
+       vectors is <= *group_change_threshold*.  A larger jump opens a new
+       group, splitting the track into structurally similar sections.
+    4. **Weighted aggregation** — each group is assigned a weight equal
+       to its segment count.  For each label separately, the groups are
+       split into a "yes" side (mean > 0.5) and a "no" side (mean ≤ 0.5).
+       The weighted mean of the *dominant* side (greater total weight) is
+       used as the label's song score.
+    5. **Oscillation suppression** — when neither side carries at least
+       ``1 - oscillation_fraction`` of the total weight (i.e. the model
+       is constantly switching), the label score is clamped to the
+       decision midpoint (0.5), effectively suppressing the tag.
+
+    Falls back to a 10 % trimmed mean when fewer than 2 active segments
+    remain after silence filtering.
+
+    Args:
+        scores: 2-D array of shape ``[num_segments, num_labels]``.
+            Values must be in probability space ``[0, 1]``.
+        silence_threshold: Segments whose ``max(score)`` across labels is
+            below this value are considered silent and excluded.
+        min_active_fraction: Minimum fraction of the original segments
+            that must remain after silence filtering.  If fewer survive,
+            all segments are kept.
+        rolling_window: Centred window width for the temporal smoothing
+            step.  Automatically capped at the number of active segments.
+        group_change_threshold: Maximum L-infinity distance between adjacent
+            rolling-average vectors before a new group is started.
+        oscillation_fraction: A label is considered oscillating when the
+            *smaller* of the two probability sides carries at least this
+            fraction of total group weight.  Oscillating labels are
+            suppressed to 0.5.
+
+    Returns:
+        1-D ``float32`` array of shape ``[num_labels]``.
+
+    """
+    if scores.ndim == 1:
+        scores = scores.reshape(1, -1)
+    n_segs, n_labels = scores.shape
+    if n_segs <= 1:
+        return scores.reshape(-1).astype(np.float32, copy=False)
+
+    # Step 1: silence filtering
+    activity = np.max(scores, axis=1)
+    active_mask = activity >= silence_threshold
+    min_active = max(1, int(np.floor(min_active_fraction * n_segs)))
+    if int(np.sum(active_mask)) < min_active:
+        active_mask = np.ones(n_segs, dtype=bool)
+    active_scores: np.ndarray = scores[active_mask]
+    n_active = len(active_scores)
+
+    if n_active <= 1:
+        # Not enough active segments — fall back to trimmed mean over all
+        return _trimmed_mean(scores, 0.1, axis=0).astype(np.float32, copy=False)
+
+    # Step 2: centred rolling average
+    w = min(rolling_window, n_active)
+    half = w // 2
+    rolled = np.empty_like(active_scores)
+    for i in range(n_active):
+        lo = max(0, i - half)
+        hi = min(n_active, i + half + 1)
+        rolled[i] = np.mean(active_scores[lo:hi], axis=0)
+
+    # Step 3: group detection — split on L-inf deviation in rolling average
+    groups: list[list[int]] = []
+    current_group: list[int] = [0]
+    for i in range(1, n_active):
+        linf_dist = float(np.max(np.abs(rolled[i] - rolled[i - 1])))
+        if linf_dist <= group_change_threshold:
+            current_group.append(i)
+        else:
+            groups.append(current_group)
+            current_group = [i]
+    groups.append(current_group)
+
+    # Step 4: per-group means and weights (normalised to sum to 1)
+    group_means = np.array(
+        [np.mean(active_scores[g], axis=0) for g in groups],
+        dtype=np.float32,
+    )
+    raw_weights = np.array([float(len(g)) for g in groups], dtype=np.float64)
+    group_weights = raw_weights / raw_weights.sum()
+
+    # Step 5 + oscillation suppression: per-label dominant-side selection
+    pooled = np.empty(n_labels, dtype=np.float32)
+    for j in range(n_labels):
+        label_vals = group_means[:, j]
+        yes_mask = label_vals > 0.5
+        no_mask = ~yes_mask
+        yes_weight = float(np.sum(group_weights[yes_mask]))
+        no_weight = float(np.sum(group_weights[no_mask]))
+        smaller_side = min(yes_weight, no_weight)
+
+        if smaller_side >= oscillation_fraction:
+            # Neither side dominates — model is oscillating; suppress to midpoint
+            pooled[j] = 0.5
+        elif yes_weight >= no_weight:
+            # "Yes" side dominates — use its weighted mean
+            w_yes = group_weights[yes_mask]
+            pooled[j] = float(np.sum(label_vals[yes_mask] * w_yes) / yes_weight) if yes_mask.any() else 0.5
+        else:
+            # "No" side dominates — use its weighted mean
+            w_no = group_weights[no_mask]
+            pooled[j] = float(np.sum(label_vals[no_mask] * w_no) / no_weight) if no_mask.any() else 0.5
+
+    return pooled
