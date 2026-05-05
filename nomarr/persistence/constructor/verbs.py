@@ -267,8 +267,8 @@ def upsert_by_field(
         _validate_field_name(field)
         cursor = _execute_aql(
             db,
-            f"FOR doc IN @docs UPSERT {{`{field}`: doc[`{field}`]}} INSERT doc UPDATE doc IN @@col RETURN NEW._id",
-            bind_vars={"@col": collection, "docs": docs},
+            "FOR doc IN @docs UPSERT KEEP(doc, @fields) INSERT doc UPDATE doc IN @@col RETURN NEW._id",
+            bind_vars={"@col": collection, "docs": docs, "fields": [field]},
             retry_on_conflict=True,
         )
     return [cast("str", _id) for _id in cursor]

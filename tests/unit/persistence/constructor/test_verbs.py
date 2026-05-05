@@ -89,10 +89,11 @@ class TestUpsertByField:
         assert db.aql.execute.call_count == 1
         call = db.aql.execute.call_args_list[0]
         assert "UPSERT" in call.args[0]
-        assert "`slug`" in call.args[0]
+        assert "KEEP" in call.args[0]
         assert call.kwargs["bind_vars"] == {
             "@col": "items",
             "docs": [{"slug": "foo"}, {"slug": "bar"}],
+            "fields": ["slug"],
         }
 
     def test_compound_key_uses_keep_and_single_query(self) -> None:
