@@ -341,15 +341,13 @@ class TestBulkDeleteFiles:
     def test_returns_zero_without_db_calls_when_paths_empty(self) -> None:
         """Returns immediately when there are no paths to delete."""
         mock_db = MagicMock()
+        mock_delete_cascade = mock_db.library_files.delete.cascade
 
-        with patch(
-            "nomarr.components.library.library_file_mutation_comp.delete_vectors_by_file_ids"
-        ) as mock_delete_vectors:
-            result = bulk_delete_files(mock_db, [])
+        result = bulk_delete_files(mock_db, [])
 
         assert result == 0
         mock_db.library_files.get.assert_not_called()
-        mock_delete_vectors.assert_not_called()
+        mock_delete_cascade.assert_not_called()
         mock_db.song_has_tags.delete.assert_not_called()
         mock_db.library_contains_file.delete.assert_not_called()
         mock_db.library_files.delete.assert_not_called()
@@ -359,18 +357,16 @@ class TestBulkDeleteFiles:
         """Skips deletion when the per-path lookup returns no library-file documents."""
         mock_db = MagicMock()
         mock_db.library_files.get.return_value = None
+        mock_delete_cascade = mock_db.library_files.delete.cascade
 
-        with patch(
-            "nomarr.components.library.library_file_mutation_comp.clear_all_states_batch"
-        ) as mock_clear_all_states_batch:
-            result = bulk_delete_files(mock_db, ["D:/Music/missing.flac"])
+        result = bulk_delete_files(mock_db, ["D:/Music/missing.flac"])
 
         assert result == 0
         mock_db.library_files.get.assert_called_once_with(path="D:/Music/missing.flac")
         mock_db.library_files.delete.assert_not_called()
         mock_db.song_has_tags.delete.assert_not_called()
         mock_db.library_contains_file.delete.assert_not_called()
-        mock_clear_all_states_batch.assert_not_called()
+        mock_delete_cascade.assert_not_called()
 
     @pytest.mark.unit
     def test_deletes_matching_files_and_returns_count(self) -> None:
@@ -380,36 +376,18 @@ class TestBulkDeleteFiles:
             {"_id": "library_files/1"},
             {"_id": "library_files/2"},
         ]
+        mock_delete_cascade = mock_db.library_files.delete.cascade
 
-        with (
-            patch(
-                "nomarr.components.library.library_file_mutation_comp.delete_vectors_by_file_ids"
-            ) as mock_delete_vectors,
-            patch(
-                "nomarr.components.library.library_file_mutation_comp.delete_segment_stats_for_files"
-            ) as mock_delete_segment_stats,
-            patch(
-                "nomarr.components.library.library_file_mutation_comp.clear_all_states_batch"
-            ) as mock_clear_all_states_batch,
-        ):
-            result = bulk_delete_files(
-                mock_db,
-                ["D:/Music/song-1.flac", "D:/Music/song-2.flac"],
-            )
+        result = bulk_delete_files(
+            mock_db,
+            ["D:/Music/song-1.flac", "D:/Music/song-2.flac"],
+        )
 
         assert result == 2
-        mock_delete_vectors.assert_called_once_with(mock_db, ["library_files/1", "library_files/2"])
-        mock_delete_segment_stats.assert_called_once_with(mock_db, ["library_files/1", "library_files/2"])
-        assert mock_db.song_has_tags.delete.call_count == 2
-        mock_db.song_has_tags.delete.assert_any_call(_from="library_files/1")
-        mock_db.song_has_tags.delete.assert_any_call(_from="library_files/2")
-        assert mock_db.library_contains_file.delete.call_count == 2
-        mock_db.library_contains_file.delete.assert_any_call(_to="library_files/1")
-        mock_db.library_contains_file.delete.assert_any_call(_to="library_files/2")
-        assert mock_db.library_files.delete.call_count == 2
-        mock_db.library_files.delete.assert_any_call(_id="library_files/1")
-        mock_db.library_files.delete.assert_any_call(_id="library_files/2")
-        mock_clear_all_states_batch.assert_called_once_with(mock_db, ["library_files/1", "library_files/2"])
+        mock_delete_cascade.assert_called_once_with(["library_files/1", "library_files/2"])
+        mock_db.song_has_tags.delete.assert_not_called()
+        mock_db.library_contains_file.delete.assert_not_called()
+        mock_db.library_files.delete.assert_not_called()
 
 
 class TestSetChromaprint:
@@ -572,26 +550,34 @@ class TestDeleteLibraryFile:
 
     @pytest.mark.unit
     def test_deletes_file_and_directly_derived_edges_by_id(self) -> None:
-        """Deletes the file document and all directly derived relations."""
+        """Deletes the file document through the library-files cascade API."""
         mock_db = MagicMock()
 
-        with (
-            patch(
-                "nomarr.components.library.library_file_mutation_comp.delete_vectors_by_file_id"
-            ) as mock_delete_vectors,
-            patch("nomarr.components.library.library_file_mutation_comp.clear_all_states") as mock_clear_all_states,
-            patch(
-                "nomarr.components.library.library_file_mutation_comp.delete_segment_stats_for_file"
-            ) as mock_delete_segment_stats,
-        ):
-            delete_library_file(mock_db, "library_files/123")
+        delete_library_file(mock_db, "library_files/123")
 
-        mock_delete_vectors.assert_called_once_with(mock_db, "library_files/123")
-        mock_delete_segment_stats.assert_called_once_with(mock_db, "library_files/123")
-        mock_db.song_has_tags.delete.assert_called_once_with(_from="library_files/123")
-        mock_clear_all_states.assert_called_once_with(mock_db, "library_files/123")
-        mock_db.library_contains_file.delete.assert_called_once_with(_to="library_files/123")
-        mock_db.library_files.delete.assert_called_once_with(_id="library_files/123")
+        mock_db.library_files.delete.cascade.assert_called_once_with(["library_files/123"])
+
+    @pytest.mark.unit
+    def test_looks_up_by_path_and_cascades_when_raw_path_given(self) -> None:
+        """Resolves raw path to _id via get(), then calls cascade with the resolved ID."""
+        mock_db = MagicMock()
+        mock_db.library_files.get.return_value = {"_id": "library_files/456"}
+
+        delete_library_file(mock_db, "/music/track.flac")
+
+        mock_db.library_files.get.assert_called_once_with(path="/music/track.flac")
+        mock_db.library_files.delete.cascade.assert_called_once_with(["library_files/456"])
+
+    @pytest.mark.unit
+    def test_returns_early_when_raw_path_not_found(self) -> None:
+        """When get() returns None for an unknown path, cascade is never called."""
+        mock_db = MagicMock()
+        mock_db.library_files.get.return_value = None
+
+        delete_library_file(mock_db, "/music/missing.flac")
+
+        mock_db.library_files.get.assert_called_once_with(path="/music/missing.flac")
+        mock_db.library_files.delete.cascade.assert_not_called()
 
 
 class TestGetFileLibraryKey:

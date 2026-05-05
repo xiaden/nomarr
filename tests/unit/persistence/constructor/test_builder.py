@@ -976,56 +976,56 @@ class TestBuilderCascadeAttachment:
         assert callable(items._id.delete.cascade)
 
     def test_cascade_delete_by_id_executes_aql_without_lookup(self, mock_db: MagicMock) -> None:
-        """Deleting by _id skips lookup and runs the precompiled cascade AQL directly."""
+        """cascade_delete accepts a list of document ids and runs precompiled AQL."""
         items = _make_cascade_source_collection(mock_db)
 
-        with (
-            patch(
-                "nomarr.persistence.constructor.builder.verbs._execute_aql",
-                return_value=iter([]),
-            ) as aql_mock,
-            patch("nomarr.persistence.constructor.builder.verbs.get_one_by_field") as get_one_mock,
-        ):
-            result = items.delete.cascade(_id="cascade_source/1")
+        with patch(
+            "nomarr.persistence.constructor.builder.verbs._execute_aql",
+            return_value=iter([]),
+        ) as aql_mock:
+            result = items.delete.cascade(ids=["cascade_source/1"])
 
         assert result == 1
-        get_one_mock.assert_not_called()
         aql_mock.assert_called_once()
-        assert aql_mock.call_args.kwargs["bind_vars"] == {"start": "cascade_source/1"}
+        assert aql_mock.call_args.kwargs["bind_vars"] == {"starts": ["cascade_source/1"]}
 
-    def test_cascade_delete_by_field_looks_up_document_before_running_aql(self, mock_db: MagicMock) -> None:
-        """Deleting by another field resolves the start _id before executing AQL."""
+    def test_cascade_delete_batch_executes_aql_and_returns_count(self, mock_db: MagicMock) -> None:
+        """cascade_delete executes AQL with all ids and returns the count."""
+        items = _make_cascade_source_collection(mock_db)
+        ids = ["cascade_source/42", "cascade_source/99"]
+
+        with patch(
+            "nomarr.persistence.constructor.builder.verbs._execute_aql",
+            return_value=iter([]),
+        ) as aql_mock:
+            result = items.delete.cascade(ids=ids)
+
+        assert result == 2
+        aql_mock.assert_called_once()
+        assert aql_mock.call_args.kwargs["bind_vars"] == {"starts": ids}
+
+    def test_cascade_delete_raises_on_empty_list(self, mock_db: MagicMock) -> None:
+        """cascade_delete raises ValueError when given an empty ids list."""
         items = _make_cascade_source_collection(mock_db)
 
         with (
-            patch(
-                "nomarr.persistence.constructor.builder.verbs.get_one_by_field",
-                return_value={"_id": "cascade_source/42"},
-            ) as get_one_mock,
-            patch(
-                "nomarr.persistence.constructor.builder.verbs._execute_aql",
-                return_value=iter([]),
-            ) as aql_mock,
-        ):
-            result = items.delete.cascade(title="The Title")
-
-        assert result == 1
-        get_one_mock.assert_called_once_with(mock_db, "cascade_source", "title", "The Title")
-        aql_mock.assert_called_once()
-        assert aql_mock.call_args.kwargs["bind_vars"] == {"start": "cascade_source/42"}
-
-    def test_cascade_delete_returns_zero_when_lookup_finds_no_document(self, mock_db: MagicMock) -> None:
-        """Deleting by another field returns 0 when the source document is not found."""
-        items = _make_cascade_source_collection(mock_db)
-
-        with (
-            patch("nomarr.persistence.constructor.builder.verbs.get_one_by_field", return_value=None) as get_one_mock,
             patch("nomarr.persistence.constructor.builder.verbs._execute_aql") as aql_mock,
+            pytest.raises(ValueError, match="non-empty list"),
         ):
-            result = items.delete.cascade(title="Missing")
+            items.delete.cascade(ids=[])
 
-        assert result == 0
-        get_one_mock.assert_called_once_with(mock_db, "cascade_source", "title", "Missing")
+        aql_mock.assert_not_called()
+
+    def test_cascade_delete_raises_on_non_list_argument(self, mock_db: MagicMock) -> None:
+        """cascade_delete raises ValueError when given a non-list ids argument."""
+        items = _make_cascade_source_collection(mock_db)
+
+        with (
+            patch("nomarr.persistence.constructor.builder.verbs._execute_aql") as aql_mock,
+            pytest.raises(ValueError, match="non-empty list"),
+        ):
+            items.delete.cascade(ids=None)  # type: ignore[arg-type]
+
         aql_mock.assert_not_called()
 
 
@@ -1118,7 +1118,10 @@ class TestBuilderCascadeQueryHelpers:
         assert isinstance(query, str)
         assert "LET subgraph" in query
         assert "cascade_edge_col" in query
-        assert "REMOVE PARSE_IDENTIFIER(@start).key IN cascade_source" in query
+        assert "@starts" in query
+        assert "FOR start_id IN @starts" in query
+        assert "REMOVE PARSE_IDENTIFIER(start_id).key IN cascade_source" in query
+        assert "edge_doc._to IN @starts" in query
 
     def test_cascade_edge_names_for_root_returns_single_cascade_edge(self, mock_db: MagicMock) -> None:
         """A single cascade edge contributes one edge collection name."""
@@ -1216,3 +1219,119 @@ class TestBuilderCascadeQueryHelpers:
         names = Builder(mock_db)._cascade_edge_names_for_root(Root)
 
         assert names == ["root_to_middle_edge", "middle_to_leaf_edge"]
+
+    def test_compile_cascade_query_extra_target_names_included_in_starts_with(self, mock_db: MagicMock) -> None:
+        """Extra runtime target names are added to the orphan delete target filters."""
+
+        class CascadeSource(DocumentCollection):
+            _name = "cascade_source"
+
+        class CascadeTarget(DocumentCollection):
+            _name = "cascade_target"
+
+        class CascadeEdge(EdgeCollection):
+            _name = "cascade_edge_col"
+            FROM_COLLECTION = CascadeSource
+            TO_COLLECTION = CascadeTarget
+
+        edge_def = EdgeDef(
+            via=CascadeEdge,
+            direction=OUTBOUND,
+            target=CascadeTarget,
+            on_delete=CASCADE,
+        )
+        CascadeSource.EDGES = [edge_def]
+
+        query = Builder(mock_db)._compile_cascade_query(
+            CascadeSource,
+            "cascade_source",
+            [edge_def],
+            extra_target_names=["vectors_track_hot__effnet__lib1"],
+        )
+
+        assert 'STARTS_WITH(orphan_id, "vectors_track_hot__effnet__lib1/")' in query
+        assert "REMOVE PARSE_IDENTIFIER(orphan_id).key IN cascade_target" in query
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestBuilderReattachVectorCascades:
+    """Tests for hot-swapping cascade deletes after vector collection registration."""
+
+    def test_reattach_vector_cascades_skips_collections_without_vector_targets(self, mock_db: MagicMock) -> None:
+        """Collections without vector cascade targets keep their original closure."""
+
+        class Source(DocumentCollection):
+            _name = "source"
+
+        class Target(DocumentCollection):
+            _name = "target"
+
+        class ViaEdge(EdgeCollection):
+            _name = "via_edge"
+            FROM_COLLECTION = Source
+            TO_COLLECTION = Target
+
+        Source.EDGES = [
+            EdgeDef(
+                via=ViaEdge,
+                direction=OUTBOUND,
+                target=Target,
+                on_delete=CASCADE,
+            )
+        ]
+
+        builder = Builder(mock_db)
+        source_instance = Source()
+        source_instance._name = "source"
+        builder.construct(source_instance)
+        original_cascade = source_instance.delete.cascade
+
+        builder.reattach_vector_cascades(["some_vector_col"])
+
+        assert source_instance.delete.cascade is original_cascade
+
+    def test_reattach_vector_cascades_recompiles_for_vector_targeting_collection(self, mock_db: MagicMock) -> None:
+        """Collections with vector cascade targets get a replacement closure using runtime names."""
+
+        class VecTarget(VectorCollection):
+            _name = "vectors_track_cold"
+            VECTOR_TIER = "cold"
+            NAME_PATTERN = "vectors_track_cold__{model}__{library}"
+
+        class Source(DocumentCollection):
+            _name = "source"
+
+        class ViaEdge(EdgeCollection):
+            _name = "via_edge"
+            FROM_COLLECTION = Source
+            TO_COLLECTION = VecTarget
+
+        Source.EDGES = [
+            EdgeDef(
+                via=ViaEdge,
+                direction=OUTBOUND,
+                target=VecTarget,
+                on_delete=CASCADE,
+            )
+        ]
+
+        builder = Builder(mock_db)
+        source_instance = Source()
+        source_instance._name = "source"
+        builder.construct(source_instance)
+        original_cascade = source_instance.delete.cascade
+
+        with patch(
+            "nomarr.persistence.constructor.builder.verbs._execute_aql",
+            return_value=iter([]),
+        ) as aql_mock:
+            builder.reattach_vector_cascades(["vectors_track_hot__effnet__lib1"])
+
+            assert source_instance.delete.cascade is not original_cascade
+
+            result = source_instance.delete.cascade(["source/test_key"])
+
+        assert result == 1
+        aql_mock.assert_called_once()
+        assert "vectors_track_hot__effnet__lib1/" in aql_mock.call_args.args[1]

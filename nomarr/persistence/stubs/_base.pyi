@@ -1,116 +1,115 @@
 from __future__ import annotations
 
-from typing import Any, Protocol, TypedDict
+from typing import Any, Protocol, runtime_checkable
 
-from nomarr.helpers.filter_types import FilterDict
+from nomarr.helpers.filter_types import AggResult as AggResult
 
-class AggResult(TypedDict):
-    value: str
-    count: int
+__all__ = [
+    "AggResult",
+    "CollectionDeleteVerbProtocol",
+    "CollectionGetVerbProtocol",
+    "DeleteVerbProtocol",
+    "DeleteWithCascadeProtocol",
+    "FieldAccessorProtocol",
+    "GetVerbProtocol",
+    "TraversalVerbProtocol",
+]
 
-class GetOneProtocol(Protocol):
-    def __call__(self, value: Any) -> dict[str, Any] | None: ...
+@runtime_checkable
+class GetVerbProtocol(Protocol):
+    """Field-level get verb (``_GetVerb``). Attached as ``collection.<field>.get``."""
 
-class GetOneByIdProtocol(Protocol):
-    def __call__(self, doc_id: str) -> dict[str, Any] | None: ...
-    def id(self, doc_id: str) -> dict[str, Any] | None: ...
-
-class GetManyProtocol(Protocol):
-    def __call__(
-        self,
-        value: Any,
-        *,
-        limit: int | None = ...,
-        offset: int = ...,
-    ) -> list[dict[str, Any]]: ...
-
-class GetManyByFilterProtocol(Protocol):
-    def __call__(self, ids: list[str]) -> list[dict[str, Any]]: ...
-    def id(self, ids: list[str]) -> list[dict[str, Any]]: ...
-    def by_filter(
-        self,
-        filter_dict: dict[str, Any],
-        *,
-        limit: int | None = ...,
-        offset: int = ...,
-    ) -> list[dict[str, Any]]: ...
-
-class CollectionGetProtocol(Protocol):
-    one: GetOneByIdProtocol
-    many: GetManyByFilterProtocol
-
-    def __call__(self, doc_id: str) -> dict[str, Any] | None: ...
-
-class UniqueGetModifierProtocol(Protocol):
-    """GetModifierProtocol for unique fields: __call__ returns a single doc or None."""
-    def __call__(self, value: Any) -> dict[str, Any] | None: ...
-    def one(self, value: Any) -> dict[str, Any] | None: ...
-    def many(
-        self,
-        value: Any,
-        *,
-        limit: int | None = ...,
-        offset: int = ...,
-    ) -> list[dict[str, Any]]: ...
-    def in_(
-        self,
-        values: list[Any] | FilterDict,
-        *,
-        limit: int | None = ...,
-        offset: int = ...,
-    ) -> list[dict[str, Any]]: ...
-    def like(
-        self,
-        pattern: str,
-        *,
-        limit: int | None = ...,
-        offset: int = ...,
-    ) -> list[dict[str, Any]]: ...
-
-class GetModifierProtocol(Protocol):
     def __call__(self, value: Any) -> dict[str, Any] | None | list[dict[str, Any]]: ...
-    def one(self, value: Any) -> dict[str, Any] | None: ...
-    def many(
-        self,
-        value: Any,
-        *,
-        limit: int | None = ...,
-        offset: int = ...,
-    ) -> list[dict[str, Any]]: ...
-    def in_(
-        self,
-        values: list[Any] | FilterDict,
-        *,
-        limit: int | None = ...,
-        offset: int = ...,
-    ) -> list[dict[str, Any]]: ...
-    def like(
-        self,
-        pattern: str,
-        *,
-        limit: int | None = ...,
-        offset: int = ...,
-    ) -> list[dict[str, Any]]: ...
+    def many(self, value: Any, *, limit: int | None = ..., offset: int = ...) -> list[dict[str, Any]]: ...
+    def in_(self, values: list[Any], *, limit: int | None = ..., offset: int = ...) -> list[dict[str, Any]]: ...
+    def gte(self, value: Any, *, limit: int | None = ..., offset: int = ...) -> list[dict[str, Any]]: ...
+    def lte(self, value: Any, *, limit: int | None = ..., offset: int = ...) -> list[dict[str, Any]]: ...
+    def like(self, pattern: str, *, limit: int | None = ..., offset: int = ...) -> list[dict[str, Any]]: ...
 
-class DeleteModifierProtocol(Protocol):
+@runtime_checkable
+class DeleteVerbProtocol(Protocol):
+    """Field-level delete verb (``_DeleteVerb``). Attached as ``collection.<field>.delete``."""
+
     def __call__(self, value: Any) -> int: ...
     def in_(self, values: list[Any]) -> int: ...
 
-class TraversalProtocol(Protocol):
+@runtime_checkable
+class FieldAccessorProtocol(Protocol):
+    """Field accessor (``FieldAccessor``). Attached as ``collection.<field>``."""
+
+    get: GetVerbProtocol
+    delete: DeleteVerbProtocol
+
+    def insert(self, docs: list[dict[str, Any]]) -> list[str]: ...
+    def update(self, value: Any, fields: dict[str, Any]) -> None: ...
+    def upsert(self, value: Any, fields: dict[str, Any]) -> list[str]: ...
+    def count(self, value: Any) -> int: ...
+
+@runtime_checkable
+class CollectionGetVerbProtocol(Protocol):
+    """Collection-level get verb (``_CollectionGetVerb``). Attached as ``collection.get``."""
+
     def __call__(
         self,
-        start: str | dict[str, Any],
-        edge: str,
+        *args: Any,
+        limit: int | None = ...,
+        offset: int = ...,
+        **kwargs: Any,
+    ) -> dict[str, Any] | None | list[dict[str, Any]]: ...
+    def many(
+        self,
+        *args: Any,
+        limit: int | None = ...,
+        offset: int = ...,
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]: ...
+    def in_(
+        self,
+        *args: Any,
+        limit: int | None = ...,
+        offset: int = ...,
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]: ...
+    def gte(
+        self,
+        field_name: str,
+        threshold: Any,
         *,
-        target_filter: dict[str, Any] | None = ...,
         limit: int | None = ...,
         offset: int = ...,
     ) -> list[dict[str, Any]]: ...
-    def by_ids(
+    def lte(
         self,
-        start_ids: list[str],
-        edge: str,
+        field_name: str,
+        threshold: Any,
         *,
-        target_filter: dict[str, Any] | None = ...,
-        target_like_starts_with: tuple[str, str] | None = ...,
+        limit: int | None = ...,
+        offset: int = ...,
     ) -> list[dict[str, Any]]: ...
+    def like(
+        self,
+        field_name: str,
+        pattern: str,
+        *,
+        limit: int | None = ...,
+        offset: int = ...,
+    ) -> list[dict[str, Any]]: ...
+
+@runtime_checkable
+class CollectionDeleteVerbProtocol(Protocol):
+    """Collection-level delete verb (``_CollectionDeleteVerb``). Attached as ``collection.delete``."""
+
+    def __call__(self, *args: Any, **kwargs: Any) -> int: ...
+
+@runtime_checkable
+class DeleteWithCascadeProtocol(CollectionDeleteVerbProtocol, Protocol):
+    """Collection delete with ``cascade`` attached (collections with outbound CASCADE edges)."""
+
+    def cascade(self, file_ids: list[str]) -> int: ...
+
+@runtime_checkable
+class TraversalVerbProtocol(Protocol):
+    """Traversal verb (``_TraversalVerb``). Attached as ``collection.<edge_name>``."""
+
+    def __call__(self, doc_id: str, limit: int | None = ...) -> list[dict[str, Any]]: ...
+    def by_ids(self, ids: list[str], limit: int | None = ..., **filters: Any) -> list[dict[str, Any]]: ...

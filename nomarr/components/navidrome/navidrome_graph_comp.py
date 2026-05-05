@@ -88,11 +88,20 @@ def list_navidrome_track_keys(db: Database) -> list[str]:
 
 
 def delete_navidrome_tracks_cascade(db: Database, nd_ids: list[str]) -> int:
-    """Cascade-delete track vertices and their connected edges."""
+    """Cascade-delete track vertices and their connected edges.
+
+    Args:
+        db: Database instance.
+        nd_ids: Navidrome track id strings (bare keys, not ``_id`` paths).
+            The function constructs the full ``navidrome_tracks/<id>`` paths internally.
+
+    Returns:
+        Number of track vertex documents deleted, or 0 if ``nd_ids`` is empty.
+    """
     if not nd_ids:
         return 0
 
-    return sum(int(db.navidrome_tracks.delete.cascade(_key=nd_id)) for nd_id in nd_ids)
+    return int(db.navidrome_tracks.delete.cascade([f"navidrome_tracks/{nd_id}" for nd_id in nd_ids]))
 
 
 def resolve_navidrome_track_to_file(db: Database, nd_id: str) -> str | None:

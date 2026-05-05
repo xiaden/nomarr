@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,6 +17,7 @@ class TestDatabaseRegister:
         """Construct a ``Database`` instance without connecting to ArangoDB."""
         db: Database = object.__new__(Database)
         db._template_namespaces = {}  # type: ignore[attr-defined]
+        db._builder = MagicMock()  # type: ignore[attr-defined]
         db.db = MagicMock()
         return db
 
@@ -29,18 +31,17 @@ class TestDatabaseRegister:
         class FakeVectorTemplate:
             NAME_PATTERN = "vectors_track_hot__{model}__{library}"
 
-        with (
-            patch.dict(
-                "nomarr.persistence.db._VECTOR_TEMPLATE_CLASSES",
-                {"vectors_track_hot": FakeVectorTemplate},
-                clear=True,
-            ),
-            patch("nomarr.persistence.db.Builder") as mock_builder_cls,
+        with patch.dict(
+            "nomarr.persistence.db._VECTOR_TEMPLATE_CLASSES",
+            {"vectors_track_hot": FakeVectorTemplate},
+            clear=True,
         ):
             result = database.register("vectors_track_hot__effnet__lib1", "vectors_track_hot")
 
-        mock_builder_cls.assert_called_once_with(database.db)
-        mock_builder_cls.return_value.construct.assert_called_once_with(result)
+        builder_mock = cast("MagicMock", database._builder)
+
+        builder_mock.construct.assert_called_once_with(result)
+        builder_mock.reattach_vector_cascades.assert_called_once_with(["vectors_track_hot__effnet__lib1"])
         assert isinstance(result, FakeVectorTemplate)
         assert result._name == "vectors_track_hot__effnet__lib1"
         assert database._template_namespaces["vectors_track_hot__effnet__lib1"] is result
@@ -98,6 +99,37 @@ class TestDatabaseRegister:
 
         with pytest.raises(ValueError, match="does not match template pattern"):
             database.register("vectors_track_hot__bad", "vectors_track_hot")
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_register_second_call_passes_cumulative_names_to_reattach(self) -> None:
+        """The second register() call reattaches cascades with all registered dynamic names so far."""
+        database = self._make_database()
+        database.db.has_collection.return_value = True
+
+        class FakeHotVectorTemplate:
+            NAME_PATTERN = "vectors_track_hot__{model}__{library}"
+
+        class FakeColdVectorTemplate:
+            NAME_PATTERN = "vectors_track_cold__{model}__{library}"
+
+        with patch.dict(
+            "nomarr.persistence.db._VECTOR_TEMPLATE_CLASSES",
+            {
+                "vectors_track_hot": FakeHotVectorTemplate,
+                "vectors_track_cold": FakeColdVectorTemplate,
+            },
+            clear=True,
+        ):
+            database.register("vectors_track_hot__effnet__lib1", "vectors_track_hot")
+            database.register("vectors_track_cold__effnet__lib1", "vectors_track_cold")
+
+        reattach_mock = cast("MagicMock", database._builder.reattach_vector_cascades)
+
+        assert reattach_mock.call_args_list[0].args == (["vectors_track_hot__effnet__lib1"],)
+        assert reattach_mock.call_args_list[1].args == (
+            ["vectors_track_hot__effnet__lib1", "vectors_track_cold__effnet__lib1"],
+        )
 
 
 class TestDatabaseGetVersion:

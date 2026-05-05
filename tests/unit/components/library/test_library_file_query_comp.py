@@ -706,19 +706,28 @@ class TestPhaseTwoQueryHelpers:
         mock_db.library_files.song_has_tags.by_ids.assert_called_once_with(["library_files/1"], name="isrc")
 
     @pytest.mark.unit
-    def test_clear_library_data_truncates_then_batches_library_files(self) -> None:
+    def test_clear_library_data_truncates_all_collections(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.aggregate.side_effect = [[{"value": "library_files/1"}], []]
+        vector_coll = MagicMock()
+        mock_db._template_namespaces = {"vectors_track__hot__effnet": vector_coll}
 
-        with patch(
-            "nomarr.components.ml.vectors.ml_vector_registry_comp.delete_vectors_by_file_ids"
-        ) as mock_delete_vectors:
-            clear_library_data(mock_db)
+        clear_library_data(mock_db)
 
+        vector_coll.truncate.assert_called_once()
         mock_db.segment_scores_stats.truncate.assert_called_once()
+        mock_db.file_has_vectors.truncate.assert_called_once()
+        mock_db.file_has_segment_stats.truncate.assert_called_once()
         mock_db.song_has_tags.truncate.assert_called_once()
-        mock_delete_vectors.assert_called_once_with(mock_db, ["library_files/1"])
-        mock_db.library_files.delete.assert_called_once_with(["library_files/1"])
+        mock_db.file_has_state.truncate.assert_called_once()
+        mock_db.library_contains_file.truncate.assert_called_once()
+        mock_db.library_contains_folder.truncate.assert_called_once()
+        mock_db.library_has_scan.truncate.assert_called_once()
+        mock_db.library_has_pipeline_state.truncate.assert_called_once()
+        mock_db.tags.truncate.assert_called_once()
+        mock_db.library_files.truncate.assert_called_once()
+        mock_db.library_folders.truncate.assert_called_once()
+        mock_db.library_scans.truncate.assert_called_once()
+        mock_db.library_pipeline_states.truncate.assert_called_once()
 
 
 @pytest.mark.unit

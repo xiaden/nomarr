@@ -6,17 +6,10 @@ from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_file_query_comp import get_existing_file_paths
 from nomarr.components.library.library_file_state_comp import (
-    clear_all_states,
-    clear_all_states_batch,
     initialize_file_states,
     initialize_file_states_batch,
     transition_file_state,
 )
-from nomarr.components.ml.inference.ml_segment_stats_store_comp import (
-    delete_segment_stats_for_file,
-    delete_segment_stats_for_files,
-)
-from nomarr.components.ml.vectors.ml_vector_registry_comp import delete_vectors_by_file_id, delete_vectors_by_file_ids
 from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
 from nomarr.helpers.dto import LibraryPath
 from nomarr.helpers.time_helper import now_ms
@@ -104,19 +97,25 @@ def upsert_library_file(
 
 
 def delete_library_file(db: Database, file_id: str) -> None:
-    """Delete one file and its directly-derived data/edges."""
+    """Delete a library file and all cascade-linked data.
+
+    Removes the file document together with all directly-derived data via a
+    single ``db.library_files.delete.cascade`` call: vectors, segment stats,
+    tag edges (``song_has_tags``), and state edges.
+
+    Args:
+        db: Database handle.
+        file_id: ArangoDB document ID (``library_files/<key>``) or a raw file
+            path.  When a path is supplied it is resolved to the document ID
+            first; returns early without error if no matching file is found.
+    """
     if not file_id.startswith("library_files/"):
         file_doc = cast("dict[str, Any] | None", db.library_files.get(path=file_id))
         if file_doc is None:
             return
         file_id = str(file_doc["_id"])
 
-    delete_vectors_by_file_id(db, file_id)
-    delete_segment_stats_for_file(db, file_id)
-    db.song_has_tags.delete(_from=file_id)
-    clear_all_states(db, file_id)
-    db.library_contains_file.delete(_to=file_id)
-    db.library_files.delete(_id=file_id)
+    db.library_files.delete.cascade([file_id])
 
 
 def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
@@ -241,7 +240,22 @@ def update_metadata_cache_batch(db: Database, updates: list[dict[str, Any]]) -> 
 
 
 def bulk_delete_files(db: Database, paths: list[str]) -> int:
-    """Delete multiple files by path and clean up their derived data."""
+    """Delete multiple library files and all cascade-linked data.
+
+    Resolves each supplied path to a file document, silently skips paths with
+    no matching document, and then removes all matched files in a single
+    ``db.library_files.delete.cascade`` call. The cascade also deletes
+    directly-derived data such as vectors, segment stats, tag edges, and state
+    edges. Returns early with ``0`` when ``paths`` is empty.
+
+    Args:
+        db: Database handle.
+        paths: File paths to resolve and delete. Paths with no matching file
+            document are ignored.
+
+    Returns:
+        The number of files that were found and deleted.
+    """
     if not paths:
         return 0
     file_docs = [
@@ -251,14 +265,7 @@ def bulk_delete_files(db: Database, paths: list[str]) -> int:
     ]
     file_ids = [str(d["_id"]) for d in file_docs]
     if file_ids:
-        delete_vectors_by_file_ids(db, file_ids)
-        delete_segment_stats_for_files(db, file_ids)
-        for file_id in file_ids:
-            db.song_has_tags.delete(_from=file_id)
-        clear_all_states_batch(db, file_ids)
-        for file_id in file_ids:
-            db.library_contains_file.delete(_to=file_id)
-            db.library_files.delete(_id=file_id)
+        db.library_files.delete.cascade(file_ids)
 
     return len(file_ids)
 

@@ -209,6 +209,7 @@ class Database:
         )
 
         builder = Builder(self.db)
+        self._builder: Builder = builder
 
         self.meta = Meta()
         self._wire_collection("meta", self.meta, builder)
@@ -330,9 +331,10 @@ class Database:
         instance = vector_template_cls()
         collection_any: Any = instance
         collection_any._name = collection_name
-        Builder(self.db).construct(instance)
+        self._builder.construct(instance)
         setattr(self, collection_name, instance)
         self._template_namespaces[collection_name] = instance
+        self._builder.reattach_vector_cascades(list(self._template_namespaces.keys()))
         return instance
 
     def get_version(self) -> str | None:

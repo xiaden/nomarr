@@ -193,17 +193,13 @@ class TestDeleteNavidromeTracksCascade:
 
     def test_cascades_with_prefixed_ids_and_returns_count(self) -> None:
         mock_db = MagicMock()
-        mock_db.navidrome_tracks.delete.cascade.side_effect = [1, 1, 1]
+        mock_db.navidrome_tracks.delete.cascade.return_value = 3
         result = delete_navidrome_tracks_cascade(mock_db, ["nd-1", "nd-2", "nd-3"])
         assert result == 3
-        mock_db.navidrome_tracks.delete.cascade.assert_has_calls(
-            [
-                call(_key="nd-1"),
-                call(_key="nd-2"),
-                call(_key="nd-3"),
-            ]
+        mock_db.navidrome_tracks.delete.cascade.assert_called_once_with(
+            ["navidrome_tracks/nd-1", "navidrome_tracks/nd-2", "navidrome_tracks/nd-3"]
         )
-        assert mock_db.navidrome_tracks.delete.cascade.call_count == 3
+        assert mock_db.navidrome_tracks.delete.cascade.call_count == 1
 
 
 @pytest.mark.unit

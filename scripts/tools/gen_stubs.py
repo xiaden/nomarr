@@ -90,24 +90,6 @@ def _needs_stub(cls: type[object]) -> bool:
     return False
 
 
-def _write_traversal_protocol(out: StringIO) -> None:
-    out.write("@runtime_checkable\n")
-    out.write("class TraversalVerbProtocol(Protocol):\n")
-    out.write("    def __call__(self, doc_id: str, limit: int | None = ...) -> list[dict[str, Any]]: ...\n")
-    out.write(
-        "    def by_ids(self, ids: list[str], limit: int | None = ..., **filters: Any) -> list[dict[str, Any]]: ...\n"
-    )
-    out.write("\n\n")
-
-
-def _write_delete_cascade_protocol(out: StringIO) -> None:
-    out.write("@runtime_checkable\n")
-    out.write("class DeleteWithCascadeProtocol(Protocol):\n")
-    out.write("    def __call__(self, *args: Any, **kwargs: Any) -> int: ...\n")
-    out.write("    def cascade(self, *args: Any, **kwargs: Any) -> int: ...\n")
-    out.write("\n\n")
-
-
 def _write_vector_methods(out: StringIO, cls: type[VectorCollection]) -> None:
     out.write("    def ann_search(\n")
     out.write("        self,\n")
@@ -144,14 +126,18 @@ def generate_stub(cls: type[object]) -> str | None:
     is_state_graph = issubclass(cls, StateGraphCollection)
     is_vector = issubclass(cls, VectorCollection)
 
+    base_imports: list[str] = []
+    if needs_delete_cascade:
+        base_imports.append("DeleteWithCascadeProtocol")
+    if needs_traversal:
+        base_imports.append("TraversalVerbProtocol")
+
     out = StringIO()
     out.write("from __future__ import annotations\n\n")
-    out.write("from typing import Any, Protocol, runtime_checkable\n\n")
-
-    if needs_traversal:
-        _write_traversal_protocol(out)
-    if needs_delete_cascade:
-        _write_delete_cascade_protocol(out)
+    out.write("from typing import Any, Protocol, runtime_checkable\n")
+    if base_imports:
+        out.write(f"from ._base import {', '.join(sorted(base_imports))}\n")
+    out.write("\n")
 
     out.write("@runtime_checkable\n")
     out.write(f"class {cls.__name__}Namespace(Protocol):\n")
@@ -208,7 +194,7 @@ def main() -> None:
                 path.unlink()
                 print(f"  deleted  {path.name}")
 
-    written = 0
+    written_paths: set[Path] = set()
     for cls in _iter_collection_classes():
         content = generate_stub(cls)
         if content is None:
@@ -216,10 +202,17 @@ def main() -> None:
 
         stub_path = STUBS_DIR / f"{_snake_case(cls.__name__)}.pyi"
         stub_path.write_text(content, encoding="utf-8", newline="\n")
+        written_paths.add(stub_path)
         print(f"  written  {stub_path.name}")
-        written += 1
 
-    print(f"Done. Wrote {written} stub file(s) to {STUBS_DIR.relative_to(ROOT)}")
+    stale = 0
+    for path in STUBS_DIR.glob("*.pyi"):
+        if path.name not in PROTECTED and path not in written_paths:
+            path.unlink()
+            print(f"  removed  {path.name}  (stale — no matching collection class)")
+            stale += 1
+
+    print(f"Done. Wrote {len(written_paths)} stub file(s), removed {stale} stale file(s) — {STUBS_DIR.relative_to(ROOT)}")
 
 
 if __name__ == "__main__":

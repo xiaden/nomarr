@@ -146,4 +146,4 @@ class TestDeleteLibrary:
 
         assert result is True
         get_library_record_mock.assert_called_once_with(mock_db, "libraries/1")
-        mock_db.libraries.delete.cascade.assert_called_once_with(_key="1")
+        mock_db.libraries.delete.cascade.assert_called_once_with(["libraries/1"])

@@ -26,12 +26,10 @@ from nomarr.components.library.library_file_query_comp import (
     get_folder_rel_paths as _get_folder_rel_paths,
 )
 from nomarr.components.library.library_file_state_comp import (
-    clear_all_states_batch,
     initialize_file_states_batch,
     library_has_tagged_files,
     transition_file_state,
 )
-from nomarr.components.ml.vectors.ml_vector_registry_comp import delete_vectors_by_file_ids
 from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
 from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_IDLE,
@@ -321,9 +319,9 @@ def _delete_segment_stats_for_files(db: Database, file_ids: list[str]) -> int:
             db.library_files.file_has_segment_stats(file_id, limit=db.segment_scores_stats.count()),
         )
         stats_ids = [cast("str", doc["_id"]) for doc in stats_docs if "_id" in doc]
-        for stats_id in stats_ids:
-            stats_key = stats_id.split("/", 1)[1] if "/" in stats_id else stats_id
-            deleted += int(db.segment_scores_stats.delete.cascade(_key=stats_key))
+        if not stats_ids:
+            continue
+        deleted += int(db.segment_scores_stats.delete.cascade(stats_ids))
     return deleted
 
 
@@ -360,31 +358,6 @@ def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
     ]
     initialize_file_states_batch(db, new_file_ids)
     return file_ids
-
-
-def _bulk_delete_files(db: Database, paths: list[str]) -> int:
-    """Delete multiple files by path and clean up their derived data."""
-    if not paths:
-        return 0
-
-    file_docs = [
-        file_doc
-        for path in paths
-        if (file_doc := cast("dict[str, Any] | None", db.library_files.get(path=path))) is not None
-    ]
-    file_ids = [str(doc["_id"]) for doc in file_docs]
-    if not file_ids:
-        return 0
-
-    delete_vectors_by_file_ids(db, file_ids)
-    _delete_segment_stats_for_files(db, file_ids)
-    for file_id in file_ids:
-        db.song_has_tags.delete(_from=file_id)
-    clear_all_states_batch(db, file_ids)
-    for file_id in file_ids:
-        db.library_contains_file.delete(_to=file_id)
-        db.library_files.delete(_id=file_id)
-    return len(file_ids)
 
 
 # ---------------------------------------------------------------------------
@@ -716,7 +689,9 @@ def remove_deleted_files(db: Database, paths: list[str]) -> int:
         Number of files deleted
 
     """
-    return _bulk_delete_files(db, paths)
+    from nomarr.components.library.library_file_mutation_comp import bulk_delete_files
+
+    return bulk_delete_files(db, paths)
 
 
 # ---------------------------------------------------------------------------

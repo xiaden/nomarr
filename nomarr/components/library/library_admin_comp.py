@@ -128,7 +128,7 @@ def delete_library(db: Database, library_id: str) -> bool:
     library = get_library_record(db, library_id)
     if not library:
         return False
-    deleted_count = cast("int", db.libraries.delete.cascade(_key=library_key_from_ref(library_id)))
+    deleted_count = cast("int", db.libraries.delete.cascade([f"libraries/{library_key_from_ref(library_id)}"]))
     logger.info(f"[LibraryAdmin] Deleted library {library_id}: {library.get('name')} ({deleted_count} docs removed)")
     return True
 

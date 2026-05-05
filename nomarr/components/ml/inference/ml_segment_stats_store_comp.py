@@ -143,7 +143,15 @@ def get_segment_stats_for_files_bulk(db: Database, file_ids: list[str]) -> dict[
 
 
 def delete_segment_stats_for_file(db: Database, file_id: str) -> int:
-    """Cascade-delete all stats rows linked to one file."""
+    """Cascade-delete all stats rows linked to one file.
+
+    Args:
+        db: Database instance.
+        file_id: Document ``_id`` of the library file whose stats should be deleted.
+
+    Returns:
+        Number of stats documents deleted.
+    """
     stats_docs = get_segment_stats_for_file(db, file_id)
     if not stats_docs:
         return 0
@@ -153,14 +161,19 @@ def delete_segment_stats_for_file(db: Database, file_id: str) -> int:
         return 0
 
     segment_scores_stats = _segment_scores_stats_ns(db)
-    deleted = 0
-    for stats_id in stats_ids:
-        deleted += int(segment_scores_stats.delete.cascade(_key=stats_id.split("/", 1)[-1]))
-    return deleted
+    return int(segment_scores_stats.delete.cascade(stats_ids))
 
 
 def delete_segment_stats_for_files(db: Database, file_ids: list[str]) -> int:
-    """Cascade-delete all stats rows linked to the provided files."""
+    """Cascade-delete all stats rows linked to the provided files.
+
+    Args:
+        db: Database instance.
+        file_ids: Document ``_id`` strings for the library files whose stats should be deleted.
+
+    Returns:
+        Total number of stats documents deleted across all files.
+    """
     deleted = 0
     for file_id in file_ids:
         deleted += delete_segment_stats_for_file(db, file_id)

@@ -617,22 +617,31 @@ def get_artist_album_frequencies(db: Database, limit: int) -> dict[str, list[tup
 
 
 def clear_library_data(db: Database) -> None:
-    """Clear all library-file documents and directly-derived edge data."""
+    """Nuke all library-file data by truncating every affected collection.
+
+    This is a destructive full-reset.  Rather than paying per-document cascade
+    cost, we truncate every collection that holds library-file-derived data in
+    one pass.  Order: deepest derived data first, then edges, then documents.
+    """
+    # Derived data
+    for vector_coll in db._template_namespaces.values():  # type: ignore[attr-defined]
+        vector_coll.truncate()
     db.segment_scores_stats.truncate()
+    # Edge collections
+    db.file_has_vectors.truncate()
+    db.file_has_segment_stats.truncate()
     db.song_has_tags.truncate()
-
-    while True:
-        file_ids = [
-            cast("str", value)
-            for value in _aggregate_values(db.library_files, "_id", limit=DEFAULT_LIMIT)
-            if isinstance(value, str)
-        ]
-        if not file_ids:
-            return
-        from nomarr.components.ml.vectors.ml_vector_registry_comp import delete_vectors_by_file_ids
-
-        delete_vectors_by_file_ids(db, file_ids)
-        db.library_files.delete(file_ids)
+    db.file_has_state.truncate()
+    db.library_contains_file.truncate()
+    db.library_contains_folder.truncate()
+    db.library_has_scan.truncate()
+    db.library_has_pipeline_state.truncate()
+    # Documents
+    db.tags.truncate()
+    db.library_files.truncate()
+    db.library_folders.truncate()
+    db.library_scans.truncate()
+    db.library_pipeline_states.truncate()
 
 
 def search_files_by_tag(

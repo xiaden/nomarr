@@ -504,6 +504,7 @@ class Builder:
             db: ArangoDB database handle.
         """
         self._db = db
+        self._cascade_wired: list[tuple[CollectionInstance, str, list[EdgeDef]]] = []
         self._validate_cascade_dag()
 
     def construct(self, collection: CollectionInstance) -> None:
@@ -589,23 +590,36 @@ class Builder:
         traversal = _TraversalVerb(self._db, edge_name, edge_def.direction)
         setattr(collection, _snake_case(edge_def.via.__name__), traversal)
 
-    def _attach_cascade(self, collection: CollectionInstance, cascade_defs: list[EdgeDef]) -> None:
-        """Attach ``collection.delete.cascade`` using a precompiled static AQL string."""
-        collection_name = cast("str", collection._name)
-        delete_verb = cast("_CollectionDeleteVerb", cast("Any", collection).delete)
-        compiled_query = self._compile_cascade_query(type(collection), collection_name, cascade_defs)
+    def _bind_cascade_delete(
+        self,
+        collection: CollectionInstance,
+        compiled_query: str,
+    ) -> None:
+        """Bind a compiled cascade-delete closure onto a wired collection instance.
 
-        def cascade_delete(*args: FieldValue, **kwargs: Any) -> int:
-            field_name, value = _require_single_criterion(*args, **kwargs)
-            if field_name == "_id":
-                start_id = cast("str", value)
-            else:
-                start_doc = verbs.get_one_by_field(self._db, collection_name, field_name, value)
-                if start_doc is None:
-                    return 0
-                start_id = cast("str", start_doc["_id"])
-            list(verbs._execute_aql(self._db, compiled_query, bind_vars={"start": start_id}))
-            return 1
+        Attaches ``cascade_delete`` to ``collection.delete.cascade`` and, if
+        present, to the ``delete.cascade`` attribute of ``_key`` and ``_id``
+        field accessors so all deletion entry-points share the same compiled AQL.
+        The attached ``cascade_delete(ids: list[str]) -> int`` closure accepts a
+        non-empty list of document ``_id`` strings, executes the precompiled AQL
+        via ``@starts``, and returns the number of root documents deleted.
+
+        Args:
+            collection: The already-constructed collection instance to mutate.
+            compiled_query: A static AQL template string produced by
+                :meth:`_compile_cascade_query`.  Bound once and reused for all
+                subsequent cascade-delete calls on this collection.
+
+        Returns:
+            None.
+        """
+        delete_verb = cast("_CollectionDeleteVerb", cast("Any", collection).delete)
+
+        def cascade_delete(ids: list[str]) -> int:
+            if not isinstance(ids, list) or not ids:
+                raise ValueError("cascade delete requires a non-empty list of document ids")
+            list(verbs._execute_aql(self._db, compiled_query, bind_vars={"starts": ids}))
+            return len(ids)
 
         delete_verb.cascade = cascade_delete
 
@@ -613,6 +627,35 @@ class Builder:
             field_accessor = getattr(collection, attr_name, None)
             if isinstance(field_accessor, FieldAccessor):
                 field_accessor.delete.cascade = cascade_delete
+
+    def _attach_cascade(self, collection: CollectionInstance, cascade_defs: list[EdgeDef]) -> None:
+        """Attach ``collection.delete.cascade`` using a precompiled static AQL string."""
+        collection_name = cast("str", collection._name)
+        compiled_query = self._compile_cascade_query(type(collection), collection_name, cascade_defs)
+        self._bind_cascade_delete(collection, compiled_query)
+        self._cascade_wired.append((collection, collection_name, cascade_defs))
+
+    def reattach_vector_cascades(self, registered_names: list[str]) -> None:
+        """Recompile and hot-swap cascades that target dynamic vector collections.
+
+        Args:
+            registered_names: Current list of all registered dynamic vector
+                collection names. Passed as ``extra_target_names`` when
+                recompiling cascade queries.
+
+        Returns:
+            None.
+        """
+        for collection, collection_name, cascade_defs in self._cascade_wired:
+            if not any(issubclass(edge_def.target, VectorCollection) for edge_def in cascade_defs):
+                continue
+            compiled_query = self._compile_cascade_query(
+                type(collection),
+                collection_name,
+                cascade_defs,
+                extra_target_names=registered_names,
+            )
+            self._bind_cascade_delete(collection, compiled_query)
 
     def _attach_state_graph(self, collection: StateGraphCollection) -> None:
         """Attach ``transition`` for state-graph collections."""
@@ -729,8 +772,28 @@ class Builder:
         owner_cls: type[CollectionInstance],
         collection_name: str,
         cascade_defs: list[EdgeDef],
+        extra_target_names: list[str] | None = None,
     ) -> str:
-        """Compile a static cascade-delete AQL template for one collection class."""
+        """Compile a static cascade-delete AQL template for one collection class.
+
+        Args:
+            owner_cls: Root collection class whose reachable cascade edges define
+                the delete traversal.
+            collection_name: ArangoDB collection name for the root documents
+                being deleted.
+            cascade_defs: Edge definitions declared for the root collection and
+                used as a fallback when reachable cascade edge names have not
+                been precomputed.
+            extra_target_names: Additional runtime collection names to include in
+                the delete target set. Used to cover dynamic vector collections
+                registered after construction.
+
+        Returns:
+            The compiled AQL query string.  Bind variable ``@starts`` must be a
+            non-empty list of root document ``_id`` strings.  The query deletes
+            every root document in ``@starts``, any reachable orphaned descendant
+            documents, and all relevant edge documents.
+        """
         cascade_edge_names = self._cascade_edge_names_for_root(owner_cls)
         all_edge_names = sorted(
             [_collection_name_for_class(cast("type[object]", cls)) for cls in _iter_subclasses(EdgeCollection)]
@@ -741,6 +804,8 @@ class Builder:
                 for cls in _iter_subclasses(DocumentCollection) | _iter_subclasses(VectorCollection)
             }
         )
+        if extra_target_names:
+            target_collection_names = sorted(set(target_collection_names) | set(extra_target_names))
 
         if not cascade_edge_names:
             cascade_edge_names = [_collection_name_for_class(edge.via) for edge in cascade_defs]
@@ -752,16 +817,17 @@ class Builder:
 
         lines = [
             "LET subgraph = (",
-            f"    FOR v IN 1..100 OUTBOUND @start {cascade_edges_clause}",
-            '        OPTIONS {bfs: true, uniqueVertices: "global"}',
-            "        RETURN v",
+            "    FOR start_id IN @starts",
+            f"        FOR v IN 1..100 OUTBOUND start_id {cascade_edges_clause}",
+            '            OPTIONS {bfs: true, uniqueVertices: "global"}',
+            "            RETURN v",
             ")",
             "LET subgraph_ids = UNIQUE(FOR doc IN subgraph RETURN doc._id)",
             "LET orphan_ids = (",
             "    FOR candidate IN subgraph",
             "        LET external_inbound = (",
             f"            FOR parent IN 1..1 INBOUND candidate._id {all_edges_clause}",
-            "                FILTER parent._id != @start AND parent._id NOT IN subgraph_ids",
+            "                FILTER parent._id NOT IN @starts AND parent._id NOT IN subgraph_ids",
             "                LIMIT 1",
             "                RETURN 1",
             "        )",
@@ -782,14 +848,15 @@ class Builder:
             lines.extend(
                 [
                     f"FOR edge_doc IN {edge_name}",
-                    "    FILTER edge_doc._from == @start OR edge_doc._from IN orphan_ids OR edge_doc._to IN orphan_ids",
+                    "    FILTER edge_doc._from IN @starts OR edge_doc._from IN orphan_ids OR edge_doc._to IN orphan_ids OR edge_doc._to IN @starts",
                     f"    REMOVE edge_doc IN {edge_name}",
                 ]
             )
 
         lines.extend(
             [
-                f"REMOVE PARSE_IDENTIFIER(@start).key IN {collection_name}",
+                "FOR start_id IN @starts",
+                f"    REMOVE PARSE_IDENTIFIER(start_id).key IN {collection_name}",
                 "RETURN 1",
             ]
         )

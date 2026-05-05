@@ -6,93 +6,105 @@ so ``nomarr.persistence.stubs`` can be imported normally by Python.
 
 from __future__ import annotations
 
-from typing import Any, Protocol, TypedDict, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
-from nomarr.helpers.filter_types import FilterDict
+from nomarr.helpers.filter_types import AggResult
 
-
-class AggResult(TypedDict):
-    """Aggregate result for field value counts."""
-
-    value: str
-    count: int
-
-
-@runtime_checkable
-class GetOneProtocol(Protocol):
-    """Protocol for unique-value lookup helpers."""
-
-    def __call__(self, value: Any) -> dict[str, Any] | None: ...
+__all__ = [
+    "AggResult",
+    "CollectionDeleteVerbProtocol",
+    "CollectionGetVerbProtocol",
+    "DeleteVerbProtocol",
+    "DeleteWithCascadeProtocol",
+    "FieldAccessorProtocol",
+    "GetVerbProtocol",
+    "TraversalVerbProtocol",
+]
 
 
 @runtime_checkable
-class GetOneByIdProtocol(Protocol):
-    """Protocol for collection-level single-document `_id` helpers."""
-
-    def __call__(self, doc_id: str) -> dict[str, Any] | None: ...
-
-    def id(self, doc_id: str) -> dict[str, Any] | None: ...
-
-
-@runtime_checkable
-class GetManyProtocol(Protocol):
-    """Protocol for multi-result lookup helpers."""
-
-    def __call__(
-        self,
-        value: Any,
-        *,
-        limit: int | None = None,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]: ...
-
-
-@runtime_checkable
-class GetManyByFilterProtocol(Protocol):
-    """Protocol for collection-level multi-document lookup helpers."""
-
-    def __call__(self, ids: list[str]) -> list[dict[str, Any]]: ...
-
-    def id(self, ids: list[str]) -> list[dict[str, Any]]: ...
-
-    def by_filter(
-        self,
-        filter_dict: dict[str, Any],
-        *,
-        limit: int | None = None,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]: ...
-
-
-@runtime_checkable
-class CollectionGetProtocol(Protocol):
-    """Protocol for collection-level callable get namespaces."""
-
-    one: GetOneByIdProtocol
-    many: GetManyByFilterProtocol
-
-    def __call__(self, doc_id: str) -> dict[str, Any] | None: ...
-
-
-@runtime_checkable
-class GetModifierProtocol(Protocol):
-    """Protocol for field-level get modifiers."""
+class GetVerbProtocol(Protocol):
+    """Field-level get verb (_GetVerb). Attached as collection.<field>.get."""
 
     def __call__(self, value: Any) -> dict[str, Any] | None | list[dict[str, Any]]: ...
 
-    def one(self, value: Any) -> dict[str, Any] | None: ...
+    def many(self, value: Any, *, limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]: ...
+
+    def in_(self, values: list[Any], *, limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]: ...
+
+    def gte(self, value: Any, *, limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]: ...
+
+    def lte(self, value: Any, *, limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]: ...
+
+    def like(self, pattern: str, *, limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]: ...
+
+
+@runtime_checkable
+class DeleteVerbProtocol(Protocol):
+    """Field-level delete verb (_DeleteVerb). Attached as collection.<field>.delete."""
+
+    def __call__(self, value: Any) -> int: ...
+
+    def in_(self, values: list[Any]) -> int: ...
+
+
+@runtime_checkable
+class FieldAccessorProtocol(Protocol):
+    """Field accessor (FieldAccessor). Attached as collection.<field>."""
+
+    get: GetVerbProtocol
+    delete: DeleteVerbProtocol
+
+    def insert(self, docs: list[dict[str, Any]]) -> list[str]: ...
+
+    def update(self, value: Any, fields: dict[str, Any]) -> None: ...
+
+    def upsert(self, value: Any, fields: dict[str, Any]) -> list[str]: ...
+
+    def count(self, value: Any) -> int: ...
+
+
+@runtime_checkable
+class CollectionGetVerbProtocol(Protocol):
+    """Collection-level get verb (_CollectionGetVerb). Attached as collection.get."""
+
+    def __call__(
+        self,
+        *args: Any,
+        limit: int | None = None,
+        offset: int = 0,
+        **kwargs: Any,
+    ) -> dict[str, Any] | None | list[dict[str, Any]]: ...
 
     def many(
         self,
-        value: Any,
-        *,
+        *args: Any,
         limit: int | None = None,
         offset: int = 0,
+        **kwargs: Any,
     ) -> list[dict[str, Any]]: ...
 
     def in_(
         self,
-        values: list[Any] | FilterDict,
+        *args: Any,
+        limit: int | None = None,
+        offset: int = 0,
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]: ...
+
+    def gte(
+        self,
+        field_name: str,
+        threshold: Any,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]: ...
+
+    def lte(
+        self,
+        field_name: str,
+        threshold: Any,
         *,
         limit: int | None = None,
         offset: int = 0,
@@ -100,6 +112,7 @@ class GetModifierProtocol(Protocol):
 
     def like(
         self,
+        field_name: str,
         pattern: str,
         *,
         limit: int | None = None,
@@ -107,12 +120,24 @@ class GetModifierProtocol(Protocol):
     ) -> list[dict[str, Any]]: ...
 
 
-__all__ = [
-    "AggResult",
-    "CollectionGetProtocol",
-    "GetManyByFilterProtocol",
-    "GetManyProtocol",
-    "GetModifierProtocol",
-    "GetOneByIdProtocol",
-    "GetOneProtocol",
-]
+@runtime_checkable
+class CollectionDeleteVerbProtocol(Protocol):
+    """Collection-level delete verb (_CollectionDeleteVerb). Attached as collection.delete."""
+
+    def __call__(self, *args: Any, **kwargs: Any) -> int: ...
+
+
+@runtime_checkable
+class DeleteWithCascadeProtocol(CollectionDeleteVerbProtocol, Protocol):
+    """Collection delete with cascade attached (collections with outbound CASCADE edges)."""
+
+    def cascade(self, file_ids: list[str]) -> int: ...
+
+
+@runtime_checkable
+class TraversalVerbProtocol(Protocol):
+    """Traversal verb (_TraversalVerb). Attached as collection.<edge_name>."""
+
+    def __call__(self, doc_id: str, limit: int | None = None) -> list[dict[str, Any]]: ...
+
+    def by_ids(self, ids: list[str], limit: int | None = None, **filters: Any) -> list[dict[str, Any]]: ...

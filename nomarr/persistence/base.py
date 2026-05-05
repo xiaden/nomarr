@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated, Any, ClassVar, Literal, TypeVar
 
@@ -63,6 +64,9 @@ class DocumentCollection:
     _name: ClassVar[str]
     EDGES: ClassVar[list[EdgeDef]] = []
 
+    # Generic flat verbs wired by the builder at startup.
+    truncate: Callable[[], None]
+
 
 class EdgeCollection:
     """Base for edge collections. Implicit: _key, _id, _rev, _from, _to."""
@@ -77,6 +81,9 @@ class EdgeCollection:
     FROM_COLLECTION: ClassVar[type[DocumentCollection]]
     TO_COLLECTION: ClassVar[type[DocumentCollection]]
 
+    # Generic flat verbs wired by the builder at startup.
+    truncate: Callable[[], None]
+
 
 class VectorCollection:
     """Base for vector collections. Implicit: _key, _id, _rev."""
@@ -88,6 +95,9 @@ class VectorCollection:
     _name: ClassVar[str]
     VECTOR_TIER: ClassVar[Literal["hot", "cold"]]
     NAME_PATTERN: ClassVar[str]
+
+    # Generic flat verbs wired by the builder at startup.
+    truncate: Callable[[], None]
 
 
 class StateGraphCollection(DocumentCollection):

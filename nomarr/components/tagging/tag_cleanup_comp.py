@@ -60,17 +60,19 @@ def cleanup_orphaned_tags(db: Database) -> int:
     """Delete tag documents that have no song or model-output edges.
 
     The orphan scan is composed from constructor verbs and Python set difference,
-    while deletion delegates to the schema-backed keyed cascade-delete path.
+    while deletion delegates to the schema-backed bulk cascade-delete path.
+
+    Args:
+        db: Database instance.
+
+    Returns:
+        Number of orphaned tag documents deleted.
     """
     orphan_ids = _get_orphaned_tag_ids(db)
     if not orphan_ids:
         return 0
     tags = _tags_ns(db)
-    deleted = 0
-    for orphan_id in orphan_ids:
-        orphan_key = orphan_id.split("/", 1)[1] if "/" in orphan_id else orphan_id
-        deleted += int(tags.delete.cascade(_key=orphan_key))
-    return deleted
+    return int(tags.delete.cascade(list(orphan_ids)))
 
 
 def get_orphaned_tag_count(db: Database) -> int:

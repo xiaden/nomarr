@@ -17,6 +17,7 @@ from nomarr.components.library.scan_lifecycle_comp import (
     is_library_scanning,
     mark_scan_completed,
     mark_scan_started,
+    remove_deleted_files,
     save_folder_record,
     update_scan_progress,
 )
@@ -389,3 +390,36 @@ class TestFolderCacheHelpers:
 
         mock_db.library_contains_folder.delete.assert_called_once_with(_to="library_folders/b")
         mock_db.library_folders.delete.assert_called_once_with(_id="library_folders/b")
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestRemoveDeletedFiles:
+    """Tests for remove_deleted_files."""
+
+    def test_remove_deleted_files_delegates_to_bulk_delete_files(self) -> None:
+        """remove_deleted_files delegates to bulk_delete_files and returns its count."""
+        mock_db = MagicMock()
+        paths = ["/music/a.mp3", "/music/b.mp3", "/music/c.mp3"]
+
+        with patch(
+            "nomarr.components.library.library_file_mutation_comp.bulk_delete_files",
+            return_value=3,
+        ) as bulk_delete_mock:
+            result = remove_deleted_files(mock_db, paths)
+
+        bulk_delete_mock.assert_called_once_with(mock_db, paths)
+        assert result == 3
+
+    def test_remove_deleted_files_returns_zero_for_empty_list(self) -> None:
+        """remove_deleted_files returns zero when the delegated bulk delete returns zero."""
+        mock_db = MagicMock()
+
+        with patch(
+            "nomarr.components.library.library_file_mutation_comp.bulk_delete_files",
+            return_value=0,
+        ) as bulk_delete_mock:
+            result = remove_deleted_files(mock_db, [])
+
+        bulk_delete_mock.assert_called_once_with(mock_db, [])
+        assert result == 0

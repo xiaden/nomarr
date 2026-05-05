@@ -69,15 +69,15 @@ class TestCleanupOrphanedTags:
             all_tag_ids=["tags/1", "tags/2", "tags/3", "tags/4"],
             song_edge_targets=["tags/1"],
             model_edge_sources=["tags/2"],
-            cascade_result=1,
+            cascade_result=2,
         )
 
         result = cleanup_orphaned_tags(mock_db)
 
         assert result == 2
-        assert mock_db.tags.delete.cascade.call_count == 2
-        deleted_keys = {call.kwargs["_key"] for call in mock_db.tags.delete.cascade.call_args_list}
-        assert deleted_keys == {"3", "4"}
+        assert mock_db.tags.delete.cascade.call_count == 1
+        cascaded_ids = set(mock_db.tags.delete.cascade.call_args[0][0])
+        assert cascaded_ids == {"tags/3", "tags/4"}
 
 
 class TestGetOrphanedTagCount:
