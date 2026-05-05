@@ -132,3 +132,75 @@ class TestAggregateSegmentScoresWeighted:
         result = aggregate_segment_scores_weighted(scores)
         np.testing.assert_allclose(result[0], 0.8, atol=0.05)
         np.testing.assert_allclose(result[1], 0.2, atol=0.05)
+
+
+@pytest.mark.unit
+class TestAggregateSegmentScoresWeightedRegressionMode:
+    """Tests for aggregate_segment_scores_weighted with decision_midpoint=None (regression mode)."""
+
+    def test_regression_mode_dominant_side_uses_data_mean_as_boundary(self) -> None:
+        """When decision_midpoint=None, boundary = per-label mean of active segments.
+
+        A signal that is mostly high (0.7) with a brief low episode (0.2) should
+        return a score near the high section's value since the high section dominates
+        relative to the data mean.
+        """
+        high = np.tile([[0.7]], (8, 1)).astype(np.float32)
+        low = np.tile([[0.2]], (2, 1)).astype(np.float32)
+        scores = np.vstack([high, low])
+        result = aggregate_segment_scores_weighted(scores, decision_midpoint=None)
+        # mean ≈ 0.62; high side (0.7 > 0.62) dominates → result near 0.7
+        assert result[0] > 0.6, f"Expected high side to dominate, got {result[0]:.3f}"
+
+    def test_regression_mode_oscillation_suppresses_to_data_mean(self) -> None:
+        """Constant oscillation in regression mode suppresses to the data mean, not 0.5."""
+        high = np.tile([[0.8]], (5, 1)).astype(np.float32)
+        low = np.tile([[0.2]], (5, 1)).astype(np.float32)
+        # Interleave so the grouper sees many group boundaries
+        alternating = np.empty((10, 1), dtype=np.float32)
+        alternating[0::2] = high
+        alternating[1::2] = low
+        expected_mean = float(np.mean(alternating))  # ~0.5
+        result = aggregate_segment_scores_weighted(
+            alternating,
+            decision_midpoint=None,
+            group_change_threshold=0.05,
+            oscillation_fraction=0.40,
+        )
+        # Suppressed to boundary (≈ data mean ≈ 0.5)
+        assert abs(result[0] - expected_mean) < 0.15, (
+            f"Expected result near data mean {expected_mean:.3f}, got {result[0]:.3f}"
+        )
+
+    def test_regression_mode_boundary_is_independent_of_fixed_0_5(self) -> None:
+        """Regression mode uses data mean, not 0.5.
+
+        A signal hovering around 0.8 should have its dominant side computed
+        relative to ~0.8, not 0.5.  Both groups are above 0.5, so a fixed-0.5
+        decision would give the wrong dominant side (all "yes"), whereas the
+        data-mean boundary correctly separates the small dip from the main body.
+        """
+        main = np.tile([[0.85]], (8, 1)).astype(np.float32)
+        dip = np.tile([[0.65]], (2, 1)).astype(np.float32)
+        scores = np.vstack([main, dip])
+        # data mean ≈ 0.81; main (0.85) is above boundary; dip (0.65) is below
+        result_regression = aggregate_segment_scores_weighted(scores, decision_midpoint=None)
+        result_fixed = aggregate_segment_scores_weighted(scores, decision_midpoint=0.5)
+        # Regression: dominant side is "main" (0.85), result ≈ 0.85
+        assert result_regression[0] > 0.80, (
+            f"Regression should use main section (0.85), got {result_regression[0]:.3f}"
+        )
+        # Fixed-0.5: both sections are above 0.5, so all weight is on "yes" side
+        # weighted mean of [0.85*8 + 0.65*2] / 10 ≈ 0.81 → also dominates, but
+        # the score is the weighted mean of ALL groups (all on the same side)
+        assert result_fixed[0] > 0.75, (
+            f"Fixed-0.5 should also be high (all groups above 0.5), got {result_fixed[0]:.3f}"
+        )
+
+    def test_regression_mode_shape_matches_fixed_mode(self) -> None:
+        """Both modes must return the same output shape."""
+        scores = np.random.default_rng(seed=7).random((12, 3)).astype(np.float32)
+        r_fixed = aggregate_segment_scores_weighted(scores, decision_midpoint=0.5)
+        r_auto = aggregate_segment_scores_weighted(scores, decision_midpoint=None)
+        assert r_fixed.shape == r_auto.shape == (3,)
+        assert r_fixed.dtype == r_auto.dtype == np.float32

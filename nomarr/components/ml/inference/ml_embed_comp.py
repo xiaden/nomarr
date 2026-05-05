@@ -218,15 +218,19 @@ def aggregate_segment_scores_weighted(
     rolling_window: int = 3,
     group_change_threshold: float = 0.10,
     oscillation_fraction: float = 0.45,
+    decision_midpoint: float | None = 0.5,
 ) -> np.ndarray:
-    """Aggregate segment-level classification head scores using temporal grouping.
+    """Aggregate segment-level head scores using temporal grouping.
 
-    More robust than a plain trimmed mean for binary / multiclass heads.
-    Inputs are assumed to be probabilities in ``[0, 1]``.
+    Applicable to both classification and regression heads.  For
+    classification heads pass ``decision_midpoint=0.5`` (default); for
+    regression heads pass ``decision_midpoint=None`` so the per-label mean
+    of the active segments is used as the decision boundary.  The boundary
+    value is also used as the oscillation-suppression midpoint.
 
     Steps:
 
-    1. **Silence filtering** — segments whose max probability is below
+    1. **Silence filtering** — segments whose max value is below
        *silence_threshold* are excluded before grouping.  If silence
        filtering would leave fewer than *min_active_fraction* of the
        original segments, all segments are retained as a fallback.
@@ -239,20 +243,19 @@ def aggregate_segment_scores_weighted(
        group, splitting the track into structurally similar sections.
     4. **Weighted aggregation** — each group is assigned a weight equal
        to its segment count.  For each label separately, the groups are
-       split into a "yes" side (mean > 0.5) and a "no" side (mean ≤ 0.5).
-       The weighted mean of the *dominant* side (greater total weight) is
-       used as the label's song score.
+       split into a "high" side (mean > boundary) and a "low" side
+       (mean <= boundary).  The weighted mean of the *dominant* side
+       (greater total weight) is used as the label's song score.
     5. **Oscillation suppression** — when neither side carries at least
        ``1 - oscillation_fraction`` of the total weight (i.e. the model
        is constantly switching), the label score is clamped to the
-       decision midpoint (0.5), effectively suppressing the tag.
+       per-label decision boundary, effectively suppressing the tag.
 
     Falls back to a 10 % trimmed mean when fewer than 2 active segments
     remain after silence filtering.
 
     Args:
         scores: 2-D array of shape ``[num_segments, num_labels]``.
-            Values must be in probability space ``[0, 1]``.
         silence_threshold: Segments whose ``max(score)`` across labels is
             below this value are considered silent and excluded.
         min_active_fraction: Minimum fraction of the original segments
@@ -263,9 +266,16 @@ def aggregate_segment_scores_weighted(
         group_change_threshold: Maximum L-infinity distance between adjacent
             rolling-average vectors before a new group is started.
         oscillation_fraction: A label is considered oscillating when the
-            *smaller* of the two probability sides carries at least this
-            fraction of total group weight.  Oscillating labels are
-            suppressed to 0.5.
+            *smaller* of the two sides carries at least this fraction of
+            total group weight.  Oscillating labels are suppressed to
+            the decision boundary.
+        decision_midpoint: Decision boundary used to split groups into
+            "high" and "low" sides, and to suppress oscillating labels.
+            Pass ``0.5`` (default) for classification heads where outputs
+            are binary probabilities.  Pass ``None`` to auto-compute the
+            boundary as the per-label mean of the active segments — the
+            correct choice for regression heads whose output range is not
+            fixed to ``[0, 1]``.
 
     Returns:
         1-D ``float32`` array of shape ``[num_labels]``.
@@ -319,24 +329,34 @@ def aggregate_segment_scores_weighted(
     raw_weights = np.array([float(len(g)) for g in groups], dtype=np.float64)
     group_weights = raw_weights / raw_weights.sum()
 
+    # Determine per-label decision boundaries.
+    # For regression (decision_midpoint=None): use the weighted mean of all
+    # active segments as the boundary, so "dominant side" is relative to the
+    # song's own average rather than an arbitrary fixed value.
+    if decision_midpoint is None:
+        boundaries = np.average(active_scores, axis=0, weights=None).astype(np.float32)
+    else:
+        boundaries = np.full(n_labels, decision_midpoint, dtype=np.float32)
+
     # Step 5 + oscillation suppression: per-label dominant-side selection
     pooled = np.empty(n_labels, dtype=np.float32)
     for j in range(n_labels):
         label_vals = group_means[:, j]
-        yes_mask = label_vals > 0.5
-        no_mask = ~yes_mask
-        yes_weight = float(np.sum(group_weights[yes_mask]))
-        no_weight = float(np.sum(group_weights[no_mask]))
-        smaller_side = min(yes_weight, no_weight)
+        boundary_j = float(boundaries[j])
+        high_mask = label_vals > boundary_j
+        low_mask = ~high_mask
+        high_weight = float(np.sum(group_weights[high_mask]))
+        low_weight = float(np.sum(group_weights[low_mask]))
+        smaller_side = min(high_weight, low_weight)
 
         if smaller_side >= oscillation_fraction:
-            # Neither side dominates — model is oscillating; suppress to midpoint
-            pooled[j] = 0.5
-        elif yes_weight >= no_weight:
-            # "Yes" side dominates — use its weighted mean
-            pooled[j] = float(np.sum(label_vals[yes_mask] * group_weights[yes_mask]) / yes_weight)
+            # Neither side dominates — model is oscillating; suppress to boundary
+            pooled[j] = boundary_j
+        elif high_weight >= low_weight:
+            # "High" side dominates — use its weighted mean
+            pooled[j] = float(np.sum(label_vals[high_mask] * group_weights[high_mask]) / high_weight)
         else:
-            # "No" side dominates — use its weighted mean
-            pooled[j] = float(np.sum(label_vals[no_mask] * group_weights[no_mask]) / no_weight)
+            # "Low" side dominates — use its weighted mean
+            pooled[j] = float(np.sum(label_vals[low_mask] * group_weights[low_mask]) / low_weight)
 
     return pooled

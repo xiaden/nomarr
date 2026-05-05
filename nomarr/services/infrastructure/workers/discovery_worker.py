@@ -118,7 +118,7 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
                         "head_name": head_name,
                         "tagger_version": writes.tagger_version,
                         "num_segments": segment_scores.shape[0],
-                        "pooling_strategy": "trimmed_mean",
+                        "pooling_strategy": "weighted_grouping",
                         "label_stats": label_stats,
                     }
                 )

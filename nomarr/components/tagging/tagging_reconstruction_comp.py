@@ -53,6 +53,12 @@ def reconstruct_head_outputs_from_stats(
     For regression heads, delegates to assign_regression_outputs (shared with
     add_regression_mood_tiers) after applying optional calibration.
 
+    The raw mean value for regression heads is loaded from *numeric_tags* when
+    available (the value stored there was produced by
+    ``aggregate_segment_scores_weighted``, which uses temporal grouping relative
+    to the song's own mean).  For records written before that strategy was
+    introduced the stored segment ``mean`` is used as a fallback.
+
     When calibrations are provided, they are applied to raw probability/mean values
     BEFORE tier assignment. This ensures tiers reflect calibrated confidence levels
     (p5\u21920, p95\u21921 normalization) rather than raw model outputs.
@@ -91,11 +97,23 @@ def reconstruct_head_outputs_from_stats(
             if not label_stats:
                 continue
             stat = label_stats[0]
-            raw_mean = stat["mean"]
             raw_std = stat["std"]
 
-            # Apply calibration to regression mean BEFORE tier logic
+            # Prefer the pre-aggregated tag value written by aggregate_segment_scores_weighted
+            # (which uses temporal grouping relative to the song's own mean).
+            # Fall back to the simple segment mean for records processed before the
+            # weighted-grouping strategy was introduced.
             reg_label = normalize_tag_label(stat["label"])
+            reg_model_key, _ = head_info.build_versioned_tag_key(
+                reg_label,
+                calib_method="none",
+                calib_version=0,
+            )
+            if reg_model_key in numeric_tags:
+                raw_mean = numeric_tags[reg_model_key]
+            else:
+                raw_mean = stat["mean"]
+
             calib_scale = 1.0
             applied_calibration_id: str | None = None
             if calibrations and reg_label in calibrations:

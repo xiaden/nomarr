@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from nomarr.components.ml.inference.ml_embed_comp import aggregate_segment_scores_weighted, pool_scores
+from nomarr.components.ml.inference.ml_embed_comp import aggregate_segment_scores_weighted
 from nomarr.components.ml.inference.ml_heads_comp import HeadSpec, run_head_decision
 from nomarr.components.tagging.mood_labels_comp import normalize_tag_label
 from nomarr.helpers.dto.ml_dto import ProcessHeadPredictionsResult, SingleHeadResult
@@ -93,12 +93,13 @@ def run_single_head(
     # Phase 1: ONNX inference (GPU/CPU, releases GIL)
     try:
         segment_scores = predict_fn()
-        # Classification heads use temporal-grouping aggregation to correctly
-        # weight dominant sections of a song (e.g. instrumental vs. vocal).
-        # Regression heads use the plain trimmed mean — their outputs are raw
-        # floats, not probabilities, so the 0.5 midpoint has no meaning.
+        # Both classification and regression heads use temporal-grouping
+        # aggregation.  Classification heads use a fixed 0.5 decision boundary
+        # (default); regression heads derive the boundary from the per-label
+        # mean of the active segments so the "dominant side" is relative to the
+        # song's own average rather than an arbitrary fixed value.
         if head_model.meta.is_regression_head:
-            pooled_vec = pool_scores(segment_scores, mode="trimmed_mean", trim_perc=0.1, nan_policy="omit")
+            pooled_vec = aggregate_segment_scores_weighted(segment_scores, decision_midpoint=None)
         else:
             pooled_vec = aggregate_segment_scores_weighted(segment_scores)
         seg_std: np.ndarray | None = None
