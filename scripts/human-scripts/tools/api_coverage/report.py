@@ -9,7 +9,9 @@ project_root = Path(__file__).parent.parent.parent.parent
 
 
 def generate_html_report(
-    endpoint_usages: list[EndpointUsage], output_file: Path, filter_mode: str | None = None,
+    endpoint_usages: list[EndpointUsage],
+    output_file: Path,
+    filter_mode: str | None = None,
 ) -> None:
     """Generate interactive HTML report with collapsible groups."""
     # Apply filters
@@ -92,9 +94,9 @@ def generate_html_report(
     <div class="container">
         <h1>API Endpoint Coverage Report</h1>
         <div class="timestamp">Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</div>
-        
+
         {"<div class='filter-info'>Filtered: " + filter_mode + " endpoints only</div>" if filter_mode else ""}
-        
+
         <div class="stats">
             <div class="stat-card">
                 <div class="stat-label">Total Endpoints</div>
@@ -113,11 +115,11 @@ def generate_html_report(
                 <div class="stat-value">{coverage_pct:.1f}%</div>
             </div>
         </div>
-        
+
         <div class="progress-bar">
             <div class="progress-fill" style="width: {coverage_pct}%"></div>
         </div>
-        
+
         <div class="controls">
             <label for="groupBy">Group by:</label>
             <select id="groupBy" onchange="switchView(this.value)">
@@ -262,11 +264,11 @@ def generate_html_report(
                 toggle.textContent = '▶';
             });
         }
-        
+
         function toggleGroup(header) {
             const content = header.nextElementSibling;
             const toggle = header.querySelector('.toggle');
-            
+
             if (content.classList.contains('expanded')) {
                 content.classList.remove('expanded');
                 toggle.textContent = '▶';
@@ -275,7 +277,7 @@ def generate_html_report(
                 toggle.textContent = '▼';
             }
         }
-        
+
         document.addEventListener('DOMContentLoaded', () => {
             const firstGroup = document.querySelector('.view-mode.active .group-header');
             if (firstGroup) {

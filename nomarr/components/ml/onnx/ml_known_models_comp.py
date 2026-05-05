@@ -10,9 +10,10 @@ When all outputs for a model have labels, the model is marked
 Label strings are authoritative human-readable display terms, written
 directly to the tag system at inference time.
 
-Output indices follow filename-declared order: the first word of the stem
-is the class at index 0.  For example ``voice_instrumental`` → index 0 is
-"has vocals" (voice), index 1 is "instrumental only".
+Output indices match the class ordering declared in the upstream MTG Essentia
+model metadata.  For example ``voice_instrumental`` → index 0 is
+"instrumental only" (instrumental), index 1 is "has vocals" (voice).
+See ``docs/upstream/modelsinfo.md`` for the authoritative class lists.
 
 ``OPPONENT_MAP`` is derived at module load from ``KNOWN_MODELS``: for each
 model stem, all co-defined output labels are declared mutual opponents.  Any
@@ -28,59 +29,59 @@ from __future__ import annotations
 # - output_index: zero-based activation index in the ONNX output tensor
 # - label: human-readable tag label written to the tag system
 #
-# Output order follows filename declaration: the first named class in the
-# model stem corresponds to index 0.
+# Output order matches the upstream MTG Essentia model training.
+# See the module docstring and docs/upstream/modelsinfo.md for details.
 
 KNOWN_MODELS: dict[str, list[tuple[int, str]]] = {
     # -- effnet backbone ---------------------------------------------------
     "approachability_2c-discogs-effnet-1": [
-        (0, "mainstream"),
-        (1, "fringe"),
+        (0, "Mainstream"),
+        (1, "Fringe"),
     ],
     "engagement_2c-discogs-effnet-1": [
-        (0, "engaging"),
-        (1, "mellow"),
+        (0, "Atmospheric"),
+        (1, "Captivating"),
     ],
     "timbre-discogs-effnet-1": [
-        (0, "bright timbre"),
-        (1, "dark timbre"),
+        (0, "Bright timbre"),
+        (1, "Dark timbre"),
     ],
     # -- musicnn backbone --------------------------------------------------
     "danceability-msd-musicnn-1": [
-        (0, "easy dancing"),
-        (1, "hard dancing"),
+        (0, "Easy dancing"),
+        (1, "Hard dancing"),
     ],
     "gender-msd-musicnn-1": [
-        (0, "high-pitch vocal"),
-        (1, "low-pitch vocal"),
+        (0, "High-pitch vocal"),
+        (1, "Low-pitch vocal"),
     ],
     "mood_aggressive-msd-musicnn-1": [
-        (0, "aggressive"),
-        (1, "relaxed"),
+        (0, "Aggressive"),
+        (1, "Relaxed"),
     ],
     "mood_happy-msd-musicnn-1": [
-        (0, "happy"),
-        (1, "not happy"),
+        (0, "Happy"),
+        (1, "Not happy"),
     ],
     "mood_party-msd-musicnn-1": [
-        (0, "party-like"),
-        (1, "not party-like"),
+        (0, "Party-like"),
+        (1, "Not party-like"),
     ],
     "mood_relaxed-msd-musicnn-1": [
-        (0, "relaxed"),
-        (1, "not relaxed"),
+        (0, "Relaxed"),
+        (1, "Not relaxed"),
     ],
     "mood_sad-msd-musicnn-1": [
-        (0, "sad"),
-        (1, "not sad"),
+        (0, "Sad"),
+        (1, "Not sad"),
     ],
     "tonal_atonal-msd-musicnn-1": [
-        (0, "tonal"),
-        (1, "atonal"),
+        (0, "Atonal"),
+        (1, "Tonal"),
     ],
     "voice_instrumental-msd-musicnn-1": [
-        (0, "has vocals"),
-        (1, "instrumental only"),
+        (0, "Instrumental only"),
+        (1, "Has vocals"),
     ],
 }
 """Mapping of shipped model stems to their output label definitions."""

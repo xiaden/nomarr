@@ -7,13 +7,14 @@ Workers query library_files directly instead of polling a queue.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from arango.exceptions import DocumentInsertError
 
 from nomarr.components.library.library_file_query_comp import get_file_by_id
 from nomarr.components.library.library_file_state_comp import discover_next_untagged_file, file_has_tagged_state
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.base import Field
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -34,9 +35,9 @@ def _get_all_claims(db: Database) -> list[dict[str, Any]]:
         return []
 
     claims: list[dict[str, Any]] = []
-    worker_ids = db.worker_claims.worker_id.collect(limit=total)
+    worker_ids = [row["value"] for row in db.worker_claims.aggregate("worker_id", limit=total) if "value" in row]
     for worker_id in worker_ids:
-        claims.extend(db.worker_claims.worker_id.get.many(worker_id, limit=total))
+        claims.extend(db.worker_claims.get(worker_id=worker_id, limit=total))
     return claims
 
 
@@ -105,7 +106,7 @@ def release_claim(db: Database, file_id: str) -> None:
         file_id: Full file document _id
 
     """
-    db.worker_claims.file_id.delete(file_id)
+    db.worker_claims.delete(file_id=file_id)
 
 
 def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
@@ -129,7 +130,7 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
         return 0
 
     heartbeat_cutoff = now_ms().value - heartbeat_timeout_ms
-    health_docs = db.health.component_type.get.many("worker", limit=db.health.count())
+    health_docs = db.health.get(component_type="worker", limit=db.health.count())
     active_workers = {
         str(doc.get("component_id")) for doc in health_docs if int(doc.get("last_heartbeat", 0)) > heartbeat_cutoff
     }
@@ -155,7 +156,8 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
     if not delete_ids:
         return 0
 
-    db.worker_claims.delete(list(delete_ids))
+    for claim_id in delete_ids:
+        db.worker_claims.delete(Field("_id", claim_id))
     return len(delete_ids)
 
 
@@ -203,7 +205,7 @@ def get_active_claim_count(db: Database) -> int:
         Number of active claim documents
 
     """
-    return db.worker_claims.count()
+    return int(cast("int", db.worker_claims.count()))
 
 
 def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
@@ -219,9 +221,10 @@ def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
         List of file_ids that were released
 
     """
-    claims = db.worker_claims.worker_id.get.many(worker_id, limit=db.worker_claims.count())
+    claims = db.worker_claims.get(worker_id=worker_id, limit=db.worker_claims.count())
     if not claims:
         return []
 
-    db.worker_claims.delete([claim["_id"] for claim in claims])
+    for claim in claims:
+        db.worker_claims.delete(Field("_id", claim["_id"]))
     return [str(claim["file_id"]) for claim in claims]

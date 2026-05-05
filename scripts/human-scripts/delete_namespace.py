@@ -9,6 +9,7 @@ Usage:
     python scripts/delete_namespace.py /path/to/music --namespace essentia
     python scripts/delete_namespace.py /path/to/music --namespace essentia --dry-run
 """
+
 import argparse
 import logging
 from pathlib import Path
@@ -21,6 +22,7 @@ from nomarr.helpers import AUDIO_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+
 
 def delete_mp3_namespace(file_path: str, namespace: str) -> int:
     """Delete all TXXX tags from specified namespace in MP3 file."""
@@ -41,6 +43,7 @@ def delete_mp3_namespace(file_path: str, namespace: str) -> int:
     except Exception as e:
         logger.error(f"Failed to process {file_path}: {e}")
         return 0
+
 
 def delete_m4a_namespace(file_path: str, namespace: str) -> int:
     """Delete all freeform tags from specified namespace in M4A file."""
@@ -63,6 +66,7 @@ def delete_m4a_namespace(file_path: str, namespace: str) -> int:
     except Exception as e:
         logger.error(f"Failed to process {file_path}: {e}")
         return 0
+
 
 def delete_flac_namespace(file_path: str, namespace: str) -> int:
     """Delete all tags with the given namespace prefix from a FLAC file.
@@ -98,7 +102,8 @@ def delete_flac_namespace(file_path: str, namespace: str) -> int:
         logger.error(f"Failed to process {file_path}: {e}")
         return 0
 
-def scan_and_delete(music_dir: str, namespace: str, dry_run: bool=False) -> dict:
+
+def scan_and_delete(music_dir: str, namespace: str, dry_run: bool = False) -> dict:
     """Scan directory and delete namespace tags from all audio files.
 
     Returns:
@@ -140,6 +145,7 @@ def scan_and_delete(music_dir: str, namespace: str, dry_run: bool=False) -> dict
             stats["files_skipped"] += 1
     return stats
 
+
 def main():
     parser = argparse.ArgumentParser(description="Delete all tags from a specific namespace in audio files")
     parser.add_argument("music_dir", help="Path to music directory")
@@ -160,5 +166,7 @@ def main():
     logger.info(f"Files modified: {stats['files_modified']}")
     logger.info(f"Files skipped: {stats['files_skipped']}")
     logger.info(f"Tags deleted: {stats['tags_deleted']}")
+
+
 if __name__ == "__main__":
     main()

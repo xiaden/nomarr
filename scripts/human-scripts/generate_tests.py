@@ -647,7 +647,9 @@ def main():
     parser.add_argument("module", help="Module name (e.g., nomarr.services.queue)")
     parser.add_argument("--output", "-o", help="Output file path")
     parser.add_argument(
-        "--layer", choices=["data", "services", "ml", "interfaces"], help="Layer type (auto-detected if not specified)",
+        "--layer",
+        choices=["data", "services", "ml", "interfaces"],
+        help="Layer type (auto-detected if not specified)",
     )
     parser.add_argument("--preview", action="store_true", help="Preview without writing file")
 

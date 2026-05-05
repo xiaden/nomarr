@@ -42,14 +42,14 @@ class TestClaimFilesForReconciliation:
             result = claim_files_for_reconciliation(mock_db, "libraries/test", "workers/test")
 
         assert result == []
-        mock_db.library_files.get.many.id.assert_not_called()
+        mock_db.library_files.get.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_claims_available_file_successfully(self) -> None:
         mock_db = MagicMock()
         candidate = {"_id": "library_files/abc", "_key": "abc"}
-        mock_db.library_files.get.many.id.return_value = [candidate]
+        mock_db.library_files.get.return_value = candidate
 
         with (
             patch(
@@ -77,7 +77,7 @@ class TestClaimFilesForReconciliation:
         mock_db = MagicMock()
         stale_ids = [f"library_files/{index}" for index in range(5)]
         candidates = [{"_id": stale_id, "_key": str(index)} for index, stale_id in enumerate(stale_ids)]
-        mock_db.library_files.get.many.id.return_value = candidates
+        mock_db.library_files.get.side_effect = candidates
 
         with (
             patch(
@@ -104,9 +104,9 @@ class TestClaimFilesForReconciliation:
     def test_skips_already_claimed_active_file(self) -> None:
         mock_db = MagicMock()
         candidate = {"_id": "library_files/abc", "_key": "abc"}
-        mock_db.library_files.get.many.id.return_value = [candidate]
+        mock_db.library_files.get.return_value = candidate
         mock_db.worker_claims.insert.side_effect = _document_insert_error()
-        mock_db.worker_claims.file_id.get.return_value = {
+        mock_db.worker_claims.get.return_value = {
             "_id": "worker_claims/existing",
             "claimed_at": 59_000,
         }
@@ -137,9 +137,9 @@ class TestClaimFilesForReconciliation:
     def test_reclaims_expired_lease(self) -> None:
         mock_db = MagicMock()
         candidate = {"_id": "library_files/abc", "_key": "abc"}
-        mock_db.library_files.get.many.id.return_value = [candidate]
+        mock_db.library_files.get.return_value = candidate
         mock_db.worker_claims.insert.side_effect = [_document_insert_error(), None]
-        mock_db.worker_claims.file_id.get.return_value = {
+        mock_db.worker_claims.get.return_value = {
             "_id": "worker_claims/existing",
             "claimed_at": 0,
         }
@@ -162,7 +162,7 @@ class TestClaimFilesForReconciliation:
             )
 
         assert result == [candidate]
-        mock_db.worker_claims.delete.assert_called_once_with(["worker_claims/existing"])
+        mock_db.worker_claims.delete.assert_called_once_with(_id="worker_claims/existing")
         assert mock_db.worker_claims.insert.call_count == 2
 
 
@@ -188,7 +188,7 @@ class TestSetFileWritten:
 
         for transition_call in mock_db.file_states.transition.call_args_list:
             assert transition_call.args[0] == ["library_files/abc123"]
-        mock_db.worker_claims.file_id.delete.assert_called_once_with("library_files/abc123")
+        mock_db.worker_claims.delete.assert_called_once_with(file_id="library_files/abc123")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -210,7 +210,7 @@ class TestSetFileWritten:
 
         set_file_written(mock_db, "abc")
 
-        mock_db.worker_claims.file_id.delete.assert_called_once_with("library_files/abc")
+        mock_db.worker_claims.delete.assert_called_once_with(file_id="library_files/abc")
 
 
 class TestReleaseClaim:
@@ -223,7 +223,7 @@ class TestReleaseClaim:
 
         release_claim(mock_db, "abc")
 
-        mock_db.worker_claims.file_id.delete.assert_called_once_with("library_files/abc")
+        mock_db.worker_claims.delete.assert_called_once_with(file_id="library_files/abc")
 
     @pytest.mark.unit
     @pytest.mark.mocked

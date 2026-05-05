@@ -17,28 +17,31 @@ class TestListAllFileIds:
     def test_returns_all_file_ids_without_limit(self) -> None:
         """Returns all file IDs when no limit is provided."""
         mock_db = MagicMock()
-        mock_db.library_files._id.collect.return_value = ["library_files/1", "library_files/2"]
+        mock_db.library_files.aggregate.return_value = [
+            {"value": "library_files/1"},
+            {"value": "library_files/2"},
+        ]
 
         result = list_all_file_ids(mock_db)
 
         assert result == ["library_files/1", "library_files/2"]
-        mock_db.library_files._id.collect.assert_called_once_with(limit=DEFAULT_LIMIT)
+        mock_db.library_files.aggregate.assert_called_once_with("_id", limit=DEFAULT_LIMIT)
 
     @pytest.mark.unit
     def test_uses_explicit_collect_limit_when_provided(self) -> None:
-        """Uses the caller-provided collect limit when supplied."""
+        """Uses the caller-provided aggregate limit when supplied."""
         mock_db = MagicMock()
-        mock_db.library_files._id.collect.return_value = []
+        mock_db.library_files.aggregate.return_value = []
 
         list_all_file_ids(mock_db, limit=10)
 
-        mock_db.library_files._id.collect.assert_called_once_with(limit=10)
+        mock_db.library_files.aggregate.assert_called_once_with("_id", limit=10)
 
     @pytest.mark.unit
     def test_returns_empty_list_when_no_files(self) -> None:
         """Returns an empty list when no file IDs are found."""
         mock_db = MagicMock()
-        mock_db.library_files._id.collect.return_value = []
+        mock_db.library_files.aggregate.return_value = []
 
         result = list_all_file_ids(mock_db)
 

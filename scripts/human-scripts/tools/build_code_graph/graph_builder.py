@@ -77,12 +77,12 @@ def build_graph_for_file(
         if isinstance(node, ast.ImportFrom) and node.module:
             for alias in node.names:
                 if alias.name != "*":
-                    local_name = alias.asname if alias.asname else alias.name
+                    local_name = alias.asname or alias.name
                     full_path = f"{node.module}.{alias.name}"
                     module_imports[local_name] = full_path
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                local_name = alias.asname if alias.asname else alias.name
+                local_name = alias.asname or alias.name
                 module_imports[local_name] = alias.name
 
     # Process imports (only during first pass to avoid duplicates)
@@ -246,7 +246,13 @@ def build_graph_for_file(
                         extract_type_annotations_from_function(item, method_id, module_id, graph, callable_index)
                         # Extract calls from method body
                         extract_calls_from_function(
-                            item, method_id, module_functions, class_methods_dict, graph, callable_index, module_imports,
+                            item,
+                            method_id,
+                            module_functions,
+                            class_methods_dict,
+                            graph,
+                            callable_index,
+                            module_imports,
                         )
 
         # 2b: Extract module-level function calls
@@ -259,13 +265,13 @@ def build_graph_for_file(
                 if isinstance(node, ast.Import):
                     for alias in node.names:
                         # import X or import X as Y
-                        local_name = alias.asname if alias.asname else alias.name
+                        local_name = alias.asname or alias.name
                         module_imports[local_name] = alias.name
                 elif isinstance(node, ast.ImportFrom) and node.module:
                     for alias in node.names:
                         if alias.name != "*":
                             # from X import Y or from X import Y as Z
-                            local_name = alias.asname if alias.asname else alias.name
+                            local_name = alias.asname or alias.name
                             module_imports[local_name] = f"{node.module}.{alias.name}"
 
             for node in ast.walk(tree):

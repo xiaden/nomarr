@@ -66,7 +66,7 @@ def get_sparse_histogram(
     calibration component because it is a cross-collection analytics read over
     `song_has_tags` and `tags`, not a calibration_state collection verb.
     """
-    model_doc = cast("dict[str, Any] | None", db.ml_models.get(model_id))
+    model_doc = cast("dict[str, Any] | None", db.ml_models.get(_id=model_id))
     if model_doc is None:
         return []
 
@@ -79,7 +79,7 @@ def get_sparse_histogram(
     bin_width = (hi - lo) / bins
     max_bin = bins - 1
     matching_names: list[str] = []
-    all_names = cast("list[Any]", db.tags.name.collect(limit=10000))
+    all_names = [row["value"] for row in db.tags.aggregate("name", limit=10000) if "value" in row]
     for name in all_names:
         if not isinstance(name, str) or not name.startswith("nom:"):
             continue
@@ -91,7 +91,7 @@ def get_sparse_histogram(
     for matched_name in matching_names:
         tag_docs = cast(
             "list[dict[str, Any]]",
-            db.tags.get.many.by_filter({"name": matched_name}, limit=50000),
+            db.tags.get(name=matched_name, limit=50000),
         )
         for tag_doc in tag_docs:
             value = tag_doc.get("value")

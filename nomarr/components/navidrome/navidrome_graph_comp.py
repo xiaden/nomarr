@@ -6,8 +6,6 @@ import hashlib
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.dto.navidrome_dto import TrackPlayData
-from nomarr.persistence.constructor import SchemaConstructor
-from nomarr.persistence.schema import SCHEMA
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -19,13 +17,13 @@ def _edge_key(left_id: str, right_id: str) -> str:
 
 
 def _build_edge_namespace(db: Database, name: str) -> Any:
-    """Build a local constructor namespace for an edge collection."""
-    return cast("Any", SchemaConstructor(db.db).build_collection_namespace(name, SCHEMA[name]))
+    """Return the runtime-wired edge namespace for an edge collection."""
+    return cast("Any", getattr(db, name))
 
 
 def upsert_navidrome_track(db: Database, nd_id: str) -> None:
     """Ensure one Navidrome track vertex exists."""
-    db.navidrome_tracks._key.upsert([{"_key": nd_id}], match_field="_key")
+    db.navidrome_tracks.upsert(_key=nd_id, fields={})
 
 
 def bulk_upsert_navidrome_tracks(db: Database, nd_ids: list[str]) -> int:
@@ -33,7 +31,8 @@ def bulk_upsert_navidrome_tracks(db: Database, nd_ids: list[str]) -> int:
     if not nd_ids:
         return 0
 
-    db.navidrome_tracks._key.upsert([{"_key": nd_id} for nd_id in nd_ids], match_field="_key")
+    for nd_id in nd_ids:
+        db.navidrome_tracks.upsert(_key=nd_id, fields={})
     return len(nd_ids)
 
 
@@ -56,7 +55,7 @@ def bulk_ensure_navidrome_file_links(db: Database, mappings: list[dict[str, str]
         track_id = f"navidrome_tracks/{nd_id}"
         existing_edges = cast(
             "list[dict[str, Any]]",
-            has_nd_id._from.get.many(track_id, limit=edge_count or None),
+            has_nd_id.get(_from=track_id, limit=edge_count or None),
         )
         existing_targets_by_track[track_id] = {str(edge["_to"]) for edge in existing_edges if "_to" in edge}
 
@@ -81,7 +80,11 @@ def bulk_ensure_navidrome_file_links(db: Database, mappings: list[dict[str, str]
 
 def list_navidrome_track_keys(db: Database) -> list[str]:
     """Return all Navidrome track `_key` values."""
-    return [str(value) for value in db.navidrome_tracks._key.collect(limit=db.navidrome_tracks.count())]
+    return [
+        str(row["value"])
+        for row in db.navidrome_tracks.aggregate("_key", limit=db.navidrome_tracks.count())
+        if "value" in row
+    ]
 
 
 def delete_navidrome_tracks_cascade(db: Database, nd_ids: list[str]) -> int:
@@ -89,14 +92,13 @@ def delete_navidrome_tracks_cascade(db: Database, nd_ids: list[str]) -> int:
     if not nd_ids:
         return 0
 
-    track_ids = [f"navidrome_tracks/{nd_id}" for nd_id in nd_ids]
-    return int(db.navidrome_tracks.cascade(track_ids))
+    return sum(int(db.navidrome_tracks.delete.cascade(_key=nd_id)) for nd_id in nd_ids)
 
 
 def resolve_navidrome_track_to_file(db: Database, nd_id: str) -> str | None:
     """Resolve one Navidrome track id to a library file `_id`."""
     track_id = f"navidrome_tracks/{nd_id}"
-    file_docs = cast("list[dict[str, Any]]", db.navidrome_tracks.traversal(track_id, edge="has_nd_id", limit=1))
+    file_docs = cast("list[dict[str, Any]]", db.navidrome_tracks.has_nd_id(track_id, limit=1))
     if not file_docs:
         return None
     return cast("str | None", file_docs[0].get("_id"))
@@ -105,7 +107,7 @@ def resolve_navidrome_track_to_file(db: Database, nd_id: str) -> str | None:
 def resolve_file_to_navidrome_track(db: Database, file_id: str) -> str | None:
     """Resolve one library file `_id` to its Navidrome track key."""
     has_nd_id = _build_edge_namespace(db, "has_nd_id")
-    edges = cast("list[dict[str, Any]]", has_nd_id._to.get.many(file_id, limit=1))
+    edges = cast("list[dict[str, Any]]", has_nd_id.get(_to=file_id, limit=1))
     if not edges:
         return None
     track_id = cast("str | None", edges[0].get("_from"))
@@ -132,7 +134,7 @@ def bulk_resolve_files_to_navidrome_ids(db: Database, file_ids: list[str]) -> di
     has_nd_id = _build_edge_namespace(db, "has_nd_id")
     result: dict[str, str] = {}
     for file_id in file_ids:
-        edges = cast("list[dict[str, Any]]", has_nd_id._to.get.many(file_id, limit=1))
+        edges = cast("list[dict[str, Any]]", has_nd_id.get(_to=file_id, limit=1))
         if not edges:
             continue
         track_id = cast("str | None", edges[0].get("_from"))
@@ -160,25 +162,22 @@ def upsert_navidrome_play(
 
     existing_edges = cast(
         "list[dict[str, Any]]",
-        plays_ns._from.get.many(track_id, limit=edge_count or None),
+        plays_ns.get(_from=track_id, limit=edge_count or None),
     )
     for edge in existing_edges:
         target_id = cast("str | None", edge.get("_to"))
         if target_id is None:
             continue
-        bucket_doc = cast("dict[str, Any] | None", db.navidrome_playcounts.get(target_id))
+        bucket_doc = cast("dict[str, Any] | None", db.navidrome_playcounts.get(_id=target_id))
         if bucket_doc is not None and bucket_doc.get("userid") == user_id:
-            plays_ns.delete([cast("str", edge["_id"])])
+            plays_ns.delete(_id=cast("str", edge["_id"]))
 
-    db.navidrome_playcounts._key.upsert(
-        [
-            {
-                "_key": bucket_key,
-                "playcount": playcount,
-                "userid": user_id,
-            }
-        ],
-        match_field="_key",
+    db.navidrome_playcounts.upsert(
+        _key=bucket_key,
+        fields={
+            "playcount": playcount,
+            "userid": user_id,
+        },
     )
     plays_ns.insert(
         [
@@ -199,7 +198,7 @@ def increment_navidrome_play(db: Database, user_id: str, nd_id: str, timestamp_m
     edge_count = plays_ns.count()
     existing_edges = cast(
         "list[dict[str, Any]]",
-        plays_ns._from.get.many(track_id, limit=edge_count or None),
+        plays_ns.get(_from=track_id, limit=edge_count or None),
     )
 
     old_count = 0
@@ -207,11 +206,11 @@ def increment_navidrome_play(db: Database, user_id: str, nd_id: str, timestamp_m
         target_id = cast("str | None", edge.get("_to"))
         if target_id is None:
             continue
-        bucket_doc = cast("dict[str, Any] | None", db.navidrome_playcounts.get(target_id))
+        bucket_doc = cast("dict[str, Any] | None", db.navidrome_playcounts.get(_id=target_id))
         if bucket_doc is None or bucket_doc.get("userid") != user_id:
             continue
         old_count = int(cast("int", bucket_doc.get("playcount", 0)))
-        plays_ns.delete([cast("str", edge["_id"])])
+        plays_ns.delete(_id=cast("str", edge["_id"]))
         break
 
     upsert_navidrome_play(db, user_id, nd_id, old_count + 1, timestamp_ms)
@@ -221,16 +220,16 @@ def bulk_upsert_navidrome_plays(db: Database, user_id: str, plays: list[dict[str
     """Replace the user's existing bucketed play graph with the provided payload."""
     buckets = cast(
         "list[dict[str, Any]]",
-        db.navidrome_playcounts.userid.get.many(user_id, limit=db.navidrome_playcounts.count()),
+        db.navidrome_playcounts.get(userid=user_id, limit=db.navidrome_playcounts.count()),
     )
     plays_ns = _build_edge_namespace(db, "has_plays")
     for bucket in buckets:
         bucket_id = cast("str | None", bucket.get("_id"))
         if bucket_id is not None:
-            plays_ns._to.delete(bucket_id)
+            plays_ns.delete(_to=bucket_id)
 
     if buckets:
-        db.navidrome_playcounts.userid.delete(user_id)
+        db.navidrome_playcounts.delete(userid=user_id)
 
     if not plays:
         return 0
@@ -261,19 +260,23 @@ def bulk_upsert_navidrome_plays(db: Database, user_id: str, plays: list[dict[str
             }
         )
 
-    db.navidrome_playcounts._key.upsert(list(bucket_docs_by_key.values()), match_field="_key")
+    for bucket_doc in bucket_docs_by_key.values():
+        db.navidrome_playcounts.upsert(
+            _key=cast("str", bucket_doc["_key"]),
+            fields={key: value for key, value in bucket_doc.items() if key != "_key"},
+        )
     plays_ns.insert(edge_docs)
     return len(edge_docs)
 
 
 def get_top_navidrome_plays(db: Database, user_id: str, top_n: int) -> list[TrackPlayData]:
-    """Return the user's most-played tracks with optional resolved file ids."""
+    """Return the user's most-played tracks, resolving ``file_id`` where a library link exists."""
     if top_n <= 0:
         return []
 
     buckets = cast(
         "list[dict[str, Any]]",
-        db.navidrome_playcounts.userid.get.many(user_id, limit=db.navidrome_playcounts.count()),
+        db.navidrome_playcounts.get(userid=user_id, limit=db.navidrome_playcounts.count()),
     )
     if not buckets:
         return []
@@ -290,12 +293,12 @@ def get_top_navidrome_plays(db: Database, user_id: str, top_n: int) -> list[Trac
         if remaining <= 0:
             break
 
-        edges = cast("list[dict[str, Any]]", plays_ns._to.get(bucket_id, limit=remaining))
+        edges = cast("list[dict[str, Any]]", plays_ns.get(_to=bucket_id, limit=remaining))
         for edge in edges:
             track_id = cast("str | None", edge.get("_from"))
             if track_id is None:
                 continue
-            file_edges = cast("list[dict[str, Any]]", has_nd_id._from.get(track_id, limit=1))
+            file_edges = cast("list[dict[str, Any]]", has_nd_id.get(_from=track_id, limit=1))
             file_id = cast("str | None", file_edges[0].get("_to")) if file_edges else None
             results.append(
                 TrackPlayData(

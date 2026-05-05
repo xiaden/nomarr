@@ -290,9 +290,7 @@ def _find_index_filter_assignment(
     Looks for the V011 pattern::
 
         ttl_index = next(
-            (idx for idx in indexes
-             if idx.get("type") == "ttl"
-             and "last_seen_ms" in idx.get("fields", [])),
+            (idx for idx in indexes if idx.get("type") == "ttl" and "last_seen_ms" in idx.get("fields", [])),
             None,
         )
 
@@ -522,5 +520,3 @@ def _recognize_aql_execute(node: ast.Call) -> str | None:
         return query[:max_len] + "..." if len(query) > max_len else query
 
     return "<AQL query>"
-
-

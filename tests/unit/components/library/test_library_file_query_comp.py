@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 from nomarr.components.library.library_file_query_comp import (
+    _collect_file_ids_for_tag_ids,
     clear_library_data,
     count_files_by_tag,
     count_library_files,
+    count_recently_tagged,
     detect_nd_path_prefix,
     get_all_library_paths,
     get_artist_album_frequencies,
+    get_existing_file_paths,
     get_file_by_id,
     get_file_modified_times,
     get_files_by_chromaprint,
@@ -32,6 +35,7 @@ from nomarr.components.library.library_file_query_comp import (
     search_files_by_tag,
     search_library_files_with_tags,
 )
+from nomarr.persistence.base import Field
 from nomarr.persistence.constructor.pagination import DEFAULT_LIMIT
 
 
@@ -46,7 +50,43 @@ class TestGetFileById:
         result = get_file_by_id(mock_db, "library_files/1")
 
         assert result == {"_id": "library_files/1"}
-        mock_db.library_files.get.assert_called_once_with("library_files/1")
+        mock_db.library_files.get.assert_called_once_with(_id="library_files/1")
+
+
+class TestCountRecentlyTagged:
+    """Tests for ``count_recently_tagged()``."""
+
+    @pytest.mark.unit
+    def test_counts_docs_from_field_based_gte_lookup(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library_files.get.gte.return_value = [{"_id": "library_files/1"}, {"_id": "library_files/2"}]
+
+        with patch("nomarr.components.library.library_file_query_comp.now_ms") as mock_now_ms:
+            mock_now_ms.return_value.value = 10_000
+
+            result = count_recently_tagged(mock_db, window_seconds=5)
+
+        assert result == 2
+        mock_db.library_files.get.gte.assert_called_once_with("last_tagged_at", 5_000)
+
+
+class TestGetExistingFilePaths:
+    """Tests for ``get_existing_file_paths()``."""
+
+    @pytest.mark.unit
+    def test_returns_existing_paths_from_field_lookup(self) -> None:
+        mock_db = MagicMock()
+        paths = ["D:/Music/song.flac", "D:/Music/other.flac"]
+        mock_db.library_files.get.in_.return_value = [
+            {"path": "D:/Music/song.flac"},
+            {"path": "D:/Music/song.flac"},
+            {"missing": True},
+        ]
+
+        result = get_existing_file_paths(mock_db, paths)
+
+        assert result == {"D:/Music/song.flac"}
+        mock_db.library_files.get.in_.assert_called_once_with(Field("path", paths))
 
 
 class TestGetFilesByIdsWithTags:
@@ -55,9 +95,9 @@ class TestGetFilesByIdsWithTags:
     @pytest.mark.unit
     def test_returns_hydrated_files_from_constructor_calls(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.get.many.return_value = [{"_id": "library_files/1", "path": "D:/Music/song.flac"}]
-        mock_db.library_files.traversal.return_value = [{"name": "genre", "value": "rock"}]
-        mock_db.library_contains_file._to.get.many.return_value = [{"_from": "libraries/1"}]
+        mock_db.library_files.get.in_.return_value = [{"_id": "library_files/1", "path": "D:/Music/song.flac"}]
+        mock_db.library_files.song_has_tags.return_value = [{"name": "genre", "value": "rock"}]
+        mock_db.library_contains_file.get.return_value = [{"_from": "libraries/1"}]
 
         result = get_files_by_ids_with_tags(mock_db, ["library_files/1"])
 
@@ -69,9 +109,9 @@ class TestGetFilesByIdsWithTags:
                 "library_id": "libraries/1",
             }
         ]
-        mock_db.library_files.get.many.assert_called_once_with(["library_files/1"])
-        mock_db.library_files.traversal.assert_called_once_with("library_files/1", "song_has_tags", limit=DEFAULT_LIMIT)
-        mock_db.library_contains_file._to.get.many.assert_called_once_with("library_files/1", limit=1)
+        mock_db.library_files.get.in_.assert_called_once_with(Field("_id", ["library_files/1"]), limit=None)
+        mock_db.library_files.song_has_tags.assert_called_once_with("library_files/1", limit=DEFAULT_LIMIT)
+        mock_db.library_contains_file.get.assert_called_once_with(_to="library_files/1", limit=1)
 
     @pytest.mark.unit
     def test_returns_empty_list_without_query_when_ids_empty(self) -> None:
@@ -80,7 +120,7 @@ class TestGetFilesByIdsWithTags:
         result = get_files_by_ids_with_tags(mock_db, [])
 
         assert result == []
-        mock_db.library_files.get.many.assert_not_called()
+        mock_db.library_files.get.in_.assert_not_called()
 
 
 class TestGetLibraryFile:
@@ -94,18 +134,17 @@ class TestGetLibraryFile:
             "path": "D:/Music/song.flac",
             "normalized_path": "song.flac",
         }
-        mock_db.libraries.traversal.return_value = [row]
+        mock_db.libraries.library_contains_file.return_value = [row]
 
         result = get_library_file(mock_db, "song.flac", library_id="libraries/1")
 
         assert result == row
-        mock_db.libraries.traversal.assert_called_once_with("libraries/1", "library_contains_file", limit=DEFAULT_LIMIT)
+        mock_db.libraries.library_contains_file.assert_called_once_with("libraries/1", limit=DEFAULT_LIMIT)
 
     @pytest.mark.unit
     def test_returns_none_when_query_has_no_match(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.normalized_path.get.many.return_value = []
-        mock_db.library_files.path.get.return_value = None
+        mock_db.library_files.get.side_effect = [[], None]
 
         result = get_library_file(mock_db, "missing.flac")
 
@@ -115,14 +154,15 @@ class TestGetLibraryFile:
     def test_falls_back_to_absolute_path_lookup_when_normalized_path_has_no_match(self) -> None:
         mock_db = MagicMock()
         row = {"_id": "library_files/1", "path": "D:/Music/song.flac"}
-        mock_db.library_files.normalized_path.get.many.return_value = []
-        mock_db.library_files.path.get.return_value = row
+        mock_db.library_files.get.side_effect = [[], row]
 
         result = get_library_file(mock_db, "D:/Music/song.flac")
 
         assert result == row
-        mock_db.library_files.normalized_path.get.many.assert_called_once_with("D:/Music/song.flac", limit=1)
-        mock_db.library_files.path.get.assert_called_once_with("D:/Music/song.flac")
+        assert mock_db.library_files.get.call_args_list == [
+            call(normalized_path="D:/Music/song.flac", limit=1),
+            call(path="D:/Music/song.flac"),
+        ]
 
 
 class TestGetFilesByPathsBulk:
@@ -136,8 +176,7 @@ class TestGetFilesByPathsBulk:
             "normalized_path": "artist/song.flac",
             "path": "D:/Music/artist/song.flac",
         }
-        mock_db.library_files.path.get.in_.return_value = [doc]
-        mock_db.library_files.normalized_path.get.in_.return_value = [doc]
+        mock_db.library_files.get.in_.side_effect = [[doc], [doc]]
 
         result = get_files_by_paths_bulk(
             mock_db,
@@ -148,6 +187,12 @@ class TestGetFilesByPathsBulk:
             "artist/song.flac": doc,
             "D:/Music/artist/song.flac": doc,
         }
+        mock_db.library_files.get.in_.assert_has_calls(
+            [
+                call(Field("path", ["artist/song.flac", "D:/Music/artist/song.flac"]), limit=None),
+                call(Field("normalized_path", ["artist/song.flac", "D:/Music/artist/song.flac"]), limit=None),
+            ]
+        )
 
     @pytest.mark.unit
     def test_returns_empty_mapping_without_query_when_paths_empty(self) -> None:
@@ -156,8 +201,7 @@ class TestGetFilesByPathsBulk:
         result = get_files_by_paths_bulk(mock_db, [])
 
         assert result == {}
-        mock_db.library_files.path.get.in_.assert_not_called()
-        mock_db.library_files.normalized_path.get.in_.assert_not_called()
+        mock_db.library_files.get.in_.assert_not_called()
 
 
 class TestDetectNdPathPrefix:
@@ -166,9 +210,9 @@ class TestDetectNdPathPrefix:
     @pytest.mark.unit
     def test_returns_prefix_for_longest_matching_normalized_path(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.normalized_path.collect.return_value = [
-            "song.flac",
-            "artist/song.flac",
+        mock_db.library_files.aggregate.return_value = [
+            {"value": "song.flac"},
+            {"value": "artist/song.flac"},
         ]
 
         result = detect_nd_path_prefix(mock_db, "/music/artist/song.flac")
@@ -178,7 +222,7 @@ class TestDetectNdPathPrefix:
     @pytest.mark.unit
     def test_returns_none_when_prefix_not_found(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.normalized_path.collect.return_value = []
+        mock_db.library_files.aggregate.return_value = []
 
         result = detect_nd_path_prefix(mock_db, "/music/missing.flac")
 
@@ -191,7 +235,11 @@ class TestListLibraryFiles:
     @pytest.mark.unit
     def test_lists_all_files_and_total_without_filters(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.get.many.by_filter.return_value = [
+        mock_db.library_files.aggregate.return_value = [
+            {"value": "library_files/2"},
+            {"value": "library_files/1"},
+        ]
+        mock_db.library_files.get.in_.return_value = [
             {"_id": "library_files/2", "artist": "B", "album": "A", "title": "T2"},
             {"_id": "library_files/1", "artist": "A", "album": "A", "title": "T1"},
         ]
@@ -200,13 +248,16 @@ class TestListLibraryFiles:
 
         assert rows == []
         assert total == 2
-        mock_db.library_files.get.many.by_filter.assert_called_once_with({}, limit=DEFAULT_LIMIT)
+        mock_db.library_files.aggregate.assert_called_once_with("_id", limit=DEFAULT_LIMIT)
+        mock_db.library_files.get.in_.assert_called_once_with(
+            Field("_id", ["library_files/2", "library_files/1"]), limit=None
+        )
 
     @pytest.mark.unit
     def test_lists_library_scoped_files_with_artist_and_album_filters(self) -> None:
         mock_db = MagicMock()
         matching_row = {"_id": "library_files/9", "artist": "Artist", "album": "Album", "title": "Song"}
-        mock_db.libraries.traversal.return_value = [
+        mock_db.libraries.library_contains_file.return_value = [
             {"_id": "library_files/8", "artist": "Other", "album": "Album", "title": "Song"},
             matching_row,
         ]
@@ -222,7 +273,7 @@ class TestListLibraryFiles:
 
         assert rows == [matching_row]
         assert total == 1
-        mock_db.libraries.traversal.assert_called_once_with("libraries/1", "library_contains_file", limit=DEFAULT_LIMIT)
+        mock_db.libraries.library_contains_file.assert_called_once_with("libraries/1", limit=DEFAULT_LIMIT)
 
 
 class TestPhaseOneQueryHelpers:
@@ -231,17 +282,21 @@ class TestPhaseOneQueryHelpers:
     @pytest.mark.unit
     def test_get_all_library_paths_collects_paths_with_default_limit(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.path.collect.return_value = ["D:/Music/a.flac", "D:/Music/b.flac"]
+        mock_db.library_files.aggregate.return_value = [{"value": "D:/Music/a.flac"}, {"value": "D:/Music/b.flac"}]
 
         result = get_all_library_paths(mock_db)
 
         assert result == ["D:/Music/a.flac", "D:/Music/b.flac"]
-        mock_db.library_files.path.collect.assert_called_once_with(limit=DEFAULT_LIMIT)
+        mock_db.library_files.aggregate.assert_called_once_with("path", limit=DEFAULT_LIMIT)
 
     @pytest.mark.unit
     def test_get_file_modified_times_builds_mapping_from_full_scan(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.get.many.by_filter.return_value = [
+        mock_db.library_files.aggregate.return_value = [
+            {"value": "library_files/1"},
+            {"value": "library_files/2"},
+        ]
+        mock_db.library_files.get.in_.return_value = [
             {"path": "D:/Music/a.flac", "modified_time": 10},
             {"path": "D:/Music/b.flac", "modified_time": 20},
         ]
@@ -249,13 +304,16 @@ class TestPhaseOneQueryHelpers:
         result = get_file_modified_times(mock_db)
 
         assert result == {"D:/Music/a.flac": 10, "D:/Music/b.flac": 20}
-        mock_db.library_files.get.many.by_filter.assert_called_once_with({}, limit=DEFAULT_LIMIT)
+        mock_db.library_files.aggregate.assert_called_once_with("_id", limit=DEFAULT_LIMIT)
+        mock_db.library_files.get.in_.assert_called_once_with(
+            Field("_id", ["library_files/1", "library_files/2"]), limit=None
+        )
 
     @pytest.mark.unit
     def test_get_tagged_file_paths_hydrates_paths_from_tagged_file_ids(self) -> None:
         mock_db = MagicMock()
-        mock_db.file_states.traversal.return_value = [{"_id": "library_files/1"}, {"_id": "library_files/2"}]
-        mock_db.library_files.get.many.return_value = [
+        mock_db.file_states.file_has_state.return_value = [{"_id": "library_files/1"}, {"_id": "library_files/2"}]
+        mock_db.library_files.get.in_.return_value = [
             {"_id": "library_files/2", "path": "D:/Music/b.flac"},
             {"_id": "library_files/1", "path": "D:/Music/a.flac"},
         ]
@@ -263,28 +321,26 @@ class TestPhaseOneQueryHelpers:
         result = get_tagged_file_paths(mock_db)
 
         assert result == ["D:/Music/a.flac", "D:/Music/b.flac"]
-        mock_db.file_states.traversal.assert_called_once_with(
-            "file_states/tagged", "file_has_state", limit=DEFAULT_LIMIT
+        mock_db.file_states.file_has_state.assert_called_once_with("file_states/tagged", limit=DEFAULT_LIMIT)
+        mock_db.library_files.get.in_.assert_called_once_with(
+            Field("_id", ["library_files/1", "library_files/2"]), limit=None
         )
-        mock_db.library_files.get.many.assert_called_once_with(["library_files/1", "library_files/2"])
 
     @pytest.mark.unit
     def test_get_folder_rel_paths_returns_traversed_folder_paths(self) -> None:
         mock_db = MagicMock()
-        mock_db.libraries.traversal.return_value = [{"path": "Artist"}, {"path": "Artist/Album"}]
+        mock_db.libraries.library_contains_folder.return_value = [{"path": "Artist"}, {"path": "Artist/Album"}]
 
         result = get_folder_rel_paths(mock_db, "abc123")
 
         assert result == {"Artist", "Artist/Album"}
-        mock_db.libraries.traversal.assert_called_once_with(
-            "libraries/abc123", "library_contains_folder", limit=DEFAULT_LIMIT
-        )
+        mock_db.libraries.library_contains_folder.assert_called_once_with("libraries/abc123", limit=DEFAULT_LIMIT)
 
     @pytest.mark.unit
     def test_get_files_for_folder_filters_by_normalized_prefix(self) -> None:
         mock_db = MagicMock()
         matching_doc = {"path": "D:/Music/Artist/Album/song.flac", "normalized_path": "Artist/Album/song.flac"}
-        mock_db.libraries.traversal.return_value = [
+        mock_db.libraries.library_contains_file.return_value = [
             matching_doc,
             {"path": "D:/Music/Other/song.flac", "normalized_path": "Other/song.flac"},
         ]
@@ -298,7 +354,7 @@ class TestPhaseOneQueryHelpers:
         mock_db = MagicMock()
         root_doc = {"path": "D:/Music/root.flac", "normalized_path": "root.flac"}
         nested_doc = {"path": "D:/Music/Artist/song.flac", "normalized_path": "Artist/song.flac"}
-        mock_db.libraries.traversal.return_value = [root_doc, nested_doc]
+        mock_db.libraries.library_contains_file.return_value = [root_doc, nested_doc]
 
         result = get_files_for_folders(mock_db, "libraries/1", ["", "Artist"])
 
@@ -307,17 +363,17 @@ class TestPhaseOneQueryHelpers:
     @pytest.mark.unit
     def test_count_library_files_normalizes_library_id_for_edge_count(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_contains_file._from.count.return_value = 7
+        mock_db.library_contains_file.count.return_value = 7
 
         result = count_library_files(mock_db, "abc123")
 
         assert result == 7
-        mock_db.library_contains_file._from.count.assert_called_once_with("libraries/abc123")
+        mock_db.library_contains_file.count.assert_called_once_with(Field("_from", "libraries/abc123"))
 
     @pytest.mark.unit
     def test_get_recently_processed_sorts_and_projects_rows(self) -> None:
         mock_db = MagicMock()
-        mock_db.file_states.traversal.return_value = [
+        mock_db.file_states.file_has_state.return_value = [
             {
                 "_id": "library_files/1",
                 "normalized_path": "Artist/older.flac",
@@ -354,16 +410,29 @@ class TestPhaseOneQueryHelpers:
     def test_get_files_by_chromaprint_filters_library_traversal_results(self) -> None:
         mock_db = MagicMock()
         matching_doc = {"_id": "library_files/1", "chromaprint": "abc"}
-        mock_db.libraries.traversal.return_value = [matching_doc, {"_id": "library_files/2", "chromaprint": "def"}]
+        mock_db.libraries.library_contains_file.return_value = [
+            matching_doc,
+            {"_id": "library_files/2", "chromaprint": "def"},
+        ]
 
         result = get_files_by_chromaprint(mock_db, "abc", library_id="libraries/1")
 
         assert result == [matching_doc]
 
     @pytest.mark.unit
+    def test_get_files_by_chromaprint_uses_many_lookup_without_library_filter(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library_files.get.many.return_value = [{"_id": "library_files/1", "chromaprint": "abc"}]
+
+        result = get_files_by_chromaprint(mock_db, "abc")
+
+        assert result == [{"_id": "library_files/1", "chromaprint": "abc"}]
+        mock_db.library_files.get.many.assert_called_once_with(chromaprint="abc", limit=None)
+
+    @pytest.mark.unit
     def test_get_tracks_by_file_ids_sorts_and_applies_defaults(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.get.many.return_value = [
+        mock_db.library_files.get.in_.return_value = [
             {"path": "D:/Music/one.flac", "title": None, "artist": None, "album": None, "sort_rank": 1},
             {
                 "path": "D:/Music/two.flac",
@@ -383,7 +452,11 @@ class TestPhaseOneQueryHelpers:
     @pytest.mark.unit
     def test_get_library_stats_aggregates_file_docs_and_needs_tagging_count(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.get.many.by_filter.return_value = [
+        mock_db.library_files.aggregate.return_value = [
+            {"value": "library_files/1"},
+            {"value": "library_files/2"},
+        ]
+        mock_db.library_files.get.in_.return_value = [
             {"artist": "Artist A", "album": "Album A", "duration_seconds": 10.5, "file_size": 100},
             {"artist": "Artist B", "album": "Album A", "duration_seconds": 9.5, "file_size": 200},
         ]
@@ -407,12 +480,12 @@ class TestPhaseOneQueryHelpers:
     @pytest.mark.unit
     def test_get_library_counts_groups_edges_and_unique_parent_folders(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_contains_file._from.collect.return_value = ["libraries/1"]
-        mock_db.library_contains_file._from.get.many.return_value = [
+        mock_db.library_contains_file.aggregate.return_value = [{"value": "libraries/1"}]
+        mock_db.library_contains_file.get.return_value = [
             {"_to": "library_files/1"},
             {"_to": "library_files/2"},
         ]
-        mock_db.library_files.get.many.return_value = [
+        mock_db.library_files.get.in_.return_value = [
             {"path": "D:/Music/Artist A/song.flac"},
             {"path": "D:/Music/Artist B/other.flac"},
         ]
@@ -424,12 +497,14 @@ class TestPhaseOneQueryHelpers:
     @pytest.mark.unit
     def test_get_artist_album_frequencies_converts_aggregate_rows(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.artist.aggregate.return_value = [
-            {"value": "Artist A", "count": 3},
-            {"value": None, "count": 1},
-        ]
-        mock_db.library_files.album.aggregate.return_value = [
-            {"value": "Album A", "count": 2},
+        mock_db.library_files.aggregate.side_effect = [
+            [
+                {"value": "Artist A", "count": 3},
+                {"value": None, "count": 1},
+            ],
+            [
+                {"value": "Album A", "count": 2},
+            ],
         ]
 
         result = get_artist_album_frequencies(mock_db, limit=5)
@@ -438,8 +513,7 @@ class TestPhaseOneQueryHelpers:
             "artist_rows": [("Artist A", 3)],
             "album_rows": [("Album A", 2)],
         }
-        mock_db.library_files.artist.aggregate.assert_called_once_with(limit=5)
-        mock_db.library_files.album.aggregate.assert_called_once_with(limit=5)
+        assert mock_db.library_files.aggregate.call_args_list == [call("artist", limit=5), call("album", limit=5)]
 
 
 class TestPhaseTwoQueryHelpers:
@@ -465,16 +539,18 @@ class TestPhaseTwoQueryHelpers:
             },
         ]
         # artist/album LIKE queries each return both files; title LIKE (t: prefix) narrows to file 1
-        mock_db.library_files.artist.get.like.return_value = file_docs
-        mock_db.library_files.album.get.like.return_value = file_docs
-        mock_db.library_files.title.get.like.return_value = [file_docs[0]]
+        mock_db.library_files.get.like.side_effect = [
+            file_docs,
+            file_docs,
+            [file_docs[0]],
+        ]
         # final by-id fetch returns the narrowed page
-        mock_db.library_files.get.many.return_value = [file_docs[0]]
-        mock_db.tags.get.many.by_filter.return_value = [{"_id": "tags/1"}]
-        mock_db.song_has_tags._to.get.in_.return_value = [{"_from": "library_files/1"}]
-        mock_db.file_states.traversal.return_value = [{"_id": "library_files/1"}]
-        mock_db.library_files.traversal.return_value = [{"name": "genre", "value": "rock"}]
-        mock_db.library_contains_file._to.get.many.return_value = [{"_from": "libraries/1"}]
+        mock_db.library_files.get.in_.return_value = [file_docs[0]]
+        mock_db.tags.get.return_value = [{"_id": "tags/1"}]
+        mock_db.song_has_tags.get.in_.return_value = [{"_from": "library_files/1"}]
+        mock_db.file_states.file_has_state.return_value = [{"_id": "library_files/1"}]
+        mock_db.library_files.song_has_tags.return_value = [{"name": "genre", "value": "rock"}]
+        mock_db.library_contains_file.get.return_value = [{"_from": "libraries/1"}]
 
         rows, total = search_library_files_with_tags(
             mock_db,
@@ -500,38 +576,45 @@ class TestPhaseTwoQueryHelpers:
                 "library_id": "libraries/1",
             }
         ]
-        mock_db.song_has_tags._to.get.in_.assert_called_once_with(["tags/1"], limit=None)
+        mock_db.song_has_tags.get.in_.assert_called_once_with(Field("_to", ["tags/1"]))
+        mock_db.library_files.get.like.assert_has_calls(
+            [
+                call("artist", "%Artist%"),
+                call("album", "%Album%"),
+                call("title", "%song%"),
+            ]
+        )
 
     @pytest.mark.unit
     def test_search_files_by_tag_numeric_sorts_by_distance_and_hydrates_tags(self) -> None:
         mock_db = MagicMock()
-        mock_db.tags.name.get.many.return_value = [
+        mock_db.tags.get.return_value = [
             {"_id": "tags/1", "value": 118.0},
             {"_id": "tags/2", "value": 121.0},
         ]
-        mock_db.song_has_tags._to.get.many.side_effect = [
+        mock_db.song_has_tags.get.side_effect = [
             [{"_from": "library_files/1"}],
             [{"_from": "library_files/2"}],
         ]
-        mock_db.library_files.get.many.return_value = [
+        mock_db.library_files.get.in_.return_value = [
             {"_id": "library_files/1", "artist": "B", "album": "A", "title": "Far"},
             {"_id": "library_files/2", "artist": "A", "album": "A", "title": "Near"},
         ]
-        mock_db.library_files.traversal.return_value = [{"name": "nom:bpm", "value": 121.0}]
-        mock_db.library_contains_file._to.get.many.return_value = [{"_from": "libraries/1"}]
+        mock_db.library_files.song_has_tags.return_value = [{"name": "nom:bpm", "value": 121.0}]
+        mock_db.library_contains_file.get.return_value = [{"_from": "libraries/1"}]
 
         result = search_files_by_tag(mock_db, "nom:bpm", 120.0, limit=1, offset=0)
 
         assert result[0]["_id"] == "library_files/2"
         assert result[0]["distance"] == 1.0
         assert result[0]["library_id"] == "libraries/1"
-        assert mock_db.song_has_tags._to.get.many.call_count == 2
+        assert mock_db.song_has_tags.get.call_count == 2
 
     @pytest.mark.unit
     def test_count_files_by_tag_uses_exact_and_numeric_constructor_lookups(self) -> None:
         mock_db = MagicMock()
-        mock_db.tags.get.many.by_filter.return_value = [{"_id": "tags/1"}]
-        mock_db.song_has_tags._to.get.in_.return_value = [
+        mock_db.tags.get.return_value = [{"_id": "tags/1"}]
+        mock_db.song_has_tags.get.in_.return_value = [
             {"_from": "library_files/1"},
             {"_from": "library_files/2"},
         ]
@@ -539,26 +622,26 @@ class TestPhaseTwoQueryHelpers:
         string_count = count_files_by_tag(mock_db, "genre", "rock")
 
         assert string_count == 2
-        mock_db.tags.get.many.by_filter.assert_called_once_with({"name": "genre", "value": "rock"}, limit=DEFAULT_LIMIT)
-        mock_db.song_has_tags._to.get.in_.assert_called_once_with(["tags/1"], limit=None)
+        mock_db.tags.get.assert_called_once_with(name="genre", value="rock", limit=DEFAULT_LIMIT)
+        mock_db.song_has_tags.get.in_.assert_called_once_with(Field("_to", ["tags/1"]))
 
         mock_db = MagicMock()
-        mock_db.tags.name.get.many.return_value = [
+        mock_db.tags.get.return_value = [
             {"_id": "tags/1", "value": 120.0},
             {"_id": "tags/2", "value": True},
         ]
-        mock_db.song_has_tags._to.get.in_.return_value = [{"_from": "library_files/1"}]
+        mock_db.song_has_tags.get.in_.return_value = [{"_from": "library_files/1"}]
 
         numeric_count = count_files_by_tag(mock_db, "nom:bpm", 120.0)
 
         assert numeric_count == 1
-        mock_db.tags.name.get.many.assert_called_once_with("nom:bpm", limit=DEFAULT_LIMIT)
-        mock_db.song_has_tags._to.get.in_.assert_called_once_with(["tags/1"], limit=None)
+        mock_db.tags.get.assert_called_once_with(name="nom:bpm", limit=DEFAULT_LIMIT)
+        mock_db.song_has_tags.get.in_.assert_called_once_with(Field("_to", ["tags/1"]))
 
     @pytest.mark.unit
     def test_get_tracks_for_matching_filters_valid_files_and_projects_isrc(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.get.many.by_filter.return_value = [
+        mock_db.library_files.get.return_value = [
             {
                 "_id": "library_files/1",
                 "path": "D:/Music/song.flac",
@@ -567,7 +650,7 @@ class TestPhaseTwoQueryHelpers:
                 "album": "Album",
             }
         ]
-        mock_db.library_files.traversal.by_ids.return_value = [
+        mock_db.library_files.song_has_tags.by_ids.return_value = [
             {"start_id": "library_files/1", "v": {"name": "isrc", "value": "ABC123"}},
         ]
 
@@ -583,17 +666,13 @@ class TestPhaseTwoQueryHelpers:
                 "isrc": "ABC123",
             }
         ]
-        mock_db.library_files.get.many.by_filter.assert_called_once_with({"is_valid": True}, limit=DEFAULT_LIMIT)
-        mock_db.library_files.traversal.by_ids.assert_called_once_with(
-            ["library_files/1"],
-            "song_has_tags",
-            target_filter={"name": "isrc"},
-        )
+        mock_db.library_files.get.assert_called_once_with(is_valid=True, limit=DEFAULT_LIMIT)
+        mock_db.library_files.song_has_tags.by_ids.assert_called_once_with(["library_files/1"], name="isrc")
 
     @pytest.mark.unit
     def test_get_tracks_for_matching_scopes_to_library_and_projects_isrc(self) -> None:
         mock_db = MagicMock()
-        mock_db.libraries.traversal.return_value = [
+        mock_db.libraries.library_contains_file.return_value = [
             {
                 "_id": "library_files/1",
                 "is_valid": True,
@@ -603,7 +682,7 @@ class TestPhaseTwoQueryHelpers:
                 "album": "Album",
             }
         ]
-        mock_db.library_files.traversal.by_ids.return_value = [
+        mock_db.library_files.song_has_tags.by_ids.return_value = [
             {"start_id": "library_files/1", "v": {"name": "isrc", "value": "XYZ789"}},
         ]
 
@@ -619,22 +698,17 @@ class TestPhaseTwoQueryHelpers:
                 "isrc": "XYZ789",
             }
         ]
-        mock_db.libraries.traversal.assert_called_once_with(
+        mock_db.libraries.library_contains_file.assert_called_once_with(
             "libraries/main",
-            "library_contains_file",
             limit=DEFAULT_LIMIT,
         )
-        mock_db.library_files.get.many.by_filter.assert_not_called()
-        mock_db.library_files.traversal.by_ids.assert_called_once_with(
-            ["library_files/1"],
-            "song_has_tags",
-            target_filter={"name": "isrc"},
-        )
+        mock_db.library_files.get.assert_not_called()
+        mock_db.library_files.song_has_tags.by_ids.assert_called_once_with(["library_files/1"], name="isrc")
 
     @pytest.mark.unit
     def test_clear_library_data_truncates_then_batches_library_files(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files._id.collect.side_effect = [["library_files/1"], []]
+        mock_db.library_files.aggregate.side_effect = [[{"value": "library_files/1"}], []]
 
         with patch(
             "nomarr.components.ml.vectors.ml_vector_registry_comp.delete_vectors_by_file_ids"
@@ -645,3 +719,46 @@ class TestPhaseTwoQueryHelpers:
         mock_db.song_has_tags.truncate.assert_called_once()
         mock_delete_vectors.assert_called_once_with(mock_db, ["library_files/1"])
         mock_db.library_files.delete.assert_called_once_with(["library_files/1"])
+
+
+@pytest.mark.unit
+class TestCollectFileIdsForTagIds:
+    """Tests for ``_collect_file_ids_for_tag_ids()``."""
+
+    def test_returns_file_ids_from_matching_edges(self) -> None:
+        mock_db = MagicMock()
+        mock_db.song_has_tags.get.in_.return_value = [
+            {"_from": "library_files/1", "_to": "tags/1"},
+            {"_from": "library_files/2", "_to": "tags/2"},
+        ]
+
+        result = _collect_file_ids_for_tag_ids(mock_db, {"tags/1", "tags/2"})
+
+        assert result == {"library_files/1", "library_files/2"}
+        tag_filter = mock_db.song_has_tags.get.in_.call_args.args[0]
+        assert tag_filter.name == "_to"
+        assert set(tag_filter.value) == {"tags/1", "tags/2"}
+
+    def test_returns_empty_set_when_no_edges_match(self) -> None:
+        mock_db = MagicMock()
+        mock_db.song_has_tags.get.in_.return_value = []
+
+        result = _collect_file_ids_for_tag_ids(mock_db, {"tags/missing"})
+
+        assert result == set()
+        tag_filter = mock_db.song_has_tags.get.in_.call_args.args[0]
+        assert tag_filter.name == "_to"
+        assert tag_filter.value == ["tags/missing"]
+
+    def test_skips_edges_with_missing_or_non_string_from(self) -> None:
+        mock_db = MagicMock()
+        mock_db.song_has_tags.get.in_.return_value = [
+            {"_from": "library_files/1", "_to": "tags/1"},
+            {"_to": "tags/1"},
+            {"_from": 123, "_to": "tags/1"},
+            {"_from": None, "_to": "tags/1"},
+        ]
+
+        result = _collect_file_ids_for_tag_ids(mock_db, {"tags/1"})
+
+        assert result == {"library_files/1"}

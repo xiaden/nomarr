@@ -26,13 +26,10 @@ class TestLibraryFilesQueryRegressions:
         }
         mock_db = MagicMock()
         # query_text-only search: OR across artist/album/title via .get.like()
-        mock_db.library_files.artist.get.like.return_value = []
-        mock_db.library_files.album.get.like.return_value = []
-        mock_db.library_files.title.get.like.return_value = [file_doc]
+        mock_db.library_files.get.like.side_effect = [[], [], [file_doc]]
         # final hydration fetch by sorted IDs
-        mock_db.library_files.get.many.return_value = [file_doc]
-        mock_db.library_files.traversal.return_value = []
-        mock_db.library_contains_file._to.get.many.return_value = [{"_from": "libraries/1"}]
+        mock_db.library_files.get.in_.return_value = [file_doc]
+        mock_db.library_contains_file.get.return_value = [{"_from": "libraries/1"}]
 
         files, total = search_library_files_with_tags(mock_db, query_text="Test Song")
 
@@ -48,7 +45,7 @@ class TestGetRecentlyProcessed:
     def test_returns_scanned_at_field(self) -> None:
         """Recently processed query should return the scanned_at field."""
         mock_db = MagicMock()
-        mock_db.file_states.traversal.return_value = [
+        mock_db.file_states.file_has_state.return_value = [
             {
                 "_id": "library_files/1",
                 "normalized_path": "Artist/Album/Test Song.flac",
@@ -68,24 +65,24 @@ class TestGetRecentlyProcessed:
     def test_library_scoped_intersects_tagged_files_with_library_edges(self) -> None:
         """Library-scoped query should intersect tagged files with ownership edges."""
         mock_db = MagicMock()
-        mock_db.file_states.traversal.return_value = [
+        mock_db.file_states.file_has_state.return_value = [
             {"_id": "library_files/1", "normalized_path": "one.flac", "scanned_at": 10},
             {"_id": "library_files/2", "normalized_path": "two.flac", "scanned_at": 20},
         ]
-        mock_db.library_contains_file._from.get.many.return_value = [{"_to": "library_files/2"}]
+        mock_db.library_contains_file.get.return_value = [{"_to": "library_files/2"}]
 
         rows = get_recently_processed(mock_db, library_id="libraries/123")
 
         assert [row["file_id"] for row in rows] == ["library_files/2"]
-        mock_db.library_contains_file._from.get.many.assert_called_once_with("libraries/123", limit=1000)
+        mock_db.library_contains_file.get.assert_called_once_with(_from="libraries/123", limit=1000)
 
     @pytest.mark.integration
     @pytest.mark.mocked
     def test_global_query_skips_library_edge_lookup(self) -> None:
         """Global query should not query library ownership edges."""
         mock_db = MagicMock()
-        mock_db.file_states.traversal.return_value = []
+        mock_db.file_states.file_has_state.return_value = []
 
         get_recently_processed(mock_db)
 
-        mock_db.library_contains_file._from.get.many.assert_not_called()
+        mock_db.library_contains_file.get.assert_not_called()

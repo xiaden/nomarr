@@ -48,9 +48,9 @@ def claim_files_for_reconciliation(
         return []
 
     candidates = [
-        doc
-        for doc in cast("list[dict[str, Any]]", cast("Any", db.library_files.get).many.id(stale_ids))
-        if doc is not None
+        candidate
+        for file_id in stale_ids
+        if (candidate := cast("dict[str, Any] | None", db.library_files.get(_id=file_id))) is not None
     ]
 
     claimed: list[dict[str, Any]] = []
@@ -74,9 +74,9 @@ def claim_files_for_reconciliation(
             db.worker_claims.insert([payload])
             claimed.append(candidate)
         except DocumentInsertError:
-            existing = cast("dict[str, Any] | None", db.worker_claims.file_id.get(file_id))
+            existing = cast("dict[str, Any] | None", db.worker_claims.get(file_id=file_id))
             if existing and existing.get("claimed_at", 0) < (now - lease_ms):
-                db.worker_claims.delete([str(existing["_id"])])
+                db.worker_claims.delete(_id=str(existing["_id"]))
                 db.worker_claims.insert([payload])
                 claimed.append(candidate)
 
@@ -92,7 +92,7 @@ def set_file_written(db: Database, file_key: str) -> None:
 
     transition_file_state(db, [file_id], STATE_TAGS_NOT_WRITTEN, STATE_TAGS_WRITTEN)
     transition_file_state(db, [file_id], STATE_TAGS_STALE, STATE_TAGS_CURRENT)
-    db.worker_claims.file_id.delete(file_id)
+    db.worker_claims.delete(file_id=file_id)
 
 
 def release_claim(db: Database, file_key: str) -> None:
@@ -101,7 +101,7 @@ def release_claim(db: Database, file_key: str) -> None:
         file_id = file_key
     else:
         file_id = f"library_files/{file_key}"
-    db.worker_claims.file_id.delete(file_id)
+    db.worker_claims.delete(file_id=file_id)
 
 
 def count_files_needing_reconciliation(db: Database, library_id: str) -> int:

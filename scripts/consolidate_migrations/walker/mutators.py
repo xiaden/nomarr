@@ -136,16 +136,12 @@ def _apply_rename_collection(
     - Merge rename: old exists, new also exists -- remove old, keep new.
     """
     if old_name not in shape.collections:
-        warnings.append(
-            f"{migration_name}: Phantom created for rename('{old_name}' -> '{new_name}')"
-        )
+        warnings.append(f"{migration_name}: Phantom created for rename('{old_name}' -> '{new_name}')")
         shape.collections[old_name] = Collection(name=old_name, edge=False)
 
     if new_name in shape.collections:
         # Merge: remove old, keep existing new
-        warnings.append(
-            f"{migration_name}: Merge rename '{old_name}' -> '{new_name}' (target exists)"
-        )
+        warnings.append(f"{migration_name}: Merge rename '{old_name}' -> '{new_name}' (target exists)")
         del shape.collections[old_name]
     else:
         old_coll = shape.collections.pop(old_name)
@@ -187,12 +183,8 @@ def _apply_add_index(
     first, then adds the index.
     """
     if index.collection not in shape.collections:
-        warnings.append(
-            f"{migration_name}: Phantom collection '{index.collection}' created for add_index"
-        )
-        shape.collections[index.collection] = Collection(
-            name=index.collection, edge=False
-        )
+        warnings.append(f"{migration_name}: Phantom collection '{index.collection}' created for add_index")
+        shape.collections[index.collection] = Collection(name=index.collection, edge=False)
     shape.indexes.add(index)
 
 
@@ -211,9 +203,7 @@ def _apply_delete_index(
     matching = {
         idx
         for idx in shape.indexes
-        if idx.collection == collection
-        and idx.index_type == index_type
-        and idx.fields == fields
+        if idx.collection == collection and idx.index_type == index_type and idx.fields == fields
     }
     if not matching:
         warnings.append(

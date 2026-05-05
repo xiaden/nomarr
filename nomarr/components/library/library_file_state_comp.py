@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from arango.exceptions import DocumentInsertError
 
@@ -22,6 +22,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_TOO_SHORT,
     STATE_VECTORS_EXTRACTED,
 )
+from nomarr.persistence.base import Field
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -68,7 +69,7 @@ def _normalize_library_id(library_id: str) -> str:
 
 
 def _state_file_docs(db: Database, state_id: str) -> list[dict[str, Any]]:
-    return db.file_states.traversal(state_id, "file_has_state", limit=None)
+    return cast("list[dict[str, Any]]", db.file_states.file_has_state(state_id, limit=None))
 
 
 def _state_file_ids(db: Database, state_id: str) -> set[str]:
@@ -76,7 +77,9 @@ def _state_file_ids(db: Database, state_id: str) -> set[str]:
 
 
 def _library_file_edges(db: Database, library_id: str) -> list[dict[str, Any]]:
-    return db.library_contains_file._from.get.many(_normalize_library_id(library_id), limit=None)
+    return cast(
+        "list[dict[str, Any]]", db.library_contains_file.get(_from=_normalize_library_id(library_id), limit=None)
+    )
 
 
 def _library_file_ids(db: Database, library_id: str) -> set[str]:
@@ -133,14 +136,14 @@ def initialize_file_states_batch(db: Database, file_ids: list[str]) -> None:
 
 def clear_all_states(db: Database, file_id: str) -> int:
     """Remove all state edges for one file."""
-    return db.file_has_state._from.delete(file_id)
+    return int(db.file_has_state.delete(_from=file_id))
 
 
 def clear_all_states_batch(db: Database, file_ids: list[str]) -> int:
     """Remove all state edges for a batch of files."""
     if not file_ids:
         return 0
-    return sum(db.file_has_state._from.delete(file_id) for file_id in file_ids)
+    return sum(db.file_has_state.delete(_from=file_id) for file_id in file_ids)
 
 
 def discover_next_untagged_file(
@@ -167,9 +170,9 @@ def discover_next_untagged_file(
         candidate_ids &= _library_file_ids(db, library_id)
     if exclude_claimed:
         claimed_ids = {
-            claim["file_id"]
-            for claim in db.worker_claims.get.many.by_filter({}, limit=None)
-            if isinstance(claim.get("file_id"), str)
+            cast("str", row["value"])
+            for row in db.worker_claims.aggregate("file_id", limit=db.worker_claims.count())
+            if isinstance(row.get("value"), str)
         }
         candidate_ids -= claimed_ids
     candidate_docs = [doc for doc in untagged_files if doc["_id"] in candidate_ids]
@@ -188,7 +191,7 @@ def count_untagged_files(db: Database, library_id: str | None = None) -> int:
 
 def count_pending_tag_writes(db: Database) -> int:
     """Count files still waiting for file-tag writeback."""
-    return len(db.file_has_state._to.get.many(STATE_TAGS_NOT_WRITTEN, limit=None))
+    return int(db.file_has_state.count(_to=STATE_TAGS_NOT_WRITTEN))
 
 
 def get_errored_file_ids(db: Database, library_id: str, limit: int | None = 500) -> list[str]:
@@ -196,7 +199,7 @@ def get_errored_file_ids(db: Database, library_id: str, limit: int | None = 500)
     library_file_ids = _library_file_ids(db, library_id)
     errored_file_ids = [
         edge["_from"]
-        for edge in db.file_has_state._to.get.many(STATE_ERRORED, limit=None)
+        for edge in cast("list[dict[str, Any]]", db.file_has_state.get(_to=STATE_ERRORED, limit=None))
         if edge["_from"] in library_file_ids
     ]
     return errored_file_ids if limit is None else errored_file_ids[:limit]
@@ -230,7 +233,15 @@ def get_calibration_status_by_library(db: Database) -> list[dict[str, Any]]:
     calibrated_ids = _state_file_ids(db, STATE_CALIBRATED)
     not_calibrated_ids = _state_file_ids(db, STATE_NOT_CALIBRATED)
     results: list[dict[str, Any]] = []
-    for library in db.libraries.get.many.by_filter({}, limit=None):
+    library_ids = [
+        cast("str", row["value"])
+        for row in db.libraries.aggregate("_id", limit=db.libraries.count())
+        if isinstance(row.get("value"), str)
+    ]
+    libraries = (
+        cast("list[dict[str, Any]]", db.libraries.get.in_(Field("_id", library_ids), limit=None)) if library_ids else []
+    )
+    for library in libraries:
         library_id = library["_id"]
         library_file_ids = _library_file_ids(db, library_id)
         results.append(
@@ -251,13 +262,15 @@ def library_has_tagged_files(db: Database, library_id: str) -> bool:
 
 def file_has_tagged_state(db: Database, file_id: str) -> bool:
     """Return whether one file currently has the tagged-state edge."""
-    return db.file_has_state.count_by_filter({"_from": file_id, "_to": STATE_TAGGED}) > 0
+    return int(db.file_has_state.count(_from=file_id, _to=STATE_TAGGED)) > 0
 
 
 def find_short_files_missing_too_short(db: Database, library_id: str, min_duration_s: int) -> list[str]:
     """Return short files that are missing the ``too_short`` state."""
-    library_files = db.libraries.traversal(_normalize_library_id(library_id), "library_contains_file", limit=None)
-    too_short_ids = {edge["_from"] for edge in db.file_has_state._to.get.many(STATE_TOO_SHORT, limit=None)}
+    library_files = db.libraries.library_contains_file(_normalize_library_id(library_id), limit=None)
+    too_short_ids = {
+        edge["_from"] for edge in cast("list[dict[str, Any]]", db.file_has_state.get(_to=STATE_TOO_SHORT, limit=None))
+    }
     return [
         file_doc["_id"]
         for file_doc in library_files
@@ -293,15 +306,7 @@ def get_files_with_incomplete_tags(
         library_file_ids = _library_file_ids(db, normalized_library_id)
         tagged_files = [file_doc for file_doc in tagged_files if file_doc["_id"] in library_file_ids]
     file_ids = [file_doc["_id"] for file_doc in tagged_files]
-    all_rows = (
-        db.library_files.traversal.by_ids(
-            file_ids,
-            "song_has_tags",
-            target_like_starts_with=("name", namespace_prefix),
-        )
-        if file_ids
-        else []
-    )
+    all_rows = db.library_files.song_has_tags.by_ids(file_ids, name_starts_with=namespace_prefix) if file_ids else []
     tags_by_file: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in all_rows:
         start_id = row.get("start_id")
@@ -335,7 +340,9 @@ def get_files_with_incomplete_tags(
 
 def bulk_set_not_calibrated(db: Database) -> int:
     """Transition all calibrated files back to not-calibrated."""
-    file_ids = [edge["_from"] for edge in db.file_has_state._to.get.many(STATE_CALIBRATED, limit=None)]
+    file_ids = [
+        edge["_from"] for edge in cast("list[dict[str, Any]]", db.file_has_state.get(_to=STATE_CALIBRATED, limit=None))
+    ]
     if not file_ids:
         return 0
     transition_file_state(db, file_ids, STATE_CALIBRATED, STATE_NOT_CALIBRATED)
@@ -344,7 +351,10 @@ def bulk_set_not_calibrated(db: Database) -> int:
 
 def bulk_set_tags_stale(db: Database, library_id: str | None = None) -> int:
     """Transition ``tags_current`` files to ``tags_stale``."""
-    file_ids = [edge["_from"] for edge in db.file_has_state._to.get.many(STATE_TAGS_CURRENT, limit=None)]
+    file_ids = [
+        edge["_from"]
+        for edge in cast("list[dict[str, Any]]", db.file_has_state.get(_to=STATE_TAGS_CURRENT, limit=None))
+    ]
     if library_id is not None:
         library_file_ids = _library_file_ids(db, library_id)
         file_ids = [file_id for file_id in file_ids if file_id in library_file_ids]
@@ -356,7 +366,10 @@ def bulk_set_tags_stale(db: Database, library_id: str | None = None) -> int:
 
 def bulk_set_not_vectors_extracted(db: Database) -> int:
     """Transition all vector-extracted files back to not-extracted."""
-    file_ids = [edge["_from"] for edge in db.file_has_state._to.get.many(STATE_VECTORS_EXTRACTED, limit=None)]
+    file_ids = [
+        edge["_from"]
+        for edge in cast("list[dict[str, Any]]", db.file_has_state.get(_to=STATE_VECTORS_EXTRACTED, limit=None))
+    ]
     if not file_ids:
         return 0
     transition_file_state(db, file_ids, STATE_VECTORS_EXTRACTED, STATE_NOT_VECTORS_EXTRACTED)

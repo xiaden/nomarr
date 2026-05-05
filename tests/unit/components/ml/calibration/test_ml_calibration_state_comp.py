@@ -25,7 +25,6 @@ from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     update_file_calibration_hashes_batch,
 )
 from nomarr.helpers.constants.file_states import STATE_CALIBRATED, STATE_NOT_CALIBRATED
-from nomarr.helpers.filter_types import Op
 
 
 class TestUpdateFileCalibrationHash:
@@ -34,8 +33,13 @@ class TestUpdateFileCalibrationHash:
     @pytest.mark.unit
     def test_delegates_to_file_states_transition(self) -> None:
         mock_db = MagicMock()
-        update_file_calibration_hash(mock_db, "library_files/abc123")
-        mock_db.file_states.transition.assert_called_once_with(
+        with patch(
+            "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_file_state"
+        ) as mock_transition:
+            update_file_calibration_hash(mock_db, "library_files/abc123")
+
+        mock_transition.assert_called_once_with(
+            mock_db,
             ["library_files/abc123"],
             STATE_NOT_CALIBRATED,
             STATE_CALIBRATED,
@@ -49,16 +53,24 @@ class TestUpdateFileCalibrationHashesBatch:
     def test_calls_transition_for_each_file_id(self) -> None:
         mock_db = MagicMock()
         file_ids = ["library_files/a", "library_files/b", "library_files/c"]
-        update_file_calibration_hashes_batch(mock_db, file_ids)
-        assert mock_db.file_states.transition.call_count == 3
+        with patch(
+            "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_file_state"
+        ) as mock_transition:
+            update_file_calibration_hashes_batch(mock_db, file_ids)
+
+        assert mock_transition.call_count == 3
         for fid in file_ids:
-            mock_db.file_states.transition.assert_any_call([fid], STATE_NOT_CALIBRATED, STATE_CALIBRATED)
+            mock_transition.assert_any_call(mock_db, [fid], STATE_NOT_CALIBRATED, STATE_CALIBRATED)
 
     @pytest.mark.unit
     def test_empty_list_makes_no_calls(self) -> None:
         mock_db = MagicMock()
-        update_file_calibration_hashes_batch(mock_db, [])
-        mock_db.file_states.transition.assert_not_called()
+        with patch(
+            "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_file_state"
+        ) as mock_transition:
+            update_file_calibration_hashes_batch(mock_db, [])
+
+        mock_transition.assert_not_called()
 
 
 class TestComputeReconciliationInfo:
@@ -150,18 +162,32 @@ class TestCalibrationStateQueries:
     def test_count_recent_uses_updated_at_range_lookup(self) -> None:
         mock_db = MagicMock()
         mock_db.calibration_state.count.return_value = 5
-        mock_db.calibration_state.updated_at.get.in_.return_value = [{"_id": "a"}, {"_id": "b"}]
+        mock_db.calibration_state.aggregate.return_value = [
+            {"value": "calibration_state/a"},
+            {"value": "calibration_state/b"},
+            {"value": "calibration_state/c"},
+        ]
+        mock_db.calibration_state.get.side_effect = [
+            {"_id": "calibration_state/a", "updated_at": 1_000},
+            {"_id": "calibration_state/b", "updated_at": 2_000},
+            {"_id": "calibration_state/c", "updated_at": 999},
+        ]
 
         result = count_recent_calibration_states(mock_db, 1_000)
 
         assert result == 2
-        mock_db.calibration_state.updated_at.get.in_.assert_called_once_with({Op.GTE: 1_000}, limit=5)
+        mock_db.calibration_state.aggregate.assert_called_once_with("_id", limit=5)
 
     @pytest.mark.unit
     def test_latest_updated_at_returns_max_timestamp(self) -> None:
         mock_db = MagicMock()
         mock_db.calibration_state.count.return_value = 6
-        mock_db.calibration_state.updated_at.get.in_.return_value = [
+        mock_db.calibration_state.aggregate.return_value = [
+            {"value": "calibration_state/a"},
+            {"value": "calibration_state/b"},
+            {"value": "calibration_state/c"},
+        ]
+        mock_db.calibration_state.get.side_effect = [
             {"updated_at": 1_000},
             {"updated_at": 2_500},
             {"updated_at": 1_750},
@@ -194,24 +220,21 @@ class TestCalibrationStateCrud:
             histogram_bins=[{"val": 0.1, "count": 4}],
         )
 
-        mock_db.calibration_state._key.upsert.assert_called_once()
-        mock_db.model_has_calibration._key.upsert.assert_called_once_with(
-            [
-                {
-                    "_key": "mood_happy:happy",
-                    "_from": "ml_models/model-1",
-                    "_to": "calibration_state/mood_happy:happy",
-                }
-            ],
-            match_field="_key",
+        mock_db.calibration_state.upsert.assert_called_once()
+        mock_db.model_has_calibration.upsert.assert_called_once_with(
+            _key="mood_happy:happy",
+            fields={
+                "_from": "ml_models/model-1",
+                "_to": "calibration_state/mood_happy:happy",
+            },
         )
 
     @pytest.mark.unit
     def test_load_all_enriches_from_constructor_edge_and_model_lookups(self) -> None:
         mock_db = MagicMock()
         mock_db.calibration_state.count.return_value = 1
-        mock_db.calibration_state._id.collect.return_value = ["calibration_state/mood_happy:happy"]
-        mock_db.calibration_state.get.many.return_value = [
+        mock_db.calibration_state.aggregate.return_value = [{"value": "calibration_state/mood_happy:happy"}]
+        mock_db.calibration_state.get.side_effect = [
             {
                 "_id": "calibration_state/mood_happy:happy",
                 "_key": "mood_happy:happy",
@@ -219,14 +242,14 @@ class TestCalibrationStateCrud:
                 "label": "happy",
             }
         ]
-        mock_db.model_has_calibration.get.many.id.return_value = [
+        mock_db.model_has_calibration.get.side_effect = [
             {
                 "_key": "mood_happy:happy",
                 "_from": "ml_models/model-1",
                 "_to": "calibration_state/mood_happy:happy",
             }
         ]
-        mock_db.ml_models.get.many.id.return_value = [
+        mock_db.ml_models.get.side_effect = [
             {
                 "_id": "ml_models/model-1",
                 "backbone": "ast",
@@ -245,18 +268,18 @@ class TestCalibrationStateCrud:
                 "model": {"backbone": "ast", "embedder_release_date": "2026-01-01"},
             }
         ]
-        mock_db.model_has_calibration.get.many.id.assert_called_once_with(["model_has_calibration/mood_happy:happy"])
-        mock_db.ml_models.get.many.id.assert_called_once_with(["ml_models/model-1"])
+        mock_db.model_has_calibration.get.assert_called_once_with(_id="model_has_calibration/mood_happy:happy")
+        mock_db.ml_models.get.assert_called_once_with(_id="ml_models/model-1")
 
     @pytest.mark.unit
     def test_delete_removes_edge_and_state_by_constructor_ids(self) -> None:
         mock_db = MagicMock()
-        mock_db.calibration_state._key.get.return_value = {"_id": "calibration_state/mood_happy:happy"}
+        mock_db.calibration_state.get.return_value = {"_id": "calibration_state/mood_happy:happy"}
 
         delete_calibration_state(mock_db, "mood_happy", "happy")
 
-        mock_db.model_has_calibration.delete.assert_called_once_with(["model_has_calibration/mood_happy:happy"])
-        mock_db.calibration_state.delete.assert_called_once_with(["calibration_state/mood_happy:happy"])
+        mock_db.model_has_calibration.delete.assert_called_once_with(_id="model_has_calibration/mood_happy:happy")
+        mock_db.calibration_state.delete.assert_called_once_with(_id="calibration_state/mood_happy:happy")
 
 
 class TestClearAllCalibrationData:
@@ -265,7 +288,7 @@ class TestClearAllCalibrationData:
     @pytest.mark.unit
     def test_truncates_collections_and_clears_states(self) -> None:
         mock_db = MagicMock()
-        mock_db.meta.key.get.return_value = {"key": "calibration_version", "value": "some_value"}
+        mock_db.meta.get.return_value = {"key": "calibration_version", "value": "some_value"}
         with (
             patch(
                 "nomarr.components.ml.calibration.ml_calibration_state_comp.bulk_set_not_calibrated",
@@ -287,7 +310,7 @@ class TestClearAllCalibrationData:
     @pytest.mark.unit
     def test_clears_meta_keys_only_when_present(self) -> None:
         mock_db = MagicMock()
-        mock_db.meta.key.get.side_effect = [None, {"key": "calibration_last_run", "value": "exists"}]
+        mock_db.meta.get.side_effect = [None, {"key": "calibration_last_run", "value": "exists"}]
         with (
             patch(
                 "nomarr.components.ml.calibration.ml_calibration_state_comp.bulk_set_not_calibrated",
@@ -298,7 +321,7 @@ class TestClearAllCalibrationData:
             result = clear_all_calibration_data(mock_db)
 
         assert result["meta_keys_cleared"] == 1
-        mock_db.meta.key.delete.assert_called_once_with("calibration_last_run")
+        mock_db.meta.delete.assert_called_once_with(key="calibration_last_run")
 
 
 class TestLoadCalibrationState:
@@ -309,23 +332,23 @@ class TestLoadCalibrationState:
     def test_returns_doc_when_found(self) -> None:
         mock_db = MagicMock()
         expected_doc = {"_id": "calibration_state/mood_happy:happy"}
-        mock_db.calibration_state._key.get.return_value = expected_doc
+        mock_db.calibration_state.get.return_value = expected_doc
 
         result = load_calibration_state(mock_db, "mood_happy", "happy")
 
         assert result == expected_doc
-        mock_db.calibration_state._key.get.assert_called_once_with("mood_happy:happy")
+        mock_db.calibration_state.get.assert_called_once_with(_key="mood_happy:happy")
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_none_when_not_found(self) -> None:
         mock_db = MagicMock()
-        mock_db.calibration_state._key.get.return_value = None
+        mock_db.calibration_state.get.return_value = None
 
         result = load_calibration_state(mock_db, "mood_happy", "happy")
 
         assert result is None
-        mock_db.calibration_state._key.get.assert_called_once_with("mood_happy:happy")
+        mock_db.calibration_state.get.assert_called_once_with(_key="mood_happy:happy")
 
 
 class TestCreateCalibrationHistorySnapshot:
@@ -442,23 +465,23 @@ class TestCalibrationVersionMeta:
     @pytest.mark.mocked
     def test_get_calibration_version_returns_none_when_doc_missing(self) -> None:
         mock_db = MagicMock()
-        mock_db.meta.key.get.return_value = None
+        mock_db.meta.get.return_value = None
 
         result = get_calibration_version(mock_db)
 
         assert result is None
-        mock_db.meta.key.get.assert_called_once_with("calibration_version")
+        mock_db.meta.get.assert_called_once_with(key="calibration_version")
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_get_calibration_version_returns_value_from_doc(self) -> None:
         mock_db = MagicMock()
-        mock_db.meta.key.get.return_value = {"key": "calibration_version", "value": "hash-123"}
+        mock_db.meta.get.return_value = {"key": "calibration_version", "value": "hash-123"}
 
         result = get_calibration_version(mock_db)
 
         assert result == "hash-123"
-        mock_db.meta.key.get.assert_called_once_with("calibration_version")
+        mock_db.meta.get.assert_called_once_with(key="calibration_version")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -467,10 +490,7 @@ class TestCalibrationVersionMeta:
 
         set_calibration_version(mock_db, "hash-123")
 
-        mock_db.meta.key.upsert.assert_called_once_with(
-            [{"key": "calibration_version", "value": "hash-123"}],
-            match_field="key",
-        )
+        mock_db.meta.upsert.assert_called_once_with(key="calibration_version", fields={"value": "hash-123"})
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -479,7 +499,6 @@ class TestCalibrationVersionMeta:
 
         set_calibration_last_run(mock_db, "2026-04-13T12:00:00Z")
 
-        mock_db.meta.key.upsert.assert_called_once_with(
-            [{"key": "calibration_last_run", "value": "2026-04-13T12:00:00Z"}],
-            match_field="key",
+        mock_db.meta.upsert.assert_called_once_with(
+            key="calibration_last_run", fields={"value": "2026-04-13T12:00:00Z"}
         )

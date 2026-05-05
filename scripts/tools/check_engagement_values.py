@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Check raw engagement/approachability tag values vs calibration state."""
+
 import json
 
 import requests
@@ -22,7 +23,7 @@ LIMIT 30
 RETURN t.value
 """)
 print(f"Samples: {eng_vals}")
-print(f"Min: {min(eng_vals):.4f}, Max: {max(eng_vals):.4f}, Mean: {sum(eng_vals)/len(eng_vals):.4f}")
+print(f"Min: {min(eng_vals):.4f}, Max: {max(eng_vals):.4f}, Mean: {sum(eng_vals) / len(eng_vals):.4f}")
 
 # 2. Calibration state for engagement
 print("\n=== Calibration state for engagement ===")

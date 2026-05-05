@@ -20,12 +20,12 @@ class TestGetSparseHistogram:
             "backbone": "ast",
             "embedder_release_date": "2026-01-01",
         }
-        mock_db.tags.name.collect.return_value = [
-            "nom:happy_sigmoid_ast20260101",
-            "nom:sad_sigmoid_ast20260101",
-            "genre",
+        mock_db.tags.aggregate.return_value = [
+            {"value": "nom:happy_sigmoid_ast20260101"},
+            {"value": "nom:sad_sigmoid_ast20260101"},
+            {"value": "genre"},
         ]
-        mock_db.tags.get.many.by_filter.return_value = [
+        mock_db.tags.get.return_value = [
             {"value": -0.2},
             {"value": 0.1},
             {"value": 0.11},
@@ -48,11 +48,8 @@ class TestGetSparseHistogram:
             {"min_val": 0.1, "count": 2, "underflow_count": 0, "overflow_count": 0},
             {"min_val": 0.9, "count": 1, "underflow_count": 0, "overflow_count": 1},
         ]
-        mock_db.tags.name.collect.assert_called_once_with(limit=10000)
-        mock_db.tags.get.many.by_filter.assert_called_once_with(
-            {"name": "nom:happy_sigmoid_ast20260101"},
-            limit=50000,
-        )
+        mock_db.tags.aggregate.assert_called_once_with("name", limit=10000)
+        mock_db.tags.get.assert_called_once_with(name="nom:happy_sigmoid_ast20260101", limit=50000)
 
     @pytest.mark.unit
     def test_returns_empty_when_model_metadata_is_missing(self) -> None:
@@ -62,4 +59,4 @@ class TestGetSparseHistogram:
         result = get_sparse_histogram(mock_db, model_id="ml_models/missing", label="happy")
 
         assert result == []
-        mock_db.tags.name.collect.assert_not_called()
+        mock_db.tags.aggregate.assert_not_called()

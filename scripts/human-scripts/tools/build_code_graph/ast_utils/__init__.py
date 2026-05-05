@@ -25,20 +25,20 @@ from .metadata import (
 from .type_extraction import extract_type_annotations_from_function, extract_type_names_from_annotation
 
 __all__ = [
-    # Metadata extraction
-    "get_layer_from_module_path",
-    "get_docstring",
-    "get_return_annotation",
-    "extract_return_var_names",
-    "extract_class_attributes",
-    "extract_function_params",
-    "is_fastapi_route_decorator",
-    "extract_decorator_targets",
-    # Type extraction
-    "extract_type_names_from_annotation",
-    "extract_type_annotations_from_function",
-    # Import extraction
-    "extract_imports_from_function",
     # Call extraction
     "extract_calls_from_function",
+    "extract_class_attributes",
+    "extract_decorator_targets",
+    "extract_function_params",
+    # Import extraction
+    "extract_imports_from_function",
+    "extract_return_var_names",
+    "extract_type_annotations_from_function",
+    # Type extraction
+    "extract_type_names_from_annotation",
+    "get_docstring",
+    # Metadata extraction
+    "get_layer_from_module_path",
+    "get_return_annotation",
+    "is_fastapi_route_decorator",
 ]

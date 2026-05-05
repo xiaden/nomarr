@@ -133,7 +133,7 @@ class ConfigService:
         try:
             db = Database()
             try:
-                db.meta.key.upsert([{"key": f"config_{key}", "value": value}], match_field="key")
+                db.meta.upsert(key=f"config_{key}", fields={"value": value})
             finally:
                 db.close()
         except Exception:
@@ -225,7 +225,7 @@ class ConfigService:
             db = Database()
             try:
                 # Batch-read existing config keys from DB
-                existing_docs = db.meta.key.get.like("config_%")
+                existing_docs = db.meta.get.like("key", "config_%")
                 existing = {doc["key"]: doc.get("value", "") for doc in existing_docs}
                 existing_keys = {k[7:] for k in existing}  # Strip 'config_' prefix
 
@@ -233,13 +233,13 @@ class ConfigService:
                 for key in _ALLOWED_CONFIG_KEYS:
                     if key not in existing_keys and key in bootstrap_config:
                         value = bootstrap_config[key]
-                        db.meta.key.upsert(
-                            [{"key": f"config_{key}", "value": str(value) if value is not None else ""}],
-                            match_field="key",
+                        db.meta.upsert(
+                            key=f"config_{key}",
+                            fields={"value": str(value) if value is not None else ""},
                         )
 
                 # Load: read all config_* keys back into cache
-                all_config_docs = db.meta.key.get.like("config_%")
+                all_config_docs = db.meta.get.like("key", "config_%")
                 all_config = {doc["key"]: doc.get("value", "") for doc in all_config_docs}
                 for db_key, db_value in all_config.items():
                     config_key = db_key[7:]  # Strip 'config_' prefix

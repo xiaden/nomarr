@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace, get_maintenance_namespace
 
@@ -49,4 +49,4 @@ def get_cold_track_vector(
         return None
 
     cold_ops = get_cold_namespace(db, backbone_id, library_key)
-    return cold_ops.get_vector(file_id)
+    return cast("dict[str, Any] | None", cold_ops.get_vector(file_id))

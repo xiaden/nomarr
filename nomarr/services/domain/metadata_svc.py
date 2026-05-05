@@ -24,6 +24,7 @@ from nomarr.components.tagging.tag_query_comp import (
 )
 from nomarr.components.tagging.tag_write_comp import find_or_create_tag
 from nomarr.helpers.dto.metadata_dto import EntityDict, EntityListResult, SongListForEntityResult
+from nomarr.persistence.base import Field
 from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -108,7 +109,7 @@ class MetadataService:
             return None
 
         # Get song count for this tag
-        song_count = self.db.song_has_tags._to.count(entity_id)
+        song_count = self.db.song_has_tags.count(Field("_to", entity_id))
 
         return EntityDict(
             _id=tag["_id"],
@@ -137,7 +138,7 @@ class MetadataService:
 
         """
         song_ids = list_songs_for_tag(self.db, entity_id, limit=limit, offset=offset)
-        total = self.db.song_has_tags._to.count(entity_id)
+        total = self.db.song_has_tags.count(Field("_to", entity_id))
 
         return SongListForEntityResult(
             song_ids=song_ids,

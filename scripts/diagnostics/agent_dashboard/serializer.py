@@ -151,16 +151,8 @@ def serialize_dashboard_data(sessions: list[Session]) -> dict:
 
     # Global stats
     total_tokens_all = sum(s.root.tree_tokens for s in sessions if s.root)
-    total_tool_calls = sum(
-        sum(i.tool_call_count for i in collect_all_invocations(s.root))
-        for s in sessions
-        if s.root
-    )
-    total_failures = sum(
-        sum(i.failure_count for i in collect_all_invocations(s.root))
-        for s in sessions
-        if s.root
-    )
+    total_tool_calls = sum(sum(i.tool_call_count for i in collect_all_invocations(s.root)) for s in sessions if s.root)
+    total_failures = sum(sum(i.failure_count for i in collect_all_invocations(s.root)) for s in sessions if s.root)
 
     # Agent aggregates
     agent_aggs = {}
@@ -188,9 +180,7 @@ def serialize_dashboard_data(sessions: list[Session]) -> dict:
             "total_failures": agg.total_failures,
             "avg_tokens_per_mutation": round(agg.avg_tokens_per_mutation, 1),
             "avg_calls_before_dispatch": (
-                round(agg.avg_calls_before_dispatch, 1)
-                if agg.avg_calls_before_dispatch is not None
-                else None
+                round(agg.avg_calls_before_dispatch, 1) if agg.avg_calls_before_dispatch is not None else None
             ),
             "avg_turns": round(agg.avg_turns, 1),
             "models_used": sorted(agg.models_used),
@@ -229,11 +219,7 @@ def serialize_dashboard_data(sessions: list[Session]) -> dict:
         "agent_aggregates": agent_aggs,
         "agent_tool_profiles": agent_tool_profiles,
         "tool_aggregates": tool_agg_list,
-        "sessions": [
-            _session_to_dict(s)
-            for s in sorted(sessions, key=lambda s: s.timestamp, reverse=True)
-            if s.root
-        ],
+        "sessions": [_session_to_dict(s) for s in sorted(sessions, key=lambda s: s.timestamp, reverse=True) if s.root],
     }
 
 

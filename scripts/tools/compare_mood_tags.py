@@ -33,6 +33,7 @@ MOOD_TIER_RELS = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
 # DB helpers
 # ---------------------------------------------------------------------------
 
+
 def _aql(query: str, bind_vars: dict | None = None, batch_size: int = 10000) -> list:
     payload: dict = {"query": query, "batchSize": batch_size}
     if bind_vars:
@@ -70,7 +71,8 @@ def load_db_mood_tags(limit: int | None) -> dict[str, dict[str, list[str]]]:
         return {}
 
     # Step 2: fetch all mood edges for those files
-    rows = _aql("""
+    rows = _aql(
+        """
         FOR file_id IN @file_ids
           FOR e IN song_has_tags
             FILTER e._from == file_id
@@ -84,7 +86,9 @@ def load_db_mood_tags(limit: int | None) -> dict[str, dict[str, list[str]]]:
               tier: tier,
               values: groups[*].tag.value
             }
-    """, {"file_ids": file_rows})
+    """,
+        {"file_ids": file_rows},
+    )
 
     result: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
     for row in rows:
@@ -97,6 +101,7 @@ def load_db_mood_tags(limit: int | None) -> dict[str, dict[str, list[str]]]:
 # File tag reading
 # ---------------------------------------------------------------------------
 
+
 def _extract_nom_mood(tags_raw: dict) -> dict[str, list[str]]:
     """Extract nom:mood-* entries from a normalised tag dict.
 
@@ -106,6 +111,7 @@ def _extract_nom_mood(tags_raw: dict) -> dict[str, list[str]]:
 
     Returns {tier_name: [mood_label, ...]}
     """
+
     def _unwrap(val: object) -> list[str]:
         if isinstance(val, list):
             out: list[str] = []
@@ -203,6 +209,7 @@ def read_file_mood_tags(path: str) -> tuple[dict[str, list[str]], list[str]] | N
 # Comparison
 # ---------------------------------------------------------------------------
 
+
 def compare(
     db_tags: dict[str, dict[str, list[str]]],
     show_matches: bool,
@@ -283,12 +290,11 @@ def compare(
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compare on-disk vs DB mood tags")
-    parser.add_argument("--limit", type=int, default=None,
-                        help="Limit number of files sampled (default: all)")
-    parser.add_argument("--show-matches", action="store_true",
-                        help="Also print matching files")
+    parser.add_argument("--limit", type=int, default=None, help="Limit number of files sampled (default: all)")
+    parser.add_argument("--show-matches", action="store_true", help="Also print matching files")
     args = parser.parse_args()
 
     print("Loading DB mood tags...", flush=True)

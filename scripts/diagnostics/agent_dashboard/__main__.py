@@ -94,7 +94,7 @@ def main() -> None:
         sys.exit(1)
 
     out_dir = Path("scripts/diagnostics/outputs")
-    json_path = args.output if args.output else out_dir / "agent_dashboard.json"
+    json_path = args.output or out_dir / "agent_dashboard.json"
     write_json(sessions, json_path)
 
 

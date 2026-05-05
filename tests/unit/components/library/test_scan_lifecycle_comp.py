@@ -22,6 +22,7 @@ from nomarr.components.library.scan_lifecycle_comp import (
 )
 from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
 from nomarr.helpers.constants.pipeline_states import PIPELINE_SCANNING
+from nomarr.helpers.time_helper import Milliseconds
 
 
 class TestBootstrapFileStateEdges:
@@ -75,12 +76,12 @@ class TestIsLibraryScanning:
     def test_returns_false_when_get_state_raises_value_error(self) -> None:
         mock_db = MagicMock()
         library_id = "libraries/test"
-        mock_db.library_pipeline_states.library_key.get.return_value = None
+        mock_db.library_pipeline_states.get.return_value = None
 
         result = is_library_scanning(mock_db, library_id)
 
         assert result is False
-        mock_db.library_pipeline_states.library_key.get.assert_called_once_with("test")
+        mock_db.library_pipeline_states.get.assert_called_once_with(library_key="test")
 
 
 class TestGetScanningLibraryIds:
@@ -91,7 +92,7 @@ class TestGetScanningLibraryIds:
     def test_calls_scanning_state_query_and_returns_set(self) -> None:
         mock_db = MagicMock()
         mock_db.library_pipeline_states.count.return_value = 3
-        mock_db.library_pipeline_states.pipeline_state.get.many.return_value = [
+        mock_db.library_pipeline_states.get.return_value = [
             {"library_key": "one", "pipeline_state": PIPELINE_SCANNING},
             {"library_key": "two", "pipeline_state": PIPELINE_SCANNING},
             {"library_key": "one", "pipeline_state": PIPELINE_SCANNING},
@@ -101,8 +102,8 @@ class TestGetScanningLibraryIds:
 
         assert result == {"libraries/one", "libraries/two"}
         assert isinstance(result, set)
-        mock_db.library_pipeline_states.pipeline_state.get.many.assert_called_once_with(
-            PIPELINE_SCANNING,
+        mock_db.library_pipeline_states.get.assert_called_once_with(
+            pipeline_state=PIPELINE_SCANNING,
             limit=3,
         )
 
@@ -201,7 +202,7 @@ class TestGetLibraryScanHistories:
         mock_db = MagicMock()
         library_id = "libraries/test"
         PIPELINE_SCANNING.rsplit("/", maxsplit=1)[-1]
-        mock_db.library_pipeline_states.library_key.get.return_value = {
+        mock_db.library_pipeline_states.get.return_value = {
             "library_key": "test",
             "pipeline_state": PIPELINE_SCANNING,
         }
@@ -209,14 +210,14 @@ class TestGetLibraryScanHistories:
         result = is_library_scanning(mock_db, library_id)
 
         assert result is True
-        mock_db.library_pipeline_states.library_key.get.assert_called_once_with("test")
+        mock_db.library_pipeline_states.get.assert_called_once_with(library_key="test")
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_false_when_pipeline_state_is_not_scanning(self) -> None:
         mock_db = MagicMock()
         library_id = "libraries/test"
-        mock_db.library_pipeline_states.library_key.get.return_value = {
+        mock_db.library_pipeline_states.get.return_value = {
             "library_key": "test",
             "pipeline_state": "library_pipeline_states/idle",
         }
@@ -224,7 +225,7 @@ class TestGetLibraryScanHistories:
         result = is_library_scanning(mock_db, library_id)
 
         assert result is False
-        mock_db.library_pipeline_states.library_key.get.assert_called_once_with("test")
+        mock_db.library_pipeline_states.get.assert_called_once_with(library_key="test")
 
 
 class TestScanStateHelpers:
@@ -235,7 +236,6 @@ class TestScanStateHelpers:
     def test_ensure_scan_state_inserts_default_doc_and_edge_when_missing(self) -> None:
         mock_db = MagicMock()
         mock_db.library_scans.get.side_effect = [None, {"_id": "library_scans/test", "library_key": "test"}]
-        mock_db.library_has_scan._to.get.return_value = []
 
         result = ensure_scan_state(mock_db, "libraries/test")
 
@@ -243,9 +243,10 @@ class TestScanStateHelpers:
         inserted_doc = mock_db.library_scans.insert.call_args.args[0][0]
         assert inserted_doc["_key"] == "test"
         assert inserted_doc["library_key"] == "test"
-        mock_db.library_has_scan._to.upsert.assert_called_once_with(
-            [{"_from": "libraries/test", "_to": "library_scans/test"}],
-            match_field=["_from", "_to"],
+        mock_db.library_has_scan.upsert.assert_called_once_with(
+            _from="libraries/test",
+            _to="library_scans/test",
+            fields={},
         )
         assert result["library_key"] == "test"
 
@@ -258,13 +259,17 @@ class TestScanStateHelpers:
             {"_id": "library_scans/test", "_key": "test", "status": "idle"},
             {"_id": "library_scans/test", "_key": "test", "library_key": "test", "status": "idle"},
         ]
-        mock_db.library_has_scan._to.get.return_value = []
 
         result = get_scan_state(mock_db, "libraries/test")
 
-        mock_db.library_scans.delete.assert_called_once_with(["library_scans/test"])
+        mock_db.library_scans.delete.assert_called_once_with(_id="library_scans/test")
         repaired_doc = mock_db.library_scans.insert.call_args.args[0][0]
         assert repaired_doc["library_key"] == "test"
+        mock_db.library_has_scan.upsert.assert_called_once_with(
+            _from="libraries/test",
+            _to="library_scans/test",
+            fields={},
+        )
         assert result is not None
         assert result["library_key"] == "test"
 
@@ -272,62 +277,59 @@ class TestScanStateHelpers:
     @pytest.mark.mocked
     def test_mark_scan_started_updates_started_at_and_scan_type(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_scans.get.side_effect = [
-            {"_id": "library_scans/test", "_key": "test", "library_key": "test", "status": "idle"},
-            {"_id": "library_scans/test", "_key": "test", "library_key": "test", "status": "idle"},
-        ]
-        mock_db.library_has_scan._to.get.return_value = [{"_from": "libraries/test", "_to": "library_scans/test"}]
 
-        mark_scan_started(mock_db, "libraries/test", "full")
+        with (
+            patch("nomarr.components.library.scan_lifecycle_comp.now_ms", return_value=Milliseconds(1234)),
+            patch("nomarr.components.library.scan_lifecycle_comp.update_scan_state") as mock_update_scan_state,
+        ):
+            mark_scan_started(mock_db, "libraries/test", "full")
 
-        update_call = mock_db.library_scans.library_key.update.call_args
-        assert update_call.args[0] == "test"
-        assert update_call.args[1]["scan_type"] == "full"
-        assert "started_at" in update_call.args[1]
+        mock_update_scan_state.assert_called_once_with(
+            mock_db,
+            "libraries/test",
+            started_at=1234,
+            scan_type="full",
+        )
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_mark_scan_completed_clears_inflight_fields(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_scans.get.side_effect = [
-            {"_id": "library_scans/test", "_key": "test", "library_key": "test", "status": "scanning"},
-            {"_id": "library_scans/test", "_key": "test", "library_key": "test", "status": "complete"},
-        ]
-        mock_db.library_has_scan._to.get.return_value = [{"_from": "libraries/test", "_to": "library_scans/test"}]
 
-        mark_scan_completed(mock_db, "libraries/test")
+        with (
+            patch("nomarr.components.library.scan_lifecycle_comp.now_ms", return_value=Milliseconds(5678)),
+            patch("nomarr.components.library.scan_lifecycle_comp.update_scan_state") as mock_update_scan_state,
+        ):
+            mark_scan_completed(mock_db, "libraries/test")
 
-        update_call = mock_db.library_scans.library_key.update.call_args
-        assert update_call.args[0] == "test"
-        assert update_call.args[1]["started_at"] is None
-        assert update_call.args[1]["scan_type"] is None
-        assert "completed_at" in update_call.args[1]
+        mock_update_scan_state.assert_called_once_with(
+            mock_db,
+            "libraries/test",
+            completed_at=5678,
+            started_at=None,
+            scan_type=None,
+        )
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_update_scan_progress_maps_progress_fields(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_scans.get.side_effect = [
-            {"_id": "library_scans/test", "_key": "test", "library_key": "test", "status": "idle"},
-            {"_id": "library_scans/test", "_key": "test", "library_key": "test", "status": "scanning"},
-        ]
-        mock_db.library_has_scan._to.get.return_value = [{"_from": "libraries/test", "_to": "library_scans/test"}]
 
-        update_scan_progress(
+        with patch("nomarr.components.library.scan_lifecycle_comp.update_scan_state") as mock_update_scan_state:
+            update_scan_progress(
+                mock_db,
+                "libraries/test",
+                progress=5,
+                total=12,
+                scan_error="boom",
+            )
+
+        mock_update_scan_state.assert_called_once_with(
             mock_db,
             "libraries/test",
-            progress=5,
-            total=12,
-            scan_error="boom",
-        )
-
-        mock_db.library_scans.library_key.update.assert_called_once_with(
-            "test",
-            {
-                "files_processed": 5,
-                "files_total": 12,
-                "error": "boom",
-            },
+            files_processed=5,
+            files_total=12,
+            error="boom",
         )
 
     @pytest.mark.unit
@@ -342,7 +344,6 @@ class TestScanStateHelpers:
             "completed_at": 100,
             "scan_type": "quick",
         }
-        mock_db.library_has_scan._to.get.return_value = [{"_from": "libraries/test", "_to": "library_scans/test"}]
 
         assert check_interrupted_scan(mock_db, "libraries/test") == (True, "quick")
 
@@ -355,37 +356,36 @@ class TestFolderCacheHelpers:
     def test_save_folder_record_replaces_existing_doc_and_recreates_edge(self) -> None:
         mock_db = MagicMock()
         mock_db.library_folders.get.return_value = {"_id": "library_folders/existing"}
-        mock_db.library_contains_folder._to.get.return_value = []
 
         save_folder_record(mock_db, "libraries/test", "Rock", 123, 7)
 
         inserted_doc = mock_db.library_folders.insert.call_args.args[0][0]
         inserted_folder_id = f"library_folders/{inserted_doc['_key']}"
-        mock_db.library_contains_folder._to.delete.assert_called_once_with(inserted_folder_id)
-        mock_db.library_folders.delete.assert_called_once_with([inserted_folder_id])
+        mock_db.library_contains_folder.delete.assert_called_once_with(_to=inserted_folder_id)
+        mock_db.library_folders.delete.assert_called_once_with(_id=inserted_folder_id)
         assert inserted_doc["path"] == "Rock"
         assert inserted_doc["library_key"] == "test"
         assert inserted_doc["mtime"] == 123
         assert inserted_doc["file_count"] == 7
-        mock_db.library_contains_folder._to.upsert.assert_called_once_with(
-            [{"_from": "libraries/test", "_to": inserted_folder_id}],
-            match_field=["_from", "_to"],
+        mock_db.library_contains_folder.upsert.assert_called_once_with(
+            _from="libraries/test",
+            _to=inserted_folder_id,
+            fields={},
         )
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_cleanup_stale_folders_deletes_only_missing_paths(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_contains_folder._from.get.return_value = [
-            {"_to": "library_folders/a"},
-            {"_to": "library_folders/b"},
-        ]
-        mock_db.library_folders.get.many.id.return_value = [
-            {"_id": "library_folders/a", "path": "Keep"},
-            {"_id": "library_folders/b", "path": "Drop"},
-        ]
 
-        cleanup_stale_folders(mock_db, "libraries/test", {"Keep"})
+        with patch(
+            "nomarr.components.library.scan_lifecycle_comp.get_cached_folders",
+            return_value={
+                "Keep": {"_id": "library_folders/a", "path": "Keep"},
+                "Drop": {"_id": "library_folders/b", "path": "Drop"},
+            },
+        ):
+            cleanup_stale_folders(mock_db, "libraries/test", {"Keep"})
 
-        mock_db.library_contains_folder._to.delete.in_.assert_called_once_with(["library_folders/b"])
-        mock_db.library_folders.delete.assert_called_once_with(["library_folders/b"])
+        mock_db.library_contains_folder.delete.assert_called_once_with(_to="library_folders/b")
+        mock_db.library_folders.delete.assert_called_once_with(_id="library_folders/b")

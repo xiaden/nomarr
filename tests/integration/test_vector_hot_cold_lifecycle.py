@@ -292,20 +292,24 @@ class FakeDatabaseAdapter:
         # Default: all file_ids belong to "test_lib"
         self.library_files.get_file_library_key.return_value = "test_lib"
         self.library_contains_file = MagicMock()
-        self.library_contains_file._to.get.many.side_effect = self._get_library_contains_file_edges
+        self.library_contains_file.get.side_effect = self._get_library_contains_file_edges
 
     def _get_library_contains_file_edges(
         self,
-        file_id: str,
+        file_id: str | None = None,
         *,
+        _to: str | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> list[dict[str, str]]:
         del limit, offset
-        library_key = self.library_files.get_file_library_key(file_id)
+        resolved_file_id = _to if _to is not None else file_id
+        if resolved_file_id is None:
+            return []
+        library_key = self.library_files.get_file_library_key(resolved_file_id)
         if not library_key:
             return []
-        return [{"_from": f"libraries/{library_key}", "_to": file_id}]
+        return [{"_from": f"libraries/{library_key}", "_to": resolved_file_id}]
 
     def register(self, collection_name: str, template_name: str) -> Any:
         parts = collection_name.split("__")

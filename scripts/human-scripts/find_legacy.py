@@ -179,7 +179,7 @@ def main():
     args = parser.parse_args()
 
     # Use provided paths or default to SEARCH_DIRS
-    search_paths = args.paths if args.paths else None
+    search_paths = args.paths or None
 
     violations = find_legacy_references(search_paths)
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -24,15 +24,12 @@ class TestFindOrCreateTag:
     @pytest.mark.mocked
     def test_returns_tag_id_from_compound_key_upsert(self) -> None:
         mock_db = MagicMock()
-        mock_db.tags.value.upsert.return_value = ["tags/abc"]
+        mock_db.tags.upsert.return_value = ["tags/abc"]
 
         result = find_or_create_tag(mock_db, "genre", "rock")
 
         assert result == "tags/abc"
-        mock_db.tags.value.upsert.assert_called_once_with(
-            [{"name": "genre", "value": "rock"}],
-            match_field=["name", "value"],
-        )
+        mock_db.tags.upsert.assert_called_once_with(name="genre", value="rock", fields={})
 
 
 class TestResolveTagIds:
@@ -46,21 +43,18 @@ class TestResolveTagIds:
         result = resolve_tag_ids(mock_db, [])
 
         assert result == {}
-        mock_db.tags.get.many.by_filter.assert_not_called()
+        mock_db.tags.get.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_maps_pairs_to_tag_ids(self) -> None:
         mock_db = MagicMock()
-        mock_db.tags.get.many.by_filter.return_value = [{"_id": "tags/1", "name": "genre", "value": "rock"}]
+        mock_db.tags.get.return_value = [{"_id": "tags/1", "name": "genre", "value": "rock"}]
 
         result = resolve_tag_ids(mock_db, [("genre", "rock")])
 
         assert result == {("genre", "rock"): "tags/1"}
-        mock_db.tags.get.many.by_filter.assert_called_once_with(
-            {"name": "genre", "value": "rock"},
-            limit=1,
-        )
+        mock_db.tags.get.assert_called_once_with(name="genre", value="rock", limit=1)
 
 
 class TestSetSongTags:
@@ -70,49 +64,44 @@ class TestSetSongTags:
     @pytest.mark.mocked
     def test_deletes_existing_edges_before_inserting(self) -> None:
         mock_db = MagicMock()
-        mock_db.song_has_tags._from.get.many.return_value = [
+        mock_db.song_has_tags.get.return_value = [
             {"_id": "edges/old", "_to": "tags/old"},
         ]
         mock_db.tags.get.side_effect = [{"_id": "tags/old", "name": "genre"}, None]
-        mock_db.tags.value.upsert.return_value = ["tags/1"]
+        mock_db.tags.upsert.return_value = ["tags/1"]
 
         set_song_tags(mock_db, "library_files/f1", "genre", ["rock"])
 
-        mock_db.song_has_tags.delete.assert_called_once_with(["edges/old"])
-        mock_db.song_has_tags._to.upsert.assert_called_once_with(
-            [{"_from": "library_files/f1", "_to": "tags/1"}],
-            match_field=["_from", "_to"],
-        )
+        mock_db.song_has_tags.get.assert_called_once_with(_from="library_files/f1", limit=None)
+        mock_db.song_has_tags.delete.assert_called_once_with(_id="edges/old")
+        mock_db.song_has_tags.upsert.assert_called_once_with(_from="library_files/f1", _to="tags/1", fields={})
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_no_insert_when_values_empty(self) -> None:
         mock_db = MagicMock()
-        mock_db.song_has_tags._from.get.many.return_value = [
+        mock_db.song_has_tags.get.return_value = [
             {"_id": "edges/old", "_to": "tags/old"},
         ]
         mock_db.tags.get.return_value = {"_id": "tags/old", "name": "genre"}
 
         set_song_tags(mock_db, "library_files/f1", "genre", [])
 
-        mock_db.song_has_tags.delete.assert_called_once_with(["edges/old"])
-        mock_db.song_has_tags._to.upsert.assert_not_called()
-        mock_db.tags.value.upsert.assert_not_called()
+        mock_db.song_has_tags.delete.assert_called_once_with(_id="edges/old")
+        mock_db.song_has_tags.upsert.assert_not_called()
+        mock_db.tags.upsert.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_skips_delete_when_no_existing_edges(self) -> None:
         mock_db = MagicMock()
-        mock_db.song_has_tags._from.get.many.return_value = []
-        mock_db.tags.value.upsert.return_value = ["tags/1"]
+        mock_db.song_has_tags.get.return_value = []
+        mock_db.tags.upsert.return_value = ["tags/1"]
 
         set_song_tags(mock_db, "library_files/f1", "genre", ["rock"])
 
         mock_db.song_has_tags.delete.assert_not_called()
-        mock_db.song_has_tags._to.upsert.assert_called_once_with(
-            [{"_from": "library_files/f1", "_to": "tags/1"}],
-            match_field=["_from", "_to"],
-        )
+        mock_db.song_has_tags.upsert.assert_called_once_with(_from="library_files/f1", _to="tags/1", fields={})
 
 
 class TestSetSongTagsBatch:
@@ -126,8 +115,8 @@ class TestSetSongTagsBatch:
         set_song_tags_batch(mock_db, [])
 
         mock_db.song_has_tags.delete.assert_not_called()
-        mock_db.tags.value.upsert.assert_not_called()
-        mock_db.song_has_tags._to.upsert.assert_not_called()
+        mock_db.tags.upsert.assert_not_called()
+        mock_db.song_has_tags.upsert.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -137,7 +126,7 @@ class TestSetSongTagsBatch:
             {"song_id": "library_files/a", "name": "genre", "values": ["rock"]},
             {"song_id": "library_files/b", "name": "mood", "values": ["happy"]},
         ]
-        mock_db.song_has_tags._from.get.many.side_effect = [
+        mock_db.song_has_tags.get.side_effect = [
             [{"_id": "edges/genre", "_to": "tags/old-genre"}],
             [{"_id": "edges/mood", "_to": "tags/old-mood"}],
         ]
@@ -145,22 +134,19 @@ class TestSetSongTagsBatch:
             {"_id": "tags/old-genre", "name": "genre"},
             {"_id": "tags/old-mood", "name": "mood"},
         ]
-        mock_db.tags.value.upsert.side_effect = [["tags/1"], ["tags/2"]]
+        mock_db.tags.upsert.side_effect = [["tags/1"], ["tags/2"]]
 
         set_song_tags_batch(mock_db, entries)
 
-        mock_db.song_has_tags.delete.assert_called_once_with(["edges/genre", "edges/mood"])
-        assert mock_db.tags.value.upsert.call_args_list == [
-            (([{"name": "genre", "value": "rock"}],), {"match_field": ["name", "value"]}),
-            (([{"name": "mood", "value": "happy"}],), {"match_field": ["name", "value"]}),
+        assert mock_db.song_has_tags.delete.call_args_list == [call(_id="edges/genre"), call(_id="edges/mood")]
+        assert mock_db.tags.upsert.call_args_list == [
+            call(name="genre", value="rock", fields={}),
+            call(name="mood", value="happy", fields={}),
         ]
-        mock_db.song_has_tags._to.upsert.assert_called_once_with(
-            [
-                {"_from": "library_files/a", "_to": "tags/1"},
-                {"_from": "library_files/b", "_to": "tags/2"},
-            ],
-            match_field=["_from", "_to"],
-        )
+        assert mock_db.song_has_tags.upsert.call_args_list == [
+            call(_from="library_files/a", _to="tags/1", fields={}),
+            call(_from="library_files/b", _to="tags/2", fields={}),
+        ]
 
 
 class TestAddSongTag:
@@ -170,14 +156,11 @@ class TestAddSongTag:
     @pytest.mark.mocked
     def test_inserts_edge_with_resolved_tag_id(self) -> None:
         mock_db = MagicMock()
-        mock_db.tags.value.upsert.return_value = ["tags/xyz"]
+        mock_db.tags.upsert.return_value = ["tags/xyz"]
 
         add_song_tag(mock_db, "library_files/f1", "genre", "rock")
 
-        mock_db.song_has_tags._to.upsert.assert_called_once_with(
-            [{"_from": "library_files/f1", "_to": "tags/xyz"}],
-            match_field=["_from", "_to"],
-        )
+        mock_db.song_has_tags.upsert.assert_called_once_with(_from="library_files/f1", _to="tags/xyz", fields={})
 
 
 class TestDeleteSongTags:
@@ -190,7 +173,7 @@ class TestDeleteSongTags:
 
         delete_song_tags(mock_db, "library_files/f1")
 
-        mock_db.song_has_tags._from.delete.assert_called_once_with("library_files/f1")
+        mock_db.song_has_tags.delete.assert_called_once_with(_from="library_files/f1")
 
 
 class TestRelinkTagEdges:
@@ -200,7 +183,7 @@ class TestRelinkTagEdges:
     @pytest.mark.mocked
     def test_returns_zero_moved_when_no_source_edges(self) -> None:
         mock_db = MagicMock()
-        mock_db.song_has_tags._to.get.many.return_value = []
+        mock_db.song_has_tags.get.return_value = []
 
         result = relink_tag_edges(mock_db, "tags/source", "tags/target")
 
@@ -216,7 +199,7 @@ class TestRelinkTagEdges:
             {"_id": "song_has_tags/1", "_from": "library_files/a", "_to": "tags/source"},
             {"_id": "song_has_tags/2", "_from": "library_files/b", "_to": "tags/source"},
         ]
-        mock_db.song_has_tags._to.get.many.side_effect = [source_edges, [], []]
+        mock_db.song_has_tags.get.side_effect = [source_edges, [], []]
 
         with patch("nomarr.components.tagging.tag_write_comp.cleanup_orphaned_tags") as mock_cleanup:
             result = relink_tag_edges(mock_db, "tags/source", "tags/target")
@@ -228,7 +211,7 @@ class TestRelinkTagEdges:
                 {"_from": "library_files/b", "_to": "tags/target"},
             ]
         )
-        mock_db.song_has_tags.delete.assert_called_once_with(["song_has_tags/1", "song_has_tags/2"])
+        assert mock_db.song_has_tags.delete.call_args_list == [call(_id="song_has_tags/1"), call(_id="song_has_tags/2")]
         mock_cleanup.assert_called_once_with(mock_db)
 
     @pytest.mark.unit
@@ -240,14 +223,14 @@ class TestRelinkTagEdges:
             {"_id": "song_has_tags/2", "_from": "library_files/b", "_to": "tags/source"},
         ]
         target_edges = [{"_id": "song_has_tags/3", "_from": "library_files/a", "_to": "tags/target"}]
-        mock_db.song_has_tags._to.get.many.side_effect = [source_edges, target_edges, []]
+        mock_db.song_has_tags.get.side_effect = [source_edges, target_edges, []]
 
         with patch("nomarr.components.tagging.tag_write_comp.cleanup_orphaned_tags"):
             result = relink_tag_edges(mock_db, "tags/source", "tags/target")
 
         assert result == {"moved": 1, "skipped": 1, "source_orphaned": True}
         mock_db.song_has_tags.insert.assert_called_once_with([{"_from": "library_files/b", "_to": "tags/target"}])
-        mock_db.song_has_tags.delete.assert_called_once_with(["song_has_tags/1", "song_has_tags/2"])
+        assert mock_db.song_has_tags.delete.call_args_list == [call(_id="song_has_tags/1"), call(_id="song_has_tags/2")]
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -258,7 +241,7 @@ class TestRelinkTagEdges:
             {"_id": "song_has_tags/2", "_from": "library_files/b", "_to": "tags/source"},
             {"_id": "song_has_tags/3", "_from": "library_files/c", "_to": "tags/source"},
         ]
-        mock_db.song_has_tags._to.get.many.side_effect = [source_edges, [], []]
+        mock_db.song_has_tags.get.side_effect = [source_edges, [], []]
 
         with patch("nomarr.components.tagging.tag_write_comp.cleanup_orphaned_tags") as mock_cleanup:
             result = relink_tag_edges(
@@ -275,5 +258,5 @@ class TestRelinkTagEdges:
                 {"_from": "library_files/b", "_to": "tags/target"},
             ]
         )
-        mock_db.song_has_tags.delete.assert_called_once_with(["song_has_tags/1", "song_has_tags/2"])
+        assert mock_db.song_has_tags.delete.call_args_list == [call(_id="song_has_tags/1"), call(_id="song_has_tags/2")]
         mock_cleanup.assert_called_once_with(mock_db)

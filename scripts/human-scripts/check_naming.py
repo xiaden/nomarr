@@ -55,7 +55,10 @@ def should_exclude(file_path: Path, exclude_prefixes: list[str], exclude_extensi
 
 
 def check_file(
-    file_path: Path, rules: list[dict[str, str]], exclude_prefixes: list[str], exclude_extensions: list[str],
+    file_path: Path,
+    rules: list[dict[str, str]],
+    exclude_prefixes: list[str],
+    exclude_extensions: list[str],
 ) -> list[dict[str, Any]]:
     """Check a single file for naming violations.
 

@@ -2,23 +2,12 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from nomarr.persistence.stubs._base import (
-    CollectionGetProtocol,
-    TraversalProtocol,
-    UniqueGetModifierProtocol,
-)
-
 @runtime_checkable
-class FileStatesUniqueGetOnlyNamespace(Protocol):
-    get: UniqueGetModifierProtocol
+class TraversalVerbProtocol(Protocol):
+    def __call__(self, doc_id: str, limit: int | None = ...) -> list[dict[str, Any]]: ...
+    def by_ids(self, ids: list[str], limit: int | None = ..., **filters: Any) -> list[dict[str, Any]]: ...
 
 @runtime_checkable
 class FileStatesNamespace(Protocol):
-    get: CollectionGetProtocol
-    _key: FileStatesUniqueGetOnlyNamespace
-    _id: FileStatesUniqueGetOnlyNamespace
-
-    def count(self) -> int: ...
-    def count_by_filter(self, filter_dict: dict[str, Any]) -> int: ...
-    def transition(self, ids: list[str], from_edge_target: str, to_edge_target: str) -> None: ...
-    traversal: TraversalProtocol
+    file_has_state: TraversalVerbProtocol
+    def transition(self, file_ids: list[str], from_state: str, to_state: str) -> None: ...

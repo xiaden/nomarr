@@ -138,26 +138,17 @@ class TimeUsageChecker(ast.NodeVisitor):
     def _var_suggests_monotonic(self, name: str) -> bool:
         """Check if variable name suggests monotonic time usage."""
         name_lower = name.lower()
-        for pattern in MONOTONIC_VAR_PATTERNS:
-            if pattern in name_lower:
-                return True
-        return False
+        return any(pattern in name_lower for pattern in MONOTONIC_VAR_PATTERNS)
 
     def _var_suggests_wall_clock(self, name: str) -> bool:
         """Check if variable name suggests wall-clock time usage."""
         name_lower = name.lower()
-        for pattern in WALL_CLOCK_VAR_PATTERNS:
-            if pattern in name_lower:
-                return True
-        return False
+        return any(pattern in name_lower for pattern in WALL_CLOCK_VAR_PATTERNS)
 
     def _key_suggests_wall_clock(self, key: str) -> bool:
         """Check if dict key suggests wall-clock time usage."""
         key_lower = key.lower()
-        for pattern in WALL_CLOCK_KEY_PATTERNS:
-            if pattern in key_lower:
-                return True
-        return False
+        return any(pattern in key_lower for pattern in WALL_CLOCK_KEY_PATTERNS)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Track current function for context."""
@@ -261,7 +252,7 @@ class TimeUsageChecker(ast.NodeVisitor):
 
     def visit_Dict(self, node: ast.Dict) -> None:
         """Check dict literals for monotonic time used as timestamps."""
-        for key, value in zip(node.keys, node.values):
+        for key, value in zip(node.keys, node.values, strict=False):
             if key is None:
                 continue
 

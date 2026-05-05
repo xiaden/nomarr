@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -65,7 +65,7 @@ class TestUpsertNavidromeTrack:
     def test_calls_key_upsert_with_nd_id(self) -> None:
         mock_db = MagicMock()
         upsert_navidrome_track(mock_db, "nd-42")
-        mock_db.navidrome_tracks._key.upsert.assert_called_once_with([{"_key": "nd-42"}], match_field="_key")
+        mock_db.navidrome_tracks.upsert.assert_called_once_with(_key="nd-42", fields={})
 
     def test_returns_none(self) -> None:
         mock_db = MagicMock()
@@ -81,16 +81,20 @@ class TestBulkUpsertNavidromeTracks:
         mock_db = MagicMock()
         result = bulk_upsert_navidrome_tracks(mock_db, [])
         assert result == 0
-        mock_db.navidrome_tracks._key.upsert.assert_not_called()
+        mock_db.navidrome_tracks.upsert.assert_not_called()
 
     def test_upserts_all_tracks_and_returns_count(self) -> None:
         mock_db = MagicMock()
         result = bulk_upsert_navidrome_tracks(mock_db, ["a", "b", "c"])
         assert result == 3
-        mock_db.navidrome_tracks._key.upsert.assert_called_once_with(
-            [{"_key": "a"}, {"_key": "b"}, {"_key": "c"}],
-            match_field="_key",
+        mock_db.navidrome_tracks.upsert.assert_has_calls(
+            [
+                call(_key="a", fields={}),
+                call(_key="b", fields={}),
+                call(_key="c", fields={}),
+            ]
         )
+        assert mock_db.navidrome_tracks.upsert.call_count == 3
 
     def test_single_track_returns_one(self) -> None:
         mock_db = MagicMock()
@@ -122,7 +126,7 @@ class TestBulkEnsureNavidromeFileLinks:
         mock_db = MagicMock()
         mock_ns = _mock_edge_ns()
         mock_ns.count.return_value = 0
-        mock_ns._from.get.many.return_value = []
+        mock_ns.get.return_value = []
 
         with patch(
             "nomarr.components.navidrome.navidrome_graph_comp._build_edge_namespace",
@@ -141,7 +145,7 @@ class TestBulkEnsureNavidromeFileLinks:
         mock_db = MagicMock()
         mock_ns = _mock_edge_ns()
         mock_ns.count.return_value = 1
-        mock_ns._from.get.many.return_value = [{"_to": "library_files/f1"}]
+        mock_ns.get.return_value = [{"_to": "library_files/f1"}]
 
         with patch(
             "nomarr.components.navidrome.navidrome_graph_comp._build_edge_namespace",
@@ -160,17 +164,17 @@ class TestListNavidromeTrackKeys:
     def test_returns_all_keys_as_strings(self) -> None:
         mock_db = MagicMock()
         mock_db.navidrome_tracks.count.return_value = 2
-        mock_db.navidrome_tracks._key.collect.return_value = ["key1", "key2"]
+        mock_db.navidrome_tracks.aggregate.return_value = [{"value": "key1"}, {"value": "key2"}]
 
         result = list_navidrome_track_keys(mock_db)
 
         assert result == ["key1", "key2"]
-        mock_db.navidrome_tracks._key.collect.assert_called_once_with(limit=2)
+        mock_db.navidrome_tracks.aggregate.assert_called_once_with("_key", limit=2)
 
     def test_returns_empty_list_when_no_tracks(self) -> None:
         mock_db = MagicMock()
         mock_db.navidrome_tracks.count.return_value = 0
-        mock_db.navidrome_tracks._key.collect.return_value = []
+        mock_db.navidrome_tracks.aggregate.return_value = []
 
         result = list_navidrome_track_keys(mock_db)
 
@@ -185,16 +189,21 @@ class TestDeleteNavidromeTracksCascade:
         mock_db = MagicMock()
         result = delete_navidrome_tracks_cascade(mock_db, [])
         assert result == 0
-        mock_db.navidrome_tracks.cascade.assert_not_called()
+        mock_db.navidrome_tracks.delete.cascade.assert_not_called()
 
     def test_cascades_with_prefixed_ids_and_returns_count(self) -> None:
         mock_db = MagicMock()
-        mock_db.navidrome_tracks.cascade.return_value = 3
+        mock_db.navidrome_tracks.delete.cascade.side_effect = [1, 1, 1]
         result = delete_navidrome_tracks_cascade(mock_db, ["nd-1", "nd-2", "nd-3"])
         assert result == 3
-        mock_db.navidrome_tracks.cascade.assert_called_once_with(
-            ["navidrome_tracks/nd-1", "navidrome_tracks/nd-2", "navidrome_tracks/nd-3"]
+        mock_db.navidrome_tracks.delete.cascade.assert_has_calls(
+            [
+                call(_key="nd-1"),
+                call(_key="nd-2"),
+                call(_key="nd-3"),
+            ]
         )
+        assert mock_db.navidrome_tracks.delete.cascade.call_count == 3
 
 
 @pytest.mark.unit
@@ -203,16 +212,16 @@ class TestResolveNavidromeTrackToFile:
 
     def test_returns_file_id_when_edge_exists(self) -> None:
         mock_db = MagicMock()
-        mock_db.navidrome_tracks.traversal.return_value = [{"_id": "library_files/f1"}]
+        mock_db.navidrome_tracks.has_nd_id.return_value = [{"_id": "library_files/f1"}]
 
         result = resolve_navidrome_track_to_file(mock_db, "nd-1")
 
         assert result == "library_files/f1"
-        mock_db.navidrome_tracks.traversal.assert_called_once_with("navidrome_tracks/nd-1", edge="has_nd_id", limit=1)
+        mock_db.navidrome_tracks.has_nd_id.assert_called_once_with("navidrome_tracks/nd-1", limit=1)
 
     def test_returns_none_when_no_edge(self) -> None:
         mock_db = MagicMock()
-        mock_db.navidrome_tracks.traversal.return_value = []
+        mock_db.navidrome_tracks.has_nd_id.return_value = []
 
         result = resolve_navidrome_track_to_file(mock_db, "nd-1")
 
@@ -220,7 +229,7 @@ class TestResolveNavidromeTrackToFile:
 
     def test_returns_none_when_id_missing_from_doc(self) -> None:
         mock_db = MagicMock()
-        mock_db.navidrome_tracks.traversal.return_value = [{}]
+        mock_db.navidrome_tracks.has_nd_id.return_value = [{}]
 
         result = resolve_navidrome_track_to_file(mock_db, "nd-1")
 
@@ -234,7 +243,7 @@ class TestResolveFileToNavidromeTrack:
     def test_returns_track_key_when_edge_exists(self) -> None:
         mock_db = MagicMock()
         mock_ns = _mock_edge_ns()
-        mock_ns._to.get.many.return_value = [{"_from": "navidrome_tracks/nd-42"}]
+        mock_ns.get.return_value = [{"_from": "navidrome_tracks/nd-42"}]
 
         with patch(
             "nomarr.components.navidrome.navidrome_graph_comp._build_edge_namespace",
@@ -247,7 +256,7 @@ class TestResolveFileToNavidromeTrack:
     def test_returns_none_when_no_edge(self) -> None:
         mock_db = MagicMock()
         mock_ns = _mock_edge_ns()
-        mock_ns._to.get.many.return_value = []
+        mock_ns.get.return_value = []
 
         with patch(
             "nomarr.components.navidrome.navidrome_graph_comp._build_edge_namespace",
@@ -260,7 +269,7 @@ class TestResolveFileToNavidromeTrack:
     def test_returns_none_when_from_absent(self) -> None:
         mock_db = MagicMock()
         mock_ns = _mock_edge_ns()
-        mock_ns._to.get.many.return_value = [{}]
+        mock_ns.get.return_value = [{}]
 
         with patch(
             "nomarr.components.navidrome.navidrome_graph_comp._build_edge_namespace",
@@ -309,7 +318,7 @@ class TestBulkResolveFilesToNavidromeIds:
     def test_maps_file_ids_to_track_keys(self) -> None:
         mock_db = MagicMock()
         mock_ns = _mock_edge_ns()
-        mock_ns._to.get.many.side_effect = [
+        mock_ns.get.side_effect = [
             [{"_from": "navidrome_tracks/nd-1"}],
             [],
         ]
@@ -337,7 +346,7 @@ class TestUpsertNavidromePlay:
         mock_db = MagicMock()
         mock_ns = _mock_edge_ns()
         mock_ns.count.return_value = 0
-        mock_ns._from.get.many.return_value = []
+        mock_ns.get.return_value = []
 
         with patch(
             "nomarr.components.navidrome.navidrome_graph_comp._build_edge_namespace",
@@ -345,7 +354,10 @@ class TestUpsertNavidromePlay:
         ):
             upsert_navidrome_play(mock_db, "user1", "nd-42", 5, 1700000000)
 
-        mock_db.navidrome_playcounts._key.upsert.assert_called_once()
+        mock_db.navidrome_playcounts.upsert.assert_called_once_with(
+            _key="5:user1",
+            fields={"playcount": 5, "userid": "user1"},
+        )
         mock_ns.insert.assert_called_once()
         edge = mock_ns.insert.call_args[0][0][0]
         assert edge["_from"] == "navidrome_tracks/nd-42"
@@ -355,7 +367,7 @@ class TestUpsertNavidromePlay:
         mock_db = MagicMock()
         mock_ns = _mock_edge_ns()
         mock_ns.count.return_value = 1
-        mock_ns._from.get.many.return_value = [{"_id": "has_plays/eid", "_to": "navidrome_playcounts/3:user1"}]
+        mock_ns.get.return_value = [{"_id": "has_plays/eid", "_to": "navidrome_playcounts/3:user1"}]
         mock_db.navidrome_playcounts.get.return_value = {
             "_id": "navidrome_playcounts/3:user1",
             "userid": "user1",
@@ -368,7 +380,7 @@ class TestUpsertNavidromePlay:
         ):
             upsert_navidrome_play(mock_db, "user1", "nd-42", 5, 1700000000)
 
-        mock_ns.delete.assert_called_once_with(["has_plays/eid"])
+        mock_ns.delete.assert_called_once_with(_id="has_plays/eid")
 
 
 @pytest.mark.unit
@@ -379,7 +391,7 @@ class TestIncrementNavidromePlay:
         mock_db = MagicMock()
         mock_ns = _mock_edge_ns()
         mock_ns.count.return_value = 0
-        mock_ns._from.get.many.return_value = []
+        mock_ns.get.return_value = []
 
         with (
             patch(
@@ -396,7 +408,7 @@ class TestIncrementNavidromePlay:
         mock_db = MagicMock()
         mock_ns = _mock_edge_ns()
         mock_ns.count.return_value = 1
-        mock_ns._from.get.many.return_value = [{"_id": "has_plays/eid", "_to": "navidrome_playcounts/7:user1"}]
+        mock_ns.get.return_value = [{"_id": "has_plays/eid", "_to": "navidrome_playcounts/7:user1"}]
         mock_db.navidrome_playcounts.get.return_value = {
             "_id": "navidrome_playcounts/7:user1",
             "userid": "user1",
@@ -422,7 +434,7 @@ class TestBulkUpsertNavidromePlays:
     def test_returns_zero_for_empty_plays_after_clearing(self) -> None:
         mock_db = MagicMock()
         mock_db.navidrome_playcounts.count.return_value = 0
-        mock_db.navidrome_playcounts.userid.get.many.return_value = []
+        mock_db.navidrome_playcounts.get.return_value = []
         mock_ns = _mock_edge_ns()
 
         with patch(
@@ -436,7 +448,7 @@ class TestBulkUpsertNavidromePlays:
     def test_inserts_edges_for_provided_plays(self) -> None:
         mock_db = MagicMock()
         mock_db.navidrome_playcounts.count.return_value = 0
-        mock_db.navidrome_playcounts.userid.get.many.return_value = []
+        mock_db.navidrome_playcounts.get.return_value = []
         mock_ns = _mock_edge_ns()
 
         plays = [
@@ -460,9 +472,8 @@ class TestBulkUpsertNavidromePlays:
     def test_clears_existing_buckets_before_insert(self) -> None:
         mock_db = MagicMock()
         mock_db.navidrome_playcounts.count.return_value = 1
-        mock_db.navidrome_playcounts.userid.get.many.return_value = [{"_id": "navidrome_playcounts/5:user1"}]
+        mock_db.navidrome_playcounts.get.return_value = [{"_id": "navidrome_playcounts/5:user1"}]
         mock_ns = _mock_edge_ns()
-        mock_ns._to.delete = MagicMock()
 
         with patch(
             "nomarr.components.navidrome.navidrome_graph_comp._build_edge_namespace",
@@ -470,8 +481,8 @@ class TestBulkUpsertNavidromePlays:
         ):
             bulk_upsert_navidrome_plays(mock_db, "user1", [])
 
-        mock_ns._to.delete.assert_called_once_with("navidrome_playcounts/5:user1")
-        mock_db.navidrome_playcounts.userid.delete.assert_called_once_with("user1")
+        mock_ns.delete.assert_called_once_with(_to="navidrome_playcounts/5:user1")
+        mock_db.navidrome_playcounts.delete.assert_called_once_with(userid="user1")
 
 
 @pytest.mark.unit
@@ -482,7 +493,7 @@ class TestGetTopNavidromePlays:
         mock_db = MagicMock()
         result = get_top_navidrome_plays(mock_db, "user1", 0)
         assert result == []
-        mock_db.navidrome_playcounts.userid.get.many.assert_not_called()
+        mock_db.navidrome_playcounts.get.assert_not_called()
 
     def test_returns_empty_when_top_n_is_negative(self) -> None:
         mock_db = MagicMock()
@@ -492,7 +503,7 @@ class TestGetTopNavidromePlays:
     def test_returns_empty_when_no_buckets(self) -> None:
         mock_db = MagicMock()
         mock_db.navidrome_playcounts.count.return_value = 0
-        mock_db.navidrome_playcounts.userid.get.many.return_value = []
+        mock_db.navidrome_playcounts.get.return_value = []
         mock_ns = _mock_edge_ns()
 
         with patch(
@@ -506,7 +517,7 @@ class TestGetTopNavidromePlays:
     def test_returns_top_plays_sorted_by_playcount(self) -> None:
         mock_db = MagicMock()
         mock_db.navidrome_playcounts.count.return_value = 2
-        mock_db.navidrome_playcounts.userid.get.many.return_value = [
+        mock_db.navidrome_playcounts.get.return_value = [
             {"_id": "navidrome_playcounts/3:user1", "userid": "user1", "playcount": 3},
             {"_id": "navidrome_playcounts/10:user1", "userid": "user1", "playcount": 10},
         ]
@@ -514,11 +525,11 @@ class TestGetTopNavidromePlays:
         mock_has_nd_ns = _mock_edge_ns()
 
         # First bucket (playcount=10) edges
-        mock_plays_ns._to.get.side_effect = [
+        mock_plays_ns.get.side_effect = [
             [{"_from": "navidrome_tracks/nd-1", "last_played": 1700000000}],
             [],
         ]
-        mock_has_nd_ns._from.get.return_value = [{"_to": "library_files/f1"}]
+        mock_has_nd_ns.get.return_value = [{"_to": "library_files/f1"}]
 
         with patch(
             "nomarr.components.navidrome.navidrome_graph_comp._build_edge_namespace",

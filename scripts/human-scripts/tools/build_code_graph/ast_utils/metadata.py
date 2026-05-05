@@ -32,7 +32,7 @@ def get_docstring(node: ast.AST) -> str | None:
     """Extract docstring from a node if present."""
     if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
         docstring = ast.get_docstring(node)
-        return docstring if docstring else None
+        return docstring or None
     return None
 
 
@@ -190,7 +190,7 @@ def extract_decorator_targets(
     This creates a CALLS edge from api_app.exception_handler to the decorated function,
     because the decorator effectively calls/registers it.
     """
-    from ..models import Edge
+    from build_code_graph.models import Edge
 
     for decorator in func_node.decorator_list:
         # Case 1: @decorator_func or @decorator_func()

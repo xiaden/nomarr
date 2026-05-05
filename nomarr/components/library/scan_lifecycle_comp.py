@@ -164,18 +164,18 @@ def _ensure_edge(
     target_id: str,
 ) -> None:
     """Ensure a graph edge exists between the supplied source and target ids."""
-    edge_namespace._to.upsert([{"_from": source_id, "_to": target_id}], match_field=["_from", "_to"])
+    edge_namespace.upsert(_from=source_id, _to=target_id, fields={})
 
 
 def ensure_scan_state(db: Database, library_id: str) -> dict[str, Any]:
     """Return the scan document for a library, creating or repairing it when needed."""
     library_key = _library_key_from_id(library_id)
     scan_id = _scan_doc_id(library_id)
-    scan_doc = cast("dict[str, Any] | None", db.library_scans.get(scan_id))
+    scan_doc = cast("dict[str, Any] | None", db.library_scans.get(_id=scan_id))
 
     if scan_doc is None:
         db.library_scans.insert([_default_scan_doc(library_id)])
-        scan_doc = cast("dict[str, Any] | None", db.library_scans.get(scan_id)) or _default_scan_doc(library_id)
+        scan_doc = cast("dict[str, Any] | None", db.library_scans.get(_id=scan_id)) or _default_scan_doc(library_id)
     elif scan_doc.get("library_key") != library_key:
         repaired_doc = {
             **_DEFAULT_SCAN_FIELDS,
@@ -183,9 +183,9 @@ def ensure_scan_state(db: Database, library_id: str) -> dict[str, Any]:
             "_key": library_key,
             "library_key": library_key,
         }
-        db.library_scans.delete([scan_id])
+        db.library_scans.delete(_id=scan_id)
         db.library_scans.insert([repaired_doc])
-        scan_doc = cast("dict[str, Any] | None", db.library_scans.get(scan_id)) or repaired_doc
+        scan_doc = cast("dict[str, Any] | None", db.library_scans.get(_id=scan_id)) or repaired_doc
 
     _ensure_edge(db, db.library_has_scan, library_id, scan_id)
     return scan_doc
@@ -208,8 +208,8 @@ def update_scan_state(db: Database, library_id: str, **fields: Any) -> dict[str,
     if not fields:
         return scan_doc
 
-    db.library_scans.library_key.update(_library_key_from_id(library_id), fields)
-    refreshed = cast("dict[str, Any] | None", db.library_scans.get(_scan_doc_id(library_id)))
+    db.library_scans.update(library_key=_library_key_from_id(library_id), fields=fields)
+    refreshed = cast("dict[str, Any] | None", db.library_scans.get(_id=_scan_doc_id(library_id)))
     if refreshed is not None:
         return refreshed
     return {**scan_doc, **fields}
@@ -218,20 +218,17 @@ def update_scan_state(db: Database, library_id: str, **fields: Any) -> dict[str,
 def transition_pipeline_state(db: Database, library_id: str, next_state: str) -> None:
     """Persist a library's current pipeline state via the constructor namespace."""
     library_key = _library_key_from_id(library_id)
-    db.library_pipeline_states.library_key.upsert(
-        [
-            {
-                "library_key": library_key,
-                "pipeline_state": next_state,
-            }
-        ],
-        match_field="library_key",
+    db.library_pipeline_states.upsert(
+        library_key=library_key,
+        fields={
+            "pipeline_state": next_state,
+        },
     )
 
 
 def delete_pipeline_state(db: Database, library_id: str) -> int:
     """Delete a library's persisted pipeline state document."""
-    return db.library_pipeline_states.library_key.delete(_library_key_from_id(library_id))
+    return int(db.library_pipeline_states.delete(library_key=_library_key_from_id(library_id)))
 
 
 def get_pipeline_state(db: Database, library_id: str) -> str:
@@ -241,7 +238,7 @@ def get_pipeline_state(db: Database, library_id: str) -> str:
         ValueError: If the library has no persisted pipeline state.
     """
     library_key = _library_key_from_id(library_id)
-    state_doc = cast("dict[str, Any] | None", db.library_pipeline_states.library_key.get(library_key))
+    state_doc = cast("dict[str, Any] | None", db.library_pipeline_states.get(library_key=library_key))
     if state_doc is None:
         msg = f"No pipeline state edge found for library {library_id}"
         raise ValueError(msg)
@@ -252,7 +249,7 @@ def get_libraries_in_pipeline_state(db: Database, state: str) -> list[str]:
     """Return library document ids whose current pipeline state matches `state`."""
     docs = cast(
         "list[dict[str, Any]]",
-        db.library_pipeline_states.pipeline_state.get.many(state, limit=db.library_pipeline_states.count()),
+        db.library_pipeline_states.get(pipeline_state=state, limit=db.library_pipeline_states.count()),
     )
     return [_library_id_from_key(str(doc["library_key"])) for doc in docs]
 
@@ -261,15 +258,15 @@ def bulk_transition_pipeline_state(db: Database, from_state: str, to_state: str)
     """Transition every library currently in `from_state` to `to_state`."""
     docs = cast(
         "list[dict[str, Any]]",
-        db.library_pipeline_states.pipeline_state.get.many(
-            from_state,
+        db.library_pipeline_states.get(
+            pipeline_state=from_state,
             limit=db.library_pipeline_states.count(),
         ),
     )
     for doc in docs:
-        db.library_pipeline_states.library_key.update(
-            str(doc["library_key"]),
-            {"pipeline_state": to_state},
+        db.library_pipeline_states.update(
+            library_key=str(doc["library_key"]),
+            fields={"pipeline_state": to_state},
         )
     return len(docs)
 
@@ -277,13 +274,17 @@ def bulk_transition_pipeline_state(db: Database, from_state: str, to_state: str)
 def _get_library_record(db: Database, library_id: str) -> dict[str, Any] | None:
     """Return one library document by `_id` or bare key without scan enrichment."""
     normalized_id = _library_id_from_key(library_id)
-    return cast("dict[str, Any] | None", db.libraries.get(normalized_id))
+    return cast("dict[str, Any] | None", db.libraries.get(_id=normalized_id))
 
 
 def _list_library_records(db: Database) -> list[dict[str, Any]]:
     """Return library documents in legacy created-at order with scan fields merged."""
-    ids = cast("list[str]", db.libraries._id.collect(limit=db.libraries.count()))
-    docs = [doc for doc_id in ids if (doc := cast("dict[str, Any] | None", db.libraries.get(doc_id))) is not None]
+    ids = [
+        cast("str", row["value"])
+        for row in db.libraries.aggregate("_id", limit=db.libraries.count())
+        if isinstance(row.get("value"), str)
+    ]
+    docs = [doc for doc_id in ids if (doc := cast("dict[str, Any] | None", db.libraries.get(_id=doc_id))) is not None]
     docs.sort(key=lambda doc: int(cast("int", doc.get("created_at", 0) or 0)))
 
     enriched_docs: list[dict[str, Any]] = []
@@ -317,11 +318,12 @@ def _delete_segment_stats_for_files(db: Database, file_ids: list[str]) -> int:
     for file_id in file_ids:
         stats_docs = cast(
             "list[dict[str, Any]]",
-            db.library_files.traversal(file_id, edge="file_has_segment_stats", limit=db.segment_scores_stats.count()),
+            db.library_files.file_has_segment_stats(file_id, limit=db.segment_scores_stats.count()),
         )
         stats_ids = [cast("str", doc["_id"]) for doc in stats_docs if "_id" in doc]
-        if stats_ids:
-            deleted += int(db.segment_scores_stats.cascade(stats_ids))
+        for stats_id in stats_ids:
+            stats_key = stats_id.split("/", 1)[1] if "/" in stats_id else stats_id
+            deleted += int(db.segment_scores_stats.delete.cascade(_key=stats_key))
     return deleted
 
 
@@ -341,15 +343,17 @@ def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
     paths = [d["path"] for d in clean_docs if "path" in d]
     existing_paths = get_existing_file_paths(db, paths)
 
-    file_ids = cast("list[str]", db.library_files.path.upsert(clean_docs, match_field="path"))
-
-    edge_docs = [
-        {"_from": library_id, "_to": file_id}
-        for library_id, file_id in zip(library_ids, file_ids, strict=True)
-        if library_id is not None
+    file_ids = [
+        db.library_files.upsert(
+            path=cast("str", doc["path"]),
+            fields={key: value for key, value in doc.items() if key != "path"},
+        )[0]
+        for doc in clean_docs
     ]
-    if edge_docs:
-        db.library_contains_file._to.upsert(edge_docs, match_field=["_from", "_to"])
+
+    for library_id, file_id in zip(library_ids, file_ids, strict=True):
+        if library_id is not None:
+            db.library_contains_file.upsert(_from=library_id, _to=file_id, fields={})
 
     new_file_ids = [
         file_id for file_id, doc in zip(file_ids, clean_docs, strict=True) if doc.get("path") not in existing_paths
@@ -363,7 +367,11 @@ def _bulk_delete_files(db: Database, paths: list[str]) -> int:
     if not paths:
         return 0
 
-    file_docs = cast("list[dict[str, Any]]", db.library_files.path.get.in_(paths))
+    file_docs = [
+        file_doc
+        for path in paths
+        if (file_doc := cast("dict[str, Any] | None", db.library_files.get(path=path))) is not None
+    ]
     file_ids = [str(doc["_id"]) for doc in file_docs]
     if not file_ids:
         return 0
@@ -371,11 +379,11 @@ def _bulk_delete_files(db: Database, paths: list[str]) -> int:
     delete_vectors_by_file_ids(db, file_ids)
     _delete_segment_stats_for_files(db, file_ids)
     for file_id in file_ids:
-        db.song_has_tags._from.delete(file_id)
+        db.song_has_tags.delete(_from=file_id)
     clear_all_states_batch(db, file_ids)
     for file_id in file_ids:
-        db.library_contains_file._to.delete(file_id)
-    db.library_files.delete(file_ids)
+        db.library_contains_file.delete(_to=file_id)
+        db.library_files.delete(_id=file_id)
     return len(file_ids)
 
 
@@ -730,12 +738,16 @@ def get_cached_folders(
         Dict mapping relative folder path → folder record
 
     """
-    folder_edges = cast("list[dict[str, Any]]", db.library_contains_folder._from.get(library_id))
+    folder_edges = cast("list[dict[str, Any]]", db.library_contains_folder.get(_from=library_id, limit=None))
     if not folder_edges:
         return {}
 
     folder_ids = [cast("str", edge["_to"]) for edge in folder_edges]
-    folders = cast("list[dict[str, Any]]", cast("Any", db.library_folders.get).many.id(folder_ids))
+    folders = [
+        folder
+        for folder_id in folder_ids
+        if (folder := cast("dict[str, Any] | None", db.library_folders.get(_id=folder_id))) is not None
+    ]
     return {str(folder["path"]): folder for folder in folders}
 
 
@@ -757,10 +769,10 @@ def save_folder_record(
 
     """
     folder_id = _folder_doc_id(library_id, rel_path)
-    existing = cast("dict[str, Any] | None", db.library_folders.get(folder_id))
+    existing = cast("dict[str, Any] | None", db.library_folders.get(_id=folder_id))
     if existing is not None:
-        db.library_contains_folder._to.delete(folder_id)
-        db.library_folders.delete([folder_id])
+        db.library_contains_folder.delete(_to=folder_id)
+        db.library_folders.delete(_id=folder_id)
 
     db.library_folders.insert([_folder_doc(library_id, rel_path, mtime, file_count)])
     _ensure_edge(db, db.library_contains_folder, library_id, folder_id)
@@ -789,7 +801,8 @@ def cleanup_stale_folders(
             if rel_path not in existing_folder_rel_paths
         ]
         if stale_ids:
-            db.library_contains_folder._to.delete.in_(stale_ids)
-            db.library_folders.delete(stale_ids)
+            for stale_id in stale_ids:
+                db.library_contains_folder.delete(_to=stale_id)
+                db.library_folders.delete(_id=stale_id)
     except Exception as e:
         logger.warning("Failed to clean up folder records: %s", e)

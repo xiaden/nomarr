@@ -29,6 +29,7 @@ Options:
     --threshold F     Max acceptable max_abs_diff in embeddings (default: 1e-3)
     --verbose         Print per-file stats
 """
+
 from __future__ import annotations
 
 import argparse
@@ -54,6 +55,7 @@ def _collect_audio_files(audio_dir: str, limit: int) -> list[str]:
 
 def _load_backbone(path: str) -> ONNXBackboneModel:  # type: ignore[name-defined]  # noqa: F821
     from nomarr.components.ml.onnx.ml_backbone import ONNXBackboneModel
+
     model = ONNXBackboneModel(path)
     model.load("cpu")
     return model
@@ -111,6 +113,7 @@ def main() -> None:
     if args.head:
         try:
             import onnxruntime as ort
+
             head_session = ort.InferenceSession(args.head, providers=["CPUExecutionProvider"])
             print(f"Loaded head: {args.head}")
         except Exception as e:
@@ -128,20 +131,20 @@ def main() -> None:
             result = load_audio_mono(path, target_sr=16000)
             waveform = result.waveform
         except Exception as e:
-            print(f"  [{i+1}/{len(audio_files)}] SKIP {fname}: load error — {e}")
+            print(f"  [{i + 1}/{len(audio_files)}] SKIP {fname}: load error — {e}")
             continue
 
         try:
-            emb_orig = orig_model.run(waveform)   # [n_patches, embed_dim]
+            emb_orig = orig_model.run(waveform)  # [n_patches, embed_dim]
             emb_patch = patch_model.run(waveform)
         except Exception as e:
-            print(f"  [{i+1}/{len(audio_files)}] SKIP {fname}: inference error — {e}")
+            print(f"  [{i + 1}/{len(audio_files)}] SKIP {fname}: inference error — {e}")
             failures.append(path)
             continue
 
         if emb_orig.shape != emb_patch.shape:
             msg = f"shape mismatch: {emb_orig.shape} vs {emb_patch.shape}"
-            print(f"  [{i+1}/{len(audio_files)}] FAIL {fname}: {msg}")
+            print(f"  [{i + 1}/{len(audio_files)}] FAIL {fname}: {msg}")
             failures.append(path)
             continue
 
@@ -151,7 +154,7 @@ def main() -> None:
         status = "OK  " if emb_max_diff < args.threshold else "FAIL"
 
         line = (
-            f"  [{i+1}/{len(audio_files)}] {status} {fname}"
+            f"  [{i + 1}/{len(audio_files)}] {status} {fname}"
             f"  emb_max={emb_max_diff:.3e}  emb_mean={emb_mean_diff:.3e}"
             f"  patches={emb_orig.shape[0]}"
         )
@@ -170,7 +173,7 @@ def main() -> None:
         if args.verbose or status != "OK  ":
             print(line)
         elif (i + 1) % 5 == 0:
-            print(f"  … {i+1}/{len(audio_files)} processed")
+            print(f"  … {i + 1}/{len(audio_files)} processed")
 
         if emb_max_diff >= args.threshold:
             failures.append(path)
@@ -182,9 +185,13 @@ def main() -> None:
     print("=" * 60)
     print(f"Results: {passed}/{tested} passed  ({len(failures)} failures)")
     if emb_diffs:
-        print(f"  Embeddings  max_abs_diff — max={max(emb_diffs):.3e}  mean={np.mean(emb_diffs):.3e}  p95={np.percentile(emb_diffs, 95):.3e}")
+        print(
+            f"  Embeddings  max_abs_diff — max={max(emb_diffs):.3e}  mean={np.mean(emb_diffs):.3e}  p95={np.percentile(emb_diffs, 95):.3e}"
+        )
     if score_diffs:
-        print(f"  Head scores max_abs_diff — max={max(score_diffs):.3e}  mean={np.mean(score_diffs):.3e}  p95={np.percentile(score_diffs, 95):.3e}")
+        print(
+            f"  Head scores max_abs_diff — max={max(score_diffs):.3e}  mean={np.mean(score_diffs):.3e}  p95={np.percentile(score_diffs, 95):.3e}"
+        )
     if failures:
         print("\nFailed files:")
         for f in failures:

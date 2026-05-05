@@ -12,15 +12,15 @@ from typing import Any, Literal, cast
 
 from nomarr.components.library.library_file_state_comp import count_untagged_files
 from nomarr.helpers.constants.file_states import STATE_TAGGED
-from nomarr.helpers.filter_types import Op
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.base import Field
 from nomarr.persistence.constructor.pagination import DEFAULT_LIMIT
 from nomarr.persistence.db import Database
 
 
 def get_file_by_id(db: Database, file_id: str) -> dict[str, Any] | None:
     """Get one library-file document by ``_id``."""
-    return cast("dict[str, Any] | None", db.library_files.get(file_id))
+    return cast("dict[str, Any] | None", db.library_files.get(_id=file_id))
 
 
 def count_recently_tagged(db: Database, window_seconds: int = 300) -> int:
@@ -37,7 +37,7 @@ def count_recently_tagged(db: Database, window_seconds: int = 300) -> int:
     cutoff_ms = now_ms().value - window_seconds * 1000
     docs = cast(
         "list[dict[str, Any]]",
-        db.library_files.last_tagged_at.get.in_({Op.GTE: cutoff_ms}),
+        db.library_files.get.gte("last_tagged_at", cutoff_ms),
     )
     return len(docs)
 
@@ -58,7 +58,9 @@ def get_existing_file_paths(db: Database, paths: list[str]) -> set[str]:
     if not paths:
         return set()
     return {
-        str(doc["path"]) for doc in cast("list[dict[str, Any]]", db.library_files.path.get.in_(paths)) if "path" in doc
+        str(doc["path"])
+        for doc in cast("list[dict[str, Any]]", db.library_files.get.in_(Field("path", paths)))
+        if "path" in doc
     }
 
 
@@ -67,7 +69,10 @@ def _normalize_library_id(library_id: str) -> str:
 
 
 def _library_file_docs_for_library(db: Database, library_id: str) -> list[dict[str, Any]]:
-    return db.libraries.traversal(_normalize_library_id(library_id), "library_contains_file", limit=DEFAULT_LIMIT)
+    return cast(
+        "list[dict[str, Any]]",
+        db.libraries.library_contains_file(_normalize_library_id(library_id), limit=DEFAULT_LIMIT),
+    )
 
 
 def _matches_requested_path(file_doc: dict[str, Any], path: str) -> bool:
@@ -145,6 +150,26 @@ def _path_parent(path_value: Any) -> str | None:
     return path_value.rsplit("/", 1)[0] if "/" in path_value else ""
 
 
+def _aggregate_values(collection: Any, field_name: str, *, limit: int | None = None) -> list[Any]:
+    aggregate_limit = collection.count() if limit is None else limit
+    return [row["value"] for row in collection.aggregate(field_name, limit=aggregate_limit) if "value" in row]
+
+
+def _get_library_files_by_ids(db: Database, file_ids: list[str]) -> list[dict[str, Any]]:
+    if not file_ids:
+        return []
+    return cast("list[dict[str, Any]]", db.library_files.get.in_(Field("_id", file_ids), limit=None))
+
+
+def _get_all_library_file_docs(db: Database, limit: int | None = DEFAULT_LIMIT) -> list[dict[str, Any]]:
+    file_ids = [
+        cast("str", value)
+        for value in _aggregate_values(db.library_files, "_id", limit=limit)
+        if isinstance(value, str)
+    ]
+    return _get_library_files_by_ids(db, file_ids)
+
+
 def _matches_file_filters(file_doc: dict[str, Any], filter_dict: dict[str, Any]) -> bool:
     return all(file_doc.get(field_name) == expected_value for field_name, expected_value in filter_dict.items())
 
@@ -178,14 +203,14 @@ def _project_tag_row(tag_doc: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tags_for_file(db: Database, file_id: str) -> list[dict[str, Any]]:
-    tag_docs = db.library_files.traversal(file_id, "song_has_tags", limit=DEFAULT_LIMIT)
+    tag_docs = db.library_files.song_has_tags(file_id, limit=DEFAULT_LIMIT)
     return [
         _project_tag_row(tag_doc) for tag_doc in sorted(tag_docs, key=lambda tag_doc: _sort_key(tag_doc.get("name")))
     ]
 
 
 def _library_id_for_file(db: Database, file_id: str) -> str | None:
-    owning_edges = db.library_contains_file._to.get.many(file_id, limit=1)
+    owning_edges = cast("list[dict[str, Any]]", db.library_contains_file.get(_to=file_id, limit=1))
     return next((library_id for edge in owning_edges if isinstance((library_id := edge.get("_from")), str)), None)
 
 
@@ -206,7 +231,7 @@ def _paginate_rows(rows: list[dict[str, Any]], limit: int, offset: int) -> list[
 
 def _collect_file_ids_for_tag_ids(db: Database, tag_ids: set[str]) -> set[str]:
     """Return file ids from a single batch read of `song_has_tags` edges targeting `tag_ids`."""
-    edges = db.song_has_tags._to.get.in_(list(tag_ids), limit=None)
+    edges = cast("list[dict[str, Any]]", db.song_has_tags.get.in_(Field("_to", list(tag_ids))))
     return {edge["_from"] for edge in edges if isinstance(edge.get("_from"), str)}
 
 
@@ -215,7 +240,7 @@ def get_files_by_ids_with_tags(db: Database, file_ids: list[str]) -> list[dict[s
     if not file_ids:
         return []
 
-    file_docs = db.library_files.get.many(file_ids)
+    file_docs = _get_library_files_by_ids(db, file_ids)
     docs_by_id = {file_id: file_doc for file_doc in file_docs if isinstance((file_id := file_doc.get("_id")), str)}
     return [_hydrate_file_with_tags(db, docs_by_id[file_id]) for file_id in file_ids if file_id in docs_by_id]
 
@@ -236,10 +261,10 @@ def get_library_file(
             return None
         return min(matching_docs, key=lambda file_doc: str(file_doc.get("_key") or file_doc.get("_id") or ""))
 
-    normalized_matches = db.library_files.normalized_path.get.many(path, limit=1)
+    normalized_matches = cast("list[dict[str, Any]]", db.library_files.get(normalized_path=path, limit=1))
     if normalized_matches:
         return normalized_matches[0]
-    return cast("dict[str, Any] | None", db.library_files.path.get(path))
+    return cast("dict[str, Any] | None", db.library_files.get(path=path))
 
 
 def get_files_by_paths_bulk(db: Database, paths: list[str]) -> dict[str, dict[str, Any]]:
@@ -249,11 +274,11 @@ def get_files_by_paths_bulk(db: Database, paths: list[str]) -> dict[str, dict[st
 
     path_set = set(paths)
     docs_by_id: dict[str, dict[str, Any]] = {}
-    for file_doc in db.library_files.path.get.in_(paths, limit=None):
+    for file_doc in db.library_files.get.in_(Field("path", paths), limit=None):
         file_id = file_doc.get("_id")
         if isinstance(file_id, str):
             docs_by_id[file_id] = file_doc
-    for file_doc in db.library_files.normalized_path.get.in_(paths, limit=None):
+    for file_doc in db.library_files.get.in_(Field("normalized_path", paths), limit=None):
         file_id = file_doc.get("_id")
         if isinstance(file_id, str):
             docs_by_id[file_id] = file_doc
@@ -272,7 +297,9 @@ def get_files_by_paths_bulk(db: Database, paths: list[str]) -> dict[str, dict[st
 def detect_nd_path_prefix(db: Database, nd_path: str) -> str | None:
     """Detect the Navidrome prefix that should be stripped from absolute paths."""
     normalized_paths = [
-        path for path in db.library_files.normalized_path.collect(limit=DEFAULT_LIMIT) if isinstance(path, str) and path
+        value
+        for value in _aggregate_values(db.library_files, "normalized_path", limit=DEFAULT_LIMIT)
+        if isinstance(value, str) and value
     ]
     best_match = next(
         (
@@ -309,7 +336,11 @@ def list_library_files(
             if _matches_file_filters(file_doc, filter_dict)
         ]
     else:
-        file_docs = db.library_files.get.many.by_filter(filter_dict, limit=DEFAULT_LIMIT)
+        file_docs = (
+            cast("list[dict[str, Any]]", db.library_files.get(limit=DEFAULT_LIMIT, **filter_dict))
+            if filter_dict
+            else _get_all_library_file_docs(db, DEFAULT_LIMIT)
+        )
 
     file_docs.sort(key=_library_file_sort_key)
     total = len(file_docs)
@@ -318,11 +349,11 @@ def list_library_files(
 
 def get_tagged_file_paths(db: Database) -> list[str]:
     """Return absolute paths for files currently in the tagged state."""
-    tagged_file_docs = db.file_states.traversal(STATE_TAGGED, "file_has_state", limit=DEFAULT_LIMIT)
+    tagged_file_docs = db.file_states.file_has_state(STATE_TAGGED, limit=DEFAULT_LIMIT)
     file_ids = [file_doc["_id"] for file_doc in tagged_file_docs if isinstance(file_doc.get("_id"), str)]
     if not file_ids:
         return []
-    library_file_docs = db.library_files.get.many(file_ids)
+    library_file_docs = _get_library_files_by_ids(db, file_ids)
     docs_by_id = {doc["_id"]: doc for doc in library_file_docs if isinstance(doc.get("_id"), str)}
     return [
         str(docs_by_id[file_id]["path"])
@@ -353,7 +384,7 @@ def search_library_files_with_tags(
         artist: Case-insensitive exact artist match filter.
         album: Case-insensitive exact album match filter.
         tag_key: When provided alone, filters to files that have any tag with this
-            relation; when combined with ``tag_value``, filters to files with an exact
+            name; when combined with ``tag_value``, filters to files with an exact
             ``(tag_key, tag_value)`` match.
         tag_value: Exact tag value to match; only meaningful when ``tag_key`` is also set.
         tagged_only: When ``True``, restricts results to files in the ``tagged`` state.
@@ -385,47 +416,47 @@ def search_library_files_with_tags(
 
     if artist:
         # a: prefix → substring match in artist field
-        _intersect(_ids(db.library_files.artist.get.like(f"%{artist}%")))
+        _intersect(_ids(db.library_files.get.like("artist", f"%{artist}%")))
 
     if album:
         # al: prefix → substring match in album field
-        _intersect(_ids(db.library_files.album.get.like(f"%{album}%")))
+        _intersect(_ids(db.library_files.get.like("album", f"%{album}%")))
 
     if query_text:
         q_pattern = f"%{query_text}%"
         if artist or album:
             # t: prefix (query_text alongside a:/al:) → narrow to title only
-            _intersect(_ids(db.library_files.title.get.like(q_pattern)))
+            _intersect(_ids(db.library_files.get.like("title", q_pattern)))
         else:
             # Unprefixed → OR across all three fields
             matched: set[str] = set()
-            for field_ns in (db.library_files.artist, db.library_files.album, db.library_files.title):
-                matched |= _ids(field_ns.get.like(q_pattern))
+            for field_name in ("artist", "album", "title"):
+                matched |= _ids(db.library_files.get.like(field_name, q_pattern))
             _intersect(matched)
 
     if tag_key:
         tag_filter: dict[str, Any] = {"name": tag_key}
         if tag_value is not None:
             tag_filter["value"] = tag_value
-        matching_tags = db.tags.get.many.by_filter(tag_filter, limit=DEFAULT_LIMIT)
+        matching_tags = cast("list[dict[str, Any]]", db.tags.get(limit=DEFAULT_LIMIT, **tag_filter))
         tag_ids = {tag_id for tag_doc in matching_tags if isinstance((tag_id := tag_doc.get("_id")), str)}
         _intersect(_collect_file_ids_for_tag_ids(db, tag_ids))
 
     if tagged_only:
         tagged_ids = {
             file_id
-            for file_doc in db.file_states.traversal(STATE_TAGGED, "file_has_state", limit=DEFAULT_LIMIT)
+            for file_doc in db.file_states.file_has_state(STATE_TAGGED, limit=DEFAULT_LIMIT)
             if isinstance((file_id := file_doc.get("_id")), str)
         }
         _intersect(tagged_ids)
 
     if candidate_ids is None:
         # No filters active — load all files up to the hard cap.
-        file_docs = db.library_files.get.many.by_filter({}, limit=DEFAULT_LIMIT)
+        file_docs = _get_all_library_file_docs(db, DEFAULT_LIMIT)
     elif not candidate_ids:
         return [], 0
     else:
-        file_docs = db.library_files.get.many(sorted(candidate_ids))
+        file_docs = _get_library_files_by_ids(db, sorted(candidate_ids))
 
     file_docs.sort(key=_library_file_sort_key)
     total = len(file_docs)
@@ -438,12 +469,15 @@ def get_recently_processed(
     limit: int = 20,
     library_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Get recently tagged files ordered by ``scanned_at`` descending."""
-    tagged_file_docs = db.file_states.traversal(STATE_TAGGED, "file_has_state", limit=DEFAULT_LIMIT)
+    """Get recently tagged files ordered by most recent activity (``scanned_at`` or ``last_tagged_at``) descending."""
+    tagged_file_docs = db.file_states.file_has_state(STATE_TAGGED, limit=DEFAULT_LIMIT)
     if library_id is not None:
         library_file_ids = {
             edge["_to"]
-            for edge in db.library_contains_file._from.get.many(_normalize_library_id(library_id), limit=DEFAULT_LIMIT)
+            for edge in cast(
+                "list[dict[str, Any]]",
+                db.library_contains_file.get(_from=_normalize_library_id(library_id), limit=DEFAULT_LIMIT),
+            )
             if isinstance(edge.get("_to"), str)
         }
         tagged_file_docs = [file_doc for file_doc in tagged_file_docs if file_doc.get("_id") in library_file_ids]
@@ -461,7 +495,7 @@ def get_recently_processed(
 
 def get_file_modified_times(db: Database) -> dict[str, int]:
     """Return absolute path to modified-time mapping for all files."""
-    file_docs = db.library_files.get.many.by_filter({}, limit=DEFAULT_LIMIT)
+    file_docs = _get_all_library_file_docs(db, DEFAULT_LIMIT)
     return {
         str(file_doc["path"]): int(file_doc["modified_time"])
         for file_doc in file_docs
@@ -471,22 +505,24 @@ def get_file_modified_times(db: Database) -> dict[str, int]:
 
 def get_all_library_paths(db: Database) -> list[str]:
     """Return all absolute library-file paths."""
-    return [path for path in db.library_files.path.collect(limit=DEFAULT_LIMIT) if isinstance(path, str)]
+    return [
+        value for value in _aggregate_values(db.library_files, "path", limit=DEFAULT_LIMIT) if isinstance(value, str)
+    ]
 
 
 def list_all_file_ids(db: Database, limit: int | None = None) -> list[str]:
     """Return all library-file ids ordered by ``_key``."""
     collect_limit = limit or DEFAULT_LIMIT
-    return [file_id for file_id in db.library_files._id.collect(limit=collect_limit) if isinstance(file_id, str)]
+    return [
+        value for value in _aggregate_values(db.library_files, "_id", limit=collect_limit) if isinstance(value, str)
+    ]
 
 
 def get_folder_rel_paths(db: Database, library_id: str) -> set[str]:
     """Get cached folder relative paths for one library."""
     return {
         folder_doc["path"]
-        for folder_doc in db.libraries.traversal(
-            _normalize_library_id(library_id), "library_contains_folder", limit=DEFAULT_LIMIT
-        )
+        for folder_doc in db.libraries.library_contains_folder(_normalize_library_id(library_id), limit=DEFAULT_LIMIT)
         if isinstance(folder_doc.get("path"), str)
     }
 
@@ -526,7 +562,7 @@ def get_files_for_folders(
 
 def count_library_files(db: Database, library_id: str) -> int:
     """Count total files attached to one library via ownership edges."""
-    return db.library_contains_file._from.count(_normalize_library_id(library_id))
+    return int(db.library_contains_file.count(Field("_from", _normalize_library_id(library_id))))
 
 
 def get_library_stats(db: Database, library_id: str | None = None) -> dict[str, Any]:
@@ -535,7 +571,7 @@ def get_library_stats(db: Database, library_id: str | None = None) -> dict[str, 
         file_docs = _library_file_docs_for_library(db, library_id)
         total_files = count_library_files(db, library_id)
     else:
-        file_docs = db.library_files.get.many.by_filter({}, limit=None)
+        file_docs = _get_all_library_file_docs(db, None)
         total_files = db.library_files.count()
 
     result: dict[str, Any] = {
@@ -554,14 +590,14 @@ def get_library_counts(db: Database) -> dict[str, dict[str, int]]:
     """Get file and folder counts for all libraries."""
     result: dict[str, dict[str, int]] = {}
     library_ids = [
-        library_id
-        for library_id in db.library_contains_file._from.collect(limit=DEFAULT_LIMIT)
-        if isinstance(library_id, str)
+        cast("str", value)
+        for value in _aggregate_values(db.library_contains_file, "_from", limit=DEFAULT_LIMIT)
+        if isinstance(value, str)
     ]
     for library_id in library_ids:
-        edges = db.library_contains_file._from.get.many(library_id, limit=DEFAULT_LIMIT)
+        edges = cast("list[dict[str, Any]]", db.library_contains_file.get(_from=library_id, limit=DEFAULT_LIMIT))
         file_ids = [edge["_to"] for edge in edges if isinstance(edge.get("_to"), str)]
-        file_docs = db.library_files.get.many(file_ids) if file_ids else []
+        file_docs = _get_library_files_by_ids(db, file_ids)
         folder_paths = {parent for file_doc in file_docs if (parent := _path_parent(file_doc.get("path"))) is not None}
         result[library_id] = {
             "file_count": len(file_ids),
@@ -572,8 +608,8 @@ def get_library_counts(db: Database) -> dict[str, dict[str, int]]:
 
 def get_artist_album_frequencies(db: Database, limit: int) -> dict[str, list[tuple[str, int]]]:
     """Get artist/album frequency rows for analytics views."""
-    artist_rows = db.library_files.artist.aggregate(limit=limit)
-    album_rows = db.library_files.album.aggregate(limit=limit)
+    artist_rows = db.library_files.aggregate("artist", limit=limit)
+    album_rows = db.library_files.aggregate("album", limit=limit)
     return {
         "artist_rows": [(value, row["count"]) for row in artist_rows if isinstance((value := row.get("value")), str)],
         "album_rows": [(value, row["count"]) for row in album_rows if isinstance((value := row.get("value")), str)],
@@ -587,7 +623,9 @@ def clear_library_data(db: Database) -> None:
 
     while True:
         file_ids = [
-            file_id for file_id in db.library_files._id.collect(limit=DEFAULT_LIMIT) if isinstance(file_id, str)
+            cast("str", value)
+            for value in _aggregate_values(db.library_files, "_id", limit=DEFAULT_LIMIT)
+            if isinstance(value, str)
         ]
         if not file_ids:
             return
@@ -608,14 +646,14 @@ def search_files_by_tag(
     if _is_numeric_target_value(target_value):
         numeric_target = float(target_value)
         best_match_by_file_id: dict[str, dict[str, Any]] = {}
-        for tag_doc in db.tags.name.get.many(tag_key, limit=DEFAULT_LIMIT):
+        for tag_doc in cast("list[dict[str, Any]]", db.tags.get(name=tag_key, limit=DEFAULT_LIMIT)):
             tag_id = tag_doc.get("_id")
             tag_value = tag_doc.get("value")
             if not isinstance(tag_id, str) or not _is_numeric_tag_value(tag_value):
                 continue
             numeric_tag_value = cast("float", tag_value)
             distance = abs(numeric_tag_value - numeric_target)
-            for edge in db.song_has_tags._to.get.many(tag_id, limit=DEFAULT_LIMIT):
+            for edge in cast("list[dict[str, Any]]", db.song_has_tags.get(_to=tag_id, limit=DEFAULT_LIMIT)):
                 file_id = edge.get("_from")
                 if not isinstance(file_id, str):
                     continue
@@ -626,7 +664,7 @@ def search_files_by_tag(
                         "distance": distance,
                     }
 
-        file_docs = db.library_files.get.many(list(best_match_by_file_id))
+        file_docs = _get_library_files_by_ids(db, list(best_match_by_file_id))
         docs_by_id = {file_id: file_doc for file_doc in file_docs if isinstance((file_id := file_doc.get("_id")), str)}
         sorted_matches = sorted(
             (
@@ -645,12 +683,15 @@ def search_files_by_tag(
             results.append(hydrated_file)
         return results
 
-    matching_tags = db.tags.get.many.by_filter({"name": tag_key, "value": str(target_value)}, limit=DEFAULT_LIMIT)
+    matching_tags = cast(
+        "list[dict[str, Any]]",
+        db.tags.get(name=tag_key, value=str(target_value), limit=DEFAULT_LIMIT),
+    )
     file_ids = _collect_file_ids_for_tag_ids(
         db,
         {tag_id for tag_doc in matching_tags if isinstance((tag_id := tag_doc.get("_id")), str)},
     )
-    file_docs = db.library_files.get.many(list(file_ids))
+    file_docs = _get_library_files_by_ids(db, list(file_ids))
     file_docs.sort(key=_library_file_sort_key)
 
     results = []
@@ -666,14 +707,17 @@ def count_files_by_tag(db: Database, tag_key: str, target_value: float | str) ->
     if _is_numeric_target_value(target_value):
         matching_tag_ids = {
             tag_id
-            for tag_doc in db.tags.name.get.many(tag_key, limit=DEFAULT_LIMIT)
+            for tag_doc in cast("list[dict[str, Any]]", db.tags.get(name=tag_key, limit=DEFAULT_LIMIT))
             if isinstance((tag_id := tag_doc.get("_id")), str) and _is_numeric_tag_value(tag_doc.get("value"))
         }
         return len(_collect_file_ids_for_tag_ids(db, matching_tag_ids))
 
     matching_tag_ids = {
         tag_id
-        for tag_doc in db.tags.get.many.by_filter({"name": tag_key, "value": str(target_value)}, limit=DEFAULT_LIMIT)
+        for tag_doc in cast(
+            "list[dict[str, Any]]",
+            db.tags.get(name=tag_key, value=str(target_value), limit=DEFAULT_LIMIT),
+        )
         if isinstance((tag_id := tag_doc.get("_id")), str)
     }
     return len(_collect_file_ids_for_tag_ids(db, matching_tag_ids))
@@ -692,7 +736,7 @@ def get_files_by_chromaprint(
             if file_doc.get("chromaprint") == chromaprint
         ]
 
-    return db.library_files.chromaprint.get.many(chromaprint, limit=None)
+    return cast("list[dict[str, Any]]", db.library_files.get.many(chromaprint=chromaprint, limit=None))
 
 
 def get_tracks_by_file_ids(
@@ -705,7 +749,7 @@ def get_tracks_by_file_ids(
     if not file_ids:
         return []
 
-    file_docs = db.library_files.get.many(list(file_ids))
+    file_docs = _get_library_files_by_ids(db, list(file_ids))
     if order_by:
         for column, direction in reversed(order_by):
             file_docs.sort(key=lambda file_doc: _sort_key(file_doc.get(column)), reverse=direction == "desc")
@@ -723,12 +767,10 @@ def get_tracks_for_matching(db: Database, library_id: str | None = None) -> list
             file_doc for file_doc in _library_file_docs_for_library(db, library_id) if file_doc.get("is_valid") is True
         ]
     else:
-        file_docs = db.library_files.get.many.by_filter({"is_valid": True}, limit=DEFAULT_LIMIT)
+        file_docs = cast("list[dict[str, Any]]", db.library_files.get(is_valid=True, limit=DEFAULT_LIMIT))
 
     file_ids = [file_id for file_doc in file_docs if isinstance(file_id := file_doc.get("_id"), str)]
-    isrc_rows = (
-        db.library_files.traversal.by_ids(file_ids, "song_has_tags", target_filter={"name": "isrc"}) if file_ids else []
-    )
+    isrc_rows = db.library_files.song_has_tags.by_ids(file_ids, name="isrc") if file_ids else []
     isrc_by_file = {
         row["start_id"]: tag_doc.get("value")
         for row in isrc_rows

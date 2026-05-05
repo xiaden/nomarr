@@ -21,14 +21,18 @@ from nomarr.components.library.library_records_comp import list_all_library_keys
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones, discover_heads_no_db
 from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES
 from nomarr.persistence.arango_client import DatabaseLike
-from nomarr.persistence.schema import SCHEMA, CollectionType
+from nomarr.persistence.collections import VectorsTrackCold, VectorsTrackHot
 
 logger = logging.getLogger(__name__)
 
+_VECTOR_TEMPLATE_NAMES: tuple[str, ...] = tuple(
+    vector_cls.NAME_PATTERN.split("__{", maxsplit=1)[0] for vector_cls in (VectorsTrackHot, VectorsTrackCold)
+)
+
 
 def list_template_collection_names() -> list[str]:
-    """Return schema keys for all dynamic template collection families."""
-    return [name for name, spec in SCHEMA.items() if spec.get("type") == CollectionType.TEMPLATE]
+    """Return template collection family names for dynamic vector collections."""
+    return list(_VECTOR_TEMPLATE_NAMES)
 
 
 def wait_for_arango(hosts: str, max_attempts: int = 30, delay_s: float = 2.0) -> bool:

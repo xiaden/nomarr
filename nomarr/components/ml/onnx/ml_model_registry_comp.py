@@ -34,16 +34,17 @@ def list_registered_models(db: Database) -> list[dict[str, Any]]:
     if model_count <= 0:
         return []
 
-    ids = cast("list[str]", db.ml_models._id.collect(limit=model_count))
+    ids = [str(row["value"]) for row in db.ml_models.aggregate("_id", limit=model_count) if "value" in row]
     if not ids:
         return []
 
-    return cast("list[dict[str, Any]]", db.ml_models.get.many(ids))
+    docs = [cast("dict[str, Any] | None", db.ml_models.get(_id=model_id)) for model_id in ids]
+    return [doc for doc in docs if doc is not None]
 
 
 def get_registered_model_by_path(db: Database, path: str) -> dict[str, Any] | None:
     """Return the registered model document for ``path`` if present."""
-    return cast("dict[str, Any] | None", db.ml_models.path.get(path))
+    return cast("dict[str, Any] | None", db.ml_models.get(path=path))
 
 
 def upsert_registered_model(
@@ -107,7 +108,7 @@ def upsert_registered_model(
             }
         )
 
-    db.ml_models.path.upsert([payload], match_field="path")
+    db.ml_models.upsert(path=path, fields={key: value for key, value in payload.items() if key != "path"})
     model_doc = get_registered_model_by_path(db, path)
     if model_doc is None:
         msg = f"Failed to load persisted ml_models document for path={path}"
@@ -117,54 +118,46 @@ def upsert_registered_model(
 
 def mark_model_fully_configured(db: Database, model_id: str, value: bool) -> None:
     """Set the ``fully_configured`` flag on one registered model."""
-    model_doc = cast("dict[str, Any] | None", db.ml_models.get(model_id))
+    model_doc = cast("dict[str, Any] | None", db.ml_models.get(_id=model_id))
     if model_doc is None:
         return
 
-    db.ml_models.path.upsert(
-        [
-            {
-                **{key: field for key, field in model_doc.items() if key != "_rev"},
-                "fully_configured": value,
-                "updated_at": now_ms().value,
-            }
-        ],
-        match_field="path",
+    db.ml_models.upsert(
+        path=cast("str", model_doc["path"]),
+        fields={
+            **{key: field for key, field in model_doc.items() if key not in {"_rev", "path"}},
+            "fully_configured": value,
+            "updated_at": now_ms().value,
+        },
     )
 
 
 def mark_model_known(db: Database, model_id: str, value: bool) -> None:
     """Set the ``is_known`` flag on one registered model."""
-    model_doc = cast("dict[str, Any] | None", db.ml_models.get(model_id))
+    model_doc = cast("dict[str, Any] | None", db.ml_models.get(_id=model_id))
     if model_doc is None:
         return
 
-    db.ml_models.path.upsert(
-        [
-            {
-                **{key: field for key, field in model_doc.items() if key != "_rev"},
-                "is_known": value,
-                "updated_at": now_ms().value,
-            }
-        ],
-        match_field="path",
+    db.ml_models.upsert(
+        path=cast("str", model_doc["path"]),
+        fields={
+            **{key: field for key, field in model_doc.items() if key not in {"_rev", "path"}},
+            "is_known": value,
+            "updated_at": now_ms().value,
+        },
     )
 
 
 def delete_registered_model(db: Database, model_id: str) -> None:
     """Delete one registered model vertex by ``_id``."""
-    db.ml_models.delete([model_id])
+    db.ml_models.delete(_id=model_id)
 
 
 def list_model_outputs_for_model(db: Database, model_id: str) -> list[dict[str, Any]]:
     """Return all output vertices attached to one model, ordered by index."""
     outputs = cast(
         "list[dict[str, Any]]",
-        db.ml_models.traversal(
-            model_id,
-            edge="model_has_output",
-            limit=db.ml_model_outputs.count(),
-        ),
+        db.ml_models.model_has_output(model_id, limit=db.ml_model_outputs.count()),
     )
     return sorted(outputs, key=lambda doc: int(cast("int", doc.get("output_index", 0))))
 
@@ -178,7 +171,7 @@ def ensure_model_outputs(db: Database, model_id: str, output_count: int) -> list
     """Ensure all expected output vertices and edges exist for a model."""
     for output_index in range(output_count):
         output_key = _output_key(model_id, output_index)
-        if db.ml_model_outputs._key.get(output_key) is None:
+        if db.ml_model_outputs.get(_key=output_key) is None:
             db.ml_model_outputs.insert(
                 [
                     {
@@ -190,12 +183,7 @@ def ensure_model_outputs(db: Database, model_id: str, output_count: int) -> list
                 ]
             )
 
-        edge_doc = {
-            "_key": output_key,
-            "_from": model_id,
-            "_to": f"ml_model_outputs/{output_key}",
-        }
-        db.model_has_output._key.upsert([edge_doc], match_field="_key")
+        db.model_has_output.upsert(_key=output_key, fields={"_from": model_id, "_to": f"ml_model_outputs/{output_key}"})
 
     return list_model_outputs_for_model(db, model_id)
 
@@ -203,9 +191,9 @@ def ensure_model_outputs(db: Database, model_id: str, output_count: int) -> list
 def update_model_output_label(db: Database, output_id: str, label: str) -> None:
     """Write label metadata for one output vertex."""
     output_key = output_id.split("/", 1)[-1]
-    db.ml_model_outputs._key.update(
-        output_key,
-        {
+    db.ml_model_outputs.update(
+        _key=output_key,
+        fields={
             "label": label,
             "fully_labeled": True,
         },

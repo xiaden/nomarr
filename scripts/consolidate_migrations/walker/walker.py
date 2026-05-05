@@ -118,8 +118,16 @@ def _walk_function_body(
     coll_bindings: dict[str, str] = {}
     bool_bindings: dict[str, bool] = {}
     _walk_statements(
-        stmts, stmts, module_funcs, constants, coll_bindings, bool_bindings,
-        shape, migration_name, warnings, depth,
+        stmts,
+        stmts,
+        module_funcs,
+        constants,
+        coll_bindings,
+        bool_bindings,
+        shape,
+        migration_name,
+        warnings,
+        depth,
     )
 
 
@@ -162,13 +170,19 @@ def _walk_statements(
         # For loops
         if isinstance(stmt, ast.For):
             if _is_dynamic_loop(stmt, func_body):
-                warnings.append(
-                    f"{migration_name}: Skipped dynamic loop (db.collections() iteration)"
-                )
+                warnings.append(f"{migration_name}: Skipped dynamic loop (db.collections() iteration)")
                 continue
             _handle_for_loop(
-                stmt, func_body, module_funcs, constants, coll_bindings, bool_bindings,
-                shape, migration_name, warnings, depth,
+                stmt,
+                func_body,
+                module_funcs,
+                constants,
+                coll_bindings,
+                bool_bindings,
+                shape,
+                migration_name,
+                warnings,
+                depth,
             )
             continue
 
@@ -178,56 +192,118 @@ def _walk_statements(
             if condition is True:
                 # Condition is known-true: only process the body
                 _walk_statements(
-                    stmt.body, func_body, module_funcs, constants, coll_bindings, bool_bindings,
-                    shape, migration_name, warnings, depth,
+                    stmt.body,
+                    func_body,
+                    module_funcs,
+                    constants,
+                    coll_bindings,
+                    bool_bindings,
+                    shape,
+                    migration_name,
+                    warnings,
+                    depth,
                 )
             elif condition is False:
                 # Condition is known-false: only process the else branch
                 if stmt.orelse:
                     _walk_statements(
-                        stmt.orelse, func_body, module_funcs, constants, coll_bindings, bool_bindings,
-                        shape, migration_name, warnings, depth,
+                        stmt.orelse,
+                        func_body,
+                        module_funcs,
+                        constants,
+                        coll_bindings,
+                        bool_bindings,
+                        shape,
+                        migration_name,
+                        warnings,
+                        depth,
                     )
             else:
                 # Cannot evaluate -- process both branches (conservative fallback)
                 _walk_statements(
-                    stmt.body, func_body, module_funcs, constants, coll_bindings, bool_bindings,
-                    shape, migration_name, warnings, depth,
+                    stmt.body,
+                    func_body,
+                    module_funcs,
+                    constants,
+                    coll_bindings,
+                    bool_bindings,
+                    shape,
+                    migration_name,
+                    warnings,
+                    depth,
                 )
                 if stmt.orelse:
                     _walk_statements(
-                        stmt.orelse, func_body, module_funcs, constants, coll_bindings, bool_bindings,
-                        shape, migration_name, warnings, depth,
+                        stmt.orelse,
+                        func_body,
+                        module_funcs,
+                        constants,
+                        coll_bindings,
+                        bool_bindings,
+                        shape,
+                        migration_name,
+                        warnings,
+                        depth,
                     )
             continue
 
         if isinstance(stmt, ast.With):
             _walk_statements(
-                stmt.body, func_body, module_funcs, constants, coll_bindings, bool_bindings,
-                shape, migration_name, warnings, depth,
+                stmt.body,
+                func_body,
+                module_funcs,
+                constants,
+                coll_bindings,
+                bool_bindings,
+                shape,
+                migration_name,
+                warnings,
+                depth,
             )
             continue
 
         if isinstance(stmt, ast.Try):
             _walk_statements(
-                stmt.body, func_body, module_funcs, constants, coll_bindings, bool_bindings,
-                shape, migration_name, warnings, depth,
+                stmt.body,
+                func_body,
+                module_funcs,
+                constants,
+                coll_bindings,
+                bool_bindings,
+                shape,
+                migration_name,
+                warnings,
+                depth,
             )
             continue
 
         # Expression statements with calls
         if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
             _process_call(
-                stmt.value, func_body, module_funcs, constants, coll_bindings,
-                shape, migration_name, warnings, depth,
+                stmt.value,
+                func_body,
+                module_funcs,
+                constants,
+                coll_bindings,
+                shape,
+                migration_name,
+                warnings,
+                depth,
             )
             continue
 
         # Assignments with calls (e.g. result = db.aql.execute(...))
         if isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.Call):
             _process_call(
-                stmt.value, func_body, module_funcs, constants, coll_bindings,
-                shape, migration_name, warnings, depth,
+                stmt.value,
+                func_body,
+                module_funcs,
+                constants,
+                coll_bindings,
+                shape,
+                migration_name,
+                warnings,
+                depth,
             )
 
 
@@ -253,16 +329,32 @@ def _handle_for_loop(
                 loop_bindings = _build_collection_bindings(stmt.body, loop_constants)
                 merged_bindings = {**coll_bindings, **loop_bindings}
                 _walk_statements(
-                    stmt.body, func_body, module_funcs, loop_constants,
-                    merged_bindings, bool_bindings, shape, migration_name, warnings, depth,
+                    stmt.body,
+                    func_body,
+                    module_funcs,
+                    loop_constants,
+                    merged_bindings,
+                    bool_bindings,
+                    shape,
+                    migration_name,
+                    warnings,
+                    depth,
                 )
             return
 
     # Can't unroll -- walk body once to catch any recognizable operations
     # (e.g. AQL calls inside data migration loops)
     _walk_statements(
-        stmt.body, func_body, module_funcs, constants, coll_bindings, bool_bindings,
-        shape, migration_name, warnings, depth,
+        stmt.body,
+        func_body,
+        module_funcs,
+        constants,
+        coll_bindings,
+        bool_bindings,
+        shape,
+        migration_name,
+        warnings,
+        depth,
     )
 
 
@@ -281,9 +373,7 @@ def _process_call(
     # 1. AQL execute -- log and return
     aql_summary = _recognize_aql_execute(call)
     if aql_summary is not None:
-        warnings.append(
-            f"{migration_name}: AQL data transform (not validated): {aql_summary}"
-        )
+        warnings.append(f"{migration_name}: AQL data transform (not validated): {aql_summary}")
         return
 
     # 2. Create collection
@@ -334,7 +424,13 @@ def _process_call(
     # 9. Call to module-level helper function -- resolve and walk
     if depth < _MAX_WALK_DEPTH:
         _try_resolve_helper_call(
-            call, module_funcs, constants, shape, migration_name, warnings, depth,
+            call,
+            module_funcs,
+            constants,
+            shape,
+            migration_name,
+            warnings,
+            depth,
         )
 
 
@@ -359,8 +455,13 @@ def _try_resolve_helper_call(
     extended_constants = _resolve_call_arguments(call, func_def, constants)
 
     _walk_function_body(
-        func_def.body, module_funcs, extended_constants,
-        shape, migration_name, warnings, depth + 1,
+        func_def.body,
+        module_funcs,
+        extended_constants,
+        shape,
+        migration_name,
+        warnings,
+        depth + 1,
     )
 
 

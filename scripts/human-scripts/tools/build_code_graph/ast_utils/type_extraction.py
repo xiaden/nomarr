@@ -90,7 +90,7 @@ def extract_type_annotations_from_function(
     - Parameter type hints
     - Return type hints
     """
-    from ..models import Edge
+    from build_code_graph.models import Edge
 
     type_names: set[str] = set()
 

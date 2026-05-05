@@ -232,7 +232,7 @@ def probe_all_models(db: Database, models_dir: str) -> None:
         delta = _probe_single_model(model, waveform)
         delta_with_headroom = int(delta * 1.1) if delta is not None else None
         value = str(delta_with_headroom) if delta_with_headroom is not None else str(sys.maxsize)
-        db.meta.key.upsert([{"key": f"{_META_PREFIX}{model._path}", "value": value}], match_field="key")
+        db.meta.upsert(key=f"{_META_PREFIX}{model._path}", fields={"value": value})
         readable = _fmt_bytes(delta_with_headroom) if delta_with_headroom is not None else "unmeasured"
         results.append(f"  {model._path} -> {readable}")
 
@@ -256,7 +256,10 @@ def has_model_vram_measurements(db: Database) -> bool:
     Returns:
         True if at least one ``ml_model_vram:*`` key is present.
     """
-    return bool(db.meta.key.get.like(f"{_META_PREFIX}%"))
+    return any(
+        isinstance(row.get("value"), str) and str(row["value"]).startswith(_META_PREFIX)
+        for row in db.meta.aggregate("key", limit=db.meta.count())
+    )
 
 
 def clear_model_vram_measurements(db: Database) -> None:
@@ -265,10 +268,14 @@ def clear_model_vram_measurements(db: Database) -> None:
     Args:
         db: Database instance.
     """
-    existing = db.meta.key.get.like(f"{_META_PREFIX}%")
-    for row in existing:
-        db.meta.key.delete(row["key"])
-    logger.info("[vram_probe] Cleared %d VRAM measurement(s)", len(existing))
+    existing_keys = [
+        str(row["value"])
+        for row in db.meta.aggregate("key", limit=db.meta.count())
+        if isinstance(row.get("value"), str) and str(row["value"]).startswith(_META_PREFIX)
+    ]
+    for key in existing_keys:
+        db.meta.delete(key=key)
+    logger.info("[vram_probe] Cleared %d VRAM measurement(s)", len(existing_keys))
 
 
 def _make_probe_waveform() -> np.ndarray:

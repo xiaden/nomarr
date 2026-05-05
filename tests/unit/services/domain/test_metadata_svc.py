@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from nomarr.persistence.base import Field
 from nomarr.services.domain.metadata_svc import COLLECTION_REL_MAP, EntityCollection, MetadataService
 
 
@@ -134,7 +135,7 @@ class TestGetEntity:
 
         assert result is None
         mock_get_tag.assert_called_once_with(mock_db, "tags/missing")
-        mock_db.song_has_tags._to.count.assert_not_called()
+        mock_db.song_has_tags.count.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -146,7 +147,7 @@ class TestGetEntity:
             "_key": "artist-1",
             "value": "The Artist",
         }
-        mock_db.song_has_tags._to.count.return_value = 7
+        mock_db.song_has_tags.count.return_value = 7
         service = _make_service(db=mock_db)
 
         with patch("nomarr.services.domain.metadata_svc.get_tag", return_value=tag_doc) as mock_get_tag:
@@ -159,7 +160,7 @@ class TestGetEntity:
             "song_count": 7,
         }
         mock_get_tag.assert_called_once_with(mock_db, "tags/artist-1")
-        mock_db.song_has_tags._to.count.assert_called_once_with("tags/artist-1")
+        mock_db.song_has_tags.count.assert_called_once_with(Field("_to", "tags/artist-1"))
 
 
 class TestGetEntityCounts:
@@ -202,3 +203,38 @@ class TestGetEntityCounts:
             ],
         )
         assert mock_count.call_count == 5
+
+
+class TestListSongsForEntity:
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_song_ids_and_count_via_flat_api(self) -> None:
+        mock_db = MagicMock()
+        mock_db.song_has_tags.count.return_value = 5
+        service = _make_service(db=mock_db)
+        with patch(
+            "nomarr.services.domain.metadata_svc.list_songs_for_tag",
+            return_value=["songs/1", "songs/2"],
+        ) as mock_list:
+            result = service.list_songs_for_entity("tags/artist-1", "artist", limit=10, offset=0)
+        assert result["song_ids"] == ["songs/1", "songs/2"]
+        assert result["total"] == 5
+        assert result["limit"] == 10
+        assert result["offset"] == 0
+        mock_list.assert_called_once_with(mock_db, "tags/artist-1", limit=10, offset=0)
+        mock_db.song_has_tags.count.assert_called_once_with(Field("_to", "tags/artist-1"))
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_paging_params_forwarded(self) -> None:
+        mock_db = MagicMock()
+        mock_db.song_has_tags.count.return_value = 100
+        service = _make_service(db=mock_db)
+        with patch(
+            "nomarr.services.domain.metadata_svc.list_songs_for_tag",
+            return_value=[],
+        ) as mock_list:
+            result = service.list_songs_for_entity("tags/genre-7", "genre", limit=25, offset=50)
+        assert result["limit"] == 25
+        assert result["offset"] == 50
+        mock_list.assert_called_once_with(mock_db, "tags/genre-7", limit=25, offset=50)

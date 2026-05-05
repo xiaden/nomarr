@@ -181,9 +181,7 @@ def _extract_graphs(func_node: ast.FunctionDef) -> list[Graph]:
             continue
 
         edge_definitions = _parse_edge_definitions(edge_defs_node)
-        graphs.append(
-            Graph(name=graph_name, edge_definitions=tuple(edge_definitions))
-        )
+        graphs.append(Graph(name=graph_name, edge_definitions=tuple(edge_definitions)))
 
     return graphs
 
@@ -200,9 +198,7 @@ def _extract_seed_documents(func_node: ast.FunctionDef) -> list[SeedDocument]:
     for node in ast.walk(func_node):
         # Find db.collection("file_states") to get the collection name
         if isinstance(node, ast.Call) and (
-            isinstance(node.func, ast.Attribute)
-            and node.func.attr == "collection"
-            and node.args
+            isinstance(node.func, ast.Attribute) and node.func.attr == "collection" and node.args
         ):
             name = _extract_string_constant(node.args[0])
             if name is not None:
@@ -376,7 +372,6 @@ def _extract_string_list(node: ast.expr | None) -> list[str]:
         if val is not None:
             result.append(val)
     return result
-
 
 
 if __name__ == "__main__":

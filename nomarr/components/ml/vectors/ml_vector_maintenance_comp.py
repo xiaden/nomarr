@@ -15,6 +15,7 @@ from nomarr.components.ml.vectors.ml_vector_registry_comp import (
     get_hot_namespace,
     get_maintenance_namespace,
 )
+from nomarr.persistence.base import Field
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -28,11 +29,12 @@ def _load_vector_docs(vector_ops: Any) -> list[dict[str, Any]]:
     if doc_count <= 0:
         return []
 
-    doc_ids = cast("list[str]", vector_ops._id.collect(limit=doc_count))
+    doc_ids = [str(row["value"]) for row in vector_ops.aggregate("_id", limit=doc_count) if "value" in row]
     if not doc_ids:
         return []
 
-    return cast("list[dict[str, Any]]", vector_ops.get.many(doc_ids))
+    docs = [cast("dict[str, Any] | None", vector_ops.get(_id=doc_id)) for doc_id in doc_ids]
+    return [doc for doc in docs if doc is not None]
 
 
 def _get_genres_for_files(db: Database, file_ids: list[str]) -> dict[str, list[str]]:
@@ -46,14 +48,18 @@ def _get_genres_for_files(db: Database, file_ids: list[str]) -> dict[str, list[s
 
     tag_edges = cast(
         "list[dict[str, Any]]",
-        db.song_has_tags._from.get.in_(file_ids),
+        [
+            edge
+            for file_id in file_ids
+            for edge in cast("list[dict[str, Any]]", db.song_has_tags.get(_from=file_id, limit=None))
+        ],
     )
 
     tag_ids = list({edge["_to"] for edge in tag_edges if isinstance(edge.get("_to"), str)})
     if not tag_ids:
         return {fid: [] for fid in file_ids}
 
-    tag_docs = cast("list[dict[str, Any]]", db.tags.get.many(tag_ids))
+    tag_docs = cast("list[dict[str, Any]]", db.tags.get.in_(Field("_id", tag_ids)))
     genre_by_tag_id: dict[str, str] = {
         doc["_id"]: doc["value"]
         for doc in tag_docs
@@ -136,7 +142,7 @@ def drain_hot_to_cold(db: Database, backbone_id: str, library_key: str) -> int:
     """
     cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
     hot_ops = get_hot_namespace(db, backbone_id, library_key)
-    drained = hot_ops.move_collection(cold_name)
+    drained = cast("int", hot_ops.move_collection(cold_name))
     db.register(cold_name, "vectors_track_cold")
     return drained
 

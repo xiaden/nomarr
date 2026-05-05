@@ -23,23 +23,11 @@ def _get_library_file_ids(db: Database, library_id: str | None) -> set[str] | No
         return None
 
     file_ids: set[str] = set()
-    offset = 0
-    while True:
-        file_docs = db.libraries.traversal(
-            library_id,
-            "library_contains_file",
-            limit=_PAGE_SIZE,
-            offset=offset,
-        )
-        if not file_docs:
-            break
-        for file_doc in file_docs:
-            file_id = file_doc.get("_id")
-            if isinstance(file_id, str):
-                file_ids.add(file_id)
-        if len(file_docs) < _PAGE_SIZE:
-            break
-        offset += len(file_docs)
+    file_docs = db.libraries.library_contains_file(library_id, limit=None)
+    for file_doc in file_docs:
+        file_id = file_doc.get("_id")
+        if isinstance(file_id, str):
+            file_ids.add(file_id)
 
     return file_ids
 
@@ -49,7 +37,7 @@ def _get_tag_docs_for_name(db: Database, name: str) -> list[dict[str, Any]]:
     tags: list[dict[str, Any]] = []
     offset = 0
     while True:
-        tag_page = db.tags.name.get.many(name, limit=_PAGE_SIZE, offset=offset)
+        tag_page = db.tags.get(name=name, limit=_PAGE_SIZE, offset=offset)
         if not tag_page:
             break
         tags.extend(tag_page)
@@ -76,7 +64,7 @@ def _get_tag_edge_rows(db: Database, name: str, library_id: str | None = None) -
         return []
 
     # Fetch all song→tag edges for the entire tag name in a single IN query.
-    edge_docs = db.song_has_tags._to.get.in_(list(tag_id_to_value))
+    edge_docs = [edge_doc for tag_id in tag_id_to_value for edge_doc in db.song_has_tags.get(_to=tag_id, limit=None)]
     rows: list[tuple[str, str]] = []
     for edge_doc in edge_docs:
         file_id = edge_doc.get("_from")
@@ -96,7 +84,9 @@ def _get_tier_tag_keys(db: Database) -> list[str]:
     seen: set[str] = set()
     offset = 0
     while True:
-        name_page = db.tags.name.collect(limit=_PAGE_SIZE, offset=offset)
+        name_page = [
+            row["value"] for row in db.tags.aggregate("name", limit=_PAGE_SIZE, offset=offset) if "value" in row
+        ]
         if not name_page:
             break
         for name_value in name_page:

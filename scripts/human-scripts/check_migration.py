@@ -143,7 +143,7 @@ class MigrationChecker:
             return
 
         parts = self.new_pattern.split(".")
-        if not parts[0] == "nomarr":
+        if parts[0] != "nomarr":
             return
 
         # Try as module

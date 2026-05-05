@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nomarr.workflows.platform.prepare_database_wf import _discover_template_collections
+from nomarr.workflows.platform.prepare_database_wf import _discover_template_collections, _is_fresh_database
 
 
 class TestDiscoverTemplateCollections:
@@ -101,3 +101,62 @@ class TestDiscoverTemplateCollections:
         assert db.register.call_count == 2
         db.register.assert_any_call("vectors_track_hot__effnet__lib1", "vectors_track_hot")
         db.register.assert_any_call("vectors_track_cold__effnet__lib1", "vectors_track_cold")
+
+
+class TestIsFreshDatabase:
+    """Tests for _is_fresh_database()."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_true_when_version_entry_missing(self) -> None:
+        """No version document in meta means fresh database."""
+        db = MagicMock()
+        db.meta.get.return_value = None
+
+        assert _is_fresh_database(db) is True
+        db.meta.get.assert_called_once_with(key="version")
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_false_when_version_entry_exists(self) -> None:
+        """Existing version document means existing (not fresh) database."""
+        db = MagicMock()
+        db.meta.get.return_value = {"key": "version", "value": "028"}
+
+        assert _is_fresh_database(db) is False
+        db.meta.get.assert_called_once_with(key="version")
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_true_on_err_1203_collection_not_found(self) -> None:
+        """ERR 1203 (meta collection missing) is treated as a fresh database."""
+
+        class _Err1203Error(Exception):
+            def __str__(self) -> str:
+                return "[ERR 1203] collection or view not found"
+
+        db = MagicMock()
+        db.meta.get.side_effect = _Err1203Error()
+
+        with patch("nomarr.workflows.platform.prepare_database_wf.AQLQueryExecuteError", _Err1203Error):
+            result = _is_fresh_database(db)
+
+        assert result is True
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_reraises_non_1203_aql_errors(self) -> None:
+        """AQL errors other than ERR 1203 should propagate to the caller."""
+
+        class _OtherAQLError(Exception):
+            def __str__(self) -> str:
+                return "[ERR 1600] some other aql error"
+
+        db = MagicMock()
+        db.meta.get.side_effect = _OtherAQLError()
+
+        with (
+            patch("nomarr.workflows.platform.prepare_database_wf.AQLQueryExecuteError", _OtherAQLError),
+            pytest.raises(_OtherAQLError),
+        ):
+            _is_fresh_database(db)

@@ -32,9 +32,7 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _DEFAULT_MIGRATIONS_DIR = _REPO_ROOT / "nomarr" / "migrations"
-_DEFAULT_BOOTSTRAP_PATH = (
-    _REPO_ROOT / "nomarr" / "components" / "platform" / "arango_bootstrap_comp.py"
-)
+_DEFAULT_BOOTSTRAP_PATH = _REPO_ROOT / "nomarr" / "components" / "platform" / "arango_bootstrap_comp.py"
 _OLD_SINGLE_FILE = _REPO_ROOT / "scripts" / "consolidate_migrations.py"
 
 
@@ -89,10 +87,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=_DEFAULT_BOOTSTRAP_PATH,
         metavar="PATH",
-        help=(
-            "Path to arango_bootstrap_comp.py (ensure_schema source). "
-            f"Default: {_DEFAULT_BOOTSTRAP_PATH}"
-        ),
+        help=(f"Path to arango_bootstrap_comp.py (ensure_schema source). Default: {_DEFAULT_BOOTSTRAP_PATH}"),
     )
     # DB connection args (only used with --execute-db-reset)
     parser.add_argument(
@@ -246,8 +241,7 @@ def _run_db_reset(
         from arango import ArangoClient  # type: ignore[import-untyped]
     except ImportError:
         print(
-            "ERROR: python-arango is not installed. "
-            "Run: pip install python-arango",
+            "ERROR: python-arango is not installed. Run: pip install python-arango",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -292,8 +286,7 @@ def main() -> None:
         print("\nResult: SHAPES DO NOT MATCH", flush=True)
         if args.consolidate:
             print(
-                "ERROR: --consolidate requires shapes to match. "
-                "Fix replay mismatches before consolidating.",
+                "ERROR: --consolidate requires shapes to match. Fix replay mismatches before consolidating.",
                 file=sys.stderr,
             )
         sys.exit(1)

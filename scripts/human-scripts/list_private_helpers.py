@@ -143,13 +143,15 @@ def extract_private_helpers(file_path: Path) -> list[dict[str, Any]]:
         docstring = ast.get_docstring(node)
         signature = _extract_signature(node)  # type: ignore[arg-type]
 
-        helpers.append({
-            "name": node.name,
-            "line": node.lineno,
-            "signature": f"{node.name}{signature}",
-            "docstring": docstring,
-            "file": str(file_path).replace("\\", "/"),
-        })
+        helpers.append(
+            {
+                "name": node.name,
+                "line": node.lineno,
+                "signature": f"{node.name}{signature}",
+                "docstring": docstring,
+                "file": str(file_path).replace("\\", "/"),
+            }
+        )
 
     # Sort by line number
     helpers.sort(key=lambda h: h["line"])
@@ -190,7 +192,7 @@ def scan_folder(
             helpers = [h for h in helpers if h["docstring"] is None]
 
         if helpers:
-            name = str(py_file).replace("\\", "/")
+            str(py_file).replace("\\", "/")
             results[rel] = helpers
 
     return results

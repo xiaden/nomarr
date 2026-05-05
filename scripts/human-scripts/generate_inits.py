@@ -15,8 +15,7 @@ def load_config() -> dict:
     """Load configuration from YAML file."""
     config_path = Path(__file__).parent / "configs" / "generate_inits_config.yml"
     with open(config_path, encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-    return config
+        return yaml.safe_load(f)
 
 
 def get_public_names(file_path: Path, banned_exports: set[str]) -> set[str]:
@@ -41,13 +40,13 @@ def get_public_names(file_path: Path, banned_exports: set[str]) -> set[str]:
                     names.add(target.id)
 
     # Filter out banned exports
-    names = {name for name in names if name not in banned_exports}
-
-    return names
+    return {name for name in names if name not in banned_exports}
 
 
 def generate_init_for_package(
-    package_dir: Path, custom_exports: dict[str, list[str]] | None = None, config: dict | None = None,
+    package_dir: Path,
+    custom_exports: dict[str, list[str]] | None = None,
+    config: dict | None = None,
 ) -> str:
     """Generate __init__.py content for a package directory."""
     custom_exports = custom_exports or {}

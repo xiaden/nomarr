@@ -11,14 +11,14 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from nomarr.components.library.library_file_query_comp import clear_library_data as clear_library_file_data
 from nomarr.components.library.library_records_comp import (
     create_library_record,
     get_library_by_name,
     get_library_record,
-    normalize_library_id,
+    library_key_from_ref,
     update_library_record,
 )
 from nomarr.components.library.library_root_comp import (
@@ -128,7 +128,7 @@ def delete_library(db: Database, library_id: str) -> bool:
     library = get_library_record(db, library_id)
     if not library:
         return False
-    deleted_count = db.libraries.cascade([normalize_library_id(library_id)])
+    deleted_count = cast("int", db.libraries.delete.cascade(_key=library_key_from_ref(library_id)))
     logger.info(f"[LibraryAdmin] Deleted library {library_id}: {library.get('name')} ({deleted_count} docs removed)")
     return True
 

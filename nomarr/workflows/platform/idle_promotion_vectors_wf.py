@@ -22,7 +22,6 @@ from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
     compute_promotion_nlists,
     list_hot_vector_targets,
 )
-from nomarr.helpers.filter_types import Op
 from nomarr.helpers.time_helper import now_ms
 from nomarr.workflows.platform.promote_and_rebuild_vectors_wf import promote_and_rebuild_workflow
 
@@ -38,33 +37,30 @@ def _make_lock_reference(lock_type: str, resource_id: str) -> str:
 
 
 def _reap_stale_promotion_locks(db: Database, worker_id: str, stale_after_ms: int) -> None:
-    """Delete stale promotion locks using constructor-backed field filters."""
+    """Delete stale promotion locks whose acquired_at is older than stale_after_ms milliseconds."""
     stale_threshold = float(now_ms().value - stale_after_ms)
-    stale_locks = db.locks.acquired_at.get.in_(
-        {Op.LT: stale_threshold},
-        limit=db.locks.count(),
-    )
+    stale_locks = db.locks.get.lte("acquired_at", stale_threshold, limit=db.locks.count())
     for lock in stale_locks:
         if lock.get("lock_type") != "vector_promotion":
             continue
         reference = str(lock["document_reference"])
         resource_id = reference.split(":", maxsplit=1)[1]
-        db.locks.document_reference.delete(reference)
+        db.locks.delete(document_reference=reference)
         logger.warning("[%s] Reaped stale promotion lock for %s", worker_id, resource_id)
 
 
 def _acquire_lock(db: Database, lock_type: str, resource_id: str, holder: str, ttl_seconds: int) -> bool:
-    """Acquire a lock using plain CRUD against the constructor namespace."""
+    """Acquire a distributed lock; return True if the lock was successfully acquired."""
     reference = _make_lock_reference(lock_type, resource_id)
     now = float(now_ms().value)
     expires_at = now + float(ttl_seconds * 1000)
 
-    existing = cast("dict[str, Any] | None", db.locks.document_reference.get(reference))
+    existing = cast("dict[str, Any] | None", db.locks.get(document_reference=reference))
     if existing is not None:
         existing_expires_at = float(existing.get("expires_at", 0.0))
         if existing_expires_at >= now and existing.get("holder") != holder:
             return False
-        db.locks.document_reference.delete(reference)
+        db.locks.delete(document_reference=reference)
 
     try:
         db.locks.insert(
@@ -88,10 +84,11 @@ def _acquire_lock(db: Database, lock_type: str, resource_id: str, holder: str, t
 def _release_lock(db: Database, lock_type: str, resource_id: str, holder: str) -> bool:
     """Release a lock only when it is still owned by the requested holder."""
     reference = _make_lock_reference(lock_type, resource_id)
-    existing = cast("dict[str, Any] | None", db.locks.document_reference.get(reference))
+    existing = cast("dict[str, Any] | None", db.locks.get(document_reference=reference))
     if existing is None or existing.get("holder") != holder:
         return False
-    return db.locks.document_reference.delete(reference) > 0
+    delete_count = cast("int", db.locks.delete(document_reference=reference))
+    return delete_count > 0
 
 
 def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: str) -> int:

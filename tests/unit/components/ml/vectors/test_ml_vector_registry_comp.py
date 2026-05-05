@@ -70,7 +70,7 @@ class TestGetMaintenanceNamespace:
         maintenance_namespace = MagicMock()
 
         with patch(
-            "nomarr.components.ml.vectors.ml_vector_registry_comp.VectorsTrackMaintenanceNamespace",
+            "nomarr.components.ml.vectors.ml_vector_registry_comp._VectorsTrackMaintenance",
             return_value=maintenance_namespace,
         ) as mock_namespace_ctor:
             result = get_maintenance_namespace(db, "effnet", "lib1")

@@ -25,9 +25,8 @@ def find_interface_entrypoints(graph: CodeGraph) -> set[str]:
 
     for node in graph.nodes:
         # API entrypoint: The FastAPI app module
-        if node.layer == "interfaces" and node.kind == "module":
-            if node.id == "nomarr.interfaces.api.api_app":
-                entrypoints.add(node.id)
+        if node.layer == "interfaces" and node.kind == "module" and node.id == "nomarr.interfaces.api.api_app":
+            entrypoints.add(node.id)
 
         # CLI entrypoints
         if node.layer == "interfaces" and node.kind == "function":

@@ -1,4 +1,5 @@
 """Verify tests/fixtures/ml_cuda_warmup.onnx loads correctly with onnxruntime."""
+
 import pathlib
 
 import numpy as np

@@ -17,22 +17,24 @@ class TestListAllLibraryKeys:
         """Returns library document keys from the constructor namespace."""
         mock_db = MagicMock()
         mock_db.libraries.count.return_value = 2
-        mock_db.libraries._key.collect.return_value = ["lib1", "lib2"]
+        mock_db.libraries.aggregate.return_value = [{"value": "lib1"}, {"value": "lib2"}]
 
         result = list_all_library_keys(mock_db)
 
         assert result == ["lib1", "lib2"]
+        mock_db.libraries.aggregate.assert_called_once_with("_key", limit=2)
 
     @pytest.mark.unit
     def test_returns_empty_list_when_no_libraries(self) -> None:
         """Returns an empty list when no libraries exist."""
         mock_db = MagicMock()
         mock_db.libraries.count.return_value = 0
-        mock_db.libraries._key.collect.return_value = []
+        mock_db.libraries.aggregate.return_value = []
 
         result = list_all_library_keys(mock_db)
 
         assert result == []
+        mock_db.libraries.aggregate.assert_called_once_with("_key", limit=0)
 
 
 class TestNormalizeLibraryId:
@@ -109,18 +111,18 @@ class TestGetLibraryRecord:
             result = get_library_record(mock_db, "libraries/1")
 
         assert result == merged_doc
-        mock_db.libraries.get.assert_called_once_with("libraries/1")
+        mock_db.libraries.get.assert_called_once_with(_id="libraries/1")
         merge_scan.assert_called_once_with(mock_db, library_doc)
 
     @pytest.mark.unit
     def test_gets_by_key_without_merge_when_scan_disabled(self) -> None:
         mock_db = MagicMock()
-        mock_db.libraries._key.get.return_value = {"_id": "libraries/2", "name": "Alt"}
+        mock_db.libraries.get.return_value = {"_id": "libraries/2", "name": "Alt"}
 
         result = get_library_record(mock_db, "2", include_scan=False)
 
         assert result == {"_id": "libraries/2", "name": "Alt"}
-        mock_db.libraries._key.get.assert_called_once_with("2")
+        mock_db.libraries.get.assert_called_once_with(_key="2")
 
 
 class TestGetLibraryByName:
@@ -131,7 +133,7 @@ class TestGetLibraryByName:
         mock_db = MagicMock()
         library_doc = {"_id": "libraries/1", "name": "Main"}
         merged_doc = {**library_doc, "scan_status": "running"}
-        mock_db.libraries.name.get.return_value = library_doc
+        mock_db.libraries.get.return_value = library_doc
 
         with patch(
             "nomarr.components.library.library_records_comp._merge_scan_state",
@@ -140,7 +142,7 @@ class TestGetLibraryByName:
             result = get_library_by_name(mock_db, "Main", include_scan=True)
 
         assert result == merged_doc
-        mock_db.libraries.name.get.assert_called_once_with("Main")
+        mock_db.libraries.get.assert_called_once_with(name="Main")
         merge_scan.assert_called_once_with(mock_db, library_doc)
 
 
@@ -151,7 +153,11 @@ class TestListLibraryRecords:
     def test_collects_all_docs_sorts_by_created_at_and_skips_missing(self) -> None:
         mock_db = MagicMock()
         mock_db.libraries.count.return_value = 3
-        mock_db.libraries._id.collect.return_value = ["libraries/2", "libraries/missing", "libraries/1"]
+        mock_db.libraries.aggregate.return_value = [
+            {"value": "libraries/2"},
+            {"value": "libraries/missing"},
+            {"value": "libraries/1"},
+        ]
         mock_db.libraries.get.side_effect = [
             {"_id": "libraries/2", "created_at": 20},
             None,
@@ -164,14 +170,19 @@ class TestListLibraryRecords:
             {"_id": "libraries/1", "created_at": 10},
             {"_id": "libraries/2", "created_at": 20},
         ]
-        mock_db.libraries._id.collect.assert_called_once_with(limit=3)
+        mock_db.libraries.aggregate.assert_called_once_with("_id", limit=3)
+        assert mock_db.libraries.get.call_args_list == [
+            call(_id="libraries/2"),
+            call(_id="libraries/missing"),
+            call(_id="libraries/1"),
+        ]
 
     @pytest.mark.unit
     def test_merges_scan_state_for_enabled_only_records(self) -> None:
         mock_db = MagicMock()
         enabled_docs = [{"_id": "libraries/1", "created_at": 10}]
         merged_docs = [{"_id": "libraries/1", "created_at": 10, "scan_status": "idle"}]
-        mock_db.libraries.is_enabled.get.return_value = enabled_docs
+        mock_db.libraries.get.return_value = enabled_docs
 
         with patch(
             "nomarr.components.library.library_records_comp._merge_scan_state",
@@ -180,7 +191,7 @@ class TestListLibraryRecords:
             result = list_library_records(mock_db, enabled_only=True)
 
         assert result == merged_docs
-        mock_db.libraries.is_enabled.get.assert_called_once_with(True)
+        mock_db.libraries.get.assert_called_once_with(is_enabled=True)
         merge_scan.assert_called_once_with(mock_db, enabled_docs[0])
 
 
@@ -223,9 +234,9 @@ class TestUpdateLibraryRecord:
                 description=None,
             )
 
-        mock_db.libraries._id.update.assert_called_once_with(
-            "libraries/main",
-            {
+        mock_db.libraries.update.assert_called_once_with(
+            _id="libraries/main",
+            fields={
                 "updated_at": 222333444,
                 "name": "Renamed",
                 "watch_mode": "poll",
@@ -287,7 +298,7 @@ class TestFindLibraryContainingPath:
         list_records.assert_called_once_with(mock_db, enabled_only=False, include_scan=False)
 
 
-from unittest.mock import patch  # noqa: E402
+from unittest.mock import call, patch  # noqa: E402
 
 from nomarr.components.library.library_records_comp import (  # noqa: E402
     PIPELINE_ML_RUNNING,
@@ -312,7 +323,7 @@ class TestFindMlCompleteLibraries:
     def test_returns_empty_list_when_no_state_docs(self) -> None:
         mock_db = MagicMock()
         mock_db.library_pipeline_states.count.return_value = 0
-        mock_db.library_pipeline_states.pipeline_state.get.many.return_value = []
+        mock_db.library_pipeline_states.get.return_value = []
 
         with (
             patch(
@@ -324,8 +335,8 @@ class TestFindMlCompleteLibraries:
             result = find_ml_complete_libraries(mock_db, min_files=10)
 
         assert result == []
-        mock_db.library_pipeline_states.pipeline_state.get.many.assert_called_once_with(
-            PIPELINE_ML_RUNNING,
+        mock_db.library_pipeline_states.get.assert_called_once_with(
+            pipeline_state=PIPELINE_ML_RUNNING,
             limit=0,
         )
         mock_get_library_counts.assert_called_once_with(mock_db)
@@ -335,7 +346,7 @@ class TestFindMlCompleteLibraries:
     def test_excludes_library_with_untagged_files(self) -> None:
         mock_db = MagicMock()
         mock_db.library_pipeline_states.count.return_value = 1
-        mock_db.library_pipeline_states.pipeline_state.get.many.return_value = [{"library_key": "42"}]
+        mock_db.library_pipeline_states.get.return_value = [{"library_key": "42"}]
 
         with (
             patch(
@@ -356,7 +367,7 @@ class TestFindMlCompleteLibraries:
     def test_includes_fully_tagged_library(self) -> None:
         mock_db = MagicMock()
         mock_db.library_pipeline_states.count.return_value = 1
-        mock_db.library_pipeline_states.pipeline_state.get.many.return_value = [{"library_key": "42"}]
+        mock_db.library_pipeline_states.get.return_value = [{"library_key": "42"}]
 
         with (
             patch(
@@ -377,7 +388,7 @@ class TestFindMlCompleteLibraries:
     def test_returns_only_fully_tagged_libraries_when_state_docs_are_mixed(self) -> None:
         mock_db = MagicMock()
         mock_db.library_pipeline_states.count.return_value = 2
-        mock_db.library_pipeline_states.pipeline_state.get.many.return_value = [
+        mock_db.library_pipeline_states.get.return_value = [
             {"library_key": "7"},
             {"library_key": "42"},
         ]

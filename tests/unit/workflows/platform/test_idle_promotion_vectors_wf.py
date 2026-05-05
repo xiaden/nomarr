@@ -46,14 +46,14 @@ class TestIdlePromotionVectorsWorkflow:
 
         db = MagicMock()
         db.locks.count.return_value = 2
-        db.locks.acquired_at.get.in_.return_value = []
-        db.locks.document_reference.get.side_effect = [
+        db.locks.get.lte.return_value = []
+        db.locks.get.side_effect = [
             None,
             {"holder": "worker:tag:0"},
             None,
             {"holder": "worker:tag:0"},
         ]
-        db.locks.document_reference.delete.return_value = 1
+        db.locks.delete.return_value = 1
 
         result = idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
 
@@ -63,9 +63,9 @@ class TestIdlePromotionVectorsWorkflow:
         mock_workflow.assert_any_call(db, "musicnn", "lib2", 100, "/models")
 
         assert db.locks.insert.call_count == 2
-        assert db.locks.document_reference.delete.call_count == 2
-        db.locks.document_reference.delete.assert_any_call("vector_promotion:effnet__lib1")
-        db.locks.document_reference.delete.assert_any_call("vector_promotion:musicnn__lib2")
+        assert db.locks.delete.call_count == 2
+        db.locks.delete.assert_any_call(document_reference="vector_promotion:effnet__lib1")
+        db.locks.delete.assert_any_call(document_reference="vector_promotion:musicnn__lib2")
 
     @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow")
     @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
@@ -86,8 +86,8 @@ class TestIdlePromotionVectorsWorkflow:
 
         db = MagicMock()
         db.locks.count.return_value = 1
-        db.locks.acquired_at.get.in_.return_value = []
-        db.locks.document_reference.get.return_value = {
+        db.locks.get.lte.return_value = []
+        db.locks.get.return_value = {
             "document_reference": "vector_promotion:effnet__lib1",
             "holder": "other-worker",
             "expires_at": 9_999_999_999_999.0,
@@ -98,7 +98,7 @@ class TestIdlePromotionVectorsWorkflow:
         assert result == 0
         mock_workflow.assert_not_called()
         db.locks.insert.assert_not_called()
-        db.locks.document_reference.delete.assert_not_called()
+        db.locks.delete.assert_not_called()
 
     @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow")
     @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
@@ -120,15 +120,15 @@ class TestIdlePromotionVectorsWorkflow:
 
         db = MagicMock()
         db.locks.count.return_value = 1
-        db.locks.acquired_at.get.in_.return_value = []
-        db.locks.document_reference.get.side_effect = [None, {"holder": "worker:tag:0"}]
-        db.locks.document_reference.delete.return_value = 1
+        db.locks.get.lte.return_value = []
+        db.locks.get.side_effect = [None, {"holder": "worker:tag:0"}]
+        db.locks.delete.return_value = 1
 
         result = idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
 
         # Promotion failed but lock was still released
         assert result == 0
-        db.locks.document_reference.delete.assert_called_once_with("vector_promotion:effnet__lib1")
+        db.locks.delete.assert_called_once_with(document_reference="vector_promotion:effnet__lib1")
 
     @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow")
     @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
@@ -149,15 +149,15 @@ class TestIdlePromotionVectorsWorkflow:
 
         db = MagicMock()
         db.locks.count.return_value = 2
-        db.locks.acquired_at.get.in_.return_value = [
+        db.locks.get.lte.return_value = [
             {
                 "document_reference": "vector_promotion:yamnet__lib3",
                 "lock_type": "vector_promotion",
             },
         ]
-        db.locks.document_reference.get.side_effect = [None, {"holder": "worker:tag:0"}]
-        db.locks.document_reference.delete.return_value = 1
+        db.locks.get.side_effect = [None, {"holder": "worker:tag:0"}]
+        db.locks.delete.return_value = 1
 
         idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
 
-        db.locks.document_reference.delete.assert_any_call("vector_promotion:yamnet__lib3")
+        db.locks.delete.assert_any_call(document_reference="vector_promotion:yamnet__lib3")

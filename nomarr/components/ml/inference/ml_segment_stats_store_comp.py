@@ -6,11 +6,19 @@ import hashlib
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.time_helper import now_ms
-from nomarr.persistence.constructor import SchemaConstructor
-from nomarr.persistence.schema import SCHEMA
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
+
+
+def _segment_scores_stats_ns(db: Database) -> Any:
+    """Return the runtime-wired segment-stats namespace with collection verbs attached."""
+    return cast("Any", db.segment_scores_stats)
+
+
+def _library_files_ns(db: Database) -> Any:
+    """Return the runtime-wired library-files namespace with traversal verbs attached."""
+    return cast("Any", db.library_files)
 
 
 def _stats_key(file_id: str, head_name: str, tagger_version: str) -> str:
@@ -24,11 +32,8 @@ def _edge_key(file_id: str, stats_id: str) -> str:
 
 
 def _build_edge_namespace(db: Database) -> Any:
-    """Build the local edge namespace used for file→stats links."""
-    return cast(
-        "Any",
-        SchemaConstructor(db.db).build_collection_namespace("file_has_segment_stats", SCHEMA["file_has_segment_stats"]),
-    )
+    """Return the runtime-wired edge namespace used for file→stats links."""
+    return cast("Any", db.file_has_segment_stats)
 
 
 def upsert_segment_stats(
@@ -65,6 +70,7 @@ def upsert_segment_stats_batch(db: Database, entries: list[dict[str, Any]]) -> N
     processed_at = now_ms().value
     edge_ns = _build_edge_namespace(db)
     edge_count = edge_ns.count()
+    segment_scores_stats = _segment_scores_stats_ns(db)
 
     docs: list[dict[str, Any]] = []
     links_by_file: dict[str, list[str]] = {}
@@ -87,13 +93,17 @@ def upsert_segment_stats_batch(db: Database, entries: list[dict[str, Any]]) -> N
         )
         links_by_file.setdefault(file_id, []).append(stats_id)
 
-    db.segment_scores_stats._key.upsert(docs, match_field="_key")
+    for doc in docs:
+        segment_scores_stats.upsert(
+            _key=cast("str", doc["_key"]),
+            fields={key: value for key, value in doc.items() if key != "_key"},
+        )
 
     edge_docs: list[dict[str, str]] = []
     for file_id, stats_ids in links_by_file.items():
         existing_edges = cast(
             "list[dict[str, Any]]",
-            edge_ns._from.get.many(file_id, limit=edge_count or None),
+            edge_ns.get(_from=file_id, limit=edge_count or None),
         )
         existing_targets = {str(edge["_to"]) for edge in existing_edges if "_to" in edge}
         for stats_id in stats_ids:
@@ -114,9 +124,11 @@ def upsert_segment_stats_batch(db: Database, entries: list[dict[str, Any]]) -> N
 
 def get_segment_stats_for_file(db: Database, file_id: str) -> list[dict[str, Any]]:
     """Return all segment-stats documents linked to one file."""
+    library_files = _library_files_ns(db)
+    segment_scores_stats = _segment_scores_stats_ns(db)
     return cast(
         "list[dict[str, Any]]",
-        db.library_files.traversal(file_id, edge="file_has_segment_stats", limit=db.segment_scores_stats.count()),
+        library_files.file_has_segment_stats(file_id, limit=segment_scores_stats.count()),
     )
 
 
@@ -139,7 +151,12 @@ def delete_segment_stats_for_file(db: Database, file_id: str) -> int:
     stats_ids = [cast("str", doc["_id"]) for doc in stats_docs if "_id" in doc]
     if not stats_ids:
         return 0
-    return int(db.segment_scores_stats.cascade(stats_ids))
+
+    segment_scores_stats = _segment_scores_stats_ns(db)
+    deleted = 0
+    for stats_id in stats_ids:
+        deleted += int(segment_scores_stats.delete.cascade(_key=stats_id.split("/", 1)[-1]))
+    return deleted
 
 
 def delete_segment_stats_for_files(db: Database, file_ids: list[str]) -> int:
@@ -157,9 +174,10 @@ def get_high_variance_segment_stats(
     std_threshold: float,
 ) -> list[dict[str, Any]]:
     """Filter constructor-backed segment stats to rows whose label std exceeds the threshold."""
+    segment_scores_stats = _segment_scores_stats_ns(db)
     docs = cast(
         "list[dict[str, Any]]",
-        db.segment_scores_stats.head_name.get.many(head_name, limit=db.segment_scores_stats.count()),
+        segment_scores_stats.get(head_name=head_name, limit=segment_scores_stats.count()),
     )
     result: list[dict[str, Any]] = []
     for doc in docs:
@@ -182,9 +200,10 @@ def get_high_variance_segment_stats(
 
 def summarize_segment_stats(db: Database, head_name: str) -> dict[str, Any]:
     """Summarize constructor-backed segment stats for one head."""
+    segment_scores_stats = _segment_scores_stats_ns(db)
     docs = cast(
         "list[dict[str, Any]]",
-        db.segment_scores_stats.head_name.get.many(head_name, limit=db.segment_scores_stats.count()),
+        segment_scores_stats.get(head_name=head_name, limit=segment_scores_stats.count()),
     )
     if not docs:
         return {

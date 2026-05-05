@@ -70,9 +70,7 @@ def path_to_module(file_path: Path, project_root: Path) -> str:
     module_path = ".".join(module_parts)
 
     # Remove __init__ if present
-    module_path = module_path.removesuffix(".__init__")
-
-    return module_path
+    return module_path.removesuffix(".__init__")
 
 
 def discover_all_dataclasses(

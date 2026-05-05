@@ -6,6 +6,7 @@ import hashlib
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.base import Field
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -31,10 +32,11 @@ def write_tag_model_output_edges_batch(db: Database, edges: list[tuple[str, str,
     unique_tag_ids = list({tag_id for tag_id, _ in unique_edges})
 
     # Fetch all existing edges for all involved tags in one IN query.
-    all_existing = cast(
-        "list[dict[str, Any]]",
-        db.tag_model_output._from.get.in_(unique_tag_ids),
-    )
+    all_existing = [
+        edge
+        for tag_id in unique_tag_ids
+        for edge in cast("list[dict[str, Any]]", db.tag_model_output.get(Field("_from", tag_id), limit=None))
+    ]
     existing_by_tag: dict[str, dict[str, dict[str, Any]]] = {}
     for edge in all_existing:
         if "_to" not in edge or "_from" not in edge:
@@ -68,16 +70,16 @@ def write_tag_model_output_edges_batch(db: Database, edges: list[tuple[str, str,
 
 def delete_tag_model_output_edges_for_tag(db: Database, tag_id: str) -> int:
     """Delete all outbound provenance edges for one tag vertex."""
-    return int(db.tag_model_output._from.delete(tag_id))
+    return int(db.tag_model_output.delete(Field("_from", tag_id)))
 
 
 def tag_has_model_output_edges(db: Database, tag_id: str) -> bool:
     """Return whether the tag has any outbound provenance edges."""
-    return bool(cast("list[dict[str, Any]]", db.tag_model_output._from.get.many(tag_id, limit=1)))
+    return bool(cast("list[dict[str, Any]]", db.tag_model_output.get(Field("_from", tag_id), limit=1)))
 
 
 def delete_tag_model_output_edges_for_outputs(db: Database, output_ids: list[str]) -> int:
     """Delete all provenance edges that target the provided output vertices."""
     if not output_ids:
         return 0
-    return int(db.tag_model_output._to.delete.in_(output_ids))
+    return sum(int(db.tag_model_output.delete(Field("_to", output_id))) for output_id in output_ids)

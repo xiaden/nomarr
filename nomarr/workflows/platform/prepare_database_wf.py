@@ -43,7 +43,7 @@ def _is_fresh_database(db: Database) -> bool:
 
     """
     try:
-        return db.meta.key.get("version") is None
+        return db.meta.get(key="version") is None
     except AQLQueryExecuteError as exc:
         # ERR 1203: collection or view not found — truly fresh database
         if "[ERR 1203]" in str(exc):

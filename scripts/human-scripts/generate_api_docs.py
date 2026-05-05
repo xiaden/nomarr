@@ -253,7 +253,7 @@ def main() -> int:
     # Canonical layer order
     LAYER_ORDER = ["interfaces", "services", "workflows", "components", "persistence", "helpers"]
     LAYERS = sorted(
-        layer_roots, key=lambda x: (LAYER_ORDER.index(x.split(".")[1]) if x.split(".")[1] in LAYER_ORDER else 99)
+        layer_roots, key=lambda x: LAYER_ORDER.index(x.split(".")[1]) if x.split(".")[1] in LAYER_ORDER else 99
     )
 
     # Ensure output directory exists

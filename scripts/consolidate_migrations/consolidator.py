@@ -104,7 +104,7 @@ def _render_indexes(indexes: frozenset[Index]) -> str:
         if idx.index_type == "ttl":
             expire = idx.expire_after if idx.expire_after is not None else 0
             lines.append("    with contextlib.suppress(IndexCreateError):")
-            lines.append(f"        db.collection(\"{idx.collection}\").add_ttl_index(  # type: ignore[union-attr]")
+            lines.append(f'        db.collection("{idx.collection}").add_ttl_index(  # type: ignore[union-attr]')
             lines.append(f"            fields={fields_repr}, expiry_time={expire}")
             lines.append("        )")
         else:
@@ -117,7 +117,7 @@ def _render_indexes(indexes: frozenset[Index]) -> str:
             kwargs_str = ", ".join(kwargs)
             lines.append("    with contextlib.suppress(IndexCreateError):")
             lines.append(
-                f"        db.collection(\"{idx.collection}\").add_persistent_index({kwargs_str})  # type: ignore[union-attr]"
+                f'        db.collection("{idx.collection}").add_persistent_index({kwargs_str})  # type: ignore[union-attr]'
             )
     lines.append("")
     return "\n".join(lines)
@@ -130,7 +130,7 @@ def _render_graphs(graphs: frozenset[Graph]) -> str:
 
     lines: list[str] = ["    # -- Graphs --"]
     for graph in sorted(graphs, key=lambda g: g.name):
-        lines.append(f"    if not db.has_graph(\"{graph.name}\"):  # type: ignore[union-attr]")
+        lines.append(f'    if not db.has_graph("{graph.name}"):  # type: ignore[union-attr]')
         lines.append("        with contextlib.suppress(GraphCreateError):")
         lines.append("            db.create_graph(  # type: ignore[union-attr]")
         lines.append(f'                "{graph.name}",')
@@ -196,12 +196,8 @@ def generate_baseline_source(shape: SchemaShape) -> str:
     body = "\n".join(body_parts) if body_parts else "    pass  # nothing to create\n"
 
     # Determine which exception imports are actually needed
-    need_collection = bool(
-        [c for c in shape.collections if not is_blacklisted(c.name)]
-    )
-    need_index = bool(
-        [i for i in shape.indexes if not is_blacklisted(i.collection)]
-    )
+    need_collection = bool([c for c in shape.collections if not is_blacklisted(c.name)])
+    need_index = bool([i for i in shape.indexes if not is_blacklisted(i.collection)])
     need_graph = bool(shape.graphs)
 
     import_parts: list[str] = []
@@ -213,9 +209,7 @@ def generate_baseline_source(shape: SchemaShape) -> str:
         import_parts.append("IndexCreateError")
 
     if import_parts:
-        arango_import = (
-            "    from arango.exceptions import " + ", ".join(import_parts)
-        )
+        arango_import = "    from arango.exceptions import " + ", ".join(import_parts)
     else:
         arango_import = ""
 

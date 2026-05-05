@@ -1,175 +1,846 @@
-"""Schema constructor — builds namespace objects from declarative schema.
-
-SchemaConstructor validates the schema at instantiation time and builds
-CollectionNamespace objects that provide the nested accessor API.
-"""
+"""Build typed collection accessors from class-based collection definitions."""
 
 from __future__ import annotations
 
-from copy import deepcopy
-from typing import Any, cast
+import hashlib
+import math
+import re
+from collections.abc import Callable
+from typing import Annotated, Any, ClassVar, cast, get_args, get_origin, get_type_hints
 
+from nomarr.helpers.filter_types import AggResult, Op
+from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.arango_client import SafeDatabase
-from nomarr.persistence.constructor.namespaces import CollectionNamespace
-from nomarr.persistence.schema import SCHEMA, CollectionType, SchemaValidationError
+from nomarr.persistence.base import (
+    CASCADE,
+    OUTBOUND,
+    DocumentCollection,
+    EdgeCollection,
+    EdgeDef,
+    FieldMarker,
+    StateGraphCollection,
+    VectorCollection,
+)
+from nomarr.persistence.base import (
+    Field as FieldValue,
+)
+from nomarr.persistence.constructor.pagination import DEFAULT_LIMIT
+
+from . import verbs
+
+Document = dict[str, Any]
+CollectionInstance = DocumentCollection | EdgeCollection | VectorCollection
+_ALWAYS_UNIQUE = frozenset({"_key", "_id"})
+_CLASS_VAR_NAMES = frozenset({"EDGES", "FROM_COLLECTION", "TO_COLLECTION", "VECTOR_TIER", "NAME_PATTERN", "_name"})
+_SNAKE_CASE_RE_1 = re.compile(r"(.)([A-Z][a-z]+)")
+_SNAKE_CASE_RE_2 = re.compile(r"([a-z0-9])([A-Z])")
 
 
-class SchemaConstructor:
-    """Builds namespace objects from the persistence schema.
+def _snake_case(name: str) -> str:
+    """Convert ``CamelCase`` class names to ``snake_case`` attribute names."""
+    return _SNAKE_CASE_RE_2.sub(r"\1_\2", _SNAKE_CASE_RE_1.sub(r"\1_\2", name)).lower()
 
-    Validates the schema at import time. Raises SchemaValidationError
-    immediately if the schema contains invalid declarations.
-    """
 
-    def __init__(self, db: SafeDatabase) -> None:
-        """Initialize with an ArangoDB database handle.
+def _collection_name_for_class(cls: type[object]) -> str:
+    """Return the concrete collection name declared on a collection class."""
+    declared_name = getattr(cls, "_name", None)
+    if isinstance(declared_name, str) and declared_name:
+        return declared_name
+    return _snake_case(cls.__name__)
 
-        Args:
-            db: ArangoDB database handle (python-arango StandardDatabase or SafeDatabase).
 
-        """
-        self._db = db
-        self._schema = SCHEMA
-        self.validate_schema(self._schema)
+def _iter_subclasses(base_cls: type[object]) -> set[type[object]]:
+    """Yield all recursive subclasses of ``base_cls``."""
+    discovered: set[type[object]] = set()
+    pending = list(base_cls.__subclasses__())
+    while pending:
+        subclass = pending.pop()
+        if subclass in discovered:
+            continue
+        discovered.add(subclass)
+        pending.extend(subclass.__subclasses__())
+    return discovered
 
-    def validate_schema(self, schema: dict[str, Any]) -> None:
-        """Validate schema declarations.
 
-        Raises SchemaValidationError on violations.
+def _is_classvar(annotation: Any) -> bool:
+    """Return whether an annotation is a ``ClassVar``."""
+    return get_origin(annotation) is ClassVar
 
-        Validation rules:
-        1. ann_search only on TEMPLATE collections
-        2. transition only on STATE_GRAPH collections
-        3. cascade targets must be declared as edge collections (EDGE type)
-        4. .get.one only generated for unique fields (enforced in namespace construction)
 
-        """
-        edge_collections = {name for name, spec in schema.items() if spec.get("type") == CollectionType.EDGE}
+def _extract_field_marker(annotation: Any) -> tuple[Any, bool] | None:
+    """Extract ``(python_type, unique)`` from an ``Annotated[..., FieldMarker]`` type."""
+    if _is_classvar(annotation):
+        return None
 
-        for col_name, spec in schema.items():
-            col_type = spec.get("type")
-            capabilities = spec.get("capabilities", [])
+    if get_origin(annotation) is not Annotated:
+        return None
 
-            if "ann_search" in capabilities and col_type != CollectionType.TEMPLATE:
-                raise SchemaValidationError(
-                    f"Collection '{col_name}' declares ann_search but has type={col_type}. "
-                    "ann_search is restricted to TEMPLATE collections (vector search only)."
-                )
+    args = get_args(annotation)
+    if not args:
+        return None
 
-            if "transition" in capabilities and col_type != CollectionType.STATE_GRAPH:
-                raise SchemaValidationError(
-                    f"Collection '{col_name}' declares transition but has type={col_type}. "
-                    "transition is restricted to STATE_GRAPH collections."
-                )
+    python_type = args[0]
+    marker = next((meta for meta in args[1:] if isinstance(meta, FieldMarker)), None)
+    if marker is None:
+        return None
 
-            for cascade_target in spec.get("cascade", []):
-                if cascade_target not in schema:
-                    raise SchemaValidationError(
-                        f"Collection '{col_name}' declares cascade target '{cascade_target}' "
-                        "which is not declared in SCHEMA."
-                    )
-                if cascade_target not in edge_collections:
-                    raise SchemaValidationError(
-                        f"Collection '{col_name}' declares cascade target '{cascade_target}' "
-                        f"but that collection has type={schema[cascade_target].get('type')}, "
-                        "not EDGE. Cascade targets must be edge collections."
-                    )
+    return python_type, marker.unique
 
-    def build_collection_namespace(
+
+def _normalize_field_criteria(*args: FieldValue, **kwargs: Any) -> dict[str, Any]:
+    """Normalize positional ``Field(name, value)`` items plus keyword filters."""
+    criteria: dict[str, Any] = {}
+    for item in args:
+        criteria[item.name] = item.value
+    criteria.update(kwargs)
+    return criteria
+
+
+def _require_single_criterion(*args: FieldValue, **kwargs: Any) -> tuple[str, Any]:
+    """Require exactly one field criterion and return it."""
+    criteria = _normalize_field_criteria(*args, **kwargs)
+    if len(criteria) != 1:
+        msg = f"Expected exactly one field criterion, got {len(criteria)}"
+        raise ValueError(msg)
+    return next(iter(criteria.items()))
+
+
+def _make_vector_key(file_id: str, model_suite_hash: str) -> str:
+    """Build the deterministic key used by vectors_track hot/cold collections."""
+    return hashlib.sha1(f"{file_id}|{model_suite_hash}".encode()).hexdigest()
+
+
+class _GetVerb:
+    """Callable helper that exposes ``get`` plus comparison/list modifiers."""
+
+    def __init__(self, accessor: FieldAccessor) -> None:
+        self._accessor = accessor
+
+    def __call__(self, value: Any) -> Document | None | list[Document]:
+        if self._accessor.unique:
+            return verbs.get_one_by_field(
+                self._accessor.db,
+                self._accessor.collection_name,
+                self._accessor.field_name,
+                value,
+            )
+        return self.many(value)
+
+    def many(
         self,
-        name: str,
-        spec: dict[str, Any],
-        registry: dict[str, Any] | None = None,
-    ) -> CollectionNamespace:
-        """Build a CollectionNamespace from a collection schema spec.
-
-        Args:
-            name: Collection name.
-            spec: Collection schema spec from SCHEMA.
-            registry: Optional template collection registry for cascade.
-
-        Returns:
-            Fully constructed CollectionNamespace.
-
-        """
-        collection_name = cast("str", spec.get("collection_name", name))
-
-        return CollectionNamespace(
-            db=self._db,
-            collection_name=collection_name,
-            spec=spec,
-            schema=self._schema,
-            registry=registry,
+        value: Any,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Document]:
+        return verbs.get_many_by_field(
+            self._accessor.db,
+            self._accessor.collection_name,
+            self._accessor.field_name,
+            value,
+            limit=limit,
+            offset=offset,
         )
 
-    def build_template_namespace(
+    def in_(
         self,
+        values: list[Any],
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Document]:
+        return verbs.get_in_by_field(
+            self._accessor.db,
+            self._accessor.collection_name,
+            self._accessor.field_name,
+            values,
+            limit=limit,
+            offset=offset,
+        )
+
+    def gte(
+        self,
+        value: Any,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Document]:
+        return verbs.get_range_by_field(
+            self._accessor.db,
+            self._accessor.collection_name,
+            self._accessor.field_name,
+            {Op.GTE: value},
+            limit=limit,
+            offset=offset,
+        )
+
+    def lte(
+        self,
+        value: Any,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Document]:
+        return verbs.get_range_by_field(
+            self._accessor.db,
+            self._accessor.collection_name,
+            self._accessor.field_name,
+            {Op.LTE: value},
+            limit=limit,
+            offset=offset,
+        )
+
+    def like(
+        self,
+        pattern: str,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Document]:
+        return verbs.get_like_by_field(
+            self._accessor.db,
+            self._accessor.collection_name,
+            self._accessor.field_name,
+            pattern,
+            limit=limit,
+            offset=offset,
+        )
+
+
+class _DeleteVerb:
+    """Callable helper that exposes ``delete`` plus bulk modifiers."""
+
+    def __init__(self, accessor: FieldAccessor) -> None:
+        self._accessor = accessor
+        self.cascade: Callable[..., int] | None = None
+
+    def __call__(self, value: Any) -> int:
+        return verbs.delete_by_field(
+            self._accessor.db,
+            self._accessor.collection_name,
+            self._accessor.field_name,
+            value,
+        )
+
+    def in_(self, values: list[Any]) -> int:
+        return verbs.delete_in_by_field(
+            self._accessor.db,
+            self._accessor.collection_name,
+            self._accessor.field_name,
+            values,
+        )
+
+
+class FieldAccessor:
+    """Attached by Builder to collection instances. Provides flat verb API."""
+
+    def __init__(
+        self,
+        db: SafeDatabase,
         collection_name: str,
-        template_name: str,
-        registry: dict[str, Any] | None = None,
-    ) -> CollectionNamespace:
-        """Build a namespace for a dynamically-resolved template collection.
-
-        Looks up ``template_name`` in the schema, deep-copies the spec, injects the
-        concrete ``collection_name``, and delegates to ``build_collection_namespace``.
+        field_name: str,
+        python_type: Any,
+        unique: bool,
+    ) -> None:
+        """Bind a field accessor to a specific field on a collection.
 
         Args:
-            collection_name: Actual ArangoDB collection name (e.g. ``"vectors_track_hot__msd__lib1"``).
-            template_name: Schema key of the TEMPLATE definition to resolve
-                (e.g. ``"vectors_track_hot"``).
-            registry: Optional pre-built AQL registry to reuse. If ``None``, a new
-                registry is created by ``build_collection_namespace``.
-
-        Returns:
-            A fully-constructed ``CollectionNamespace`` bound to ``collection_name``.
-
-        Raises:
-            SchemaValidationError: If ``template_name`` is not found in the schema or
-                is not of type TEMPLATE.
-
+            db: ArangoDB database handle.
+            collection_name: Name of the ArangoDB collection.
+            field_name: Name of the field this accessor targets.
+            python_type: Python type of the field (from annotations).
+            unique: Whether the field has a uniqueness constraint.
         """
-        template_spec = cast("dict[str, Any] | None", self._schema.get(template_name))
-        if template_spec is None or template_spec.get("type") != CollectionType.TEMPLATE:
-            msg = f"Collection '{template_name}' is not a template collection"
-            raise SchemaValidationError(msg)
+        self.db = db
+        self.collection_name = collection_name
+        self.field_name = field_name
+        self.python_type = python_type
+        self.unique = unique
 
-        resolved_spec = deepcopy(template_spec)
-        resolved_spec["collection_name"] = collection_name
-        resolved_spec["template_family"] = template_name
-        resolved_spec["template_tier"] = template_name.rsplit("_", 1)[-1]
+        self.get = _GetVerb(self)
+        self.delete = _DeleteVerb(self)
 
-        return self.build_collection_namespace(template_name, resolved_spec, registry=registry)
+    def insert(self, docs: list[Document]) -> list[str]:
+        """Insert documents into the owning collection."""
+        return verbs.insert(self.db, self.collection_name, docs)
 
-    def build(
+    def update(self, value: Any, fields: Document) -> None:
+        """Update documents where this field equals ``value``."""
+        verbs.update_by_field(self.db, self.collection_name, self.field_name, value, fields)
+
+    def upsert(self, value: Any, fields: Document) -> list[str]:
+        """Upsert a single document using this field as the match key."""
+        doc = {self.field_name: value, **fields}
+        return verbs.upsert_by_field(self.db, self.collection_name, self.field_name, [doc])
+
+    def count(self, value: Any) -> int:
+        """Count documents where this field equals ``value``."""
+        return verbs.count_by_field(self.db, self.collection_name, self.field_name, value)
+
+
+class _CollectionGetVerb:
+    """Collection-level callable helper that exposes ``get`` plus flat modifiers."""
+
+    def __init__(self, db: SafeDatabase, collection: CollectionInstance) -> None:
+        self._db = db
+        self._collection = collection
+        self._collection_name = cast("str", collection._name)
+
+    def __call__(
         self,
-        schema: dict[str, Any] | None = None,
-        registry: dict[str, Any] | None = None,
-    ) -> dict[str, CollectionNamespace]:
-        """Validate and build all collection namespaces.
+        *args: FieldValue,
+        limit: int | None = None,
+        offset: int = 0,
+        **kwargs: Any,
+    ) -> Document | None | list[Document]:
+        criteria = _normalize_field_criteria(*args, **kwargs)
+        if not criteria:
+            msg = "get() requires at least one field criterion"
+            raise ValueError(msg)
+        if len(criteria) == 1:
+            field_name, value = next(iter(criteria.items()))
+            accessor = getattr(self._collection, field_name, None)
+            if isinstance(accessor, FieldAccessor):
+                if limit is None and offset == 0:
+                    return accessor.get(value)
+                return accessor.get.many(value, limit=limit, offset=offset)
+            return verbs.get_many_by_field(
+                self._db,
+                self._collection_name,
+                field_name,
+                value,
+                limit=limit,
+                offset=offset,
+            )
+        return verbs.get_many_by_filter(
+            self._db,
+            self._collection_name,
+            criteria,
+            limit=limit,
+            offset=offset,
+        )
+
+    def many(
+        self,
+        *args: FieldValue,
+        limit: int | None = None,
+        offset: int = 0,
+        **kwargs: Any,
+    ) -> list[Document]:
+        criteria = _normalize_field_criteria(*args, **kwargs)
+        if len(criteria) == 1:
+            field_name, value = next(iter(criteria.items()))
+            accessor = getattr(self._collection, field_name, None)
+            if isinstance(accessor, FieldAccessor):
+                return accessor.get.many(value, limit=limit, offset=offset)
+            return verbs.get_many_by_field(
+                self._db,
+                self._collection_name,
+                field_name,
+                value,
+                limit=limit,
+                offset=offset,
+            )
+        return verbs.get_many_by_filter(
+            self._db,
+            self._collection_name,
+            criteria,
+            limit=limit,
+            offset=offset,
+        )
+
+    def in_(
+        self,
+        *args: FieldValue,
+        limit: int | None = None,
+        offset: int = 0,
+        **kwargs: Any,
+    ) -> list[Document]:
+        field_name, values = _require_single_criterion(*args, **kwargs)
+        accessor = getattr(self._collection, field_name, None)
+        if isinstance(accessor, FieldAccessor):
+            return accessor.get.in_(cast("list[Any]", values), limit=limit, offset=offset)
+        return verbs.get_in_by_field(
+            self._db,
+            self._collection_name,
+            field_name,
+            cast("list[Any]", values),
+            limit=limit,
+            offset=offset,
+        )
+
+    def gte(
+        self,
+        field_name: str,
+        threshold: Any,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Document]:
+        accessor = getattr(self._collection, field_name, None)
+        if isinstance(accessor, FieldAccessor):
+            return accessor.get.gte(threshold, limit=limit, offset=offset)
+        return verbs.get_range_by_field(
+            self._db,
+            self._collection_name,
+            field_name,
+            {Op.GTE: threshold},
+            limit=limit,
+            offset=offset,
+        )
+
+    def lte(
+        self,
+        field_name: str,
+        threshold: Any,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Document]:
+        accessor = getattr(self._collection, field_name, None)
+        if isinstance(accessor, FieldAccessor):
+            return accessor.get.lte(threshold, limit=limit, offset=offset)
+        return verbs.get_range_by_field(
+            self._db,
+            self._collection_name,
+            field_name,
+            {Op.LTE: threshold},
+            limit=limit,
+            offset=offset,
+        )
+
+    def like(
+        self,
+        field_name: str,
+        pattern: str,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Document]:
+        accessor = getattr(self._collection, field_name, None)
+        if isinstance(accessor, FieldAccessor):
+            return accessor.get.like(pattern, limit=limit, offset=offset)
+        return verbs.get_like_by_field(
+            self._db,
+            self._collection_name,
+            field_name,
+            pattern,
+            limit=limit,
+            offset=offset,
+        )
+
+
+class _CollectionDeleteVerb:
+    """Collection-level delete helper with optional cascade attachment."""
+
+    def __init__(self, db: SafeDatabase, collection_name: str) -> None:
+        self._db = db
+        self._collection_name = collection_name
+        self.cascade: Callable[..., int] | None = None
+
+    def __call__(self, *args: FieldValue, **kwargs: Any) -> int:
+        criteria = _normalize_field_criteria(*args, **kwargs)
+        if not criteria:
+            verbs.truncate(self._db, self._collection_name)
+            return 0
+        if len(criteria) == 1:
+            field_name, value = next(iter(criteria.items()))
+            return verbs.delete_by_field(self._db, self._collection_name, field_name, value)
+        return verbs.delete_by_filter(self._db, self._collection_name, criteria)
+
+
+class _TraversalVerb:
+    """Callable traversal helper with ``by_ids`` support."""
+
+    def __init__(self, db: SafeDatabase, edge_name: str, direction: str) -> None:
+        self._db = db
+        self._edge_name = edge_name
+        self._direction = direction
+
+    def __call__(self, doc_id: str, limit: int | None = DEFAULT_LIMIT) -> list[Document]:
+        return verbs.traversal_by_id(
+            self._db,
+            "",
+            doc_id,
+            self._edge_name,
+            self._direction,
+            limit=limit,
+        )
+
+    def by_ids(
+        self,
+        ids: list[str],
+        limit: int | None = DEFAULT_LIMIT,
+        **filters: Any,
+    ) -> list[dict[str, Any]]:
+        target_filter = {name: value for name, value in filters.items() if not name.endswith("_starts_with")}
+        starts_with_item = next(
+            ((name[: -len("_starts_with")], value) for name, value in filters.items() if name.endswith("_starts_with")),
+            None,
+        )
+        results = verbs.traversal_by_ids(
+            self._db,
+            "",
+            ids,
+            self._edge_name,
+            self._direction,
+            target_filter=target_filter or None,
+            target_like_starts_with=starts_with_item,
+        )
+        if limit is None:
+            return results
+        return results[:limit]
+
+
+class Builder:
+    """Build typed collection instances from class annotations."""
+
+    def __init__(self, db: SafeDatabase) -> None:
+        """Initialize the builder with a database handle.
+
+        Validates the CASCADE edge graph for acyclicity on construction.
 
         Args:
-            schema: Schema dict (defaults to SCHEMA from persistence.schema).
-            registry: Optional template collection registry.
-
-        Returns:
-            Dict mapping collection names to CollectionNamespace objects.
-
+            db: ArangoDB database handle.
         """
-        target = schema or self._schema
-        self.validate_schema(target)
+        self._db = db
+        self._validate_cascade_dag()
 
-        namespaces: dict[str, CollectionNamespace] = {}
-        for name, spec in target.items():
-            if spec.get("type") == CollectionType.TEMPLATE:
+    def construct(self, collection: CollectionInstance) -> None:
+        """Read annotations from MRO, build FieldAccessors, and attach verbs."""
+        collection_name = getattr(collection, "_name", "") or _collection_name_for_class(type(collection))
+        type(collection)._name = collection_name
+        cast("Any", collection)._name = collection_name
+
+        annotations: dict[str, Any] = {}
+        for cls in reversed(type(collection).__mro__):
+            if cls is object:
+                continue
+            annotations.update(get_type_hints(cls, include_extras=True))
+
+        for field_name, field_type in annotations.items():
+            if field_name in _CLASS_VAR_NAMES or _is_classvar(field_type):
                 continue
 
-            collection_name = cast("str", spec.get("collection_name", name))
-            namespaces[name] = CollectionNamespace(
+            extracted = _extract_field_marker(field_type)
+            if extracted is None:
+                continue
+
+            python_type, unique = extracted
+            accessor = FieldAccessor(
                 db=self._db,
                 collection_name=collection_name,
-                spec=spec,
-                schema=target,
-                registry=registry,
+                field_name=field_name,
+                python_type=python_type,
+                unique=unique or field_name in _ALWAYS_UNIQUE,
+            )
+            setattr(collection, field_name, accessor)
+
+        self._attach_base_verbs(collection)
+
+        for edge_def in getattr(type(collection), "EDGES", []):
+            self._attach_traversal(collection, edge_def)
+
+        cascade_defs = [
+            edge
+            for edge in getattr(type(collection), "EDGES", [])
+            if edge.on_delete == CASCADE and edge.direction == OUTBOUND
+        ]
+        if cascade_defs:
+            self._attach_cascade(collection, cascade_defs)
+
+        if isinstance(collection, StateGraphCollection):
+            self._attach_state_graph(collection)
+
+    def _attach_base_verbs(self, collection: CollectionInstance) -> None:
+        """Attach collection-level verbs that are not tied to one field."""
+        collection_name = cast("str", collection._name)
+        collection_obj = cast("Any", collection)
+
+        collection_obj.insert = lambda docs: verbs.insert(self._db, collection_name, docs)
+        collection_obj.get = self._build_get_callable(collection)
+        collection_obj.delete = _CollectionDeleteVerb(self._db, collection_name)
+        collection_obj.count = self._build_count_callable(collection_name)
+        collection_obj.update = self._build_update_callable(collection_name)
+        collection_obj.upsert = self._build_upsert_callable(collection_name)
+        collection_obj.update_many = lambda docs: verbs.update_many_by_key(self._db, collection_name, docs)
+        collection_obj.aggregate = self._build_aggregate_callable(collection_name)
+
+        if isinstance(collection, EdgeCollection):
+            collection_obj.truncate = lambda: verbs.truncate(self._db, collection_name)
+
+        if isinstance(collection, VectorCollection):
+            collection_obj.ann_search = lambda query_vector, limit, nprobe, *, filter=None: verbs.ann_search(
+                self._db,
+                collection_name,
+                query_vector,
+                limit,
+                nprobe,
+                filter=filter,
+            )
+            collection_obj.get_vector = lambda file_id: verbs.get_vector(self._db, collection_name, file_id)
+            if collection.VECTOR_TIER == "hot":
+                collection_obj.upsert_vector = self._build_upsert_vector_callable(collection_name)
+                collection_obj.move_collection = lambda dest: verbs.move_collection(self._db, collection_name, dest)
+
+    def _attach_traversal(self, collection: CollectionInstance, edge_def: EdgeDef) -> None:
+        """Attach a traversal callable named after the edge collection class."""
+        edge_name = _collection_name_for_class(edge_def.via)
+        traversal = _TraversalVerb(self._db, edge_name, edge_def.direction)
+        setattr(collection, _snake_case(edge_def.via.__name__), traversal)
+
+    def _attach_cascade(self, collection: CollectionInstance, cascade_defs: list[EdgeDef]) -> None:
+        """Attach ``collection.delete.cascade`` using a precompiled static AQL string."""
+        collection_name = cast("str", collection._name)
+        delete_verb = cast("_CollectionDeleteVerb", cast("Any", collection).delete)
+        compiled_query = self._compile_cascade_query(type(collection), collection_name, cascade_defs)
+
+        def cascade_delete(*args: FieldValue, **kwargs: Any) -> int:
+            field_name, value = _require_single_criterion(*args, **kwargs)
+            if field_name == "_id":
+                start_id = cast("str", value)
+            else:
+                start_doc = verbs.get_one_by_field(self._db, collection_name, field_name, value)
+                if start_doc is None:
+                    return 0
+                start_id = cast("str", start_doc["_id"])
+            list(verbs._execute_aql(self._db, compiled_query, bind_vars={"start": start_id}))
+            return 1
+
+        delete_verb.cascade = cascade_delete
+
+        for attr_name in ("_key", "_id"):
+            field_accessor = getattr(collection, attr_name, None)
+            if isinstance(field_accessor, FieldAccessor):
+                field_accessor.delete.cascade = cascade_delete
+
+    def _attach_state_graph(self, collection: StateGraphCollection) -> None:
+        """Attach ``transition`` for state-graph collections."""
+        edge_defs = getattr(type(collection), "EDGES", [])
+        if not edge_defs:
+            return
+
+        edge_name = _collection_name_for_class(edge_defs[0].via)
+        cast("Any", collection).transition = lambda file_ids, from_state, to_state: verbs.transition(
+            self._db, edge_name, file_ids, from_state, to_state
+        )
+
+    def _build_get_callable(self, collection: CollectionInstance) -> _CollectionGetVerb:
+        """Build a collection-level get callable using flat field criteria."""
+        return _CollectionGetVerb(self._db, collection)
+
+    def _build_count_callable(self, collection_name: str) -> Callable[..., int]:
+        """Build a collection-level count callable."""
+
+        def count(*args: FieldValue, **kwargs: Any) -> int:
+            criteria = _normalize_field_criteria(*args, **kwargs)
+            if not criteria:
+                return verbs.count_all(self._db, collection_name)
+            if len(criteria) == 1:
+                field_name, value = next(iter(criteria.items()))
+                return verbs.count_by_field(self._db, collection_name, field_name, value)
+            return verbs.count_by_filter(self._db, collection_name, criteria)
+
+        return count
+
+    def _build_update_callable(self, collection_name: str) -> Callable[..., None]:
+        """Build a collection-level update callable using flat keyword criteria."""
+
+        def update(*args: FieldValue, fields: Document, **kwargs: Any) -> None:
+            criteria = _normalize_field_criteria(*args, **kwargs)
+            if not criteria:
+                msg = "update() requires at least one field criterion"
+                raise ValueError(msg)
+            if len(criteria) == 1:
+                field_name, value = next(iter(criteria.items()))
+                verbs.update_by_field(self._db, collection_name, field_name, value, fields)
+                return
+            verbs.update_by_filter(self._db, collection_name, criteria, fields)
+
+        return update
+
+    def _build_upsert_callable(self, collection_name: str) -> Callable[..., list[str]]:
+        """Build a collection-level upsert callable using flat keyword criteria."""
+
+        def upsert(*args: FieldValue, fields: Document, **kwargs: Any) -> list[str]:
+            criteria = _normalize_field_criteria(*args, **kwargs)
+            if not criteria:
+                msg = "upsert() requires at least one field criterion"
+                raise ValueError(msg)
+            doc = {**criteria, **fields}
+            if len(criteria) == 1:
+                field_name = next(iter(criteria))
+                return verbs.upsert_by_field(self._db, collection_name, field_name, [doc])
+            return verbs.upsert_by_field(self._db, collection_name, list(criteria), [doc])
+
+        return upsert
+
+    def _build_aggregate_callable(self, collection_name: str) -> Callable[..., list[AggResult]]:
+        """Build a collection-level aggregate callable."""
+
+        def aggregate(
+            field_name: str,
+            *,
+            filter: dict[str, Any] | None = None,
+            limit: int | None = None,
+            offset: int = 0,
+        ) -> list[AggResult]:
+            return verbs.aggregate_field(
+                self._db,
+                collection_name,
+                field_name,
+                filter=filter,
+                limit=limit,
+                offset=offset,
             )
 
-        return namespaces
+        return aggregate
+
+    def _build_upsert_vector_callable(self, collection_name: str) -> Callable[..., None]:
+        """Build the hot-tier ``upsert_vector`` callable."""
+
+        def upsert_vector(
+            file_id: str,
+            model_suite_hash: str,
+            embed_dim: int,
+            vector: list[float],
+            num_segments: int,
+        ) -> None:
+            _key = _make_vector_key(file_id, model_suite_hash)
+            norm = math.sqrt(math.fsum(x * x for x in vector))
+            vector_n = [x / norm for x in vector] if norm > 0.0 else list(vector)
+            doc: Document = {
+                "_key": _key,
+                "file_id": file_id,
+                "model_suite_hash": model_suite_hash,
+                "embed_dim": embed_dim,
+                "vector": vector,
+                "vector_n": vector_n,
+                "num_segments": num_segments,
+                "created_at": now_ms().value,
+            }
+            verbs.upsert_by_field(self._db, collection_name, "_key", [doc])
+            verbs.upsert_file_has_vectors_edge(self._db, file_id, f"{collection_name}/{_key}")
+
+        return upsert_vector
+
+    def _compile_cascade_query(
+        self,
+        owner_cls: type[CollectionInstance],
+        collection_name: str,
+        cascade_defs: list[EdgeDef],
+    ) -> str:
+        """Compile a static cascade-delete AQL template for one collection class."""
+        cascade_edge_names = self._cascade_edge_names_for_root(owner_cls)
+        all_edge_names = sorted(
+            [_collection_name_for_class(cast("type[object]", cls)) for cls in _iter_subclasses(EdgeCollection)]
+        )
+        target_collection_names = sorted(
+            {
+                _collection_name_for_class(cast("type[object]", cls))
+                for cls in _iter_subclasses(DocumentCollection) | _iter_subclasses(VectorCollection)
+            }
+        )
+
+        if not cascade_edge_names:
+            cascade_edge_names = [_collection_name_for_class(edge.via) for edge in cascade_defs]
+        if not all_edge_names:
+            all_edge_names = cascade_edge_names[:]
+
+        cascade_edges_clause = ", ".join(cascade_edge_names)
+        all_edges_clause = ", ".join(all_edge_names)
+
+        lines = [
+            "LET subgraph = (",
+            f"    FOR v IN 1..100 OUTBOUND @start {cascade_edges_clause}",
+            '        OPTIONS {bfs: true, uniqueVertices: "global"}',
+            "        RETURN v",
+            ")",
+            "LET subgraph_ids = UNIQUE(FOR doc IN subgraph RETURN doc._id)",
+            "LET orphan_ids = (",
+            "    FOR candidate IN subgraph",
+            "        LET external_inbound = (",
+            f"            FOR parent IN 1..1 INBOUND candidate._id {all_edges_clause}",
+            "                FILTER parent._id != @start AND parent._id NOT IN subgraph_ids",
+            "                LIMIT 1",
+            "                RETURN 1",
+            "        )",
+            "        FILTER LENGTH(external_inbound) == 0",
+            "        RETURN candidate._id",
+            ")",
+        ]
+
+        for target_collection_name in target_collection_names:
+            lines.extend(
+                [
+                    f'FOR orphan_id IN orphan_ids FILTER STARTS_WITH(orphan_id, "{target_collection_name}/")',
+                    f"    REMOVE PARSE_IDENTIFIER(orphan_id).key IN {target_collection_name}",
+                ]
+            )
+
+        for edge_name in cascade_edge_names:
+            lines.extend(
+                [
+                    f"FOR edge_doc IN {edge_name}",
+                    "    FILTER edge_doc._from == @start OR edge_doc._from IN orphan_ids OR edge_doc._to IN orphan_ids",
+                    f"    REMOVE edge_doc IN {edge_name}",
+                ]
+            )
+
+        lines.extend(
+            [
+                f"REMOVE PARSE_IDENTIFIER(@start).key IN {collection_name}",
+                "RETURN 1",
+            ]
+        )
+        return "\n".join(lines)
+
+    def _cascade_edge_names_for_root(self, root_cls: type[CollectionInstance]) -> list[str]:
+        """Collect all cascade edge collection names reachable from ``root_cls``."""
+        names: list[str] = []
+        seen: set[type[object]] = set()
+
+        def visit(collection_cls: type[object]) -> None:
+            if collection_cls in seen:
+                return
+            seen.add(collection_cls)
+            for edge_def in getattr(collection_cls, "EDGES", []):
+                if edge_def.on_delete != CASCADE or edge_def.direction != OUTBOUND:
+                    continue
+                edge_name = _collection_name_for_class(edge_def.via)
+                if edge_name not in names:
+                    names.append(edge_name)
+                visit(edge_def.target)
+
+        visit(root_cls)
+        return names
+
+    def _validate_cascade_dag(self) -> None:
+        """Validate that the CASCADE edge graph across collection classes is acyclic."""
+        graph: dict[type[object], list[type[object]]] = {}
+        roots = _iter_subclasses(DocumentCollection) | _iter_subclasses(VectorCollection)
+        for collection_cls in roots:
+            graph[collection_cls] = [
+                edge_def.target
+                for edge_def in getattr(collection_cls, "EDGES", [])
+                if edge_def.on_delete == CASCADE and edge_def.direction == OUTBOUND
+            ]
+
+        visiting: set[type[object]] = set()
+        visited: set[type[object]] = set()
+
+        def visit(node: type[object]) -> None:
+            if node in visited:
+                return
+            if node in visiting:
+                msg = f"CASCADE edges must form a DAG; cycle detected at {_collection_name_for_class(node)}"
+                raise ValueError(msg)
+
+            visiting.add(node)
+            for target in graph.get(node, []):
+                visit(target)
+            visiting.remove(node)
+            visited.add(node)
+
+        for node in graph:
+            visit(node)

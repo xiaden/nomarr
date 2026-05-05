@@ -17,8 +17,8 @@ def _add_call_edges(
     lineno: int,
 ) -> None:
     """Helper to add CALLS edges to graph for all resolved targets."""
-    from ..edge_types import get_edge_type_from_ast_case
-    from ..models import Edge
+    from build_code_graph.edge_types import get_edge_type_from_ast_case
+    from build_code_graph.models import Edge
 
     for target_id, ast_case in target_ids:
         edge_type = get_edge_type_from_ast_case(ast_case)
@@ -232,7 +232,7 @@ def _caseb_dependency_injection(
     results = []
     for candidate in candidates:
         if candidate.startswith(import_package + ".") and (
-            candidate.endswith("." + import_name) or candidate.endswith(f".{import_name}.__init__")
+            candidate.endswith(("." + import_name, f".{import_name}.__init__"))
         ):
             results.append((candidate, "CaseB-DependencyInjection"))
 

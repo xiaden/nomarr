@@ -20,14 +20,14 @@ def extract_imports_from_function(
         if isinstance(node, ast.ImportFrom) and node.module:
             for alias in node.names:
                 if alias.name != "*":
-                    local_name = alias.asname if alias.asname else alias.name
+                    local_name = alias.asname or alias.name
                     full_path = f"{node.module}.{alias.name}"
                     imports[local_name] = full_path
 
         # import X or import X as Y
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                local_name = alias.asname if alias.asname else alias.name
+                local_name = alias.asname or alias.name
                 imports[local_name] = alias.name
 
     return imports

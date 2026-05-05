@@ -16,6 +16,7 @@ from nomarr.components.ml.vectors.ml_vector_maintenance_comp import (
     rebuild_cold_vector_index,
     verify_hot_empty,
 )
+from nomarr.persistence.base import Field
 
 PATCH_BASE = "nomarr.components.ml.vectors.ml_vector_maintenance_comp"
 
@@ -95,17 +96,22 @@ class TestBackfillGenres:
         mock_db = MagicMock()
         cold_ops = MagicMock()
         cold_ops.count.return_value = 2
-        cold_ops._id.collect.return_value = ["vectors_track_cold__ast__lib1/k1", "vectors_track_cold__ast__lib1/k2"]
-        cold_ops.get.many.return_value = [
+        cold_ops.aggregate.return_value = [
+            {"value": "vectors_track_cold__ast__lib1/k1"},
+            {"value": "vectors_track_cold__ast__lib1/k2"},
+        ]
+        cold_ops.get.side_effect = [
             {"_key": "k1", "file_id": "library_files/f1"},
             {"_key": "k2", "file_id": "library_files/f2"},
         ]
-        mock_db.song_has_tags._from.get.in_.return_value = [
-            {"_from": "library_files/f1", "_to": "tags/g1"},
-            {"_from": "library_files/f2", "_to": "tags/g2"},
-            {"_from": "library_files/f2", "_to": "tags/g3"},
+        mock_db.song_has_tags.get.side_effect = [
+            [{"_from": "library_files/f1", "_to": "tags/g1"}],
+            [
+                {"_from": "library_files/f2", "_to": "tags/g2"},
+                {"_from": "library_files/f2", "_to": "tags/g3"},
+            ],
         ]
-        mock_db.tags.get.many.return_value = [
+        mock_db.tags.get.in_.return_value = [
             {"_id": "tags/g1", "name": "genre", "value": "ambient"},
             {"_id": "tags/g2", "name": "genre", "value": "jazz"},
             {"_id": "tags/g3", "name": "genre", "value": "fusion"},
@@ -122,6 +128,11 @@ class TestBackfillGenres:
                 {"_key": "k2", "genres": ["jazz", "fusion"]},
             ]
         )
+        mock_db.tags.get.in_.assert_called_once()
+        field_arg = mock_db.tags.get.in_.call_args.args[0]
+        assert isinstance(field_arg, Field)
+        assert field_arg.name == "_id"
+        assert set(field_arg.value) == {"tags/g1", "tags/g2", "tags/g3"}
 
     @pytest.mark.unit
     @pytest.mark.mocked

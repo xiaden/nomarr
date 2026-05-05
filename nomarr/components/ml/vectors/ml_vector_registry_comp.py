@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.persistence.constructor.namespaces import VectorsTrackMaintenanceNamespace
+from nomarr.persistence.arango_client import SafeDatabase
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -17,6 +17,72 @@ if TYPE_CHECKING:
         VectorsTrackHotNamespace,
         VectorsTrackMaintenanceProtocol,
     )
+
+
+class _VectorsTrackMaintenance:
+    """Maintenance operations spanning a vectors_track hot/cold collection pair."""
+
+    def __init__(self, db: SafeDatabase, hot_collection_name: str, cold_collection_name: str) -> None:
+        self._db = db
+        self._hot_collection_name = hot_collection_name
+        self._cold_collection_name = cold_collection_name
+
+    def drop_index(self) -> None:
+        """Drop the cold collection vector index if it exists."""
+        if not self._db.has_collection(self._cold_collection_name):
+            msg = f"Cold collection '{self._cold_collection_name}' does not exist"
+            raise ValueError(msg)
+
+        cold_collection = self._db.collection(self._cold_collection_name)
+        existing_indexes = cast("list[dict[str, Any]]", cold_collection.indexes())
+        for index in existing_indexes:
+            if index.get("type") == "vector" and index.get("id"):
+                cold_collection.delete_index(index["id"])
+
+    def build_index(self, *, embed_dim: int, nlists: int) -> None:
+        """Create the cold collection vector index."""
+        if not self._db.has_collection(self._cold_collection_name):
+            msg = f"Cold collection '{self._cold_collection_name}' does not exist"
+            raise ValueError(msg)
+
+        cold_collection = self._db.collection(self._cold_collection_name)
+        cold_collection.add_index(
+            {
+                "type": "vector",
+                "fields": ["vector_n"],
+                "params": {
+                    "metric": "cosine",
+                    "dimension": embed_dim,
+                    "nLists": nlists,
+                },
+                "storedValues": ["genres"],
+            }
+        )
+
+    def rebuild_index(self, *, embed_dim: int, nlists: int) -> None:
+        """Drop and rebuild the cold collection vector index."""
+        self.drop_index()
+        self.build_index(embed_dim=embed_dim, nlists=nlists)
+
+    def get_stats(self) -> dict[str, int | bool]:
+        """Return current hot/cold counts and cold-index state."""
+        hot_count = 0
+        if self._db.has_collection(self._hot_collection_name):
+            hot_count = cast("int", self._db.collection(self._hot_collection_name).count())
+
+        cold_count = 0
+        index_exists = False
+        if self._db.has_collection(self._cold_collection_name):
+            cold_collection = self._db.collection(self._cold_collection_name)
+            cold_count = cast("int", cold_collection.count())
+            existing_indexes = cast("list[dict[str, Any]]", cold_collection.indexes())
+            index_exists = any(index.get("type") == "vector" for index in existing_indexes)
+
+        return {
+            "hot_count": hot_count,
+            "cold_count": cold_count,
+            "index_exists": index_exists,
+        }
 
 
 __all__ = [
@@ -98,7 +164,7 @@ def get_maintenance_namespace(
     """
     return cast(
         "VectorsTrackMaintenanceProtocol",
-        VectorsTrackMaintenanceNamespace(
+        _VectorsTrackMaintenance(
             db.db,
             hot_collection_name=f"vectors_track_hot__{backbone_id}__{library_key}",
             cold_collection_name=f"vectors_track_cold__{backbone_id}__{library_key}",

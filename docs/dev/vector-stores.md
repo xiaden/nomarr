@@ -1,77 +1,13 @@
 # Vector Stores (Hot/Cold Architecture)
 
-## Overview
+Nomarr uses a two-tier vector storage model for track embeddings:
 
-Nomarr's embedding pipeline now stores vectors in two physically separate
-collections per backbone:
+- **Hot collections** receive fresh writes and fast churn
+- **Cold collections** serve long-lived ANN search
 
-- **Hot collections (`vectors_track_hot__{backbone}`)** capture fresh vectors as
-  soon as ML processing finishes. They are write-optimized and **never** host a
-  vector index, which keeps inference throughput predictable.
-- **Cold collections (`vectors_track_cold__{backbone}`)** hold promoted vectors
-  that are ready for similarity search. These collections own the vector
-  indexes and remain query-optimized.
+The live persistence API is class-based: vector collection templates are declared in `nomarr/persistence/collections.py`, wired by `Builder`, and registered at runtime through `db.register(resolved_name, template_name)`.
 
-This split avoids the OOM regressions we saw when the ANN index was maintained
-inline with ingest. Workers can upsert freely in hot, and operators decide when
-search freshness should be updated by draining to cold.
-
-## Lifecycle Summary
-
-1. ML workers upsert embeddings into the hot collection via
-   constructor verbs (`db.vectors_track_hot.insert(...)`).
-2. Operators run the synchronous promote & rebuild workflow, which drains the
-   hot collection, inserts documents into cold, and rebuilds the ANN index.
-3. Search APIs query the cold collection only, guaranteeing predictable query
-   latency and "as of last promote" semantics.
-4. Direct get-by-id operations check cold first for promoted vectors and then
-   fall back to hot for "not yet promoted" files.
-
-## When to Run Promote & Rebuild
-
-- Trigger the workflow **after a batch of ML processing completes** so that all
-  recent vectors are captured in the subsequent cold collection snapshot.
-- Use `VectorMaintenanceService.get_hot_cold_stats()` (exposed via the web vector API)
-  to inspect `hot_count` versus `cold_count`. When hot grows beyond a batch's
-  worth of files, schedule a promote to keep search freshness bounded.
-- Run promote & rebuild during operational quiet periods. The workflow is
-  synchronous and rebuilds the ANN index; keeping it off the ingest critical path
-  prevents worker stalls.
-- Skip automatic interval-based scheduling for now. Operators can manually
-  trigger the `/api/web/vector/promote` endpoint once the ML pipeline has
-  drained its queue.
-
-## Calculating `nlists`
-
-`VectorMaintenanceService.calculate_optimal_nlists()` computes
-`nlists = clamp(10, 100, floor(sqrt(total_docs)))`, where `total_docs` is the
-future cold size (`hot_count + cold_count`). Operators generally do not need to
-provide a value; the admin endpoint accepts `null` and defers to this
-calculation. Override it only when benchmarking a specific backbone that needs a
-higher/lower recall-performance tradeoff.
-
-## Search Semantics
-
-- `/api/web/vector/search` and `VectorSearchService` query **cold collections only**.
-- Responses represent the state **as of the last promote & rebuild**. Newly
-  ingested vectors will show up after the next maintenance cycle.
-- Hot collections are never searched; this guarantees predictable ANN latency
-  and keeps write-path data isolated from query-path data.
-- If clients require "draft" visibility, they can call
-  `VectorSearchService.get_track_vector()` for a single file, which falls back
-  to hot storage when cold misses.
-
-## Get-by-ID Retrieval
-
-`VectorSearchService.get_track_vector()` implements the documented fallback:
-
-1. Query cold collection — return immediately if the vector exists.
-2. If cold misses, query the hot collection for the same file ID.
-3. Return `None` only when both storage tiers lack the vector.
-
-Use this endpoint for editor previews or debugging when a specific file has been
-processed but not yet promoted. The behavior is intentionally read-mostly and
-should not be used to emulate bulk search.
+---
 
 ## Migration Path (m007)
 
@@ -92,11 +28,13 @@ Schema version increments to 7, and bootstrap now provisions hot collections
 only. The migration is idempotent; re-running it skips already-converted
 backbones.
 
+---
+
 ## Key Components
 
 | Layer | Responsibilities |
 | --- | --- |
-| Components / Persistence | Schema-driven constructor verbs for hot/cold collections |
+| Components / Persistence | Class-based vector collection templates plus builder-wired verbs for hot/cold collections |
 | Workflows | `promote_and_rebuild_workflow` orchestrates drain, rebuild, and convergence checks |
 | Services | `VectorSearchService` (cold-only search + fallback reads), `VectorMaintenanceService` (promote + stats) |
 | Interfaces | `/api/web/vector/*` exposes search and maintenance endpoints |
@@ -104,6 +42,20 @@ backbones.
 Subsequent sections describe operational guidance, search semantics, and upgrade
 paths for existing deployments.
 
-```
+```text
 [ ML Workers ] --upsert--> [ vectors_track_hot__* ] --promote & rebuild--> [ vectors_track_cold__* ] --search--> [ API Clients ]
 ```
+
+---
+
+## Runtime registration
+
+The vector collection classes in `collections.py` are templates, not single physical collections.
+
+At runtime, code resolves a concrete collection name and registers it through:
+
+- `db.register(resolved_name, template_name)`
+
+Examples of template names include `vectors_track_hot` and `vectors_track_cold`, while resolved names include physical collections such as `vectors_track_hot__discogs_effnet__main`.
+
+The returned object is a builder-wired collection instance exposing the normal flat persistence verbs plus vector-specific helpers where applicable.

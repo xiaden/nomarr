@@ -118,11 +118,7 @@ def _extract_module_constants(module: ast.Module) -> dict[str, Any]:
             if isinstance(t, ast.Name):
                 target = t
                 value = node.value
-        elif (
-            isinstance(node, ast.AnnAssign)
-            and isinstance(node.target, ast.Name)
-            and node.value is not None
-        ):
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
             target = node.target
             value = node.value
 

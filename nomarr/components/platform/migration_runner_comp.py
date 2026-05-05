@@ -194,16 +194,13 @@ def apply_migration(name: str, module: ModuleType, db: Database) -> None:
     )
 
     started_at = format_wall_timestamp(now_ms(), fmt="%Y-%m-%dT%H:%M:%SZ")
-    db.migrations.name.upsert(
-        [
-            {
-                "name": name,
-                "status": "in_progress",
-                "started_at": started_at,
-                "migration_version": module.MIGRATION_VERSION,
-            }
-        ],
-        match_field="name",
+    db.migrations.upsert(
+        name=name,
+        fields={
+            "status": "in_progress",
+            "started_at": started_at,
+            "migration_version": module.MIGRATION_VERSION,
+        },
     )
 
     start_time = internal_ms()
@@ -216,16 +213,13 @@ def apply_migration(name: str, module: ModuleType, db: Database) -> None:
     duration_ms = internal_ms().value - start_time.value
     applied_at = format_wall_timestamp(now_ms(), fmt="%Y-%m-%dT%H:%M:%SZ")
 
-    db.migrations.name.upsert(
-        [
-            {
-                "name": name,
-                "status": "applied",
-                "applied_at": applied_at,
-                "duration_ms": duration_ms,
-            }
-        ],
-        match_field="name",
+    db.migrations.upsert(
+        name=name,
+        fields={
+            "status": "applied",
+            "applied_at": applied_at,
+            "duration_ms": duration_ms,
+        },
     )
 
     # Write the new version only after the migration is fully recorded

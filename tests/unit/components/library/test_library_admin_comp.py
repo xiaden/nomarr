@@ -121,22 +121,15 @@ class TestDeleteLibrary:
         """Missing libraries should short-circuit without cascading delete."""
         mock_db = MagicMock()
 
-        with (
-            patch(
-                "nomarr.components.library.library_admin_comp.get_library_record",
-                return_value=None,
-            ) as get_library_record_mock,
-            patch(
-                "nomarr.components.library.library_admin_comp.normalize_library_id",
-                return_value="libraries/normalized",
-            ) as normalize_library_id_mock,
-        ):
+        with patch(
+            "nomarr.components.library.library_admin_comp.get_library_record",
+            return_value=None,
+        ) as get_library_record_mock:
             result = delete_library(mock_db, "libraries/missing")
 
         assert result is False
         get_library_record_mock.assert_called_once_with(mock_db, "libraries/missing")
-        normalize_library_id_mock.assert_not_called()
-        mock_db.libraries.cascade.assert_not_called()
+        mock_db.libraries.delete.cascade.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -145,19 +138,12 @@ class TestDeleteLibrary:
         mock_db = MagicMock()
         library = {"name": "Main Library"}
 
-        with (
-            patch(
-                "nomarr.components.library.library_admin_comp.get_library_record",
-                return_value=library,
-            ) as get_library_record_mock,
-            patch(
-                "nomarr.components.library.library_admin_comp.normalize_library_id",
-                return_value="libraries/normalized",
-            ) as normalize_library_id_mock,
-        ):
+        with patch(
+            "nomarr.components.library.library_admin_comp.get_library_record",
+            return_value=library,
+        ) as get_library_record_mock:
             result = delete_library(mock_db, "libraries/1")
 
         assert result is True
         get_library_record_mock.assert_called_once_with(mock_db, "libraries/1")
-        normalize_library_id_mock.assert_called_once_with("libraries/1")
-        mock_db.libraries.cascade.assert_called_once_with(["libraries/normalized"])
+        mock_db.libraries.delete.cascade.assert_called_once_with(_key="1")

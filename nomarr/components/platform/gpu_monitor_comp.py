@@ -96,10 +96,7 @@ class GPUHealthMonitor(multiprocessing.Process):
                     "error_summary": result.get("error_summary"),
                 }
                 try:
-                    db.meta.key.upsert(
-                        [{"key": "gpu_resources", "value": json.dumps(resource_snapshot)}],
-                        match_field="key",
-                    )
+                    db.meta.upsert(key="gpu_resources", fields={"value": json.dumps(resource_snapshot)})
                     consecutive_errors = 0
                     self._send_heartbeat("healthy")
                 except Exception as db_error:

@@ -65,7 +65,7 @@ def upsert_library_file(
     normalized_path = str(path.relative)
     absolute_path = str(path.absolute)
     library_key = library_id.split("/", 1)[1] if "/" in library_id else library_id
-    existing = cast("dict[str, Any] | None", db.library_files.path.get(absolute_path))
+    existing = cast("dict[str, Any] | None", db.library_files.get(path=absolute_path))
     update_fields = {
         "library_key": library_key,
         "normalized_path": normalized_path,
@@ -91,16 +91,13 @@ def upsert_library_file(
             "scanned_at": scanned_at,
             "chromaprint": None,
         }
-        file_id = db.library_files.insert([full_doc])[0]
+        file_id = cast("str", db.library_files.insert([full_doc])[0])
         initialize_file_states(db, file_id)
     else:
         file_id = str(existing["_id"])
-        db.library_files._id.update(file_id, update_fields)
+        db.library_files.update(_id=file_id, fields=update_fields)
 
-    db.library_contains_file._to.upsert(
-        [{"_from": library_id, "_to": file_id}],
-        match_field=["_from", "_to"],
-    )
+    db.library_contains_file.upsert(_from=library_id, _to=file_id, fields={})
     if last_tagged_at is not None:
         transition_file_state(db, [file_id], STATE_NOT_TAGGED, STATE_TAGGED)
     return file_id
@@ -109,17 +106,17 @@ def upsert_library_file(
 def delete_library_file(db: Database, file_id: str) -> None:
     """Delete one file and its directly-derived data/edges."""
     if not file_id.startswith("library_files/"):
-        file_doc = cast("dict[str, Any] | None", db.library_files.path.get(file_id))
+        file_doc = cast("dict[str, Any] | None", db.library_files.get(path=file_id))
         if file_doc is None:
             return
         file_id = str(file_doc["_id"])
 
     delete_vectors_by_file_id(db, file_id)
     delete_segment_stats_for_file(db, file_id)
-    db.song_has_tags._from.delete(file_id)
+    db.song_has_tags.delete(_from=file_id)
     clear_all_states(db, file_id)
-    db.library_contains_file._to.delete(file_id)
-    db.library_files.delete([file_id])
+    db.library_contains_file.delete(_to=file_id)
+    db.library_files.delete(_id=file_id)
 
 
 def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
@@ -147,18 +144,17 @@ def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
     paths = [d["path"] for d in clean_docs if "path" in d]
     existing_paths = get_existing_file_paths(db, paths)
 
-    result = db.library_files.path.upsert(clean_docs, match_field="path")
-
-    edge_docs = [
-        {"_from": lib_id, "_to": file_id}
-        for lib_id, file_id in zip(library_ids, result, strict=True)
-        if lib_id is not None
+    result = [
+        db.library_files.upsert(
+            path=cast("str", doc["path"]),
+            fields={key: value for key, value in doc.items() if key != "path"},
+        )[0]
+        for doc in clean_docs
     ]
-    if edge_docs:
-        db.library_contains_file._to.upsert(
-            edge_docs,
-            match_field=["_from", "_to"],
-        )
+
+    for lib_id, file_id in zip(library_ids, result, strict=True):
+        if lib_id is not None:
+            db.library_contains_file.upsert(_from=lib_id, _to=file_id, fields={})
     new_file_ids = [
         file_id for file_id, doc in zip(result, clean_docs, strict=True) if doc.get("path") not in existing_paths
     ]
@@ -193,12 +189,12 @@ def update_file_path(
     }
     if normalized_path is not None:
         update_dict["normalized_path"] = normalized_path
-    db.library_files._id.update(file_id, update_dict)
+    db.library_files.update(_id=file_id, fields=update_dict)
 
 
 def update_file_modified_time(db: Database, file_key: str, modified_time_ms: int) -> None:
     """Update the stored modified-time after a successful file write."""
-    db.library_files._key.update(file_key, {"modified_time": modified_time_ms})
+    db.library_files.update(_key=file_key, fields={"modified_time": modified_time_ms})
 
 
 def update_metadata_cache(
@@ -213,9 +209,9 @@ def update_metadata_cache(
     year: int | None,
 ) -> None:
     """Update embedded metadata-cache fields for one song."""
-    db.library_files._id.update(
-        song_id,
-        {
+    db.library_files.update(
+        _id=song_id,
+        fields={
             "artist": artist,
             "artists": artists,
             "album": album,
@@ -231,9 +227,9 @@ def update_metadata_cache_batch(db: Database, updates: list[dict[str, Any]]) -> 
     if not updates:
         return
     for entry in updates:
-        db.library_files._id.update(
-            str(entry["song_id"]),
-            {
+        db.library_files.update(
+            _id=str(entry["song_id"]),
+            fields={
                 "artist": entry.get("artist"),
                 "artists": entry.get("artists"),
                 "album": entry.get("album"),
@@ -248,25 +244,28 @@ def bulk_delete_files(db: Database, paths: list[str]) -> int:
     """Delete multiple files by path and clean up their derived data."""
     if not paths:
         return 0
-    file_docs = db.library_files.path.get.in_(paths)
+    file_docs = [
+        file_doc
+        for path in paths
+        if (file_doc := cast("dict[str, Any] | None", db.library_files.get(path=path))) is not None
+    ]
     file_ids = [str(d["_id"]) for d in file_docs]
     if file_ids:
         delete_vectors_by_file_ids(db, file_ids)
         delete_segment_stats_for_files(db, file_ids)
         for file_id in file_ids:
-            db.song_has_tags._from.delete(file_id)
+            db.song_has_tags.delete(_from=file_id)
         clear_all_states_batch(db, file_ids)
         for file_id in file_ids:
-            db.library_contains_file._to.delete(file_id)
+            db.library_contains_file.delete(_to=file_id)
+            db.library_files.delete(_id=file_id)
 
-    if file_ids:
-        db.library_files.delete(file_ids)
     return len(file_ids)
 
 
 def get_file_library_key(db: Database, file_id: str) -> str | None:
     """Return the owning library key for a file id."""
-    results = db.library_contains_file._to.get.many(file_id, limit=1)
+    results = db.library_contains_file.get(_to=file_id, limit=1)
     if not results:
         return None
     edge = results[0]
@@ -277,7 +276,7 @@ def get_file_library_key(db: Database, file_id: str) -> str | None:
 def set_chromaprint(db: Database, file_id: str, chromaprint: str) -> None:
     """Persist a chromaprint fingerprint for one file."""
     doc_key = file_id.split("/", 1)[1] if "/" in file_id else file_id
-    db.library_files._key.update(doc_key, {"chromaprint": chromaprint})
+    db.library_files.update(_key=doc_key, fields={"chromaprint": chromaprint})
 
 
 def update_last_tagged_at(db: Database, file_id: str) -> None:
@@ -288,4 +287,4 @@ def update_last_tagged_at(db: Database, file_id: str) -> None:
         file_id: Document ``_id`` of the library-file to update.
 
     """
-    db.library_files._id.update(file_id, {"last_tagged_at": now_ms().value})
+    db.library_files.update(_id=file_id, fields={"last_tagged_at": now_ms().value})

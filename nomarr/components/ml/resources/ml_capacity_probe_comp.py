@@ -72,12 +72,12 @@ def _try_acquire_probe_lock(db: Database, model_set_hash: str, worker_id: str) -
     """Acquire the constructor-backed probe lock for one model set."""
     reference = _probe_lock_reference(model_set_hash)
     now_value = float(now_ms().value)
-    existing = db.locks.document_reference.get(reference)
+    existing = db.locks.get(document_reference=reference)
     if existing is not None:
         existing_expires_at = float(existing.get("expires_at", 0.0))
         if existing_expires_at >= now_value and existing.get("holder") != worker_id:
             return False
-        db.locks.document_reference.delete(reference)
+        db.locks.delete(document_reference=reference)
 
     try:
         db.locks.insert(
@@ -100,13 +100,13 @@ def _try_acquire_probe_lock(db: Database, model_set_hash: str, worker_id: str) -
 
 def _get_probe_lock_status(db: Database, model_set_hash: str) -> dict[str, Any] | None:
     """Return the lock document for a capacity probe, if present."""
-    return cast("dict[str, Any] | None", db.locks.document_reference.get(_probe_lock_reference(model_set_hash)))
+    return cast("dict[str, Any] | None", db.locks.get(document_reference=_probe_lock_reference(model_set_hash)))
 
 
 def _complete_probe_lock(db: Database, model_set_hash: str) -> None:
     """Mark a capacity probe lock complete without changing its reference."""
     reference = _probe_lock_reference(model_set_hash)
-    existing = db.locks.document_reference.get(reference)
+    existing = db.locks.get(document_reference=reference)
     if existing is None:
         return
 
@@ -114,17 +114,20 @@ def _complete_probe_lock(db: Database, model_set_hash: str) -> None:
     updated.pop("_id", None)
     updated["document_reference"] = reference
     updated["status"] = "complete"
-    db.locks.document_reference.upsert([updated], match_field="document_reference")
+    db.locks.upsert(
+        document_reference=reference,
+        fields={key: value for key, value in updated.items() if key != "document_reference"},
+    )
 
 
 def _release_probe_lock(db: Database, model_set_hash: str) -> None:
     """Delete the lock document for a capacity probe."""
-    db.locks.document_reference.delete(_probe_lock_reference(model_set_hash))
+    db.locks.delete(document_reference=_probe_lock_reference(model_set_hash))
 
 
 def _get_capacity_estimate(db: Database, model_set_hash: str) -> dict[str, Any] | None:
     """Read the persisted capacity estimate document for one model set."""
-    return cast("dict[str, Any] | None", db.ml_capacity.model_set_hash.get(model_set_hash))
+    return cast("dict[str, Any] | None", db.ml_capacity.get(model_set_hash=model_set_hash))
 
 
 def _save_capacity_estimate(
@@ -147,12 +150,15 @@ def _save_capacity_estimate(
         "created_at": timestamp if existing is None else existing.get("created_at"),
         "updated_at": None if existing is None else timestamp,
     }
-    db.ml_capacity.model_set_hash.upsert([payload], match_field="model_set_hash")
+    db.ml_capacity.upsert(
+        model_set_hash=model_set_hash,
+        fields={key: value for key, value in payload.items() if key != "model_set_hash"},
+    )
 
 
 def _delete_capacity_estimate(db: Database, model_set_hash: str) -> None:
     """Delete the stored capacity estimate and any related probe lock."""
-    db.ml_capacity.model_set_hash.delete(model_set_hash)
+    db.ml_capacity.delete(model_set_hash=model_set_hash)
     _release_probe_lock(db, model_set_hash)
 
 

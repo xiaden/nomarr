@@ -23,12 +23,7 @@ FREQUENCY_HZ = 128
 AMPLITUDE = 0.9
 SEED = 42
 
-OUTPUT_PATH = (
-    pathlib.Path(__file__).resolve().parents[2]
-    / "tests"
-    / "fixtures"
-    / "ml_probe_audio.wav"
-)
+OUTPUT_PATH = pathlib.Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "ml_probe_audio.wav"
 
 
 def main() -> None:

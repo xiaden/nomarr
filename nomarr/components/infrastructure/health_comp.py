@@ -21,7 +21,7 @@ class HealthComp:
             List of worker health records
 
         """
-        return cast("list[dict[str, Any]]", self.db.health.component_type.get("worker"))
+        return cast("list[dict[str, Any]]", self.db.health.get(component_type="worker", limit=self.db.health.count()))
 
     def get_component(self, component: str) -> dict[str, Any] | None:
         """Get health status for a specific component.
@@ -33,4 +33,4 @@ class HealthComp:
             Health record or None if not found
 
         """
-        return cast("dict[str, Any] | None", self.db.health.component_id.get(component))
+        return cast("dict[str, Any] | None", self.db.health.get(component_id=component))

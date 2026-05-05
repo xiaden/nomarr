@@ -24,6 +24,7 @@ The substitution:
 Usage:
     python patch_musicnn_conv.py <src.onnx> <dst.onnx>
 """
+
 from __future__ import annotations
 
 import os
@@ -91,7 +92,7 @@ def patch_model(src_path: str, dst_path: str) -> None:
     padded_time = _N_OUT_TIME + time_pad_begin + time_pad_end
     print(f"[patch] Time padding: begin={time_pad_begin}, end={time_pad_end} → padded={padded_time}")
 
-    x_name = conv_node.input[0]    # [N, 1, 187, 96]
+    x_name = conv_node.input[0]  # [N, 1, 187, 96]
     w_name = conv_node.input[1]
     b_name = conv_node.input[2] if len(conv_node.input) > 2 and conv_node.input[2] else None
     out_name = conv_node.output[0]  # [N, 51, 187, 96]
@@ -100,7 +101,7 @@ def patch_model(src_path: str, dst_path: str) -> None:
     # Derive new weight matrix and Gather indices
     # -----------------------------------------------------------------------
     w_orig = numpy_helper.to_array(init_map[w_name])  # [51, 1, 64, 1]
-    w_mat = w_orig.squeeze().T.astype(np.float32)      # [64, 51]
+    w_mat = w_orig.squeeze().T.astype(np.float32)  # [64, 51]
 
     # Sliding-window indices: for each output time t gather frames t..t+63
     indices = np.array(
@@ -125,9 +126,7 @@ def patch_model(src_path: str, dst_path: str) -> None:
     # New initializers
     # -----------------------------------------------------------------------
     # Pad uses pads as tensor input (ONNX opset 11+)
-    pads_val = np.array(
-        [0, 0, time_pad_begin, 0, 0, 0, time_pad_end, 0], dtype=np.int64
-    )
+    pads_val = np.array([0, 0, time_pad_begin, 0, 0, 0, time_pad_end, 0], dtype=np.int64)
     pads_init = numpy_helper.from_array(pads_val, name=f"{pfx}_pads_const")
 
     # Reshape [N,1,padded_time,96] → [N,padded_time,96]; 0 means "copy input dim"
