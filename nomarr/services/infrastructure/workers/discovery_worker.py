@@ -238,15 +238,12 @@ class DiscoveryWorker(multiprocessing.Process):
         config = ProcessorConfig(**self.processor_config_dict)
         self._current_status = "healthy"
         db.health.component_id.upsert(
-            [
-                {
-                    "component_id": self.worker_id,
-                    "component_type": "worker",
-                    "status": "starting",
-                    "last_heartbeat": now_ms().value,
-                }
-            ],
-            match_field="component_id",
+            self.worker_id,
+            {
+                "component_type": "worker",
+                "status": "starting",
+                "last_heartbeat": now_ms().value,
+            },
         )
         db.health.component_id.update(
             self.worker_id,

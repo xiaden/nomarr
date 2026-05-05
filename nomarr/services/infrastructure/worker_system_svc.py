@@ -215,17 +215,14 @@ class WorkerSystemService(ComponentLifecycleHandler):
             timestamp = now_ms().value
             if restart_state is None:
                 self.db.worker_restart_policy.component_id.upsert(
-                    [
-                        {
-                            "component_id": component_id,
-                            "restart_count": 1,
-                            "last_restart_wall_ms": timestamp,
-                            "failed_at_wall_ms": None,
-                            "failure_reason": None,
-                            "updated_at_wall_ms": timestamp,
-                        }
-                    ],
-                    match_field="component_id",
+                    component_id,
+                    {
+                        "restart_count": 1,
+                        "last_restart_wall_ms": timestamp,
+                        "failed_at_wall_ms": None,
+                        "failure_reason": None,
+                        "updated_at_wall_ms": timestamp,
+                    },
                 )
             else:
                 self.db.worker_restart_policy.component_id.update(
@@ -246,17 +243,14 @@ class WorkerSystemService(ComponentLifecycleHandler):
         timestamp = now_ms().value
         if restart_state is None:
             self.db.worker_restart_policy.component_id.upsert(
-                [
-                    {
-                        "component_id": component_id,
-                        "restart_count": 0,
-                        "last_restart_wall_ms": None,
-                        "failed_at_wall_ms": timestamp,
-                        "failure_reason": failure_reason,
-                        "updated_at_wall_ms": timestamp,
-                    }
-                ],
-                match_field="component_id",
+                component_id,
+                {
+                    "restart_count": 0,
+                    "last_restart_wall_ms": None,
+                    "failed_at_wall_ms": timestamp,
+                    "failure_reason": failure_reason,
+                    "updated_at_wall_ms": timestamp,
+                },
             )
         else:
             self.db.worker_restart_policy.component_id.update(
@@ -352,12 +346,12 @@ class WorkerSystemService(ComponentLifecycleHandler):
 
     def enable_worker_system(self) -> None:
         """Enable worker system globally (sets worker_enabled=true in DB meta)."""
-        self.db.meta.key.upsert([{"key": "worker_enabled", "value": "true"}], match_field="key")
+        self.db.meta.key.upsert("worker_enabled", {"value": "true"})
         logger.info("[WorkerSystemService] Worker system globally enabled")
 
     def disable_worker_system(self) -> None:
         """Disable worker system globally (sets worker_enabled=false in DB meta)."""
-        self.db.meta.key.upsert([{"key": "worker_enabled", "value": "false"}], match_field="key")
+        self.db.meta.key.upsert("worker_enabled", {"value": "false"})
         logger.info("[WorkerSystemService] Worker system globally disabled")
 
     # ---------------------------- Worker Lifecycle ----------------------------

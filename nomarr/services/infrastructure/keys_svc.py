@@ -76,7 +76,7 @@ class KeyManagementService:
         if key:
             return key
         new_key = secrets.token_urlsafe(32)
-        self._db.meta.key.upsert([{"key": "api_key", "value": new_key}], match_field="key")
+        self._db.meta.key.upsert("api_key", {"value": new_key})
         logger.info("[KeyManagement] Generated new API key on first run.")
         return new_key
 
@@ -88,7 +88,7 @@ class KeyManagementService:
 
         """
         new_key = secrets.token_urlsafe(32)
-        self._db.meta.key.upsert([{"key": "api_key", "value": new_key}], match_field="key")
+        self._db.meta.key.upsert("api_key", {"value": new_key})
         logger.info("[KeyManagement] API key regenerated.")
         return new_key
 
@@ -167,12 +167,12 @@ class KeyManagementService:
             return ""
         if config_password:
             password_hash = self.hash_password(config_password)
-            self._db.meta.key.upsert([{"key": "admin_password_hash", "value": password_hash}], match_field="key")
+            self._db.meta.key.upsert("admin_password_hash", {"value": password_hash})
             logger.info("[KeyManagement] Admin password set from config file.")
             return ""
         random_password = secrets.token_urlsafe(16)
         password_hash = self.hash_password(random_password)
-        self._db.meta.key.upsert([{"key": "admin_password_hash", "value": password_hash}], match_field="key")
+        self._db.meta.key.upsert("admin_password_hash", {"value": password_hash})
         logger.warning("[KeyManagement] ========================================")
         logger.warning("[KeyManagement] AUTO-GENERATED ADMIN PASSWORD:")
         logger.warning(f"[KeyManagement]   {random_password}")
@@ -191,7 +191,7 @@ class KeyManagementService:
 
         """
         password_hash = self.hash_password(new_password)
-        self._db.meta.key.upsert([{"key": "admin_password_hash", "value": password_hash}], match_field="key")
+        self._db.meta.key.upsert("admin_password_hash", {"value": password_hash})
         logger.warning("[KeyManagement] Admin password reset - all sessions invalidated")
 
     def create_session(self) -> str:

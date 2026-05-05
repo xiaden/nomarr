@@ -582,16 +582,13 @@ class HealthMonitorService:
                     # Convert monotonic time to wall-clock for DB storage
                     wall_ms = to_wall_ms(internal_s_to_ms(last_time))
                     self.db.health.component_id.upsert(
-                        [
-                            {
-                                "component_id": component_id,
-                                "status": status,
-                                "last_snapshot": wall_ms.value,
-                                "created_at": wall_ms.value,
-                                "snapshot_type": "history",
-                            }
-                        ],
-                        match_field="component_id",
+                        component_id,
+                        {
+                            "status": status,
+                            "last_snapshot": wall_ms.value,
+                            "created_at": wall_ms.value,
+                            "snapshot_type": "history",
+                        },
                     )
                 except Exception as e:
                     logger.debug("[HealthMonitor] History write failed for %s: %s", component_id, e)
