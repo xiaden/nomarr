@@ -15,8 +15,8 @@ Output indices follow the MTG Essentia model metadata
 Always verify against the upstream class list for each model:
 
 - ``voice_instrumental``: idx 0 = "instrumental only", idx 1 = "has vocals"
-- ``tonal_atonal``:       idx 0 = "atonal",            idx 1 = "tonal"
-- ``engagement_2c``:     idx 0 = "mellow",             idx 1 = "engaging"
+- ``tonal_atonal``:      idx 0 = "atonal",            idx 1 = "tonal"
+- ``engagement_2c``:    idx 0 = "mellow",             idx 1 = "engaging"
 
 ``OPPONENT_MAP`` is derived at module load from ``KNOWN_MODELS``: for each
 model stem, all co-defined output labels are declared mutual opponents.  Any

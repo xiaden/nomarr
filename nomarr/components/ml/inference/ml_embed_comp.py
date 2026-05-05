@@ -334,7 +334,7 @@ def aggregate_segment_scores_weighted(
     # active segments as the boundary, so "dominant side" is relative to the
     # song's own average rather than an arbitrary fixed value.
     if decision_midpoint is None:
-        boundaries = np.average(active_scores, axis=0, weights=None).astype(np.float32)
+        boundaries = np.average(active_scores, axis=0).astype(np.float32)
     else:
         boundaries = np.full(n_labels, decision_midpoint, dtype=np.float32)
 

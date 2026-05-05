@@ -160,7 +160,7 @@ class TestAggregateSegmentScoresWeightedRegressionMode:
         alternating = np.empty((10, 1), dtype=np.float32)
         alternating[0::2] = high
         alternating[1::2] = low
-        expected_mean = float(np.mean(alternating))  # ~0.5
+        expected_mean = float(np.mean(alternating))  # exactly 0.5
         result = aggregate_segment_scores_weighted(
             alternating,
             decision_midpoint=None,
