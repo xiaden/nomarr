@@ -257,18 +257,19 @@ def upsert_by_field(
     if isinstance(field, list):
         for f in field:
             _validate_field_name(f)
+        search_expr = "{" + ", ".join(f"`{f}`: doc.`{f}`" for f in field) + "}"
         cursor = _execute_aql(
             db,
-            "FOR doc IN @docs UPSERT KEEP(doc, @fields) INSERT doc UPDATE doc IN @@col RETURN NEW._id",
-            bind_vars={"@col": collection, "docs": docs, "fields": field},
+            f"FOR doc IN @docs UPSERT {search_expr} INSERT doc UPDATE doc IN @@col RETURN NEW._id",
+            bind_vars={"@col": collection, "docs": docs},
             retry_on_conflict=True,
         )
     else:
         _validate_field_name(field)
         cursor = _execute_aql(
             db,
-            "FOR doc IN @docs UPSERT KEEP(doc, @fields) INSERT doc UPDATE doc IN @@col RETURN NEW._id",
-            bind_vars={"@col": collection, "docs": docs, "fields": [field]},
+            f"FOR doc IN @docs UPSERT {{`{field}`: doc.`{field}`}} INSERT doc UPDATE doc IN @@col RETURN NEW._id",
+            bind_vars={"@col": collection, "docs": docs},
             retry_on_conflict=True,
         )
     return [cast("str", _id) for _id in cursor]

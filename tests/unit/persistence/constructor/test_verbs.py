@@ -89,15 +89,14 @@ class TestUpsertByField:
         assert db.aql.execute.call_count == 1
         call = db.aql.execute.call_args_list[0]
         assert "UPSERT" in call.args[0]
-        assert "KEEP" in call.args[0]
+        assert "`slug`: doc.`slug`" in call.args[0]
         assert call.kwargs["bind_vars"] == {
             "@col": "items",
             "docs": [{"slug": "foo"}, {"slug": "bar"}],
-            "fields": ["slug"],
         }
 
     def test_compound_key_uses_keep_and_single_query(self) -> None:
-        """Compound-key upsert uses KEEP() and issues a single AQL query for all docs."""
+        """Compound-key upsert uses object literal search expression and issues a single AQL query for all docs."""
         db = MagicMock()
         db.aql.execute.return_value = iter(["tags/1", "tags/2"])
         docs = [
@@ -110,11 +109,11 @@ class TestUpsertByField:
         assert result == ["tags/1", "tags/2"]
         assert db.aql.execute.call_count == 1
         call = db.aql.execute.call_args_list[0]
-        assert "KEEP" in call.args[0]
+        assert "`name`: doc.`name`" in call.args[0]
+        assert "`value`: doc.`value`" in call.args[0]
         assert call.kwargs["bind_vars"] == {
             "@col": "tags",
             "docs": docs,
-            "fields": ["name", "value"],
         }
 
     def test_empty_docs_list_returns_empty_list_without_db_call(self) -> None:
