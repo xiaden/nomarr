@@ -35,6 +35,12 @@
           "description": "API key for authenticating with Nomarr",
           "minLength": 1
         },
+        "backbone_id": {
+          "type": "string",
+          "title": "ML Backbone",
+          "description": "Vector backbone identifier used for similarity search (e.g. effnet, effnet-discogs)",
+          "default": "effnet"
+        },
         "pp_enabled": {
           "type": "boolean",
           "title": "Enable Personal Playlists",
@@ -118,6 +124,10 @@
           "options": {
             "format": "password"
           }
+        },
+        {
+          "type": "Control",
+          "scope": "#/properties/backbone_id"
         },
         {
           "type": "Control",
