@@ -36,6 +36,78 @@ _UPSERT_BATCH_SIZE = 500
 _PREFIX_SAMPLE_SIZE = 20
 
 
+def _apply_path_prefix_map(nd_path: str, path_prefix_map: list[tuple[str, str]]) -> str:
+    """Apply the longest configured Navidrome path-prefix rewrite, if any."""
+    for source_prefix, target_prefix in sorted(path_prefix_map, key=lambda pair: len(pair[0]), reverse=True):
+        if nd_path == source_prefix:
+            return target_prefix
+        if nd_path.startswith(source_prefix):
+            suffix = nd_path.removeprefix(source_prefix)
+            separator = "" if target_prefix.endswith("/") or not suffix or suffix.startswith("/") else "/"
+            return f"{target_prefix}{separator}{suffix}"
+    return nd_path
+
+
+def _resolve_song_paths(
+    songs: list[CrawledSong],
+    db: Database,
+    path_prefix_map: list[tuple[str, str]],
+) -> tuple[list[str], dict[str, dict[str, Any]]]:
+    """Resolve Navidrome song paths using raw, configured, or auto-detected mappings."""
+    if not songs:
+        return [], {}
+
+    raw_paths = [song["nd_path"] for song in songs]
+    best_paths = raw_paths
+    best_docs = get_files_by_paths_bulk(db, raw_paths)
+    best_label = "raw"
+    best_score = sum(1 for path in raw_paths if path in best_docs)
+
+    def consider_candidate(label: str, candidate_paths: list[str]) -> None:
+        nonlocal best_docs, best_label, best_paths, best_score
+
+        candidate_docs = get_files_by_paths_bulk(db, candidate_paths)
+        candidate_score = sum(1 for path in candidate_paths if path in candidate_docs)
+        if candidate_score > best_score:
+            best_paths = candidate_paths
+            best_docs = candidate_docs
+            best_label = label
+            best_score = candidate_score
+
+    if path_prefix_map and best_score < len(raw_paths):
+        mapped_paths = [_apply_path_prefix_map(path, path_prefix_map) for path in raw_paths]
+        if mapped_paths != raw_paths:
+            consider_candidate("configured prefix map", mapped_paths)
+
+    if best_score < len(raw_paths):
+        try:
+            detected_prefix = _detect_prefix(songs, db)
+        except ValueError:
+            detected_prefix = None
+        if detected_prefix is not None:
+            remapped_paths = [path.removeprefix(detected_prefix) for path in raw_paths]
+            if remapped_paths != raw_paths:
+                consider_candidate("auto-detected prefix", remapped_paths)
+
+    if best_score == 0:
+        sample_path = raw_paths[0] if raw_paths else "(no songs)"
+        msg = (
+            "Could not match Navidrome paths to Nomarr library files. "
+            "Ensure the Nomarr library has been scanned, or configure navidrome_path_prefix_map "
+            "when Navidrome and Nomarr see the same files under different mount points. "
+            f"Sample path: {sample_path}"
+        )
+        raise ValueError(msg)
+
+    logger.info(
+        "sync_navidrome: using %s path resolution (%d/%d matched)",
+        best_label,
+        best_score,
+        len(raw_paths),
+    )
+    return best_paths, best_docs
+
+
 def _detect_prefix(songs: list[CrawledSong], db: Database) -> str:
     """Auto-detect the Navidrome path prefix from a sample of crawled songs.
 
@@ -65,6 +137,7 @@ def sync_navidrome(
     client: SubsonicClient,
     db: Database,
     user_id: str,
+    path_prefix_map: list[tuple[str, str]] | None = None,
 ) -> NdSyncResult:
     """Sync Navidrome's song inventory into graph collections.
 
@@ -89,10 +162,8 @@ def sync_navidrome(
     # Step 1: Crawl all albums and collect song data
     all_songs: list[CrawledSong] = crawl_navidrome_songs(client)
 
-    # Step 2: Auto-detect path prefix and strip it from all ND paths
-    nd_prefix = _detect_prefix(all_songs, db)
-    remapped_paths = [s["nd_path"].removeprefix(nd_prefix) for s in all_songs]
-    path_to_doc = get_files_by_paths_bulk(db, remapped_paths)
+    # Step 2: Resolve ND paths via raw paths, configured mappings, or auto-detection
+    remapped_paths, path_to_doc = _resolve_song_paths(all_songs, db, path_prefix_map or [])
 
     # Step 3: Build resolved mappings and play edge data
     nd_ids: list[str] = []

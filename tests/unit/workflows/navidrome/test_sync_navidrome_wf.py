@@ -141,6 +141,51 @@ class TestSyncNavidrome:
         assert result["resolved"] == 1
         assert result["unresolved"] == 1
 
+    def test_raw_relative_paths_resolve_without_prefix_detection(self) -> None:
+        """Relative Navidrome paths should resolve directly when they already match Nomarr."""
+        songs = [_song("nd-1", "Artist/Album/t1.mp3")]
+        db = _make_db(
+            path_map={"Artist/Album/t1.mp3": {"_id": "library_files/f1"}},
+            existing_track_keys=["nd-1"],
+        )
+        db.navidrome_tracks.bulk_upsert_tracks.return_value = 1
+        client = MagicMock()
+
+        with (
+            patch(_CRAWL_PATH, return_value=songs),
+            patch(_GET_FILES_BY_PATHS, return_value=db.library_files.get_files_by_paths_bulk.return_value),
+            patch(_DETECT_PREFIX) as mock_detect_prefix,
+        ):
+            result = sync_navidrome(client, db, "user-1")
+
+        assert result["resolved"] == 1
+        mock_detect_prefix.assert_not_called()
+
+    def test_configured_prefix_map_overrides_auto_detection(self) -> None:
+        """Configured path-prefix mappings should be applied before auto-detection."""
+        songs = [_song("nd-1", "/music/Artist/Album/t1.mp3")]
+        db = _make_db(
+            path_map={"D:/Media/Artist/Album/t1.mp3": {"_id": "library_files/f1"}},
+            existing_track_keys=["nd-1"],
+        )
+        db.navidrome_tracks.bulk_upsert_tracks.return_value = 1
+        client = MagicMock()
+
+        with (
+            patch(_CRAWL_PATH, return_value=songs),
+            patch(_GET_FILES_BY_PATHS, side_effect=[{}, db.library_files.get_files_by_paths_bulk.return_value]),
+            patch(_DETECT_PREFIX) as mock_detect_prefix,
+        ):
+            result = sync_navidrome(
+                client,
+                db,
+                "user-1",
+                path_prefix_map=[("/music", "D:/Media")],
+            )
+
+        assert result["resolved"] == 1
+        mock_detect_prefix.assert_not_called()
+
     def test_empty_library(self) -> None:
         """No songs returns zero-filled result."""
         db = _make_db(existing_track_keys=[])
