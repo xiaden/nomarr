@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import unicodedata
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -154,6 +155,51 @@ class TestSyncNavidrome:
         with (
             patch(_CRAWL_PATH, return_value=songs),
             patch(_GET_FILES_BY_PATHS, return_value=db.library_files.get_files_by_paths_bulk.return_value),
+            patch(_DETECT_PREFIX) as mock_detect_prefix,
+        ):
+            result = sync_navidrome(client, db, "user-1")
+
+        assert result["resolved"] == 1
+        mock_detect_prefix.assert_not_called()
+
+    def test_raw_paths_with_windows_separators_resolve_after_normalization(self) -> None:
+        """Equivalent paths with backslashes should normalize before match failure."""
+        songs = [_song("nd-1", r"Artist\Album\t1.mp3")]
+        db = _make_db(existing_track_keys=["nd-1"])
+        db.navidrome_tracks.bulk_upsert_tracks.return_value = 1
+        client = MagicMock()
+
+        def lookup(_db: MagicMock, paths: list[str]) -> dict[str, dict[str, str]]:
+            if paths == ["Artist/Album/t1.mp3"]:
+                return {"Artist/Album/t1.mp3": {"_id": "library_files/f1"}}
+            return {}
+
+        with (
+            patch(_CRAWL_PATH, return_value=songs),
+            patch(_GET_FILES_BY_PATHS, side_effect=lookup),
+            patch(_DETECT_PREFIX) as mock_detect_prefix,
+        ):
+            result = sync_navidrome(client, db, "user-1")
+
+        assert result["resolved"] == 1
+        mock_detect_prefix.assert_not_called()
+
+    def test_unicode_equivalent_paths_resolve_after_normalization(self) -> None:
+        """Unicode-equivalent paths should match even when API text uses a different form."""
+        stored_path = "Beyoncé/Album/t1.mp3"
+        songs = [_song("nd-1", unicodedata.normalize("NFD", stored_path))]
+        db = _make_db(existing_track_keys=["nd-1"])
+        db.navidrome_tracks.bulk_upsert_tracks.return_value = 1
+        client = MagicMock()
+
+        def lookup(_db: MagicMock, paths: list[str]) -> dict[str, dict[str, str]]:
+            if paths == [stored_path]:
+                return {stored_path: {"_id": "library_files/f1"}}
+            return {}
+
+        with (
+            patch(_CRAWL_PATH, return_value=songs),
+            patch(_GET_FILES_BY_PATHS, side_effect=lookup),
             patch(_DETECT_PREFIX) as mock_detect_prefix,
         ):
             result = sync_navidrome(client, db, "user-1")

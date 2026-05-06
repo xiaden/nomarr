@@ -11,6 +11,7 @@ in Navidrome.
 from __future__ import annotations
 
 import logging
+import unicodedata
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_file_query_comp import (
@@ -38,6 +39,16 @@ logger = logging.getLogger(__name__)
 
 _UPSERT_BATCH_SIZE = 500
 _PREFIX_SAMPLE_SIZE = 20
+
+
+def _normalize_match_path(path: str) -> str:
+    """Normalize Navidrome path text for robust library-file matching.
+
+    This keeps matching exact-first, but lets the workflow recover from
+    equivalent path representations such as Windows separators or Unicode
+    normalization differences in API responses.
+    """
+    return unicodedata.normalize("NFKC", path).replace("\\", "/")
 
 
 def _apply_path_prefix_map(nd_path: str, path_prefix_map: list[tuple[str, str]]) -> str:
@@ -78,10 +89,18 @@ def _resolve_song_paths(
             best_label = label
             best_score = candidate_score
 
+    normalized_raw_paths = [_normalize_match_path(path) for path in raw_paths]
+    if normalized_raw_paths != raw_paths:
+        consider_candidate("normalized raw", normalized_raw_paths)
+
     if path_prefix_map and best_score < len(raw_paths):
         mapped_paths = [_apply_path_prefix_map(path, path_prefix_map) for path in raw_paths]
         if mapped_paths != raw_paths:
             consider_candidate("configured prefix map", mapped_paths)
+
+        normalized_mapped_paths = [_normalize_match_path(path) for path in mapped_paths]
+        if normalized_mapped_paths != mapped_paths:
+            consider_candidate("normalized configured prefix map", normalized_mapped_paths)
 
     if best_score < len(raw_paths):
         try:
@@ -89,8 +108,8 @@ def _resolve_song_paths(
         except ValueError:
             detected_prefix = None
         if detected_prefix is not None:
-            remapped_paths = [path.removeprefix(detected_prefix) for path in raw_paths]
-            if remapped_paths != raw_paths:
+            remapped_paths = [_normalize_match_path(path).removeprefix(detected_prefix) for path in raw_paths]
+            if remapped_paths != raw_paths and remapped_paths != normalized_raw_paths:
                 consider_candidate("auto-detected prefix", remapped_paths)
 
     if best_score == 0:
@@ -124,7 +143,7 @@ def _detect_prefix(songs: list[CrawledSong], db: Database) -> str:
         ValueError: If no sample path matches any Nomarr file — library may
             not have been scanned yet.
     """
-    sample = [s["nd_path"] for s in songs[:_PREFIX_SAMPLE_SIZE]]
+    sample = [_normalize_match_path(s["nd_path"]) for s in songs[:_PREFIX_SAMPLE_SIZE]]
     for nd_path in sample:
         prefix = detect_nd_path_prefix(db, nd_path)
         if prefix is not None:
