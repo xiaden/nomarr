@@ -77,7 +77,11 @@ async def navidrome_similar_tracks(
             backbone_id=body.backbone_id,
         )
     except ValueError as exc:
+        logger.warning("[navidrome] similar-track not found: song_id=%s error=%s", body.song_id, exc)
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("[navidrome] similar-track unexpected error: song_id=%s", body.song_id)
+        raise
 
     return SimilarTracksResponse(
         songs=[
