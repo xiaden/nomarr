@@ -71,15 +71,3 @@ repos:
         language: system
         pass_filenames: false
         files: ^(nomarr|tests/unit)/
-
-  # --- Agent dashboard: update metrics on every commit ---
-  - repo: local
-    hooks:
-      - id: agent-dashboard
-        name: agent-dashboard
-        entry: bash -c ".venv/Scripts/python.exe -m scripts.diagnostics.agent_dashboard && git add scripts/diagnostics/outputs/agent_dashboard.json"
-        language: system
-        always_run: true
-        pass_filenames: false
-        verbose: true
-        stages: [pre-commit]
