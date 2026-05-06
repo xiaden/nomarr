@@ -151,12 +151,17 @@ describe("preset switching", () => {
 
     // Wait for initial genre/year data to settle and matrix to render
     await screen.findByRole("table");
+    // Drain any remaining async work from the initial render before clearing mocks
+    await waitFor(() => expect(vi.mocked(getTagCoOccurrence)).toHaveBeenCalled());
 
     // Clear call history so we can assert on only post-switch calls
     vi.clearAllMocks();
 
-    // Click the first Mood button (X axis — rendered before Y axis)
-    fireEvent.click(screen.getAllByText("Mood")[0]);
+    // Click the first Mood button (X axis — rendered before Y axis); wrap in act
+    // to ensure React flushes all resulting state updates and effects
+    await act(async () => {
+      fireEvent.click(screen.getAllByText("Mood")[0]);
+    });
 
     // Wait for mood values API to be called
     await waitFor(() => {
