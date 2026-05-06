@@ -290,7 +290,7 @@ def _delete_segment_stats_for_files(db: Database, file_ids: list[str]) -> int:
         stats_ids = [cast("str", doc["_id"]) for doc in stats_docs if "_id" in doc]
         if not stats_ids:
             continue
-        deleted += int(db.segment_scores_stats.delete(stats_ids))
+        deleted += db.segment_scores_stats.delete.in_(_id=stats_ids)  # type: ignore[union-attr]
     return deleted
 
 

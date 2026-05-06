@@ -455,7 +455,9 @@ class TestDeleteOldCalibrationHistorySnapshots:
         result = delete_old_calibration_history_snapshots(mock_db, "mood_happy:happy", keep_count=3)
 
         assert result == 2
-        mock_db.calibration_history.delete.assert_called_once_with(["calibration_history/e", "calibration_history/a"])
+        mock_db.calibration_history.delete.in_.assert_called_once_with(
+            _id=["calibration_history/e", "calibration_history/a"]
+        )
 
 
 class TestCalibrationVersionMeta:

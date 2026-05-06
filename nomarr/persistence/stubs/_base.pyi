@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Protocol, runtime_checkable
 
 from nomarr.helpers.filter_types import AggResult as AggResult
+from nomarr.persistence.base import Field as _Field
 
 __all__ = [
     "AggResult",
@@ -101,8 +102,11 @@ class CollectionGetVerbProtocol(Protocol):
 class CollectionDeleteVerbProtocol(Protocol):
     """Collection-level delete verb (``_CollectionDeleteVerb``). Attached as ``collection.delete``."""
 
-    def __call__(self, *args: Any, **kwargs: Any) -> int: ...
-    def in_(self, *args: Any, **kwargs: Any) -> int: ...
+    # Positional args must be Field[Any] instances (not bare lists/scalars).
+    # Use kwargs for field=value style: delete(worker_id="foo").
+    # Use .in_(field=list) for bulk deletes: delete.in_(_id=["id1", "id2"]).
+    def __call__(self, *args: _Field[Any], **kwargs: Any) -> int: ...
+    def in_(self, **kwargs: Any) -> int: ...
     def unreferenced(self, edge_collection: str) -> int: ...
 
 @runtime_checkable

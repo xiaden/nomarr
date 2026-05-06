@@ -295,10 +295,6 @@ export function LibraryManagement() {
   );
 
   const handleCreate = async () => {
-    if (!formRootPath.trim()) {
-      setError("Path is required");
-      return;
-    }
 
     try {
       setError(null);
@@ -321,10 +317,6 @@ export function LibraryManagement() {
 
   const handleUpdate = async () => {
     if (editingId === null) return;
-    if (!formRootPath.trim()) {
-      setError("Path is required");
-      return;
-    }
 
     const writeModeChanged = formFileWriteMode !== originalFileWriteMode;
 

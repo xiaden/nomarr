@@ -35,11 +35,6 @@ def _promise_key(worker_id: str, model_path: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
-def _get_worker_promises(db: Any, worker_id: str) -> list[dict[str, Any]]:
-    """Return all VRAM promises currently held by one worker."""
-    return list(db.vram_promises.get(worker_id=worker_id, limit=None))  # type: ignore[union-attr]
-
-
 def _get_all_promises(db: Any) -> list[dict[str, Any]]:
     """Return all VRAM promise documents via constructor-backed accessors."""
     worker_ids = [
@@ -110,11 +105,7 @@ def register_vram_promise(
         )
         return False
 
-    existing_ids = [
-        promise["_id"] for promise in _get_worker_promises(db, worker_id) if promise.get("model_path") == model_path
-    ]
-    if existing_ids:
-        db.vram_promises.delete(existing_ids)  # type: ignore[union-attr]
+    db.vram_promises.delete(worker_id=worker_id, model_path=model_path)  # type: ignore[union-attr]
 
     db.vram_promises.insert(  # type: ignore[union-attr]
         [
@@ -171,11 +162,7 @@ def release_vram_promise(
         model_path:  Absolute path to the ONNX model file.
 
     """
-    matching_ids = [
-        promise["_id"] for promise in _get_worker_promises(db, worker_id) if promise.get("model_path") == model_path
-    ]
-    if matching_ids:
-        db.vram_promises.delete(matching_ids)  # type: ignore[union-attr]
+    db.vram_promises.delete(worker_id=worker_id, model_path=model_path)  # type: ignore[union-attr]
     logger.debug(
         "[vram_coordinator] Released promise: worker=%s model=%s",
         worker_id,
@@ -226,10 +213,7 @@ def release_worker_promises(
         Number of promise documents removed.
 
     """
-    promises = _get_worker_promises(db, worker_id)
-    removed = len(promises)
-    if promises:
-        db.vram_promises.delete([promise["_id"] for promise in promises])  # type: ignore[union-attr]
+    removed: int = db.vram_promises.delete(worker_id=worker_id)  # type: ignore[union-attr]
     if removed:
         logger.info(
             "[vram_coordinator] Released %d promise(s) for worker %s",

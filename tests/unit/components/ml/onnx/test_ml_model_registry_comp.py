@@ -403,8 +403,8 @@ class TestDeleteModelOutputsForModel:
         result = delete_model_outputs_for_model(mock_db, "ml_models/abc")
 
         assert result == ["ml_model_outputs/o1", "ml_model_outputs/o2"]
-        mock_db.model_has_output.delete.assert_called_once_with(["model_has_output/o1", "model_has_output/o2"])
-        mock_db.ml_model_outputs.delete.assert_called_once_with(["ml_model_outputs/o1", "ml_model_outputs/o2"])
+        mock_db.model_has_output.delete.in_.assert_called_once_with(_id=["model_has_output/o1", "model_has_output/o2"])
+        mock_db.ml_model_outputs.delete.in_.assert_called_once_with(_id=["ml_model_outputs/o1", "ml_model_outputs/o2"])
 
 
 @pytest.mark.unit

@@ -257,7 +257,7 @@ def delete_old_calibration_history_snapshots(
     if not stale_ids:
         return 0
 
-    db.calibration_history.delete(stale_ids)
+    db.calibration_history.delete.in_(_id=stale_ids)  # type: ignore[union-attr]
     return len(stale_ids)
 
 

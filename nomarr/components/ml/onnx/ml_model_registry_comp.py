@@ -228,8 +228,8 @@ def delete_model_outputs_for_model(db: Database, model_id: str) -> list[str]:
     ]
 
     if edge_ids:
-        db.model_has_output.delete(edge_ids)
-    db.ml_model_outputs.delete(output_ids)
+        db.model_has_output.delete.in_(_id=edge_ids)  # type: ignore[union-attr]
+    db.ml_model_outputs.delete.in_(_id=output_ids)  # type: ignore[union-attr]
     return output_ids
 
 

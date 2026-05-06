@@ -267,7 +267,7 @@ class KeyManagementService:
             limit=self._db.sessions.count(),
         )
         if expired_docs:
-            self._db.sessions.delete([doc["_id"] for doc in expired_docs])
+            self._db.sessions.delete.in_(_id=[doc["_id"] for doc in expired_docs])  # type: ignore[union-attr]
         db_count = len(expired_docs)
         if expired or db_count:
             logger.info(f"[KeyManagement] Cleaned up {len(expired)} expired session(s) from cache, {db_count} from DB")
