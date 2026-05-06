@@ -17,6 +17,7 @@ from nomarr.helpers.constants.file_states import (
 from nomarr.helpers.dto.processing_dto import DeferredFileWrites
 
 _PATCH_PREFIX_SYNC = "nomarr.components.library.file_sync_comp"
+_PATCH_PREFIX_MUTATION = "nomarr.components.library.library_file_mutation_comp"
 _PATCH_PREFIX_PARSE = "nomarr.components.tagging.tag_parsing_comp"
 _PATCH_PREFIX_STATS = "nomarr.components.ml.inference.ml_segment_stats_comp"
 _PATCH_PREFIX_WORKER = "nomarr.components.workers.worker_discovery_comp"
@@ -47,7 +48,7 @@ class TestExecuteDeferredWritesSuccess:
     @pytest.mark.unit
     @patch(f"{_PATCH_PREFIX_WORKER}.release_claim")
     @patch(f"{_PATCH_PREFIX_STATS}.compute_segment_stats")
-    @patch(f"{_PATCH_PREFIX_SYNC}.set_chromaprint")
+    @patch(f"{_PATCH_PREFIX_MUTATION}.set_chromaprint")
     @patch(f"{_PATCH_PREFIX_PARSE}.parse_tag_values")
     @patch(f"{_PATCH_PREFIX_SYNC}.save_file_tags")
     def test_sets_vectors_extracted_on_success(
@@ -79,7 +80,7 @@ class TestExecuteDeferredWritesSuccess:
     @pytest.mark.unit
     @patch(f"{_PATCH_PREFIX_WORKER}.release_claim")
     @patch(f"{_PATCH_PREFIX_STATS}.compute_segment_stats")
-    @patch(f"{_PATCH_PREFIX_SYNC}.set_chromaprint")
+    @patch(f"{_PATCH_PREFIX_MUTATION}.set_chromaprint")
     @patch(f"{_PATCH_PREFIX_PARSE}.parse_tag_values")
     @patch(f"{_PATCH_PREFIX_SYNC}.save_file_tags")
     def test_does_not_set_errored_on_success(
@@ -122,7 +123,7 @@ class TestExecuteDeferredWritesFailure:
     @pytest.mark.unit
     @patch(f"{_PATCH_PREFIX_WORKER}.release_claim")
     @patch(f"{_PATCH_PREFIX_STATS}.compute_segment_stats")
-    @patch(f"{_PATCH_PREFIX_SYNC}.set_chromaprint")
+    @patch(f"{_PATCH_PREFIX_MUTATION}.set_chromaprint")
     @patch(f"{_PATCH_PREFIX_PARSE}.parse_tag_values")
     @patch(f"{_PATCH_PREFIX_SYNC}.save_file_tags")
     def test_sets_errored_on_exception(
@@ -149,7 +150,7 @@ class TestExecuteDeferredWritesFailure:
     @pytest.mark.unit
     @patch(f"{_PATCH_PREFIX_WORKER}.release_claim")
     @patch(f"{_PATCH_PREFIX_STATS}.compute_segment_stats")
-    @patch(f"{_PATCH_PREFIX_SYNC}.set_chromaprint")
+    @patch(f"{_PATCH_PREFIX_MUTATION}.set_chromaprint")
     @patch(f"{_PATCH_PREFIX_PARSE}.parse_tag_values")
     @patch(f"{_PATCH_PREFIX_SYNC}.save_file_tags")
     def test_releases_claim_even_when_set_errored_fails(

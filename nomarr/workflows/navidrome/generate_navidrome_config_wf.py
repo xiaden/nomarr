@@ -9,10 +9,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.navidrome.tag_query_comp import (
-    get_nomarr_tag_names,
-    get_tag_value_counts,
-)
+from nomarr.components.navidrome.tag_query_comp import get_nomarr_tag_names
+from nomarr.components.tagging.tag_stats_comp import get_tag_value_counts
 from nomarr.helpers.tag_key_mapping import (
     is_versioned_ml_key,
     make_navidrome_field_name,

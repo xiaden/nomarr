@@ -13,6 +13,11 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.file_batch_scanner_comp import scan_folder_files
 from nomarr.components.library.folder_analysis_comp import discover_library_folders
+from nomarr.components.library.library_file_query_comp import (
+    get_files_for_folder,
+    get_files_for_folders,
+    get_folder_rel_paths,
+)
 from nomarr.components.library.library_file_state_comp import transition_file_state
 from nomarr.components.library.library_root_comp import validate_library_root
 from nomarr.components.library.move_detection_comp import (
@@ -23,9 +28,6 @@ from nomarr.components.library.scan_lifecycle_comp import (
     cleanup_stale_folders,
     count_library_files,
     get_cached_folders,
-    get_files_for_folder,
-    get_files_for_folders,
-    get_folder_rel_paths,
     library_has_tagged_files,
     mark_scan_completed,
     mark_scan_started,

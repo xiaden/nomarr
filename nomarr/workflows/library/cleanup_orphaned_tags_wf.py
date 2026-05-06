@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from nomarr.components.library.tag_cleanup_comp import cleanup_orphaned_tags, get_orphaned_tag_count
+from nomarr.components.tagging.tag_cleanup_comp import cleanup_orphaned_tags, get_orphaned_tag_count
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:

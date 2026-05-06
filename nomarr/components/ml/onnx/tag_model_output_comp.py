@@ -29,14 +29,13 @@ def write_tag_model_output_edges_batch(db: Database, edges: list[tuple[str, str,
 
     timestamp = now_ms().value
     unique_edges = {(tag_id, output_id): score for tag_id, output_id, score in edges}
-    unique_tag_ids = list({tag_id for tag_id, _ in unique_edges})
+    unique_tag_ids = sorted({tag_id for tag_id, _ in unique_edges})
 
     # Fetch all existing edges for all involved tags in one IN query.
-    all_existing = [
-        edge
-        for tag_id in unique_tag_ids
-        for edge in cast("list[dict[str, Any]]", db.tag_model_output.get(Field("_from", tag_id), limit=None))
-    ]
+    all_existing = cast(
+        "list[dict[str, Any]]",
+        db.tag_model_output.get.in_(Field("_from", unique_tag_ids), limit=None),
+    )
     existing_by_tag: dict[str, dict[str, dict[str, Any]]] = {}
     for edge in all_existing:
         if "_to" not in edge or "_from" not in edge:
@@ -82,4 +81,5 @@ def delete_tag_model_output_edges_for_outputs(db: Database, output_ids: list[str
     """Delete all provenance edges that target the provided output vertices."""
     if not output_ids:
         return 0
-    return sum(int(db.tag_model_output.delete(Field("_to", output_id))) for output_id in output_ids)
+
+    return db.tag_model_output._to.delete.in_(output_ids)

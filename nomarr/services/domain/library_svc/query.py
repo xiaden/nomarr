@@ -28,12 +28,12 @@ from nomarr.components.library.library_file_state_comp import (
 from nomarr.components.library.library_records_comp import get_library_record, list_library_records
 from nomarr.components.library.scan_lifecycle_comp import get_libraries_in_pipeline_state
 from nomarr.components.library.search_files_comp import (
-    get_unique_tag_keys,
     get_unique_tag_values,
     search_library_files,
 )
 from nomarr.components.library.work_status_comp import compute_work_status
 from nomarr.components.tagging.tag_query_comp import get_unique_mood_values
+from nomarr.components.tagging.tag_stats_comp import get_unique_names
 from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_APPLYING,
     PIPELINE_AWAITING_CALIBRATION,
@@ -197,7 +197,7 @@ class LibraryQueryMixin:
 
     def get_unique_tag_keys(self, nomarr_only: bool = False) -> UniqueTagKeysResult:
         """Get all unique tag keys across the library."""
-        keys = get_unique_tag_keys(self.db, nomarr_only)
+        keys = get_unique_names(self.db, nomarr_only)
         return UniqueTagKeysResult(tag_keys=keys, count=len(keys), calibration=None, library_id=None)
 
     def get_unique_tag_values(self, tag_key: str, nomarr_only: bool = False) -> UniqueTagKeysResult:

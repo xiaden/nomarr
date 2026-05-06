@@ -10,7 +10,6 @@ import pytest
 from nomarr.components.processing.file_write_comp import (
     get_file_for_writing,
     get_nomarr_tags,
-    mark_file_written,
     release_file_claim,
     resolve_library_root,
     save_mood_tags,
@@ -232,16 +231,3 @@ class TestReleaseFileClaim:
             release_file_claim(mock_db, "abc123")
 
         mock_release_claim.assert_called_once_with(mock_db, "abc123")
-
-
-class TestMarkFileWritten:
-    """Tests for mark_file_written delegation."""
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_delegates_to_library_files_set_file_written(self) -> None:
-        mock_db = MagicMock()
-        with patch("nomarr.components.processing.file_write_comp.set_file_written") as mock_set_file_written:
-            mark_file_written(mock_db, "abc123")
-
-        mock_set_file_written.assert_called_once_with(mock_db, "abc123")

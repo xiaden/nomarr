@@ -32,7 +32,7 @@ def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda db, file_path: db.libraries.find_library_containing_path(file_path),
     )
     monkeypatch.setattr(
-        "nomarr.workflows.library.sync_file_to_library_wf.find_library_for_file",
+        "nomarr.workflows.library.sync_file_to_library_wf.find_library_containing_path",
         lambda db, file_path: db.libraries.find_library_containing_path(file_path),
     )
     monkeypatch.setattr(

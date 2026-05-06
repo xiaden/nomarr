@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_file_query_comp import search_library_files_with_tags
 from nomarr.components.tagging.tag_query_comp import list_tags_by_name
-from nomarr.components.tagging.tag_stats_comp import get_unique_names
 from nomarr.helpers.dto.library_dto import SearchFilesQuery
 
 if TYPE_CHECKING:
@@ -42,20 +41,6 @@ def search_library_files(
         limit=query.limit,
         offset=query.offset,
     )
-
-
-def get_unique_tag_keys(db: Database, nomarr_only: bool = False) -> list[str]:
-    """Get list of unique tag keys (name values).
-
-    Args:
-        db: Database instance
-        nomarr_only: Only return Nomarr tags (name starts with "nom:")
-
-    Returns:
-        List of unique tag keys (name values)
-
-    """
-    return get_unique_names(db, nomarr_only=nomarr_only)
 
 
 def get_unique_tag_values(db: Database, tag_key: str, nomarr_only: bool = False) -> list[str]:

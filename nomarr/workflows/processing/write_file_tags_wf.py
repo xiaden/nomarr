@@ -24,10 +24,10 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db
 from nomarr.components.library.library_file_mutation_comp import update_file_modified_time
+from nomarr.components.library.reconciliation_comp import set_file_written
 from nomarr.components.processing.file_write_comp import (
     get_file_for_writing,
     get_nomarr_tags,
-    mark_file_written,
     release_file_claim,
     resolve_library_root,
 )
@@ -225,7 +225,7 @@ def write_file_tags_workflow(
             update_file_modified_time(db, file_key, result.new_mtime_ms)
 
         # Update file projection state in database
-        mark_file_written(db, file_key)
+        set_file_written(db, file_key)
 
         logger.debug(
             f"[write_file_tags] Wrote {len(tags_to_write)} tags to {library_path.relative} "

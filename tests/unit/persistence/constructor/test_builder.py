@@ -21,6 +21,7 @@ from nomarr.persistence.base import (
     UniqueField,
     VectorCollection,
 )
+from nomarr.persistence.collections import VectorsTrackHot
 from nomarr.persistence.constructor.builder import (
     Builder,
     FieldAccessor,
@@ -1255,6 +1256,61 @@ class TestBuilderCascadeQueryHelpers:
         assert '"vectors_track_hot__effnet__lib1/"' in query
         assert "IN vectors_track_hot__effnet__lib1" in query
         assert "IN cascade_target" in query
+
+    def test_compile_cascade_query_excludes_abstract_state_graph_base(self, mock_db: MagicMock) -> None:
+        """Abstract collection bases never appear as physical delete targets."""
+
+        class CascadeSource(DocumentCollection):
+            _name = "cascade_source"
+
+        class ConcreteWorkflowState(StateGraphCollection):
+            _name = "concrete_workflow_state"
+
+        class CascadeEdge(EdgeCollection):
+            _name = "cascade_edge_col"
+            FROM_COLLECTION = CascadeSource
+            TO_COLLECTION = ConcreteWorkflowState
+
+        edge_def = EdgeDef(
+            via=CascadeEdge,
+            direction=OUTBOUND,
+            target=ConcreteWorkflowState,
+            on_delete=CASCADE,
+        )
+        CascadeSource.EDGES = [edge_def]
+
+        query = Builder(mock_db)._compile_cascade_query(CascadeSource, "cascade_source", [edge_def])
+
+        assert "STARTS_WITH(orphan_id_" in query
+        assert '"concrete_workflow_state/"' in query
+        assert '"state_graph_collection/"' not in query
+
+    def test_compile_cascade_query_excludes_vector_template_classes(self, mock_db: MagicMock) -> None:
+        """Static cascade targets exclude vector template names that are never physical collections."""
+
+        class CascadeSource(DocumentCollection):
+            _name = "cascade_source"
+
+        edge_def = EdgeDef(
+            via=type(
+                "CascadeEdge",
+                (EdgeCollection,),
+                {
+                    "_name": "cascade_edge_col",
+                    "FROM_COLLECTION": CascadeSource,
+                    "TO_COLLECTION": VectorsTrackHot,
+                },
+            ),
+            direction=OUTBOUND,
+            target=VectorsTrackHot,
+            on_delete=CASCADE,
+        )
+        CascadeSource.EDGES = [edge_def]
+
+        query = Builder(mock_db)._compile_cascade_query(CascadeSource, "cascade_source", [edge_def])
+
+        assert '"vectors_track_hot/"' not in query
+        assert "IN vectors_track_hot" not in query
 
 
 @pytest.mark.unit

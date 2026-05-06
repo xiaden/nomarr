@@ -11,14 +11,10 @@ import os
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
-from nomarr.components.library.file_sync_comp import (
-    find_library_for_file,
-    get_library_file,
-    mark_file_tagged,
-    save_file_tags,
-    set_chromaprint,
-    upsert_library_file,
-)
+from nomarr.components.library.file_sync_comp import mark_file_tagged, save_file_tags
+from nomarr.components.library.library_file_mutation_comp import set_chromaprint, upsert_library_file
+from nomarr.components.library.library_file_query_comp import get_library_file
+from nomarr.components.library.library_records_comp import find_library_containing_path
 from nomarr.components.metadata.entity_seeding_comp import seed_song_entities_from_tags
 from nomarr.components.metadata.metadata_cache_comp import rebuild_song_metadata_cache
 from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
@@ -142,7 +138,7 @@ def sync_file_to_library(
         # Slow path: no file_id provided, need path-based lookup
         # This path is used by the scanner's initial sync
         if library_id is None:
-            library = find_library_for_file(db, file_path)
+            library = find_library_containing_path(db, file_path)
             if not library:
                 logger.warning(f"[sync_file_to_library] File path not in any library: {file_path}")
                 return

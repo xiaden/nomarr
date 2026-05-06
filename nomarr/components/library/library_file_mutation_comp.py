@@ -143,17 +143,15 @@ def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
     paths = [d["path"] for d in clean_docs if "path" in d]
     existing_paths = get_existing_file_paths(db, paths)
 
-    result = [
-        db.library_files.upsert(
-            path=cast("str", doc["path"]),
-            fields={key: value for key, value in doc.items() if key != "path"},
-        )[0]
-        for doc in clean_docs
-    ]
+    result = db.library_files.upsert_batch(clean_docs, match_fields="path")
 
-    for lib_id, file_id in zip(library_ids, result, strict=True):
-        if lib_id is not None:
-            db.library_contains_file.upsert(_from=lib_id, _to=file_id, fields={})
+    edge_docs = [
+        {"_from": lib_id, "_to": file_id}
+        for lib_id, file_id in zip(library_ids, result, strict=True)
+        if lib_id is not None
+    ]
+    if edge_docs:
+        db.library_contains_file.upsert_batch(edge_docs, match_fields=["_from", "_to"])
     new_file_ids = [
         file_id for file_id, doc in zip(result, clean_docs, strict=True) if doc.get("path") not in existing_paths
     ]
@@ -222,7 +220,17 @@ def update_metadata_cache(
 
 
 def update_metadata_cache_batch(db: Database, updates: list[dict[str, Any]]) -> None:
-    """Batch-update embedded metadata-cache fields for many songs."""
+    """Batch-update embedded metadata-cache fields for many songs.
+
+    Args:
+        db: Database handle.
+        updates: List of metadata update payloads. Each dict must contain
+            ``song_id`` (``str``; document ``_id`` of the library file) and
+            may contain ``artist`` (``str | None``), ``artists``
+            (``list[str] | None``), ``album`` (``str | None``), ``labels``
+            (``list[str] | None``), ``genres`` (``list[str] | None``), and
+            ``year`` (``int | None``).
+    """
     if not updates:
         return
     for entry in updates:

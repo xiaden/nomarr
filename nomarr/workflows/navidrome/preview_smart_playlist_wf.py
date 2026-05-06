@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from nomarr.components.navidrome.tag_query_comp import get_playlist_preview_tracks
+from nomarr.components.library.library_file_query_comp import get_tracks_by_file_ids
 from nomarr.helpers.dto.navidrome_dto import PlaylistPreviewResult
 from nomarr.helpers.exceptions import PlaylistQueryError
 
@@ -64,7 +64,7 @@ def preview_smart_playlist_workflow(
     total_count = len(file_ids)
 
     # Fetch sample tracks (limit already validated at API layer: 1-100)
-    sample_tracks = get_playlist_preview_tracks(
+    sample_tracks = get_tracks_by_file_ids(
         db,
         file_ids=file_ids,
         order_by=None,  # Random order for preview

@@ -62,6 +62,24 @@ def _iter_subclasses(base_cls: type[object]) -> set[type[object]]:
     return discovered
 
 
+def _is_concrete_collection_class(cls: type[object]) -> bool:
+    """Return whether ``cls`` represents a physical Arango collection.
+
+    ``StateGraphCollection`` is an abstract typed base used only to attach the
+    state transition verb. Vector collection classes without a concrete
+    ``_name`` are runtime templates whose real Arango collection names are
+    registered dynamically (for example ``vectors_track_hot__{backbone}__{lib}``).
+    Neither category should be compiled into static cascade AQL target sets.
+    """
+
+    if cls is StateGraphCollection:
+        return False
+    if issubclass(cls, VectorCollection):
+        declared_name = getattr(cls, "_name", None)
+        return isinstance(declared_name, str) and bool(declared_name)
+    return True
+
+
 def _is_classvar(annotation: Any) -> bool:
     """Return whether an annotation is a ``ClassVar``."""
     return get_origin(annotation) is ClassVar
@@ -817,12 +835,17 @@ class Builder:
         """
         cascade_edge_names = self._cascade_edge_names_for_root(owner_cls)
         all_edge_names = sorted(
-            [_collection_name_for_class(cast("type[object]", cls)) for cls in _iter_subclasses(EdgeCollection)]
+            [
+                _collection_name_for_class(cast("type[object]", cls))
+                for cls in _iter_subclasses(EdgeCollection)
+                if _is_concrete_collection_class(cast("type[object]", cls))
+            ]
         )
         target_collection_names = sorted(
             {
                 _collection_name_for_class(cast("type[object]", cls))
                 for cls in _iter_subclasses(DocumentCollection) | _iter_subclasses(VectorCollection)
+                if _is_concrete_collection_class(cast("type[object]", cls))
             }
         )
         if extra_target_names:
@@ -908,7 +931,11 @@ class Builder:
     def _validate_cascade_dag(self) -> None:
         """Validate that the CASCADE edge graph across collection classes is acyclic."""
         graph: dict[type[object], list[type[object]]] = {}
-        roots = _iter_subclasses(DocumentCollection) | _iter_subclasses(VectorCollection)
+        roots = {
+            cls
+            for cls in _iter_subclasses(DocumentCollection) | _iter_subclasses(VectorCollection)
+            if _is_concrete_collection_class(cast("type[object]", cls))
+        }
         for collection_cls in roots:
             graph[collection_cls] = [
                 edge_def.target

@@ -16,15 +16,6 @@ from nomarr.components.library.library_file_query_comp import (
     get_existing_file_paths,
     list_library_files,
 )
-from nomarr.components.library.library_file_query_comp import (
-    get_files_for_folder as _get_files_for_folder,
-)
-from nomarr.components.library.library_file_query_comp import (
-    get_files_for_folders as _get_files_for_folders,
-)
-from nomarr.components.library.library_file_query_comp import (
-    get_folder_rel_paths as _get_folder_rel_paths,
-)
 from nomarr.components.library.library_file_state_comp import (
     initialize_file_states_batch,
     library_has_tagged_files,
@@ -73,29 +64,6 @@ def _pipeline_state_to_scan_status(pipeline_state: str | None, scan_doc: dict[st
     if scan_doc and scan_doc.get("completed_at"):
         return "complete"
     return "idle"
-
-
-def get_folder_rel_paths(db: Database, library_id: str) -> set[str]:
-    """Return cached relative folder paths for one library."""
-    return _get_folder_rel_paths(db, library_id)
-
-
-def get_files_for_folder(
-    db: Database,
-    library_id: str,
-    folder_rel_path: str,
-) -> dict[str, dict[str, Any]]:
-    """Return existing file docs for one folder relative path."""
-    return _get_files_for_folder(db, library_id, folder_rel_path)
-
-
-def get_files_for_folders(
-    db: Database,
-    library_id: str,
-    folder_rel_paths: list[str],
-) -> dict[str, dict[str, Any]]:
-    """Return existing file docs for many folder relative paths."""
-    return _get_files_for_folders(db, library_id, folder_rel_paths)
 
 
 def _library_key_from_id(library_id: str) -> str:

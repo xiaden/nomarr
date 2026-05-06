@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.file_library_comp import get_file_library_key
+from nomarr.components.library.library_file_mutation_comp import get_file_library_key
 from nomarr.components.ml.vectors.ml_vector_retrieve_comp import get_cold_track_vector
 
 if TYPE_CHECKING:

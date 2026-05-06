@@ -1,27 +1,4 @@
-"""Resolve library ownership for a file."""
+"""Removed compatibility module.
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
-from nomarr.components.library.library_file_mutation_comp import get_file_library_key as resolve_file_library_key
-
-if TYPE_CHECKING:
-    from nomarr.persistence.db import Database
-
-
-def get_file_library_key(db: Database, file_id: str) -> str | None:
-    """Return the library ``_key`` that owns the given file.
-
-    Thin component wrapper around the persistence lookup so that
-    workflows never call persistence directly.
-
-    Args:
-        db: Database instance.
-        file_id: Library file document ``_id`` (e.g. ``"library_files/12345"``).
-
-    Returns:
-        Library ``_key`` string, or ``None`` if the file does not exist.
-
-    """
-    return resolve_file_library_key(db, file_id)
+Import `get_file_library_key` from `nomarr.components.library.library_file_mutation_comp`.
+"""

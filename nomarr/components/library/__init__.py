@@ -1,15 +1,9 @@
 """Library package."""
 
-from .file_library_comp import get_file_library_key
-from .file_sync_comp import (
-    find_library_for_file,
-    get_library_file,
-    mark_file_tagged,
-    save_file_tags,
-    set_chromaprint,
-    upsert_library_file,
-)
+from .file_sync_comp import mark_file_tagged, save_file_tags
 from .file_tags_comp import get_file_tags_with_path
+from .library_file_mutation_comp import get_file_library_key, set_chromaprint, upsert_library_file
+from .library_file_query_comp import get_library_file
 from .library_records_comp import (
     create_library_record,
     find_library_containing_path,
@@ -56,22 +50,18 @@ from .scan_lifecycle_comp import (
     upsert_scanned_files,
 )
 from .search_files_comp import (
-    get_unique_tag_keys,
     get_unique_tag_values,
     search_library_files,
 )
-from .tag_cleanup_comp import cleanup_orphaned_tags, get_orphaned_tag_count
 
 __all__ = [
     "check_interrupted_scan",
-    "cleanup_orphaned_tags",
     "cleanup_stale_folders",
     "compute_chromaprint_for_file",
     "create_library_record",
     "ensure_no_overlapping_library_root",
     "extract_metadata",
     "find_library_containing_path",
-    "find_library_for_file",
     "find_ml_complete_libraries",
     "get_base_library_root",
     "get_cached_folders",
@@ -82,9 +72,7 @@ __all__ = [
     "get_library_record",
     "get_library_scan_histories",
     "get_library_watch_config",
-    "get_orphaned_tag_count",
     "get_scanning_library_ids",
-    "get_unique_tag_keys",
     "get_unique_tag_values",
     "library_key_from_ref",
     "list_all_library_keys",

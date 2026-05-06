@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-from nomarr.components.library.file_library_comp import get_file_library_key
+from nomarr.components.library.library_file_mutation_comp import get_file_library_key
 from nomarr.components.library.library_records_comp import list_library_records
 from nomarr.components.ml.vectors.ml_vector_maintenance_comp import has_vector_index
 from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace

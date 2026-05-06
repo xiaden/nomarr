@@ -11,8 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from arango.exceptions import DocumentInsertError
 
-from nomarr.components.library.library_file_query_comp import get_file_by_id
-from nomarr.components.library.library_file_state_comp import discover_next_untagged_file, file_has_tagged_state
+from nomarr.components.library.library_file_state_comp import discover_next_untagged_file
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.base import Field
 
@@ -20,6 +19,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
+_TAGGED_STATE_ID = "file_states/tagged"
 
 
 def _claim_key(file_id: str) -> str:
@@ -34,16 +34,11 @@ def _get_all_claims(db: Database) -> list[dict[str, Any]]:
     if total == 0:
         return []
 
-    claims: list[dict[str, Any]] = []
-    worker_ids = [row["value"] for row in db.worker_claims.aggregate("worker_id", limit=total) if "value" in row]
-    for worker_id in worker_ids:
-        claims.extend(db.worker_claims.get.many(worker_id=worker_id, limit=total))
-    return claims
+    claim_ids = [str(row["value"]) for row in db.worker_claims.aggregate("_id", limit=total) if "value" in row]
+    if not claim_ids:
+        return []
 
-
-def _file_has_tagged_state(db: Database, file_id: str) -> bool:
-    """Return whether a file currently has the tagged state edge."""
-    return file_has_tagged_state(db, file_id)
+    return db.worker_claims.get.in_(Field("_id", claim_ids), limit=total)
 
 
 def discover_next_file(
@@ -135,30 +130,37 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
         str(doc.get("component_id")) for doc in health_docs if int(doc.get("last_heartbeat", 0)) > heartbeat_cutoff
     }
 
-    delete_ids: set[str] = set()
-    for claim in all_claims:
-        claim_id = str(claim["_id"])
-        worker_id = str(claim["worker_id"])
-        file_id = str(claim["file_id"])
-        claim_type = claim.get("claim_type")
+    inactive_worker_ids = {
+        str(claim["worker_id"]) for claim in all_claims if str(claim["worker_id"]) not in active_workers
+    }
+    active_ml_claims = [
+        claim
+        for claim in all_claims
+        if str(claim["worker_id"]) in active_workers and claim.get("claim_type") != "reconcile"
+    ]
 
-        if worker_id not in active_workers:
-            delete_ids.add(claim_id)
-            continue
+    stale_file_ids: set[str] = set()
+    candidate_file_ids = sorted({str(claim["file_id"]) for claim in active_ml_claims})
+    if candidate_file_ids:
+        file_docs = db.library_files.get.in_(Field("_id", candidate_file_ids), limit=None)
+        existing_file_ids = {str(doc["_id"]) for doc in file_docs if "_id" in doc}
 
-        if claim_type == "reconcile":
-            continue
+        tagged_edges = db.file_has_state.get.in_(
+            Field("_from", candidate_file_ids),
+            Field("_to", [_TAGGED_STATE_ID]),
+            limit=None,
+        )
+        tagged_file_ids = {str(edge["_from"]) for edge in tagged_edges if "_from" in edge}
+        stale_file_ids = {
+            file_id for file_id in candidate_file_ids if file_id not in existing_file_ids or file_id in tagged_file_ids
+        }
 
-        file_doc = get_file_by_id(db, file_id)
-        if file_doc is None or _file_has_tagged_state(db, file_id):
-            delete_ids.add(claim_id)
-
-    if not delete_ids:
-        return 0
-
-    for claim_id in delete_ids:
-        db.worker_claims.delete(Field("_id", claim_id))
-    return len(delete_ids)
+    removed = 0
+    if inactive_worker_ids:
+        removed += int(cast("int", db.worker_claims.worker_id.delete.in_(sorted(inactive_worker_ids))))
+    if stale_file_ids:
+        removed += int(cast("int", db.worker_claims.file_id.delete.in_(sorted(stale_file_ids))))
+    return removed
 
 
 def discover_and_claim_file(
@@ -221,10 +223,10 @@ def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
         List of file_ids that were released
 
     """
-    claims = db.worker_claims.get.many(worker_id=worker_id, limit=db.worker_claims.count())
+    claims = db.worker_claims.worker_id.get.in_([worker_id], limit=None)
     if not claims:
         return []
 
-    for claim in claims:
-        db.worker_claims.delete(Field("_id", claim["_id"]))
-    return [str(claim["file_id"]) for claim in claims]
+    file_ids = [str(claim["file_id"]) for claim in claims]
+    db.worker_claims.worker_id.delete.in_([worker_id])
+    return file_ids

@@ -6,6 +6,7 @@ import hashlib
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.base import Field
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -63,13 +64,24 @@ def upsert_segment_stats(
 
 
 def upsert_segment_stats_batch(db: Database, entries: list[dict[str, Any]]) -> None:
-    """Upsert multiple segment-stats documents and their file edges."""
+    """Upsert multiple segment-stats documents and their file edges.
+
+    Args:
+        db: Database instance.
+        entries: List of segment-stats payloads. Each dict must contain
+            ``file_id`` (``str``; document ``_id`` of the library file),
+            ``head_name`` (``str``), ``tagger_version`` (``str``),
+            ``num_segments`` (``int``), ``pooling_strategy`` (``str``), and
+            ``label_stats`` (``list[dict[str, Any]]`` containing per-label
+            stat rows). May also contain ``processed_at`` (``int``;
+            millisecond epoch timestamp), which defaults to the current time
+            when omitted.
+    """
     if not entries:
         return
 
     processed_at = now_ms().value
     edge_ns = _build_edge_namespace(db)
-    edge_count = edge_ns.count()
     segment_scores_stats = _segment_scores_stats_ns(db)
 
     docs: list[dict[str, Any]] = []
@@ -93,19 +105,21 @@ def upsert_segment_stats_batch(db: Database, entries: list[dict[str, Any]]) -> N
         )
         links_by_file.setdefault(file_id, []).append(stats_id)
 
-    for doc in docs:
-        segment_scores_stats.upsert(
-            _key=cast("str", doc["_key"]),
-            fields={key: value for key, value in doc.items() if key != "_key"},
-        )
+    segment_scores_stats.upsert_batch(docs, match_fields="_key")
+
+    existing_edges = cast(
+        "list[dict[str, Any]]",
+        edge_ns.get.in_(Field("_from", sorted(links_by_file)), limit=None),
+    )
+    existing_targets_by_file: dict[str, set[str]] = {}
+    for edge in existing_edges:
+        if "_from" not in edge or "_to" not in edge:
+            continue
+        existing_targets_by_file.setdefault(str(edge["_from"]), set()).add(str(edge["_to"]))
 
     edge_docs: list[dict[str, str]] = []
     for file_id, stats_ids in links_by_file.items():
-        existing_edges = cast(
-            "list[dict[str, Any]]",
-            edge_ns.get(_from=file_id, limit=edge_count or None),
-        )
-        existing_targets = {str(edge["_to"]) for edge in existing_edges if "_to" in edge}
+        existing_targets = existing_targets_by_file.setdefault(file_id, set())
         for stats_id in stats_ids:
             if stats_id in existing_targets:
                 continue
@@ -124,22 +138,30 @@ def upsert_segment_stats_batch(db: Database, entries: list[dict[str, Any]]) -> N
 
 def get_segment_stats_for_file(db: Database, file_id: str) -> list[dict[str, Any]]:
     """Return all segment-stats documents linked to one file."""
-    library_files = _library_files_ns(db)
-    segment_scores_stats = _segment_scores_stats_ns(db)
-    return cast(
-        "list[dict[str, Any]]",
-        library_files.file_has_segment_stats(file_id, limit=segment_scores_stats.count()),
-    )
+    return get_segment_stats_for_files_bulk(db, [file_id]).get(file_id, [])
 
 
 def get_segment_stats_for_files_bulk(db: Database, file_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
     """Return segment-stats documents grouped by file id."""
-    result: dict[str, list[dict[str, Any]]] = {}
-    for file_id in file_ids:
-        stats_docs = get_segment_stats_for_file(db, file_id)
-        if stats_docs:
-            result[file_id] = stats_docs
-    return result
+    if not file_ids:
+        return {}
+
+    unique_file_ids = list(dict.fromkeys(file_ids))
+    library_files = _library_files_ns(db)
+    rows = cast(
+        "list[dict[str, Any]]",
+        library_files.file_has_segment_stats.by_ids(unique_file_ids, limit=None),
+    )
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        start_id = row.get("start_id")
+        stats_doc = row.get("v")
+        if not isinstance(start_id, str) or not isinstance(stats_doc, dict):
+            continue
+        grouped.setdefault(start_id, []).append(cast("dict[str, Any]", stats_doc))
+
+    return {file_id: grouped[file_id] for file_id in unique_file_ids if file_id in grouped}
 
 
 def delete_segment_stats_for_file(db: Database, file_id: str) -> int:
@@ -152,16 +174,7 @@ def delete_segment_stats_for_file(db: Database, file_id: str) -> int:
     Returns:
         Number of stats documents deleted.
     """
-    stats_docs = get_segment_stats_for_file(db, file_id)
-    if not stats_docs:
-        return 0
-
-    stats_ids = [cast("str", doc["_id"]) for doc in stats_docs if "_id" in doc]
-    if not stats_ids:
-        return 0
-
-    segment_scores_stats = _segment_scores_stats_ns(db)
-    return int(segment_scores_stats.delete.cascade(stats_ids))
+    return delete_segment_stats_for_files(db, [file_id])
 
 
 def delete_segment_stats_for_files(db: Database, file_ids: list[str]) -> int:
@@ -174,10 +187,21 @@ def delete_segment_stats_for_files(db: Database, file_ids: list[str]) -> int:
     Returns:
         Total number of stats documents deleted across all files.
     """
-    deleted = 0
-    for file_id in file_ids:
-        deleted += delete_segment_stats_for_file(db, file_id)
-    return deleted
+    if not file_ids:
+        return 0
+
+    stats_by_file = get_segment_stats_for_files_bulk(db, file_ids)
+    stats_ids = [
+        cast("str", stats_doc["_id"])
+        for stats_docs in stats_by_file.values()
+        for stats_doc in stats_docs
+        if "_id" in stats_doc
+    ]
+    if not stats_ids:
+        return 0
+
+    segment_scores_stats = _segment_scores_stats_ns(db)
+    return int(segment_scores_stats.delete.cascade(stats_ids))
 
 
 def get_high_variance_segment_stats(

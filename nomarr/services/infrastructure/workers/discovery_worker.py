@@ -79,7 +79,8 @@ def _malloc_trim() -> None:
 
 def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id: str) -> None:
     """Persist deferred file writes and release the worker claim."""
-    from nomarr.components.library.file_sync_comp import save_file_tags, set_chromaprint
+    from nomarr.components.library.file_sync_comp import save_file_tags
+    from nomarr.components.library.library_file_mutation_comp import set_chromaprint
     from nomarr.components.library.library_file_state_comp import transition_file_state
     from nomarr.components.ml.inference.ml_segment_stats_comp import compute_segment_stats
     from nomarr.components.ml.inference.ml_segment_stats_store_comp import upsert_segment_stats_batch

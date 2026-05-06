@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, TypedDict
 
-from nomarr.components.library.file_library_comp import get_file_library_key
+from nomarr.components.library.library_file_mutation_comp import get_file_library_key
 from nomarr.components.library.library_file_query_comp import get_files_by_ids_with_tags
 from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
 from nomarr.components.navidrome.navidrome_graph_comp import (

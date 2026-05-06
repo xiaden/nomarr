@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -51,7 +51,7 @@ class TestWriteTagModelOutputEdgesBatch:
         write_tag_model_output_edges_batch(mock_db, [])
 
         mock_now_ms.assert_not_called()
-        mock_db.tag_model_output.get.assert_not_called()
+        mock_db.tag_model_output.get.in_.assert_not_called()
         mock_db.tag_model_output.update_many.assert_not_called()
         mock_db.tag_model_output.insert.assert_not_called()
 
@@ -59,11 +59,11 @@ class TestWriteTagModelOutputEdgesBatch:
     def test_inserts_new_edge_when_no_existing_edge_found(self, mock_now_ms: MagicMock) -> None:
         mock_now_ms.return_value.value = 1234
         mock_db = MagicMock()
-        mock_db.tag_model_output.get.return_value = []
+        mock_db.tag_model_output.get.in_.return_value = []
 
         write_tag_model_output_edges_batch(mock_db, [("tags/1", "outputs/1", 0.75)])
 
-        mock_db.tag_model_output.get.assert_called_once_with(Field("_from", "tags/1"), limit=None)
+        mock_db.tag_model_output.get.in_.assert_called_once_with(Field("_from", ["tags/1"]), limit=None)
         mock_db.tag_model_output.update_many.assert_not_called()
         mock_db.tag_model_output.insert.assert_called_once_with(
             [
@@ -82,34 +82,39 @@ class TestWriteTagModelOutputEdgesBatch:
     def test_updates_existing_edge_without_inserting(self, mock_now_ms: MagicMock) -> None:
         mock_now_ms.return_value.value = 5678
         mock_db = MagicMock()
-        mock_db.tag_model_output.get.return_value = [{"_from": "tags/1", "_to": "outputs/1", "score": 0.25}]
+        mock_db.tag_model_output.get.in_.return_value = [{"_from": "tags/1", "_to": "outputs/1", "score": 0.25}]
 
         write_tag_model_output_edges_batch(mock_db, [("tags/1", "outputs/1", 0.9)])
 
+        mock_db.tag_model_output.get.in_.assert_called_once_with(Field("_from", ["tags/1"]), limit=None)
         mock_db.tag_model_output.update_many.assert_called_once_with(
             [{"_key": _edge_key("tags/1", "outputs/1"), "score": 0.9, "updated_at": 5678}]
         )
         mock_db.tag_model_output.insert.assert_not_called()
 
     @patch("nomarr.components.ml.onnx.tag_model_output_comp.now_ms")
-    def test_inserts_and_updates_for_mixed_new_and_existing_edges(self, mock_now_ms: MagicMock) -> None:
+    def test_bulk_reads_existing_edges_once_for_all_tags(self, mock_now_ms: MagicMock) -> None:
         mock_now_ms.return_value.value = 91011
         mock_db = MagicMock()
-        mock_db.tag_model_output.get.return_value = [{"_from": "tags/1", "_to": "outputs/existing", "score": 0.1}]
+        mock_db.tag_model_output.get.in_.return_value = [{"_from": "tags/1", "_to": "outputs/existing", "score": 0.1}]
 
         write_tag_model_output_edges_batch(
             mock_db,
-            [("tags/1", "outputs/existing", 0.4), ("tags/1", "outputs/new", 0.8)],
+            [("tags/1", "outputs/existing", 0.4), ("tags/2", "outputs/new", 0.8)],
         )
 
+        mock_db.tag_model_output.get.in_.assert_called_once_with(
+            Field("_from", ["tags/1", "tags/2"]),
+            limit=None,
+        )
         mock_db.tag_model_output.update_many.assert_called_once_with(
             [{"_key": _edge_key("tags/1", "outputs/existing"), "score": 0.4, "updated_at": 91011}]
         )
         mock_db.tag_model_output.insert.assert_called_once_with(
             [
                 {
-                    "_key": _edge_key("tags/1", "outputs/new"),
-                    "_from": "tags/1",
+                    "_key": _edge_key("tags/2", "outputs/new"),
+                    "_from": "tags/2",
                     "_to": "outputs/new",
                     "score": 0.8,
                     "created_at": 91011,
@@ -179,17 +184,13 @@ class TestDeleteTagModelOutputEdgesForOutputs:
         result = delete_tag_model_output_edges_for_outputs(mock_db, [])
 
         assert result == 0
-        mock_db.tag_model_output.delete.assert_not_called()
+        mock_db.tag_model_output._to.delete.in_.assert_not_called()
 
-    def test_sums_deleted_counts_for_each_output_id(self) -> None:
+    def test_bulk_deletes_edges_for_all_output_ids_in_one_call(self) -> None:
         mock_db = MagicMock()
-        mock_db.tag_model_output.delete.side_effect = [2, 3, 0]
+        mock_db.tag_model_output._to.delete.in_.return_value = 5
 
         result = delete_tag_model_output_edges_for_outputs(mock_db, ["outputs/1", "outputs/2", "outputs/3"])
 
         assert result == 5
-        assert mock_db.tag_model_output.delete.call_args_list == [
-            call(Field("_to", "outputs/1")),
-            call(Field("_to", "outputs/2")),
-            call(Field("_to", "outputs/3")),
-        ]
+        mock_db.tag_model_output._to.delete.in_.assert_called_once_with(["outputs/1", "outputs/2", "outputs/3"])

@@ -8,13 +8,14 @@ from nomarr.components.library.file_tags_comp import get_file_tags_with_path
 from nomarr.components.library.library_file_query_comp import count_files_by_tag, search_files_by_tag
 from nomarr.components.library.library_file_state_comp import count_pending_tag_writes
 from nomarr.components.library.library_records_comp import list_library_records
-from nomarr.components.library.search_files_comp import get_unique_tag_keys, get_unique_tag_values
+from nomarr.components.library.search_files_comp import get_unique_tag_values
 from nomarr.components.tagging.tag_query_comp import (
     count_tags_by_name,
     get_tag_songs_with_metadata,
     get_unique_mood_values,
     list_tags_by_name,
 )
+from nomarr.components.tagging.tag_stats_comp import get_unique_names
 from nomarr.helpers.dto.library_dto import (
     FileTag,
     FileTagsResult,
@@ -144,7 +145,7 @@ class TaggingQueryMixin:
 
     def get_unique_tag_keys(self, nomarr_only: bool = False) -> UniqueTagKeysResult:
         """Get all unique tag keys across the library."""
-        keys = get_unique_tag_keys(self.db, nomarr_only)
+        keys = get_unique_names(self.db, nomarr_only)
         return UniqueTagKeysResult(tag_keys=keys, count=len(keys), calibration=None, library_id=None)
 
     def get_unique_tag_values(self, tag_key: str, nomarr_only: bool = False) -> UniqueTagKeysResult:

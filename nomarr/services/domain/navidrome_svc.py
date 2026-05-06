@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 
 from nomarr.components.navidrome.navidrome_graph_comp import bulk_resolve_files_to_navidrome_ids
 from nomarr.components.navidrome.subsonic_client_comp import SubsonicClient
-from nomarr.components.navidrome.tag_query_comp import get_tag_value_counts
 from nomarr.components.navidrome.templates_comp import generate_template_files, get_template_summary
+from nomarr.components.tagging.tag_stats_comp import get_tag_value_counts
 from nomarr.helpers.dto import NavidromeGeneratePlaylistsResult
 from nomarr.helpers.dto.navidrome_dto import (
     GeneratePlaylistResult,

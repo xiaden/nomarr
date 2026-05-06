@@ -44,7 +44,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.file_sync_comp import get_library_file
+from nomarr.components.library.library_file_query_comp import get_library_file
 from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     get_calibration_version,
     update_file_calibration_hash,

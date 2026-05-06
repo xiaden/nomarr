@@ -57,11 +57,6 @@
 		},
 		"chat.useCustomAgentHooks": true,
 		"chat.subagents.allowInvocationsFromSubagents": true,
-		"github.copilot.chat.codeGeneration.instructions": [
-			{
-				"file": "code-intel/instructions/copilot-base.md"
-			}
-		],
 		"python.analysis.typeCheckingMode": "basic",
 		"github.copilot.chat.tools.memory.enabled": false
 	},

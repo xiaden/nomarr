@@ -224,13 +224,13 @@ class TestUpsertBatch:
         result = upsert_batch(mock_db, [])
 
         assert result == []
-        mock_db.library_files.upsert.assert_not_called()
+        mock_db.library_files.upsert_batch.assert_not_called()
 
     @pytest.mark.unit
     def test_strips_library_id_before_path_upsert(self) -> None:
         """Removes ``library_id`` from docs before calling the collection upsert verb."""
         mock_db = MagicMock()
-        mock_db.library_files.upsert.return_value = ["library_files/1"]
+        mock_db.library_files.upsert_batch.return_value = ["library_files/1"]
         file_docs = [
             {
                 "library_id": "libraries/1",
@@ -252,17 +252,19 @@ class TestUpsertBatch:
             result = upsert_batch(mock_db, file_docs)
 
         assert result == ["library_files/1"]
-        mock_db.library_files.upsert.assert_called_once_with(
-            path="D:/Music/song.flac",
-            fields={
-                "file_size": 4096,
-                "modified_time": 123456789,
-            },
+        mock_db.library_files.upsert_batch.assert_called_once_with(
+            [
+                {
+                    "path": "D:/Music/song.flac",
+                    "file_size": 4096,
+                    "modified_time": 123456789,
+                }
+            ],
+            match_fields="path",
         )
-        mock_db.library_contains_file.upsert.assert_called_once_with(
-            _from="libraries/1",
-            _to="library_files/1",
-            fields={},
+        mock_db.library_contains_file.upsert_batch.assert_called_once_with(
+            [{"_from": "libraries/1", "_to": "library_files/1"}],
+            match_fields=["_from", "_to"],
         )
         mock_initialize_file_states_batch.assert_called_once_with(mock_db, ["library_files/1"])
 
@@ -275,7 +277,7 @@ class TestUpsertBatch:
         occurred and pushing those files backwards through the ML pipeline.
         """
         mock_db = MagicMock()
-        mock_db.library_files.upsert.return_value = ["library_files/1"]
+        mock_db.library_files.upsert_batch.return_value = ["library_files/1"]
         file_docs = [
             {
                 "library_id": "libraries/1",
@@ -303,7 +305,7 @@ class TestUpsertBatch:
     def test_initializes_state_only_for_new_files_in_mixed_batch(self) -> None:
         """Only new files get state initialisation when a batch contains both new and existing files."""
         mock_db = MagicMock()
-        mock_db.library_files.upsert.side_effect = [["library_files/1"], ["library_files/2"]]
+        mock_db.library_files.upsert_batch.return_value = ["library_files/1", "library_files/2"]
         file_docs = [
             {
                 "library_id": "libraries/1",
@@ -331,6 +333,28 @@ class TestUpsertBatch:
             result = upsert_batch(mock_db, file_docs)
 
         assert result == ["library_files/1", "library_files/2"]
+        mock_db.library_files.upsert_batch.assert_called_once_with(
+            [
+                {
+                    "path": "D:/Music/existing.flac",
+                    "file_size": 4096,
+                    "modified_time": 111,
+                },
+                {
+                    "path": "D:/Music/new.flac",
+                    "file_size": 8192,
+                    "modified_time": 222,
+                },
+            ],
+            match_fields="path",
+        )
+        mock_db.library_contains_file.upsert_batch.assert_called_once_with(
+            [
+                {"_from": "libraries/1", "_to": "library_files/1"},
+                {"_from": "libraries/1", "_to": "library_files/2"},
+            ],
+            match_fields=["_from", "_to"],
+        )
         mock_initialize_file_states_batch.assert_called_once_with(mock_db, ["library_files/2"])
 
 

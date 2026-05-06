@@ -89,8 +89,11 @@ def some_workflow(db: Database):
     db.library_files.insert([{"path": "/music/track.flac", ...}])
     db.worker_claims.delete(["claims/abc123"])
 
-# ❌ Wrong - direct import of deleted *_aql modules
-from nomarr.persistence.database.library_files_aql import LibraryFilesAQL
+# ❌ Wrong - rebuilding constructor-backed collections inside workflow code
+from nomarr.persistence.collections import LibraryFiles
+from nomarr.persistence.constructor.builder import Builder
+
+files = Builder(db).construct(LibraryFiles)
 ```
 
 ---
