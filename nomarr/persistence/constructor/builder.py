@@ -860,6 +860,8 @@ class Builder:
         cascade_edges_clause = ", ".join(cascade_edge_names)
         all_edges_clause = ", ".join(all_edge_names)
 
+        # Phase 1: Pure read — collect all ids up front into LET subqueries so that
+        # no collection is read after any write has begun (avoids ERR 1579).
         lines = [
             "LET subgraph = (",
             "    FOR start_id IN @starts",
@@ -881,6 +883,19 @@ class Builder:
             ")",
         ]
 
+        for idx, edge_name in enumerate(cascade_edge_names):
+            var = f"edge_keys_{idx}"
+            lines.extend(
+                [
+                    f"LET {var} = (",
+                    f"    FOR e IN {edge_name}",
+                    "        FILTER e._from IN @starts OR e._from IN orphan_ids OR e._to IN orphan_ids OR e._to IN @starts",
+                    "        RETURN e._key",
+                    ")",
+                ]
+            )
+
+        # Phase 2: Pure write — all collections read above are now fully materialised.
         for idx, target_collection_name in enumerate(target_collection_names):
             var = f"orphan_id_{idx}"
             lines.extend(
@@ -891,12 +906,11 @@ class Builder:
             )
 
         for idx, edge_name in enumerate(cascade_edge_names):
-            var = f"edge_doc_{idx}"
+            var = f"edge_keys_{idx}"
             lines.extend(
                 [
-                    f"FOR {var} IN {edge_name}",
-                    f"    FILTER {var}._from IN @starts OR {var}._from IN orphan_ids OR {var}._to IN orphan_ids OR {var}._to IN @starts",
-                    f"    REMOVE {var} IN {edge_name}",
+                    f"FOR key_{idx} IN {var}",
+                    f"    REMOVE key_{idx} IN {edge_name}",
                 ]
             )
 

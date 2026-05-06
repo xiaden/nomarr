@@ -1125,7 +1125,10 @@ class TestBuilderCascadeQueryHelpers:
         assert "@starts" in query
         assert "FOR start_id IN @starts" in query
         assert "REMOVE PARSE_IDENTIFIER(start_id).key IN cascade_source" in query
-        assert "edge_doc_0._to IN @starts" in query
+        assert "LET edge_keys_0 = (" in query
+        assert "RETURN e._key" in query
+        assert "FOR key_0 IN edge_keys_0" in query
+        assert "REMOVE key_0 IN cascade_edge_col" in query
 
     def test_cascade_edge_names_for_root_returns_single_cascade_edge(self, mock_db: MagicMock) -> None:
         """A single cascade edge contributes one edge collection name."""
