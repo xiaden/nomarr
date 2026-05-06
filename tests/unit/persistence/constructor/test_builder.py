@@ -1124,7 +1124,7 @@ class TestBuilderCascadeQueryHelpers:
         assert "@starts" in query
         assert "FOR start_id IN @starts" in query
         assert "REMOVE PARSE_IDENTIFIER(start_id).key IN cascade_source" in query
-        assert "edge_doc._to IN @starts" in query
+        assert "edge_doc_0._to IN @starts" in query
 
     def test_cascade_edge_names_for_root_returns_single_cascade_edge(self, mock_db: MagicMock) -> None:
         """A single cascade edge contributes one edge collection name."""
@@ -1252,8 +1252,9 @@ class TestBuilderCascadeQueryHelpers:
             extra_target_names=["vectors_track_hot__effnet__lib1"],
         )
 
-        assert 'STARTS_WITH(orphan_id, "vectors_track_hot__effnet__lib1/")' in query
-        assert "REMOVE PARSE_IDENTIFIER(orphan_id).key IN cascade_target" in query
+        assert '"vectors_track_hot__effnet__lib1/"' in query
+        assert "IN vectors_track_hot__effnet__lib1" in query
+        assert "IN cascade_target" in query
 
 
 @pytest.mark.unit

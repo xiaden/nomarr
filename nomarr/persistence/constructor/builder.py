@@ -857,20 +857,22 @@ class Builder:
             ")",
         ]
 
-        for target_collection_name in target_collection_names:
+        for idx, target_collection_name in enumerate(target_collection_names):
+            var = f"orphan_id_{idx}"
             lines.extend(
                 [
-                    f'FOR orphan_id IN orphan_ids FILTER STARTS_WITH(orphan_id, "{target_collection_name}/")',
-                    f"    REMOVE PARSE_IDENTIFIER(orphan_id).key IN {target_collection_name}",
+                    f'FOR {var} IN orphan_ids FILTER STARTS_WITH({var}, "{target_collection_name}/")',
+                    f"    REMOVE PARSE_IDENTIFIER({var}).key IN {target_collection_name}",
                 ]
             )
 
-        for edge_name in cascade_edge_names:
+        for idx, edge_name in enumerate(cascade_edge_names):
+            var = f"edge_doc_{idx}"
             lines.extend(
                 [
-                    f"FOR edge_doc IN {edge_name}",
-                    "    FILTER edge_doc._from IN @starts OR edge_doc._from IN orphan_ids OR edge_doc._to IN orphan_ids OR edge_doc._to IN @starts",
-                    f"    REMOVE edge_doc IN {edge_name}",
+                    f"FOR {var} IN {edge_name}",
+                    f"    FILTER {var}._from IN @starts OR {var}._from IN orphan_ids OR {var}._to IN orphan_ids OR {var}._to IN @starts",
+                    f"    REMOVE {var} IN {edge_name}",
                 ]
             )
 
