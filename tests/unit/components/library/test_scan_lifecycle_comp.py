@@ -253,6 +253,18 @@ class TestScanStateHelpers:
 
     @pytest.mark.unit
     @pytest.mark.mocked
+    def test_get_scan_state_looks_up_scan_doc_by_id_keyword(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library_scans.get.return_value = None
+
+        result = get_scan_state(mock_db, "libraries/test")
+
+        mock_db.library_scans.get.assert_called_once_with(_id="library_scans/test")
+        mock_db.library_has_scan.upsert.assert_not_called()
+        assert result is None
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
     def test_get_scan_state_repairs_legacy_row_missing_library_key(self) -> None:
         mock_db = MagicMock()
         mock_db.library_scans.get.side_effect = [
@@ -263,6 +275,7 @@ class TestScanStateHelpers:
 
         result = get_scan_state(mock_db, "libraries/test")
 
+        mock_db.library_scans.get.assert_any_call(_id="library_scans/test")
         mock_db.library_scans.delete.assert_called_once_with(_id="library_scans/test")
         repaired_doc = mock_db.library_scans.insert.call_args.args[0][0]
         assert repaired_doc["library_key"] == "test"

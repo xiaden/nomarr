@@ -191,12 +191,13 @@ def ensure_scan_state(db: Database, library_id: str) -> dict[str, Any]:
 
 def get_scan_state(db: Database, library_id: str) -> dict[str, Any] | None:
     """Return the scan document for a library, repairing legacy rows when found."""
-    scan_doc = cast("dict[str, Any] | None", db.library_scans.get(_scan_doc_id(library_id)))
+    scan_id = _scan_doc_id(library_id)
+    scan_doc = cast("dict[str, Any] | None", db.library_scans.get(_id=scan_id))
     if scan_doc is None:
         return None
     if scan_doc.get("library_key") != _library_key_from_id(library_id):
         return ensure_scan_state(db, library_id)
-    _ensure_edge(db, db.library_has_scan, library_id, _scan_doc_id(library_id))
+    _ensure_edge(db, db.library_has_scan, library_id, scan_id)
     return scan_doc
 
 
