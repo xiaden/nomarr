@@ -208,6 +208,7 @@ async def web_navidrome_sync_songs(
     try:
         result = await asyncio.to_thread(navidrome_service.sync_navidrome)
     except ValueError as exc:
+        logger.warning("[Web API] Sync songs rejected: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as e:
         logger.exception("[Web API] Error syncing Navidrome songs")

@@ -297,9 +297,7 @@ def get_files_by_paths_bulk(db: Database, paths: list[str]) -> dict[str, dict[st
 def detect_nd_path_prefix(db: Database, nd_path: str) -> str | None:
     """Detect the Navidrome prefix that should be stripped from absolute paths."""
     normalized_paths = [
-        value
-        for value in _aggregate_values(db.library_files, "normalized_path", limit=DEFAULT_LIMIT)
-        if isinstance(value, str) and value
+        value for value in _aggregate_values(db.library_files, "normalized_path") if isinstance(value, str) and value
     ]
     best_match = next(
         (
