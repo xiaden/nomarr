@@ -118,7 +118,7 @@ class TestDeleteLibrary:
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_false_when_library_not_found(self) -> None:
-        """Missing libraries should short-circuit without cascading delete."""
+        """Missing libraries should short-circuit without any deletion."""
         mock_db = MagicMock()
 
         with patch(
@@ -129,21 +129,29 @@ class TestDeleteLibrary:
 
         assert result is False
         get_library_record_mock.assert_called_once_with(mock_db, "libraries/missing")
-        mock_db.libraries.delete.cascade.assert_not_called()
+        mock_db.libraries.delete.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_deletes_library_and_returns_true(self) -> None:
-        """Existing libraries should cascade delete their normalized id."""
+        """Existing libraries should delete all associated data and return True."""
         mock_db = MagicMock()
         library = {"name": "Main Library"}
+        # Traversal returns empty list so no per-file batches run.
+        mock_db.libraries.library_contains_file.return_value = []
 
-        with patch(
-            "nomarr.components.library.library_admin_comp.get_library_record",
-            return_value=library,
-        ) as get_library_record_mock:
+        with (
+            patch(
+                "nomarr.components.library.library_admin_comp.get_library_record",
+                return_value=library,
+            ) as get_library_record_mock,
+            patch("nomarr.components.library.library_admin_comp.cleanup_orphaned_tags") as cleanup_mock,
+        ):
             result = delete_library(mock_db, "libraries/1")
 
         assert result is True
         get_library_record_mock.assert_called_once_with(mock_db, "libraries/1")
-        mock_db.libraries.delete.cascade.assert_called_once_with(["libraries/1"])
+        # Orphan tag cleanup should always run.
+        cleanup_mock.assert_called_once_with(mock_db)
+        # Library document itself should be deleted.
+        mock_db.libraries.delete.assert_called_once_with(_key="1")

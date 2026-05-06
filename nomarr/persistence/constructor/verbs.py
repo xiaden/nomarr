@@ -959,3 +959,24 @@ def upsert_file_has_vectors_edge(db: SafeDatabase, file_id: str, vector_id: str)
         """,
         bind_vars={"file_id": file_id, "vector_id": vector_id},
     )
+
+
+def delete_unreferenced(db: SafeDatabase, collection: str, edge_collection: str) -> int:
+    """Delete documents in ``collection`` that have no inbound edges in ``edge_collection``.
+
+    Returns the number of documents deleted.
+    """
+    cursor = _execute_aql(
+        db,
+        """
+        FOR doc IN @@col
+            LET ref_count = LENGTH(
+                FOR e IN @@edge FILTER e._to == doc._id RETURN 1
+            )
+            FILTER ref_count == 0
+            REMOVE doc IN @@col
+            RETURN 1
+        """,
+        bind_vars={"@col": collection, "@edge": edge_collection},
+    )
+    return sum(1 for _ in cursor)

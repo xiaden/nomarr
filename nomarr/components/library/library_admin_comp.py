@@ -31,6 +31,7 @@ from nomarr.components.library.scan_lifecycle_comp import (
     get_scanning_library_ids,
     transition_pipeline_state,
 )
+from nomarr.components.tagging.tag_cleanup_comp import cleanup_orphaned_tags
 from nomarr.helpers.constants.pipeline_states import PIPELINE_IDLE
 
 logger = logging.getLogger(__name__)
@@ -114,8 +115,14 @@ def update_library_root(db: Database, base_library_root: str | None, library_id:
     logger.info(f"[LibraryAdmin] Updated library {library_id} root path to {abs_path}")
 
 
+_BATCH_SIZE = 500
+
+
 def delete_library(db: Database, library_id: str) -> bool:
-    """Delete a library.
+    """Delete a library and all associated data in batched Python-orchestrated steps.
+
+    Uses sequential small AQL queries rather than a single large cascade to
+    avoid timeouts on libraries with many files.
 
     Args:
         db: Database instance
@@ -128,8 +135,58 @@ def delete_library(db: Database, library_id: str) -> bool:
     library = get_library_record(db, library_id)
     if not library:
         return False
-    deleted_count = cast("int", db.libraries.delete.cascade([f"libraries/{library_key_from_ref(library_id)}"]))
-    logger.info(f"[LibraryAdmin] Deleted library {library_id}: {library.get('name')} ({deleted_count} docs removed)")
+
+    lib_key = library_key_from_ref(library_id)
+    library_full_id = f"libraries/{lib_key}"
+
+    # Collect all file IDs for this library upfront.
+    file_docs = cast("list[dict]", db.libraries.library_contains_file(library_full_id, limit=None))
+    file_ids = [doc["_id"] for doc in file_docs if isinstance(doc.get("_id"), str)]
+
+    # Delete per-file derived data in batches.
+    for i in range(0, max(len(file_ids), 1), _BATCH_SIZE):
+        batch = file_ids[i : i + _BATCH_SIZE]
+        if not batch:
+            break
+        # Collect segment stat IDs before deleting the edges that point to them.
+        stat_docs = cast("list[dict]", db.library_files.file_has_segment_stats.by_ids(batch, limit=None))
+        stat_ids = [doc["_id"] for doc in stat_docs if isinstance(doc.get("_id"), str)]
+        # Delete per-file edge collections.
+        db.file_has_state.delete.in_(_from=batch)
+        db.file_has_vectors.delete.in_(_from=batch)
+        db.file_has_segment_stats.delete.in_(_from=batch)
+        db.song_has_tags.delete.in_(_from=batch)
+        db.worker_claims.delete.in_(file_id=batch)
+        # Delete orphaned segment stats docs now that their edges are gone.
+        if stat_ids:
+            db.segment_scores_stats.delete.in_(_id=stat_ids)
+
+    # Delete orphan tags after clearing song_has_tags edges.
+    # The cleanup component also checks tag_model_output edges so tags still
+    # referenced by ML model outputs are preserved.
+    cleanup_orphaned_tags(db)
+
+    # Delete vector template collections scoped to this library.
+    for coll_name, coll in list(db._template_namespaces.items()):  # type: ignore[attr-defined]
+        if coll_name.endswith(f"__{lib_key}"):
+            coll.truncate()
+
+    # Delete library-scoped edge collections (single query each).
+    db.library_contains_file.delete(_from=library_full_id)
+    db.library_contains_folder.delete(_from=library_full_id)
+    db.library_has_scan.delete(_from=library_full_id)
+    db.library_has_pipeline_state.delete(_from=library_full_id)
+
+    # Delete library-scoped document collections (single AQL each via library_key field).
+    db.library_files.library_key.delete(lib_key)
+    db.library_folders.library_key.delete(lib_key)
+    db.library_scans.library_key.delete(lib_key)
+    db.library_pipeline_states.library_key.delete(lib_key)
+
+    # Finally, delete the library document itself.
+    db.libraries.delete(_key=lib_key)
+
+    logger.info(f"[LibraryAdmin] Deleted library {library_id}: {library.get('name')} ({len(file_ids)} files removed)")
     return True
 
 

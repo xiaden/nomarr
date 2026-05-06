@@ -478,6 +478,15 @@ class _CollectionDeleteVerb:
             return verbs.delete_by_field(self._db, self._collection_name, field_name, value)
         return verbs.delete_by_filter(self._db, self._collection_name, criteria)
 
+    def in_(self, *args: FieldValue, **kwargs: Any) -> int:
+        """Delete all documents where a single field's value is IN the provided list."""
+        field_name, values = _require_single_criterion(*args, **kwargs)
+        return verbs.delete_in_by_field(self._db, self._collection_name, field_name, cast("list[Any]", values))
+
+    def unreferenced(self, edge_collection: str) -> int:
+        """Delete documents in this collection that have no inbound edges in ``edge_collection``."""
+        return verbs.delete_unreferenced(self._db, self._collection_name, edge_collection)
+
 
 class _TraversalVerb:
     """Callable traversal helper with ``by_ids`` support."""
