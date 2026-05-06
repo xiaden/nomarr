@@ -26,6 +26,7 @@ const CONFIG_KEYS = {
   url: "navidrome_api_url",
   user: "navidrome_api_user",
   password: "navidrome_api_password",
+  prefixMap: "navidrome_path_prefix_map",
 } as const;
 
 export function ApiSettingsPanel() {
@@ -35,6 +36,7 @@ export function ApiSettingsPanel() {
   const [url, setUrl] = useState("");
   const [user, setUser] = useState("");
   const [password, setPassword] = useState("");
+  const [prefixMap, setPrefixMap] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -59,6 +61,7 @@ export function ApiSettingsPanel() {
       setUrl((config[CONFIG_KEYS.url] as string) ?? "");
       setUser((config[CONFIG_KEYS.user] as string) ?? "");
       setPassword((config[CONFIG_KEYS.password] as string) ?? "");
+      setPrefixMap((config[CONFIG_KEYS.prefixMap] as string) ?? "");
       setLoaded(true);
     } catch (err) {
       showError(
@@ -114,6 +117,7 @@ export function ApiSettingsPanel() {
         updateConfig(CONFIG_KEYS.url, url),
         updateConfig(CONFIG_KEYS.user, user),
         updateConfig(CONFIG_KEYS.password, password),
+        updateConfig(CONFIG_KEYS.prefixMap, prefixMap),
       ]);
       showSuccess("Navidrome API settings saved");
     } catch (err) {
@@ -275,6 +279,16 @@ export function ApiSettingsPanel() {
         onChange={(e) => setPassword(e.target.value)}
         size="small"
         fullWidth
+      />
+
+      <TextField
+        label="Path Prefix Map"
+        placeholder="/music:/media/music"
+        value={prefixMap}
+        onChange={(e) => setPrefixMap(e.target.value)}
+        size="small"
+        fullWidth
+        helperText="Comma-separated from:to pairs for path remapping. Leave empty to use auto-detection."
       />
 
       <Stack direction="row" spacing={2} alignItems="center">

@@ -1,0 +1,1 @@
+import{Ct as e,Dr as t,Tr as n}from"./index-CaXkn0m-.js";var r=t(n(),1);function i(){let t=(0,r.useContext)(e);if(!t)throw Error(`useNotification must be used within NotificationProvider`);return t}export{i as t};

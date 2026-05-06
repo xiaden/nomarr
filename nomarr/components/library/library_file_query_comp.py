@@ -508,6 +508,12 @@ def get_all_library_paths(db: Database) -> list[str]:
     ]
 
 
+def get_sample_normalized_path(db: Database) -> str | None:
+    """Return one normalized_path from the library for diagnostic purposes."""
+    values = [v for v in _aggregate_values(db.library_files, "normalized_path", limit=1) if isinstance(v, str) and v]
+    return values[0] if values else None
+
+
 def list_all_file_ids(db: Database, limit: int | None = None) -> list[str]:
     """Return all library-file ids ordered by ``_key``."""
     collect_limit = limit or DEFAULT_LIMIT

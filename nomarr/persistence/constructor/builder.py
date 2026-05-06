@@ -847,9 +847,10 @@ class Builder:
                 for cls in _iter_subclasses(DocumentCollection) | _iter_subclasses(VectorCollection)
                 if _is_concrete_collection_class(cast("type[object]", cls))
             }
+            - {collection_name}
         )
         if extra_target_names:
-            target_collection_names = sorted(set(target_collection_names) | set(extra_target_names))
+            target_collection_names = sorted(set(target_collection_names) | set(extra_target_names) - {collection_name})
 
         if not cascade_edge_names:
             cascade_edge_names = [_collection_name_for_class(edge.via) for edge in cascade_defs]

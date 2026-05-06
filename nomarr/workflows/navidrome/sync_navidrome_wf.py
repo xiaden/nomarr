@@ -13,7 +13,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_file_query_comp import detect_nd_path_prefix, get_files_by_paths_bulk
+from nomarr.components.library.library_file_query_comp import (
+    detect_nd_path_prefix,
+    get_files_by_paths_bulk,
+    get_sample_normalized_path,
+)
 from nomarr.components.navidrome.navidrome_graph_comp import (
     bulk_ensure_navidrome_file_links,
     bulk_upsert_navidrome_plays,
@@ -90,12 +94,13 @@ def _resolve_song_paths(
                 consider_candidate("auto-detected prefix", remapped_paths)
 
     if best_score == 0:
-        sample_path = raw_paths[0] if raw_paths else "(no songs)"
+        nd_sample = raw_paths[0] if raw_paths else "(no songs)"
+        nomarr_sample = get_sample_normalized_path(db) or "(library appears empty — run a scan first)"
         msg = (
             "Could not match Navidrome paths to Nomarr library files. "
             "Ensure the Nomarr library has been scanned, or configure navidrome_path_prefix_map "
             "when Navidrome and Nomarr see the same files under different mount points. "
-            f"Sample path: {sample_path}"
+            f"Navidrome sample path: {nd_sample} | Nomarr sample path: {nomarr_sample}"
         )
         raise ValueError(msg)
 
