@@ -169,6 +169,24 @@ class TestGetFilesByPathsBulk:
     """Tests for ``get_files_by_paths_bulk()``."""
 
     @pytest.mark.unit
+    def test_delegates_to_concrete_library_files_bulk_lookup_when_available(self) -> None:
+        class LibraryFilesOps:
+            def __init__(self) -> None:
+                self.calls: list[list[str]] = []
+
+            def get_files_by_paths_bulk(self, paths: list[str]) -> dict[str, dict[str, str]]:
+                self.calls.append(paths)
+                return {paths[0]: {"_id": "library_files/1"}}
+
+        mock_db = MagicMock()
+        mock_db.library_files = LibraryFilesOps()
+
+        result = get_files_by_paths_bulk(mock_db, ["artist/song.flac"])
+
+        assert result == {"artist/song.flac": {"_id": "library_files/1"}}
+        assert mock_db.library_files.calls == [["artist/song.flac"]]
+
+    @pytest.mark.unit
     def test_maps_results_by_matching_normalized_and_absolute_paths(self) -> None:
         mock_db = MagicMock()
         doc = {
@@ -206,6 +224,24 @@ class TestGetFilesByPathsBulk:
 
 class TestDetectNdPathPrefix:
     """Tests for ``detect_nd_path_prefix()``."""
+
+    @pytest.mark.unit
+    def test_delegates_to_concrete_library_files_prefix_detection_when_available(self) -> None:
+        class LibraryFilesOps:
+            def __init__(self) -> None:
+                self.calls: list[str] = []
+
+            def detect_nd_path_prefix(self, nd_path: str) -> str | None:
+                self.calls.append(nd_path)
+                return "/music/"
+
+        mock_db = MagicMock()
+        mock_db.library_files = LibraryFilesOps()
+
+        result = detect_nd_path_prefix(mock_db, "/music/artist/song.flac")
+
+        assert result == "/music/"
+        assert mock_db.library_files.calls == ["/music/artist/song.flac"]
 
     @pytest.mark.unit
     def test_returns_prefix_for_longest_matching_normalized_path(self) -> None:

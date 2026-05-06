@@ -18,6 +18,13 @@ from nomarr.persistence.constructor.pagination import DEFAULT_LIMIT
 from nomarr.persistence.db import Database
 
 
+def _get_concrete_library_files_method(db: Database, method_name: str) -> Any | None:
+    """Return a real ``db.library_files`` method, ignoring mock magic attributes."""
+    if hasattr(type(db.library_files), method_name):
+        return getattr(db.library_files, method_name)
+    return None
+
+
 def get_file_by_id(db: Database, file_id: str) -> dict[str, Any] | None:
     """Get one library-file document by ``_id``."""
     return cast("dict[str, Any] | None", db.library_files.get(_id=file_id))
@@ -272,6 +279,10 @@ def get_files_by_paths_bulk(db: Database, paths: list[str]) -> dict[str, dict[st
     if not paths:
         return {}
 
+    bulk_lookup = _get_concrete_library_files_method(db, "get_files_by_paths_bulk")
+    if bulk_lookup is not None:
+        return cast("dict[str, dict[str, Any]]", bulk_lookup(paths))
+
     path_set = set(paths)
     docs_by_id: dict[str, dict[str, Any]] = {}
     for file_doc in db.library_files.get.in_(Field("path", paths), limit=None):
@@ -296,6 +307,10 @@ def get_files_by_paths_bulk(db: Database, paths: list[str]) -> dict[str, dict[st
 
 def detect_nd_path_prefix(db: Database, nd_path: str) -> str | None:
     """Detect the Navidrome prefix that should be stripped from absolute paths."""
+    detect_prefix = _get_concrete_library_files_method(db, "detect_nd_path_prefix")
+    if detect_prefix is not None:
+        return cast("str | None", detect_prefix(nd_path))
+
     normalized_paths = [
         value for value in _aggregate_values(db.library_files, "normalized_path") if isinstance(value, str) and value
     ]
