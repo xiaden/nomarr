@@ -306,3 +306,19 @@ export interface SyncSongsResponse {
 export async function syncNavidromeSongs(): Promise<SyncSongsResponse> {
   return post<SyncSongsResponse>("/api/web/navidrome/sync-song");
 }
+
+// ── Personal Playlists ──
+
+export interface TriggerPersonalPlaylistsResponse {
+  status: string;
+  message: string;
+  playlists_generated: number;
+  playlists_pushed: number;
+}
+
+/**
+ * Generate personal playlists for the configured Navidrome user and push to Navidrome.
+ */
+export async function triggerPersonalPlaylists(): Promise<TriggerPersonalPlaylistsResponse> {
+  return post<TriggerPersonalPlaylistsResponse>("/api/web/navidrome/generate-personal-playlists");
+}

@@ -268,6 +268,15 @@ class SyncSongsResponse(BaseModel):
     duration_ms: int = Field(..., description="Sync duration in milliseconds")
 
 
+class TriggerPersonalPlaylistsResponse(BaseModel):
+    """Response after triggering personal playlist generation and push."""
+
+    status: str = Field(..., description="Outcome: 'ok' or 'no_data'")
+    message: str = Field("", description="Human-readable detail; empty on success")
+    playlists_generated: int = Field(..., description="Number of playlists generated")
+    playlists_pushed: int = Field(..., description="Number successfully pushed to Navidrome")
+
+
 class PingResponse(BaseModel):
     """Response from the Navidrome connection test endpoint."""
 

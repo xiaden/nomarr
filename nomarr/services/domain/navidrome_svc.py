@@ -301,6 +301,28 @@ class NavidromeService:
         api_password = self._config_service.get("navidrome_api_password")
         return api_url, api_user, api_password
 
+    @staticmethod
+    def _parse_path_prefix_map(raw_value: object) -> list[tuple[str, str]]:
+        """Parse the live Navidrome path-prefix mapping config.
+
+        The config value is a comma-separated list of ``from:to`` pairs.
+        Invalid or incomplete entries are ignored.
+        """
+        if not isinstance(raw_value, str):
+            return []
+
+        mappings: list[tuple[str, str]] = []
+        for raw_pair in raw_value.split(","):
+            pair = raw_pair.strip()
+            if not pair or ":" not in pair:
+                continue
+            source_prefix, target_prefix = pair.split(":", maxsplit=1)
+            source_prefix = source_prefix.strip()
+            target_prefix = target_prefix.strip()
+            if source_prefix and target_prefix:
+                mappings.append((source_prefix, target_prefix))
+        return mappings
+
     # ------------------------------------------------------------------
     # Subsonic client (lazy, invalidated on credential change)
     # ------------------------------------------------------------------
@@ -400,10 +422,14 @@ class NavidromeService:
         """
         client = self._get_client()
         api_user: str = self._config_service.get("navidrome_api_user", "")
+        path_prefix_map = self._parse_path_prefix_map(
+            self._config_service.get("navidrome_path_prefix_map", ""),
+        )
         return sync_navidrome(
             client=client,
             db=self._db,
             user_id=api_user,
+            path_prefix_map=path_prefix_map,
         )
 
     # ------------------------------------------------------------------
@@ -535,6 +561,55 @@ class NavidromeService:
             )
 
         return result
+
+    def trigger_personal_playlists(self) -> dict[str, int | str]:
+        """Generate personal playlists for the configured Navidrome user and push them.
+
+        Reads ``navidrome_api_user`` from config, generates playlists from the
+        taste profile, then pushes each to Navidrome via the Subsonic API.
+
+        Returns:
+            Dict with ``status``, ``message``, ``playlists_generated``, ``playlists_pushed``.
+
+        Raises:
+            ValueError: If ``navidrome_api_user`` is not configured.
+            MisconfiguredError: If ``library_key`` is not configured.
+
+        """
+        user_id: str = self._config_service.get("navidrome_api_user", "")
+        if not user_id:
+            raise ValueError("navidrome_api_user is not configured")
+
+        result = self.generate_playlists(user_id=user_id)
+
+        if not result.playlists:
+            return {
+                "status": result.status,
+                "message": result.message or "No playlists generated",
+                "playlists_generated": 0,
+                "playlists_pushed": 0,
+            }
+
+        client = self._get_client()
+        pushed = 0
+        for playlist in result.playlists:
+            try:
+                push_playlist(
+                    db=self._db,
+                    client=client,
+                    playlist_name=playlist["playlist_name"],
+                    file_ids=playlist["file_ids"],
+                )
+                pushed += 1
+            except Exception:
+                logger.exception("Failed to push playlist %s", playlist["playlist_name"])
+
+        return {
+            "status": "ok",
+            "message": "",
+            "playlists_generated": len(result.playlists),
+            "playlists_pushed": pushed,
+        }
 
     def resolve_files_to_nd(self, file_ids: list[str]) -> dict[str, str]:
         """Resolve ``library_files/_id`` values to Navidrome track IDs.

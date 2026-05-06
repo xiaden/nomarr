@@ -49,6 +49,7 @@ export function ApiSettingsPanel() {
   // --- API key state ---
   const [apiKey, setApiKey] = useState("");
   const [apiKeyLoading, setApiKeyLoading] = useState(false);
+  const [apiKeyFocused, setApiKeyFocused] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
 
   const loadSettings = async () => {
@@ -189,8 +190,11 @@ export function ApiSettingsPanel() {
       <Stack direction="row" spacing={1} alignItems="center">
         <TextField
           value={apiKeyLoading ? "Loading..." : apiKey}
+          type={apiKeyFocused ? "text" : "password"}
           size="small"
           fullWidth
+          onFocus={() => setApiKeyFocused(true)}
+          onBlur={() => setApiKeyFocused(false)}
           slotProps={{
             input: {
               readOnly: true,

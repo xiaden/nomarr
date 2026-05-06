@@ -27,6 +27,7 @@ from nomarr.interfaces.api.types.navidrome_types import (
     StaticPlaylistResponse,
     SyncSongsResponse,
     TagValuesResponse,
+    TriggerPersonalPlaylistsResponse,
 )
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
 
@@ -222,6 +223,30 @@ async def web_navidrome_sync_songs(
         play_edges_upserted=result["play_edges_upserted"],
         orphans_removed=result["orphans_removed"],
         duration_ms=result["duration_ms"],
+    )
+
+
+@router.post("/generate-personal-playlists", dependencies=[Depends(verify_session)])
+async def web_generate_personal_playlists(
+    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
+) -> TriggerPersonalPlaylistsResponse:
+    """Trigger personal playlist generation for the configured Navidrome user."""
+    try:
+        result = await asyncio.to_thread(navidrome_service.trigger_personal_playlists)
+    except ValueError as exc:
+        logger.warning("[Web API] Personal playlist trigger rejected: %s", exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as e:
+        logger.exception("[Web API] Error generating personal playlists")
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to generate playlists")
+        ) from e
+
+    return TriggerPersonalPlaylistsResponse(
+        status=str(result["status"]),
+        message=str(result["message"]),
+        playlists_generated=int(result["playlists_generated"]),
+        playlists_pushed=int(result["playlists_pushed"]),
     )
 
 
