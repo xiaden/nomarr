@@ -115,7 +115,12 @@ def delete_library_file(db: Database, file_id: str) -> None:
             return
         file_id = str(file_doc["_id"])
 
-    db.library_files.delete.cascade([file_id])
+    cascade_delete = db.library_files.delete.cascade
+    if cascade_delete is None:
+        msg = "LibraryFiles cascade delete is not attached"
+        raise RuntimeError(msg)
+
+    cascade_delete([file_id])
 
 
 def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
@@ -272,9 +277,15 @@ def bulk_delete_files(db: Database, paths: list[str]) -> int:
         if (file_doc := cast("dict[str, Any] | None", db.library_files.get(path=path))) is not None
     ]
     file_ids = [str(d["_id"]) for d in file_docs]
-    if file_ids:
-        db.library_files.delete.cascade(file_ids)
+    if not file_ids:
+        return 0
 
+    cascade_delete = db.library_files.delete.cascade
+    if cascade_delete is None:
+        msg = "LibraryFiles cascade delete is not attached"
+        raise RuntimeError(msg)
+
+    cascade_delete(file_ids)
     return len(file_ids)
 
 

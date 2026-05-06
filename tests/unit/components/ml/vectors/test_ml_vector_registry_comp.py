@@ -88,14 +88,14 @@ class TestDeleteVectorsByFileId:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_iterates_all_template_namespaces_and_executes_edge_cleanup(self) -> None:
+    def test_iterates_all_registered_vector_collections_and_executes_edge_cleanup(self) -> None:
         db = MagicMock()
 
         hot_namespace = MagicMock()
         hot_namespace.file_id.delete.return_value = 1
         cold_namespace = MagicMock()
         cold_namespace.file_id.delete.return_value = 2
-        db._template_namespaces = {
+        db._registered = {
             "vectors_track_hot__effnet__lib1": hot_namespace,
             "vectors_track_cold__effnet__lib1": cold_namespace,
         }
@@ -119,7 +119,7 @@ class TestDeleteVectorsByFileIds:
     @pytest.mark.mocked
     def test_returns_zero_for_empty_input(self) -> None:
         db = MagicMock()
-        db._template_namespaces = {}
+        db._registered = {}
         db.db = MagicMock()
 
         deleted = delete_vectors_by_file_ids(db, [])
@@ -136,7 +136,7 @@ class TestDeleteVectorsByFileIds:
         hot_namespace.file_id.delete.side_effect = [1, 1]
         cold_namespace = MagicMock()
         cold_namespace.file_id.delete.side_effect = [2, 2]
-        db._template_namespaces = {
+        db._registered = {
             "vectors_track_hot__effnet__lib1": hot_namespace,
             "vectors_track_cold__effnet__lib1": cold_namespace,
         }

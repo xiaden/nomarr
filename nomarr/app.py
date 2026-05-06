@@ -197,13 +197,12 @@ class Application:
 
     def _start_app_heartbeat(self) -> None:
         """Start background thread to write app heartbeat (Phase 3: DB-based IPC)."""
-        from nomarr.persistence.db import Database
+        db = self.db
 
         def heartbeat_loop() -> None:
-            heartbeat_db = Database()
             while self._running:
                 try:
-                    heartbeat_db.health.component_id.upsert(
+                    db.health.component_id.upsert(
                         "app",
                         {
                             "component_type": "app",
@@ -214,7 +213,6 @@ class Application:
                 except Exception as e:
                     logger.exception(f"[Application] Heartbeat error: {e}")
                 time.sleep(5)
-            heartbeat_db.close()
 
         self._heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True, name="AppHeartbeat")
         self._heartbeat_thread.start()

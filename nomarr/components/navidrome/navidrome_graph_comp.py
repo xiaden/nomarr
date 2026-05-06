@@ -101,7 +101,12 @@ def delete_navidrome_tracks_cascade(db: Database, nd_ids: list[str]) -> int:
     if not nd_ids:
         return 0
 
-    return int(db.navidrome_tracks.delete.cascade([f"navidrome_tracks/{nd_id}" for nd_id in nd_ids]))
+    cascade_delete = db.navidrome_tracks.delete.cascade
+    if cascade_delete is None:
+        msg = "NavidromeTracks cascade delete is not attached"
+        raise RuntimeError(msg)
+
+    return int(cascade_delete([f"navidrome_tracks/{nd_id}" for nd_id in nd_ids]))
 
 
 def resolve_navidrome_track_to_file(db: Database, nd_id: str) -> str | None:

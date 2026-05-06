@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
 
 import yaml
 
 from nomarr.persistence.arango_client import SafeDatabase, create_arango_client
-from nomarr.persistence.base import DocumentCollection, EdgeCollection, VectorCollection
+from nomarr.persistence.base import VectorCollection, bind_all_collections, reattach_vector_cascades
 from nomarr.persistence.collections import (
     CalibrationHistory,
     CalibrationState,
@@ -50,7 +49,6 @@ from nomarr.persistence.collections import (
     WorkerClaims,
     WorkerRestartPolicy,
 )
-from nomarr.persistence.constructor.builder import Builder
 
 __all__ = ["Database"]
 
@@ -124,44 +122,42 @@ class Database:
     - Username and db_name are hardcoded as 'nomarr' (not configurable).
     """
 
-    # Builder wires collection-level verbs and traversals onto these instances at runtime,
-    # so the application-facing attribute types are intentionally broad for static checking.
-    meta: Any
-    libraries: Any
-    library_files: Any
-    tags: Any
-    library_folders: Any
-    library_scans: Any
-    sessions: Any
-    calibration_state: Any
-    calibration_history: Any
-    health: Any
-    worker_restart_policy: Any
-    navidrome_tracks: Any
-    navidrome_playcounts: Any
-    file_states: Any
-    file_has_state: Any
-    song_has_tags: Any
-    file_has_vectors: Any
-    library_has_scan: Any
-    library_contains_file: Any
-    library_contains_folder: Any
-    library_pipeline_states: Any
-    library_has_pipeline_state: Any
-    worker_claims: Any
-    vram_promises: Any
-    locks: Any
-    ml_capacity: Any
-    ml_models: Any
-    model_has_output: Any
-    model_has_calibration: Any
-    ml_model_outputs: Any
-    tag_model_output: Any
-    segment_scores_stats: Any
-    file_has_segment_stats: Any
-    has_nd_id: Any
-    has_plays: Any
-    migrations: Any
+    meta: type[Meta]
+    libraries: type[Libraries]
+    library_files: type[LibraryFiles]
+    tags: type[Tags]
+    library_folders: type[LibraryFolders]
+    library_scans: type[LibraryScans]
+    sessions: type[Sessions]
+    calibration_state: type[CalibrationState]
+    calibration_history: type[CalibrationHistory]
+    health: type[Health]
+    worker_restart_policy: type[WorkerRestartPolicy]
+    navidrome_tracks: type[NavidromeTracks]
+    navidrome_playcounts: type[NavidromePlaycounts]
+    file_states: type[FileStates]
+    file_has_state: type[FileHasState]
+    song_has_tags: type[SongHasTags]
+    file_has_vectors: type[FileHasVectors]
+    library_has_scan: type[LibraryHasScan]
+    library_contains_file: type[LibraryContainsFile]
+    library_contains_folder: type[LibraryContainsFolder]
+    library_pipeline_states: type[LibraryPipelineStates]
+    library_has_pipeline_state: type[LibraryHasPipelineState]
+    worker_claims: type[WorkerClaims]
+    vram_promises: type[VramPromises]
+    locks: type[Locks]
+    ml_capacity: type[MlCapacity]
+    ml_models: type[MlModels]
+    model_has_output: type[ModelHasOutput]
+    model_has_calibration: type[ModelHasCalibration]
+    ml_model_outputs: type[MlModelOutputs]
+    tag_model_output: type[TagModelOutput]
+    segment_scores_stats: type[SegmentScoresStats]
+    file_has_segment_stats: type[FileHasSegmentStats]
+    has_nd_id: type[HasNdId]
+    has_plays: type[HasPlays]
+    migrations: type[Migrations]
 
     USERNAME = "nomarr"
     DB_NAME = "nomarr"
@@ -207,117 +203,66 @@ class Database:
             password=self.password,
             db_name=self.db_name,
         )
+        bind_all_collections(self.db)
 
-        builder = Builder(self.db)
-        self._builder: Builder = builder
+        self.meta = Meta
+        self.libraries = Libraries
+        self.library_files = LibraryFiles
+        self.tags = Tags
+        self.library_folders = LibraryFolders
+        self.library_scans = LibraryScans
+        self.sessions = Sessions
+        self.calibration_state = CalibrationState
+        self.calibration_history = CalibrationHistory
+        self.health = Health
+        self.worker_restart_policy = WorkerRestartPolicy
+        self.navidrome_tracks = NavidromeTracks
+        self.navidrome_playcounts = NavidromePlaycounts
+        self.file_states = FileStates
+        self.file_has_state = FileHasState
+        self.song_has_tags = SongHasTags
+        self.file_has_vectors = FileHasVectors
+        self.library_has_scan = LibraryHasScan
+        self.library_contains_file = LibraryContainsFile
+        self.library_contains_folder = LibraryContainsFolder
+        self.library_pipeline_states = LibraryPipelineStates
+        self.library_has_pipeline_state = LibraryHasPipelineState
+        self.worker_claims = WorkerClaims
+        self.vram_promises = VramPromises
+        self.locks = Locks
+        self.ml_capacity = MlCapacity
+        self.ml_models = MlModels
+        self.model_has_output = ModelHasOutput
+        self.model_has_calibration = ModelHasCalibration
+        self.ml_model_outputs = MlModelOutputs
+        self.tag_model_output = TagModelOutput
+        self.segment_scores_stats = SegmentScoresStats
+        self.file_has_segment_stats = FileHasSegmentStats
+        self.has_nd_id = HasNdId
+        self.has_plays = HasPlays
+        self.migrations = Migrations
 
-        self.meta = Meta()
-        self._wire_collection("meta", self.meta, builder)
-        self.libraries = Libraries()
-        self._wire_collection("libraries", self.libraries, builder)
-        self.library_files = LibraryFiles()
-        self._wire_collection("library_files", self.library_files, builder)
-        self.tags = Tags()
-        self._wire_collection("tags", self.tags, builder)
-        self.library_folders = LibraryFolders()
-        self._wire_collection("library_folders", self.library_folders, builder)
-        self.library_scans = LibraryScans()
-        self._wire_collection("library_scans", self.library_scans, builder)
-        self.sessions = Sessions()
-        self._wire_collection("sessions", self.sessions, builder)
-        self.calibration_state = CalibrationState()
-        self._wire_collection("calibration_state", self.calibration_state, builder)
-        self.calibration_history = CalibrationHistory()
-        self._wire_collection("calibration_history", self.calibration_history, builder)
-        self.health = Health()
-        self._wire_collection("health", self.health, builder)
-        self.worker_restart_policy = WorkerRestartPolicy()
-        self._wire_collection("worker_restart_policy", self.worker_restart_policy, builder)
-        self.navidrome_tracks = NavidromeTracks()
-        self._wire_collection("navidrome_tracks", self.navidrome_tracks, builder)
-        self.navidrome_playcounts = NavidromePlaycounts()
-        self._wire_collection("navidrome_playcounts", self.navidrome_playcounts, builder)
-        self.file_states = FileStates()
-        self._wire_collection("file_states", self.file_states, builder)
-        self.file_has_state = FileHasState()
-        self._wire_collection("file_has_state", self.file_has_state, builder)
-        self.song_has_tags = SongHasTags()
-        self._wire_collection("song_has_tags", self.song_has_tags, builder)
-        self.file_has_vectors = FileHasVectors()
-        self._wire_collection("file_has_vectors", self.file_has_vectors, builder)
-        self.library_has_scan = LibraryHasScan()
-        self._wire_collection("library_has_scan", self.library_has_scan, builder)
-        self.library_contains_file = LibraryContainsFile()
-        self._wire_collection("library_contains_file", self.library_contains_file, builder)
-        self.library_contains_folder = LibraryContainsFolder()
-        self._wire_collection("library_contains_folder", self.library_contains_folder, builder)
-        self.library_pipeline_states = LibraryPipelineStates()
-        self._wire_collection("library_pipeline_states", self.library_pipeline_states, builder)
-        self.library_has_pipeline_state = LibraryHasPipelineState()
-        self._wire_collection("library_has_pipeline_state", self.library_has_pipeline_state, builder)
-        self.worker_claims = WorkerClaims()
-        self._wire_collection("worker_claims", self.worker_claims, builder)
-        self.vram_promises = VramPromises()
-        self._wire_collection("vram_promises", self.vram_promises, builder)
-        self.locks = Locks()
-        self._wire_collection("locks", self.locks, builder)
-        self.ml_capacity = MlCapacity()
-        self._wire_collection("ml_capacity", self.ml_capacity, builder)
-        self.ml_models = MlModels()
-        self._wire_collection("ml_models", self.ml_models, builder)
-        self.model_has_output = ModelHasOutput()
-        self._wire_collection("model_has_output", self.model_has_output, builder)
-        self.model_has_calibration = ModelHasCalibration()
-        self._wire_collection("model_has_calibration", self.model_has_calibration, builder)
-        self.ml_model_outputs = MlModelOutputs()
-        self._wire_collection("ml_model_outputs", self.ml_model_outputs, builder)
-        self.tag_model_output = TagModelOutput()
-        self._wire_collection("tag_model_output", self.tag_model_output, builder)
-        self.segment_scores_stats = SegmentScoresStats()
-        self._wire_collection("segment_scores_stats", self.segment_scores_stats, builder)
-        self.file_has_segment_stats = FileHasSegmentStats()
-        self._wire_collection("file_has_segment_stats", self.file_has_segment_stats, builder)
-        self.has_nd_id = HasNdId()
-        self._wire_collection("has_nd_id", self.has_nd_id, builder)
-        self.has_plays = HasPlays()
-        self._wire_collection("has_plays", self.has_plays, builder)
-        self.migrations = Migrations()
-        self._wire_collection("migrations", self.migrations, builder)
+        self._registered: dict[str, type[VectorCollection]] = {}
 
-        self._template_namespaces: dict[str, VectorCollection] = {}
+    def register(self, collection_name: str, template_name: str) -> type[VectorCollection]:
+        """Register a dynamic typed vector collection class on the database.
 
-    def _wire_collection(
-        self,
-        attr_name: str,
-        collection: DocumentCollection | EdgeCollection | VectorCollection,
-        builder: Builder,
-    ) -> None:
-        """Builder-wire a typed collection instance with its physical collection name."""
-        declared_name = getattr(type(collection), "_name", None)
-        if not isinstance(declared_name, str) or not declared_name:
-            collection_any: Any = collection
-            collection_any._name = attr_name
-        builder.construct(collection)
-
-    def register(self, collection_name: str, template_name: str) -> Any:
-        """Register a dynamic typed collection instance on the database.
-
-        If the collection is already registered, returns the cached instance.
+        If the collection is already registered, returns the cached class.
 
         Args:
             collection_name: Name of the ArangoDB collection to register.
             template_name: Template family name identifying the vector collection class.
 
         Returns:
-            The registered runtime-wired collection instance.
+            The registered runtime-bound collection class.
 
         Raises:
             ValueError: If ``collection_name`` does not exist in ArangoDB.
             ValueError: If ``template_name`` is not a supported template collection.
 
         """
-        if collection_name in self._template_namespaces:
-            return self._template_namespaces[collection_name]
+        if collection_name in self._registered:
+            return self._registered[collection_name]
         if not self.db.has_collection(collection_name):
             raise ValueError(f"Collection {collection_name!r} does not exist in ArangoDB")
 
@@ -328,19 +273,19 @@ class Database:
             msg = f"Collection {collection_name!r} does not match template pattern {vector_template_cls.NAME_PATTERN!r}"
             raise ValueError(msg)
 
-        instance = vector_template_cls()
-        collection_any: Any = instance
-        collection_any._name = collection_name
-        self._builder.construct(instance)
-        setattr(self, collection_name, instance)
-        self._template_namespaces[collection_name] = instance
-        self._builder.reattach_vector_cascades(list(self._template_namespaces.keys()))
-        return instance
+        dyn_cls = type(
+            f"{vector_template_cls.__name__}__{collection_name}",
+            (vector_template_cls,),
+            {"_name": collection_name},
+        )
+        self._registered[collection_name] = dyn_cls
+        setattr(self, collection_name, dyn_cls)
+        reattach_vector_cascades(list(self._registered.keys()))
+        return dyn_cls
 
     def get_version(self) -> str | None:
         """Read the current schema version from the meta store."""
-        meta: Any = self.meta
-        version_doc = meta.get(key="version")
+        version_doc = self.meta.get(key="version")
         if not isinstance(version_doc, dict):
             return None
         value = version_doc.get("value")
@@ -348,8 +293,7 @@ class Database:
 
     def set_version(self, version: str) -> None:
         """Persist the schema version to the meta store."""
-        meta: Any = self.meta
-        meta.upsert(key="version", fields={"value": version})
+        self.meta.upsert(key="version", fields={"value": version})
 
     def close(self) -> None:
         """Close database connection (cleanup)."""

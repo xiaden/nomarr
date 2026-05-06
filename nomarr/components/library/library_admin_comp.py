@@ -73,14 +73,17 @@ def create_library(
     ensure_no_overlapping_library_root(db, abs_path, ignore_id=None)
     resolved_name = _resolve_library_name(db, name, abs_path)
     try:
-        library_id = create_library_record(
-            db,
-            name=resolved_name,
-            root_path=abs_path,
-            is_enabled=is_enabled,
-            watch_mode=watch_mode,
-            file_write_mode=file_write_mode,
-            library_auto_write=library_auto_write,
+        library_id = cast(
+            "str",
+            create_library_record(
+                db,
+                name=resolved_name,
+                root_path=abs_path,
+                is_enabled=is_enabled,
+                watch_mode=watch_mode,
+                file_write_mode=file_write_mode,
+                library_auto_write=library_auto_write,
+            ),
         )
         transition_pipeline_state(db, library_id, PIPELINE_IDLE)
         ensure_scan_state(db, library_id)
@@ -167,7 +170,7 @@ def delete_library(db: Database, library_id: str) -> bool:
     cleanup_orphaned_tags(db)
 
     # Delete vector template collections scoped to this library.
-    for coll_name, coll in list(db._template_namespaces.items()):  # type: ignore[attr-defined]
+    for coll_name, coll in list(db._registered.items()):
         if coll_name.endswith(f"__{lib_key}"):
             coll.truncate()
 

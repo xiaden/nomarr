@@ -45,7 +45,7 @@ def _find_song_name_edge_ids(db: Database, song_id: str, name: str) -> list[str]
         if tag_id is None:
             continue
         tag = db.tags.get(_id=str(tag_id))
-        if tag is None or tag.get("name") != name:
+        if not isinstance(tag, dict) or tag.get("name") != name:
             continue
         edge_id = edge.get("_id")
         if edge_id is not None:

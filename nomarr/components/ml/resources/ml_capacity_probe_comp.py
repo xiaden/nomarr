@@ -73,7 +73,7 @@ def _try_acquire_probe_lock(db: Database, model_set_hash: str, worker_id: str) -
     reference = _probe_lock_reference(model_set_hash)
     now_value = float(now_ms().value)
     existing = db.locks.get(document_reference=reference)
-    if existing is not None:
+    if isinstance(existing, dict):
         existing_expires_at = float(existing.get("expires_at", 0.0))
         if existing_expires_at >= now_value and existing.get("holder") != worker_id:
             return False
@@ -107,7 +107,7 @@ def _complete_probe_lock(db: Database, model_set_hash: str) -> None:
     """Mark a capacity probe lock complete without changing its reference."""
     reference = _probe_lock_reference(model_set_hash)
     existing = db.locks.get(document_reference=reference)
-    if existing is None:
+    if not isinstance(existing, dict):
         return
 
     updated = dict(existing)

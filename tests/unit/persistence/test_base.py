@@ -109,7 +109,7 @@ class TestFieldDataclass:
 
     def test_field_is_dataclass_with_name_and_value(self) -> None:
         """Field is a dataclass that stores the provided name and value."""
-        field = Field("status", "active")
+        field: Field[str] = Field("status", "active")
 
         assert is_dataclass(Field)
         assert field.name == "status"
@@ -117,14 +117,14 @@ class TestFieldDataclass:
 
     def test_field_instance_stores_name_and_value(self) -> None:
         """Field instances preserve the supplied runtime filter payload."""
-        field = Field("genre", "rock")
+        field: Field[str] = Field("genre", "rock")
 
         assert field.name == "genre"
         assert field.value == "rock"
 
     def test_field_instance_is_frozen(self) -> None:
         """Field instances are immutable once created."""
-        field = Field("status", "active")
+        field: Field[str] = Field("status", "active")
 
         with pytest.raises(FrozenInstanceError):
             field.__setattr__("name", "inactive")
@@ -132,7 +132,7 @@ class TestFieldDataclass:
     def test_unique_field_instantiation_raises_type_error(self) -> None:
         """UniqueField cannot be instantiated directly."""
         with pytest.raises(TypeError, match="only for type annotations"):
-            UniqueField()
+            UniqueField.__new__(UniqueField)
 
 
 @pytest.mark.unit
@@ -363,6 +363,8 @@ class TestAllExports:
             "StateGraphCollection",
             "UniqueField",
             "VectorCollection",
+            "bind_all_collections",
+            "reattach_vector_cascades",
         ]
 
 

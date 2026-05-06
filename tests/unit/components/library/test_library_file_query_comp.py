@@ -745,7 +745,7 @@ class TestPhaseTwoQueryHelpers:
     def test_clear_library_data_truncates_all_collections(self) -> None:
         mock_db = MagicMock()
         vector_coll = MagicMock()
-        mock_db._template_namespaces = {"vectors_track__hot__effnet": vector_coll}
+        mock_db._registered = {"vectors_track__hot__effnet": vector_coll}
 
         clear_library_data(mock_db)
 

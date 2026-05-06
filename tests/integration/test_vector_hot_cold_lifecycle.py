@@ -256,6 +256,12 @@ class FakeHotOperations:
     def delete_by_file_ids(self, file_ids: list[str]) -> int:
         return sum(self.delete_by_file_id(file_id) for file_id in file_ids)
 
+    def move_collection(self, target_collection_name: str) -> int:
+        del target_collection_name
+        moved = self.harness.hot_count(self.backbone_id)
+        self.harness.move_hot_to_cold(self.backbone_id, nlists=0)
+        return moved
+
 
 class FakeColdOperations:
     """Subset of cold operations used by the services/tests."""
@@ -267,9 +273,21 @@ class FakeColdOperations:
     def get_vector(self, file_id: str) -> dict[str, Any] | None:
         return self.harness.get_cold_vector(self.backbone_id, file_id)
 
-    def ann_search(self, vector: list[float], limit: int, *, nprobe: int = 10) -> list[dict[str, Any]]:
+    def ann_search(
+        self,
+        vector: list[float],
+        limit: int,
+        nprobe: int = 10,
+        filter: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         del nprobe
-        return self.harness.search_cold(self.backbone_id, vector, limit)
+        results = self.harness.search_cold(self.backbone_id, vector, limit)
+        if filter is None:
+            return results
+        genre = filter.get("genres")
+        if not isinstance(genre, str):
+            return results
+        return [doc for doc in results if genre in cast("list[str]", doc.get("genres", []))]
 
     def count(self) -> int:
         return self.harness.cold_count(self.backbone_id)
@@ -287,7 +305,7 @@ class FakeDatabaseAdapter:
     def __init__(self, harness: VectorLifecycleHarness) -> None:
         self.harness = harness
         self.db = FakeArangoHandle(harness)
-        self._template_namespaces: dict[str, Any] = {}
+        self._registered: dict[str, Any] = {}
         self.library_files = MagicMock()
         # Default: all file_ids belong to "test_lib"
         self.library_files.get_file_library_key.return_value = "test_lib"
@@ -327,7 +345,7 @@ class FakeDatabaseAdapter:
             raise ValueError(f"Unsupported template {template_name!r}")
 
         self.db.register_collection(collection_name)
-        self._template_namespaces[collection_name] = obj
+        self._registered[collection_name] = obj
         setattr(self, collection_name, obj)
         return obj
 
@@ -548,7 +566,7 @@ def test_cascade_delete_calls_hot_and_cold_ops() -> None:
 
     hot_namespace = _VectorNamespace(1)
     cold_namespace = _VectorNamespace(2)
-    database._template_namespaces = cast(
+    database._registered = cast(
         "dict[str, Any]",
         {
             "vectors_track_hot__effnet__lib": hot_namespace,

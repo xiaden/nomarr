@@ -643,7 +643,7 @@ def clear_library_data(db: Database) -> None:
     one pass.  Order: deepest derived data first, then edges, then documents.
     """
     # Derived data
-    for vector_coll in db._template_namespaces.values():  # type: ignore[attr-defined]
+    for vector_coll in db._registered.values():
         vector_coll.truncate()
     db.segment_scores_stats.truncate()
     # Edge collections

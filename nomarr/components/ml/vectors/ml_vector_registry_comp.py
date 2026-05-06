@@ -6,17 +6,84 @@ backbone+library, and owns batch vector deletion.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from nomarr.persistence.arango_client import SafeDatabase
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
-    from nomarr.persistence.stubs.vectors_track import (
-        VectorsTrackColdNamespace,
-        VectorsTrackHotNamespace,
-        VectorsTrackMaintenanceProtocol,
-    )
+
+
+class _VectorFileIdDeleteProtocol(Protocol):
+    """Protocol for vector namespaces exposing ``file_id.delete()``."""
+
+    def delete(self, value: str) -> int: ...
+
+
+class VectorsTrackHotNamespace(Protocol):
+    """Typed surface used by hot vector namespace callers."""
+
+    file_id: _VectorFileIdDeleteProtocol
+
+    def upsert_vector(
+        self,
+        file_id: str,
+        model_suite_hash: str,
+        embed_dim: int,
+        vector: list[float],
+        num_segments: int,
+    ) -> None: ...
+
+    def get_vector(self, file_id: str) -> dict[str, Any] | None: ...
+
+    def get_vectors_by_file_ids(self, file_ids: list[str]) -> list[dict[str, Any]]: ...
+
+    def count(self) -> int: ...
+
+    def truncate(self) -> None: ...
+
+    def delete_by_file_id(self, file_id: str) -> int: ...
+
+    def delete_by_file_ids(self, file_ids: list[str]) -> int: ...
+
+    def move_collection(self, dest: str) -> int: ...
+
+
+class VectorsTrackColdNamespace(Protocol):
+    """Typed surface used by cold vector namespace callers."""
+
+    file_id: _VectorFileIdDeleteProtocol
+
+    def get_vector(self, file_id: str) -> dict[str, Any] | None: ...
+
+    def get_vectors_by_file_ids(self, file_ids: list[str]) -> list[dict[str, Any]]: ...
+
+    def count(self) -> int: ...
+
+    def ann_search(
+        self,
+        vector: list[float],
+        limit: int,
+        nprobe: int = 10,
+        *,
+        filter: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]: ...
+
+    def delete_by_file_id(self, file_id: str) -> int: ...
+
+    def delete_by_file_ids(self, file_ids: list[str]) -> int: ...
+
+
+class VectorsTrackMaintenanceProtocol(Protocol):
+    """Protocol for maintenance operations spanning hot/cold vector collections."""
+
+    def drop_index(self) -> None: ...
+
+    def build_index(self, *, embed_dim: int, nlists: int) -> None: ...
+
+    def rebuild_index(self, *, embed_dim: int, nlists: int) -> None: ...
+
+    def get_stats(self) -> dict[str, int | bool]: ...
 
 
 class _VectorsTrackMaintenance:
@@ -189,8 +256,9 @@ def delete_vectors_by_file_id(db: Database, file_id: str) -> int:
             removing ``file_has_vectors`` edges.
     """
     total_deleted = 0
+    registered_collections = cast("dict[str, Any]", getattr(db, "_registered", {}))
 
-    for namespace in db._template_namespaces.values():
+    for namespace in registered_collections.values():
         deleted = cast("VectorsTrackHotNamespace", namespace).file_id.delete(file_id)
         total_deleted += deleted
 
@@ -227,8 +295,9 @@ def delete_vectors_by_file_ids(db: Database, file_ids: list[str]) -> int:
         return 0
 
     total_deleted = 0
+    registered_collections = cast("dict[str, Any]", getattr(db, "_registered", {}))
 
-    for namespace in db._template_namespaces.values():
+    for namespace in registered_collections.values():
         typed_namespace = cast("VectorsTrackHotNamespace", namespace)
         for file_id in file_ids:
             total_deleted += typed_namespace.file_id.delete(file_id)

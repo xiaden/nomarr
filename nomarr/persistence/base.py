@@ -2,11 +2,144 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import importlib
+import re
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import Annotated, Any, ClassVar, Literal, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    ClassVar,
+    Literal,
+    Protocol,
+    TypeVar,
+    cast,
+    get_args,
+    get_origin,
+    get_type_hints,
+    overload,
+)
+
+from nomarr.helpers.filter_types import AggResult, Op
+from nomarr.persistence.arango_client import SafeDatabase
 
 T = TypeVar("T")
+type Document = dict[str, Any]
+type FieldValue = "Field[Any]"
+
+_ALWAYS_UNIQUE = frozenset({"_key", "_id"})
+_CLASS_VAR_NAMES = frozenset(
+    {"_name", "_db", "EDGES", "VECTOR_TIER", "NAME_PATTERN", "FROM_COLLECTION", "TO_COLLECTION"}
+)
+_SNAKE_CASE_RE_1 = re.compile(r"(.)([A-Z][a-z]+)")
+_SNAKE_CASE_RE_2 = re.compile(r"([a-z0-9])([A-Z])")
+_VERBS_MODULE: Any | None = None
+
+
+def _verbs() -> Any:
+    """Lazily import the verbs module to avoid constructor package cycles."""
+    global _VERBS_MODULE
+    if _VERBS_MODULE is None:
+        _VERBS_MODULE = importlib.import_module("nomarr.persistence.constructor.verbs")
+    return _VERBS_MODULE
+
+
+def _execute_aql(*args: Any, **kwargs: Any) -> Any:
+    return _verbs()._execute_aql(*args, **kwargs)
+
+
+def aggregate_field(*args: Any, **kwargs: Any) -> list[AggResult]:
+    return cast("list[AggResult]", _verbs().aggregate_field(*args, **kwargs))
+
+
+def collect_field(*args: Any, **kwargs: Any) -> list[Any]:
+    return cast("list[Any]", _verbs().collect_field(*args, **kwargs))
+
+
+def count_all(*args: Any, **kwargs: Any) -> int:
+    return cast("int", _verbs().count_all(*args, **kwargs))
+
+
+def count_by_field(*args: Any, **kwargs: Any) -> int:
+    return cast("int", _verbs().count_by_field(*args, **kwargs))
+
+
+def count_by_filter(*args: Any, **kwargs: Any) -> int:
+    return cast("int", _verbs().count_by_filter(*args, **kwargs))
+
+
+def delete_by_field(*args: Any, **kwargs: Any) -> int:
+    return cast("int", _verbs().delete_by_field(*args, **kwargs))
+
+
+def delete_by_filter(*args: Any, **kwargs: Any) -> int:
+    return cast("int", _verbs().delete_by_filter(*args, **kwargs))
+
+
+def delete_in_by_field(*args: Any, **kwargs: Any) -> int:
+    return cast("int", _verbs().delete_in_by_field(*args, **kwargs))
+
+
+def delete_unreferenced(*args: Any, **kwargs: Any) -> int:
+    return cast("int", _verbs().delete_unreferenced(*args, **kwargs))
+
+
+def get_in_by_field(*args: Any, **kwargs: Any) -> list[Document]:
+    return cast("list[Document]", _verbs().get_in_by_field(*args, **kwargs))
+
+
+def get_like_by_field(*args: Any, **kwargs: Any) -> list[Document]:
+    return cast("list[Document]", _verbs().get_like_by_field(*args, **kwargs))
+
+
+def get_many_by_field(*args: Any, **kwargs: Any) -> list[Document]:
+    return cast("list[Document]", _verbs().get_many_by_field(*args, **kwargs))
+
+
+def get_many_by_filter(*args: Any, **kwargs: Any) -> list[Document]:
+    return cast("list[Document]", _verbs().get_many_by_filter(*args, **kwargs))
+
+
+def get_one_by_field(*args: Any, **kwargs: Any) -> Document | None:
+    return cast("Document | None", _verbs().get_one_by_field(*args, **kwargs))
+
+
+def get_range_by_field(*args: Any, **kwargs: Any) -> list[Document]:
+    return cast("list[Document]", _verbs().get_range_by_field(*args, **kwargs))
+
+
+def insert(*args: Any, **kwargs: Any) -> list[str]:
+    return cast("list[str]", _verbs().insert(*args, **kwargs))
+
+
+def transition_verb(*args: Any, **kwargs: Any) -> None:
+    _verbs().transition(*args, **kwargs)
+
+
+def truncate(*args: Any, **kwargs: Any) -> None:
+    _verbs().truncate(*args, **kwargs)
+
+
+def update_by_field(*args: Any, **kwargs: Any) -> None:
+    _verbs().update_by_field(*args, **kwargs)
+
+
+def update_by_filter(*args: Any, **kwargs: Any) -> None:
+    _verbs().update_by_filter(*args, **kwargs)
+
+
+def update_many_by_key(*args: Any, **kwargs: Any) -> None:
+    _verbs().update_many_by_key(*args, **kwargs)
+
+
+def upsert_by_field(*args: Any, **kwargs: Any) -> list[str]:
+    return cast("list[str]", _verbs().upsert_by_field(*args, **kwargs))
+
+
+def _resolve_owner(obj: object, owner: type[Any] | None) -> type[Any]:
+    """Return the descriptor owner class for class or instance attribute access."""
+    return cast("type[Any]", owner if owner is not None else type(obj))
 
 
 @dataclass(frozen=True)
@@ -16,36 +149,92 @@ class FieldMarker:
     unique: bool
 
 
-@dataclass(frozen=True)
-class Field[T]:
-    """Non-unique field annotation wrapper and runtime positional field filter."""
+if TYPE_CHECKING:
 
-    name: str
-    value: Any
+    class _FieldGetProtocol(Protocol):
+        def __call__(self, value: Any) -> Document | None: ...
 
-    _unique: ClassVar[bool] = False
+        def many(self, value: Any, *, limit: int | None = None, offset: int = 0) -> list[Document]: ...
 
-    @classmethod
-    def __class_getitem__(cls, item: object) -> object:
-        return Annotated[item, FieldMarker(unique=cls._unique)]
+        def in_(self, values: list[Any], *, limit: int | None = None, offset: int = 0) -> list[Document]: ...
 
+        def gte(self, threshold: Any, *, limit: int | None = None, offset: int = 0) -> list[Document]: ...
 
-class _FieldAnnotation[T]:
-    """Marker class that resolves subscriptions into ``Annotated`` types."""
+        def lte(self, threshold: Any, *, limit: int | None = None, offset: int = 0) -> list[Document]: ...
 
-    _unique: ClassVar[bool]
+        def like(self, pattern: str, *, limit: int | None = None, offset: int = 0) -> list[Document]: ...
 
-    def __new__(cls) -> _FieldAnnotation:
-        raise TypeError(f"{cls.__name__} is only for type annotations and cannot be instantiated.")
+    class _FieldDeleteProtocol(Protocol):
+        def __call__(self, value: Any) -> int: ...
 
-    def __class_getitem__(cls, item: object) -> object:
-        return Annotated[item, FieldMarker(unique=cls._unique)]
+        def in_(self, values: list[Any]) -> int: ...
 
+    class _FieldAnnotation[T]:
+        """Static type for annotation-only field markers."""
 
-class UniqueField[T](_FieldAnnotation):
-    """Unique field annotation wrapper."""
+        def __new__(cls) -> _FieldAnnotation[T]: ...
 
-    _unique: ClassVar[bool] = True
+        @classmethod
+        def __class_getitem__(cls, item: object) -> object: ...
+
+    class Field[T]:
+        """Static type for class-bound field descriptors and positional field filters."""
+
+        name: str
+        value: Any
+        get: _FieldGetProtocol
+        delete: _FieldDeleteProtocol
+
+        def __init__(self, name: str, value: Any) -> None: ...
+
+        @classmethod
+        def __class_getitem__(cls, item: object) -> object: ...
+
+        def insert(self, docs: list[Document]) -> list[str]: ...
+
+        def update(self, value: Any, fields: Document) -> None: ...
+
+        def upsert(self, value: Any, fields: Document) -> list[str]: ...
+
+        def upsert_batch(self, docs: list[Document]) -> list[str]: ...
+
+        def count(self, value: Any) -> int: ...
+
+        def collect(self, *, limit: int | None = None, offset: int = 0) -> list[Any]: ...
+
+    class UniqueField[T](Field[T], _FieldAnnotation[T]):
+        """Static type for unique class-bound field descriptors."""
+else:
+
+    @dataclass(frozen=True)
+    class Field[T]:
+        """Non-unique field annotation wrapper and runtime positional field filter."""
+
+        name: str
+        value: Any
+
+        _unique: ClassVar[bool] = False
+
+        @classmethod
+        def __class_getitem__(cls, item: object) -> object:
+            return Annotated[item, FieldMarker(unique=cls._unique)]
+
+    class _FieldAnnotation[T]:
+        """Marker class that resolves subscriptions into ``Annotated`` types."""
+
+        _unique: ClassVar[bool]
+
+        def __new__(cls) -> _FieldAnnotation:
+            msg = f"{cls.__name__} is only for type annotations and cannot be instantiated."
+            raise TypeError(msg)
+
+        def __class_getitem__(cls, item: object) -> object:
+            return Annotated[item, FieldMarker(unique=cls._unique)]
+
+    class UniqueField[T](_FieldAnnotation):
+        """Unique field annotation wrapper."""
+
+        _unique: ClassVar[bool] = True
 
 
 INBOUND: Literal["INBOUND"] = "INBOUND"
@@ -54,22 +243,994 @@ CASCADE: Literal["CASCADE"] = "CASCADE"
 DETACH: Literal["DETACH"] = "DETACH"
 
 
-class DocumentCollection:
-    """Base for document collections. Implicit: _key, _id, _rev."""
+def _snake_case(name: str) -> str:
+    """Convert ``CamelCase`` class names to ``snake_case`` attribute names."""
+    return _SNAKE_CASE_RE_2.sub(r"\1_\2", _SNAKE_CASE_RE_1.sub(r"\1_\2", name)).lower()
+
+
+def _is_classvar(annotation: Any) -> bool:
+    """Return whether an annotation is a ``ClassVar``."""
+    return get_origin(annotation) is ClassVar
+
+
+def _extract_field_marker(annotation: Any) -> tuple[Any, bool] | None:
+    """Extract ``(python_type, unique)`` from ``Annotated[..., FieldMarker]``."""
+    if _is_classvar(annotation) or get_origin(annotation) is not Annotated:
+        return None
+
+    args = get_args(annotation)
+    if not args:
+        return None
+
+    python_type = args[0]
+    marker = next((meta for meta in args[1:] if isinstance(meta, FieldMarker)), None)
+    if marker is None:
+        return None
+
+    return python_type, marker.unique
+
+
+def _normalize_field_criteria(*args: FieldValue, **kwargs: Any) -> dict[str, Any]:
+    """Normalize a single positional ``Field(name, value)`` or keyword criteria."""
+    if len(args) > 1:
+        msg = "Expected at most one positional Field(name, value) criterion"
+        raise ValueError(msg)
+    if args and kwargs:
+        msg = "Do not mix positional Field(name, value) criteria with keyword criteria"
+        raise ValueError(msg)
+    if args:
+        item = args[0]
+        return {item.name: item.value}
+    return dict(kwargs)
+
+
+def _require_single_criterion(*args: FieldValue, **kwargs: Any) -> tuple[str, Any]:
+    """Require exactly one normalized criterion and return ``(field, value)``."""
+    criteria = _normalize_field_criteria(*args, **kwargs)
+    if len(criteria) != 1:
+        msg = f"Expected exactly one field criterion, got {len(criteria)}"
+        raise ValueError(msg)
+    return next(iter(criteria.items()))
+
+
+def _collection_name_for_class(cls: type[Any]) -> str:
+    """Return the concrete collection name declared on a collection class."""
+    declared_name = getattr(cls, "_name", None)
+    if isinstance(declared_name, str) and declared_name:
+        return declared_name
+    return _snake_case(cls.__name__)
+
+
+class _BoundGet:
+    """Field-level get verb. Returned by ``_BoundFieldAccessor.get``."""
+
+    def __init__(self, cls: type[Any], field_name: str, unique: bool) -> None:
+        self._cls = cls
+        self._field_name = field_name
+        self._unique = unique
+
+    def __call__(self, value: Any) -> Document | None | list[Document]:
+        if self._unique:
+            return get_one_by_field(
+                cast("SafeDatabase", self._cls._db),
+                cast("str", self._cls._name),
+                self._field_name,
+                value,
+            )
+        return self.many(value)
+
+    def many(self, value: Any, *, limit: int | None = None, offset: int = 0) -> list[Document]:
+        return get_many_by_field(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            self._field_name,
+            value,
+            limit=limit,
+            offset=offset,
+        )
+
+    def in_(self, values: list[Any], *, limit: int | None = None, offset: int = 0) -> list[Document]:
+        return get_in_by_field(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            self._field_name,
+            values,
+            limit=limit,
+            offset=offset,
+        )
+
+    def gte(self, value: Any, *, limit: int | None = None, offset: int = 0) -> list[Document]:
+        return get_range_by_field(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            self._field_name,
+            {Op.GTE: value},
+            limit=limit,
+            offset=offset,
+        )
+
+    def lte(self, value: Any, *, limit: int | None = None, offset: int = 0) -> list[Document]:
+        return get_range_by_field(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            self._field_name,
+            {Op.LTE: value},
+            limit=limit,
+            offset=offset,
+        )
+
+    def like(self, pattern: str, *, limit: int | None = None, offset: int = 0) -> list[Document]:
+        return get_like_by_field(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            self._field_name,
+            pattern,
+            limit=limit,
+            offset=offset,
+        )
+
+
+class _BoundFieldDelete:
+    """Field-level delete verb. Returned by ``_BoundFieldAccessor.delete``."""
+
+    def __init__(self, cls: type[Any], field_name: str) -> None:
+        self._cls = cls
+        self._field_name = field_name
+
+    def __call__(self, value: Any) -> int:
+        return delete_by_field(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            self._field_name,
+            value,
+        )
+
+    def in_(self, values: list[Any]) -> int:
+        return delete_in_by_field(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            self._field_name,
+            values,
+        )
+
+
+class _BoundFieldAccessor:
+    """Class-bound field accessor that replaces the old ``FieldAccessor``."""
+
+    def __init__(self, cls: type[Any], field_name: str, unique: bool) -> None:
+        self._cls = cls
+        self._field_name = field_name
+        self._unique = unique
+        self.get = _BoundGet(cls, field_name, unique)
+        self.delete = _BoundFieldDelete(cls, field_name)
+
+    def insert(self, docs: list[Document]) -> list[str]:
+        return insert(cast("SafeDatabase", self._cls._db), cast("str", self._cls._name), docs)
+
+    def update(self, value: Any, fields: Document) -> None:
+        update_by_field(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            self._field_name,
+            value,
+            fields,
+        )
+
+    def upsert(self, value: Any, fields: Document) -> list[str]:
+        doc = {self._field_name: value, **fields}
+        return upsert_by_field(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            self._field_name,
+            [doc],
+        )
+
+    def upsert_batch(self, docs: list[Document]) -> list[str]:
+        return upsert_by_field(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            self._field_name,
+            docs,
+        )
+
+    def count(self, value: Any) -> int:
+        return count_by_field(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            self._field_name,
+            value,
+        )
+
+    def collect(self, *, limit: int | None = None, offset: int = 0) -> list[Any]:
+        return collect_field(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            self._field_name,
+            limit=limit,
+            offset=offset,
+        )
+
+
+class _FieldDescriptor:
+    """Descriptor installed on collection classes for annotated fields."""
+
+    def __init__(self, field_name: str, unique: bool) -> None:
+        self._field_name = field_name
+        self._unique = unique
+        self._cache_attr = f"_bound_field_{field_name}"
+
+    def __set_name__(self, owner: type[Any], name: str) -> None:
+        self._field_name = name
+        self._cache_attr = f"_bound_field_{name}"
+
+    def __get__(self, obj: object, owner: type[Any] | None = None) -> _BoundFieldAccessor:
+        bound_owner = _resolve_owner(obj, owner)
+        cached = bound_owner.__dict__.get(self._cache_attr)
+        if isinstance(cached, _BoundFieldAccessor):
+            return cached
+        bound = _BoundFieldAccessor(bound_owner, self._field_name, self._unique)
+        setattr(bound_owner, self._cache_attr, bound)
+        return bound
+
+    def __set__(self, obj: object, value: object) -> None:
+        msg = f"Field descriptor '{self._field_name}' is read-only"
+        raise AttributeError(msg)
+
+
+class _BoundCollectionGet:
+    """Collection-level get helper with field/filter modifiers."""
+
+    def __init__(self, cls: type[Any]) -> None:
+        self._cls = cls
+
+    def __call__(
+        self,
+        *args: FieldValue,
+        limit: int | None = None,
+        offset: int = 0,
+        **kwargs: Any,
+    ) -> Document | None | list[Document]:
+        criteria = _normalize_field_criteria(*args, **kwargs)
+        if not criteria:
+            return get_many_by_filter(
+                cast("SafeDatabase", self._cls._db),
+                cast("str", self._cls._name),
+                {},
+                limit=limit,
+                offset=offset,
+            )
+        if len(criteria) == 1:
+            field_name, value = next(iter(criteria.items()))
+            accessor = getattr(self._cls, field_name, None)
+            if isinstance(accessor, _BoundFieldAccessor):
+                if limit is None and offset == 0:
+                    return accessor.get(value)
+                return accessor.get.many(value, limit=limit, offset=offset)
+            return get_many_by_field(
+                cast("SafeDatabase", self._cls._db),
+                cast("str", self._cls._name),
+                field_name,
+                value,
+                limit=limit,
+                offset=offset,
+            )
+        return get_many_by_filter(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            criteria,
+            limit=limit,
+            offset=offset,
+        )
+
+    def many(
+        self,
+        *args: FieldValue,
+        limit: int | None = None,
+        offset: int = 0,
+        **kwargs: Any,
+    ) -> list[Document]:
+        criteria = _normalize_field_criteria(*args, **kwargs)
+        if not criteria:
+            return get_many_by_filter(
+                cast("SafeDatabase", self._cls._db),
+                cast("str", self._cls._name),
+                {},
+                limit=limit,
+                offset=offset,
+            )
+        if len(criteria) == 1:
+            field_name, value = next(iter(criteria.items()))
+            accessor = getattr(self._cls, field_name, None)
+            if isinstance(accessor, _BoundFieldAccessor):
+                return accessor.get.many(value, limit=limit, offset=offset)
+            return get_many_by_field(
+                cast("SafeDatabase", self._cls._db),
+                cast("str", self._cls._name),
+                field_name,
+                value,
+                limit=limit,
+                offset=offset,
+            )
+        return get_many_by_filter(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            criteria,
+            limit=limit,
+            offset=offset,
+        )
+
+    def in_(
+        self,
+        *args: FieldValue,
+        limit: int | None = None,
+        offset: int = 0,
+        **kwargs: Any,
+    ) -> list[Document]:
+        field_name, values = _require_single_criterion(*args, **kwargs)
+        accessor = getattr(self._cls, field_name, None)
+        if isinstance(accessor, _BoundFieldAccessor):
+            return accessor.get.in_(cast("list[Any]", values), limit=limit, offset=offset)
+        return get_in_by_field(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            field_name,
+            cast("list[Any]", values),
+            limit=limit,
+            offset=offset,
+        )
+
+    def gte(
+        self,
+        field_name: str,
+        threshold: Any,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Document]:
+        accessor = getattr(self._cls, field_name, None)
+        if isinstance(accessor, _BoundFieldAccessor):
+            return accessor.get.gte(threshold, limit=limit, offset=offset)
+        return get_range_by_field(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            field_name,
+            {Op.GTE: threshold},
+            limit=limit,
+            offset=offset,
+        )
+
+    def lte(
+        self,
+        field_name: str,
+        threshold: Any,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Document]:
+        accessor = getattr(self._cls, field_name, None)
+        if isinstance(accessor, _BoundFieldAccessor):
+            return accessor.get.lte(threshold, limit=limit, offset=offset)
+        return get_range_by_field(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            field_name,
+            {Op.LTE: threshold},
+            limit=limit,
+            offset=offset,
+        )
+
+    def like(
+        self,
+        field_name: str,
+        pattern: str,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Document]:
+        accessor = getattr(self._cls, field_name, None)
+        if isinstance(accessor, _BoundFieldAccessor):
+            return accessor.get.like(pattern, limit=limit, offset=offset)
+        return get_like_by_field(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            field_name,
+            pattern,
+            limit=limit,
+            offset=offset,
+        )
+
+
+class _BoundCollectionDelete:
+    """Collection-level delete helper with optional cascade attachment."""
+
+    def __init__(self, cls: type[Any]) -> None:
+        self._cls = cls
+
+    @property
+    def cascade(self) -> Callable[[list[str]], int] | None:
+        return getattr(self._cls, "_cascade_delete_fn", None)
+
+    def __call__(self, *args: FieldValue, **kwargs: Any) -> int:
+        criteria = _normalize_field_criteria(*args, **kwargs)
+        if not criteria:
+            truncate(cast("SafeDatabase", self._cls._db), cast("str", self._cls._name))
+            return 0
+        if len(criteria) == 1:
+            field_name, value = next(iter(criteria.items()))
+            return delete_by_field(
+                cast("SafeDatabase", self._cls._db),
+                cast("str", self._cls._name),
+                field_name,
+                value,
+            )
+        return delete_by_filter(cast("SafeDatabase", self._cls._db), cast("str", self._cls._name), criteria)
+
+    def in_(self, *args: FieldValue, **kwargs: Any) -> int:
+        field_name, values = _require_single_criterion(*args, **kwargs)
+        return delete_in_by_field(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            field_name,
+            cast("list[Any]", values),
+        )
+
+    def unreferenced(self, edge_collection: str) -> int:
+        return delete_unreferenced(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            edge_collection,
+        )
+
+
+class _BoundTransition:
+    """Bound transition callable for state-graph collections."""
+
+    def __init__(self, cls: type[StateGraphCollection]) -> None:
+        self._cls = cls
+
+    def __call__(self, file_ids: list[str], from_state: str, to_state: str) -> None:
+        edge_defs = getattr(self._cls, "EDGES", [])
+        if not edge_defs:
+            msg = f"{self._cls.__name__} has no EDGES defined for transition()"
+            raise ValueError(msg)
+        edge_name = _snake_case(edge_defs[0].via.__name__)
+        transition_verb(cast("SafeDatabase", self._cls._db), edge_name, file_ids, from_state, to_state)
+
+
+class _InsertCallable(Protocol):
+    def __call__(self, docs: list[Document]) -> list[str]: ...
+
+
+class _CountCallable(Protocol):
+    def __call__(self, *args: FieldValue, **kwargs: Any) -> int: ...
+
+
+class _UpdateCallable(Protocol):
+    def __call__(self, *args: FieldValue, fields: Document, **kwargs: Any) -> None: ...
+
+
+class _UpsertCallable(Protocol):
+    def __call__(self, *args: FieldValue, fields: Document, **kwargs: Any) -> list[str]: ...
+
+
+class _UpsertBatchCallable(Protocol):
+    def __call__(self, docs: list[Document], match_fields: str | list[str]) -> list[str]: ...
+
+
+class _UpdateManyCallable(Protocol):
+    def __call__(self, docs: list[Document]) -> None: ...
+
+
+class _AggregateCallable(Protocol):
+    def __call__(
+        self,
+        field_name: str,
+        *,
+        filter: dict[str, Any] | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[AggResult]: ...
+
+
+class _TruncateCallable(Protocol):
+    def __call__(self) -> None: ...
+
+
+class BaseGet:
+    """Collection-level descriptor that returns ``_BoundCollectionGet``."""
+
+    @overload
+    def __get__(self, obj: None, owner: type[Any] | None = None) -> _BoundCollectionGet: ...
+
+    @overload
+    def __get__(self, obj: object, owner: type[Any] | None = None) -> _BoundCollectionGet: ...
+
+    def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _BoundCollectionGet:
+        bound_owner = _resolve_owner(obj, owner)
+        return _BoundCollectionGet(bound_owner)
+
+
+class BaseDelete:
+    """Collection-level descriptor that returns ``_BoundCollectionDelete``."""
+
+    @overload
+    def __get__(self, obj: None, owner: type[Any] | None = None) -> _BoundCollectionDelete: ...
+
+    @overload
+    def __get__(self, obj: object, owner: type[Any] | None = None) -> _BoundCollectionDelete: ...
+
+    def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _BoundCollectionDelete:
+        bound_owner = _resolve_owner(obj, owner)
+        return _BoundCollectionDelete(bound_owner)
+
+
+class BaseInsert:
+    """Collection-level descriptor for ``insert``."""
+
+    @overload
+    def __get__(self, obj: None, owner: type[Any] | None = None) -> _InsertCallable: ...
+
+    @overload
+    def __get__(self, obj: object, owner: type[Any] | None = None) -> _InsertCallable: ...
+
+    def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _InsertCallable:
+        bound_owner = _resolve_owner(obj, owner)
+        return lambda docs: insert(cast("SafeDatabase", bound_owner._db), cast("str", bound_owner._name), docs)
+
+
+class BaseCount:
+    """Collection-level descriptor for ``count``."""
+
+    @overload
+    def __get__(self, obj: None, owner: type[Any] | None = None) -> _CountCallable: ...
+
+    @overload
+    def __get__(self, obj: object, owner: type[Any] | None = None) -> _CountCallable: ...
+
+    def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _CountCallable:
+        bound_owner = _resolve_owner(obj, owner)
+
+        def count(*args: FieldValue, **kwargs: Any) -> int:
+            criteria = _normalize_field_criteria(*args, **kwargs)
+            if not criteria:
+                return count_all(cast("SafeDatabase", bound_owner._db), cast("str", bound_owner._name))
+            if len(criteria) == 1:
+                field_name, value = next(iter(criteria.items()))
+                return count_by_field(
+                    cast("SafeDatabase", bound_owner._db),
+                    cast("str", bound_owner._name),
+                    field_name,
+                    value,
+                )
+            return count_by_filter(cast("SafeDatabase", bound_owner._db), cast("str", bound_owner._name), criteria)
+
+        return count
+
+
+class BaseUpdate:
+    """Collection-level descriptor for ``update``."""
+
+    @overload
+    def __get__(self, obj: None, owner: type[Any] | None = None) -> _UpdateCallable: ...
+
+    @overload
+    def __get__(self, obj: object, owner: type[Any] | None = None) -> _UpdateCallable: ...
+
+    def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _UpdateCallable:
+        bound_owner = _resolve_owner(obj, owner)
+
+        def update(*args: FieldValue, fields: Document, **kwargs: Any) -> None:
+            criteria = _normalize_field_criteria(*args, **kwargs)
+            if not criteria:
+                msg = "update() requires at least one field criterion"
+                raise ValueError(msg)
+            if len(criteria) == 1:
+                field_name, value = next(iter(criteria.items()))
+                update_by_field(
+                    cast("SafeDatabase", bound_owner._db),
+                    cast("str", bound_owner._name),
+                    field_name,
+                    value,
+                    fields,
+                )
+                return
+            update_by_filter(cast("SafeDatabase", bound_owner._db), cast("str", bound_owner._name), criteria, fields)
+
+        return update
+
+
+class BaseUpsert:
+    """Collection-level descriptor for ``upsert``."""
+
+    @overload
+    def __get__(self, obj: None, owner: type[Any] | None = None) -> _UpsertCallable: ...
+
+    @overload
+    def __get__(self, obj: object, owner: type[Any] | None = None) -> _UpsertCallable: ...
+
+    def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _UpsertCallable:
+        bound_owner = _resolve_owner(obj, owner)
+
+        def upsert(*args: FieldValue, fields: Document, **kwargs: Any) -> list[str]:
+            criteria = _normalize_field_criteria(*args, **kwargs)
+            if not criteria:
+                msg = "upsert() requires at least one field criterion"
+                raise ValueError(msg)
+            doc = {**criteria, **fields}
+            if len(criteria) == 1:
+                field_name = next(iter(criteria))
+                return upsert_by_field(
+                    cast("SafeDatabase", bound_owner._db),
+                    cast("str", bound_owner._name),
+                    field_name,
+                    [doc],
+                )
+            return upsert_by_field(
+                cast("SafeDatabase", bound_owner._db),
+                cast("str", bound_owner._name),
+                list(criteria),
+                [doc],
+            )
+
+        return upsert
+
+
+class BaseUpsertBatch:
+    """Collection-level descriptor for ``upsert_batch``."""
+
+    @overload
+    def __get__(self, obj: None, owner: type[Any] | None = None) -> _UpsertBatchCallable: ...
+
+    @overload
+    def __get__(self, obj: object, owner: type[Any] | None = None) -> _UpsertBatchCallable: ...
+
+    def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _UpsertBatchCallable:
+        bound_owner = _resolve_owner(obj, owner)
+
+        def upsert_batch(docs: list[Document], match_fields: str | list[str]) -> list[str]:
+            if not docs:
+                return []
+            return upsert_by_field(
+                cast("SafeDatabase", bound_owner._db), cast("str", bound_owner._name), match_fields, docs
+            )
+
+        return upsert_batch
+
+
+class BaseUpdateMany:
+    """Collection-level descriptor for ``update_many``."""
+
+    @overload
+    def __get__(self, obj: None, owner: type[Any] | None = None) -> _UpdateManyCallable: ...
+
+    @overload
+    def __get__(self, obj: object, owner: type[Any] | None = None) -> _UpdateManyCallable: ...
+
+    def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _UpdateManyCallable:
+        bound_owner = _resolve_owner(obj, owner)
+        return lambda docs: update_many_by_key(
+            cast("SafeDatabase", bound_owner._db), cast("str", bound_owner._name), docs
+        )
+
+
+class BaseAggregate:
+    """Collection-level descriptor for ``aggregate``."""
+
+    @overload
+    def __get__(self, obj: None, owner: type[Any] | None = None) -> _AggregateCallable: ...
+
+    @overload
+    def __get__(self, obj: object, owner: type[Any] | None = None) -> _AggregateCallable: ...
+
+    def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _AggregateCallable:
+        bound_owner = _resolve_owner(obj, owner)
+
+        def aggregate(
+            field_name: str,
+            *,
+            filter: dict[str, Any] | None = None,
+            limit: int | None = None,
+            offset: int = 0,
+        ) -> list[AggResult]:
+            return aggregate_field(
+                cast("SafeDatabase", bound_owner._db),
+                cast("str", bound_owner._name),
+                field_name,
+                filter=filter,
+                limit=limit,
+                offset=offset,
+            )
+
+        return aggregate
+
+
+class BaseTruncate:
+    """Collection-level descriptor for ``truncate``."""
+
+    @overload
+    def __get__(self, obj: None, owner: type[Any] | None = None) -> _TruncateCallable: ...
+
+    @overload
+    def __get__(self, obj: object, owner: type[Any] | None = None) -> _TruncateCallable: ...
+
+    def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _TruncateCallable:
+        bound_owner = _resolve_owner(obj, owner)
+        return lambda: truncate(cast("SafeDatabase", bound_owner._db), cast("str", bound_owner._name))
+
+
+class BaseTransition:
+    """Collection-level descriptor for ``transition``."""
+
+    @overload
+    def __get__(self, obj: None, owner: type[Any] | None = None) -> _BoundTransition: ...
+
+    @overload
+    def __get__(self, obj: object, owner: type[Any] | None = None) -> _BoundTransition: ...
+
+    def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _BoundTransition:
+        bound_owner = _resolve_owner(obj, owner)
+        return _BoundTransition(cast("type[StateGraphCollection]", bound_owner))
+
+
+def _iter_recursive_subclasses(base_cls: type[Any]) -> set[type[Any]]:
+    """Return all recursive subclasses of ``base_cls``."""
+    discovered: set[type[Any]] = set()
+    pending = list(base_cls.__subclasses__())
+    while pending:
+        subclass = pending.pop()
+        if subclass in discovered:
+            continue
+        discovered.add(subclass)
+        pending.extend(subclass.__subclasses__())
+    return discovered
+
+
+def _is_concrete_collection_class(cls: type[Any]) -> bool:
+    """Return whether ``cls`` represents a physical Arango collection."""
+    if cls is StateGraphCollection:
+        return False
+    if issubclass(cls, VectorCollection):
+        declared_name = getattr(cls, "_name", None)
+        return isinstance(declared_name, str) and bool(declared_name)
+    return True
+
+
+def _iter_concrete_subclasses(base_cls: type[Any]) -> Iterator[type[Any]]:
+    """Yield recursive subclasses of ``base_cls`` that map to physical collections."""
+    for cls in _iter_recursive_subclasses(base_cls):
+        if _is_concrete_collection_class(cls):
+            yield cls
+
+
+def _has_cascade_edges(cls: type[Any]) -> bool:
+    """Return whether ``cls`` declares outbound cascade edges."""
+    return any(edge.on_delete == CASCADE and edge.direction == OUTBOUND for edge in getattr(cls, "EDGES", []))
+
+
+def _cascade_edge_names_for_root(root_cls: type[Any]) -> list[str]:
+    """Collect all cascade edge collection names reachable from ``root_cls``."""
+    names: list[str] = []
+    seen: set[type[Any]] = set()
+
+    def visit(collection_cls: type[Any]) -> None:
+        if collection_cls in seen:
+            return
+        seen.add(collection_cls)
+        for edge_def in getattr(collection_cls, "EDGES", []):
+            if edge_def.on_delete != CASCADE or edge_def.direction != OUTBOUND:
+                continue
+            edge_name = _collection_name_for_class(edge_def.via)
+            if edge_name not in names:
+                names.append(edge_name)
+            visit(edge_def.target)
+
+    visit(root_cls)
+    return names
+
+
+def _compile_cascade_query(
+    owner_cls: type[Any],
+    collection_name: str,
+    cascade_defs: list[EdgeDef],
+    extra_target_names: list[str] | None = None,
+) -> str:
+    """Compile the static cascade-delete AQL template for one collection class."""
+    cascade_edge_names = _cascade_edge_names_for_root(owner_cls)
+    all_edge_names = sorted(_collection_name_for_class(cls) for cls in _iter_concrete_subclasses(EdgeCollection))
+    target_collection_names = sorted(
+        {
+            _collection_name_for_class(cls)
+            for cls in set(_iter_concrete_subclasses(DocumentCollection))
+            | set(_iter_concrete_subclasses(VectorCollection))
+        }
+        - {collection_name}
+    )
+    if extra_target_names:
+        target_collection_names = sorted((set(target_collection_names) | set(extra_target_names)) - {collection_name})
+
+    if not cascade_edge_names:
+        cascade_edge_names = [_collection_name_for_class(edge.via) for edge in cascade_defs]
+    if not all_edge_names:
+        all_edge_names = cascade_edge_names[:]
+
+    cascade_edges_clause = ", ".join(cascade_edge_names)
+    all_edges_clause = ", ".join(all_edge_names)
+
+    lines = [
+        "LET subgraph = (",
+        "    FOR start_id IN @starts",
+        f"        FOR v IN 1..100 OUTBOUND start_id {cascade_edges_clause}",
+        '            OPTIONS {bfs: true, uniqueVertices: "global"}',
+        "            RETURN v",
+        ")",
+        "LET subgraph_ids = UNIQUE(FOR doc IN subgraph RETURN doc._id)",
+        "LET orphan_ids = (",
+        "    FOR candidate IN subgraph",
+        "        LET external_inbound = (",
+        f"            FOR parent IN 1..1 INBOUND candidate._id {all_edges_clause}",
+        "                FILTER parent._id NOT IN @starts AND parent._id NOT IN subgraph_ids",
+        "                LIMIT 1",
+        "                RETURN 1",
+        "        )",
+        "        FILTER LENGTH(external_inbound) == 0",
+        "        RETURN candidate._id",
+        ")",
+    ]
+
+    for idx, edge_name in enumerate(cascade_edge_names):
+        var = f"edge_keys_{idx}"
+        lines.extend(
+            [
+                f"LET {var} = (",
+                f"    FOR e IN {edge_name}",
+                "        FILTER e._from IN @starts OR e._from IN orphan_ids OR e._to IN orphan_ids OR e._to IN @starts",
+                "        RETURN e._key",
+                ")",
+            ]
+        )
+
+    for idx, target_collection_name in enumerate(target_collection_names):
+        var = f"orphan_id_{idx}"
+        lines.extend(
+            [
+                f'FOR {var} IN orphan_ids FILTER STARTS_WITH({var}, "{target_collection_name}/")',
+                f"    REMOVE PARSE_IDENTIFIER({var}).key IN {target_collection_name}",
+            ]
+        )
+
+    for idx, edge_name in enumerate(cascade_edge_names):
+        var = f"edge_keys_{idx}"
+        lines.extend(
+            [
+                f"FOR key_{idx} IN {var}",
+                f"    REMOVE key_{idx} IN {edge_name}",
+            ]
+        )
+
+    lines.extend(
+        [
+            "FOR start_id IN @starts",
+            f"    REMOVE PARSE_IDENTIFIER(start_id).key IN {collection_name}",
+            "RETURN 1",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _compile_and_attach_cascade(
+    cls: type[DocumentCollection],
+    extra_vector_names: list[str] | None = None,
+) -> None:
+    """Compile cascade AQL for ``cls`` and attach the callable to the class."""
+    cascade_defs = [edge for edge in cls.EDGES if edge.on_delete == CASCADE and edge.direction == OUTBOUND]
+    if not cascade_defs:
+        return
+
+    compiled_aql = _compile_cascade_query(
+        owner_cls=cls,
+        collection_name=cls._name,
+        cascade_defs=cascade_defs,
+        extra_target_names=extra_vector_names,
+    )
+    cls._cascade_aql = compiled_aql
+
+    def cascade_delete(ids: list[str]) -> int:
+        if not isinstance(ids, list) or not ids:
+            msg = "cascade delete requires a non-empty list of document ids"
+            raise ValueError(msg)
+        list(_execute_aql(cls._db, compiled_aql, bind_vars={"starts": ids}))
+        return len(ids)
+
+    cls._cascade_delete_fn = cascade_delete
+
+
+def bind_all_collections(safe_db: SafeDatabase) -> None:
+    """Set ``_db`` on collection bases and compile static cascade AQL."""
+    DocumentCollection._db = safe_db
+    EdgeCollection._db = safe_db
+    VectorCollection._db = safe_db
+
+    for cls in _iter_concrete_subclasses(DocumentCollection):
+        document_cls = cast("type[DocumentCollection]", cls)
+        if _has_cascade_edges(document_cls):
+            _compile_and_attach_cascade(document_cls)
+
+
+def reattach_vector_cascades(registered_names: list[str]) -> None:
+    """Recompile cascades for collections that target dynamic vector collections."""
+    for cls in _iter_concrete_subclasses(DocumentCollection):
+        document_cls = cast("type[DocumentCollection]", cls)
+        if not _has_cascade_edges(document_cls):
+            continue
+        edges = [edge for edge in document_cls.EDGES if edge.on_delete == CASCADE and edge.direction == OUTBOUND]
+        if any(issubclass(edge.target, VectorCollection) for edge in edges):
+            _compile_and_attach_cascade(document_cls, extra_vector_names=registered_names)
+
+
+def _install_field_descriptors(cls: type[Any]) -> None:
+    """Install ``_FieldDescriptor`` objects for annotated schema fields on ``cls``."""
+    try:
+        annotations = get_type_hints(cls, include_extras=True)
+    except Exception:
+        annotations = getattr(cls, "__annotations__", {})
+    for field_name, annotation in annotations.items():
+        if field_name in _CLASS_VAR_NAMES or _is_classvar(annotation):
+            continue
+        if isinstance(cls.__dict__.get(field_name), _FieldDescriptor):
+            continue
+        extracted = _extract_field_marker(annotation)
+        if extracted is None:
+            continue
+        _, unique = extracted
+        setattr(cls, field_name, _FieldDescriptor(field_name, unique or field_name in _ALWAYS_UNIQUE))
+
+
+class _CollectionMeta(type):
+    """Metaclass that preserves runtime lookup semantics for dynamic class attrs.
+
+    Collection classes gain field and edge descriptors dynamically at import time or
+    during database registration. Exposing a metaclass ``__getattr__`` gives static
+    type checkers a fallback for those late-bound class attributes without changing
+    normal runtime attribute resolution.
+    """
+
+    def __getattr__(cls, name: str) -> Any:
+        raise AttributeError(name)
+
+
+class DocumentCollection(metaclass=_CollectionMeta):
+    """Base for document collections. Implicit: ``_key``, ``_id``, ``_rev``."""
 
     _key: UniqueField[str]
     _id: UniqueField[str]
     _rev: Field[str]
 
+    _db: ClassVar[SafeDatabase] = cast("SafeDatabase", None)
     _name: ClassVar[str]
     EDGES: ClassVar[list[EdgeDef]] = []
+    _cascade_aql: ClassVar[str | None] = None
+    _cascade_delete_fn: ClassVar[Callable[[list[str]], int] | None] = None
 
-    # Generic flat verbs wired by the builder at startup.
-    truncate: Callable[[], None]
+    get = BaseGet()
+    delete = BaseDelete()
+    insert = BaseInsert()
+    count = BaseCount()
+    update = BaseUpdate()
+    upsert = BaseUpsert()
+    upsert_batch = BaseUpsertBatch()
+    update_many = BaseUpdateMany()
+    aggregate = BaseAggregate()
+    truncate = BaseTruncate()
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if "_name" not in cls.__dict__:
+            cls._name = _snake_case(cls.__name__)
+        _install_field_descriptors(cls)
 
 
-class EdgeCollection:
-    """Base for edge collections. Implicit: _key, _id, _rev, _from, _to."""
+class EdgeCollection(metaclass=_CollectionMeta):
+    """Base for edge collections. Implicit: ``_key``, ``_id``, ``_rev``, ``_from``, ``_to``."""
 
     _key: UniqueField[str]
     _id: UniqueField[str]
@@ -77,31 +1238,66 @@ class EdgeCollection:
     _from: Field[str]
     _to: Field[str]
 
+    _db: ClassVar[SafeDatabase] = cast("SafeDatabase", None)
     _name: ClassVar[str]
     FROM_COLLECTION: ClassVar[type[DocumentCollection]]
     TO_COLLECTION: ClassVar[type[DocumentCollection]]
 
-    # Generic flat verbs wired by the builder at startup.
-    truncate: Callable[[], None]
+    get = BaseGet()
+    delete = BaseDelete()
+    insert = BaseInsert()
+    count = BaseCount()
+    update = BaseUpdate()
+    upsert = BaseUpsert()
+    upsert_batch = BaseUpsertBatch()
+    update_many = BaseUpdateMany()
+    aggregate = BaseAggregate()
+    truncate = BaseTruncate()
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if "_name" not in cls.__dict__:
+            cls._name = _snake_case(cls.__name__)
+        _install_field_descriptors(cls)
 
 
-class VectorCollection:
-    """Base for vector collections. Implicit: _key, _id, _rev."""
+class VectorCollection(metaclass=_CollectionMeta):
+    """Base for vector collections. Implicit: ``_key``, ``_id``, ``_rev``."""
 
     _key: UniqueField[str]
     _id: UniqueField[str]
     _rev: Field[str]
 
+    _db: ClassVar[SafeDatabase] = cast("SafeDatabase", None)
     _name: ClassVar[str]
     VECTOR_TIER: ClassVar[Literal["hot", "cold"]]
     NAME_PATTERN: ClassVar[str]
 
-    # Generic flat verbs wired by the builder at startup.
-    truncate: Callable[[], None]
+    get = BaseGet()
+    delete = BaseDelete()
+    insert = BaseInsert()
+    count = BaseCount()
+    update = BaseUpdate()
+    upsert = BaseUpsert()
+    upsert_batch = BaseUpsertBatch()
+    update_many = BaseUpdateMany()
+    aggregate = BaseAggregate()
+    truncate = BaseTruncate()
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if "NAME_PATTERN" in cls.__dict__ and "_name" not in cls.__dict__:
+            _install_field_descriptors(cls)
+            return
+        if "_name" not in cls.__dict__:
+            cls._name = _snake_case(cls.__name__)
+        _install_field_descriptors(cls)
 
 
 class StateGraphCollection(DocumentCollection):
-    """DocumentCollection with transition verb attached by builder."""
+    """DocumentCollection with transition verb attached by descriptor."""
+
+    transition = BaseTransition()
 
 
 @dataclass(frozen=True)
@@ -112,6 +1308,13 @@ class EdgeDef:
     direction: Literal["INBOUND", "OUTBOUND"]
     target: type[DocumentCollection | VectorCollection]
     on_delete: Literal["CASCADE", "DETACH"]
+
+
+_install_field_descriptors(DocumentCollection)
+_install_field_descriptors(EdgeCollection)
+_install_field_descriptors(VectorCollection)
+
+FieldAccessor = _BoundFieldAccessor
 
 
 __all__ = [
@@ -127,4 +1330,6 @@ __all__ = [
     "StateGraphCollection",
     "UniqueField",
     "VectorCollection",
+    "bind_all_collections",
+    "reattach_vector_cascades",
 ]
