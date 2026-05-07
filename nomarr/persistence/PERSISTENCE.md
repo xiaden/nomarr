@@ -2,15 +2,15 @@
 
 The **persistence layer** owns ArangoDB access for Nomarr.
 
-It is now a **class-based, builder-wired API**:
+It now exposes a **descriptor-based, class-bound API**:
 
-- Collection shapes are declared as Python classes in `collections.py`
-- Base collection types live in `base.py`
-- `Builder` in `constructor/builder.py` reads class annotations and attaches runtime verbs/accessors
-- `Database` in `db.py` exposes wired collection instances as `db.<collection>` attributes
-- Type stubs in `stubs/` are auto-generated from the collection classes by `scripts/tools/gen_stubs.py`
+- `base.py` defines collection base classes, field declarations, and verb descriptors
+- `collections.py` declares concrete collections as typed Python classes
+- `constructor/` contains reusable AQL helpers (`verbs.py`, `filters.py`, `pagination.py`)
+- `db.py` binds a single `SafeDatabase` to all collection classes at startup via `bind_all_collections()`
+- External code uses the injected `Database` facade and accesses collections as `db.<collection>` attributes
 
-There is **no `SCHEMA` dict** and no constructor-era namespace layer.
+The live API is descriptor-based and class-bound rather than wrapper-based or code-generated.
 
 > **Access rule:** Higher layers should use the injected `Database` facade. Do not import persistence internals directly unless you are extending the persistence layer itself.
 
@@ -37,38 +37,32 @@ Persistence is responsible for data access, not orchestration or business policy
 ```text
 persistence/
 ├── arango_client.py             # ArangoDB connection / typed DB protocol helpers
-├── base.py                      # Field markers + base collection classes
+├── base.py                      # Collection bases, field declarations, verb descriptors
 ├── collections.py               # Concrete collection declarations
-├── db.py                        # Database facade and dynamic registration
-├── constructor/
-│   ├── builder.py               # Builder that wires collection instances
-│   ├── verbs.py                 # Shared AQL verb implementations
-│   ├── filters.py               # Filter helpers
-│   └── pagination.py            # Pagination helpers
-├── stubs/
-│   ├── _base.pyi                # Shared protocol definitions
-│   └── *.pyi                    # Generated per-collection stubs
-└── database/
-    └── __init__.py              # Legacy empty compatibility stub
+├── db.py                        # Database facade and dynamic vector registration
+└── constructor/
+    ├── __init__.py              # Constructor package exports
+    ├── verbs.py                 # Shared AQL verb implementations
+    ├── filters.py               # Filter helpers
+    └── pagination.py            # Pagination helpers
 ```
 
 Key points:
 
-- `base.py` defines the persistence type system
-- `collections.py` is the source of truth for collection declarations
-- `Builder` attaches verbs to collection instances at runtime
-- `stubs/` are generated artifacts, not hand-maintained APIs
-- `database/` is retained only as a compatibility stub and is not where the live API lives
+- `base.py` defines the descriptor model and shared collection behavior
+- `collections.py` is the source of truth for physical collection declarations
+- `constructor/verbs.py` holds reusable AQL execution helpers instead of per-collection operation classes
+- `db.py` binds the database handle once and exposes bound collection classes as `db.<collection>` attributes
 
 ---
 
-## 3. Collection declarations
+## 3. Descriptor-based collection model
 
 Collection classes are plain Python classes with typed field annotations.
 
 ### Base classes
 
-`base.py` defines four collection families:
+`base.py` defines the collection families used across the persistence layer:
 
 - `DocumentCollection`
 - `EdgeCollection`
@@ -78,119 +72,109 @@ Collection classes are plain Python classes with typed field annotations.
 It also defines:
 
 - `Field[T]` and `UniqueField[T]` for field declarations
-- `EdgeDef` for traversal / cascade metadata
+- `EdgeDef` for traversal and cascade metadata
 - `INBOUND`, `OUTBOUND`, `CASCADE`, and `DETACH` constants
+- collection verb descriptors such as `BaseGet`, `BaseInsert`, `BaseDelete`, `BaseUpsert`, `BaseUpdate`, `BaseCount`, and `BaseTruncate`
 
 ### Concrete collections
 
 `collections.py` contains the concrete declarations, for example:
 
-- document collections like `Libraries`, `LibraryFiles`, `Tags`
-- edge collections like `LibraryContainsFile`, `SongHasTags`
-- vector templates like `VectorsTrackHot`, `VectorsTrackCold`
+- document collections like `Libraries`, `LibraryFiles`, and `Tags`
+- edge collections like `LibraryContainsFile` and `SongHasTags`
+- vector collection templates like `VectorsTrackHot` and `VectorsTrackCold`
 - state graph collections like `FileStates`
 
-Collection names are usually derived from the class name in `snake_case`, but a class may override this with `_name` when the physical ArangoDB collection name differs.
+Collection names default to the class name in `snake_case`, but a class may override `_name` when the physical ArangoDB collection name differs.
 
-The builder reads:
+### What field declarations do
 
-- field annotations to create field accessors
-- `EDGES` metadata to attach traversal helpers
-- base class type to attach state-graph or vector-specific verbs
+When a collection subclass is created, `DocumentCollection.__init_subclass__()`:
+
+1. derives `_name` if the subclass does not declare one explicitly
+2. scans the class annotations for `Field[...]` and `UniqueField[...]`
+3. installs descriptors that lazily bind field accessors on first access
+
+That means this declaration:
+
+```python
+class LibraryFiles(DocumentCollection):
+    path: UniqueField[str]
+    library_key: Field[str]
+```
+
+becomes a runtime API like:
+
+```python
+db.library_files.path.get("/music/track.flac")
+db.library_files.library_key.get.many("main", limit=100)
+```
+
+A `UniqueField` accessor treats bare `get(value)` as a single-document lookup. A plain `Field` accessor treats bare `get(value)` as a list-producing query and exposes `many()`, `in_()`, `gte()`, `lte()`, and `like()` helpers as needed.
 
 ---
 
-## 4. How collections get wired
+## 4. How binding works
 
-`Database` creates collection instances and `Builder` wires them.
+`Database` does **not** instantiate per-collection operation objects.
 
-### Static collections
+Instead, `Database.__init__()`:
 
-Most collections are wired during `Database` initialization:
+1. creates the underlying ArangoDB client
+2. calls `bind_all_collections(self.db)` once
+3. assigns collection classes such as `Libraries`, `LibraryFiles`, and `Tags` onto the `Database` instance
 
-- `Database` instantiates the collection class
-- sets the resolved collection name
-- calls `Builder(self.db).construct(instance)`
-- exposes the result as `db.<collection_name>`
+`bind_all_collections()` assigns the shared `SafeDatabase` handle to the base collection classes' `ClassVar _db` and pre-compiles any static cascade delete AQL needed by concrete document collections.
 
-That means application code works with already-wired collection instances like:
+Because the verbs are descriptors, access happens at class lookup time:
 
-- `db.library_files`
-- `db.tags`
-- `db.ml_models`
-- `db.file_states`
+- `db.library_files.get` returns a collection-scoped read helper bound to `LibraryFiles`
+- `db.library_files.path` returns a field-scoped accessor bound to `LibraryFiles.path`
+- both helpers resolve the shared `_db` and `_name` when they execute
 
 ### Dynamic vector collections
 
-Dynamic vector collections are registered at runtime through:
+Template-backed vector collections are still registered at runtime with:
 
-`db.register(resolved_name, template_name)`
+```python
+db.register("vectors_track_hot__discogs_effnet__main", "vectors_track_hot")
+```
 
-This method:
-
-1. checks whether the physical collection exists in ArangoDB
-2. looks up the template class by `template_name`
-3. validates that `resolved_name` matches the template `NAME_PATTERN`
-4. instantiates the template class
-5. wires it through `Builder`
-6. caches and returns the runtime instance
-
-This is used for template-backed vector collections whose physical names are resolved at runtime.
+`register()` validates the physical collection name against the template `NAME_PATTERN`, creates a dynamic subclass with `_name` set to the resolved collection name, stores it on the `Database` instance, and recompiles any vector-dependent cascade wiring.
 
 ---
 
-## 5. Flat runtime API
+## 5. Calling convention
 
-The public persistence surface is intentionally **flat and attribute-based**.
+The public persistence surface is attribute-based and field-first.
 
-### Collection-level reads
+### Field-scoped access
 
-Common read entry points include:
-
-- `db.col.get()`
-- `db.col.get.many()`
-- `db.col.get.in_()`
-- `db.col.get.gte()`
-- `db.col.get.lte()`
-- `db.col.get.like()`
-
-Examples:
+Each declared field becomes a bound accessor with field-scoped verbs:
 
 ```python
-doc = db.library_files.get(path="/music/track.flac")
-rows = db.library_files.get.many(library_key="main", limit=100, offset=0)
+file_doc = db.library_files.path.get("/music/track.flac")
+main_files = db.library_files.library_key.get.many("main", limit=100, offset=0)
+rock_tags = db.tags.name.get.like("rock%", limit=50)
+deleted = db.song_has_tags._from.delete(file_id)
+```
+
+Field accessors also expose convenience mutations tied to their field name:
+
+```python
+db.tags.name.upsert("genre", {"value": "genre"})
+db.worker_claims.file_id.update(file_id, {"worker_id": worker_id})
+count = db.library_files.library_key.count("main")
+```
+
+### Collection-scoped access
+
+Collection verbs accept either `Field("name", value)` positional filters or keyword criteria:
+
+```python
 recent = db.library_files.get.gte("modified_time", 1700000000000, limit=50)
-matching = db.library_files.get.like("normalized_path", "/music/")
-```
+rows = db.library_files.get.many(library_key="main", limit=100, offset=0)
 
-### Field-scoped reads
-
-Each declared field becomes a field accessor with the same read helpers.
-
-Examples:
-
-```python
-tag = db.tags.name.get("genre")
-tags = db.tags.name.get.many("genre", limit=100)
-files = db.library_files.library_key.get.in_(["main", "secondary"], limit=500)
-```
-
-### Collection-level writes and utilities
-
-Common write and utility entry points include:
-
-- `db.col.insert()`
-- `db.col.update()`
-- `db.col.update_many()`
-- `db.col.upsert()`
-- `db.col.delete()`
-- `db.col.delete.cascade()`
-- `db.col.count()`
-- `db.col.aggregate()`
-
-Examples:
-
-```python
 db.library_files.insert([
     {
         "path": "/music/track.flac",
@@ -199,48 +183,41 @@ db.library_files.insert([
     }
 ])
 
-db.tags.upsert(name="genre", value="rock", fields={"value": "rock"})
-db.libraries.delete.cascade(name="Main Library")
+db.library_files.update(path="/music/track.flac", fields={"size_bytes": 12345})
+db.tags.upsert(name="genre", fields={"value": "genre"})
+total = db.library_files.count(library_key="main")
+db.library_files.delete(path="/music/track.flac")
+db.library_files.truncate()
 ```
 
-### Traversal, state-graph, and vector verbs
+### Metadata-driven verbs
 
 Additional verbs are attached based on collection type and metadata:
 
 - traversal helpers derived from `EDGES`
-- `delete.cascade()` for collections with outbound `CASCADE` edges
-- `transition()` for `StateGraphCollection`
-- vector helpers such as `ann_search()`, `get_vector()`, `upsert_vector()`, and `move_collection()` on `VectorCollection` instances where applicable
+- `delete.cascade(ids)` for collections with outbound `CASCADE` edges
+- `transition(file_ids, from_state, to_state)` for `StateGraphCollection`
+- vector helpers on `VectorCollection` classes where applicable
 
-These verbs are not hand-written per collection; they are attached by `Builder` based on the class declaration.
+These verbs are declared once in `base.py` and resolved against the bound collection class at access time.
 
 ---
 
-## 6. Generated type stubs
+## 6. Constructor helpers
 
-`nomarr/persistence/stubs/` contains IDE and type-checker stubs for the runtime-wired API.
+The `constructor/` package no longer builds collection objects. It now contains reusable query helpers:
 
-They are **auto-generated** by:
+- `verbs.py` — shared AQL read/write primitives such as `get_one_by_field()`, `insert()`, `update_by_field()`, and `upsert_by_field()`
+- `filters.py` — filter expression helpers used by AQL builders
+- `pagination.py` — pagination clause helpers
 
-- `scripts/tools/gen_stubs.py`
-
-The generator reads the collection classes and their annotations / metadata to emit per-collection `.pyi` files.
-
-It derives stub content from:
-
-- field annotations on collection classes
-- `EDGES` traversal metadata
-- `StateGraphCollection` membership
-- `VectorCollection` membership
-- whether a collection gets `delete.cascade`
-
-Do not hand-edit generated stubs unless you are also updating the generator.
+If you need a new persistence capability that fits the shared model, add or extend a helper here and bind it through the relevant descriptor or collection base in `base.py`.
 
 ---
 
 ## 7. Raw ArangoDB access
 
-For advanced queries or operations that are not yet exposed through the flat API, use the raw handle on:
+For advanced operations that are not yet exposed through the typed collection API, use the raw handle on:
 
 - `db.db`
 
@@ -258,14 +235,13 @@ This is the escape hatch for specialized DDL or AQL work. Prefer the typed colle
 
 When adding or changing persistence behavior:
 
-1. Update or add the collection declaration in `collections.py`
+1. Add or update the collection declaration in `collections.py`
 2. Use the correct base type from `base.py`
-3. Add field annotations with `Field[...]` / `UniqueField[...]`
+3. Declare fields with `Field[...]` and `UniqueField[...]`
 4. Add `EDGES` metadata if traversal or cascade behavior is needed
-5. Let `Builder` wire the runtime API
-6. Regenerate stubs with `scripts/tools/gen_stubs.py` if the public surface changed
-
-If a change requires DB structure updates, add a forward-only migration in `nomarr/migrations/`.
+5. Expose the collection on `Database` in `db.py` if it should be part of the static facade
+6. Add or extend shared AQL helpers in `constructor/` when the descriptor verbs need new lower-level behavior
+7. Add a forward-only migration in `nomarr/migrations/` if the schema changes
 
 ---
 
@@ -274,9 +250,10 @@ If a change requires DB structure updates, add a forward-only migration in `noma
 Think of the persistence layer like this:
 
 - **`collections.py` declares what a collection is**
-- **`Builder` turns that declaration into a callable runtime API**
-- **`Database` exposes those wired instances to the rest of the app**
-- **`stubs/` make the dynamic API visible to IDEs and static tooling**
+- **`base.py` turns those declarations into a descriptor-backed API**
+- **`bind_all_collections()` supplies the shared database handle once at startup**
+- **`db.py` exposes the bound collection classes to the rest of the app**
+- **`constructor/` provides reusable AQL building blocks, not per-collection wrappers**
 - **`db.db` remains available for advanced raw ArangoDB work**
 
-That is the current persistence architecture. If you see references to a `SCHEMA` dict, schema constructor, or constructor-era namespaces, they are historical and should be updated.
+If you encounter docs or examples that describe wrapper-based persistence wiring, they are out of date and should be updated to the descriptor-based API.

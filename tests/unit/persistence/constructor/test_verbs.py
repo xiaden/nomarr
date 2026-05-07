@@ -140,7 +140,7 @@ class TestDeleteByIds:
         db.aql.execute.assert_called_once_with(
             "FOR id IN @ids REMOVE {_key: PARSE_IDENTIFIER(id).key} IN @@col",
             bind_vars={"@col": "items", "ids": ["items/1", "items/2"]},
-            ttl=3600,
+            ttl=6000,
         )
 
     def test_delete_by_ids_with_empty_list_passes_empty_ids(self) -> None:
@@ -152,7 +152,7 @@ class TestDeleteByIds:
         db.aql.execute.assert_called_once_with(
             "FOR id IN @ids REMOVE {_key: PARSE_IDENTIFIER(id).key} IN @@col",
             bind_vars={"@col": "items", "ids": []},
-            ttl=3600,
+            ttl=6000,
         )
 
 

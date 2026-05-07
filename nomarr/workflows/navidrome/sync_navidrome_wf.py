@@ -74,7 +74,9 @@ def _resolve_song_paths(
 
     raw_paths = [song["nd_path"] for song in songs]
     best_paths = raw_paths
+    logger.info(raw_paths)
     best_docs = get_files_by_paths_bulk(db, raw_paths)
+    logger.info(best_docs)
     best_label = "raw"
     best_score = sum(1 for path in raw_paths if path in best_docs)
 

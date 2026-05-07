@@ -178,7 +178,15 @@ if TYPE_CHECKING:
         def __class_getitem__(cls, item: object) -> object: ...
 
     class Field[T]:
-        """Static type for class-bound field descriptors and positional field filters."""
+        """Static type for a declared collection field.
+
+        In annotations, ``Field[T]`` marks a non-unique field on a collection
+        class. Once the class is created, the annotation is replaced with a
+        descriptor-backed accessor such as ``db.library_files.path``.
+
+        The bound accessor exposes field-scoped verbs like ``get()``,
+        ``delete()``, ``update()``, ``upsert()``, ``count()``, and ``collect()``.
+        """
 
         name: str
         value: Any
@@ -203,12 +211,29 @@ if TYPE_CHECKING:
         def collect(self, *, limit: int | None = None, offset: int = 0) -> list[Any]: ...
 
     class UniqueField[T](Field[T], _FieldAnnotation[T]):
-        """Static type for unique class-bound field descriptors."""
+        """Static type for a field that uniquely identifies documents.
+
+        A bare ``get(value)`` on the bound accessor returns at most one
+        document, while the other field-scoped verbs behave the same as on
+        ``Field[T]``.
+        """
 else:
 
     @dataclass(frozen=True)
     class Field[T]:
-        """Non-unique field annotation wrapper and runtime positional field filter."""
+        """Declares a non-unique collection field and positional filter value.
+
+        ``Field[T]`` serves two closely related roles:
+
+        * in annotations on a ``DocumentCollection`` subclass, it marks a field
+          that should be replaced with a descriptor-backed accessor at class
+          creation time; and
+        * in collection-level calls such as ``db.tags.get(Field("name",
+          "genre"))``, it carries a positional field criterion.
+
+        Bound field accessors expose field-scoped verbs like ``get()``,
+        ``delete()``, ``update()``, ``upsert()``, ``count()``, and ``collect()``.
+        """
 
         name: str
         value: Any
@@ -232,7 +257,11 @@ else:
             return Annotated[item, FieldMarker(unique=cls._unique)]
 
     class UniqueField[T](_FieldAnnotation):
-        """Unique field annotation wrapper."""
+        """Declares a collection field whose values are expected to be unique.
+
+        When accessed through a bound collection class, ``get(value)`` returns
+        a single document or ``None`` instead of a list.
+        """
 
         _unique: ClassVar[bool] = True
 
@@ -302,7 +331,11 @@ def _collection_name_for_class(cls: type[Any]) -> str:
 
 
 class _BoundGet:
-    """Field-level get verb. Returned by ``_BoundFieldAccessor.get``."""
+    """Bound field-scoped read helper.
+
+    Instances are created lazily when a field descriptor is accessed on a bound
+    collection class such as ``db.library_files.path``.
+    """
 
     def __init__(self, cls: type[Any], field_name: str, unique: bool) -> None:
         self._cls = cls
@@ -310,6 +343,12 @@ class _BoundGet:
         self._unique = unique
 
     def __call__(self, value: Any) -> Document | None | list[Document]:
+        """Fetch documents matching this field value.
+
+        For ``UniqueField`` accessors this returns a single document or
+        ``None``. For ``Field`` accessors it delegates to ``many()`` and returns
+        a list.
+        """
         if self._unique:
             return get_one_by_field(
                 cast("SafeDatabase", self._cls._db),
@@ -371,13 +410,22 @@ class _BoundGet:
 
 
 class _BoundFieldDelete:
-    """Field-level delete verb. Returned by ``_BoundFieldAccessor.delete``."""
+    """Bound field-scoped delete helper.
+
+    Instances are created lazily when a field descriptor is accessed on a bound
+    collection class.
+    """
 
     def __init__(self, cls: type[Any], field_name: str) -> None:
         self._cls = cls
         self._field_name = field_name
 
     def __call__(self, value: Any) -> int:
+        """Delete all documents whose field matches ``value``.
+
+        Returns:
+            The number of documents deleted.
+        """
         return delete_by_field(
             cast("SafeDatabase", self._cls._db),
             cast("str", self._cls._name),
@@ -395,7 +443,12 @@ class _BoundFieldDelete:
 
 
 class _BoundFieldAccessor:
-    """Class-bound field accessor that replaces the old ``FieldAccessor``."""
+    """Bound field accessor for a concrete collection class.
+
+    The accessor is produced by the installed field descriptor and exposes both
+    field-scoped verbs (``get`` and ``delete``) and convenience mutation helpers
+    that implicitly target the accessor's field name.
+    """
 
     def __init__(self, cls: type[Any], field_name: str, unique: bool) -> None:
         self._cls = cls
@@ -478,7 +531,11 @@ class _FieldDescriptor:
 
 
 class _BoundCollectionGet:
-    """Collection-level get helper with field/filter modifiers."""
+    """Bound collection-scoped read helper.
+
+    Supports collection-wide reads as well as criteria expressed either through
+    ``Field`` positional values or keyword arguments.
+    """
 
     def __init__(self, cls: type[Any]) -> None:
         self._cls = cls
@@ -490,6 +547,13 @@ class _BoundCollectionGet:
         offset: int = 0,
         **kwargs: Any,
     ) -> Document | None | list[Document]:
+        """Fetch documents matching the supplied criteria.
+
+        With no criteria this returns the collection contents. With exactly one
+        criterion it reuses the bound field accessor when available so unique
+        fields can return a single document. Multiple criteria always return a
+        list.
+        """
         criteria = _normalize_field_criteria(*args, **kwargs)
         if not criteria:
             return get_many_by_filter(
@@ -641,7 +705,12 @@ class _BoundCollectionGet:
 
 
 class _BoundCollectionDelete:
-    """Collection-level delete helper with optional cascade attachment."""
+    """Bound collection-scoped delete helper.
+
+    Deletion may be filtered by field criteria, may target a field ``IN`` list
+    through ``in_()``, and may expose a compiled ``cascade`` callable when the
+    collection declares outbound cascade edges.
+    """
 
     def __init__(self, cls: type[Any]) -> None:
         self._cls = cls
@@ -651,6 +720,12 @@ class _BoundCollectionDelete:
         return getattr(self._cls, "_cascade_delete_fn", None)
 
     def __call__(self, *args: FieldValue, **kwargs: Any) -> int:
+        """Delete documents matching the supplied criteria.
+
+        With no criteria this truncates the collection and returns ``0``. With
+        one or more criteria it deletes matching documents and returns the
+        delete count reported by the underlying AQL helper.
+        """
         criteria = _normalize_field_criteria(*args, **kwargs)
         if not criteria:
             truncate(cast("SafeDatabase", self._cls._db), cast("str", self._cls._name))
@@ -737,7 +812,7 @@ class _TruncateCallable(Protocol):
 
 
 class BaseGet:
-    """Collection-level descriptor that returns ``_BoundCollectionGet``."""
+    """Descriptor that binds collection-scoped read helpers on access."""
 
     @overload
     def __get__(self, obj: None, owner: type[Any] | None = None) -> _BoundCollectionGet: ...
@@ -746,12 +821,13 @@ class BaseGet:
     def __get__(self, obj: object, owner: type[Any] | None = None) -> _BoundCollectionGet: ...
 
     def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _BoundCollectionGet:
+        """Return a collection-scoped read helper bound to the owner class."""
         bound_owner = _resolve_owner(obj, owner)
         return _BoundCollectionGet(bound_owner)
 
 
 class BaseDelete:
-    """Collection-level descriptor that returns ``_BoundCollectionDelete``."""
+    """Descriptor that binds collection-scoped delete helpers on access."""
 
     @overload
     def __get__(self, obj: None, owner: type[Any] | None = None) -> _BoundCollectionDelete: ...
@@ -760,12 +836,13 @@ class BaseDelete:
     def __get__(self, obj: object, owner: type[Any] | None = None) -> _BoundCollectionDelete: ...
 
     def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _BoundCollectionDelete:
+        """Return a collection-scoped delete helper bound to the owner class."""
         bound_owner = _resolve_owner(obj, owner)
         return _BoundCollectionDelete(bound_owner)
 
 
 class BaseInsert:
-    """Collection-level descriptor for ``insert``."""
+    """Descriptor that binds the collection ``insert`` verb on access."""
 
     @overload
     def __get__(self, obj: None, owner: type[Any] | None = None) -> _InsertCallable: ...
@@ -774,12 +851,17 @@ class BaseInsert:
     def __get__(self, obj: object, owner: type[Any] | None = None) -> _InsertCallable: ...
 
     def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _InsertCallable:
+        """Return an ``insert(docs)`` callable bound to the owner class."""
         bound_owner = _resolve_owner(obj, owner)
-        return lambda docs: insert(cast("SafeDatabase", bound_owner._db), cast("str", bound_owner._name), docs)
+
+        def insert_docs(docs: list[Document]) -> list[str]:
+            return insert(cast("SafeDatabase", bound_owner._db), cast("str", bound_owner._name), docs)
+
+        return insert_docs
 
 
 class BaseCount:
-    """Collection-level descriptor for ``count``."""
+    """Descriptor that binds the collection ``count`` verb on access."""
 
     @overload
     def __get__(self, obj: None, owner: type[Any] | None = None) -> _CountCallable: ...
@@ -788,6 +870,7 @@ class BaseCount:
     def __get__(self, obj: object, owner: type[Any] | None = None) -> _CountCallable: ...
 
     def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _CountCallable:
+        """Return a ``count`` callable bound to the owner class."""
         bound_owner = _resolve_owner(obj, owner)
 
         def count(*args: FieldValue, **kwargs: Any) -> int:
@@ -808,7 +891,7 @@ class BaseCount:
 
 
 class BaseUpdate:
-    """Collection-level descriptor for ``update``."""
+    """Descriptor that binds the collection ``update`` verb on access."""
 
     @overload
     def __get__(self, obj: None, owner: type[Any] | None = None) -> _UpdateCallable: ...
@@ -817,6 +900,7 @@ class BaseUpdate:
     def __get__(self, obj: object, owner: type[Any] | None = None) -> _UpdateCallable: ...
 
     def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _UpdateCallable:
+        """Return an ``update`` callable bound to the owner class."""
         bound_owner = _resolve_owner(obj, owner)
 
         def update(*args: FieldValue, fields: Document, **kwargs: Any) -> None:
@@ -840,7 +924,7 @@ class BaseUpdate:
 
 
 class BaseUpsert:
-    """Collection-level descriptor for ``upsert``."""
+    """Descriptor that binds the collection ``upsert`` verb on access."""
 
     @overload
     def __get__(self, obj: None, owner: type[Any] | None = None) -> _UpsertCallable: ...
@@ -849,6 +933,7 @@ class BaseUpsert:
     def __get__(self, obj: object, owner: type[Any] | None = None) -> _UpsertCallable: ...
 
     def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _UpsertCallable:
+        """Return an ``upsert`` callable bound to the owner class."""
         bound_owner = _resolve_owner(obj, owner)
 
         def upsert(*args: FieldValue, fields: Document, **kwargs: Any) -> list[str]:
@@ -945,7 +1030,7 @@ class BaseAggregate:
 
 
 class BaseTruncate:
-    """Collection-level descriptor for ``truncate``."""
+    """Descriptor that binds the collection ``truncate`` verb on access."""
 
     @overload
     def __get__(self, obj: None, owner: type[Any] | None = None) -> _TruncateCallable: ...
@@ -954,8 +1039,13 @@ class BaseTruncate:
     def __get__(self, obj: object, owner: type[Any] | None = None) -> _TruncateCallable: ...
 
     def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _TruncateCallable:
+        """Return a ``truncate()`` callable bound to the owner class."""
         bound_owner = _resolve_owner(obj, owner)
-        return lambda: truncate(cast("SafeDatabase", bound_owner._db), cast("str", bound_owner._name))
+
+        def truncate_collection() -> None:
+            truncate(cast("SafeDatabase", bound_owner._db), cast("str", bound_owner._name))
+
+        return truncate_collection
 
 
 class BaseTransition:
@@ -1145,7 +1235,18 @@ def _compile_and_attach_cascade(
 
 
 def bind_all_collections(safe_db: SafeDatabase) -> None:
-    """Set ``_db`` on collection bases and compile static cascade AQL."""
+    """Bind a shared database handle to all collection classes.
+
+    This initializes the descriptor-based persistence API for the current
+    process by assigning ``safe_db`` to the collection base classes' shared
+    ``_db`` class variable. It also compiles and attaches cascade delete
+    callables for every concrete document collection that declares outbound
+    cascade edges.
+
+    Args:
+        safe_db: The process-wide safe ArangoDB handle used by collection
+            descriptors and bound verbs.
+    """
     DocumentCollection._db = safe_db
     EdgeCollection._db = safe_db
     VectorCollection._db = safe_db
@@ -1198,18 +1299,22 @@ class _CollectionMeta(type):
         raise AttributeError(name)
 
 
-class DocumentCollection(metaclass=_CollectionMeta):
-    """Base for document collections. Implicit: ``_key``, ``_id``, ``_rev``."""
+def _finalize_collection_subclass(cls: type[Any], *, derive_name: bool = True) -> None:
+    """Install collection descriptors and derive the physical name when needed."""
+    if derive_name and "_name" not in cls.__dict__:
+        cls._name = _snake_case(cls.__name__)
+    _install_field_descriptors(cls)
 
-    _key: UniqueField[str]
-    _id: UniqueField[str]
-    _rev: Field[str]
+
+class _DescriptorCollection(metaclass=_CollectionMeta):
+    """Shared descriptor-backed collection base.
+
+    This internal base centralizes the class-bound verb descriptors and shared
+    database/name state used by all concrete collection families.
+    """
 
     _db: ClassVar[SafeDatabase] = cast("SafeDatabase", None)
     _name: ClassVar[str]
-    EDGES: ClassVar[list[EdgeDef]] = []
-    _cascade_aql: ClassVar[str | None] = None
-    _cascade_delete_fn: ClassVar[Callable[[list[str]], int] | None] = None
 
     get = BaseGet()
     delete = BaseDelete()
@@ -1222,14 +1327,34 @@ class DocumentCollection(metaclass=_CollectionMeta):
     aggregate = BaseAggregate()
     truncate = BaseTruncate()
 
+
+class DocumentCollection(_DescriptorCollection):
+    """Base class for descriptor-backed document collections.
+
+    Subclasses declare fields using ``Field[T]`` and ``UniqueField[T]`` class
+    annotations. ``__init_subclass__`` converts those annotations into bound
+    field descriptors, derives ``_name`` from the class name when needed, and
+    exposes collection-level verb descriptors such as ``get``, ``insert``,
+    ``update``, ``upsert``, ``delete``, ``count``, and ``truncate``.
+
+    The actual ArangoDB connection is shared through the class variable
+    ``_db`` and is assigned once at startup by ``bind_all_collections()``.
+    """
+
+    _key: UniqueField[str]
+    _id: UniqueField[str]
+    _rev: Field[str]
+
+    EDGES: ClassVar[list[EdgeDef]] = []
+    _cascade_aql: ClassVar[str | None] = None
+    _cascade_delete_fn: ClassVar[Callable[[list[str]], int] | None] = None
+
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
-        if "_name" not in cls.__dict__:
-            cls._name = _snake_case(cls.__name__)
-        _install_field_descriptors(cls)
+        _finalize_collection_subclass(cls)
 
 
-class EdgeCollection(metaclass=_CollectionMeta):
+class EdgeCollection(_DescriptorCollection):
     """Base for edge collections. Implicit: ``_key``, ``_id``, ``_rev``, ``_from``, ``_to``."""
 
     _key: UniqueField[str]
@@ -1238,60 +1363,30 @@ class EdgeCollection(metaclass=_CollectionMeta):
     _from: Field[str]
     _to: Field[str]
 
-    _db: ClassVar[SafeDatabase] = cast("SafeDatabase", None)
-    _name: ClassVar[str]
     FROM_COLLECTION: ClassVar[type[DocumentCollection]]
     TO_COLLECTION: ClassVar[type[DocumentCollection]]
 
-    get = BaseGet()
-    delete = BaseDelete()
-    insert = BaseInsert()
-    count = BaseCount()
-    update = BaseUpdate()
-    upsert = BaseUpsert()
-    upsert_batch = BaseUpsertBatch()
-    update_many = BaseUpdateMany()
-    aggregate = BaseAggregate()
-    truncate = BaseTruncate()
-
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
-        if "_name" not in cls.__dict__:
-            cls._name = _snake_case(cls.__name__)
-        _install_field_descriptors(cls)
+        _finalize_collection_subclass(cls)
 
 
-class VectorCollection(metaclass=_CollectionMeta):
+class VectorCollection(_DescriptorCollection):
     """Base for vector collections. Implicit: ``_key``, ``_id``, ``_rev``."""
 
     _key: UniqueField[str]
     _id: UniqueField[str]
     _rev: Field[str]
 
-    _db: ClassVar[SafeDatabase] = cast("SafeDatabase", None)
-    _name: ClassVar[str]
     VECTOR_TIER: ClassVar[Literal["hot", "cold"]]
     NAME_PATTERN: ClassVar[str]
-
-    get = BaseGet()
-    delete = BaseDelete()
-    insert = BaseInsert()
-    count = BaseCount()
-    update = BaseUpdate()
-    upsert = BaseUpsert()
-    upsert_batch = BaseUpsertBatch()
-    update_many = BaseUpdateMany()
-    aggregate = BaseAggregate()
-    truncate = BaseTruncate()
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         if "NAME_PATTERN" in cls.__dict__ and "_name" not in cls.__dict__:
-            _install_field_descriptors(cls)
+            _finalize_collection_subclass(cls, derive_name=False)
             return
-        if "_name" not in cls.__dict__:
-            cls._name = _snake_case(cls.__name__)
-        _install_field_descriptors(cls)
+        _finalize_collection_subclass(cls)
 
 
 class StateGraphCollection(DocumentCollection):

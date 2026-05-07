@@ -32,7 +32,7 @@ _RETRY_BASE_DELAY = 0.05  # 50ms, doubles each retry
 logger = logging.getLogger(__name__)
 
 
-_CURSOR_TTL = 3600  # seconds — prevents ERR 1600 on large multi-batch result sets
+_CURSOR_TTL = 6000  # seconds — prevents ERR 1600 on large multi-batch result sets
 
 
 def _execute_aql(

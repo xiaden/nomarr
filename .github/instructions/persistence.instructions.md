@@ -10,9 +10,11 @@ applyTo: nomarr/persistence/**
 
 Persistence is the **data access layer**:
 
-- `Database` class owns the connection and exposes collection namespaces
-- `constructor/` builds `*Namespace` objects dynamically from the collection schema
-- External code accesses via constructor-backed namespaces: `db.tags.name.get.many(...)`, `db.library_files.path.get(...)`
+- `Database` owns the connection and exposes bound collection classes as attributes
+- `base.py` defines collection base classes, field declarations, and verb descriptors
+- `collections.py` declares concrete collections
+- `constructor/` contains reusable AQL/query helpers (`verbs.py`, `filters.py`, `pagination.py`)
+- External code accesses persistence via the injected `Database` facade, for example `db.tags.name.get.many(...)` or `db.library_files.path.get(...)`
 - Returns [DTOs defined in helpers](./helpers.instructions.md)
 
 ---
@@ -21,23 +23,15 @@ Persistence is the **data access layer**:
 
 ```
 persistence/
-├── db.py                   # Database facade (connection + namespace wiring)
+├── db.py                   # Database facade (connection + one-time binding)
 ├── arango_client.py        # ArangoDB client wrapper
-├── constructor/            # Schema-driven namespace builder
-│   ├── builder.py          # SchemaConstructor (reads schema, builds namespaces)
-│   ├── namespaces.py       # CollectionNamespace, FieldNamespace, GetModifierNamespace
-│   ├── verbs.py            # AQL verb templates (insert, delete, get_one_by_field, etc.)
-│   ├── cascade.py          # CascadeEngine for graph cleanup
-│   ├── filters.py          # Filter/pagination helpers
-│   └── pagination.py
-├── stubs/                  # Type stubs (*Namespace Protocols) for IDE + mypy
-│   ├── _base.pyi           # Base protocols (GetModifierProtocol, CollectionGetProtocol, AggResult)
-│   ├── library_files.pyi
-│   ├── tags.pyi
-│   └── ...                 # One .pyi per collection
-├── database/               # Empty legacy namespace stub (no modules, kept for import compat)
-│   └── __init__.py
-└── schema.py               # Collection schema definitions (SCHEMA dict, CollectionType, Op enums)
+├── base.py                 # Collection bases, Field/UniqueField, verb descriptors
+├── collections.py          # Concrete collection declarations
+└── constructor/            # Shared AQL/query helpers
+    ├── __init__.py
+    ├── verbs.py            # AQL primitives (insert, delete, get_one_by_field, etc.)
+    ├── filters.py          # Filter helpers
+    └── pagination.py
 ```
 
 ---
@@ -66,35 +60,37 @@ from nomarr.interfaces import ...    # No interfaces
 
 **Use the Nomarr MCP server to navigate this layer efficiently:**
 
-- `read_module_api(module_name)` - See constructor namespace API before reading full files
-- `locate_module_symbol(symbol_name)` - Find where database operations are defined
-- `read_module_source(qualified_name)` - Get exact constructor or verb source with line numbers
+- `read_module_api(module_name)` - Inspect the live collection/descriptor API before reading full files
+- `locate_module_symbol(symbol_name)` - Find collection classes, descriptors, or AQL helpers
+- `read_module_source(qualified_name)` - Get exact collection, descriptor, or verb source with line numbers
 
-**Before modifying database operations, run `read_module_api` to understand the interface.**
+**Before modifying persistence behavior, run `read_module_api` to understand the interface.**
 
 ---
 
 ## Database Access Pattern
 
-External code **never** imports from `persistence/database/` directly:
+External code should go through the injected `Database` facade and use the descriptor-bound API:
 
 ```python
-# ✅ Correct - access via Database instance and constructor-backed namespaces
-def some_workflow(db: Database):
+# ✅ Correct - access via Database instance
+
+def some_workflow(db: Database) -> None:
     # Field accessor chain: db.<collection>.<field>.get(value)
     file = db.library_files.path.get("/music/track.flac")
     tags = db.tags.name.get.many("genre", limit=100, offset=0)
 
     # Collection-level verbs
     db.library_files.insert([{"path": "/music/track.flac", ...}])
-    db.worker_claims.delete(["claims/abc123"])
+    db.library_files.update(path="/music/track.flac", fields={"size_bytes": 12345})
 
-# ❌ Wrong - rebuilding constructor-backed collections inside workflow code
+# ❌ Wrong - importing persistence internals into higher layers
 from nomarr.persistence.collections import LibraryFiles
-from nomarr.persistence.constructor.builder import Builder
 
-files = Builder(db).construct(LibraryFiles)
+file = LibraryFiles.path.get("/music/track.flac")
 ```
+
+Persistence wiring happens inside `Database.__init__()` via `bind_all_collections(self.db)`. Higher layers should not bind or rebuild collection classes themselves.
 
 ---
 
@@ -117,38 +113,47 @@ These are ArangoDB-native identifiers:
 
 ---
 
-## Constructor Pattern
+## Descriptor Pattern
 
-The constructor builds namespace objects from the schema at import time.
-Each collection is accessible as an attribute of the `Database` instance.
-There are no hand-written `*AQL` classes.
+Collection behavior is declared in classes, not in per-collection wrapper objects.
 
-### Always-List Rule
+When adding a collection:
 
-All **collection-level** mutation verbs accept `list[...]` inputs — never a scalar, never a union.
-Pass `[item]` for single values. No separate `_batch` or `bulk_` variants.
+1. Define or update the collection class in `collections.py`
+2. Choose the correct base class (`DocumentCollection`, `EdgeCollection`, `VectorCollection`, or `StateGraphCollection`)
+3. Declare fields with `Field[...]` and `UniqueField[...]`
+4. Add `EDGES` metadata when traversal or cascade behavior is required
+5. Expose the collection on `Database` in `db.py` if it belongs on the static facade
+6. Add or extend shared AQL helpers in `constructor/` if the existing verbs are insufficient
 
- | Verb | Input | Return |
- | ------ | ------- | -------- |
- | `insert(docs)` | `list[dict]` | `list[str]` |
- | `upsert(docs, match_field)` | `list[dict]` | `list[str]` |
- | `delete(ids)` | `list[str]` | `None` |
- | `cascade(ids)` | `list[str]` | `int` |
- | `transition(ids, from_edge, to_edge)` | `list[str]` | `None` |
- | `truncate()` | *(none)* | `None` |
+### Mutation rules
 
-**Field-level** `delete(value) -> int` is different — it takes a single field value (WHERE clause) and returns a count. This is not subject to the always-list rule.
+Collection-level and field-level verbs have different shapes:
+
+| Verb | Input | Return |
+| --- | --- | --- |
+| `insert(docs)` | `list[dict]` | `list[str]` |
+| `update(..., fields=...)` | field criteria + update document | `None` |
+| `upsert(..., fields=...)` | field criteria + upsert document | `list[str]` |
+| `delete(...)` | field criteria | `int` |
+| `delete.cascade(ids)` | `list[str]` document IDs | `int` |
+| `transition(file_ids, from_state, to_state)` | `list[str]`, `str`, `str` | `None` |
+| `truncate()` | *(none)* | `None` |
+
+Field-level verbs stay anchored to a declared field name:
 
 ```python
-# ✅ Correct — always-list for collection-level verbs
-db.worker_claims.delete(["claims/abc123"])
+# ✅ Collection-level mutations
 db.library_files.insert([{"path": "/music/track.flac", ...}])
+db.library_files.update(path="/music/track.flac", fields={"size_bytes": 12345})
+db.tags.upsert(name="genre", fields={"value": "genre"})
 
-# ✅ Correct — field-level delete takes a single value
+# ✅ Field-level mutations
 db.song_has_tags._from.delete(file_id)  # returns int (count deleted)
+db.worker_claims.file_id.update(file_id, {"worker_id": worker_id})
 
-# ❌ Wrong — scalar at collection-level
-db.ml_models.delete(model_id)  # Must be db.ml_models.delete([model_id])
+# ✅ Explicit truncate when you mean "delete everything"
+db.worker_claims.truncate()
 ```
 
 ---
@@ -158,7 +163,7 @@ db.ml_models.delete(model_id)  # Must be db.ml_models.delete([model_id])
 Persistence **only** performs data access. No business decisions:
 
 ```python
-# ✅ Correct - pure data access via constructor-backed verbs
+# ✅ Correct - pure data access via descriptor-bound verbs
 def get_library_files(db: Database, library_key: str, limit: int = 100) -> list[dict[str, object]]:
     return db.library_files.library_key.get.many(library_key, limit=limit, offset=0)
 
@@ -201,7 +206,7 @@ def is_component_healthy(self, component_id: str) -> bool:
 - **Consider splitting** at 400 LOC — review whether queries and mutations have grown independently
 - **MUST split** at 600 LOC — no exceptions; separate queries from mutations or split by sub-domain
 
-Constructor modules (`verbs.py`, `namespaces.py`) may grow large due to method coverage. If a constructor module exceeds 600 LOC, review whether it can be split by concern (e.g., edge verbs vs. document verbs).
+Shared persistence helpers (especially `constructor/verbs.py`) may grow large due to method coverage. If a helper module exceeds 600 LOC, review whether it can be split by concern (for example, edge verbs vs. document verbs).
 
 ---
 
@@ -212,7 +217,7 @@ Before committing persistence code, verify:
 - [ ] Does this file import from services, workflows, components, or interfaces? **→ Violation**
 - [ ] Does this code make business decisions? **→ Move to workflow/component**
 - [ ] Are `_id` and `_key` preserved as-is? **→ Required**
-- [ ] Is external code importing from `database/*` directly? **→ Access via `Database`**
+- [ ] Is external code bypassing the injected `Database` facade or importing collection classes directly? **→ Access via `Database`**
 - [ ] Is health/liveness logic here instead of in services? **→ Move to service**
 - [ ] **Does `lint_project_backend(path="nomarr/persistence")` pass with zero errors?** **→ MANDATORY**
 

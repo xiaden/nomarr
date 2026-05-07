@@ -610,11 +610,11 @@ def get_library_counts(db: Database) -> dict[str, dict[str, int]]:
     result: dict[str, dict[str, int]] = {}
     library_ids = [
         cast("str", value)
-        for value in _aggregate_values(db.library_contains_file, "_from", limit=DEFAULT_LIMIT)
+        for value in _aggregate_values(db.library_contains_file, "_from", limit=None)
         if isinstance(value, str)
     ]
     for library_id in library_ids:
-        edges = cast("list[dict[str, Any]]", db.library_contains_file.get(_from=library_id, limit=DEFAULT_LIMIT))
+        edges = cast("list[dict[str, Any]]", db.library_contains_file.get(_from=library_id, limit=None))
         file_ids = [edge["_to"] for edge in edges if isinstance(edge.get("_to"), str)]
         file_docs = _get_library_files_by_ids(db, file_ids)
         folder_paths = {parent for file_doc in file_docs if (parent := _path_parent(file_doc.get("path"))) is not None}

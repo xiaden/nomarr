@@ -90,18 +90,17 @@ Rules:
 
 **Contains:**
 
-- `db.py` — `Database` facade
-- `base.py` — collection base types and field markers
+- `db.py` — `Database` facade and one-time collection binding via `bind_all_collections()`
+- `base.py` — collection base types, field declarations, and verb descriptors
 - `collections.py` — concrete collection declarations
-- `constructor/builder.py` — runtime builder that wires collection instances
-- `stubs/` — generated type stubs for the runtime API
-- `database/` — empty legacy compatibility stub
+- `constructor/` — shared AQL helpers (`verbs.py`, `filters.py`, `pagination.py`)
 
-**Access pattern:** Always go through the injected `Database` facade.
+**Access pattern:** Always go through the injected `Database` facade and use the descriptor-bound collection API.
 
 ```python
 # ✅ Via Database facade
-claimed = db.worker_claims.worker_id.get.many(worker_id, limit=db.worker_claims.count())
+file_doc = db.library_files.path.get("/music/track.flac")
+rows = db.library_files.get.many(library_key="main", limit=100, offset=0)
 
 # ✅ Dynamic vector collections when a physical name is resolved at runtime
 vectors = db.register("vectors_track_hot__discogs_effnet__main", "vectors_track_hot")
@@ -159,7 +158,7 @@ Dynamic vector collections use `db.register(resolved_name, template_name)` and r
 - Prefer dependency injection for major resources like DB/config/backends
 - Public contracts belong in service and workflow boundaries, not persistence internals
 - Breaking internal architecture changes are acceptable in alpha as long as callers and migrations are updated together
-- If persistence contracts change, update the callers and regenerate type stubs when needed
+- If persistence contracts change, update the callers and keep the descriptor-based docs/examples in sync
 
 ---
 
@@ -167,7 +166,7 @@ Dynamic vector collections use `db.register(resolved_name, template_name)` and r
 
 1. Open ArangoDB connection
 2. Prepare database and run migrations
-3. Wire `Database` collection instances
+3. Bind collection classes and expose them through `Database`
 4. Start workers, services, and interfaces
 
 Persistence wiring happens after the database is available and before higher layers begin using `db.*` accessors.

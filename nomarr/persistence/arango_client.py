@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from arango import ArangoClient
+from arango.client import ArangoClient
 from arango.database import StandardDatabase
 
 if TYPE_CHECKING:
