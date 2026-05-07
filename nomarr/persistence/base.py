@@ -113,6 +113,10 @@ def traversal_by_id(*args: Any, **kwargs: Any) -> list[Document]:
     return cast("list[Document]", _verbs().traversal_by_id(*args, **kwargs))
 
 
+def traversal_by_ids(*args: Any, **kwargs: Any) -> list[Document]:
+    return cast("list[Document]", _verbs().traversal_by_ids(*args, **kwargs))
+
+
 def insert(*args: Any, **kwargs: Any) -> list[str]:
     return cast("list[str]", _verbs().insert(*args, **kwargs))
 
@@ -550,6 +554,38 @@ class _BoundEdgeTraversal:
             self._edge_def.direction,
             limit=limit,
             offset=offset,
+        )
+
+    def by_ids(
+        self,
+        start_ids: list[str],
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+        **kwargs: Any,
+    ) -> list[Document]:
+        target_filter: dict[str, Any] = {}
+        target_like_starts_with: tuple[str, str] | None = None
+
+        for key, value in kwargs.items():
+            if key.endswith("_starts_with"):
+                if target_like_starts_with is not None:
+                    msg = "Only one *_starts_with filter is supported per traversal"
+                    raise ValueError(msg)
+                target_like_starts_with = (key.removesuffix("_starts_with"), cast("str", value))
+                continue
+            target_filter[key] = value
+
+        return traversal_by_ids(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            start_ids,
+            _collection_name_for_class(self._edge_def.via),
+            self._edge_def.direction,
+            limit=limit,
+            offset=offset,
+            target_filter=target_filter or None,
+            target_like_starts_with=target_like_starts_with,
         )
 
 

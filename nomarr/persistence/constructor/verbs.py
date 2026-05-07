@@ -623,6 +623,8 @@ def traversal_by_ids(
     edge: str,
     direction: str,
     *,
+    limit: int | None = None,
+    offset: int = 0,
     target_filter: dict[str, Any] | None = None,
     target_like_starts_with: tuple[str, str] | None = None,
 ) -> list[dict[str, Any]]:
@@ -655,12 +657,15 @@ def traversal_by_ids(
     if filter_clauses:
         filter_block = f" FILTER {' AND '.join(filter_clauses)}"
 
-    aql = (
+    aql, pagination_vars = inject_pagination(
         f"FOR start_id IN @start_ids "
         f"FOR v IN 1..1 {traversal_direction} start_id @@edge"
         f"{filter_block} "
-        "RETURN {start_id: start_id, v: v}"
+        "RETURN {start_id: start_id, v: v}",
+        limit,
+        offset,
     )
+    bind_vars.update(pagination_vars)
     cursor = _execute_aql(db, aql, bind_vars=bind_vars)
     return list(cursor)
 

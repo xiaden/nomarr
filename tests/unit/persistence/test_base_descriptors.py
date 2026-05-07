@@ -321,6 +321,45 @@ class TestEdgeDescriptor:
             offset=2,
         )
 
+    def test_by_ids_calls_traversal_by_ids_with_filters_and_prefix_match(self) -> None:
+        """Multi-start traversal forwards equality and ``*_starts_with`` filters."""
+        source = _make_document_collection("TraverseManySourceCollection", "traverse_many_source_docs")
+        target = _make_document_collection("TraverseManyTargetCollection", "traverse_many_target_docs")
+        edge = _make_edge_collection("TraverseManyLinkCollection", "traverse_many_link_docs", source, target)
+        safe_db = cast("SafeDatabase", MagicMock(spec=SafeDatabase))
+
+        owner = _make_document_collection(
+            "TraverseManyOwnerCollection",
+            "traverse_many_owner_docs",
+            edges=[base.EdgeDef(via=edge, direction=base.OUTBOUND, target=target, on_delete=base.DETACH)],
+        )
+        owner._db = safe_db
+
+        with patch(
+            "nomarr.persistence.base.traversal_by_ids",
+            return_value=[{"start_id": "library_files/1", "v": {"_id": "tags/1"}}],
+        ) as traversal_mock:
+            result = owner.traverse_many_link_docs.by_ids(
+                ["library_files/1", "library_files/2"],
+                limit=10,
+                offset=3,
+                name="nom:mood-strict",
+                value_starts_with="calm",
+            )
+
+        assert result == [{"start_id": "library_files/1", "v": {"_id": "tags/1"}}]
+        traversal_mock.assert_called_once_with(
+            safe_db,
+            "traverse_many_owner_docs",
+            ["library_files/1", "library_files/2"],
+            "traverse_many_link_docs",
+            base.OUTBOUND,
+            limit=10,
+            offset=3,
+            target_filter={"name": "nom:mood-strict"},
+            target_like_starts_with=("value", "calm"),
+        )
+
 
 @pytest.mark.unit
 @pytest.mark.mocked
