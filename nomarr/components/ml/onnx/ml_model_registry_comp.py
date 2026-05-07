@@ -155,7 +155,11 @@ def delete_registered_model(db: Database, model_id: str) -> None:
 
 def list_model_outputs_for_model(db: Database, model_id: str) -> list[dict[str, Any]]:
     """Return all output vertices attached to one model, ordered by index."""
-    outputs = cast("list[dict[str, Any]]", db.ml_model_outputs.get_outputs_for_model(model_id))
+    edges = cast("list[dict[str, Any]]", db.model_has_output._from.get.many(model_id))
+    output_ids = [edge["_to"] for edge in edges if isinstance(edge.get("_to"), str)]
+    if not output_ids:
+        return []
+    outputs = cast("list[dict[str, Any]]", db.ml_model_outputs.get.in_(_id=output_ids))
     return sorted(outputs, key=lambda doc: int(cast("int", doc.get("output_index", 0))))
 
 

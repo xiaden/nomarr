@@ -71,7 +71,7 @@ logger = logging.getLogger(__name__)
 class LoadLibraryStateResult:
     """Result from _load_library_state() private helper (workflow-internal)."""
 
-    file_id: int
+    file_id: str
     all_tags: dict[str, Any]
 
 
@@ -130,22 +130,30 @@ def _load_library_state(
         FileNotFoundError: If file not found in library database
 
     """
-    # Use prefetched file doc when available
+    # Use prefetched file doc when available, but fall back if the chunk cache is partial.
+    library_file: dict[str, Any] | None = None
     if batch_ctx is not None and batch_ctx.prefetched_file_docs is not None:
         library_file = batch_ctx.prefetched_file_docs.get(file_path)
-    else:
+        if library_file is None:
+            logger.debug("[calibrated_tags] File-doc cache miss for %s; falling back to DB", file_path)
+
+    if library_file is None:
         library_file = get_library_file(db, file_path)
 
     if not library_file:
         msg = f"File not in library: {file_path}"
         raise FileNotFoundError(msg)
 
-    file_id = library_file["_id"]
+    file_id = str(library_file["_id"])
 
-    # Use prefetched tags when available
+    # Use prefetched tags when available, but never treat a cache miss as authoritative emptiness.
+    tags: Tags | None = None
     if batch_ctx is not None and batch_ctx.prefetched_tags is not None:
-        tags = batch_ctx.prefetched_tags.get(str(file_id), Tags(items=()))
-    else:
+        tags = batch_ctx.prefetched_tags.get(file_id)
+        if tags is None:
+            logger.debug("[calibrated_tags] Tag cache miss for %s (%s); falling back to DB", file_path, file_id)
+
+    if tags is None:
         tags = get_nomarr_tags(db, file_id)
 
     all_tags = {}
@@ -292,10 +300,16 @@ def write_calibrated_tags_wf(
     calibrations = batch_ctx.calibrations if batch_ctx is not None else _load_calibrations_from_db(db)
 
     # Load segment_scores_stats — use prefetched bulk data if available
+    stats_list: list[dict[str, Any]] | None = None
     if batch_ctx is not None and batch_ctx.prefetched_stats is not None:
-        stats_list = batch_ctx.prefetched_stats.get(str(file_id), [])
-    else:
-        stats_list = get_segment_stats_for_file(db, str(file_id))
+        stats_list = batch_ctx.prefetched_stats.get(file_id)
+        if stats_list is None:
+            logger.debug(
+                "[calibrated_tags] Segment-stats cache miss for %s (%s); falling back to DB", file_path, file_id
+            )
+
+    if stats_list is None:
+        stats_list = get_segment_stats_for_file(db, file_id)
     segment_stats_by_head: dict[str, list[dict[str, Any]]] = {}
     for doc in stats_list:
         head_name = doc.get("head_name")
