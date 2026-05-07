@@ -1,21 +1,18 @@
 """Sync Navidrome song inventory to graph-based collections.
 
-Walks Navidrome's album inventory via the Subsonic API, auto-detects the
-path prefix mapping from crawled paths vs. Nomarr normalized_paths,
-resolves Navidrome file paths to Nomarr library_files, upserts
-``navidrome_tracks`` vertices + ``has_nd_id`` edges, captures per-user play
-counts as ``has_plays`` edges, and removes orphaned tracks no longer present
-in Navidrome.
+Walks Navidrome's album inventory via the Subsonic API, resolves song paths to
+Nomarr ``library_files`` using either raw paths or configured prefix remaps,
+upserts ``navidrome_tracks`` vertices + ``has_nd_id`` edges, captures per-user
+play counts as ``has_plays`` edges, and removes orphaned tracks no longer
+present in Navidrome.
 """
 
 from __future__ import annotations
 
 import logging
-import unicodedata
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_file_query_comp import (
-    detect_nd_path_prefix,
     get_files_by_paths_bulk,
     get_sample_normalized_path,
 )
@@ -38,17 +35,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _UPSERT_BATCH_SIZE = 500
-_PREFIX_SAMPLE_SIZE = 20
-
-
-def _normalize_match_path(path: str) -> str:
-    """Normalize Navidrome path text for robust library-file matching.
-
-    This keeps matching exact-first, but lets the workflow recover from
-    equivalent path representations such as Windows separators or Unicode
-    normalization differences in API responses.
-    """
-    return unicodedata.normalize("NFKC", path).replace("\\", "/")
+_PATH_LOOKUP_BATCH_SIZE = 100
 
 
 def _apply_path_prefix_map(nd_path: str, path_prefix_map: list[tuple[str, str]]) -> str:
@@ -58,7 +45,9 @@ def _apply_path_prefix_map(nd_path: str, path_prefix_map: list[tuple[str, str]])
             return target_prefix
         if nd_path.startswith(source_prefix):
             suffix = nd_path.removeprefix(source_prefix)
-            separator = "" if target_prefix.endswith("/") or not suffix or suffix.startswith("/") else "/"
+            separator = (
+                "" if not target_prefix or target_prefix.endswith("/") or not suffix or suffix.startswith("/") else "/"
+            )
             return f"{target_prefix}{separator}{suffix}"
     return nd_path
 
@@ -68,93 +57,38 @@ def _resolve_song_paths(
     db: Database,
     path_prefix_map: list[tuple[str, str]],
 ) -> tuple[list[str], dict[str, dict[str, Any]]]:
-    """Resolve Navidrome song paths using raw, configured, or auto-detected mappings."""
+    """Resolve Navidrome song paths using raw or configured-remapped values."""
     if not songs:
         return [], {}
 
     raw_paths = [song["nd_path"] for song in songs]
-    best_paths = raw_paths
-    best_docs = get_files_by_paths_bulk(db, raw_paths)
-    best_label = "raw"
-    best_score = sum(1 for path in raw_paths if path in best_docs)
+    resolved_paths = (
+        [_apply_path_prefix_map(path, path_prefix_map) for path in raw_paths] if path_prefix_map else list(raw_paths)
+    )
+    resolved_docs: dict[str, dict[str, Any]] = {}
+    for start in range(0, len(resolved_paths), _PATH_LOOKUP_BATCH_SIZE):
+        batch = resolved_paths[start : start + _PATH_LOOKUP_BATCH_SIZE]
+        resolved_docs.update(get_files_by_paths_bulk(db, batch))
 
-    def consider_candidate(label: str, candidate_paths: list[str]) -> None:
-        nonlocal best_docs, best_label, best_paths, best_score
-
-        candidate_docs = get_files_by_paths_bulk(db, candidate_paths)
-        candidate_score = sum(1 for path in candidate_paths if path in candidate_docs)
-        if candidate_score > best_score:
-            best_paths = candidate_paths
-            best_docs = candidate_docs
-            best_label = label
-            best_score = candidate_score
-
-    normalized_raw_paths = [_normalize_match_path(path) for path in raw_paths]
-    if normalized_raw_paths != raw_paths:
-        consider_candidate("normalized raw", normalized_raw_paths)
-
-    if path_prefix_map and best_score < len(raw_paths):
-        mapped_paths = [_apply_path_prefix_map(path, path_prefix_map) for path in raw_paths]
-        if mapped_paths != raw_paths:
-            consider_candidate("configured prefix map", mapped_paths)
-
-        normalized_mapped_paths = [_normalize_match_path(path) for path in mapped_paths]
-        if normalized_mapped_paths != mapped_paths:
-            consider_candidate("normalized configured prefix map", normalized_mapped_paths)
-
-    if best_score < len(raw_paths):
-        try:
-            detected_prefix = _detect_prefix(songs, db)
-        except ValueError:
-            detected_prefix = None
-        if detected_prefix is not None:
-            remapped_paths = [_normalize_match_path(path).removeprefix(detected_prefix) for path in raw_paths]
-            if remapped_paths != raw_paths and remapped_paths != normalized_raw_paths:
-                consider_candidate("auto-detected prefix", remapped_paths)
-
-    if best_score == 0:
+    resolved_count = sum(1 for path in resolved_paths if path in resolved_docs)
+    if resolved_count == 0:
         nd_sample = raw_paths[0] if raw_paths else "(no songs)"
         nomarr_sample = get_sample_normalized_path(db) or "(library appears empty — run a scan first)"
         msg = (
             "Could not match Navidrome paths to Nomarr library files. "
-            "Ensure the Nomarr library has been scanned, or configure navidrome_path_prefix_map "
+            "Ensure the Nomarr library has been scanned, and configure navidrome_path_prefix_map "
             "when Navidrome and Nomarr see the same files under different mount points. "
             f"Navidrome sample path: {nd_sample} | Nomarr sample path: {nomarr_sample}"
         )
         raise ValueError(msg)
 
-    logger.info(
-        "sync_navidrome: using %s path resolution (%d/%d matched)",
-        best_label,
-        best_score,
-        len(raw_paths),
-    )
-    return best_paths, best_docs
-
-
-def _detect_prefix(songs: list[CrawledSong], db: Database) -> str:
-    """Auto-detect the Navidrome path prefix from a sample of crawled songs.
-
-    Tries up to ``_PREFIX_SAMPLE_SIZE`` paths against library_files until one
-    matches a ``normalized_path`` suffix.  Returns the detected prefix (e.g.
-    ``"/music/"``) or ``""`` if the paths already match without stripping.
-
-    Raises:
-        ValueError: If no sample path matches any Nomarr file — library may
-            not have been scanned yet.
-    """
-    sample = [_normalize_match_path(s["nd_path"]) for s in songs[:_PREFIX_SAMPLE_SIZE]]
-    for nd_path in sample:
-        prefix = detect_nd_path_prefix(db, nd_path)
-        if prefix is not None:
-            logger.info("sync_navidrome: auto-detected path prefix %r", prefix)
-            return prefix
-    msg = (
-        "Could not detect path prefix from Navidrome paths. "
-        "Ensure the Nomarr library has been scanned before syncing. "
-        f"Sample path: {sample[0] if sample else '(no songs)'}"
-    )
-    raise ValueError(msg)
+    if path_prefix_map:
+        logger.info(
+            "sync_navidrome: resolved %d/%d songs using configured path remapping", resolved_count, len(raw_paths)
+        )
+    else:
+        logger.info("sync_navidrome: resolved %d/%d songs using raw paths", resolved_count, len(raw_paths))
+    return resolved_paths, resolved_docs
 
 
 def sync_navidrome(
@@ -166,8 +100,8 @@ def sync_navidrome(
     """Sync Navidrome's song inventory into graph collections.
 
     Walks all albums via ``getAlbumList2`` (paginated), fetches each album's
-    songs via ``getAlbum``, auto-detects the path prefix, resolves Nomarr
-    file IDs via ``get_files_by_paths_bulk(db, ...)``, and writes
+    songs, optionally rewrites their paths via configured prefix mappings,
+    resolves Nomarr file IDs via ``get_files_by_paths_bulk(db, ...)``, and writes
     to ``navidrome_tracks``, ``has_nd_id``, ``navidrome_playcounts``, and
     ``has_plays`` collections.  Orphan tracks (present in DB but absent from
     Navidrome) are cascade-deleted.
@@ -186,7 +120,7 @@ def sync_navidrome(
     # Step 1: Crawl all albums and collect song data
     all_songs: list[CrawledSong] = crawl_navidrome_songs(client)
 
-    # Step 2: Resolve ND paths via raw paths, configured mappings, or auto-detection
+    # Step 2: Resolve ND paths via raw paths or configured prefix remapping
     remapped_paths, path_to_doc = _resolve_song_paths(all_songs, db, path_prefix_map or [])
 
     # Step 3: Build resolved mappings and play edge data
