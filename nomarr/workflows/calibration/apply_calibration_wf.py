@@ -8,15 +8,12 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING, Protocol
 
-from nomarr.components.library.library_file_query_comp import get_files_by_paths_bulk
 from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     get_calibration_version,
     update_file_calibration_hashes_batch,
 )
-from nomarr.components.ml.inference.ml_segment_stats_store_comp import get_segment_stats_for_files_bulk
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
 from nomarr.components.processing.file_write_comp import save_mood_tags_batch
-from nomarr.components.tagging.tag_query_comp import get_nomarr_tags_bulk
 from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
 from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult
 from nomarr.helpers.time_helper import internal_ms
@@ -65,10 +62,10 @@ def apply_calibration_wf(
     File writes execute concurrently via a ThreadPoolExecutor (default 4 workers).
 
     Paths are processed in chunks of `prefetch_chunk_size` (default 1000) to
-    bound peak RAM usage. Each chunk prefetches its DB data, processes files,
-    flushes deferred writes, and releases the prefetched data before the next
-    chunk begins. Invariant data (heads, calibrations, library roots) is held
-    across all chunks since it is small.
+    bound peak RAM usage and cap deferred batch-write size. Each chunk processes
+    at most that many files, flushes deferred writes, then moves on to the next
+    chunk. Invariant data (heads and calibrations) is held across all chunks since
+    it is small.
 
     Args:
         db: Database instance for persistence operations
@@ -79,8 +76,9 @@ def apply_calibration_wf(
         calibrate_heads: Whether to apply calibration heads
         on_progress: Optional callback invoked after each file
         max_write_workers: Max concurrent file write workers (default 4)
-        prefetch_chunk_size: Number of files to prefetch per batch (default 1000).
-            Lower values reduce peak RAM at the cost of more DB round-trips.
+        prefetch_chunk_size: Maximum files processed per chunk before deferred
+            writes flush (default 1000). Lower values reduce peak RAM and batch
+            write size at the cost of more flush cycles.
 
     Returns:
         ApplyCalibrationResult with processed/failed/total counts
@@ -127,42 +125,28 @@ def apply_calibration_wf(
             logger.warning(f"Failed to write calibrated tags for {file_path}: {e}")
             return False
 
-    # --- Chunk loop: prefetch → process → flush → discard ---
+    # --- Chunk loop: process → flush ---
     success_count = 0
     fail_count = 0
     completed_count = [0]
     completed_lock = threading.Lock()
 
     _t_io_total = 0.0
-    _t_prefetch_total = 0.0
 
     for chunk_start in range(0, total, prefetch_chunk_size):
         chunk_paths = paths[chunk_start : chunk_start + prefetch_chunk_size]
         chunk_num = chunk_start // prefetch_chunk_size + 1
         chunk_size = len(chunk_paths)
 
-        # Prefetch DB data for this chunk only
-        _t_prefetch_start = internal_ms()
-        logger.info(f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: prefetching DB data for {chunk_size} files...")
-        prefetched_file_docs = get_files_by_paths_bulk(db, chunk_paths)
-        all_file_ids = [doc["_id"] for doc in prefetched_file_docs.values()]
-        prefetched_tags = get_nomarr_tags_bulk(db, all_file_ids) if all_file_ids else {}
-        prefetched_stats = get_segment_stats_for_files_bulk(db, all_file_ids) if all_file_ids else {}
-        _t_prefetch_chunk = (internal_ms().value - _t_prefetch_start.value) / 1000
-        _t_prefetch_total += _t_prefetch_chunk
+        logger.info(
+            f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: processing {chunk_size} files "
+            f"(chunk limit={prefetch_chunk_size})..."
+        )
 
         batch_ctx = BatchContext(
             heads=heads,
             calibrations=calibrations,
             calibration_version=calibration_version,
-        )
-        batch_ctx.prefetched_file_docs = prefetched_file_docs
-        batch_ctx.prefetched_tags = prefetched_tags
-        batch_ctx.prefetched_stats = prefetched_stats
-
-        logger.debug(
-            f"[apply_calibration] Chunk {chunk_num}/{n_chunks} prefetch done in "
-            f"{_t_prefetch_chunk:.2f}s: {len(prefetched_file_docs)}/{chunk_size} files cached"
         )
 
         _t_io_start = internal_ms()
@@ -192,7 +176,7 @@ def apply_calibration_wf(
         _t_io_chunk = (internal_ms().value - _t_io_start.value) / 1000
         _t_io_total += _t_io_chunk
 
-        # Flush deferred DB writes for this chunk, then release the cache
+        # Flush deferred DB writes for this chunk
         if batch_ctx.pending_mood_tags:
             logger.debug(
                 f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: "
@@ -213,18 +197,12 @@ def apply_calibration_wf(
             except Exception as e:
                 logger.warning(f"[apply_calibration] Batch calibration hash flush failed: {e}")
 
-        # Explicitly release prefetched data so GC can reclaim RAM before next chunk
-        batch_ctx.prefetched_file_docs = None
-        batch_ctx.prefetched_tags = None
-        batch_ctx.prefetched_stats = None
-
         logger.debug(f"[apply_calibration] Chunk {chunk_num}/{n_chunks} done in {_t_io_chunk:.2f}s I/O")
 
     _t_total = (internal_ms().value - _t0.value) / 1000
     logger.info(
         f"[apply_calibration] DONE in {_t_total:.2f}s — "
-        f"setup={_t_setup:.2f}s prefetch={_t_prefetch_total:.2f}s "
-        f"io={_t_io_total:.2f}s | "
+        f"setup={_t_setup:.2f}s io={_t_io_total:.2f}s | "
         f"{success_count}/{total} ok, {fail_count} failed"
     )
     logger.info(f"Applied calibration to DB: {success_count}/{total} files ({fail_count} failed)")

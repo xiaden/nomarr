@@ -15,7 +15,7 @@ Multi-step workflows for generating, applying, importing, and exporting histogra
  | Module | Purpose |
  | -------- | --------- |
  | `generate_calibration_wf.py` | Single-pass histogram generation across all model labels; drift metrics (APD, SRD, JSD, median/IQR) |
- | `apply_calibration_wf.py` | Batch apply calibration to file paths with chunked prefetch and concurrent file writes |
+| `apply_calibration_wf.py` | Batch apply calibration to file paths with chunked processing, live per-file reads, and concurrent file writes |
  | `write_calibrated_tags_wf.py` | Per-file calibration apply — reconstructs `HeadOutput` from DB tags + calibration, re-aggregates mood tags |
  | `calibration_loader_wf.py` | Load calibrations from `calibration_state` collection; version-hash-based caching |
  | `export_calibration_bundle_wf.py` | Export to bundle JSON (single file or per-model directory structure) |
@@ -23,8 +23,8 @@ Multi-step workflows for generating, applying, importing, and exporting histogra
 
 ## Patterns
 
-- **Batch context**: `BatchContext` pre-computes heads, calibrations, and version once; reused across all files in a batch
-- **Chunked prefetch**: `apply_calibration_wf` processes files in chunks (default 1000) to bound peak RAM
+- **Batch context**: `BatchContext` carries shared invariants plus deferred writes; DB reads stay live per file
+- **Chunked batching**: `apply_calibration_wf` processes files in chunks (default 1000) to bound peak RAM and flush sizes
 - **Deferred flush**: Mood tags and calibration hashes accumulate in `BatchContext` then flush in bulk
 - **Idempotent**: Generation always computes from current state; apply skips files whose `calibration_hash` matches
 

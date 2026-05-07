@@ -109,6 +109,10 @@ def get_range_by_field(*args: Any, **kwargs: Any) -> list[Document]:
     return cast("list[Document]", _verbs().get_range_by_field(*args, **kwargs))
 
 
+def traversal_by_id(*args: Any, **kwargs: Any) -> list[Document]:
+    return cast("list[Document]", _verbs().traversal_by_id(*args, **kwargs))
+
+
 def insert(*args: Any, **kwargs: Any) -> list[str]:
     return cast("list[str]", _verbs().insert(*args, **kwargs))
 
@@ -527,6 +531,51 @@ class _FieldDescriptor:
 
     def __set__(self, obj: object, value: object) -> None:
         msg = f"Field descriptor '{self._field_name}' is read-only"
+        raise AttributeError(msg)
+
+
+class _BoundEdgeTraversal:
+    """Bound graph-traversal helper installed from ``EDGES`` metadata."""
+
+    def __init__(self, cls: type[Any], edge_def: EdgeDef) -> None:
+        self._cls = cls
+        self._edge_def = edge_def
+
+    def __call__(self, start_id: str, *, limit: int | None = None, offset: int = 0) -> list[Document]:
+        return traversal_by_id(
+            cast("SafeDatabase", self._cls._db),
+            cast("str", self._cls._name),
+            start_id,
+            _collection_name_for_class(self._edge_def.via),
+            self._edge_def.direction,
+            limit=limit,
+            offset=offset,
+        )
+
+
+class _EdgeDescriptor:
+    """Descriptor installed on collection classes for declared graph edges."""
+
+    def __init__(self, edge_name: str, edge_def: EdgeDef) -> None:
+        self._edge_name = edge_name
+        self._edge_def = edge_def
+        self._cache_attr = f"_bound_edge_{edge_name}"
+
+    def __set_name__(self, owner: type[Any], name: str) -> None:
+        self._edge_name = name
+        self._cache_attr = f"_bound_edge_{name}"
+
+    def __get__(self, obj: object | None, owner: type[Any] | None = None) -> _BoundEdgeTraversal:
+        bound_owner = _resolve_owner(obj, owner)
+        cached = bound_owner.__dict__.get(self._cache_attr)
+        if isinstance(cached, _BoundEdgeTraversal):
+            return cached
+        bound = _BoundEdgeTraversal(bound_owner, self._edge_def)
+        setattr(bound_owner, self._cache_attr, bound)
+        return bound
+
+    def __set__(self, obj: object, value: object) -> None:
+        msg = f"Edge descriptor '{self._edge_name}' is read-only"
         raise AttributeError(msg)
 
 
@@ -1286,6 +1335,15 @@ def _install_field_descriptors(cls: type[Any]) -> None:
         setattr(cls, field_name, _FieldDescriptor(field_name, unique or field_name in _ALWAYS_UNIQUE))
 
 
+def _install_edge_descriptors(cls: type[Any]) -> None:
+    """Install ``_EdgeDescriptor`` objects declared in ``cls.EDGES``."""
+    for edge_def in getattr(cls, "EDGES", []):
+        edge_name = _collection_name_for_class(edge_def.via)
+        if isinstance(cls.__dict__.get(edge_name), _EdgeDescriptor):
+            continue
+        setattr(cls, edge_name, _EdgeDescriptor(edge_name, edge_def))
+
+
 class _CollectionMeta(type):
     """Metaclass that preserves runtime lookup semantics for dynamic class attrs.
 
@@ -1304,6 +1362,7 @@ def _finalize_collection_subclass(cls: type[Any], *, derive_name: bool = True) -
     if derive_name and "_name" not in cls.__dict__:
         cls._name = _snake_case(cls.__name__)
     _install_field_descriptors(cls)
+    _install_edge_descriptors(cls)
 
 
 class _DescriptorCollection(metaclass=_CollectionMeta):

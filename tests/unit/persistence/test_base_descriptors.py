@@ -271,6 +271,59 @@ class TestBoundTransition:
 
 @pytest.mark.unit
 @pytest.mark.mocked
+class TestEdgeDescriptor:
+    """Tests for late-bound edge traversal descriptors."""
+
+    def test_get_from_class_returns_bound_edge_traversal(self) -> None:
+        """Class access returns a cached ``_BoundEdgeTraversal`` helper."""
+        source = _make_document_collection("EdgeSourceCollection", "edge_source_docs")
+        target = _make_document_collection("EdgeTargetCollection", "edge_target_docs")
+        edge = _make_edge_collection("EdgeLinkCollection", "edge_link_docs", source, target)
+
+        owner = _make_document_collection(
+            "EdgeOwnerCollection",
+            "edge_owner_docs",
+            edges=[base.EdgeDef(via=edge, direction=base.OUTBOUND, target=target, on_delete=base.CASCADE)],
+        )
+
+        accessor = owner.edge_link_docs
+
+        assert isinstance(accessor, base._BoundEdgeTraversal)
+        assert accessor._cls is owner
+        assert accessor._edge_def.via is edge
+        assert owner.edge_link_docs is accessor
+
+    def test_calls_traversal_by_id_with_edge_collection_name_and_direction(self) -> None:
+        """Bound edge traversal dispatches via the declared edge definition."""
+        source = _make_document_collection("TraverseSourceCollection", "traverse_source_docs")
+        target = _make_document_collection("TraverseTargetCollection", "traverse_target_docs")
+        edge = _make_edge_collection("TraverseLinkCollection", "traverse_link_docs", source, target)
+        safe_db = cast("SafeDatabase", MagicMock(spec=SafeDatabase))
+
+        owner = _make_document_collection(
+            "TraverseOwnerCollection",
+            "traverse_owner_docs",
+            edges=[base.EdgeDef(via=edge, direction=base.INBOUND, target=target, on_delete=base.DETACH)],
+        )
+        owner._db = safe_db
+
+        with patch("nomarr.persistence.base.traversal_by_id", return_value=[{"_id": "doc/1"}]) as traversal_mock:
+            result = owner.traverse_link_docs("file_states/tagged", limit=5, offset=2)
+
+        assert result == [{"_id": "doc/1"}]
+        traversal_mock.assert_called_once_with(
+            safe_db,
+            "traverse_owner_docs",
+            "file_states/tagged",
+            "traverse_link_docs",
+            base.INBOUND,
+            limit=5,
+            offset=2,
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
 class TestFieldDescriptor:
     """Tests for ``_FieldDescriptor``."""
 

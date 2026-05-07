@@ -79,19 +79,13 @@ class LoadLibraryStateResult:
 class BatchContext:
     """Pre-computed invariants for batch calibration apply.
 
-    When processing many files, these values are computed once and reused,
-    avoiding redundant DB queries and filesystem scans per file.
+    When processing many files, these values are computed once per chunk and reused,
+    while DB reads remain live component calls per file.
 
     Attributes:
         heads: Discovered HeadInfo objects from discover_heads()
         calibrations: Calibration data from load_calibrations_from_db_wf()
         calibration_version: Global calibration version string
-        prefetched_file_docs: Optional pre-fetched file records keyed by path.
-            When populated, _load_library_state uses it instead of DB queries.
-        prefetched_tags: Optional pre-fetched nomarr tags keyed by file_id.
-            When populated, avoids per-file tag DB queries.
-        prefetched_stats: Optional pre-fetched segment stats keyed by file_id.
-            When populated, avoids per-file stats DB queries.
         pending_mood_tags: Accumulated (file_id, mood_tags) for deferred batch write.
         pending_calibration_hashes: Accumulated file_ids for deferred batch calibration mark.
 
@@ -100,9 +94,6 @@ class BatchContext:
     heads: list[Any]
     calibrations: dict[str, Any]
     calibration_version: str | None
-    prefetched_file_docs: dict[str, dict[str, Any]] | None = None
-    prefetched_tags: dict[str, Tags] | None = None
-    prefetched_stats: dict[str, list[dict[str, Any]]] | None = None
     pending_mood_tags: list[tuple[str, Tags]] = field(default_factory=list)
     pending_calibration_hashes: list[str] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
@@ -115,13 +106,13 @@ def _load_library_state(
 ) -> LoadLibraryStateResult:
     """Load file metadata and tags from library database.
 
-    When ``batch_ctx`` is supplied and its prefetched caches are populated,
-    all DB round-trips are bypassed.
+    ``batch_ctx`` carries batch invariants and deferred writes only; file metadata
+    and tags are always loaded through live component reads.
 
     Args:
         db: Database instance
         file_path: Path to audio file
-        batch_ctx: Optional batch context with pre-fetched data.
+        batch_ctx: Optional batch context for batch apply bookkeeping.
 
     Returns:
         LoadLibraryStateResult with file_id and all_tags
@@ -130,15 +121,9 @@ def _load_library_state(
         FileNotFoundError: If file not found in library database
 
     """
-    # Use prefetched file doc when available, but fall back if the chunk cache is partial.
-    library_file: dict[str, Any] | None = None
-    if batch_ctx is not None and batch_ctx.prefetched_file_docs is not None:
-        library_file = batch_ctx.prefetched_file_docs.get(file_path)
-        if library_file is None:
-            logger.debug("[calibrated_tags] File-doc cache miss for %s; falling back to DB", file_path)
+    _ = batch_ctx  # Batch context does not cache DB reads.
 
-    if library_file is None:
-        library_file = get_library_file(db, file_path)
+    library_file = get_library_file(db, file_path)
 
     if not library_file:
         msg = f"File not in library: {file_path}"
@@ -146,15 +131,7 @@ def _load_library_state(
 
     file_id = str(library_file["_id"])
 
-    # Use prefetched tags when available, but never treat a cache miss as authoritative emptiness.
-    tags: Tags | None = None
-    if batch_ctx is not None and batch_ctx.prefetched_tags is not None:
-        tags = batch_ctx.prefetched_tags.get(file_id)
-        if tags is None:
-            logger.debug("[calibrated_tags] Tag cache miss for %s (%s); falling back to DB", file_path, file_id)
-
-    if tags is None:
-        tags = get_nomarr_tags(db, file_id)
+    tags = get_nomarr_tags(db, file_id)
 
     all_tags = {}
     for tag in tags:
@@ -299,17 +276,8 @@ def write_calibrated_tags_wf(
     heads: list[Any] | None = batch_ctx.heads if batch_ctx is not None else None
     calibrations = batch_ctx.calibrations if batch_ctx is not None else _load_calibrations_from_db(db)
 
-    # Load segment_scores_stats — use prefetched bulk data if available
-    stats_list: list[dict[str, Any]] | None = None
-    if batch_ctx is not None and batch_ctx.prefetched_stats is not None:
-        stats_list = batch_ctx.prefetched_stats.get(file_id)
-        if stats_list is None:
-            logger.debug(
-                "[calibrated_tags] Segment-stats cache miss for %s (%s); falling back to DB", file_path, file_id
-            )
-
-    if stats_list is None:
-        stats_list = get_segment_stats_for_file(db, file_id)
+    # Load segment_scores_stats live for each file; chunking bounds in-flight work.
+    stats_list = get_segment_stats_for_file(db, file_id)
     segment_stats_by_head: dict[str, list[dict[str, Any]]] = {}
     for doc in stats_list:
         head_name = doc.get("head_name")
