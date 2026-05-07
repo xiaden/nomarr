@@ -625,3 +625,40 @@ class TestBindAllCollections:
             base.DocumentCollection._db = original_document_db
             base.EdgeCollection._db = original_edge_db
             base.VectorCollection._db = original_vector_db
+
+    def test_installs_edge_descriptors_for_edges_assigned_after_class_creation(self) -> None:
+        """Binding rehydrates late-assigned ``EDGES`` metadata into callable accessors."""
+        safe_db = cast("SafeDatabase", MagicMock(spec=SafeDatabase))
+        root = _make_document_collection("BindLateEdgeRoot", "bind_late_edge_roots")
+        target = _make_document_collection("BindLateEdgeTarget", "bind_late_edge_targets")
+        edge = _make_edge_collection("BindLateEdge", "bind_late_edges", root, target)
+        root.EDGES = [base.EdgeDef(via=edge, direction=base.OUTBOUND, target=target, on_delete=base.DETACH)]
+
+        original_document_db = base.DocumentCollection._db
+        original_edge_db = base.EdgeCollection._db
+        original_vector_db = base.VectorCollection._db
+
+        try:
+            with patch("nomarr.persistence.base._iter_concrete_subclasses", return_value=iter([root])):
+                base.bind_all_collections(safe_db)
+
+            accessor = root.bind_late_edges
+            assert isinstance(accessor, base._BoundEdgeTraversal)
+
+            with patch("nomarr.persistence.base.traversal_by_id", return_value=[{"_id": "doc/1"}]) as traversal_mock:
+                result = root.bind_late_edges("bind_late_edge_roots/1", limit=4, offset=1)
+
+            assert result == [{"_id": "doc/1"}]
+            traversal_mock.assert_called_once_with(
+                safe_db,
+                "bind_late_edge_roots",
+                "bind_late_edge_roots/1",
+                "bind_late_edges",
+                base.OUTBOUND,
+                limit=4,
+                offset=1,
+            )
+        finally:
+            base.DocumentCollection._db = original_document_db
+            base.EdgeCollection._db = original_edge_db
+            base.VectorCollection._db = original_vector_db

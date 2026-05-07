@@ -1302,6 +1302,7 @@ def bind_all_collections(safe_db: SafeDatabase) -> None:
 
     for cls in _iter_concrete_subclasses(DocumentCollection):
         document_cls = cast("type[DocumentCollection]", cls)
+        _install_edge_descriptors(document_cls)
         if _has_cascade_edges(document_cls):
             _compile_and_attach_cascade(document_cls)
 
