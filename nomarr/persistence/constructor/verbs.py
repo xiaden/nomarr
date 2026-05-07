@@ -699,12 +699,10 @@ def ann_search(
     cursor = _execute_aql(
         db,
         f"""
-        FOR doc IN APPROX_NEAR_COSINE(@@col, @query_vector, @nprobe)
+        FOR doc IN @@col
+            LET score = APPROX_NEAR_COSINE(doc.vector_n, @query_vector, {{nProbe: @nprobe}})
             {filter_clause}
-            LET score = SUM(
-                FOR idx IN 0..(LENGTH(doc.vector_n) - 1)
-                    RETURN doc.vector_n[idx] * @query_vector[idx]
-            )
+            SORT score DESC
             LIMIT @limit
             RETURN MERGE(doc, {{file_id: doc.file_id, score: score}})
         """,

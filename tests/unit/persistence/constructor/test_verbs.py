@@ -9,6 +9,7 @@ import pytest
 
 from nomarr.persistence.constructor.verbs import (
     aggregate_field,
+    ann_search,
     collect_field,
     count_by_filter,
     delete_by_filter,
@@ -256,6 +257,39 @@ class TestFilterVerbs:
             "fields": {"value": "jazz"},
             "f0": "name",
             "v0": "genre",
+        }
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestAnnSearch:
+    """Tests for ANN vector search verb generation."""
+
+    def test_ann_search_iterates_bound_collection_and_uses_doc_vector_score(self) -> None:
+        """ann_search() must score docs from the bound collection, not use the collection as an operand."""
+        db = _mock_db([{"file_id": "library_files/1", "score": 0.99}])
+
+        result = ann_search(
+            db,
+            "vectors_track_cold__effnet__216882179",
+            [0.1, 0.2, 0.3],
+            limit=10,
+            nprobe=4,
+        )
+
+        assert result == [{"file_id": "library_files/1", "score": 0.99}]
+        call_args = db.aql.execute.call_args
+        aql = call_args.args[0]
+        bind_vars = call_args.kwargs["bind_vars"]
+        assert "FOR doc IN @@col" in aql
+        assert "LET score = APPROX_NEAR_COSINE(doc.vector_n, @query_vector, {nProbe: @nprobe})" in aql
+        assert "SORT score DESC" in aql
+        assert "FOR doc IN APPROX_NEAR_COSINE(@@col, @query_vector, @nprobe)" not in aql
+        assert bind_vars == {
+            "@col": "vectors_track_cold__effnet__216882179",
+            "query_vector": [0.1, 0.2, 0.3],
+            "nprobe": 4,
+            "limit": 10,
         }
 
 
