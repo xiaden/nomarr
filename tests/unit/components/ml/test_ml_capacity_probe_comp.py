@@ -105,7 +105,7 @@ class TestGetOrRunCapacityProbe:
             "measured_backbone_vram_mb": 8000,
             "estimated_worker_ram_mb": 2000,
         }
-        mock_db.ml_capacity.get.return_value = cached
+        mock_db.meta.get.return_value = cached
 
         with (
             tempfile.TemporaryDirectory() as tmpdir,
@@ -145,5 +145,5 @@ class TestInvalidateCapacityEstimate:
         ):
             invalidate_capacity_estimate(mock_db, tmpdir)
 
-        mock_db.ml_capacity.delete.assert_called_once_with(model_set_hash="abc123")
+        mock_db.meta.delete.assert_called_once_with(key="capacity_estimate:abc123")
         mock_db.locks.delete.assert_called_once_with(document_reference="capacity_probe:abc123")

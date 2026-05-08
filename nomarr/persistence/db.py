@@ -33,7 +33,6 @@ from nomarr.persistence.collections import (
     Locks,
     Meta,
     Migrations,
-    MlCapacity,
     MlModelOutputs,
     MlModels,
     MlOutputStreams,
@@ -151,7 +150,6 @@ class Database:
     worker_claims: WorkerClaims
     vram_promises: VramPromises
     locks: Locks
-    ml_capacity: MlCapacity
     ml_models: MlModels
     model_has_output: ModelHasOutput
     model_has_calibration: ModelHasCalibration
@@ -234,7 +232,6 @@ class Database:
         self.worker_claims = WorkerClaims(self.db)
         self.vram_promises = VramPromises(self.db)
         self.locks = Locks(self.db)
-        self.ml_capacity = MlCapacity(self.db)
         self.ml_models = MlModels(self.db)
         self.model_has_output = ModelHasOutput(self.db)
         self.model_has_calibration = ModelHasCalibration(self.db)
@@ -266,7 +263,6 @@ class Database:
             self.worker_claims,
             self.vram_promises,
             self.locks,
-            self.ml_capacity,
             self.ml_models,
             self.ml_model_outputs,
             self.ml_output_streams,

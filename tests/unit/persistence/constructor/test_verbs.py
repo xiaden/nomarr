@@ -12,6 +12,8 @@ from nomarr.persistence.constructor.verbs import (
     ann_search,
     collect_field,
     count_by_filter,
+    count_inbound_connections,
+    count_outbound_connections,
     delete_by_filter,
     delete_by_ids,
     get_many_by_filter,
@@ -334,6 +336,73 @@ class TestFilteredCollectAndAggregate:
             "@col": "tags",
             "field": "value",
         }
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestConnectionCounts:
+    """Tests for single-hop connection count verbs."""
+
+    def test_count_inbound_connections_builds_to_query(self) -> None:
+        db = _mock_db([{"tag": "happy", "count": 2}])
+
+        result = count_inbound_connections(
+            db,
+            "tags",
+            "song_has_tags",
+            "name",
+            ["nom:mood-strict"],
+            return_field="value",
+            label="tag",
+            limit=10,
+        )
+
+        assert result == [{"tag": "happy", "count": 2}]
+        call_args = db.aql.execute.call_args
+        aql = call_args.args[0]
+        bind_vars = call_args.kwargs["bind_vars"]
+        assert "FILTER doc[@filter_field] IN @filter_values" in aql
+        assert "FILTER edge[@edge_field] == doc._id" in aql
+        assert "RETURN MERGE({[@label]: doc[@return_field]}, {count: edge_count})" in aql
+        assert bind_vars == {
+            "@col": "tags",
+            "@edge": "song_has_tags",
+            "edge_field": "_to",
+            "filter_field": "name",
+            "filter_values": ["nom:mood-strict"],
+            "return_field": "value",
+            "label": "tag",
+            "pagination_limit": 10,
+        }
+
+    def test_count_outbound_connections_builds_from_query(self) -> None:
+        db = _mock_db([{"song_id": "library_files/1", "count": 3}])
+
+        result = count_outbound_connections(
+            db,
+            "library_files",
+            "song_has_tags",
+            "_id",
+            ["library_files/1"],
+            return_field="_id",
+            label="song_id",
+        )
+
+        assert result == [{"song_id": "library_files/1", "count": 3}]
+        call_args = db.aql.execute.call_args
+        aql = call_args.args[0]
+        bind_vars = call_args.kwargs["bind_vars"]
+        assert "FILTER edge[@edge_field] == doc._id" in aql
+        assert bind_vars["edge_field"] == "_from"
+        assert bind_vars["label"] == "song_id"
+
+    def test_count_connections_short_circuits_empty_filter_values(self) -> None:
+        db = _mock_db()
+
+        result = count_inbound_connections(db, "tags", "song_has_tags", "name", [])
+
+        assert result == []
+        db.aql.execute.assert_not_called()
 
     def test_aggregate_field_with_filter_places_filter_before_collect(self) -> None:
         """aggregate_field inserts FILTER before COLLECT when provided."""

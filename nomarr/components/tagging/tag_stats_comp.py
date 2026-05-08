@@ -95,6 +95,25 @@ def _song_count_for_tag(db: Database, tag_id: str) -> int:
     return int(song_has_tags.count(_to=tag_id))
 
 
+def _song_count_rows_for_tag_ids(db: Database, tag_ids: list[str]) -> dict[str, int]:
+    """Return ``tag_id -> song_count`` using the generic inbound count verb."""
+    if not tag_ids:
+        return {}
+    tags = _tags_ns(db)
+    count_rows = cast(
+        "list[dict[str, Any]]",
+        tags.count_inbound_connections(
+            "song_has_tags",
+            filter_field="_id",
+            filter_values=tag_ids,
+            return_field="_id",
+            label="tag_id",
+            limit=len(tag_ids),
+        ),
+    )
+    return {str(tag_id): int(row.get("count", 0)) for row in count_rows if (tag_id := row.get("tag_id")) is not None}
+
+
 def _scoped_song_count_for_tag(
     db: Database,
     tag_id: str,
@@ -156,12 +175,14 @@ def get_unique_names(db: Database, nomarr_only: bool = False) -> list[str]:
 
 def get_tag_value_counts(db: Database, name: str) -> dict[Any, int]:
     """Return value → song-count mapping for one tag name."""
-    library_files = _library_files_ns(db)
-    counts_raw = cast("list[dict[str, Any]]", library_files.aggregate("song_has_tags"))
-    count_by_tag_id = {row["value"]: row["count"] for row in counts_raw}
+    tag_docs = _tags_for_name(db, name)
+    count_by_tag_id = _song_count_rows_for_tag_ids(
+        db,
+        [tag_id for tag in tag_docs if isinstance(tag_id := tag.get("_id"), str)],
+    )
     return {
         tag["value"]: count_by_tag_id.get(tag_id, 0)
-        for tag in _tags_for_name(db, name)
+        for tag in tag_docs
         if isinstance(tag_id := tag.get("_id"), str) and "value" in tag
     }
 
@@ -169,23 +190,33 @@ def get_tag_value_counts(db: Database, name: str) -> dict[Any, int]:
 def get_all_tag_stats_batched(db: Database) -> dict[str, dict[str, Any]]:
     """Return summary stats for all tag names in one query."""
     tags = _tags_ns(db)
-    library_files = _library_files_ns(db)
+    _library_files_ns(db)
     result: dict[str, dict[str, Any]] = {}
     total_tags = int(tags.count())
     if total_tags <= 0:
         return result
 
-    counts_raw = cast("list[dict[str, Any]]", library_files.aggregate("song_has_tags"))
-    count_by_tag_id = {row["value"]: row["count"] for row in counts_raw}
+    name_rows = cast("list[dict[str, Any]]", tags.aggregate("name", limit=total_tags))
+    tag_names = [str(name_value) for row in name_rows if (name_value := row.get("value")) is not None]
+    all_tag_docs = cast("list[dict[str, Any]]", tags.get.in_(name=tag_names, limit=total_tags)) if tag_names else []
+    count_by_tag_id = _song_count_rows_for_tag_ids(
+        db,
+        [tag_id for tag in all_tag_docs if isinstance(tag_id := tag.get("_id"), str)],
+    )
+    tags_by_name: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    for tag in all_tag_docs:
+        tag_name = tag.get("name")
+        if isinstance(tag_name, str):
+            tags_by_name[tag_name].append(tag)
 
-    for row in cast("list[dict[str, Any]]", tags.aggregate("name", limit=total_tags)):
+    for row in name_rows:
         name_value = row.get("value")
         if name_value is None:
             continue
         name = str(name_value)
         values: dict[Any, int] = {
             tag["value"]: count_by_tag_id.get(tag_id, 0)
-            for tag in cast("list[dict[str, Any]]", tags.get(name=name, limit=total_tags))
+            for tag in tags_by_name.get(name, [])
             if isinstance(tag_id := tag.get("_id"), str) and "value" in tag
         }
         total_count = sum(values.values())
@@ -224,32 +255,34 @@ def get_tag_frequencies(db: Database, limit: int, namespace_prefix: str) -> dict
     genre_counts: defaultdict[str, int] = defaultdict(int)
 
     if total_tags > 0:
-        for row in cast("list[dict[str, Any]]", tags.aggregate("name", limit=total_tags)):
-            name_value = row.get("value")
-            if name_value is None:
-                continue
-            name = str(name_value)
-            if not name.startswith("nom:"):
-                continue
-            key_part = name.removeprefix(namespace_prefix)
-            for tag in cast("list[dict[str, Any]]", tags.get(name=name, limit=total_tags)):
-                tag_id = tag.get("_id")
-                if not isinstance(tag_id, str) or "value" not in tag:
-                    continue
-                song_count = _song_count_for_tag(db, tag_id)
-                if song_count <= 0:
-                    continue
-                nom_counts[f"{key_part}:{tag['value']}"] += song_count
+        tag_names = [
+            str(name_value)
+            for row in cast("list[dict[str, Any]]", tags.aggregate("name", limit=total_tags))
+            if (name_value := row.get("value")) is not None
+        ]
+        relevant_names = [name for name in tag_names if name.startswith("nom:") or name == "genre"]
+        all_tag_docs = (
+            cast("list[dict[str, Any]]", tags.get.in_(name=relevant_names, limit=total_tags)) if relevant_names else []
+        )
+        count_by_tag_id = _song_count_rows_for_tag_ids(
+            db,
+            [tag_id for tag in all_tag_docs if isinstance(tag_id := tag.get("_id"), str)],
+        )
 
-        for tag in cast("list[dict[str, Any]]", tags.get(name="genre", limit=total_tags)):
+        for tag in all_tag_docs:
             tag_id = tag.get("_id")
-            genre_value = tag.get("value")
-            if not isinstance(tag_id, str) or not isinstance(genre_value, str):
+            tag_name = tag.get("name")
+            tag_value = tag.get("value")
+            if not isinstance(tag_id, str) or not isinstance(tag_name, str):
                 continue
-            song_count = _song_count_for_tag(db, tag_id)
+            song_count = count_by_tag_id.get(tag_id, 0)
             if song_count <= 0:
                 continue
-            genre_counts[genre_value] += song_count
+            if tag_name.startswith("nom:"):
+                key_part = tag_name.removeprefix(namespace_prefix)
+                nom_counts[f"{key_part}:{tag_value}"] += song_count
+            elif tag_name == "genre" and isinstance(tag_value, str):
+                genre_counts[tag_value] += song_count
 
     nom_tag_rows = sorted(nom_counts.items(), key=lambda item: (-item[1], item[0]))[:limit]
     genre_rows = sorted(genre_counts.items(), key=lambda item: (-item[1], item[0]))[:limit]

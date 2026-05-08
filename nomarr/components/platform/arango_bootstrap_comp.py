@@ -15,7 +15,7 @@ import os
 import time
 
 from arango import ArangoClient
-from arango.exceptions import CollectionCreateError, DocumentInsertError, GraphCreateError, IndexCreateError
+from arango.exceptions import CollectionCreateError, DocumentInsertError, IndexCreateError
 
 from nomarr.components.library.library_records_comp import list_all_library_keys
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones, discover_heads_no_db
@@ -111,8 +111,6 @@ def _create_collections(db: DatabaseLike) -> None:
         "calibration_history",
         "health",
         "worker_claims",  # Discovery worker claims (Phase 2)
-        # ML capacity probe collections (GPU/CPU adaptive resource management)
-        "ml_capacity_estimates",  # Stores probe results per model_set_hash
         "locks",  # Unified lock system (capacity_probe, vector_promotion, etc.)
         "worker_restart_policy",  # Worker restart state persistence
         # Canonical raw ML output streams (one per file/output pair)
@@ -380,47 +378,12 @@ def _ensure_index(
 
 
 def _create_graphs(db: DatabaseLike) -> None:
-    """Create named graphs for traversals.
+    """Named graphs have been dropped (V030). No graphs are created.
 
-    Creates "tag_graph" for song→tag relationships.
+    ArangoDB named graphs were removed because no AQL traversal queries used
+    them — edge collections are queried directly. This stub is retained so the
+    ``ensure_schema`` call-site does not need updating.
     """
-    graph_name = "tag_graph"
-
-    if not db.has_graph(graph_name):
-        with contextlib.suppress(GraphCreateError):
-            # Graph already exists (race condition)
-            db.create_graph(
-                name=graph_name,
-                edge_definitions=[
-                    {
-                        "edge_collection": "song_has_tags",
-                        "from_vertex_collections": ["library_files"],
-                        "to_vertex_collections": ["tags"],
-                    },
-                ],
-            )
-
-    # Navidrome graph: play traversal path
-    # tracks →[has_plays]→ playcount buckets; tracks →[has_nd_id]→ library_files
-    nd_graph = "navidrome_graph"
-
-    if not db.has_graph(nd_graph):
-        with contextlib.suppress(GraphCreateError):
-            db.create_graph(
-                name=nd_graph,
-                edge_definitions=[
-                    {
-                        "edge_collection": "has_plays",
-                        "from_vertex_collections": ["navidrome_tracks"],
-                        "to_vertex_collections": ["navidrome_playcounts"],
-                    },
-                    {
-                        "edge_collection": "has_nd_id",
-                        "from_vertex_collections": ["navidrome_tracks"],
-                        "to_vertex_collections": ["library_files"],
-                    },
-                ],
-            )
 
 
 def _validate_no_legacy_calibration(db: DatabaseLike) -> None:

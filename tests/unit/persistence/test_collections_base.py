@@ -90,6 +90,68 @@ class TestBaseCollectionField:
 
 @pytest.mark.unit
 @pytest.mark.mocked
+class TestBaseCollectionConnectionCounts:
+    """Tests for ``BaseCollection`` connection-count delegation."""
+
+    def test_count_inbound_connections_delegates_to_verbs(self) -> None:
+        collection = collections_base.BaseCollection(_make_db(), "tags")
+
+        with patch(
+            "nomarr.persistence.collections_base.verbs.count_inbound_connections",
+            return_value=[{"tag_id": "tags/1", "count": 2}],
+        ) as inbound_mock:
+            result = collection.count_inbound_connections(
+                "song_has_tags",
+                filter_field="_id",
+                filter_values=["tags/1"],
+                return_field="_id",
+                label="tag_id",
+                limit=5,
+                offset=1,
+            )
+
+        assert result == [{"tag_id": "tags/1", "count": 2}]
+        inbound_mock.assert_called_once_with(
+            collection._db,
+            "tags",
+            "song_has_tags",
+            "_id",
+            ["tags/1"],
+            return_field="_id",
+            label="tag_id",
+            limit=5,
+            offset=1,
+        )
+
+    def test_count_outbound_connections_delegates_to_verbs(self) -> None:
+        collection = collections_base.BaseCollection(_make_db(), "tags")
+
+        with patch(
+            "nomarr.persistence.collections_base.verbs.count_outbound_connections",
+            return_value=[{"tag_id": "tags/1", "count": 1}],
+        ) as outbound_mock:
+            result = collection.count_outbound_connections(
+                "tag_model_output",
+                filter_field="_id",
+                filter_values=["tags/1"],
+            )
+
+        assert result == [{"tag_id": "tags/1", "count": 1}]
+        outbound_mock.assert_called_once_with(
+            collection._db,
+            "tags",
+            "tag_model_output",
+            "_id",
+            ["tags/1"],
+            return_field="_id",
+            label="value",
+            limit=None,
+            offset=0,
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
 class TestDocumentCollectionInit:
     """Tests for ``DocumentCollection`` initialization."""
 

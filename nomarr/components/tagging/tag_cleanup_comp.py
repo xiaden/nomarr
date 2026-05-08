@@ -31,9 +31,7 @@ def _tag_model_output_ns(db: Database) -> Any:
 def _get_orphaned_tag_ids(db: Database) -> set[str]:
     """Return tag ids that are unreferenced by song or model-output edges."""
     tags = _tags_ns(db)
-    library_files = _library_files_ns(db)
-    song_has_tags = _song_has_tags_ns(db)
-    tag_model_output = _tag_model_output_ns(db)
+    _tag_model_output_ns(db)
 
     all_tag_ids = {
         str(tag_id)
@@ -45,13 +43,33 @@ def _get_orphaned_tag_ids(db: Database) -> set[str]:
 
     song_edge_targets = {
         str(tag_id)
-        for row in cast("list[dict[str, Any]]", library_files.aggregate("song_has_tags", limit=song_has_tags.count()))
-        if (tag_id := row.get("value")) is not None
+        for row in cast(
+            "list[dict[str, Any]]",
+            tags.count_inbound_connections(
+                "song_has_tags",
+                filter_field="_id",
+                filter_values=list(all_tag_ids),
+                return_field="_id",
+                label="tag_id",
+                limit=len(all_tag_ids),
+            ),
+        )
+        if row.get("count", 0) > 0 and (tag_id := row.get("tag_id")) is not None
     }
     model_edge_sources = {
         str(tag_id)
-        for row in cast("list[dict[str, Any]]", tag_model_output.aggregate("_from", limit=tag_model_output.count()))
-        if (tag_id := row.get("value")) is not None
+        for row in cast(
+            "list[dict[str, Any]]",
+            tags.count_outbound_connections(
+                "tag_model_output",
+                filter_field="_id",
+                filter_values=list(all_tag_ids),
+                return_field="_id",
+                label="tag_id",
+                limit=len(all_tag_ids),
+            ),
+        )
+        if row.get("count", 0) > 0 and (tag_id := row.get("tag_id")) is not None
     }
     return all_tag_ids - song_edge_targets - model_edge_sources
 

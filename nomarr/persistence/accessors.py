@@ -100,6 +100,50 @@ class FieldAccessor:
     def collect(self, *, limit: int | None = None, offset: int = 0) -> list[Any]:
         return verbs.collect_field(self._db, self._collection, self._field, limit=limit, offset=offset)
 
+    def count_inbound_connections(
+        self,
+        edge_collection: str,
+        values: list[Any],
+        *,
+        return_field: str = "_id",
+        label: str = "value",
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Document]:
+        return verbs.count_inbound_connections(
+            self._db,
+            self._collection,
+            edge_collection,
+            self._field,
+            values,
+            return_field=return_field,
+            label=label,
+            limit=limit,
+            offset=offset,
+        )
+
+    def count_outbound_connections(
+        self,
+        edge_collection: str,
+        values: list[Any],
+        *,
+        return_field: str = "_id",
+        label: str = "value",
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Document]:
+        return verbs.count_outbound_connections(
+            self._db,
+            self._collection,
+            edge_collection,
+            self._field,
+            values,
+            return_field=return_field,
+            label=label,
+            limit=limit,
+            offset=offset,
+        )
+
 
 class CollectionGet:
     def __init__(self, db: SafeDatabase, collection: str, field_accessors: dict[str, FieldAccessor]) -> None:

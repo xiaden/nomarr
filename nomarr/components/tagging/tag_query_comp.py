@@ -225,10 +225,20 @@ def list_tags_by_name(
     sort_by_count: bool = False,
 ) -> list[dict[str, Any]]:
     """List tag values, optionally filtered by tag name and search text."""
-    library_files = _library_files_ns(db)
     matched_tags = _filter_tags_by_search(_tags_for_name(db, name), search)
+    count_rows = cast(
+        "list[dict[str, Any]]",
+        db.tags.count_inbound_connections(
+            "song_has_tags",
+            filter_field="_id",
+            filter_values=[tag_id for tag in matched_tags if isinstance(tag_id := tag.get("_id"), str)],
+            return_field="_id",
+            label="tag_id",
+            limit=len(matched_tags),
+        ),
+    )
     count_by_tag_id = {
-        row["value"]: row["count"] for row in cast("list[dict[str, Any]]", library_files.aggregate("song_has_tags"))
+        str(tag_id): int(row.get("count", 0)) for row in count_rows if (tag_id := row.get("tag_id")) is not None
     }
 
     if sort_by_count:

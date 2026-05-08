@@ -159,29 +159,35 @@ class TestGetTagValueCounts:
             {"_id": 3, "value": "Skip"},
         ]
 
-        mock_db.library_files.aggregate.return_value = [
-            {"value": "tags/1", "count": 4},
-            {"value": "tags/2", "count": 2},
+        mock_db.tags.count_inbound_connections.return_value = [
+            {"tag_id": "tags/1", "count": 4},
+            {"tag_id": "tags/2", "count": 2},
         ]
 
         result = get_tag_value_counts(mock_db, "genre")
 
         assert result == {"Rock": 4, "Jazz": 2}
         mock_db.tags.get.assert_called_once_with(name="genre", limit=3)
-        mock_db.library_files.aggregate.assert_called_once_with("song_has_tags")
+        mock_db.tags.count_inbound_connections.assert_called_once_with(
+            "song_has_tags",
+            filter_field="_id",
+            filter_values=["tags/1", "tags/2"],
+            return_field="_id",
+            label="tag_id",
+            limit=2,
+        )
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_empty_dict_when_no_tags_exist_for_relation(self) -> None:
         mock_db = MagicMock()
         mock_db.tags.count.return_value = 0
-        mock_db.library_files.aggregate.return_value = []
 
         result = get_tag_value_counts(mock_db, "genre")
 
         assert result == {}
-        mock_db.library_files.aggregate.assert_called_once_with("song_has_tags")
         mock_db.tags.get.assert_not_called()
+        mock_db.tags.count_inbound_connections.assert_not_called()
 
 
 class TestGetAllTagStatsBatched:
@@ -204,17 +210,15 @@ class TestGetAllTagStatsBatched:
         mock_db = MagicMock()
         mock_db.tags.count.return_value = 3
         mock_db.tags.aggregate.return_value = [{"value": "genre"}, {"value": "year"}]
-        mock_db.tags.get.side_effect = [
-            [
-                {"_id": "tags/1", "value": "Rock"},
-                {"_id": "tags/2", "value": "Jazz"},
-            ],
-            [{"_id": "tags/3", "value": 1999}],
+        mock_db.tags.get.in_.return_value = [
+            {"_id": "tags/1", "name": "genre", "value": "Rock"},
+            {"_id": "tags/2", "name": "genre", "value": "Jazz"},
+            {"_id": "tags/3", "name": "year", "value": 1999},
         ]
-        mock_db.library_files.aggregate.return_value = [
-            {"value": "tags/1", "count": 4},
-            {"value": "tags/2", "count": 2},
-            {"value": "tags/3", "count": 1},
+        mock_db.tags.count_inbound_connections.return_value = [
+            {"tag_id": "tags/1", "count": 4},
+            {"tag_id": "tags/2", "count": 2},
+            {"tag_id": "tags/3", "count": 1},
         ]
 
         result = get_all_tag_stats_batched(mock_db)
@@ -233,7 +237,15 @@ class TestGetAllTagStatsBatched:
                 "total_count": 1,
             },
         }
-        mock_db.library_files.aggregate.assert_called_once_with("song_has_tags")
+        mock_db.tags.get.in_.assert_called_once_with(name=["genre", "year"], limit=3)
+        mock_db.tags.count_inbound_connections.assert_called_once_with(
+            "song_has_tags",
+            filter_field="_id",
+            filter_values=["tags/1", "tags/2", "tags/3"],
+            return_field="_id",
+            label="tag_id",
+            limit=3,
+        )
 
 
 class TestGetYearDistribution:

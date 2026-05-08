@@ -41,6 +41,7 @@ PROBE_TIMEOUT_S = 120000  # Timeout waiting for another worker's probe
 CONSERVATIVE_BACKBONE_VRAM_MB = 8192  # Default if probe fails (EffNet worst case)
 CONSERVATIVE_WORKER_RAM_MB = 4096  # Default if probe fails
 PROBE_LOCK_TTL_MS = 1800 * 1000
+_CAPACITY_META_PREFIX = "capacity_estimate:"
 
 
 @dataclass
@@ -127,7 +128,7 @@ def _release_probe_lock(db: Database, model_set_hash: str) -> None:
 
 def _get_capacity_estimate(db: Database, model_set_hash: str) -> dict[str, Any] | None:
     """Read the persisted capacity estimate document for one model set."""
-    return cast("dict[str, Any] | None", db.ml_capacity.get(model_set_hash=model_set_hash))
+    return cast("dict[str, Any] | None", db.meta.get(key=f"{_CAPACITY_META_PREFIX}{model_set_hash}"))
 
 
 def _save_capacity_estimate(
@@ -150,15 +151,15 @@ def _save_capacity_estimate(
         "created_at": timestamp if existing is None else existing.get("created_at"),
         "updated_at": None if existing is None else timestamp,
     }
-    db.ml_capacity.upsert(
-        model_set_hash=model_set_hash,
-        fields={key: value for key, value in payload.items() if key != "model_set_hash"},
+    db.meta.upsert(
+        key=f"{_CAPACITY_META_PREFIX}{model_set_hash}",
+        fields={k: v for k, v in payload.items() if k != "model_set_hash"},
     )
 
 
 def _delete_capacity_estimate(db: Database, model_set_hash: str) -> None:
     """Delete the stored capacity estimate and any related probe lock."""
-    db.ml_capacity.delete(model_set_hash=model_set_hash)
+    db.meta.delete(key=f"{_CAPACITY_META_PREFIX}{model_set_hash}")
     _release_probe_lock(db, model_set_hash)
 
 

@@ -29,7 +29,6 @@ from nomarr.persistence.collections import (
     Locks,
     Meta,
     Migrations,
-    MlCapacity,
     MlModelOutputs,
     MlModels,
     MlOutputStreams,
@@ -78,7 +77,6 @@ EXPECTED_ALL = [
     "Locks",
     "Meta",
     "Migrations",
-    "MlCapacity",
     "MlModelOutputs",
     "MlModels",
     "MlOutputStreams",
@@ -107,7 +105,6 @@ DOCUMENT_COLLECTION_CLASSES = [
     VramPromises,
     WorkerClaims,
     WorkerRestartPolicy,
-    MlCapacity,
     LibraryPipelineStates,
     LibraryScans,
     LibraryFolders,
@@ -133,7 +130,6 @@ DIRECT_DOCUMENT_COLLECTION_CLASSES = [
     VramPromises,
     WorkerClaims,
     WorkerRestartPolicy,
-    MlCapacity,
     LibraryPipelineStates,
     LibraryScans,
     LibraryFolders,
@@ -176,7 +172,7 @@ class TestModuleExports:
     def test_all_contains_exactly_expected_class_names(self) -> None:
         """`__all__` exports the complete typed collection surface."""
         assert __all__ == EXPECTED_ALL
-        assert len(__all__) == 39
+        assert len(__all__) == 38
 
 
 @pytest.mark.unit
@@ -316,12 +312,6 @@ class TestCustomCollectionNames:
         mock_db = MagicMock()
 
         assert Migrations(mock_db)._name == "applied_migrations"
-
-    def test_ml_capacity_uses_capacity_estimates_name(self) -> None:
-        """`MlCapacity` maps to the renamed capacity estimates collection."""
-        mock_db = MagicMock()
-
-        assert MlCapacity(mock_db)._name == "ml_capacity_estimates"
 
 
 @pytest.mark.unit

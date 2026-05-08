@@ -153,6 +153,54 @@ class BaseCollection:
         """
         return verbs.aggregate_field(self._db, self._name, field_name, filter=filter, limit=limit, offset=offset)
 
+    def count_inbound_connections(
+        self,
+        edge_collection: str,
+        *,
+        filter_field: str,
+        filter_values: list[Any],
+        return_field: str = "_id",
+        label: str = "value",
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Document]:
+        """Count inbound single-hop edge connections for matching documents."""
+        return verbs.count_inbound_connections(
+            self._db,
+            self._name,
+            edge_collection,
+            filter_field,
+            filter_values,
+            return_field=return_field,
+            label=label,
+            limit=limit,
+            offset=offset,
+        )
+
+    def count_outbound_connections(
+        self,
+        edge_collection: str,
+        *,
+        filter_field: str,
+        filter_values: list[Any],
+        return_field: str = "_id",
+        label: str = "value",
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Document]:
+        """Count outbound single-hop edge connections for matching documents."""
+        return verbs.count_outbound_connections(
+            self._db,
+            self._name,
+            edge_collection,
+            filter_field,
+            filter_values,
+            return_field=return_field,
+            label=label,
+            limit=limit,
+            offset=offset,
+        )
+
     def truncate(self) -> None:
         """Remove all documents from the collection."""
         verbs.truncate(self._db, self._name)

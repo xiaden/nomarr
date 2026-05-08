@@ -191,33 +191,6 @@ class WorkerRestartPolicy(DocumentCollection):
         self.updated_at_wall_ms = self._field("updated_at_wall_ms")
 
 
-class MlCapacity(DocumentCollection):
-    """Stores measured ML capacity estimates per model-set hash.
-
-    The ArangoDB collection name is ``ml_capacity_estimates`` (overrides the default
-    derived from the class name). Each record captures VRAM and RAM measurements from
-    a capacity-probe run for a specific combination of loaded models.
-    """
-
-    model_set_hash: FieldAccessor  # str, unique
-    measured_backbone_vram_mb: FieldAccessor  # int
-    estimated_worker_ram_mb: FieldAccessor  # int
-    probe_duration_s: FieldAccessor  # float
-    probed_by: FieldAccessor  # str
-    created_at: FieldAccessor  # int | None
-    updated_at: FieldAccessor  # int | None
-
-    def __init__(self, db: SafeDatabase) -> None:
-        super().__init__(db, "ml_capacity_estimates")
-        self.model_set_hash = self._field("model_set_hash", unique=True)
-        self.measured_backbone_vram_mb = self._field("measured_backbone_vram_mb")
-        self.estimated_worker_ram_mb = self._field("estimated_worker_ram_mb")
-        self.probe_duration_s = self._field("probe_duration_s")
-        self.probed_by = self._field("probed_by")
-        self.created_at = self._field("created_at")
-        self.updated_at = self._field("updated_at")
-
-
 class LibraryPipelineStates(DocumentCollection):
     library_key: FieldAccessor  # str, unique
     pipeline_state: FieldAccessor  # str
@@ -769,7 +742,6 @@ __all__ = [
     "Locks",
     "Meta",
     "Migrations",
-    "MlCapacity",
     "MlModelOutputs",
     "MlModels",
     "MlOutputStreams",

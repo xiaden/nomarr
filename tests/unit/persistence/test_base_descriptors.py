@@ -41,6 +41,59 @@ class TestFieldAccessor:
             [{"path": "song.flac", "size": 123}],
         )
 
+    def test_count_inbound_connections_uses_bound_field(self) -> None:
+        safe_db = MagicMock()
+        accessor = FieldAccessor(safe_db, "tags", "name")
+
+        with patch(
+            "nomarr.persistence.accessors.verbs.count_inbound_connections",
+            return_value=[{"tag": "Rock", "count": 4}],
+        ) as inbound_mock:
+            result = accessor.count_inbound_connections(
+                "song_has_tags",
+                ["genre"],
+                return_field="value",
+                label="tag",
+                limit=3,
+                offset=2,
+            )
+
+        assert result == [{"tag": "Rock", "count": 4}]
+        inbound_mock.assert_called_once_with(
+            safe_db,
+            "tags",
+            "song_has_tags",
+            "name",
+            ["genre"],
+            return_field="value",
+            label="tag",
+            limit=3,
+            offset=2,
+        )
+
+    def test_count_outbound_connections_uses_bound_field(self) -> None:
+        safe_db = MagicMock()
+        accessor = FieldAccessor(safe_db, "library_files", "_id")
+
+        with patch(
+            "nomarr.persistence.accessors.verbs.count_outbound_connections",
+            return_value=[{"song_id": "library_files/1", "count": 7}],
+        ) as outbound_mock:
+            result = accessor.count_outbound_connections("song_has_tags", ["library_files/1"], label="song_id")
+
+        assert result == [{"song_id": "library_files/1", "count": 7}]
+        outbound_mock.assert_called_once_with(
+            safe_db,
+            "library_files",
+            "song_has_tags",
+            "_id",
+            ["library_files/1"],
+            return_field="_id",
+            label="song_id",
+            limit=None,
+            offset=0,
+        )
+
 
 @pytest.mark.unit
 @pytest.mark.mocked

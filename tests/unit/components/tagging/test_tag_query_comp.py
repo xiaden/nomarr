@@ -202,9 +202,9 @@ class TestListTagsByName:
             {"_id": "tags/2", "_key": "2", "name": "genre", "value": "Jazz"},
             {"_id": 3, "_key": "3", "name": "genre", "value": "Skip"},
         ]
-        mock_db.library_files.aggregate.return_value = [
-            {"value": "tags/1", "count": 4},
-            {"value": "tags/2", "count": 2},
+        mock_db.tags.count_inbound_connections.return_value = [
+            {"tag_id": "tags/1", "count": 4},
+            {"tag_id": "tags/2", "count": 2},
         ]
 
         result = list_tags_by_name(mock_db, name="genre", limit=10, offset=0)
@@ -213,7 +213,14 @@ class TestListTagsByName:
             {"_id": "tags/2", "_key": "2", "name": "genre", "value": "Jazz", "song_count": 2},
             {"_id": "tags/1", "_key": "1", "name": "genre", "value": "Rock", "song_count": 4},
         ]
-        mock_db.library_files.aggregate.assert_called_once_with("song_has_tags")
+        mock_db.tags.count_inbound_connections.assert_called_once_with(
+            "song_has_tags",
+            filter_field="_id",
+            filter_values=["tags/1", "tags/2"],
+            return_field="_id",
+            label="tag_id",
+            limit=3,
+        )
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -224,9 +231,9 @@ class TestListTagsByName:
             {"_id": "tags/1", "_key": "1", "name": "genre", "value": "Rock"},
             {"_id": "tags/2", "_key": "2", "name": "genre", "value": "Jazz"},
         ]
-        mock_db.library_files.aggregate.return_value = [
-            {"value": "tags/1", "count": 1},
-            {"value": "tags/2", "count": 3},
+        mock_db.tags.count_inbound_connections.return_value = [
+            {"tag_id": "tags/1", "count": 1},
+            {"tag_id": "tags/2", "count": 3},
         ]
 
         result = list_tags_by_name(mock_db, name="genre", limit=10, offset=0, sort_by_count=True)
@@ -235,7 +242,14 @@ class TestListTagsByName:
             {"_id": "tags/2", "_key": "2", "name": "genre", "value": "Jazz", "song_count": 3},
             {"_id": "tags/1", "_key": "1", "name": "genre", "value": "Rock", "song_count": 1},
         ]
-        mock_db.library_files.aggregate.assert_called_once_with("song_has_tags")
+        mock_db.tags.count_inbound_connections.assert_called_once_with(
+            "song_has_tags",
+            filter_field="_id",
+            filter_values=["tags/1", "tags/2"],
+            return_field="_id",
+            label="tag_id",
+            limit=2,
+        )
 
 
 class TestGetTag:

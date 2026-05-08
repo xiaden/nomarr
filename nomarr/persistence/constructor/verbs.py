@@ -484,6 +484,114 @@ def aggregate_field(
     return [cast("AggResult", row) for row in cursor]
 
 
+def _count_connections(
+    db: SafeDatabase,
+    collection: str,
+    edge_collection: str,
+    edge_field: str,
+    filter_field: str,
+    filter_values: list[Any],
+    *,
+    return_field: str,
+    label: str,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[Document]:
+    """Count single-hop edge connections for documents in ``collection``.
+
+    The starting documents are filtered by ``doc[filter_field] IN filter_values``.
+    For each matching document, counts how many edges in ``edge_collection`` have
+    ``edge[edge_field] == doc._id`` and returns one row containing the selected
+    ``return_field`` value plus the connection count.
+    """
+    if not filter_values:
+        return []
+
+    query_lines = [
+        "FOR doc IN @@col",
+        "  FILTER doc[@filter_field] IN @filter_values",
+        "  LET edge_count = LENGTH(",
+        "    FOR edge IN @@edge",
+        "      FILTER edge[@edge_field] == doc._id",
+        "      RETURN 1",
+        "  )",
+        "  RETURN MERGE({[@label]: doc[@return_field]}, {count: edge_count})",
+    ]
+    query, pagination_vars = inject_pagination("\n".join(query_lines), limit, offset)
+    bind_vars = {
+        "@col": collection,
+        "@edge": edge_collection,
+        "edge_field": edge_field,
+        "filter_field": filter_field,
+        "filter_values": filter_values,
+        "return_field": return_field,
+        "label": label,
+    }
+    bind_vars.update(pagination_vars)
+    cursor = _execute_aql(db, query, bind_vars=bind_vars)
+    return _cursor_to_documents(cursor)
+
+
+def count_inbound_connections(
+    db: SafeDatabase,
+    collection: str,
+    edge_collection: str,
+    filter_field: str,
+    filter_values: list[Any],
+    *,
+    return_field: str = "_id",
+    label: str = "value",
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[Document]:
+    """Count inbound single-hop edge connections for matching documents.
+
+    Uses ``edge._to == doc._id`` semantics.
+    """
+    return _count_connections(
+        db,
+        collection,
+        edge_collection,
+        "_to",
+        filter_field,
+        filter_values,
+        return_field=return_field,
+        label=label,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def count_outbound_connections(
+    db: SafeDatabase,
+    collection: str,
+    edge_collection: str,
+    filter_field: str,
+    filter_values: list[Any],
+    *,
+    return_field: str = "_id",
+    label: str = "value",
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[Document]:
+    """Count outbound single-hop edge connections for matching documents.
+
+    Uses ``edge._from == doc._id`` semantics.
+    """
+    return _count_connections(
+        db,
+        collection,
+        edge_collection,
+        "_from",
+        filter_field,
+        filter_values,
+        return_field=return_field,
+        label=label,
+        limit=limit,
+        offset=offset,
+    )
+
+
 # ---------------------------------------------------------------------------
 # GRAPH verbs
 # ---------------------------------------------------------------------------

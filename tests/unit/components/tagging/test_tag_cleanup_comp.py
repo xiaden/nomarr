@@ -23,10 +23,12 @@ def _make_cleanup_db(
     mock_db = MagicMock()
     mock_db.tags.count.return_value = len(all_tag_ids)
     mock_db.tags.aggregate.return_value = [{"value": tag_id} for tag_id in all_tag_ids]
-    mock_db.song_has_tags.count.return_value = len(song_edge_targets)
-    mock_db.library_files.aggregate.return_value = [{"value": tag_id} for tag_id in song_edge_targets]
-    mock_db.tag_model_output.count.return_value = len(model_edge_sources)
-    mock_db.tag_model_output.aggregate.return_value = [{"value": tag_id} for tag_id in model_edge_sources]
+    mock_db.tags.count_inbound_connections.return_value = [
+        {"tag_id": tag_id, "count": 1} for tag_id in song_edge_targets
+    ] + [{"tag_id": tag_id, "count": 0} for tag_id in all_tag_ids if tag_id not in song_edge_targets]
+    mock_db.tags.count_outbound_connections.return_value = [
+        {"tag_id": tag_id, "count": 1} for tag_id in model_edge_sources
+    ] + [{"tag_id": tag_id, "count": 0} for tag_id in all_tag_ids if tag_id not in model_edge_sources]
     mock_db.tags.delete.cascade.return_value = cascade_result
     return mock_db
 
