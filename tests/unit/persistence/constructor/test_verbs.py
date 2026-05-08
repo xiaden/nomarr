@@ -681,6 +681,17 @@ class TestTraversalByIds:
         assert "tgt_field_1" in bind_vars
         assert "tgt_val_1" in bind_vars
 
+    def test_include_edge_returns_edge_metadata_in_aql(self) -> None:
+        """include_edge switches traversal to bind vertex+edge rows and returns edge metadata."""
+        db = _mock_db([{"start_id": "col/1", "e": {"_id": "edge/1"}, "v": {"_id": "tag/1"}}])
+
+        result = traversal_by_ids(db, "col", ["col/1"], "edge", "OUTBOUND", include_edge=True)
+
+        assert result == [{"start_id": "col/1", "e": {"_id": "edge/1"}, "v": {"_id": "tag/1"}}]
+        aql = db.aql.execute.call_args[0][0]
+        assert "FOR v, e IN 1..1 OUTBOUND" in aql
+        assert "RETURN {start_id: start_id, e: e, v: v}" in aql
+
 
 @pytest.mark.unit
 @pytest.mark.mocked

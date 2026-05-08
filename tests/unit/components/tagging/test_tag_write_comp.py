@@ -64,15 +64,22 @@ class TestSetSongTags:
     @pytest.mark.mocked
     def test_deletes_existing_edges_before_inserting(self) -> None:
         mock_db = MagicMock()
-        mock_db.song_has_tags.get.return_value = [
-            {"_id": "edges/old", "_to": "tags/old"},
+        mock_db.library_files.song_has_tags.by_ids.return_value = [
+            {
+                "start_id": "library_files/f1",
+                "e": {"_id": "edges/old", "_from": "library_files/f1", "_to": "tags/old"},
+                "v": {"_id": "tags/old", "name": "genre"},
+            },
         ]
-        mock_db.tags.get.side_effect = [{"_id": "tags/old", "name": "genre"}, None]
         mock_db.tags.upsert.return_value = ["tags/1"]
 
         set_song_tags(mock_db, "library_files/f1", "genre", ["rock"])
 
-        mock_db.song_has_tags.get.assert_called_once_with(_from="library_files/f1", limit=None)
+        mock_db.library_files.song_has_tags.by_ids.assert_called_once_with(
+            ["library_files/f1"],
+            name="genre",
+            include_edge=True,
+        )
         mock_db.song_has_tags.delete.assert_called_once_with(_id="edges/old")
         mock_db.song_has_tags.upsert.assert_called_once_with(_from="library_files/f1", _to="tags/1", fields={})
 
@@ -80,10 +87,13 @@ class TestSetSongTags:
     @pytest.mark.mocked
     def test_no_insert_when_values_empty(self) -> None:
         mock_db = MagicMock()
-        mock_db.song_has_tags.get.return_value = [
-            {"_id": "edges/old", "_to": "tags/old"},
+        mock_db.library_files.song_has_tags.by_ids.return_value = [
+            {
+                "start_id": "library_files/f1",
+                "e": {"_id": "edges/old", "_from": "library_files/f1", "_to": "tags/old"},
+                "v": {"_id": "tags/old", "name": "genre"},
+            },
         ]
-        mock_db.tags.get.return_value = {"_id": "tags/old", "name": "genre"}
 
         set_song_tags(mock_db, "library_files/f1", "genre", [])
 
@@ -95,7 +105,7 @@ class TestSetSongTags:
     @pytest.mark.mocked
     def test_skips_delete_when_no_existing_edges(self) -> None:
         mock_db = MagicMock()
-        mock_db.song_has_tags.get.return_value = []
+        mock_db.library_files.song_has_tags.by_ids.return_value = []
         mock_db.tags.upsert.return_value = ["tags/1"]
 
         set_song_tags(mock_db, "library_files/f1", "genre", ["rock"])
@@ -126,13 +136,17 @@ class TestSetSongTagsBatch:
             {"song_id": "library_files/a", "name": "genre", "values": ["rock"]},
             {"song_id": "library_files/b", "name": "mood", "values": ["happy"]},
         ]
-        mock_db.song_has_tags.get.side_effect = [
-            [{"_id": "edges/genre", "_to": "tags/old-genre"}],
-            [{"_id": "edges/mood", "_to": "tags/old-mood"}],
-        ]
-        mock_db.tags.get.side_effect = [
-            {"_id": "tags/old-genre", "name": "genre"},
-            {"_id": "tags/old-mood", "name": "mood"},
+        mock_db.library_files.song_has_tags.by_ids.return_value = [
+            {
+                "start_id": "library_files/a",
+                "e": {"_id": "edges/genre", "_from": "library_files/a", "_to": "tags/old-genre"},
+                "v": {"_id": "tags/old-genre", "name": "genre"},
+            },
+            {
+                "start_id": "library_files/b",
+                "e": {"_id": "edges/mood", "_from": "library_files/b", "_to": "tags/old-mood"},
+                "v": {"_id": "tags/old-mood", "name": "mood"},
+            },
         ]
         mock_db.tags.upsert.side_effect = [["tags/1"], ["tags/2"]]
 
@@ -147,6 +161,10 @@ class TestSetSongTagsBatch:
             call(_from="library_files/a", _to="tags/1", fields={}),
             call(_from="library_files/b", _to="tags/2", fields={}),
         ]
+        mock_db.library_files.song_has_tags.by_ids.assert_called_once_with(
+            ["library_files/a", "library_files/b"],
+            include_edge=True,
+        )
 
 
 class TestAddSongTag:
@@ -183,7 +201,7 @@ class TestRelinkTagEdges:
     @pytest.mark.mocked
     def test_returns_zero_moved_when_no_source_edges(self) -> None:
         mock_db = MagicMock()
-        mock_db.song_has_tags.get.return_value = []
+        mock_db.song_has_tags.get.in_.return_value = []
 
         result = relink_tag_edges(mock_db, "tags/source", "tags/target")
 
@@ -199,7 +217,8 @@ class TestRelinkTagEdges:
             {"_id": "song_has_tags/1", "_from": "library_files/a", "_to": "tags/source"},
             {"_id": "song_has_tags/2", "_from": "library_files/b", "_to": "tags/source"},
         ]
-        mock_db.song_has_tags.get.side_effect = [source_edges, [], []]
+        mock_db.song_has_tags.get.in_.return_value = source_edges
+        mock_db.song_has_tags.count.return_value = 0
 
         with patch("nomarr.components.tagging.tag_write_comp.cleanup_orphaned_tags") as mock_cleanup:
             result = relink_tag_edges(mock_db, "tags/source", "tags/target")
@@ -223,7 +242,8 @@ class TestRelinkTagEdges:
             {"_id": "song_has_tags/2", "_from": "library_files/b", "_to": "tags/source"},
         ]
         target_edges = [{"_id": "song_has_tags/3", "_from": "library_files/a", "_to": "tags/target"}]
-        mock_db.song_has_tags.get.side_effect = [source_edges, target_edges, []]
+        mock_db.song_has_tags.get.in_.return_value = source_edges + target_edges
+        mock_db.song_has_tags.count.return_value = 0
 
         with patch("nomarr.components.tagging.tag_write_comp.cleanup_orphaned_tags"):
             result = relink_tag_edges(mock_db, "tags/source", "tags/target")
@@ -241,7 +261,8 @@ class TestRelinkTagEdges:
             {"_id": "song_has_tags/2", "_from": "library_files/b", "_to": "tags/source"},
             {"_id": "song_has_tags/3", "_from": "library_files/c", "_to": "tags/source"},
         ]
-        mock_db.song_has_tags.get.side_effect = [source_edges, [], []]
+        mock_db.song_has_tags.get.in_.return_value = source_edges
+        mock_db.song_has_tags.count.return_value = 0
 
         with patch("nomarr.components.tagging.tag_write_comp.cleanup_orphaned_tags") as mock_cleanup:
             result = relink_tag_edges(

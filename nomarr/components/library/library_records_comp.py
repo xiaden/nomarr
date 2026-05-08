@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_file_query_comp import get_library_counts
 from nomarr.components.library.library_file_state_comp import count_untagged_files
+from nomarr.components.library.library_id_comp import normalize_library_id
 from nomarr.components.library.scan_lifecycle_comp import (
     _pipeline_state_to_scan_status,
     get_pipeline_state,
@@ -19,24 +20,11 @@ from nomarr.components.library.scan_lifecycle_comp import (
 )
 from nomarr.helpers.constants.pipeline_states import PIPELINE_ML_RUNNING
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.base_types import Field
 
 if TYPE_CHECKING:
     from nomarr.persistence.arango_client import DatabaseLike
     from nomarr.persistence.db import Database
-
-
-def normalize_library_id(library_id: str) -> str:
-    """Normalize a library reference to a full ``libraries/{key}`` id."""
-    if library_id.startswith("libraries/"):
-        return library_id
-    return f"libraries/{library_id}"
-
-
-def library_key_from_ref(library_id: str) -> str:
-    """Extract the library ``_key`` from either a full id or a bare key."""
-    if library_id.startswith("libraries/"):
-        return library_id.split("/", 1)[1]
-    return library_id
 
 
 def create_library_record(
@@ -138,9 +126,12 @@ def list_library_records(
             for row in db.libraries.aggregate("_id", limit=db.libraries.count())
             if isinstance(row.get("value"), str)
         ]
-        docs = [
-            doc for doc_id in ids if (doc := cast("dict[str, Any] | None", db.libraries.get(_id=doc_id))) is not None
-        ]
+        docs_by_id = {
+            str(doc_id): doc
+            for doc in cast("list[dict[str, Any]]", db.libraries.get.in_(Field("_id", ids), limit=None))
+            if isinstance((doc_id := doc.get("_id")), str)
+        }
+        docs = [docs_by_id[doc_id] for doc_id in ids if doc_id in docs_by_id]
 
     docs.sort(key=lambda doc: int(cast("int", doc.get("created_at", 0) or 0)))
     if not include_scan:

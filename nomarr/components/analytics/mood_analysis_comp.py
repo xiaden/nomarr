@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.analytics.analytics_comp import compute_dominant_vibes
 from nomarr.components.tagging.tag_stats_comp import get_library_stats
@@ -64,7 +64,7 @@ def _get_tag_edge_rows(db: Database, name: str, library_id: str | None = None) -
         return []
 
     # Fetch all song→tag edges for the entire tag name in a single IN query.
-    edge_docs = [edge_doc for tag_id in tag_id_to_value for edge_doc in db.song_has_tags.get.many(_to=tag_id)]
+    edge_docs = cast("list[dict[str, Any]]", db.song_has_tags.get.in_(_to=list(tag_id_to_value), limit=None))
     rows: list[tuple[str, str]] = []
     for edge_doc in edge_docs:
         file_id = edge_doc.get("_from")

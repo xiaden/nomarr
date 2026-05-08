@@ -321,12 +321,25 @@ def get_year_distribution(db: Database, library_id: str | None = None) -> list[d
     library_file_ids = _library_file_ids(db, library_id)
     song_has_tags = _song_has_tags_ns(db)
     edge_limit = int(song_has_tags.count()) if library_file_ids is not None else 0
+    year_tags = cast("list[dict[str, Any]]", tags.get(name="year", limit=total_tags))
+    count_by_tag_id = (
+        _song_count_rows_for_tag_ids(
+            db,
+            [tag_id for tag in year_tags if isinstance(tag_id := tag.get("_id"), str)],
+        )
+        if library_file_ids is None
+        else {}
+    )
     rows: list[dict[str, Any]] = []
-    for tag in cast("list[dict[str, Any]]", tags.get(name="year", limit=total_tags)):
+    for tag in year_tags:
         tag_id = tag.get("_id")
         if not isinstance(tag_id, str) or "value" not in tag:
             continue
-        song_count = _scoped_song_count_for_tag(db, tag_id, library_file_ids, edge_limit)
+        song_count = (
+            count_by_tag_id.get(tag_id, 0)
+            if library_file_ids is None
+            else _scoped_song_count_for_tag(db, tag_id, library_file_ids, edge_limit)
+        )
         if song_count <= 0:
             continue
         rows.append({"year": tag["value"], "count": song_count})
@@ -355,13 +368,30 @@ def get_genre_distribution(
     library_file_ids = _library_file_ids(db, library_id)
     song_has_tags = _song_has_tags_ns(db)
     edge_limit = int(song_has_tags.count()) if library_file_ids is not None else 0
+    genre_tags = cast("list[dict[str, Any]]", tags.get(name="genre", limit=total_tags))
+    count_by_tag_id = (
+        _song_count_rows_for_tag_ids(
+            db,
+            [
+                tag_id
+                for tag in genre_tags
+                if isinstance(tag_id := tag.get("_id"), str) and isinstance(tag.get("value"), str)
+            ],
+        )
+        if library_file_ids is None
+        else {}
+    )
     rows: list[dict[str, Any]] = []
-    for tag in cast("list[dict[str, Any]]", tags.get(name="genre", limit=total_tags)):
+    for tag in genre_tags:
         tag_id = tag.get("_id")
         genre_value = tag.get("value")
         if not isinstance(tag_id, str) or not isinstance(genre_value, str):
             continue
-        song_count = _scoped_song_count_for_tag(db, tag_id, library_file_ids, edge_limit)
+        song_count = (
+            count_by_tag_id.get(tag_id, 0)
+            if library_file_ids is None
+            else _scoped_song_count_for_tag(db, tag_id, library_file_ids, edge_limit)
+        )
         if song_count <= 0:
             continue
         rows.append({"genre": genre_value, "count": song_count})

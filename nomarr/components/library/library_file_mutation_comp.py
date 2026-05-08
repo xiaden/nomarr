@@ -10,6 +10,7 @@ from nomarr.components.library.library_file_state_comp import (
     initialize_file_states_batch,
     transition_file_state,
 )
+from nomarr.components.library.library_id_comp import library_key_from_ref
 from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
 from nomarr.helpers.dto import LibraryPath
 from nomarr.helpers.time_helper import now_ms
@@ -57,7 +58,7 @@ def upsert_library_file(
     scanned_at = now_ms().value
     normalized_path = str(path.relative)
     absolute_path = str(path.absolute)
-    library_key = library_id.split("/", 1)[1] if "/" in library_id else library_id
+    library_key = library_key_from_ref(library_id)
     existing = cast("dict[str, Any] | None", db.library_files.get(path=absolute_path))
     update_fields = {
         "library_key": library_key,
@@ -295,8 +296,7 @@ def get_file_library_key(db: Database, file_id: str) -> str | None:
     if not results:
         return None
     edge = results[0]
-    library_id = str(edge["_from"])
-    return library_id.split("/", 1)[1] if "/" in library_id else library_id
+    return library_key_from_ref(str(edge["_from"]))
 
 
 def set_chromaprint(db: Database, file_id: str, chromaprint: str) -> None:

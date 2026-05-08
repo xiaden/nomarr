@@ -735,6 +735,7 @@ def traversal_by_ids(
     offset: int = 0,
     target_filter: dict[str, Any] | None = None,
     target_like_starts_with: tuple[str, str] | None = None,
+    include_edge: bool = False,
 ) -> list[dict[str, Any]]:
     """Graph traversal starting from multiple known document IDs."""
     del collection
@@ -765,11 +766,14 @@ def traversal_by_ids(
     if filter_clauses:
         filter_block = f" FILTER {' AND '.join(filter_clauses)}"
 
+    traversal_vars = "v, e" if include_edge else "v"
+    return_expr = "{start_id: start_id, e: e, v: v}" if include_edge else "{start_id: start_id, v: v}"
+
     aql, pagination_vars = inject_pagination(
         f"FOR start_id IN @start_ids "
-        f"FOR v IN 1..1 {traversal_direction} start_id @@edge"
+        f"FOR {traversal_vars} IN 1..1 {traversal_direction} start_id @@edge"
         f"{filter_block} "
-        "RETURN {start_id: start_id, v: v}",
+        f"RETURN {return_expr}",
         limit,
         offset,
     )

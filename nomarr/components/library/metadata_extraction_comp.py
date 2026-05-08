@@ -253,11 +253,17 @@ def extract_metadata(file_path: LibraryPath, namespace: str = "nom") -> dict[str
     return metadata
 
 
-def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) -> None:
-    """Extract metadata from M4A/MP4 files using MP4 atoms."""
-    if not isinstance(audio, MP4) or not audio.tags:
-        return
-    metadata["all_tags"] = normalize_mp4_tags(audio.tags)
+def _apply_common_tag_fields(metadata: dict[str, Any], namespace: str) -> None:
+    """Populate artist, title, album, genre, year, track_number, and nom_tags from all_tags.
+
+    Mutates *metadata* in place. Called after each format-specific normalizer
+    has populated ``metadata["all_tags"]``.
+
+    Args:
+        metadata: In-progress metadata dict (must already have ``all_tags`` populated).
+        namespace: Tag namespace prefix used to partition nom tags (e.g. ``"nom"``).
+
+    """
     artist_value, artists_value = resolve_artists(metadata["all_tags"])
     metadata["title"] = _parse_single_value(metadata["all_tags"].get("title"))
     metadata["artist"] = artist_value
@@ -288,6 +294,14 @@ def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) 
     for key in keys_to_remove:
         del metadata["all_tags"][key]
     metadata["nom_tags"] = nom_tags
+
+
+def _extract_mp4_metadata(audio: Any, metadata: dict[str, Any], namespace: str) -> None:
+    """Extract metadata from M4A/MP4 files using MP4 atoms."""
+    if not isinstance(audio, MP4) or not audio.tags:
+        return
+    metadata["all_tags"] = normalize_mp4_tags(audio.tags)
+    _apply_common_tag_fields(metadata, namespace)
 
 
 def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str) -> None:
@@ -295,36 +309,7 @@ def _extract_flac_metadata(audio: Any, metadata: dict[str, Any], namespace: str)
     if not isinstance(audio, FLAC):
         return
     metadata["all_tags"] = normalize_vorbis_tags(dict(audio))
-    artist_value, artists_value = resolve_artists(metadata["all_tags"])
-    metadata["title"] = _parse_single_value(metadata["all_tags"].get("title"))
-    metadata["artist"] = artist_value
-    metadata["artists"] = artists_value
-    metadata["album"] = _parse_single_value(metadata["all_tags"].get("album"))
-    metadata["genre"] = _parse_multi_values(metadata["all_tags"].get("genre"))
-    year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(
-        metadata["all_tags"].get("date"),
-    )
-    if year_str:
-        with contextlib.suppress(ValueError, IndexError):
-            metadata["year"] = int(year_str[:4])
-    track_str = _parse_single_value(metadata["all_tags"].get("tracknumber"))
-    if track_str:
-        with contextlib.suppress(ValueError, IndexError):
-            metadata["track_number"] = int(track_str.split("/")[0])
-    if artist_value:
-        metadata["all_tags"]["artist"] = json.dumps([artist_value], ensure_ascii=False)
-    if artists_value:
-        metadata["all_tags"]["artists"] = json.dumps(artists_value, ensure_ascii=False)
-    nom_tags: dict[str, str] = {}
-    keys_to_remove = []
-    for key, value in metadata["all_tags"].items():
-        if isinstance(key, str) and key.lower().startswith(f"{namespace.lower()}:"):
-            tag_key = key[len(namespace) + 1 :]
-            nom_tags[tag_key] = value
-            keys_to_remove.append(key)
-    for key in keys_to_remove:
-        del metadata["all_tags"][key]
-    metadata["nom_tags"] = nom_tags
+    _apply_common_tag_fields(metadata, namespace)
 
 
 def _extract_mp3_metadata(file_path: LibraryPath, metadata: dict[str, Any], namespace: str) -> None:
@@ -332,36 +317,7 @@ def _extract_mp3_metadata(file_path: LibraryPath, metadata: dict[str, Any], name
     try:
         id3 = ID3(str(file_path.absolute))
         metadata["all_tags"] = normalize_id3_tags(dict(id3))
-        artist_value, artists_value = resolve_artists(metadata["all_tags"])
-        metadata["title"] = _parse_single_value(metadata["all_tags"].get("title"))
-        metadata["artist"] = artist_value
-        metadata["artists"] = artists_value
-        metadata["album"] = _parse_single_value(metadata["all_tags"].get("album"))
-        metadata["genre"] = _parse_multi_values(metadata["all_tags"].get("genre"))
-        year_str = _parse_single_value(metadata["all_tags"].get("year")) or _parse_single_value(
-            metadata["all_tags"].get("date"),
-        )
-        if year_str:
-            with contextlib.suppress(ValueError, IndexError):
-                metadata["year"] = int(year_str[:4])
-        track_str = _parse_single_value(metadata["all_tags"].get("tracknumber"))
-        if track_str:
-            with contextlib.suppress(ValueError, IndexError):
-                metadata["track_number"] = int(track_str.split("/")[0])
-        if artist_value:
-            metadata["all_tags"]["artist"] = json.dumps([artist_value], ensure_ascii=False)
-        if artists_value:
-            metadata["all_tags"]["artists"] = json.dumps(artists_value, ensure_ascii=False)
-        nom_tags: dict[str, str] = {}
-        keys_to_remove = []
-        for key, value in metadata["all_tags"].items():
-            if isinstance(key, str) and key.lower().startswith(f"{namespace.lower()}:"):
-                tag_key = key[len(namespace) + 1 :]
-                nom_tags[tag_key] = value
-                keys_to_remove.append(key)
-        for key in keys_to_remove:
-            del metadata["all_tags"][key]
-        metadata["nom_tags"] = nom_tags
+        _apply_common_tag_fields(metadata, namespace)
     except Exception as e:
         logger.debug("[metadata_extraction] Failed to extract MP3 tags from %s: %s", file_path, e)
 

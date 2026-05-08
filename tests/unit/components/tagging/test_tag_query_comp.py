@@ -9,6 +9,7 @@ import pytest
 from nomarr.components.tagging.tag_query_comp import (
     _candidate_filter_values,
     _enrich_tag,
+    _file_ids_for_tag_docs,
     _filter_tags_by_search,
     _first_name_value,
     _matches_tag_operator,
@@ -311,6 +312,32 @@ class TestListSongsForTag:
         assert result == []
 
 
+class TestFileIdsForTagDocs:
+    """Tests for _file_ids_for_tag_docs."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_batches_edge_lookup_with_single_in_query(self) -> None:
+        mock_db = MagicMock()
+        mock_db.song_has_tags.get.in_.return_value = [
+            {"_from": "library_files/1", "_to": "tags/1"},
+            {"_from": "library_files/2", "_to": "tags/2"},
+            {"_from": "library_files/1", "_to": "tags/2"},
+        ]
+
+        result = _file_ids_for_tag_docs(
+            mock_db,
+            [
+                {"_id": "tags/1", "value": "Rock"},
+                {"_id": "tags/2", "value": "Jazz"},
+                {"_id": 3, "value": "Skip"},
+            ],
+        )
+
+        assert result == {"library_files/1", "library_files/2"}
+        mock_db.song_has_tags.get.in_.assert_called_once_with(_to=["tags/1", "tags/2"], limit=None)
+
+
 class TestCountTagsByName:
     """Tests for count_tags_by_name."""
 
@@ -541,7 +568,7 @@ class TestGetFileIdsMatchingTag:
             {"_id": "tags/1", "value": "Rock"},
             {"_id": "tags/2", "value": "Jazz"},
         ]
-        mock_db.song_has_tags.get.return_value = [
+        mock_db.song_has_tags.get.in_.return_value = [
             {"_from": "library_files/1"},
             {"_from": "library_files/2"},
         ]
@@ -549,4 +576,4 @@ class TestGetFileIdsMatchingTag:
         result = get_file_ids_matching_tag(mock_db, "genre", "eq", "Rock")
 
         assert result == {"library_files/1", "library_files/2"}
-        mock_db.song_has_tags.get.assert_called_once_with(_to="tags/1", limit=None)
+        mock_db.song_has_tags.get.in_.assert_called_once_with(_to=["tags/1"], limit=None)

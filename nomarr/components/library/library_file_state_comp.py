@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from arango.exceptions import DocumentInsertError
 
+from nomarr.components.library.library_id_comp import normalize_library_id
 from nomarr.helpers.constants.file_states import (
     ALL_STATE_VERTICES,
     AXIS_PAIRS,
@@ -64,10 +65,6 @@ def _insert_file_state_edges_ignoring_duplicates(db: Database, edge_docs: list[d
                 raise
 
 
-def _normalize_library_id(library_id: str) -> str:
-    return library_id if "/" in library_id else f"libraries/{library_id}"
-
-
 def _state_file_docs(db: Database, state_id: str) -> list[dict[str, Any]]:
     return cast("list[dict[str, Any]]", db.file_states.file_has_state(state_id, limit=None))
 
@@ -78,7 +75,7 @@ def _state_file_ids(db: Database, state_id: str) -> set[str]:
 
 def _library_file_edges(db: Database, library_id: str) -> list[dict[str, Any]]:
     return cast(
-        "list[dict[str, Any]]", db.library_contains_file.get(_from=_normalize_library_id(library_id), limit=None)
+        "list[dict[str, Any]]", db.library_contains_file.get(_from=normalize_library_id(library_id), limit=None)
     )
 
 
@@ -143,7 +140,7 @@ def clear_all_states_batch(db: Database, file_ids: list[str]) -> int:
     """Remove all state edges for a batch of files."""
     if not file_ids:
         return 0
-    return sum(db.file_has_state.delete(_from=file_id) for file_id in file_ids)
+    return int(db.file_has_state.delete.in_(Field("_from", file_ids)))
 
 
 def discover_next_untagged_file(
@@ -267,7 +264,7 @@ def file_has_tagged_state(db: Database, file_id: str) -> bool:
 
 def find_short_files_missing_too_short(db: Database, library_id: str, min_duration_s: int) -> list[str]:
     """Return short files that are missing the ``too_short`` state."""
-    library_files = db.libraries.library_contains_file(_normalize_library_id(library_id), limit=None)
+    library_files = db.libraries.library_contains_file(normalize_library_id(library_id), limit=None)
     too_short_ids = {
         edge["_from"] for edge in cast("list[dict[str, Any]]", db.file_has_state.get(_to=STATE_TOO_SHORT, limit=None))
     }
@@ -301,7 +298,7 @@ def get_files_with_incomplete_tags(
             tagged file missing one or more expected heads.
     """
     tagged_files = _state_file_docs(db, STATE_TAGGED)
-    normalized_library_id = _normalize_library_id(library_id) if library_id is not None else None
+    normalized_library_id = normalize_library_id(library_id) if library_id is not None else None
     if normalized_library_id is not None:
         library_file_ids = _library_file_ids(db, normalized_library_id)
         tagged_files = [file_doc for file_doc in tagged_files if file_doc["_id"] in library_file_ids]

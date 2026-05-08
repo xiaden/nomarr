@@ -272,16 +272,12 @@ class TestGetYearDistribution:
             {"_id": "tags/2020", "value": "2020"},
             {"_id": "tags/zero", "value": 2022},
         ]
-
-        def count_for_tag(*, _to: str) -> int:
-            return {
-                "tags/2019": 2,
-                "tags/2021": 1,
-                "tags/2020": 3,
-                "tags/zero": 0,
-            }[_to]
-
-        mock_db.song_has_tags.count.side_effect = count_for_tag
+        mock_db.tags.count_inbound_connections.return_value = [
+            {"tag_id": "tags/2019", "count": 2},
+            {"tag_id": "tags/2021", "count": 1},
+            {"tag_id": "tags/2020", "count": 3},
+            {"tag_id": "tags/zero", "count": 0},
+        ]
 
         result = get_year_distribution(mock_db)
 
@@ -290,6 +286,14 @@ class TestGetYearDistribution:
             {"year": "2020", "count": 3},
             {"year": 2019, "count": 2},
         ]
+        mock_db.tags.count_inbound_connections.assert_called_once_with(
+            "song_has_tags",
+            filter_field="_id",
+            filter_values=["tags/2019", "tags/2021", "tags/2020", "tags/zero"],
+            return_field="_id",
+            label="tag_id",
+            limit=4,
+        )
 
 
 class TestGetGenreDistribution:
@@ -316,15 +320,11 @@ class TestGetGenreDistribution:
             {"_id": "tags/blues", "value": "Blues"},
             {"_id": "tags/skip", "value": 123},
         ]
-
-        def count_for_tag(*, _to: str) -> int:
-            return {
-                "tags/rock": 2,
-                "tags/jazz": 5,
-                "tags/blues": 5,
-            }[_to]
-
-        mock_db.song_has_tags.count.side_effect = count_for_tag
+        mock_db.tags.count_inbound_connections.return_value = [
+            {"tag_id": "tags/rock", "count": 2},
+            {"tag_id": "tags/jazz", "count": 5},
+            {"tag_id": "tags/blues", "count": 5},
+        ]
 
         result = get_genre_distribution(mock_db, limit=2)
 
@@ -332,3 +332,11 @@ class TestGetGenreDistribution:
             {"genre": "Blues", "count": 5},
             {"genre": "Jazz", "count": 5},
         ]
+        mock_db.tags.count_inbound_connections.assert_called_once_with(
+            "song_has_tags",
+            filter_field="_id",
+            filter_values=["tags/rock", "tags/jazz", "tags/blues"],
+            return_field="_id",
+            label="tag_id",
+            limit=3,
+        )

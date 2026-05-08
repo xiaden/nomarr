@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from nomarr.components.library.library_file_query_comp import get_recently_processed, search_library_files_with_tags
+from nomarr.persistence.base_types import Field
 
 
 class TestLibraryFilesQueryRegressions:
@@ -29,12 +30,16 @@ class TestLibraryFilesQueryRegressions:
         mock_db.library_files.get.like.side_effect = [[], [], [file_doc]]
         # final hydration fetch by sorted IDs
         mock_db.library_files.get.in_.return_value = [file_doc]
-        mock_db.library_contains_file.get.return_value = [{"_from": "libraries/1"}]
+        mock_db.library_contains_file.get.in_.return_value = [{"_from": "libraries/1", "_to": "library_files/1"}]
 
         files, total = search_library_files_with_tags(mock_db, query_text="Test Song")
 
         assert total == 1
         assert files[0]["library_id"] == "libraries/1"
+        mock_db.library_contains_file.get.in_.assert_called_once_with(
+            Field("_to", ["library_files/1"]),
+            limit=None,
+        )
 
 
 class TestGetRecentlyProcessed:

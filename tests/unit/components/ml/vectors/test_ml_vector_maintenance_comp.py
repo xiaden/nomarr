@@ -100,21 +100,14 @@ class TestBackfillGenres:
             {"value": "vectors_track_cold__ast__lib1/k1"},
             {"value": "vectors_track_cold__ast__lib1/k2"},
         ]
-        cold_ops.get.side_effect = [
-            {"_key": "k1", "file_id": "library_files/f1"},
-            {"_key": "k2", "file_id": "library_files/f2"},
+        cold_ops.get.in_.return_value = [
+            {"_id": "vectors_track_cold__ast__lib1/k1", "_key": "k1", "file_id": "library_files/f1"},
+            {"_id": "vectors_track_cold__ast__lib1/k2", "_key": "k2", "file_id": "library_files/f2"},
         ]
-        mock_db.song_has_tags.get.side_effect = [
-            [{"_from": "library_files/f1", "_to": "tags/g1"}],
-            [
-                {"_from": "library_files/f2", "_to": "tags/g2"},
-                {"_from": "library_files/f2", "_to": "tags/g3"},
-            ],
-        ]
-        mock_db.tags.get.in_.return_value = [
-            {"_id": "tags/g1", "name": "genre", "value": "ambient"},
-            {"_id": "tags/g2", "name": "genre", "value": "jazz"},
-            {"_id": "tags/g3", "name": "genre", "value": "fusion"},
+        mock_db.library_files.song_has_tags.by_ids.return_value = [
+            {"start_id": "library_files/f1", "v": {"name": "genre", "value": "ambient"}},
+            {"start_id": "library_files/f2", "v": {"name": "genre", "value": "jazz"}},
+            {"start_id": "library_files/f2", "v": {"name": "genre", "value": "fusion"}},
         ]
 
         with patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold:
@@ -128,11 +121,18 @@ class TestBackfillGenres:
                 {"_key": "k2", "genres": ["jazz", "fusion"]},
             ]
         )
-        mock_db.tags.get.in_.assert_called_once()
-        field_arg = mock_db.tags.get.in_.call_args.args[0]
+        field_arg = cold_ops.get.in_.call_args.args[0]
         assert isinstance(field_arg, Field)
         assert field_arg.name == "_id"
-        assert set(field_arg.value) == {"tags/g1", "tags/g2", "tags/g3"}
+        assert field_arg.value == [
+            "vectors_track_cold__ast__lib1/k1",
+            "vectors_track_cold__ast__lib1/k2",
+        ]
+        cold_ops.get.in_.assert_called_once_with(field_arg, limit=None)
+        mock_db.library_files.song_has_tags.by_ids.assert_called_once_with(
+            ["library_files/f1", "library_files/f2"],
+            name="genre",
+        )
 
     @pytest.mark.unit
     @pytest.mark.mocked

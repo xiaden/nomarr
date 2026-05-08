@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from nomarr.components.library.library_file_state_comp import count_untagged_files
+from nomarr.components.library.library_id_comp import normalize_library_id
 from nomarr.helpers.constants.file_states import STATE_TAGGED
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.base_types import Field
@@ -75,14 +76,10 @@ def get_existing_file_paths(db: Database, paths: list[str]) -> set[str]:
     }
 
 
-def _normalize_library_id(library_id: str) -> str:
-    return library_id if "/" in library_id else f"libraries/{library_id}"
-
-
 def _library_file_docs_for_library(db: Database, library_id: str) -> list[dict[str, Any]]:
     return cast(
         "list[dict[str, Any]]",
-        db.libraries.library_contains_file(_normalize_library_id(library_id), limit=DEFAULT_LIMIT),
+        db.libraries.library_contains_file(normalize_library_id(library_id), limit=DEFAULT_LIMIT),
     )
 
 
@@ -225,15 +222,48 @@ def _library_id_for_file(db: Database, file_id: str) -> str | None:
     return next((library_id for edge in owning_edges if isinstance((library_id := edge.get("_from")), str)), None)
 
 
+def _hydrate_files_with_tags(db: Database, file_docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Hydrate many file docs with tags and owning library ids in batched lookups."""
+    file_ids = [file_id for file_doc in file_docs if isinstance(file_id := file_doc.get("_id"), str)]
+    if not file_ids:
+        return [{**file_doc, "tags": [], "library_id": None} for file_doc in file_docs]
+
+    tag_rows = cast("list[dict[str, Any]]", db.library_files.song_has_tags.by_ids(file_ids))
+    tags_by_file: dict[str, list[dict[str, Any]]] = {file_id: [] for file_id in file_ids}
+    for row in tag_rows:
+        start_id = row.get("start_id")
+        tag_doc = row.get("v")
+        if not isinstance(start_id, str) or not isinstance(tag_doc, dict):
+            continue
+        tags_by_file.setdefault(start_id, []).append(_project_tag_row(tag_doc))
+    for tag_list in tags_by_file.values():
+        tag_list.sort(key=lambda tag_row: _sort_key(tag_row.get("key")))
+
+    owning_edges = cast("list[dict[str, Any]]", db.library_contains_file.get.in_(Field("_to", file_ids), limit=None))
+    library_id_by_file: dict[str, str] = {}
+    for edge in owning_edges:
+        file_id = edge.get("_to")
+        library_id = edge.get("_from")
+        if isinstance(file_id, str) and isinstance(library_id, str) and file_id not in library_id_by_file:
+            library_id_by_file[file_id] = library_id
+
+    return [
+        {
+            **file_doc,
+            "tags": tags_by_file.get(file_id, []),
+            "library_id": library_id_by_file.get(file_id),
+        }
+        if isinstance((file_id := file_doc.get("_id")), str)
+        else {**file_doc, "tags": [], "library_id": None}
+        for file_doc in file_docs
+    ]
+
+
 def _hydrate_file_with_tags(db: Database, file_doc: dict[str, Any]) -> dict[str, Any]:
     file_id = file_doc.get("_id")
     if not isinstance(file_id, str):
         return {**file_doc, "tags": [], "library_id": None}
-    return {
-        **file_doc,
-        "tags": _tags_for_file(db, file_id),
-        "library_id": _library_id_for_file(db, file_id),
-    }
+    return _hydrate_files_with_tags(db, [file_doc])[0]
 
 
 def _paginate_rows(rows: list[dict[str, Any]], limit: int, offset: int) -> list[dict[str, Any]]:
@@ -253,7 +283,8 @@ def get_files_by_ids_with_tags(db: Database, file_ids: list[str]) -> list[dict[s
 
     file_docs = _get_library_files_by_ids(db, file_ids)
     docs_by_id = {file_id: file_doc for file_doc in file_docs if isinstance((file_id := file_doc.get("_id")), str)}
-    return [_hydrate_file_with_tags(db, docs_by_id[file_id]) for file_id in file_ids if file_id in docs_by_id]
+    ordered_docs = [docs_by_id[file_id] for file_id in file_ids if file_id in docs_by_id]
+    return _hydrate_files_with_tags(db, ordered_docs)
 
 
 def get_library_file(
@@ -477,7 +508,7 @@ def search_library_files_with_tags(
     file_docs.sort(key=_library_file_sort_key)
     total = len(file_docs)
     page_files = _paginate_rows(file_docs, limit=limit, offset=offset)
-    return ([_hydrate_file_with_tags(db, file_doc) for file_doc in page_files], total)
+    return (_hydrate_files_with_tags(db, page_files), total)
 
 
 def get_recently_processed(
@@ -492,7 +523,7 @@ def get_recently_processed(
             edge["_to"]
             for edge in cast(
                 "list[dict[str, Any]]",
-                db.library_contains_file.get(_from=_normalize_library_id(library_id), limit=DEFAULT_LIMIT),
+                db.library_contains_file.get(_from=normalize_library_id(library_id), limit=DEFAULT_LIMIT),
             )
             if isinstance(edge.get("_to"), str)
         }
@@ -544,7 +575,7 @@ def get_folder_rel_paths(db: Database, library_id: str) -> set[str]:
     """Get cached folder relative paths for one library."""
     return {
         folder_doc["path"]
-        for folder_doc in db.libraries.library_contains_folder(_normalize_library_id(library_id), limit=DEFAULT_LIMIT)
+        for folder_doc in db.libraries.library_contains_folder(normalize_library_id(library_id), limit=DEFAULT_LIMIT)
         if isinstance(folder_doc.get("path"), str)
     }
 
@@ -584,7 +615,7 @@ def get_files_for_folders(
 
 def count_library_files(db: Database, library_id: str) -> int:
     """Count total files attached to one library via ownership edges."""
-    return int(db.library_contains_file.count(Field("_from", _normalize_library_id(library_id))))
+    return int(db.library_contains_file.count(Field("_from", normalize_library_id(library_id))))
 
 
 def get_library_stats(db: Database, library_id: str | None = None) -> dict[str, Any]:
@@ -616,8 +647,13 @@ def get_library_counts(db: Database) -> dict[str, dict[str, int]]:
         for value in _aggregate_values(db.library_contains_file, "_from", limit=None)
         if isinstance(value, str)
     ]
+    edges_by_library: dict[str, list[dict[str, Any]]] = {library_id: [] for library_id in library_ids}
+    for edge in cast("list[dict[str, Any]]", db.library_contains_file.get.in_(Field("_from", library_ids), limit=None)):
+        library_id = edge.get("_from")
+        if isinstance(library_id, str):
+            edges_by_library.setdefault(library_id, []).append(edge)
     for library_id in library_ids:
-        edges = cast("list[dict[str, Any]]", db.library_contains_file.get(_from=library_id, limit=None))
+        edges = edges_by_library.get(library_id, [])
         file_ids = [edge["_to"] for edge in edges if isinstance(edge.get("_to"), str)]
         file_docs = _get_library_files_by_ids(db, file_ids)
         folder_paths = {parent for file_doc in file_docs if (parent := _path_parent(file_doc.get("path"))) is not None}
@@ -683,22 +719,28 @@ def search_files_by_tag(
     """Search files by tag value with numeric-distance or exact-match semantics."""
     if _is_numeric_target_value(target_value):
         numeric_target = float(target_value)
+        tag_value_by_id = {
+            tag_id: cast("float", tag_value)
+            for tag_doc in cast("list[dict[str, Any]]", db.tags.get(name=tag_key, limit=DEFAULT_LIMIT))
+            if isinstance((tag_id := tag_doc.get("_id")), str)
+            and _is_numeric_tag_value(tag_value := tag_doc.get("value"))
+        }
+        distance_by_tag_id = {tag_id: abs(tag_value - numeric_target) for tag_id, tag_value in tag_value_by_id.items()}
         best_match_by_file_id: dict[str, dict[str, Any]] = {}
-        for tag_doc in cast("list[dict[str, Any]]", db.tags.get(name=tag_key, limit=DEFAULT_LIMIT)):
-            tag_id = tag_doc.get("_id")
-            tag_value = tag_doc.get("value")
-            if not isinstance(tag_id, str) or not _is_numeric_tag_value(tag_value):
-                continue
-            numeric_tag_value = cast("float", tag_value)
-            distance = abs(numeric_tag_value - numeric_target)
-            for edge in cast("list[dict[str, Any]]", db.song_has_tags.get(_to=tag_id, limit=DEFAULT_LIMIT)):
+        if distance_by_tag_id:
+            for edge in cast(
+                "list[dict[str, Any]]",
+                db.song_has_tags.get.in_(_to=list(distance_by_tag_id), limit=DEFAULT_LIMIT),
+            ):
                 file_id = edge.get("_from")
-                if not isinstance(file_id, str):
+                to_id = edge.get("_to")
+                if not isinstance(file_id, str) or not isinstance(to_id, str) or to_id not in distance_by_tag_id:
                     continue
+                distance = distance_by_tag_id[to_id]
                 prior_match = best_match_by_file_id.get(file_id)
                 if prior_match is None or distance < cast("float", prior_match["distance"]):
                     best_match_by_file_id[file_id] = {
-                        "matched_tag": {"key": tag_key, "value": numeric_tag_value},
+                        "matched_tag": {"key": tag_key, "value": tag_value_by_id[to_id]},
                         "distance": distance,
                     }
 
@@ -713,9 +755,9 @@ def search_files_by_tag(
             key=lambda item: (float(item[2]["distance"]), _library_file_sort_key(item[1])),
         )
         paged_matches = sorted_matches[offset : offset + limit]
+        hydrated_files = _hydrate_files_with_tags(db, [file_doc for _, file_doc, _ in paged_matches])
         results: list[dict[str, Any]] = []
-        for _, file_doc, match_meta in paged_matches:
-            hydrated_file = _hydrate_file_with_tags(db, file_doc)
+        for hydrated_file, (_, _, match_meta) in zip(hydrated_files, paged_matches, strict=False):
             hydrated_file["matched_tag"] = match_meta["matched_tag"]
             hydrated_file["distance"] = match_meta["distance"]
             results.append(hydrated_file)
@@ -733,8 +775,7 @@ def search_files_by_tag(
     file_docs.sort(key=_library_file_sort_key)
 
     results = []
-    for file_doc in _paginate_rows(file_docs, limit=limit, offset=offset):
-        hydrated_file = _hydrate_file_with_tags(db, file_doc)
+    for hydrated_file in _hydrate_files_with_tags(db, _paginate_rows(file_docs, limit=limit, offset=offset)):
         hydrated_file["matched_tag"] = {"key": tag_key, "value": str(target_value)}
         results.append(hydrated_file)
     return results

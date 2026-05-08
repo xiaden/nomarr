@@ -172,15 +172,16 @@ class TestClearAllStatesBatch:
     @pytest.mark.unit
     def test_sums_constructor_delete_counts_for_file_batch(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.file_has_state.delete.side_effect = [3, 4]
+        mock_db.file_has_state.delete.in_.return_value = 7
 
         result = clear_all_states_batch(mock_db, ["library_files/1", "library_files/2"])
 
         assert result == 7
-        assert mock_db.file_has_state.delete.call_args_list == [
-            call(_from="library_files/1"),
-            call(_from="library_files/2"),
-        ]
+        field_arg = mock_db.file_has_state.delete.in_.call_args.args[0]
+        assert isinstance(field_arg, Field)
+        assert field_arg.name == "_from"
+        assert field_arg.value == ["library_files/1", "library_files/2"]
+        mock_db.file_has_state.delete.in_.assert_called_once_with(field_arg)
 
     @pytest.mark.unit
     def test_returns_zero_without_query_when_batch_empty(self) -> None:

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.components.analytics.mood_analysis_comp import (
+    _get_tag_edge_rows,
     get_mood_and_tier_tags_for_correlation,
     get_mood_balance,
     get_mood_coverage,
@@ -210,3 +211,31 @@ class TestGetMoodDistributionData:
         assert result == [("nom:mood-regular", "warm")]
         for call in get_tag_edge_rows_mock.call_args_list:
             assert call.args[2] == "libraries/1"
+
+
+class TestGetTagEdgeRows:
+    """Tests for ``_get_tag_edge_rows``."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_batches_tag_edge_lookup_with_single_in_query(self) -> None:
+        mock_db = MagicMock()
+        mock_db.tags.get.many.side_effect = [
+            [
+                {"_id": "tags/1", "value": "happy"},
+                {"_id": "tags/2", "value": "calm"},
+            ],
+            [],
+        ]
+        mock_db.song_has_tags.get.in_.return_value = [
+            {"_from": "library_files/1", "_to": "tags/1"},
+            {"_from": "library_files/2", "_to": "tags/2"},
+        ]
+
+        result = _get_tag_edge_rows(mock_db, "nom:mood-strict")
+
+        assert result == [
+            ("library_files/1", "happy"),
+            ("library_files/2", "calm"),
+        ]
+        mock_db.song_has_tags.get.in_.assert_called_once_with(_to=["tags/1", "tags/2"], limit=None)

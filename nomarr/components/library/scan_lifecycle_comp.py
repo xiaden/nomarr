@@ -21,6 +21,7 @@ from nomarr.components.library.library_file_state_comp import (
     library_has_tagged_files,
     transition_file_state,
 )
+from nomarr.components.library.library_id_comp import library_key_from_ref, normalize_library_id
 from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
 from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_IDLE,
@@ -29,6 +30,7 @@ from nomarr.helpers.constants.pipeline_states import (
 )
 from nomarr.helpers.exceptions import LibraryNotFoundError
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.base_types import Field
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -66,28 +68,14 @@ def _pipeline_state_to_scan_status(pipeline_state: str | None, scan_doc: dict[st
     return "idle"
 
 
-def _library_key_from_id(library_id: str) -> str:
-    """Extract the Arango library `_key` from either `_id` or bare key input."""
-    if library_id.startswith("libraries/"):
-        return library_id.split("/", 1)[1]
-    return library_id
-
-
-def _library_id_from_key(library_key: str) -> str:
-    """Normalize a library key back to a full `libraries/{key}` document id."""
-    if library_key.startswith("libraries/"):
-        return library_key
-    return f"libraries/{library_key}"
-
-
 def _scan_doc_id(library_id: str) -> str:
     """Return the canonical scan document id for a library."""
-    return f"library_scans/{_library_key_from_id(library_id)}"
+    return f"library_scans/{library_key_from_ref(library_id)}"
 
 
 def _default_scan_doc(library_id: str) -> dict[str, Any]:
     """Build the canonical default scan document payload."""
-    library_key = _library_key_from_id(library_id)
+    library_key = library_key_from_ref(library_id)
     return {
         "_key": library_key,
         "library_key": library_key,
@@ -116,7 +104,7 @@ def _folder_doc(
     return {
         "_key": _folder_key(library_id, folder_path),
         "path": folder_path,
-        "library_key": _library_key_from_id(library_id),
+        "library_key": library_key_from_ref(library_id),
         "mtime": mtime,
         "file_count": file_count,
         "last_scanned_at": now_ms().value,
@@ -135,7 +123,7 @@ def _ensure_edge(
 
 def ensure_scan_state(db: Database, library_id: str) -> dict[str, Any]:
     """Return the scan document for a library, creating or repairing it when needed."""
-    library_key = _library_key_from_id(library_id)
+    library_key = library_key_from_ref(library_id)
     scan_id = _scan_doc_id(library_id)
     scan_doc = cast("dict[str, Any] | None", db.library_scans.get(_id=scan_id))
 
@@ -163,7 +151,7 @@ def get_scan_state(db: Database, library_id: str) -> dict[str, Any] | None:
     scan_doc = cast("dict[str, Any] | None", db.library_scans.get(_id=scan_id))
     if scan_doc is None:
         return None
-    if scan_doc.get("library_key") != _library_key_from_id(library_id):
+    if scan_doc.get("library_key") != library_key_from_ref(library_id):
         return ensure_scan_state(db, library_id)
     _ensure_edge(db, db.library_has_scan, library_id, scan_id)
     return scan_doc
@@ -175,7 +163,7 @@ def update_scan_state(db: Database, library_id: str, **fields: Any) -> dict[str,
     if not fields:
         return scan_doc
 
-    db.library_scans.update(library_key=_library_key_from_id(library_id), fields=fields)
+    db.library_scans.update(library_key=library_key_from_ref(library_id), fields=fields)
     refreshed = cast("dict[str, Any] | None", db.library_scans.get(_id=_scan_doc_id(library_id)))
     if refreshed is not None:
         return refreshed
@@ -184,7 +172,7 @@ def update_scan_state(db: Database, library_id: str, **fields: Any) -> dict[str,
 
 def transition_pipeline_state(db: Database, library_id: str, next_state: str) -> None:
     """Persist a library's current pipeline state via the constructor namespace."""
-    library_key = _library_key_from_id(library_id)
+    library_key = library_key_from_ref(library_id)
     db.library_pipeline_states.upsert(
         library_key=library_key,
         fields={
@@ -195,7 +183,7 @@ def transition_pipeline_state(db: Database, library_id: str, next_state: str) ->
 
 def delete_pipeline_state(db: Database, library_id: str) -> int:
     """Delete a library's persisted pipeline state document."""
-    return int(db.library_pipeline_states.delete(library_key=_library_key_from_id(library_id)))
+    return int(db.library_pipeline_states.delete(library_key=library_key_from_ref(library_id)))
 
 
 def get_pipeline_state(db: Database, library_id: str) -> str:
@@ -204,7 +192,7 @@ def get_pipeline_state(db: Database, library_id: str) -> str:
     Raises:
         ValueError: If the library has no persisted pipeline state.
     """
-    library_key = _library_key_from_id(library_id)
+    library_key = library_key_from_ref(library_id)
     state_doc = cast("dict[str, Any] | None", db.library_pipeline_states.get(library_key=library_key))
     if state_doc is None:
         msg = f"No pipeline state edge found for library {library_id}"
@@ -218,7 +206,7 @@ def get_libraries_in_pipeline_state(db: Database, state: str) -> list[str]:
         "list[dict[str, Any]]",
         db.library_pipeline_states.get(pipeline_state=state, limit=db.library_pipeline_states.count()),
     )
-    return [_library_id_from_key(str(doc["library_key"])) for doc in docs]
+    return [normalize_library_id(str(doc["library_key"])) for doc in docs]
 
 
 def bulk_transition_pipeline_state(db: Database, from_state: str, to_state: str) -> int:
@@ -240,7 +228,7 @@ def bulk_transition_pipeline_state(db: Database, from_state: str, to_state: str)
 
 def _get_library_record(db: Database, library_id: str) -> dict[str, Any] | None:
     """Return one library document by `_id` or bare key without scan enrichment."""
-    normalized_id = _library_id_from_key(library_id)
+    normalized_id = normalize_library_id(library_id)
     return cast("dict[str, Any] | None", db.libraries.get(_id=normalized_id))
 
 
@@ -251,7 +239,12 @@ def _list_library_records(db: Database) -> list[dict[str, Any]]:
         for row in db.libraries.aggregate("_id", limit=db.libraries.count())
         if isinstance(row.get("value"), str)
     ]
-    docs = [doc for doc_id in ids if (doc := cast("dict[str, Any] | None", db.libraries.get(_id=doc_id))) is not None]
+    docs_by_id = {
+        str(doc_id): doc
+        for doc in cast("list[dict[str, Any]]", db.libraries.get.in_(Field("_id", ids), limit=None))
+        if isinstance((doc_id := doc.get("_id")), str)
+    }
+    docs = [docs_by_id[doc_id] for doc_id in ids if doc_id in docs_by_id]
     docs.sort(key=lambda doc: int(cast("int", doc.get("created_at", 0) or 0)))
 
     enriched_docs: list[dict[str, Any]] = []
@@ -691,11 +684,7 @@ def get_cached_folders(
         return {}
 
     folder_ids = [cast("str", edge["_to"]) for edge in folder_edges]
-    folders = [
-        folder
-        for folder_id in folder_ids
-        if (folder := cast("dict[str, Any] | None", db.library_folders.get(_id=folder_id))) is not None
-    ]
+    folders = cast("list[dict[str, Any]]", db.library_folders.get.in_(Field("_id", folder_ids), limit=None))
     return {str(folder["path"]): folder for folder in folders}
 
 

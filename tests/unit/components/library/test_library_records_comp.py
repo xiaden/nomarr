@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from nomarr.components.library.library_records_comp import list_all_library_keys
+from nomarr.persistence.base_types import Field
 
 
 class TestListAllLibraryKeys:
@@ -158,9 +159,8 @@ class TestListLibraryRecords:
             {"value": "libraries/missing"},
             {"value": "libraries/1"},
         ]
-        mock_db.libraries.get.side_effect = [
+        mock_db.libraries.get.in_.return_value = [
             {"_id": "libraries/2", "created_at": 20},
-            None,
             {"_id": "libraries/1", "created_at": 10},
         ]
 
@@ -171,11 +171,11 @@ class TestListLibraryRecords:
             {"_id": "libraries/2", "created_at": 20},
         ]
         mock_db.libraries.aggregate.assert_called_once_with("_id", limit=3)
-        assert mock_db.libraries.get.call_args_list == [
-            call(_id="libraries/2"),
-            call(_id="libraries/missing"),
-            call(_id="libraries/1"),
-        ]
+        field_arg = mock_db.libraries.get.in_.call_args.args[0]
+        assert isinstance(field_arg, Field)
+        assert field_arg.name == "_id"
+        assert field_arg.value == ["libraries/2", "libraries/missing", "libraries/1"]
+        mock_db.libraries.get.in_.assert_called_once_with(field_arg, limit=None)
 
     @pytest.mark.unit
     def test_merges_scan_state_for_enabled_only_records(self) -> None:
@@ -298,8 +298,9 @@ class TestFindLibraryContainingPath:
         list_records.assert_called_once_with(mock_db, enabled_only=False, include_scan=False)
 
 
-from unittest.mock import call, patch  # noqa: E402
+from unittest.mock import patch  # noqa: E402
 
+from nomarr.components.library.library_id_comp import library_key_from_ref, normalize_library_id  # noqa: E402
 from nomarr.components.library.library_records_comp import (  # noqa: E402
     PIPELINE_ML_RUNNING,
     create_library_record,
@@ -307,10 +308,8 @@ from nomarr.components.library.library_records_comp import (  # noqa: E402
     find_ml_complete_libraries,
     get_library_by_name,
     get_library_record,
-    library_key_from_ref,
     list_library_records,
     list_watchable_library_records,
-    normalize_library_id,
     update_library_config_fields,
     update_library_record,
 )

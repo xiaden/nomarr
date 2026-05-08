@@ -33,8 +33,12 @@ def _load_vector_docs(vector_ops: Any) -> list[dict[str, Any]]:
     if not doc_ids:
         return []
 
-    docs = [cast("dict[str, Any] | None", vector_ops.get(_id=doc_id)) for doc_id in doc_ids]
-    return [doc for doc in docs if doc is not None]
+    docs_by_id = {
+        str(doc_id): doc
+        for doc in cast("list[dict[str, Any]]", vector_ops.get.in_(Field("_id", doc_ids), limit=None))
+        if isinstance((doc_id := doc.get("_id")), str)
+    }
+    return [docs_by_id[doc_id] for doc_id in doc_ids if doc_id in docs_by_id]
 
 
 def _get_genres_for_files(db: Database, file_ids: list[str]) -> dict[str, list[str]]:
@@ -46,34 +50,15 @@ def _get_genres_for_files(db: Database, file_ids: list[str]) -> dict[str, list[s
     if not file_ids:
         return {}
 
-    tag_edges = cast(
-        "list[dict[str, Any]]",
-        [
-            edge
-            for file_id in file_ids
-            for edge in cast("list[dict[str, Any]]", db.song_has_tags.get(_from=file_id, limit=None))
-        ],
-    )
-
-    tag_ids = list({edge["_to"] for edge in tag_edges if isinstance(edge.get("_to"), str)})
-    if not tag_ids:
-        return {fid: [] for fid in file_ids}
-
-    tag_docs = cast("list[dict[str, Any]]", db.tags.get.in_(Field("_id", tag_ids)))
-    genre_by_tag_id: dict[str, str] = {
-        doc["_id"]: doc["value"]
-        for doc in tag_docs
-        if doc.get("name") == "genre" and isinstance(doc.get("_id"), str) and isinstance(doc.get("value"), str)
-    }
-
     result: dict[str, list[str]] = {fid: [] for fid in file_ids}
     seen: dict[str, set[str]] = {fid: set() for fid in file_ids}
-    for edge in tag_edges:
-        fid = edge.get("_from")
-        tag_id = edge.get("_to")
-        if not isinstance(fid, str) or not isinstance(tag_id, str):
+    genre_rows = cast("list[dict[str, Any]]", db.library_files.song_has_tags.by_ids(file_ids, name="genre"))
+    for row in genre_rows:
+        fid = row.get("start_id")
+        tag = row.get("v")
+        if not isinstance(fid, str) or not isinstance(tag, dict):
             continue
-        genre = genre_by_tag_id.get(tag_id)
+        genre = tag.get("value")
         if genre and genre not in seen[fid]:
             seen[fid].add(genre)
             result[fid].append(genre)

@@ -19,6 +19,32 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _derive_artists(tags: dict[str, Any]) -> tuple[str | None, list[str]]:
+    """Derive singular artist and artist list from raw tag dict.
+
+    Args:
+        tags: Raw metadata tags dict (from mutagen/external source)
+
+    Returns:
+        Tuple of (primary_artist, all_artists) where primary_artist is a single
+        string or None, and all_artists is a (possibly empty) list of strings.
+
+    """
+    artist_raw = tags.get("artist")
+    artists_raw = tags.get("artists")
+    primary_artist: str | None = None
+    if artist_raw:
+        primary_artist = (artist_raw[0] if artist_raw else None) if isinstance(artist_raw, list) else artist_raw
+    elif artists_raw:
+        primary_artist = (artists_raw[0] if artists_raw else None) if isinstance(artists_raw, list) else artists_raw
+    all_artists: list[str] = []
+    if artists_raw:
+        all_artists = [str(a) for a in artists_raw if a] if isinstance(artists_raw, list) else [str(artists_raw)]
+    elif primary_artist:
+        all_artists = [primary_artist]
+    return primary_artist, all_artists
+
+
 def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, Any]) -> None:
     """Derive song tag edges from raw imported metadata tags.
 
@@ -39,26 +65,12 @@ def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, A
 
     """
     # ==================== ARTIST (singular) ====================
-    artist_raw = tags.get("artist")
-    artists_raw = tags.get("artists")
-
-    # Derive singular artist: use "artist" if present, else first from "artists"
-    primary_artist: str | None = None
-    if artist_raw:
-        primary_artist = (artist_raw[0] if artist_raw else None) if isinstance(artist_raw, list) else artist_raw
-    elif artists_raw:
-        primary_artist = (artists_raw[0] if artists_raw else None) if isinstance(artists_raw, list) else artists_raw
+    primary_artist, all_artists = _derive_artists(tags)
 
     set_song_tags(db, song_id, "artist", [primary_artist] if primary_artist else [])
 
     # ==================== ARTISTS (multi) ====================
     # Use "artists" if present, else use ["artist"] if present
-    all_artists: list[str] = []
-    if artists_raw:
-        all_artists = [str(a) for a in artists_raw if a] if isinstance(artists_raw, list) else [str(artists_raw)]
-    elif primary_artist:
-        all_artists = [primary_artist]
-
     set_song_tags(db, song_id, "artists", list(all_artists))
 
     # ==================== ALBUM (singular) ====================
@@ -125,25 +137,12 @@ def _build_song_tag_entries(song_id: str, tags: dict[str, Any]) -> list[dict[str
     """
     entries: list[dict[str, Any]] = []
 
-    artist_raw = tags.get("artist")
-    artists_raw = tags.get("artists")
-
     # — artist (singular) —
-    primary_artist: str | None = None
-    if artist_raw:
-        primary_artist = (artist_raw[0] if artist_raw else None) if isinstance(artist_raw, list) else artist_raw
-    elif artists_raw:
-        primary_artist = (artists_raw[0] if artists_raw else None) if isinstance(artists_raw, list) else artists_raw
+    primary_artist, all_artists = _derive_artists(tags)
 
     entries.append({"song_id": song_id, "name": "artist", "values": [primary_artist] if primary_artist else []})
 
     # — artists (multi) —
-    all_artists: list[str] = []
-    if artists_raw:
-        all_artists = [str(a) for a in artists_raw if a] if isinstance(artists_raw, list) else [str(artists_raw)]
-    elif primary_artist:
-        all_artists = [str(primary_artist)]
-
     entries.append({"song_id": song_id, "name": "artists", "values": list(all_artists)})
 
     # — album (singular) —

@@ -104,6 +104,40 @@ def release_claim(db: Database, file_id: str) -> None:
     db.worker_claims.delete(file_id=file_id)
 
 
+def try_insert_or_steal_claim(
+    db: Database,
+    payload: dict[str, Any],
+    now: int,
+    lease_ms: int,
+) -> bool:
+    """Try to insert a claim, stealing it if the existing one is expired.
+
+    Args:
+        db: Database handle.
+        payload: Full claim document payload including ``_key``, ``file_id``,
+            ``worker_id``, and ``claimed_at``.
+        now: Current timestamp in milliseconds.
+        lease_ms: Claim lease duration in ms; existing claims older than this
+            threshold are considered expired and may be stolen.
+
+    Returns:
+        True if the claim was successfully inserted (new or stolen);
+        False if an active un-expired claim already exists.
+
+    """
+    file_id = str(payload["file_id"])
+    try:
+        db.worker_claims.insert([payload])
+        return True
+    except DocumentInsertError:
+        existing = cast("dict[str, Any] | None", db.worker_claims.get(file_id=file_id))
+        if existing and existing.get("claimed_at", 0) < (now - lease_ms):
+            db.worker_claims.delete(_id=str(existing["_id"]))
+            db.worker_claims.insert([payload])
+            return True
+        return False
+
+
 def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
     """Remove claims from inactive workers and completed/ineligible files.
 

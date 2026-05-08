@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from arango.exceptions import DocumentInsertError
-
 from nomarr.components.library.library_file_state_comp import get_stale_file_ids, transition_file_state
+from nomarr.components.workers.worker_discovery_comp import try_insert_or_steal_claim
 from nomarr.helpers.constants.file_states import (
     STATE_TAGS_CURRENT,
     STATE_TAGS_NOT_WRITTEN,
@@ -70,15 +69,8 @@ def claim_files_for_reconciliation(
             "claim_type": "reconcile",
         }
 
-        try:
-            db.worker_claims.insert([payload])
+        if try_insert_or_steal_claim(db, payload, now, lease_ms):
             claimed.append(candidate)
-        except DocumentInsertError:
-            existing = cast("dict[str, Any] | None", db.worker_claims.get(file_id=file_id))
-            if existing and existing.get("claimed_at", 0) < (now - lease_ms):
-                db.worker_claims.delete(_id=str(existing["_id"]))
-                db.worker_claims.insert([payload])
-                claimed.append(candidate)
 
     return claimed
 

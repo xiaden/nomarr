@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-MIGRATION_VERSION: str = "0.3.0"
+MIGRATION_VERSION: str = "0.2.30"
 DESCRIPTION: str = "Drop all named graphs and legacy dead-weight collections"
 
 # Named graphs to drop.  ArangoDB forbids dropping a collection that belongs

@@ -4,17 +4,16 @@ from .file_sync_comp import mark_file_tagged, save_file_tags
 from .file_tags_comp import get_file_tags_with_path
 from .library_file_mutation_comp import get_file_library_key, set_chromaprint, upsert_library_file
 from .library_file_query_comp import get_library_file
+from .library_id_comp import library_key_from_ref, normalize_library_id
 from .library_records_comp import (
     create_library_record,
     find_library_containing_path,
     find_ml_complete_libraries,
     get_library_by_name,
     get_library_record,
-    library_key_from_ref,
     list_all_library_keys,
     list_library_records,
     list_watchable_library_records,
-    normalize_library_id,
     update_library_config_fields,
     update_library_record,
 )

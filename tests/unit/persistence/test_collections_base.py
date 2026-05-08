@@ -294,6 +294,90 @@ class TestDocumentCollectionTraversal:
             offset=0,
         )
 
+    def test_attaches_by_ids_helper_to_traversal_callable(self) -> None:
+        """Traversal callables expose a by_ids helper for batched cross-lookups."""
+        collection = collections_base.DocumentCollection(_make_db(), "docs")
+
+        traverse = collection.traversal("rel_edges", OUTBOUND)
+
+        assert hasattr(traverse, "by_ids")
+        assert callable(traverse.by_ids)
+
+    def test_by_ids_delegates_to_traversal_by_ids_with_exact_filters(self) -> None:
+        """by_ids converts exact-match kwargs into target_filter for the verb layer."""
+        collection = collections_base.DocumentCollection(_make_db(), "docs")
+        traverse = collection.traversal("rel_edges", OUTBOUND)
+
+        with patch(
+            "nomarr.persistence.collections_base.verbs.traversal_by_ids",
+            return_value=[{"start_id": "docs/1", "v": {"name": "isrc", "value": "ABC"}}],
+        ) as mock_traversal:
+            result = traverse.by_ids(["docs/1"], name="isrc", limit=4, offset=2)
+
+        assert result == [{"start_id": "docs/1", "v": {"name": "isrc", "value": "ABC"}}]
+        mock_traversal.assert_called_once_with(
+            collection._db,
+            "docs",
+            ["docs/1"],
+            "rel_edges",
+            OUTBOUND,
+            limit=4,
+            offset=2,
+            target_filter={"name": "isrc"},
+            target_like_starts_with=None,
+            include_edge=False,
+        )
+
+    def test_by_ids_delegates_to_traversal_by_ids_with_starts_with_filter(self) -> None:
+        """by_ids converts *_starts_with kwargs into target_like_starts_with for the verb layer."""
+        collection = collections_base.DocumentCollection(_make_db(), "docs")
+        traverse = collection.traversal("rel_edges", OUTBOUND)
+
+        with patch(
+            "nomarr.persistence.collections_base.verbs.traversal_by_ids",
+            return_value=[{"start_id": "docs/1", "v": {"name": "nom:mood", "value": "calm"}}],
+        ) as mock_traversal:
+            result = traverse.by_ids(["docs/1"], name_starts_with="nom:")
+
+        assert result == [{"start_id": "docs/1", "v": {"name": "nom:mood", "value": "calm"}}]
+        mock_traversal.assert_called_once_with(
+            collection._db,
+            "docs",
+            ["docs/1"],
+            "rel_edges",
+            OUTBOUND,
+            limit=None,
+            offset=0,
+            target_filter=None,
+            target_like_starts_with=("name", "nom:"),
+            include_edge=False,
+        )
+
+    def test_by_ids_forwards_include_edge_flag(self) -> None:
+        """by_ids forwards include_edge when callers need traversal edge metadata."""
+        collection = collections_base.DocumentCollection(_make_db(), "docs")
+        traverse = collection.traversal("rel_edges", OUTBOUND)
+
+        with patch(
+            "nomarr.persistence.collections_base.verbs.traversal_by_ids",
+            return_value=[{"start_id": "docs/1", "e": {"_id": "rel_edges/1"}, "v": {"name": "genre"}}],
+        ) as mock_traversal:
+            result = traverse.by_ids(["docs/1"], include_edge=True)
+
+        assert result == [{"start_id": "docs/1", "e": {"_id": "rel_edges/1"}, "v": {"name": "genre"}}]
+        mock_traversal.assert_called_once_with(
+            collection._db,
+            "docs",
+            ["docs/1"],
+            "rel_edges",
+            OUTBOUND,
+            limit=None,
+            offset=0,
+            target_filter=None,
+            target_like_starts_with=None,
+            include_edge=True,
+        )
+
 
 @pytest.mark.unit
 @pytest.mark.mocked

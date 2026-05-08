@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 from nomarr.persistence.accessors import CollectionDelete, CollectionGet, FieldAccessor
 from nomarr.persistence.arango_client import SafeDatabase
@@ -250,6 +250,43 @@ class DocumentCollection(BaseCollection):
 
         def traverse(start_id: str, *, limit: int | None = None, offset: int = 0) -> list[Document]:
             return verbs.traversal_by_id(db, name, start_id, edge_collection, direction, limit=limit, offset=offset)
+
+        def traverse_by_ids(
+            start_ids: list[str],
+            *,
+            limit: int | None = None,
+            offset: int = 0,
+            **kwargs: Any,
+        ) -> list[dict[str, Any]]:
+            include_edge = bool(kwargs.pop("include_edge", False))
+            target_filter = {key: value for key, value in kwargs.items() if not key.endswith("_starts_with")}
+            starts_with_filters = {key: value for key, value in kwargs.items() if key.endswith("_starts_with")}
+            target_like_starts_with: tuple[str, str] | None = None
+            if starts_with_filters:
+                if len(starts_with_filters) != 1:
+                    msg = "Traversal by_ids supports at most one *_starts_with filter"
+                    raise ValueError(msg)
+                starts_with_key, starts_with_value = next(iter(starts_with_filters.items()))
+                if not isinstance(starts_with_value, str):
+                    msg = "Traversal *_starts_with filters must use a string prefix"
+                    raise ValueError(msg)
+                target_like_starts_with = (starts_with_key.removesuffix("_starts_with"), starts_with_value)
+
+            return verbs.traversal_by_ids(
+                db,
+                name,
+                start_ids,
+                edge_collection,
+                direction,
+                limit=limit,
+                offset=offset,
+                target_filter=target_filter or None,
+                target_like_starts_with=target_like_starts_with,
+                include_edge=include_edge,
+            )
+
+        traverse_with_batch = cast("Any", traverse)
+        traverse_with_batch.by_ids = traverse_by_ids
 
         return traverse
 

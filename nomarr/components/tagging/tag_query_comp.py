@@ -146,14 +146,12 @@ def _matches_tag_operator(tag_value: Any, operator: str, value: TagValue) -> boo
 def _file_ids_for_tag_docs(db: Database, tags: list[dict[str, Any]]) -> set[str]:
     """Traverse from tags to linked file ids and return the union set."""
     song_has_tags = _song_has_tags_ns(db)
-    file_ids: set[str] = set()
-    for tag in tags:
-        tag_id = tag.get("_id")
-        if not isinstance(tag_id, str):
-            continue
-        edges = cast("list[dict[str, Any]]", song_has_tags.get(_to=tag_id, limit=None))
-        file_ids.update(str(edge["_from"]) for edge in edges if isinstance(edge.get("_from"), str))
-    return file_ids
+    tag_ids = [tag_id for tag in tags if isinstance(tag_id := tag.get("_id"), str)]
+    if not tag_ids:
+        return set()
+
+    edges = cast("list[dict[str, Any]]", song_has_tags.get.in_(_to=tag_ids, limit=None))
+    return {str(edge["_from"]) for edge in edges if isinstance(edge.get("_from"), str)}
 
 
 def _library_file_ids(db: Database, library_id: str | None) -> set[str] | None:

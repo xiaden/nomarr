@@ -14,11 +14,11 @@ import os
 from typing import TYPE_CHECKING, cast
 
 from nomarr.components.library.library_file_query_comp import clear_library_data as clear_library_file_data
+from nomarr.components.library.library_id_comp import library_key_from_ref
 from nomarr.components.library.library_records_comp import (
     create_library_record,
     get_library_by_name,
     get_library_record,
-    library_key_from_ref,
     update_library_record,
 )
 from nomarr.components.library.library_root_comp import (
