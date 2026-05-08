@@ -262,14 +262,7 @@ def delete_vectors_by_file_id(db: Database, file_id: str) -> int:
         deleted = cast("VectorsTrackHotNamespace", namespace).file_id.delete(file_id)
         total_deleted += deleted
 
-    db.db.aql.execute(
-        """
-        FOR e IN file_has_vectors
-            FILTER e._from == @file_id
-            REMOVE e IN file_has_vectors
-        """,
-        bind_vars={"file_id": file_id},
-    )
+    db.file_has_vectors._from.delete(file_id)
 
     return total_deleted
 
@@ -302,13 +295,6 @@ def delete_vectors_by_file_ids(db: Database, file_ids: list[str]) -> int:
         for file_id in file_ids:
             total_deleted += typed_namespace.file_id.delete(file_id)
 
-    db.db.aql.execute(
-        """
-        FOR e IN file_has_vectors
-            FILTER e._from IN @file_ids
-            REMOVE e IN file_has_vectors
-        """,
-        bind_vars=cast("dict[str, Any]", {"file_ids": file_ids}),
-    )
+    db.file_has_vectors._from.delete.in_(file_ids)
 
     return total_deleted

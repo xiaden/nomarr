@@ -1,1 +1,0 @@
-import{An as e,Dr as t,ur as n}from"./index-CElnuVr5.js";var r=e((0,t(n()).jsx)(`path`,{d:`m12 8-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z`}),`ExpandLess`);export{r as t};

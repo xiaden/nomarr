@@ -291,7 +291,7 @@ class Libraries(DocumentCollection):
 class LibraryFiles(DocumentCollection):
     song_has_tags: TraversalAccessor
     file_has_state: TraversalAccessor
-    file_has_segment_stats: TraversalAccessor
+    file_has_output_stream: TraversalAccessor
     path: FieldAccessor  # str, unique
     normalized_path: FieldAccessor  # str
     library_key: FieldAccessor  # str
@@ -485,6 +485,7 @@ class MlModels(DocumentCollection):
 
 
 class MlModelOutputs(DocumentCollection):
+    output_has_stream: TraversalAccessor
     output_index: FieldAccessor  # int
     label: FieldAccessor  # str | None
     fully_labeled: FieldAccessor  # bool
@@ -514,27 +515,14 @@ class NavidromePlaycounts(DocumentCollection):
         self.userid = self._field("userid")
 
 
-class SegmentScoresStats(DocumentCollection):
-    """Aggregate statistics from an ML segment-scoring run keyed by ``head_name`` and ``tagger_version``.
+class MlOutputStreams(DocumentCollection):
+    """Canonical raw ML output stream storage, one document per (file, model output) pair."""
 
-    Each document stores per-label distribution summaries in ``label_stats`` together with the segment count and pooling strategy used.
-    """
-
-    head_name: FieldAccessor  # str
-    tagger_version: FieldAccessor  # str
-    num_segments: FieldAccessor  # int
-    pooling_strategy: FieldAccessor  # str
-    label_stats: FieldAccessor  # list[dict[str, Any]]
-    processed_at: FieldAccessor  # int
+    values: FieldAccessor  # list[float]
 
     def __init__(self, db: SafeDatabase) -> None:
-        super().__init__(db, "segment_scores_stats")
-        self.head_name = self._field("head_name")
-        self.tagger_version = self._field("tagger_version")
-        self.num_segments = self._field("num_segments")
-        self.pooling_strategy = self._field("pooling_strategy")
-        self.label_stats = self._field("label_stats")
-        self.processed_at = self._field("processed_at")
+        super().__init__(db, "ml_output_streams")
+        self.values = self._field("values")
 
 
 class VectorsTrackHot(VectorCollection):
@@ -643,12 +631,14 @@ class FileHasVectors(EdgeCollection):
         super().__init__(db, "file_has_vectors")
 
 
-class FileHasSegmentStats(EdgeCollection):
+class FileHasOutputStream(EdgeCollection):
+    """Edge from a ``LibraryFiles`` document to an ``MlOutputStreams`` document."""
+
     FROM_COLLECTION = LibraryFiles
-    TO_COLLECTION = SegmentScoresStats
+    TO_COLLECTION = MlOutputStreams
 
     def __init__(self, db: SafeDatabase) -> None:
-        super().__init__(db, "file_has_segment_stats")
+        super().__init__(db, "file_has_output_stream")
 
 
 class ModelHasOutput(EdgeCollection):
@@ -657,6 +647,16 @@ class ModelHasOutput(EdgeCollection):
 
     def __init__(self, db: SafeDatabase) -> None:
         super().__init__(db, "model_has_output")
+
+
+class OutputHasStream(EdgeCollection):
+    """Edge from an ``MlModelOutputs`` document to an ``MlOutputStreams`` document."""
+
+    FROM_COLLECTION = MlModelOutputs
+    TO_COLLECTION = MlOutputStreams
+
+    def __init__(self, db: SafeDatabase) -> None:
+        super().__init__(db, "output_has_stream")
 
 
 class ModelHasCalibration(EdgeCollection):
@@ -704,7 +704,7 @@ LibraryFiles.EDGES = [
     EdgeDef(via=SongHasTags, direction=OUTBOUND, target=Tags, on_delete=CASCADE),
     EdgeDef(via=FileHasState, direction=OUTBOUND, target=FileStates, on_delete=CASCADE),
     EdgeDef(via=FileHasVectors, direction=OUTBOUND, target=VectorCollection, on_delete=CASCADE),
-    EdgeDef(via=FileHasSegmentStats, direction=OUTBOUND, target=SegmentScoresStats, on_delete=CASCADE),
+    EdgeDef(via=FileHasOutputStream, direction=OUTBOUND, target=MlOutputStreams, on_delete=CASCADE),
     EdgeDef(via=LibraryContainsFile, direction=INBOUND, target=Libraries, on_delete=CASCADE),
 ]
 LibraryFolders.EDGES = [
@@ -732,6 +732,7 @@ MlModels.EDGES = [
 ]
 MlModelOutputs.EDGES = [
     EdgeDef(via=ModelHasOutput, direction=INBOUND, target=MlModels, on_delete=CASCADE),
+    EdgeDef(via=OutputHasStream, direction=OUTBOUND, target=MlOutputStreams, on_delete=CASCADE),
 ]
 NavidromeTracks.EDGES = [
     EdgeDef(via=HasNdId, direction=OUTBOUND, target=LibraryFiles, on_delete=CASCADE),
@@ -740,15 +741,16 @@ NavidromeTracks.EDGES = [
 NavidromePlaycounts.EDGES = [
     EdgeDef(via=HasPlays, direction=INBOUND, target=NavidromeTracks, on_delete=DETACH),
 ]
-SegmentScoresStats.EDGES = [
-    EdgeDef(via=FileHasSegmentStats, direction=INBOUND, target=LibraryFiles, on_delete=CASCADE),
+MlOutputStreams.EDGES = [
+    EdgeDef(via=FileHasOutputStream, direction=INBOUND, target=LibraryFiles, on_delete=CASCADE),
+    EdgeDef(via=OutputHasStream, direction=INBOUND, target=MlModelOutputs, on_delete=CASCADE),
 ]
 
 
 __all__ = [
     "CalibrationHistory",
     "CalibrationState",
-    "FileHasSegmentStats",
+    "FileHasOutputStream",
     "FileHasState",
     "FileHasVectors",
     "FileStates",
@@ -770,11 +772,12 @@ __all__ = [
     "MlCapacity",
     "MlModelOutputs",
     "MlModels",
+    "MlOutputStreams",
     "ModelHasCalibration",
     "ModelHasOutput",
     "NavidromePlaycounts",
     "NavidromeTracks",
-    "SegmentScoresStats",
+    "OutputHasStream",
     "Sessions",
     "SongHasTags",
     "TagModelOutput",

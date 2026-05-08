@@ -171,6 +171,30 @@ def load_all_calibration_states(
     )
 
 
+def load_calibration_lookup(db: Database) -> dict[str, dict[str, Any]]:
+    """Return calibration parameters keyed by label for reconstruction and aggregation."""
+    calibration_states = load_all_calibration_states(db)
+    if not calibration_states:
+        logger.debug("[calibration_state] No calibrations in database (initial state)")
+        return {}
+
+    calibrations: dict[str, dict[str, Any]] = {}
+    for state in calibration_states:
+        label = state.get("label")
+        p5 = state.get("p5")
+        p95 = state.get("p95")
+        calibration_def_hash = state.get("calibration_def_hash")
+        if label and p5 is not None and p95 is not None:
+            calibrations[str(label)] = {
+                "p5": p5,
+                "p95": p95,
+                "calibration_def_hash": calibration_def_hash,
+            }
+
+    logger.debug("[calibration_state] Loaded %d calibrations from database", len(calibrations))
+    return calibrations
+
+
 def delete_calibration_state(
     db: Database,
     head_name: str,

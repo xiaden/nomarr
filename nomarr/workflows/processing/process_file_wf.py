@@ -11,8 +11,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db
 from nomarr.components.library.library_file_mutation_comp import bulk_delete_files
 from nomarr.components.ml.audio.ml_audio_comp import (
@@ -26,12 +24,17 @@ from nomarr.components.ml.inference.ml_backbone_embed_comp import compute_backbo
 from nomarr.components.ml.inference.ml_head_pipeline_comp import run_heads
 from nomarr.components.ml.onnx.ml_cache import ONNXModelCache
 from nomarr.components.ml.onnx.ml_discovery_comp import compute_model_suite_hash
-from nomarr.components.ml.onnx.ml_model_registry_comp import build_model_output_id_map
+from nomarr.components.ml.onnx.ml_model_registry_comp import build_model_output_id_map, build_model_output_index_map
 from nomarr.components.ml.resources.ml_timing_comp import build_timing_summary
 from nomarr.components.ml.vectors.ml_vector_persist_comp import persist_backbone_vector
 from nomarr.components.tagging.tagging_aggregation_comp import collect_mood_outputs
 from nomarr.helpers.dto.ml_edge_dto import MLEdgeWrites
-from nomarr.helpers.dto.processing_dto import DeferredFileWrites, ProcessFileResult, ProcessorConfig
+from nomarr.helpers.dto.processing_dto import (
+    DeferredFileWrites,
+    DeferredOutputStreamWrite,
+    ProcessFileResult,
+    ProcessorConfig,
+)
 from nomarr.helpers.dto.tags_dto import Tags
 from nomarr.helpers.time_helper import internal_ms
 
@@ -90,7 +93,7 @@ def process_file_workflow(
     all_head_outputs: list[Any] = []
     regression_heads: list[tuple[Any, list[float]]] = []
     total_heads_succeeded = 0
-    all_raw_segments: dict[str, tuple[np.ndarray, list[str]]] = {}
+    all_raw_output_streams: dict[str, list[Any]] = {}
     # Compute model suite hash once for vector persistence (not per backbone)
     model_suite_hash = compute_model_suite_hash(config.models_dir)
 
@@ -157,7 +160,7 @@ def process_file_workflow(
         all_head_results.update(result.head_results)
         regression_heads.extend(result.regression_heads)
         all_head_outputs.extend(result.all_head_outputs)
-        all_raw_segments.update(result.raw_segments_per_head)
+        all_raw_output_streams.update(result.raw_output_streams_by_model_path)
         # Persist pooled track-level embedding vector for this backbone
         if file_id is not None:
             assert library_path.library_id is not None  # validated above
@@ -206,6 +209,31 @@ def process_file_workflow(
                 if output_id is not None:
                     output_edges[f"nom:{ho.model_key}"] = (output_id, ho.value)
 
+    resolved_output_streams: list[DeferredOutputStreamWrite] = []
+    if all_raw_output_streams:
+        output_index_map = build_model_output_index_map(db)
+        for model_path, output_streams in all_raw_output_streams.items():
+            output_ids_by_index = output_index_map.get(model_path)
+            if output_ids_by_index is None:
+                logger.warning(
+                    "[process_file_workflow] Missing output registry for %s; skipping %d canonical streams",
+                    model_path,
+                    len(output_streams),
+                )
+                continue
+            for output_stream in output_streams:
+                output_id = output_ids_by_index.get(output_stream.output_index)
+                if output_id is None:
+                    logger.warning(
+                        "[process_file_workflow] Missing output id for %s[%d]; skipping canonical stream",
+                        model_path,
+                        output_stream.output_index,
+                    )
+                    continue
+                resolved_output_streams.append(
+                    DeferredOutputStreamWrite(output_id=output_id, values=output_stream.values)
+                )
+
     # Build deferred DB writes (executed async by caller, not here)
     tags_accum[config.version_tag_key] = config.tagger_version
     db_tags = dict(tags_accum)
@@ -218,7 +246,7 @@ def process_file_workflow(
             namespace=config.namespace,
             tagger_version=config.tagger_version,
             chromaprint=shared_chromaprint,
-            raw_segments=all_raw_segments or {},
+            raw_output_streams=resolved_output_streams,
             ml_edges=MLEdgeWrites(output_edges=output_edges) if output_edges else None,
         )
     elapsed_ms = internal_ms().value - start_all.value

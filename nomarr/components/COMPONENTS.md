@@ -77,7 +77,7 @@ components/
 │   │   ├── ml_embed_comp.py           # Embedding computation
 │   │   ├── ml_head_pipeline_comp.py   # Head inference pipeline
 │   │   ├── ml_heads_comp.py           # Head management
-│   │   └── ml_segment_stats_comp.py   # Segment score statistics
+│   │   └── ml_output_stream_store_comp.py # Canonical raw output stream persistence
 │   │
 │   ├── onnx/
 │   │   ├── ml_backbone.py             # ONNX backbone model wrapper

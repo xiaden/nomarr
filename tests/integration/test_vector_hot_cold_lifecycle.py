@@ -573,15 +573,14 @@ def test_cascade_delete_calls_hot_and_cold_ops() -> None:
             "vectors_track_cold__effnet__lib": cold_namespace,
         },
     )
-    database.db = MagicMock()
+    database.file_has_vectors = MagicMock()
 
     deleted = delete_vectors_by_file_id(database, "library_files/7")
 
     assert deleted == 3
     assert hot_namespace.file_id.calls == ["library_files/7"]
     assert cold_namespace.file_id.calls == ["library_files/7"]
-    database.db.aql.execute.assert_called_once()
-    assert database.db.aql.execute.call_args.kwargs["bind_vars"] == {"file_id": "library_files/7"}
+    database.file_has_vectors._from.delete.assert_called_once_with("library_files/7")
 
 
 def test_promote_is_safe_no_op_when_hot_empty(

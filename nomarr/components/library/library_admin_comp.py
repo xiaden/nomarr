@@ -147,22 +147,20 @@ def delete_library(db: Database, library_id: str) -> bool:
     file_ids = [doc["_id"] for doc in file_docs if isinstance(doc.get("_id"), str)]
 
     # Delete per-file derived data in batches.
+    from nomarr.components.ml.inference.ml_output_stream_store_comp import delete_output_streams
+
     for i in range(0, max(len(file_ids), 1), _BATCH_SIZE):
         batch = file_ids[i : i + _BATCH_SIZE]
         if not batch:
             break
-        # Collect segment stat IDs before deleting the edges that point to them.
-        stat_docs = cast("list[dict]", db.library_files.file_has_segment_stats.by_ids(batch, limit=None))
-        stat_ids = [doc["_id"] for doc in stat_docs if isinstance(doc.get("_id"), str)]
+        # Delete canonical output streams before removing the file-side edges.
+        for file_id in batch:
+            delete_output_streams(db, file_id)
         # Delete per-file edge collections.
         db.file_has_state.delete.in_(_from=batch)
         db.file_has_vectors.delete.in_(_from=batch)
-        db.file_has_segment_stats.delete.in_(_from=batch)
         db.song_has_tags.delete.in_(_from=batch)
         db.worker_claims.delete.in_(file_id=batch)
-        # Delete orphaned segment stats docs now that their edges are gone.
-        if stat_ids:
-            db.segment_scores_stats.delete.in_(_id=stat_ids)
 
     # Delete orphan tags after clearing song_has_tags edges.
     # The cleanup component also checks tag_model_output edges so tags still

@@ -109,6 +109,34 @@ class _StubSigmoidHeadModel(ONNXHeadModel):
         return np.array([[0.9, 0.1]], dtype=np.float32)
 
 
+class _StubSigmoidMultiSegmentHeadModel(ONNXHeadModel):
+    """Typed test double that returns deterministic multilabel segment scores."""
+
+    def _run(self, embeddings: np.ndarray) -> np.ndarray:
+        return np.array(
+            [
+                [0.9, 0.1],
+                [0.8, 0.2],
+                [0.7, 0.3],
+            ],
+            dtype=np.float32,
+        )
+
+
+class _StubRegressionMultiSegmentHeadModel(ONNXHeadModel):
+    """Typed test double that returns deterministic regression segment scores."""
+
+    def _run(self, embeddings: np.ndarray) -> np.ndarray:
+        return np.array(
+            [
+                [0.65],
+                [0.75],
+                [0.85],
+            ],
+            dtype=np.float32,
+        )
+
+
 @pytest.mark.unit
 class TestRunSingleHeadWithRealObjects:
     """Tests for run_single_head() using real HeadInfo + ONNXHeadModel (no ONNX session)."""
@@ -154,6 +182,27 @@ class TestRunSingleHeadWithRealObjects:
         assert happy_outputs[0].head is hi
         assert happy_outputs[0].tier == "high"
 
+    def test_classification_head_captures_raw_output_streams_by_output_index(self) -> None:
+        hi = _make_sigmoid_head_info()
+        model = ONNXHeadModel("/models/effnet/heads/sigmoid/mood_happy.onnx", meta=hi)
+
+        def predict_fn() -> np.ndarray:
+            return np.array(
+                [
+                    [0.9, 0.1],
+                    [0.8, 0.2],
+                    [0.7, 0.3],
+                ],
+                dtype=np.float32,
+            )
+
+        result = run_single_head(model, predict_fn)
+
+        assert result.raw_output_streams is not None
+        assert [stream.output_index for stream in result.raw_output_streams] == [0, 1]
+        assert result.raw_output_streams[0].values == pytest.approx([0.9, 0.8, 0.7])
+        assert result.raw_output_streams[1].values == pytest.approx([0.1, 0.2, 0.3])
+
     def test_regression_head_captures_regression_data(self) -> None:
         hi = _make_regression_head_info()
         model = ONNXHeadModel(
@@ -186,6 +235,30 @@ class TestRunSingleHeadWithRealObjects:
         result = run_single_head(model, predict_fn)
 
         assert result.head_outputs == []
+
+    def test_regression_head_captures_single_raw_output_stream(self) -> None:
+        hi = _make_regression_head_info()
+        model = ONNXHeadModel(
+            "/models/effnet/heads/regression/approachability_regression.onnx",
+            meta=hi,
+        )
+
+        def predict_fn() -> np.ndarray:
+            return np.array(
+                [
+                    [0.65],
+                    [0.75],
+                    [0.85],
+                ],
+                dtype=np.float32,
+            )
+
+        result = run_single_head(model, predict_fn)
+
+        assert result.raw_output_streams is not None
+        assert len(result.raw_output_streams) == 1
+        assert result.raw_output_streams[0].output_index == 0
+        assert result.raw_output_streams[0].values == pytest.approx([0.65, 0.75, 0.85])
 
     def test_predict_fn_exception_yields_error_processing(self) -> None:
         hi = _make_sigmoid_head_info()
@@ -224,6 +297,43 @@ class TestRunHeads:
 
         assert "existing_tag" in tags_accum
         assert "happy_effnet_mood_happy" in tags_accum
+
+    def test_run_heads_aggregates_raw_output_streams_by_model_path(self) -> None:
+        sigmoid_head_info = _make_sigmoid_head_info()
+        regression_head_info = _make_regression_head_info()
+        sigmoid_head = _StubSigmoidMultiSegmentHeadModel(sigmoid_head_info.model_path, meta=sigmoid_head_info)
+        regression_head = _StubRegressionMultiSegmentHeadModel(
+            regression_head_info.model_path,
+            meta=regression_head_info,
+        )
+
+        tags_accum: dict[str, Any] = {}
+        result = run_heads(
+            [sigmoid_head, regression_head],
+            np.zeros((3, 64), dtype=np.float32),
+            tags_accum,
+        )
+
+        assert result.heads_succeeded == 2
+        assert set(result.raw_output_streams_by_model_path) == {
+            sigmoid_head_info.model_path,
+            regression_head_info.model_path,
+        }
+        assert [
+            stream.output_index for stream in result.raw_output_streams_by_model_path[sigmoid_head_info.model_path]
+        ] == [0, 1]
+        assert result.raw_output_streams_by_model_path[sigmoid_head_info.model_path][0].values == pytest.approx(
+            [0.9, 0.8, 0.7]
+        )
+        assert result.raw_output_streams_by_model_path[sigmoid_head_info.model_path][1].values == pytest.approx(
+            [0.1, 0.2, 0.3]
+        )
+        assert [
+            stream.output_index for stream in result.raw_output_streams_by_model_path[regression_head_info.model_path]
+        ] == [0]
+        assert result.raw_output_streams_by_model_path[regression_head_info.model_path][0].values == pytest.approx(
+            [0.65, 0.75, 0.85]
+        )
 
     def test_empty_head_list_returns_zero_successes(self) -> None:
         tags_accum: dict[str, Any] = {}

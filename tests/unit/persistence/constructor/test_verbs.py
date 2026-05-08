@@ -615,6 +615,104 @@ class TestTraversalByIds:
 
 @pytest.mark.unit
 @pytest.mark.mocked
+class TestTransition:
+    """Tests for the transition verb."""
+
+    def test_empty_ids_is_a_no_op(self) -> None:
+        """transition() skips AQL entirely for an empty batch."""
+        from nomarr.persistence.constructor import verbs as module
+
+        db = MagicMock()
+
+        module.transition(db, "file_has_state", [], "file_states/not_tagged", "file_states/tagged")
+
+        db.aql.execute.assert_not_called()
+
+    def test_batches_ids_and_uses_one_set_based_aql_query_per_chunk(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """transition() chunks ids and performs one set-based AQL statement per chunk."""
+        from nomarr.persistence.constructor import verbs as module
+
+        db = MagicMock()
+        execute = MagicMock(return_value=iter(()))
+        monkeypatch.setattr(module, "_execute_aql", execute)
+        monkeypatch.setattr(module, "_EDGE_BATCH", 2)
+
+        module.transition(
+            db,
+            "file_has_state",
+            ["library_files/1", "library_files/2", "library_files/3", "library_files/4", "library_files/5"],
+            "file_states/not_tagged",
+            "file_states/tagged",
+        )
+
+        assert execute.call_count == 3
+        assert [call.kwargs["bind_vars"]["ids"] for call in execute.call_args_list] == [
+            ["library_files/1", "library_files/2"],
+            ["library_files/3", "library_files/4"],
+            ["library_files/5"],
+        ]
+        assert all("FILTER e._from IN @ids AND e._to == @from" in call.args[1] for call in execute.call_args_list)
+        assert all("FOR fid IN @ids" in call.args[1] for call in execute.call_args_list)
+        assert all("UPSERT { _from: fid, _to: @to }" in call.args[1] for call in execute.call_args_list)
+        assert all("@fid" not in call.args[1] for call in execute.call_args_list)
+
+    def test_query_keeps_remove_then_upsert_order_for_reruns_and_already_at_target(self) -> None:
+        """transition() removes only the expected source edge before idempotent destination UPSERT."""
+        from nomarr.persistence.constructor import verbs as module
+
+        db = MagicMock()
+
+        module.transition(
+            db,
+            "file_has_state",
+            ["library_files/1", "library_files/2"],
+            "file_states/not_tagged",
+            "file_states/tagged",
+        )
+
+        call_args = db.aql.execute.call_args
+        aql = call_args.args[0]
+        bind_vars = call_args.kwargs["bind_vars"]
+        assert aql.index("REMOVE e IN @@ec") < aql.index("UPSERT { _from: fid, _to: @to }")
+        assert "FILTER e._from IN @ids AND e._to == @from" in aql
+        assert "UPDATE {}" in aql
+        assert bind_vars == {
+            "@ec": "file_has_state",
+            "ids": ["library_files/1", "library_files/2"],
+            "from": "file_states/not_tagged",
+            "to": "file_states/tagged",
+        }
+
+    def test_mixed_batch_removes_only_matching_source_edges_but_upserts_all_ids(self) -> None:
+        """transition() supports mixed batches where only some ids currently match from_edge_target."""
+        from nomarr.persistence.constructor import verbs as module
+
+        db = MagicMock()
+
+        module.transition(
+            db,
+            "file_has_state",
+            ["library_files/1", "library_files/2", "library_files/3"],
+            "file_states/not_scanned",
+            "file_states/scanned",
+        )
+
+        call_args = db.aql.execute.call_args
+        aql = call_args.args[0]
+        bind_vars = call_args.kwargs["bind_vars"]
+        assert "FILTER e._from IN @ids AND e._to == @from" in aql
+        assert "FOR fid IN @ids" in aql
+        assert "e._to == @to" not in aql
+        assert bind_vars["ids"] == ["library_files/1", "library_files/2", "library_files/3"]
+        assert bind_vars["from"] == "file_states/not_scanned"
+        assert bind_vars["to"] == "file_states/scanned"
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
 class TestTruncate:
     """Tests for the truncate verb."""
 
@@ -626,3 +724,105 @@ class TestTruncate:
         truncate(db, "my_collection")
         db.collection.assert_called_once_with("my_collection")
         db.collection.return_value.truncate.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestMoveCollection:
+    """Tests for the move_collection verb."""
+
+    def test_uses_keyset_watermarks_for_copy_edge_insert_and_cleanup(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """move_collection paginates copy, edge insert, and cleanup by stable _key watermarks."""
+        from nomarr.persistence.constructor import verbs as module
+
+        db = MagicMock()
+        db.has_collection.return_value = True
+        db.collection.return_value.count.return_value = 3
+        db.collections.return_value = [{"name": "file_has_state", "type": 3, "system": False}]
+
+        execute = MagicMock(
+            side_effect=[
+                iter(["001", "002"]),
+                iter(["003"]),
+                iter([]),
+                iter(["edge-001", "edge-002"]),
+                iter(["edge-003"]),
+                iter([]),
+                iter([1, 1]),
+                iter([]),
+                iter(["001", "003"]),
+                iter([]),
+            ]
+        )
+        monkeypatch.setattr(module, "_execute_aql", execute)
+
+        result = module.move_collection(db, "vectors_hot", "vectors_cold")
+
+        assert result == 3
+        assert not any("LIMIT @offset, @batch" in call.args[1] for call in execute.call_args_list)
+
+        copy_calls = execute.call_args_list[0:3]
+        assert all("FILTER @last_key == null OR doc._key > @last_key" in call.args[1] for call in copy_calls)
+        assert all("SORT doc._key ASC" in call.args[1] for call in copy_calls)
+        assert [call.kwargs["bind_vars"]["last_key"] for call in copy_calls] == [None, "002", "003"]
+
+        edge_insert_calls = execute.call_args_list[3:6]
+        assert all("e._key > @last_key" in call.args[1] for call in edge_insert_calls)
+        assert all("SORT e._key ASC" in call.args[1] for call in edge_insert_calls)
+        assert [call.kwargs["bind_vars"]["last_key"] for call in edge_insert_calls] == [None, "edge-002", "edge-003"]
+
+        cleanup_calls = execute.call_args_list[8:10]
+        assert all("FILTER @last_key == null OR doc._key > @last_key" in call.args[1] for call in cleanup_calls)
+        assert all("DOCUMENT(@@src, doc._key) != null" in call.args[1] for call in cleanup_calls)
+        assert [call.kwargs["bind_vars"]["last_key"] for call in cleanup_calls] == [None, "003"]
+
+    def test_preserves_rerun_safe_queries_and_edge_insert_before_delete(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """move_collection keeps UPSERT/overwrite cleanup semantics and inserts new edges before deleting old ones."""
+        from nomarr.persistence.constructor import verbs as module
+
+        db = MagicMock()
+        db.has_collection.return_value = True
+        db.collection.return_value.count.return_value = 2
+        db.collections.return_value = [{"name": "file_has_state", "type": 3, "system": False}]
+
+        execute = MagicMock(
+            side_effect=[
+                iter(["001"]),
+                iter([]),
+                iter(["edge-001"]),
+                iter([]),
+                iter([1]),
+                iter([]),
+                iter(["001"]),
+                iter([]),
+            ]
+        )
+        monkeypatch.setattr(module, "_execute_aql", execute)
+
+        result = module.move_collection(db, "source_docs", "dest_docs")
+
+        assert result == 2
+        db.create_collection.assert_not_called()
+
+        copy_query = execute.call_args_list[0].args[1]
+        edge_insert_query = execute.call_args_list[2].args[1]
+        edge_delete_query = execute.call_args_list[4].args[1]
+        cleanup_query = execute.call_args_list[6].args[1]
+
+        assert "UPSERT {_key: doc._key}" in copy_query
+        assert "UPDATE doc IN @@dest" in copy_query
+        assert 'overwriteMode: "replace"' in edge_insert_query
+        assert 'CONCAT("mv_", e._key)' in edge_insert_query
+        assert "REMOVE e IN @@ec" in edge_delete_query
+        assert execute.call_args_list.index(execute.call_args_list[2]) < execute.call_args_list.index(
+            execute.call_args_list[4]
+        )
+        assert "DOCUMENT(@@src, doc._key) != null" in cleanup_query
+        assert "REMOVE {_key: doc._key} IN @@src" in cleanup_query
+        assert not any("truncate" in call.args[1].lower() for call in execute.call_args_list)

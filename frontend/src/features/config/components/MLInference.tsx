@@ -73,7 +73,9 @@ export function MLInference({ onVramProbe, actionLoading }: MLInferenceProps) {
         <SectionHeader title="Registered Models" />
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Configure output labels for each model head before enabling it for
-          inference. Known models are pre-labeled automatically at startup.
+          inference. Known models are pre-labeled automatically when first
+          discovered. Changing a label affects future inference after files are
+          reprocessed; existing tags and segment data are not rewritten.
         </Typography>
 
         {loading && (

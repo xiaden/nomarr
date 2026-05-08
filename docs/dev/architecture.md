@@ -90,12 +90,16 @@ Rules:
 
 **Contains:**
 
-- `db.py` — `Database` facade and one-time collection binding via `bind_all_collections()`
-- `base.py` — collection base types, field declarations, and verb descriptors
-- `collections.py` — concrete collection declarations
+- `db.py` — `Database` facade, static collection binding, dynamic vector registration, and cascade compilation
+- `collections.py` — concrete typed collection declarations
+- `collections_base.py` — shared collection wrapper bases (`DocumentCollection`, `EdgeCollection`, `StateGraphCollection`, `VectorCollection`)
+- `accessors.py` — field and collection accessors that expose the descriptor-bound API
 - `constructor/` — shared AQL helpers (`verbs.py`, `filters.py`, `pagination.py`)
+- `cascade.py` — cascade compilation helpers derived from collection `EDGES` metadata
 
 **Access pattern:** Always go through the injected `Database` facade and use the descriptor-bound collection API.
+
+**Governing ADR:** See [ADR-030](../../artifacts/decisions/ADR-030-adopt-descriptor-based-database-facade-for-persistence-access.md).
 
 ```python
 # ✅ Via Database facade
@@ -121,7 +125,10 @@ vectors = db.register("vectors_track_hot__discogs_effnet__main", "vectors_track_
 | `db.ml_model_outputs` | `ml_model_outputs` | ML |
 | `db.calibration_state` | `calibration_state` | ML / Calibration |
 | `db.calibration_history` | `calibration_history` | ML / Calibration |
-| `db.segment_scores_stats` | `segment_scores_stats` | ML |
+| `db.ml_output_streams` | `ml_output_streams` | ML |
+| `db.file_has_output_stream` | `file_has_output_stream` | ML |
+| `db.output_has_stream` | `output_has_stream` | ML |
+| `db.file_has_vectors` | `file_has_vectors` | ML |
 | `db.worker_claims` | `worker_claims` | Workers |
 | `db.worker_restart_policy` | `worker_restart_policy` | Workers |
 | `db.health` | `health` | Infrastructure |

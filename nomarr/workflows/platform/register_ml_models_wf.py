@@ -1,8 +1,9 @@
-"""Register ONNX head models and seed known labels at startup.
+"""Register ONNX head models and seed missing known labels at startup.
 
 Walks the models directory for ``*.onnx`` files under
 ``<backbone>/heads/<type>/``, introspects each session for output shape,
-upserts model and output vertices, and seeds labels for known shipped models.
+upserts model and output vertices, and seeds missing labels for known shipped
+models without clobbering existing user edits.
 
 JSON sidecar files are **not** read.  Release dates are stored as empty
 strings; they do not exist for ONNX-only deployments.
@@ -46,7 +47,7 @@ def register_ml_models_workflow(
     2. Introspect ONNX session for output dimension count
     3. Upsert model vertex into ``ml_models``
     4. Ensure output vertices exist in ``ml_model_outputs``
-    5. Seed labels from known defaults if the model is shipped by nomarr
+    5. Seed missing labels from known defaults if the model is shipped by nomarr
 
     Models with all outputs labeled are marked ``fully_configured=True``.
     Unknown models remain unconfigured until the user labels them via UI.
@@ -93,10 +94,12 @@ def register_ml_models_workflow(
         # Step 4: Ensure output vertices exist
         outputs = ensure_model_outputs(db, model_id, output_count)
 
-        # Step 5: Seed labels for known shipped models
+        # Step 5: Seed missing labels for known shipped models
         if known_outputs is not None:
             for output_index, label in known_outputs:
                 output_doc = outputs[output_index]
+                if output_doc.get("fully_labeled", False):
+                    continue
                 update_model_output_label(db, output_id=output_doc["_id"], label=label)
             fully_labeled = list_fully_labeled_model_outputs(db, model_id)
             if len(fully_labeled) == output_count:

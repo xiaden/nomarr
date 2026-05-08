@@ -1,0 +1,1 @@
+import{An as e,Dr as t,ur as n}from"./index-k9QvjM2c.js";var r=e((0,t(n()).jsx)(`path`,{d:`M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z`}),`Add`);export{r as t};

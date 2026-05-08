@@ -279,18 +279,13 @@ def _list_library_records(db: Database) -> list[dict[str, Any]]:
     return enriched_docs
 
 
-def _delete_segment_stats_for_files(db: Database, file_ids: list[str]) -> int:
-    """Cascade-delete all segment-stats documents linked to the provided files."""
+def _delete_output_streams_for_files(db: Database, file_ids: list[str]) -> int:
+    """Delete all canonical output streams linked to the provided files."""
+    from nomarr.components.ml.inference.ml_output_stream_store_comp import delete_output_streams
+
     deleted = 0
     for file_id in file_ids:
-        stats_docs = cast(
-            "list[dict[str, Any]]",
-            db.library_files.file_has_segment_stats(file_id, limit=db.segment_scores_stats.count()),
-        )
-        stats_ids = [cast("str", doc["_id"]) for doc in stats_docs if "_id" in doc]
-        if not stats_ids:
-            continue
-        deleted += db.segment_scores_stats.delete.in_(_id=stats_ids)  # type: ignore[union-attr]
+        deleted += delete_output_streams(db, file_id)
     return deleted
 
 
@@ -648,6 +643,9 @@ def bootstrap_file_state_edges(
 def remove_deleted_files(db: Database, paths: list[str]) -> int:
     """Bulk-delete files that are no longer on disk.
 
+    Canonical raw output streams are explicitly removed first because the
+    library-files cascade only covers directly linked graph data.
+
     Args:
         db: Database instance
         paths: Absolute file paths to remove
@@ -657,6 +655,14 @@ def remove_deleted_files(db: Database, paths: list[str]) -> int:
 
     """
     from nomarr.components.library.library_file_mutation_comp import bulk_delete_files
+
+    file_ids = [
+        str(file_doc["_id"])
+        for path in paths
+        if (file_doc := cast("dict[str, Any] | None", db.library_files.get(path=path))) is not None
+    ]
+    if file_ids:
+        _delete_output_streams_for_files(db, file_ids)
 
     return bulk_delete_files(db, paths)
 

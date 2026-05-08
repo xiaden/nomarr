@@ -10,12 +10,14 @@ applyTo: nomarr/persistence/**
 
 Persistence is the **data access layer**:
 
-- `Database` owns the connection and exposes bound collection classes as attributes
-- `base.py` defines collection base classes, field declarations, and verb descriptors
+- `Database` owns the connection and exposes instantiated collection wrappers as attributes
+- `collections_base.py` defines the shared collection base classes and collection-level verbs
+- `base_types.py` defines `Field`, `UniqueField`, and edge metadata/constants
+- `accessors.py` defines `FieldAccessor` plus collection/field get/delete helpers
 - `collections.py` declares concrete collections
 - `constructor/` contains reusable AQL/query helpers (`verbs.py`, `filters.py`, `pagination.py`)
 - External code accesses persistence via the injected `Database` facade, for example `db.tags.name.get.many(...)` or `db.library_files.path.get(...)`
-- Returns [DTOs defined in helpers](./helpers.instructions.md)
+- Persistence returns raw document dicts and query results; higher layers map them to DTOs when needed
 
 ---
 
@@ -23,10 +25,13 @@ Persistence is the **data access layer**:
 
 ```
 persistence/
-├── db.py                   # Database facade (connection + one-time binding)
+├── db.py                   # Database facade and collection instance binding
 ├── arango_client.py        # ArangoDB client wrapper
-├── base.py                 # Collection bases, Field/UniqueField, verb descriptors
 ├── collections.py          # Concrete collection declarations
+├── collections_base.py     # Shared collection wrappers and collection-level verbs
+├── accessors.py            # FieldAccessor plus collection/field get/delete helpers
+├── base_types.py           # Field criteria, edge metadata, and constants
+├── cascade.py              # Cascade compilation helpers
 └── constructor/            # Shared AQL/query helpers
     ├── __init__.py
     ├── verbs.py            # AQL primitives (insert, delete, get_one_by_field, etc.)
@@ -60,9 +65,9 @@ from nomarr.interfaces import ...    # No interfaces
 
 **Use the Nomarr MCP server to navigate this layer efficiently:**
 
-- `read_module_api(module_name)` - Inspect the live collection/descriptor API before reading full files
-- `locate_module_symbol(symbol_name)` - Find collection classes, descriptors, or AQL helpers
-- `read_module_source(qualified_name)` - Get exact collection, descriptor, or verb source with line numbers
+- `read_module_api(module_name)` - Inspect the live collection/accessor API before reading full files
+- `locate_module_symbol(symbol_name)` - Find collection classes, accessors, or AQL helpers
+- `read_module_source(qualified_name)` - Get exact collection, accessor, or verb source with line numbers
 
 **Before modifying persistence behavior, run `read_module_api` to understand the interface.**
 
@@ -70,7 +75,7 @@ from nomarr.interfaces import ...    # No interfaces
 
 ## Database Access Pattern
 
-External code should go through the injected `Database` facade and use the descriptor-bound API:
+External code should go through the injected `Database` facade and use the instance-bound collection/accessor API:
 
 ```python
 # ✅ Correct - access via Database instance
@@ -90,7 +95,7 @@ from nomarr.persistence.collections import LibraryFiles
 file = LibraryFiles.path.get("/music/track.flac")
 ```
 
-Persistence wiring happens inside `Database.__init__()` via `bind_all_collections(self.db)`. Higher layers should not bind or rebuild collection classes themselves.
+Persistence wiring happens inside `Database.__init__()` by instantiating each collection wrapper with the shared `SafeDatabase` handle and then compiling cascade helpers via `_compile_all_cascades()`. Higher layers should not instantiate, bind, or rebuild collection classes themselves.
 
 ---
 
@@ -113,18 +118,20 @@ These are ArangoDB-native identifiers:
 
 ---
 
-## Descriptor Pattern
+## Collection and accessor pattern
 
-Collection behavior is declared in classes, not in per-collection wrapper objects.
+Collection behavior lives in collection wrapper classes plus per-field `FieldAccessor` instances created in each collection `__init__`.
 
 When adding a collection:
 
 1. Define or update the collection class in `collections.py`
 2. Choose the correct base class (`DocumentCollection`, `EdgeCollection`, `VectorCollection`, or `StateGraphCollection`)
-3. Declare fields with `Field[...]` and `UniqueField[...]`
-4. Add `EDGES` metadata when traversal or cascade behavior is required
-5. Expose the collection on `Database` in `db.py` if it belongs on the static facade
-6. Add or extend shared AQL helpers in `constructor/` if the existing verbs are insufficient
+3. Annotate field attributes as `FieldAccessor`
+4. Register each field in `__init__` with `self._field("name", unique=True/False)`
+5. Use `Field(...)` only for positional collection criteria; `UniqueField[...]` is compatibility-only and should not be used in new collection bodies
+6. Add `EDGES` metadata when traversal or cascade behavior is required
+7. Expose the collection on `Database` in `db.py` if it belongs on the static facade
+8. Add or extend shared AQL helpers in `constructor/` if the existing verbs are insufficient
 
 ### Mutation rules
 
@@ -163,12 +170,12 @@ db.worker_claims.truncate()
 Persistence **only** performs data access. No business decisions:
 
 ```python
-# ✅ Correct - pure data access via descriptor-bound verbs
+# ✅ Correct - pure data access via collection/accessor verbs
 def get_library_files(db: Database, library_key: str, limit: int = 100) -> list[dict[str, object]]:
     return db.library_files.library_key.get.many(library_key, limit=limit, offset=0)
 
 def delete_stale_claims(db: Database, stale_ids: list[str]) -> None:
-    db.worker_claims.delete(stale_ids)
+    db.worker_claims.file_id.delete.in_(stale_ids)
 
 # ❌ Wrong - business logic in persistence
 def get_files_to_process(db: Database, library_key: str) -> list[dict[str, object]]:

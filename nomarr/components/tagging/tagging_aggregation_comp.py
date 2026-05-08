@@ -12,6 +12,7 @@ from nomarr.components.ml.onnx.ml_known_models_comp import OPPONENT_MAP
 from nomarr.components.tagging.mood_labels_comp import MOOD_MAPPING
 from nomarr.helpers.dto.ml_dto import HeadOutput
 from nomarr.helpers.dto.tagging_dto import BuildTierTermSetsResult
+from nomarr.helpers.dto.tags_dto import Tags
 
 logger = logging.getLogger(__name__)
 
@@ -472,6 +473,16 @@ def aggregate_mood_tiers(
     suppressed_keys = _compute_suppressed_keys(head_outputs, OPPONENT_MAP)
     tier_sets = _build_tier_term_sets(tier_map, suppressed_keys)
     return _make_inclusive_mood_tags(tier_sets.strict_terms, tier_sets.regular_terms, tier_sets.loose_terms)
+
+
+def aggregate_mood_tags(head_outputs: list[HeadOutput]) -> Tags:
+    """Aggregate HeadOutput objects into a ``Tags`` DTO of mood-tier tags."""
+    mood_tags_dict = aggregate_mood_tiers(head_outputs)
+    if not mood_tags_dict:
+        logger.debug("[aggregation] No mood tags generated")
+        return Tags(items=())
+    logger.debug("[aggregation] Generated %d mood tags", len(mood_tags_dict))
+    return Tags.from_dict(mood_tags_dict)
 
 
 def collect_mood_outputs(

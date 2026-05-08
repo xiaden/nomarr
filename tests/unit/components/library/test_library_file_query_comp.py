@@ -790,13 +790,24 @@ class TestPhaseTwoQueryHelpers:
         mock_db = MagicMock()
         vector_coll = MagicMock()
         mock_db._registered = {"vectors_track__hot__effnet": vector_coll}
+        mock_db.library_files.get.return_value = [
+            {"_id": "library_files/1"},
+            {"_id": "library_files/2"},
+            {"_id": None},
+        ]
 
-        clear_library_data(mock_db)
+        with patch(
+            "nomarr.components.ml.inference.ml_output_stream_store_comp.delete_output_streams"
+        ) as mock_delete_output_streams:
+            clear_library_data(mock_db)
 
         vector_coll.truncate.assert_called_once()
-        mock_db.segment_scores_stats.truncate.assert_called_once()
+        mock_db.library_files.get.assert_called_once_with(limit=None)
+        assert mock_delete_output_streams.call_args_list == [
+            call(mock_db, "library_files/1"),
+            call(mock_db, "library_files/2"),
+        ]
         mock_db.file_has_vectors.truncate.assert_called_once()
-        mock_db.file_has_segment_stats.truncate.assert_called_once()
         mock_db.song_has_tags.truncate.assert_called_once()
         mock_db.file_has_state.truncate.assert_called_once()
         mock_db.library_contains_file.truncate.assert_called_once()

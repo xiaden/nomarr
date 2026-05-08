@@ -110,6 +110,14 @@ class WorkerStatusResult:
 
 
 @dataclass
+class DeferredOutputStreamWrite:
+    """Deferred canonical stream write for one model output."""
+
+    output_id: str
+    values: list[float]
+
+
+@dataclass
 class DeferredFileWrites:
     """DB write payloads collected during ML processing.
 
@@ -118,13 +126,12 @@ class DeferredFileWrites:
     with the next file.
 
     The expected execution order is:
-    1. ``save_file_tags``   (tag vertices + edges)
+    1. ``save_file_tags``         (tag vertices + edges)
     2. write ``tag_model_output`` edges via ``ml_edges``
-    3. ``set_chromaprint``  (fingerprint)
-    4. compute segment stats from raw_segments (deferred from hot path)
-    5. ``upsert_stats``     (segment statistics)
-    6. ``mark_file_tagged`` (only if 1-5 succeeded)
-    7. ``release_claim``    (always, even on error)
+    3. ``set_chromaprint``        (fingerprint)
+    4. ``upsert_output_streams``  (canonical raw output streams)
+    5. ``mark_file_tagged``       (only if 1-4 succeeded)
+    6. ``release_claim``          (always, even on error)
     """
 
     file_id: str
@@ -133,7 +140,7 @@ class DeferredFileWrites:
     namespace: str
     tagger_version: str
     chromaprint: str | None
-    raw_segments: dict[str, tuple[Any, list[str]]]  # head_name -> (segment_scores ndarray, labels)
+    raw_output_streams: list[DeferredOutputStreamWrite]
     ml_edges: MLEdgeWrites | None = None
 
 

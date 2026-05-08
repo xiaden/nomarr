@@ -115,8 +115,8 @@ def _create_collections(db: DatabaseLike) -> None:
         "ml_capacity_estimates",  # Stores probe results per model_set_hash
         "locks",  # Unified lock system (capacity_probe, vector_promotion, etc.)
         "worker_restart_policy",  # Worker restart state persistence
-        # Segment-level ML statistics (per-label aggregates from head predictions)
-        "segment_scores_stats",
+        # Canonical raw ML output streams (one per file/output pair)
+        "ml_output_streams",
         # Future: "segment_scores_blob" -- full segment x class matrix for re-pooling
         # Migration tracking (database migration system)
         "applied_migrations",
@@ -143,6 +143,8 @@ def _create_collections(db: DatabaseLike) -> None:
         "song_has_tags",  # song→tag relationships (unified)
         "tag_model_output",  # tag→ml_model_output edges
         "file_has_state",  # library_files→file_states state edges
+        "file_has_output_stream",  # library_files→ml_output_streams canonical stream links
+        "output_has_stream",  # ml_model_outputs→ml_output_streams canonical stream links
         "has_nd_id",  # navidrome_tracks→library_files file resolution
         "has_plays",  # navidrome_playcounts→navidrome_tracks play data
     ]
@@ -310,17 +312,13 @@ def _create_indexes(db: DatabaseLike) -> None:
     _ensure_index(db, "tag_model_output", "persistent", ["_to"])
     _ensure_index(db, "tag_model_output", "persistent", ["_from", "_to"], unique=True)
 
-    # segment_scores_stats indexes (per-label segment statistics)
-    _ensure_index(db, "segment_scores_stats", "persistent", ["file_id"])
-    _ensure_index(db, "segment_scores_stats", "persistent", ["head_name"])
-    _ensure_index(db, "segment_scores_stats", "persistent", ["tagger_version"])
-    _ensure_index(
-        db,
-        "segment_scores_stats",
-        "persistent",
-        ["file_id", "head_name", "tagger_version"],
-        unique=True,
-    )
+    # canonical stream graph indexes
+    _ensure_index(db, "file_has_output_stream", "persistent", ["_from"])
+    _ensure_index(db, "file_has_output_stream", "persistent", ["_to"])
+    _ensure_index(db, "file_has_output_stream", "persistent", ["_from", "_to"], unique=True)
+    _ensure_index(db, "output_has_stream", "persistent", ["_from"])
+    _ensure_index(db, "output_has_stream", "persistent", ["_to"])
+    _ensure_index(db, "output_has_stream", "persistent", ["_from", "_to"], unique=True)
 
     # Note: V010 added a TTL index on vram_promises.last_seen_ms, but V011 dropped it
     # (the ms vs s unit mismatch made it non-functional, and explicit owner-driven

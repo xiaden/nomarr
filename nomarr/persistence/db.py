@@ -14,7 +14,7 @@ from nomarr.persistence.cascade import _compile_cascade_aql, gather_concrete_nam
 from nomarr.persistence.collections import (
     CalibrationHistory,
     CalibrationState,
-    FileHasSegmentStats,
+    FileHasOutputStream,
     FileHasState,
     FileHasVectors,
     FileStates,
@@ -36,11 +36,12 @@ from nomarr.persistence.collections import (
     MlCapacity,
     MlModelOutputs,
     MlModels,
+    MlOutputStreams,
     ModelHasCalibration,
     ModelHasOutput,
     NavidromePlaycounts,
     NavidromeTracks,
-    SegmentScoresStats,
+    OutputHasStream,
     Sessions,
     SongHasTags,
     TagModelOutput,
@@ -155,9 +156,10 @@ class Database:
     model_has_output: ModelHasOutput
     model_has_calibration: ModelHasCalibration
     ml_model_outputs: MlModelOutputs
+    ml_output_streams: MlOutputStreams
     tag_model_output: TagModelOutput
-    segment_scores_stats: SegmentScoresStats
-    file_has_segment_stats: FileHasSegmentStats
+    file_has_output_stream: FileHasOutputStream
+    output_has_stream: OutputHasStream
     has_nd_id: HasNdId
     has_plays: HasPlays
     migrations: Migrations
@@ -237,9 +239,10 @@ class Database:
         self.model_has_output = ModelHasOutput(self.db)
         self.model_has_calibration = ModelHasCalibration(self.db)
         self.ml_model_outputs = MlModelOutputs(self.db)
+        self.ml_output_streams = MlOutputStreams(self.db)
         self.tag_model_output = TagModelOutput(self.db)
-        self.segment_scores_stats = SegmentScoresStats(self.db)
-        self.file_has_segment_stats = FileHasSegmentStats(self.db)
+        self.file_has_output_stream = FileHasOutputStream(self.db)
+        self.output_has_stream = OutputHasStream(self.db)
         self.has_nd_id = HasNdId(self.db)
         self.has_plays = HasPlays(self.db)
         self.migrations = Migrations(self.db)
@@ -266,7 +269,7 @@ class Database:
             self.ml_capacity,
             self.ml_models,
             self.ml_model_outputs,
-            self.segment_scores_stats,
+            self.ml_output_streams,
             self.migrations,
         ]
         self._edge_collections: list[EdgeCollection] = [
@@ -280,7 +283,8 @@ class Database:
             self.model_has_output,
             self.model_has_calibration,
             self.tag_model_output,
-            self.file_has_segment_stats,
+            self.file_has_output_stream,
+            self.output_has_stream,
             self.has_nd_id,
             self.has_plays,
         ]

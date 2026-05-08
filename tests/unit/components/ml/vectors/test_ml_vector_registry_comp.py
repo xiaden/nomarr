@@ -99,17 +99,14 @@ class TestDeleteVectorsByFileId:
             "vectors_track_hot__effnet__lib1": hot_namespace,
             "vectors_track_cold__effnet__lib1": cold_namespace,
         }
-        db.db = MagicMock()
+        db.file_has_vectors = MagicMock()
 
         deleted = delete_vectors_by_file_id(db, "library_files/7")
 
         assert deleted == 3
         hot_namespace.file_id.delete.assert_called_once_with("library_files/7")
         cold_namespace.file_id.delete.assert_called_once_with("library_files/7")
-        db.db.aql.execute.assert_called_once()
-        query = db.db.aql.execute.call_args.args[0]
-        assert "FOR e IN file_has_vectors" in query
-        assert db.db.aql.execute.call_args.kwargs["bind_vars"] == {"file_id": "library_files/7"}
+        db.file_has_vectors._from.delete.assert_called_once_with("library_files/7")
 
 
 class TestDeleteVectorsByFileIds:
@@ -120,12 +117,12 @@ class TestDeleteVectorsByFileIds:
     def test_returns_zero_for_empty_input(self) -> None:
         db = MagicMock()
         db._registered = {}
-        db.db = MagicMock()
+        db.file_has_vectors = MagicMock()
 
         deleted = delete_vectors_by_file_ids(db, [])
 
         assert deleted == 0
-        db.db.aql.execute.assert_not_called()
+        db.file_has_vectors._from.delete.in_.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -140,7 +137,7 @@ class TestDeleteVectorsByFileIds:
             "vectors_track_hot__effnet__lib1": hot_namespace,
             "vectors_track_cold__effnet__lib1": cold_namespace,
         }
-        db.db = MagicMock()
+        db.file_has_vectors = MagicMock()
 
         deleted = delete_vectors_by_file_ids(db, ["library_files/1", "library_files/2"])
 
@@ -153,7 +150,4 @@ class TestDeleteVectorsByFileIds:
             call("library_files/1"),
             call("library_files/2"),
         ]
-        db.db.aql.execute.assert_called_once()
-        query = db.db.aql.execute.call_args.args[0]
-        assert "FILTER e._from IN @file_ids" in query
-        assert db.db.aql.execute.call_args.kwargs["bind_vars"] == {"file_ids": ["library_files/1", "library_files/2"]}
+        db.file_has_vectors._from.delete.in_.assert_called_once_with(["library_files/1", "library_files/2"])

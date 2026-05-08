@@ -278,6 +278,19 @@ def get_library_file(
     return cast("dict[str, Any] | None", db.library_files.get(path=path))
 
 
+def require_library_file_id(
+    db: Database,
+    path: str,
+    library_id: str | None = None,
+) -> str:
+    """Return the library-file ``_id`` for a path or raise ``FileNotFoundError``."""
+    library_file = get_library_file(db, path, library_id=library_id)
+    if not library_file:
+        msg = f"File not in library: {path}"
+        raise FileNotFoundError(msg)
+    return str(library_file["_id"])
+
+
 def get_files_by_paths_bulk(db: Database, paths: list[str]) -> dict[str, dict[str, Any]]:
     """Get multiple library-file records keyed by the original input path."""
     if not paths:
@@ -630,15 +643,22 @@ def clear_library_data(db: Database) -> None:
 
     This is a destructive full-reset.  Rather than paying per-document cascade
     cost, we truncate every collection that holds library-file-derived data in
-    one pass.  Order: deepest derived data first, then edges, then documents.
+    one pass.  Exception: ``ml_output_streams`` documents are deleted per-file
+    rather than truncated, so their linked ``file_has_output_stream`` and
+    ``output_has_stream`` edges are also removed. Order: deepest derived data
+    first, then edges, then documents.
     """
     # Derived data
+    from nomarr.components.ml.inference.ml_output_stream_store_comp import delete_output_streams
+
     for vector_coll in db._registered.values():
         vector_coll.truncate()
-    db.segment_scores_stats.truncate()
+    for file_doc in cast("list[dict[str, Any]]", db.library_files.get(limit=None)):
+        file_id = file_doc.get("_id")
+        if isinstance(file_id, str):
+            delete_output_streams(db, file_id)
     # Edge collections
     db.file_has_vectors.truncate()
-    db.file_has_segment_stats.truncate()
     db.song_has_tags.truncate()
     db.file_has_state.truncate()
     db.library_contains_file.truncate()

@@ -112,6 +112,25 @@ class AnalyzeWithSegmentsResult:
 
 
 @dataclass
+class RawOutputStream:
+    """Canonical per-output raw activation stream produced by one head during ML inference."""
+
+    output_index: int
+    values: list[float]
+
+
+@dataclass
+class LoadedOutputStream:
+    """Joined canonical stream input used by reconstruction/calibration reads."""
+
+    head_name: str
+    output_id: str
+    output_index: int
+    label: str
+    values: list[float]
+
+
+@dataclass
 class ProcessHeadPredictionsResult:
     """Result from running all heads for a single backbone."""
 
@@ -119,7 +138,7 @@ class ProcessHeadPredictionsResult:
     head_results: dict[str, Any]
     regression_heads: list[tuple[Any, list[float]]]
     all_head_outputs: list[Any]
-    raw_segments_per_head: dict[str, tuple[Any, list[str]]]  # head -> (scores, labels)
+    raw_output_streams_by_model_path: dict[str, list[RawOutputStream]]
     per_head_timings: dict[str, float]  # head_name -> duration_ms
 
 
@@ -129,11 +148,11 @@ class SingleHeadResult:
 
     head_name: str
     status: str  # "success", "error_processing", "error_aggregation"
+    model_path: str | None = None
     error: str | None = None
     head_tags: dict[str, Any] | None = None
     head_outputs: list[Any] | None = None
     regression_data: tuple[Any, list[float]] | None = None
-    raw_segment_scores: Any | None = None  # np.ndarray — deferred to async write thread
-    segment_labels: list[str] | None = None  # labels for segment stats computation
+    raw_output_streams: list[RawOutputStream] | None = None
     elapsed_ms: float = 0.0
     decisions_count: int = 0

@@ -10,7 +10,7 @@ from nomarr.persistence.base_types import CASCADE, DETACH, EdgeDef
 from nomarr.persistence.collections import (
     CalibrationHistory,
     CalibrationState,
-    FileHasSegmentStats,
+    FileHasOutputStream,
     FileHasState,
     FileHasVectors,
     FileStates,
@@ -32,11 +32,12 @@ from nomarr.persistence.collections import (
     MlCapacity,
     MlModelOutputs,
     MlModels,
+    MlOutputStreams,
     ModelHasCalibration,
     ModelHasOutput,
     NavidromePlaycounts,
     NavidromeTracks,
-    SegmentScoresStats,
+    OutputHasStream,
     Sessions,
     SongHasTags,
     TagModelOutput,
@@ -58,7 +59,7 @@ from nomarr.persistence.collections_base import (
 EXPECTED_ALL = [
     "CalibrationHistory",
     "CalibrationState",
-    "FileHasSegmentStats",
+    "FileHasOutputStream",
     "FileHasState",
     "FileHasVectors",
     "FileStates",
@@ -80,11 +81,12 @@ EXPECTED_ALL = [
     "MlCapacity",
     "MlModelOutputs",
     "MlModels",
+    "MlOutputStreams",
     "ModelHasCalibration",
     "ModelHasOutput",
     "NavidromePlaycounts",
     "NavidromeTracks",
-    "SegmentScoresStats",
+    "OutputHasStream",
     "Sessions",
     "SongHasTags",
     "TagModelOutput",
@@ -117,9 +119,9 @@ DOCUMENT_COLLECTION_CLASSES = [
     CalibrationHistory,
     MlModels,
     MlModelOutputs,
+    MlOutputStreams,
     NavidromeTracks,
     NavidromePlaycounts,
-    SegmentScoresStats,
 ]
 
 DIRECT_DOCUMENT_COLLECTION_CLASSES = [
@@ -142,9 +144,9 @@ DIRECT_DOCUMENT_COLLECTION_CLASSES = [
     CalibrationHistory,
     MlModels,
     MlModelOutputs,
+    MlOutputStreams,
     NavidromeTracks,
     NavidromePlaycounts,
-    SegmentScoresStats,
 ]
 
 EDGE_COLLECTION_CLASSES = [
@@ -155,9 +157,10 @@ EDGE_COLLECTION_CLASSES = [
     LibraryContainsFolder,
     LibraryHasScan,
     FileHasVectors,
-    FileHasSegmentStats,
+    FileHasOutputStream,
     ModelHasOutput,
     ModelHasCalibration,
+    OutputHasStream,
     LibraryHasPipelineState,
     HasNdId,
     HasPlays,
@@ -173,7 +176,7 @@ class TestModuleExports:
     def test_all_contains_exactly_expected_class_names(self) -> None:
         """`__all__` exports the complete typed collection surface."""
         assert __all__ == EXPECTED_ALL
-        assert len(__all__) == 38
+        assert len(__all__) == 39
 
 
 @pytest.mark.unit
@@ -336,6 +339,8 @@ class TestEdgeCollectionEndpoints:
         [
             (SongHasTags, LibraryFiles, Tags),
             (TagModelOutput, Tags, MlModelOutputs),
+            (FileHasOutputStream, LibraryFiles, MlOutputStreams),
+            (OutputHasStream, MlModelOutputs, MlOutputStreams),
             (HasPlays, NavidromeTracks, NavidromePlaycounts),
         ],
     )
@@ -437,6 +442,15 @@ class TestEdgesAssignments:
                 ),
             ),
             (
+                LibraryFiles,
+                EdgeDef(
+                    via=FileHasOutputStream,
+                    direction="OUTBOUND",
+                    target=MlOutputStreams,
+                    on_delete=CASCADE,
+                ),
+            ),
+            (
                 FileStates,
                 EdgeDef(
                     via=FileHasState,
@@ -460,6 +474,15 @@ class TestEdgesAssignments:
                     via=ModelHasCalibration,
                     direction="INBOUND",
                     target=MlModels,
+                    on_delete=CASCADE,
+                ),
+            ),
+            (
+                MlOutputStreams,
+                EdgeDef(
+                    via=OutputHasStream,
+                    direction="INBOUND",
+                    target=MlModelOutputs,
                     on_delete=CASCADE,
                 ),
             ),

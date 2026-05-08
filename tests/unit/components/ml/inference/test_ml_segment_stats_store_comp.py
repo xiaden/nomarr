@@ -1,23 +1,19 @@
-"""Tests for nomarr.components.ml.inference.ml_segment_stats_store_comp module."""
+"""Obsolete segment-stats store tests.
+
+Canonical raw output streams replaced segment-stats persistence in Phase 6.
+The active coverage lives in `test_ml_output_stream_store_comp.py`.
+"""
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
-
 import pytest
 
-from nomarr.components.ml.inference.ml_segment_stats_store_comp import (
-    _edge_key,
-    _stats_key,
-    delete_segment_stats_for_file,
-    delete_segment_stats_for_files,
-    get_segment_stats_for_file,
-    get_segment_stats_for_files_bulk,
-    upsert_segment_stats_batch,
+pytest.skip(
+    "segment-stats persistence was removed; canonical output stream tests supersede this module",
+    allow_module_level=True,
 )
-from nomarr.persistence.base_types import Field
 
+'''
 
 @pytest.mark.unit
 @pytest.mark.mocked
@@ -254,3 +250,5 @@ class TestDeleteSegmentStatsForFile:
         mock_db.segment_scores_stats.delete.cascade.assert_called_once_with(
             ["segment_scores_stats/stats-9a", "segment_scores_stats/stats-9b"]
         )
+
+'''

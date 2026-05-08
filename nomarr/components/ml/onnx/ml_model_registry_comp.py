@@ -201,6 +201,22 @@ def update_model_output_label(db: Database, output_id: str, label: str) -> None:
     )
 
 
+def build_model_output_index_map(db: Database) -> dict[str, dict[int, str]]:
+    """Return ``{model_path: {output_index: output_id}}`` for registered outputs."""
+    result: dict[str, dict[int, str]] = {}
+    for model_doc in list_registered_models(db):
+        model_path = model_doc.get("path")
+        model_id = model_doc.get("_id")
+        if not isinstance(model_path, str) or not isinstance(model_id, str):
+            continue
+        for output_doc in list_model_outputs_for_model(db, model_id):
+            output_index = output_doc.get("output_index")
+            output_id = output_doc.get("_id")
+            if isinstance(output_index, int) and isinstance(output_id, str):
+                result.setdefault(model_path, {})[output_index] = output_id
+    return result
+
+
 def build_model_output_id_map(db: Database) -> dict[str, dict[str, str]]:
     """Return ``{model_path: {label: output_id}}`` for labeled outputs."""
     result: dict[str, dict[str, str]] = {}

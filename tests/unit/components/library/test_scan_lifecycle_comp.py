@@ -410,29 +410,46 @@ class TestFolderCacheHelpers:
 class TestRemoveDeletedFiles:
     """Tests for remove_deleted_files."""
 
-    def test_remove_deleted_files_delegates_to_bulk_delete_files(self) -> None:
-        """remove_deleted_files delegates to bulk_delete_files and returns its count."""
+    def test_remove_deleted_files_deletes_output_streams_before_bulk_delete(self) -> None:
+        """remove_deleted_files cleans canonical streams for matched file ids before deletion."""
         mock_db = MagicMock()
         paths = ["/music/a.mp3", "/music/b.mp3", "/music/c.mp3"]
+        mock_db.library_files.get.side_effect = [
+            {"_id": "library_files/a"},
+            {"_id": "library_files/b"},
+            None,
+        ]
 
-        with patch(
-            "nomarr.components.library.library_file_mutation_comp.bulk_delete_files",
-            return_value=3,
-        ) as bulk_delete_mock:
+        with (
+            patch(
+                "nomarr.components.library.scan_lifecycle_comp._delete_output_streams_for_files"
+            ) as delete_streams_mock,
+            patch(
+                "nomarr.components.library.library_file_mutation_comp.bulk_delete_files",
+                return_value=2,
+            ) as bulk_delete_mock,
+        ):
             result = remove_deleted_files(mock_db, paths)
 
+        delete_streams_mock.assert_called_once_with(mock_db, ["library_files/a", "library_files/b"])
         bulk_delete_mock.assert_called_once_with(mock_db, paths)
-        assert result == 3
+        assert result == 2
 
     def test_remove_deleted_files_returns_zero_for_empty_list(self) -> None:
-        """remove_deleted_files returns zero when the delegated bulk delete returns zero."""
+        """remove_deleted_files skips stream cleanup when no file paths are supplied."""
         mock_db = MagicMock()
 
-        with patch(
-            "nomarr.components.library.library_file_mutation_comp.bulk_delete_files",
-            return_value=0,
-        ) as bulk_delete_mock:
+        with (
+            patch(
+                "nomarr.components.library.scan_lifecycle_comp._delete_output_streams_for_files"
+            ) as delete_streams_mock,
+            patch(
+                "nomarr.components.library.library_file_mutation_comp.bulk_delete_files",
+                return_value=0,
+            ) as bulk_delete_mock,
+        ):
             result = remove_deleted_files(mock_db, [])
 
+        delete_streams_mock.assert_not_called()
         bulk_delete_mock.assert_called_once_with(mock_db, [])
         assert result == 0

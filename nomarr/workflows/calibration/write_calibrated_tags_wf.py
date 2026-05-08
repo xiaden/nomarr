@@ -1,8 +1,8 @@
 """Calibrated tags database updater workflow.
 
 This workflow applies calibration to existing library files without re-running ML inference.
-It reconstructs HeadOutput objects from stored numeric tags and calibration metadata,
-then re-runs aggregation to update mood-* tags IN THE DATABASE ONLY.
+It reconstructs HeadOutput objects from canonical raw output streams and calibration
+metadata, then re-runs aggregation to update mood-* tags IN THE DATABASE ONLY.
 
 File writes are handled separately by the write_file_tags_wf / reconcile pipeline,
 which reads the updated DB mood tags and writes them to audio files on disk.
@@ -44,35 +44,29 @@ import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_file_query_comp import get_library_file
+from nomarr.components.library.library_file_query_comp import require_library_file_id
 from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     get_calibration_version,
+    load_calibration_lookup,
     update_file_calibration_hash,
 )
-from nomarr.components.ml.inference.ml_segment_stats_store_comp import get_segment_stats_for_file
+from nomarr.components.ml.inference.ml_output_stream_store_comp import (
+    build_output_stream_lookup,
+    load_output_streams_for_file,
+)
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
-from nomarr.components.processing.file_write_comp import get_nomarr_tags, save_mood_tags
-from nomarr.components.tagging.tagging_aggregation_comp import aggregate_mood_tiers
+from nomarr.components.processing.file_write_comp import save_mood_tags
+from nomarr.components.tagging.tagging_aggregation_comp import aggregate_mood_tags
 from nomarr.components.tagging.tagging_reconstruction_comp import (
-    reconstruct_head_outputs_from_stats,
+    reconstruct_head_outputs_from_streams,
 )
 from nomarr.helpers.dto.tags_dto import Tags
-from nomarr.workflows.calibration.calibration_loader_wf import load_calibrations_from_db_wf
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
-    from nomarr.helpers.dto.ml_dto import HeadOutput
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class LoadLibraryStateResult:
-    """Result from _load_library_state() private helper (workflow-internal)."""
-
-    file_id: str
-    all_tags: dict[str, Any]
 
 
 @dataclass
@@ -84,8 +78,10 @@ class BatchContext:
 
     Attributes:
         heads: Discovered HeadInfo objects from discover_heads()
-        calibrations: Calibration data from load_calibrations_from_db_wf()
+        calibrations: Calibration data from load_calibration_lookup()
         calibration_version: Global calibration version string
+        output_stream_lookup: Optional cached mapping of output_id to
+            ``(head_name, label)`` derived from registered model outputs.
         pending_mood_tags: Accumulated (file_id, mood_tags) for deferred batch write.
         pending_calibration_hashes: Accumulated file_ids for deferred batch calibration mark.
 
@@ -94,124 +90,10 @@ class BatchContext:
     heads: list[Any]
     calibrations: dict[str, Any]
     calibration_version: str | None
+    output_stream_lookup: dict[str, tuple[str, str]] | None = None
     pending_mood_tags: list[tuple[str, Tags]] = field(default_factory=list)
     pending_calibration_hashes: list[str] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
-
-
-def _load_library_state(
-    db: Database,
-    file_path: str,
-    batch_ctx: BatchContext | None = None,
-) -> LoadLibraryStateResult:
-    """Load file metadata and tags from library database.
-
-    ``batch_ctx`` carries batch invariants and deferred writes only; file metadata
-    and tags are always loaded through live component reads.
-
-    Args:
-        db: Database instance
-        file_path: Path to audio file
-        batch_ctx: Optional batch context for batch apply bookkeeping.
-
-    Returns:
-        LoadLibraryStateResult with file_id and all_tags
-
-    Raises:
-        FileNotFoundError: If file not found in library database
-
-    """
-    _ = batch_ctx  # Batch context does not cache DB reads.
-
-    library_file = get_library_file(db, file_path)
-
-    if not library_file:
-        msg = f"File not in library: {file_path}"
-        raise FileNotFoundError(msg)
-
-    file_id = str(library_file["_id"])
-
-    tags = get_nomarr_tags(db, file_id)
-
-    all_tags = {}
-    for tag in tags:
-        name = tag.key
-        key = name.removeprefix("nom:")
-        all_tags[key] = tag.value[0] if len(tag.value) == 1 else tag.value
-    if not all_tags:
-        logger.warning("[calibrated_tags] No tags found for %s", file_path)
-    return LoadLibraryStateResult(file_id=file_id, all_tags=all_tags)
-
-
-def _filter_numeric_tags(all_tags: dict[str, Any], version_tag_key: str) -> dict[str, float | int]:
-    """Filter to numeric tags only, excluding mood-* and version tags.
-
-    Args:
-        all_tags: All tags for the file
-        version_tag_key: Un-namespaced key for the tagger version tag (e.g., "nom_version")
-
-    Returns:
-        Dictionary of numeric tags only
-
-    """
-
-    def _is_version_key(key: str) -> bool:
-        if not isinstance(key, str):
-            return False
-        if key == version_tag_key:
-            return True
-        return ":" in key and key.split(":", 1)[1] == version_tag_key
-
-    numeric_tags = {
-        k: v
-        for k, v in all_tags.items()
-        if isinstance(v, int | float)
-        and not k.endswith(":mood-strict")
-        and not k.endswith(":mood-regular")
-        and not k.endswith(":mood-loose")
-        and not _is_version_key(k)
-    }
-    if not numeric_tags:
-        logger.warning("[calibrated_tags] No numeric tags found")
-    logger.debug("[calibrated_tags] Found %d numeric tags", len(numeric_tags))
-    return numeric_tags
-
-
-def _load_calibrations_from_db(db: Database) -> dict[str, Any]:
-    """Load calibrations from calibration_state database table.
-
-    Args:
-        db: Database instance
-
-    Returns:
-        Dictionary of calibration data (label -> {p5, p95})
-        Empty dict if no calibrations exist (initial state)
-
-    """
-    calibrations = load_calibrations_from_db_wf(db)
-    if not calibrations:
-        logger.debug("[calibrated_tags] No calibrations in database (initial state)")
-    else:
-        logger.debug("[calibrated_tags] Loaded %d calibrations from database", len(calibrations))
-    return calibrations
-
-
-def _compute_mood_tags(head_outputs: list[HeadOutput]) -> Tags:
-    """Aggregate HeadOutput objects into mood-* tags.
-
-    Args:
-        head_outputs: List of HeadOutput objects
-
-    Returns:
-        Tags DTO with mood tags
-
-    """
-    mood_tags_dict = aggregate_mood_tiers(head_outputs)
-    if not mood_tags_dict:
-        logger.debug("[calibrated_tags] No mood tags generated")
-        return Tags(items=())
-    logger.debug("[calibrated_tags] Generated %d mood tags", len(mood_tags_dict))
-    return Tags.from_dict(mood_tags_dict)
 
 
 def write_calibrated_tags_wf(
@@ -227,16 +109,16 @@ def write_calibrated_tags_wf(
     which reads the updated DB mood tags and writes them to disk.
 
     This workflow:
-    1. Loads numeric tags from DB (model_key -> value)
+    1. Loads canonical output streams from DB for the file
     2. Loads calibration metadata from calibration_state
     3. Discovers HeadInfo from models directory
-    4. Reconstructs HeadOutput objects from tags + calibration
+    4. Reconstructs HeadOutput objects from streams + calibration
     5. Re-runs aggregation to compute mood-* tags
     6. Updates mood-* tags in DB
     7. Records calibration_hash on the file record
 
     This is much faster than retagging because it skips ML inference entirely,
-    reusing the numeric scores already stored in the database.
+    reusing the canonical raw output streams already stored in the database.
 
     Args:
         db: Database instance (must provide library, tags accessors)
@@ -247,49 +129,26 @@ def write_calibrated_tags_wf(
             - version_tag_key: Un-namespaced key for version tag
             - calibrate_heads: Whether to use versioned calibration files
         batch_ctx: Pre-computed batch context (batch optimization).
-            When provided, reuses cached heads and calibrations
-            instead of re-computing them for every file.  DB writes
-            are deferred to the batch flush.
+            When provided, reuses cached heads, calibrations, and output lookup
+            metadata instead of re-computing them for every file. DB writes are
+            deferred to the batch flush.
 
     Returns:
         None (updates DB in-place)
 
     Raises:
         FileNotFoundError: If file not found in library database
-        ValueError: If no heads discovered or no tags found
+        ValueError: If no heads discovered
 
     """
     file_path = params.file_path
     models_dir = params.models_dir
-    version_tag_key = params.version_tag_key
     logger.debug("[calibrated_tags] Processing %s", file_path)
-    library_state = _load_library_state(db, file_path, batch_ctx=batch_ctx)
-    file_id = library_state.file_id
-    all_tags = library_state.all_tags
-    if not all_tags:
-        return
-    numeric_tags = _filter_numeric_tags(all_tags, version_tag_key)
-    if not numeric_tags:
-        return
+    file_id = require_library_file_id(db, file_path)
 
     # Use cached values from batch context when available
     heads: list[Any] | None = batch_ctx.heads if batch_ctx is not None else None
-    calibrations = batch_ctx.calibrations if batch_ctx is not None else _load_calibrations_from_db(db)
-
-    # Load segment_scores_stats live for each file; chunking bounds in-flight work.
-    stats_list = get_segment_stats_for_file(db, file_id)
-    segment_stats_by_head: dict[str, list[dict[str, Any]]] = {}
-    for doc in stats_list:
-        head_name = doc.get("head_name")
-        label_stats = doc.get("label_stats", [])
-        if head_name and label_stats:
-            segment_stats_by_head[head_name] = label_stats
-
-    if not segment_stats_by_head:
-        logger.warning(
-            f"[calibrated_tags] No segment_scores_stats found for {file_path}, skipping (file needs reprocessing)"
-        )
-        return
+    calibrations = batch_ctx.calibrations if batch_ctx is not None else load_calibration_lookup(db)
 
     # Use discovered heads or discover them
     heads_list: list[Any]
@@ -301,22 +160,41 @@ def write_calibrated_tags_wf(
     else:
         heads_list = heads
 
-    # Reconstruct HeadOutput objects using segment stats (matches ML tier logic).
-    # Pass calibrations so they are applied BEFORE tier assignment.
-    head_outputs = reconstruct_head_outputs_from_stats(
-        numeric_tags=numeric_tags,
-        segment_stats_by_head=segment_stats_by_head,
+    output_stream_lookup = batch_ctx.output_stream_lookup if batch_ctx is not None else None
+    if output_stream_lookup is None:
+        output_stream_lookup = build_output_stream_lookup(db, heads_list)
+        if batch_ctx is not None:
+            with batch_ctx._lock:
+                if batch_ctx.output_stream_lookup is None:
+                    batch_ctx.output_stream_lookup = output_stream_lookup
+                output_stream_lookup = batch_ctx.output_stream_lookup
+
+    output_streams = load_output_streams_for_file(
+        db,
+        file_id,
+        file_path,
+        heads_list,
+        output_lookup=output_stream_lookup,
+    )
+    if not output_streams:
+        return
+
+    head_outputs = reconstruct_head_outputs_from_streams(
+        output_streams=output_streams,
         head_infos=heads_list,
         calibrations=calibrations,
     )
     if not head_outputs:
         return
-    mood_tags = _compute_mood_tags(head_outputs)
+    mood_tags = aggregate_mood_tags(head_outputs)
     # mood_tags may be empty when all labels conflict or scores are below threshold.
     # Empty is a valid calibration result — we still write it (to clear stale tiers)
     # and update calibration_hash so the file is not re-queued on every apply run.
     if not mood_tags:
-        logger.debug("[calibrated_tags] No mood tags produced for %s — writing empty tiers and marking hash", file_path)
+        logger.debug(
+            "[calibrated_tags] No mood tags produced for %s — writing empty tiers and marking hash",
+            file_path,
+        )
 
     # Write to DB — batch mode defers, single-file mode writes immediately
     if batch_ctx is not None:

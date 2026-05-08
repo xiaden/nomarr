@@ -745,10 +745,10 @@ def move_collection(db: SafeDatabase, source: str, dest: str) -> int:
     Creates ``dest`` if it does not exist.
 
     Edge re-pointing is fully server-side (no Python materialization).
-    Both the document copy and edge re-pointing run in batches of ``_EDGE_BATCH``
-    using ``SORT _key / LIMIT offset, batch`` pagination so no single query
-    handles large vector payloads. Phase 1 inserts new edges, Phase 2 removes
-    old edges using a shrinking-set ``LIMIT`` loop.
+    The document copy, edge re-point insertion, and source cleanup phases use
+    stable ``_key`` watermarks instead of offset pagination so large collections
+    do not pay growing skip costs. Phase 1 still inserts new edges before
+    Phase 2 removes old edges, preserving crash-safe reruns.
 
     Args:
         db: Database handle.
@@ -773,21 +773,24 @@ def move_collection(db: SafeDatabase, source: str, dest: str) -> int:
     if not db.has_collection(dest):
         db.create_collection(dest)
 
-    # Copy documents in batches — idempotent UPSERT by _key.
-    # SORT + LIMIT offset, batch is stable because the source collection is
-    # not mutated during this phase.
-    doc_offset = 0
+    # Copy documents in deterministic _key order. UPSERT keeps reruns safe if a
+    # crash happens after some batches were already copied.
+    doc_last_key: str | None = None
     while True:
         cursor = _execute_aql(
             db,
-            "FOR doc IN @@src SORT doc._key LIMIT @offset, @batch "
-            "UPSERT {_key: doc._key} INSERT doc UPDATE doc IN @@dest RETURN 1",
-            bind_vars={"@src": source, "@dest": dest, "offset": doc_offset, "batch": _EDGE_BATCH},
+            "FOR doc IN @@src "
+            "FILTER @last_key == null OR doc._key > @last_key "
+            "SORT doc._key ASC "
+            "LIMIT @batch "
+            "UPSERT {_key: doc._key} INSERT doc UPDATE doc IN @@dest "
+            "RETURN doc._key",
+            bind_vars={"@src": source, "@dest": dest, "last_key": doc_last_key, "batch": _EDGE_BATCH},
         )
-        copied = sum(1 for _ in cursor)
-        if copied == 0:
+        copied_keys = [cast("str", key) for key in cursor]
+        if not copied_keys:
             break
-        doc_offset += copied
+        doc_last_key = copied_keys[-1]
 
     src_prefix = f"{source}/"
     dest_prefix = f"{dest}/"
@@ -799,42 +802,47 @@ def move_collection(db: SafeDatabase, source: str, dest: str) -> int:
     edge_names = [c["name"] for c in db.collections() if c.get("type") == 3 and not c.get("system", False)]
 
     for edge_name in edge_names:
-        # Phase 1: INSERT new edges in sorted batches.
-        # LIMIT @offset, @batch over an unchanged source set is stable — source
-        # edges are not touched until Phase 2, so offsets do not shift.
-        offset = 0
+        # Phase 1: INSERT new edges in deterministic _key order. New edges use
+        # stable ``mv_`` keys with overwrite replace semantics, so reruns are
+        # safe even if some replacement edges already exist.
+        edge_last_key: str | None = None
+        inserted_total = 0
         while True:
             cursor = _execute_aql(
                 db,
                 """
                 FOR e IN @@ec
-                    FILTER STARTS_WITH(e._from, @src) OR STARTS_WITH(e._to, @src)
-                    SORT e._key
-                    LIMIT @offset, @batch
+                    FILTER (STARTS_WITH(e._from, @src) OR STARTS_WITH(e._to, @src))
+                        AND (@last_key == null OR e._key > @last_key)
+                    SORT e._key ASC
+                    LIMIT @batch
                     LET new_from = STARTS_WITH(e._from, @src)
                         ? CONCAT(@dest, SUBSTRING(e._from, LENGTH(@src)))
                         : e._from
-                    LET new_to   = STARTS_WITH(e._to,   @src) ? CONCAT(@dest, SUBSTRING(e._to,   LENGTH(@src))) : e._to
+                    LET new_to = STARTS_WITH(e._to, @src)
+                        ? CONCAT(@dest, SUBSTRING(e._to, LENGTH(@src)))
+                        : e._to
                     INSERT MERGE(
                         UNSET(e, '_id', '_rev', '_from', '_to'),
                         {_key: CONCAT("mv_", e._key), _from: new_from, _to: new_to}
                     ) IN @@ec OPTIONS {overwriteMode: "replace"}
-                    RETURN 1
+                    RETURN e._key
                 """,
                 bind_vars={
                     "@ec": edge_name,
                     "src": src_prefix,
                     "dest": dest_prefix,
-                    "offset": offset,
+                    "last_key": edge_last_key,
                     "batch": _EDGE_BATCH,
                 },
             )
-            inserted = sum(1 for _ in cursor)
-            if inserted == 0:
+            inserted_keys = [cast("str", key) for key in cursor]
+            if not inserted_keys:
                 break
-            offset += inserted
+            inserted_total += len(inserted_keys)
+            edge_last_key = inserted_keys[-1]
 
-        if offset == 0:
+        if inserted_total == 0:
             continue
 
         # Phase 2: REMOVE old edges in batches.
@@ -853,22 +861,25 @@ def move_collection(db: SafeDatabase, source: str, dest: str) -> int:
 
     # Delete only documents that were successfully copied to dest — do not
     # truncate. Truncate would destroy any documents written to source after
-    # the copy loop started. Filter to keys that still exist in source so the
-    # loop is idempotent on crash + resume: already-removed docs are simply
-    # skipped rather than erroring.
-    del_offset = 0
+    # the copy loop started. Filtering to keys still present in source keeps
+    # reruns safe: already-removed docs are simply skipped.
+    cleanup_last_key: str | None = None
     while True:
         cursor = _execute_aql(
             db,
-            "FOR doc IN @@dest SORT doc._key LIMIT @offset, @batch "
+            "FOR doc IN @@dest "
+            "FILTER @last_key == null OR doc._key > @last_key "
             "FILTER DOCUMENT(@@src, doc._key) != null "
-            "REMOVE {_key: doc._key} IN @@src RETURN 1",
-            bind_vars={"@dest": dest, "@src": source, "offset": del_offset, "batch": _EDGE_BATCH},
+            "SORT doc._key ASC "
+            "LIMIT @batch "
+            "REMOVE {_key: doc._key} IN @@src "
+            "RETURN doc._key",
+            bind_vars={"@dest": dest, "@src": source, "last_key": cleanup_last_key, "batch": _EDGE_BATCH},
         )
-        removed = sum(1 for _ in cursor)
-        if removed == 0:
+        removed_keys = [cast("str", key) for key in cursor]
+        if not removed_keys:
             break
-        del_offset += removed
+        cleanup_last_key = removed_keys[-1]
 
     return count
 
@@ -885,31 +896,26 @@ def transition(
     from_edge_target: str,
     to_edge_target: str,
 ) -> None:
-    """Three-phase state transition: remove old edge, upsert new edge, per ADR-003."""
-    for doc_id in ids:
-        cursor = _execute_aql(
-            db,
-            "FOR e IN @@ec FILTER e._from == @fid AND e._to == @from RETURN e._key",
-            bind_vars={"@ec": edge_col, "fid": doc_id, "from": from_edge_target},
-        )
-        old_key = next(cursor, None)
+    """Batch state transition per ADR-003: remove matching old edges, upsert new edges."""
+    if not ids:
+        return
 
-        if old_key is not None:
-            _execute_aql(
-                db,
-                "REMOVE @key IN @@ec",
-                bind_vars={"@ec": edge_col, "key": old_key},
-            )
-
+    for start in range(0, len(ids), _EDGE_BATCH):
+        chunk = ids[start : start + _EDGE_BATCH]
         _execute_aql(
             db,
             """
-            UPSERT { _from: @fid, _to: @to }
-            INSERT { _from: @fid, _to: @to }
-            UPDATE {}
-            IN @@ec
+            FOR e IN @@ec
+                FILTER e._from IN @ids AND e._to == @from
+                REMOVE e IN @@ec
+
+            FOR fid IN @ids
+                UPSERT { _from: fid, _to: @to }
+                INSERT { _from: fid, _to: @to }
+                UPDATE {}
+                IN @@ec
             """,
-            bind_vars={"@ec": edge_col, "fid": doc_id, "to": to_edge_target},
+            bind_vars={"@ec": edge_col, "ids": chunk, "from": from_edge_target, "to": to_edge_target},
         )
 
 

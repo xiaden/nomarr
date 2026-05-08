@@ -82,8 +82,7 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
     from nomarr.components.library.file_sync_comp import save_file_tags
     from nomarr.components.library.library_file_mutation_comp import set_chromaprint
     from nomarr.components.library.library_file_state_comp import transition_file_state
-    from nomarr.components.ml.inference.ml_segment_stats_comp import compute_segment_stats
-    from nomarr.components.ml.inference.ml_segment_stats_store_comp import upsert_segment_stats_batch
+    from nomarr.components.ml.inference.ml_output_stream_store_comp import StreamWrite, upsert_output_streams
     from nomarr.components.ml.onnx.tag_model_output_comp import write_tag_model_output_edges_batch
     from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
     from nomarr.components.tagging.tag_write_comp import resolve_tag_ids
@@ -109,22 +108,15 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
                 write_tag_model_output_edges_batch(db, edge_tuples)
         if writes.chromaprint:
             set_chromaprint(db, file_id, writes.chromaprint)
-        if writes.raw_segments:
-            stats_entries: list[dict[str, Any]] = []
-            for head_name, (segment_scores, labels) in writes.raw_segments.items():
-                label_stats = compute_segment_stats(segment_scores, labels)
-                stats_entries.append(
-                    {
-                        "file_id": file_id,
-                        "head_name": head_name,
-                        "tagger_version": writes.tagger_version,
-                        "num_segments": segment_scores.shape[0],
-                        "pooling_strategy": "trimmed_mean",
-                        "label_stats": label_stats,
-                    }
-                )
-            if stats_entries:
-                upsert_segment_stats_batch(db, stats_entries)
+        if writes.raw_output_streams:
+            upsert_output_streams(
+                db,
+                file_id=file_id,
+                streams=[
+                    StreamWrite(output_id=stream.output_id, values=stream.values)
+                    for stream in writes.raw_output_streams
+                ],
+            )
         transition_file_state(db, [file_id], STATE_NOT_TAGGED, STATE_TAGGED)
         update_last_tagged_at(db, file_id)
         transition_file_state(db, [file_id], STATE_NOT_VECTORS_EXTRACTED, STATE_VECTORS_EXTRACTED)
