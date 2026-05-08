@@ -15,7 +15,7 @@ from nomarr.components.ml.vectors.ml_vector_registry_comp import (
     get_hot_namespace,
     get_maintenance_namespace,
 )
-from nomarr.persistence.base import Field
+from nomarr.persistence.base_types import Field
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database

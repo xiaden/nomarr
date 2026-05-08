@@ -13,15 +13,19 @@ from typing import Any, Literal, cast
 from nomarr.components.library.library_file_state_comp import count_untagged_files
 from nomarr.helpers.constants.file_states import STATE_TAGGED
 from nomarr.helpers.time_helper import now_ms
-from nomarr.persistence.base import Field
+from nomarr.persistence.base_types import Field
 from nomarr.persistence.constructor.pagination import DEFAULT_LIMIT
 from nomarr.persistence.db import Database
 
 
 def _get_concrete_library_files_method(db: Database, method_name: str) -> Any | None:
     """Return a real ``db.library_files`` method, ignoring mock magic attributes."""
-    if hasattr(type(db.library_files), method_name):
-        return getattr(db.library_files, method_name)
+    owner = db.library_files if isinstance(db.library_files, type) else type(db.library_files)
+    if method_name not in getattr(owner, "__dict__", {}):
+        return None
+    bound_method = getattr(db.library_files, method_name, None)
+    if callable(bound_method):
+        return bound_method
     return None
 
 
@@ -283,25 +287,11 @@ def get_files_by_paths_bulk(db: Database, paths: list[str]) -> dict[str, dict[st
     if bulk_lookup is not None:
         return cast("dict[str, dict[str, Any]]", bulk_lookup(paths))
 
-    path_set = set(paths)
-    docs_by_id: dict[str, dict[str, Any]] = {}
-    for file_doc in db.library_files.get.in_(Field("path", paths), limit=None):
-        file_id = file_doc.get("_id")
-        if isinstance(file_id, str):
-            docs_by_id[file_id] = file_doc
-    for file_doc in db.library_files.get.in_(Field("normalized_path", paths), limit=None):
-        file_id = file_doc.get("_id")
-        if isinstance(file_id, str):
-            docs_by_id[file_id] = file_doc
-
     result: dict[str, dict[str, Any]] = {}
-    for file_doc in docs_by_id.values():
-        norm = file_doc.get("normalized_path")
-        abs_path = file_doc.get("path")
-        if isinstance(norm, str) and norm in path_set and norm not in result:
-            result[norm] = file_doc
-        if isinstance(abs_path, str) and abs_path in path_set and abs_path not in result:
-            result[abs_path] = file_doc
+    for path in paths:
+        file_doc = get_library_file(db, path)
+        if file_doc is not None:
+            result[path] = file_doc
     return result
 
 

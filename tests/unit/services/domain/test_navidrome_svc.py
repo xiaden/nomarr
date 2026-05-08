@@ -195,3 +195,36 @@ class TestNavidromeServiceSync:
             ("/alt", "/mnt/library"),
         ]
         assert mock_sync.call_args.kwargs["user_id"] == "nav-user"
+
+    def test_sync_navidrome_allows_empty_remap_targets(self) -> None:
+        """Service should preserve prefix-strip mappings with empty targets."""
+        service, _ = _make_service(
+            {
+                "navidrome_api_user": "nav-user",
+                "navidrome_path_prefix_map": "/music/:,/alt:/mnt/library",
+            },
+        )
+        mock_client = MagicMock()
+
+        with (
+            patch.object(service, "_get_client", return_value=mock_client),
+            patch(
+                "nomarr.services.domain.navidrome_svc.sync_navidrome",
+                return_value={
+                    "total_songs": 0,
+                    "resolved": 0,
+                    "unresolved": 0,
+                    "tracks_upserted": 0,
+                    "play_edges_upserted": 0,
+                    "orphans_removed": 0,
+                    "duration_ms": 0,
+                },
+            ) as mock_sync,
+        ):
+            service.sync_navidrome()
+
+        assert mock_sync.call_args.kwargs["path_prefix_map"] == [
+            ("/music/", ""),
+            ("/alt", "/mnt/library"),
+        ]
+        assert mock_sync.call_args.kwargs["user_id"] == "nav-user"

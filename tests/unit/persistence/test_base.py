@@ -1,276 +1,101 @@
-"""Tests for typed persistence base collection declarations."""
+"""Tests for persistence base types and collection base classes."""
 
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError, is_dataclass
-from typing import Annotated, ClassVar, get_args, get_origin, get_type_hints
+from typing import Any, cast
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-import nomarr.persistence.base as base
-from nomarr.persistence.base import (
+from nomarr.persistence.accessors import FieldAccessor
+from nomarr.persistence.base_types import (
     CASCADE,
     DETACH,
     INBOUND,
     OUTBOUND,
-    DocumentCollection,
-    EdgeCollection,
     EdgeDef,
     Field,
-    FieldMarker,
-    StateGraphCollection,
     UniqueField,
+    _normalize_field_criteria,
+    collection_name_for_class,
+)
+from nomarr.persistence.collections_base import (
+    DocumentCollection,
+    EdgeCollection,
+    StateGraphCollection,
     VectorCollection,
 )
 
 
 @pytest.mark.unit
-class TestFieldMarker:
-    """Tests for FieldMarker."""
+class TestFieldAndCriteria:
+    """Tests for persistence field criteria helpers."""
 
-    def test_is_frozen_dataclass(self) -> None:
-        """FieldMarker is implemented as a frozen dataclass."""
-        assert is_dataclass(FieldMarker)
-
-    def test_unique_true_stores_true(self) -> None:
-        """FieldMarker stores a True unique flag."""
-        marker = FieldMarker(unique=True)
-
-        assert marker.unique is True
-
-    def test_unique_false_stores_false(self) -> None:
-        """FieldMarker stores a False unique flag."""
-        marker = FieldMarker(unique=False)
-
-        assert marker.unique is False
-
-    def test_is_immutable(self) -> None:
-        """FieldMarker instances cannot be mutated."""
-        marker = FieldMarker(unique=False)
-
-        with pytest.raises(FrozenInstanceError):
-            marker.__setattr__("unique", True)
-
-
-@pytest.mark.unit
-class TestField:
-    """Tests for Field annotations."""
-
-    def test_returns_annotated_str_with_non_unique_marker(self) -> None:
-        """Field[str] resolves to Annotated[str, FieldMarker(unique=False)]."""
-        annotation = Field.__class_getitem__(str)
-        marker = get_args(annotation)[1]
-
-        assert get_origin(annotation) is Annotated
-        assert get_args(annotation)[0] is str
-        assert marker == FieldMarker(unique=False)
-
-    def test_returns_annotated_int_with_non_unique_marker(self) -> None:
-        """Field[int] resolves to Annotated[int, FieldMarker(unique=False)]."""
-        annotation = Field.__class_getitem__(int)
-        marker = get_args(annotation)[1]
-
-        assert get_origin(annotation) is Annotated
-        assert get_args(annotation)[0] is int
-        assert marker == FieldMarker(unique=False)
-
-    def test_marker_has_unique_false(self) -> None:
-        """Field annotations always attach a non-unique marker."""
-        marker = get_args(Field.__class_getitem__(str))[1]
-
-        assert isinstance(marker, FieldMarker)
-        assert marker.unique is False
-
-
-@pytest.mark.unit
-class TestUniqueField:
-    """Tests for UniqueField annotations."""
-
-    def test_returns_annotated_str_with_unique_marker(self) -> None:
-        """UniqueField[str] resolves to Annotated[str, FieldMarker(unique=True)]."""
-        annotation = UniqueField.__class_getitem__(str)
-        marker = get_args(annotation)[1]
-
-        assert get_origin(annotation) is Annotated
-        assert get_args(annotation)[0] is str
-        assert marker == FieldMarker(unique=True)
-
-    def test_marker_has_unique_true(self) -> None:
-        """UniqueField annotations always attach a unique marker."""
-        marker = get_args(UniqueField.__class_getitem__(str))[1]
-
-        assert isinstance(marker, FieldMarker)
-        assert marker.unique is True
-
-
-@pytest.mark.unit
-class TestFieldDataclass:
-    """Tests for Field runtime instances and UniqueField instantiation guards."""
-
-    def test_field_is_dataclass_with_name_and_value(self) -> None:
-        """Field is a dataclass that stores the provided name and value."""
-        field: Field[str] = Field("status", "active")
+    def test_field_is_frozen_dataclass(self) -> None:
+        field = Field("status", "active")
 
         assert is_dataclass(Field)
         assert field.name == "status"
         assert field.value == "active"
 
-    def test_field_instance_stores_name_and_value(self) -> None:
-        """Field instances preserve the supplied runtime filter payload."""
-        field: Field[str] = Field("genre", "rock")
-
-        assert field.name == "genre"
-        assert field.value == "rock"
-
-    def test_field_instance_is_frozen(self) -> None:
-        """Field instances are immutable once created."""
-        field: Field[str] = Field("status", "active")
-
         with pytest.raises(FrozenInstanceError):
             field.__setattr__("name", "inactive")
 
-    def test_unique_field_instantiation_raises_type_error(self) -> None:
-        """UniqueField cannot be instantiated directly."""
-        with pytest.raises(TypeError, match="only for type annotations"):
-            UniqueField.__new__(UniqueField)
+    def test_field_and_uniquefield_subscription_are_runtime_noops(self) -> None:
+        assert Field.__class_getitem__(str) is str
+        assert UniqueField.__class_getitem__(int) is int
+
+    def test_normalize_field_criteria_accepts_positional_fields(self) -> None:
+        criteria = _normalize_field_criteria((Field("status", "ready"), Field("attempts", 2)), {})
+
+        assert criteria == {"status": "ready", "attempts": 2}
+
+    def test_normalize_field_criteria_accepts_keyword_fields(self) -> None:
+        criteria = _normalize_field_criteria((), {"status": "ready", "attempts": 2})
+
+        assert criteria == {"status": "ready", "attempts": 2}
+
+    def test_normalize_field_criteria_rejects_mixed_styles(self) -> None:
+        with pytest.raises(ValueError, match="Do not mix positional"):
+            _normalize_field_criteria((Field("status", "ready"),), {"attempts": 2})
+
+    def test_normalize_field_criteria_rejects_duplicates(self) -> None:
+        with pytest.raises(ValueError, match="Duplicate field criterion"):
+            _normalize_field_criteria((Field("status", "ready"), Field("status", "done")), {})
 
 
 @pytest.mark.unit
-class TestConstants:
-    """Tests for direction and deletion constants."""
+class TestConstantsAndNames:
+    """Tests for public constants and collection name helpers."""
 
     def test_constant_values_match_expected_literals(self) -> None:
-        """Public constants expose the expected string values."""
         assert INBOUND == "INBOUND"
         assert OUTBOUND == "OUTBOUND"
         assert CASCADE == "CASCADE"
         assert DETACH == "DETACH"
 
+    def test_collection_name_uses_declared_name_when_present(self) -> None:
+        class DeclaredCollection(DocumentCollection):
+            _name = "declared_name"
 
-@pytest.mark.unit
-class TestDocumentCollection:
-    """Tests for DocumentCollection."""
+        assert collection_name_for_class(DeclaredCollection) == "declared_name"
 
-    def test_has_classvar_annotations_and_empty_edges_default(self) -> None:
-        """DocumentCollection declares class variables and defaults EDGES to an empty list."""
-        hints = get_type_hints(DocumentCollection, include_extras=True)
+    def test_collection_name_falls_back_to_snake_case(self) -> None:
+        class CamelCaseCollection(DocumentCollection):
+            pass
 
-        assert get_origin(hints["_name"]) is ClassVar
-        assert get_args(hints["_name"]) == (str,)
-        assert get_origin(hints["EDGES"]) is ClassVar
-        assert DocumentCollection.EDGES == []
-
-    def test_subclass_can_declare_edges_with_edge_defs(self) -> None:
-        """DocumentCollection subclasses can define typed edge declarations."""
-
-        class Artists(DocumentCollection):
-            _name = "artists"
-
-        class Albums(DocumentCollection):
-            _name = "albums"
-
-        class ArtistAlbumEdges(EdgeCollection):
-            _name = "artist_album_edges"
-            FROM_COLLECTION = Artists
-            TO_COLLECTION = Albums
-
-        edge_def = EdgeDef(
-            via=ArtistAlbumEdges,
-            direction=OUTBOUND,
-            target=Albums,
-            on_delete=CASCADE,
-        )
-
-        class ArtistGraph(DocumentCollection):
-            _name = "artist_graph"
-            EDGES: ClassVar[list[EdgeDef]] = [edge_def]
-
-        assert [edge_def] == ArtistGraph.EDGES
-        assert ArtistGraph.EDGES[0].via is ArtistAlbumEdges
-        assert ArtistGraph.EDGES[0].target is Albums
-
-
-@pytest.mark.unit
-class TestStateGraphCollection:
-    """Tests for StateGraphCollection."""
-
-    def test_is_subclass_of_document_collection(self) -> None:
-        """StateGraphCollection extends DocumentCollection."""
-        assert issubclass(StateGraphCollection, DocumentCollection)
-
-    def test_inherits_edges_default(self) -> None:
-        """StateGraphCollection inherits the base EDGES default."""
-        assert StateGraphCollection.EDGES == []
-        assert StateGraphCollection.EDGES is DocumentCollection.EDGES
-
-
-@pytest.mark.unit
-class TestEdgeCollection:
-    """Tests for EdgeCollection."""
-
-    def test_has_classvar_annotations(self) -> None:
-        """EdgeCollection declares expected class variables."""
-        hints = get_type_hints(EdgeCollection, include_extras=True)
-
-        assert get_origin(hints["_name"]) is ClassVar
-        assert get_origin(hints["FROM_COLLECTION"]) is ClassVar
-        assert get_origin(hints["TO_COLLECTION"]) is ClassVar
-
-    def test_subclass_can_declare_name_and_endpoint_collections(self) -> None:
-        """EdgeCollection subclasses can define their required collection references."""
-
-        class Artists(DocumentCollection):
-            _name = "artists"
-
-        class Albums(DocumentCollection):
-            _name = "albums"
-
-        class ArtistAlbumEdges(EdgeCollection):
-            _name = "artist_album_edges"
-            FROM_COLLECTION = Artists
-            TO_COLLECTION = Albums
-
-        assert ArtistAlbumEdges._name == "artist_album_edges"
-        assert ArtistAlbumEdges.FROM_COLLECTION is Artists
-        assert ArtistAlbumEdges.TO_COLLECTION is Albums
-
-
-@pytest.mark.unit
-class TestVectorCollection:
-    """Tests for VectorCollection."""
-
-    def test_has_classvar_annotations(self) -> None:
-        """VectorCollection declares expected class variables."""
-        hints = get_type_hints(VectorCollection, include_extras=True)
-
-        assert get_origin(hints["_name"]) is ClassVar
-        assert get_origin(hints["VECTOR_TIER"]) is ClassVar
-        assert get_origin(hints["NAME_PATTERN"]) is ClassVar
-
-    def test_subclass_can_declare_name_tier_and_pattern(self) -> None:
-        """VectorCollection subclasses can define all required metadata."""
-
-        class Embeddings(VectorCollection):
-            _name = "embeddings"
-            VECTOR_TIER = "hot"
-            NAME_PATTERN = "embeddings_{tier}__{lib}"
-
-        assert Embeddings._name == "embeddings"
-        assert Embeddings.VECTOR_TIER == "hot"
-        assert Embeddings.NAME_PATTERN == "embeddings_{tier}__{lib}"
+        assert collection_name_for_class(CamelCaseCollection) == "camel_case_collection"
 
 
 @pytest.mark.unit
 class TestEdgeDef:
-    """Tests for EdgeDef."""
+    """Tests for the edge declaration dataclass."""
 
     def test_is_frozen_dataclass(self) -> None:
-        """EdgeDef is implemented as a frozen dataclass."""
         assert is_dataclass(EdgeDef)
 
     def test_stores_constructor_values(self) -> None:
-        """EdgeDef stores via, direction, target, and on_delete values."""
-
         class Artists(DocumentCollection):
             _name = "artists"
 
@@ -279,8 +104,6 @@ class TestEdgeDef:
 
         class ArtistAlbumEdges(EdgeCollection):
             _name = "artist_album_edges"
-            FROM_COLLECTION = Artists
-            TO_COLLECTION = Albums
 
         edge_def = EdgeDef(
             via=ArtistAlbumEdges,
@@ -294,103 +117,93 @@ class TestEdgeDef:
         assert edge_def.target is Albums
         assert edge_def.on_delete == DETACH
 
-    def test_is_immutable(self) -> None:
-        """EdgeDef instances cannot be mutated."""
+        with pytest.raises(FrozenInstanceError):
+            edge_def.__setattr__("on_delete", CASCADE)
 
-        class Artists(DocumentCollection):
-            _name = "artists"
 
+@pytest.mark.unit
+class TestCollectionBases:
+    """Tests for instance-bound collection base classes."""
+
+    def test_document_collection_registers_default_fields_and_traversal(self) -> None:
         class Albums(DocumentCollection):
             _name = "albums"
 
         class ArtistAlbumEdges(EdgeCollection):
             _name = "artist_album_edges"
-            FROM_COLLECTION = Artists
-            TO_COLLECTION = Albums
-
-        edge_def = EdgeDef(
-            via=ArtistAlbumEdges,
-            direction=INBOUND,
-            target=Artists,
-            on_delete=CASCADE,
-        )
-
-        with pytest.raises(FrozenInstanceError):
-            edge_def.__setattr__("on_delete", DETACH)
-
-    def test_accepts_vector_collection_as_target(self) -> None:
-        """EdgeDef accepts a VectorCollection subclass as target."""
 
         class Artists(DocumentCollection):
-            _name = "artists"
+            pass
 
-        class ArtistEmbeddings(VectorCollection):
-            _name = "artist_embeddings"
-            VECTOR_TIER = "hot"
-            NAME_PATTERN = "artist_embeddings_{tier}__{lib}"
+        Artists.EDGES = [EdgeDef(via=ArtistAlbumEdges, direction=OUTBOUND, target=Albums, on_delete=CASCADE)]
 
-        class ArtistEmbeddingEdges(EdgeCollection):
-            _name = "artist_embedding_edges"
-            FROM_COLLECTION = Artists
-            TO_COLLECTION = Artists
+        safe_db = MagicMock()
+        artists = Artists(safe_db, "artists")
 
-        edge_def = EdgeDef(
-            via=ArtistEmbeddingEdges,
-            direction=OUTBOUND,
-            target=ArtistEmbeddings,
-            on_delete=DETACH,
+        assert isinstance(artists._key, FieldAccessor)
+        assert isinstance(artists._id, FieldAccessor)
+        assert isinstance(artists._rev, FieldAccessor)
+        assert set(artists._fields) >= {"_key", "_id", "_rev"}
+        traversal = cast("Any", artists).artist_album_edges
+        assert callable(traversal)
+
+        with patch(
+            "nomarr.persistence.collections_base.verbs.traversal_by_id", return_value=[{"_id": "albums/1"}]
+        ) as traversal_mock:
+            result = traversal("artists/1", limit=2, offset=3)
+
+        assert result == [{"_id": "albums/1"}]
+        traversal_mock.assert_called_once_with(
+            safe_db,
+            "artists",
+            "artists/1",
+            "artist_album_edges",
+            OUTBOUND,
+            limit=2,
+            offset=3,
         )
 
-        assert edge_def.target is ArtistEmbeddings
+    def test_edge_collection_registers_edge_fields(self) -> None:
+        class FileHasState(EdgeCollection):
+            _name = "file_has_state"
 
+        safe_db = MagicMock()
+        edges = FileHasState(safe_db, "file_has_state")
 
-@pytest.mark.unit
-class TestAllExports:
-    """Tests for module exports."""
+        assert isinstance(edges._key, FieldAccessor)
+        assert isinstance(edges._id, FieldAccessor)
+        assert isinstance(edges._from, FieldAccessor)
+        assert isinstance(edges._to, FieldAccessor)
+        assert set(edges._fields) >= {"_key", "_id", "_from", "_to"}
 
-    def test_exports_expected_public_names(self) -> None:
-        """__all__ exposes the full supported public API."""
-        assert base.__all__ == [
-            "CASCADE",
-            "DETACH",
-            "INBOUND",
-            "OUTBOUND",
-            "DocumentCollection",
-            "EdgeCollection",
-            "EdgeDef",
-            "Field",
-            "FieldMarker",
-            "StateGraphCollection",
-            "UniqueField",
-            "VectorCollection",
-            "bind_all_collections",
-            "reattach_vector_cascades",
-        ]
+    def test_vector_collection_registers_vector_fields(self) -> None:
+        class Embeddings(VectorCollection):
+            VECTOR_TIER = "hot"
+            NAME_PATTERN = "embeddings__{library}"
 
+        safe_db = MagicMock()
+        vectors = Embeddings(safe_db, "embeddings__lib1")
 
-@pytest.mark.unit
-class TestFieldAnnotationInternals:
-    """Direct tests for Field/UniqueField subscription machinery."""
+        assert isinstance(vectors._key, FieldAccessor)
+        assert isinstance(vectors._id, FieldAccessor)
+        assert isinstance(vectors.file_id, FieldAccessor)
+        assert isinstance(vectors.vector, FieldAccessor)
+        assert set(vectors._fields) >= {"_key", "_id", "file_id", "vector"}
 
-    def test_field_subscription_syntax_returns_non_unique_annotation(self) -> None:
-        """Field[str] uses Field.__class_getitem__ to attach a non-unique marker."""
-        annotation = Field[str]
-        marker = get_args(annotation)[1]
+    def test_state_graph_collection_stores_edge_name_and_delegates_transition(self) -> None:
+        safe_db = MagicMock()
+        state_graph = StateGraphCollection(safe_db, "file_states", "file_has_state")
 
-        assert get_origin(annotation) is Annotated
-        assert get_args(annotation)[0] is str
-        assert marker == FieldMarker(unique=False)
+        assert isinstance(state_graph, DocumentCollection)
+        assert state_graph._edge_name == "file_has_state"
 
-    def test_field_annotation_base_cannot_be_instantiated(self) -> None:
-        """_FieldAnnotation is annotation-only and rejects direct instantiation."""
-        with pytest.raises(TypeError, match="only for type annotations"):
-            base._FieldAnnotation()
+        with patch("nomarr.persistence.collections_base.verbs.transition") as transition_mock:
+            state_graph.transition(["library_files/1"], "queued", "processed")
 
-    def test_unique_field_subscription_syntax_returns_unique_annotation(self) -> None:
-        """UniqueField[str] uses _FieldAnnotation.__class_getitem__ with a unique marker."""
-        annotation = UniqueField[str]
-        marker = get_args(annotation)[1]
-
-        assert get_origin(annotation) is Annotated
-        assert get_args(annotation)[0] is str
-        assert marker == FieldMarker(unique=True)
+        transition_mock.assert_called_once_with(
+            safe_db,
+            "file_has_state",
+            ["library_files/1"],
+            "queued",
+            "processed",
+        )

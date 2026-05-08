@@ -16,7 +16,7 @@ from nomarr.components.ml.inference.ml_segment_stats_store_comp import (
     get_segment_stats_for_files_bulk,
     upsert_segment_stats_batch,
 )
-from nomarr.persistence.base import Field
+from nomarr.persistence.base_types import Field
 
 
 @pytest.mark.unit

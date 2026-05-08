@@ -22,7 +22,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_TOO_SHORT,
     STATE_VECTORS_EXTRACTED,
 )
-from nomarr.persistence.base import Field
+from nomarr.persistence.base_types import Field
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database

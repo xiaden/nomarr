@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -35,7 +36,7 @@ from nomarr.components.library.library_file_query_comp import (
     search_files_by_tag,
     search_library_files_with_tags,
 )
-from nomarr.persistence.base import Field
+from nomarr.persistence.base_types import Field
 from nomarr.persistence.constructor.pagination import DEFAULT_LIMIT
 
 
@@ -187,28 +188,71 @@ class TestGetFilesByPathsBulk:
         assert mock_db.library_files.calls == [["artist/song.flac"]]
 
     @pytest.mark.unit
-    def test_maps_results_by_matching_normalized_and_absolute_paths(self) -> None:
+    def test_delegates_to_class_backed_library_files_bulk_lookup_when_available(self) -> None:
+        class LibraryFilesOps:
+            calls: ClassVar[list[list[str]]] = []
+
+            @classmethod
+            def get_files_by_paths_bulk(cls, paths: list[str]) -> dict[str, dict[str, str]]:
+                cls.calls.append(paths)
+                return {paths[0]: {"_id": "library_files/1"}}
+
+        mock_db = MagicMock()
+        mock_db.library_files = LibraryFilesOps
+
+        result = get_files_by_paths_bulk(mock_db, ["artist/song.flac"])
+
+        assert result == {"artist/song.flac": {"_id": "library_files/1"}}
+        assert LibraryFilesOps.calls == [["artist/song.flac"]]
+
+    @pytest.mark.unit
+    def test_maps_results_by_running_exact_lookup_for_each_path(self) -> None:
         mock_db = MagicMock()
         doc = {
             "_id": "library_files/1",
             "normalized_path": "artist/song.flac",
             "path": "D:/Music/artist/song.flac",
         }
-        mock_db.library_files.get.in_.side_effect = [[doc], [doc]]
-
-        result = get_files_by_paths_bulk(
-            mock_db,
-            ["artist/song.flac", "D:/Music/artist/song.flac"],
-        )
+        other_doc = {
+            "_id": "library_files/2",
+            "normalized_path": "artist/other.flac",
+            "path": "D:/Music/artist/other.flac",
+        }
+        with patch(
+            "nomarr.components.library.library_file_query_comp.get_library_file",
+            side_effect=[doc, other_doc],
+        ) as get_library_file_mock:
+            result = get_files_by_paths_bulk(
+                mock_db,
+                ["artist/song.flac", "D:/Music/artist/other.flac"],
+            )
 
         assert result == {
             "artist/song.flac": doc,
-            "D:/Music/artist/song.flac": doc,
+            "D:/Music/artist/other.flac": other_doc,
         }
-        mock_db.library_files.get.in_.assert_has_calls(
+        get_library_file_mock.assert_has_calls(
             [
-                call(Field("path", ["artist/song.flac", "D:/Music/artist/song.flac"]), limit=None),
-                call(Field("normalized_path", ["artist/song.flac", "D:/Music/artist/song.flac"]), limit=None),
+                call(mock_db, "artist/song.flac"),
+                call(mock_db, "D:/Music/artist/other.flac"),
+            ]
+        )
+
+    @pytest.mark.unit
+    def test_skips_paths_without_exact_match(self) -> None:
+        mock_db = MagicMock()
+
+        with patch(
+            "nomarr.components.library.library_file_query_comp.get_library_file",
+            side_effect=[None, {"_id": "library_files/2", "path": "D:/Music/found.flac"}],
+        ) as get_library_file_mock:
+            result = get_files_by_paths_bulk(mock_db, ["missing.flac", "D:/Music/found.flac"])
+
+        assert result == {"D:/Music/found.flac": {"_id": "library_files/2", "path": "D:/Music/found.flac"}}
+        get_library_file_mock.assert_has_calls(
+            [
+                call(mock_db, "missing.flac"),
+                call(mock_db, "D:/Music/found.flac"),
             ]
         )
 

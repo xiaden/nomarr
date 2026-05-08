@@ -13,7 +13,7 @@ from arango.exceptions import DocumentInsertError
 
 from nomarr.components.library.library_file_state_comp import discover_next_untagged_file
 from nomarr.helpers.time_helper import now_ms
-from nomarr.persistence.base import Field
+from nomarr.persistence.base_types import Field
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database

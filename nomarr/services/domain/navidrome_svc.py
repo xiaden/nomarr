@@ -306,7 +306,8 @@ class NavidromeService:
         """Parse the live Navidrome path-prefix mapping config.
 
         The config value is a comma-separated list of ``from:to`` pairs.
-        Invalid or incomplete entries are ignored.
+        Invalid entries are ignored. Empty target prefixes are allowed so a
+        mapping can strip a prefix entirely.
         """
         if not isinstance(raw_value, str):
             return []
@@ -319,7 +320,7 @@ class NavidromeService:
             source_prefix, target_prefix = pair.split(":", maxsplit=1)
             source_prefix = source_prefix.strip()
             target_prefix = target_prefix.strip()
-            if source_prefix and target_prefix:
+            if source_prefix:
                 mappings.append((source_prefix, target_prefix))
         return mappings
 

@@ -16,7 +16,7 @@ from nomarr.components.ml.vectors.ml_vector_maintenance_comp import (
     rebuild_cold_vector_index,
     verify_hot_empty,
 )
-from nomarr.persistence.base import Field
+from nomarr.persistence.base_types import Field
 
 PATCH_BASE = "nomarr.components.ml.vectors.ml_vector_maintenance_comp"
 

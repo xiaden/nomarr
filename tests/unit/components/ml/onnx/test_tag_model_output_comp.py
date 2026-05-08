@@ -14,7 +14,7 @@ from nomarr.components.ml.onnx.tag_model_output_comp import (
     write_tag_model_output_edge,
     write_tag_model_output_edges_batch,
 )
-from nomarr.persistence.base import Field
+from nomarr.persistence.base_types import Field
 
 
 @pytest.mark.unit

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from nomarr.components.library.library_file_query_comp import count_files_by_tag
-from nomarr.persistence.base import Field
+from nomarr.persistence.base_types import Field
 from nomarr.persistence.constructor.pagination import DEFAULT_LIMIT
 
 

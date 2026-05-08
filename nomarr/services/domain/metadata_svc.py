@@ -24,7 +24,7 @@ from nomarr.components.tagging.tag_query_comp import (
 )
 from nomarr.components.tagging.tag_write_comp import find_or_create_tag
 from nomarr.helpers.dto.metadata_dto import EntityDict, EntityListResult, SongListForEntityResult
-from nomarr.persistence.base import Field
+from nomarr.persistence.base_types import Field
 from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 
 import yaml
 
 from nomarr.persistence.arango_client import SafeDatabase, create_arango_client
-from nomarr.persistence.base import VectorCollection, bind_all_collections, reattach_vector_cascades
+from nomarr.persistence.base_types import CASCADE, OUTBOUND, EdgeDef
+from nomarr.persistence.cascade import _compile_cascade_aql, gather_concrete_names
 from nomarr.persistence.collections import (
     CalibrationHistory,
     CalibrationState,
@@ -49,6 +51,7 @@ from nomarr.persistence.collections import (
     WorkerClaims,
     WorkerRestartPolicy,
 )
+from nomarr.persistence.collections_base import DocumentCollection, EdgeCollection, VectorCollection
 
 __all__ = ["Database"]
 
@@ -122,42 +125,42 @@ class Database:
     - Username and db_name are hardcoded as 'nomarr' (not configurable).
     """
 
-    meta: type[Meta]
-    libraries: type[Libraries]
-    library_files: type[LibraryFiles]
-    tags: type[Tags]
-    library_folders: type[LibraryFolders]
-    library_scans: type[LibraryScans]
-    sessions: type[Sessions]
-    calibration_state: type[CalibrationState]
-    calibration_history: type[CalibrationHistory]
-    health: type[Health]
-    worker_restart_policy: type[WorkerRestartPolicy]
-    navidrome_tracks: type[NavidromeTracks]
-    navidrome_playcounts: type[NavidromePlaycounts]
-    file_states: type[FileStates]
-    file_has_state: type[FileHasState]
-    song_has_tags: type[SongHasTags]
-    file_has_vectors: type[FileHasVectors]
-    library_has_scan: type[LibraryHasScan]
-    library_contains_file: type[LibraryContainsFile]
-    library_contains_folder: type[LibraryContainsFolder]
-    library_pipeline_states: type[LibraryPipelineStates]
-    library_has_pipeline_state: type[LibraryHasPipelineState]
-    worker_claims: type[WorkerClaims]
-    vram_promises: type[VramPromises]
-    locks: type[Locks]
-    ml_capacity: type[MlCapacity]
-    ml_models: type[MlModels]
-    model_has_output: type[ModelHasOutput]
-    model_has_calibration: type[ModelHasCalibration]
-    ml_model_outputs: type[MlModelOutputs]
-    tag_model_output: type[TagModelOutput]
-    segment_scores_stats: type[SegmentScoresStats]
-    file_has_segment_stats: type[FileHasSegmentStats]
-    has_nd_id: type[HasNdId]
-    has_plays: type[HasPlays]
-    migrations: type[Migrations]
+    meta: Meta
+    libraries: Libraries
+    library_files: LibraryFiles
+    tags: Tags
+    library_folders: LibraryFolders
+    library_scans: LibraryScans
+    sessions: Sessions
+    calibration_state: CalibrationState
+    calibration_history: CalibrationHistory
+    health: Health
+    worker_restart_policy: WorkerRestartPolicy
+    navidrome_tracks: NavidromeTracks
+    navidrome_playcounts: NavidromePlaycounts
+    file_states: FileStates
+    file_has_state: FileHasState
+    song_has_tags: SongHasTags
+    file_has_vectors: FileHasVectors
+    library_has_scan: LibraryHasScan
+    library_contains_file: LibraryContainsFile
+    library_contains_folder: LibraryContainsFolder
+    library_pipeline_states: LibraryPipelineStates
+    library_has_pipeline_state: LibraryHasPipelineState
+    worker_claims: WorkerClaims
+    vram_promises: VramPromises
+    locks: Locks
+    ml_capacity: MlCapacity
+    ml_models: MlModels
+    model_has_output: ModelHasOutput
+    model_has_calibration: ModelHasCalibration
+    ml_model_outputs: MlModelOutputs
+    tag_model_output: TagModelOutput
+    segment_scores_stats: SegmentScoresStats
+    file_has_segment_stats: FileHasSegmentStats
+    has_nd_id: HasNdId
+    has_plays: HasPlays
+    migrations: Migrations
 
     USERNAME = "nomarr"
     DB_NAME = "nomarr"
@@ -203,58 +206,99 @@ class Database:
             password=self.password,
             db_name=self.db_name,
         )
-        bind_all_collections(self.db)
 
-        self.meta = Meta
-        self.libraries = Libraries
-        self.library_files = LibraryFiles
-        self.tags = Tags
-        self.library_folders = LibraryFolders
-        self.library_scans = LibraryScans
-        self.sessions = Sessions
-        self.calibration_state = CalibrationState
-        self.calibration_history = CalibrationHistory
-        self.health = Health
-        self.worker_restart_policy = WorkerRestartPolicy
-        self.navidrome_tracks = NavidromeTracks
-        self.navidrome_playcounts = NavidromePlaycounts
-        self.file_states = FileStates
-        self.file_has_state = FileHasState
-        self.song_has_tags = SongHasTags
-        self.file_has_vectors = FileHasVectors
-        self.library_has_scan = LibraryHasScan
-        self.library_contains_file = LibraryContainsFile
-        self.library_contains_folder = LibraryContainsFolder
-        self.library_pipeline_states = LibraryPipelineStates
-        self.library_has_pipeline_state = LibraryHasPipelineState
-        self.worker_claims = WorkerClaims
-        self.vram_promises = VramPromises
-        self.locks = Locks
-        self.ml_capacity = MlCapacity
-        self.ml_models = MlModels
-        self.model_has_output = ModelHasOutput
-        self.model_has_calibration = ModelHasCalibration
-        self.ml_model_outputs = MlModelOutputs
-        self.tag_model_output = TagModelOutput
-        self.segment_scores_stats = SegmentScoresStats
-        self.file_has_segment_stats = FileHasSegmentStats
-        self.has_nd_id = HasNdId
-        self.has_plays = HasPlays
-        self.migrations = Migrations
+        self.meta = Meta(self.db)
+        self.libraries = Libraries(self.db)
+        self.library_files = LibraryFiles(self.db)
+        self.tags = Tags(self.db)
+        self.library_folders = LibraryFolders(self.db)
+        self.library_scans = LibraryScans(self.db)
+        self.sessions = Sessions(self.db)
+        self.calibration_state = CalibrationState(self.db)
+        self.calibration_history = CalibrationHistory(self.db)
+        self.health = Health(self.db)
+        self.worker_restart_policy = WorkerRestartPolicy(self.db)
+        self.navidrome_tracks = NavidromeTracks(self.db)
+        self.navidrome_playcounts = NavidromePlaycounts(self.db)
+        self.file_states = FileStates(self.db)
+        self.file_has_state = FileHasState(self.db)
+        self.song_has_tags = SongHasTags(self.db)
+        self.file_has_vectors = FileHasVectors(self.db)
+        self.library_has_scan = LibraryHasScan(self.db)
+        self.library_contains_file = LibraryContainsFile(self.db)
+        self.library_contains_folder = LibraryContainsFolder(self.db)
+        self.library_pipeline_states = LibraryPipelineStates(self.db)
+        self.library_has_pipeline_state = LibraryHasPipelineState(self.db)
+        self.worker_claims = WorkerClaims(self.db)
+        self.vram_promises = VramPromises(self.db)
+        self.locks = Locks(self.db)
+        self.ml_capacity = MlCapacity(self.db)
+        self.ml_models = MlModels(self.db)
+        self.model_has_output = ModelHasOutput(self.db)
+        self.model_has_calibration = ModelHasCalibration(self.db)
+        self.ml_model_outputs = MlModelOutputs(self.db)
+        self.tag_model_output = TagModelOutput(self.db)
+        self.segment_scores_stats = SegmentScoresStats(self.db)
+        self.file_has_segment_stats = FileHasSegmentStats(self.db)
+        self.has_nd_id = HasNdId(self.db)
+        self.has_plays = HasPlays(self.db)
+        self.migrations = Migrations(self.db)
 
-        self._registered: dict[str, type[VectorCollection]] = {}
+        self._document_collections: list[DocumentCollection] = [
+            self.meta,
+            self.libraries,
+            self.library_files,
+            self.tags,
+            self.library_folders,
+            self.library_scans,
+            self.sessions,
+            self.calibration_state,
+            self.calibration_history,
+            self.health,
+            self.worker_restart_policy,
+            self.navidrome_tracks,
+            self.navidrome_playcounts,
+            self.file_states,
+            self.library_pipeline_states,
+            self.worker_claims,
+            self.vram_promises,
+            self.locks,
+            self.ml_capacity,
+            self.ml_models,
+            self.ml_model_outputs,
+            self.segment_scores_stats,
+            self.migrations,
+        ]
+        self._edge_collections: list[EdgeCollection] = [
+            self.file_has_state,
+            self.song_has_tags,
+            self.file_has_vectors,
+            self.library_has_scan,
+            self.library_contains_file,
+            self.library_contains_folder,
+            self.library_has_pipeline_state,
+            self.model_has_output,
+            self.model_has_calibration,
+            self.tag_model_output,
+            self.file_has_segment_stats,
+            self.has_nd_id,
+            self.has_plays,
+        ]
+        self._registered: dict[str, VectorCollection] = {}
 
-    def register(self, collection_name: str, template_name: str) -> type[VectorCollection]:
-        """Register a dynamic typed vector collection class on the database.
+        self._compile_all_cascades()
 
-        If the collection is already registered, returns the cached class.
+    def register(self, collection_name: str, template_name: str) -> VectorCollection:
+        """Register a dynamic typed vector collection instance on the database.
+
+        If the collection is already registered, returns the cached instance.
 
         Args:
             collection_name: Name of the ArangoDB collection to register.
             template_name: Template family name identifying the vector collection class.
 
         Returns:
-            The registered runtime-bound collection class.
+            The registered runtime-bound collection instance.
 
         Raises:
             ValueError: If ``collection_name`` does not exist in ArangoDB.
@@ -273,15 +317,81 @@ class Database:
             msg = f"Collection {collection_name!r} does not match template pattern {vector_template_cls.NAME_PATTERN!r}"
             raise ValueError(msg)
 
-        dyn_cls = type(
-            f"{vector_template_cls.__name__}__{collection_name}",
-            (vector_template_cls,),
-            {"_name": collection_name},
+        instance = vector_template_cls(self.db, collection_name)
+        self._registered[collection_name] = instance
+        setattr(self, collection_name, instance)
+        self._reattach_vector_cascades()
+        return instance
+
+    def _compile_all_cascades(self) -> None:
+        from nomarr.persistence.constructor import verbs
+
+        target_names, all_edge_names = gather_concrete_names(
+            self._document_collections,
+            self._edge_collections,
         )
-        self._registered[collection_name] = dyn_cls
-        setattr(self, collection_name, dyn_cls)
-        reattach_vector_cascades(list(self._registered.keys()))
-        return dyn_cls
+        for coll_instance in self._document_collections:
+            edges: list[EdgeDef] = getattr(coll_instance.__class__, "EDGES", [])
+            cascade_defs = [
+                edge_def for edge_def in edges if edge_def.on_delete == CASCADE and edge_def.direction == OUTBOUND
+            ]
+            if not cascade_defs:
+                continue
+            compiled = _compile_cascade_aql(
+                coll_instance._name,
+                coll_instance.__class__,
+                target_names,
+                all_edge_names,
+            )
+            db = self.db
+
+            def make_fn(aql: str, db: SafeDatabase = db) -> Callable[[list[str]], int]:
+                def cascade_delete(ids: list[str]) -> int:
+                    if not ids:
+                        raise ValueError("cascade delete requires a non-empty list of ids")
+                    list(verbs._execute_aql(db, aql, bind_vars={"starts": ids}))
+                    return len(ids)
+
+                return cascade_delete
+
+            coll_instance._attach_cascade(make_fn(compiled))
+
+    def _reattach_vector_cascades(self) -> None:
+        from nomarr.persistence.constructor import verbs
+
+        registered_names = list(self._registered.keys())
+        target_names, all_edge_names = gather_concrete_names(
+            self._document_collections,
+            self._edge_collections,
+            extra_vector_names=registered_names,
+        )
+        for coll_instance in self._document_collections:
+            edges: list[EdgeDef] = getattr(coll_instance.__class__, "EDGES", [])
+            if not any(
+                edge_def.on_delete == CASCADE
+                and edge_def.direction == OUTBOUND
+                and issubclass(edge_def.target, VectorCollection)
+                for edge_def in edges
+            ):
+                continue
+            compiled = _compile_cascade_aql(
+                coll_instance._name,
+                coll_instance.__class__,
+                target_names,
+                all_edge_names,
+            )
+            db = self.db
+
+            def make_fn(aql: str, db: SafeDatabase = db) -> Callable[[list[str]], int]:
+                def cascade_delete(ids: list[str]) -> int:
+                    if not ids:
+                        raise ValueError("cascade delete requires a non-empty list of ids")
+                    list(verbs._execute_aql(db, aql, bind_vars={"starts": ids}))
+                    return len(ids)
+
+                return cascade_delete
+
+            coll_instance._attach_cascade(make_fn(compiled))
 
     def get_version(self) -> str | None:
         """Read the current schema version from the meta store."""

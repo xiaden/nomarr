@@ -161,7 +161,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
         """
         try:
             restart_state = self.db.worker_restart_policy.component_id.get(component_id)
-            if restart_state and int(restart_state.get("restart_count", 0)) > 0:
+            if isinstance(restart_state, dict) and int(restart_state.get("restart_count", 0)) > 0:
                 timestamp = now_ms().value
                 self.db.worker_restart_policy.component_id.update(
                     component_id,

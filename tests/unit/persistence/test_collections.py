@@ -2,20 +2,11 @@
 
 from __future__ import annotations
 
-from typing import get_args, get_type_hints
+from unittest.mock import MagicMock
 
 import pytest
 
-from nomarr.persistence.base import (
-    CASCADE,
-    DETACH,
-    DocumentCollection,
-    EdgeCollection,
-    EdgeDef,
-    FieldMarker,
-    StateGraphCollection,
-    VectorCollection,
-)
+from nomarr.persistence.base_types import CASCADE, DETACH, EdgeDef
 from nomarr.persistence.collections import (
     CalibrationHistory,
     CalibrationState,
@@ -56,6 +47,12 @@ from nomarr.persistence.collections import (
     WorkerClaims,
     WorkerRestartPolicy,
     __all__,
+)
+from nomarr.persistence.collections_base import (
+    DocumentCollection,
+    EdgeCollection,
+    StateGraphCollection,
+    VectorCollection,
 )
 
 EXPECTED_ALL = [
@@ -201,6 +198,16 @@ class TestDocumentCollectionSubclasses:
         assert issubclass(FileStates, StateGraphCollection)
         assert StateGraphCollection in FileStates.__bases__
 
+    @pytest.mark.mocked
+    def test_file_states_init_sets_edge_name_and_returns_document_collection(self) -> None:
+        """`FileStates` delegates to the state-graph base with the expected edge wiring."""
+        mock_db = MagicMock()
+
+        instance = FileStates(mock_db)
+
+        assert isinstance(instance, DocumentCollection)
+        assert instance._edge_name == "file_has_state"
+
 
 @pytest.mark.unit
 class TestEdgeCollectionSubclasses:
@@ -223,16 +230,95 @@ class TestVectorCollectionSubclasses:
 
 
 @pytest.mark.unit
+class TestLibraryFilesCustomMethods:
+    """Tests for concrete `LibraryFiles` helper methods."""
+
+    def test_get_files_by_paths_bulk_uses_single_exact_query(self) -> None:
+        mock_db = MagicMock()
+        mock_db.aql.execute.return_value = [
+            {
+                "_id": "library_files/1",
+                "_key": "1",
+                "normalized_path": "artist/song.flac",
+                "path": "D:/Music/artist/song.flac",
+            },
+            {
+                "_id": "library_files/2",
+                "_key": "2",
+                "normalized_path": "artist/other.flac",
+                "path": "D:/Music/artist/other.flac",
+            },
+        ]
+        instance = LibraryFiles(mock_db)
+
+        result = instance.get_files_by_paths_bulk(
+            ["artist/song.flac", "D:/Music/artist/other.flac", "missing.flac"],
+        )
+
+        assert result == {
+            "artist/song.flac": {
+                "_id": "library_files/1",
+                "_key": "1",
+                "normalized_path": "artist/song.flac",
+                "path": "D:/Music/artist/song.flac",
+            },
+            "D:/Music/artist/other.flac": {
+                "_id": "library_files/2",
+                "_key": "2",
+                "normalized_path": "artist/other.flac",
+                "path": "D:/Music/artist/other.flac",
+            },
+        }
+        mock_db.aql.execute.assert_called_once_with(
+            """
+            FOR doc IN @@collection
+                FILTER doc.normalized_path IN @paths OR doc.path IN @paths
+                SORT doc._key
+                RETURN doc
+            """,
+            bind_vars={
+                "@collection": "library_files",
+                "paths": ["artist/song.flac", "D:/Music/artist/other.flac", "missing.flac"],
+            },
+        )
+
+    def test_get_files_by_paths_bulk_prefers_normalized_path_match(self) -> None:
+        mock_db = MagicMock()
+        normalized_match = {
+            "_id": "library_files/1",
+            "_key": "1",
+            "normalized_path": "artist/song.flac",
+            "path": "D:/Music/artist/song.flac",
+        }
+        absolute_match = {
+            "_id": "library_files/2",
+            "_key": "2",
+            "normalized_path": "other/song.flac",
+            "path": "artist/song.flac",
+        }
+        mock_db.aql.execute.return_value = [normalized_match, absolute_match]
+        instance = LibraryFiles(mock_db)
+
+        result = instance.get_files_by_paths_bulk(["artist/song.flac"])
+
+        assert result == {"artist/song.flac": normalized_match}
+
+
+@pytest.mark.unit
 class TestCustomCollectionNames:
     """Tests for custom physical collection names."""
 
     def test_migrations_uses_applied_migrations_name(self) -> None:
         """`Migrations` maps to the applied migrations collection."""
-        assert Migrations._name == "applied_migrations"
+        mock_db = MagicMock()
+
+        assert Migrations(mock_db)._name == "applied_migrations"
 
     def test_ml_capacity_uses_capacity_estimates_name(self) -> None:
         """`MlCapacity` maps to the renamed capacity estimates collection."""
-        assert MlCapacity._name == "ml_capacity_estimates"
+        mock_db = MagicMock()
+
+        assert MlCapacity(mock_db)._name == "ml_capacity_estimates"
 
 
 @pytest.mark.unit
@@ -240,7 +326,7 @@ class TestEdgeCollectionEndpoints:
     """Tests for edge endpoint declarations."""
 
     @pytest.mark.parametrize("collection_cls", EDGE_COLLECTION_CLASSES)
-    def test_edge_collections_define_from_and_to_collection(self, collection_cls: type[EdgeCollection]) -> None:
+    def test_edge_collections_define_from_and_to_collection(self, collection_cls: type) -> None:
         """Every edge class declares source and destination collection classes."""
         assert hasattr(collection_cls, "FROM_COLLECTION")
         assert hasattr(collection_cls, "TO_COLLECTION")
@@ -255,7 +341,7 @@ class TestEdgeCollectionEndpoints:
     )
     def test_selected_edge_collections_point_to_expected_endpoints(
         self,
-        collection_cls: type[EdgeCollection],
+        collection_cls: type,
         from_collection: type[DocumentCollection],
         to_collection: type[DocumentCollection],
     ) -> None:
@@ -271,26 +357,10 @@ class TestTagModelOutputFields:
     def test_tag_model_output_declares_expected_payload_fields(self) -> None:
         """`TagModelOutput` exposes score and timestamp payload annotations."""
         assert TagModelOutput.__annotations__ == {
-            "score": "Field[float]",
-            "created_at": "Field[int]",
-            "updated_at": "Field[int]",
+            "score": "FieldAccessor",
+            "created_at": "FieldAccessor",
+            "updated_at": "FieldAccessor",
         }
-
-    @pytest.mark.parametrize(
-        ("field_name", "expected_type"),
-        [("score", float), ("created_at", int), ("updated_at", int)],
-    )
-    def test_tag_model_output_payload_fields_are_non_unique_field_annotations(
-        self,
-        field_name: str,
-        expected_type: type[object],
-    ) -> None:
-        """The payload fields resolve to non-unique `Field[...]` annotations."""
-        annotation = get_type_hints(TagModelOutput, include_extras=True)[field_name]
-        args = get_args(annotation)
-
-        assert args[0] is expected_type
-        assert args[1] == FieldMarker(unique=False)
 
 
 @pytest.mark.unit

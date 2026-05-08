@@ -14,7 +14,7 @@ from nomarr.components.workers.worker_discovery_comp import (
     discover_next_file,
     release_claims_for_worker,
 )
-from nomarr.persistence.base import Field
+from nomarr.persistence.base_types import Field
 
 
 class TestDiscoverNextFile:
