@@ -1008,7 +1008,13 @@ def transition(
     from_edge_target: str,
     to_edge_target: str,
 ) -> None:
-    """Batch state transition per ADR-003: remove matching old edges, upsert new edges."""
+    """Batch state transition per ADR-003 using separate remove and upsert phases.
+
+    ArangoDB rejects AQL that reads from a collection and then performs a
+    second read/write step against that same collection later in the same
+    statement (ERR 1579). Keep removal and destination UPSERT in separate AQL
+    executions so transitions remain bulk, idempotent, and conflict-retry safe.
+    """
     if not ids:
         return
 
@@ -1020,7 +1026,13 @@ def transition(
             FOR e IN @@ec
                 FILTER e._from IN @ids AND e._to == @from
                 REMOVE e IN @@ec
+            """,
+            bind_vars={"@ec": edge_col, "ids": chunk, "from": from_edge_target},
+        )
 
+        _execute_aql(
+            db,
+            """
             FOR fid IN @ids
                 UPSERT { _from: fid, _to: @to }
                 INSERT { _from: fid, _to: @to }
@@ -1028,6 +1040,7 @@ def transition(
                 IN @@ec
             """,
             bind_vars={"@ec": edge_col, "ids": chunk, "from": from_edge_target, "to": to_edge_target},
+            retry_on_conflict=True,
         )
 
 

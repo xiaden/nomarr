@@ -11,6 +11,7 @@ from nomarr.components.metadata.metadata_cache_comp import (
     compute_metadata_cache_fields,
     update_metadata_cache_batch,
 )
+from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
 from nomarr.components.tagging.tag_write_comp import set_song_tags, set_song_tags_batch
 
 if TYPE_CHECKING:
@@ -178,16 +179,63 @@ def _build_song_tag_entries(song_id: str, tags: dict[str, Any]) -> list[dict[str
     return entries
 
 
+def _build_entity_tag_map(tags: dict[str, Any]) -> dict[str, list[Any]]:
+    """Return canonical entity-tag values keyed by tag name.
+
+    Uses the same normalization logic as :func:`seed_song_entities_from_tags`,
+    but materialises the result as a mapping so batch scan persistence can merge
+    it with the full raw tag set before writing everything in one call.
+    """
+    return {str(entry["name"]): list(entry["values"]) for entry in _build_song_tag_entries(song_id="", tags=tags)}
+
+
+def _build_scan_tag_map(metadata: dict[str, Any]) -> dict[str, list[Any]]:
+    """Build the authoritative persisted tag map for one scanned file.
+
+    This mirrors the single-file sync workflow semantics:
+    - persist all extracted source tags
+    - add structured ``genre`` / ``year`` / ``track_number`` values
+    - persist namespaced Nomarr tags under ``nom:`` keys
+    - override entity tags with canonical normalized values so the tag graph and
+      embedded metadata cache agree on artist/album/genre/year style.
+    """
+    all_tags = dict(metadata.get("all_tags", {}))
+    nom_tags = metadata.get("nom_tags", {})
+
+    if metadata.get("genre"):
+        all_tags["genre"] = metadata["genre"]
+    if metadata.get("year") is not None:
+        all_tags["year"] = metadata["year"]
+    if metadata.get("track_number") is not None:
+        all_tags["track_number"] = metadata["track_number"]
+
+    persisted_tags = parse_tag_values(all_tags) if all_tags else {}
+    parsed_nom_tags = parse_tag_values(nom_tags) if nom_tags else {}
+    for name, values in parsed_nom_tags.items():
+        tag_name = name if name.startswith("nom:") else f"nom:{name}"
+        persisted_tags[tag_name] = values
+
+    entity_tags = _build_entity_tag_map(_extract_entity_tags(metadata))
+    for name, values in entity_tags.items():
+        if values or name in metadata:
+            persisted_tags[name] = values
+
+    return persisted_tags
+
+
 def seed_entities_for_scan_batch(
     db: "Database",
     file_ids: list[str],
     metadata_by_id: dict[str, dict[str, Any]],
 ) -> int:
-    """Seed entity vertices/edges and update metadata caches for scanned files.
+    """Persist scan-derived tags and update metadata caches for scanned files.
 
     Batch-optimised: collects per-file tag entries in-memory, then executes
-    ``set_song_tags_batch`` (3 AQL) and ``update_metadata_cache_batch`` (1 AQL)
-    — total 4 AQL per folder instead of ~20 x N per file.
+    ``set_song_tags_batch`` once for the authoritative source-tag graph and
+    ``update_metadata_cache_batch`` once for the embedded read cache.
+
+    Despite the historical name, this step is responsible for preserving the
+    full raw tag set discovered during scan, not just the entity-oriented subset.
 
     Args:
         db: Database instance
@@ -195,7 +243,7 @@ def seed_entities_for_scan_batch(
         metadata_by_id: Map of file_id -> raw metadata dict
 
     Returns:
-        Number of files successfully seeded
+        Number of files successfully prepared for cache updates
 
     """
     if not file_ids:
@@ -213,18 +261,20 @@ def seed_entities_for_scan_batch(
             continue
 
         try:
-            entity_tags = _extract_entity_tags(metadata)
-            all_tag_entries.extend(_build_song_tag_entries(file_id, entity_tags))
+            persisted_tags = _build_scan_tag_map(metadata)
+            all_tag_entries.extend(
+                {"song_id": file_id, "name": name, "values": values} for name, values in persisted_tags.items()
+            )
             cache_updates.append({"song_id": file_id, **compute_metadata_cache_fields(metadata)})
         except Exception as e:
             logger.warning("Failed to build entities for file_id %s: %s", file_id, e)
 
-    # 3) Batch seed entities (3 AQL total instead of 3 x N x 6)
+    # 3) Batch persist tags (3 AQL total instead of per-file writes)
     if all_tag_entries:
         try:
             set_song_tags_batch(db, all_tag_entries)
         except Exception as e:
-            logger.warning("Batch tag seeding failed: %s", e)
+            logger.warning("Batch tag persistence failed: %s", e)
             return 0
 
     # 4) Batch update metadata cache (1 AQL instead of N)

@@ -273,7 +273,7 @@ class TestScanFolderFiles:
                 existing_files={
                     str(track_path): {
                         "modified_time": 0,
-                        "tagged": True,
+                        "has_tagged_state": True,
                     }
                 },
                 tagger_version="suite-v1",

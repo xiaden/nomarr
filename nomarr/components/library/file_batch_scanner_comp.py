@@ -53,8 +53,8 @@ def scan_folder_files(
         tagger_version: Current model suite hash
         db: Database instance (for build_library_path_from_input)
         min_duration_s: Minimum duration in seconds for ML tagging.
-            Files shorter than this are marked as not needing tagging
-            with ``tagging_skipped_reason='too_short'``.
+            Files shorter than this are marked for the ``too_short`` state
+            during post-upsert edge bootstrapping.
 
     Returns:
         FileBatchResult with file entries ready for upsert and metadata
@@ -133,7 +133,7 @@ def scan_folder_files(
             skip_ml = False
             ml_skip_reason: str | None = None
 
-            if existing_file is not None and existing_file.get("tagged") and file_version == tagger_version:
+            if existing_file is not None and existing_file.get("has_tagged_state") and file_version == tagger_version:
                 skip_ml = True  # Already tagged with current model suite
 
             # Override: files too short for ML get skipped at scan time

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import math
 from collections.abc import Callable
 from typing import Any, ClassVar, cast
 
+from nomarr.helpers.time_helper import internal_ms
 from nomarr.persistence.accessors import CollectionDelete, CollectionGet, FieldAccessor
 from nomarr.persistence.arango_client import SafeDatabase
 from nomarr.persistence.base_types import (
@@ -310,8 +313,9 @@ class VectorCollection(BaseCollection):
     """Collection wrapper for embedding-vector collections.
 
     Subclasses declare `VECTOR_TIER` ("hot" or "cold") and `NAME_PATTERN`
-    for naming, and this base registers `_key`, `_id`, `file_id`, and
-    `vector` field accessors.
+    for naming. The base registers the shared vector document fields and
+    exposes common vector persistence/retrieval verbs used by the dynamic
+    hot/cold collection namespaces returned from ``Database.register()``.
     """
 
     VECTOR_TIER: ClassVar[str]  # "hot" or "cold"
@@ -322,7 +326,79 @@ class VectorCollection(BaseCollection):
         self._key = self._field("_key", unique=True)
         self._id = self._field("_id", unique=True)
         self.file_id = self._field("file_id")
+        self.model_suite_hash = self._field("model_suite_hash")
+        self.embed_dim = self._field("embed_dim")
         self.vector = self._field("vector")
+        self.vector_n = self._field("vector_n")
+        self.num_segments = self._field("num_segments")
+        self.created_at = self._field("created_at")
+
+    @staticmethod
+    def _make_vector_key(file_id: str, model_suite_hash: str) -> str:
+        """Return the deterministic key for one persisted track vector."""
+        return hashlib.sha1(f"{file_id}|{model_suite_hash}".encode()).hexdigest()
+
+    @staticmethod
+    def _normalize_vector(vector: list[float]) -> list[float]:
+        """Return an L2-normalized copy of ``vector`` for cosine ANN search."""
+        norm = math.sqrt(sum(value * value for value in vector))
+        if norm == 0.0:
+            return list(vector)
+        return [value / norm for value in vector]
+
+    def upsert_vector(
+        self,
+        file_id: str,
+        model_suite_hash: str,
+        embed_dim: int,
+        vector: list[float],
+        num_segments: int,
+    ) -> None:
+        """Upsert a track vector document and maintain its ``file_has_vectors`` edge."""
+        vector_key = self._make_vector_key(file_id, model_suite_hash)
+        vector_doc: Document = {
+            "_key": vector_key,
+            "file_id": file_id,
+            "model_suite_hash": model_suite_hash,
+            "embed_dim": embed_dim,
+            "vector": list(vector),
+            "vector_n": self._normalize_vector(vector),
+            "num_segments": num_segments,
+            "created_at": internal_ms().value,
+        }
+        self.upsert(_key=vector_key, fields=vector_doc)
+        verbs.upsert_file_has_vectors_edge(self._db, file_id, f"{self._name}/{vector_key}")
+
+    def get_vector(self, file_id: str) -> Document | None:
+        """Return the latest vector document stored for ``file_id``."""
+        return verbs.get_vector(self._db, self._name, file_id)
+
+    def get_vectors_by_file_ids(self, file_ids: list[str]) -> list[Document]:
+        """Return vector documents for the supplied file IDs."""
+        return verbs.get_vectors_by_file_ids(self._db, self._name, file_ids)
+
+    def ann_search(
+        self,
+        vector: list[float],
+        limit: int,
+        nprobe: int = 10,
+        *,
+        filter: dict[str, Any] | None = None,
+    ) -> list[Document]:
+        """Run approximate cosine search against this vector collection."""
+        return verbs.ann_search(self._db, self._name, vector, limit, nprobe, filter=filter)
+
+    def delete_by_file_id(self, file_id: str) -> int:
+        """Delete all vector documents associated with ``file_id``."""
+        return cast("int", self.file_id.delete(file_id))
+
+    def delete_by_file_ids(self, file_ids: list[str]) -> int:
+        """Delete all vector documents associated with each supplied file ID."""
+        return sum(self.delete_by_file_id(file_id) for file_id in file_ids)
+
+    def move_collection(self, dest: str) -> int:
+        """Move this collection into ``dest`` using the vector-aware move verb."""
+        return verbs.move_collection(self._db, self._name, dest)
 
 
 class StateGraphCollection(DocumentCollection):

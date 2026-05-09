@@ -1,8 +1,8 @@
 """Workers package - crash handling, restart logic, and discovery components.
 
-In the discovery model, workers query library_files directly instead of
-polling a queue. Files with needs_tagging=1 and no active claim are
-available for processing.
+In the discovery model, workers select files via the file-state graph instead
+of polling a queue. Files in the ``not_tagged`` state that are not ``too_short``
+and have no active claim are available for processing.
 """
 
 from .worker_crash_comp import (

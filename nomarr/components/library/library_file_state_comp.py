@@ -179,8 +179,13 @@ def discover_next_untagged_file(
 
 
 def count_untagged_files(db: Database, library_id: str | None = None) -> int:
-    """Count files in the ``not_tagged`` state."""
+    """Count files in the ``not_tagged`` state that are still taggable.
+
+    Files already marked ``too_short`` are excluded because they are no longer
+    eligible for ML tagging work and should not inflate pending-work counts.
+    """
     untagged_ids = _state_file_ids(db, STATE_NOT_TAGGED)
+    untagged_ids -= _state_file_ids(db, STATE_TOO_SHORT)
     if library_id is not None:
         untagged_ids &= _library_file_ids(db, library_id)
     return len(untagged_ids)

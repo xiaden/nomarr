@@ -324,12 +324,15 @@ class TestLibraryScopedStateQueries:
     """Tests for library-scoped state query helpers."""
 
     @pytest.mark.unit
-    def test_count_untagged_files_intersects_with_library_files(self) -> None:
+    def test_count_untagged_files_excludes_too_short_after_library_intersection(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.file_states.file_has_state.return_value = [
-            {"_id": "library_files/1"},
-            {"_id": "library_files/2"},
-            {"_id": "library_files/3"},
+        mock_db.file_states.file_has_state.side_effect = [
+            [
+                {"_id": "library_files/1"},
+                {"_id": "library_files/2"},
+                {"_id": "library_files/3"},
+            ],
+            [{"_id": "library_files/3"}],
         ]
         mock_db.library_contains_file.get.return_value = [
             {"_to": "library_files/2"},
@@ -338,7 +341,11 @@ class TestLibraryScopedStateQueries:
 
         result = count_untagged_files(mock_db, library_id="libraries/1")
 
-        assert result == 2
+        assert result == 1
+        assert mock_db.file_states.file_has_state.call_args_list == [
+            call(STATE_NOT_TAGGED, limit=None),
+            call(STATE_TOO_SHORT, limit=None),
+        ]
 
     @pytest.mark.unit
     def test_get_errored_file_ids_normalizes_library_id_and_applies_limit_after_intersection(self) -> None:
@@ -411,15 +418,18 @@ class TestLibraryScopedStateQueries:
     @pytest.mark.unit
     def test_count_untagged_files_returns_global_count_when_no_library_id(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.file_states.file_has_state.return_value = [
-            {"_id": "library_files/1"},
-            {"_id": "library_files/2"},
-            {"_id": "library_files/3"},
+        mock_db.file_states.file_has_state.side_effect = [
+            [
+                {"_id": "library_files/1"},
+                {"_id": "library_files/2"},
+                {"_id": "library_files/3"},
+            ],
+            [{"_id": "library_files/2"}],
         ]
 
         result = count_untagged_files(mock_db)
 
-        assert result == 3
+        assert result == 2
         mock_db.library_contains_file.get.assert_not_called()
 
     @pytest.mark.unit

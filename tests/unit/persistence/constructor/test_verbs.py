@@ -712,7 +712,7 @@ class TestTransition:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """transition() chunks ids and performs one set-based AQL statement per chunk."""
+        """transition() chunks ids and performs separate remove/upsert AQL statements per chunk."""
         from nomarr.persistence.constructor import verbs as module
 
         db = MagicMock()
@@ -728,15 +728,28 @@ class TestTransition:
             "file_states/tagged",
         )
 
-        assert execute.call_count == 3
-        assert [call.kwargs["bind_vars"]["ids"] for call in execute.call_args_list] == [
+        assert execute.call_count == 6
+
+        remove_calls = execute.call_args_list[0::2]
+        upsert_calls = execute.call_args_list[1::2]
+
+        assert [call.kwargs["bind_vars"]["ids"] for call in remove_calls] == [
             ["library_files/1", "library_files/2"],
             ["library_files/3", "library_files/4"],
             ["library_files/5"],
         ]
-        assert all("FILTER e._from IN @ids AND e._to == @from" in call.args[1] for call in execute.call_args_list)
-        assert all("FOR fid IN @ids" in call.args[1] for call in execute.call_args_list)
-        assert all("UPSERT { _from: fid, _to: @to }" in call.args[1] for call in execute.call_args_list)
+        assert [call.kwargs["bind_vars"]["ids"] for call in upsert_calls] == [
+            ["library_files/1", "library_files/2"],
+            ["library_files/3", "library_files/4"],
+            ["library_files/5"],
+        ]
+        assert all("FILTER e._from IN @ids AND e._to == @from" in call.args[1] for call in remove_calls)
+        assert all("REMOVE e IN @@ec" in call.args[1] for call in remove_calls)
+        assert all("UPSERT" not in call.args[1] for call in remove_calls)
+        assert all("FOR fid IN @ids" in call.args[1] for call in upsert_calls)
+        assert all("UPSERT { _from: fid, _to: @to }" in call.args[1] for call in upsert_calls)
+        assert all("REMOVE e IN @@ec" not in call.args[1] for call in upsert_calls)
+        assert all(call.kwargs.get("retry_on_conflict") is True for call in upsert_calls)
         assert all("@fid" not in call.args[1] for call in execute.call_args_list)
 
     def test_query_keeps_remove_then_upsert_order_for_reruns_and_already_at_target(self) -> None:
@@ -753,13 +766,21 @@ class TestTransition:
             "file_states/tagged",
         )
 
-        call_args = db.aql.execute.call_args
-        aql = call_args.args[0]
-        bind_vars = call_args.kwargs["bind_vars"]
-        assert aql.index("REMOVE e IN @@ec") < aql.index("UPSERT { _from: fid, _to: @to }")
-        assert "FILTER e._from IN @ids AND e._to == @from" in aql
-        assert "UPDATE {}" in aql
-        assert bind_vars == {
+        remove_call, upsert_call = db.aql.execute.call_args_list
+        remove_aql = remove_call.args[0]
+        upsert_aql = upsert_call.args[0]
+        assert "FILTER e._from IN @ids AND e._to == @from" in remove_aql
+        assert "REMOVE e IN @@ec" in remove_aql
+        assert "UPSERT" not in remove_aql
+        assert "FOR fid IN @ids" in upsert_aql
+        assert "UPSERT { _from: fid, _to: @to }" in upsert_aql
+        assert "UPDATE {}" in upsert_aql
+        assert remove_call.kwargs["bind_vars"] == {
+            "@ec": "file_has_state",
+            "ids": ["library_files/1", "library_files/2"],
+            "from": "file_states/not_tagged",
+        }
+        assert upsert_call.kwargs["bind_vars"] == {
             "@ec": "file_has_state",
             "ids": ["library_files/1", "library_files/2"],
             "from": "file_states/not_tagged",
@@ -780,15 +801,37 @@ class TestTransition:
             "file_states/scanned",
         )
 
-        call_args = db.aql.execute.call_args
-        aql = call_args.args[0]
-        bind_vars = call_args.kwargs["bind_vars"]
-        assert "FILTER e._from IN @ids AND e._to == @from" in aql
-        assert "FOR fid IN @ids" in aql
-        assert "e._to == @to" not in aql
-        assert bind_vars["ids"] == ["library_files/1", "library_files/2", "library_files/3"]
-        assert bind_vars["from"] == "file_states/not_scanned"
-        assert bind_vars["to"] == "file_states/scanned"
+        remove_call, upsert_call = db.aql.execute.call_args_list
+        remove_aql = remove_call.args[0]
+        upsert_aql = upsert_call.args[0]
+        assert "FILTER e._from IN @ids AND e._to == @from" in remove_aql
+        assert "FOR fid IN @ids" in upsert_aql
+        assert "e._to == @to" not in remove_aql
+        assert "e._to == @to" not in upsert_aql
+        assert remove_call.kwargs["bind_vars"]["ids"] == ["library_files/1", "library_files/2", "library_files/3"]
+        assert remove_call.kwargs["bind_vars"]["from"] == "file_states/not_scanned"
+        assert upsert_call.kwargs["bind_vars"]["ids"] == ["library_files/1", "library_files/2", "library_files/3"]
+        assert upsert_call.kwargs["bind_vars"]["to"] == "file_states/scanned"
+
+    def test_remove_and_upsert_queries_are_split_to_avoid_err1579(self) -> None:
+        """transition() keeps collection mutation phases in separate AQL statements."""
+        from nomarr.persistence.constructor import verbs as module
+
+        db = MagicMock()
+
+        module.transition(
+            db,
+            "file_has_state",
+            ["library_files/1"],
+            "file_states/not_tagged",
+            "file_states/tagged",
+        )
+
+        remove_call, upsert_call = db.aql.execute.call_args_list
+        assert "REMOVE e IN @@ec" in remove_call.args[0]
+        assert "UPSERT" not in remove_call.args[0]
+        assert "UPSERT { _from: fid, _to: @to }" in upsert_call.args[0]
+        assert "REMOVE e IN @@ec" not in upsert_call.args[0]
 
 
 @pytest.mark.unit

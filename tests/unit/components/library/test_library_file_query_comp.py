@@ -36,6 +36,7 @@ from nomarr.components.library.library_file_query_comp import (
     search_files_by_tag,
     search_library_files_with_tags,
 )
+from nomarr.helpers.constants.file_states import STATE_TAGGED
 from nomarr.persistence.base_types import Field
 from nomarr.persistence.constructor.pagination import DEFAULT_LIMIT
 
@@ -421,26 +422,48 @@ class TestPhaseOneQueryHelpers:
     @pytest.mark.unit
     def test_get_files_for_folder_filters_by_normalized_prefix(self) -> None:
         mock_db = MagicMock()
-        matching_doc = {"path": "D:/Music/Artist/Album/song.flac", "normalized_path": "Artist/Album/song.flac"}
+        matching_doc = {
+            "_id": "library_files/1",
+            "path": "D:/Music/Artist/Album/song.flac",
+            "normalized_path": "Artist/Album/song.flac",
+        }
         mock_db.libraries.library_contains_file.return_value = [
             matching_doc,
-            {"path": "D:/Music/Other/song.flac", "normalized_path": "Other/song.flac"},
+            {
+                "_id": "library_files/2",
+                "path": "D:/Music/Other/song.flac",
+                "normalized_path": "Other/song.flac",
+            },
         ]
+        mock_db.file_has_state.get.in_.return_value = [{"_from": "library_files/1", "_to": STATE_TAGGED}]
 
         result = get_files_for_folder(mock_db, "libraries/1", "Artist/Album")
 
-        assert result == {matching_doc["path"]: matching_doc}
+        assert result == {matching_doc["path"]: {**matching_doc, "has_tagged_state": True}}
+        mock_db.file_has_state.get.in_.assert_called_once_with(
+            Field("_from", ["library_files/1", "library_files/2"]),
+            Field("_to", [STATE_TAGGED]),
+            limit=None,
+        )
 
     @pytest.mark.unit
     def test_get_files_for_folders_matches_root_and_nested_paths(self) -> None:
         mock_db = MagicMock()
-        root_doc = {"path": "D:/Music/root.flac", "normalized_path": "root.flac"}
-        nested_doc = {"path": "D:/Music/Artist/song.flac", "normalized_path": "Artist/song.flac"}
+        root_doc = {"_id": "library_files/1", "path": "D:/Music/root.flac", "normalized_path": "root.flac"}
+        nested_doc = {
+            "_id": "library_files/2",
+            "path": "D:/Music/Artist/song.flac",
+            "normalized_path": "Artist/song.flac",
+        }
         mock_db.libraries.library_contains_file.return_value = [root_doc, nested_doc]
+        mock_db.file_has_state.get.in_.return_value = [{"_from": "library_files/2", "_to": STATE_TAGGED}]
 
         result = get_files_for_folders(mock_db, "libraries/1", ["", "Artist"])
 
-        assert result == {root_doc["path"]: root_doc, nested_doc["path"]: nested_doc}
+        assert result == {
+            root_doc["path"]: {**root_doc, "has_tagged_state": False},
+            nested_doc["path"]: {**nested_doc, "has_tagged_state": True},
+        }
 
     @pytest.mark.unit
     def test_count_library_files_normalizes_library_id_for_edge_count(self) -> None:

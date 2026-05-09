@@ -489,6 +489,25 @@ class DiscoveryWorker(multiprocessing.Process):
                 if not cache_warmed:
                     logger.debug("[%s] Warming ONNX model cache...", self.worker_id)
                     onnx_cache = self._warm_onnx_cache(db, config)
+                    if onnx_cache is None:
+                        from nomarr.components.workers.worker_discovery_comp import release_claim
+
+                        logger.warning(
+                            "[%s] Cache warmup failed; releasing claim on %s and will retry",
+                            self.worker_id,
+                            file_id,
+                        )
+                        release_claim(db, file_id)
+                        consecutive_errors += 1
+                        if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                            logger.error(
+                                "[%s] Too many consecutive warmup failures (%d), shutting down",
+                                self.worker_id,
+                                consecutive_errors,
+                            )
+                            break
+                        time.sleep(IDLE_SLEEP_S)
+                        continue
                     cache_warmed = True
 
                 try:

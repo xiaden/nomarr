@@ -178,6 +178,30 @@ def _get_all_library_file_docs(db: Database, limit: int | None = DEFAULT_LIMIT) 
     return _get_library_files_by_ids(db, file_ids)
 
 
+def _hydrate_files_with_tagged_state(db: Database, file_docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Annotate file docs with ``has_tagged_state`` derived from ``file_has_state`` edges."""
+    file_ids = [file_id for file_doc in file_docs if isinstance((file_id := file_doc.get("_id")), str)]
+    if not file_ids:
+        return list(file_docs)
+
+    tagged_edges = cast(
+        "list[dict[str, Any]]",
+        db.file_has_state.get.in_(
+            Field("_from", file_ids),
+            Field("_to", [STATE_TAGGED]),
+            limit=None,
+        ),
+    )
+    tagged_file_ids = {edge["_from"] for edge in tagged_edges if isinstance(edge.get("_from"), str)}
+
+    return [
+        {**file_doc, "has_tagged_state": file_id in tagged_file_ids}
+        if isinstance((file_id := file_doc.get("_id")), str)
+        else dict(file_doc)
+        for file_doc in file_docs
+    ]
+
+
 def _matches_file_filters(file_doc: dict[str, Any], filter_dict: dict[str, Any]) -> bool:
     return all(file_doc.get(field_name) == expected_value for field_name, expected_value in filter_dict.items())
 
@@ -586,9 +610,10 @@ def get_files_for_folder(
     folder_rel_path: str,
 ) -> dict[str, dict[str, Any]]:
     """Get file documents for a single relative folder path."""
+    file_docs = _hydrate_files_with_tagged_state(db, _library_file_docs_for_library(db, library_id))
     return {
         file_doc["path"]: file_doc
-        for file_doc in _library_file_docs_for_library(db, library_id)
+        for file_doc in file_docs
         if isinstance(file_doc.get("path"), str)
         and _matches_folder_rel_path(file_doc.get("normalized_path"), folder_rel_path)
     }
@@ -602,9 +627,10 @@ def get_files_for_folders(
     """Batch-fetch file documents for multiple folders."""
     if not folder_rel_paths:
         return {}
+    file_docs = _hydrate_files_with_tagged_state(db, _library_file_docs_for_library(db, library_id))
     return {
         file_doc["path"]: file_doc
-        for file_doc in _library_file_docs_for_library(db, library_id)
+        for file_doc in file_docs
         if isinstance(file_doc.get("path"), str)
         and any(
             _matches_folder_rel_path(file_doc.get("normalized_path"), folder_rel_path)

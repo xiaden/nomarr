@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from typing import cast
 from unittest.mock import MagicMock, patch
 
@@ -420,7 +421,12 @@ class TestVectorCollectionInit:
         assert "_key" in collection._fields
         assert "_id" in collection._fields
         assert "file_id" in collection._fields
+        assert "model_suite_hash" in collection._fields
+        assert "embed_dim" in collection._fields
         assert "vector" in collection._fields
+        assert "vector_n" in collection._fields
+        assert "num_segments" in collection._fields
+        assert "created_at" in collection._fields
 
     def test_is_not_document_collection_subclass(self) -> None:
         """VectorCollection does not inherit from DocumentCollection."""
@@ -432,6 +438,82 @@ class TestVectorCollectionInit:
 
         assert collection._fields["_key"]._unique is True
         assert collection._fields["_id"]._unique is True
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestVectorCollectionMethods:
+    """Tests for ``VectorCollection`` vector-specific helpers."""
+
+    def test_upsert_vector_uses_deterministic_key_and_upserts_edge(self) -> None:
+        """upsert_vector writes the vector doc and maintains file->vector edge."""
+        collection = collections_base.VectorCollection(_make_db(), "vectors_track_hot__effnet__lib1")
+        expected_key = hashlib.sha1(b"library_files/7|suite-1").hexdigest()
+
+        with (
+            patch.object(collection, "upsert") as mock_upsert,
+            patch("nomarr.persistence.collections_base.internal_ms", return_value=MagicMock(value=1234)),
+            patch("nomarr.persistence.collections_base.verbs.upsert_file_has_vectors_edge") as mock_upsert_edge,
+        ):
+            collection.upsert_vector(
+                file_id="library_files/7",
+                model_suite_hash="suite-1",
+                embed_dim=3,
+                vector=[3.0, 4.0, 0.0],
+                num_segments=5,
+            )
+
+        mock_upsert.assert_called_once_with(
+            _key=expected_key,
+            fields={
+                "_key": expected_key,
+                "file_id": "library_files/7",
+                "model_suite_hash": "suite-1",
+                "embed_dim": 3,
+                "vector": [3.0, 4.0, 0.0],
+                "vector_n": [0.6, 0.8, 0.0],
+                "num_segments": 5,
+                "created_at": 1234,
+            },
+        )
+        mock_upsert_edge.assert_called_once_with(
+            collection._db,
+            "library_files/7",
+            f"vectors_track_hot__effnet__lib1/{expected_key}",
+        )
+
+    def test_get_vector_delegates_to_verbs(self) -> None:
+        """get_vector delegates to the constructor verb for latest-vector lookup."""
+        collection = collections_base.VectorCollection(_make_db(), "vectors")
+
+        with patch(
+            "nomarr.persistence.collections_base.verbs.get_vector",
+            return_value={"file_id": "library_files/1"},
+        ) as mock_get_vector:
+            result = collection.get_vector("library_files/1")
+
+        assert result == {"file_id": "library_files/1"}
+        mock_get_vector.assert_called_once_with(collection._db, "vectors", "library_files/1")
+
+    def test_ann_search_delegates_to_verbs(self) -> None:
+        """ann_search delegates to the vector ANN constructor verb."""
+        collection = collections_base.VectorCollection(_make_db(), "vectors")
+
+        with patch(
+            "nomarr.persistence.collections_base.verbs.ann_search",
+            return_value=[{"file_id": "library_files/1", "score": 0.9}],
+        ) as mock_ann_search:
+            result = collection.ann_search([0.1, 0.2], limit=10, nprobe=7, filter={"genres": "rock"})
+
+        assert result == [{"file_id": "library_files/1", "score": 0.9}]
+        mock_ann_search.assert_called_once_with(
+            collection._db,
+            "vectors",
+            [0.1, 0.2],
+            10,
+            7,
+            filter={"genres": "rock"},
+        )
 
 
 @pytest.mark.unit
