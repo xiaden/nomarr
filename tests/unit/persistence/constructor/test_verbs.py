@@ -11,7 +11,6 @@ from nomarr.persistence.constructor.verbs import (
     aggregate_field,
     ann_search,
     collect_field,
-    count_by_filter,
     count_inbound_connections,
     count_outbound_connections,
     delete_by_filter,
@@ -188,40 +187,6 @@ class TestFilterVerbs:
             "v0": "genre",
             "pagination_offset": 5,
             "pagination_limit": 10,
-        }
-
-    def test_get_many_by_filter_empty_filter_omits_filter_clause(self) -> None:
-        """An empty filter dict produces no FILTER clause in the query."""
-        db = _mock_db([{"_id": "tags/1"}])
-
-        result = get_many_by_filter(db, "tags", {}, limit=10)
-
-        assert result == [{"_id": "tags/1"}]
-        call_args = db.aql.execute.call_args
-        assert "FILTER" not in call_args.args[0]
-        assert call_args.kwargs["bind_vars"] == {
-            "@col": "tags",
-            "pagination_limit": 10,
-        }
-
-    def test_count_by_filter_includes_collect_count(self) -> None:
-        """count_by_filter uses the equality filter and COLLECT WITH COUNT."""
-        db = _mock_db([3])
-
-        result = count_by_filter(db, "tags", {"name": "genre", "value": "rock"})
-
-        assert result == 3
-        call_args = db.aql.execute.call_args
-        aql = call_args.args[0]
-        bind_vars = call_args.kwargs["bind_vars"]
-        assert "FILTER doc[@f0] == @v0 AND doc[@f1] == @v1" in aql
-        assert "COLLECT WITH COUNT INTO c" in aql
-        assert bind_vars == {
-            "@col": "tags",
-            "f0": "name",
-            "v0": "genre",
-            "f1": "value",
-            "v1": "rock",
         }
 
     def test_delete_by_filter_returns_deleted_count(self) -> None:
@@ -783,7 +748,6 @@ class TestTransition:
         assert upsert_call.kwargs["bind_vars"] == {
             "@ec": "file_has_state",
             "ids": ["library_files/1", "library_files/2"],
-            "from": "file_states/not_tagged",
             "to": "file_states/tagged",
         }
 

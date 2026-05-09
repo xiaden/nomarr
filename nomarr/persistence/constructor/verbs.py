@@ -1039,7 +1039,7 @@ def transition(
                 UPDATE {}
                 IN @@ec
             """,
-            bind_vars={"@ec": edge_col, "ids": chunk, "from": from_edge_target, "to": to_edge_target},
+            bind_vars={"@ec": edge_col, "ids": chunk, "to": to_edge_target},
             retry_on_conflict=True,
         )
 
