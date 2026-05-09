@@ -186,13 +186,11 @@ def _hydrate_files_with_tagged_state(db: Database, file_docs: list[dict[str, Any
 
     tagged_edges = cast(
         "list[dict[str, Any]]",
-        db.file_has_state.get.in_(
-            Field("_from", file_ids),
-            Field("_to", [STATE_TAGGED]),
-            limit=None,
-        ),
+        db.file_has_state.get.in_(Field("_from", file_ids), limit=None),
     )
-    tagged_file_ids = {edge["_from"] for edge in tagged_edges if isinstance(edge.get("_from"), str)}
+    tagged_file_ids = {
+        edge["_from"] for edge in tagged_edges if isinstance(edge.get("_from"), str) and edge.get("_to") == STATE_TAGGED
+    }
 
     return [
         {**file_doc, "has_tagged_state": file_id in tagged_file_ids}

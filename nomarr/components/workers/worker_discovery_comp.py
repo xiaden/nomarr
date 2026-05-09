@@ -179,12 +179,10 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
         file_docs = db.library_files.get.in_(Field("_id", candidate_file_ids), limit=None)
         existing_file_ids = {str(doc["_id"]) for doc in file_docs if "_id" in doc}
 
-        tagged_edges = db.file_has_state.get.in_(
-            Field("_from", candidate_file_ids),
-            Field("_to", [_TAGGED_STATE_ID]),
-            limit=None,
-        )
-        tagged_file_ids = {str(edge["_from"]) for edge in tagged_edges if "_from" in edge}
+        tagged_edges = db.file_has_state.get.in_(Field("_from", candidate_file_ids), limit=None)
+        tagged_file_ids = {
+            str(edge["_from"]) for edge in tagged_edges if "_from" in edge and edge.get("_to") == _TAGGED_STATE_ID
+        }
         stale_file_ids = {
             file_id for file_id in candidate_file_ids if file_id not in existing_file_ids or file_id in tagged_file_ids
         }

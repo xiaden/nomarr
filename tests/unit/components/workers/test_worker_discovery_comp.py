@@ -114,6 +114,7 @@ class TestCleanupStaleClaims:
             {"_id": "library_files/file3"},
         ]
         mock_db.file_has_state.get.in_.return_value = [
+            {"_from": "library_files/file2", "_to": "file_states/not_tagged"},
             {"_from": "library_files/file3", "_to": "file_states/tagged"},
         ]
         mock_db.worker_claims.worker_id.delete.in_.return_value = 1
@@ -146,7 +147,6 @@ class TestCleanupStaleClaims:
         )
         mock_db.file_has_state.get.in_.assert_called_once_with(
             Field("_from", ["library_files/file2", "library_files/file3"]),
-            Field("_to", ["file_states/tagged"]),
             limit=None,
         )
         mock_db.worker_claims.worker_id.delete.in_.assert_called_once_with(["worker:stale"])

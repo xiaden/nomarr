@@ -435,15 +435,16 @@ class TestPhaseOneQueryHelpers:
                 "normalized_path": "Other/song.flac",
             },
         ]
-        mock_db.file_has_state.get.in_.return_value = [{"_from": "library_files/1", "_to": STATE_TAGGED}]
+        mock_db.file_has_state.get.in_.return_value = [
+            {"_from": "library_files/1", "_to": STATE_TAGGED},
+            {"_from": "library_files/2", "_to": "file_states/not_tagged"},
+        ]
 
         result = get_files_for_folder(mock_db, "libraries/1", "Artist/Album")
 
         assert result == {matching_doc["path"]: {**matching_doc, "has_tagged_state": True}}
         mock_db.file_has_state.get.in_.assert_called_once_with(
-            Field("_from", ["library_files/1", "library_files/2"]),
-            Field("_to", [STATE_TAGGED]),
-            limit=None,
+            Field("_from", ["library_files/1", "library_files/2"]), limit=None
         )
 
     @pytest.mark.unit
@@ -456,7 +457,10 @@ class TestPhaseOneQueryHelpers:
             "normalized_path": "Artist/song.flac",
         }
         mock_db.libraries.library_contains_file.return_value = [root_doc, nested_doc]
-        mock_db.file_has_state.get.in_.return_value = [{"_from": "library_files/2", "_to": STATE_TAGGED}]
+        mock_db.file_has_state.get.in_.return_value = [
+            {"_from": "library_files/1", "_to": "file_states/not_tagged"},
+            {"_from": "library_files/2", "_to": STATE_TAGGED},
+        ]
 
         result = get_files_for_folders(mock_db, "libraries/1", ["", "Artist"])
 
@@ -464,6 +468,9 @@ class TestPhaseOneQueryHelpers:
             root_doc["path"]: {**root_doc, "has_tagged_state": False},
             nested_doc["path"]: {**nested_doc, "has_tagged_state": True},
         }
+        mock_db.file_has_state.get.in_.assert_called_once_with(
+            Field("_from", ["library_files/1", "library_files/2"]), limit=None
+        )
 
     @pytest.mark.unit
     def test_count_library_files_normalizes_library_id_for_edge_count(self) -> None:
