@@ -430,3 +430,37 @@ def test_no_raw_aql_outside_persistence_and_migrations():
             "Violations:\n" + "\n".join(violations)
         )
         pytest.fail(msg)
+
+
+@pytest.mark.code_smell
+def test_higher_layers_do_not_import_persistence_collection_or_accessor_internals():
+    """Test: Ensure higher layers use the `Database` facade, not persistence internals.
+
+    Components, services, and workflows may depend on `Database`, but they must not
+    import collection/accessor implementation modules directly. This keeps
+    field-first compatibility shims and collection wrappers internal to
+    `nomarr.persistence`.
+    """
+    forbidden_imports = [
+        "nomarr.persistence.collections_base",
+        "nomarr.persistence.accessors",
+    ]
+    violations = []
+
+    for layer_name in ("components", "services", "workflows"):
+        layer_dir = NOMARR_DIR / layer_name
+        for py_file in find_python_files(layer_dir, exclude_dirs={"__pycache__", ".pytest_cache"}):
+            file_violations = find_import_violations(py_file, forbidden_imports)
+            if file_violations:
+                rel_path = py_file.relative_to(PROJECT_ROOT)
+                for line_num, line in file_violations:
+                    violations.append(f"  {rel_path}:{line_num}: {line}")
+
+    if violations:
+        msg = (
+            "Found higher-layer imports of persistence collection/accessor internals.\n"
+            "Components, services, and workflows must import `Database` from `nomarr.persistence.db`\n"
+            "instead of `nomarr.persistence.collections_base` or `nomarr.persistence.accessors`.\n\n"
+            "Violations:\n" + "\n".join(violations)
+        )
+        pytest.fail(msg)

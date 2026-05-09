@@ -14,7 +14,13 @@ from nomarr.components.ml.onnx.tag_model_output_comp import (
     write_tag_model_output_edge,
     write_tag_model_output_edges_batch,
 )
-from nomarr.persistence.base_types import Field
+from nomarr.persistence.query_specs import (
+    AggregateQuerySpec,
+    QueryCriterion,
+    QueryOperator,
+    ReadQuerySpec,
+    WriteQuerySpec,
+)
 
 
 @pytest.mark.unit
@@ -51,7 +57,7 @@ class TestWriteTagModelOutputEdgesBatch:
         write_tag_model_output_edges_batch(mock_db, [])
 
         mock_now_ms.assert_not_called()
-        mock_db.tag_model_output.get.in_.assert_not_called()
+        mock_db.tag_model_output.get.assert_not_called()
         mock_db.tag_model_output.update_many.assert_not_called()
         mock_db.tag_model_output.insert.assert_not_called()
 
@@ -59,11 +65,16 @@ class TestWriteTagModelOutputEdgesBatch:
     def test_inserts_new_edge_when_no_existing_edge_found(self, mock_now_ms: MagicMock) -> None:
         mock_now_ms.return_value.value = 1234
         mock_db = MagicMock()
-        mock_db.tag_model_output.get.in_.return_value = []
+        mock_db.tag_model_output.get.return_value = []
 
         write_tag_model_output_edges_batch(mock_db, [("tags/1", "outputs/1", 0.75)])
 
-        mock_db.tag_model_output.get.in_.assert_called_once_with(Field("_from", ["tags/1"]), limit=None)
+        mock_db.tag_model_output.get.assert_called_once_with(
+            query_spec=ReadQuerySpec(
+                collection_name="tag_model_output",
+                criteria=(QueryCriterion("_from", QueryOperator.IN, ["tags/1"]),),
+            )
+        )
         mock_db.tag_model_output.update_many.assert_not_called()
         mock_db.tag_model_output.insert.assert_called_once_with(
             [
@@ -82,11 +93,16 @@ class TestWriteTagModelOutputEdgesBatch:
     def test_updates_existing_edge_without_inserting(self, mock_now_ms: MagicMock) -> None:
         mock_now_ms.return_value.value = 5678
         mock_db = MagicMock()
-        mock_db.tag_model_output.get.in_.return_value = [{"_from": "tags/1", "_to": "outputs/1", "score": 0.25}]
+        mock_db.tag_model_output.get.return_value = [{"_from": "tags/1", "_to": "outputs/1", "score": 0.25}]
 
         write_tag_model_output_edges_batch(mock_db, [("tags/1", "outputs/1", 0.9)])
 
-        mock_db.tag_model_output.get.in_.assert_called_once_with(Field("_from", ["tags/1"]), limit=None)
+        mock_db.tag_model_output.get.assert_called_once_with(
+            query_spec=ReadQuerySpec(
+                collection_name="tag_model_output",
+                criteria=(QueryCriterion("_from", QueryOperator.IN, ["tags/1"]),),
+            )
+        )
         mock_db.tag_model_output.update_many.assert_called_once_with(
             [{"_key": _edge_key("tags/1", "outputs/1"), "score": 0.9, "updated_at": 5678}]
         )
@@ -96,16 +112,18 @@ class TestWriteTagModelOutputEdgesBatch:
     def test_bulk_reads_existing_edges_once_for_all_tags(self, mock_now_ms: MagicMock) -> None:
         mock_now_ms.return_value.value = 91011
         mock_db = MagicMock()
-        mock_db.tag_model_output.get.in_.return_value = [{"_from": "tags/1", "_to": "outputs/existing", "score": 0.1}]
+        mock_db.tag_model_output.get.return_value = [{"_from": "tags/1", "_to": "outputs/existing", "score": 0.1}]
 
         write_tag_model_output_edges_batch(
             mock_db,
             [("tags/1", "outputs/existing", 0.4), ("tags/2", "outputs/new", 0.8)],
         )
 
-        mock_db.tag_model_output.get.in_.assert_called_once_with(
-            Field("_from", ["tags/1", "tags/2"]),
-            limit=None,
+        mock_db.tag_model_output.get.assert_called_once_with(
+            query_spec=ReadQuerySpec(
+                collection_name="tag_model_output",
+                criteria=(QueryCriterion("_from", QueryOperator.IN, ["tags/1", "tags/2"]),),
+            )
         )
         mock_db.tag_model_output.update_many.assert_called_once_with(
             [{"_key": _edge_key("tags/1", "outputs/existing"), "score": 0.4, "updated_at": 91011}]
@@ -148,7 +166,12 @@ class TestDeleteTagModelOutputEdgesForTag:
         result = delete_tag_model_output_edges_for_tag(mock_db, "tags/1")
 
         assert result == 3
-        mock_db.tag_model_output.delete.assert_called_once_with(Field("_from", "tags/1"))
+        mock_db.tag_model_output.delete.assert_called_once_with(
+            query_spec=WriteQuerySpec(
+                collection_name="tag_model_output",
+                criteria=(QueryCriterion("_from", QueryOperator.EQ, "tags/1"),),
+            )
+        )
 
 
 @pytest.mark.unit
@@ -157,21 +180,31 @@ class TestTagHasModelOutputEdges:
 
     def test_returns_true_when_edges_exist(self) -> None:
         mock_db = MagicMock()
-        mock_db.tag_model_output.get.return_value = [{"_from": "tags/1", "_to": "outputs/1"}]
+        mock_db.tag_model_output.count.return_value = 1
 
         result = tag_has_model_output_edges(mock_db, "tags/1")
 
         assert result is True
-        mock_db.tag_model_output.get.assert_called_once_with(Field("_from", "tags/1"), limit=1)
+        mock_db.tag_model_output.count.assert_called_once_with(
+            query_spec=AggregateQuerySpec(
+                collection_name="tag_model_output",
+                criteria=(QueryCriterion("_from", QueryOperator.EQ, "tags/1"),),
+            )
+        )
 
     def test_returns_false_when_no_edges_exist(self) -> None:
         mock_db = MagicMock()
-        mock_db.tag_model_output.get.return_value = []
+        mock_db.tag_model_output.count.return_value = 0
 
         result = tag_has_model_output_edges(mock_db, "tags/1")
 
         assert result is False
-        mock_db.tag_model_output.get.assert_called_once_with(Field("_from", "tags/1"), limit=1)
+        mock_db.tag_model_output.count.assert_called_once_with(
+            query_spec=AggregateQuerySpec(
+                collection_name="tag_model_output",
+                criteria=(QueryCriterion("_from", QueryOperator.EQ, "tags/1"),),
+            )
+        )
 
 
 @pytest.mark.unit
@@ -184,13 +217,18 @@ class TestDeleteTagModelOutputEdgesForOutputs:
         result = delete_tag_model_output_edges_for_outputs(mock_db, [])
 
         assert result == 0
-        mock_db.tag_model_output._to.delete.in_.assert_not_called()
+        mock_db.tag_model_output.delete.assert_not_called()
 
     def test_bulk_deletes_edges_for_all_output_ids_in_one_call(self) -> None:
         mock_db = MagicMock()
-        mock_db.tag_model_output._to.delete.in_.return_value = 5
+        mock_db.tag_model_output.delete.return_value = 5
 
         result = delete_tag_model_output_edges_for_outputs(mock_db, ["outputs/1", "outputs/2", "outputs/3"])
 
         assert result == 5
-        mock_db.tag_model_output._to.delete.in_.assert_called_once_with(["outputs/1", "outputs/2", "outputs/3"])
+        mock_db.tag_model_output.delete.assert_called_once_with(
+            query_spec=WriteQuerySpec(
+                collection_name="tag_model_output",
+                criteria=(QueryCriterion("_to", QueryOperator.IN, ["outputs/1", "outputs/2", "outputs/3"]),),
+            )
+        )

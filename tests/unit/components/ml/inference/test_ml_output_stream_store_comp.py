@@ -16,6 +16,7 @@ from nomarr.components.ml.inference.ml_output_stream_store_comp import (
     fetch_output_streams,
     upsert_output_streams,
 )
+from nomarr.persistence.query_specs import QueryCriterion, QueryOperator, WriteQuerySpec
 
 
 @pytest.mark.unit
@@ -186,9 +187,9 @@ class TestDeleteOutputStreams:
 
         assert result == 0
         mock_db.library_files.file_has_output_stream.assert_called_once_with("library_files/file-9", limit=None)
-        mock_db.file_has_output_stream._to.delete.in_.assert_not_called()
-        mock_db.output_has_stream._to.delete.in_.assert_not_called()
-        mock_db.ml_output_streams._id.delete.in_.assert_not_called()
+        mock_db.file_has_output_stream.delete.assert_not_called()
+        mock_db.output_has_stream.delete.assert_not_called()
+        mock_db.ml_output_streams.delete.assert_not_called()
 
     def test_deletes_file_edges_output_edges_and_stream_docs_once(self) -> None:
         mock_db = MagicMock()
@@ -198,12 +199,27 @@ class TestDeleteOutputStreams:
             {"_id": "ml_output_streams/stream-a"},
             {"values": [0.2]},
         ]
-        mock_db.ml_output_streams._id.delete.in_.return_value = 2
+        mock_db.ml_output_streams.delete.return_value = 2
 
         result = delete_output_streams(mock_db, "library_files/file-4")
 
         assert result == 2
         expected_stream_ids = ["ml_output_streams/stream-a", "ml_output_streams/stream-b"]
-        mock_db.file_has_output_stream._to.delete.in_.assert_called_once_with(expected_stream_ids)
-        mock_db.output_has_stream._to.delete.in_.assert_called_once_with(expected_stream_ids)
-        mock_db.ml_output_streams._id.delete.in_.assert_called_once_with(expected_stream_ids)
+        mock_db.file_has_output_stream.delete.assert_called_once_with(
+            query_spec=WriteQuerySpec(
+                collection_name="file_has_output_stream",
+                criteria=(QueryCriterion("_to", QueryOperator.IN, expected_stream_ids),),
+            )
+        )
+        mock_db.output_has_stream.delete.assert_called_once_with(
+            query_spec=WriteQuerySpec(
+                collection_name="output_has_stream",
+                criteria=(QueryCriterion("_to", QueryOperator.IN, expected_stream_ids),),
+            )
+        )
+        mock_db.ml_output_streams.delete.assert_called_once_with(
+            query_spec=WriteQuerySpec(
+                collection_name="ml_output_streams",
+                criteria=(QueryCriterion("_id", QueryOperator.IN, expected_stream_ids),),
+            )
+        )

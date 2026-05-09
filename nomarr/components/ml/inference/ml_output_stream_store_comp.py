@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.ml.onnx.ml_model_registry_comp import build_model_output_index_map
 from nomarr.helpers.dto.ml_dto import LoadedOutputStream
+from nomarr.persistence.query_specs import QueryCriterion, QueryOperator, WriteQuerySpec
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -286,6 +287,20 @@ def delete_output_streams(db: Database, file_id: str) -> int:
     if not stream_ids:
         return 0
 
-    db.file_has_output_stream._to.delete.in_(stream_ids)
-    db.output_has_stream._to.delete.in_(stream_ids)
-    return int(db.ml_output_streams._id.delete.in_(stream_ids))
+    delete_stream_refs = WriteQuerySpec(
+        collection_name="file_has_output_stream",
+        criteria=(QueryCriterion("_to", QueryOperator.IN, stream_ids),),
+    )
+    db.file_has_output_stream.delete(query_spec=delete_stream_refs)
+    db.output_has_stream.delete(
+        query_spec=WriteQuerySpec(
+            collection_name="output_has_stream",
+            criteria=(QueryCriterion("_to", QueryOperator.IN, stream_ids),),
+        )
+    )
+    return db.ml_output_streams.delete(
+        query_spec=WriteQuerySpec(
+            collection_name="ml_output_streams",
+            criteria=(QueryCriterion("_id", QueryOperator.IN, stream_ids),),
+        )
+    )

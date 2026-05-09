@@ -75,19 +75,22 @@ from nomarr.interfaces import ...    # No interfaces
 
 ## Database Access Pattern
 
-External code should go through the injected `Database` facade and use the instance-bound collection/accessor API:
+External code should go through the injected `Database` facade and use the instance-bound collection/accessor API. For new code, prefer collection-first operations; field-accessor chains remain available as compatibility shims for transitional callers only:
 
 ```python
-# ✅ Correct - access via Database instance
+# ✅ Correct - access via Database instance with collection-first verbs
 
 def some_workflow(db: Database) -> None:
-    # Field accessor chain: db.<collection>.<field>.get(value)
-    file = db.library_files.path.get("/music/track.flac")
-    tags = db.tags.name.get.many("genre", limit=100, offset=0)
+    file = db.library_files.get(path="/music/track.flac")
+    tags = db.tags.get(name="genre", limit=100, offset=0)
 
     # Collection-level verbs
     db.library_files.insert([{"path": "/music/track.flac", ...}])
     db.library_files.update(path="/music/track.flac", fields={"size_bytes": 12345})
+
+# ⚠️ Compatibility shim only - field accessor chains still work for legacy callers
+legacy_file = db.library_files.path.get("/music/track.flac")
+legacy_tags = db.tags.name.get.many("genre", limit=100, offset=0)
 
 # ❌ Wrong - importing persistence internals into higher layers
 from nomarr.persistence.collections import LibraryFiles
@@ -147,16 +150,18 @@ Collection-level and field-level verbs have different shapes:
 | `transition(file_ids, from_state, to_state)` | `list[str]`, `str`, `str` | `None` |
 | `truncate()` | *(none)* | `None` |
 
-Field-level verbs stay anchored to a declared field name:
+Field-level verbs stay anchored to a declared field name, but they are compatibility shims rather than the recommended pattern for new code:
 
 ```python
 # ✅ Collection-level mutations
 db.library_files.insert([{"path": "/music/track.flac", ...}])
 db.library_files.update(path="/music/track.flac", fields={"size_bytes": 12345})
 db.tags.upsert(name="genre", fields={"value": "genre"})
+db.song_has_tags.delete(_from=file_id)  # returns int (count deleted)
+db.worker_claims.update(file_id=file_id, fields={"worker_id": worker_id})
 
-# ✅ Field-level mutations
-db.song_has_tags._from.delete(file_id)  # returns int (count deleted)
+# ⚠️ Compatibility shim only - retained for legacy callers
+db.song_has_tags._from.delete(file_id)
 db.worker_claims.file_id.update(file_id, {"worker_id": worker_id})
 
 # ✅ Explicit truncate when you mean "delete everything"
@@ -170,16 +175,16 @@ db.worker_claims.truncate()
 Persistence **only** performs data access. No business decisions:
 
 ```python
-# ✅ Correct - pure data access via collection/accessor verbs
+# ✅ Correct - pure data access via collection-first verbs
 def get_library_files(db: Database, library_key: str, limit: int = 100) -> list[dict[str, object]]:
-    return db.library_files.library_key.get.many(library_key, limit=limit, offset=0)
+    return db.library_files.get(library_key=library_key, limit=limit, offset=0)
 
 def delete_stale_claims(db: Database, stale_ids: list[str]) -> None:
-    db.worker_claims.file_id.delete.in_(stale_ids)
+    db.worker_claims.delete(file_id=stale_ids)  # IN operator when value is a list
 
 # ❌ Wrong - business logic in persistence
 def get_files_to_process(db: Database, library_key: str) -> list[dict[str, object]]:
-    files = db.library_files.library_key.get.many(library_key, limit=100, offset=0)
+    files = db.library_files.get(library_key=library_key, limit=100, offset=0)
     # ❌ Business logic - this belongs in a workflow
     if len(files) > 10 and is_system_overloaded():
         return files[:5]

@@ -485,3 +485,61 @@ class TestEdgesAssignments:
     ) -> None:
         """Selected edge definitions preserve their expected cascade/detach behavior."""
         assert expected_edge in owner.EDGES
+
+
+COLLECTION_FIRST_ROOTS = (
+    "get",
+    "insert",
+    "update",
+    "upsert",
+    "delete",
+    "count",
+    "aggregate",
+    "truncate",
+)
+
+
+@pytest.mark.unit
+class TestCollectionFirstSurface:
+    """Tests for the normalized collection-first generic surface on concrete wrappers."""
+
+    @pytest.mark.parametrize(
+        ("collection_cls", "name"),
+        [
+            pytest.param(LibraryFiles, None, id="document"),
+            pytest.param(FileHasState, None, id="edge"),
+            pytest.param(VectorsTrackHot, "vectors_track_hot__effnet__lib1", id="vector-hot"),
+            pytest.param(VectorsTrackCold, "vectors_track_cold__effnet__lib1", id="vector-cold"),
+        ],
+    )
+    def test_concrete_collections_expose_normative_collection_first_roots(
+        self,
+        collection_cls: type[DocumentCollection] | type[EdgeCollection] | type[VectorCollection],
+        name: str | None,
+    ) -> None:
+        mock_db = MagicMock()
+        instance = collection_cls(mock_db, name) if name is not None else collection_cls(mock_db)
+
+        for root_name in COLLECTION_FIRST_ROOTS:
+            assert hasattr(instance, root_name), f"{collection_cls.__name__} missing {root_name}"
+
+    def test_library_files_query_metadata_marks_path_as_unique(self) -> None:
+        """Concrete document metadata should preserve field uniqueness for query validation."""
+        instance = LibraryFiles(MagicMock())
+
+        metadata = instance._query_collection_metadata()
+
+        assert metadata["collection_name"] == "library_files"
+        assert metadata["fields"]["path"] == {"name": "path", "unique": True}
+        assert metadata["fields"]["artist"] == {"name": "artist", "unique": False}
+
+    def test_vector_collections_register_shared_query_metadata_fields(self) -> None:
+        """Dynamic vector wrappers should expose the same shared metadata used by collection-first ops."""
+        instance = VectorsTrackHot(MagicMock(), "vectors_track_hot__effnet__lib1")
+
+        metadata = instance._query_collection_metadata()
+
+        assert metadata["collection_name"] == "vectors_track_hot__effnet__lib1"
+        assert metadata["fields"]["file_id"] == {"name": "file_id", "unique": False}
+        assert metadata["fields"]["vector_n"] == {"name": "vector_n", "unique": False}
+        assert metadata["fields"]["_id"] == {"name": "_id", "unique": True}

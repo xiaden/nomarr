@@ -148,7 +148,7 @@ class TestCollectionBases:
         assert callable(traversal)
 
         with patch(
-            "nomarr.persistence.collections_base.verbs.traversal_by_id", return_value=[{"_id": "albums/1"}]
+            "nomarr.persistence.constructor.verbs.traversal_by_id", return_value=[{"_id": "albums/1"}]
         ) as traversal_mock:
             result = traversal("artists/1", limit=2, offset=3)
 
@@ -197,7 +197,7 @@ class TestCollectionBases:
         assert isinstance(state_graph, DocumentCollection)
         assert state_graph._edge_name == "file_has_state"
 
-        with patch("nomarr.persistence.collections_base.verbs.transition") as transition_mock:
+        with patch("nomarr.persistence.constructor.verbs.transition") as transition_mock:
             state_graph.transition(["library_files/1"], "queued", "processed")
 
         transition_mock.assert_called_once_with(

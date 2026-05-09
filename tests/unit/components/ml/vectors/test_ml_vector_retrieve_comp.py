@@ -6,7 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nomarr.components.ml.vectors.ml_vector_retrieve_comp import get_cold_track_vector
+from nomarr.components.ml.vectors.ml_vector_retrieve_comp import (
+    get_cold_track_vector,
+    search_similar_cold_track_vectors,
+)
 
 PATCH_BASE = "nomarr.components.ml.vectors.ml_vector_retrieve_comp"
 
@@ -103,3 +106,65 @@ class TestGetColdTrackVector:
         mock_get_maintenance.assert_called_once_with(mock_db, "effnet", "lib1")
         mock_get_cold.assert_called_once_with(mock_db, "effnet", "lib1")
         cold_ops.get_vector.assert_called_once_with("library_files/missing")
+
+
+@pytest.mark.unit
+class TestSearchSimilarColdTrackVectors:
+    """Tests for ``search_similar_cold_track_vectors``."""
+
+    def test_returns_empty_when_cold_collection_is_empty(self) -> None:
+        """Skips ANN search when the cold collection has no promoted vectors."""
+        mock_db = MagicMock()
+        cold_ops = MagicMock()
+        cold_ops.count.return_value = 0
+
+        with (
+            patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold,
+            patch(f"{PATCH_BASE}.compute_nlists") as mock_compute_nlists,
+            patch(f"{PATCH_BASE}.compute_nprobe") as mock_compute_nprobe,
+        ):
+            result = search_similar_cold_track_vectors(
+                mock_db,
+                backbone_id="effnet",
+                library_key="lib1",
+                seed_vector=[0.1, 0.2, 0.3],
+                result_limit=11,
+                vector_group_size=15,
+                vector_search_thoroughness=10,
+            )
+
+        assert result == []
+        mock_get_cold.assert_called_once_with(mock_db, "effnet", "lib1")
+        mock_compute_nlists.assert_not_called()
+        mock_compute_nprobe.assert_not_called()
+        cold_ops.get.assert_not_called()
+        cold_ops.ann_search.assert_not_called()
+
+    def test_computes_nprobe_and_executes_ann_search(self) -> None:
+        """Uses cold count to size ANN probing before delegating to persistence."""
+        mock_db = MagicMock()
+        cold_ops = MagicMock()
+        cold_ops.count.return_value = 300
+        cold_ops.ann_search.return_value = [{"file_id": "library_files/2", "score": 0.91}]
+
+        with (
+            patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold,
+            patch(f"{PATCH_BASE}.compute_nlists", return_value=20) as mock_compute_nlists,
+            patch(f"{PATCH_BASE}.compute_nprobe", return_value=7) as mock_compute_nprobe,
+        ):
+            result = search_similar_cold_track_vectors(
+                mock_db,
+                backbone_id="effnet",
+                library_key="lib1",
+                seed_vector=[0.1, 0.2, 0.3],
+                result_limit=11,
+                vector_group_size=15,
+                vector_search_thoroughness=25,
+            )
+
+        assert result == [{"file_id": "library_files/2", "score": 0.91}]
+        mock_get_cold.assert_called_once_with(mock_db, "effnet", "lib1")
+        mock_compute_nlists.assert_called_once_with(300, 15)
+        mock_compute_nprobe.assert_called_once_with(20, 25)
+        cold_ops.get.assert_not_called()
+        cold_ops.ann_search.assert_called_once_with([0.1, 0.2, 0.3], 11, nprobe=7)

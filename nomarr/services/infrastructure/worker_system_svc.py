@@ -160,12 +160,12 @@ class WorkerSystemService(ComponentLifecycleHandler):
         counts from earlier sessions or restart cycles.
         """
         try:
-            restart_state = self.db.worker_restart_policy.component_id.get(component_id)
+            restart_state = self.db.worker_restart_policy.get(component_id=component_id)
             if isinstance(restart_state, dict) and int(restart_state.get("restart_count", 0)) > 0:
                 timestamp = now_ms().value
-                self.db.worker_restart_policy.component_id.update(
-                    component_id,
-                    {
+                self.db.worker_restart_policy.update(
+                    component_id=component_id,
+                    fields={
                         "restart_count": 0,
                         "last_restart_wall_ms": None,
                         "updated_at_wall_ms": timestamp,
@@ -198,7 +198,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
             logger.debug("[WorkerSystemService] Cancelled existing restart timer for %s", component_id)
         restart_state = cast(
             "dict[str, Any] | None",
-            self.db.worker_restart_policy.component_id.get(component_id),
+            self.db.worker_restart_policy.get(component_id=component_id),
         )
         restart_count = int(restart_state.get("restart_count", 0)) if restart_state is not None else 0
         last_restart_wall_ms = (
@@ -214,9 +214,9 @@ class WorkerSystemService(ComponentLifecycleHandler):
         if decision.action == "restart":
             timestamp = now_ms().value
             if restart_state is None:
-                self.db.worker_restart_policy.component_id.upsert(
-                    component_id,
-                    {
+                self.db.worker_restart_policy.upsert(
+                    component_id=component_id,
+                    fields={
                         "restart_count": 1,
                         "last_restart_wall_ms": timestamp,
                         "failed_at_wall_ms": None,
@@ -225,9 +225,9 @@ class WorkerSystemService(ComponentLifecycleHandler):
                     },
                 )
             else:
-                self.db.worker_restart_policy.component_id.update(
-                    component_id,
-                    {
+                self.db.worker_restart_policy.update(
+                    component_id=component_id,
+                    fields={
                         "restart_count": restart_count + 1,
                         "last_restart_wall_ms": timestamp,
                         "updated_at_wall_ms": timestamp,
@@ -242,9 +242,9 @@ class WorkerSystemService(ComponentLifecycleHandler):
         failure_reason = decision.failure_reason or "Restart limit exceeded"
         timestamp = now_ms().value
         if restart_state is None:
-            self.db.worker_restart_policy.component_id.upsert(
-                component_id,
-                {
+            self.db.worker_restart_policy.upsert(
+                component_id=component_id,
+                fields={
                     "restart_count": 0,
                     "last_restart_wall_ms": None,
                     "failed_at_wall_ms": timestamp,
@@ -253,9 +253,9 @@ class WorkerSystemService(ComponentLifecycleHandler):
                 },
             )
         else:
-            self.db.worker_restart_policy.component_id.update(
-                component_id,
-                {
+            self.db.worker_restart_policy.update(
+                component_id=component_id,
+                fields={
                     "failed_at_wall_ms": timestamp,
                     "failure_reason": failure_reason,
                     "updated_at_wall_ms": timestamp,
@@ -339,19 +339,19 @@ class WorkerSystemService(ComponentLifecycleHandler):
 
     def is_worker_system_enabled(self) -> bool:
         """Return whether the worker system is globally enabled."""
-        meta = cast("dict[str, Any] | None", self.db.meta.key.get("worker_enabled"))
+        meta = cast("dict[str, Any] | None", self.db.meta.get(key="worker_enabled"))
         if meta is None:
             return self.default_enabled
         return cast("str | None", meta.get("value")) == "true"
 
     def enable_worker_system(self) -> None:
         """Enable worker system globally (sets worker_enabled=true in DB meta)."""
-        self.db.meta.key.upsert("worker_enabled", {"value": "true"})
+        self.db.meta.upsert(key="worker_enabled", fields={"value": "true"})
         logger.info("[WorkerSystemService] Worker system globally enabled")
 
     def disable_worker_system(self) -> None:
         """Disable worker system globally (sets worker_enabled=false in DB meta)."""
-        self.db.meta.key.upsert("worker_enabled", {"value": "false"})
+        self.db.meta.upsert(key="worker_enabled", fields={"value": "false"})
         logger.info("[WorkerSystemService] Worker system globally disabled")
 
     # ---------------------------- Worker Lifecycle ----------------------------

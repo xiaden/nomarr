@@ -31,8 +31,21 @@ def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda db, file_ids: db.navidrome_tracks.bulk_resolve_files_to_nd(file_ids),
     )
     monkeypatch.setattr(
-        "nomarr.workflows.navidrome.find_similar_tracks_wf.get_cold_namespace",
-        lambda db, backbone_id, library_key: db.get_vectors_track_cold(backbone_id, library_key),
+        "nomarr.workflows.navidrome.find_similar_tracks_wf.get_cold_track_vector",
+        lambda db, file_id, backbone_id, library_key: db._get_cold_track_vector(file_id, backbone_id, library_key),
+    )
+    monkeypatch.setattr(
+        "nomarr.workflows.navidrome.find_similar_tracks_wf.search_similar_cold_track_vectors",
+        lambda db, backbone_id, library_key, seed_vector, result_limit, vector_group_size, vector_search_thoroughness: (
+            db._search_similar_cold_track_vectors(
+                backbone_id=backbone_id,
+                library_key=library_key,
+                seed_vector=seed_vector,
+                result_limit=result_limit,
+                vector_group_size=vector_group_size,
+                vector_search_thoroughness=vector_search_thoroughness,
+            )
+        ),
     )
 
 
@@ -64,12 +77,11 @@ def _make_db(
     # navidrome_tracks
     db.navidrome_tracks.resolve_nd_to_file.return_value = nd_lookup
 
-    # cold ops
-    cold_ops = MagicMock()
-    cold_ops.get_vector.return_value = {"vector_n": seed_vector, "file_id": nd_lookup} if nd_lookup else None
-    cold_ops.ann_search.return_value = ann_results
-    cold_ops.count.return_value = 300  # reasonable default for nprobe calculation
-    db.get_vectors_track_cold.return_value = cold_ops
+    # vector component seams
+    db._get_cold_track_vector = MagicMock(
+        return_value={"vector_n": seed_vector, "file_id": nd_lookup} if nd_lookup else None,
+    )
+    db._search_similar_cold_track_vectors = MagicMock(return_value=ann_results)
 
     # bulk ND lookup
     db.navidrome_tracks.bulk_resolve_files_to_nd.return_value = nd_bulk_map
@@ -156,9 +168,7 @@ class TestFindSimilarTracksHappyPath:
 
         find_similar_tracks("nd-seed", count=25, backbone_id="effnet", db=db)
 
-        cold_ops = db.get_vectors_track_cold.return_value
-        cold_ops.ann_search.assert_called_once()
-        call_limit = cold_ops.ann_search.call_args[0][1]
+        call_limit = db._search_similar_cold_track_vectors.call_args.kwargs["result_limit"]
         assert call_limit == 51  # 25 * 2 + 1
 
 
@@ -182,8 +192,7 @@ class TestFindSimilarTracksErrors:
     def test_raises_when_no_vector_exists(self) -> None:
         """ValueError when seed file has no vector embedding."""
         db = _make_db(nd_lookup="library_files/seed-file")
-        cold_ops = db.get_vectors_track_cold.return_value
-        cold_ops.get_vector.return_value = None
+        db._get_cold_track_vector.return_value = None
 
         with pytest.raises(ValueError, match="No vector embedding found"):
             find_similar_tracks("nd-seed", count=10, backbone_id="effnet", db=db)
@@ -281,10 +290,17 @@ class TestFindSimilarTracksEdgeCases:
         assert results[0]["album"] == ""
 
     @pytest.mark.unit
-    def test_backbone_id_passed_to_cold_ops(self) -> None:
-        """Backbone ID is forwarded to get_vectors_track_cold."""
+    def test_backbone_id_and_library_key_passed_to_vector_components(self) -> None:
+        """Workflow forwards vector search context through component seams."""
         db = _make_db(ann_results=[])
 
         find_similar_tracks("nd-seed", count=5, backbone_id="custom-backbone", db=db)
 
-        db.get_vectors_track_cold.assert_called_once_with("custom-backbone", "test_lib")
+        db._get_cold_track_vector.assert_called_once_with(
+            "library_files/seed-file",
+            "custom-backbone",
+            "test_lib",
+        )
+        db._search_similar_cold_track_vectors.assert_called_once()
+        assert db._search_similar_cold_track_vectors.call_args.kwargs["backbone_id"] == "custom-backbone"
+        assert db._search_similar_cold_track_vectors.call_args.kwargs["library_key"] == "test_lib"

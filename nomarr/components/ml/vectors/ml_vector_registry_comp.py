@@ -14,16 +14,24 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-class _VectorFileIdDeleteProtocol(Protocol):
-    """Protocol for vector namespaces exposing ``file_id.delete()``."""
+class _FieldDeleteProtocol(Protocol):
+    def __call__(self, value: Any) -> int: ...
 
-    def delete(self, value: str) -> int: ...
+    def in_(self, values: list[Any]) -> int: ...
+
+
+class _FieldDeleteAccessorProtocol(Protocol):
+    delete: _FieldDeleteProtocol
+
+
+class _VectorDeleteByFileIdNamespace(Protocol):
+    file_id: _FieldDeleteAccessorProtocol
 
 
 class VectorsTrackHotNamespace(Protocol):
     """Typed surface used by hot vector namespace callers."""
 
-    file_id: _VectorFileIdDeleteProtocol
+    file_id: _FieldDeleteAccessorProtocol
 
     def upsert_vector(
         self,
@@ -42,17 +50,13 @@ class VectorsTrackHotNamespace(Protocol):
 
     def truncate(self) -> None: ...
 
-    def delete_by_file_id(self, file_id: str) -> int: ...
-
-    def delete_by_file_ids(self, file_ids: list[str]) -> int: ...
-
     def move_collection(self, dest: str) -> int: ...
 
 
 class VectorsTrackColdNamespace(Protocol):
     """Typed surface used by cold vector namespace callers."""
 
-    file_id: _VectorFileIdDeleteProtocol
+    file_id: _FieldDeleteAccessorProtocol
 
     def get_vector(self, file_id: str) -> dict[str, Any] | None: ...
 
@@ -68,10 +72,6 @@ class VectorsTrackColdNamespace(Protocol):
         *,
         filter: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]: ...
-
-    def delete_by_file_id(self, file_id: str) -> int: ...
-
-    def delete_by_file_ids(self, file_ids: list[str]) -> int: ...
 
 
 class VectorsTrackMaintenanceProtocol(Protocol):
@@ -259,10 +259,10 @@ def delete_vectors_by_file_id(db: Database, file_id: str) -> int:
     registered_collections = cast("dict[str, Any]", getattr(db, "_registered", {}))
 
     for namespace in registered_collections.values():
-        deleted = cast("VectorsTrackHotNamespace", namespace).file_id.delete(file_id)
-        total_deleted += deleted
+        typed_namespace = cast("_VectorDeleteByFileIdNamespace", namespace)
+        total_deleted += typed_namespace.file_id.delete(file_id)
 
-    db.file_has_vectors._from.delete(file_id)
+    db.file_has_vectors.delete(_from=file_id)
 
     return total_deleted
 
@@ -291,10 +291,9 @@ def delete_vectors_by_file_ids(db: Database, file_ids: list[str]) -> int:
     registered_collections = cast("dict[str, Any]", getattr(db, "_registered", {}))
 
     for namespace in registered_collections.values():
-        typed_namespace = cast("VectorsTrackHotNamespace", namespace)
-        for file_id in file_ids:
-            total_deleted += typed_namespace.file_id.delete(file_id)
+        typed_namespace = cast("_VectorDeleteByFileIdNamespace", namespace)
+        total_deleted += typed_namespace.file_id.delete.in_(file_ids)
 
-    db.file_has_vectors._from.delete.in_(file_ids)
+    db.file_has_vectors.delete.in_(_from=file_ids)
 
     return total_deleted

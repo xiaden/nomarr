@@ -301,6 +301,16 @@ allow_indirect_imports = true
 # App.py (composition root) is the only place that should construct Database instances.
 
 [[tool.importlinter.contracts]]
+name = "Higher layers must not import persistence collection/accessor internals"
+type = "forbidden"
+source_modules = ["nomarr.components", "nomarr.services", "nomarr.workflows"]
+forbidden_modules = [
+    "nomarr.persistence.collections_base",
+    "nomarr.persistence.accessors",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
 name = "CLI bootstrap service is only for CLI commands"
 type = "layers"
 layers = [

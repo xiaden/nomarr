@@ -16,7 +16,7 @@ def mock_db():
     db = MagicMock()
     db.meta = MagicMock()
     db.worker_restart_policy = MagicMock()
-    db.worker_restart_policy.component_id.get.return_value = None
+    db.worker_restart_policy.get.return_value = None
     return db
 
 
@@ -68,8 +68,8 @@ class TestOnStatusChangeRestartLogic:
         worker_service.on_status_change("worker_0", "healthy", "dead", StatusChangeContext())
 
         # Verify no restart-related DB calls
-        assert worker_service.db.worker_restart_policy.component_id.get.call_count == 0
-        assert worker_service.db.worker_restart_policy.component_id.update.call_count == 0
+        assert worker_service.db.worker_restart_policy.get.call_count == 0
+        assert worker_service.db.worker_restart_policy.update.call_count == 0
 
     @patch("nomarr.services.infrastructure.worker_system_svc.should_restart_worker")
     def test_restart_decision_schedules_timer(self, mock_should_restart, worker_service, mock_db):
@@ -79,7 +79,7 @@ class TestOnStatusChangeRestartLogic:
             backoff_seconds=2,
             reason="Under restart limit",
         )
-        mock_db.worker_restart_policy.component_id.get.return_value = {
+        mock_db.worker_restart_policy.get.return_value = {
             "component_id": "worker_1",
             "restart_count": 2,
             "last_restart_wall_ms": 1234567890,
@@ -109,10 +109,10 @@ class TestOnStatusChangeRestartLogic:
             assert worker_service._pending_restart_timers["worker_1"] == mock_timer
 
             # Verify restart count incremented
-            mock_db.worker_restart_policy.component_id.update.assert_called_once()
-            update_args = mock_db.worker_restart_policy.component_id.update.call_args.args
-            assert update_args[0] == "worker_1"
-            assert update_args[1]["restart_count"] == 3
+            mock_db.worker_restart_policy.update.assert_called_once()
+            _, update_kwargs = mock_db.worker_restart_policy.update.call_args
+            assert update_kwargs["component_id"] == "worker_1"
+            assert update_kwargs["fields"]["restart_count"] == 3
 
     @patch("nomarr.services.infrastructure.worker_system_svc.should_restart_worker")
     def test_mark_failed_decision(self, mock_should_restart, worker_service, mock_db):
@@ -123,7 +123,7 @@ class TestOnStatusChangeRestartLogic:
             failure_reason="Restart limit exceeded",
             reason="Too many restarts",
         )
-        mock_db.worker_restart_policy.component_id.get.return_value = {
+        mock_db.worker_restart_policy.get.return_value = {
             "component_id": "worker_2",
             "restart_count": 5,
             "last_restart_wall_ms": 1234567890,
@@ -135,10 +135,10 @@ class TestOnStatusChangeRestartLogic:
         worker_service.health_monitor.set_failed.assert_called_once_with("worker_2")
 
         # Verify DB persistence
-        mock_db.worker_restart_policy.component_id.update.assert_called_once()
-        update_args = mock_db.worker_restart_policy.component_id.update.call_args.args
-        assert update_args[0] == "worker_2"
-        assert update_args[1]["failure_reason"] == "Restart limit exceeded"
+        mock_db.worker_restart_policy.update.assert_called_once()
+        _, update_kwargs = mock_db.worker_restart_policy.update.call_args
+        assert update_kwargs["component_id"] == "worker_2"
+        assert update_kwargs["fields"]["failure_reason"] == "Restart limit exceeded"
 
         # Verify no timer scheduled
         assert "worker_2" not in worker_service._pending_restart_timers
@@ -197,7 +197,7 @@ class TestRestartWorkerHelper:
     @patch("nomarr.services.infrastructure.worker_system_svc.create_discovery_worker")
     def test_restart_worker_spawns_replacement(self, mock_create_worker, worker_service, mock_db):
         """When enabled, spawns replacement worker and registers with health monitor."""
-        mock_db.meta.key.get.return_value = {"key": "worker_enabled", "value": "true"}  # enabled
+        mock_db.meta.get.return_value = {"key": "worker_enabled", "value": "true"}  # enabled
         mock_worker = MagicMock()
         mock_worker.worker_id = "worker_1"
         mock_worker.health_pipe = MagicMock()

@@ -25,6 +25,7 @@ from nomarr.helpers.dto.library_dto import (
     map_file_with_tags_to_dto,
 )
 from nomarr.helpers.dto.tag_curation_dto import CommitResult, TagListResult, TagSongItem, TagValueItem
+from nomarr.persistence.query_specs import AggregateQuerySpec, QueryCriterion, QueryOperator
 from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
 
 if TYPE_CHECKING:
@@ -101,7 +102,12 @@ class TaggingQueryMixin:
 
         """
         raw_songs = get_tag_songs_with_metadata(self.db, tag_id, limit=limit, offset=offset)
-        total = self.db.song_has_tags._to.count(tag_id)
+        total = self.db.song_has_tags.count(
+            query_spec=AggregateQuerySpec(
+                collection_name="song_has_tags",
+                criteria=(QueryCriterion("_to", QueryOperator.EQ, tag_id),),
+            )
+        )
 
         songs: list[TagSongItem] = [
             TagSongItem(

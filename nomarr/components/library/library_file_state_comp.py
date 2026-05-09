@@ -23,7 +23,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_TOO_SHORT,
     STATE_VECTORS_EXTRACTED,
 )
-from nomarr.persistence.base_types import Field
+from nomarr.persistence.query_specs import PaginationSpec, QueryCriterion, QueryOperator, ReadQuerySpec, WriteQuerySpec
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -140,7 +140,12 @@ def clear_all_states_batch(db: Database, file_ids: list[str]) -> int:
     """Remove all state edges for a batch of files."""
     if not file_ids:
         return 0
-    return int(db.file_has_state.delete.in_(Field("_from", file_ids)))
+    return db.file_has_state.delete(
+        query_spec=WriteQuerySpec(
+            collection_name="file_has_state",
+            criteria=(QueryCriterion("_from", QueryOperator.IN, file_ids),),
+        )
+    )
 
 
 def discover_next_untagged_file(
@@ -241,7 +246,18 @@ def get_calibration_status_by_library(db: Database) -> list[dict[str, Any]]:
         if isinstance(row.get("value"), str)
     ]
     libraries = (
-        cast("list[dict[str, Any]]", db.libraries.get.in_(Field("_id", library_ids), limit=None)) if library_ids else []
+        cast(
+            "list[dict[str, Any]]",
+            db.libraries.get(
+                query_spec=ReadQuerySpec(
+                    collection_name="libraries",
+                    criteria=(QueryCriterion("_id", QueryOperator.IN, library_ids),),
+                    pagination=PaginationSpec(limit=len(library_ids)),
+                )
+            ),
+        )
+        if library_ids
+        else []
     )
     for library in libraries:
         library_id = library["_id"]

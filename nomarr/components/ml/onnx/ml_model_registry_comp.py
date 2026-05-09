@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.ml.onnx.tag_model_output_comp import delete_tag_model_output_edges_for_outputs
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.query_specs import PaginationSpec, QueryCriterion, QueryOperator, ReadQuerySpec, WriteQuerySpec
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -34,12 +35,11 @@ def list_registered_models(db: Database) -> list[dict[str, Any]]:
     if model_count <= 0:
         return []
 
-    ids = [str(row["value"]) for row in db.ml_models.aggregate("_id", limit=model_count) if "value" in row]
-    if not ids:
-        return []
-
-    docs = [cast("dict[str, Any] | None", db.ml_models.get(_id=model_id)) for model_id in ids]
-    return [doc for doc in docs if doc is not None]
+    query_spec = ReadQuerySpec(
+        collection_name="ml_models",
+        pagination=PaginationSpec(limit=model_count),
+    )
+    return cast("list[dict[str, Any]]", db.ml_models.get(query_spec=query_spec))
 
 
 def get_registered_model_by_path(db: Database, path: str) -> dict[str, Any] | None:
@@ -155,11 +155,28 @@ def delete_registered_model(db: Database, model_id: str) -> None:
 
 def list_model_outputs_for_model(db: Database, model_id: str) -> list[dict[str, Any]]:
     """Return all output vertices attached to one model, ordered by index."""
-    edges = cast("list[dict[str, Any]]", db.model_has_output._from.get.many(model_id))
+    edges = cast(
+        "list[dict[str, Any]]",
+        db.model_has_output.get(
+            query_spec=ReadQuerySpec(
+                collection_name="model_has_output",
+                criteria=(QueryCriterion("_from", QueryOperator.EQ, model_id),),
+            )
+        ),
+    )
     output_ids = [edge["_to"] for edge in edges if isinstance(edge.get("_to"), str)]
     if not output_ids:
         return []
-    outputs = cast("list[dict[str, Any]]", db.ml_model_outputs.get.in_(_id=output_ids))
+    outputs = cast(
+        "list[dict[str, Any]]",
+        db.ml_model_outputs.get(
+            query_spec=ReadQuerySpec(
+                collection_name="ml_model_outputs",
+                criteria=(QueryCriterion("_id", QueryOperator.IN, output_ids),),
+                pagination=PaginationSpec(limit=len(output_ids)),
+            )
+        ),
+    )
     return sorted(outputs, key=lambda doc: int(cast("int", doc.get("output_index", 0))))
 
 
@@ -245,8 +262,18 @@ def delete_model_outputs_for_model(db: Database, model_id: str) -> list[str]:
     ]
 
     if edge_ids:
-        db.model_has_output.delete.in_(_id=edge_ids)  # type: ignore[union-attr]
-    db.ml_model_outputs.delete.in_(_id=output_ids)  # type: ignore[union-attr]
+        db.model_has_output.delete(
+            query_spec=WriteQuerySpec(
+                collection_name="model_has_output",
+                criteria=(QueryCriterion("_id", QueryOperator.IN, edge_ids),),
+            )
+        )
+    db.ml_model_outputs.delete(
+        query_spec=WriteQuerySpec(
+            collection_name="ml_model_outputs",
+            criteria=(QueryCriterion("_id", QueryOperator.IN, output_ids),),
+        )
+    )
     return output_ids
 
 

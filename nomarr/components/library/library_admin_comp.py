@@ -179,10 +179,10 @@ def delete_library(db: Database, library_id: str) -> bool:
     db.library_has_pipeline_state.delete(_from=library_full_id)
 
     # Delete library-scoped document collections (single AQL each via library_key field).
-    db.library_files.library_key.delete(lib_key)
-    db.library_folders.library_key.delete(lib_key)
-    db.library_scans.library_key.delete(lib_key)
-    db.library_pipeline_states.library_key.delete(lib_key)
+    db.library_files.delete(library_key=lib_key)
+    db.library_folders.delete(library_key=lib_key)
+    db.library_scans.delete(library_key=lib_key)
+    db.library_pipeline_states.delete(library_key=lib_key)
 
     # Finally, delete the library document itself.
     db.libraries.delete(_key=lib_key)

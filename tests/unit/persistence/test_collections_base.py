@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from typing import cast
+from typing import Any, ClassVar, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,6 +12,17 @@ import nomarr.persistence.collections_base as collections_base
 from nomarr.persistence.accessors import CollectionDelete, CollectionGet, FieldAccessor
 from nomarr.persistence.arango_client import SafeDatabase
 from nomarr.persistence.base_types import CASCADE, OUTBOUND, EdgeDef
+from nomarr.persistence.collections import LibraryFiles
+from nomarr.persistence.query_specs import (
+    AggregateQuerySpec,
+    PaginationSpec,
+    QueryCriterion,
+    QueryOperator,
+    ReadQuerySpec,
+    SortDirection,
+    SortFieldSpec,
+    WriteQuerySpec,
+)
 
 
 def _make_db() -> SafeDatabase:
@@ -91,6 +102,226 @@ class TestBaseCollectionField:
 
 @pytest.mark.unit
 @pytest.mark.mocked
+class TestFieldAccessorQueryMetadata:
+    """Tests for ``FieldAccessor._query_field_metadata``."""
+
+    def test_returns_field_name_and_unique_true(self) -> None:
+        """Field metadata should expose the field name and uniqueness flag."""
+        collection = collections_base.BaseCollection(_make_db(), "library_files")
+        accessor = collection._field("path", unique=True)
+
+        assert accessor._query_field_metadata() == {"name": "path", "unique": True}
+
+    def test_returns_unique_false_for_non_unique_accessor(self) -> None:
+        """Non-unique accessors should report ``unique=False`` in metadata."""
+        collection = collections_base.BaseCollection(_make_db(), "library_files")
+        accessor = collection._field("artist", unique=False)
+
+        assert accessor._query_field_metadata() == {"name": "artist", "unique": False}
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestFieldAccessorCompatibilityBoundary:
+    """Tests documenting the intentionally supported Phase 3 shim surface."""
+
+    def test_exposes_only_supported_field_first_methods(self) -> None:
+        """Field access keeps only the normalized compatibility mappings."""
+        collection = collections_base.BaseCollection(_make_db(), "library_files")
+        accessor = collection._field("path", unique=True)
+
+        assert hasattr(accessor, "get")
+        assert hasattr(accessor, "update")
+        assert hasattr(accessor, "upsert")
+        assert hasattr(accessor, "delete")
+        assert hasattr(accessor, "count")
+        assert hasattr(accessor, "collect")
+
+        assert not hasattr(accessor, "insert")
+        assert not hasattr(accessor, "upsert_batch")
+        assert not hasattr(accessor, "count_inbound_connections")
+        assert not hasattr(accessor, "count_outbound_connections")
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestFieldAccessorCompatibilityDelegation:
+    """Tests for collection-first query-spec delegation from field shims."""
+
+    def test_field_get_call_builds_equality_read_query_spec(self) -> None:
+        """Single-value field reads delegate through a collection-first read spec."""
+        collection = collections_base.BaseCollection(_make_db(), "library_files")
+        collection._collection_get = MagicMock(return_value={"_id": "library_files/1"})  # type: ignore[method-assign]
+        accessor = collection._field("path", unique=True)
+
+        result = accessor.get("/music/a.flac")
+
+        assert result == {"_id": "library_files/1"}
+        call_kwargs = collection._collection_get.call_args.kwargs
+        query_spec = cast("ReadQuerySpec", call_kwargs["query_spec"])
+        assert query_spec.collection_name == "library_files"
+        assert query_spec.criteria[0].field_name == "path"
+        assert query_spec.criteria[0].operator is QueryOperator.EQ
+        assert query_spec.criteria[0].value == "/music/a.flac"
+        assert query_spec.pagination.limit is None
+        assert query_spec.pagination.offset == 0
+        assert call_kwargs.get("force_many", False) is False
+
+    @pytest.mark.parametrize(
+        ("method_name", "value", "operator"),
+        [
+            ("many", "/music/a.flac", QueryOperator.EQ),
+            ("in_", ["/music/a.flac", "/music/b.flac"], QueryOperator.IN),
+            ("gte", 100, QueryOperator.GTE),
+            ("lte", 100, QueryOperator.LTE),
+            ("like", "%beatles%", QueryOperator.LIKE),
+        ],
+    )
+    def test_supported_multi_document_reads_use_collection_first_specs(
+        self,
+        method_name: str,
+        value: object,
+        operator: QueryOperator,
+    ) -> None:
+        """Supported field-first read shims build normalized read query specs."""
+        collection = collections_base.BaseCollection(_make_db(), "library_files")
+        collection._collection_get = MagicMock(return_value=[{"_id": "library_files/1"}])  # type: ignore[method-assign]
+        accessor = collection._field("path", unique=True)
+
+        result = getattr(accessor.get, method_name)(value)
+
+        assert result == [{"_id": "library_files/1"}]
+        call_kwargs = collection._collection_get.call_args.kwargs
+        query_spec = cast("ReadQuerySpec", call_kwargs["query_spec"])
+        assert query_spec.collection_name == "library_files"
+        assert query_spec.criteria[0].field_name == "path"
+        assert query_spec.criteria[0].operator is operator
+        assert query_spec.criteria[0].value == value
+        assert call_kwargs["force_many"] is True
+
+    @pytest.mark.parametrize(
+        ("method_name", "value", "operator"),
+        [
+            ("__call__", "/music/a.flac", QueryOperator.EQ),
+            ("in_", ["/music/a.flac", "/music/b.flac"], QueryOperator.IN),
+        ],
+    )
+    def test_field_delete_builds_single_field_write_query_spec(
+        self,
+        method_name: str,
+        value: object,
+        operator: QueryOperator,
+    ) -> None:
+        """Field delete shims delegate through single-field collection-first write specs."""
+        collection = collections_base.BaseCollection(_make_db(), "library_files")
+        collection._collection_delete = MagicMock(return_value=2)  # type: ignore[method-assign]
+        accessor = collection._field("path", unique=True)
+
+        result = getattr(accessor.delete, method_name)(value)
+
+        assert result == 2
+        call_kwargs = collection._collection_delete.call_args.kwargs
+        query_spec = cast("WriteQuerySpec", call_kwargs["query_spec"])
+        assert query_spec.collection_name == "library_files"
+        assert query_spec.criteria[0].field_name == "path"
+        assert query_spec.criteria[0].operator is operator
+        assert query_spec.criteria[0].value == value
+
+    def test_field_update_builds_single_field_write_query_spec(self) -> None:
+        """Field update remains a compatibility shim over collection-first update()."""
+        collection = collections_base.BaseCollection(_make_db(), "library_files")
+        collection.update = MagicMock()  # type: ignore[method-assign]
+        accessor = collection._field("path", unique=True)
+
+        accessor.update("/music/a.flac", {"artist": "The Beatles"})
+
+        query_spec = cast("WriteQuerySpec", collection.update.call_args.kwargs["query_spec"])
+        assert query_spec.collection_name == "library_files"
+        assert query_spec.criteria[0].field_name == "path"
+        assert query_spec.criteria[0].operator is QueryOperator.EQ
+        assert query_spec.criteria[0].value == "/music/a.flac"
+        assert query_spec.payload == {"artist": "The Beatles"}
+
+    def test_field_upsert_builds_single_field_write_query_spec(self) -> None:
+        """Field upsert remains a compatibility shim over collection-first upsert()."""
+        collection = collections_base.BaseCollection(_make_db(), "library_files")
+        collection.upsert = MagicMock(return_value=["library_files/1"])  # type: ignore[method-assign]
+        accessor = collection._field("path", unique=True)
+
+        result = accessor.upsert("/music/a.flac", {"artist": "The Beatles"})
+
+        assert result == ["library_files/1"]
+        query_spec = cast("WriteQuerySpec", collection.upsert.call_args.kwargs["query_spec"])
+        assert query_spec.collection_name == "library_files"
+        assert query_spec.criteria[0].field_name == "path"
+        assert query_spec.criteria[0].operator is QueryOperator.EQ
+        assert query_spec.criteria[0].value == "/music/a.flac"
+        assert query_spec.payload == {"artist": "The Beatles"}
+
+    def test_field_count_builds_single_field_count_query_spec(self) -> None:
+        """Field count remains a compatibility shim over collection-first count()."""
+        collection = collections_base.BaseCollection(_make_db(), "library_files")
+        collection.count = MagicMock(return_value=7)  # type: ignore[method-assign]
+        accessor = collection._field("artist")
+
+        result = accessor.count("The Beatles")
+
+        assert result == 7
+        query_spec = cast("AggregateQuerySpec", collection.count.call_args.kwargs["query_spec"])
+        assert query_spec.collection_name == "library_files"
+        assert query_spec.criteria[0].field_name == "artist"
+        assert query_spec.criteria[0].operator is QueryOperator.EQ
+        assert query_spec.criteria[0].value == "The Beatles"
+
+    def test_collect_builds_single_field_aggregate_spec_and_unwraps_values(self) -> None:
+        """Collect-like access remains the only supported field-first aggregate shim."""
+        collection = collections_base.BaseCollection(_make_db(), "library_files")
+        collection.aggregate = MagicMock(return_value=[{"value": "A"}, {"count": 2}, {"value": "B"}])  # type: ignore[method-assign]
+        accessor = collection._field("artist")
+
+        result = accessor.collect(limit=5, offset=2)
+
+        assert result == ["A", "B"]
+        query_spec = cast("AggregateQuerySpec", collection.aggregate.call_args.kwargs["query_spec"])
+        assert query_spec.collection_name == "library_files"
+        assert query_spec.aggregate_fields == ("artist",)
+        assert query_spec.pagination.limit == 5
+        assert query_spec.pagination.offset == 2
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestBaseCollectionQueryMetadata:
+    """Tests for ``BaseCollection._query_collection_metadata``."""
+
+    def test_returns_collection_name_family_and_empty_fields_when_no_fields_registered(self) -> None:
+        """Base metadata should reflect the declared family and an empty field registry."""
+        collection = collections_base.BaseCollection(_make_db(), "library_files")
+
+        assert collection._query_collection_metadata() == {
+            "collection_name": "library_files",
+            "collection_family": collections_base.BaseCollection.COLLECTION_FAMILY,
+            "fields": {},
+        }
+
+    def test_includes_registered_fields_with_uniqueness_flags(self) -> None:
+        """Registered field accessors should be materialized into field metadata."""
+        collection = collections_base.BaseCollection(_make_db(), "library_files")
+        collection._field("path", unique=True)
+        collection._field("artist")
+
+        assert collection._query_collection_metadata() == {
+            "collection_name": "library_files",
+            "collection_family": collections_base.BaseCollection.COLLECTION_FAMILY,
+            "fields": {
+                "path": {"name": "path", "unique": True},
+                "artist": {"name": "artist", "unique": False},
+            },
+        }
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
 class TestBaseCollectionConnectionCounts:
     """Tests for ``BaseCollection`` connection-count delegation."""
 
@@ -98,7 +329,7 @@ class TestBaseCollectionConnectionCounts:
         collection = collections_base.BaseCollection(_make_db(), "tags")
 
         with patch(
-            "nomarr.persistence.collections_base.verbs.count_inbound_connections",
+            "nomarr.persistence.constructor.verbs.count_inbound_connections",
             return_value=[{"tag_id": "tags/1", "count": 2}],
         ) as inbound_mock:
             result = collection.count_inbound_connections(
@@ -128,7 +359,7 @@ class TestBaseCollectionConnectionCounts:
         collection = collections_base.BaseCollection(_make_db(), "tags")
 
         with patch(
-            "nomarr.persistence.collections_base.verbs.count_outbound_connections",
+            "nomarr.persistence.constructor.verbs.count_outbound_connections",
             return_value=[{"tag_id": "tags/1", "count": 1}],
         ) as outbound_mock:
             result = collection.count_outbound_connections(
@@ -187,7 +418,9 @@ class TestDocumentCollectionInit:
             pass
 
         class ParentDocs(collections_base.DocumentCollection):
-            EDGES = (EdgeDef(via=RelEdges, direction=OUTBOUND, target=ChildDocs, on_delete=CASCADE),)
+            EDGES: ClassVar[list[EdgeDef]] = [
+                EdgeDef(via=RelEdges, direction=OUTBOUND, target=ChildDocs, on_delete=CASCADE)
+            ]
 
         collection = ParentDocs(_make_db(), "parent_docs")
 
@@ -198,7 +431,7 @@ class TestDocumentCollectionInit:
         """No traversal attributes are attached when EDGES is empty."""
 
         class EmptyDocs(collections_base.DocumentCollection):
-            EDGES = ()
+            EDGES: ClassVar[list[EdgeDef]] = []
 
         collection = EmptyDocs(_make_db(), "empty_docs")
 
@@ -262,7 +495,7 @@ class TestDocumentCollectionTraversal:
         traverse = collection.traversal("rel_edges", OUTBOUND)
 
         with patch(
-            "nomarr.persistence.collections_base.verbs.traversal_by_id", return_value=[{"_id": "docs/2"}]
+            "nomarr.persistence.constructor.verbs.traversal_by_id", return_value=[{"_id": "docs/2"}]
         ) as mock_traversal:
             result = traverse("docs/1", limit=5, offset=0)
 
@@ -282,7 +515,7 @@ class TestDocumentCollectionTraversal:
         collection = collections_base.DocumentCollection(_make_db(), "docs")
         traverse = collection.traversal("rel_edges", OUTBOUND)
 
-        with patch("nomarr.persistence.collections_base.verbs.traversal_by_id", return_value=[]) as mock_traversal:
+        with patch("nomarr.persistence.constructor.verbs.traversal_by_id", return_value=[]) as mock_traversal:
             traverse("docs/1")
 
         mock_traversal.assert_called_once_with(
@@ -310,10 +543,10 @@ class TestDocumentCollectionTraversal:
         traverse = collection.traversal("rel_edges", OUTBOUND)
 
         with patch(
-            "nomarr.persistence.collections_base.verbs.traversal_by_ids",
+            "nomarr.persistence.constructor.verbs.traversal_by_ids",
             return_value=[{"start_id": "docs/1", "v": {"name": "isrc", "value": "ABC"}}],
         ) as mock_traversal:
-            result = traverse.by_ids(["docs/1"], name="isrc", limit=4, offset=2)
+            result = cast("Any", traverse).by_ids(["docs/1"], name="isrc", limit=4, offset=2)
 
         assert result == [{"start_id": "docs/1", "v": {"name": "isrc", "value": "ABC"}}]
         mock_traversal.assert_called_once_with(
@@ -335,10 +568,10 @@ class TestDocumentCollectionTraversal:
         traverse = collection.traversal("rel_edges", OUTBOUND)
 
         with patch(
-            "nomarr.persistence.collections_base.verbs.traversal_by_ids",
+            "nomarr.persistence.constructor.verbs.traversal_by_ids",
             return_value=[{"start_id": "docs/1", "v": {"name": "nom:mood", "value": "calm"}}],
         ) as mock_traversal:
-            result = traverse.by_ids(["docs/1"], name_starts_with="nom:")
+            result = cast("Any", traverse).by_ids(["docs/1"], name_starts_with="nom:")
 
         assert result == [{"start_id": "docs/1", "v": {"name": "nom:mood", "value": "calm"}}]
         mock_traversal.assert_called_once_with(
@@ -360,10 +593,10 @@ class TestDocumentCollectionTraversal:
         traverse = collection.traversal("rel_edges", OUTBOUND)
 
         with patch(
-            "nomarr.persistence.collections_base.verbs.traversal_by_ids",
+            "nomarr.persistence.constructor.verbs.traversal_by_ids",
             return_value=[{"start_id": "docs/1", "e": {"_id": "rel_edges/1"}, "v": {"name": "genre"}}],
         ) as mock_traversal:
-            result = traverse.by_ids(["docs/1"], include_edge=True)
+            result = cast("Any", traverse).by_ids(["docs/1"], include_edge=True)
 
         assert result == [{"start_id": "docs/1", "e": {"_id": "rel_edges/1"}, "v": {"name": "genre"}}]
         mock_traversal.assert_called_once_with(
@@ -411,6 +644,27 @@ class TestEdgeCollectionInit:
 
 @pytest.mark.unit
 @pytest.mark.mocked
+class TestEdgeCollectionMethods:
+    """Tests for ``EdgeCollection`` relationship-native helpers."""
+
+    def test_replace_targets_delegates_to_generic_edge_target_helper(self) -> None:
+        """replace_targets should route through the normalized edge mutation helper."""
+        collection = collections_base.EdgeCollection(_make_db(), "rel_edges")
+
+        with patch("nomarr.persistence.collections_base._replace_edge_targets") as replace_targets_mock:
+            collection.replace_targets(["id1", "id2"], "state/pending", "state/done")
+
+        replace_targets_mock.assert_called_once_with(
+            collection._db,
+            "rel_edges",
+            ["id1", "id2"],
+            "state/pending",
+            "state/done",
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
 class TestVectorCollectionInit:
     """Tests for ``VectorCollection`` initialization."""
 
@@ -453,7 +707,7 @@ class TestVectorCollectionMethods:
         with (
             patch.object(collection, "upsert") as mock_upsert,
             patch("nomarr.persistence.collections_base.internal_ms", return_value=MagicMock(value=1234)),
-            patch("nomarr.persistence.collections_base.verbs.upsert_file_has_vectors_edge") as mock_upsert_edge,
+            patch("nomarr.persistence.constructor.verbs.upsert_file_has_vectors_edge") as mock_upsert_edge,
         ):
             collection.upsert_vector(
                 file_id="library_files/7",
@@ -481,26 +735,42 @@ class TestVectorCollectionMethods:
             "library_files/7",
             f"vectors_track_hot__effnet__lib1/{expected_key}",
         )
+        collection._db.aql.execute.assert_not_called()
 
-    def test_get_vector_delegates_to_verbs(self) -> None:
-        """get_vector delegates to the constructor verb for latest-vector lookup."""
+    def test_get_vector_delegates_to_collection_get_with_sorted_query_spec(self) -> None:
+        """get_vector should be a compatibility shim over collection-first ``get(...)``."""
         collection = collections_base.VectorCollection(_make_db(), "vectors")
+        collection.get = MagicMock(return_value={"file_id": "library_files/1"})
 
-        with patch(
-            "nomarr.persistence.collections_base.verbs.get_vector",
-            return_value={"file_id": "library_files/1"},
-        ) as mock_get_vector:
-            result = collection.get_vector("library_files/1")
+        result = collection.get_vector("library_files/1")
 
         assert result == {"file_id": "library_files/1"}
-        mock_get_vector.assert_called_once_with(collection._db, "vectors", "library_files/1")
+        collection.get.assert_called_once()
+        query_spec = collection.get.call_args.kwargs["query_spec"]
+        assert isinstance(query_spec, ReadQuerySpec)
+        assert query_spec.collection_name == "vectors"
+        assert query_spec.criteria == (QueryCriterion("file_id", QueryOperator.EQ, "library_files/1"),)
+        assert query_spec.sort == (SortFieldSpec("created_at", SortDirection.DESC),)
+        assert query_spec.pagination.limit == 1
+        assert query_spec.pagination.offset == 0
+
+    def test_get_vectors_by_file_ids_delegates_to_collection_get_in(self) -> None:
+        """get_vectors_by_file_ids should delegate to collection-first ``get.in_(...)``."""
+        collection = collections_base.VectorCollection(_make_db(), "vectors")
+        collection.get.in_ = MagicMock(return_value=[{"file_id": "library_files/1"}])  # type: ignore[method-assign]
+
+        result = collection.get_vectors_by_file_ids(["library_files/1"])
+
+        assert result == [{"file_id": "library_files/1"}]
+        collection.get.in_.assert_called_once_with(file_id=["library_files/1"])
+        collection._db.aql.execute.assert_not_called()
 
     def test_ann_search_delegates_to_verbs(self) -> None:
         """ann_search delegates to the vector ANN constructor verb."""
         collection = collections_base.VectorCollection(_make_db(), "vectors")
 
         with patch(
-            "nomarr.persistence.collections_base.verbs.ann_search",
+            "nomarr.persistence.constructor.verbs.ann_search",
             return_value=[{"file_id": "library_files/1", "score": 0.9}],
         ) as mock_ann_search:
             result = collection.ann_search([0.1, 0.2], limit=10, nprobe=7, filter={"genres": "rock"})
@@ -545,17 +815,106 @@ class TestStateGraphCollectionInit:
 class TestStateGraphCollectionTransition:
     """Tests for ``StateGraphCollection.transition``."""
 
-    def test_calls_verbs_transition(self) -> None:
-        """transition delegates to verbs.transition with the stored edge name."""
+    def test_calls_generic_edge_target_helper(self) -> None:
+        """transition should now be a compatibility shim over edge-target replacement."""
         collection = collections_base.StateGraphCollection(_make_db(), "state_nodes", "state_transitions")
 
-        with patch("nomarr.persistence.collections_base.verbs.transition") as mock_transition:
+        with patch("nomarr.persistence.collections_base._replace_edge_targets") as replace_targets_mock:
             collection.transition(["id1", "id2"], "pending", "done")
 
-        mock_transition.assert_called_once_with(
+        replace_targets_mock.assert_called_once_with(
             collection._db,
             "state_transitions",
             ["id1", "id2"],
             "pending",
             "done",
         )
+        collection._db.aql.execute.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestCollectionFirstExecutionBoundary:
+    """Tests proving collection roots execute without field-shim dispatch."""
+
+    def test_collection_get_query_spec_uses_collection_root_without_field_get(self) -> None:
+        """Collection reads should execute from the collection root, not `FieldAccessor.get`."""
+        collection = LibraryFiles(_make_db())
+        field_get = MagicMock(side_effect=AssertionError("field accessor get should not execute"))
+        collection.path.get = field_get  # type: ignore[method-assign]
+        execute_mock = cast("MagicMock", collection._db.aql.execute)
+        execute_mock.return_value = iter(
+            [
+                {"_id": "library_files/1", "path": "/music/a.flac"},
+            ]
+        )
+
+        result = collection.get(
+            query_spec=ReadQuerySpec(
+                collection_name="library_files",
+                criteria=(
+                    QueryCriterion(
+                        field_name="path",
+                        operator=QueryOperator.EQ,
+                        value="/music/a.flac",
+                    ),
+                ),
+                pagination=PaginationSpec(limit=None, offset=0),
+            )
+        )
+
+        assert result == {"_id": "library_files/1", "path": "/music/a.flac"}
+        field_get.assert_not_called()
+        execute_mock.assert_called_once()
+
+    def test_collection_delete_query_spec_uses_collection_root_without_field_delete(self) -> None:
+        """Collection deletes should execute directly from the collection root."""
+        collection = LibraryFiles(_make_db())
+        collection.path.delete = MagicMock(side_effect=AssertionError("field accessor delete should not execute"))
+        query_spec = WriteQuerySpec(
+            collection_name="library_files",
+            criteria=(
+                QueryCriterion(
+                    field_name="path",
+                    operator=QueryOperator.EQ,
+                    value="/music/a.flac",
+                ),
+            ),
+        )
+
+        with patch("nomarr.persistence.constructor.verbs.delete_by_field", return_value=1) as delete_mock:
+            result = collection.delete(query_spec=query_spec)
+
+        assert result == 1
+        collection.path.delete.assert_not_called()
+        delete_mock.assert_called_once_with(
+            collection._db,
+            "library_files",
+            "path",
+            "/music/a.flac",
+        )
+
+    def test_collection_count_query_spec_consumes_registered_field_metadata(self) -> None:
+        """Collection counts should validate via collection metadata, not field-root execution."""
+        collection = LibraryFiles(_make_db())
+        field_count = MagicMock(side_effect=AssertionError("field accessor count should not execute"))
+        collection.artist.count = field_count  # type: ignore[method-assign]
+        execute_mock = cast("MagicMock", collection._db.aql.execute)
+        execute_mock.return_value = iter([2])
+
+        result = collection.count(
+            query_spec=AggregateQuerySpec(
+                collection_name="library_files",
+                criteria=(
+                    QueryCriterion(
+                        field_name="artist",
+                        operator=QueryOperator.EQ,
+                        value="Boards of Canada",
+                    ),
+                ),
+            )
+        )
+
+        assert result == 2
+        field_count.assert_not_called()
+        execute_mock.assert_called_once()

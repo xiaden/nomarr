@@ -30,7 +30,7 @@ from nomarr.helpers.constants.pipeline_states import (
 )
 from nomarr.helpers.exceptions import LibraryNotFoundError
 from nomarr.helpers.time_helper import now_ms
-from nomarr.persistence.base_types import Field
+from nomarr.persistence.query_specs import PaginationSpec, QueryCriterion, QueryOperator, ReadQuerySpec
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -241,7 +241,16 @@ def _list_library_records(db: Database) -> list[dict[str, Any]]:
     ]
     docs_by_id = {
         str(doc_id): doc
-        for doc in cast("list[dict[str, Any]]", db.libraries.get.in_(Field("_id", ids), limit=None))
+        for doc in cast(
+            "list[dict[str, Any]]",
+            db.libraries.get(
+                query_spec=ReadQuerySpec(
+                    collection_name="libraries",
+                    criteria=(QueryCriterion("_id", QueryOperator.IN, ids),),
+                    pagination=PaginationSpec(limit=len(ids)),
+                )
+            ),
+        )
         if isinstance((doc_id := doc.get("_id")), str)
     }
     docs = [docs_by_id[doc_id] for doc_id in ids if doc_id in docs_by_id]
@@ -298,7 +307,7 @@ def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
     paths = [d["path"] for d in clean_docs if "path" in d]
     existing_paths = get_existing_file_paths(db, paths)
 
-    file_ids = db.library_files.path.upsert_batch(clean_docs)
+    file_ids = db.library_files.upsert_batch(clean_docs, match_fields="path")
 
     edge_docs = [
         {"_from": lib_id, "_to": file_id}
@@ -684,7 +693,16 @@ def get_cached_folders(
         return {}
 
     folder_ids = [cast("str", edge["_to"]) for edge in folder_edges]
-    folders = cast("list[dict[str, Any]]", db.library_folders.get.in_(Field("_id", folder_ids), limit=None))
+    folders = cast(
+        "list[dict[str, Any]]",
+        db.library_folders.get(
+            query_spec=ReadQuerySpec(
+                collection_name="library_folders",
+                criteria=(QueryCriterion("_id", QueryOperator.IN, folder_ids),),
+                pagination=PaginationSpec(limit=len(folder_ids)),
+            )
+        ),
+    )
     return {str(folder["path"]): folder for folder in folders}
 
 

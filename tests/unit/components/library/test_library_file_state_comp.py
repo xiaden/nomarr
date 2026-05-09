@@ -43,7 +43,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_TOO_SHORT,
     STATE_VECTORS_EXTRACTED,
 )
-from nomarr.persistence.base_types import Field
+from nomarr.persistence.query_specs import PaginationSpec, QueryCriterion, QueryOperator, ReadQuerySpec, WriteQuerySpec
 
 
 def _make_mock_db() -> MagicMock:
@@ -172,16 +172,17 @@ class TestClearAllStatesBatch:
     @pytest.mark.unit
     def test_sums_constructor_delete_counts_for_file_batch(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.file_has_state.delete.in_.return_value = 7
+        mock_db.file_has_state.delete.return_value = 7
 
         result = clear_all_states_batch(mock_db, ["library_files/1", "library_files/2"])
 
         assert result == 7
-        field_arg = mock_db.file_has_state.delete.in_.call_args.args[0]
-        assert isinstance(field_arg, Field)
-        assert field_arg.name == "_from"
-        assert field_arg.value == ["library_files/1", "library_files/2"]
-        mock_db.file_has_state.delete.in_.assert_called_once_with(field_arg)
+        mock_db.file_has_state.delete.assert_called_once_with(
+            query_spec=WriteQuerySpec(
+                collection_name="file_has_state",
+                criteria=(QueryCriterion("_from", QueryOperator.IN, ["library_files/1", "library_files/2"]),),
+            )
+        )
 
     @pytest.mark.unit
     def test_returns_zero_without_query_when_batch_empty(self) -> None:
@@ -478,7 +479,7 @@ class TestMultiStateComposition:
             {"value": "libraries/alpha"},
             {"value": "libraries/beta"},
         ]
-        mock_db.libraries.get.in_.return_value = [
+        mock_db.libraries.get.return_value = [
             {"_id": "libraries/alpha"},
             {"_id": "libraries/beta"},
         ]
@@ -502,8 +503,12 @@ class TestMultiStateComposition:
             },
         ]
         mock_db.libraries.aggregate.assert_called_once_with("_id", limit=2)
-        mock_db.libraries.get.in_.assert_called_once_with(
-            Field("_id", ["libraries/alpha", "libraries/beta"]), limit=None
+        mock_db.libraries.get.assert_called_once_with(
+            query_spec=ReadQuerySpec(
+                collection_name="libraries",
+                criteria=(QueryCriterion("_id", QueryOperator.IN, ["libraries/alpha", "libraries/beta"]),),
+                pagination=PaginationSpec(limit=2),
+            )
         )
 
     @pytest.mark.unit
@@ -516,7 +521,7 @@ class TestMultiStateComposition:
         result = get_calibration_status_by_library(mock_db)
 
         assert result == []
-        mock_db.libraries.get.in_.assert_not_called()
+        mock_db.libraries.get.assert_not_called()
         mock_db.library_contains_file.get.assert_not_called()
 
 
@@ -623,6 +628,9 @@ class TestTransitionFileState:
         transition_file_state(mock_db, file_ids, from_state, to_state)
 
         mock_db.file_states.transition.assert_called_once_with(file_ids, from_state, to_state)
+        mock_db.file_has_state.insert.assert_not_called()
+        mock_db.file_has_state.delete.assert_not_called()
+        mock_db.file_has_state.replace_targets.assert_not_called()
 
     @pytest.mark.unit
     def test_raises_value_error_for_invalid_axis_pair(self) -> None:

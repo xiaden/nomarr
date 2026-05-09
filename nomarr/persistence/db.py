@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable
+from typing import TypeVar
 
 import yaml
 
@@ -64,6 +65,61 @@ _VECTOR_TEMPLATE_COLLECTIONS: tuple[type[VectorCollection], ...] = (
 _VECTOR_TEMPLATE_CLASSES: dict[str, type[VectorCollection]] = {
     vector_cls.NAME_PATTERN.split("__{", maxsplit=1)[0]: vector_cls for vector_cls in _VECTOR_TEMPLATE_COLLECTIONS
 }
+
+TCollection = TypeVar("TCollection", DocumentCollection, EdgeCollection, VectorCollection)
+
+_COLLECTION_FIRST_ROOTS: tuple[str, ...] = (
+    "get",
+    "insert",
+    "update",
+    "upsert",
+    "delete",
+    "count",
+    "aggregate",
+    "truncate",
+)
+
+_STATIC_DOCUMENT_COLLECTIONS: tuple[tuple[str, Callable[[SafeDatabase], DocumentCollection]], ...] = (
+    ("meta", Meta),
+    ("libraries", Libraries),
+    ("library_files", LibraryFiles),
+    ("tags", Tags),
+    ("library_folders", LibraryFolders),
+    ("library_scans", LibraryScans),
+    ("sessions", Sessions),
+    ("calibration_state", CalibrationState),
+    ("calibration_history", CalibrationHistory),
+    ("health", Health),
+    ("worker_restart_policy", WorkerRestartPolicy),
+    ("navidrome_tracks", NavidromeTracks),
+    ("navidrome_playcounts", NavidromePlaycounts),
+    ("file_states", FileStates),
+    ("library_pipeline_states", LibraryPipelineStates),
+    ("worker_claims", WorkerClaims),
+    ("vram_promises", VramPromises),
+    ("locks", Locks),
+    ("ml_models", MlModels),
+    ("ml_model_outputs", MlModelOutputs),
+    ("ml_output_streams", MlOutputStreams),
+    ("migrations", Migrations),
+)
+
+_STATIC_EDGE_COLLECTIONS: tuple[tuple[str, Callable[[SafeDatabase], EdgeCollection]], ...] = (
+    ("file_has_state", FileHasState),
+    ("song_has_tags", SongHasTags),
+    ("file_has_vectors", FileHasVectors),
+    ("library_has_scan", LibraryHasScan),
+    ("library_contains_file", LibraryContainsFile),
+    ("library_contains_folder", LibraryContainsFolder),
+    ("library_has_pipeline_state", LibraryHasPipelineState),
+    ("model_has_output", ModelHasOutput),
+    ("model_has_calibration", ModelHasCalibration),
+    ("tag_model_output", TagModelOutput),
+    ("file_has_output_stream", FileHasOutputStream),
+    ("output_has_stream", OutputHasStream),
+    ("has_nd_id", HasNdId),
+    ("has_plays", HasPlays),
+)
 
 
 def _matches_name_pattern(resolved_name: str, name_pattern: str) -> bool:
@@ -207,89 +263,16 @@ class Database:
             db_name=self.db_name,
         )
 
-        self.meta = Meta(self.db)
-        self.libraries = Libraries(self.db)
-        self.library_files = LibraryFiles(self.db)
-        self.tags = Tags(self.db)
-        self.library_folders = LibraryFolders(self.db)
-        self.library_scans = LibraryScans(self.db)
-        self.sessions = Sessions(self.db)
-        self.calibration_state = CalibrationState(self.db)
-        self.calibration_history = CalibrationHistory(self.db)
-        self.health = Health(self.db)
-        self.worker_restart_policy = WorkerRestartPolicy(self.db)
-        self.navidrome_tracks = NavidromeTracks(self.db)
-        self.navidrome_playcounts = NavidromePlaycounts(self.db)
-        self.file_states = FileStates(self.db)
-        self.file_has_state = FileHasState(self.db)
-        self.song_has_tags = SongHasTags(self.db)
-        self.file_has_vectors = FileHasVectors(self.db)
-        self.library_has_scan = LibraryHasScan(self.db)
-        self.library_contains_file = LibraryContainsFile(self.db)
-        self.library_contains_folder = LibraryContainsFolder(self.db)
-        self.library_pipeline_states = LibraryPipelineStates(self.db)
-        self.library_has_pipeline_state = LibraryHasPipelineState(self.db)
-        self.worker_claims = WorkerClaims(self.db)
-        self.vram_promises = VramPromises(self.db)
-        self.locks = Locks(self.db)
-        self.ml_models = MlModels(self.db)
-        self.model_has_output = ModelHasOutput(self.db)
-        self.model_has_calibration = ModelHasCalibration(self.db)
-        self.ml_model_outputs = MlModelOutputs(self.db)
-        self.ml_output_streams = MlOutputStreams(self.db)
-        self.tag_model_output = TagModelOutput(self.db)
-        self.file_has_output_stream = FileHasOutputStream(self.db)
-        self.output_has_stream = OutputHasStream(self.db)
-        self.has_nd_id = HasNdId(self.db)
-        self.has_plays = HasPlays(self.db)
-        self.migrations = Migrations(self.db)
-
-        self._document_collections: list[DocumentCollection] = [
-            self.meta,
-            self.libraries,
-            self.library_files,
-            self.tags,
-            self.library_folders,
-            self.library_scans,
-            self.sessions,
-            self.calibration_state,
-            self.calibration_history,
-            self.health,
-            self.worker_restart_policy,
-            self.navidrome_tracks,
-            self.navidrome_playcounts,
-            self.file_states,
-            self.library_pipeline_states,
-            self.worker_claims,
-            self.vram_promises,
-            self.locks,
-            self.ml_models,
-            self.ml_model_outputs,
-            self.ml_output_streams,
-            self.migrations,
-        ]
-        self._edge_collections: list[EdgeCollection] = [
-            self.file_has_state,
-            self.song_has_tags,
-            self.file_has_vectors,
-            self.library_has_scan,
-            self.library_contains_file,
-            self.library_contains_folder,
-            self.library_has_pipeline_state,
-            self.model_has_output,
-            self.model_has_calibration,
-            self.tag_model_output,
-            self.file_has_output_stream,
-            self.output_has_stream,
-            self.has_nd_id,
-            self.has_plays,
-        ]
+        self._document_collections: list[DocumentCollection] = []
+        self._edge_collections: list[EdgeCollection] = []
+        self._vector_collections: list[VectorCollection] = []
         self._registered: dict[str, VectorCollection] = {}
 
+        self._bind_static_collections()
         self._compile_all_cascades()
 
     def register(self, collection_name: str, template_name: str) -> VectorCollection:
-        """Register a dynamic typed vector collection instance on the database.
+        """Compatibility-only seam for runtime vector collection registration.
 
         If the collection is already registered, returns the cached instance.
 
@@ -317,10 +300,45 @@ class Database:
             msg = f"Collection {collection_name!r} does not match template pattern {vector_template_cls.NAME_PATTERN!r}"
             raise ValueError(msg)
 
-        instance = vector_template_cls(self.db, collection_name)
+        instance = self._bind_collection_instance(
+            collection_name,
+            vector_template_cls(self.db, collection_name),
+        )
         self._registered[collection_name] = instance
-        setattr(self, collection_name, instance)
+        self._vector_collections.append(instance)
         self._reattach_vector_cascades()
+        return instance
+
+    def _bind_static_collections(self) -> None:
+        """Instantiate and expose the fixed collection wrappers on the facade."""
+        for attribute_name, document_factory in _STATIC_DOCUMENT_COLLECTIONS:
+            document_instance = self._bind_collection_instance(attribute_name, document_factory(self.db))
+            self._document_collections.append(document_instance)
+
+        for attribute_name, edge_factory in _STATIC_EDGE_COLLECTIONS:
+            edge_instance = self._bind_collection_instance(attribute_name, edge_factory(self.db))
+            self._edge_collections.append(edge_instance)
+
+    @staticmethod
+    def _assert_collection_first_surface(
+        attribute_name: str,
+        instance: DocumentCollection | EdgeCollection | VectorCollection,
+    ) -> None:
+        """Guard that bound collections expose the normalized collection-first roots."""
+        missing_roots = [root_name for root_name in _COLLECTION_FIRST_ROOTS if not hasattr(instance, root_name)]
+        if missing_roots:
+            missing_list = ", ".join(missing_roots)
+            msg = f"Collection {attribute_name!r} is missing collection-first roots: {missing_list}"
+            raise TypeError(msg)
+
+    def _bind_collection_instance(
+        self,
+        attribute_name: str,
+        instance: TCollection,
+    ) -> TCollection:
+        """Attach one collection wrapper to the facade after surface validation."""
+        self._assert_collection_first_surface(attribute_name, instance)
+        setattr(self, attribute_name, instance)
         return instance
 
     def _compile_all_cascades(self) -> None:
@@ -359,7 +377,7 @@ class Database:
     def _reattach_vector_cascades(self) -> None:
         from nomarr.persistence.constructor import verbs
 
-        registered_names = list(self._registered.keys())
+        registered_names = [collection._name for collection in self._vector_collections]
         target_names, all_edge_names = gather_concrete_names(
             self._document_collections,
             self._edge_collections,

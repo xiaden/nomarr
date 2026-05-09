@@ -21,6 +21,7 @@ from nomarr.components.ml.onnx.ml_model_registry_comp import (
     update_model_output_label,
     upsert_registered_model,
 )
+from nomarr.persistence.query_specs import PaginationSpec, QueryCriterion, QueryOperator, ReadQuerySpec, WriteQuerySpec
 
 
 @pytest.mark.unit
@@ -35,6 +36,7 @@ class TestListRegisteredModels:
 
         assert result == []
         mock_db.ml_models.aggregate.assert_not_called()
+        mock_db.ml_models.get.assert_not_called()
 
     def test_returns_empty_when_count_negative(self) -> None:
         mock_db = MagicMock()
@@ -47,18 +49,22 @@ class TestListRegisteredModels:
     def test_returns_empty_when_collect_yields_nothing(self) -> None:
         mock_db = MagicMock()
         mock_db.ml_models.count.return_value = 2
-        mock_db.ml_models.aggregate.return_value = []
+        mock_db.ml_models.get.return_value = []
 
         result = list_registered_models(mock_db)
 
         assert result == []
-        mock_db.ml_models.get.assert_not_called()
+        mock_db.ml_models.get.assert_called_once_with(
+            query_spec=ReadQuerySpec(
+                collection_name="ml_models",
+                pagination=PaginationSpec(limit=2),
+            )
+        )
 
     def test_returns_documents_when_models_exist(self) -> None:
         mock_db = MagicMock()
         mock_db.ml_models.count.return_value = 2
-        mock_db.ml_models.aggregate.return_value = [{"value": "ml_models/k1"}, {"value": "ml_models/k2"}]
-        mock_db.ml_models.get.side_effect = [
+        mock_db.ml_models.get.return_value = [
             {"_id": "ml_models/k1", "path": "/a.onnx"},
             {"_id": "ml_models/k2", "path": "/b.onnx"},
         ]
@@ -66,8 +72,13 @@ class TestListRegisteredModels:
         result = list_registered_models(mock_db)
 
         assert len(result) == 2
-        mock_db.ml_models.aggregate.assert_called_once_with("_id", limit=2)
-        assert mock_db.ml_models.get.call_count == 2
+        mock_db.ml_models.aggregate.assert_not_called()
+        mock_db.ml_models.get.assert_called_once_with(
+            query_spec=ReadQuerySpec(
+                collection_name="ml_models",
+                pagination=PaginationSpec(limit=2),
+            )
+        )
 
 
 @pytest.mark.unit
@@ -245,12 +256,12 @@ class TestListModelOutputsForModel:
 
     def test_returns_outputs_sorted_by_index(self) -> None:
         mock_db = MagicMock()
-        mock_db.model_has_output._from.get.many.return_value = [
+        mock_db.model_has_output.get.return_value = [
             {"_to": "ml_model_outputs/c"},
             {"_to": "ml_model_outputs/a"},
             {"_to": "ml_model_outputs/b"},
         ]
-        mock_db.ml_model_outputs.get.in_.return_value = [
+        mock_db.ml_model_outputs.get.return_value = [
             {"_id": "ml_model_outputs/c", "output_index": 2},
             {"_id": "ml_model_outputs/a", "output_index": 0},
             {"_id": "ml_model_outputs/b", "output_index": 1},
@@ -259,19 +270,32 @@ class TestListModelOutputsForModel:
         result = list_model_outputs_for_model(mock_db, "ml_models/abc")
 
         assert [doc["output_index"] for doc in result] == [0, 1, 2]
-        mock_db.model_has_output._from.get.many.assert_called_once_with("ml_models/abc")
-        mock_db.ml_model_outputs.get.in_.assert_called_once_with(
-            _id=["ml_model_outputs/c", "ml_model_outputs/a", "ml_model_outputs/b"]
+        mock_db.model_has_output.get.assert_called_once_with(
+            query_spec=ReadQuerySpec(
+                collection_name="model_has_output",
+                criteria=(QueryCriterion("_from", QueryOperator.EQ, "ml_models/abc"),),
+            )
+        )
+        mock_db.ml_model_outputs.get.assert_called_once_with(
+            query_spec=ReadQuerySpec(
+                collection_name="ml_model_outputs",
+                criteria=(
+                    QueryCriterion(
+                        "_id", QueryOperator.IN, ["ml_model_outputs/c", "ml_model_outputs/a", "ml_model_outputs/b"]
+                    ),
+                ),
+                pagination=PaginationSpec(limit=3),
+            )
         )
 
     def test_returns_empty_when_traversal_empty(self) -> None:
         mock_db = MagicMock()
-        mock_db.model_has_output._from.get.many.return_value = []
+        mock_db.model_has_output.get.return_value = []
 
         result = list_model_outputs_for_model(mock_db, "ml_models/abc")
 
         assert result == []
-        mock_db.ml_model_outputs.get.in_.assert_not_called()
+        mock_db.ml_model_outputs.get.assert_not_called()
 
 
 @pytest.mark.unit
@@ -280,12 +304,12 @@ class TestListFullyLabeledModelOutputs:
 
     def test_filters_to_only_fully_labeled(self) -> None:
         mock_db = MagicMock()
-        mock_db.model_has_output._from.get.many.return_value = [
+        mock_db.model_has_output.get.return_value = [
             {"_to": "ml_model_outputs/0"},
             {"_to": "ml_model_outputs/1"},
             {"_to": "ml_model_outputs/2"},
         ]
-        mock_db.ml_model_outputs.get.in_.return_value = [
+        mock_db.ml_model_outputs.get.return_value = [
             {"output_index": 0, "fully_labeled": True, "label": "mood"},
             {"output_index": 1, "fully_labeled": False, "label": None},
             {"output_index": 2, "fully_labeled": True, "label": "genre"},
@@ -298,8 +322,8 @@ class TestListFullyLabeledModelOutputs:
 
     def test_returns_empty_when_none_labeled(self) -> None:
         mock_db = MagicMock()
-        mock_db.model_has_output._from.get.many.return_value = [{"_to": "ml_model_outputs/0"}]
-        mock_db.ml_model_outputs.get.in_.return_value = [
+        mock_db.model_has_output.get.return_value = [{"_to": "ml_model_outputs/0"}]
+        mock_db.ml_model_outputs.get.return_value = [
             {"output_index": 0, "fully_labeled": False, "label": None},
         ]
 
@@ -315,7 +339,7 @@ class TestEnsureModelOutputs:
     def test_inserts_missing_output_and_upserts_edge(self) -> None:
         mock_db = MagicMock()
         mock_db.ml_model_outputs.get.return_value = None  # output not yet present
-        mock_db.model_has_output._from.get.many.return_value = []
+        mock_db.model_has_output.get.return_value = []
 
         ensure_model_outputs(mock_db, "ml_models/abc", 1)
 
@@ -327,9 +351,11 @@ class TestEnsureModelOutputs:
 
     def test_skips_insert_when_output_exists(self) -> None:
         mock_db = MagicMock()
-        mock_db.ml_model_outputs.get.return_value = {"_key": "existing"}
-        mock_db.model_has_output._from.get.many.return_value = [{"_to": "ml_model_outputs/existing"}]
-        mock_db.ml_model_outputs.get.in_.return_value = [{"output_index": 0, "fully_labeled": False}]
+        mock_db.ml_model_outputs.get.side_effect = [
+            {"_key": "existing"},
+            [{"output_index": 0, "fully_labeled": False}],
+        ]
+        mock_db.model_has_output.get.return_value = [{"_to": "ml_model_outputs/existing"}]
 
         ensure_model_outputs(mock_db, "ml_models/abc", 1)
 
@@ -367,16 +393,13 @@ class TestBuildModelOutputIdMap:
 
     def test_builds_nested_map_for_labeled_outputs(self) -> None:
         mock_db = MagicMock()
-        # list_registered_models internals
         mock_db.ml_models.count.return_value = 1
-        mock_db.ml_models.aggregate.return_value = [{"value": "ml_models/m1"}]
-        mock_db.ml_models.get.return_value = {"_id": "ml_models/m1", "path": "/effnet.onnx"}
-        # list_model_outputs_for_model internals
-        mock_db.model_has_output._from.get.many.return_value = [
+        mock_db.ml_models.get.return_value = [{"_id": "ml_models/m1", "path": "/effnet.onnx"}]
+        mock_db.model_has_output.get.return_value = [
             {"_to": "ml_model_outputs/o1"},
             {"_to": "ml_model_outputs/o2"},
         ]
-        mock_db.ml_model_outputs.get.in_.return_value = [
+        mock_db.ml_model_outputs.get.return_value = [
             {"_id": "ml_model_outputs/o1", "_key": "o1", "output_index": 0, "label": "genre", "fully_labeled": True},
             {"_id": "ml_model_outputs/o2", "_key": "o2", "output_index": 1, "label": "mood", "fully_labeled": True},
         ]
@@ -397,7 +420,7 @@ class TestDeleteModelOutputsForModel:
 
     def test_returns_empty_when_no_outputs(self) -> None:
         mock_db = MagicMock()
-        mock_db.model_has_output._from.get.many.return_value = []
+        mock_db.model_has_output.get.return_value = []
 
         result = delete_model_outputs_for_model(mock_db, "ml_models/abc")
 
@@ -407,11 +430,11 @@ class TestDeleteModelOutputsForModel:
 
     def test_deletes_edges_and_outputs(self) -> None:
         mock_db = MagicMock()
-        mock_db.model_has_output._from.get.many.return_value = [
+        mock_db.model_has_output.get.return_value = [
             {"_to": "ml_model_outputs/o1"},
             {"_to": "ml_model_outputs/o2"},
         ]
-        mock_db.ml_model_outputs.get.in_.return_value = [
+        mock_db.ml_model_outputs.get.return_value = [
             {"_id": "ml_model_outputs/o1", "_key": "o1", "output_index": 0},
             {"_id": "ml_model_outputs/o2", "_key": "o2", "output_index": 1},
         ]
@@ -419,8 +442,18 @@ class TestDeleteModelOutputsForModel:
         result = delete_model_outputs_for_model(mock_db, "ml_models/abc")
 
         assert result == ["ml_model_outputs/o1", "ml_model_outputs/o2"]
-        mock_db.model_has_output.delete.in_.assert_called_once_with(_id=["model_has_output/o1", "model_has_output/o2"])
-        mock_db.ml_model_outputs.delete.in_.assert_called_once_with(_id=["ml_model_outputs/o1", "ml_model_outputs/o2"])
+        mock_db.model_has_output.delete.assert_called_once_with(
+            query_spec=WriteQuerySpec(
+                collection_name="model_has_output",
+                criteria=(QueryCriterion("_id", QueryOperator.IN, ["model_has_output/o1", "model_has_output/o2"]),),
+            )
+        )
+        mock_db.ml_model_outputs.delete.assert_called_once_with(
+            query_spec=WriteQuerySpec(
+                collection_name="ml_model_outputs",
+                criteria=(QueryCriterion("_id", QueryOperator.IN, ["ml_model_outputs/o1", "ml_model_outputs/o2"]),),
+            )
+        )
 
 
 @pytest.mark.unit
@@ -431,8 +464,8 @@ class TestPruneRegisteredModel:
     def test_prunes_model_with_outputs(self, mock_delete_tag_edges: MagicMock) -> None:
         mock_db = MagicMock()
         mock_delete_tag_edges.return_value = 3
-        mock_db.model_has_output._from.get.many.return_value = [{"_to": "ml_model_outputs/o1"}]
-        mock_db.ml_model_outputs.get.in_.return_value = [
+        mock_db.model_has_output.get.return_value = [{"_to": "ml_model_outputs/o1"}]
+        mock_db.ml_model_outputs.get.return_value = [
             {"_id": "ml_model_outputs/o1", "_key": "o1", "output_index": 0},
         ]
 
@@ -448,7 +481,7 @@ class TestPruneRegisteredModel:
     @patch("nomarr.components.ml.onnx.ml_model_registry_comp.delete_tag_model_output_edges_for_outputs")
     def test_prunes_model_with_no_outputs(self, mock_delete_tag_edges: MagicMock) -> None:
         mock_db = MagicMock()
-        mock_db.model_has_output._from.get.many.return_value = []
+        mock_db.model_has_output.get.return_value = []
 
         result = prune_registered_model(mock_db, "ml_models/abc")
 

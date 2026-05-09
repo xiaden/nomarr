@@ -230,17 +230,17 @@ class DiscoveryWorker(multiprocessing.Process):
             logger.debug("[%s] Failed to clear stale VRAM promises at startup", self.worker_id, exc_info=True)
         config = ProcessorConfig(**self.processor_config_dict)
         self._current_status = "healthy"
-        db.health.component_id.upsert(
-            self.worker_id,
-            {
+        db.health.upsert(
+            component_id=self.worker_id,
+            fields={
                 "component_type": "worker",
                 "status": "starting",
                 "last_heartbeat": now_ms().value,
             },
         )
-        db.health.component_id.update(
-            self.worker_id,
-            {"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
+        db.health.update(
+            component_id=self.worker_id,
+            fields={"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
         )
         logger.info(
             "[%s] Discovery worker started (pid=%s, tier=%d, prefer_gpu=%s)",
@@ -531,7 +531,7 @@ class DiscoveryWorker(multiprocessing.Process):
             if promotion_running is not None and promotion_running.is_alive():
                 promotion_running.join(timeout=8)
             logger.info("[%s] Discovery worker stopping (processed %d files)", self.worker_id, files_processed)
-            db.health.component_id.update(self.worker_id, {"status": "stopping"})
+            db.health.update(component_id=self.worker_id, fields={"status": "stopping"})
             try:
                 from nomarr.components.ml.resources.ml_vram_coordinator_comp import release_worker_promises
 

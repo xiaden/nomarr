@@ -11,7 +11,7 @@ import pytest
 from nomarr.persistence.arango_client import SafeDatabase
 from nomarr.persistence.collections import FileHasState, LibraryFiles
 from nomarr.persistence.collections_base import DocumentCollection, EdgeCollection, VectorCollection
-from nomarr.persistence.db import Database, _matches_name_pattern
+from nomarr.persistence.db import _COLLECTION_FIRST_ROOTS, Database, _matches_name_pattern
 
 
 class TestDatabaseInitialization:
@@ -71,6 +71,7 @@ class TestDatabaseRegister:
     def _make_database(self) -> Database:
         db: Database = object.__new__(Database)
         db._registered = {}
+        db._vector_collections = []
         db.db = MagicMock()
         return db
 
@@ -251,3 +252,63 @@ class TestMatchesNamePattern:
     )
     def test_matches_name_pattern(self, resolved_name: str, name_pattern: str, expected: bool) -> None:
         assert _matches_name_pattern(resolved_name, name_pattern) is expected
+
+
+class TestDatabaseCollectionFirstSurface:
+    """Unit tests for consistent collection-first surface wiring on the facade."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_static_bindings_expose_normative_collection_first_roots(self) -> None:
+        fake_safe_db = cast("SafeDatabase", MagicMock(spec=SafeDatabase))
+
+        with (
+            patch.dict(os.environ, {"ARANGO_HOST": "http://localhost:8529"}, clear=False),
+            patch("nomarr.persistence.db.create_arango_client", return_value=fake_safe_db),
+            patch.object(Database, "_load_password_from_config", return_value="secret"),
+            patch.object(Database, "_compile_all_cascades"),
+        ):
+            db = Database()
+
+        for collection in (db.meta, db.library_files, db.file_has_state):
+            for root_name in _COLLECTION_FIRST_ROOTS:
+                assert hasattr(collection, root_name), f"{collection._name} missing {root_name}"
+
+        assert db._vector_collections == []
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_register_runtime_vector_exposes_normative_roots_and_tracks_instance(self) -> None:
+        database: Database = object.__new__(Database)
+        database._registered = {}
+        database._vector_collections = []
+        database.db = MagicMock()
+        database.db.has_collection.return_value = True
+
+        class FakeVectorTemplate(VectorCollection):
+            VECTOR_TIER = "hot"
+            NAME_PATTERN = "vectors_track_hot__{model}__{library}"
+
+        with (
+            patch.dict(
+                "nomarr.persistence.db._VECTOR_TEMPLATE_CLASSES",
+                {"vectors_track_hot": FakeVectorTemplate},
+                clear=True,
+            ),
+            patch.object(Database, "_reattach_vector_cascades") as reattach_mock,
+        ):
+            result = database.register("vectors_track_hot__effnet__lib1", "vectors_track_hot")
+
+        assert result is database._registered["vectors_track_hot__effnet__lib1"]
+        assert database._vector_collections == [result]
+        assert database.vectors_track_hot__effnet__lib1 is result
+        for root_name in _COLLECTION_FIRST_ROOTS:
+            assert hasattr(result, root_name), f"registered vector missing {root_name}"
+        reattach_mock.assert_called_once_with()
+
+    @pytest.mark.unit
+    def test_bind_collection_instance_rejects_missing_collection_first_roots(self) -> None:
+        database: Database = object.__new__(Database)
+
+        with pytest.raises(TypeError, match="missing collection-first roots"):
+            database._bind_collection_instance("broken", cast("Any", object()))

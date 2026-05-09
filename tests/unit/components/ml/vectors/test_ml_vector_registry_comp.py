@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -106,7 +106,7 @@ class TestDeleteVectorsByFileId:
         assert deleted == 3
         hot_namespace.file_id.delete.assert_called_once_with("library_files/7")
         cold_namespace.file_id.delete.assert_called_once_with("library_files/7")
-        db.file_has_vectors._from.delete.assert_called_once_with("library_files/7")
+        db.file_has_vectors.delete.assert_called_once_with(_from="library_files/7")
 
 
 class TestDeleteVectorsByFileIds:
@@ -122,7 +122,7 @@ class TestDeleteVectorsByFileIds:
         deleted = delete_vectors_by_file_ids(db, [])
 
         assert deleted == 0
-        db.file_has_vectors._from.delete.in_.assert_not_called()
+        db.file_has_vectors.delete.in_.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -130,9 +130,9 @@ class TestDeleteVectorsByFileIds:
         db = MagicMock()
 
         hot_namespace = MagicMock()
-        hot_namespace.file_id.delete.side_effect = [1, 1]
+        hot_namespace.file_id.delete.in_.return_value = 2
         cold_namespace = MagicMock()
-        cold_namespace.file_id.delete.side_effect = [2, 2]
+        cold_namespace.file_id.delete.in_.return_value = 4
         db._registered = {
             "vectors_track_hot__effnet__lib1": hot_namespace,
             "vectors_track_cold__effnet__lib1": cold_namespace,
@@ -142,12 +142,6 @@ class TestDeleteVectorsByFileIds:
         deleted = delete_vectors_by_file_ids(db, ["library_files/1", "library_files/2"])
 
         assert deleted == 6
-        assert hot_namespace.file_id.delete.call_args_list == [
-            call("library_files/1"),
-            call("library_files/2"),
-        ]
-        assert cold_namespace.file_id.delete.call_args_list == [
-            call("library_files/1"),
-            call("library_files/2"),
-        ]
-        db.file_has_vectors._from.delete.in_.assert_called_once_with(["library_files/1", "library_files/2"])
+        hot_namespace.file_id.delete.in_.assert_called_once_with(["library_files/1", "library_files/2"])
+        cold_namespace.file_id.delete.in_.assert_called_once_with(["library_files/1", "library_files/2"])
+        db.file_has_vectors.delete.in_.assert_called_once_with(_from=["library_files/1", "library_files/2"])
