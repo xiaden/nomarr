@@ -612,13 +612,13 @@ def traversal_by_id(
 
     if direction == "OUTBOUND":
         query, pagination_vars = inject_pagination(
-            "FOR v IN 1..1 OUTBOUND @start_id @@edge RETURN v",
+            "FOR v IN 1..1 OUTBOUND @start_id @@edge FILTER v != null RETURN v",
             limit,
             offset,
         )
     elif direction == "INBOUND":
         query, pagination_vars = inject_pagination(
-            "FOR v IN 1..1 INBOUND @start_id @@edge RETURN v",
+            "FOR v IN 1..1 INBOUND @start_id @@edge FILTER v != null RETURN v",
             limit,
             offset,
         )
@@ -655,13 +655,13 @@ def traversal_by_filter(
 
     if direction == "OUTBOUND":
         query, pagination_vars = inject_pagination(
-            f"FOR doc IN @@col FILTER {filter_clause} FOR v IN 1..1 OUTBOUND doc @@edge RETURN v",
+            f"FOR doc IN @@col FILTER {filter_clause} FOR v IN 1..1 OUTBOUND doc @@edge FILTER v != null RETURN v",
             limit,
             offset,
         )
     elif direction == "INBOUND":
         query, pagination_vars = inject_pagination(
-            f"FOR doc IN @@col FILTER {filter_clause} FOR v IN 1..1 INBOUND doc @@edge RETURN v",
+            f"FOR doc IN @@col FILTER {filter_clause} FOR v IN 1..1 INBOUND doc @@edge FILTER v != null RETURN v",
             limit,
             offset,
         )
@@ -705,13 +705,13 @@ def traversal_by_filter_with_target_filter(
 
     if direction == "OUTBOUND":
         query, pagination_vars = inject_pagination(
-            f"FOR doc IN @@col FILTER {filter_clause} FOR v IN 1..1 OUTBOUND doc @@edge FILTER {filter_block} RETURN v",
+            f"FOR doc IN @@col FILTER {filter_clause} FOR v IN 1..1 OUTBOUND doc @@edge FILTER v != null AND {filter_block} RETURN v",
             limit,
             offset,
         )
     elif direction == "INBOUND":
         query, pagination_vars = inject_pagination(
-            f"FOR doc IN @@col FILTER {filter_clause} FOR v IN 1..1 INBOUND doc @@edge FILTER {filter_block} RETURN v",
+            f"FOR doc IN @@col FILTER {filter_clause} FOR v IN 1..1 INBOUND doc @@edge FILTER v != null AND {filter_block} RETURN v",
             limit,
             offset,
         )
@@ -762,9 +762,8 @@ def traversal_by_ids(
         msg = f"Unsupported traversal direction: {direction}"
         raise ValueError(msg)
 
-    filter_block = ""
-    if filter_clauses:
-        filter_block = f" FILTER {' AND '.join(filter_clauses)}"
+    filter_clauses.insert(0, "v != null")
+    filter_block = f" FILTER {' AND '.join(filter_clauses)}"
 
     traversal_vars = "v, e" if include_edge else "v"
     return_expr = "{start_id: start_id, e: e, v: v}" if include_edge else "{start_id: start_id, v: v}"
