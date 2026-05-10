@@ -66,8 +66,8 @@ class LibraryFilesAqlOperations:
     def count_files_by_tag(self, tag_key: str, target_value: float | str) -> int:
         """Count files matching tag query semantics."""
         # Numeric tag values are matched by "tag exists with numeric payload" semantics.
-        # This path intentionally ignores an exact numeric target value and mirrors
-        # legacy caller behavior for normalized score/range-like tags.
+        # This intentionally ignores exact numeric equality because these tags are used
+        # as score/range-like values where "numeric tag present" is the relevant filter.
         if _is_numeric_type(target_value):
             query = """
             LET tag_ids = (

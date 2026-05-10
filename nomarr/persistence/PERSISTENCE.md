@@ -10,7 +10,7 @@ Persistence should default to:
 2. reusable AQL templates/primitives in `aql/`
 3. thin capability bindings in `database/` that bind collection names, allowed fields, and common query shapes
 
-This keeps persistence between two extremes:
+This approach balances two extremes:
 
 - **not** a generic ORM/query-builder framework
 - **not** handwritten per-collection AQL for every basic query shape

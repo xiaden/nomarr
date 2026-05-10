@@ -24,7 +24,7 @@ class TestLibrariesAqlOperations:
                 "nomarr.persistence.database.libraries_aql.insert_document",
                 side_effect=RuntimeError("Failed to insert document into libraries"),
             ),
-            pytest.raises(RuntimeError, match="Failed to insert"),
+            pytest.raises(RuntimeError, match="Failed to insert document into libraries"),
         ):
             ops.insert_library({"name": "Main"})
 

@@ -34,9 +34,7 @@ def _validate_field_name(field_name: str, *, allowed_fields: set[str] | None = N
     specific query capability.
     """
     if not _FIELD_NAME_PATTERN.fullmatch(field_name):
-        raise ValueError(
-            f"Invalid field name: {field_name}. Must match pattern ^[A-Za-z_][A-Za-z0-9_]*$"
-        )
+        raise ValueError(f"Invalid field name: {field_name}. Field names must be valid identifiers.")
     if allowed_fields is not None and field_name not in allowed_fields:
         raise ValueError(f"Field '{field_name}' is not allowed")
     return field_name
@@ -102,18 +100,29 @@ def get_filtered_docs(
     safe_sort_field = None
     if sort_field is not None:
         safe_sort_field = _validate_field_name(sort_field, allowed_fields=allowed_fields)
-    sort_clause = "SORT doc[@sort_field]" if safe_sort_field is not None else ""
-    query = f"""
-    FOR doc IN @@collection
-      FILTER LENGTH(@filters) == 0
-        OR ALL(
-          FOR criterion IN @filters
-            RETURN doc[criterion.name] == criterion.value
-        )
-      {sort_clause}
-      LIMIT @limit
-      RETURN doc
-    """
+    if safe_sort_field is None:
+        query = """
+        FOR doc IN @@collection
+          FILTER LENGTH(@filters) == 0
+            OR ALL(
+              FOR criterion IN @filters
+                RETURN doc[criterion.name] == criterion.value
+            )
+          LIMIT @limit
+          RETURN doc
+        """
+    else:
+        query = """
+        FOR doc IN @@collection
+          FILTER LENGTH(@filters) == 0
+            OR ALL(
+              FOR criterion IN @filters
+                RETURN doc[criterion.name] == criterion.value
+            )
+          SORT doc[@sort_field]
+          LIMIT @limit
+          RETURN doc
+        """
     rows = execute(
         db,
         query,
@@ -145,18 +154,29 @@ def list_field_values(
     safe_sort_field = None
     if sort_field is not None:
         safe_sort_field = _validate_field_name(sort_field, allowed_fields=allowed_fields)
-    sort_clause = "SORT doc[@sort_field]" if safe_sort_field is not None else ""
-    query = f"""
-    FOR doc IN @@collection
-      FILTER LENGTH(@filters) == 0
-        OR ALL(
-          FOR criterion IN @filters
-            RETURN doc[criterion.name] == criterion.value
-        )
-      {sort_clause}
-      LIMIT @limit
-      RETURN doc[@value_field]
-    """
+    if safe_sort_field is None:
+        query = """
+        FOR doc IN @@collection
+          FILTER LENGTH(@filters) == 0
+            OR ALL(
+              FOR criterion IN @filters
+                RETURN doc[criterion.name] == criterion.value
+            )
+          LIMIT @limit
+          RETURN doc[@value_field]
+        """
+    else:
+        query = """
+        FOR doc IN @@collection
+          FILTER LENGTH(@filters) == 0
+            OR ALL(
+              FOR criterion IN @filters
+                RETURN doc[criterion.name] == criterion.value
+            )
+          SORT doc[@sort_field]
+          LIMIT @limit
+          RETURN doc[@value_field]
+        """
     return execute(
         db,
         query,
