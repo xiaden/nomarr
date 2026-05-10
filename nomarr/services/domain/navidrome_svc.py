@@ -10,6 +10,8 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
+from nomarr.components.library.library_file_query_comp import get_files_by_ids_with_tags
+from nomarr.components.navidrome.descriptor_match_comp import build_track_descriptor
 from nomarr.components.navidrome.navidrome_graph_comp import bulk_resolve_files_to_navidrome_ids
 from nomarr.components.navidrome.subsonic_client_comp import SubsonicClient
 from nomarr.components.navidrome.templates_comp import generate_template_files, get_template_summary
@@ -66,8 +68,10 @@ class NavidromeService:
     Boundary:
         - Plugin similar-track uses descriptor I/O via ``get_similar_tracks`` and
           does not depend on Nomarr-side Navidrome ID mapping tables.
+        - Plugin personal playlist generation consumes descriptor payloads via
+          ``generate_playlists`` + ``resolve_files_to_descriptors``.
         - Sync/mapping helpers are retained for backend-managed playlist push and
-          personal-playlist workflows.
+          manual personal-playlist trigger workflows.
     """
 
     def __init__(self, db: Database, cfg: NavidromeConfig, config_service: ConfigService) -> None:
@@ -589,6 +593,10 @@ class NavidromeService:
             ValueError: If ``navidrome_api_user`` is not configured.
             MisconfiguredError: If ``library_key`` is not configured.
 
+        Legacy backend push path. Plugin-backed personal playlist generation should
+        use descriptor payloads from ``generate_playlists`` via the v1 API and
+        resolve to Navidrome IDs inside the plugin.
+
         """
         user_id: str = self._config_service.get("navidrome_api_user", "")
         if not user_id:
@@ -642,3 +650,21 @@ class NavidromeService:
 
         """
         return bulk_resolve_files_to_navidrome_ids(self._db, file_ids)
+
+    def resolve_files_to_descriptors(self, file_ids: list[str]) -> dict[str, TrackDescriptor]:
+        """Resolve ``library_files/_id`` values to portable track descriptors.
+
+        Used by plugin-backed playlist/recommendation API flows so Nomarr returns
+        portable descriptors and the plugin resolves Navidrome mediafile IDs locally.
+        """
+        if not file_ids:
+            return {}
+
+        file_docs = get_files_by_ids_with_tags(self._db, file_ids)
+        descriptors_by_file_id: dict[str, TrackDescriptor] = {}
+        for file_doc in file_docs:
+            file_id = file_doc.get("_id")
+            if not isinstance(file_id, str):
+                continue
+            descriptors_by_file_id[file_id] = build_track_descriptor(file_doc)
+        return descriptors_by_file_id

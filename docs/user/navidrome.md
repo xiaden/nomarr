@@ -19,8 +19,8 @@ Nomarr can generate smart playlists for [Navidrome](https://www.navidrome.org/) 
 
 **Flow boundary:**
 
-- **Plugin Instant Mix / similar-track**: descriptor-only flow; plugin resolves Navidrome IDs locally.
-- **Backend push / personal playlists**: may use Nomarr’s synced Navidrome ID mapping for file-id → song-id translation.
+- **Plugin flows (Instant Mix + plugin personal playlists)**: descriptor-only payloads; plugin resolves Navidrome IDs locally.
+- **Legacy backend push flows (Web UI push/static/manual personal trigger)**: may use Nomarr’s synced Navidrome ID mapping for file-id → song-id translation.
 
 ---
 
@@ -232,7 +232,7 @@ Nomarr can generate playlists automatically based on your Navidrome play history
 ### Prerequisites
 
 1. **Navidrome connection configured** — URL, username, and password saved
-2. **Sync Songs run** — required for backend-managed playlist push/personal playlist flows
+2. **Sync Songs run** — required only for legacy backend-managed push/manual personal-trigger flows
 3. **Music processed** — Tracks need ML embeddings; run a library scan first
 4. **`pp_enabled`** set to `true` in settings
 
@@ -344,7 +344,7 @@ For programmatic access, Nomarr provides a full REST API for all Navidrome opera
 1. **Process your music** — Scan and process your library in Nomarr (see [Getting Started](getting_started.md))
 2. **Configure Navidrome connection** — Go to Navidrome page → API Settings → enter URL, username, password → Save
 3. **Test connectivity** — Click Ping to verify the connection works
-4. **Sync songs** — optional for plugin Instant Mix; required for backend push/personal playlist flows
+4. **Sync songs** — optional for plugin-backed flows; required for legacy backend push/manual personal-trigger flows
 
 ### Creating Playlists
 
@@ -356,7 +356,7 @@ For programmatic access, Nomarr provides a full REST API for all Navidrome opera
 ### Ongoing Use
 
 - After processing new music, revisit the Navidrome page to regenerate playlists
-- Run Sync Songs periodically if you use backend push/personal playlist flows and your Navidrome library changes independently
+- Run Sync Songs periodically only if you use legacy backend push/manual personal-trigger flows and your Navidrome library changes independently
 - Use templates for quick batch generation of common playlist types
 
 ---

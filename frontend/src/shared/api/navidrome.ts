@@ -266,7 +266,7 @@ export async function getNavidromeStatus(): Promise<NavidromeStatusResponse> {
 }
 
 
-// ── Push Static Playlist (Vector Search → Navidrome) ──
+// ── Legacy backend push flows (Web UI) ──
 
 export interface PushStaticPlaylistResponse {
   playlist_name: string;
@@ -276,7 +276,8 @@ export interface PushStaticPlaylistResponse {
 }
 
 /**
- * Push a static playlist to Navidrome by song IDs.
+ * Legacy backend path: push a static playlist to Navidrome by song IDs.
+ * Plugin-backed playlist flows resolve descriptors inside the Navidrome plugin.
  */
 export async function pushStaticPlaylist(
   fileIds: string[],
@@ -302,8 +303,9 @@ export interface SyncSongsResponse {
 
 /**
  * Trigger a full Navidrome song sync to graph collections.
- * Required for backend push/personal playlist flows that resolve file IDs to
- * Navidrome song IDs. Not required for plugin Instant Mix descriptor flow.
+ * Required only for legacy backend push/manual personal-trigger flows that
+ * resolve file IDs to Navidrome song IDs. Not required for plugin-backed
+ * descriptor flows.
  */
 export async function syncNavidromeSongs(): Promise<SyncSongsResponse> {
   return post<SyncSongsResponse>("/api/web/navidrome/sync-song");
@@ -319,7 +321,8 @@ export interface TriggerPersonalPlaylistsResponse {
 }
 
 /**
- * Generate personal playlists for the configured Navidrome user and push to Navidrome.
+ * Legacy backend path: generate personal playlists for the configured Navidrome
+ * user and push to Navidrome.
  */
 export async function triggerPersonalPlaylists(): Promise<TriggerPersonalPlaylistsResponse> {
   return post<TriggerPersonalPlaylistsResponse>("/api/web/navidrome/generate-personal-playlists");

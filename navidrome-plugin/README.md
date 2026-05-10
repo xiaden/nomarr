@@ -171,6 +171,13 @@ that user:
 When the plugin asks Nomarr to generate personal playlists, it applies a few
 guards before pushing anything back to Navidrome.
 
+For plugin-backed personal playlists, Nomarr returns portable track descriptors.
+The plugin resolves each descriptor locally to Navidrome mediafile IDs before
+calling `createPlaylist`.
+
+Sync Songs/song-map sync in Nomarr is not required for this plugin-backed
+personal-playlist flow.
+
 #### Empty playlists are skipped
 
 If Nomarr returns a playlist with zero tracks, the plugin logs a WARN message

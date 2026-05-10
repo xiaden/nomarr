@@ -519,10 +519,10 @@ type generatePlaylistsRequest struct {
 
 // playlistResult is a single generated playlist in Nomarr's response.
 type playlistResult struct {
-	PlaylistType string   `json:"playlist_type"`
-	PlaylistName string   `json:"playlist_name"`
-	TrackNdIDs   []string `json:"track_nd_ids"`
-	TrackCount   int      `json:"track_count"`
+	PlaylistType string                 `json:"playlist_type"`
+	PlaylistName string                 `json:"playlist_name"`
+	Songs        []nomarrSongDescriptor `json:"songs"`
+	TrackCount   int                    `json:"track_count"`
 }
 
 // generatePlaylistsResponse is the JSON response from Nomarr's generate-playlists endpoint.
@@ -530,6 +530,39 @@ type generatePlaylistsResponse struct {
 	Status    string           `json:"status"`
 	Message   string           `json:"message"`
 	Playlists []playlistResult `json:"playlists"`
+}
+
+func resolveDescriptorsToSongIDs(
+	descriptors []nomarrSongDescriptor,
+	fetchCandidates func(nomarrSongDescriptor) ([]subsonicSong, error),
+) ([]string, int, int, error) {
+	resolvedIDs := make([]string, 0, len(descriptors))
+	unresolvedCount := 0
+	ambiguousCount := 0
+
+	for _, descriptor := range descriptors {
+		candidates, err := fetchCandidates(descriptor)
+		if err != nil {
+			return nil, unresolvedCount, ambiguousCount, err
+		}
+		if len(candidates) == 0 {
+			unresolvedCount++
+			continue
+		}
+
+		candidate, status := resolveDescriptorAgainstCandidates(descriptor, candidates)
+		if status == "descriptor_unresolved" {
+			unresolvedCount++
+			continue
+		}
+		if status == "descriptor_ambiguous" {
+			ambiguousCount++
+			continue
+		}
+		resolvedIDs = append(resolvedIDs, candidate.ID)
+	}
+
+	return resolvedIDs, unresolvedCount, ambiguousCount, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -890,8 +923,34 @@ func generateAndPushPlaylists() {
 
 		// Push each playlist into Navidrome via Subsonic createPlaylist API.
 		for _, pl := range genResp.Playlists {
-			if len(pl.TrackNdIDs) == 0 {
-				pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: skipping empty playlist %q for user %s", pl.PlaylistName, user.Username))
+			resolvedIDs, unresolvedCount, ambiguousCount, err := resolveDescriptorsToSongIDs(
+				pl.Songs,
+				fetchCandidatesForDescriptor,
+			)
+			if err != nil {
+				pdk.Log(
+					pdk.LogError,
+					fmt.Sprintf(
+						"nomarr: nomarr_unreachable search3 failed while resolving playlist %q for user %s: %v",
+						pl.PlaylistName,
+						user.Username,
+						err,
+					),
+				)
+				continue
+			}
+
+			if len(resolvedIDs) == 0 {
+				pdk.Log(
+					pdk.LogWarn,
+					fmt.Sprintf(
+						"nomarr: skipping empty playlist %q for user %s after descriptor resolution (unresolved=%d ambiguous=%d)",
+						pl.PlaylistName,
+						user.Username,
+						unresolvedCount,
+						ambiguousCount,
+					),
+				)
 				skippedEmpty++
 				continue
 			}
@@ -909,7 +968,7 @@ func generateAndPushPlaylists() {
 				action = "create"
 			}
 
-			for _, songID := range pl.TrackNdIDs {
+			for _, songID := range resolvedIDs {
 				uri += "&songId=" + url.QueryEscape(songID)
 			}
 
@@ -924,7 +983,20 @@ func generateAndPushPlaylists() {
 				updated++
 			}
 
-			pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: %s playlist %q (%s, %d tracks) for user %s", action, pl.PlaylistName, pl.PlaylistType, pl.TrackCount, user.Username))
+			pdk.Log(
+				pdk.LogInfo,
+				fmt.Sprintf(
+					"nomarr: %s playlist %q (%s, %d/%d tracks resolved, unresolved=%d ambiguous=%d) for user %s",
+					action,
+					pl.PlaylistName,
+					pl.PlaylistType,
+					len(resolvedIDs),
+					len(pl.Songs),
+					unresolvedCount,
+					ambiguousCount,
+					user.Username,
+				),
+			)
 		}
 
 		pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: playlists for user %s: %d created, %d updated, %d skipped (empty)", user.Username, created, updated, skippedEmpty))

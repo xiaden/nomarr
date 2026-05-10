@@ -228,3 +228,65 @@ class TestNavidromeServiceSync:
             ("/alt", "/mnt/library"),
         ]
         assert mock_sync.call_args.kwargs["user_id"] == "nav-user"
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestNavidromeServiceDescriptorResolution:
+    """Tests for ``NavidromeService.resolve_files_to_descriptors``."""
+
+    def test_resolve_files_to_descriptors_returns_descriptor_map(self) -> None:
+        service, _ = _make_service()
+
+        with (
+            patch(
+                "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
+                return_value=[{"_id": "library_files/track-1", "_key": "track-1"}],
+            ) as mock_get_files,
+            patch(
+                "nomarr.services.domain.navidrome_svc.build_track_descriptor",
+                return_value={
+                    "title": "Song A",
+                    "artist": "Artist A",
+                    "album": "Album A",
+                    "album_artist": "",
+                    "duration_ms": None,
+                    "track_number": None,
+                    "disc_number": None,
+                    "year": None,
+                    "musicbrainz_track_id": None,
+                    "musicbrainz_recording_id": None,
+                    "nomarr_file_key": "track-1",
+                },
+            ) as mock_build,
+        ):
+            descriptors = service.resolve_files_to_descriptors(["library_files/track-1"])
+
+        assert descriptors == {
+            "library_files/track-1": {
+                "title": "Song A",
+                "artist": "Artist A",
+                "album": "Album A",
+                "album_artist": "",
+                "duration_ms": None,
+                "track_number": None,
+                "disc_number": None,
+                "year": None,
+                "musicbrainz_track_id": None,
+                "musicbrainz_recording_id": None,
+                "nomarr_file_key": "track-1",
+            },
+        }
+        mock_get_files.assert_called_once_with(service._db, ["library_files/track-1"])
+        mock_build.assert_called_once()
+
+    def test_resolve_files_to_descriptors_ignores_docs_without_id(self) -> None:
+        service, _ = _make_service()
+
+        with patch(
+            "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
+            return_value=[{"_key": "missing-id"}],
+        ):
+            descriptors = service.resolve_files_to_descriptors(["library_files/track-1"])
+
+        assert descriptors == {}

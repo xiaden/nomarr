@@ -194,7 +194,7 @@ class PlaylistResultResponse(BaseModel):
 
     playlist_type: str
     playlist_name: str
-    track_nd_ids: list[str]
+    songs: list[SeedTrackDescriptor]
     track_count: int
 
 
@@ -254,9 +254,10 @@ async def navidrome_generate_playlists(
             playlists=[],
         )
 
-    # Resolve internal file_ids to Navidrome track IDs (external concern).
+    # Resolve internal file_ids to portable descriptors for plugin-side
+    # Navidrome mediafile-ID resolution.
     all_file_ids = list({fid for playlist in result.playlists for fid in playlist["file_ids"]})
-    nd_map = await asyncio.to_thread(svc.resolve_files_to_nd, all_file_ids) if all_file_ids else {}
+    descriptor_map = await asyncio.to_thread(svc.resolve_files_to_descriptors, all_file_ids) if all_file_ids else {}
 
     return GeneratePlaylistsResponse(
         status=result.status,
@@ -265,8 +266,8 @@ async def navidrome_generate_playlists(
             PlaylistResultResponse(
                 playlist_type=playlist["playlist_type"],
                 playlist_name=playlist["playlist_name"],
-                track_nd_ids=[nd_map[fid] for fid in playlist["file_ids"] if fid in nd_map],
-                track_count=len([fid for fid in playlist["file_ids"] if fid in nd_map]),
+                songs=[SeedTrackDescriptor(**descriptor_map[fid]) for fid in playlist["file_ids"] if fid in descriptor_map],
+                track_count=len([fid for fid in playlist["file_ids"] if fid in descriptor_map]),
             )
             for playlist in result.playlists
         ],

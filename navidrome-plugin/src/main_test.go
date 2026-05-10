@@ -184,3 +184,76 @@ func TestResultDescriptorDoesNotResolveFromSeedCandidatePool(t *testing.T) {
 		t.Fatalf("expected seed to resolve in seed pool, got status=%q id=%q", seedStatus, seedResolved.ID)
 	}
 }
+
+func TestResolveDescriptorsToSongIDs(t *testing.T) {
+	descriptors := []nomarrSongDescriptor{
+		{Title: "Song A", Artist: "Artist A", Album: "Album A", DurationMs: intPtr(200000)},
+		{Title: "Song B", Artist: "Artist B", Album: "Album B", DurationMs: intPtr(210000)},
+		{Title: "Song C", Artist: "Artist C", Album: "Album C", DurationMs: intPtr(220000)},
+	}
+
+	candidateByTitle := map[string][]subsonicSong{
+		"Song A": {
+			{ID: "nd-a", Title: "Song A", Artist: "Artist A", Album: "Album A", DurationMs: intPtr(200000)},
+		},
+		"Song B": {
+			{ID: "nd-b1", Title: "Song B", Artist: "Artist B", Album: "Album B", DurationMs: intPtr(210000)},
+			{ID: "nd-b2", Title: "Song B", Artist: "Artist B", Album: "Album B", DurationMs: intPtr(210000)},
+		},
+		"Song C": {},
+	}
+
+	resolvedIDs, unresolved, ambiguous, err := resolveDescriptorsToSongIDs(
+		descriptors,
+		func(descriptor nomarrSongDescriptor) ([]subsonicSong, error) {
+			return candidateByTitle[descriptor.Title], nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resolvedIDs) != 1 || resolvedIDs[0] != "nd-a" {
+		t.Fatalf("unexpected resolved IDs: %#v", resolvedIDs)
+	}
+	if unresolved != 1 {
+		t.Fatalf("expected 1 unresolved, got %d", unresolved)
+	}
+	if ambiguous != 1 {
+		t.Fatalf("expected 1 ambiguous, got %d", ambiguous)
+	}
+}
+
+func TestResolveDescriptorsToSongIDsUsesPerResultMetadata(t *testing.T) {
+	descriptors := []nomarrSongDescriptor{
+		{Title: "Result A", Artist: "Artist A", Album: "Album A", DurationMs: intPtr(200000)},
+		{Title: "Result B", Artist: "Artist B", Album: "Album B", DurationMs: intPtr(210000)},
+	}
+
+	calls := make([]string, 0, len(descriptors))
+	resolvedIDs, unresolved, ambiguous, err := resolveDescriptorsToSongIDs(
+		descriptors,
+		func(descriptor nomarrSongDescriptor) ([]subsonicSong, error) {
+			calls = append(calls, descriptor.Title)
+			if descriptor.Title == "Result A" {
+				return []subsonicSong{
+					{ID: "nd-a", Title: "Result A", Artist: "Artist A", Album: "Album A", DurationMs: intPtr(200000)},
+				}, nil
+			}
+			return []subsonicSong{
+				{ID: "nd-b", Title: "Result B", Artist: "Artist B", Album: "Album B", DurationMs: intPtr(210000)},
+			}, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(calls) != 2 || calls[0] != "Result A" || calls[1] != "Result B" {
+		t.Fatalf("expected per-result descriptor fetch calls, got %#v", calls)
+	}
+	if unresolved != 0 || ambiguous != 0 {
+		t.Fatalf("expected no unresolved/ambiguous, got unresolved=%d ambiguous=%d", unresolved, ambiguous)
+	}
+	if len(resolvedIDs) != 2 || resolvedIDs[0] != "nd-a" || resolvedIDs[1] != "nd-b" {
+		t.Fatalf("unexpected resolved IDs: %#v", resolvedIDs)
+	}
+}

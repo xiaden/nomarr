@@ -186,7 +186,7 @@ class TestGeneratePlaylistsEndpoint:
             "playlists": [],
         }
 
-    def test_success_returns_playlists_with_nd_ids(
+    def test_success_returns_playlists_with_descriptors(
         self,
         client: TestClient,
         mock_navidrome_service: MagicMock,
@@ -202,8 +202,20 @@ class TestGeneratePlaylistsEndpoint:
                 },
             ],
         )
-        mock_navidrome_service.resolve_files_to_nd.return_value = {
-            "library_files/track-1": "nd-abc",
+        mock_navidrome_service.resolve_files_to_descriptors.return_value = {
+            "library_files/track-1": {
+                "title": "Song A",
+                "artist": "Artist A",
+                "album": "Album A",
+                "album_artist": "Album Artist A",
+                "duration_ms": 201000,
+                "track_number": 3,
+                "disc_number": 1,
+                "year": 2024,
+                "musicbrainz_track_id": "mb-track",
+                "musicbrainz_recording_id": "mb-recording",
+                "nomarr_file_key": "track-1",
+            },
         }
 
         response = client.post(
@@ -219,14 +231,29 @@ class TestGeneratePlaylistsEndpoint:
                 {
                     "playlist_type": "familiar",
                     "playlist_name": "Familiar Favorites",
-                    "track_nd_ids": ["nd-abc"],
+                    "songs": [
+                        {
+                            "title": "Song A",
+                            "artist": "Artist A",
+                            "album": "Album A",
+                            "album_artist": "Album Artist A",
+                            "duration_ms": 201000,
+                            "track_number": 3,
+                            "disc_number": 1,
+                            "year": 2024,
+                            "musicbrainz_track_id": "mb-track",
+                            "musicbrainz_recording_id": "mb-recording",
+                            "nomarr_file_key": "track-1",
+                        }
+                    ],
                     "track_count": 1,
                 },
             ],
         }
-        mock_navidrome_service.resolve_files_to_nd.assert_called_once_with(
+        mock_navidrome_service.resolve_files_to_descriptors.assert_called_once_with(
             ["library_files/track-1"],
         )
+        mock_navidrome_service.resolve_files_to_nd.assert_not_called()
 
     def test_misconfigured_status_on_result_returns_422(
         self,
