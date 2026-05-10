@@ -93,7 +93,12 @@ def _normalized(value: str) -> str:
     return normalize_title(value) if value else ""
 
 
-def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> str | None:
+def build_track_descriptor(file_doc: dict[str, Any]) -> TrackDescriptor:
+    """Build a portable descriptor from hydrated ``library_files`` metadata."""
+    return _descriptor_from_doc(file_doc)
+
+
+def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tuple[str | None, str]:
     """Resolve a portable seed descriptor to one Nomarr ``library_files/_id``."""
     rows = get_tracks_for_matching(db)
     file_ids = [row["_id"] for row in rows if isinstance(row.get("_id"), str)]
@@ -114,9 +119,9 @@ def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> str 
             or (mb_recording and (descriptor.get("musicbrainz_recording_id") or "").casefold() == mb_recording)
         ]
         if len(mb_matches) == 1:
-            return mb_matches[0]
+            return mb_matches[0], ""
         if len(mb_matches) > 1:
-            return None
+            return None, "descriptor_ambiguous"
 
     title = _normalized(seed.get("title", ""))
     artist = normalize_artist(seed.get("artist", "")) if seed.get("artist") else ""
@@ -132,9 +137,9 @@ def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> str 
         and _duration_close(descriptor.get("duration_ms"), seed.get("duration_ms"))
     ]
     if len(step2_matches) == 1:
-        return step2_matches[0]
+        return step2_matches[0], ""
     if len(step2_matches) > 1:
-        return None
+        return None, "descriptor_ambiguous"
 
     step3_matches = [
         file_id
@@ -146,9 +151,9 @@ def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> str 
         and descriptor.get("disc_number") == seed.get("disc_number")
     ]
     if len(step3_matches) == 1:
-        return step3_matches[0]
+        return step3_matches[0], ""
     if len(step3_matches) > 1:
-        return None
+        return None, "descriptor_ambiguous"
 
     step4_matches = [
         file_id
@@ -158,9 +163,9 @@ def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> str 
         and _duration_close(descriptor.get("duration_ms"), seed.get("duration_ms"))
     ]
     if len(step4_matches) == 1:
-        return step4_matches[0]
+        return step4_matches[0], ""
     if len(step4_matches) > 1:
-        return None
+        return None, "descriptor_ambiguous"
 
     fallback_matches = [
         file_id
@@ -168,6 +173,7 @@ def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> str 
         if _normalized(descriptor["title"]) == title and normalize_artist(descriptor["artist"]) == artist
     ]
     if len(fallback_matches) == 1:
-        return fallback_matches[0]
-    return None
-
+        return fallback_matches[0], ""
+    if len(fallback_matches) > 1:
+        return None, "descriptor_ambiguous"
+    return None, "descriptor_unresolved"

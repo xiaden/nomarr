@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"unicode"
 
 	"github.com/navidrome/navidrome/plugins/pdk/go/host"
 	"github.com/navidrome/navidrome/plugins/pdk/go/metadata"
@@ -67,7 +68,8 @@ func readConfig() (nomarrURL string, apiKey string, ok bool) {
 
 func safeGetConfig(key string) (value string, ok bool) {
 	defer func() {
-		if recover() != nil {
+		if recovered := recover(); recovered != nil {
+			fmt.Printf("nomarr: recovered panic from pdk.GetConfig(%q): %v\n", key, recovered)
 			value = ""
 			ok = false
 		}
@@ -77,7 +79,9 @@ func safeGetConfig(key string) (value string, ok bool) {
 
 func safeLog(level pdk.LogLevel, message string) {
 	defer func() {
-		_ = recover()
+		if recovered := recover(); recovered != nil {
+			fmt.Printf("nomarr: recovered panic from pdk.Log: %v\n", recovered)
+		}
 	}()
 	pdk.Log(level, message)
 }
@@ -238,13 +242,15 @@ func parseIntPointer(value string) *int {
 		return nil
 	}
 	parsed := 0
+	hasDigit := false
 	for _, ch := range value {
 		if ch < '0' || ch > '9' {
 			continue
 		}
+		hasDigit = true
 		parsed = (parsed * 10) + int(ch-'0')
 	}
-	if parsed == 0 {
+	if !hasDigit {
 		return nil
 	}
 	return &parsed
@@ -267,7 +273,7 @@ func normalizeText(value string) string {
 	var b strings.Builder
 	lastWasSpace := false
 	for _, ch := range trimmed {
-		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') {
+		if unicode.IsLetter(ch) || unicode.IsDigit(ch) {
 			b.WriteRune(ch)
 			lastWasSpace = false
 			continue

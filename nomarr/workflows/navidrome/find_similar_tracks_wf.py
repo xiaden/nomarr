@@ -11,7 +11,11 @@ from nomarr.components.ml.vectors.ml_vector_retrieve_comp import (
     get_cold_track_vector,
     search_similar_cold_track_vectors,
 )
-from nomarr.components.navidrome.descriptor_match_comp import TrackDescriptor, resolve_seed_descriptor_to_file
+from nomarr.components.navidrome.descriptor_match_comp import (
+    TrackDescriptor,
+    build_track_descriptor,
+    resolve_seed_descriptor_to_file,
+)
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -70,8 +74,11 @@ def find_similar_tracks(
 
     """
     # 1. Resolve seed descriptor to Nomarr file_id
-    seed_file_id = resolve_seed_descriptor_to_file(db, seed_descriptor)
+    seed_file_id, seed_resolution_status = resolve_seed_descriptor_to_file(db, seed_descriptor)
     if seed_file_id is None:
+        if seed_resolution_status == "descriptor_ambiguous":
+            msg = "Seed descriptor matched multiple tracks in Nomarr and is ambiguous."
+            raise ValueError(msg)
         msg = "Seed descriptor could not be resolved to an analyzed Nomarr track."
         raise ValueError(msg)
 
@@ -127,44 +134,21 @@ def find_similar_tracks(
     for result in results:
         file_id = result["file_id"]
         doc = file_docs_by_id.get(file_id, {})
-        tags = {
-            str(tag.get("key", "")).casefold(): str(tag.get("value", ""))
-            for tag in doc.get("tags", [])
-            if isinstance(tag, dict) and isinstance(tag.get("key"), str)
-        }
-        duration_seconds = doc.get("duration_seconds")
-        duration_ms = int(float(duration_seconds) * 1000.0) if isinstance(duration_seconds, (int, float)) else None
-        track_number_raw = tags.get("track_number") or tags.get("tracknumber") or ""
-        disc_number_raw = tags.get("disc_number") or tags.get("discnumber") or ""
+        descriptor = build_track_descriptor(doc)
 
         output.append(
             SimilarTrackResult(
-                title=doc.get("title", ""),
-                artist=doc.get("artist", ""),
-                album=doc.get("album", ""),
-                album_artist=tags.get("album_artist", tags.get("albumartist", "")),
-                duration_ms=duration_ms,
-                track_number=int("".join(ch for ch in track_number_raw if ch.isdigit()))
-                if any(ch.isdigit() for ch in track_number_raw)
-                else None,
-                disc_number=int("".join(ch for ch in disc_number_raw if ch.isdigit()))
-                if any(ch.isdigit() for ch in disc_number_raw)
-                else None,
-                year=doc.get("year") if isinstance(doc.get("year"), int) else None,
-                musicbrainz_track_id=(
-                    tags.get("musicbrainz_trackid")
-                    or tags.get("musicbrainz_track_id")
-                    or tags.get("musicbrainz/release track id")
-                    or None
-                ),
-                musicbrainz_recording_id=(
-                    tags.get("musicbrainz_recordingid")
-                    or tags.get("musicbrainz_recording_id")
-                    or tags.get("musicbrainzid")
-                    or tags.get("musicbrainz_id")
-                    or None
-                ),
-                nomarr_file_key=doc.get("_key"),
+                title=descriptor["title"],
+                artist=descriptor["artist"],
+                album=descriptor["album"],
+                album_artist=descriptor["album_artist"],
+                duration_ms=descriptor["duration_ms"],
+                track_number=descriptor["track_number"],
+                disc_number=descriptor["disc_number"],
+                year=descriptor["year"],
+                musicbrainz_track_id=descriptor["musicbrainz_track_id"],
+                musicbrainz_recording_id=descriptor["musicbrainz_recording_id"],
+                nomarr_file_key=descriptor["nomarr_file_key"],
                 score=float(result["score"]),
             )
         )

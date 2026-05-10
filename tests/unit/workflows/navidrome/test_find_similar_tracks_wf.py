@@ -49,6 +49,7 @@ def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
 def _make_db(
     *,
     seed_file_id: str | None = "library_files/seed-file",
+    seed_resolution_status: str = "",
     seed_vector: list[float] | None = None,
     ann_results: list[dict] | None = None,
     file_docs: list[dict] | None = None,
@@ -62,7 +63,7 @@ def _make_db(
         file_docs = []
 
     db = MagicMock()
-    db._resolve_seed_descriptor_to_file = MagicMock(return_value=seed_file_id)
+    db._resolve_seed_descriptor_to_file = MagicMock(return_value=(seed_file_id, seed_resolution_status))
     db._get_cold_track_vector = MagicMock(
         return_value={"vector_n": seed_vector, "file_id": seed_file_id} if seed_file_id else None,
     )
@@ -144,9 +145,16 @@ class TestFindSimilarTracksErrors:
 
     @pytest.mark.unit
     def test_raises_when_seed_descriptor_not_resolved(self) -> None:
-        db = _make_db(seed_file_id=None)
+        db = _make_db(seed_file_id=None, seed_resolution_status="descriptor_unresolved")
 
         with pytest.raises(ValueError, match="Seed descriptor could not be resolved"):
+            find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
+
+    @pytest.mark.unit
+    def test_raises_when_seed_descriptor_ambiguous(self) -> None:
+        db = _make_db(seed_file_id=None, seed_resolution_status="descriptor_ambiguous")
+
+        with pytest.raises(ValueError, match="is ambiguous"):
             find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
 
     @pytest.mark.unit
