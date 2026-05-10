@@ -203,7 +203,7 @@ func TestResolveDescriptorsToSongIDs(t *testing.T) {
 		"Song C": {},
 	}
 
-	resolvedIDs, unresolved, ambiguous, err := resolveDescriptorsToSongIDs(
+	resolution, err := resolveDescriptorsToSongIDs(
 		descriptors,
 		func(descriptor nomarrSongDescriptor) ([]subsonicSong, error) {
 			return candidateByTitle[descriptor.Title], nil
@@ -212,14 +212,14 @@ func TestResolveDescriptorsToSongIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(resolvedIDs) != 1 || resolvedIDs[0] != "nd-a" {
-		t.Fatalf("unexpected resolved IDs: %#v", resolvedIDs)
+	if len(resolution.ResolvedIDs) != 1 || resolution.ResolvedIDs[0] != "nd-a" {
+		t.Fatalf("unexpected resolved IDs: %#v", resolution.ResolvedIDs)
 	}
-	if unresolved != 1 {
-		t.Fatalf("expected 1 unresolved, got %d", unresolved)
+	if resolution.UnresolvedCount != 1 {
+		t.Fatalf("expected 1 unresolved, got %d", resolution.UnresolvedCount)
 	}
-	if ambiguous != 1 {
-		t.Fatalf("expected 1 ambiguous, got %d", ambiguous)
+	if resolution.AmbiguousCount != 1 {
+		t.Fatalf("expected 1 ambiguous, got %d", resolution.AmbiguousCount)
 	}
 }
 
@@ -230,7 +230,7 @@ func TestResolveDescriptorsToSongIDsUsesPerResultMetadata(t *testing.T) {
 	}
 
 	calls := make([]string, 0, len(descriptors))
-	resolvedIDs, unresolved, ambiguous, err := resolveDescriptorsToSongIDs(
+	resolution, err := resolveDescriptorsToSongIDs(
 		descriptors,
 		func(descriptor nomarrSongDescriptor) ([]subsonicSong, error) {
 			calls = append(calls, descriptor.Title)
@@ -250,10 +250,14 @@ func TestResolveDescriptorsToSongIDsUsesPerResultMetadata(t *testing.T) {
 	if len(calls) != 2 || calls[0] != "Result A" || calls[1] != "Result B" {
 		t.Fatalf("expected per-result descriptor fetch calls, got %#v", calls)
 	}
-	if unresolved != 0 || ambiguous != 0 {
-		t.Fatalf("expected no unresolved/ambiguous, got unresolved=%d ambiguous=%d", unresolved, ambiguous)
+	if resolution.UnresolvedCount != 0 || resolution.AmbiguousCount != 0 {
+		t.Fatalf(
+			"expected no unresolved/ambiguous, got unresolved=%d ambiguous=%d",
+			resolution.UnresolvedCount,
+			resolution.AmbiguousCount,
+		)
 	}
-	if len(resolvedIDs) != 2 || resolvedIDs[0] != "nd-a" || resolvedIDs[1] != "nd-b" {
-		t.Fatalf("unexpected resolved IDs: %#v", resolvedIDs)
+	if len(resolution.ResolvedIDs) != 2 || resolution.ResolvedIDs[0] != "nd-a" || resolution.ResolvedIDs[1] != "nd-b" {
+		t.Fatalf("unexpected resolved IDs: %#v", resolution.ResolvedIDs)
 	}
 }
