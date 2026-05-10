@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import yaml
 
@@ -218,8 +218,8 @@ class Database:
     has_nd_id: HasNdId
     has_plays: HasPlays
     migrations: Migrations
-    libraries_aql: LibrariesAqlOperations
-    library_files_aql: LibraryFilesAqlOperations
+    _libraries_aql: LibrariesAqlOperations
+    _library_files_aql: LibraryFilesAqlOperations
 
     USERNAME = "nomarr"
     DB_NAME = "nomarr"
@@ -265,8 +265,8 @@ class Database:
             password=self.password,
             db_name=self.db_name,
         )
-        self.libraries_aql = LibrariesAqlOperations(self.db)
-        self.library_files_aql = LibraryFilesAqlOperations(self.db)
+        self._libraries_aql = LibrariesAqlOperations(self.db)
+        self._library_files_aql = LibraryFilesAqlOperations(self.db)
 
         self._document_collections: list[DocumentCollection] = []
         self._edge_collections: list[EdgeCollection] = []
@@ -275,6 +275,45 @@ class Database:
 
         self._bind_static_collections()
         self._compile_all_cascades()
+
+    def add_library(self, payload: dict[str, Any]) -> str:
+        """Insert one library document."""
+        return self._libraries_aql.insert_library(payload)
+
+    def get_library(self, library_id_or_key: str) -> dict[str, Any] | None:
+        """Get one library by full ``_id`` or bare ``_key``."""
+        if library_id_or_key.startswith("libraries/"):
+            return self._libraries_aql.get_library_by_id(library_id_or_key)
+        return self._libraries_aql.get_library_by_key(library_id_or_key)
+
+    def get_library_by_name(self, name: str) -> dict[str, Any] | None:
+        """Get one library by unique name."""
+        return self._libraries_aql.get_library_by_name(name)
+
+    def list_libraries(self, *, enabled_only: bool = False) -> list[dict[str, Any]]:
+        """List library documents, optionally restricted to enabled rows."""
+        return self._libraries_aql.list_libraries(enabled_only=enabled_only)
+
+    def list_library_keys(self) -> list[str]:
+        """Return all library document keys."""
+        return self._libraries_aql.list_library_keys()
+
+    def update_library(self, library_id: str, fields: dict[str, Any]) -> None:
+        """Update one library by id (accepts ``libraries/<key>`` or bare key)."""
+        normalized_id = library_id if library_id.startswith("libraries/") else f"libraries/{library_id}"
+        self._libraries_aql.update_library_by_id(normalized_id, fields)
+
+    def list_library_file_ids(self, *, limit: int | None = None) -> list[str]:
+        """Return ordered library-file document ids."""
+        return self._library_files_aql.list_all_file_ids(limit=limit)
+
+    def count_files_by_tag(self, tag_key: str, target_value: float | str) -> int:
+        """Count files matching tag criteria."""
+        return self._library_files_aql.count_files_by_tag(tag_key, target_value)
+
+    def get_tracks_for_matching(self, *, library_id: str | None = None) -> list[dict[str, Any]]:
+        """Return fuzzy matching track projection rows."""
+        return self._library_files_aql.get_tracks_for_matching(library_id=library_id)
 
     def register(self, collection_name: str, template_name: str) -> VectorCollection:
         """Compatibility-only seam for runtime vector collection registration.

@@ -587,7 +587,7 @@ def get_sample_normalized_path(db: Database) -> str | None:
 
 def list_all_file_ids(db: Database, limit: int | None = None) -> list[str]:
     """Return all library-file ids ordered by ``_key``."""
-    return db.library_files_aql.list_all_file_ids(limit=limit)
+    return db.list_library_file_ids(limit=limit)
 
 
 def get_folder_rel_paths(db: Database, library_id: str) -> set[str]:
@@ -804,7 +804,7 @@ def search_files_by_tag(
 
 def count_files_by_tag(db: Database, tag_key: str, target_value: float | str) -> int:
     """Count files that match a tag-value filter."""
-    return db.library_files_aql.count_files_by_tag(tag_key, target_value)
+    return db.count_files_by_tag(tag_key, target_value)
 
 
 def get_files_by_chromaprint(
@@ -846,4 +846,4 @@ def get_tracks_by_file_ids(
 
 def get_tracks_for_matching(db: Database, library_id: str | None = None) -> list[dict[str, Any]]:
     """Get track rows for fuzzy playlist matching, optionally scoped to a library."""
-    return db.library_files_aql.get_tracks_for_matching(library_id=library_id)
+    return db.get_tracks_for_matching(library_id=library_id)

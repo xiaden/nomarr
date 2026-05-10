@@ -738,25 +738,25 @@ class TestPhaseTwoQueryHelpers:
     @pytest.mark.unit
     def test_count_files_by_tag_uses_exact_and_numeric_constructor_lookups(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files_aql.count_files_by_tag.return_value = 2
+        mock_db.count_files_by_tag.return_value = 2
 
         string_count = count_files_by_tag(mock_db, "genre", "rock")
 
         assert string_count == 2
-        mock_db.library_files_aql.count_files_by_tag.assert_called_once_with("genre", "rock")
+        mock_db.count_files_by_tag.assert_called_once_with("genre", "rock")
 
         mock_db = MagicMock()
-        mock_db.library_files_aql.count_files_by_tag.return_value = 1
+        mock_db.count_files_by_tag.return_value = 1
 
         numeric_count = count_files_by_tag(mock_db, "nom:bpm", 120.0)
 
         assert numeric_count == 1
-        mock_db.library_files_aql.count_files_by_tag.assert_called_once_with("nom:bpm", 120.0)
+        mock_db.count_files_by_tag.assert_called_once_with("nom:bpm", 120.0)
 
     @pytest.mark.unit
     def test_get_tracks_for_matching_filters_valid_files_and_projects_isrc(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files_aql.get_tracks_for_matching.return_value = [
+        mock_db.get_tracks_for_matching.return_value = [
             {
                 "_id": "library_files/1",
                 "path": "D:/Music/song.flac",
@@ -779,12 +779,12 @@ class TestPhaseTwoQueryHelpers:
                 "isrc": "ABC123",
             }
         ]
-        mock_db.library_files_aql.get_tracks_for_matching.assert_called_once_with(library_id=None)
+        mock_db.get_tracks_for_matching.assert_called_once_with(library_id=None)
 
     @pytest.mark.unit
     def test_get_tracks_for_matching_scopes_to_library_and_projects_isrc(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files_aql.get_tracks_for_matching.return_value = [
+        mock_db.get_tracks_for_matching.return_value = [
             {
                 "_id": "library_files/1",
                 "path": "D:/Music/song.flac",
@@ -807,7 +807,7 @@ class TestPhaseTwoQueryHelpers:
                 "isrc": "XYZ789",
             }
         ]
-        mock_db.library_files_aql.get_tracks_for_matching.assert_called_once_with(library_id="main")
+        mock_db.get_tracks_for_matching.assert_called_once_with(library_id="main")
 
     @pytest.mark.unit
     def test_clear_library_data_truncates_all_collections(self) -> None:
