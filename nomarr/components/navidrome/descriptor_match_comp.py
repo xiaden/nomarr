@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
-from nomarr.components.library.library_file_query_comp import get_files_by_ids_with_tags, get_tracks_for_matching
+from nomarr.components.library.library_file_query_comp import get_files_by_ids_with_tags
 from nomarr.components.playlist_import.metadata_normalizer_comp import normalize_artist, normalize_title
+from nomarr.persistence.base_types import Field
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -98,11 +99,57 @@ def build_track_descriptor(file_doc: dict[str, Any]) -> TrackDescriptor:
     return _descriptor_from_doc(file_doc)
 
 
+def _file_ids_for_tag_values(db: Database, keys: tuple[str, ...], value: str) -> set[str]:
+    if not value:
+        return set()
+    tag_ids = {
+        tag_id
+        for key in keys
+        for tag_doc in cast("list[dict[str, Any]]", db.tags.get(name=key, value=value, limit=None))
+        if isinstance((tag_id := tag_doc.get("_id")), str)
+    }
+    if not tag_ids:
+        return set()
+    edges = cast("list[dict[str, Any]]", db.song_has_tags.get.in_(Field("_to", list(tag_ids)), limit=None))
+    return {file_id for edge in edges if isinstance((file_id := edge.get("_from")), str)}
+
+
+def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
+    mb_track = (seed.get("musicbrainz_track_id") or "").strip()
+    mb_recording = (seed.get("musicbrainz_recording_id") or "").strip()
+    if mb_track or mb_recording:
+        mb_ids = _file_ids_for_tag_values(
+            db,
+            ("musicbrainz_trackid", "musicbrainz_track_id", "musicbrainz/release track id"),
+            mb_track,
+        ) | _file_ids_for_tag_values(
+            db,
+            ("musicbrainz_recordingid", "musicbrainz_recording_id", "musicbrainzid", "musicbrainz_id"),
+            mb_recording,
+        )
+        if mb_ids:
+            return mb_ids
+
+    title = seed.get("title", "")
+    if title:
+        title_docs = cast("list[dict[str, Any]]", db.library_files.get.many(title=title, limit=None))
+        return {file_id for doc in title_docs if isinstance((file_id := doc.get("_id")), str)}
+
+    artist = seed.get("artist", "")
+    if artist:
+        artist_docs = cast("list[dict[str, Any]]", db.library_files.get.many(artist=artist, limit=None))
+        return {file_id for doc in artist_docs if isinstance((file_id := doc.get("_id")), str)}
+
+    return set()
+
+
 def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tuple[str | None, str]:
     """Resolve a portable seed descriptor to one Nomarr ``library_files/_id``."""
-    rows = get_tracks_for_matching(db)
-    file_ids = [row["_id"] for row in rows if isinstance(row.get("_id"), str)]
-    docs = get_files_by_ids_with_tags(db, file_ids)
+    candidate_ids = _candidate_file_ids(db, seed)
+    if not candidate_ids:
+        return None, "descriptor_unresolved"
+
+    docs = get_files_by_ids_with_tags(db, sorted(candidate_ids))
     descriptors_by_id = {
         file_id: _descriptor_from_doc(file_doc)
         for file_doc in docs

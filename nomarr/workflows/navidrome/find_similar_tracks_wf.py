@@ -1,4 +1,8 @@
-"""Find tracks similar to a portable seed descriptor using vector ANN search."""
+"""Find tracks similar to a portable seed descriptor using vector ANN search.
+
+Plugin recommendation flow is descriptor-only and does not require Nomarr-side
+Navidrome ID mapping.
+"""
 
 from __future__ import annotations
 

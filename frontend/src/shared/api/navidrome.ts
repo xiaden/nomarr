@@ -302,6 +302,8 @@ export interface SyncSongsResponse {
 
 /**
  * Trigger a full Navidrome song sync to graph collections.
+ * Required for backend push/personal playlist flows that resolve file IDs to
+ * Navidrome song IDs. Not required for plugin Instant Mix descriptor flow.
  */
 export async function syncNavidromeSongs(): Promise<SyncSongsResponse> {
   return post<SyncSongsResponse>("/api/web/navidrome/sync-song");

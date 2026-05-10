@@ -108,3 +108,48 @@ func TestResolveDescriptorAgainstCandidates(t *testing.T) {
 		}
 	})
 }
+
+func TestDescriptorSearchQueryUsesResultDescriptor(t *testing.T) {
+	first := nomarrSongDescriptor{Title: "Seed Song", Artist: "Seed Artist"}
+	second := nomarrSongDescriptor{Title: "Result Song", Artist: "Result Artist"}
+
+	q1 := descriptorSearchQuery(first)
+	q2 := descriptorSearchQuery(second)
+
+	if q1 == q2 {
+		t.Fatalf("expected per-descriptor search queries to differ, got %q", q1)
+	}
+	if q2 != "Result Song Result Artist" {
+		t.Fatalf("unexpected descriptor query: %q", q2)
+	}
+}
+
+func TestPerResultDescriptorResolutionUsesDescriptorSpecificCandidates(t *testing.T) {
+	descriptors := []nomarrSongDescriptor{
+		{Title: "Song A", Artist: "Artist A", Album: "Album A", DurationMs: intPtr(200000)},
+		{Title: "Song B", Artist: "Artist B", Album: "Album B", DurationMs: intPtr(210000)},
+	}
+	candidateByQuery := map[string][]subsonicSong{
+		"Song A Artist A": {
+			{ID: "nd-a", Title: "Song A", Artist: "Artist A", Album: "Album A", DurationMs: intPtr(200000)},
+		},
+		"Song B Artist B": {
+			{ID: "nd-b", Title: "Song B", Artist: "Artist B", Album: "Album B", DurationMs: intPtr(210000)},
+		},
+	}
+
+	resolvedIDs := make([]string, 0, len(descriptors))
+	for _, descriptor := range descriptors {
+		query := descriptorSearchQuery(descriptor)
+		candidates := candidateByQuery[query]
+		resolved, status := resolveDescriptorAgainstCandidates(descriptor, candidates)
+		if status != "" {
+			t.Fatalf("expected descriptor %q to resolve, got status %q", descriptor.Title, status)
+		}
+		resolvedIDs = append(resolvedIDs, resolved.ID)
+	}
+
+	if len(resolvedIDs) != 2 || resolvedIDs[0] != "nd-a" || resolvedIDs[1] != "nd-b" {
+		t.Fatalf("unexpected resolved IDs: %#v", resolvedIDs)
+	}
+}

@@ -17,6 +17,11 @@ Nomarr can generate smart playlists for [Navidrome](https://www.navidrome.org/) 
 - **Song sync** to pull your Navidrome library into Nomarr for cross-referencing
 - **Connectivity testing** to verify your Navidrome connection
 
+**Flow boundary:**
+
+- **Plugin Instant Mix / similar-track**: descriptor-only flow; plugin resolves Navidrome IDs locally.
+- **Backend push / personal playlists**: may use Nomarr’s synced Navidrome ID mapping for file-id → song-id translation.
+
 ---
 
 ## How It Works
@@ -77,12 +82,15 @@ Click the **Ping** button to verify Nomarr can reach your Navidrome server. You 
 !!! tip
     If Navidrome and Nomarr both run in Docker, use the Navidrome container name and internal port (e.g., `http://navidrome:4533`). They must share a Docker network.
 
-### 4. Sync Songs (Optional but Recommended)
+### 4. Sync Songs (Optional; non-plugin flows)
 
 Click **Sync Songs** to pull your Navidrome library into Nomarr’s database. This enables:
 
 - Resolving Nomarr file IDs to Navidrome song IDs when pushing playlists
 - Better cross-referencing between the two systems
+
+Sync is **not required** for Navidrome plugin Instant Mix / similar-track recommendations.
+That plugin flow uses portable descriptors and resolves Navidrome IDs inside the plugin.
 
 ---
 
@@ -161,7 +169,8 @@ Instead of downloading `.nsp` files, you can push playlists directly to Navidrom
 5. The playlist is created (or updated) in Navidrome via the Subsonic API
 
 !!! note
-    Push requires that you’ve run **Sync Songs** at least once so Nomarr can map its files to Navidrome’s song IDs.
+    Push and other backend-managed playlist flows require **Sync Songs** so Nomarr can map file IDs to Navidrome song IDs.
+    This requirement does **not** apply to plugin Instant Mix recommendations.
 
 ---
 
@@ -223,7 +232,7 @@ Nomarr can generate playlists automatically based on your Navidrome play history
 ### Prerequisites
 
 1. **Navidrome connection configured** — URL, username, and password saved
-2. **Sync Songs run** — Nomarr must have an up-to-date copy of Navidrome's library
+2. **Sync Songs run** — required for backend-managed playlist push/personal playlist flows
 3. **Music processed** — Tracks need ML embeddings; run a library scan first
 4. **`pp_enabled`** set to `true` in settings
 
@@ -289,7 +298,7 @@ Returns `status: "ok"` with a list of generated playlists, or `status: "no_data"
 
 **Solutions:**
 
-1. **Run Sync Songs** — Nomarr needs an up-to-date copy of Navidrome’s library to resolve file IDs to song IDs
+1. **Run Sync Songs** — required for backend push flows that resolve file IDs to Navidrome song IDs
 2. **Check library paths** — Both Nomarr and Navidrome must see the same music files. Path mismatches prevent song resolution.
 
 ### Empty Playlist Results
@@ -335,7 +344,7 @@ For programmatic access, Nomarr provides a full REST API for all Navidrome opera
 1. **Process your music** — Scan and process your library in Nomarr (see [Getting Started](getting_started.md))
 2. **Configure Navidrome connection** — Go to Navidrome page → API Settings → enter URL, username, password → Save
 3. **Test connectivity** — Click Ping to verify the connection works
-4. **Sync songs** — Click Sync Songs to import Navidrome’s library
+4. **Sync songs** — optional for plugin Instant Mix; required for backend push/personal playlist flows
 
 ### Creating Playlists
 
@@ -347,7 +356,7 @@ For programmatic access, Nomarr provides a full REST API for all Navidrome opera
 ### Ongoing Use
 
 - After processing new music, revisit the Navidrome page to regenerate playlists
-- Run Sync Songs periodically if your Navidrome library changes independently
+- Run Sync Songs periodically if you use backend push/personal playlist flows and your Navidrome library changes independently
 - Use templates for quick batch generation of common playlist types
 
 ---

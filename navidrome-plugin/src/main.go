@@ -450,6 +450,32 @@ func resolveDescriptorAgainstCandidates(descriptor nomarrSongDescriptor, candida
 	return empty, "descriptor_unresolved"
 }
 
+func descriptorSearchQuery(descriptor nomarrSongDescriptor) string {
+	if descriptor.Title == "" {
+		return strings.TrimSpace(descriptor.Artist + " " + descriptor.Album)
+	}
+	if descriptor.Artist != "" {
+		return strings.TrimSpace(descriptor.Title + " " + descriptor.Artist)
+	}
+	if descriptor.AlbumArtist != "" {
+		return strings.TrimSpace(descriptor.Title + " " + descriptor.AlbumArtist)
+	}
+	return strings.TrimSpace(descriptor.Title + " " + descriptor.Album)
+}
+
+func fetchCandidatesForDescriptor(descriptor nomarrSongDescriptor) ([]subsonicSong, error) {
+	query := descriptorSearchQuery(descriptor)
+	if query == "" {
+		return nil, nil
+	}
+	searchEndpoint := "search3?query=" + url.QueryEscape(query) + "&songCount=200"
+	searchResp, err := host.SubsonicAPICall(searchEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	return parseSubsonicSongs(searchResp), nil
+}
+
 // ---------------------------------------------------------------------------
 // Scrobble types (Nomarr API payload)
 // ---------------------------------------------------------------------------
@@ -605,19 +631,6 @@ func (p *nomarrPlugin) GetSimilarSongsByTrack(req metadata.SimilarSongsByTrackRe
 		return empty, fmt.Errorf("nomarr_no_results")
 	}
 
-	searchQuery := strings.TrimSpace(seedSong.Title + " " + seedSong.Artist)
-	searchEndpoint := "search3?query=" + url.QueryEscape(searchQuery) + "&songCount=200"
-	searchResp, err := host.SubsonicAPICall(searchEndpoint)
-	if err != nil {
-		pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: nomarr_unreachable search3 failed for query %q: %v", searchQuery, err))
-		return empty, fmt.Errorf("nomarr_unreachable")
-	}
-	candidates := parseSubsonicSongs(searchResp)
-	if len(candidates) == 0 {
-		pdk.Log(pdk.LogWarn, "nomarr: insufficient_resolved_results search3 returned no candidates")
-		return empty, fmt.Errorf("insufficient_resolved_results")
-	}
-
 	resolvedCount := 0
 	unresolvedCount := 0
 	ambiguousCount := 0
@@ -625,6 +638,24 @@ func (p *nomarrPlugin) GetSimilarSongsByTrack(req metadata.SimilarSongsByTrackRe
 	// Resolve Nomarr descriptors to Navidrome SongRef IDs.
 	songs := make([]metadata.SongRef, 0, len(nomarrResp.Songs))
 	for _, descriptor := range nomarrResp.Songs {
+		candidates, err := fetchCandidatesForDescriptor(descriptor)
+		if err != nil {
+			pdk.Log(
+				pdk.LogError,
+				fmt.Sprintf(
+					"nomarr: nomarr_unreachable search3 failed for descriptor %q/%q: %v",
+					descriptor.Title,
+					descriptor.Artist,
+					err,
+				),
+			)
+			return empty, fmt.Errorf("nomarr_unreachable")
+		}
+		if len(candidates) == 0 {
+			unresolvedCount++
+			continue
+		}
+
 		candidate, status := resolveDescriptorAgainstCandidates(descriptor, candidates)
 		if status == "descriptor_unresolved" {
 			unresolvedCount++

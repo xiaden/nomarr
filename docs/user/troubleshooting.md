@@ -312,6 +312,10 @@ Polling mode checks for changes every 60 seconds, which is slower than event mod
 1. Run **Sync Songs** from the Navidrome page to refresh the mapping
 2. Ensure both Nomarr and Navidrome point to the **same music files** (paths may differ between containers, but the actual files must be the same)
 
+!!! note
+    This Sync Songs requirement applies to backend push flows.
+    Navidrome plugin Instant Mix / similar-track recommendations use descriptor resolution in-plugin and do not require Nomarr song-map sync.
+
 ---
 
 ## Calibration
