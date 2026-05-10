@@ -94,9 +94,11 @@ Copy the key value into the plugin's configuration in Navidrome.
 When a user triggers Instant Mix on a track in Navidrome:
 
 1. Navidrome sends the track's mediafile ID to the plugin
-2. The plugin POSTs to Nomarr's `/api/v1/navidrome/similar-tracks` endpoint
+2. The plugin POSTs a portable seed descriptor to Nomarr's
+   `/api/v1/navidrome/similar-track` endpoint
 3. Nomarr performs vector ANN search over ML audio embeddings to find similar tracks
-4. The plugin maps results back to Navidrome mediafile IDs
+4. Nomarr returns portable descriptors for similar tracks
+5. The plugin resolves descriptors to Navidrome mediafile IDs locally
 5. Navidrome creates a playlist from the similar tracks
 
 The plugin uses Navidrome's host HTTP service for network requests, respecting
@@ -206,13 +208,11 @@ request. When omitted, Nomarr uses its normal backend default behavior.
 - Verify Nomarr is reachable from the Navidrome host:
 
   ```bash
-  curl -H "X-API-Key: YOUR_KEY" http://nomarr:8356/api/v1/navidrome/similar-tracks \
+  curl -H "X-API-Key: YOUR_KEY" http://nomarr:8356/api/v1/navidrome/similar-track \
     -H "Content-Type: application/json" \
-    -d '{"song_id": "SOME_NAVIDROME_ID", "count": 10}'
+    -d '{"seed":{"title":"Song","artist":"Artist"},"count":10}'
   ```
 
-- Check that Navidrome's song map is synced (the Nomarr API needs to know the
-  mapping between Navidrome mediafile IDs and Nomarr's internal IDs)
 - Review Navidrome plugin logs for error messages from the nomarr plugin
 
 ### Configuration errors
@@ -226,18 +226,16 @@ request. When omitted, Nomarr uses its normal backend default behavior.
 
 1. Build and deploy the plugin as described above
 2. Configure the plugin with your Nomarr instance URL and API key
-3. Ensure the Navidrome song map is synced (trigger a sync from Nomarr's
-   Navidrome settings page)
-4. In a Navidrome client (web UI or Subsonic app), select a track and click
+3. In a Navidrome client (web UI or Subsonic app), select a track and click
    **Instant Mix** (or "Play Radio")
-5. Check Navidrome logs for plugin invocation messages:
+4. Check Navidrome logs for plugin invocation messages:
 
    ```
-   nomarr: querying http://nomarr:8356/api/v1/navidrome/similar-tracks for song <id>
+   nomarr: querying http://nomarr:8356/api/v1/navidrome/similar-track for song <id>
    nomarr: found N similar tracks for song <id>
    ```
 
-6. Verify similar tracks appear in the generated playlist
+5. Verify similar tracks appear in the generated playlist
 
 ## License
 

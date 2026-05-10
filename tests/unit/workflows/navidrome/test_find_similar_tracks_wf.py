@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
-import logging
 from unittest.mock import MagicMock
 
 import pytest
 
 from nomarr.workflows.navidrome.find_similar_tracks_wf import find_similar_tracks
 
+SEED = {"title": "Seed", "artist": "Artist", "album": "Album"}
+
 
 @pytest.fixture(autouse=True)
 def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Bridge helper-based workflow imports to the existing db mock surface."""
+    """Bridge workflow component calls to the mock DB surface."""
 
+    monkeypatch.setattr(
+        "nomarr.workflows.navidrome.find_similar_tracks_wf.resolve_seed_descriptor_to_file",
+        lambda db, seed_descriptor: db._resolve_seed_descriptor_to_file(seed_descriptor),
+    )
     monkeypatch.setattr(
         "nomarr.workflows.navidrome.find_similar_tracks_wf.get_file_library_key",
         lambda db, file_id: db.library_files.get_file_library_key(file_id),
@@ -21,14 +26,6 @@ def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "nomarr.workflows.navidrome.find_similar_tracks_wf.get_files_by_ids_with_tags",
         lambda db, file_ids: db.library_files.get_files_by_ids_with_tags(file_ids),
-    )
-    monkeypatch.setattr(
-        "nomarr.workflows.navidrome.find_similar_tracks_wf.resolve_navidrome_track_to_file",
-        lambda db, nd_id: db.navidrome_tracks.resolve_nd_to_file(nd_id),
-    )
-    monkeypatch.setattr(
-        "nomarr.workflows.navidrome.find_similar_tracks_wf.bulk_resolve_files_to_navidrome_ids",
-        lambda db, file_ids: db.navidrome_tracks.bulk_resolve_files_to_nd(file_ids),
     )
     monkeypatch.setattr(
         "nomarr.workflows.navidrome.find_similar_tracks_wf.get_cold_track_vector",
@@ -49,17 +46,11 @@ def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 def _make_db(
     *,
-    nd_lookup: str | None = "library_files/seed-file",
+    seed_file_id: str | None = "library_files/seed-file",
     seed_vector: list[float] | None = None,
     ann_results: list[dict] | None = None,
-    nd_bulk_map: dict[str, str] | None = None,
     file_docs: list[dict] | None = None,
 ) -> MagicMock:
     """Build a mock Database with pre-configured return values."""
@@ -67,140 +58,104 @@ def _make_db(
         seed_vector = [0.1, 0.2, 0.3]
     if ann_results is None:
         ann_results = []
-    if nd_bulk_map is None:
-        nd_bulk_map = {}
     if file_docs is None:
         file_docs = []
 
     db = MagicMock()
-
-    # navidrome_tracks
-    db.navidrome_tracks.resolve_nd_to_file.return_value = nd_lookup
-
-    # vector component seams
+    db._resolve_seed_descriptor_to_file = MagicMock(return_value=seed_file_id)
     db._get_cold_track_vector = MagicMock(
-        return_value={"vector_n": seed_vector, "file_id": nd_lookup} if nd_lookup else None,
+        return_value={"vector_n": seed_vector, "file_id": seed_file_id} if seed_file_id else None,
     )
     db._search_similar_cold_track_vectors = MagicMock(return_value=ann_results)
-
-    # bulk ND lookup
-    db.navidrome_tracks.bulk_resolve_files_to_nd.return_value = nd_bulk_map
-
-    # library files metadata
     db.library_files.get_files_by_ids_with_tags.return_value = file_docs
     db.library_files.get_file_library_key.return_value = "test_lib"
-
     return db
 
 
-# ---------------------------------------------------------------------------
-# Happy-path tests
-# ---------------------------------------------------------------------------
-
-
 class TestFindSimilarTracksHappyPath:
-    """Tests for the successful similarity search flow."""
+    """Tests for successful descriptor-based similarity flow."""
 
     @pytest.mark.unit
-    def test_returns_similar_tracks_with_metadata(self) -> None:
-        """Full pipeline: seed → vector → ANN → ND resolve → metadata."""
-        db = _make_db(
-            nd_lookup="library_files/seed-file",
-            seed_vector=[0.1, 0.2, 0.3],
-            ann_results=[
-                {"file_id": "library_files/seed-file", "score": 1.0},  # self-match
-                {"file_id": "library_files/match-1", "score": 0.95},
-                {"file_id": "library_files/match-2", "score": 0.88},
-            ],
-            nd_bulk_map={
-                "library_files/match-1": "nd-id-1",
-                "library_files/match-2": "nd-id-2",
-            },
-            file_docs=[
-                {"_id": "library_files/match-1", "title": "Song A", "artist": "Artist A", "album": "Album A"},
-                {"_id": "library_files/match-2", "title": "Song B", "artist": "Artist B", "album": "Album B"},
-            ],
-        )
-
-        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet", db=db)
-
-        assert len(results) == 2
-        assert results[0]["nd_id"] == "nd-id-1"
-        assert results[0]["name"] == "Song A"
-        assert results[0]["score"] == 0.95
-        assert results[1]["nd_id"] == "nd-id-2"
-        assert results[1]["name"] == "Song B"
-
-    @pytest.mark.unit
-    def test_excludes_seed_track_from_results(self) -> None:
-        """Seed file_id must not appear in output."""
+    def test_returns_portable_descriptors(self) -> None:
         db = _make_db(
             ann_results=[
                 {"file_id": "library_files/seed-file", "score": 1.0},
-                {"file_id": "library_files/other", "score": 0.9},
+                {"file_id": "library_files/match-1", "score": 0.95},
             ],
-            nd_bulk_map={"library_files/other": "nd-other"},
-            file_docs=[{"_id": "library_files/other", "title": "Other", "artist": "A", "album": "B"}],
+            file_docs=[
+                {
+                    "_id": "library_files/match-1",
+                    "_key": "match-1",
+                    "title": "Song A",
+                    "artist": "Artist A",
+                    "album": "Album A",
+                    "duration_seconds": 201.2,
+                    "year": 2024,
+                    "tags": [
+                        {"key": "album_artist", "value": "Album Artist A"},
+                        {"key": "tracknumber", "value": "3"},
+                        {"key": "discnumber", "value": "1"},
+                        {"key": "musicbrainz_trackid", "value": "mb-track"},
+                        {"key": "musicbrainz_recordingid", "value": "mb-recording"},
+                    ],
+                }
+            ],
         )
 
-        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet", db=db)
+        results = find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
 
         assert len(results) == 1
-        assert results[0]["nd_id"] == "nd-other"
+        result = results[0]
+        assert result["title"] == "Song A"
+        assert result["artist"] == "Artist A"
+        assert result["album"] == "Album A"
+        assert result["album_artist"] == "Album Artist A"
+        assert result["duration_ms"] == 201200
+        assert result["track_number"] == 3
+        assert result["disc_number"] == 1
+        assert result["year"] == 2024
+        assert result["musicbrainz_track_id"] == "mb-track"
+        assert result["musicbrainz_recording_id"] == "mb-recording"
+        assert result["nomarr_file_key"] == "match-1"
+        assert result["score"] == 0.95
 
     @pytest.mark.unit
     def test_respects_count_limit(self) -> None:
-        """Output is trimmed to requested count."""
         ann = [{"file_id": f"library_files/f{i}", "score": 0.9 - i * 0.01} for i in range(10)]
-        nd_map = {f"library_files/f{i}": f"nd-{i}" for i in range(10)}
-        docs = [{"_id": f"library_files/f{i}", "title": f"S{i}", "artist": "A", "album": "B"} for i in range(10)]
+        docs = [{"_id": f"library_files/f{i}", "title": f"S{i}", "artist": "A", "album": "B", "tags": []} for i in range(10)]
+        db = _make_db(ann_results=ann, file_docs=docs)
 
-        db = _make_db(ann_results=ann, nd_bulk_map=nd_map, file_docs=docs)
-
-        results = find_similar_tracks("nd-seed", count=3, backbone_id="effnet", db=db)
+        results = find_similar_tracks(SEED, count=3, backbone_id="effnet", db=db)
 
         assert len(results) == 3
 
     @pytest.mark.unit
-    def test_over_fetches_from_ann(self) -> None:
-        """ANN search limit should be count * 2 + 1."""
+    def test_fetches_count_plus_self(self) -> None:
         db = _make_db(ann_results=[])
 
-        find_similar_tracks("nd-seed", count=25, backbone_id="effnet", db=db)
+        find_similar_tracks(SEED, count=25, backbone_id="effnet", db=db)
 
         call_limit = db._search_similar_cold_track_vectors.call_args.kwargs["result_limit"]
-        assert call_limit == 51  # 25 * 2 + 1
-
-
-# ---------------------------------------------------------------------------
-# Error path tests
-# ---------------------------------------------------------------------------
+        assert call_limit == 26
 
 
 class TestFindSimilarTracksErrors:
-    """Tests for error conditions in the similarity pipeline."""
+    """Tests for error conditions in descriptor flow."""
 
     @pytest.mark.unit
-    def test_raises_when_seed_not_in_song_map(self) -> None:
-        """ValueError when Navidrome ID is not mapped."""
-        db = _make_db(nd_lookup=None)
+    def test_raises_when_seed_descriptor_not_resolved(self) -> None:
+        db = _make_db(seed_file_id=None)
 
-        with pytest.raises(ValueError, match="not found in track map"):
-            find_similar_tracks("unknown-nd-id", count=10, backbone_id="effnet", db=db)
+        with pytest.raises(ValueError, match="Seed descriptor could not be resolved"):
+            find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
 
     @pytest.mark.unit
     def test_raises_when_no_vector_exists(self) -> None:
-        """ValueError when seed file has no vector embedding."""
-        db = _make_db(nd_lookup="library_files/seed-file")
+        db = _make_db(seed_file_id="library_files/seed-file")
         db._get_cold_track_vector.return_value = None
 
         with pytest.raises(ValueError, match="No vector embedding found"):
-            find_similar_tracks("nd-seed", count=10, backbone_id="effnet", db=db)
-
-
-# ---------------------------------------------------------------------------
-# Edge case tests
-# ---------------------------------------------------------------------------
+            find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
 
 
 class TestFindSimilarTracksEdgeCases:
@@ -208,99 +163,24 @@ class TestFindSimilarTracksEdgeCases:
 
     @pytest.mark.unit
     def test_empty_ann_results(self) -> None:
-        """Returns empty list when ANN search finds nothing."""
         db = _make_db(ann_results=[])
 
-        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet", db=db)
+        results = find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
 
         assert results == []
 
     @pytest.mark.unit
-    def test_partial_nd_mapping(self) -> None:
-        """Only results with Navidrome mappings are returned."""
-        db = _make_db(
-            ann_results=[
-                {"file_id": "library_files/mapped", "score": 0.9},
-                {"file_id": "library_files/unmapped", "score": 0.85},
-            ],
-            nd_bulk_map={"library_files/mapped": "nd-mapped"},  # unmapped is missing
-            file_docs=[{"_id": "library_files/mapped", "title": "Mapped", "artist": "A", "album": "B"}],
-        )
-
-        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet", db=db)
-
-        assert len(results) == 1
-        assert results[0]["nd_id"] == "nd-mapped"
-
-    @pytest.mark.unit
-    def test_logs_warning_for_high_unmapped_ratio(self, caplog: pytest.LogCaptureFixture) -> None:
-        """High unmapped ANN ratio should be logged at WARNING level."""
-        db = _make_db(
-            ann_results=[
-                {"file_id": "library_files/mapped", "score": 0.92},
-                {"file_id": "library_files/unmapped-1", "score": 0.9},
-                {"file_id": "library_files/unmapped-2", "score": 0.89},
-            ],
-            nd_bulk_map={"library_files/mapped": "nd-mapped"},
-            file_docs=[{"_id": "library_files/mapped", "title": "Mapped", "artist": "A", "album": "B"}],
-        )
-
-        workflow_logger = logging.getLogger("nomarr.workflows.navidrome.find_similar_tracks_wf")
-        original_propagate = workflow_logger.propagate
-        workflow_logger.propagate = True
-
-        try:
-            with caplog.at_level(logging.WARNING, logger="nomarr.workflows.navidrome.find_similar_tracks_wf"):
-                results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet", db=db)
-        finally:
-            workflow_logger.propagate = original_propagate
-
-        assert len(results) == 1
-        assert any(
-            record.levelno == logging.WARNING and "High ANN unmapped ratio" in record.getMessage()
-            for record in caplog.records
-        )
-
-    @pytest.mark.unit
-    def test_all_results_unmapped(self) -> None:
-        """Returns empty list when no ANN results have Navidrome mappings."""
-        db = _make_db(
-            ann_results=[{"file_id": "library_files/orphan", "score": 0.9}],
-            nd_bulk_map={},  # nothing maps
-        )
-
-        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet", db=db)
-
-        assert results == []
-
-    @pytest.mark.unit
-    def test_missing_metadata_uses_empty_strings(self) -> None:
-        """If a file doc is missing fields, defaults to empty strings."""
+    def test_missing_metadata_defaults(self) -> None:
         db = _make_db(
             ann_results=[{"file_id": "library_files/sparse", "score": 0.9}],
-            nd_bulk_map={"library_files/sparse": "nd-sparse"},
-            file_docs=[{"_id": "library_files/sparse"}],  # no title/artist/album
+            file_docs=[{"_id": "library_files/sparse", "tags": []}],
         )
 
-        results = find_similar_tracks("nd-seed", count=10, backbone_id="effnet", db=db)
+        results = find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
 
         assert len(results) == 1
-        assert results[0]["name"] == ""
+        assert results[0]["title"] == ""
         assert results[0]["artist"] == ""
         assert results[0]["album"] == ""
-
-    @pytest.mark.unit
-    def test_backbone_id_and_library_key_passed_to_vector_components(self) -> None:
-        """Workflow forwards vector search context through component seams."""
-        db = _make_db(ann_results=[])
-
-        find_similar_tracks("nd-seed", count=5, backbone_id="custom-backbone", db=db)
-
-        db._get_cold_track_vector.assert_called_once_with(
-            "library_files/seed-file",
-            "custom-backbone",
-            "test_lib",
-        )
-        db._search_similar_cold_track_vectors.assert_called_once()
-        assert db._search_similar_cold_track_vectors.call_args.kwargs["backbone_id"] == "custom-backbone"
-        assert db._search_similar_cold_track_vectors.call_args.kwargs["library_key"] == "test_lib"
+        assert results[0]["album_artist"] == ""
+        assert results[0]["duration_ms"] is None

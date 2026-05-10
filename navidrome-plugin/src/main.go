@@ -29,19 +29,19 @@ func init() {
 	scheduler.Register(&nomarrPlugin{})
 
 	// Register playlist generation scheduler if enabled.
-	ppEnabled, ok := pdk.GetConfig("pp_enabled")
+	ppEnabled, ok := safeGetConfig("pp_enabled")
 	if ok && ppEnabled == "true" {
-		cron, ok := pdk.GetConfig("pp_schedule_cron")
+		cron, ok := safeGetConfig("pp_schedule_cron")
 		if !ok || cron == "" {
 			cron = "0 3 * * *"
 		}
 		if _, err := host.SchedulerScheduleRecurring(cron, "", "nomarr-playlist-gen"); err != nil {
-			pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: failed to schedule playlist generation: %v", err))
+			safeLog(pdk.LogError, fmt.Sprintf("nomarr: failed to schedule playlist generation: %v", err))
 		} else {
-			pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: playlist generation scheduled with cron: %s", cron))
+			safeLog(pdk.LogInfo, fmt.Sprintf("nomarr: playlist generation scheduled with cron: %s", cron))
 		}
 	} else {
-		pdk.Log(pdk.LogDebug, "nomarr: personal playlists not enabled")
+		safeLog(pdk.LogDebug, "nomarr: personal playlists not enabled")
 	}
 }
 
@@ -52,17 +52,34 @@ func init() {
 // readConfig reads the shared nomarr_url and nomarr_api_key from plugin config.
 // Returns empty strings and ok=false if either value is missing.
 func readConfig() (nomarrURL string, apiKey string, ok bool) {
-	nomarrURL, found := pdk.GetConfig("nomarr_url")
+	nomarrURL, found := safeGetConfig("nomarr_url")
 	if !found || nomarrURL == "" {
 		pdk.Log(pdk.LogWarn, "nomarr: nomarr_url not configured")
 		return "", "", false
 	}
-	apiKey, found = pdk.GetConfig("nomarr_api_key")
+	apiKey, found = safeGetConfig("nomarr_api_key")
 	if !found || apiKey == "" {
 		pdk.Log(pdk.LogWarn, "nomarr: nomarr_api_key not configured")
 		return "", "", false
 	}
 	return nomarrURL, apiKey, true
+}
+
+func safeGetConfig(key string) (value string, ok bool) {
+	defer func() {
+		if recover() != nil {
+			value = ""
+			ok = false
+		}
+	}()
+	return pdk.GetConfig(key)
+}
+
+func safeLog(level pdk.LogLevel, message string) {
+	defer func() {
+		_ = recover()
+	}()
+	pdk.Log(level, message)
 }
 
 // subsonicCallAs calls a Subsonic API endpoint on behalf of a specific user.
@@ -176,23 +193,255 @@ func findExistingPlaylists(username string) map[string]string {
 
 // nomarrRequest is the JSON body sent to Nomarr's similar-tracks endpoint.
 type nomarrRequest struct {
-	SongID     string `json:"song_id"`
-	Count      int32  `json:"count"`
-	BackboneID string `json:"backbone_id"`
+	Seed       nomarrSongDescriptor `json:"seed"`
+	Count      int32                `json:"count"`
+	BackboneID string               `json:"backbone_id"`
 }
 
-// nomarrSong is a single song in Nomarr's API response.
-type nomarrSong struct {
-	ID     string  `json:"id"`
-	Name   string  `json:"name"`
-	Artist string  `json:"artist"`
-	Album  string  `json:"album"`
-	Score  float64 `json:"score"`
+// nomarrSongDescriptor is a portable track descriptor in Nomarr's API response.
+type nomarrSongDescriptor struct {
+	Title                  string  `json:"title"`
+	Artist                 string  `json:"artist"`
+	Album                  string  `json:"album"`
+	AlbumArtist            string  `json:"album_artist"`
+	DurationMs             *int    `json:"duration_ms,omitempty"`
+	TrackNumber            *int    `json:"track_number,omitempty"`
+	DiscNumber             *int    `json:"disc_number,omitempty"`
+	Year                   *int    `json:"year,omitempty"`
+	MusicBrainzTrackID     string  `json:"musicbrainz_track_id,omitempty"`
+	MusicBrainzRecordingID string  `json:"musicbrainz_recording_id,omitempty"`
+	NomarrFileKey          string  `json:"nomarr_file_key,omitempty"`
+	Score                  float64 `json:"score"`
 }
 
 // nomarrResponse is the JSON response from Nomarr's similar-tracks endpoint.
 type nomarrResponse struct {
-	Songs []nomarrSong `json:"songs"`
+	Songs []nomarrSongDescriptor `json:"songs"`
+}
+
+type subsonicSong struct {
+	ID                     string
+	Title                  string
+	Artist                 string
+	Album                  string
+	AlbumArtist            string
+	DurationMs             *int
+	TrackNumber            *int
+	DiscNumber             *int
+	Year                   *int
+	MusicBrainzTrackID     string
+	MusicBrainzRecordingID string
+}
+
+func parseIntPointer(value string) *int {
+	if value == "" {
+		return nil
+	}
+	parsed := 0
+	for _, ch := range value {
+		if ch < '0' || ch > '9' {
+			continue
+		}
+		parsed = (parsed * 10) + int(ch-'0')
+	}
+	if parsed == 0 {
+		return nil
+	}
+	return &parsed
+}
+
+func parseDurationMs(value string) *int {
+	seconds := parseIntPointer(value)
+	if seconds == nil {
+		return nil
+	}
+	millis := *seconds * 1000
+	return &millis
+}
+
+func normalizeText(value string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(value))
+	if trimmed == "" {
+		return ""
+	}
+	var b strings.Builder
+	lastWasSpace := false
+	for _, ch := range trimmed {
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') {
+			b.WriteRune(ch)
+			lastWasSpace = false
+			continue
+		}
+		if !lastWasSpace {
+			b.WriteRune(' ')
+		}
+		lastWasSpace = true
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func durationWithinTolerance(lhs *int, rhs *int, toleranceMs int) bool {
+	if lhs == nil || rhs == nil {
+		return false
+	}
+	diff := *lhs - *rhs
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff <= toleranceMs
+}
+
+func parseSubsonicSongs(xml string) []subsonicSong {
+	songs := make([]subsonicSong, 0)
+	remaining := xml
+	for {
+		idx := strings.Index(remaining, "<song ")
+		if idx < 0 {
+			break
+		}
+		remaining = remaining[idx:]
+		endSelfClose := strings.Index(remaining, "/>")
+		endOpen := strings.Index(remaining, ">")
+		var tag string
+		if endSelfClose >= 0 && (endOpen < 0 || endSelfClose <= endOpen) {
+			tag = remaining[:endSelfClose+2]
+			remaining = remaining[endSelfClose+2:]
+		} else if endOpen >= 0 {
+			tag = remaining[:endOpen+1]
+			remaining = remaining[endOpen+1:]
+		} else {
+			break
+		}
+
+		id, ok := xmlAttr(tag, "id")
+		if !ok || id == "" {
+			continue
+		}
+		title, _ := xmlAttr(tag, "title")
+		artist, _ := xmlAttr(tag, "artist")
+		album, _ := xmlAttr(tag, "album")
+		albumArtist, _ := xmlAttr(tag, "albumArtist")
+		durationRaw, _ := xmlAttr(tag, "duration")
+		trackRaw, _ := xmlAttr(tag, "track")
+		discRaw, _ := xmlAttr(tag, "discNumber")
+		yearRaw, _ := xmlAttr(tag, "year")
+		mbTrack, _ := xmlAttr(tag, "musicBrainzTrackId")
+		mbRecording, _ := xmlAttr(tag, "musicBrainzId")
+		if mbRecording == "" {
+			mbRecording, _ = xmlAttr(tag, "mbid")
+		}
+
+		songs = append(songs, subsonicSong{
+			ID:                     id,
+			Title:                  title,
+			Artist:                 artist,
+			Album:                  album,
+			AlbumArtist:            albumArtist,
+			DurationMs:             parseDurationMs(durationRaw),
+			TrackNumber:            parseIntPointer(trackRaw),
+			DiscNumber:             parseIntPointer(discRaw),
+			Year:                   parseIntPointer(yearRaw),
+			MusicBrainzTrackID:     mbTrack,
+			MusicBrainzRecordingID: mbRecording,
+		})
+	}
+	return songs
+}
+
+func resolveDescriptorAgainstCandidates(descriptor nomarrSongDescriptor, candidates []subsonicSong) (subsonicSong, string) {
+	empty := subsonicSong{}
+	mbTrack := strings.TrimSpace(strings.ToLower(descriptor.MusicBrainzTrackID))
+	mbRecording := strings.TrimSpace(strings.ToLower(descriptor.MusicBrainzRecordingID))
+	if mbTrack != "" || mbRecording != "" {
+		mbMatches := make([]subsonicSong, 0)
+		for _, candidate := range candidates {
+			if mbTrack != "" && strings.ToLower(candidate.MusicBrainzTrackID) == mbTrack {
+				mbMatches = append(mbMatches, candidate)
+				continue
+			}
+			if mbRecording != "" && strings.ToLower(candidate.MusicBrainzRecordingID) == mbRecording {
+				mbMatches = append(mbMatches, candidate)
+			}
+		}
+		if len(mbMatches) == 1 {
+			return mbMatches[0], ""
+		}
+		if len(mbMatches) > 1 {
+			return empty, "descriptor_ambiguous"
+		}
+	}
+
+	title := normalizeText(descriptor.Title)
+	artist := normalizeText(descriptor.Artist)
+	album := normalizeText(descriptor.Album)
+	albumArtist := normalizeText(descriptor.AlbumArtist)
+
+	step2 := make([]subsonicSong, 0)
+	for _, candidate := range candidates {
+		if normalizeText(candidate.Title) == title &&
+			normalizeText(candidate.Artist) == artist &&
+			normalizeText(candidate.Album) == album &&
+			durationWithinTolerance(candidate.DurationMs, descriptor.DurationMs, 2000) {
+			step2 = append(step2, candidate)
+		}
+	}
+	if len(step2) == 1 {
+		return step2[0], ""
+	}
+	if len(step2) > 1 {
+		return empty, "descriptor_ambiguous"
+	}
+
+	step3 := make([]subsonicSong, 0)
+	for _, candidate := range candidates {
+		if normalizeText(candidate.Title) == title &&
+			normalizeText(candidate.AlbumArtist) == albumArtist &&
+			normalizeText(candidate.Album) == album &&
+			candidate.TrackNumber != nil &&
+			descriptor.TrackNumber != nil &&
+			candidate.DiscNumber != nil &&
+			descriptor.DiscNumber != nil &&
+			*candidate.TrackNumber == *descriptor.TrackNumber &&
+			*candidate.DiscNumber == *descriptor.DiscNumber {
+			step3 = append(step3, candidate)
+		}
+	}
+	if len(step3) == 1 {
+		return step3[0], ""
+	}
+	if len(step3) > 1 {
+		return empty, "descriptor_ambiguous"
+	}
+
+	step4 := make([]subsonicSong, 0)
+	for _, candidate := range candidates {
+		if normalizeText(candidate.Title) == title &&
+			normalizeText(candidate.Artist) == artist &&
+			durationWithinTolerance(candidate.DurationMs, descriptor.DurationMs, 2000) {
+			step4 = append(step4, candidate)
+		}
+	}
+	if len(step4) == 1 {
+		return step4[0], ""
+	}
+	if len(step4) > 1 {
+		return empty, "descriptor_ambiguous"
+	}
+
+	fallback := make([]subsonicSong, 0)
+	for _, candidate := range candidates {
+		if normalizeText(candidate.Title) == title && normalizeText(candidate.Artist) == artist {
+			fallback = append(fallback, candidate)
+		}
+	}
+	if len(fallback) == 1 {
+		return fallback[0], ""
+	}
+	if len(fallback) > 1 {
+		return empty, "descriptor_ambiguous"
+	}
+
+	return empty, "descriptor_unresolved"
 }
 
 // ---------------------------------------------------------------------------
@@ -278,8 +527,31 @@ func (p *nomarrPlugin) GetSimilarSongsByTrack(req metadata.SimilarSongsByTrackRe
 		count = 50
 	}
 
+	seedResp, err := host.SubsonicAPICall("getSong?id=" + url.QueryEscape(req.ID))
+	if err != nil {
+		pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: nomarr_unreachable failed to load seed song %s: %v", req.ID, err))
+		return empty, fmt.Errorf("nomarr_unreachable")
+	}
+	seedSongs := parseSubsonicSongs(seedResp)
+	if len(seedSongs) == 0 {
+		pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: descriptor_unresolved seed song %s not found via getSong", req.ID))
+		return empty, fmt.Errorf("descriptor_unresolved")
+	}
+	seedSong := seedSongs[0]
+
 	reqBody := nomarrRequest{
-		SongID:     req.ID,
+		Seed: nomarrSongDescriptor{
+			Title:                  seedSong.Title,
+			Artist:                 seedSong.Artist,
+			Album:                  seedSong.Album,
+			AlbumArtist:            seedSong.AlbumArtist,
+			DurationMs:             seedSong.DurationMs,
+			TrackNumber:            seedSong.TrackNumber,
+			DiscNumber:             seedSong.DiscNumber,
+			Year:                   seedSong.Year,
+			MusicBrainzTrackID:     seedSong.MusicBrainzTrackID,
+			MusicBrainzRecordingID: seedSong.MusicBrainzRecordingID,
+		},
 		Count:      count,
 		BackboneID: backbone,
 	}
@@ -306,35 +578,87 @@ func (p *nomarrPlugin) GetSimilarSongsByTrack(req metadata.SimilarSongsByTrackRe
 		TimeoutMs: 30000,
 	})
 	if err != nil {
-		pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: HTTP request failed: %v", err))
-		return empty, nil
+		pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: nomarr_unreachable HTTP request failed: %v", err))
+		return empty, fmt.Errorf("nomarr_unreachable")
 	}
 
 	// Check HTTP status.
 	if resp.StatusCode != 200 {
 		pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: API returned status %d: %s", resp.StatusCode, string(resp.Body)))
-		return empty, nil
+		return empty, fmt.Errorf("nomarr_unreachable")
 	}
 
 	// Parse Nomarr response.
 	var nomarrResp nomarrResponse
 	if err := json.Unmarshal(resp.Body, &nomarrResp); err != nil {
 		pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: failed to parse response: %v", err))
-		return empty, nil
+		return empty, fmt.Errorf("nomarr_unreachable")
+	}
+	if len(nomarrResp.Songs) == 0 {
+		pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: nomarr_no_results for seed %s", req.ID))
+		return empty, fmt.Errorf("nomarr_no_results")
 	}
 
-	// Map Nomarr songs to Navidrome SongRef.
+	searchQuery := strings.TrimSpace(seedSong.Title + " " + seedSong.Artist)
+	searchEndpoint := "search3?query=" + url.QueryEscape(searchQuery) + "&songCount=200"
+	searchResp, err := host.SubsonicAPICall(searchEndpoint)
+	if err != nil {
+		pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: nomarr_unreachable search3 failed for query %q: %v", searchQuery, err))
+		return empty, fmt.Errorf("nomarr_unreachable")
+	}
+	candidates := parseSubsonicSongs(searchResp)
+	if len(candidates) == 0 {
+		pdk.Log(pdk.LogWarn, "nomarr: insufficient_resolved_results search3 returned no candidates")
+		return empty, fmt.Errorf("insufficient_resolved_results")
+	}
+
+	resolvedCount := 0
+	unresolvedCount := 0
+	ambiguousCount := 0
+
+	// Resolve Nomarr descriptors to Navidrome SongRef IDs.
 	songs := make([]metadata.SongRef, 0, len(nomarrResp.Songs))
-	for _, s := range nomarrResp.Songs {
+	for _, descriptor := range nomarrResp.Songs {
+		candidate, status := resolveDescriptorAgainstCandidates(descriptor, candidates)
+		if status == "descriptor_unresolved" {
+			unresolvedCount++
+			continue
+		}
+		if status == "descriptor_ambiguous" {
+			ambiguousCount++
+			continue
+		}
 		songs = append(songs, metadata.SongRef{
-			ID:     s.ID,
-			Name:   s.Name,
-			Artist: s.Artist,
-			Album:  s.Album,
+			ID:     candidate.ID,
+			Name:   candidate.Title,
+			Artist: candidate.Artist,
+			Album:  candidate.Album,
 		})
+		resolvedCount++
+	}
+	if resolvedCount == 0 {
+		pdk.Log(
+			pdk.LogError,
+			fmt.Sprintf(
+				"nomarr: insufficient_resolved_results resolved=0 unresolved=%d ambiguous=%d",
+				unresolvedCount,
+				ambiguousCount,
+			),
+		)
+		return empty, fmt.Errorf("insufficient_resolved_results")
 	}
 
-	pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: found %d similar tracks for song %s", len(songs), req.ID))
+	pdk.Log(
+		pdk.LogInfo,
+		fmt.Sprintf(
+			"nomarr: found %d similar tracks for song %s (resolved=%d unresolved=%d ambiguous=%d)",
+			len(songs),
+			req.ID,
+			resolvedCount,
+			unresolvedCount,
+			ambiguousCount,
+		),
+	)
 
 	return &metadata.SimilarSongsResponse{Songs: songs}, nil
 }

@@ -31,25 +31,37 @@ router = APIRouter(tags=["navidrome"], prefix="/v1/navidrome")
 class SimilarTracksRequest(BaseModel):
     """Request body for similar tracks endpoint."""
 
-    song_id: str
+    seed: SeedTrackDescriptor
     count: int = Field(default=50, ge=1, le=500)
     backbone_id: str = "effnet"
 
 
-class SongResult(BaseModel):
-    """A single similar song in the response."""
+class SeedTrackDescriptor(BaseModel):
+    """Portable track descriptor used for plugin-side Navidrome resolution."""
 
-    id: str
-    name: str
+    title: str = ""
     artist: str
-    album: str
+    album: str = ""
+    album_artist: str = ""
+    duration_ms: int | None = None
+    track_number: int | None = None
+    disc_number: int | None = None
+    year: int | None = None
+    musicbrainz_track_id: str | None = None
+    musicbrainz_recording_id: str | None = None
+    nomarr_file_key: str | None = None
+
+
+class SongDescriptor(SeedTrackDescriptor):
+    """Portable descriptor plus similarity score."""
+
     score: float
 
 
 class SimilarTracksResponse(BaseModel):
     """Response for similar tracks endpoint."""
 
-    songs: list[SongResult]
+    songs: list[SongDescriptor]
 
 
 # ------------------------------------------------------------------
@@ -64,32 +76,49 @@ async def navidrome_similar_tracks(
 ) -> SimilarTracksResponse:
     """Find tracks similar to a Navidrome song via vector ANN search."""
     logger.info(
-        "[navidrome] similar-track request: song_id=%s count=%d backbone=%s",
-        body.song_id,
+        "[navidrome] similar-track request: title=%r artist=%r count=%d backbone=%s",
+        body.seed.title,
+        body.seed.artist,
         body.count,
         body.backbone_id,
     )
     try:
         results = await asyncio.to_thread(
             svc.get_similar_tracks,
-            nd_song_id=body.song_id,
+            seed_descriptor=body.seed.model_dump(),
             count=body.count,
             backbone_id=body.backbone_id,
         )
     except ValueError as exc:
-        logger.warning("[navidrome] similar-track not found: song_id=%s error=%s", body.song_id, exc)
+        logger.warning(
+            "[navidrome] similar-track seed unresolved: title=%r artist=%r error=%s",
+            body.seed.title,
+            body.seed.artist,
+            exc,
+        )
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception:
-        logger.exception("[navidrome] similar-track unexpected error: song_id=%s", body.song_id)
+        logger.exception(
+            "[navidrome] similar-track unexpected error: title=%r artist=%r",
+            body.seed.title,
+            body.seed.artist,
+        )
         raise
 
     return SimilarTracksResponse(
         songs=[
-            SongResult(
-                id=r["nd_id"],
-                name=r["name"],
+            SongDescriptor(
+                title=r["title"],
                 artist=r["artist"],
                 album=r["album"],
+                album_artist=r["album_artist"],
+                duration_ms=r["duration_ms"],
+                track_number=r["track_number"],
+                disc_number=r["disc_number"],
+                year=r["year"],
+                musicbrainz_track_id=r["musicbrainz_track_id"],
+                musicbrainz_recording_id=r["musicbrainz_recording_id"],
+                nomarr_file_key=r["nomarr_file_key"],
                 score=r["score"],
             )
             for r in results

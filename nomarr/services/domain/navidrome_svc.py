@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from nomarr.components.navidrome.navidrome_graph_comp import bulk_resolve_files_to_navidrome_ids
 from nomarr.components.navidrome.subsonic_client_comp import SubsonicClient
@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from nomarr.helpers.dto.navidrome_dto import NdSyncResult, PlaylistPreviewResult
     from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.config_svc import ConfigService
+    from nomarr.components.navidrome.descriptor_match_comp import TrackDescriptor
     from nomarr.workflows.navidrome.find_similar_tracks_wf import SimilarTrackResult
 
 
@@ -439,29 +440,29 @@ class NavidromeService:
 
     def get_similar_tracks(
         self,
-        nd_song_id: str,
+        seed_descriptor: dict[str, object],
         count: int,
         backbone_id: str = "effnet",
     ) -> list[SimilarTrackResult]:
-        """Find tracks similar to a Navidrome song via vector ANN search.
+        """Find tracks similar to a seed descriptor via vector ANN search.
 
         Args:
-            nd_song_id: Navidrome mediafile ID of the seed track.
+            seed_descriptor: Portable seed descriptor from Navidrome plugin.
             count: Maximum number of similar tracks to return.
             backbone_id: Vector backbone identifier.
 
         Returns:
-            List of similar tracks with Navidrome IDs and metadata.
+            List of similar tracks as portable descriptors plus score.
 
         Raises:
-            ValueError: If song map has no mapping or no vector exists.
+            ValueError: If seed descriptor cannot resolve or no vector exists.
 
         """
         group_size: int = self._config_service.get("vector_group_size", 15)
         thoroughness: int = self._config_service.get("vector_search_thoroughness", 10)
 
         return find_similar_tracks(
-            seed_nd_id=nd_song_id,
+            seed_descriptor=cast("TrackDescriptor", seed_descriptor),
             count=count,
             backbone_id=backbone_id,
             db=self._db,
