@@ -471,7 +471,7 @@ func fetchCandidatesForDescriptor(descriptor nomarrSongDescriptor) ([]subsonicSo
 	searchEndpoint := "search3?query=" + url.QueryEscape(query) + "&songCount=200"
 	searchResp, err := host.SubsonicAPICall(searchEndpoint)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("search3 failed for descriptor %q/%q: %w", descriptor.Title, descriptor.Artist, err)
 	}
 	return parseSubsonicSongs(searchResp), nil
 }

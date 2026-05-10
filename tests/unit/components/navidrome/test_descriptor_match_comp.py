@@ -38,8 +38,6 @@ def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
         {"start_id": "library_files/1", "v": {"name": "discnumber", "value": "1"}},
     ]
     db.library_contains_file.get.in_.return_value = []
-    db.tags.get.return_value = []
-    db.song_has_tags.get.in_.return_value = []
     db.library_files.get.in_.return_value = [
         {
             "_id": "library_files/1",
