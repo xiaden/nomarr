@@ -114,6 +114,8 @@ class TestSimilarTracksEndpoint:
             count=10,
             backbone_id="effnet",
         )
+        mock_navidrome_service.resolve_files_to_nd.assert_not_called()
+        mock_navidrome_service.sync_navidrome.assert_not_called()
 
     def test_seed_unresolved_returns_404(
         self,

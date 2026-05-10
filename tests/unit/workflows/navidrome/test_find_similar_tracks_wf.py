@@ -139,6 +139,18 @@ class TestFindSimilarTracksHappyPath:
         call_limit = db._search_similar_cold_track_vectors.call_args.kwargs["result_limit"]
         assert call_limit == 26
 
+    @pytest.mark.unit
+    def test_does_not_use_navidrome_song_map_table(self) -> None:
+        db = _make_db(
+            ann_results=[{"file_id": "library_files/match-1", "score": 0.95}],
+            file_docs=[{"_id": "library_files/match-1", "title": "Song A", "artist": "Artist A", "album": "Album A", "tags": []}],
+        )
+        db.navidrome_tracks = MagicMock()
+
+        find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
+
+        assert db.navidrome_tracks.mock_calls == []
+
 
 class TestFindSimilarTracksErrors:
     """Tests for error conditions in descriptor flow."""

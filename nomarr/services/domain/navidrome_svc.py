@@ -42,10 +42,10 @@ from nomarr.workflows.navidrome.sync_navidrome_wf import sync_navidrome
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
+    from nomarr.components.navidrome.descriptor_match_comp import TrackDescriptor
     from nomarr.helpers.dto.navidrome_dto import NdSyncResult, PlaylistPreviewResult
     from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.config_svc import ConfigService
-    from nomarr.components.navidrome.descriptor_match_comp import TrackDescriptor
     from nomarr.workflows.navidrome.find_similar_tracks_wf import SimilarTrackResult
 
 
@@ -62,6 +62,12 @@ class NavidromeService:
     Wraps workflows from workflows/navidrome/* to hide DB dependency from interfaces.
     API credentials are read live from ConfigService so changes via the web UI
     take effect without restarting the application.
+
+    Boundary:
+        - Plugin similar-track uses descriptor I/O via ``get_similar_tracks`` and
+          does not depend on Nomarr-side Navidrome ID mapping tables.
+        - Sync/mapping helpers are retained for backend-managed playlist push and
+          personal-playlist workflows.
     """
 
     def __init__(self, db: Database, cfg: NavidromeConfig, config_service: ConfigService) -> None:
@@ -223,6 +229,9 @@ class NavidromeService:
 
         Raises:
             ValueError: If Navidrome credentials are not configured.
+
+        This method is part of backend-managed push flow and is separate from
+        plugin similar-track recommendation resolution.
 
         """
         client = self._get_client()
@@ -420,6 +429,9 @@ class NavidromeService:
 
         Raises:
             ValueError: If Navidrome API credentials are not configured.
+
+        This sync path is for backend-managed mapping/push flows and is not
+        required for plugin descriptor-based similar-track recommendations.
 
         """
         client = self._get_client()
@@ -624,6 +636,9 @@ class NavidromeService:
         Returns:
             Mapping of file document ID → Navidrome ``nd_id``.
             Only contains entries where a ``has_nd_id`` edge exists.
+
+        Used by backend-managed playlist push paths only. Plugin similar-track
+        resolves descriptors to Navidrome IDs inside the plugin.
 
         """
         return bulk_resolve_files_to_navidrome_ids(self._db, file_ids)

@@ -153,3 +153,34 @@ func TestPerResultDescriptorResolutionUsesDescriptorSpecificCandidates(t *testin
 		t.Fatalf("unexpected resolved IDs: %#v", resolvedIDs)
 	}
 }
+
+func TestResultDescriptorDoesNotResolveFromSeedCandidatePool(t *testing.T) {
+	seedDescriptor := nomarrSongDescriptor{Title: "Seed Song", Artist: "Seed Artist", Album: "Seed Album", DurationMs: intPtr(200000)}
+	resultDescriptor := nomarrSongDescriptor{Title: "Result Song", Artist: "Result Artist", Album: "Result Album", DurationMs: intPtr(210000)}
+
+	seedCandidates := []subsonicSong{
+		{ID: "nd-seed", Title: "Seed Song", Artist: "Seed Artist", Album: "Seed Album", DurationMs: intPtr(200000)},
+	}
+	resultCandidates := []subsonicSong{
+		{ID: "nd-result", Title: "Result Song", Artist: "Result Artist", Album: "Result Album", DurationMs: intPtr(210000)},
+	}
+
+	_, seedPoolStatus := resolveDescriptorAgainstCandidates(resultDescriptor, seedCandidates)
+	if seedPoolStatus != "descriptor_unresolved" {
+		t.Fatalf("expected unresolved against seed pool, got %q", seedPoolStatus)
+	}
+
+	resolved, resultPoolStatus := resolveDescriptorAgainstCandidates(resultDescriptor, resultCandidates)
+	if resultPoolStatus != "" {
+		t.Fatalf("expected resolved against result pool, got %q", resultPoolStatus)
+	}
+	if resolved.ID != "nd-result" {
+		t.Fatalf("expected nd-result, got %q", resolved.ID)
+	}
+
+	// Guard sanity: seed still resolves in its own pool.
+	seedResolved, seedStatus := resolveDescriptorAgainstCandidates(seedDescriptor, seedCandidates)
+	if seedStatus != "" || seedResolved.ID != "nd-seed" {
+		t.Fatalf("expected seed to resolve in seed pool, got status=%q id=%q", seedStatus, seedResolved.ID)
+	}
+}

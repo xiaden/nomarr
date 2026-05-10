@@ -104,6 +104,13 @@ When a user triggers Instant Mix on a track in Navidrome:
 The plugin uses Navidrome's host HTTP service for network requests, respecting
 the sandbox permissions declared in `manifest.json`.
 
+### Instant Mix architecture boundary
+
+- Plugin Instant Mix / similar-track uses **descriptor-only** exchange with Nomarr.
+- Nomarr returns portable descriptors.
+- The plugin resolves those descriptors to Navidrome mediafile IDs locally.
+- **Sync Songs is not required** for this plugin recommendation flow.
+
 ## Personal Playlists
 
 The plugin can generate personal playlists on a schedule and push them directly
@@ -169,8 +176,11 @@ guards before pushing anything back to Navidrome.
 If Nomarr returns a playlist with zero tracks, the plugin logs a WARN message
 and skips that playlist instead of calling Navidrome's `createPlaylist` API.
 This protects existing Navidrome playlists from being overwritten with empty
-content when no Navidrome track IDs could be resolved for the generated
-playlist.
+content when no Navidrome track IDs could be resolved for the generated playlist.
+
+> **Note:** Personal-playlist push is a separate backend-managed flow. Any
+> Nomarr-side sync/mapping requirements in that flow do not apply to plugin
+> Instant Mix / similar-track recommendations.
 
 #### Backend response status handling
 
