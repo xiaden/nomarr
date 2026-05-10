@@ -7,11 +7,16 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.persistence.aql.primitives import (
+    count_distinct_edge_sources_to_filtered_vertices,
     delete_many_by_keys,
     execute,
+    get_filtered_docs,
     get_many_by_field,
     get_many_by_keys,
+    insert_document,
+    list_field_values,
     normalize_limit,
+    update_document_by_key,
     upsert_by_field,
 )
 
@@ -61,6 +66,38 @@ class TestPrimitiveVerbs:
             result = get_many_by_field(db, "tags", "name", "genre")
         assert result == [{"_key": "1"}]
 
+    def test_get_many_by_field_rejects_invalid_field_name(self) -> None:
+        db = MagicMock()
+        with pytest.raises(ValueError, match="Invalid field name"):
+            get_many_by_field(db, "tags", "name; DROP", "genre")
+
+    def test_get_filtered_docs_returns_only_dict_rows(self) -> None:
+        db = MagicMock()
+        with patch("nomarr.persistence.aql.primitives.execute", return_value=[{"_id": "libraries/1"}, "bad"]):
+            result = get_filtered_docs(db, "libraries", filters={"is_enabled": True}, allowed_fields={"is_enabled"})
+        assert result == [{"_id": "libraries/1"}]
+
+    def test_list_field_values_returns_raw_rows(self) -> None:
+        db = MagicMock()
+        with patch("nomarr.persistence.aql.primitives.execute", return_value=["libraries/1", 1]):
+            result = list_field_values(db, "library_files", "_id", allowed_fields={"_id"})
+        assert result == ["libraries/1", 1]
+
+    def test_count_distinct_edge_sources_to_filtered_vertices_returns_count(self) -> None:
+        db = MagicMock()
+        with patch("nomarr.persistence.aql.primitives.execute", return_value=[3]):
+            result = count_distinct_edge_sources_to_filtered_vertices(
+                db,
+                edge_collection="song_has_tags",
+                edge_source_field="_from",
+                edge_target_field="_to",
+                vertex_collection="tags",
+                vertex_filters={"name": "genre"},
+                vertex_allowed_fields={"name"},
+                edge_allowed_fields={"_from", "_to"},
+            )
+        assert result == 3
+
     def test_delete_many_by_keys_returns_count(self) -> None:
         db = MagicMock()
         with patch("nomarr.persistence.aql.primitives.execute", return_value=[2]):
@@ -72,3 +109,16 @@ class TestPrimitiveVerbs:
         with patch("nomarr.persistence.aql.primitives.execute", return_value=["tags/1", {"bad": True}]):
             result = upsert_by_field(db, "tags", "name", "genre", {"value": "rock"})
         assert result == ["tags/1"]
+
+    def test_insert_document_returns_inserted_id(self) -> None:
+        db = MagicMock()
+        with patch("nomarr.persistence.aql.primitives.execute", return_value=["libraries/1"]):
+            result = insert_document(db, "libraries", {"name": "Main"})
+        assert result == "libraries/1"
+
+    def test_update_document_by_key_executes_without_return(self) -> None:
+        db = MagicMock()
+        with patch("nomarr.persistence.aql.primitives.execute") as execute_mock:
+            update_document_by_key(db, "libraries", "main", {"is_enabled": True})
+        _, _, bind_vars = execute_mock.call_args.args
+        assert bind_vars["key"] == "main"

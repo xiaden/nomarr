@@ -15,21 +15,22 @@ class TestLibraryFilesAqlOperations:
     def test_list_all_file_ids_uses_aql_and_normalizes_rows(self) -> None:
         ops = LibraryFilesAqlOperations(MagicMock())
         # Include a non-string row to verify id filtering behavior.
-        with patch("nomarr.persistence.database.library_files_aql.execute", return_value=["library_files/1", 3]) as exec_mock:
+        with patch("nomarr.persistence.database.library_files_aql.list_field_values", return_value=["library_files/1", 3]) as list_mock:
             result = ops.list_all_file_ids(limit=10)
 
         assert result == ["library_files/1"]
-        bind_vars = exec_mock.call_args.args[2]
-        assert bind_vars["limit"] == 10
+        assert list_mock.call_args.kwargs["limit"] == 10
 
     def test_count_files_by_tag_string_target(self) -> None:
         ops = LibraryFilesAqlOperations(MagicMock())
-        with patch("nomarr.persistence.database.library_files_aql.execute", return_value=[2]) as exec_mock:
+        with patch(
+            "nomarr.persistence.database.library_files_aql.count_distinct_edge_sources_to_filtered_vertices",
+            return_value=2,
+        ) as count_mock:
             result = ops.count_files_by_tag("genre", "rock")
 
         assert result == 2
-        bind_vars = exec_mock.call_args.args[2]
-        assert bind_vars == {"tag_key": "genre", "tag_value": "rock"}
+        assert count_mock.call_args.kwargs["vertex_filters"] == {"name": "genre", "value": "rock"}
 
     def test_count_files_by_tag_numeric_target(self) -> None:
         ops = LibraryFilesAqlOperations(MagicMock())

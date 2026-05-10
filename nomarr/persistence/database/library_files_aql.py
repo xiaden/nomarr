@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from nomarr.persistence.aql.primitives import execute, normalize_limit
+from nomarr.persistence.aql.primitives import (
+    count_distinct_edge_sources_to_filtered_vertices,
+    execute,
+    list_field_values,
+    normalize_limit,
+)
 from nomarr.persistence.arango_client import SafeDatabase
 from nomarr.persistence.constructor.pagination import DEFAULT_LIMIT
 
@@ -40,7 +45,7 @@ def _is_numeric_type(target_value: float | str) -> bool:
 
 
 class LibraryFilesAqlOperations:
-    """Explicit, reviewed library-file operations."""
+    """Library-file capability bindings over reusable AQL templates."""
 
     def __init__(self, db: SafeDatabase) -> None:
         self._db = db
@@ -48,13 +53,14 @@ class LibraryFilesAqlOperations:
     def list_all_file_ids(self, *, limit: int | None = None) -> list[str]:
         """Return ordered `library_files` ids."""
         effective_limit = DEFAULT_LIMIT if limit is None else limit
-        query = """
-        FOR file IN library_files
-          SORT file._key
-          LIMIT @limit
-          RETURN file._id
-        """
-        rows = execute(self._db, query, {"limit": normalize_limit(effective_limit)})
+        rows = list_field_values(
+            self._db,
+            "library_files",
+            "_id",
+            sort_field="_key",
+            limit=normalize_limit(effective_limit),
+            allowed_fields={"_id", "_key"},
+        )
         return [row for row in rows if isinstance(row, str)]
 
     def count_files_by_tag(self, tag_key: str, target_value: float | str) -> int:
@@ -76,21 +82,16 @@ class LibraryFilesAqlOperations:
             rows = execute(self._db, query, {"tag_key": tag_key})
             return int(rows[0]) if rows else 0
 
-        query = """
-        LET tag_ids = (
-          FOR tag IN tags
-            FILTER tag.name == @tag_key
-            FILTER tag.value == @tag_value
-            RETURN tag._id
+        return count_distinct_edge_sources_to_filtered_vertices(
+            self._db,
+            edge_collection="song_has_tags",
+            edge_source_field="_from",
+            edge_target_field="_to",
+            vertex_collection="tags",
+            vertex_filters={"name": tag_key, "value": str(target_value)},
+            vertex_allowed_fields={"name", "value"},
+            edge_allowed_fields={"_from", "_to"},
         )
-        RETURN LENGTH(UNIQUE(
-          FOR edge IN song_has_tags
-            FILTER edge._to IN tag_ids
-            RETURN edge._from
-        ))
-        """
-        rows = execute(self._db, query, {"tag_key": tag_key, "tag_value": str(target_value)})
-        return int(rows[0]) if rows else 0
 
     def get_tracks_for_matching(self, *, library_id: str | None = None) -> list[dict[str, Any]]:
         """Return fuzzy matching track rows, optionally scoped to one library."""
