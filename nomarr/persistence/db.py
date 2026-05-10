@@ -282,7 +282,7 @@ class Database:
 
     def get_library(self, library_id_or_key: str) -> dict[str, Any] | None:
         """Get one library by full ``_id`` or bare ``_key``."""
-        if library_id_or_key.startswith("libraries/"):
+        if self._is_library_id(library_id_or_key):
             return self._libraries_aql.get_library_by_id(library_id_or_key)
         return self._libraries_aql.get_library_by_key(library_id_or_key)
 
@@ -300,7 +300,7 @@ class Database:
 
     def update_library(self, library_id: str, fields: dict[str, Any]) -> None:
         """Update one library by id (accepts ``libraries/<key>`` or bare key)."""
-        normalized_id = library_id if library_id.startswith("libraries/") else f"libraries/{library_id}"
+        normalized_id = self._normalize_library_id(library_id)
         self._libraries_aql.update_library_by_id(normalized_id, fields)
 
     def list_library_file_ids(self, *, limit: int | None = None) -> list[str]:
@@ -314,6 +314,16 @@ class Database:
     def get_tracks_for_matching(self, *, library_id: str | None = None) -> list[dict[str, Any]]:
         """Return fuzzy matching track projection rows."""
         return self._library_files_aql.get_tracks_for_matching(library_id=library_id)
+
+    @staticmethod
+    def _is_library_id(value: str) -> bool:
+        """Return whether a value is a full libraries ``_id``."""
+        return value.startswith("libraries/")
+
+    @classmethod
+    def _normalize_library_id(cls, value: str) -> str:
+        """Normalize a library identifier to ``libraries/<key>`` format."""
+        return value if cls._is_library_id(value) else f"libraries/{value}"
 
     def register(self, collection_name: str, template_name: str) -> VectorCollection:
         """Compatibility-only seam for runtime vector collection registration.
