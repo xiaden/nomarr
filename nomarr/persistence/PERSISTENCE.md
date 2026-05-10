@@ -2,15 +2,13 @@
 
 The **persistence layer** owns ArangoDB access for Nomarr.
 
-It now exposes a **descriptor-based, instance-bound API**:
+The target shape is:
 
-- `collections_base.py` defines the shared collection wrapper bases and collection-level verbs
-- `accessors.py` defines `FieldAccessor` plus collection/field get/delete helpers
-- `collections.py` declares concrete collections as typed Python classes
-- `constructor/` contains reusable AQL helpers (`verbs.py`, `filters.py`, `pagination.py`)
-- `db.py` instantiates the static collection facade and exposes collections as `db.<collection>` attributes
+- `db.py` owns connection setup and exposes the python-arango database handle
+- `aql/` contains reusable AQL primitives (`execute`, bind/pagination helpers, bulk verbs)
+- `database/` contains explicit app/domain operations with stable return shapes
 
-The live API is descriptor-driven and instance-bound rather than wrapper-per-query or code-generated.
+The legacy collection/accessor framework remains for compatibility while callers migrate to explicit operation modules.
 
 > **Access rule:** Higher layers should use the injected `Database` facade. Do not import persistence internals directly unless you are extending the persistence layer itself.
 
@@ -37,6 +35,12 @@ Persistence is responsible for data access, not orchestration or business policy
 ```text
 persistence/
 ├── arango_client.py             # ArangoDB connection / typed DB protocol helpers
+├── aql/                         # Shared AQL primitives
+│   ├── __init__.py
+│   └── primitives.py
+├── database/                    # Explicit app/domain operations
+│   ├── __init__.py
+│   └── library_files_aql.py
 ├── collections.py               # Concrete collection declarations
 ├── collections_base.py          # Shared collection wrapper bases and collection-level verbs
 ├── accessors.py                 # FieldAccessor plus collection/field get/delete helpers
@@ -52,11 +56,10 @@ persistence/
 
 Key points:
 
-- `collections_base.py` defines the shared collection families and collection-level verb surface
-- `accessors.py` provides the field-scoped API used by concrete collections
-- `collections.py` is the source of truth for physical collection declarations, including canonical raw-output persistence for ML via `ml_output_streams`
-- `constructor/verbs.py` holds reusable AQL execution helpers instead of per-collection operation classes
-- `db.py` instantiates the static facade, compiles cascades, and exposes collection instances as `db.<collection>` attributes
+- New work should go into explicit `database/*_aql.py` operation modules
+- New reusable AQL helpers should go in `aql/primitives.py`
+- `db.py` wires operation modules (for example `db.library_files_aql`) and still binds legacy collection wrappers for compatibility
+- Collection/accessor/query-spec framework files are legacy compatibility internals, not the preferred extension model
 
 ---
 

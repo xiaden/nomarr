@@ -738,45 +738,33 @@ class TestPhaseTwoQueryHelpers:
     @pytest.mark.unit
     def test_count_files_by_tag_uses_exact_and_numeric_constructor_lookups(self) -> None:
         mock_db = MagicMock()
-        mock_db.tags.get.return_value = [{"_id": "tags/1"}]
-        mock_db.song_has_tags.get.in_.return_value = [
-            {"_from": "library_files/1"},
-            {"_from": "library_files/2"},
-        ]
+        mock_db.library_files_aql.count_files_by_tag.return_value = 2
 
         string_count = count_files_by_tag(mock_db, "genre", "rock")
 
         assert string_count == 2
-        mock_db.tags.get.assert_called_once_with(name="genre", value="rock", limit=DEFAULT_LIMIT)
-        mock_db.song_has_tags.get.in_.assert_called_once_with(Field("_to", ["tags/1"]))
+        mock_db.library_files_aql.count_files_by_tag.assert_called_once_with("genre", "rock")
 
         mock_db = MagicMock()
-        mock_db.tags.get.return_value = [
-            {"_id": "tags/1", "value": 120.0},
-            {"_id": "tags/2", "value": True},
-        ]
-        mock_db.song_has_tags.get.in_.return_value = [{"_from": "library_files/1"}]
+        mock_db.library_files_aql.count_files_by_tag.return_value = 1
 
         numeric_count = count_files_by_tag(mock_db, "nom:bpm", 120.0)
 
         assert numeric_count == 1
-        mock_db.tags.get.assert_called_once_with(name="nom:bpm", limit=DEFAULT_LIMIT)
-        mock_db.song_has_tags.get.in_.assert_called_once_with(Field("_to", ["tags/1"]))
+        mock_db.library_files_aql.count_files_by_tag.assert_called_once_with("nom:bpm", 120.0)
 
     @pytest.mark.unit
     def test_get_tracks_for_matching_filters_valid_files_and_projects_isrc(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.get.return_value = [
+        mock_db.library_files_aql.get_tracks_for_matching.return_value = [
             {
                 "_id": "library_files/1",
                 "path": "D:/Music/song.flac",
                 "title": "Song",
                 "artist": "Artist",
                 "album": "Album",
+                "isrc": "ABC123",
             }
-        ]
-        mock_db.library_files.song_has_tags.by_ids.return_value = [
-            {"start_id": "library_files/1", "v": {"name": "isrc", "value": "ABC123"}},
         ]
 
         result = get_tracks_for_matching(mock_db)
@@ -791,24 +779,20 @@ class TestPhaseTwoQueryHelpers:
                 "isrc": "ABC123",
             }
         ]
-        mock_db.library_files.get.assert_called_once_with(is_valid=True, limit=DEFAULT_LIMIT)
-        mock_db.library_files.song_has_tags.by_ids.assert_called_once_with(["library_files/1"], name="isrc")
+        mock_db.library_files_aql.get_tracks_for_matching.assert_called_once_with(library_id=None)
 
     @pytest.mark.unit
     def test_get_tracks_for_matching_scopes_to_library_and_projects_isrc(self) -> None:
         mock_db = MagicMock()
-        mock_db.libraries.library_contains_file.return_value = [
+        mock_db.library_files_aql.get_tracks_for_matching.return_value = [
             {
                 "_id": "library_files/1",
-                "is_valid": True,
                 "path": "D:/Music/song.flac",
                 "title": "Song",
                 "artist": "Artist",
                 "album": "Album",
+                "isrc": "XYZ789",
             }
-        ]
-        mock_db.library_files.song_has_tags.by_ids.return_value = [
-            {"start_id": "library_files/1", "v": {"name": "isrc", "value": "XYZ789"}},
         ]
 
         result = get_tracks_for_matching(mock_db, library_id="main")
@@ -823,12 +807,7 @@ class TestPhaseTwoQueryHelpers:
                 "isrc": "XYZ789",
             }
         ]
-        mock_db.libraries.library_contains_file.assert_called_once_with(
-            "libraries/main",
-            limit=DEFAULT_LIMIT,
-        )
-        mock_db.library_files.get.assert_not_called()
-        mock_db.library_files.song_has_tags.by_ids.assert_called_once_with(["library_files/1"], name="isrc")
+        mock_db.library_files_aql.get_tracks_for_matching.assert_called_once_with(library_id="main")
 
     @pytest.mark.unit
     def test_clear_library_data_truncates_all_collections(self) -> None:

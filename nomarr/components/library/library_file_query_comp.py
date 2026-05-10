@@ -587,10 +587,8 @@ def get_sample_normalized_path(db: Database) -> str | None:
 
 def list_all_file_ids(db: Database, limit: int | None = None) -> list[str]:
     """Return all library-file ids ordered by ``_key``."""
-    collect_limit = limit or DEFAULT_LIMIT
-    return [
-        value for value in _aggregate_values(db.library_files, "_id", limit=collect_limit) if isinstance(value, str)
-    ]
+    collect_limit = limit if limit is not None else DEFAULT_LIMIT
+    return db.library_files_aql.list_all_file_ids(limit=collect_limit)
 
 
 def get_folder_rel_paths(db: Database, library_id: str) -> set[str]:
@@ -807,23 +805,7 @@ def search_files_by_tag(
 
 def count_files_by_tag(db: Database, tag_key: str, target_value: float | str) -> int:
     """Count files that match a tag-value filter."""
-    if _is_numeric_target_value(target_value):
-        matching_tag_ids = {
-            tag_id
-            for tag_doc in cast("list[dict[str, Any]]", db.tags.get(name=tag_key, limit=DEFAULT_LIMIT))
-            if isinstance((tag_id := tag_doc.get("_id")), str) and _is_numeric_tag_value(tag_doc.get("value"))
-        }
-        return len(_collect_file_ids_for_tag_ids(db, matching_tag_ids))
-
-    matching_tag_ids = {
-        tag_id
-        for tag_doc in cast(
-            "list[dict[str, Any]]",
-            db.tags.get(name=tag_key, value=str(target_value), limit=DEFAULT_LIMIT),
-        )
-        if isinstance((tag_id := tag_doc.get("_id")), str)
-    }
-    return len(_collect_file_ids_for_tag_ids(db, matching_tag_ids))
+    return db.library_files_aql.count_files_by_tag(tag_key, target_value)
 
 
 def get_files_by_chromaprint(
@@ -865,34 +847,4 @@ def get_tracks_by_file_ids(
 
 def get_tracks_for_matching(db: Database, library_id: str | None = None) -> list[dict[str, Any]]:
     """Get track rows for fuzzy playlist matching, optionally scoped to a library."""
-    if library_id:
-        file_docs = [
-            file_doc for file_doc in _library_file_docs_for_library(db, library_id) if file_doc.get("is_valid") is True
-        ]
-    else:
-        file_docs = cast("list[dict[str, Any]]", db.library_files.get(is_valid=True, limit=DEFAULT_LIMIT))
-
-    file_ids = [file_id for file_doc in file_docs if isinstance(file_id := file_doc.get("_id"), str)]
-    isrc_rows = db.library_files.song_has_tags.by_ids(file_ids, name="isrc") if file_ids else []
-    isrc_by_file = {
-        row["start_id"]: tag_doc.get("value")
-        for row in isrc_rows
-        if isinstance(row.get("start_id"), str) and isinstance(tag_doc := row.get("v"), dict)
-    }
-
-    results: list[dict[str, Any]] = []
-    for file_doc in file_docs:
-        file_id = file_doc.get("_id")
-        if not isinstance(file_id, str):
-            continue
-        results.append(
-            {
-                "_id": file_id,
-                "path": file_doc.get("path"),
-                "title": file_doc.get("title"),
-                "artist": file_doc.get("artist"),
-                "album": file_doc.get("album"),
-                "isrc": isrc_by_file.get(file_id),
-            }
-        )
-    return results
+    return db.library_files_aql.get_tracks_for_matching(library_id=library_id)

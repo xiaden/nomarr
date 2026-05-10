@@ -79,14 +79,15 @@ class TestDatabasePersistenceEnforcement:
     """Tests guarding the `Database` facade naming and binding surface."""
 
     def test_bound_public_instance_attributes_are_only_collection_names(self) -> None:
-        """Static binding should only expose registry-declared collection attributes."""
+        """Static binding exposes collections plus explicit operation modules."""
         facade = _make_database_shell()
+        facade.library_files_aql = MagicMock()
 
         facade._bind_static_collections()
 
         expected_names = {name for name, _ in _STATIC_DOCUMENT_COLLECTIONS} | {
             name for name, _ in _STATIC_EDGE_COLLECTIONS
-        }
+        } | {"library_files_aql"}
         bound_public_names = {name for name in vars(facade) if not name.startswith("_") and name != "db"}
 
         assert bound_public_names == expected_names

@@ -53,6 +53,7 @@ from nomarr.persistence.collections import (
     WorkerRestartPolicy,
 )
 from nomarr.persistence.collections_base import DocumentCollection, EdgeCollection, VectorCollection
+from nomarr.persistence.database import LibraryFilesAqlOperations
 
 __all__ = ["Database"]
 
@@ -217,6 +218,7 @@ class Database:
     has_nd_id: HasNdId
     has_plays: HasPlays
     migrations: Migrations
+    library_files_aql: LibraryFilesAqlOperations
 
     USERNAME = "nomarr"
     DB_NAME = "nomarr"
@@ -262,6 +264,7 @@ class Database:
             password=self.password,
             db_name=self.db_name,
         )
+        self.library_files_aql = LibraryFilesAqlOperations(self.db)
 
         self._document_collections: list[DocumentCollection] = []
         self._edge_collections: list[EdgeCollection] = []
