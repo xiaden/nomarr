@@ -9,6 +9,7 @@ The target shape is:
 - `database/` contains explicit app/domain operations with stable return shapes
 
 The legacy collection/accessor framework remains for compatibility while callers migrate to explicit operation modules.
+It is **legacy compatibility-only** and is no longer the recommended app-facing persistence style.
 
 > **Access rule:** Higher layers should use the injected `Database` facade. Do not import persistence internals directly unless you are extending the persistence layer itself.
 
@@ -60,6 +61,16 @@ Key points:
 - New reusable AQL helpers should go in `aql/primitives.py`
 - `db.py` wires operation modules (for example `db.library_files_aql`) and still binds legacy collection wrappers for compatibility
 - Collection/accessor/query-spec framework files are legacy compatibility internals, not the preferred extension model
+
+### Migration evidence (current branch)
+
+- Added explicit operation modules:
+  - `database/library_files_aql.py`
+  - `database/libraries_aql.py`
+- Migrated callers:
+  - `components/library/library_file_query_comp.py` (selected query paths)
+  - `components/library/library_records_comp.py` (library record CRUD/query paths)
+- Remaining legacy users are tracked as follow-up migration work; new persistence additions should target `aql/` + `database/` modules.
 
 ---
 

@@ -1,7 +1,7 @@
-"""Constructor-backed helpers for library documents.
+"""Explicit persistence-operation helpers for library documents.
 
-This module owns light composition logic that is not itself a constructor
-verb: scan-state enrichment, filesystem path ownership checks, bootstrap
+This module owns light composition logic that is not itself persistence:
+scan-state enrichment, filesystem path ownership checks, bootstrap
 key enumeration, and ML-complete library discovery.
 """
 
@@ -20,7 +20,6 @@ from nomarr.components.library.scan_lifecycle_comp import (
 )
 from nomarr.helpers.constants.pipeline_states import PIPELINE_ML_RUNNING
 from nomarr.helpers.time_helper import now_ms
-from nomarr.persistence.base_types import Field
 
 if TYPE_CHECKING:
     from nomarr.persistence.arango_client import DatabaseLike
@@ -61,20 +60,18 @@ def create_library_record(
     timestamp = now_ms().value
     return cast(
         "str",
-        db.libraries.insert(
-            [
-                {
-                    "name": name,
-                    "root_path": root_path,
-                    "is_enabled": is_enabled,
-                    "watch_mode": watch_mode,
-                    "file_write_mode": file_write_mode,
-                    "library_auto_write": library_auto_write,
-                    "created_at": timestamp,
-                    "updated_at": timestamp,
-                }
-            ]
-        )[0],
+        db.libraries_aql.insert_library(
+            {
+                "name": name,
+                "root_path": root_path,
+                "is_enabled": is_enabled,
+                "watch_mode": watch_mode,
+                "file_write_mode": file_write_mode,
+                "library_auto_write": library_auto_write,
+                "created_at": timestamp,
+                "updated_at": timestamp,
+            }
+        ),
     )
 
 
@@ -86,9 +83,9 @@ def get_library_record(
 ) -> dict[str, Any] | None:
     """Get one library by ``_id`` or ``_key`` and optionally merge scan state."""
     if library_id.startswith("libraries/"):
-        doc = cast("dict[str, Any] | None", db.libraries.get(_id=library_id))
+        doc = db.libraries_aql.get_library_by_id(library_id)
     else:
-        doc = cast("dict[str, Any] | None", db.libraries.get(_key=library_id))
+        doc = db.libraries_aql.get_library_by_key(library_id)
 
     if doc is None or not include_scan:
         return doc
@@ -102,7 +99,7 @@ def get_library_by_name(
     include_scan: bool = False,
 ) -> dict[str, Any] | None:
     """Get one library by unique name."""
-    doc = cast("dict[str, Any] | None", db.libraries.get(name=name))
+    doc = db.libraries_aql.get_library_by_name(name)
     if doc is None or not include_scan:
         return doc
     return _merge_scan_state(db, doc)
@@ -114,24 +111,8 @@ def list_library_records(
     enabled_only: bool = False,
     include_scan: bool = True,
 ) -> list[dict[str, Any]]:
-    """List libraries through constructor verbs, preserving legacy sort order."""
-    if enabled_only:
-        docs = cast(
-            "list[dict[str, Any]]",
-            db.libraries.get(is_enabled=True),
-        )
-    else:
-        ids = [
-            cast("str", row["value"])
-            for row in db.libraries.aggregate("_id", limit=db.libraries.count())
-            if isinstance(row.get("value"), str)
-        ]
-        docs_by_id = {
-            str(doc_id): doc
-            for doc in cast("list[dict[str, Any]]", db.libraries.get.in_(Field("_id", ids), limit=None))
-            if isinstance((doc_id := doc.get("_id")), str)
-        }
-        docs = [docs_by_id[doc_id] for doc_id in ids if doc_id in docs_by_id]
+    """List libraries through explicit persistence operations, preserving legacy sort order."""
+    docs = db.libraries_aql.list_libraries(enabled_only=enabled_only)
 
     docs.sort(key=lambda doc: int(cast("int", doc.get("created_at", 0) or 0)))
     if not include_scan:
@@ -169,7 +150,7 @@ def update_library_record(
     if "file_write_mode" in fields and fields["file_write_mode"] is not None:
         _validate_file_write_mode(cast("str", fields["file_write_mode"]))
 
-    db.libraries.update(_id=normalize_library_id(library_id), fields=update_fields)
+    db.libraries_aql.update_library_by_id(normalize_library_id(library_id), update_fields)
 
 
 def update_library_config_fields(
@@ -198,14 +179,9 @@ def update_library_config_fields(
 
 def list_all_library_keys(db: DatabaseLike) -> list[str]:
     """Return all library document keys for bootstrap-style callers."""
-    libraries: Any = getattr(db, "libraries", None)
-    if libraries is not None:
-        total = int(libraries.count())
-        return [
-            cast("str", row["value"])
-            for row in libraries.aggregate("_key", limit=total)
-            if isinstance(row.get("value"), str)
-        ]
+    libraries_aql: Any = getattr(db, "libraries_aql", None)
+    if libraries_aql is not None:
+        return [cast("str", key) for key in libraries_aql.list_library_keys() if isinstance(key, str)]
 
     cursor = cast(
         "Any",
