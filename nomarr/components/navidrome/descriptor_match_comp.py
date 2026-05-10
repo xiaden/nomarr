@@ -89,7 +89,7 @@ def _descriptor_from_doc(file_doc: dict[str, Any]) -> TrackDescriptor:
     )
 
 
-def _normalized(value: str) -> str:
+def _normalize_title(value: str) -> str:
     return normalize_title(value) if value else ""
 
 
@@ -123,17 +123,17 @@ def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tupl
         if len(mb_matches) > 1:
             return None, "descriptor_ambiguous"
 
-    title = _normalized(seed.get("title", ""))
+    title = _normalize_title(seed.get("title", ""))
     artist = normalize_artist(seed.get("artist", "")) if seed.get("artist") else ""
-    album = _normalized(seed.get("album", ""))
+    album = _normalize_title(seed.get("album", ""))
     album_artist = normalize_artist(seed.get("album_artist", "")) if seed.get("album_artist") else ""
 
     step2_matches = [
         file_id
         for file_id, descriptor in descriptors_by_id.items()
-        if _normalized(descriptor["title"]) == title
+        if _normalize_title(descriptor["title"]) == title
         and normalize_artist(descriptor["artist"]) == artist
-        and _normalized(descriptor["album"]) == album
+        and _normalize_title(descriptor["album"]) == album
         and _duration_close(descriptor.get("duration_ms"), seed.get("duration_ms"))
     ]
     if len(step2_matches) == 1:
@@ -144,8 +144,8 @@ def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tupl
     step3_matches = [
         file_id
         for file_id, descriptor in descriptors_by_id.items()
-        if _normalized(descriptor["title"]) == title
-        and _normalized(descriptor["album"]) == album
+        if _normalize_title(descriptor["title"]) == title
+        and _normalize_title(descriptor["album"]) == album
         and normalize_artist(descriptor.get("album_artist", "")) == album_artist
         and descriptor.get("track_number") == seed.get("track_number")
         and descriptor.get("disc_number") == seed.get("disc_number")
@@ -158,7 +158,7 @@ def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tupl
     step4_matches = [
         file_id
         for file_id, descriptor in descriptors_by_id.items()
-        if _normalized(descriptor["title"]) == title
+        if _normalize_title(descriptor["title"]) == title
         and normalize_artist(descriptor["artist"]) == artist
         and _duration_close(descriptor.get("duration_ms"), seed.get("duration_ms"))
     ]
@@ -170,7 +170,7 @@ def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tupl
     fallback_matches = [
         file_id
         for file_id, descriptor in descriptors_by_id.items()
-        if _normalized(descriptor["title"]) == title and normalize_artist(descriptor["artist"]) == artist
+        if _normalize_title(descriptor["title"]) == title and normalize_artist(descriptor["artist"]) == artist
     ]
     if len(fallback_matches) == 1:
         return fallback_matches[0], ""

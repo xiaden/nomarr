@@ -99,7 +99,7 @@ When a user triggers Instant Mix on a track in Navidrome:
 3. Nomarr performs vector ANN search over ML audio embeddings to find similar tracks
 4. Nomarr returns portable descriptors for similar tracks
 5. The plugin resolves descriptors to Navidrome mediafile IDs locally
-5. Navidrome creates a playlist from the similar tracks
+6. Navidrome creates a playlist from the similar tracks
 
 The plugin uses Navidrome's host HTTP service for network requests, respecting
 the sandbox permissions declared in `manifest.json`.

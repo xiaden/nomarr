@@ -55,7 +55,7 @@ def find_similar_tracks(
         2. Fetch seed vector from the promoted cold collection via components
         3. Run ANN search on cold collection
         4. Enrich result file_ids with descriptor metadata
-        6. Return up to ``count`` results sorted by similarity score
+        5. Return up to ``count`` results sorted by similarity score
 
     Args:
         seed_descriptor: Portable seed track descriptor from plugin.
