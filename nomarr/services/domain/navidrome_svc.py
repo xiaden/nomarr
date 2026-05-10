@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, cast
 
 from nomarr.components.library.library_file_query_comp import get_files_by_ids_with_tags
 from nomarr.components.navidrome.descriptor_match_comp import build_track_descriptor
-from nomarr.components.navidrome.navidrome_graph_comp import bulk_resolve_files_to_navidrome_ids
 from nomarr.components.navidrome.subsonic_client_comp import SubsonicClient
 from nomarr.components.navidrome.templates_comp import generate_template_files, get_template_summary
 from nomarr.components.tagging.tag_stats_comp import get_tag_value_counts
@@ -21,31 +20,26 @@ from nomarr.helpers.dto.navidrome_dto import (
     GeneratePlaylistResult,
     GenerateTemplateFilesResult,
     GetTemplateSummaryResult,
-    NavidromeStaticPlaylistResult,
     PreviewTagStatsResult,
     StaticPlaylistResult,
     TemplateSummaryItem,
 )
 from nomarr.helpers.exceptions import MisconfiguredError
 from nomarr.workflows.navidrome import (
-    execute_smart_playlist_filter,
     generate_navidrome_config_workflow,
     generate_smart_playlist_workflow,
     generate_static_playlist_workflow,
-    parse_smart_playlist_query,
     preview_smart_playlist_workflow,
     preview_tag_stats_workflow,
 )
 from nomarr.workflows.navidrome.find_similar_tracks_wf import find_similar_tracks
 from nomarr.workflows.navidrome.generate_playlists_wf import generate_playlists
 from nomarr.workflows.navidrome.ingest_scrobble_wf import ingest_scrobble
-from nomarr.workflows.navidrome.push_playlist_wf import push_playlist
-from nomarr.workflows.navidrome.sync_navidrome_wf import sync_navidrome
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.components.navidrome.descriptor_match_comp import TrackDescriptor
-    from nomarr.helpers.dto.navidrome_dto import NdSyncResult, PlaylistPreviewResult
+    from nomarr.helpers.dto.navidrome_dto import PlaylistPreviewResult
     from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.config_svc import ConfigService
     from nomarr.workflows.navidrome.find_similar_tracks_wf import SimilarTrackResult
@@ -70,8 +64,8 @@ class NavidromeService:
           does not depend on Nomarr-side Navidrome ID mapping tables.
         - Plugin personal playlist generation consumes descriptor payloads via
           ``generate_playlists`` + ``resolve_files_to_descriptors``.
-        - Sync/mapping helpers are retained for backend-managed playlist push and
-          manual personal-playlist trigger workflows.
+        - Backend-managed Navidrome-ID resolution output paths are intentionally
+          not exposed from this service.
     """
 
     def __init__(self, db: Database, cfg: NavidromeConfig, config_service: ConfigService) -> None:
@@ -165,37 +159,7 @@ class NavidromeService:
             sort=sort,
             limit=limit,
         )
-        result = GeneratePlaylistResult(playlist_structure=playlist_structure)
-
-        # Optionally push an evaluated snapshot to Navidrome via Subsonic API.
-        try:
-            client = self._get_client()
-        except ValueError:
-            pass
-        else:
-            try:
-                playlist_filter = parse_smart_playlist_query(query, namespace=self.cfg.namespace)
-                matching_ids = execute_smart_playlist_filter(self._db, playlist_filter)
-                file_ids = list(matching_ids)
-                if limit is not None:
-                    file_ids = file_ids[:limit]
-                push_playlist(
-                    db=self._db,
-                    client=client,
-                    playlist_name=playlist_name,
-                    file_ids=file_ids,
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to push smart playlist '%s' to Navidrome",
-                    playlist_name,
-                    extra={
-                        "playlist_name": playlist_name,
-                        "query": query,
-                    },
-                )
-
-        return result
+        return GeneratePlaylistResult(playlist_structure=playlist_structure)
 
     def get_template_summary(self) -> GetTemplateSummaryResult:
         """Get list of available Navidrome templates."""
@@ -212,51 +176,6 @@ class NavidromeService:
         """Generate files from a template."""
         files_generated = generate_template_files()
         return GenerateTemplateFilesResult(files_generated=files_generated)
-
-    def push_static_playlist(
-        self,
-        file_ids: list[str],
-        playlist_name: str = "Vector Search Playlist",
-    ) -> NavidromeStaticPlaylistResult:
-        """Push a static playlist of specific tracks to Navidrome.
-
-        Resolves Nomarr file IDs to Navidrome song IDs, creates or replaces
-        the named playlist via the Subsonic API, and returns a result that
-        includes the resolved ND IDs and any unresolved file IDs.
-
-        Args:
-            file_ids: Nomarr ``library_files`` document IDs (max 200).
-            playlist_name: Display name for the Navidrome playlist.
-
-        Returns:
-            NavidromeStaticPlaylistResult with playlist metadata.
-
-        Raises:
-            ValueError: If Navidrome credentials are not configured.
-
-        This method is part of backend-managed push flow and is separate from
-        plugin similar-track recommendation resolution.
-
-        """
-        client = self._get_client()
-        result = push_playlist(
-            db=self._db,
-            client=client,
-            playlist_name=playlist_name,
-            file_ids=file_ids,
-        )
-
-        # Resolve IDs for the response (single DB call, cached by bulk_resolve).
-        id_map = bulk_resolve_files_to_navidrome_ids(self._db, file_ids)
-        track_nd_ids = [id_map[fid] for fid in file_ids if fid in id_map]
-        unresolved = [fid for fid in file_ids if fid not in id_map]
-
-        return NavidromeStaticPlaylistResult(
-            playlist_name=playlist_name,
-            playlist_id=result.playlist_id,
-            track_nd_ids=track_nd_ids,
-            unresolved_file_ids=unresolved,
-        )
 
     def generate_static_playlist(
         self,
@@ -314,29 +233,6 @@ class NavidromeService:
         api_user = self._config_service.get("navidrome_api_user")
         api_password = self._config_service.get("navidrome_api_password")
         return api_url, api_user, api_password
-
-    @staticmethod
-    def _parse_path_prefix_map(raw_value: object) -> list[tuple[str, str]]:
-        """Parse the live Navidrome path-prefix mapping config.
-
-        The config value is a comma-separated list of ``from:to`` pairs.
-        Invalid entries are ignored. Empty target prefixes are allowed so a
-        mapping can strip a prefix entirely.
-        """
-        if not isinstance(raw_value, str):
-            return []
-
-        mappings: list[tuple[str, str]] = []
-        for raw_pair in raw_value.split(","):
-            pair = raw_pair.strip()
-            if not pair or ":" not in pair:
-                continue
-            source_prefix, target_prefix = pair.split(":", maxsplit=1)
-            source_prefix = source_prefix.strip()
-            target_prefix = target_prefix.strip()
-            if source_prefix:
-                mappings.append((source_prefix, target_prefix))
-        return mappings
 
     # ------------------------------------------------------------------
     # Subsonic client (lazy, invalidated on credential change)
@@ -416,39 +312,6 @@ class NavidromeService:
             return False, str(e)
         except Exception as e:
             return False, str(e)
-
-    # ------------------------------------------------------------------
-    # Song map sync
-    # ------------------------------------------------------------------
-
-    def sync_navidrome(self) -> NdSyncResult:
-        """Sync Navidrome's song inventory to graph collections.
-
-        Walks Navidrome's album inventory via the Subsonic API, matches file
-        paths to Nomarr library_files, upserts track vertices + edges, and
-        captures per-user play counts.
-
-        Returns:
-            NdSyncResult with sync statistics.
-
-        Raises:
-            ValueError: If Navidrome API credentials are not configured.
-
-        This sync path is for backend-managed mapping/push flows and is not
-        required for plugin descriptor-based similar-track recommendations.
-
-        """
-        client = self._get_client()
-        api_user: str = self._config_service.get("navidrome_api_user", "")
-        path_prefix_map = self._parse_path_prefix_map(
-            self._config_service.get("navidrome_path_prefix_map", ""),
-        )
-        return sync_navidrome(
-            client=client,
-            db=self._db,
-            user_id=api_user,
-            path_prefix_map=path_prefix_map,
-        )
 
     # ------------------------------------------------------------------
     # Similarity search
@@ -579,77 +442,6 @@ class NavidromeService:
             )
 
         return result
-
-    def trigger_personal_playlists(self) -> dict[str, int | str]:
-        """Generate personal playlists for the configured Navidrome user and push them.
-
-        Reads ``navidrome_api_user`` from config, generates playlists from the
-        taste profile, then pushes each to Navidrome via the Subsonic API.
-
-        Returns:
-            Dict with ``status``, ``message``, ``playlists_generated``, ``playlists_pushed``.
-
-        Raises:
-            ValueError: If ``navidrome_api_user`` is not configured.
-            MisconfiguredError: If ``library_key`` is not configured.
-
-        Legacy backend push path. Plugin-backed personal playlist generation should
-        use descriptor payloads from ``generate_playlists`` via the v1 API and
-        resolve to Navidrome IDs inside the plugin.
-
-        """
-        user_id: str = self._config_service.get("navidrome_api_user", "")
-        if not user_id:
-            raise ValueError("navidrome_api_user is not configured")
-
-        result = self.generate_playlists(user_id=user_id)
-
-        if not result.playlists:
-            return {
-                "status": result.status,
-                "message": result.message or "No playlists generated",
-                "playlists_generated": 0,
-                "playlists_pushed": 0,
-            }
-
-        client = self._get_client()
-        pushed = 0
-        for playlist in result.playlists:
-            try:
-                push_playlist(
-                    db=self._db,
-                    client=client,
-                    playlist_name=playlist["playlist_name"],
-                    file_ids=playlist["file_ids"],
-                )
-                pushed += 1
-            except Exception:
-                logger.exception("Failed to push playlist %s", playlist["playlist_name"])
-
-        return {
-            "status": "ok",
-            "message": "",
-            "playlists_generated": len(result.playlists),
-            "playlists_pushed": pushed,
-        }
-
-    def resolve_files_to_nd(self, file_ids: list[str]) -> dict[str, str]:
-        """Resolve ``library_files/_id`` values to Navidrome track IDs.
-
-        Thin delegation to the persistence layer.
-
-        Args:
-            file_ids: List of ``library_files/<_key>`` document IDs.
-
-        Returns:
-            Mapping of file document ID → Navidrome ``nd_id``.
-            Only contains entries where a ``has_nd_id`` edge exists.
-
-        Used by backend-managed playlist push paths only. Plugin similar-track
-        resolves descriptors to Navidrome IDs inside the plugin.
-
-        """
-        return bulk_resolve_files_to_navidrome_ids(self._db, file_ids)
 
     def resolve_files_to_descriptors(self, file_ids: list[str]) -> dict[str, TrackDescriptor]:
         """Resolve ``library_files/_id`` values to portable track descriptors.

@@ -266,7 +266,7 @@ export async function getNavidromeStatus(): Promise<NavidromeStatusResponse> {
 }
 
 
-// ── Legacy backend push flows (Web UI) ──
+// ── Removed backend push flows (HTTP 410) ──
 
 export interface PushStaticPlaylistResponse {
   playlist_name: string;
@@ -276,7 +276,7 @@ export interface PushStaticPlaylistResponse {
 }
 
 /**
- * Legacy backend path: push a static playlist to Navidrome by song IDs.
+ * Removed backend path (returns HTTP 410).
  * Plugin-backed playlist flows resolve descriptors inside the Navidrome plugin.
  */
 export async function pushStaticPlaylist(
@@ -289,7 +289,7 @@ export async function pushStaticPlaylist(
   });
 }
 
-// ── Sync Songs ──
+// ── Removed Sync Songs path (HTTP 410) ──
 
 export interface SyncSongsResponse {
   total_songs: number;
@@ -302,10 +302,7 @@ export interface SyncSongsResponse {
 }
 
 /**
- * Trigger a full Navidrome song sync to graph collections.
- * Required only for legacy backend push/manual personal-trigger flows that
- * resolve file IDs to Navidrome song IDs. Not required for plugin-backed
- * descriptor flows.
+ * Removed backend path (returns HTTP 410).
  */
 export async function syncNavidromeSongs(): Promise<SyncSongsResponse> {
   return post<SyncSongsResponse>("/api/web/navidrome/sync-song");
@@ -321,8 +318,7 @@ export interface TriggerPersonalPlaylistsResponse {
 }
 
 /**
- * Legacy backend path: generate personal playlists for the configured Navidrome
- * user and push to Navidrome.
+ * Removed backend path (returns HTTP 410).
  */
 export async function triggerPersonalPlaylists(): Promise<TriggerPersonalPlaylistsResponse> {
   return post<TriggerPersonalPlaylistsResponse>("/api/web/navidrome/generate-personal-playlists");

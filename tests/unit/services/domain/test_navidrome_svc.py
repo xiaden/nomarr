@@ -160,78 +160,6 @@ class TestNavidromeServiceGeneratePlaylists:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-class TestNavidromeServiceSync:
-    """Tests for ``NavidromeService.sync_navidrome``."""
-
-    def test_sync_navidrome_passes_live_path_prefix_map(self) -> None:
-        """Service should parse and forward the live Navidrome path-prefix config."""
-        service, _ = _make_service(
-            {
-                "navidrome_api_user": "nav-user",
-                "navidrome_path_prefix_map": "/music:D:/Media,/alt:/mnt/library",
-            },
-        )
-        mock_client = MagicMock()
-
-        with (
-            patch.object(service, "_get_client", return_value=mock_client),
-            patch(
-                "nomarr.services.domain.navidrome_svc.sync_navidrome",
-                return_value={
-                    "total_songs": 0,
-                    "resolved": 0,
-                    "unresolved": 0,
-                    "tracks_upserted": 0,
-                    "play_edges_upserted": 0,
-                    "orphans_removed": 0,
-                    "duration_ms": 0,
-                },
-            ) as mock_sync,
-        ):
-            service.sync_navidrome()
-
-        assert mock_sync.call_args.kwargs["path_prefix_map"] == [
-            ("/music", "D:/Media"),
-            ("/alt", "/mnt/library"),
-        ]
-        assert mock_sync.call_args.kwargs["user_id"] == "nav-user"
-
-    def test_sync_navidrome_allows_empty_remap_targets(self) -> None:
-        """Service should preserve prefix-strip mappings with empty targets."""
-        service, _ = _make_service(
-            {
-                "navidrome_api_user": "nav-user",
-                "navidrome_path_prefix_map": "/music/:,/alt:/mnt/library",
-            },
-        )
-        mock_client = MagicMock()
-
-        with (
-            patch.object(service, "_get_client", return_value=mock_client),
-            patch(
-                "nomarr.services.domain.navidrome_svc.sync_navidrome",
-                return_value={
-                    "total_songs": 0,
-                    "resolved": 0,
-                    "unresolved": 0,
-                    "tracks_upserted": 0,
-                    "play_edges_upserted": 0,
-                    "orphans_removed": 0,
-                    "duration_ms": 0,
-                },
-            ) as mock_sync,
-        ):
-            service.sync_navidrome()
-
-        assert mock_sync.call_args.kwargs["path_prefix_map"] == [
-            ("/music/", ""),
-            ("/alt", "/mnt/library"),
-        ]
-        assert mock_sync.call_args.kwargs["user_id"] == "nav-user"
-
-
-@pytest.mark.unit
-@pytest.mark.mocked
 class TestNavidromeServiceDescriptorResolution:
     """Tests for ``NavidromeService.resolve_files_to_descriptors``."""
 
@@ -311,6 +239,25 @@ class TestNavidromeServiceDescriptorResolution:
             patch(
                 "nomarr.services.domain.navidrome_svc.build_track_descriptor",
                 side_effect=ValueError("bad descriptor"),
-            ),pytest.raises(ValueError, match="bad descriptor")
+            ),
+            pytest.raises(ValueError, match="bad descriptor"),
         ):
             service.resolve_files_to_descriptors(["library_files/track-1"])
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestNavidromeServiceSmartPlaylistGeneration:
+    """Tests for ``NavidromeService.generate_playlist``."""
+
+    def test_generate_playlist_does_not_push_to_navidrome(self) -> None:
+        """Smart playlist generation should return structure only (no backend push)."""
+        service, _ = _make_service()
+
+        with patch(
+            "nomarr.services.domain.navidrome_svc.generate_smart_playlist_workflow",
+            return_value={"name": "Mix", "all": []},
+        ):
+            result = service.generate_playlist(query="tag:rock > 0.5", playlist_name="Mix")
+
+        assert result.playlist_structure == {"name": "Mix", "all": []}
