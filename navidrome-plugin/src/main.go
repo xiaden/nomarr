@@ -204,18 +204,16 @@ type nomarrRequest struct {
 
 // nomarrSongDescriptor is a portable track descriptor in Nomarr's API response.
 type nomarrSongDescriptor struct {
-	Title                  string  `json:"title"`
-	Artist                 string  `json:"artist"`
-	Album                  string  `json:"album"`
-	AlbumArtist            string  `json:"album_artist"`
-	DurationMs             *int    `json:"duration_ms,omitempty"`
-	TrackNumber            *int    `json:"track_number,omitempty"`
-	DiscNumber             *int    `json:"disc_number,omitempty"`
-	Year                   *int    `json:"year,omitempty"`
-	MusicBrainzTrackID     string  `json:"musicbrainz_track_id,omitempty"`
-	MusicBrainzRecordingID string  `json:"musicbrainz_recording_id,omitempty"`
-	NomarrFileKey          string  `json:"nomarr_file_key,omitempty"`
-	Score                  float64 `json:"score"`
+	Title         string  `json:"title"`
+	Artist        string  `json:"artist"`
+	Album         string  `json:"album"`
+	AlbumArtist   string  `json:"album_artist"`
+	DurationMs    *int    `json:"duration_ms,omitempty"`
+	TrackNumber   *int    `json:"track_number,omitempty"`
+	DiscNumber    *int    `json:"disc_number,omitempty"`
+	Year          *int    `json:"year,omitempty"`
+	NomarrFileKey string  `json:"nomarr_file_key,omitempty"`
+	Score         float64 `json:"score"`
 }
 
 // nomarrResponse is the JSON response from Nomarr's similar-tracks endpoint.
@@ -224,17 +222,15 @@ type nomarrResponse struct {
 }
 
 type subsonicSong struct {
-	ID                     string
-	Title                  string
-	Artist                 string
-	Album                  string
-	AlbumArtist            string
-	DurationMs             *int
-	TrackNumber            *int
-	DiscNumber             *int
-	Year                   *int
-	MusicBrainzTrackID     string
-	MusicBrainzRecordingID string
+	ID          string
+	Title       string
+	Artist      string
+	Album       string
+	AlbumArtist string
+	DurationMs  *int
+	TrackNumber *int
+	DiscNumber  *int
+	Year        *int
 }
 
 func parseIntPointer(value string) *int {
@@ -331,52 +327,27 @@ func parseSubsonicSongs(xml string) []subsonicSong {
 		trackRaw, _ := xmlAttr(tag, "track")
 		discRaw, _ := xmlAttr(tag, "discNumber")
 		yearRaw, _ := xmlAttr(tag, "year")
-		mbTrack, _ := xmlAttr(tag, "musicBrainzTrackId")
-		mbRecording, _ := xmlAttr(tag, "musicBrainzId")
-		if mbRecording == "" {
-			mbRecording, _ = xmlAttr(tag, "mbid")
-		}
-
 		songs = append(songs, subsonicSong{
-			ID:                     id,
-			Title:                  title,
-			Artist:                 artist,
-			Album:                  album,
-			AlbumArtist:            albumArtist,
-			DurationMs:             parseDurationMs(durationRaw),
-			TrackNumber:            parseIntPointer(trackRaw),
-			DiscNumber:             parseIntPointer(discRaw),
-			Year:                   parseIntPointer(yearRaw),
-			MusicBrainzTrackID:     mbTrack,
-			MusicBrainzRecordingID: mbRecording,
+			ID:          id,
+			Title:       title,
+			Artist:      artist,
+			Album:       album,
+			AlbumArtist: albumArtist,
+			DurationMs:  parseDurationMs(durationRaw),
+			TrackNumber: parseIntPointer(trackRaw),
+			DiscNumber:  parseIntPointer(discRaw),
+			Year:        parseIntPointer(yearRaw),
 		})
 	}
 	return songs
 }
 
 func resolveDescriptorAgainstCandidates(descriptor nomarrSongDescriptor, candidates []subsonicSong) (subsonicSong, string) {
+	// Deterministic metadata-only resolution:
+	// strict title/artist/album(+duration), then title/album_artist/album(+track+disc),
+	// then looser title+artist(+duration), then title+artist fallback.
+	// Multiple matches return descriptor_ambiguous; no matches return descriptor_unresolved.
 	empty := subsonicSong{}
-	mbTrack := strings.TrimSpace(strings.ToLower(descriptor.MusicBrainzTrackID))
-	mbRecording := strings.TrimSpace(strings.ToLower(descriptor.MusicBrainzRecordingID))
-	if mbTrack != "" || mbRecording != "" {
-		mbMatches := make([]subsonicSong, 0)
-		for _, candidate := range candidates {
-			if mbTrack != "" && strings.ToLower(candidate.MusicBrainzTrackID) == mbTrack {
-				mbMatches = append(mbMatches, candidate)
-				continue
-			}
-			if mbRecording != "" && strings.ToLower(candidate.MusicBrainzRecordingID) == mbRecording {
-				mbMatches = append(mbMatches, candidate)
-			}
-		}
-		if len(mbMatches) == 1 {
-			return mbMatches[0], ""
-		}
-		if len(mbMatches) > 1 {
-			return empty, "descriptor_ambiguous"
-		}
-	}
-
 	title := normalizeText(descriptor.Title)
 	artist := normalizeText(descriptor.Artist)
 	album := normalizeText(descriptor.Album)
@@ -625,16 +596,14 @@ func (p *nomarrPlugin) GetSimilarSongsByTrack(req metadata.SimilarSongsByTrackRe
 
 	reqBody := nomarrRequest{
 		Seed: nomarrSongDescriptor{
-			Title:                  seedSong.Title,
-			Artist:                 seedSong.Artist,
-			Album:                  seedSong.Album,
-			AlbumArtist:            seedSong.AlbumArtist,
-			DurationMs:             seedSong.DurationMs,
-			TrackNumber:            seedSong.TrackNumber,
-			DiscNumber:             seedSong.DiscNumber,
-			Year:                   seedSong.Year,
-			MusicBrainzTrackID:     seedSong.MusicBrainzTrackID,
-			MusicBrainzRecordingID: seedSong.MusicBrainzRecordingID,
+			Title:       seedSong.Title,
+			Artist:      seedSong.Artist,
+			Album:       seedSong.Album,
+			AlbumArtist: seedSong.AlbumArtist,
+			DurationMs:  seedSong.DurationMs,
+			TrackNumber: seedSong.TrackNumber,
+			DiscNumber:  seedSong.DiscNumber,
+			Year:        seedSong.Year,
 		},
 		Count:      count,
 		BackboneID: backbone,

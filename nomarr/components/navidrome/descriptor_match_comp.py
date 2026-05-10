@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from nomarr.components.library.library_file_query_comp import get_files_by_ids_with_tags
 from nomarr.components.playlist_import.metadata_normalizer_comp import normalize_artist, normalize_title
-from nomarr.persistence.base_types import Field
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -23,8 +22,6 @@ class TrackDescriptor(TypedDict):
     track_number: int | None
     disc_number: int | None
     year: int | None
-    musicbrainz_track_id: str | None
-    musicbrainz_recording_id: str | None
     nomarr_file_key: str | None
 
 
@@ -62,19 +59,6 @@ def _duration_close(lhs_ms: int | None, rhs_ms: int | None, tolerance_ms: int = 
 
 
 def _descriptor_from_doc(file_doc: dict[str, Any]) -> TrackDescriptor:
-    musicbrainz_track_id = _tag_value(
-        file_doc,
-        "musicbrainz_trackid",
-        "musicbrainz_track_id",
-        "musicbrainz/release track id",
-    )
-    musicbrainz_recording_id = _tag_value(
-        file_doc,
-        "musicbrainz_recordingid",
-        "musicbrainz_recording_id",
-        "musicbrainzid",
-        "musicbrainz_id",
-    )
     return TrackDescriptor(
         title=str(file_doc.get("title") or ""),
         artist=str(file_doc.get("artist") or ""),
@@ -84,8 +68,6 @@ def _descriptor_from_doc(file_doc: dict[str, Any]) -> TrackDescriptor:
         track_number=_tag_int(file_doc, "track_number", "tracknumber"),
         disc_number=_tag_int(file_doc, "disc_number", "discnumber"),
         year=int(file_doc["year"]) if isinstance(file_doc.get("year"), int) else None,
-        musicbrainz_track_id=musicbrainz_track_id,
-        musicbrainz_recording_id=musicbrainz_recording_id,
         nomarr_file_key=str(file_doc.get("_key") or "") or None,
     )
 
@@ -99,37 +81,7 @@ def build_track_descriptor(file_doc: dict[str, Any]) -> TrackDescriptor:
     return _descriptor_from_doc(file_doc)
 
 
-def _file_ids_for_tag_values(db: Database, keys: tuple[str, ...], value: str) -> set[str]:
-    if not value:
-        return set()
-    tag_ids = {
-        tag_id
-        for key in keys
-        for tag_doc in cast("list[dict[str, Any]]", db.tags.get(name=key, value=value, limit=None))
-        if isinstance((tag_id := tag_doc.get("_id")), str)
-    }
-    if not tag_ids:
-        return set()
-    edges = cast("list[dict[str, Any]]", db.song_has_tags.get.in_(Field("_to", list(tag_ids)), limit=None))
-    return {file_id for edge in edges if isinstance((file_id := edge.get("_from")), str)}
-
-
 def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
-    mb_track = (seed.get("musicbrainz_track_id") or "").strip()
-    mb_recording = (seed.get("musicbrainz_recording_id") or "").strip()
-    if mb_track or mb_recording:
-        mb_ids = _file_ids_for_tag_values(
-            db,
-            ("musicbrainz_trackid", "musicbrainz_track_id", "musicbrainz/release track id"),
-            mb_track,
-        ) | _file_ids_for_tag_values(
-            db,
-            ("musicbrainz_recordingid", "musicbrainz_recording_id", "musicbrainzid", "musicbrainz_id"),
-            mb_recording,
-        )
-        if mb_ids:
-            return mb_ids
-
     title = seed.get("title", "")
     if title:
         title_docs = cast("list[dict[str, Any]]", db.library_files.get.many(title=title, limit=None))
@@ -155,20 +107,6 @@ def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tupl
         for file_doc in docs
         if isinstance((file_id := file_doc.get("_id")), str)
     }
-
-    mb_track = (seed.get("musicbrainz_track_id") or "").casefold()
-    mb_recording = (seed.get("musicbrainz_recording_id") or "").casefold()
-    if mb_track or mb_recording:
-        mb_matches = [
-            file_id
-            for file_id, descriptor in descriptors_by_id.items()
-            if (mb_track and (descriptor.get("musicbrainz_track_id") or "").casefold() == mb_track)
-            or (mb_recording and (descriptor.get("musicbrainz_recording_id") or "").casefold() == mb_recording)
-        ]
-        if len(mb_matches) == 1:
-            return mb_matches[0], ""
-        if len(mb_matches) > 1:
-            return None, "descriptor_ambiguous"
 
     title = _normalize_title(seed.get("title", ""))
     artist = normalize_artist(seed.get("artist", "")) if seed.get("artist") else ""

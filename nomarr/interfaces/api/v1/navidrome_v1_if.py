@@ -47,8 +47,6 @@ class SeedTrackDescriptor(BaseModel):
     track_number: int | None = None
     disc_number: int | None = None
     year: int | None = None
-    musicbrainz_track_id: str | None = None
-    musicbrainz_recording_id: str | None = None
     nomarr_file_key: str | None = None
 
 
@@ -116,8 +114,6 @@ async def navidrome_similar_tracks(
                 track_number=r["track_number"],
                 disc_number=r["disc_number"],
                 year=r["year"],
-                musicbrainz_track_id=r["musicbrainz_track_id"],
-                musicbrainz_recording_id=r["musicbrainz_recording_id"],
                 nomarr_file_key=r["nomarr_file_key"],
                 score=r["score"],
             )

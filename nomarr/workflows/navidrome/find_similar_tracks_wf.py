@@ -38,8 +38,6 @@ class SimilarTrackResult(TypedDict):
     track_number: int | None
     disc_number: int | None
     year: int | None
-    musicbrainz_track_id: str | None
-    musicbrainz_recording_id: str | None
     nomarr_file_key: str | None
     score: float
 
@@ -150,8 +148,6 @@ def find_similar_tracks(
                 track_number=descriptor["track_number"],
                 disc_number=descriptor["disc_number"],
                 year=descriptor["year"],
-                musicbrainz_track_id=descriptor["musicbrainz_track_id"],
-                musicbrainz_recording_id=descriptor["musicbrainz_recording_id"],
                 nomarr_file_key=descriptor["nomarr_file_key"],
                 score=float(result["score"]),
             )

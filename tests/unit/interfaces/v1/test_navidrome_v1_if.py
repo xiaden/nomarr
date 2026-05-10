@@ -59,8 +59,6 @@ class TestSimilarTracksEndpoint:
                 "track_number": 4,
                 "disc_number": 1,
                 "year": 2024,
-                "musicbrainz_track_id": "mb-track",
-                "musicbrainz_recording_id": "mb-recording",
                 "nomarr_file_key": "abc123",
                 "score": 0.91,
             }
@@ -90,8 +88,6 @@ class TestSimilarTracksEndpoint:
                     "track_number": 4,
                     "disc_number": 1,
                     "year": 2024,
-                    "musicbrainz_track_id": "mb-track",
-                    "musicbrainz_recording_id": "mb-recording",
                     "nomarr_file_key": "abc123",
                     "score": 0.91,
                 }
@@ -107,8 +103,6 @@ class TestSimilarTracksEndpoint:
                 "track_number": None,
                 "disc_number": None,
                 "year": None,
-                "musicbrainz_track_id": None,
-                "musicbrainz_recording_id": None,
                 "nomarr_file_key": None,
             },
             count=10,
@@ -212,8 +206,6 @@ class TestGeneratePlaylistsEndpoint:
                 "track_number": 3,
                 "disc_number": 1,
                 "year": 2024,
-                "musicbrainz_track_id": "mb-track",
-                "musicbrainz_recording_id": "mb-recording",
                 "nomarr_file_key": "track-1",
             },
         }
@@ -241,8 +233,6 @@ class TestGeneratePlaylistsEndpoint:
                             "track_number": 3,
                             "disc_number": 1,
                             "year": 2024,
-                            "musicbrainz_track_id": "mb-track",
-                            "musicbrainz_recording_id": "mb-recording",
                             "nomarr_file_key": "track-1",
                         }
                     ],
@@ -305,8 +295,6 @@ class TestGeneratePlaylistsEndpoint:
                 "track_number": None,
                 "disc_number": None,
                 "year": None,
-                "musicbrainz_track_id": None,
-                "musicbrainz_recording_id": None,
                 "nomarr_file_key": "track-1",
             },
         }

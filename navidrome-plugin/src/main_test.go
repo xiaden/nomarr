@@ -71,19 +71,6 @@ func TestResolveDescriptorAgainstCandidates(t *testing.T) {
 		}
 	})
 
-	t.Run("musicbrainz ambiguous", func(t *testing.T) {
-		_, status := resolveDescriptorAgainstCandidates(
-			nomarrSongDescriptor{MusicBrainzRecordingID: "mbid-1"},
-			[]subsonicSong{
-				{ID: "1", MusicBrainzRecordingID: "mbid-1"},
-				{ID: "2", MusicBrainzRecordingID: "mbid-1"},
-			},
-		)
-		if status != "descriptor_ambiguous" {
-			t.Fatalf("expected descriptor_ambiguous, got %q", status)
-		}
-	})
-
 	t.Run("partial result resolution", func(t *testing.T) {
 		descriptors := []nomarrSongDescriptor{
 			{Title: "Song", Artist: "Artist", Album: "Album", DurationMs: intPtr(200000)},

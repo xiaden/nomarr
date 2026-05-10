@@ -96,8 +96,6 @@ class TestFindSimilarTracksHappyPath:
                         {"key": "album_artist", "value": "Album Artist A"},
                         {"key": "tracknumber", "value": "3"},
                         {"key": "discnumber", "value": "1"},
-                        {"key": "musicbrainz_trackid", "value": "mb-track"},
-                        {"key": "musicbrainz_recordingid", "value": "mb-recording"},
                     ],
                 }
             ],
@@ -115,8 +113,6 @@ class TestFindSimilarTracksHappyPath:
         assert result["track_number"] == 3
         assert result["disc_number"] == 1
         assert result["year"] == 2024
-        assert result["musicbrainz_track_id"] == "mb-track"
-        assert result["musicbrainz_recording_id"] == "mb-recording"
         assert result["nomarr_file_key"] == "match-1"
         assert result["score"] == 0.95
 

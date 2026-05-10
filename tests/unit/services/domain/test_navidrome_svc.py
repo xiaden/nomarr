@@ -182,8 +182,6 @@ class TestNavidromeServiceDescriptorResolution:
                     "track_number": None,
                     "disc_number": None,
                     "year": None,
-                    "musicbrainz_track_id": None,
-                    "musicbrainz_recording_id": None,
                     "nomarr_file_key": "track-1",
                 },
             ) as mock_build,
@@ -200,8 +198,6 @@ class TestNavidromeServiceDescriptorResolution:
                 "track_number": None,
                 "disc_number": None,
                 "year": None,
-                "musicbrainz_track_id": None,
-                "musicbrainz_recording_id": None,
                 "nomarr_file_key": "track-1",
             },
         }
