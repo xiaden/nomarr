@@ -15,7 +15,7 @@ from nomarr.persistence.arango_client import SafeDatabase
 
 
 class LibrariesAqlOperations:
-    """Library capability bindings over reusable AQL templates."""
+    """Operations for library CRUD and query paths via reusable AQL templates."""
 
     def __init__(self, db: SafeDatabase) -> None:
         self._db = db

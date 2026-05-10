@@ -28,7 +28,9 @@ def normalize_limit(limit: int | None) -> int:
 
 def _validate_field_name(field_name: str, *, allowed_fields: set[str] | None = None) -> str:
     if not _FIELD_NAME_PATTERN.fullmatch(field_name):
-        raise ValueError(f"Invalid field name: {field_name}")
+        raise ValueError(
+            f"Invalid field name: {field_name}. Must match pattern ^[A-Za-z_][A-Za-z0-9_]*$"
+        )
     if allowed_fields is not None and field_name not in allowed_fields:
         raise ValueError(f"Field '{field_name}' is not allowed")
     return field_name
@@ -101,7 +103,7 @@ def get_filtered_docs(
           FOR criterion IN @filters
             RETURN doc[criterion.name] == criterion.value
         )
-      SORT @sort_field == null ? null : doc[@sort_field]
+      SORT doc[@sort_field]
       LIMIT @limit
       RETURN doc
     """
@@ -143,7 +145,7 @@ def list_field_values(
           FOR criterion IN @filters
             RETURN doc[criterion.name] == criterion.value
         )
-      SORT @sort_field == null ? null : doc[@sort_field]
+      SORT doc[@sort_field]
       LIMIT @limit
       RETURN doc[@value_field]
     """

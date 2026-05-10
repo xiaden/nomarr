@@ -45,7 +45,7 @@ def _is_numeric_type(target_value: float | str) -> bool:
 
 
 class LibraryFilesAqlOperations:
-    """Library-file capability bindings over reusable AQL templates."""
+    """Operations for library-file listing/counting and matching-track queries via AQL templates."""
 
     def __init__(self, db: SafeDatabase) -> None:
         self._db = db
