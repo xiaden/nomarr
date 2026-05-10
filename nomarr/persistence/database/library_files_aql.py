@@ -7,6 +7,29 @@ from typing import Any
 from nomarr.persistence.aql.primitives import execute, normalize_limit
 from nomarr.persistence.arango_client import SafeDatabase
 
+_ISRC_SUBQUERY = """
+LET isrc = FIRST(
+  FOR edge IN song_has_tags
+    FILTER edge._from == file._id
+    FOR tag IN tags
+      FILTER tag._id == edge._to
+      FILTER tag.name == "isrc"
+      LIMIT 1
+      RETURN tag.value
+)
+"""
+
+_TRACK_PROJECTION = """
+RETURN {
+  _id: file._id,
+  path: file.path,
+  title: file.title,
+  artist: file.artist,
+  album: file.album,
+  isrc: isrc
+}
+"""
+
 
 def _is_numeric_target_value(target_value: float | str) -> bool:
     return isinstance(target_value, (int, float)) and not isinstance(target_value, bool)
@@ -67,53 +90,27 @@ class LibraryFilesAqlOperations:
     def get_tracks_for_matching(self, *, library_id: str | None = None) -> list[dict[str, Any]]:
         """Return fuzzy matching track rows, optionally scoped to one library."""
         if library_id is not None:
-            query = """
+            query = (
+                """
             FOR ownership IN library_contains_file
               FILTER ownership._from == @library_id
               FOR file IN library_files
                 FILTER file._id == ownership._to
                 FILTER file.is_valid == true
-                LET isrc = FIRST(
-                  FOR edge IN song_has_tags
-                    FILTER edge._from == file._id
-                    FOR tag IN tags
-                      FILTER tag._id == edge._to
-                      FILTER tag.name == "isrc"
-                      LIMIT 1
-                      RETURN tag.value
-                )
-                RETURN {
-                  _id: file._id,
-                  path: file.path,
-                  title: file.title,
-                  artist: file.artist,
-                  album: file.album,
-                  isrc: isrc
-                }
             """
+                + _ISRC_SUBQUERY
+                + _TRACK_PROJECTION
+            )
             rows = execute(self._db, query, {"library_id": library_id})
         else:
-            query = """
+            query = (
+                """
             FOR file IN library_files
               FILTER file.is_valid == true
-              LET isrc = FIRST(
-                FOR edge IN song_has_tags
-                  FILTER edge._from == file._id
-                  FOR tag IN tags
-                    FILTER tag._id == edge._to
-                    FILTER tag.name == "isrc"
-                    LIMIT 1
-                    RETURN tag.value
-              )
-              RETURN {
-                _id: file._id,
-                path: file.path,
-                title: file.title,
-                artist: file.artist,
-                album: file.album,
-                isrc: isrc
-              }
             """
+                + _ISRC_SUBQUERY
+                + _TRACK_PROJECTION
+            )
             rows = execute(self._db, query, {})
 
         return [row for row in rows if isinstance(row, dict)]
