@@ -7,7 +7,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from nomarr.components.library.library_file_query_comp import list_all_file_ids
-from nomarr.persistence.constructor.pagination import DEFAULT_LIMIT
 
 
 class TestListAllFileIds:
@@ -22,7 +21,7 @@ class TestListAllFileIds:
         result = list_all_file_ids(mock_db)
 
         assert result == ["library_files/1", "library_files/2"]
-        mock_db.library_files_aql.list_all_file_ids.assert_called_once_with(limit=DEFAULT_LIMIT)
+        mock_db.library_files_aql.list_all_file_ids.assert_called_once_with(limit=None)
 
     @pytest.mark.unit
     def test_uses_explicit_collect_limit_when_provided(self) -> None:

@@ -14,6 +14,7 @@ from nomarr.persistence.database.library_files_aql import LibraryFilesAqlOperati
 class TestLibraryFilesAqlOperations:
     def test_list_all_file_ids_uses_aql_and_normalizes_rows(self) -> None:
         ops = LibraryFilesAqlOperations(MagicMock())
+        # Include a non-string row to verify id filtering behavior.
         with patch("nomarr.persistence.database.library_files_aql.execute", return_value=["library_files/1", 3]) as exec_mock:
             result = ops.list_all_file_ids(limit=10)
 

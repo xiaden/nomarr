@@ -13,7 +13,7 @@ def execute(
     db: SafeDatabase,
     query: str,
     bind_vars: dict[str, Any],
-) -> list[dict[str, Any]] | list[Any]:
+) -> list[Any]:
     """Execute AQL and materialize the cursor."""
     return list(_execute_aql(db, query, bind_vars=bind_vars))
 

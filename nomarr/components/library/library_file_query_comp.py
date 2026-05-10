@@ -587,8 +587,7 @@ def get_sample_normalized_path(db: Database) -> str | None:
 
 def list_all_file_ids(db: Database, limit: int | None = None) -> list[str]:
     """Return all library-file ids ordered by ``_key``."""
-    collect_limit = limit if limit is not None else DEFAULT_LIMIT
-    return db.library_files_aql.list_all_file_ids(limit=collect_limit)
+    return db.library_files_aql.list_all_file_ids(limit=limit)
 
 
 def get_folder_rel_paths(db: Database, library_id: str) -> set[str]:

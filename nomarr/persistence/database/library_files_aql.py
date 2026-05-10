@@ -6,7 +6,10 @@ from typing import Any
 
 from nomarr.persistence.aql.primitives import execute, normalize_limit
 from nomarr.persistence.arango_client import SafeDatabase
+from nomarr.persistence.constructor.pagination import DEFAULT_LIMIT
 
+# Query fragment used by track projections. Requires `file` in scope.
+# When no ISRC tag exists, FIRST(...) returns null and the projected `isrc` is null.
 _ISRC_SUBQUERY = """
 LET isrc = FIRST(
   FOR edge IN song_has_tags
@@ -19,6 +22,7 @@ LET isrc = FIRST(
 )
 """
 
+# Projection fragment used with `_ISRC_SUBQUERY`. Requires `file` and `isrc`.
 _TRACK_PROJECTION = """
 RETURN {
   _id: file._id,
@@ -31,7 +35,7 @@ RETURN {
 """
 
 
-def _is_numeric_target_value(target_value: float | str) -> bool:
+def _is_numeric_type(target_value: float | str) -> bool:
     return isinstance(target_value, (int, float)) and not isinstance(target_value, bool)
 
 
@@ -43,18 +47,19 @@ class LibraryFilesAqlOperations:
 
     def list_all_file_ids(self, *, limit: int | None = None) -> list[str]:
         """Return ordered `library_files` ids."""
+        effective_limit = DEFAULT_LIMIT if limit is None else limit
         query = """
         FOR file IN library_files
           SORT file._key
           LIMIT @limit
           RETURN file._id
         """
-        rows = execute(self._db, query, {"limit": normalize_limit(limit)})
+        rows = execute(self._db, query, {"limit": normalize_limit(effective_limit)})
         return [row for row in rows if isinstance(row, str)]
 
     def count_files_by_tag(self, tag_key: str, target_value: float | str) -> int:
         """Count files matching tag query semantics."""
-        if _is_numeric_target_value(target_value):
+        if _is_numeric_type(target_value):
             query = """
             LET tag_ids = (
               FOR tag IN tags

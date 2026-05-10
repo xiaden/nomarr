@@ -31,11 +31,19 @@ class TestNormalizeLimit:
 class TestExecute:
     def test_materializes_execute_cursor(self) -> None:
         db = MagicMock()
-        with patch("nomarr.persistence.aql.primitives._execute_aql", return_value=iter([{"_id": "1"}])) as execute_mock:
+        with patch("nomarr.persistence.aql.primitives._execute_aql", return_value=iter([{"_id": "1"}, {"_id": "2"}])) as execute_mock:
             result = execute(db, "FOR d IN c RETURN d", {"x": 1})
 
-        assert result == [{"_id": "1"}]
+        assert result == [{"_id": "1"}, {"_id": "2"}]
         execute_mock.assert_called_once_with(db, "FOR d IN c RETURN d", bind_vars={"x": 1})
+
+    def test_propagates_execute_errors(self) -> None:
+        db = MagicMock()
+        with (
+            patch("nomarr.persistence.aql.primitives._execute_aql", side_effect=RuntimeError("boom")),
+            pytest.raises(RuntimeError, match="boom"),
+        ):
+            execute(db, "FOR d IN c RETURN d", {"x": 1})
 
 
 @pytest.mark.unit
