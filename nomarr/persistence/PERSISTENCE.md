@@ -49,6 +49,12 @@ Use handwritten custom AQL in `database/*_aql.py` only when a reusable template 
   - `components/library/library_file_query_comp.py` (selected query paths)
   - `components/library/library_records_comp.py` (library record CRUD/query paths)
 
+## Migration strategy for legacy callers
+
+- When touching a caller that still uses legacy collection/accessor/query-spec APIs, migrate that touched path to `database/*_aql.py` capability bindings backed by `aql/primitives.py`.
+- Prefer extracting a reusable primitive first; only keep bespoke query text in `database/*_aql.py` when the shape is truly domain-specific.
+- Remaining untouched legacy callers are allowed temporarily for incremental migration, but new persistence features should not be added to legacy surfaces.
+
 ## Rules
 
 - Persistence may not import interfaces/services/workflows/components.

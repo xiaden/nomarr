@@ -65,6 +65,9 @@ class LibraryFilesAqlOperations:
 
     def count_files_by_tag(self, tag_key: str, target_value: float | str) -> int:
         """Count files matching tag query semantics."""
+        # Numeric tag values are matched by "tag exists with numeric payload" semantics.
+        # This path intentionally ignores an exact numeric target value and mirrors
+        # legacy caller behavior for normalized score/range-like tags.
         if _is_numeric_type(target_value):
             query = """
             LET tag_ids = (
@@ -82,6 +85,7 @@ class LibraryFilesAqlOperations:
             rows = execute(self._db, query, {"tag_key": tag_key})
             return int(rows[0]) if rows else 0
 
+        # String-like tag values use exact name/value match semantics.
         return count_distinct_edge_sources_to_filtered_vertices(
             self._db,
             edge_collection="song_has_tags",

@@ -27,6 +27,12 @@ def normalize_limit(limit: int | None) -> int:
 
 
 def _validate_field_name(field_name: str, *, allowed_fields: set[str] | None = None) -> str:
+    """Validate dynamic field names used in bindable AQL templates.
+
+    This pattern allows Arango system fields (for example ``_id``, ``_key``,
+    ``_from``, ``_to``). Use ``allowed_fields`` to narrow accepted names for a
+    specific query capability.
+    """
     if not _FIELD_NAME_PATTERN.fullmatch(field_name):
         raise ValueError(
             f"Invalid field name: {field_name}. Must match pattern ^[A-Za-z_][A-Za-z0-9_]*$"
@@ -96,14 +102,15 @@ def get_filtered_docs(
     safe_sort_field = None
     if sort_field is not None:
         safe_sort_field = _validate_field_name(sort_field, allowed_fields=allowed_fields)
-    query = """
+    sort_clause = "SORT doc[@sort_field]" if safe_sort_field is not None else ""
+    query = f"""
     FOR doc IN @@collection
       FILTER LENGTH(@filters) == 0
         OR ALL(
           FOR criterion IN @filters
             RETURN doc[criterion.name] == criterion.value
         )
-      SORT doc[@sort_field]
+      {sort_clause}
       LIMIT @limit
       RETURN doc
     """
@@ -138,14 +145,15 @@ def list_field_values(
     safe_sort_field = None
     if sort_field is not None:
         safe_sort_field = _validate_field_name(sort_field, allowed_fields=allowed_fields)
-    query = """
+    sort_clause = "SORT doc[@sort_field]" if safe_sort_field is not None else ""
+    query = f"""
     FOR doc IN @@collection
       FILTER LENGTH(@filters) == 0
         OR ALL(
           FOR criterion IN @filters
             RETURN doc[criterion.name] == criterion.value
         )
-      SORT doc[@sort_field]
+      {sort_clause}
       LIMIT @limit
       RETURN doc[@value_field]
     """

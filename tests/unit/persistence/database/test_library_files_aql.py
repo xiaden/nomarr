@@ -30,7 +30,15 @@ class TestLibraryFilesAqlOperations:
             result = ops.count_files_by_tag("genre", "rock")
 
         assert result == 2
-        assert count_mock.call_args.kwargs["vertex_filters"] == {"name": "genre", "value": "rock"}
+        assert count_mock.call_args.kwargs == {
+            "edge_collection": "song_has_tags",
+            "edge_source_field": "_from",
+            "edge_target_field": "_to",
+            "vertex_collection": "tags",
+            "vertex_filters": {"name": "genre", "value": "rock"},
+            "vertex_allowed_fields": {"name", "value"},
+            "edge_allowed_fields": {"_from", "_to"},
+        }
 
     def test_count_files_by_tag_numeric_target(self) -> None:
         ops = LibraryFilesAqlOperations(MagicMock())
