@@ -281,7 +281,7 @@ class Database:
         return self._libraries_aql.insert_library(payload)
 
     def get_library(self, library_id_or_key: str) -> dict[str, Any] | None:
-        """Get one library by full ``_id`` or bare ``_key``."""
+        """Get one library by ``libraries/<key>`` id or bare key."""
         if self._is_library_id(library_id_or_key):
             return self._libraries_aql.get_library_by_id(library_id_or_key)
         return self._libraries_aql.get_library_by_key(library_id_or_key)
@@ -315,15 +315,13 @@ class Database:
         """Return fuzzy matching track projection rows."""
         return self._library_files_aql.get_tracks_for_matching(library_id=library_id)
 
-    @staticmethod
-    def _is_library_id(value: str) -> bool:
+    def _is_library_id(self, value: str) -> bool:
         """Return whether a value is a full libraries ``_id``."""
         return value.startswith("libraries/")
 
-    @classmethod
-    def _normalize_library_id(cls, value: str) -> str:
+    def _normalize_library_id(self, value: str) -> str:
         """Normalize a library identifier to ``libraries/<key>`` format."""
-        return value if cls._is_library_id(value) else f"libraries/{value}"
+        return value if self._is_library_id(value) else f"libraries/{value}"
 
     def register(self, collection_name: str, template_name: str) -> VectorCollection:
         """Compatibility-only seam for runtime vector collection registration.
