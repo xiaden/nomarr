@@ -20,7 +20,9 @@ class LibrariesAqlOperations:
         RETURN NEW._id
         """
         rows = execute(self._db, query, {"payload": payload})
-        return str(rows[0]) if rows else ""
+        if not rows or not isinstance(rows[0], str):
+            raise RuntimeError("Failed to insert library document")
+        return rows[0]
 
     def get_library_by_id(self, library_id: str) -> dict[str, Any] | None:
         query = """
@@ -73,7 +75,10 @@ class LibrariesAqlOperations:
         return [row for row in rows if isinstance(row, str)]
 
     def update_library_by_id(self, library_id: str, fields: dict[str, Any]) -> None:
+        if not library_id.startswith("libraries/"):
+            raise ValueError("library_id must be a full Arango _id like 'libraries/<key>'")
+        library_key = library_id.split("/", maxsplit=1)[1]
         query = """
-        UPDATE PARSE_IDENTIFIER(@library_id).key WITH @fields IN libraries
+        UPDATE @library_key WITH @fields IN libraries
         """
-        execute(self._db, query, {"library_id": library_id, "fields": fields})
+        execute(self._db, query, {"library_key": library_key, "fields": fields})

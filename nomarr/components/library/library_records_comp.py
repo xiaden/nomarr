@@ -1,4 +1,4 @@
-"""Explicit persistence-operation helpers for library documents.
+"""Component-layer helpers for library documents.
 
 This module owns light composition logic that is not itself persistence:
 scan-state enrichment, filesystem path ownership checks, bootstrap
@@ -181,7 +181,7 @@ def list_all_library_keys(db: DatabaseLike) -> list[str]:
     """Return all library document keys for bootstrap-style callers."""
     libraries_aql: Any = getattr(db, "libraries_aql", None)
     if libraries_aql is not None:
-        return [cast("str", key) for key in libraries_aql.list_library_keys() if isinstance(key, str)]
+        return libraries_aql.list_library_keys()
 
     cursor = cast(
         "Any",
