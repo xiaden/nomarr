@@ -58,12 +58,18 @@ class LibrariesAqlOperations:
         return first if isinstance(first, dict) else None
 
     def list_libraries(self, *, enabled_only: bool = False) -> list[dict[str, Any]]:
-        query = """
-        FOR lib IN libraries
-          FILTER !@enabled_only OR lib.is_enabled == true
-          RETURN lib
-        """
-        rows = execute(self._db, query, {"enabled_only": enabled_only})
+        if enabled_only:
+            query = """
+            FOR lib IN libraries
+              FILTER lib.is_enabled == true
+              RETURN lib
+            """
+        else:
+            query = """
+            FOR lib IN libraries
+              RETURN lib
+            """
+        rows = execute(self._db, query, {})
         return [row for row in rows if isinstance(row, dict)]
 
     def list_library_keys(self) -> list[str]:

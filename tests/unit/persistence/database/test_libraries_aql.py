@@ -47,6 +47,14 @@ class TestLibrariesAqlOperations:
         with patch("nomarr.persistence.database.libraries_aql.execute", return_value=[]):
             assert ops.get_library_by_key("1") is None
 
+    def test_get_library_by_key_propagates_execute_errors(self) -> None:
+        ops = LibrariesAqlOperations(MagicMock())
+        with (
+            patch("nomarr.persistence.database.libraries_aql.execute", side_effect=RuntimeError("db error")),
+            pytest.raises(RuntimeError, match="db error"),
+        ):
+            ops.get_library_by_key("1")
+
     def test_get_library_by_name_returns_dict_or_none(self) -> None:
         ops = LibrariesAqlOperations(MagicMock())
         with patch("nomarr.persistence.database.libraries_aql.execute", return_value=[{"name": "Main"}]):

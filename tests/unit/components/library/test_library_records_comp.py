@@ -146,7 +146,7 @@ class TestListLibraryRecords:
     """Tests for ``list_library_records()``."""
 
     @pytest.mark.unit
-    def test_collects_all_docs_sorts_by_created_at_and_skips_missing(self) -> None:
+    def test_collects_all_docs_and_sorts_by_created_at(self) -> None:
         mock_db = MagicMock()
         mock_db.libraries_aql.list_libraries.return_value = [
             {"_id": "libraries/2", "created_at": 20},

@@ -114,7 +114,7 @@ def list_library_records(
     """List libraries through explicit persistence operations, preserving legacy sort order."""
     docs = db.libraries_aql.list_libraries(enabled_only=enabled_only)
 
-    docs.sort(key=lambda doc: int(cast("int", doc.get("created_at", 0) or 0)))
+    docs.sort(key=lambda doc: int(doc.get("created_at", 0)))
     if not include_scan:
         return docs
     return [_merge_scan_state(db, doc) for doc in docs]
