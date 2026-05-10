@@ -532,6 +532,14 @@ type generatePlaylistsResponse struct {
 	Playlists []playlistResult `json:"playlists"`
 }
 
+// resolveDescriptorsToSongIDs resolves a list of Nomarr track descriptors to
+// Navidrome song IDs using the provided candidate-fetch function.
+//
+// Returns:
+//   - resolvedIDs: Navidrome song IDs for descriptors that resolved uniquely
+//   - unresolvedCount: descriptors with no acceptable match
+//   - ambiguousCount: descriptors with multiple acceptable matches
+//   - error: fetch error from the candidate source
 func resolveDescriptorsToSongIDs(
 	descriptors []nomarrSongDescriptor,
 	fetchCandidates func(nomarrSongDescriptor) ([]subsonicSong, error),

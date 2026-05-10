@@ -290,3 +290,27 @@ class TestNavidromeServiceDescriptorResolution:
             descriptors = service.resolve_files_to_descriptors(["library_files/track-1"])
 
         assert descriptors == {}
+
+    def test_resolve_files_to_descriptors_propagates_query_errors(self) -> None:
+        service, _ = _make_service()
+
+        with patch(
+            "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
+            side_effect=RuntimeError("query failed"),
+        ), pytest.raises(RuntimeError, match="query failed"):
+            service.resolve_files_to_descriptors(["library_files/track-1"])
+
+    def test_resolve_files_to_descriptors_propagates_build_errors(self) -> None:
+        service, _ = _make_service()
+
+        with (
+            patch(
+                "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
+                return_value=[{"_id": "library_files/track-1"}],
+            ),
+            patch(
+                "nomarr.services.domain.navidrome_svc.build_track_descriptor",
+                side_effect=ValueError("bad descriptor"),
+            ),pytest.raises(ValueError, match="bad descriptor")
+        ):
+            service.resolve_files_to_descriptors(["library_files/track-1"])

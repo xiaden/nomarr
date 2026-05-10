@@ -278,3 +278,44 @@ class TestGeneratePlaylistsEndpoint:
                 "message": "some config error",
             },
         }
+
+    def test_partial_descriptor_resolution_skips_unresolved_files(
+        self,
+        client: TestClient,
+        mock_navidrome_service: MagicMock,
+    ) -> None:
+        mock_navidrome_service.generate_playlists.return_value = NavidromeGeneratePlaylistsResult(
+            status="ok",
+            message="",
+            playlists=[
+                {
+                    "playlist_type": "familiar",
+                    "playlist_name": "Familiar Favorites",
+                    "file_ids": ["library_files/track-1", "library_files/missing"],
+                },
+            ],
+        )
+        mock_navidrome_service.resolve_files_to_descriptors.return_value = {
+            "library_files/track-1": {
+                "title": "Song A",
+                "artist": "Artist A",
+                "album": "Album A",
+                "album_artist": "",
+                "duration_ms": None,
+                "track_number": None,
+                "disc_number": None,
+                "year": None,
+                "musicbrainz_track_id": None,
+                "musicbrainz_recording_id": None,
+                "nomarr_file_key": "track-1",
+            },
+        }
+
+        response = client.post(
+            "/api/v1/navidrome/playlist/generate",
+            json={"user_id": "user-1"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["playlists"][0]["track_count"] == 1
+        assert len(response.json()["playlists"][0]["songs"]) == 1
