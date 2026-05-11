@@ -22,12 +22,9 @@ from nomarr.interfaces.api.types.navidrome_types import (
     PlaylistPreviewRequest,
     PlaylistPreviewResponse,
     PreviewTagStatsResponse,
-    PushStaticPlaylistResponse,
     StaticPlaylistRequest,
     StaticPlaylistResponse,
-    SyncSongsResponse,
     TagValuesResponse,
-    TriggerPersonalPlaylistsResponse,
 )
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
 
@@ -174,79 +171,51 @@ async def web_navidrome_static_playlist(
         ) from e
 
 
-@router.post("/playlist/push", dependencies=[Depends(verify_session)], response_model=PushStaticPlaylistResponse)
+@router.post("/playlist/push", dependencies=[Depends(verify_session)])
 async def web_navidrome_push_playlist(
-    request: StaticPlaylistRequest,
-    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
-) -> PushStaticPlaylistResponse:
+    _request: StaticPlaylistRequest,
+    _navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
+) -> None:
     """Push a static playlist to Navidrome via Subsonic API.
 
     Creates or replaces a Navidrome playlist using song IDs resolved from
     the supplied Nomarr file IDs.  Returns the Navidrome playlist ID and
     resolution details.
     """
-    try:
-        result_dto = await asyncio.to_thread(
-            navidrome_service.push_static_playlist,
-            file_ids=[decode_id(fid) for fid in request.file_ids],
-            playlist_name=request.playlist_name,
-        )
-        return PushStaticPlaylistResponse.from_dto(result_dto)
-    except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("[Web API] Error pushing static playlist to Navidrome")
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to push playlist")) from e
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "Backend Navidrome-ID playlist push has been removed. "
+            "Use plugin-backed descriptor flows where the plugin resolves Navidrome IDs locally."
+        ),
+    )
 
 
 @router.post("/sync-song", dependencies=[Depends(verify_session)])
 async def web_navidrome_sync_songs(
-    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
-) -> SyncSongsResponse:
+    _navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
+) -> None:
     """Trigger a full Navidrome song sync to graph collections."""
-    try:
-        result = await asyncio.to_thread(navidrome_service.sync_navidrome)
-    except ValueError as exc:
-        logger.warning("[Web API] Sync songs rejected: %s", exc)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as e:
-        logger.exception("[Web API] Error syncing Navidrome songs")
-        raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to sync songs")) from e
-
-    return SyncSongsResponse(
-        total_songs=result["total_songs"],
-        resolved=result["resolved"],
-        unresolved=result["unresolved"],
-        tracks_upserted=result["tracks_upserted"],
-        play_edges_upserted=result["play_edges_upserted"],
-        orphans_removed=result["orphans_removed"],
-        duration_ms=result["duration_ms"],
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "Backend Navidrome song-map sync has been removed for playlist/recommendation output paths. "
+            "Use plugin-backed descriptor flows."
+        ),
     )
 
 
 @router.post("/generate-personal-playlists", dependencies=[Depends(verify_session)])
 async def web_generate_personal_playlists(
-    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
-) -> TriggerPersonalPlaylistsResponse:
+    _navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
+) -> None:
     """Trigger personal playlist generation for the configured Navidrome user."""
-    try:
-        result = await asyncio.to_thread(navidrome_service.trigger_personal_playlists)
-    except ValueError as exc:
-        logger.warning("[Web API] Personal playlist trigger rejected: %s", exc)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as e:
-        logger.exception("[Web API] Error generating personal playlists")
-        raise HTTPException(
-            status_code=500, detail=sanitize_exception_message(e, "Failed to generate playlists")
-        ) from e
-
-    return TriggerPersonalPlaylistsResponse(
-        status=str(result["status"]),
-        message=str(result["message"]),
-        playlists_generated=int(result["playlists_generated"]),
-        playlists_pushed=int(result["playlists_pushed"]),
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "Backend personal-playlist push has been removed. "
+            "Use plugin-backed /api/v1/navidrome/playlist/generate descriptor flow."
+        ),
     )
 
 

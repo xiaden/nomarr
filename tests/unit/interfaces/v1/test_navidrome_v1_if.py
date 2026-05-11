@@ -43,6 +43,97 @@ def client(app: FastAPI) -> Iterator[TestClient]:
 
 @pytest.mark.integration
 @pytest.mark.mocked
+class TestSimilarTracksEndpoint:
+    def test_success_returns_descriptor_payload(
+        self,
+        client: TestClient,
+        mock_navidrome_service: MagicMock,
+    ) -> None:
+        mock_navidrome_service.get_similar_tracks.return_value = [
+            {
+                "title": "Song A",
+                "artist": "Artist A",
+                "album": "Album A",
+                "album_artist": "Album Artist A",
+                "duration_ms": 201000,
+                "track_number": 4,
+                "disc_number": 1,
+                "year": 2024,
+                "nomarr_file_key": "abc123",
+                "score": 0.91,
+            }
+        ]
+
+        response = client.post(
+            "/api/v1/navidrome/similar-track",
+            json={
+                "seed": {
+                    "title": "Seed",
+                    "artist": "Artist",
+                    "album": "Album",
+                },
+                "count": 10,
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "songs": [
+                {
+                    "title": "Song A",
+                    "artist": "Artist A",
+                    "album": "Album A",
+                    "album_artist": "Album Artist A",
+                    "duration_ms": 201000,
+                    "track_number": 4,
+                    "disc_number": 1,
+                    "year": 2024,
+                    "nomarr_file_key": "abc123",
+                    "score": 0.91,
+                }
+            ]
+        }
+        mock_navidrome_service.get_similar_tracks.assert_called_once_with(
+            seed_descriptor={
+                "title": "Seed",
+                "artist": "Artist",
+                "album": "Album",
+                "album_artist": "",
+                "duration_ms": None,
+                "track_number": None,
+                "disc_number": None,
+                "year": None,
+                "nomarr_file_key": None,
+            },
+            count=10,
+            backbone_id="effnet",
+        )
+        mock_navidrome_service.resolve_files_to_nd.assert_not_called()
+        mock_navidrome_service.sync_navidrome.assert_not_called()
+
+    def test_seed_unresolved_returns_404(
+        self,
+        client: TestClient,
+        mock_navidrome_service: MagicMock,
+    ) -> None:
+        mock_navidrome_service.get_similar_tracks.side_effect = ValueError("Seed descriptor could not be resolved")
+
+        response = client.post(
+            "/api/v1/navidrome/similar-track",
+            json={
+                "seed": {
+                    "title": "Seed",
+                    "artist": "Artist",
+                }
+            },
+        )
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Seed descriptor could not be resolved"}
+
+
+@pytest.mark.integration
+@pytest.mark.mocked
 class TestGeneratePlaylistsEndpoint:
     def test_misconfigured_error_returns_422(
         self,
@@ -89,7 +180,7 @@ class TestGeneratePlaylistsEndpoint:
             "playlists": [],
         }
 
-    def test_success_returns_playlists_with_nd_ids(
+    def test_success_returns_playlists_with_descriptors(
         self,
         client: TestClient,
         mock_navidrome_service: MagicMock,
@@ -105,8 +196,18 @@ class TestGeneratePlaylistsEndpoint:
                 },
             ],
         )
-        mock_navidrome_service.resolve_files_to_nd.return_value = {
-            "library_files/track-1": "nd-abc",
+        mock_navidrome_service.resolve_files_to_descriptors.return_value = {
+            "library_files/track-1": {
+                "title": "Song A",
+                "artist": "Artist A",
+                "album": "Album A",
+                "album_artist": "Album Artist A",
+                "duration_ms": 201000,
+                "track_number": 3,
+                "disc_number": 1,
+                "year": 2024,
+                "nomarr_file_key": "track-1",
+            },
         }
 
         response = client.post(
@@ -122,14 +223,27 @@ class TestGeneratePlaylistsEndpoint:
                 {
                     "playlist_type": "familiar",
                     "playlist_name": "Familiar Favorites",
-                    "track_nd_ids": ["nd-abc"],
+                    "songs": [
+                        {
+                            "title": "Song A",
+                            "artist": "Artist A",
+                            "album": "Album A",
+                            "album_artist": "Album Artist A",
+                            "duration_ms": 201000,
+                            "track_number": 3,
+                            "disc_number": 1,
+                            "year": 2024,
+                            "nomarr_file_key": "track-1",
+                        }
+                    ],
                     "track_count": 1,
                 },
             ],
         }
-        mock_navidrome_service.resolve_files_to_nd.assert_called_once_with(
+        mock_navidrome_service.resolve_files_to_descriptors.assert_called_once_with(
             ["library_files/track-1"],
         )
+        mock_navidrome_service.resolve_files_to_nd.assert_not_called()
 
     def test_misconfigured_status_on_result_returns_422(
         self,
@@ -154,3 +268,42 @@ class TestGeneratePlaylistsEndpoint:
                 "message": "some config error",
             },
         }
+
+    def test_partial_descriptor_resolution_skips_unresolved_files(
+        self,
+        client: TestClient,
+        mock_navidrome_service: MagicMock,
+    ) -> None:
+        mock_navidrome_service.generate_playlists.return_value = NavidromeGeneratePlaylistsResult(
+            status="ok",
+            message="",
+            playlists=[
+                {
+                    "playlist_type": "familiar",
+                    "playlist_name": "Familiar Favorites",
+                    "file_ids": ["library_files/track-1", "library_files/missing"],
+                },
+            ],
+        )
+        mock_navidrome_service.resolve_files_to_descriptors.return_value = {
+            "library_files/track-1": {
+                "title": "Song A",
+                "artist": "Artist A",
+                "album": "Album A",
+                "album_artist": "",
+                "duration_ms": None,
+                "track_number": None,
+                "disc_number": None,
+                "year": None,
+                "nomarr_file_key": "track-1",
+            },
+        }
+
+        response = client.post(
+            "/api/v1/navidrome/playlist/generate",
+            json={"user_id": "user-1"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["playlists"][0]["track_count"] == 1
+        assert len(response.json()["playlists"][0]["songs"]) == 1

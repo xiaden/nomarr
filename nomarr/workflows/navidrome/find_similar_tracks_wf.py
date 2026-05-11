@@ -1,8 +1,7 @@
-"""Find tracks similar to a Navidrome seed track using vector ANN search.
+"""Find tracks similar to a portable seed descriptor using vector ANN search.
 
-Resolves a Navidrome song ID to a Nomarr file, retrieves its promoted
-vector through vector components, runs approximate nearest neighbor
-search, maps results back to Navidrome IDs, and enriches with metadata.
+Plugin recommendation flow is descriptor-only and does not require Nomarr-side
+Navidrome ID mapping.
 """
 
 from __future__ import annotations
@@ -16,9 +15,10 @@ from nomarr.components.ml.vectors.ml_vector_retrieve_comp import (
     get_cold_track_vector,
     search_similar_cold_track_vectors,
 )
-from nomarr.components.navidrome.navidrome_graph_comp import (
-    bulk_resolve_files_to_navidrome_ids,
-    resolve_navidrome_track_to_file,
+from nomarr.components.navidrome.descriptor_match_comp import (
+    TrackDescriptor,
+    build_track_descriptor,
+    resolve_seed_descriptor_to_file,
 )
 
 if TYPE_CHECKING:
@@ -28,35 +28,39 @@ logger = logging.getLogger(__name__)
 
 
 class SimilarTrackResult(TypedDict):
-    """A single similar track result with Navidrome ID and metadata."""
+    """A single similar track result with portable descriptor metadata."""
 
-    nd_id: str
-    name: str
+    title: str
     artist: str
     album: str
+    album_artist: str
+    duration_ms: int | None
+    track_number: int | None
+    disc_number: int | None
+    year: int | None
+    nomarr_file_key: str | None
     score: float
 
 
 def find_similar_tracks(
-    seed_nd_id: str,
+    seed_descriptor: TrackDescriptor,
     count: int,
     backbone_id: str,
     db: Database,
     vector_group_size: int = 15,
     vector_search_thoroughness: int = 10,
 ) -> list[SimilarTrackResult]:
-    """Find tracks similar to a Navidrome seed track.
+    """Find tracks similar to a portable seed descriptor.
 
     Pipeline:
-        1. Resolve seed Navidrome ID to Nomarr file_id
+        1. Resolve seed descriptor to Nomarr file_id
         2. Fetch seed vector from the promoted cold collection via components
-        3. Run ANN search on cold collection (over-fetch 2x to compensate for unmapped)
-        4. Resolve result file_ids to Navidrome IDs
-        5. Enrich mapped results with metadata (title, artist, album)
-        6. Return up to ``count`` results sorted by similarity score
+        3. Run ANN search on cold collection
+        4. Enrich result file_ids with descriptor metadata
+        5. Return up to ``count`` results sorted by similarity score
 
     Args:
-        seed_nd_id: Navidrome mediafile ID of the seed track.
+        seed_descriptor: Portable seed track descriptor from plugin.
         count: Maximum number of similar tracks to return.
         backbone_id: Vector backbone identifier (e.g., "effnet").
         db: Database instance passed through to components.
@@ -64,20 +68,23 @@ def find_similar_tracks(
         vector_search_thoroughness: Percentage of neighbourhoods to probe (1-100).
 
     Returns:
-        List of similar tracks with Navidrome IDs and metadata,
+        List of similar tracks with portable descriptors and score,
         sorted by descending similarity score.
 
     Raises:
-        ValueError: If seed ID is not in the song map or has no vector.
+        ValueError: If seed descriptor cannot be resolved or has no vector.
 
     """
-    # 1. Resolve seed Navidrome ID to Nomarr file_id
-    seed_file_id = resolve_navidrome_track_to_file(db, seed_nd_id)
+    # 1. Resolve seed descriptor to Nomarr file_id
+    seed_file_id, seed_resolution_status = resolve_seed_descriptor_to_file(db, seed_descriptor)
     if seed_file_id is None:
-        msg = f"Navidrome song ID '{seed_nd_id}' not found in track map. Run sync first."
+        if seed_resolution_status == "descriptor_ambiguous":
+            msg = "Seed descriptor matched multiple tracks in Nomarr and is ambiguous."
+            raise ValueError(msg)
+        msg = "Seed descriptor could not be resolved to an analyzed Nomarr track."
         raise ValueError(msg)
 
-    logger.debug("Seed ND ID %s resolved to file_id %s", seed_nd_id, seed_file_id)
+    logger.debug("Seed descriptor resolved to file_id %s", seed_file_id)
 
     # Auto-resolve library_key from the file document (library_id field is "libraries/{key}")
     library_key = get_file_library_key(db, seed_file_id)
@@ -99,8 +106,8 @@ def find_similar_tracks(
     seed_vector: list[float] = seed_doc["vector_n"]
     logger.debug("Seed vector retrieved, dim=%d", len(seed_vector))
 
-    # 3. ANN search on cold collection (over-fetch to compensate for unmapped results)
-    fetch_limit = count * 2 + 1  # +1 for potential self-match
+    # 3. ANN search on cold collection
+    fetch_limit = count + 1  # +1 for potential self-match
     raw_results = search_similar_cold_track_vectors(
         db=db,
         backbone_id=backbone_id,
@@ -118,68 +125,37 @@ def find_similar_tracks(
     if not results:
         return []
 
-    # 4. Resolve result file_ids to Navidrome IDs
-    result_file_ids = [r["file_id"] for r in results]
-    file_id_to_nd_id = bulk_resolve_files_to_navidrome_ids(db, result_file_ids)
-
-    # Filter to only results that have a Navidrome mapping
-    mapped_results = [(r, file_id_to_nd_id[r["file_id"]]) for r in results if r["file_id"] in file_id_to_nd_id]
-
-    unmapped_count = len(results) - len(mapped_results)
-    if unmapped_count > 0:
-        if unmapped_count > len(results) * 0.5:
-            logger.warning(
-                "High ANN unmapped ratio; many similar-track results had no Navidrome mapping",
-                extra={
-                    "backbone_id": backbone_id,
-                    "library_key": library_key,
-                    "seed_nd_id": seed_nd_id,
-                    "total_results": len(results),
-                    "unmapped_count": unmapped_count,
-                },
-            )
-        else:
-            logger.debug(
-                "Some ANN results had no Navidrome mapping, skipped",
-                extra={
-                    "backbone_id": backbone_id,
-                    "library_key": library_key,
-                    "seed_nd_id": seed_nd_id,
-                    "total_results": len(results),
-                    "unmapped_count": unmapped_count,
-                },
-            )
-
-    if not mapped_results:
-        return []
-
-    # Trim to requested count before metadata enrichment
-    mapped_results = mapped_results[:count]
-
-    # 5. Enrich with metadata
-    enrichment_file_ids = [r["file_id"] for r, _ in mapped_results]
+    # 4. Enrich with metadata
+    results = results[:count]
+    enrichment_file_ids = [r["file_id"] for r in results]
     file_docs = get_files_by_ids_with_tags(db, enrichment_file_ids)
     file_docs_by_id: dict[str, dict] = {doc["_id"]: doc for doc in file_docs}
 
-    # 6. Build result list
+    # 5. Build result list
     output: list[SimilarTrackResult] = []
-    for result, nd_id in mapped_results:
+    for result in results:
         file_id = result["file_id"]
         doc = file_docs_by_id.get(file_id, {})
+        descriptor = build_track_descriptor(doc)
 
         output.append(
             SimilarTrackResult(
-                nd_id=nd_id,
-                name=doc.get("title", ""),
-                artist=doc.get("artist", ""),
-                album=doc.get("album", ""),
+                title=descriptor["title"],
+                artist=descriptor["artist"],
+                album=descriptor["album"],
+                album_artist=descriptor["album_artist"],
+                duration_ms=descriptor["duration_ms"],
+                track_number=descriptor["track_number"],
+                disc_number=descriptor["disc_number"],
+                year=descriptor["year"],
+                nomarr_file_key=descriptor["nomarr_file_key"],
                 score=float(result["score"]),
             )
         )
 
     logger.info(
         "find_similar_tracks: seed=%s, requested=%d, returned=%d",
-        seed_nd_id,
+        seed_file_id,
         count,
         len(output),
     )

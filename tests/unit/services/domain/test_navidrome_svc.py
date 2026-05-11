@@ -160,71 +160,100 @@ class TestNavidromeServiceGeneratePlaylists:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-class TestNavidromeServiceSync:
-    """Tests for ``NavidromeService.sync_navidrome``."""
+class TestNavidromeServiceDescriptorResolution:
+    """Tests for ``NavidromeService.resolve_files_to_descriptors``."""
 
-    def test_sync_navidrome_passes_live_path_prefix_map(self) -> None:
-        """Service should parse and forward the live Navidrome path-prefix config."""
-        service, _ = _make_service(
-            {
-                "navidrome_api_user": "nav-user",
-                "navidrome_path_prefix_map": "/music:D:/Media,/alt:/mnt/library",
-            },
-        )
-        mock_client = MagicMock()
+    def test_resolve_files_to_descriptors_returns_descriptor_map(self) -> None:
+        service, _ = _make_service()
 
         with (
-            patch.object(service, "_get_client", return_value=mock_client),
             patch(
-                "nomarr.services.domain.navidrome_svc.sync_navidrome",
+                "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
+                return_value=[{"_id": "library_files/track-1", "_key": "track-1"}],
+            ) as mock_get_files,
+            patch(
+                "nomarr.services.domain.navidrome_svc.build_track_descriptor",
                 return_value={
-                    "total_songs": 0,
-                    "resolved": 0,
-                    "unresolved": 0,
-                    "tracks_upserted": 0,
-                    "play_edges_upserted": 0,
-                    "orphans_removed": 0,
-                    "duration_ms": 0,
+                    "title": "Song A",
+                    "artist": "Artist A",
+                    "album": "Album A",
+                    "album_artist": "",
+                    "duration_ms": None,
+                    "track_number": None,
+                    "disc_number": None,
+                    "year": None,
+                    "nomarr_file_key": "track-1",
                 },
-            ) as mock_sync,
+            ) as mock_build,
         ):
-            service.sync_navidrome()
+            descriptors = service.resolve_files_to_descriptors(["library_files/track-1"])
 
-        assert mock_sync.call_args.kwargs["path_prefix_map"] == [
-            ("/music", "D:/Media"),
-            ("/alt", "/mnt/library"),
-        ]
-        assert mock_sync.call_args.kwargs["user_id"] == "nav-user"
-
-    def test_sync_navidrome_allows_empty_remap_targets(self) -> None:
-        """Service should preserve prefix-strip mappings with empty targets."""
-        service, _ = _make_service(
-            {
-                "navidrome_api_user": "nav-user",
-                "navidrome_path_prefix_map": "/music/:,/alt:/mnt/library",
+        assert descriptors == {
+            "library_files/track-1": {
+                "title": "Song A",
+                "artist": "Artist A",
+                "album": "Album A",
+                "album_artist": "",
+                "duration_ms": None,
+                "track_number": None,
+                "disc_number": None,
+                "year": None,
+                "nomarr_file_key": "track-1",
             },
-        )
-        mock_client = MagicMock()
+        }
+        mock_get_files.assert_called_once_with(service._db, ["library_files/track-1"])
+        mock_build.assert_called_once()
+
+    def test_resolve_files_to_descriptors_ignores_docs_without_id(self) -> None:
+        service, _ = _make_service()
+
+        with patch(
+            "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
+            return_value=[{"_key": "missing-id"}],
+        ):
+            descriptors = service.resolve_files_to_descriptors(["library_files/track-1"])
+
+        assert descriptors == {}
+
+    def test_resolve_files_to_descriptors_propagates_query_errors(self) -> None:
+        service, _ = _make_service()
+
+        with patch(
+            "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
+            side_effect=RuntimeError("query failed"),
+        ), pytest.raises(RuntimeError, match="query failed"):
+            service.resolve_files_to_descriptors(["library_files/track-1"])
+
+    def test_resolve_files_to_descriptors_propagates_build_errors(self) -> None:
+        service, _ = _make_service()
 
         with (
-            patch.object(service, "_get_client", return_value=mock_client),
             patch(
-                "nomarr.services.domain.navidrome_svc.sync_navidrome",
-                return_value={
-                    "total_songs": 0,
-                    "resolved": 0,
-                    "unresolved": 0,
-                    "tracks_upserted": 0,
-                    "play_edges_upserted": 0,
-                    "orphans_removed": 0,
-                    "duration_ms": 0,
-                },
-            ) as mock_sync,
+                "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
+                return_value=[{"_id": "library_files/track-1"}],
+            ),
+            patch(
+                "nomarr.services.domain.navidrome_svc.build_track_descriptor",
+                side_effect=ValueError("bad descriptor"),
+            ),
+            pytest.raises(ValueError, match="bad descriptor"),
         ):
-            service.sync_navidrome()
+            service.resolve_files_to_descriptors(["library_files/track-1"])
 
-        assert mock_sync.call_args.kwargs["path_prefix_map"] == [
-            ("/music/", ""),
-            ("/alt", "/mnt/library"),
-        ]
-        assert mock_sync.call_args.kwargs["user_id"] == "nav-user"
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestNavidromeServiceSmartPlaylistGeneration:
+    """Tests for ``NavidromeService.generate_playlist``."""
+
+    def test_generate_playlist_does_not_push_to_navidrome(self) -> None:
+        """Smart playlist generation should return structure only (no backend push)."""
+        service, _ = _make_service()
+
+        with patch(
+            "nomarr.services.domain.navidrome_svc.generate_smart_playlist_workflow",
+            return_value={"name": "Mix", "all": []},
+        ):
+            result = service.generate_playlist(query="tag:rock > 0.5", playlist_name="Mix")
+
+        assert result.playlist_structure == {"name": "Mix", "all": []}
