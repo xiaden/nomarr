@@ -19,6 +19,57 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
+def _normalize_file_id(file_ref: str) -> str:
+    """Normalize a library-file reference to full document-id form."""
+    return file_ref if file_ref.startswith("library_files/") else f"library_files/{file_ref}"
+
+
+def _rebuild_library_file_links(
+    db: Database,
+    *,
+    library_id: str,
+    deleted_file_ids: set[str],
+) -> None:
+    """Rewrite one library's ownership edges without the deleted files."""
+    existing_file_ids = db.library.list_library_file_ids(library_id)
+    remaining_file_ids = [
+        _normalize_file_id(file_id)
+        for file_id in existing_file_ids
+        if _normalize_file_id(file_id) not in deleted_file_ids
+    ]
+    db.library.delete_all_file_links_for_library(library_id)
+    if remaining_file_ids:
+        db.library.upsert_library_file_links_batch(
+            [{"_from": library_id, "_to": file_id} for file_id in remaining_file_ids]
+        )
+
+
+def _delete_library_files(db: Database, file_ids: list[str]) -> None:
+    """Delete library/app-managed state for the given file ids, then remove the docs."""
+    normalized_file_ids = list(dict.fromkeys(_normalize_file_id(file_id) for file_id in file_ids))
+    if not normalized_file_ids:
+        return
+
+    deleted_file_ids = set(normalized_file_ids)
+    library_ids_by_file = db.library.get_library_ids_for_files(normalized_file_ids)
+    library_ids = sorted({library_id for library_id in library_ids_by_file.values() if isinstance(library_id, str)})
+    vector_namespaces = db.ml.list_registered_vector_namespaces()
+
+    for file_id in normalized_file_ids:
+        db.app.release_claim(file_id)
+        db.library.delete_all_tags_for_file(file_id)
+        for collection_name in vector_namespaces:
+            db.ml.delete_vectors_for_file(collection_name, file_id)
+
+    db.app.delete_file_state_edges(normalized_file_ids)
+
+    for library_id in library_ids:
+        _rebuild_library_file_links(db, library_id=library_id, deleted_file_ids=deleted_file_ids)
+
+    for file_id in normalized_file_ids:
+        db.library.delete_file(file_id)
+
+
 def upsert_library_file(
     db: Database,
     path: LibraryPath,
@@ -59,7 +110,7 @@ def upsert_library_file(
     normalized_path = str(path.relative)
     absolute_path = str(path.absolute)
     library_key = library_key_from_ref(library_id)
-    existing = cast("dict[str, Any] | None", db.library_files.get(path=absolute_path))
+    existing = cast("dict[str, Any] | None", db.library.get_file_by_path(absolute_path, library_id))
     update_fields = {
         "library_key": library_key,
         "normalized_path": normalized_path,
@@ -85,43 +136,41 @@ def upsert_library_file(
             "scanned_at": scanned_at,
             "chromaprint": None,
         }
-        file_id = cast("str", db.library_files.insert([full_doc])[0])
+        file_id = cast("str", db.library.add_file(full_doc))
         initialize_file_states(db, file_id)
     else:
         file_id = str(existing["_id"])
-        db.library_files.update(_id=file_id, fields=update_fields)
+        db.library.update_file(file_id, update_fields)
 
-    db.library_contains_file.upsert(_from=library_id, _to=file_id, fields={})
+    db.library.link_file_to_library(library_id, file_id)
     if last_tagged_at is not None:
         transition_file_state(db, [file_id], STATE_NOT_TAGGED, STATE_TAGGED)
     return file_id
 
 
 def delete_library_file(db: Database, file_id: str) -> None:
-    """Delete a library file and all cascade-linked data.
-
-    Removes the file document together with all directly-derived data via a
-    single ``db.library_files.delete.cascade`` call: vectors, segment stats,
-    tag edges (``song_has_tags``), and state edges.
+    """Delete one library-file document and its library/app-managed edges.
 
     Args:
         db: Database handle.
         file_id: ArangoDB document ID (``library_files/<key>``) or a raw file
-            path.  When a path is supplied it is resolved to the document ID
+            path. When a path is supplied it is resolved to the document ID
             first; returns early without error if no matching file is found.
     """
     if not file_id.startswith("library_files/"):
-        file_doc = cast("dict[str, Any] | None", db.library_files.get(path=file_id))
+        file_doc: dict[str, Any] | None = None
+        for library_doc in db.library.list_libraries():
+            library_doc_id = library_doc.get("_id")
+            if not isinstance(library_doc_id, str):
+                continue
+            file_doc = cast("dict[str, Any] | None", db.library.get_file_by_path(file_id, library_doc_id))
+            if file_doc is not None:
+                break
         if file_doc is None:
             return
         file_id = str(file_doc["_id"])
 
-    cascade_delete = db.library_files.delete.cascade
-    if cascade_delete is None:
-        msg = "LibraryFiles cascade delete is not attached"
-        raise RuntimeError(msg)
-
-    cascade_delete([file_id])
+    _delete_library_files(db, [file_id])
 
 
 def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
@@ -149,15 +198,26 @@ def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
     paths = [d["path"] for d in clean_docs if "path" in d]
     existing_paths = get_existing_file_paths(db, paths)
 
-    result = db.library_files.upsert_batch(clean_docs, match_fields="path")
+    db.library.upsert_files_batch(clean_docs)
+
+    resolved_library_ids: list[str] = []
+    result: list[str] = []
+    for library_id, doc in zip(library_ids, clean_docs, strict=True):
+        if not isinstance(library_id, str):
+            msg = "library_id is required for upsert_batch"
+            raise ValueError(msg)
+        file_doc = cast("dict[str, Any] | None", db.library.get_file_by_path(str(doc["path"]), library_id))
+        if file_doc is None:
+            msg = f"Upserted file could not be reloaded by path: {doc.get('path')}"
+            raise RuntimeError(msg)
+        resolved_library_ids.append(library_id)
+        result.append(str(file_doc["_id"]))
 
     edge_docs = [
-        {"_from": lib_id, "_to": file_id}
-        for lib_id, file_id in zip(library_ids, result, strict=True)
-        if lib_id is not None
+        {"_from": library_id, "_to": file_id} for library_id, file_id in zip(resolved_library_ids, result, strict=True)
     ]
     if edge_docs:
-        db.library_contains_file.upsert_batch(edge_docs, match_fields=["_from", "_to"])
+        db.library.upsert_library_file_links_batch(edge_docs)
     new_file_ids = [
         file_id for file_id, doc in zip(result, clean_docs, strict=True) if doc.get("path") not in existing_paths
     ]
@@ -192,12 +252,12 @@ def update_file_path(
     }
     if normalized_path is not None:
         update_dict["normalized_path"] = normalized_path
-    db.library_files.update(_id=file_id, fields=update_dict)
+    db.library.update_file(file_id, update_dict)
 
 
 def update_file_modified_time(db: Database, file_key: str, modified_time_ms: int) -> None:
     """Update the stored modified-time after a successful file write."""
-    db.library_files.update(_key=file_key, fields={"modified_time": modified_time_ms})
+    db.library.update_file(_normalize_file_id(file_key), {"modified_time": modified_time_ms})
 
 
 def update_metadata_cache(
@@ -212,9 +272,9 @@ def update_metadata_cache(
     year: int | None,
 ) -> None:
     """Update embedded metadata-cache fields for one song."""
-    db.library_files.update(
-        _id=song_id,
-        fields={
+    db.library.update_file(
+        song_id,
+        {
             "artist": artist,
             "artists": artists,
             "album": album,
@@ -240,9 +300,9 @@ def update_metadata_cache_batch(db: Database, updates: list[dict[str, Any]]) -> 
     if not updates:
         return
     for entry in updates:
-        db.library_files.update(
-            _id=str(entry["song_id"]),
-            fields={
+        db.library.update_file(
+            str(entry["song_id"]),
+            {
                 "artist": entry.get("artist"),
                 "artists": entry.get("artists"),
                 "album": entry.get("album"),
@@ -254,13 +314,10 @@ def update_metadata_cache_batch(db: Database, updates: list[dict[str, Any]]) -> 
 
 
 def bulk_delete_files(db: Database, paths: list[str]) -> int:
-    """Delete multiple library files and all cascade-linked data.
+    """Delete multiple library-file documents and their library/app-managed edges.
 
     Resolves each supplied path to a file document, silently skips paths with
-    no matching document, and then removes all matched files in a single
-    ``db.library_files.delete.cascade`` call. The cascade also deletes
-    directly-derived data such as vectors, segment stats, tag edges, and state
-    edges. Returns early with ``0`` when ``paths`` is empty.
+    no matching document, and returns early with ``0`` when ``paths`` is empty.
 
     Args:
         db: Database handle.
@@ -275,34 +332,28 @@ def bulk_delete_files(db: Database, paths: list[str]) -> int:
     file_docs = [
         file_doc
         for path in paths
-        if (file_doc := cast("dict[str, Any] | None", db.library_files.get(path=path))) is not None
+        if (file_doc := cast("dict[str, Any] | None", db.library.get_file_by_path_unscoped(path))) is not None
     ]
     file_ids = [str(d["_id"]) for d in file_docs]
     if not file_ids:
         return 0
 
-    cascade_delete = db.library_files.delete.cascade
-    if cascade_delete is None:
-        msg = "LibraryFiles cascade delete is not attached"
-        raise RuntimeError(msg)
-
-    cascade_delete(file_ids)
+    _delete_library_files(db, file_ids)
     return len(file_ids)
 
 
 def get_file_library_key(db: Database, file_id: str) -> str | None:
     """Return the owning library key for a file id."""
-    results = db.library_contains_file.get.many(_to=file_id, limit=1)
-    if not results:
+    library_ids_by_file = db.library.get_library_ids_for_files([file_id])
+    library_id = library_ids_by_file.get(_normalize_file_id(file_id))
+    if library_id is None:
         return None
-    edge = results[0]
-    return library_key_from_ref(str(edge["_from"]))
+    return library_key_from_ref(library_id)
 
 
 def set_chromaprint(db: Database, file_id: str, chromaprint: str) -> None:
     """Persist a chromaprint fingerprint for one file."""
-    doc_key = file_id.split("/", 1)[1] if "/" in file_id else file_id
-    db.library_files.update(_key=doc_key, fields={"chromaprint": chromaprint})
+    db.library.update_file(_normalize_file_id(file_id), {"chromaprint": chromaprint})
 
 
 def update_last_tagged_at(db: Database, file_id: str) -> None:
@@ -313,4 +364,4 @@ def update_last_tagged_at(db: Database, file_id: str) -> None:
         file_id: Document ``_id`` of the library-file to update.
 
     """
-    db.library_files.update(_id=file_id, fields={"last_tagged_at": now_ms().value})
+    db.library.update_file(file_id, {"last_tagged_at": now_ms().value})

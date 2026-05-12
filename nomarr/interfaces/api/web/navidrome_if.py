@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from nomarr.helpers.exceptions import PlaylistQueryError
+from nomarr.helpers.exceptions import MisconfiguredError, PlaylistQueryError
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.id_codec import decode_id
@@ -18,13 +18,17 @@ from nomarr.interfaces.api.types.navidrome_types import (
     NavidromeConfigResponse,
     NavidromeStatusResponse,
     PingResponse,
+    PlaylistDescriptorEntry,
     PlaylistGenerateRequest,
     PlaylistPreviewRequest,
     PlaylistPreviewResponse,
     PreviewTagStatsResponse,
+    PushStaticPlaylistResponse,
     StaticPlaylistRequest,
     StaticPlaylistResponse,
     TagValuesResponse,
+    TrackDescriptorResponse,
+    TriggerPersonalPlaylistsResponse,
 )
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
 
@@ -173,22 +177,33 @@ async def web_navidrome_static_playlist(
 
 @router.post("/playlist/push", dependencies=[Depends(verify_session)])
 async def web_navidrome_push_playlist(
-    _request: StaticPlaylistRequest,
-    _navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
-) -> None:
-    """Push a static playlist to Navidrome via Subsonic API.
+    request: StaticPlaylistRequest,
+    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
+) -> PushStaticPlaylistResponse:
+    """Resolve file IDs to portable track descriptors for plugin-side playlist push.
 
-    Creates or replaces a Navidrome playlist using song IDs resolved from
-    the supplied Nomarr file IDs.  Returns the Navidrome playlist ID and
-    resolution details.
+    Returns track descriptors that the Navidrome plugin can use to resolve
+    to Navidrome mediafile IDs and push as a playlist on its side.
     """
-    raise HTTPException(
-        status_code=410,
-        detail=(
-            "Backend Navidrome-ID playlist push has been removed. "
-            "Use plugin-backed descriptor flows where the plugin resolves Navidrome IDs locally."
-        ),
-    )
+    try:
+        file_ids = [decode_id(fid) for fid in request.file_ids]
+        descriptor_map = await asyncio.to_thread(
+            navidrome_service.resolve_files_to_descriptors,
+            file_ids,
+        )
+        songs = [TrackDescriptorResponse(**descriptor_map[fid]) for fid in file_ids if fid in descriptor_map]
+        return PushStaticPlaylistResponse(
+            playlist_name=request.playlist_name,
+            songs=songs,
+            track_count=len(songs),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("[Web API] Error resolving playlist descriptors")
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to resolve playlist descriptors")
+        ) from e
 
 
 @router.post("/sync-song", dependencies=[Depends(verify_session)])
@@ -207,16 +222,56 @@ async def web_navidrome_sync_songs(
 
 @router.post("/generate-personal-playlists", dependencies=[Depends(verify_session)])
 async def web_generate_personal_playlists(
-    _navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
-) -> None:
-    """Trigger personal playlist generation for the configured Navidrome user."""
-    raise HTTPException(
-        status_code=410,
-        detail=(
-            "Backend personal-playlist push has been removed. "
-            "Use plugin-backed /api/v1/navidrome/playlist/generate descriptor flow."
-        ),
-    )
+    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
+) -> TriggerPersonalPlaylistsResponse:
+    """Generate personal playlists and return portable track descriptors.
+
+    Returns playlists with track descriptors that the Navidrome plugin can use
+    to resolve to Navidrome mediafile IDs and push on its side.
+    """
+    try:
+        gen_result = await asyncio.to_thread(navidrome_service.generate_personal_playlists)
+
+        if gen_result.status != "ok":
+            return TriggerPersonalPlaylistsResponse(
+                status=gen_result.status,
+                message=gen_result.message,
+                playlists=[],
+            )
+
+        all_file_ids = list({fid for playlist in gen_result.playlists for fid in playlist["file_ids"]})
+        descriptor_map = (
+            await asyncio.to_thread(navidrome_service.resolve_files_to_descriptors, all_file_ids)
+            if all_file_ids
+            else {}
+        )
+
+        return TriggerPersonalPlaylistsResponse(
+            status=gen_result.status,
+            message=gen_result.message,
+            playlists=[
+                PlaylistDescriptorEntry(
+                    playlist_name=playlist["playlist_name"],
+                    playlist_type=playlist.get("playlist_type", ""),
+                    songs=[
+                        TrackDescriptorResponse(**descriptor_map[fid])
+                        for fid in playlist["file_ids"]
+                        if fid in descriptor_map
+                    ],
+                    track_count=len([fid for fid in playlist["file_ids"] if fid in descriptor_map]),
+                )
+                for playlist in gen_result.playlists
+            ],
+        )
+    except MisconfiguredError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("[Web API] Error generating personal playlists")
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to generate personal playlists")
+        ) from e
 
 
 @router.post("/ping", response_model=PingResponse)

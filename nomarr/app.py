@@ -202,9 +202,9 @@ class Application:
         def heartbeat_loop() -> None:
             while self._running:
                 try:
-                    db.health.upsert(
-                        component_id="app",
-                        fields={
+                    db.app.upsert_health(
+                        "app",
+                        {
                             "component_type": "app",
                             "status": "healthy",
                             "last_heartbeat": now_ms().value,
@@ -236,10 +236,10 @@ class Application:
             return
         logger.debug("[Application] Starting...")
         logger.debug("[Application] Cleaning ephemeral runtime state...")
-        self.db.health.truncate()
-        self.db.health.upsert(
-            component_id="app",
-            fields={
+        self.db.app.truncate_health()
+        self.db.app.upsert_health(
+            "app",
+            {
                 "component_type": "app",
                 "status": "starting",
                 "last_heartbeat": now_ms().value,
@@ -403,9 +403,9 @@ class Application:
         info_service.start()
         self._running = True
         self._start_app_heartbeat()
-        self.db.health.update(
-            component_id="app",
-            fields={"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
+        self.db.app.update_health(
+            "app",
+            {"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
         )
 
         # Summary log with key startup info
@@ -446,12 +446,12 @@ class Application:
             logger.info("[Application] Stopping health monitor...")
             self.health_monitor.stop()
         try:
-            self.db.health.update(
-                component_id="app",
-                fields={"status": "stopping", "exit_code": 0},
+            self.db.app.update_health(
+                "app",
+                {"status": "stopping", "exit_code": 0},
             )
             logger.info("[Application] Cleaning ephemeral runtime state...")
-            self.db.health.truncate()
+            self.db.app.truncate_health()
         except Exception as e:
             logger.warning(f"[Application] DB unavailable during shutdown (expected if containers stopping): {e}")
         self._running = False

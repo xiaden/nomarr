@@ -15,7 +15,7 @@ from nomarr.components.ml.vectors.ml_vector_registry_comp import (
     get_hot_namespace,
     get_maintenance_namespace,
 )
-from nomarr.persistence.base_types import Field
+from nomarr.persistence.schema_types import Field
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -52,14 +52,13 @@ def _get_genres_for_files(db: Database, file_ids: list[str]) -> dict[str, list[s
 
     result: dict[str, list[str]] = {fid: [] for fid in file_ids}
     seen: dict[str, set[str]] = {fid: set() for fid in file_ids}
-    genre_rows = cast("list[dict[str, Any]]", db.library_files.song_has_tags.by_ids(file_ids, name="genre"))
+    genre_rows = cast("list[dict[str, Any]]", db.library.get_genre_tags_for_files(file_ids))
     for row in genre_rows:
-        fid = row.get("start_id")
-        tag = row.get("v")
-        if not isinstance(fid, str) or not isinstance(tag, dict):
+        fid = row.get("fid")
+        genre = row.get("genre")
+        if not isinstance(fid, str) or fid not in seen or not isinstance(genre, str) or not genre:
             continue
-        genre = tag.get("value")
-        if genre and genre not in seen[fid]:
+        if genre not in seen[fid]:
             seen[fid].add(genre)
             result[fid].append(genre)
 
@@ -128,7 +127,7 @@ def drain_hot_to_cold(db: Database, backbone_id: str, library_key: str) -> int:
     cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
     hot_ops = get_hot_namespace(db, backbone_id, library_key)
     drained = cast("int", hot_ops.move_collection(cold_name))
-    db.register(cold_name, "vectors_track_cold")
+    db.ml.register_vector_collection(cold_name, "vectors_track_cold")
     return drained
 
 

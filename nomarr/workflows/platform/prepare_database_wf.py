@@ -12,7 +12,11 @@ from typing import TYPE_CHECKING
 
 from arango.exceptions import AQLQueryExecuteError
 
-from nomarr.components.platform.arango_bootstrap_comp import ensure_schema, list_template_collection_names
+from nomarr.components.platform.arango_bootstrap_comp import (
+    ensure_schema_from_database,
+    list_template_collection_names,
+    register_template_collection,
+)
 from nomarr.components.platform.migration_runner_comp import (
     MigrationError,
     SchemaVersionMismatchError,
@@ -43,7 +47,7 @@ def _is_fresh_database(db: Database) -> bool:
 
     """
     try:
-        return db.meta.get(key="version") is None
+        return db.app.get_meta("version") is None
     except AQLQueryExecuteError as exc:
         # ERR 1203: collection or view not found — truly fresh database
         if "[ERR 1203]" in str(exc):
@@ -56,15 +60,14 @@ def _discover_template_collections(db: Database) -> None:
     template_names = list_template_collection_names()
     registered = 0
 
-    for collection_info in db.db.collections():
-        name = collection_info["name"]
+    for name in db.app.list_collections():
         if name.startswith("_"):
             continue
 
         for template_name in template_names:
             if name.startswith(f"{template_name}__"):
                 try:
-                    db.register(name, template_name)
+                    register_template_collection(db, name, template_name)
                     registered += 1
                 except ValueError:
                     logger.warning(
@@ -102,7 +105,7 @@ def prepare_database_workflow(
     # would recreate indexes that migrations have intentionally dropped.
     if _is_fresh_database(db):
         logger.info("Fresh database detected — bootstrapping schema")
-        ensure_schema(db.db, models_dir=models_dir)
+        ensure_schema_from_database(db, models_dir=models_dir)
     else:
         logger.info("Existing database detected — skipping schema bootstrap")
 

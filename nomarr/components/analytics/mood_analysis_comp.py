@@ -23,7 +23,7 @@ def _get_library_file_ids(db: Database, library_id: str | None) -> set[str] | No
         return None
 
     file_ids: set[str] = set()
-    file_docs = db.libraries.library_contains_file(library_id, limit=None)
+    file_docs = db.library.list_library_files(library_id)
     for file_doc in file_docs:
         file_id = file_doc.get("_id")
         if isinstance(file_id, str):
@@ -37,7 +37,7 @@ def _get_tag_docs_for_name(db: Database, name: str) -> list[dict[str, Any]]:
     tags: list[dict[str, Any]] = []
     offset = 0
     while True:
-        tag_page = db.tags.get.many(name=name, limit=_PAGE_SIZE, offset=offset)
+        tag_page = db.library.list_tags(name=name, limit=_PAGE_SIZE, offset=offset)
         if not tag_page:
             break
         tags.extend(tag_page)
@@ -63,8 +63,10 @@ def _get_tag_edge_rows(db: Database, name: str, library_id: str | None = None) -
     if not tag_id_to_value:
         return []
 
-    # Fetch all song→tag edges for the entire tag name in a single IN query.
-    edge_docs = cast("list[dict[str, Any]]", db.song_has_tags.get.in_(_to=list(tag_id_to_value), limit=None))
+    edge_docs = cast(
+        "list[dict[str, Any]]",
+        db.library.get_song_tag_edges_for_tags(list(tag_id_to_value)),
+    )
     rows: list[tuple[str, str]] = []
     for edge_doc in edge_docs:
         file_id = edge_doc.get("_from")
@@ -85,7 +87,9 @@ def _get_tier_tag_keys(db: Database) -> list[str]:
     offset = 0
     while True:
         name_page = [
-            row["value"] for row in db.tags.aggregate("name", limit=_PAGE_SIZE, offset=offset) if "value" in row
+            row["value"]
+            for row in db.library.aggregate_tag_field("name", limit=_PAGE_SIZE, offset=offset)
+            if "value" in row
         ]
         if not name_page:
             break
@@ -97,7 +101,6 @@ def _get_tier_tag_keys(db: Database) -> list[str]:
         if len(name_page) < _PAGE_SIZE:
             break
         offset += len(name_page)
-
     return tier_tag_keys
 
 
@@ -157,8 +160,8 @@ def get_mood_distribution_data(db: Database, library_id: str | None = None) -> l
 
     Returns:
         A list of ``(mood_name, tag_value)`` tuples. ``mood_name`` is one of
-        ``"nom:mood-strict"``, ``"nom:mood-regular"``, or
-        ``"nom:mood-loose"``, and ``tag_value`` is the stored mood tag value for
+        ``\"nom:mood-strict\"``, ``\"nom:mood-regular\"``, or
+        ``\"nom:mood-loose\"``, and ``tag_value`` is the stored mood tag value for
         one matching song-tag edge.
     """
     mood_rows: list[tuple[str, str]] = []
@@ -238,9 +241,9 @@ def get_top_mood_pairs(
         library_id: Optional library document ``_id``. When provided, only files
             contained in that library are considered.
         limit: Maximum number of mood-pair rows to return.
-        mood_tier: Mood tier selector. ``"strict"`` uses only strict mood tags,
-            ``"regular"`` uses both strict and regular mood tags, and
-            ``"loose"`` uses strict, regular, and loose mood tags. Any other
+        mood_tier: Mood tier selector. ``\"strict\"`` uses only strict mood tags,
+            ``\"regular\"`` uses both strict and regular mood tags, and
+            ``\"loose\"`` uses strict, regular, and loose mood tags. Any other
             value falls back to the strict tier only.
 
     Returns:

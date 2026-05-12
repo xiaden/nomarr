@@ -55,13 +55,9 @@ class TestUpsertHotTrackVector:
         mock_get_hot_namespace.assert_called_once_with(mock_db, "effnet", "lib1")
         hot_namespace.upsert.assert_called_once_with(_key=expected_key, fields=expected_doc)
         hot_namespace.upsert_vector.assert_not_called()
-        mock_db.file_has_vectors.upsert.assert_called_once_with(
-            _from="library_files/f1",
-            _to="vectors_track_hot__effnet__lib1/vector-doc",
-            fields={
-                "_from": "library_files/f1",
-                "_to": "vectors_track_hot__effnet__lib1/vector-doc",
-            },
+        mock_db.ml.upsert_file_has_vector_edge.assert_called_once_with(
+            "library_files/f1",
+            "vectors_track_hot__effnet__lib1/vector-doc",
         )
 
 

@@ -21,11 +21,11 @@ def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(
         "nomarr.workflows.navidrome.find_similar_tracks_wf.get_file_library_key",
-        lambda db, file_id: db.library_files.get_file_library_key(file_id),
+        lambda db, file_id: db.library.get_file_library_key(file_id),
     )
     monkeypatch.setattr(
         "nomarr.workflows.navidrome.find_similar_tracks_wf.get_files_by_ids_with_tags",
-        lambda db, file_ids: db.library_files.get_files_by_ids_with_tags(file_ids),
+        lambda db, file_ids: db.library.get_files_by_ids_with_tags(file_ids),
     )
     monkeypatch.setattr(
         "nomarr.workflows.navidrome.find_similar_tracks_wf.get_cold_track_vector",
@@ -68,8 +68,8 @@ def _make_db(
         return_value={"vector_n": seed_vector, "file_id": seed_file_id} if seed_file_id else None,
     )
     db._search_similar_cold_track_vectors = MagicMock(return_value=ann_results)
-    db.library_files.get_files_by_ids_with_tags.return_value = file_docs
-    db.library_files.get_file_library_key.return_value = "test_lib"
+    db.library.get_files_by_ids_with_tags.return_value = file_docs
+    db.library.get_file_library_key.return_value = "test_lib"
     return db
 
 
@@ -119,7 +119,9 @@ class TestFindSimilarTracksHappyPath:
     @pytest.mark.unit
     def test_respects_count_limit(self) -> None:
         ann = [{"file_id": f"library_files/f{i}", "score": 0.9 - i * 0.01} for i in range(10)]
-        docs = [{"_id": f"library_files/f{i}", "title": f"S{i}", "artist": "A", "album": "B", "tags": []} for i in range(10)]
+        docs = [
+            {"_id": f"library_files/f{i}", "title": f"S{i}", "artist": "A", "album": "B", "tags": []} for i in range(10)
+        ]
         db = _make_db(ann_results=ann, file_docs=docs)
 
         results = find_similar_tracks(SEED, count=3, backbone_id="effnet", db=db)
@@ -139,13 +141,19 @@ class TestFindSimilarTracksHappyPath:
     def test_does_not_use_navidrome_song_map_table(self) -> None:
         db = _make_db(
             ann_results=[{"file_id": "library_files/match-1", "score": 0.95}],
-            file_docs=[{"_id": "library_files/match-1", "title": "Song A", "artist": "Artist A", "album": "Album A", "tags": []}],
+            file_docs=[
+                {
+                    "_id": "library_files/match-1",
+                    "title": "Song A",
+                    "artist": "Artist A",
+                    "album": "Album A",
+                    "tags": [],
+                }
+            ],
         )
-        db.navidrome_tracks = MagicMock()
-
         find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
 
-        assert db.navidrome_tracks.mock_calls == []
+        assert db.app.mock_calls == []
 
 
 class TestFindSimilarTracksErrors:

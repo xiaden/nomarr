@@ -58,7 +58,9 @@
 		"chat.useCustomAgentHooks": true,
 		"chat.subagents.allowInvocationsFromSubagents": true,
 		"python.analysis.typeCheckingMode": "basic",
-		"github.copilot.chat.tools.memory.enabled": false
+		"github.copilot.chat.tools.memory.enabled": false,
+		"gitlens.currentLine.enabled": true,
+		"gitlens.hovers.currentLine.over": "line"
 	},
 	"extensions": {
 		"recommendations": [

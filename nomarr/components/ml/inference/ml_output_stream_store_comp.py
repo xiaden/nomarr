@@ -5,11 +5,10 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.ml.onnx.ml_model_registry_comp import build_model_output_index_map
 from nomarr.helpers.dto.ml_dto import LoadedOutputStream
-from nomarr.persistence.query_specs import QueryCriterion, QueryOperator, WriteQuerySpec
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -20,11 +19,6 @@ _FILE_COLLECTION = "library_files"
 _OUTPUT_COLLECTION = "ml_model_outputs"
 
 logger = logging.getLogger(__name__)
-
-
-def _ml_output_streams_ns(db: Database) -> Any:
-    """Return the runtime-wired output-stream namespace with traversal verbs attached."""
-    return cast("Any", db.ml_output_streams)
 
 
 @dataclass(frozen=True)
@@ -94,67 +88,31 @@ def upsert_output_streams(db: Database, *, file_id: str, streams: list[StreamWri
 
     normalized_file_id = _as_document_id(_FILE_COLLECTION, file_id)
     normalized_streams = _normalize_streams(streams)
-
-    stream_docs: list[dict[str, Any]] = []
-    file_edge_docs: list[dict[str, str]] = []
-    output_edge_docs: list[dict[str, str]] = []
-    for stream in normalized_streams:
-        stream_key = _stream_key(normalized_file_id, stream.output_id)
-        stream_id = f"{_STREAM_COLLECTION}/{stream_key}"
-        stream_docs.append(
+    db.ml.upsert_output_streams_batch(
+        file_id=normalized_file_id,
+        stream_payloads=[
             {
-                "_key": stream_key,
+                "output_id": stream.output_id,
                 "values": stream.values,
             }
-        )
-        file_edge_docs.append(
-            {
-                "_key": _file_stream_edge_key(normalized_file_id, stream_id),
-                "_from": normalized_file_id,
-                "_to": stream_id,
-            }
-        )
-        output_edge_docs.append(
-            {
-                "_key": _output_stream_edge_key(stream.output_id, stream_id),
-                "_from": stream.output_id,
-                "_to": stream_id,
-            }
-        )
-
-    db.ml_output_streams.upsert_batch(stream_docs, match_fields="_key")
-    db.file_has_output_stream.upsert_batch(file_edge_docs, match_fields=["_from", "_to"])
-    db.output_has_stream.upsert_batch(output_edge_docs, match_fields=["_from", "_to"])
+            for stream in normalized_streams
+        ],
+    )
 
 
 def fetch_output_streams(db: Database, file_id: str) -> list[StreamRecord]:
     """Fetch all canonical output streams linked to one file."""
     normalized_file_id = _as_document_id(_FILE_COLLECTION, file_id)
-    stream_docs = cast(
-        "list[dict[str, Any]]",
-        db.library_files.file_has_output_stream(normalized_file_id, limit=None),
-    )
+    stream_docs = db.ml.get_output_streams_for_file(normalized_file_id)
     if not stream_docs:
         return []
 
     records: list[StreamRecord] = []
     for stream_doc in stream_docs:
-        stream_id = stream_doc.get("_id")
+        output_id = stream_doc.get("output_id")
+        output_index = stream_doc.get("output_index")
         values = stream_doc.get("values", [])
-        if not isinstance(stream_id, str) or not isinstance(values, list):
-            continue
-
-        output_docs = cast(
-            "list[dict[str, Any]]",
-            _ml_output_streams_ns(db).output_has_stream(stream_id, limit=1),
-        )
-        if not output_docs:
-            continue
-
-        output_doc = output_docs[0]
-        output_id = output_doc.get("_id")
-        output_index = output_doc.get("output_index")
-        if not isinstance(output_id, str) or not isinstance(output_index, int):
+        if not isinstance(output_id, str) or not isinstance(output_index, int) or not isinstance(values, list):
             continue
 
         records.append(
@@ -277,30 +235,12 @@ def load_output_streams_for_file(
 def delete_output_streams(db: Database, file_id: str) -> int:
     """Delete all canonical output streams and both edge types for one file."""
     normalized_file_id = _as_document_id(_FILE_COLLECTION, file_id)
-    stream_docs = cast(
-        "list[dict[str, Any]]",
-        db.library_files.file_has_output_stream(normalized_file_id, limit=None),
-    )
+    stream_docs = db.ml.get_output_streams_for_file(normalized_file_id)
     stream_ids = sorted(
-        {cast("str", stream_doc["_id"]) for stream_doc in stream_docs if isinstance(stream_doc.get("_id"), str)}
+        {stream_id for stream_doc in stream_docs if isinstance((stream_id := stream_doc.get("_id")), str)}
     )
     if not stream_ids:
         return 0
 
-    delete_stream_refs = WriteQuerySpec(
-        collection_name="file_has_output_stream",
-        criteria=(QueryCriterion("_to", QueryOperator.IN, stream_ids),),
-    )
-    db.file_has_output_stream.delete(query_spec=delete_stream_refs)
-    db.output_has_stream.delete(
-        query_spec=WriteQuerySpec(
-            collection_name="output_has_stream",
-            criteria=(QueryCriterion("_to", QueryOperator.IN, stream_ids),),
-        )
-    )
-    return db.ml_output_streams.delete(
-        query_spec=WriteQuerySpec(
-            collection_name="ml_output_streams",
-            criteria=(QueryCriterion("_id", QueryOperator.IN, stream_ids),),
-        )
-    )
+    db.ml.delete_output_streams_for_file(normalized_file_id)
+    return len(stream_ids)

@@ -81,15 +81,22 @@ def build_track_descriptor(file_doc: dict[str, Any]) -> TrackDescriptor:
     return _descriptor_from_doc(file_doc)
 
 
+def _search_candidate_docs(db: Database, field_name: str, value: str) -> list[dict[str, Any]]:
+    docs = db.library.search_files_by_text(field_name, value, limit=None)
+    if isinstance(docs, list):
+        return cast("list[dict[str, Any]]", docs)
+    return cast("list[dict[str, Any]]", db.library_files.get.many(limit=None, **{field_name: value}))
+
+
 def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
     title = seed.get("title", "")
     if title:
-        title_docs = cast("list[dict[str, Any]]", db.library_files.get.many(title=title, limit=None))
+        title_docs = _search_candidate_docs(db, "title", title)
         return {file_id for doc in title_docs if isinstance((file_id := doc.get("_id")), str)}
 
     artist = seed.get("artist", "")
     if artist:
-        artist_docs = cast("list[dict[str, Any]]", db.library_files.get.many(artist=artist, limit=None))
+        artist_docs = _search_candidate_docs(db, "artist", artist)
         return {file_id for doc in artist_docs if isinstance((file_id := doc.get("_id")), str)}
 
     return set()

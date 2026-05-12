@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 def find_or_create_tag(db: Database, name: str, value: TagValue) -> str:
     """Find or create one tag vertex and return its ``_id``."""
-    return cast("str", db.tags.upsert(name=name, value=value, fields={})[0])
+    return db.library.find_or_create_tag(name, value)
 
 
 def resolve_tag_ids(
@@ -28,7 +28,10 @@ def resolve_tag_ids(
 
     resolved: dict[tuple[str, TagValue], str] = {}
     for name, value in dict.fromkeys(pairs):
-        matches = cast("list[dict[str, Any]]", db.tags.get(name=name, value=value, limit=1))
+        matches = cast(
+            "list[dict[str, Any]]",
+            db.library.list_tags(name=name, value=value, limit=1),
+        )
         if not matches:
             continue
         tag_id = matches[0].get("_id")
@@ -43,9 +46,12 @@ def _find_song_name_edge_ids(db: Database, song_id: str, name: str) -> list[str]
         str(edge_id)
         for row in cast(
             "list[dict[str, Any]]",
-            db.library_files.song_has_tags.by_ids([song_id], name=name, include_edge=True),
+            db.library.get_tags_for_files_batch([song_id], include_edge=True),
         )
-        if isinstance((edge := row.get("e")), dict) and (edge_id := edge.get("_id")) is not None
+        if isinstance((tag := row.get("v")), dict)
+        and tag.get("name") == name
+        and isinstance((edge := row.get("e")), dict)
+        and (edge_id := edge.get("_id")) is not None
     ]
 
 
@@ -53,14 +59,14 @@ def set_song_tags(db: Database, song_id: str, name: str, values: list[TagValue])
     """Replace all tags for one ``song_id`` + ``name`` pair."""
     edge_ids = _find_song_name_edge_ids(db, song_id, name)
     for edge_id in edge_ids:
-        db.song_has_tags.delete(_id=edge_id)
+        db.library.delete_song_tag_edge_by_id(edge_id)
     if not values:
         return
 
     tag_id_map = {value: find_or_create_tag(db, name, value) for value in values}
     edge_docs = [{"_from": song_id, "_to": tag_id_map[value]} for value in values if value in tag_id_map]
     for edge_doc in edge_docs:
-        db.song_has_tags.upsert(_from=edge_doc["_from"], _to=edge_doc["_to"], fields={})
+        db.library.upsert_song_tag_edge(edge_doc["_from"], edge_doc["_to"])
 
 
 def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
@@ -91,7 +97,7 @@ def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
     song_ids = list(dict.fromkeys(song_id for song_id, _, _ in entry_pairs))
     existing_rows = cast(
         "list[dict[str, Any]]",
-        db.library_files.song_has_tags.by_ids(song_ids, include_edge=True),
+        db.library.get_tags_for_files_batch(song_ids, include_edge=True),
     )
     wanted_pairs = {(song_id, name) for song_id, name, _ in entry_pairs}
     edge_ids: list[str] = []
@@ -118,7 +124,7 @@ def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
             edge_ids.append(str(edge_id))
 
     for edge_id in edge_ids:
-        db.song_has_tags.delete(_id=edge_id)
+        db.library.delete_song_tag_edge_by_id(edge_id)
 
     if not upsert_pairs:
         return
@@ -130,24 +136,27 @@ def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
     for song_id, name, values in entry_pairs:
         for value in values:
             tag_id = tag_ids.get((name, value))
-            if tag_id is not None:
-                edge_key = (song_id, tag_id)
-                if edge_key not in seen_edges:
-                    seen_edges.add(edge_key)
-                    edge_docs.append({"_from": song_id, "_to": tag_id})
+            if tag_id is None:
+                continue
+            edge_key = (song_id, tag_id)
+            if edge_key in seen_edges:
+                continue
+            seen_edges.add(edge_key)
+            edge_docs.append({"_from": song_id, "_to": tag_id})
+
     for edge_doc in edge_docs:
-        db.song_has_tags.upsert(_from=edge_doc["_from"], _to=edge_doc["_to"], fields={})
+        db.library.upsert_song_tag_edge(edge_doc["_from"], edge_doc["_to"])
 
 
 def add_song_tag(db: Database, song_id: str, name: str, value: TagValue) -> None:
     """Add one tag value to a song without replacing other values for the name."""
     tag_id = find_or_create_tag(db, name, value)
-    db.song_has_tags.upsert(_from=song_id, _to=tag_id, fields={})
+    db.library.upsert_song_tag_edge(song_id, tag_id)
 
 
 def delete_song_tags(db: Database, song_id: str) -> None:
     """Delete all tag edges for one song."""
-    db.song_has_tags.delete(_from=song_id)
+    db.library.delete_song_tag_edges_for_file(song_id)
 
 
 def relink_tag_edges(
@@ -179,7 +188,7 @@ def relink_tag_edges(
     """
     all_candidate_edges = cast(
         "list[dict[str, Any]]",
-        db.song_has_tags.get.in_(_to=[source_tag_id, target_tag_id], limit=None),
+        db.library.get_song_tag_edges_for_tags([source_tag_id, target_tag_id]),
     )
     source_edges = [edge for edge in all_candidate_edges if edge.get("_to") == source_tag_id]
     if song_ids is not None:
@@ -188,20 +197,24 @@ def relink_tag_edges(
     if not source_edges:
         return {"moved": 0, "skipped": 0, "source_orphaned": False}
 
-    target_existing = {str(edge.get("_from")) for edge in all_candidate_edges if edge.get("_to") == target_tag_id}
+    target_existing = {
+        str(edge_from)
+        for edge in all_candidate_edges
+        if edge.get("_to") == target_tag_id and (edge_from := edge.get("_from")) is not None
+    }
     edges_to_insert = [
         {"_from": str(edge["_from"]), "_to": target_tag_id}
         for edge in source_edges
         if str(edge["_from"]) not in target_existing
     ]
     if edges_to_insert:
-        db.song_has_tags.insert(edges_to_insert)
+        db.library.insert_song_tag_edges(edges_to_insert)
 
-    moved_edge_ids = [str(edge["_id"]) for edge in source_edges if edge.get("_id")]
+    moved_edge_ids = [str(edge_id) for edge in source_edges if (edge_id := edge.get("_id"))]
     for edge_id in moved_edge_ids:
-        db.song_has_tags.delete(_id=edge_id)
+        db.library.delete_song_tag_edge_by_id(edge_id)
 
-    source_orphaned = int(db.song_has_tags.count(_to=source_tag_id)) == 0
+    source_orphaned = db.library.count_song_tag_edges(source_tag_id) == 0
     if source_orphaned:
         cleanup_orphaned_tags(db)
 

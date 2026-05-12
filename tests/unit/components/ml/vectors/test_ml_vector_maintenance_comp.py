@@ -16,7 +16,7 @@ from nomarr.components.ml.vectors.ml_vector_maintenance_comp import (
     rebuild_cold_vector_index,
     verify_hot_empty,
 )
-from nomarr.persistence.base_types import Field
+from nomarr.persistence.schema_types import Field
 
 PATCH_BASE = "nomarr.components.ml.vectors.ml_vector_maintenance_comp"
 
@@ -54,7 +54,9 @@ class TestDrainHotToCold:
         assert result == 0
         mock_get_hot.assert_called_once_with(mock_db, "ast", "lib1")
         hot_ops.move_collection.assert_called_once_with("vectors_track_cold__ast__lib1")
-        mock_db.register.assert_called_once_with("vectors_track_cold__ast__lib1", "vectors_track_cold")
+        mock_db.ml.register_vector_collection.assert_called_once_with(
+            "vectors_track_cold__ast__lib1", "vectors_track_cold"
+        )
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -69,7 +71,9 @@ class TestDrainHotToCold:
         assert drained == 2
         mock_get_hot.assert_called_once_with(mock_db, "ast", "lib1")
         hot_ops.move_collection.assert_called_once_with("vectors_track_cold__ast__lib1")
-        mock_db.register.assert_called_once_with("vectors_track_cold__ast__lib1", "vectors_track_cold")
+        mock_db.ml.register_vector_collection.assert_called_once_with(
+            "vectors_track_cold__ast__lib1", "vectors_track_cold"
+        )
 
 
 class TestBackfillGenres:
@@ -104,10 +108,10 @@ class TestBackfillGenres:
             {"_id": "vectors_track_cold__ast__lib1/k1", "_key": "k1", "file_id": "library_files/f1"},
             {"_id": "vectors_track_cold__ast__lib1/k2", "_key": "k2", "file_id": "library_files/f2"},
         ]
-        mock_db.library_files.song_has_tags.by_ids.return_value = [
-            {"start_id": "library_files/f1", "v": {"name": "genre", "value": "ambient"}},
-            {"start_id": "library_files/f2", "v": {"name": "genre", "value": "jazz"}},
-            {"start_id": "library_files/f2", "v": {"name": "genre", "value": "fusion"}},
+        mock_db.library.get_genre_tags_for_files.return_value = [
+            {"fid": "library_files/f1", "genre": "ambient", "tag_id": "tags/g1"},
+            {"fid": "library_files/f2", "genre": "jazz", "tag_id": "tags/g2"},
+            {"fid": "library_files/f2", "genre": "fusion", "tag_id": "tags/g3"},
         ]
 
         with patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold:
@@ -129,10 +133,7 @@ class TestBackfillGenres:
             "vectors_track_cold__ast__lib1/k2",
         ]
         cold_ops.get.in_.assert_called_once_with(field_arg, limit=None)
-        mock_db.library_files.song_has_tags.by_ids.assert_called_once_with(
-            ["library_files/f1", "library_files/f2"],
-            name="genre",
-        )
+        mock_db.library.get_genre_tags_for_files.assert_called_once_with(["library_files/f1", "library_files/f2"])
 
     @pytest.mark.unit
     @pytest.mark.mocked

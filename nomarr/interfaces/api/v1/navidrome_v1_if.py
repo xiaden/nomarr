@@ -262,7 +262,9 @@ async def navidrome_generate_playlists(
             PlaylistResultResponse(
                 playlist_type=playlist["playlist_type"],
                 playlist_name=playlist["playlist_name"],
-                songs=[SeedTrackDescriptor(**descriptor_map[fid]) for fid in playlist["file_ids"] if fid in descriptor_map],
+                songs=[
+                    SeedTrackDescriptor(**descriptor_map[fid]) for fid in playlist["file_ids"] if fid in descriptor_map
+                ],
                 track_count=len([fid for fid in playlist["file_ids"] if fid in descriptor_map]),
             )
             for playlist in result.playlists

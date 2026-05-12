@@ -34,11 +34,11 @@ def parse_oom_requested_bytes(error: BaseException) -> int | None:
 
 def update_model_vram_from_oom(db: Database, model_path: str, requested_bytes: int) -> int:
     """Write a corrected VRAM limit after a BFC arena OOM."""
-    raw_doc = cast("dict[str, Any] | None", db.meta.get(key=f"{_META_PREFIX}{model_path}"))
+    raw_doc = cast("dict[str, Any] | None", db.app.get_meta(f"{_META_PREFIX}{model_path}"))
     raw = None if raw_doc is None else raw_doc.get("value")
     base = int(raw) if raw is not None else requested_bytes
     new_limit = int(base * 1.25)
-    db.meta.upsert(key=f"{_META_PREFIX}{model_path}", fields={"value": str(new_limit)})
+    db.app.upsert_meta(f"{_META_PREFIX}{model_path}", {"value": str(new_limit)})
     logger.warning(
         "[vram_probe] OOM self-heal: updated %s from %s to %s (%d bytes) — bumped probe by 25%%",
         model_path,

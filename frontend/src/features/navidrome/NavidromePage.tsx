@@ -158,7 +158,7 @@ export function NavidromePage() {
                 {personalPlaylistsResult && (
                   <Alert severity={personalPlaylistsResult.status === "ok" ? "success" : "info"} sx={{ mt: 1.5 }}>
                     {personalPlaylistsResult.status === "ok"
-                      ? `Generated ${personalPlaylistsResult.playlists_generated} playlist(s), pushed ${personalPlaylistsResult.playlists_pushed} to Navidrome.`
+                      ? `Generated ${personalPlaylistsResult.playlists.length} playlist(s) ready for Navidrome plugin.`
                       : personalPlaylistsResult.message || "No playlists generated — not enough play history yet."}
                   </Alert>
                 )}

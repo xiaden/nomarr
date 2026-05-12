@@ -250,7 +250,7 @@ class TestTriggerCalibration:
         mock_calibration_svc: MagicMock,
     ) -> None:
         """Should return early when no libraries are awaiting calibration."""
-        mock_db.calibration_state.count.return_value = 0
+        mock_db.app.count_calibration_states.return_value = 0
         mock_db.library_pipeline_states.bulk_transition.return_value = 0
 
         pipeline_service.trigger_calibration()
@@ -268,7 +268,7 @@ class TestTriggerCalibration:
         mock_calibration_svc: MagicMock,
     ) -> None:
         """Should start histogram calibration when libraries are waiting and no calibration exists."""
-        mock_db.calibration_state.count.return_value = 0
+        mock_db.app.count_calibration_states.return_value = 0
         mock_db.library_pipeline_states.bulk_transition.return_value = 2
 
         pipeline_service.trigger_calibration()
@@ -282,7 +282,7 @@ class TestTriggerCalibration:
         mock_db: MagicMock,
     ) -> None:
         """Existing calibration should shortcut directly into apply dispatch."""
-        mock_db.calibration_state.count.return_value = 1
+        mock_db.app.count_calibration_states.return_value = 1
         mock_db.library_pipeline_states.bulk_transition.side_effect = [2, 2]
         mock_dispatch_apply = MagicMock()
         monkeypatch.setattr(pipeline_service, "_dispatch_apply", mock_dispatch_apply)

@@ -143,8 +143,9 @@ def delete_library(db: Database, library_id: str) -> bool:
     library_full_id = f"libraries/{lib_key}"
 
     # Collect all file IDs for this library upfront.
-    file_docs = cast("list[dict]", db.libraries.library_contains_file(library_full_id, limit=None))
+    file_docs = cast("list[dict]", db.library.list_library_files(library_full_id))
     file_ids = [doc["_id"] for doc in file_docs if isinstance(doc.get("_id"), str)]
+    vector_collection_names = db.ml.list_registered_vector_collection_names()
 
     # Delete per-file derived data in batches.
     from nomarr.components.ml.inference.ml_output_stream_store_comp import delete_output_streams
@@ -156,11 +157,11 @@ def delete_library(db: Database, library_id: str) -> bool:
         # Delete canonical output streams before removing the file-side edges.
         for file_id in batch:
             delete_output_streams(db, file_id)
-        # Delete per-file edge collections.
-        db.file_has_state.delete.in_(_from=batch)
-        db.file_has_vectors.delete.in_(_from=batch)
-        db.song_has_tags.delete.in_(_from=batch)
-        db.worker_claims.delete.in_(file_id=batch)
+            for collection_name in vector_collection_names:
+                db.ml.delete_vectors_for_file(collection_name, file_id)
+            db.library.delete_song_tag_edges_for_file(file_id)
+            db.app.release_claim(file_id)
+        db.app.delete_file_state_edges(batch)
 
     # Delete orphan tags after clearing song_has_tags edges.
     # The cleanup component also checks tag_model_output edges so tags still
@@ -168,24 +169,24 @@ def delete_library(db: Database, library_id: str) -> bool:
     cleanup_orphaned_tags(db)
 
     # Delete vector template collections scoped to this library.
-    for coll_name, coll in list(db._registered.items()):
+    for coll_name in db.ml.list_registered_vector_collection_names():
         if coll_name.endswith(f"__{lib_key}"):
-            coll.truncate()
+            db.ml.truncate_vector_collection(coll_name)
 
     # Delete library-scoped edge collections (single query each).
-    db.library_contains_file.delete(_from=library_full_id)
-    db.library_contains_folder.delete(_from=library_full_id)
-    db.library_has_scan.delete(_from=library_full_id)
-    db.library_has_pipeline_state.delete(_from=library_full_id)
+    db.library.delete_all_file_links_for_library(library_full_id)
+    db.library.delete_all_folder_links_for_library(library_full_id)
+    db.app.delete_library_scan_edge(library_full_id)
+    db.app.delete_pipeline_state_edges_for_library(library_full_id)
 
     # Delete library-scoped document collections (single AQL each via library_key field).
-    db.library_files.delete(library_key=lib_key)
-    db.library_folders.delete(library_key=lib_key)
-    db.library_scans.delete(library_key=lib_key)
-    db.library_pipeline_states.delete(library_key=lib_key)
+    db.library.delete_files_for_library(lib_key)
+    db.library.delete_folders_for_library(lib_key)
+    db.app.delete_scan_records_for_library(lib_key)
+    db.app.delete_pipeline_state(library_full_id)
 
     # Finally, delete the library document itself.
-    db.libraries.delete(_key=lib_key)
+    db.library.delete_library(library_full_id)
 
     logger.info(f"[LibraryAdmin] Deleted library {library_id}: {library.get('name')} ({len(file_ids)} files removed)")
     return True

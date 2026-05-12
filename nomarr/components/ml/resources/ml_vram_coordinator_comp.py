@@ -19,10 +19,13 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.platform import resource_monitor_comp as _resource_monitor
 from nomarr.helpers.time_helper import now_ms
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
@@ -35,21 +38,13 @@ def _promise_key(worker_id: str, model_path: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
-def _get_all_promises(db: Any) -> list[dict[str, Any]]:
-    """Return all VRAM promise documents via constructor-backed accessors."""
-    worker_ids = [
-        row["value"]
-        for row in db.vram_promises.aggregate("worker_id", limit=db.vram_promises.count())
-        if "value" in row
-    ]  # type: ignore[union-attr]
-    promises: list[dict[str, Any]] = []
-    for current_worker_id in worker_ids:
-        promises.extend(db.vram_promises.get(worker_id=current_worker_id, limit=None))  # type: ignore[union-attr]
-    return promises
+def _get_all_promises(db: Database) -> list[dict[str, Any]]:
+    """Return all VRAM promise documents via app-level accessors."""
+    return db.app.get_vram_promises()
 
 
 def register_vram_promise(
-    db: Any,
+    db: Database,
     worker_id: str,
     pid: int,
     model_path: str,
@@ -63,7 +58,7 @@ def register_vram_promise(
     headroom — the caller should fall back to CPU.
 
     Args:
-        db:          Application database (must have ``vram_promises`` attribute).
+        db:          Application database.
         worker_id:   Worker identifier (e.g., ``“nomarr-tag:0”``).
         pid:         Worker OS PID.
         model_path:  Absolute path to the ONNX model file.
@@ -105,21 +100,20 @@ def register_vram_promise(
         )
         return False
 
-    db.vram_promises.delete(worker_id=worker_id, model_path=model_path)  # type: ignore[union-attr]
+    promise_id = f"vram_promises/{_promise_key(worker_id, model_path)}"
+    db.app.delete_vram_promise(promise_id)
 
-    db.vram_promises.insert(  # type: ignore[union-attr]
-        [
-            {
-                "_key": _promise_key(worker_id, model_path),
-                "worker_id": worker_id,
-                "pid": pid,
-                "model_path": model_path,
-                "promised_mb": promised_mb,
-                "total_mb": total_mb,
-                "used_mb": used_mb,
-                "last_seen_ms": now_ms().value,
-            }
-        ],
+    db.app.upsert_vram_promise(
+        {
+            "_key": _promise_key(worker_id, model_path),
+            "worker_id": worker_id,
+            "pid": pid,
+            "model_path": model_path,
+            "promised_mb": promised_mb,
+            "total_mb": total_mb,
+            "used_mb": used_mb,
+            "last_seen_ms": now_ms().value,
+        }
     )
     registered = True
 
@@ -147,7 +141,7 @@ def register_vram_promise(
 
 
 def release_vram_promise(
-    db: Any,
+    db: Database,
     worker_id: str,
     model_path: str,
 ) -> None:
@@ -162,7 +156,7 @@ def release_vram_promise(
         model_path:  Absolute path to the ONNX model file.
 
     """
-    db.vram_promises.delete(worker_id=worker_id, model_path=model_path)  # type: ignore[union-attr]
+    db.app.delete_vram_promise(f"vram_promises/{_promise_key(worker_id, model_path)}")
     logger.debug(
         "[vram_coordinator] Released promise: worker=%s model=%s",
         worker_id,
@@ -171,7 +165,7 @@ def release_vram_promise(
 
 
 def get_fleet_vram_state(
-    db: Any,
+    db: Database,
 ) -> dict[str, Any]:
     """Return a snapshot of current fleet VRAM promises and live GPU telemetry.
 
@@ -193,7 +187,7 @@ def get_fleet_vram_state(
 
 
 def release_worker_promises(
-    db: Any,
+    db: Database,
     worker_id: str,
 ) -> int:
     """Release all VRAM promises held by a specific worker.
@@ -213,7 +207,19 @@ def release_worker_promises(
         Number of promise documents removed.
 
     """
-    removed: int = db.vram_promises.delete(worker_id=worker_id)  # type: ignore[union-attr]
+    removed = 0
+    for promise in _get_all_promises(db):
+        if promise.get("worker_id") != worker_id:
+            continue
+        promise_id = promise.get("_id")
+        promise_key = promise.get("_key")
+        if isinstance(promise_id, str) and promise_id:
+            db.app.delete_vram_promise(promise_id)
+            removed += 1
+            continue
+        if isinstance(promise_key, str) and promise_key:
+            db.app.delete_vram_promise(f"vram_promises/{promise_key}")
+            removed += 1
     if removed:
         logger.info(
             "[vram_coordinator] Released %d promise(s) for worker %s",

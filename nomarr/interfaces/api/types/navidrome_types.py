@@ -19,7 +19,6 @@ if TYPE_CHECKING:
     from nomarr.helpers.dto.navidrome_dto import (
         GeneratePlaylistResult,
         GetTemplateSummaryResult,
-        NavidromeStaticPlaylistResult,
         PlaylistPreviewResult,
         PreviewTagStatsResult,
         RuleGroup,
@@ -269,12 +268,13 @@ class SyncSongsResponse(BaseModel):
 
 
 class TriggerPersonalPlaylistsResponse(BaseModel):
-    """Response after triggering personal playlist generation and push."""
+    """Response after triggering personal playlist generation."""
 
     status: str = Field(..., description="Outcome: 'ok' or 'no_data'")
     message: str = Field("", description="Human-readable detail; empty on success")
-    playlists_generated: int = Field(..., description="Number of playlists generated")
-    playlists_pushed: int = Field(..., description="Number successfully pushed to Navidrome")
+    playlists: list[PlaylistDescriptorEntry] = Field(
+        default_factory=list, description="Generated playlists with portable track descriptors"
+    )
 
 
 class PingResponse(BaseModel):
@@ -290,20 +290,36 @@ class NavidromeStatusResponse(BaseModel):
     configured: bool = Field(..., description="True when Navidrome credentials are fully set")
 
 
+class TrackDescriptorResponse(BaseModel):
+    """Portable track descriptor for plugin-side Navidrome resolution."""
+
+    title: str = ""
+    artist: str
+    album: str = ""
+    album_artist: str = ""
+    duration_ms: int | None = None
+    track_number: int | None = None
+    disc_number: int | None = None
+    year: int | None = None
+    nomarr_file_key: str | None = None
+
+
+class PlaylistDescriptorEntry(BaseModel):
+    """A named playlist with portable track descriptors."""
+
+    playlist_name: str = Field(..., description="Playlist display name")
+    playlist_type: str = Field("", description="Playlist type (e.g. 'top_tracks', 'genre')")
+    songs: list[TrackDescriptorResponse] = Field(
+        default_factory=list, description="Portable track descriptors for plugin-side resolution"
+    )
+    track_count: int = Field(..., description="Number of tracks in this playlist")
+
+
 class PushStaticPlaylistResponse(BaseModel):
-    """Response after pushing a static playlist to Navidrome."""
+    """Response for a static playlist prepared for plugin-side push."""
 
-    playlist_name: str = Field(..., description="Display name written to Navidrome")
-    playlist_id: str = Field(..., description="Navidrome-assigned playlist ID")
-    track_count: int = Field(..., description="Number of tracks resolved and pushed")
-    unresolved_count: int = Field(..., description="Number of file IDs with no Navidrome mapping")
-
-    @classmethod
-    def from_dto(cls, dto: NavidromeStaticPlaylistResult) -> PushStaticPlaylistResponse:
-        """Convert NavidromeStaticPlaylistResult DTO to Pydantic response."""
-        return cls(
-            playlist_name=dto["playlist_name"],
-            playlist_id=dto["playlist_id"],
-            track_count=len(dto["track_nd_ids"]),
-            unresolved_count=len(dto["unresolved_file_ids"]),
-        )
+    playlist_name: str = Field(..., description="Display name for the playlist")
+    songs: list[TrackDescriptorResponse] = Field(
+        default_factory=list, description="Portable track descriptors for plugin-side resolution"
+    )
+    track_count: int = Field(..., description="Number of tracks resolved")

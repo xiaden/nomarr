@@ -13,7 +13,6 @@ from arango.exceptions import DocumentInsertError
 
 from nomarr.components.library.library_file_state_comp import discover_next_untagged_file
 from nomarr.helpers.time_helper import now_ms
-from nomarr.persistence.query_specs import PaginationSpec, QueryCriterion, QueryOperator, ReadQuerySpec, WriteQuerySpec
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -29,16 +28,8 @@ def _claim_key(file_id: str) -> str:
 
 
 def _get_all_claims(db: Database) -> list[dict[str, Any]]:
-    """Return all worker-claim documents via the collection-first read root."""
-    total = db.worker_claims.count()
-    if total == 0:
-        return []
-
-    query_spec = ReadQuerySpec(
-        collection_name="worker_claims",
-        pagination=PaginationSpec(limit=total),
-    )
-    return cast("list[dict[str, Any]]", db.worker_claims.get(query_spec=query_spec))
+    """Return all worker-claim documents via the application facade."""
+    return cast("list[dict[str, Any]]", db.app.list_claims())
 
 
 def discover_next_file(
@@ -77,17 +68,14 @@ def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
         True if claim successful, False if already claimed
 
     """
+    payload = {
+        "_key": _claim_key(file_id),
+        "file_id": file_id,
+        "worker_id": worker_id,
+        "claimed_at": now_ms().value,
+    }
     try:
-        db.worker_claims.insert(
-            [
-                {
-                    "_key": _claim_key(file_id),
-                    "file_id": file_id,
-                    "worker_id": worker_id,
-                    "claimed_at": now_ms().value,
-                }
-            ],
-        )
+        db.app.claim_file(file_id, worker_id, payload)
     except DocumentInsertError:
         return False
     return True
@@ -101,7 +89,7 @@ def release_claim(db: Database, file_id: str) -> None:
         file_id: Full file document _id
 
     """
-    db.worker_claims.delete(file_id=file_id)
+    db.app.release_claim(file_id)
 
 
 def try_insert_or_steal_claim(
@@ -125,17 +113,7 @@ def try_insert_or_steal_claim(
         False if an active un-expired claim already exists.
 
     """
-    file_id = str(payload["file_id"])
-    try:
-        db.worker_claims.insert([payload])
-        return True
-    except DocumentInsertError:
-        existing = cast("dict[str, Any] | None", db.worker_claims.get(file_id=file_id))
-        if existing and existing.get("claimed_at", 0) < (now - lease_ms):
-            db.worker_claims.delete(_id=str(existing["_id"]))
-            db.worker_claims.insert([payload])
-            return True
-        return False
+    return db.app.steal_claim(payload, now, lease_ms)
 
 
 def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
@@ -159,16 +137,7 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
         return 0
 
     heartbeat_cutoff = now_ms().value - heartbeat_timeout_ms
-    health_docs = cast(
-        "list[dict[str, Any]]",
-        db.health.get(
-            query_spec=ReadQuerySpec(
-                collection_name="health",
-                criteria=(QueryCriterion("component_type", QueryOperator.EQ, "worker"),),
-                pagination=PaginationSpec(limit=db.health.count()),
-            )
-        ),
-    )
+    health_docs = cast("list[dict[str, Any]]", db.app.list_worker_health())
     active_workers = {
         str(doc.get("component_id")) for doc in health_docs if int(doc.get("last_heartbeat", 0)) > heartbeat_cutoff
     }
@@ -185,27 +154,10 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
     stale_file_ids: set[str] = set()
     candidate_file_ids = sorted({str(claim["file_id"]) for claim in active_ml_claims})
     if candidate_file_ids:
-        file_docs = cast(
-            "list[dict[str, Any]]",
-            db.library_files.get(
-                query_spec=ReadQuerySpec(
-                    collection_name="library_files",
-                    criteria=(QueryCriterion("_id", QueryOperator.IN, candidate_file_ids),),
-                    pagination=PaginationSpec(limit=len(candidate_file_ids)),
-                )
-            ),
-        )
+        file_docs = cast("list[dict[str, Any]]", db.library.get_files_by_ids(candidate_file_ids))
         existing_file_ids = {str(doc["_id"]) for doc in file_docs if "_id" in doc}
 
-        tagged_edges = cast(
-            "list[dict[str, Any]]",
-            db.file_has_state.get(
-                query_spec=ReadQuerySpec(
-                    collection_name="file_has_state",
-                    criteria=(QueryCriterion("_from", QueryOperator.IN, candidate_file_ids),),
-                )
-            ),
-        )
+        tagged_edges = cast("list[dict[str, Any]]", db.app.get_state_edges_for_files(candidate_file_ids))
         tagged_file_ids = {
             str(edge["_from"]) for edge in tagged_edges if "_from" in edge and edge.get("_to") == _TAGGED_STATE_ID
         }
@@ -215,19 +167,9 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
 
     removed = 0
     if inactive_worker_ids:
-        removed += db.worker_claims.delete(
-            query_spec=WriteQuerySpec(
-                collection_name="worker_claims",
-                criteria=(QueryCriterion("worker_id", QueryOperator.IN, sorted(inactive_worker_ids)),),
-            )
-        )
+        removed += db.app.delete_claims_for_workers(sorted(inactive_worker_ids))
     if stale_file_ids:
-        removed += db.worker_claims.delete(
-            query_spec=WriteQuerySpec(
-                collection_name="worker_claims",
-                criteria=(QueryCriterion("file_id", QueryOperator.IN, sorted(stale_file_ids)),),
-            )
-        )
+        removed += db.app.delete_claims_for_files(sorted(stale_file_ids))
     return removed
 
 
@@ -275,7 +217,7 @@ def get_active_claim_count(db: Database) -> int:
         Number of active claim documents
 
     """
-    return int(cast("int", db.worker_claims.count()))
+    return db.app.count_claims()
 
 
 def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
@@ -291,23 +233,14 @@ def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
         List of file_ids that were released
 
     """
-    claims = cast(
-        "list[dict[str, Any]]",
-        db.worker_claims.get(
-            query_spec=ReadQuerySpec(
-                collection_name="worker_claims",
-                criteria=(QueryCriterion("worker_id", QueryOperator.EQ, worker_id),),
-            )
-        ),
-    )
+    claims = [
+        claim
+        for claim in cast("list[dict[str, Any]]", db.app.list_claims())
+        if str(claim.get("worker_id")) == worker_id
+    ]
     if not claims:
         return []
 
     file_ids = [str(claim["file_id"]) for claim in claims]
-    db.worker_claims.delete(
-        query_spec=WriteQuerySpec(
-            collection_name="worker_claims",
-            criteria=(QueryCriterion("worker_id", QueryOperator.EQ, worker_id),),
-        )
-    )
+    db.app.delete_claims_for_workers([worker_id])
     return file_ids

@@ -218,10 +218,13 @@ class TestNavidromeServiceDescriptorResolution:
     def test_resolve_files_to_descriptors_propagates_query_errors(self) -> None:
         service, _ = _make_service()
 
-        with patch(
-            "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
-            side_effect=RuntimeError("query failed"),
-        ), pytest.raises(RuntimeError, match="query failed"):
+        with (
+            patch(
+                "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
+                side_effect=RuntimeError("query failed"),
+            ),
+            pytest.raises(RuntimeError, match="query failed"),
+        ):
             service.resolve_files_to_descriptors(["library_files/track-1"])
 
     def test_resolve_files_to_descriptors_propagates_build_errors(self) -> None:

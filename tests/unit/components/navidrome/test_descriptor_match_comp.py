@@ -29,14 +29,14 @@ def _seed(**overrides: object) -> dict[str, object]:
 @pytest.mark.mocked
 def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
     db = MagicMock()
-    db.library_files.get.many.return_value = [{"_id": "library_files/1"}]
-    db.library_files.song_has_tags.by_ids.return_value = [
+    db.library.search_files_by_text.return_value = [{"_id": "library_files/1"}]
+    db.library.get_tags_for_files_batch.return_value = [
         {"start_id": "library_files/1", "v": {"name": "album_artist", "value": "Album Artist A"}},
         {"start_id": "library_files/1", "v": {"name": "tracknumber", "value": "3"}},
         {"start_id": "library_files/1", "v": {"name": "discnumber", "value": "1"}},
     ]
-    db.library_contains_file.get.in_.return_value = []
-    db.library_files.get.in_.return_value = [
+    db.library.get_library_ids_for_files.return_value = {"library_files/1": "libraries/1"}
+    db.library.get_files_by_ids.return_value = [
         {
             "_id": "library_files/1",
             "title": "Song A",
@@ -51,17 +51,19 @@ def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
 
     assert status == ""
     assert resolved == "library_files/1"
-    db.library_files.get.many.assert_called_once_with(title="Song A", limit=None)
+    db.library.search_files_by_text.assert_called_once_with("title", "Song A", limit=None)
+    db.library_files.get.many.assert_not_called()
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
 def test_resolve_seed_descriptor_returns_unresolved_when_title_empty() -> None:
     db = MagicMock()
-    db.library_files.get.many.return_value = []
+    db.library.search_files_by_text.return_value = []
 
     resolved, status = resolve_seed_descriptor_to_file(db, _seed(title=""))
 
     assert status == "descriptor_unresolved"
     assert resolved is None
-    db.library_files.get.many.assert_called_once_with(artist="Artist A", limit=None)
+    db.library.search_files_by_text.assert_called_once_with("artist", "Artist A", limit=None)
+    db.library_files.get.many.assert_not_called()

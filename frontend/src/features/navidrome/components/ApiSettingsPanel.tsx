@@ -20,7 +20,7 @@ import {
   getConfig,
   updateConfig,
 } from "../../../shared/api/config";
-import { pingNavidrome, syncNavidromeSongs, type SyncSongsResponse } from "../../../shared/api/navidrome";
+import { pingNavidrome } from "../../../shared/api/navidrome";
 
 const CONFIG_KEYS = {
   url: "navidrome_api_url",
@@ -45,8 +45,6 @@ export function ApiSettingsPanel() {
     error: string | null;
   } | null>(null);
   const [pinging, setPinging] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<SyncSongsResponse | null>(null);
 
   // --- API key state ---
   const [apiKey, setApiKey] = useState("");
@@ -126,20 +124,6 @@ export function ApiSettingsPanel() {
       );
     } finally {
       setSaving(false);
-    }
-  };
-
-  const syncSongs = async () => {
-    try {
-      setSyncing(true);
-      setSyncResult(null);
-      const result = await syncNavidromeSongs();
-      setSyncResult(result);
-      showSuccess(`Sync complete: ${result.resolved.toLocaleString()} of ${result.total_songs.toLocaleString()} tracks mapped`);
-    } catch (err) {
-      showError(err instanceof Error ? err.message : "Sync failed");
-    } finally {
-      setSyncing(false);
     }
   };
 
@@ -316,22 +300,6 @@ export function ApiSettingsPanel() {
             "Test Connection"
           )}
         </Button>
-
-        <Button
-          variant="outlined"
-          onClick={() => void syncSongs()}
-          disabled={syncing || !url}
-          size="small"
-        >
-          {syncing ? (
-            <>
-              <CircularProgress size={16} sx={{ mr: 1 }} />
-              Syncing...
-            </>
-          ) : (
-            "Sync Songs"
-          )}
-        </Button>
       </Stack>
 
       {pingResult && (
@@ -342,13 +310,6 @@ export function ApiSettingsPanel() {
         </Alert>
       )}
 
-      {syncResult && (
-        <Alert severity="success">
-          Sync complete — {syncResult.resolved.toLocaleString()} / {syncResult.total_songs.toLocaleString()} tracks mapped
-          {syncResult.unresolved > 0 && ` (${syncResult.unresolved.toLocaleString()} unresolved)`}
-          {syncResult.orphans_removed > 0 && `, ${syncResult.orphans_removed.toLocaleString()} orphans removed`}
-        </Alert>
-      )}
     </Stack>
   );
 }

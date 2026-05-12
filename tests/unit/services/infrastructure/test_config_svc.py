@@ -31,9 +31,9 @@ class TestWriteToDb:
 
             service._write_to_db("namespace", "myns")
 
-        mock_db_instance.meta.upsert.assert_called_once_with(
-            key="config_namespace",
-            fields={"value": "myns"},
+        mock_db_instance.app.upsert_meta.assert_called_once_with(
+            "config_namespace",
+            {"value": "myns"},
         )
 
     @pytest.mark.unit
@@ -79,13 +79,13 @@ class TestBootstrapAndLoad:
 
         with patch("nomarr.services.infrastructure.config_svc.Database") as mock_database:
             mock_db_instance = mock_database.return_value
-            mock_db_instance.meta.get.like.return_value = []
+            mock_db_instance.app.list_meta_keys_by_prefix.return_value = []
 
             service._bootstrap_and_load()
 
-        assert mock_db_instance.meta.get.like.call_count == 2
-        mock_db_instance.meta.get.like.assert_has_calls(
-            [call("key", "config_%"), call("key", "config_%")],
+        assert mock_db_instance.app.list_meta_keys_by_prefix.call_count == 2
+        mock_db_instance.app.list_meta_keys_by_prefix.assert_has_calls(
+            [call("config_"), call("config_")],
         )
 
     @pytest.mark.unit
@@ -97,13 +97,13 @@ class TestBootstrapAndLoad:
 
         with patch("nomarr.services.infrastructure.config_svc.Database") as mock_database:
             mock_db_instance = mock_database.return_value
-            mock_db_instance.meta.get.like.return_value = []
+            mock_db_instance.app.list_meta_keys_by_prefix.return_value = []
 
             service._bootstrap_and_load()
 
-        mock_db_instance.meta.upsert.assert_called_once_with(
-            key="config_library_root",
-            fields={"value": "/test-root"},
+        mock_db_instance.app.upsert_meta.assert_called_once_with(
+            "config_library_root",
+            {"value": "/test-root"},
         )
 
     @pytest.mark.unit
@@ -115,10 +115,11 @@ class TestBootstrapAndLoad:
 
         with patch("nomarr.services.infrastructure.config_svc.Database") as mock_database:
             mock_db_instance = mock_database.return_value
-            mock_db_instance.meta.get.like.side_effect = [
+            mock_db_instance.app.list_meta_keys_by_prefix.side_effect = [
                 [],
-                [{"key": "config_library_root", "value": "/myns"}],
+                ["config_library_root"],
             ]
+            mock_db_instance.app.get_meta.return_value = {"key": "config_library_root", "value": "/myns"}
 
             service._bootstrap_and_load()
 

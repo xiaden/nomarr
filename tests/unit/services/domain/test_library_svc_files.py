@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -14,20 +14,6 @@ from nomarr.helpers.constants.file_states import (
 )
 from nomarr.helpers.dto.library_dto import RetryErroredResult
 from nomarr.services.domain.library_svc.files import LibraryFilesMixin
-
-
-@pytest.fixture(autouse=True)
-def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Bridge helper-based production code to the existing mock db surface."""
-
-    monkeypatch.setattr(
-        "nomarr.services.domain.library_svc.files.get_library_record",
-        lambda db, library_id: db.libraries.get_library(library_id),
-    )
-    monkeypatch.setattr(
-        "nomarr.services.domain.library_svc.files.get_errored_file_ids",
-        lambda db, library_id: db.library_files.get_errored_file_ids(library_id),
-    )
 
 
 class _ConcreteFilesMixin(LibraryFilesMixin):
@@ -42,57 +28,73 @@ class TestRetryErroredFiles:
     """Tests for retry_errored_files."""
 
     @pytest.mark.unit
-    def test_retries_all_errored_when_no_file_ids(self) -> None:
+    @patch("nomarr.services.domain.library_svc.files.transition_file_state")
+    @patch(
+        "nomarr.services.domain.library_svc.files.get_errored_file_ids",
+        return_value=["library_files/1", "library_files/2"],
+    )
+    def test_retries_all_errored_when_no_file_ids(
+        self,
+        mock_get_errored_file_ids: MagicMock,
+        mock_transition_file_state: MagicMock,
+    ) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.get_errored_file_ids.return_value = [
-            "library_files/1",
-            "library_files/2",
-        ]
+        mock_db.library.get_library.return_value = {"_id": "libraries/abc123"}
         mixin = _ConcreteFilesMixin(mock_db)
+
         result = mixin.retry_errored_files("abc123")
+
         assert result == RetryErroredResult(retried=2)
-        mock_db.file_states.transition.assert_any_call(
-            ["library_files/1", "library_files/2"],
-            STATE_ERRORED,
-            STATE_NOT_ERRORED,
-        )
-        mock_db.file_states.transition.assert_any_call(
-            ["library_files/1", "library_files/2"],
-            STATE_TAGGED,
-            STATE_NOT_TAGGED,
-        )
+        mock_get_errored_file_ids.assert_called_once_with(mock_db, "abc123")
+        assert mock_transition_file_state.call_args_list == [
+            call(mock_db, ["library_files/1", "library_files/2"], STATE_ERRORED, STATE_NOT_ERRORED),
+            call(mock_db, ["library_files/1", "library_files/2"], STATE_TAGGED, STATE_NOT_TAGGED),
+        ]
 
     @pytest.mark.unit
-    def test_filters_to_specified_file_ids(self) -> None:
+    @patch("nomarr.services.domain.library_svc.files.transition_file_state")
+    @patch(
+        "nomarr.services.domain.library_svc.files.get_errored_file_ids",
+        return_value=["library_files/1", "library_files/2", "library_files/3"],
+    )
+    def test_filters_to_specified_file_ids(
+        self,
+        mock_get_errored_file_ids: MagicMock,
+        mock_transition_file_state: MagicMock,
+    ) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.get_errored_file_ids.return_value = [
-            "library_files/1",
-            "library_files/2",
-            "library_files/3",
-        ]
+        mock_db.library.get_library.return_value = {"_id": "libraries/abc123"}
         mixin = _ConcreteFilesMixin(mock_db)
+
         mixin.retry_errored_files(
             "abc123",
             file_ids=["library_files/1", "library_files/3"],
         )
-        mock_db.file_states.transition.assert_any_call(
-            ["library_files/1", "library_files/3"],
-            STATE_ERRORED,
-            STATE_NOT_ERRORED,
-        )
-        mock_db.file_states.transition.assert_any_call(
-            ["library_files/1", "library_files/3"],
-            STATE_TAGGED,
-            STATE_NOT_TAGGED,
-        )
+
+        mock_get_errored_file_ids.assert_called_once_with(mock_db, "abc123")
+        assert mock_transition_file_state.call_args_list == [
+            call(mock_db, ["library_files/1", "library_files/3"], STATE_ERRORED, STATE_NOT_ERRORED),
+            call(mock_db, ["library_files/1", "library_files/3"], STATE_TAGGED, STATE_NOT_TAGGED),
+        ]
 
     @pytest.mark.unit
-    def test_calls_clear_tagged_batch(self) -> None:
+    @patch("nomarr.services.domain.library_svc.files.transition_file_state")
+    @patch(
+        "nomarr.services.domain.library_svc.files.get_errored_file_ids",
+        return_value=["library_files/1"],
+    )
+    def test_calls_transition_helper_twice_for_errored_files(
+        self,
+        _mock_get_errored_file_ids: MagicMock,
+        mock_transition_file_state: MagicMock,
+    ) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.get_errored_file_ids.return_value = ["library_files/1"]
+        mock_db.library.get_library.return_value = {"_id": "libraries/abc123"}
         mixin = _ConcreteFilesMixin(mock_db)
+
         mixin.retry_errored_files("abc123")
-        assert mock_db.file_states.transition.call_count == 2
+
+        assert mock_transition_file_state.call_count == 2
 
     @pytest.mark.unit
     def test_raises_on_invalid_library(self) -> None:

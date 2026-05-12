@@ -96,7 +96,7 @@ class TaggingWriteMixin:
             raise ValueError(msg)
 
         target_mode = library.get("file_write_mode", "full")
-        calibration_doc = cast("dict[str, Any] | None", self.db.meta.get(key="calibration_version"))
+        calibration_doc = cast("dict[str, Any] | None", self.db.app.get_meta("calibration_version"))
         calibration_hash = None if calibration_doc is None else calibration_doc.get("value")
         has_calibration = bool(calibration_hash)
 

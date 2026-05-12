@@ -23,7 +23,6 @@ from nomarr.helpers.constants.file_states import (
     STATE_TOO_SHORT,
     STATE_VECTORS_EXTRACTED,
 )
-from nomarr.persistence.query_specs import PaginationSpec, QueryCriterion, QueryOperator, ReadQuerySpec, WriteQuerySpec
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -53,20 +52,20 @@ def transition_file_state(db: Database, file_ids: list[str], from_state: str, to
             f"Transitions must swap between poles of the same axis (see AXIS_PAIRS)."
         )
         raise ValueError(msg)
-    db.file_states.transition(file_ids, from_state, to_state)
+    db.app.transition_file_states(file_ids, from_state, to_state)
 
 
 def _insert_file_state_edges_ignoring_duplicates(db: Database, edge_docs: list[dict[str, str]]) -> None:
     for edge_doc in edge_docs:
         try:
-            db.file_has_state.insert([edge_doc])
+            db.app.add_file_state_edge(edge_doc["_from"], edge_doc["_to"])
         except DocumentInsertError as exc:
             if exc.error_code != DUPLICATE_KEY_ERROR_CODE:
                 raise
 
 
 def _state_file_docs(db: Database, state_id: str) -> list[dict[str, Any]]:
-    return cast("list[dict[str, Any]]", db.file_states.file_has_state(state_id, limit=None))
+    return cast("list[dict[str, Any]]", db.app.list_file_docs_in_state(state_id))
 
 
 def _state_file_ids(db: Database, state_id: str) -> set[str]:
@@ -74,13 +73,18 @@ def _state_file_ids(db: Database, state_id: str) -> set[str]:
 
 
 def _library_file_edges(db: Database, library_id: str) -> list[dict[str, Any]]:
-    return cast(
-        "list[dict[str, Any]]", db.library_contains_file.get(_from=normalize_library_id(library_id), limit=None)
-    )
+    return cast("list[dict[str, Any]]", db.library.list_library_files(library_id))
 
 
 def _library_file_ids(db: Database, library_id: str) -> set[str]:
-    return {edge["_to"] for edge in _library_file_edges(db, library_id)}
+    return {file_doc["_id"] for file_doc in _library_file_edges(db, library_id)}
+
+
+def _count_state_edges_for_files(db: Database, file_ids: list[str]) -> int:
+    if not file_ids:
+        return 0
+    file_id_set = set(file_ids)
+    return sum(len(_state_file_ids(db, state_id) & file_id_set) for state_id in ALL_STATE_VERTICES)
 
 
 def _extract_matching_head_keys(
@@ -133,19 +137,18 @@ def initialize_file_states_batch(db: Database, file_ids: list[str]) -> None:
 
 def clear_all_states(db: Database, file_id: str) -> int:
     """Remove all state edges for one file."""
-    return int(db.file_has_state.delete(_from=file_id))
+    deleted_count = _count_state_edges_for_files(db, [file_id])
+    db.app.delete_file_state_edges([file_id])
+    return deleted_count
 
 
 def clear_all_states_batch(db: Database, file_ids: list[str]) -> int:
     """Remove all state edges for a batch of files."""
     if not file_ids:
         return 0
-    return db.file_has_state.delete(
-        query_spec=WriteQuerySpec(
-            collection_name="file_has_state",
-            criteria=(QueryCriterion("_from", QueryOperator.IN, file_ids),),
-        )
-    )
+    deleted_count = _count_state_edges_for_files(db, file_ids)
+    db.app.delete_file_state_edges(file_ids)
+    return deleted_count
 
 
 def discover_next_untagged_file(
@@ -172,9 +175,10 @@ def discover_next_untagged_file(
         candidate_ids &= _library_file_ids(db, library_id)
     if exclude_claimed:
         claimed_ids = {
-            cast("str", row["value"])
-            for row in db.worker_claims.aggregate("file_id", limit=db.worker_claims.count())
-            if isinstance(row.get("value"), str)
+            cast("str", file_id)
+            for claim in db.app.list_claims()
+            for file_id in [claim.get("file_id")]
+            if isinstance(file_id, str)
         }
         candidate_ids -= claimed_ids
     candidate_docs = [doc for doc in untagged_files if doc["_id"] in candidate_ids]
@@ -198,16 +202,16 @@ def count_untagged_files(db: Database, library_id: str | None = None) -> int:
 
 def count_pending_tag_writes(db: Database) -> int:
     """Count files still waiting for file-tag writeback."""
-    return int(db.file_has_state.count(_to=STATE_TAGS_NOT_WRITTEN))
+    return int(db.app.count_files_in_state(STATE_TAGS_NOT_WRITTEN))
 
 
 def get_errored_file_ids(db: Database, library_id: str, limit: int | None = 500) -> list[str]:
     """Return errored file ids for one library."""
     library_file_ids = _library_file_ids(db, library_id)
     errored_file_ids = [
-        edge["_from"]
-        for edge in cast("list[dict[str, Any]]", db.file_has_state.get(_to=STATE_ERRORED, limit=None))
-        if edge["_from"] in library_file_ids
+        file_doc["_id"]
+        for file_doc in cast("list[dict[str, Any]]", db.app.list_file_docs_in_state(STATE_ERRORED))
+        if file_doc["_id"] in library_file_ids
     ]
     return errored_file_ids if limit is None else errored_file_ids[:limit]
 
@@ -221,7 +225,7 @@ def get_uncalibrated_tagged_file_ids(db: Database, library_id: str) -> list[str]
     """Return ids that are tagged and not calibrated within one library."""
     tagged_ids = _state_file_ids(db, STATE_TAGGED)
     not_calibrated_ids = _state_file_ids(db, STATE_NOT_CALIBRATED)
-    library_file_ids = [edge["_to"] for edge in _library_file_edges(db, library_id)]
+    library_file_ids = [file_doc["_id"] for file_doc in _library_file_edges(db, library_id)]
     eligible_ids = tagged_ids & not_calibrated_ids
     return [file_id for file_id in library_file_ids if file_id in eligible_ids]
 
@@ -240,25 +244,7 @@ def get_calibration_status_by_library(db: Database) -> list[dict[str, Any]]:
     calibrated_ids = _state_file_ids(db, STATE_CALIBRATED)
     not_calibrated_ids = _state_file_ids(db, STATE_NOT_CALIBRATED)
     results: list[dict[str, Any]] = []
-    library_ids = [
-        cast("str", row["value"])
-        for row in db.libraries.aggregate("_id", limit=db.libraries.count())
-        if isinstance(row.get("value"), str)
-    ]
-    libraries = (
-        cast(
-            "list[dict[str, Any]]",
-            db.libraries.get(
-                query_spec=ReadQuerySpec(
-                    collection_name="libraries",
-                    criteria=(QueryCriterion("_id", QueryOperator.IN, library_ids),),
-                    pagination=PaginationSpec(limit=len(library_ids)),
-                )
-            ),
-        )
-        if library_ids
-        else []
-    )
+    libraries = cast("list[dict[str, Any]]", db.library.list_libraries())
     for library in libraries:
         library_id = library["_id"]
         library_file_ids = _library_file_ids(db, library_id)
@@ -280,14 +266,14 @@ def library_has_tagged_files(db: Database, library_id: str) -> bool:
 
 def file_has_tagged_state(db: Database, file_id: str) -> bool:
     """Return whether one file currently has the tagged-state edge."""
-    return int(db.file_has_state.count(_from=file_id, _to=STATE_TAGGED)) > 0
+    return db.library.count_song_tag_edges_for_file_state(file_id, STATE_TAGGED) > 0
 
 
 def find_short_files_missing_too_short(db: Database, library_id: str, min_duration_s: int) -> list[str]:
     """Return short files that are missing the ``too_short`` state."""
-    library_files = db.libraries.library_contains_file(normalize_library_id(library_id), limit=None)
+    library_files = db.library.list_library_files(library_id)
     too_short_ids = {
-        edge["_from"] for edge in cast("list[dict[str, Any]]", db.file_has_state.get(_to=STATE_TOO_SHORT, limit=None))
+        file_doc["_id"] for file_doc in cast("list[dict[str, Any]]", db.app.list_file_docs_in_state(STATE_TOO_SHORT))
     }
     return [
         file_doc["_id"]
@@ -324,7 +310,7 @@ def get_files_with_incomplete_tags(
         library_file_ids = _library_file_ids(db, normalized_library_id)
         tagged_files = [file_doc for file_doc in tagged_files if file_doc["_id"] in library_file_ids]
     file_ids = [file_doc["_id"] for file_doc in tagged_files]
-    all_rows = db.library_files.song_has_tags.by_ids(file_ids, name_starts_with=namespace_prefix) if file_ids else []
+    all_rows = db.library.get_tags_for_files_batch(file_ids, name_starts_with=namespace_prefix) if file_ids else []
     tags_by_file: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in all_rows:
         start_id = row.get("start_id")
@@ -358,9 +344,7 @@ def get_files_with_incomplete_tags(
 
 def bulk_set_not_calibrated(db: Database) -> int:
     """Transition all calibrated files back to not-calibrated."""
-    file_ids = [
-        edge["_from"] for edge in cast("list[dict[str, Any]]", db.file_has_state.get(_to=STATE_CALIBRATED, limit=None))
-    ]
+    file_ids = [file_doc["_id"] for file_doc in _state_file_docs(db, STATE_CALIBRATED)]
     if not file_ids:
         return 0
     transition_file_state(db, file_ids, STATE_CALIBRATED, STATE_NOT_CALIBRATED)
@@ -369,10 +353,7 @@ def bulk_set_not_calibrated(db: Database) -> int:
 
 def bulk_set_tags_stale(db: Database, library_id: str | None = None) -> int:
     """Transition ``tags_current`` files to ``tags_stale``."""
-    file_ids = [
-        edge["_from"]
-        for edge in cast("list[dict[str, Any]]", db.file_has_state.get(_to=STATE_TAGS_CURRENT, limit=None))
-    ]
+    file_ids = [file_doc["_id"] for file_doc in _state_file_docs(db, STATE_TAGS_CURRENT)]
     if library_id is not None:
         library_file_ids = _library_file_ids(db, library_id)
         file_ids = [file_id for file_id in file_ids if file_id in library_file_ids]
@@ -384,10 +365,7 @@ def bulk_set_tags_stale(db: Database, library_id: str | None = None) -> int:
 
 def bulk_set_not_vectors_extracted(db: Database) -> int:
     """Transition all vector-extracted files back to not-extracted."""
-    file_ids = [
-        edge["_from"]
-        for edge in cast("list[dict[str, Any]]", db.file_has_state.get(_to=STATE_VECTORS_EXTRACTED, limit=None))
-    ]
+    file_ids = [file_doc["_id"] for file_doc in _state_file_docs(db, STATE_VECTORS_EXTRACTED)]
     if not file_ids:
         return 0
     transition_file_state(db, file_ids, STATE_VECTORS_EXTRACTED, STATE_NOT_VECTORS_EXTRACTED)

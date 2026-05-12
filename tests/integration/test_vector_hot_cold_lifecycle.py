@@ -299,6 +299,29 @@ class FakeColdOperations:
         return sum(self.delete_by_file_id(file_id) for file_id in file_ids)
 
 
+class _FakeMlDb:
+    """Tiny ML sub-facade for vector lifecycle integration tests."""
+
+    def __init__(self, adapter: FakeDatabaseAdapter) -> None:
+        self.adapter = adapter
+        self.deleted_edge_file_ids: list[str] = []
+        self.deleted_edge_file_id_batches: list[list[str]] = []
+
+    def register_vector_collection(self, collection_name: str, template_name: str) -> Any:
+        return self.adapter.register(collection_name, template_name)
+
+    def list_registered_vector_namespaces(self) -> dict[str, Any]:
+        return self.adapter._registered
+
+    def delete_file_has_vector_edges_for_file(self, file_id: str) -> int:
+        self.deleted_edge_file_ids.append(file_id)
+        return 0
+
+    def delete_file_has_vector_edges_for_files(self, file_ids: list[str]) -> int:
+        self.deleted_edge_file_id_batches.append(list(file_ids))
+        return 0
+
+
 class FakeDatabaseAdapter:
     """Provides the minimal Database interface needed by the services."""
 
@@ -306,9 +329,12 @@ class FakeDatabaseAdapter:
         self.harness = harness
         self.db = FakeArangoHandle(harness)
         self._registered: dict[str, Any] = {}
-        self.library_files = MagicMock()
+        self.ml = _FakeMlDb(self)
+        self.library = MagicMock()
         # Default: all file_ids belong to "test_lib"
-        self.library_files.get_file_library_key.return_value = "test_lib"
+        self.library.get_library_ids_for_files.side_effect = lambda file_ids: dict.fromkeys(
+            file_ids, "libraries/test_lib"
+        )
         self.library_contains_file = MagicMock()
         self.library_contains_file.get.side_effect = self._get_library_contains_file_edges
 
@@ -324,10 +350,7 @@ class FakeDatabaseAdapter:
         resolved_file_id = _to if _to is not None else file_id
         if resolved_file_id is None:
             return []
-        library_key = self.library_files.get_file_library_key(resolved_file_id)
-        if not library_key:
-            return []
-        return [{"_from": f"libraries/{library_key}", "_to": resolved_file_id}]
+        return [{"_from": "libraries/test_lib", "_to": resolved_file_id}]
 
     def register(self, collection_name: str, template_name: str) -> Any:
         parts = collection_name.split("__")
@@ -391,10 +414,7 @@ def test_bootstrap_creates_hot_collections_only(monkeypatch: pytest.MonkeyPatch)
         "nomarr.components.platform.arango_bootstrap_comp._ensure_index",
         record_index,
     )
-    monkeypatch.setattr(
-        "nomarr.components.platform.arango_bootstrap_comp.list_all_library_keys",
-        lambda _db: ["lib1"],
-    )
+    db_mock.aql.execute.return_value = iter(["lib1"])
 
     _create_vectors_track_collections(db_mock, models_dir="/tmp/models")
 
@@ -566,21 +586,21 @@ def test_cascade_delete_calls_hot_and_cold_ops() -> None:
 
     hot_namespace = _VectorNamespace(1)
     cold_namespace = _VectorNamespace(2)
-    database._registered = cast(
+    database.ml = MagicMock()
+    database.ml.list_registered_vector_namespaces.return_value = cast(
         "dict[str, Any]",
         {
             "vectors_track_hot__effnet__lib": hot_namespace,
             "vectors_track_cold__effnet__lib": cold_namespace,
         },
     )
-    database.file_has_vectors = MagicMock()
 
     deleted = delete_vectors_by_file_id(database, "library_files/7")
 
     assert deleted == 3
     assert hot_namespace.file_id.calls == ["library_files/7"]
     assert cold_namespace.file_id.calls == ["library_files/7"]
-    database.file_has_vectors.delete.assert_called_once_with(_from="library_files/7")
+    database.ml.delete_file_has_vector_edges_for_file.assert_called_once_with("library_files/7")
 
 
 def test_promote_is_safe_no_op_when_hot_empty(

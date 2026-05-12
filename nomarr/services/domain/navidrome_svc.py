@@ -460,3 +460,20 @@ class NavidromeService:
                 continue
             descriptors_by_file_id[file_id] = build_track_descriptor(file_doc)
         return descriptors_by_file_id
+
+    def generate_personal_playlists(self) -> NavidromeGeneratePlaylistsResult:
+        """Generate personal playlists for the configured Navidrome API user.
+
+        Uses ``navidrome_api_user`` from config as the user ID for taste-profile lookup.
+
+        Returns:
+            NavidromeGeneratePlaylistsResult with status and playlist entries.
+
+        Raises:
+            MisconfiguredError: If ``navidrome_api_user`` is not configured.
+
+        """
+        _, api_user, _ = self._get_api_credentials()
+        if not api_user:
+            raise MisconfiguredError("navidrome_api_user not configured")
+        return self.generate_playlists(user_id=api_user)

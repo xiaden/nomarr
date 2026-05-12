@@ -1,15 +1,16 @@
 """Persistence package."""
 
-from .base_types import CASCADE, DETACH, INBOUND, OUTBOUND, EdgeDef, Field, UniqueField
-from .db import Database
+from __future__ import annotations
 
-__all__ = [
-    "CASCADE",
-    "DETACH",
-    "INBOUND",
-    "OUTBOUND",
-    "Database",
-    "EdgeDef",
-    "Field",
-    "UniqueField",
-]
+from typing import Any
+
+__all__ = ["Database"]
+
+
+def __getattr__(name: str) -> Any:
+    if name == "Database":
+        from .db import Database
+
+        return Database
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)

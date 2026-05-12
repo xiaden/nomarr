@@ -73,41 +73,36 @@ def _try_acquire_probe_lock(db: Database, model_set_hash: str, worker_id: str) -
     """Acquire the constructor-backed probe lock for one model set."""
     reference = _probe_lock_reference(model_set_hash)
     now_value = float(now_ms().value)
-    existing = db.locks.get(document_reference=reference)
+    existing = db.app.get_lock(reference)
     if isinstance(existing, dict):
         existing_expires_at = float(existing.get("expires_at", 0.0))
         if existing_expires_at >= now_value and existing.get("holder") != worker_id:
             return False
-        db.locks.delete(document_reference=reference)
+        db.app.release_lock(reference)
 
+    payload = {
+        "document_reference": reference,
+        "lock_type": "capacity_probe",
+        "holder": worker_id,
+        "expires_at": now_value + float(PROBE_LOCK_TTL_MS),
+        "acquired_at": now_value,
+        "status": "active",
+    }
     try:
-        db.locks.insert(
-            [
-                {
-                    "document_reference": reference,
-                    "lock_type": "capacity_probe",
-                    "holder": worker_id,
-                    "expires_at": now_value + float(PROBE_LOCK_TTL_MS),
-                    "acquired_at": now_value,
-                    "status": "active",
-                }
-            ],
-        )
+        return db.app.acquire_lock(reference, payload)
     except DocumentInsertError:
         return False
-
-    return True
 
 
 def _get_probe_lock_status(db: Database, model_set_hash: str) -> dict[str, Any] | None:
     """Return the lock document for a capacity probe, if present."""
-    return cast("dict[str, Any] | None", db.locks.get(document_reference=_probe_lock_reference(model_set_hash)))
+    return cast("dict[str, Any] | None", db.app.get_lock(_probe_lock_reference(model_set_hash)))
 
 
 def _complete_probe_lock(db: Database, model_set_hash: str) -> None:
     """Mark a capacity probe lock complete without changing its reference."""
     reference = _probe_lock_reference(model_set_hash)
-    existing = db.locks.get(document_reference=reference)
+    existing = db.app.get_lock(reference)
     if not isinstance(existing, dict):
         return
 
@@ -115,20 +110,20 @@ def _complete_probe_lock(db: Database, model_set_hash: str) -> None:
     updated.pop("_id", None)
     updated["document_reference"] = reference
     updated["status"] = "complete"
-    db.locks.upsert(
-        document_reference=reference,
-        fields={key: value for key, value in updated.items() if key != "document_reference"},
+    db.app.upsert_lock(
+        reference,
+        {key: value for key, value in updated.items() if key != "document_reference"},
     )
 
 
 def _release_probe_lock(db: Database, model_set_hash: str) -> None:
     """Delete the lock document for a capacity probe."""
-    db.locks.delete(document_reference=_probe_lock_reference(model_set_hash))
+    db.app.release_lock(_probe_lock_reference(model_set_hash))
 
 
 def _get_capacity_estimate(db: Database, model_set_hash: str) -> dict[str, Any] | None:
     """Read the persisted capacity estimate document for one model set."""
-    return cast("dict[str, Any] | None", db.meta.get(key=f"{_CAPACITY_META_PREFIX}{model_set_hash}"))
+    return cast("dict[str, Any] | None", db.app.get_meta(f"{_CAPACITY_META_PREFIX}{model_set_hash}"))
 
 
 def _save_capacity_estimate(
@@ -151,15 +146,15 @@ def _save_capacity_estimate(
         "created_at": timestamp if existing is None else existing.get("created_at"),
         "updated_at": None if existing is None else timestamp,
     }
-    db.meta.upsert(
-        key=f"{_CAPACITY_META_PREFIX}{model_set_hash}",
-        fields={k: v for k, v in payload.items() if k != "model_set_hash"},
+    db.app.upsert_meta(
+        f"{_CAPACITY_META_PREFIX}{model_set_hash}",
+        {k: v for k, v in payload.items() if k != "model_set_hash"},
     )
 
 
 def _delete_capacity_estimate(db: Database, model_set_hash: str) -> None:
     """Delete the stored capacity estimate and any related probe lock."""
-    db.meta.delete(key=f"{_CAPACITY_META_PREFIX}{model_set_hash}")
+    db.app.delete_meta(f"{_CAPACITY_META_PREFIX}{model_set_hash}")
     _release_probe_lock(db, model_set_hash)
 
 

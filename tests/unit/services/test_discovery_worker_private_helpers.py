@@ -119,15 +119,21 @@ class TestHandleProcessError:
         assert result == 4
 
     @pytest.mark.unit
+    @patch("nomarr.components.library.library_file_state_comp.transition_file_state")
     @patch(_PATCH_RELEASE)
-    def test_sets_file_state_errored(self, mock_release):
+    def test_sets_file_state_errored(self, mock_release, mock_transition_file_state):
         """Should mark the file as errored in the database."""
         mock_self = _make_worker_self()
         mock_db = MagicMock()
 
         self._call(mock_self, mock_db, "library_files/xyz", ValueError("bad"), 0)
 
-        mock_db.file_states.transition.assert_called_once_with(["library_files/xyz"], STATE_NOT_ERRORED, STATE_ERRORED)
+        mock_transition_file_state.assert_called_once_with(
+            mock_db,
+            ["library_files/xyz"],
+            STATE_NOT_ERRORED,
+            STATE_ERRORED,
+        )
 
     @pytest.mark.unit
     @patch(_PATCH_RELEASE)
@@ -141,15 +147,23 @@ class TestHandleProcessError:
         mock_release.assert_called_once_with(mock_db, "library_files/abc")
 
     @pytest.mark.unit
+    @patch(
+        "nomarr.components.library.library_file_state_comp.transition_file_state", side_effect=RuntimeError("db down")
+    )
     @patch(_PATCH_RELEASE)
-    def test_releases_claim_even_when_set_errored_fails(self, mock_release):
-        """Claim must be released even if db.file_states.set_errored raises."""
+    def test_releases_claim_even_when_set_errored_fails(self, mock_release, mock_transition_file_state):
+        """Claim must be released even if state transition helper raises."""
         mock_self = _make_worker_self()
         mock_db = MagicMock()
-        mock_db.file_states.transition.side_effect = RuntimeError("db down")
 
         self._call(mock_self, mock_db, "library_files/abc", RuntimeError("x"), 0)
 
+        mock_transition_file_state.assert_called_once_with(
+            mock_db,
+            ["library_files/abc"],
+            STATE_NOT_ERRORED,
+            STATE_ERRORED,
+        )
         mock_release.assert_called_once_with(mock_db, "library_files/abc")
 
     @pytest.mark.unit
@@ -396,7 +410,7 @@ class TestProcessClaimedFile:
     def test_releases_claim_and_returns_false_when_file_not_found(self, mock_release_claim):
         mock_self = _make_worker_self()
         mock_db = MagicMock()
-        mock_db.library_files.get.return_value = None
+        mock_db.library.get_file.return_value = None
         pending_write = MagicMock()
 
         result = self._call(
@@ -407,16 +421,22 @@ class TestProcessClaimedFile:
         mock_release_claim.assert_called_once_with(mock_db, "library_files/missing")
 
     @pytest.mark.unit
+    @patch("nomarr.components.library.library_file_state_comp.transition_file_state")
     @patch(_PATCH_RELEASE)
     @patch(_PATCH_MALLOC_TRIM)
     @patch(_PATCH_GETSIZE)
     @patch(_PATCH_PROCESS)
     def test_sets_tagged_and_releases_claim_when_all_heads_skipped(
-        self, mock_process_file_workflow, mock_getsize, mock_malloc_trim, mock_release_claim
+        self,
+        mock_process_file_workflow,
+        mock_getsize,
+        mock_malloc_trim,
+        mock_release_claim,
+        mock_transition_file_state,
     ):
         mock_self = _make_worker_self()
         mock_db = MagicMock()
-        mock_db.library_files.get.return_value = {"path": "D:/music/song.mp3"}
+        mock_db.library.get_file.return_value = {"path": "D:/music/song.mp3"}
         mock_getsize.return_value = 1234
         pending_write = MagicMock()
         mock_process_file_workflow.return_value = MagicMock(
@@ -437,7 +457,12 @@ class TestProcessClaimedFile:
 
         assert result == (None, True)
         pending_write.result.assert_called_once_with()
-        mock_db.file_states.transition.assert_called_once_with(["library_files/abc"], STATE_NOT_TAGGED, STATE_TAGGED)
+        mock_transition_file_state.assert_called_once_with(
+            mock_db,
+            ["library_files/abc"],
+            STATE_NOT_TAGGED,
+            STATE_TAGGED,
+        )
         mock_release_claim.assert_called_once_with(mock_db, "library_files/abc")
         mock_malloc_trim.assert_called_once_with()
 
@@ -453,7 +478,7 @@ class TestProcessClaimedFile:
 
         mock_self = _make_worker_self()
         mock_db = MagicMock()
-        mock_db.library_files.get.return_value = {"path": "D:/music/song.mp3"}
+        mock_db.library.get_file.return_value = {"path": "D:/music/song.mp3"}
         mock_getsize.return_value = 4321
         write_executor = MagicMock()
         new_future = MagicMock()
@@ -498,7 +523,7 @@ class TestProcessClaimedFile:
     ):
         mock_self = _make_worker_self()
         mock_db = MagicMock()
-        mock_db.library_files.get.return_value = {"path": "D:/music/song.mp3"}
+        mock_db.library.get_file.return_value = {"path": "D:/music/song.mp3"}
         mock_getsize.return_value = 9876
         mock_process_file_workflow.return_value = MagicMock(
             heads_processed=1,

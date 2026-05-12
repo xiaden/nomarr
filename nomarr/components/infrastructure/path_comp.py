@@ -128,11 +128,11 @@ def build_library_path_from_db(
 
     Example:
         # When processing a file from discovery
-        file_record = db.files.get_file(file_id)
+        raise NotImplementedError("db.files is not implemented; this path is unreachable")
         path = build_library_path_from_db(file_record["path"], db)
         if not path.is_valid():
             # Config changed, path no longer valid
-            db.files.mark_invalid(file_id, path.reason)
+            raise NotImplementedError("db.files is not implemented; this path is unreachable")
             return
 
     """

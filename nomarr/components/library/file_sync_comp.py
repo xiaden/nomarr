@@ -1,7 +1,7 @@
 """File sync component — persistence operations for single-file library sync.
 
-Wraps all db.libraries.*, db.library_files.*, and db.tags.* calls needed
-by sync_file_to_library_wf. Workflows call these functions instead of
+Wraps persistence calls needed by library file sync via the ``db.library``
+and ``db.app`` sub-facades. Workflows call these functions instead of
 accessing persistence directly.
 """
 

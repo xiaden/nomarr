@@ -39,7 +39,7 @@ class TestGetMoodCoverage:
             },
         }
         get_library_stats_mock.assert_called_once_with(mock_db, None)
-        mock_db.tags.rel.get.many.assert_not_called()
+        mock_db.library.list_tags.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -220,14 +220,14 @@ class TestGetTagEdgeRows:
     @pytest.mark.mocked
     def test_batches_tag_edge_lookup_with_single_in_query(self) -> None:
         mock_db = MagicMock()
-        mock_db.tags.get.many.side_effect = [
+        mock_db.library.list_tags.side_effect = [
             [
                 {"_id": "tags/1", "value": "happy"},
                 {"_id": "tags/2", "value": "calm"},
             ],
             [],
         ]
-        mock_db.song_has_tags.get.in_.return_value = [
+        mock_db.library.get_song_tag_edges_for_tags.return_value = [
             {"_from": "library_files/1", "_to": "tags/1"},
             {"_from": "library_files/2", "_to": "tags/2"},
         ]
@@ -238,4 +238,4 @@ class TestGetTagEdgeRows:
             ("library_files/1", "happy"),
             ("library_files/2", "calm"),
         ]
-        mock_db.song_has_tags.get.in_.assert_called_once_with(_to=["tags/1", "tags/2"], limit=None)
+        mock_db.library.get_song_tag_edges_for_tags.assert_called_once_with(["tags/1", "tags/2"])

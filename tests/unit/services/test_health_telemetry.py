@@ -344,9 +344,8 @@ class TestComponentLifecycleHandler:
         mock_db = MagicMock()
         mock_db.hosts = "http://localhost:8529"
         mock_db.password = "test"
-        # Add worker_restart_policy mock for new restart logic
-        mock_db.worker_restart_policy = MagicMock()
-        mock_db.worker_restart_policy.get.return_value = None
+        # app.get_worker_restart_policy returns None so restart_state is None
+        mock_db.app.get_worker_restart_policy.return_value = None
 
         mock_config = MagicMock()
         mock_config.tagger_version = "test"

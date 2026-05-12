@@ -11,8 +11,10 @@ TAG_UNIFICATION_REFACTOR: Entities are now tags. Route collection values map to 
     - "year" → name="year"
 """
 
+from __future__ import annotations
+
 import logging
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from nomarr.components.tagging.tag_cleanup_comp import cleanup_orphaned_tags, get_orphaned_tag_count
 from nomarr.components.tagging.tag_query_comp import (
@@ -24,8 +26,9 @@ from nomarr.components.tagging.tag_query_comp import (
 )
 from nomarr.components.tagging.tag_write_comp import find_or_create_tag
 from nomarr.helpers.dto.metadata_dto import EntityDict, EntityListResult, SongListForEntityResult
-from nomarr.persistence.base_types import Field
-from nomarr.persistence.db import Database
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +112,7 @@ class MetadataService:
             return None
 
         # Get song count for this tag
-        song_count = self.db.song_has_tags.count(Field("_to", entity_id))
+        song_count = self.db.library.count_song_tag_edges(entity_id)
 
         return EntityDict(
             _id=tag["_id"],
@@ -138,7 +141,7 @@ class MetadataService:
 
         """
         song_ids = list_songs_for_tag(self.db, entity_id, limit=limit, offset=offset)
-        total = self.db.song_has_tags.count(Field("_to", entity_id))
+        total = self.db.library.count_song_tag_edges(entity_id)
 
         return SongListForEntityResult(
             song_ids=song_ids,

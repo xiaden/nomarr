@@ -25,11 +25,6 @@ def _libraries_ns(db: Database) -> Any:
     return cast("Any", db.libraries)
 
 
-def _song_has_tags_ns(db: Database) -> Any:
-    """Return the runtime-wired tag-edge namespace with collection verbs attached."""
-    return cast("Any", db.song_has_tags)
-
-
 def _tags_for_name(db: Database, name: str) -> list[dict[str, Any]]:
     """Return all tags for one tag name."""
     tags = _tags_ns(db)
@@ -91,8 +86,7 @@ def _library_file_ids(db: Database, library_id: str | None) -> set[str] | None:
 
 def _song_count_for_tag(db: Database, tag_id: str) -> int:
     """Count song edges targeting one tag."""
-    song_has_tags = _song_has_tags_ns(db)
-    return int(song_has_tags.count(_to=tag_id))
+    return db.library.count_song_tag_edges(tag_id)
 
 
 def _song_count_rows_for_tag_ids(db: Database, tag_ids: list[str]) -> dict[str, int]:
@@ -118,19 +112,17 @@ def _scoped_song_count_for_tag(
     db: Database,
     tag_id: str,
     library_file_ids: set[str] | None,
-    edge_limit: int,
 ) -> int:
     """Count songs for a tag, optionally intersected with a library file-id set."""
     if library_file_ids is None:
         return _song_count_for_tag(db, tag_id)
-    if edge_limit <= 0 or not library_file_ids:
+    if not library_file_ids:
         return 0
-    song_has_tags = _song_has_tags_ns(db)
-    return sum(
-        1
-        for edge in cast("list[dict[str, Any]]", song_has_tags.get(_to=tag_id, limit=edge_limit))
-        if isinstance(edge.get("_from"), str) and edge["_from"] in library_file_ids
-    )
+    edge_limit = db.library.count_song_tag_edges(tag_id)
+    if edge_limit <= 0:
+        return 0
+    edges = db.tags.get_song_tag_edges_for_tags([tag_id], limit=edge_limit)
+    return sum(1 for edge in edges if isinstance(edge.get("_from"), str) and edge["_from"] in library_file_ids)
 
 
 def _numeric_value(value: Any) -> float | None:
@@ -319,8 +311,6 @@ def get_year_distribution(db: Database, library_id: str | None = None) -> list[d
         return []
 
     library_file_ids = _library_file_ids(db, library_id)
-    song_has_tags = _song_has_tags_ns(db)
-    edge_limit = int(song_has_tags.count()) if library_file_ids is not None else 0
     year_tags = cast("list[dict[str, Any]]", tags.get(name="year", limit=total_tags))
     count_by_tag_id = (
         _song_count_rows_for_tag_ids(
@@ -338,7 +328,7 @@ def get_year_distribution(db: Database, library_id: str | None = None) -> list[d
         song_count = (
             count_by_tag_id.get(tag_id, 0)
             if library_file_ids is None
-            else _scoped_song_count_for_tag(db, tag_id, library_file_ids, edge_limit)
+            else _scoped_song_count_for_tag(db, tag_id, library_file_ids)
         )
         if song_count <= 0:
             continue
@@ -366,8 +356,6 @@ def get_genre_distribution(
         return []
 
     library_file_ids = _library_file_ids(db, library_id)
-    song_has_tags = _song_has_tags_ns(db)
-    edge_limit = int(song_has_tags.count()) if library_file_ids is not None else 0
     genre_tags = cast("list[dict[str, Any]]", tags.get(name="genre", limit=total_tags))
     count_by_tag_id = (
         _song_count_rows_for_tag_ids(
@@ -390,7 +378,7 @@ def get_genre_distribution(
         song_count = (
             count_by_tag_id.get(tag_id, 0)
             if library_file_ids is None
-            else _scoped_song_count_for_tag(db, tag_id, library_file_ids, edge_limit)
+            else _scoped_song_count_for_tag(db, tag_id, library_file_ids)
         )
         if song_count <= 0:
             continue

@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from nomarr.persistence.base_types import Field
 from nomarr.services.domain.metadata_svc import COLLECTION_REL_MAP, EntityCollection, MetadataService
 
 
@@ -147,7 +146,7 @@ class TestGetEntity:
             "_key": "artist-1",
             "value": "The Artist",
         }
-        mock_db.song_has_tags.count.return_value = 7
+        mock_db.library.count_song_tag_edges.return_value = 7
         service = _make_service(db=mock_db)
 
         with patch("nomarr.services.domain.metadata_svc.get_tag", return_value=tag_doc) as mock_get_tag:
@@ -160,7 +159,7 @@ class TestGetEntity:
             "song_count": 7,
         }
         mock_get_tag.assert_called_once_with(mock_db, "tags/artist-1")
-        mock_db.song_has_tags.count.assert_called_once_with(Field("_to", "tags/artist-1"))
+        mock_db.library.count_song_tag_edges.assert_called_once_with("tags/artist-1")
 
 
 class TestGetEntityCounts:
@@ -210,7 +209,7 @@ class TestListSongsForEntity:
     @pytest.mark.mocked
     def test_returns_song_ids_and_count_via_flat_api(self) -> None:
         mock_db = MagicMock()
-        mock_db.song_has_tags.count.return_value = 5
+        mock_db.library.count_song_tag_edges.return_value = 5
         service = _make_service(db=mock_db)
         with patch(
             "nomarr.services.domain.metadata_svc.list_songs_for_tag",
@@ -222,13 +221,13 @@ class TestListSongsForEntity:
         assert result["limit"] == 10
         assert result["offset"] == 0
         mock_list.assert_called_once_with(mock_db, "tags/artist-1", limit=10, offset=0)
-        mock_db.song_has_tags.count.assert_called_once_with(Field("_to", "tags/artist-1"))
+        mock_db.library.count_song_tag_edges.assert_called_once_with("tags/artist-1")
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_paging_params_forwarded(self) -> None:
         mock_db = MagicMock()
-        mock_db.song_has_tags.count.return_value = 100
+        mock_db.library.count_song_tag_edges.return_value = 100
         service = _make_service(db=mock_db)
         with patch(
             "nomarr.services.domain.metadata_svc.list_songs_for_tag",

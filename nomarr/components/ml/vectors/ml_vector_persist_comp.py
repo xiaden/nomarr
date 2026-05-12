@@ -84,14 +84,7 @@ def upsert_hot_track_vector(
         raise RuntimeError(msg)
 
     vector_id = str(vector_ids[0])
-    db.file_has_vectors.upsert(
-        _from=file_id,
-        _to=vector_id,
-        fields={
-            "_from": file_id,
-            "_to": vector_id,
-        },
-    )
+    db.ml.upsert_file_has_vector_edge(file_id, vector_id)
     return vector_id
 
 

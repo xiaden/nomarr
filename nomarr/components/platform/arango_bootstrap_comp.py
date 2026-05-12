@@ -9,19 +9,25 @@ Rationale: Schema bootstrap may evolve to include non-DB setup (directories, def
 Persistence layer is "AQL only" - no upward dependencies.
 """
 
+from __future__ import annotations
+
 import contextlib
 import logging
 import os
 import time
+from typing import TYPE_CHECKING
 
 from arango import ArangoClient
 from arango.exceptions import CollectionCreateError, DocumentInsertError, IndexCreateError
 
-from nomarr.components.library.library_records_comp import list_all_library_keys
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones, discover_heads_no_db
 from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES
-from nomarr.persistence.arango_client import DatabaseLike
-from nomarr.persistence.collections import VectorsTrackCold, VectorsTrackHot
+from nomarr.persistence.arango_client import SafeDatabase
+from nomarr.persistence.database.libraries_aql import LibrariesAqlOperations
+from nomarr.persistence.schema_types import VectorsTrackCold, VectorsTrackHot
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +39,16 @@ _VECTOR_TEMPLATE_NAMES: tuple[str, ...] = tuple(
 def list_template_collection_names() -> list[str]:
     """Return template collection family names for dynamic vector collections."""
     return list(_VECTOR_TEMPLATE_NAMES)
+
+
+def ensure_schema_from_database(db: Database, *, models_dir: str | None = None) -> None:
+    """Bootstrap the frozen schema using the raw handle carried by ``Database``."""
+    ensure_schema(db.db, models_dir=models_dir)
+
+
+def register_template_collection(db: Database, collection_name: str, template_name: str) -> None:
+    """Register an existing dynamic collection against its template family."""
+    db.ml.register_vector_collection(collection_name, template_name)
 
 
 def wait_for_arango(hosts: str, max_attempts: int = 30, delay_s: float = 2.0) -> bool:
@@ -73,7 +89,7 @@ def wait_for_arango(hosts: str, max_attempts: int = 30, delay_s: float = 2.0) ->
     return False
 
 
-def ensure_schema(db: DatabaseLike, *, models_dir: str | None = None) -> None:
+def ensure_schema(db: SafeDatabase, *, models_dir: str | None = None) -> None:
     """Ensure all collections, indexes, and graphs exist (frozen baseline).
 
     This is a **frozen baseline** representing the schema at the last
@@ -97,7 +113,7 @@ def ensure_schema(db: DatabaseLike, *, models_dir: str | None = None) -> None:
         _create_vectors_track_collections(db, models_dir)
 
 
-def _create_collections(db: DatabaseLike) -> None:
+def _create_collections(db: SafeDatabase) -> None:
     """Create document and edge collections."""
     # Document collections
     document_collections = [
@@ -157,7 +173,7 @@ def _create_collections(db: DatabaseLike) -> None:
     _seed_file_states(db)
 
 
-def _seed_file_states(db: DatabaseLike) -> None:
+def _seed_file_states(db: SafeDatabase) -> None:
     """Ensure all 16 file_states vertex documents exist (8 axes x positive + negative).
 
     Idempotent — inserts only if the document is missing.
@@ -168,7 +184,7 @@ def _seed_file_states(db: DatabaseLike) -> None:
             coll.insert({"_key": vertex.split("/")[1]})  # type: ignore[union-attr]
 
 
-def _create_indexes(db: DatabaseLike) -> None:
+def _create_indexes(db: SafeDatabase) -> None:
     """Create indexes for performance.
 
     Idempotent - skips existing indexes.
@@ -339,7 +355,7 @@ def _create_indexes(db: DatabaseLike) -> None:
 
 
 def _ensure_index(
-    db: DatabaseLike,
+    db: SafeDatabase,
     collection: str,
     index_type: str,
     fields: list[str],
@@ -377,7 +393,7 @@ def _ensure_index(
             raise
 
 
-def _create_graphs(db: DatabaseLike) -> None:
+def _create_graphs(db: SafeDatabase) -> None:
     """Named graphs have been dropped (V030). No graphs are created.
 
     ArangoDB named graphs were removed because no AQL traversal queries used
@@ -386,7 +402,7 @@ def _create_graphs(db: DatabaseLike) -> None:
     """
 
 
-def _validate_no_legacy_calibration(db: DatabaseLike) -> None:
+def _validate_no_legacy_calibration(db: SafeDatabase) -> None:
     """Warn if legacy calibration collections exist.
 
     Legacy queue-based calibration was replaced by histogram-based approach.
@@ -426,7 +442,7 @@ def _discover_backbone_ids(models_dir: str) -> list[str]:
         return []
 
 
-def provision_vectors_track_for_library(db: DatabaseLike, models_dir: str, library_key: str) -> None:
+def provision_vectors_track_for_library(db: SafeDatabase, models_dir: str, library_key: str) -> None:
     """Provision vectors_track collections for a single library.
 
     Creates ``vectors_track_hot__{backbone}__{library_key}`` for every
@@ -470,7 +486,7 @@ def provision_vectors_track_for_library(db: DatabaseLike, models_dir: str, libra
             logger.info("[bootstrap] Provisioned indexes for %s", collection_name)
 
 
-def _create_vectors_track_collections(db: DatabaseLike, models_dir: str) -> None:
+def _create_vectors_track_collections(db: SafeDatabase, models_dir: str) -> None:
     """Create per-library ``vectors_track_hot__{backbone}__{library_key}`` collections.
 
     For each (backbone, library_key) combination discovered from the models
@@ -488,7 +504,7 @@ def _create_vectors_track_collections(db: DatabaseLike, models_dir: str) -> None
         logger.info("[bootstrap] No libraries collection — skipping per-library vector collections")
         return
 
-    library_keys = list_all_library_keys(db)
+    library_keys = LibrariesAqlOperations(db).list_library_keys()
     if not library_keys:
         logger.info("[bootstrap] No libraries found — skipping per-library vector collections")
         return

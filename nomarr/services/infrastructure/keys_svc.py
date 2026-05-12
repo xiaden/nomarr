@@ -59,7 +59,7 @@ class KeyManagementService:
             Use this for validation. Use get_or_create_api_key() during initialization.
 
         """
-        api_key_doc = cast("dict[str, Any] | None", self._db.meta.get(key="api_key"))
+        api_key_doc = cast("dict[str, Any] | None", self._db.app.get_meta("api_key"))
         return None if api_key_doc is None else cast("str | None", api_key_doc.get("value"))
 
     def get_or_create_api_key(self) -> str:
@@ -70,12 +70,12 @@ class KeyManagementService:
             API key string (existing or newly generated)
 
         """
-        key_doc = cast("dict[str, Any] | None", self._db.meta.get(key="api_key"))
+        key_doc = cast("dict[str, Any] | None", self._db.app.get_meta("api_key"))
         key = None if key_doc is None else cast("str | None", key_doc.get("value"))
         if key:
             return key
         new_key = secrets.token_urlsafe(32)
-        self._db.meta.upsert(key="api_key", fields={"value": new_key})
+        self._db.app.upsert_meta("api_key", {"value": new_key})
         logger.info("[KeyManagement] Generated new API key on first run.")
         return new_key
 
@@ -87,7 +87,7 @@ class KeyManagementService:
 
         """
         new_key = secrets.token_urlsafe(32)
-        self._db.meta.upsert(key="api_key", fields={"value": new_key})
+        self._db.app.upsert_meta("api_key", {"value": new_key})
         logger.info("[KeyManagement] API key regenerated.")
         return new_key
 
@@ -136,7 +136,7 @@ class KeyManagementService:
             RuntimeError: If password not found in database
 
         """
-        password_hash_doc = cast("dict[str, Any] | None", self._db.meta.get(key="admin_password_hash"))
+        password_hash_doc = cast("dict[str, Any] | None", self._db.app.get_meta("admin_password_hash"))
         password_hash = None if password_hash_doc is None else cast("str | None", password_hash_doc.get("value"))
         if not password_hash:
             msg = "Admin password not found in DB. Password should be generated during initialization."
@@ -160,18 +160,18 @@ class KeyManagementService:
             Plaintext password if auto-generated (for logging), empty string otherwise
 
         """
-        existing_hash_doc = cast("dict[str, Any] | None", self._db.meta.get(key="admin_password_hash"))
+        existing_hash_doc = cast("dict[str, Any] | None", self._db.app.get_meta("admin_password_hash"))
         existing_hash = None if existing_hash_doc is None else cast("str | None", existing_hash_doc.get("value"))
         if existing_hash:
             return ""
         if config_password:
             password_hash = self.hash_password(config_password)
-            self._db.meta.upsert(key="admin_password_hash", fields={"value": password_hash})
+            self._db.app.upsert_meta("admin_password_hash", {"value": password_hash})
             logger.info("[KeyManagement] Admin password set from config file.")
             return ""
         random_password = secrets.token_urlsafe(16)
         password_hash = self.hash_password(random_password)
-        self._db.meta.upsert(key="admin_password_hash", fields={"value": password_hash})
+        self._db.app.upsert_meta("admin_password_hash", {"value": password_hash})
         logger.warning("[KeyManagement] ========================================")
         logger.warning("[KeyManagement] AUTO-GENERATED ADMIN PASSWORD:")
         logger.warning(f"[KeyManagement]   {random_password}")
@@ -190,7 +190,7 @@ class KeyManagementService:
 
         """
         password_hash = self.hash_password(new_password)
-        self._db.meta.upsert(key="admin_password_hash", fields={"value": password_hash})
+        self._db.app.upsert_meta("admin_password_hash", {"value": password_hash})
         logger.warning("[KeyManagement] Admin password reset - all sessions invalidated")
 
     def create_session(self) -> str:
@@ -204,7 +204,7 @@ class KeyManagementService:
         session_token = secrets.token_urlsafe(32)
         expiry = now_s().value + SESSION_TIMEOUT_SECONDS
         _session_cache[session_token] = expiry
-        self._db.sessions.insert(
+        self._db.app.insert_session(
             [
                 {
                     "session_id": session_token,
@@ -248,7 +248,7 @@ class KeyManagementService:
 
         """
         _session_cache.pop(session_token, None)
-        self._db.sessions.delete(session_id=session_token)
+        self._db.app.delete_session(session_token)
         logger.info("[KeyManagement] Session invalidated (logout)")
 
     def cleanup_expired_sessions(self) -> int:
@@ -262,13 +262,13 @@ class KeyManagementService:
         expired = [token for token, expiry in _session_cache.items() if expiry < now]
         for token in expired:
             _session_cache.pop(token, None)
-        expired_docs = self._db.sessions.get.lte(
-            "expiry_timestamp",
+        session_count = self._db.app.count_sessions()
+        expired_docs = self._db.app.get_sessions_expiring_before(
             int(now * 1000),
-            limit=self._db.sessions.count(),
+            session_count,
         )
         if expired_docs:
-            self._db.sessions.delete.in_(_id=[doc["_id"] for doc in expired_docs])  # type: ignore[union-attr]
+            self._db.app.delete_sessions_by_ids([doc["_id"] for doc in expired_docs])
         db_count = len(expired_docs)
         if expired or db_count:
             logger.info(f"[KeyManagement] Cleaned up {len(expired)} expired session(s) from cache, {db_count} from DB")
@@ -281,10 +281,10 @@ class KeyManagementService:
             Number of sessions loaded
 
         """
-        sessions = self._db.sessions.get.gte(
-            "expiry_timestamp",
+        session_count = self._db.app.count_sessions()
+        sessions = self._db.app.get_active_sessions(
             int(now_s().value * 1000),
-            limit=self._db.sessions.count(),
+            session_count,
         )
         _session_cache.update((s["session_id"], s["expiry_timestamp"] / 1000.0) for s in sessions)
         logger.debug(f"[KeyManagement] Loaded {len(sessions)} active session(s) from database")

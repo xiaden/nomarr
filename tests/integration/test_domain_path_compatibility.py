@@ -29,19 +29,19 @@ def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(
         "nomarr.components.infrastructure.path_comp.find_library_containing_path",
-        lambda db, file_path: db.libraries.find_library_containing_path(file_path),
+        lambda db, file_path: db.library.find_library_containing_path(file_path),
     )
     monkeypatch.setattr(
         "nomarr.workflows.library.sync_file_to_library_wf.find_library_containing_path",
-        lambda db, file_path: db.libraries.find_library_containing_path(file_path),
+        lambda db, file_path: db.library.find_library_containing_path(file_path),
     )
     monkeypatch.setattr(
         "nomarr.workflows.library.sync_file_to_library_wf.upsert_library_file",
-        lambda db, **kwargs: db.library_files.upsert_library_file(**kwargs),
+        lambda db, **kwargs: db.library.upsert_library_file(**kwargs),
     )
     monkeypatch.setattr(
         "nomarr.workflows.library.sync_file_to_library_wf.get_library_file",
-        lambda db, file_path: db.library_files.get_library_file(file_path),
+        lambda db, file_path: db.library.get_library_file(file_path),
     )
 
 
@@ -67,12 +67,11 @@ def mock_db_with_file():
     mock_db = MagicMock()
 
     # Configure nested mocks for operations
-    mock_db.libraries = MagicMock()
-    mock_db.library_files = MagicMock()
+    mock_db.library = MagicMock()
     mock_db.file_tags = MagicMock()
 
     # Mock library lookup (use platform-specific paths)
-    mock_db.libraries.find_library_containing_path.return_value = {
+    mock_db.library.find_library_containing_path.return_value = {
         "_id": "libraries/lib1",
         "_key": "lib1",
         "name": "Test Library",
@@ -81,7 +80,7 @@ def mock_db_with_file():
     }
 
     # Mock file lookup - returns file with absolute path
-    mock_db.library_files.get_library_file.return_value = {
+    mock_db.library.get_library_file.return_value = {
         "_id": "library_files/file1",
         "_key": "file1",
         "path": TEST_ABSOLUTE_PATH,  # Absolute path available to domains
@@ -129,7 +128,7 @@ class TestLibraryUpdateDomain:
         mock_db, test_absolute_path, _ = mock_db_with_file
 
         # Mock file operations
-        mock_db.library_files.upsert_library_file.return_value = "library_files/file1"
+        mock_db.library.upsert_library_file.return_value = "library_files/file1"
         test_metadata = {
             "duration": 180.5,
             "artist": "Test Artist",
@@ -162,7 +161,7 @@ class TestLibraryUpdateDomain:
             )
 
             # Verify get_library_file was called with absolute path
-            mock_db.library_files.get_library_file.assert_called_once_with(test_absolute_path)
+            mock_db.library.get_library_file.assert_called_once_with(test_absolute_path)
 
 
 class TestQueueDomain:
@@ -185,7 +184,7 @@ class TestQueueDomain:
 
         # When queue component queries DB, it uses absolute path
         path_str = str(mock_library_path.absolute)
-        file_record = mock_db.library_files.get_library_file(path_str)
+        file_record = mock_db.library.get_library_file(path_str)
 
         # Verify file record has absolute path
         assert file_record["path"] == test_absolute_path
@@ -199,7 +198,7 @@ class TestSearchDomain:
         mock_db, test_absolute_path, test_normalized_path = mock_db_with_file
 
         # Mock search results
-        mock_db.library_files.search_library_files_with_tags.return_value = (
+        mock_db.library.search_library_files_with_tags.return_value = (
             [
                 {
                     "_id": "library_files/file1",
@@ -214,7 +213,7 @@ class TestSearchDomain:
             1,  # Total count
         )
 
-        files, total = mock_db.library_files.search_library_files_with_tags(
+        files, total = mock_db.library.search_library_files_with_tags(
             q="Test",
             limit=100,
             offset=0,
@@ -269,7 +268,7 @@ class TestBackwardCompatibility:
         # All these operations should work with absolute paths:
 
         # 1. Library update component
-        file_record = mock_db.library_files.get_library_file(test_absolute_path)
+        file_record = mock_db.library.get_library_file(test_absolute_path)
         assert file_record is not None
         assert file_record["path"] == test_absolute_path
 
@@ -278,11 +277,11 @@ class TestBackwardCompatibility:
         assert os.path.isabs(path_str)
 
         # 3. Search results contain absolute paths
-        mock_db.library_files.search_library_files_with_tags.return_value = (
+        mock_db.library.search_library_files_with_tags.return_value = (
             [{"path": test_absolute_path}],
             1,
         )
-        files, _ = mock_db.library_files.search_library_files_with_tags(q="test")
+        files, _ = mock_db.library.search_library_files_with_tags(q="test")
         assert files[0]["path"] == test_absolute_path
 
         # 4. File tags operations use absolute paths

@@ -581,9 +581,9 @@ class HealthMonitorService:
                 try:
                     # Convert monotonic time to wall-clock for DB storage
                     wall_ms = to_wall_ms(internal_s_to_ms(last_time))
-                    self.db.health.upsert(
-                        component_id=component_id,
-                        fields={
+                    self.db.app.upsert_health(
+                        component_id,
+                        {
                             "status": status,
                             "last_snapshot": wall_ms.value,
                             "created_at": wall_ms.value,

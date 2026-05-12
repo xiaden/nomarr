@@ -14,7 +14,6 @@ from nomarr.components.workers.worker_discovery_comp import (
     discover_next_file,
     release_claims_for_worker,
 )
-from nomarr.persistence.query_specs import PaginationSpec, QueryCriterion, QueryOperator, ReadQuerySpec, WriteQuerySpec
 
 
 class TestDiscoverNextFile:
@@ -59,8 +58,8 @@ class TestClaimFile:
         mock_db = MagicMock()
         result = claim_file(mock_db, "library_files/abc", "worker:tag:0")
         assert result is True
-        mock_db.worker_claims.insert.assert_called_once()
-        inserted = mock_db.worker_claims.insert.call_args.args[0][0]
+        mock_db.app.claim_file.assert_called_once()
+        inserted = mock_db.app.claim_file.call_args.args[2]
         assert inserted["_key"] == "claim_abc"
         assert inserted["file_id"] == "library_files/abc"
         assert inserted["worker_id"] == "worker:tag:0"
@@ -68,7 +67,7 @@ class TestClaimFile:
     @pytest.mark.unit
     def test_returns_false_when_duplicate_insert_raises(self) -> None:
         mock_db = MagicMock()
-        mock_db.worker_claims.insert.side_effect = self._duplicate_claim_error()
+        mock_db.app.claim_file.side_effect = self._duplicate_claim_error()
 
         result = claim_file(mock_db, "library_files/abc", "worker:tag:0")
 
@@ -77,7 +76,7 @@ class TestClaimFile:
     @pytest.mark.unit
     def test_returns_false_when_already_claimed(self) -> None:
         mock_db = MagicMock()
-        mock_db.worker_claims.insert.side_effect = self._duplicate_claim_error()
+        mock_db.app.claim_file.side_effect = self._duplicate_claim_error()
         result = claim_file(mock_db, "library_files/abc", "worker:tag:1")
         assert result is False
 
@@ -88,8 +87,7 @@ class TestCleanupStaleClaims:
     @pytest.mark.unit
     def test_bulk_fetches_claims_and_groups_deletes(self) -> None:
         mock_db = MagicMock()
-        mock_db.worker_claims.count.return_value = 4
-        mock_db.worker_claims.get.return_value = [
+        mock_db.app.list_claims.return_value = [
             {"_id": "worker_claims/claim1", "worker_id": "worker:stale", "file_id": "library_files/file1"},
             {"_id": "worker_claims/claim2", "worker_id": "worker:active", "file_id": "library_files/file2"},
             {"_id": "worker_claims/claim3", "worker_id": "worker:active", "file_id": "library_files/file3"},
@@ -100,18 +98,18 @@ class TestCleanupStaleClaims:
                 "claim_type": "reconcile",
             },
         ]
-        mock_db.health.count.return_value = 1
-        mock_db.health.get.return_value = [
+        mock_db.app.list_worker_health.return_value = [
             {"component_id": "worker:active", "last_heartbeat": 9001},
         ]
-        mock_db.library_files.get.return_value = [
+        mock_db.library.get_files_by_ids.return_value = [
             {"_id": "library_files/file3"},
         ]
-        mock_db.file_has_state.get.return_value = [
+        mock_db.app.get_state_edges_for_files.return_value = [
             {"_from": "library_files/file2", "_to": "file_states/not_tagged"},
             {"_from": "library_files/file3", "_to": "file_states/tagged"},
         ]
-        mock_db.worker_claims.delete.side_effect = [1, 2]
+        mock_db.app.delete_claims_for_workers.return_value = 1
+        mock_db.app.delete_claims_for_files.return_value = 2
 
         with patch(
             "nomarr.components.workers.worker_discovery_comp.now_ms",
@@ -120,63 +118,29 @@ class TestCleanupStaleClaims:
             result = cleanup_stale_claims(mock_db, heartbeat_timeout_ms=1000)
 
         assert result == 3
-        mock_db.worker_claims.aggregate.assert_not_called()
-        mock_db.worker_claims.get.assert_called_once_with(
-            query_spec=ReadQuerySpec(
-                collection_name="worker_claims",
-                pagination=PaginationSpec(limit=4),
-            )
-        )
-        mock_db.health.get.assert_called_once_with(
-            query_spec=ReadQuerySpec(
-                collection_name="health",
-                criteria=(QueryCriterion("component_type", QueryOperator.EQ, "worker"),),
-                pagination=PaginationSpec(limit=1),
-            )
-        )
-        mock_db.library_files.get.assert_called_once_with(
-            query_spec=ReadQuerySpec(
-                collection_name="library_files",
-                criteria=(QueryCriterion("_id", QueryOperator.IN, ["library_files/file2", "library_files/file3"]),),
-                pagination=PaginationSpec(limit=2),
-            )
-        )
-        mock_db.file_has_state.get.assert_called_once_with(
-            query_spec=ReadQuerySpec(
-                collection_name="file_has_state",
-                criteria=(QueryCriterion("_from", QueryOperator.IN, ["library_files/file2", "library_files/file3"]),),
-            )
-        )
-        assert mock_db.worker_claims.delete.call_args_list == [
-            call(
-                query_spec=WriteQuerySpec(
-                    collection_name="worker_claims",
-                    criteria=(QueryCriterion("worker_id", QueryOperator.IN, ["worker:stale"]),),
-                )
-            ),
-            call(
-                query_spec=WriteQuerySpec(
-                    collection_name="worker_claims",
-                    criteria=(
-                        QueryCriterion("file_id", QueryOperator.IN, ["library_files/file2", "library_files/file3"]),
-                    ),
-                )
-            ),
+        mock_db.app.list_claims.assert_called_once_with()
+        mock_db.app.list_worker_health.assert_called_once_with()
+        mock_db.library.get_files_by_ids.assert_called_once_with(["library_files/file2", "library_files/file3"])
+        mock_db.app.get_state_edges_for_files.assert_called_once_with(["library_files/file2", "library_files/file3"])
+        assert mock_db.app.delete_claims_for_workers.call_args_list == [call(["worker:stale"])]
+        assert mock_db.app.delete_claims_for_files.call_args_list == [
+            call(["library_files/file2", "library_files/file3"])
         ]
 
     @pytest.mark.unit
     def test_returns_zero_without_claims(self) -> None:
         mock_db = MagicMock()
-        mock_db.worker_claims.count.return_value = 0
+        mock_db.app.list_claims.return_value = []
 
         result = cleanup_stale_claims(mock_db, heartbeat_timeout_ms=1000)
 
         assert result == 0
-        mock_db.worker_claims.aggregate.assert_not_called()
-        mock_db.health.get.assert_not_called()
-        mock_db.library_files.get.assert_not_called()
-        mock_db.file_has_state.get.assert_not_called()
-        mock_db.worker_claims.delete.assert_not_called()
+        mock_db.app.list_claims.assert_called_once_with()
+        mock_db.app.list_worker_health.assert_not_called()
+        mock_db.library.get_files_by_ids.assert_not_called()
+        mock_db.app.get_state_edges_for_files.assert_not_called()
+        mock_db.app.delete_claims_for_workers.assert_not_called()
+        mock_db.app.delete_claims_for_files.assert_not_called()
 
 
 class TestReleaseClaimsForWorker:
@@ -185,39 +149,24 @@ class TestReleaseClaimsForWorker:
     @pytest.mark.unit
     def test_returns_file_ids_with_single_bulk_read_and_delete(self) -> None:
         mock_db = MagicMock()
-        mock_db.worker_claims.get.return_value = [
-            {"_id": "worker_claims/claim1", "file_id": "library_files/file1"},
-            {"_id": "worker_claims/claim2", "file_id": "library_files/file2"},
+        mock_db.app.list_claims.return_value = [
+            {"_id": "worker_claims/claim1", "worker_id": "worker:tag:0", "file_id": "library_files/file1"},
+            {"_id": "worker_claims/claim2", "worker_id": "worker:tag:0", "file_id": "library_files/file2"},
         ]
 
         result = release_claims_for_worker(mock_db, "worker:tag:0")
 
         assert result == ["library_files/file1", "library_files/file2"]
-        mock_db.worker_claims.get.assert_called_once_with(
-            query_spec=ReadQuerySpec(
-                collection_name="worker_claims",
-                criteria=(QueryCriterion("worker_id", QueryOperator.EQ, "worker:tag:0"),),
-            )
-        )
-        mock_db.worker_claims.delete.assert_called_once_with(
-            query_spec=WriteQuerySpec(
-                collection_name="worker_claims",
-                criteria=(QueryCriterion("worker_id", QueryOperator.EQ, "worker:tag:0"),),
-            )
-        )
+        mock_db.app.list_claims.assert_called_once_with()
+        mock_db.app.delete_claims_for_workers.assert_called_once_with(["worker:tag:0"])
 
     @pytest.mark.unit
     def test_returns_empty_list_without_claims(self) -> None:
         mock_db = MagicMock()
-        mock_db.worker_claims.get.return_value = []
+        mock_db.app.list_claims.return_value = []
 
         result = release_claims_for_worker(mock_db, "worker:tag:0")
 
         assert result == []
-        mock_db.worker_claims.get.assert_called_once_with(
-            query_spec=ReadQuerySpec(
-                collection_name="worker_claims",
-                criteria=(QueryCriterion("worker_id", QueryOperator.EQ, "worker:tag:0"),),
-            )
-        )
-        mock_db.worker_claims.delete.assert_not_called()
+        mock_db.app.list_claims.assert_called_once_with()
+        mock_db.app.delete_claims_for_workers.assert_not_called()

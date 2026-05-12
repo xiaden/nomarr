@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 
@@ -197,16 +197,13 @@ class TestListTagsByName:
     @pytest.mark.mocked
     def test_returns_page_with_counts_from_aggregate_lookup(self) -> None:
         mock_db = MagicMock()
-        mock_db.tags.count.return_value = 3
-        mock_db.tags.get.return_value = [
+        mock_db.library.count_tags.return_value = 3
+        mock_db.library.list_tags.return_value = [
             {"_id": "tags/1", "_key": "1", "name": "genre", "value": "Rock"},
             {"_id": "tags/2", "_key": "2", "name": "genre", "value": "Jazz"},
             {"_id": 3, "_key": "3", "name": "genre", "value": "Skip"},
         ]
-        mock_db.tags.count_inbound_connections.return_value = [
-            {"tag_id": "tags/1", "count": 4},
-            {"tag_id": "tags/2", "count": 2},
-        ]
+        mock_db.library.count_song_tag_edges.side_effect = [4, 2]
 
         result = list_tags_by_name(mock_db, name="genre", limit=10, offset=0)
 
@@ -214,28 +211,18 @@ class TestListTagsByName:
             {"_id": "tags/2", "_key": "2", "name": "genre", "value": "Jazz", "song_count": 2},
             {"_id": "tags/1", "_key": "1", "name": "genre", "value": "Rock", "song_count": 4},
         ]
-        mock_db.tags.count_inbound_connections.assert_called_once_with(
-            "song_has_tags",
-            filter_field="_id",
-            filter_values=["tags/1", "tags/2"],
-            return_field="_id",
-            label="tag_id",
-            limit=3,
-        )
+        assert mock_db.library.count_song_tag_edges.call_args_list == [call("tags/1"), call("tags/2")]
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_sorts_by_song_count_using_aggregate_lookup(self) -> None:
         mock_db = MagicMock()
-        mock_db.tags.count.return_value = 2
-        mock_db.tags.get.return_value = [
+        mock_db.library.count_tags.return_value = 2
+        mock_db.library.list_tags.return_value = [
             {"_id": "tags/1", "_key": "1", "name": "genre", "value": "Rock"},
             {"_id": "tags/2", "_key": "2", "name": "genre", "value": "Jazz"},
         ]
-        mock_db.tags.count_inbound_connections.return_value = [
-            {"tag_id": "tags/1", "count": 1},
-            {"tag_id": "tags/2", "count": 3},
-        ]
+        mock_db.library.count_song_tag_edges.side_effect = [1, 3]
 
         result = list_tags_by_name(mock_db, name="genre", limit=10, offset=0, sort_by_count=True)
 
@@ -243,14 +230,7 @@ class TestListTagsByName:
             {"_id": "tags/2", "_key": "2", "name": "genre", "value": "Jazz", "song_count": 3},
             {"_id": "tags/1", "_key": "1", "name": "genre", "value": "Rock", "song_count": 1},
         ]
-        mock_db.tags.count_inbound_connections.assert_called_once_with(
-            "song_has_tags",
-            filter_field="_id",
-            filter_values=["tags/1", "tags/2"],
-            return_field="_id",
-            label="tag_id",
-            limit=2,
-        )
+        assert mock_db.library.count_song_tag_edges.call_args_list == [call("tags/1"), call("tags/2")]
 
 
 class TestGetTag:
@@ -260,23 +240,23 @@ class TestGetTag:
     @pytest.mark.mocked
     def test_calls_db_get_and_returns_tag(self) -> None:
         mock_db = MagicMock()
-        mock_db.tags.get.return_value = {"_id": "tags/1", "value": "rock"}
+        mock_db.library.get_tag.return_value = {"_id": "tags/1", "value": "rock"}
 
         result = get_tag(mock_db, "tags/1")
 
         assert result == {"_id": "tags/1", "value": "rock"}
-        mock_db.tags.get.assert_called_once_with(_id="tags/1")
+        mock_db.library.get_tag.assert_called_once_with("tags/1")
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_none_when_tag_is_not_found(self) -> None:
         mock_db = MagicMock()
-        mock_db.tags.get.return_value = None
+        mock_db.library.get_tag.return_value = None
 
         result = get_tag(mock_db, "tags/missing")
 
         assert result is None
-        mock_db.tags.get.assert_called_once_with(_id="tags/missing")
+        mock_db.library.get_tag.assert_called_once_with("tags/missing")
 
 
 class TestListSongsForTag:
@@ -286,7 +266,9 @@ class TestListSongsForTag:
     @pytest.mark.mocked
     def test_returns_from_values_as_strings(self) -> None:
         mock_db = MagicMock()
-        mock_db.song_has_tags.get.return_value = [
+        mock_db.library.get_song_tag_edges_for_tags.return_value = [
+            {"_from": "library_files/pre-0"},
+            {"_from": "library_files/pre-1"},
             {"_from": "library_files/1"},
             {"_from": 123},
             {"_from": None},
@@ -295,17 +277,13 @@ class TestListSongsForTag:
         result = list_songs_for_tag(mock_db, "tags/1", limit=5, offset=2)
 
         assert result == ["library_files/1", "123"]
-        mock_db.song_has_tags.get.assert_called_once_with(
-            _to="tags/1",
-            limit=5,
-            offset=2,
-        )
+        mock_db.library.get_song_tag_edges_for_tags.assert_called_once_with(["tags/1"])
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_empty_list_when_no_edges_exist(self) -> None:
         mock_db = MagicMock()
-        mock_db.song_has_tags.get.return_value = []
+        mock_db.library.get_song_tag_edges_for_tags.return_value = []
 
         result = list_songs_for_tag(mock_db, "tags/1")
 
@@ -319,7 +297,7 @@ class TestFileIdsForTagDocs:
     @pytest.mark.mocked
     def test_batches_edge_lookup_with_single_in_query(self) -> None:
         mock_db = MagicMock()
-        mock_db.song_has_tags.get.in_.return_value = [
+        mock_db.library.get_song_tag_edges_for_tags.return_value = [
             {"_from": "library_files/1", "_to": "tags/1"},
             {"_from": "library_files/2", "_to": "tags/2"},
             {"_from": "library_files/1", "_to": "tags/2"},
@@ -335,7 +313,7 @@ class TestFileIdsForTagDocs:
         )
 
         assert result == {"library_files/1", "library_files/2"}
-        mock_db.song_has_tags.get.in_.assert_called_once_with(_to=["tags/1", "tags/2"], limit=None)
+        mock_db.library.get_song_tag_edges_for_tags.assert_called_once_with(["tags/1", "tags/2"])
 
 
 class TestCountTagsByName:
@@ -345,8 +323,8 @@ class TestCountTagsByName:
     @pytest.mark.mocked
     def test_returns_count_for_name(self) -> None:
         mock_db = MagicMock()
-        mock_db.tags.count.return_value = 3
-        mock_db.tags.get.return_value = [
+        mock_db.library.count_tags.return_value = 3
+        mock_db.library.list_tags.return_value = [
             {"value": "Rock"},
             {"value": "Jazz"},
             {"value": "Pop"},
@@ -355,19 +333,19 @@ class TestCountTagsByName:
         result = count_tags_by_name(mock_db, name="genre", search=None)
 
         assert result == 3
-        mock_db.tags.get.assert_called_once_with(name="genre", limit=3)
+        mock_db.library.list_tags.assert_called_once_with(name="genre", limit=3)
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_applies_search_filter_when_provided(self) -> None:
         mock_db = MagicMock()
-        mock_db.tags.count.return_value = 3
-        mock_db.tags.aggregate.return_value = [
+        mock_db.library.count_tags.return_value = 3
+        mock_db.library.aggregate_tag_field.return_value = [
             {"value": "tags/1"},
             {"value": "tags/2"},
             {"value": "tags/3"},
         ]
-        mock_db.tags.get.side_effect = [
+        mock_db.library.get_tag.side_effect = [
             {"value": "Dream Pop"},
             {"value": "Pop Rock"},
             {"value": "Jazz"},
@@ -376,14 +354,14 @@ class TestCountTagsByName:
         result = count_tags_by_name(mock_db, name=None, search="pop")
 
         assert result == 2
-        mock_db.tags.aggregate.assert_called_once_with("_id", limit=3, offset=0)
+        mock_db.library.aggregate_tag_field.assert_called_once_with("_id", limit=3, offset=0)
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_zero_when_no_tags_match_search(self) -> None:
         mock_db = MagicMock()
-        mock_db.tags.count.return_value = 2
-        mock_db.tags.get.return_value = [
+        mock_db.library.count_tags.return_value = 2
+        mock_db.library.list_tags.return_value = [
             {"value": "Rock"},
             {"value": "Jazz"},
         ]
@@ -404,13 +382,13 @@ class TestGetNomarrTagsBulk:
         result = get_nomarr_tags_bulk(mock_db, [])
 
         assert result == {}
-        mock_db.library_files.song_has_tags.by_ids.assert_not_called()
+        mock_db.library.get_tags_for_files_batch.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_batches_nomarr_rows_by_file_id(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.song_has_tags.by_ids.return_value = [
+        mock_db.library.get_tags_for_files_batch.return_value = [
             {"start_id": "library_files/1", "v": {"name": "nom:mood", "value": "calm"}},
             {"start_id": "library_files/1", "v": {"name": "nom:mood", "value": "bright"}},
             {"start_id": "library_files/2", "v": {"name": "nom:energy", "value": 0.91}},
@@ -420,7 +398,7 @@ class TestGetNomarrTagsBulk:
 
         assert result["library_files/1"].to_dict() == {"nom:mood": ("calm", "bright")}
         assert result["library_files/2"].to_dict() == {"nom:energy": (0.91,)}
-        mock_db.library_files.song_has_tags.by_ids.assert_called_once_with(
+        mock_db.library.get_tags_for_files_batch.assert_called_once_with(
             ["library_files/1", "library_files/2"],
             name_starts_with="nom:",
         )
@@ -437,13 +415,13 @@ class TestGetDistinctTagValuesForFiles:
         result = get_distinct_tag_values_for_files(mock_db, [], "genre")
 
         assert result == []
-        mock_db.library_files.song_has_tags.by_ids.assert_not_called()
+        mock_db.library.get_tags_for_files_batch.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_sorted_distinct_string_values(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.song_has_tags.by_ids.return_value = [
+        mock_db.library.get_tags_for_files_batch.return_value = [
             {"start_id": "library_files/1", "v": {"name": "genre", "value": "Rock"}},
             {"start_id": "library_files/1", "v": {"name": "genre", "value": "Pop"}},
             {"start_id": "library_files/2", "v": {"name": "genre", "value": "Rock"}},
@@ -458,10 +436,7 @@ class TestGetDistinctTagValuesForFiles:
         )
 
         assert result == ["Ambient", "Pop", "Rock"]
-        mock_db.library_files.song_has_tags.by_ids.assert_called_once_with(
-            ["library_files/1", "library_files/2"],
-            name="genre",
-        )
+        mock_db.library.get_tags_for_files_batch.assert_called_once_with(["library_files/1", "library_files/2"])
 
 
 class TestGetTagValuesGroupedByFile:
@@ -475,13 +450,13 @@ class TestGetTagValuesGroupedByFile:
         result = get_tag_values_grouped_by_file(mock_db, [], "genre")
 
         assert result == {}
-        mock_db.library_files.song_has_tags.by_ids.assert_not_called()
+        mock_db.library.get_tags_for_files_batch.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_groups_matching_values_by_file(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.song_has_tags.by_ids.return_value = [
+        mock_db.library.get_tags_for_files_batch.return_value = [
             {"start_id": "library_files/1", "v": {"name": "genre", "value": "Rock"}},
             {"start_id": "library_files/1", "v": {"name": "genre", "value": "Pop"}},
             {"start_id": "library_files/3", "v": {"name": "genre", "value": "Jazz"}},
@@ -498,9 +473,8 @@ class TestGetTagValuesGroupedByFile:
             "library_files/1": {"Rock", "Pop"},
             "library_files/3": {"Jazz"},
         }
-        mock_db.library_files.song_has_tags.by_ids.assert_called_once_with(
-            ["library_files/1", "library_files/2", "library_files/3"],
-            name="genre",
+        mock_db.library.get_tags_for_files_batch.assert_called_once_with(
+            ["library_files/1", "library_files/2", "library_files/3"]
         )
 
 
@@ -511,7 +485,7 @@ class TestGetSongTags:
     @pytest.mark.mocked
     def test_returns_all_tags_when_no_filters_are_provided(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.song_has_tags.return_value = [
+        mock_db.library.get_tags_for_file.return_value = [
             {"name": "genre", "value": "Rock"},
             {"name": "artist", "value": "Artist One"},
             {"name": 123, "value": "skip"},
@@ -524,13 +498,13 @@ class TestGetSongTags:
             "artist": ("Artist One",),
             "genre": ("Rock",),
         }
-        mock_db.library_files.song_has_tags.assert_called_once_with("library_files/1")
+        mock_db.library.get_tags_for_file.assert_called_once_with("library_files/1")
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_filters_by_name_when_name_is_provided(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.song_has_tags.return_value = [
+        mock_db.library.get_tags_for_file.return_value = [
             {"name": "genre", "value": "Rock"},
             {"name": "artist", "value": "Artist One"},
             {"name": "genre", "value": "Pop"},
@@ -544,7 +518,7 @@ class TestGetSongTags:
     @pytest.mark.mocked
     def test_filters_to_nomarr_tags_when_nomarr_only_is_true(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.song_has_tags.return_value = [
+        mock_db.library.get_tags_for_file.return_value = [
             {"name": "genre", "value": "Rock"},
             {"name": "nom:mood-tier-1", "value": "calm"},
             {"name": "nom:mood-tier-1", "value": "bright"},
@@ -563,12 +537,12 @@ class TestGetFileIdsMatchingTag:
     def test_uses_batched_in_query_for_file_lookup(self) -> None:
         """Matching tag ids are passed to .get.in_() in a single batch call."""
         mock_db = MagicMock()
-        mock_db.tags.count.return_value = 2
-        mock_db.tags.get.return_value = [
+        mock_db.library.count_tags.return_value = 2
+        mock_db.library.list_tags.return_value = [
             {"_id": "tags/1", "value": "Rock"},
             {"_id": "tags/2", "value": "Jazz"},
         ]
-        mock_db.song_has_tags.get.in_.return_value = [
+        mock_db.library.get_song_tag_edges_for_tags.return_value = [
             {"_from": "library_files/1"},
             {"_from": "library_files/2"},
         ]
@@ -576,4 +550,4 @@ class TestGetFileIdsMatchingTag:
         result = get_file_ids_matching_tag(mock_db, "genre", "eq", "Rock")
 
         assert result == {"library_files/1", "library_files/2"}
-        mock_db.song_has_tags.get.in_.assert_called_once_with(_to=["tags/1"], limit=None)
+        mock_db.library.get_song_tag_edges_for_tags.assert_called_once_with(["tags/1"])

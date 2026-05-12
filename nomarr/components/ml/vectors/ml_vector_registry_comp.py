@@ -1,7 +1,7 @@
 """Domain-specific vector collection registry.
 
-Wraps `db.register()` to resolve hot/cold/maintenance namespaces by
-backbone+library, and owns batch vector deletion.
+Wraps `db.ml.register_vector_collection()` to resolve hot/cold/maintenance
+namespaces by backbone+library, and owns batch vector deletion.
 """
 
 from __future__ import annotations
@@ -173,11 +173,11 @@ def get_hot_namespace(db: Database, backbone_id: str, library_key: str) -> Vecto
         Registered hot vectors namespace for the ``backbone_id`` and ``library_key`` pair.
 
     Raises:
-        Exception: Propagates errors raised by ``db.register()`` while resolving the
-            namespace.
+        Exception: Propagates errors raised by ``db.ml.register_vector_collection()``
+            while resolving the namespace.
     """
     col_name = f"vectors_track_hot__{backbone_id}__{library_key}"
-    return cast("VectorsTrackHotNamespace", db.register(col_name, "vectors_track_hot"))
+    return cast("VectorsTrackHotNamespace", db.ml.register_vector_collection(col_name, "vectors_track_hot"))
 
 
 def get_cold_namespace(
@@ -200,13 +200,13 @@ def get_cold_namespace(
         pair, with ``collection_suffix`` appended to the collection name when set.
 
     Raises:
-        Exception: Propagates errors raised by ``db.register()`` while resolving the
-            namespace.
+        Exception: Propagates errors raised by ``db.ml.register_vector_collection()``
+            while resolving the namespace.
     """
     col_name = f"vectors_track_cold__{backbone_id}__{library_key}"
     if collection_suffix:
         col_name = f"{col_name}__{collection_suffix}"
-    return cast("VectorsTrackColdNamespace", db.register(col_name, "vectors_track_cold"))
+    return cast("VectorsTrackColdNamespace", db.ml.register_vector_collection(col_name, "vectors_track_cold"))
 
 
 def get_maintenance_namespace(
@@ -256,13 +256,13 @@ def delete_vectors_by_file_id(db: Database, file_id: str) -> int:
             removing ``file_has_vectors`` edges.
     """
     total_deleted = 0
-    registered_collections = cast("dict[str, Any]", getattr(db, "_registered", {}))
+    registered_collections = cast("dict[str, Any]", db.ml.list_registered_vector_namespaces())
 
     for namespace in registered_collections.values():
         typed_namespace = cast("_VectorDeleteByFileIdNamespace", namespace)
         total_deleted += typed_namespace.file_id.delete(file_id)
 
-    db.file_has_vectors.delete(_from=file_id)
+    db.ml.delete_file_has_vector_edges_for_file(file_id)
 
     return total_deleted
 
@@ -288,12 +288,12 @@ def delete_vectors_by_file_ids(db: Database, file_ids: list[str]) -> int:
         return 0
 
     total_deleted = 0
-    registered_collections = cast("dict[str, Any]", getattr(db, "_registered", {}))
+    registered_collections = cast("dict[str, Any]", db.ml.list_registered_vector_namespaces())
 
     for namespace in registered_collections.values():
         typed_namespace = cast("_VectorDeleteByFileIdNamespace", namespace)
         total_deleted += typed_namespace.file_id.delete.in_(file_ids)
 
-    db.file_has_vectors.delete.in_(_from=file_ids)
+    db.ml.delete_file_has_vector_edges_for_files(file_ids)
 
     return total_deleted

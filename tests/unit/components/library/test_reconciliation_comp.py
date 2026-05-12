@@ -5,7 +5,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-from arango.exceptions import DocumentInsertError
 
 from nomarr.components.library.reconciliation_comp import (
     claim_files_for_reconciliation,
@@ -20,11 +19,6 @@ from nomarr.helpers.constants.file_states import (
     STATE_TAGS_WRITTEN,
 )
 from nomarr.helpers.time_helper import Milliseconds
-
-
-def _document_insert_error() -> DocumentInsertError:
-    """Create a lightweight DocumentInsertError instance for unit tests."""
-    return DocumentInsertError.__new__(DocumentInsertError)
 
 
 class TestClaimFilesForReconciliation:
@@ -42,14 +36,15 @@ class TestClaimFilesForReconciliation:
             result = claim_files_for_reconciliation(mock_db, "libraries/test", "workers/test")
 
         assert result == []
-        mock_db.library_files.get.assert_not_called()
+        mock_db.library.get_file.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_claims_available_file_successfully(self) -> None:
         mock_db = MagicMock()
         candidate = {"_id": "library_files/abc", "_key": "abc"}
-        mock_db.library_files.get.return_value = candidate
+        mock_db.library.get_file.return_value = candidate
+        mock_db.app.steal_claim.return_value = True
 
         with (
             patch(
@@ -64,12 +59,15 @@ class TestClaimFilesForReconciliation:
             result = claim_files_for_reconciliation(mock_db, "libraries/test", "workers/test")
 
         assert result == [candidate]
-        inserted_payload = mock_db.worker_claims.insert.call_args.args[0][0]
-        assert inserted_payload["_key"] == "claim_reconcile_abc"
-        assert inserted_payload["file_id"] == "library_files/abc"
-        assert inserted_payload["worker_id"] == "workers/test"
-        assert inserted_payload["claimed_at"] == 10_000
-        assert inserted_payload["claim_type"] == "reconcile"
+        mock_db.library.get_file.assert_called_once_with("library_files/abc")
+        claim_payload, claim_now, claim_lease_ms = mock_db.app.steal_claim.call_args.args
+        assert claim_payload["_key"] == "claim_reconcile_abc"
+        assert claim_payload["file_id"] == "library_files/abc"
+        assert claim_payload["worker_id"] == "workers/test"
+        assert claim_payload["claimed_at"] == 10_000
+        assert claim_payload["claim_type"] == "reconcile"
+        assert claim_now == 10_000
+        assert claim_lease_ms == 60_000
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -77,7 +75,8 @@ class TestClaimFilesForReconciliation:
         mock_db = MagicMock()
         stale_ids = [f"library_files/{index}" for index in range(5)]
         candidates = [{"_id": stale_id, "_key": str(index)} for index, stale_id in enumerate(stale_ids)]
-        mock_db.library_files.get.side_effect = candidates
+        mock_db.library.get_file.side_effect = candidates
+        mock_db.app.steal_claim.return_value = True
 
         with (
             patch(
@@ -97,19 +96,22 @@ class TestClaimFilesForReconciliation:
             )
 
         assert result == candidates[:2]
-        assert mock_db.worker_claims.insert.call_count == 2
+        assert mock_db.library.get_file.call_count == len(stale_ids)
+        assert mock_db.app.steal_claim.call_count == 2
+        first_payload, first_now, first_lease_ms = mock_db.app.steal_claim.call_args_list[0].args
+        second_payload, second_now, second_lease_ms = mock_db.app.steal_claim.call_args_list[1].args
+        assert first_payload["_key"] == "claim_reconcile_0"
+        assert second_payload["_key"] == "claim_reconcile_1"
+        assert first_now == second_now == 20_000
+        assert first_lease_ms == second_lease_ms == 60_000
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_skips_already_claimed_active_file(self) -> None:
         mock_db = MagicMock()
         candidate = {"_id": "library_files/abc", "_key": "abc"}
-        mock_db.library_files.get.return_value = candidate
-        mock_db.worker_claims.insert.side_effect = _document_insert_error()
-        mock_db.worker_claims.get.return_value = {
-            "_id": "worker_claims/existing",
-            "claimed_at": 59_000,
-        }
+        mock_db.library.get_file.return_value = candidate
+        mock_db.app.steal_claim.return_value = False
 
         with (
             patch(
@@ -129,20 +131,26 @@ class TestClaimFilesForReconciliation:
             )
 
         assert result == []
-        mock_db.worker_claims.delete.assert_not_called()
-        assert mock_db.worker_claims.insert.call_count == 1
+        mock_db.library.get_file.assert_called_once_with("library_files/abc")
+        mock_db.app.steal_claim.assert_called_once_with(
+            {
+                "_key": "claim_reconcile_abc",
+                "file_id": "library_files/abc",
+                "worker_id": "workers/test",
+                "claimed_at": 60_000,
+                "claim_type": "reconcile",
+            },
+            60_000,
+            60_000,
+        )
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_reclaims_expired_lease(self) -> None:
         mock_db = MagicMock()
         candidate = {"_id": "library_files/abc", "_key": "abc"}
-        mock_db.library_files.get.return_value = candidate
-        mock_db.worker_claims.insert.side_effect = [_document_insert_error(), None]
-        mock_db.worker_claims.get.return_value = {
-            "_id": "worker_claims/existing",
-            "claimed_at": 0,
-        }
+        mock_db.library.get_file.return_value = candidate
+        mock_db.app.steal_claim.return_value = True
 
         with (
             patch(
@@ -162,8 +170,18 @@ class TestClaimFilesForReconciliation:
             )
 
         assert result == [candidate]
-        mock_db.worker_claims.delete.assert_called_once_with(_id="worker_claims/existing")
-        assert mock_db.worker_claims.insert.call_count == 2
+        mock_db.library.get_file.assert_called_once_with("library_files/abc")
+        mock_db.app.steal_claim.assert_called_once_with(
+            {
+                "_key": "claim_reconcile_abc",
+                "file_id": "library_files/abc",
+                "worker_id": "workers/test",
+                "claimed_at": 120_000,
+                "claim_type": "reconcile",
+            },
+            120_000,
+            60_000,
+        )
 
 
 class TestSetFileWritten:
@@ -174,43 +192,63 @@ class TestSetFileWritten:
     def test_normalizes_bare_key_to_full_id(self) -> None:
         mock_db = MagicMock()
 
-        set_file_written(mock_db, "abc123")
+        with patch("nomarr.components.library.reconciliation_comp.transition_file_state") as mock_transition:
+            set_file_written(mock_db, "abc123")
 
-        first_transition = mock_db.file_states.transition.call_args_list[0].args
-        assert first_transition[0] == ["library_files/abc123"]
+        first_transition = mock_transition.call_args_list[0].args
+        assert first_transition == (
+            mock_db,
+            ["library_files/abc123"],
+            STATE_TAGS_NOT_WRITTEN,
+            STATE_TAGS_WRITTEN,
+        )
+        mock_db.app.release_claim.assert_called_once_with("library_files/abc123")
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_normalizes_full_id_unchanged(self) -> None:
         mock_db = MagicMock()
 
-        set_file_written(mock_db, "library_files/abc123")
+        with patch("nomarr.components.library.reconciliation_comp.transition_file_state") as mock_transition:
+            set_file_written(mock_db, "library_files/abc123")
 
-        for transition_call in mock_db.file_states.transition.call_args_list:
-            assert transition_call.args[0] == ["library_files/abc123"]
-        mock_db.worker_claims.delete.assert_called_once_with(file_id="library_files/abc123")
+        for transition_call in mock_transition.call_args_list:
+            assert transition_call.args[1] == ["library_files/abc123"]
+        mock_db.app.release_claim.assert_called_once_with("library_files/abc123")
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_transitions_tag_state_edges(self) -> None:
         mock_db = MagicMock()
 
-        set_file_written(mock_db, "abc")
+        with patch("nomarr.components.library.reconciliation_comp.transition_file_state") as mock_transition:
+            set_file_written(mock_db, "abc")
 
-        assert mock_db.file_states.transition.call_count == 2
-        first_transition = mock_db.file_states.transition.call_args_list[0].args
-        second_transition = mock_db.file_states.transition.call_args_list[1].args
-        assert first_transition == (["library_files/abc"], STATE_TAGS_NOT_WRITTEN, STATE_TAGS_WRITTEN)
-        assert second_transition == (["library_files/abc"], STATE_TAGS_STALE, STATE_TAGS_CURRENT)
+        assert mock_transition.call_count == 2
+        first_transition = mock_transition.call_args_list[0].args
+        second_transition = mock_transition.call_args_list[1].args
+        assert first_transition == (
+            mock_db,
+            ["library_files/abc"],
+            STATE_TAGS_NOT_WRITTEN,
+            STATE_TAGS_WRITTEN,
+        )
+        assert second_transition == (
+            mock_db,
+            ["library_files/abc"],
+            STATE_TAGS_STALE,
+            STATE_TAGS_CURRENT,
+        )
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_deletes_worker_claim(self) -> None:
+    def test_releases_claim_via_app_api(self) -> None:
         mock_db = MagicMock()
 
-        set_file_written(mock_db, "abc")
+        with patch("nomarr.components.library.reconciliation_comp.transition_file_state"):
+            set_file_written(mock_db, "abc")
 
-        mock_db.worker_claims.delete.assert_called_once_with(file_id="library_files/abc")
+        mock_db.app.release_claim.assert_called_once_with("library_files/abc")
 
 
 class TestReleaseClaim:
@@ -218,12 +256,12 @@ class TestReleaseClaim:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_normalizes_bare_key_and_deletes_claim(self) -> None:
+    def test_normalizes_bare_key_and_releases_claim_via_app_api(self) -> None:
         mock_db = MagicMock()
 
         release_claim(mock_db, "abc")
 
-        mock_db.worker_claims.delete.assert_called_once_with(file_id="library_files/abc")
+        mock_db.app.release_claim.assert_called_once_with("library_files/abc")
 
     @pytest.mark.unit
     @pytest.mark.mocked

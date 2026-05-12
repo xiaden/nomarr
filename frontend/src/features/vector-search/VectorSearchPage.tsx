@@ -164,7 +164,7 @@ export function VectorSearchPage() {
       const playlistName = `Songs like ${artist} - ${title}`;
       const response = await pushStaticPlaylist(fileIds, playlistName);
       setPlaylistSuccess(
-        `Playlist "${response.playlist_name}" pushed to Navidrome (${response.track_count} tracks)`
+        `Playlist "${response.playlist_name}" prepared for Navidrome (${response.track_count} tracks)`
       );
     } catch (err) {
       console.error("Failed to push playlist:", err);

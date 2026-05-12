@@ -266,18 +266,28 @@ export async function getNavidromeStatus(): Promise<NavidromeStatusResponse> {
 }
 
 
-// ── Removed backend push flows (HTTP 410) ──
+// ── Push Static Playlist (Vector Search → Navidrome plugin) ──
+
+export interface TrackDescriptor {
+  title: string;
+  artist: string;
+  album: string;
+  album_artist: string;
+  duration_ms: number | null;
+  track_number: number | null;
+  disc_number: number | null;
+  year: number | null;
+  nomarr_file_key: string | null;
+}
 
 export interface PushStaticPlaylistResponse {
   playlist_name: string;
-  playlist_id: string;
+  songs: TrackDescriptor[];
   track_count: number;
-  unresolved_count: number;
 }
 
 /**
- * Removed backend path (returns HTTP 410).
- * Plugin-backed playlist flows resolve descriptors inside the Navidrome plugin.
+ * Resolve file IDs to portable track descriptors for plugin-side Navidrome push.
  */
 export async function pushStaticPlaylist(
   fileIds: string[],
@@ -289,36 +299,23 @@ export async function pushStaticPlaylist(
   });
 }
 
-// ── Removed Sync Songs path (HTTP 410) ──
-
-export interface SyncSongsResponse {
-  total_songs: number;
-  resolved: number;
-  unresolved: number;
-  tracks_upserted: number;
-  play_edges_upserted: number;
-  orphans_removed: number;
-  duration_ms: number;
-}
-
-/**
- * Removed backend path (returns HTTP 410).
- */
-export async function syncNavidromeSongs(): Promise<SyncSongsResponse> {
-  return post<SyncSongsResponse>("/api/web/navidrome/sync-song");
-}
-
 // ── Personal Playlists ──
+
+export interface PlaylistDescriptorEntry {
+  playlist_name: string;
+  playlist_type: string;
+  songs: TrackDescriptor[];
+  track_count: number;
+}
 
 export interface TriggerPersonalPlaylistsResponse {
   status: string;
   message: string;
-  playlists_generated: number;
-  playlists_pushed: number;
+  playlists: PlaylistDescriptorEntry[];
 }
 
 /**
- * Removed backend path (returns HTTP 410).
+ * Generate personal playlists for the configured Navidrome user and return track descriptors.
  */
 export async function triggerPersonalPlaylists(): Promise<TriggerPersonalPlaylistsResponse> {
   return post<TriggerPersonalPlaylistsResponse>("/api/web/navidrome/generate-personal-playlists");

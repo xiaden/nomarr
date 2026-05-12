@@ -6,13 +6,6 @@ import hashlib
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.time_helper import now_ms
-from nomarr.persistence.query_specs import (
-    AggregateQuerySpec,
-    QueryCriterion,
-    QueryOperator,
-    ReadQuerySpec,
-    WriteQuerySpec,
-)
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -38,15 +31,7 @@ def write_tag_model_output_edges_batch(db: Database, edges: list[tuple[str, str,
     unique_tag_ids = sorted({tag_id for tag_id, _ in unique_edges})
 
     # Fetch all existing edges for all involved tags in one IN query.
-    all_existing = cast(
-        "list[dict[str, Any]]",
-        db.tag_model_output.get(
-            query_spec=ReadQuerySpec(
-                collection_name="tag_model_output",
-                criteria=(QueryCriterion("_from", QueryOperator.IN, unique_tag_ids),),
-            )
-        ),
-    )
+    all_existing = cast("list[dict[str, Any]]", db.ml.get_tag_model_output_edges_for_tags(unique_tag_ids))
     existing_by_tag: dict[str, dict[str, dict[str, Any]]] = {}
     for edge in all_existing:
         if "_to" not in edge or "_from" not in edge:
@@ -73,32 +58,19 @@ def write_tag_model_output_edges_batch(db: Database, edges: list[tuple[str, str,
             )
 
     if docs_to_update:
-        db.tag_model_output.update_many(docs_to_update)
+        db.ml.update_tag_model_output_edges_batch(docs_to_update)
     if docs_to_insert:
-        db.tag_model_output.insert(docs_to_insert)
+        db.ml.insert_tag_model_output_edges_batch(docs_to_insert)
 
 
 def delete_tag_model_output_edges_for_tag(db: Database, tag_id: str) -> int:
     """Delete all outbound provenance edges for one tag vertex."""
-    return db.tag_model_output.delete(
-        query_spec=WriteQuerySpec(
-            collection_name="tag_model_output",
-            criteria=(QueryCriterion("_from", QueryOperator.EQ, tag_id),),
-        )
-    )
+    return db.ml.delete_tag_model_output_edges_for_tag(tag_id)
 
 
 def tag_has_model_output_edges(db: Database, tag_id: str) -> bool:
     """Return whether the tag has any outbound provenance edges."""
-    return (
-        db.tag_model_output.count(
-            query_spec=AggregateQuerySpec(
-                collection_name="tag_model_output",
-                criteria=(QueryCriterion("_from", QueryOperator.EQ, tag_id),),
-            )
-        )
-        > 0
-    )
+    return db.ml.count_tag_model_output_edges_for_tag(tag_id) > 0
 
 
 def delete_tag_model_output_edges_for_outputs(db: Database, output_ids: list[str]) -> int:
@@ -106,9 +78,4 @@ def delete_tag_model_output_edges_for_outputs(db: Database, output_ids: list[str
     if not output_ids:
         return 0
 
-    return db.tag_model_output.delete(
-        query_spec=WriteQuerySpec(
-            collection_name="tag_model_output",
-            criteria=(QueryCriterion("_to", QueryOperator.IN, output_ids),),
-        )
-    )
+    return db.ml.delete_tag_model_output_edges_for_outputs(output_ids)

@@ -222,6 +222,15 @@ class FakeDatabase:
             file_states=file_states,
         )
         self.calibration_state = FakeCalibrationStateOps(states=list(calibration_states or []))
+        # Expose app-tier API used by pipeline_svc
+        _cal_state = self.calibration_state
+        self.app = type(
+            "FakeAppDb",
+            (),
+            {
+                "count_calibration_states": lambda _self: _cal_state.count(),
+            },
+        )()
 
 
 @dataclass

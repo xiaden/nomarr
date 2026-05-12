@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -18,7 +18,11 @@ class TestHealShortFiles:
     """Tests for _heal_short_files."""
 
     @pytest.mark.unit
-    def test_no_short_files_returns_zero(self) -> None:
+    @patch("nomarr.components.library.validate_scan_state_comp.transition_file_state")
+    def test_no_short_files_returns_zero(
+        self,
+        mock_transition_file_state: MagicMock,
+    ) -> None:
         mock_db = MagicMock()
         with patch(
             "nomarr.components.library.validate_scan_state_comp.find_short_files_missing_too_short",
@@ -26,10 +30,14 @@ class TestHealShortFiles:
         ):
             result = _heal_short_files(mock_db, "libraries/1", 30)
         assert result == 0
-        mock_db.file_states.transition.assert_not_called()
+        mock_transition_file_state.assert_not_called()
 
     @pytest.mark.unit
-    def test_short_files_calls_set_too_short_for_each(self) -> None:
+    @patch("nomarr.components.library.validate_scan_state_comp.transition_file_state")
+    def test_short_files_calls_transition_for_each(
+        self,
+        mock_transition_file_state: MagicMock,
+    ) -> None:
         mock_db = MagicMock()
         file_ids = ["library_files/a", "library_files/b"]
         with patch(
@@ -38,9 +46,10 @@ class TestHealShortFiles:
         ):
             result = _heal_short_files(mock_db, "libraries/1", 30)
         assert result == 2
-        assert mock_db.file_states.transition.call_count == 2
-        for fid in file_ids:
-            mock_db.file_states.transition.assert_any_call([fid], STATE_NOT_TOO_SHORT, STATE_TOO_SHORT)
+        assert mock_transition_file_state.call_args_list == [
+            call(mock_db, ["library_files/a"], STATE_NOT_TOO_SHORT, STATE_TOO_SHORT),
+            call(mock_db, ["library_files/b"], STATE_NOT_TOO_SHORT, STATE_TOO_SHORT),
+        ]
 
     @pytest.mark.unit
     def test_query_uses_outbound_library_edge_traversal(self) -> None:

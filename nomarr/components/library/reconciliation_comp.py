@@ -49,7 +49,7 @@ def claim_files_for_reconciliation(
     candidates = [
         candidate
         for file_id in stale_ids
-        if (candidate := cast("dict[str, Any] | None", db.library_files.get(_id=file_id))) is not None
+        if (candidate := cast("dict[str, Any] | None", db.library.get_file(file_id))) is not None
     ]
 
     claimed: list[dict[str, Any]] = []
@@ -84,7 +84,7 @@ def set_file_written(db: Database, file_key: str) -> None:
 
     transition_file_state(db, [file_id], STATE_TAGS_NOT_WRITTEN, STATE_TAGS_WRITTEN)
     transition_file_state(db, [file_id], STATE_TAGS_STALE, STATE_TAGS_CURRENT)
-    db.worker_claims.delete(file_id=file_id)
+    db.app.release_claim(file_id)
 
 
 def release_claim(db: Database, file_key: str) -> None:
@@ -93,7 +93,7 @@ def release_claim(db: Database, file_key: str) -> None:
         file_id = file_key
     else:
         file_id = f"library_files/{file_key}"
-    db.worker_claims.delete(file_id=file_id)
+    db.app.release_claim(file_id)
 
 
 def count_files_needing_reconciliation(db: Database, library_id: str) -> int:

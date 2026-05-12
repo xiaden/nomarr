@@ -13,7 +13,7 @@ from nomarr.workflows.navidrome.generate_playlists_wf import generate_playlists
 def _make_db(plays: list[dict[str, object]] | None = None) -> MagicMock:
     """Create a mock Database with configurable play-history data."""
     db = MagicMock()
-    db.navidrome_playcounts.get_top_plays.return_value = plays or []
+    db.app.get_top_nd_plays.return_value = plays or []
     return db
 
 

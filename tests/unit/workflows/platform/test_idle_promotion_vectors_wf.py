@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -36,7 +36,7 @@ class TestIdlePromotionVectorsWorkflow:
         mock_targets: MagicMock,
         mock_workflow: MagicMock,
     ) -> None:
-        """Promotes backbones when lock is successfully acquired."""
+        """Promotes backbones when the distributed lock is successfully acquired."""
         from nomarr.workflows.platform.idle_promotion_vectors_wf import (
             idle_promotion_vectors_workflow,
         )
@@ -45,27 +45,29 @@ class TestIdlePromotionVectorsWorkflow:
         mock_nlists.return_value = 100
 
         db = MagicMock()
-        db.locks.count.return_value = 2
-        db.locks.get.lte.return_value = []
-        db.locks.get.side_effect = [
-            None,
-            {"holder": "worker:tag:0"},
-            None,
-            {"holder": "worker:tag:0"},
-        ]
-        db.locks.delete.return_value = 1
 
-        result = idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
+        with (
+            patch(f"{MODULE_UNDER_TEST}.locks_comp.reap_stale_locks") as mock_reap,
+            patch(f"{MODULE_UNDER_TEST}.locks_comp.acquire_distributed_lock") as mock_acquire,
+            patch(f"{MODULE_UNDER_TEST}.locks_comp.release_distributed_lock") as mock_release,
+        ):
+            mock_acquire.side_effect = [True, True]
+
+            result = idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
 
         assert result == 2
         assert mock_workflow.call_count == 2
         mock_workflow.assert_any_call(db, "effnet", "lib1", 100, "/models")
         mock_workflow.assert_any_call(db, "musicnn", "lib2", 100, "/models")
-
-        assert db.locks.insert.call_count == 2
-        assert db.locks.delete.call_count == 2
-        db.locks.delete.assert_any_call(document_reference="vector_promotion:effnet__lib1")
-        db.locks.delete.assert_any_call(document_reference="vector_promotion:musicnn__lib2")
+        mock_reap.assert_called_once_with(db, "worker:tag:0", stale_after_ms=600_000)
+        assert mock_acquire.call_args_list == [
+            call(db, "vector_promotion", "effnet__lib1", "worker:tag:0", 1800),
+            call(db, "vector_promotion", "musicnn__lib2", "worker:tag:0", 1800),
+        ]
+        assert mock_release.call_args_list == [
+            call(db, "vector_promotion", "effnet__lib1", "worker:tag:0"),
+            call(db, "vector_promotion", "musicnn__lib2", "worker:tag:0"),
+        ]
 
     @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow")
     @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
@@ -76,7 +78,7 @@ class TestIdlePromotionVectorsWorkflow:
         mock_targets: MagicMock,
         mock_workflow: MagicMock,
     ) -> None:
-        """Skips promotion when lock is held by another worker."""
+        """Skips promotion when the distributed lock is held elsewhere."""
         from nomarr.workflows.platform.idle_promotion_vectors_wf import (
             idle_promotion_vectors_workflow,
         )
@@ -85,20 +87,22 @@ class TestIdlePromotionVectorsWorkflow:
         mock_nlists.return_value = 100
 
         db = MagicMock()
-        db.locks.count.return_value = 1
-        db.locks.get.lte.return_value = []
-        db.locks.get.return_value = {
-            "document_reference": "vector_promotion:effnet__lib1",
-            "holder": "other-worker",
-            "expires_at": 9_999_999_999_999.0,
-        }
 
-        result = idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
+        with (
+            patch(f"{MODULE_UNDER_TEST}.locks_comp.reap_stale_locks") as mock_reap,
+            patch(
+                f"{MODULE_UNDER_TEST}.locks_comp.acquire_distributed_lock",
+                return_value=False,
+            ) as mock_acquire,
+            patch(f"{MODULE_UNDER_TEST}.locks_comp.release_distributed_lock") as mock_release,
+        ):
+            result = idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
 
         assert result == 0
         mock_workflow.assert_not_called()
-        db.locks.insert.assert_not_called()
-        db.locks.delete.assert_not_called()
+        mock_reap.assert_called_once_with(db, "worker:tag:0", stale_after_ms=600_000)
+        mock_acquire.assert_called_once_with(db, "vector_promotion", "effnet__lib1", "worker:tag:0", 1800)
+        mock_release.assert_not_called()
 
     @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow")
     @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
@@ -119,16 +123,21 @@ class TestIdlePromotionVectorsWorkflow:
         mock_workflow.side_effect = RuntimeError("drain failed")
 
         db = MagicMock()
-        db.locks.count.return_value = 1
-        db.locks.get.lte.return_value = []
-        db.locks.get.side_effect = [None, {"holder": "worker:tag:0"}]
-        db.locks.delete.return_value = 1
 
-        result = idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
+        with (
+            patch(f"{MODULE_UNDER_TEST}.locks_comp.reap_stale_locks") as mock_reap,
+            patch(
+                f"{MODULE_UNDER_TEST}.locks_comp.acquire_distributed_lock",
+                return_value=True,
+            ) as mock_acquire,
+            patch(f"{MODULE_UNDER_TEST}.locks_comp.release_distributed_lock") as mock_release,
+        ):
+            result = idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
 
-        # Promotion failed but lock was still released
         assert result == 0
-        db.locks.delete.assert_called_once_with(document_reference="vector_promotion:effnet__lib1")
+        mock_reap.assert_called_once_with(db, "worker:tag:0", stale_after_ms=600_000)
+        mock_acquire.assert_called_once_with(db, "vector_promotion", "effnet__lib1", "worker:tag:0", 1800)
+        mock_release.assert_called_once_with(db, "vector_promotion", "effnet__lib1", "worker:tag:0")
 
     @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow")
     @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
@@ -139,7 +148,7 @@ class TestIdlePromotionVectorsWorkflow:
         mock_targets: MagicMock,
         mock_workflow: MagicMock,
     ) -> None:
-        """Stale locks from crashed workers are force-released."""
+        """Reaps stale locks before attempting the next promotion target."""
         from nomarr.workflows.platform.idle_promotion_vectors_wf import (
             idle_promotion_vectors_workflow,
         )
@@ -148,16 +157,19 @@ class TestIdlePromotionVectorsWorkflow:
         mock_nlists.return_value = 100
 
         db = MagicMock()
-        db.locks.count.return_value = 2
-        db.locks.get.lte.return_value = [
-            {
-                "document_reference": "vector_promotion:yamnet__lib3",
-                "lock_type": "vector_promotion",
-            },
-        ]
-        db.locks.get.side_effect = [None, {"holder": "worker:tag:0"}]
-        db.locks.delete.return_value = 1
 
-        idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
+        with (
+            patch(f"{MODULE_UNDER_TEST}.locks_comp.reap_stale_locks") as mock_reap,
+            patch(
+                f"{MODULE_UNDER_TEST}.locks_comp.acquire_distributed_lock",
+                return_value=True,
+            ) as mock_acquire,
+            patch(f"{MODULE_UNDER_TEST}.locks_comp.release_distributed_lock") as mock_release,
+        ):
+            result = idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
 
-        db.locks.delete.assert_any_call(document_reference="vector_promotion:yamnet__lib3")
+        assert result == 1
+        mock_reap.assert_called_once_with(db, "worker:tag:0", stale_after_ms=600_000)
+        mock_acquire.assert_called_once_with(db, "vector_promotion", "effnet__lib1", "worker:tag:0", 1800)
+        mock_release.assert_called_once_with(db, "vector_promotion", "effnet__lib1", "worker:tag:0")
+        mock_workflow.assert_called_once_with(db, "effnet", "lib1", 100, "/models")

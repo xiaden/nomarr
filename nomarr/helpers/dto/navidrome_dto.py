@@ -210,21 +210,6 @@ class StaticPlaylistResult:
     saved_path: str | None = None
 
 
-@dataclass(frozen=True)
-class PushPlaylistResult:
-    """Result from pushing a playlist to Navidrome via Subsonic API.
-
-    Attributes:
-        resolved_count: Number of file IDs successfully mapped to Navidrome song IDs.
-        unresolved_count: Number of file IDs with no Navidrome mapping.
-        playlist_id: Navidrome playlist ID (from create or replace).
-    """
-
-    resolved_count: int
-    unresolved_count: int
-    playlist_id: str
-
-
 class NavidromeStaticPlaylistResult(TypedDict):
     """Result from pushing a static playlist to Navidrome.
 
