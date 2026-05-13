@@ -287,4 +287,4 @@ class AppDb:
         return self._navidrome.get_nd_id_edge(track_id)
 
     def list_collections(self) -> list[str]:
-        return list(self._db.collections())
+        return [c["name"] for c in self._db.collections()]

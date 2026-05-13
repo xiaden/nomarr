@@ -23,7 +23,7 @@ Parts README: `artifacts/designs/parts/collection-first-query-spec-persistence/R
 ## Capability Families
 
 | Family | Status | Notes |
-|--------|--------|-------|
+| -------- | -------- | ------- |
 | Document read | implemented in Part A metadata | Generic collection-first reads with validated criteria |
 | Document write | implemented in Part A metadata | Insert/update/upsert/delete family |
 | Aggregation | implemented in Part A metadata | Count, aggregate, collect-like summaries |
@@ -37,7 +37,7 @@ Parts README: `artifacts/designs/parts/collection-first-query-spec-persistence/R
 ## Query-Spec / Validation Contracts
 
 | Symbol / Contract | Status | Notes |
-|-------------------|--------|-------|
+| ------------------- | -------- | ------- |
 | `query_specs.py` public contracts | implemented in Part A | Capability metadata + validated criteria contracts |
 | `query_templates.py` template registry | implemented in Part A | Fixed first-party AQL templates only |
 | `aql_validation.py` validation helpers | implemented in Part A | Spec/template/bind-time validation + parse/explain hooks |
@@ -48,7 +48,7 @@ Parts README: `artifacts/designs/parts/collection-first-query-spec-persistence/R
 ## Compatibility / Migration Decisions
 
 | Topic | Current Decision |
-|------|------------------|
+| ------ | ------------------ |
 | Field accessors | Compatibility shims only; not normative architecture |
 | Collection families | Internal scaffolding, not sacred public architecture |
 | `transition` | Must be re-justified during implementation planning |
@@ -65,7 +65,7 @@ _Add actual implemented signatures, modules, helpers, and enforcement rules here
 **Created modules**
 
 | Symbol | Module | Notes |
-|--------|--------|-------|
+| -------- | -------- | ------- |
 | `CollectionFamily` | `nomarr.persistence.query_specs` | Closed enum: `DOCUMENT`, `EDGE`, `VECTOR`, `STATE_GRAPH` |
 | `CapabilityFamily` | `nomarr.persistence.query_specs` | Closed enum including storage-native `ANN_SEARCH` |
 | `QueryOperator` | `nomarr.persistence.query_specs` | Normalized operator taxonomy for validated criteria |
@@ -103,7 +103,7 @@ _Add actual implemented signatures, modules, helpers, and enforcement rules here
 **Created/modified modules**
 
 | Symbol | Module | Notes |
-|--------|--------|-------|
+| -------- | -------- | ------- |
 | `SupportsCollectionFirstSurface` | `nomarr.persistence.accessors` | Structural protocol for the collection-owned generic persistence surface |
 | `CollectionGet` | `nomarr.persistence.accessors` | Normative read root exposed as `collection.get`; supports `__call__`, `.many`, `.in_`, `.gte`, `.lte`, `.like` |
 | `CollectionDelete` | `nomarr.persistence.accessors` | Normative delete root exposed as `collection.delete`; supports `__call__`, `.in_`, `.unreferenced`, and holds the injected `cascade` slot |
@@ -141,7 +141,7 @@ _Add actual implemented signatures, modules, helpers, and enforcement rules here
 **Helpers that must be explicitly classified**
 
 | Symbol | Current module | Required review outcome |
-|------|----------------|-------------------------|
+| ------ | ---------------- | ------------------------- |
 | `StateGraphCollection.transition(file_ids: list[str], from_state: str, to_state: str) -> None` | `nomarr.persistence.collections_base` | Keep only if it remains a true atomic state-graph primitive under the DD’s stricter storage-native test; otherwise replace with a normalized relationship/state mutation surface in the same plan. |
 | `BaseCollection.count_inbound_connections(edge_collection: str, *, filter_field: str, filter_values: list[Any], return_field: str = "_id", label: str = "value", limit: int \| None = None, offset: int = 0) -> list[Document]` | `nomarr.persistence.collections_base` | Keep only if it is a reusable relationship-native primitive rather than a convenience helper. |
 | `BaseCollection.count_outbound_connections(edge_collection: str, *, filter_field: str, filter_values: list[Any], return_field: str = "_id", label: str = "value", limit: int \| None = None, offset: int = 0) -> list[Document]` | `nomarr.persistence.collections_base` | Keep only if it is a reusable relationship-native primitive rather than a convenience helper. |
@@ -156,7 +156,7 @@ _Add actual implemented signatures, modules, helpers, and enforcement rules here
 **Existing higher-layer seams expected to absorb orchestration if helpers move**
 
 | Symbol | Module | Current role |
-|--------|--------|--------------|
+| -------- | -------- | -------------- |
 | `transition_file_state(db: Database, file_ids: list[str], from_state: str, to_state: str) -> None` | `nomarr.components.library.library_file_state_comp` | Validation/policy wrapper around persistence transition; likely owner of non-native transition policy. |
 | `get_hot_namespace(db: Database, backbone_id: str, library_key: str) -> VectorsTrackHotNamespace` | `nomarr.components.ml.vectors.ml_vector_registry_comp` | Resolves registered hot vector namespaces through `Database.register(...)`. |
 | `get_cold_namespace(db: Database, backbone_id: str, library_key: str, collection_suffix: str \| None = None) -> VectorsTrackColdNamespace` | `nomarr.components.ml.vectors.ml_vector_registry_comp` | Resolves registered cold vector namespaces through `Database.register(...)`. |
@@ -169,14 +169,12 @@ _Add actual implemented signatures, modules, helpers, and enforcement rules here
 - Any helper kept in persistence must remain single-step, storage-shaped, and justified as generic capability, true storage-native primitive, or narrow storage maintenance.
 - No Part C refactor may reintroduce module-scope constructor imports that recreate the `nomarr.persistence.base` / `constructor` partial-initialization cycle seen in prior persistence work.
 
-
-
 ### Plan C
 
 **Final classification outcomes**
 
 | Classification | Symbol | Module | Final outcome |
-|------|--------|--------|---------------|
+| ------ | -------- | -------- | --------------- |
 | Storage-native primitive | `BaseCollection.count_inbound_connections(edge_collection: str, *, filter_field: str, filter_values: list[Any], return_field: str = "_id", label: str = "value", limit: int \| None = None, offset: int = 0) -> list[Document]` | `nomarr.persistence.collections_base` | Retained as a relationship-native primitive over the constructor verb. |
 | Storage-native primitive | `BaseCollection.count_outbound_connections(edge_collection: str, *, filter_field: str, filter_values: list[Any], return_field: str = "_id", label: str = "value", limit: int \| None = None, offset: int = 0) -> list[Document]` | `nomarr.persistence.collections_base` | Retained as a relationship-native primitive over the constructor verb. |
 | Storage-native primitive | `CollectionDelete.unreferenced(edge_collection: str) -> int` | `nomarr.persistence.accessors` | Retained as a narrow storage-maintenance primitive that delegates to `delete_unreferenced(...)`. |
@@ -197,8 +195,6 @@ _Add actual implemented signatures, modules, helpers, and enforcement rules here
 - `tests/unit/components/ml/vectors/test_ml_vector_retrieve_comp.py` — strengthened coverage that similarity search stays ANN-native and does not fall back to `get(...)`/`ReadQuerySpec` retrieval.
 - `tests/unit/components/library/test_library_file_state_comp.py` — strengthened coverage that state transitions stay on the validated component path and delegate via `db.file_states.transition(...)` rather than direct edge mutation calls.
 
-
-
 ---
 
 ### Plan D
@@ -206,7 +202,7 @@ _Add actual implemented signatures, modules, helpers, and enforcement rules here
 **Final caller migration / cleanup outcomes**
 
 | Outcome | Symbol / Rule | Status | Notes |
-|------|----------------|--------|-------|
+| ------ | ---------------- | -------- | ------- |
 | Removed compatibility shim | `VectorCollection.delete_by_file_id(file_id: str) -> int` | removed | Deleted after caller migration; vector deletion now belongs to collection-first delete criteria or higher-layer orchestration. |
 | Removed compatibility shim | `VectorCollection.delete_by_file_ids(file_ids: list[str]) -> int` | removed | Deleted with its last transitional callers; no longer exposed on `VectorCollection`. |
 | Enforcement | Import-linter contract `Higher layers must not import persistence collection/accessor internals` | implemented | Keeps `Database` as the higher-layer public persistence entry point. |
@@ -234,7 +230,7 @@ _Add actual implemented signatures, modules, helpers, and enforcement rules here
 **Supplementary Phase 5 blocker audit closure**
 
 | Caller | Outcome | Notes |
-|------|---------|-------|
+| ------ | --------- | ------- |
 | `nomarr/app.py` | migrated | Replaced `db.health.component_id.{upsert,update}(...)` with collection-first `db.health.{upsert,update}(component_id=..., fields=...)`. |
 | `nomarr/services/infrastructure/worker_system_svc.py` | migrated | Replaced `worker_restart_policy.component_id.{get,update,upsert}(...)` and `meta.key.{get,upsert}(...)` with collection-first roots. |
 | `nomarr/services/infrastructure/workers/discovery_worker.py` | migrated | Replaced `db.health.component_id.{upsert,update}(...)` with collection-first health operations. |
@@ -253,7 +249,7 @@ _Add actual implemented signatures, modules, helpers, and enforcement rules here
 ## Decisions Log
 
 | Plan | Decision | Reason |
-|------|----------|--------|
+| ------ | ---------- | -------- |
 | A | Capability families, query specs, template assets, and surface API remain explicitly separated in the foundation modules. | Prevents the old overloaded-verb model from reappearing under a new name. |
 | A | Naming grammar enforcement lives in the Part A foundation instead of being deferred to later cleanup. | Prevents new bespoke generic helper names from proliferating during migration. |
 | A | Metadata bridge methods on `BaseCollection` / `FieldAccessor` are underscore-prefixed internal helpers only. | Lets validation/template code inspect legacy structures without re-legitimizing field-first APIs as the target architecture. |

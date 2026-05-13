@@ -374,7 +374,7 @@ def test_delete_nd_tracks_for_file_delegates_to_navidrome() -> None:
 @pytest.mark.unit
 def test_list_collections_delegates_to_wrapped_database() -> None:
     db, _, _, _, _ = _make_app_db()
-    db._db.collections.return_value = ["libraries", "library_files"]
+    db._db.collections.return_value = [{"name": "libraries"}, {"name": "library_files"}]
 
     result = db.list_collections()
 

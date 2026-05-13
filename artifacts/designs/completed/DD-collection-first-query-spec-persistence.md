@@ -73,7 +73,7 @@ This design does **not**:
 ### Layer Mapping
 
 | Component | Layer | Responsibility |
-|-----------|-------|----------------|
+| ----------- | ------- | ---------------- |
 | `nomarr/persistence/db.py` | persistence | Owns the connection, instantiates collections, exposes the stable `Database` facade, and remains the only public entry point |
 | `nomarr/persistence/collections.py` | persistence | Declares concrete collection wrappers, field metadata, and collection-family selection |
 | `nomarr/persistence/collections_base.py` | persistence | Defines generic collection families (`BaseCollection`, `DocumentCollection`, `EdgeCollection`, `StateGraphCollection`, `VectorCollection`) and only the storage-native special capabilities that genuinely belong in persistence |
@@ -137,7 +137,7 @@ This design intentionally avoids standardizing a new Python call signature in th
 The persistence surface should be described using a small number of normalized capability families.
 
 | Capability family | Scope | What belongs here | What does not belong here |
-|-------------------|-------|-------------------|---------------------------|
+| ------------------- | ------- | ------------------- | --------------------------- |
 | **Document read** | generic persistence | get one, get many, equality/inclusion/range/pattern criteria, pagination | graph traversals, ANN search, multi-step fetch pipelines |
 | **Document write** | generic persistence | insert, update, upsert, delete | cross-collection orchestration, edge maintenance side effects not intrinsic to one collection write |
 | **Aggregation** | generic persistence | count, aggregate, distinct/collect-like storage-shaped summaries | domain DTO shaping, business scoring, semantic post-processing |
@@ -344,10 +344,12 @@ At runtime, persistence should execute only reviewed, cataloged query templates/
 **Summary:** Retain the current DD direction, formalize verb specs, and continue treating collection and field surfaces as co-equal architectural targets.
 
 **Pros**
+
 - Lowest change to the existing document and live API framing
 - Easier to migrate incrementally without confronting field-surface complexity directly
 
 **Cons**
+
 - Preserves the overloaded “verb” concept as the architectural center
 - Keeps field-first complexity alive without proving it still earns its cost
 - Does not normalize naming well
@@ -360,6 +362,7 @@ At runtime, persistence should execute only reviewed, cataloged query templates/
 **Summary:** Keep `Database` as the only public boundary, make collection namespaces primary, use validated query specs for generic document operations, keep only truly storage-native primitives special, and treat field accessors as transitional compatibility shims.
 
 **Pros**
+
 - Addresses the overengineered field-first surface directly
 - Produces a normalized vocabulary that separates generic operations from storage-native behavior
 - Makes AQL validation an explicit architectural responsibility
@@ -367,6 +370,7 @@ At runtime, persistence should execute only reviewed, cataloged query templates/
 - Better distinguishes persistence responsibilities from higher-layer orchestration
 
 **Cons**
+
 - Requires a deliberate migration story rather than a purely internal refactor
 - May eventually require an ADR to supersede or narrow the field-ergonomics part of ADR-030 once migration is proven
 - Forces sharper decisions about which existing helpers do not belong in persistence
@@ -378,10 +382,12 @@ At runtime, persistence should execute only reviewed, cataloged query templates/
 **Summary:** Generalize persistence into a flexible spec language capable of expressing arbitrary AQL-shaped queries.
 
 **Pros**
+
 - Maximum flexibility
 - Could absorb many edge cases under one engine
 
 **Cons**
+
 - Violates ADR-025’s constrained persistence direction
 - Makes validation, review, and security materially harder
 - Blurs the line between persistence primitives and orchestration/query authoring
@@ -457,6 +463,7 @@ The migration is not complete merely because new modules exist. It is complete o
 **Risk:** The codebase may still rely heavily on field-first call sites, and a too-aggressive migration would create noise or breakage.
 
 **Mitigation:**
+
 - keep field accessors as explicit compatibility shims first
 - stop adding new field-first APIs
 - migrate callers in planned phases rather than forcing immediate flag-day removal
@@ -466,6 +473,7 @@ The migration is not complete merely because new modules exist. It is complete o
 **Risk:** “Query spec” could become just a more fashionable way to hide uncontrolled complexity.
 
 **Mitigation:**
+
 - keep capability families small and reviewed
 - keep operators/criteria separate from capability-family naming
 - keep query specs separate from template assets and from public API naming
@@ -476,6 +484,7 @@ The migration is not complete merely because new modules exist. It is complete o
 **Risk:** Some helpers may be prematurely pushed upward or incorrectly kept special.
 
 **Mitigation:**
+
 - require justification for every special capability
 - classify based on storage-native semantics, not historical naming
 - prefer composition above persistence when the operation is really several generic calls
@@ -485,6 +494,7 @@ The migration is not complete merely because new modules exist. It is complete o
 **Risk:** Parse/plan validation may require infrastructure that is not always present locally.
 
 **Mitigation:**
+
 - separate spec-time validation from environment-backed parse/explain checks
 - make parse/plan checks mandatory in CI and available locally where practical
 - keep runtime failure modes explicit when validation cannot be completed ahead of time
@@ -494,6 +504,7 @@ The migration is not complete merely because new modules exist. It is complete o
 **Risk:** Reworking query specs/templates/validation could recreate prior import-cycle or shared-state hazards.
 
 **Mitigation:**
+
 - keep metadata/spec modules side-effect free
 - bind runtime state per `Database` instance only
 - avoid class-level caches that capture database handles

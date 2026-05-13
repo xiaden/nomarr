@@ -7,7 +7,7 @@ Design doc: `artifacts/designs/pending/DD-collection-first-query-spec-persistenc
 ## Parts
 
 | Part | Title | Depends On | Layers | Session Scope |
-|------|-------|-----------|--------|---------------|
+| ------ | ------- | ----------- | -------- | --------------- |
 | A | Query-spec foundation and AQL validation | None | persistence, tests | ~10 steps |
 | B | Collection-first generic surface and compatibility shims | A | persistence | ~12 steps |
 | C | Reclassify special capabilities and move orchestration up-layer | B | persistence, components/workflows | ~12 steps |
@@ -82,6 +82,5 @@ Finish the migration and enforce the new architecture:
 - update docs or ADR follow-up notes if implementation evidence requires a formal narrowing of field-accessor expectations.
 
 This part should leave the persistence layer aligned with the DD’s exit criteria rather than merely introducing parallel mechanisms.
-
 
 **Current status:** Parts A through D are complete. Part D caller migration cleanup, enforcement, retained seam notes, and final verification results are recorded in `CONTRACTS.md`.
