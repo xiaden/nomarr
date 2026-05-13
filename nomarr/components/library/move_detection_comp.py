@@ -10,6 +10,7 @@ from typing import Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 from nomarr.components.library.library_file_mutation_comp import update_file_path
+from nomarr.components.library.library_file_query_comp import find_move_candidate_by_chromaprint
 from nomarr.components.library.metadata_extraction_comp import compute_chromaprint_for_file
 from nomarr.components.metadata.entity_seeding_comp import (
     _extract_entity_tags,
@@ -266,3 +267,65 @@ def apply_detected_moves(
         applied += 1
 
     return applied
+
+
+def detect_file_move_via_db(
+    new_file_entry: dict[str, Any],
+    library_id: str,
+    db: Database,
+) -> FileMove | None:
+    """Check whether ``new_file_entry`` is a moved version of an existing DB file.
+
+    Computes the chromaprint for the new file, then queries the DB for a file
+    with the same fingerprint belonging to ``library_id``.  Used during the
+    final scan pass when there are no in-memory ``missing_docs_map`` candidates
+    (e.g. files moved from a folder that vanished entirely from disk).
+
+    Returns a :class:`FileMove` when a match is found, ``None`` otherwise.
+    """
+    new_path = new_file_entry["path"]
+
+    try:
+        library_path = build_library_path_from_input(new_path, db)
+        if not library_path.is_valid():
+            return None
+        chromaprint = compute_chromaprint_for_file(library_path)
+    except Exception as e:
+        logger.warning("Failed to compute chromaprint for %s: %s", new_path, e)
+        return None
+
+    if not chromaprint:
+        return None
+
+    candidate = find_move_candidate_by_chromaprint(db, library_id, chromaprint)
+    if candidate is None:
+        return None
+
+    # Verify path actually changed (guard against self-match on re-scan)
+    if candidate.get("path") == new_path:
+        return None
+
+    # Duration tolerance check
+    removed_duration = candidate.get("duration_seconds")
+    new_duration = new_file_entry.get("duration_seconds")
+    if removed_duration is not None and new_duration is not None and abs(removed_duration - new_duration) > 1.0:
+        logger.warning(
+            "Chromaprint collision: %s vs %s (duration %ss vs %ss)",
+            candidate.get("path"),
+            new_path,
+            removed_duration,
+            new_duration,
+        )
+        return None
+
+    logger.info("File moved (DB lookup): %s → %s", candidate.get("path"), new_path)
+    return FileMove(
+        old_path=candidate["path"],
+        new_path=new_path,
+        file_id=candidate["_id"],
+        chromaprint=chromaprint,
+        old_duration=removed_duration,
+        new_duration=new_duration,
+        new_file_size=new_file_entry["file_size"],
+        new_modified_time=new_file_entry["modified_time"],
+    )

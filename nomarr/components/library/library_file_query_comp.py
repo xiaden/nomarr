@@ -60,7 +60,7 @@ def get_existing_file_paths(db: Database, paths: list[str]) -> set[str]:
 def _library_file_docs_for_library(db: Database, library_id: str) -> list[dict[str, Any]]:
     return cast(
         "list[dict[str, Any]]",
-        db.library.list_library_files(normalize_library_id(library_id), limit=DEFAULT_LIMIT),
+        db.library.list_library_files(normalize_library_id(library_id), limit=None),
     )
 
 
@@ -550,14 +550,9 @@ def get_files_for_folder(
     library_id: str,
     folder_rel_path: str,
 ) -> dict[str, dict[str, Any]]:
-    """Get file documents for a single relative folder path."""
-    file_docs = _hydrate_files_with_tagged_state(db, _library_file_docs_for_library(db, library_id))
-    return {
-        file_doc["path"]: file_doc
-        for file_doc in file_docs
-        if isinstance(file_doc.get("path"), str)
-        and _matches_folder_rel_path(file_doc.get("normalized_path"), folder_rel_path)
-    }
+    """Get file documents for a single folder. Has_tagged_state is annotated in-query."""
+    file_docs = db.library.list_library_files_for_folder(normalize_library_id(library_id), folder_rel_path)
+    return {file_doc["path"]: file_doc for file_doc in file_docs if isinstance(file_doc.get("path"), str)}
 
 
 def get_files_for_folders(
@@ -578,6 +573,16 @@ def get_files_for_folders(
             for folder_rel_path in folder_rel_paths
         )
     }
+
+
+def find_move_candidate_by_chromaprint(
+    db: Database,
+    library_id: str,
+    chromaprint: str,
+) -> dict[str, Any] | None:
+    """Return the library file matching ``chromaprint``, or ``None``. Used for DB-lookup move detection."""
+    result = db.library.find_library_file_by_chromaprint(normalize_library_id(library_id), chromaprint)
+    return cast("dict[str, Any] | None", result)
 
 
 def count_library_files(db: Database, library_id: str) -> int:
@@ -611,7 +616,7 @@ def get_library_counts(db: Database) -> dict[str, dict[str, int]]:
     result: dict[str, dict[str, int]] = {}
     for library_key in db.library.list_library_keys():
         library_id = normalize_library_id(library_key)
-        file_docs = db.library.list_library_files(library_id, limit=DEFAULT_LIMIT)
+        file_docs = db.library.list_library_files(library_id, limit=None)
         folder_paths = {parent for file_doc in file_docs if (parent := _path_parent(file_doc.get("path"))) is not None}
         result[library_id] = {
             "file_count": len(file_docs),

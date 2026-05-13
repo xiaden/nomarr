@@ -57,11 +57,14 @@ class LibraryDb:
     def get_file_by_path(self, path: str, library_id: str) -> dict | None:
         return self._files.get_file_by_path(path, library_id)
 
-    def upsert_file(self, payload: dict) -> None:
+    def upsert_file(self, payload: dict) -> str:
         return self._files.upsert_file(payload)
 
-    def upsert_files_batch(self, payloads: list[dict]) -> None:
+    def upsert_files_batch(self, payloads: list[dict]) -> list[str]:
         return self._files.upsert_files_batch(payloads)
+
+    def upsert_files_for_library(self, library_id: str, payloads: list[dict]) -> list[str]:
+        return self._files.upsert_files_for_library(library_id, payloads)
 
     def update_file(self, file_id: str, fields: dict) -> None:
         return self._files.update_file(file_id, fields)
@@ -95,6 +98,12 @@ class LibraryDb:
 
     def list_library_files(self, library_id: str, *, limit: int | None = None) -> list[dict]:
         return self._files.list_library_files(library_id, limit=limit)
+
+    def list_library_files_for_folder(self, library_id: str, folder_rel_path: str) -> list[dict]:
+        return self._files.list_library_files_for_folder(library_id, folder_rel_path)
+
+    def find_library_file_by_chromaprint(self, library_id: str, chromaprint: str) -> dict | None:
+        return self._files.find_library_file_by_chromaprint(library_id, chromaprint)
 
     def count_library_file_links(self, library_id: str) -> int:
         return self._files.count_library_file_links(library_id)

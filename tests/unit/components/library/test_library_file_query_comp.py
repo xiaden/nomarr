@@ -131,7 +131,7 @@ def test_get_library_file_scoped_filters_library_files() -> None:
     result = get_library_file(db, "song.flac", library_id="libraries/1")
 
     assert result == row
-    db.library.list_library_files.assert_called_once_with("libraries/1", limit=DEFAULT_LIMIT)
+    db.library.list_library_files.assert_called_once_with("libraries/1", limit=None)
 
 
 @pytest.mark.unit
@@ -222,7 +222,7 @@ def test_list_library_files_scoped_filters_in_python() -> None:
 
     assert rows == [matching_row]
     assert total == 1
-    db.library.list_library_files.assert_called_once_with("libraries/1", limit=DEFAULT_LIMIT)
+    db.library.list_library_files.assert_called_once_with("libraries/1", limit=None)
 
 
 @pytest.mark.unit
@@ -283,18 +283,14 @@ def test_get_files_for_folder_marks_tagged_state_from_app_facade() -> None:
         "_id": "library_files/1",
         "path": "D:/Music/Artist/Album/song.flac",
         "normalized_path": "Artist/Album/song.flac",
+        "has_tagged_state": True,
     }
-    db.library.list_library_files.return_value = [
-        matching_doc,
-        {"_id": "library_files/2", "path": "D:/Music/Other/song.flac", "normalized_path": "Other/song.flac"},
-    ]
-    db.app.list_files_in_state.return_value = ["library_files/1"]
+    db.library.list_library_files_for_folder.return_value = [matching_doc]
 
     result = get_files_for_folder(db, "libraries/1", "Artist/Album")
 
-    assert result == {matching_doc["path"]: {**matching_doc, "has_tagged_state": True}}
-    db.library.list_library_files.assert_called_once_with("libraries/1", limit=DEFAULT_LIMIT)
-    db.app.list_files_in_state.assert_called_once_with(STATE_TAGGED, limit=None)
+    assert result == {matching_doc["path"]: matching_doc}
+    db.library.list_library_files_for_folder.assert_called_once_with("libraries/1", "Artist/Album")
 
 
 @pytest.mark.unit
@@ -386,7 +382,7 @@ def test_get_files_by_chromaprint_scoped_filters_library_files() -> None:
     result = get_files_by_chromaprint(db, "abc", library_id="libraries/1")
 
     assert result == [matching_doc]
-    db.library.list_library_files.assert_called_once_with("libraries/1", limit=DEFAULT_LIMIT)
+    db.library.list_library_files.assert_called_once_with("libraries/1", limit=None)
 
 
 @pytest.mark.unit
@@ -450,7 +446,7 @@ def test_get_library_counts_groups_parent_folders_by_library() -> None:
     result = get_library_counts(db)
 
     assert result == {"libraries/1": {"file_count": 2, "folder_count": 2}}
-    db.library.list_library_files.assert_called_once_with("libraries/1", limit=DEFAULT_LIMIT)
+    db.library.list_library_files.assert_called_once_with("libraries/1", limit=None)
 
 
 @pytest.mark.unit
@@ -645,7 +641,7 @@ def test_get_tracks_for_matching_scopes_to_library_and_projects_isrc() -> None:
             "isrc": "XYZ789",
         }
     ]
-    db.library.list_library_files.assert_called_once_with("libraries/main", limit=DEFAULT_LIMIT)
+    db.library.list_library_files.assert_called_once_with("libraries/main", limit=None)
     db.library.list_files.assert_not_called()
     db.library.get_tags_for_files_batch.assert_called_once_with(["library_files/1"])
 

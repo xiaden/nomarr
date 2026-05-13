@@ -83,16 +83,28 @@ class LibraryFilesAqlOperations:
         )
         return results[0] if results else None
 
-    def upsert_file(self, payload: dict[str, Any]) -> None:
+    def upsert_file(self, payload: dict[str, Any]) -> str:
         path = payload.get("path")
         if not isinstance(path, str) or not path:
             msg = "File payload must include a non-empty 'path' string"
             raise ValueError(msg)
-        primitives.upsert_by_field(self._db, self.FILE_COLLECTION, "path", path, payload)
+        return primitives.upsert_by_field(self._db, self.FILE_COLLECTION, "path", path, payload)
 
-    def upsert_files_batch(self, payloads: list[dict[str, Any]]) -> None:
+    def upsert_files_batch(self, payloads: list[dict[str, Any]]) -> list[str]:
         for payload in payloads:
-            self.upsert_file(payload)
+            path = payload.get("path")
+            if not isinstance(path, str) or not path:
+                msg = "File payload must include a non-empty 'path' string"
+                raise ValueError(msg)
+        return primitives.upsert_many_by_field(self._db, self.FILE_COLLECTION, "path", payloads)
+
+    def upsert_files_for_library(self, library_id: str, payloads: list[dict[str, Any]]) -> list[str]:
+        """Upsert file docs and ensure library→file ownership edges, returning _ids."""
+        file_ids = self.upsert_files_batch(payloads)
+        edge_docs = [{"_from": library_id, "_to": file_id} for file_id in file_ids]
+        if edge_docs:
+            self.upsert_library_file_links_batch(edge_docs)
+        return file_ids
 
     def update_file(self, file_id: str, fields: dict[str, Any]) -> None:
         primitives.update_document_by_key(self._db, self.FILE_COLLECTION, _extract_key(file_id), fields)
@@ -258,6 +270,60 @@ class LibraryFilesAqlOperations:
         query_lines.append("    RETURN edge._to")
         cursor = self._db.aql.execute("\n".join(query_lines), bind_vars=bind_vars)
         return list(cursor)
+
+    def list_library_files_for_folder(self, library_id: str, folder_rel_path: str) -> list[Document]:
+        """Fetch file docs for a single folder, with ``has_tagged_state`` annotated.
+
+        One query: edge traversal + normalized_path filter + tagged-state sub-query.
+        """
+        bind_vars: dict[str, Any] = {
+            "@lib_edge": self.LIBRARY_FILE_EDGE_COLLECTION,
+            "@state_edge": "file_has_state",
+            "library_id": _as_document_id("libraries", library_id),
+            "is_root": folder_rel_path == "",
+            "folder_prefix": f"{folder_rel_path}/",
+            "tagged_state_id": "file_states/ml_tagged",
+        }
+        query = """
+        FOR edge IN @@lib_edge
+            FILTER edge._from == @library_id
+            LET file = DOCUMENT(edge._to)
+            FILTER file != null
+            FILTER (
+                @is_root
+                ? NOT CONTAINS(file.normalized_path, '/')
+                : STARTS_WITH(file.normalized_path, @folder_prefix)
+            )
+            LET has_tagged = LENGTH(
+                FOR se IN @@state_edge
+                    FILTER se._from == file._id AND se._to == @tagged_state_id
+                    LIMIT 1
+                    RETURN 1
+            ) > 0
+            SORT file._key
+            RETURN MERGE(file, { has_tagged_state: has_tagged })
+        """
+        return primitives.execute(self._db, query, bind_vars)
+
+    def find_library_file_by_chromaprint(self, library_id: str, chromaprint: str) -> Document | None:
+        """Find the first library file matching ``chromaprint``. Returns ``None`` if not found."""
+        results = primitives.execute(
+            self._db,
+            """
+            FOR edge IN @@edge_collection
+                FILTER edge._from == @library_id
+                LET file = DOCUMENT(edge._to)
+                FILTER file != null AND file.chromaprint == @chromaprint
+                LIMIT 1
+                RETURN file
+            """,
+            {
+                "@edge_collection": self.LIBRARY_FILE_EDGE_COLLECTION,
+                "library_id": _as_document_id("libraries", library_id),
+                "chromaprint": chromaprint,
+            },
+        )
+        return results[0] if results else None
 
     def list_library_files(self, library_id: str, *, limit: int | None = None) -> list[Document]:
         bind_vars: dict[str, Any] = {

@@ -221,19 +221,46 @@ def upsert_by_field(
     field_name: str,
     field_value: Any,
     payload: dict[str, Any],
-) -> None:
-    """Upsert one document addressed by a validated field name."""
+) -> str:
+    """Upsert one document addressed by a validated field name and return its ``_id``."""
     _validate_field_name(field_name)
     query = f"""
     UPSERT {{ {field_name}: @field_value }}
         INSERT MERGE(@payload, {{ {field_name}: @field_value }})
         UPDATE @payload
         IN @@collection
+    RETURN NEW._id
     """
-    db.aql.execute(
+    cursor = db.aql.execute(
         query,
         bind_vars={"@collection": collection, "field_value": field_value, "payload": payload},
     )
+    return cast("str", next(iter(cursor)))
+
+
+def upsert_many_by_field(
+    db: SafeDatabase,
+    collection: str,
+    field_name: str,
+    payloads: list[dict[str, Any]],
+) -> list[str]:
+    """Batch-upsert documents matched by ``field_name``, returning ``_id`` list in input order."""
+    if not payloads:
+        return []
+    _validate_field_name(field_name)
+    query = f"""
+    FOR doc IN @docs
+        UPSERT {{ {field_name}: doc.{field_name} }}
+            INSERT doc
+            UPDATE doc
+            IN @@collection
+        RETURN NEW._id
+    """
+    cursor = db.aql.execute(
+        query,
+        bind_vars={"@collection": collection, "docs": payloads},
+    )
+    return cast("list[str]", list(cursor))
 
 
 def insert_document(db: SafeDatabase, collection: str, payload: dict[str, Any]) -> str:

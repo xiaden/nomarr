@@ -163,9 +163,9 @@ def test_delete_many_by_keys_returns_removed_count() -> None:
 
 
 def test_upsert_by_field_builds_expected_upsert_shape() -> None:
-    db = make_db()
+    db = make_db(cursor_rows=["libraries/abc"])
 
-    primitives.upsert_by_field(
+    result = primitives.upsert_by_field(
         as_safe_db(db),
         "libraries",
         "name",
@@ -173,11 +173,13 @@ def test_upsert_by_field_builds_expected_upsert_shape() -> None:
         {"name": "Main", "watch_mode": "poll"},
     )
 
+    assert result == "libraries/abc"
     call = db.aql.execute.call_args
     assert call is not None
     query = call.args[0]
     assert "UPSERT { name: @field_value }" in query
     assert "INSERT MERGE(@payload, { name: @field_value })" in query
+    assert "RETURN NEW._id" in query
     assert call.kwargs["bind_vars"] == {
         "@collection": "libraries",
         "field_value": "Main",

@@ -258,27 +258,12 @@ def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
     paths = [d["path"] for d in clean_docs if "path" in d]
     existing_paths = get_existing_file_paths(db, paths)
 
-    db.library.upsert_files_batch(clean_docs)
+    library_id = library_ids[0]
+    if not isinstance(library_id, str) or not all(lid == library_id for lid in library_ids):
+        msg = "All docs in a scan batch must share the same string library_id"
+        raise ValueError(msg)
 
-    file_ids: list[str] = []
-    for library_id, doc in zip(library_ids, clean_docs, strict=True):
-        path = doc.get("path")
-        if not isinstance(library_id, str) or not isinstance(path, str):
-            msg = "Scanned file docs must include string library_id and path"
-            raise ValueError(msg)
-        file_doc = cast("dict[str, Any] | None", db.library.get_file_by_path(path, library_id))
-        if file_doc is None:
-            msg = f"Upserted file missing for path {path}"
-            raise ValueError(msg)
-        file_ids.append(str(file_doc["_id"]))
-
-    edge_docs = [
-        {"_from": lib_id, "_to": file_id}
-        for lib_id, file_id in zip(library_ids, file_ids, strict=True)
-        if lib_id is not None
-    ]
-    if edge_docs:
-        db.library.upsert_library_file_links_batch(edge_docs)
+    file_ids = db.library.upsert_files_for_library(library_id, clean_docs)
 
     new_file_ids = [
         file_id for file_id, doc in zip(file_ids, clean_docs, strict=True) if doc.get("path") not in existing_paths
