@@ -476,7 +476,11 @@ class LibraryFilesAqlOperations:
             )
 
     def upsert_library_file_links_batch(self, links: list[dict[str, Any]]) -> None:
-        self.upsert_file_links_batch(links)
+        for link in links:
+            self.link_file_to_library(
+                str(link["_from"]),
+                str(link["_to"]),
+            )
 
     def add_folder(self, payload: dict[str, Any]) -> str:
         return primitives.insert_document(self._db, self.FOLDER_COLLECTION, payload)
