@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -13,7 +14,7 @@ def _make_service() -> ConfigService:
     """Build a ``ConfigService`` instance without running ``__init__``."""
     service = ConfigService.__new__(ConfigService)
     service._cache = {}
-    service._logger = MagicMock()
+    service._logger = MagicMock()  # type: ignore[assignment]
     return service
 
 
@@ -61,7 +62,7 @@ class TestWriteToDb:
         ):
             service._write_to_db("namespace", "myns")
 
-        service._logger.exception.assert_called_once_with(
+        cast("MagicMock", service._logger).exception.assert_called_once_with(
             "Failed to persist config '%s' to DB",
             "namespace",
         )
@@ -72,10 +73,10 @@ class TestBootstrapAndLoad:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_uses_flat_like_api_to_read_existing_config(self) -> None:
+    def test_uses_flat_like_api_to_read_existing_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Bootstrap should read existing config through ``meta.get.like`` twice."""
         service = _make_service()
-        service._build_bootstrap_config = MagicMock(return_value={"library_root": "/test-root"})
+        monkeypatch.setattr(service, "_build_bootstrap_config", MagicMock(return_value={"library_root": "/test-root"}))
 
         with patch("nomarr.services.infrastructure.config_svc.Database") as mock_database:
             mock_db_instance = mock_database.return_value
@@ -90,10 +91,10 @@ class TestBootstrapAndLoad:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_seeds_missing_key_to_db(self) -> None:
+    def test_seeds_missing_key_to_db(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Missing bootstrap keys should be seeded into the DB."""
         service = _make_service()
-        service._build_bootstrap_config = MagicMock(return_value={"library_root": "/test-root"})
+        monkeypatch.setattr(service, "_build_bootstrap_config", MagicMock(return_value={"library_root": "/test-root"}))
 
         with patch("nomarr.services.infrastructure.config_svc.Database") as mock_database:
             mock_db_instance = mock_database.return_value
@@ -108,10 +109,12 @@ class TestBootstrapAndLoad:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_populates_cache_from_db_values(self) -> None:
+    def test_populates_cache_from_db_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Loaded DB values should populate the in-memory cache."""
         service = _make_service()
-        service._build_bootstrap_config = MagicMock(return_value={"library_root": "/bootstrap-root"})
+        monkeypatch.setattr(
+            service, "_build_bootstrap_config", MagicMock(return_value={"library_root": "/bootstrap-root"})
+        )
 
         with patch("nomarr.services.infrastructure.config_svc.Database") as mock_database:
             mock_db_instance = mock_database.return_value
@@ -127,10 +130,12 @@ class TestBootstrapAndLoad:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_falls_back_to_file_config_when_db_unavailable(self) -> None:
+    def test_falls_back_to_file_config_when_db_unavailable(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Bootstrap should fall back to file/env config when the DB is unavailable."""
         service = _make_service()
-        service._build_bootstrap_config = MagicMock(return_value={"library_root": "/fallback-root"})
+        monkeypatch.setattr(
+            service, "_build_bootstrap_config", MagicMock(return_value={"library_root": "/fallback-root"})
+        )
 
         with patch(
             "nomarr.services.infrastructure.config_svc.Database",

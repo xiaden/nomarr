@@ -6,9 +6,20 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nomarr.components.navidrome.descriptor_match_comp import TrackDescriptor
 from nomarr.workflows.navidrome.find_similar_tracks_wf import find_similar_tracks
 
-SEED = {"title": "Seed", "artist": "Artist", "album": "Album"}
+SEED: TrackDescriptor = {
+    "title": "Seed",
+    "artist": "Artist",
+    "album": "Album",
+    "album_artist": "",
+    "duration_ms": None,
+    "track_number": None,
+    "disc_number": None,
+    "year": None,
+    "nomarr_file_key": None,
+}
 
 
 @pytest.fixture(autouse=True)
