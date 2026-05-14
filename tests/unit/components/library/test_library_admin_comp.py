@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -134,60 +134,16 @@ class TestDeleteLibrary:
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_deletes_library_and_returns_true(self) -> None:
-        """Existing libraries should delete all associated data and return True."""
+        """Existing libraries should delegate cascade to db.library.remove_library and return True."""
         mock_db = MagicMock()
         library = {"name": "Main Library"}
-        mock_db.library.list_library_files.return_value = [
-            {"_id": "library_files/1"},
-            {"_id": "library_files/2"},
-        ]
-        mock_db.ml.list_registered_vector_collection_names.side_effect = [
-            ["vectors__1", "vectors__shared"],
-            ["vectors__1", "vectors__shared"],
-        ]
 
-        with (
-            patch(
-                "nomarr.components.library.library_admin_comp.get_library_record",
-                return_value=library,
-            ) as get_library_record_mock,
-            patch("nomarr.components.library.library_admin_comp.cleanup_orphaned_tags") as cleanup_mock,
-            patch(
-                "nomarr.components.ml.inference.ml_output_stream_store_comp.delete_output_streams"
-            ) as delete_streams_mock,
-        ):
+        with patch(
+            "nomarr.components.library.library_admin_comp.get_library_record",
+            return_value=library,
+        ) as get_library_record_mock:
             result = delete_library(mock_db, "libraries/1")
 
         assert result is True
         get_library_record_mock.assert_called_once_with(mock_db, "libraries/1")
-        mock_db.library.list_library_files.assert_called_once_with("libraries/1")
-        delete_streams_mock.assert_has_calls(
-            [
-                call(mock_db, "library_files/1"),
-                call(mock_db, "library_files/2"),
-            ]
-        )
-        mock_db.ml.delete_vectors_for_file.assert_has_calls(
-            [
-                call("vectors__1", "library_files/1"),
-                call("vectors__shared", "library_files/1"),
-                call("vectors__1", "library_files/2"),
-                call("vectors__shared", "library_files/2"),
-            ]
-        )
-        mock_db.library.delete_song_tag_edges_for_file.assert_has_calls(
-            [call("library_files/1"), call("library_files/2")]
-        )
-        mock_db.app.release_claim.assert_has_calls([call("library_files/1"), call("library_files/2")])
-        mock_db.app.delete_file_state_edges.assert_called_once_with(["library_files/1", "library_files/2"])
-        cleanup_mock.assert_called_once_with(mock_db)
-        mock_db.ml.truncate_vector_collection.assert_called_once_with("vectors__1")
-        mock_db.library.delete_all_file_links_for_library.assert_called_once_with("libraries/1")
-        mock_db.library.delete_all_folder_links_for_library.assert_called_once_with("libraries/1")
-        mock_db.app.delete_library_scan_edge.assert_called_once_with("libraries/1")
-        mock_db.app.delete_pipeline_state_edges_for_library.assert_called_once_with("libraries/1")
-        mock_db.library.delete_files_for_library.assert_called_once_with("1")
-        mock_db.library.delete_folders_for_library.assert_called_once_with("1")
-        mock_db.app.delete_scan_records_for_library.assert_called_once_with("1")
-        mock_db.app.delete_pipeline_state.assert_called_once_with("libraries/1")
-        mock_db.library.delete_library.assert_called_once_with("libraries/1")
+        mock_db.library.remove_library.assert_called_once_with("libraries/1")

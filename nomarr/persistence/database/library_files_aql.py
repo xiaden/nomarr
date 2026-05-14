@@ -112,6 +112,70 @@ class LibraryFilesAqlOperations:
     def delete_file(self, file_id: str) -> None:
         primitives.delete_many_by_keys(self._db, self.FILE_COLLECTION, [_extract_key(file_id)])
 
+    def remove_files(self, file_ids: list[str]) -> None:
+        """Delete a set of file documents and all their derived data.
+
+        Executes two AQL queries: one that collects stream IDs via LET then
+        removes each dependent collection in order, and one that sweeps
+        orphaned tag documents.  Collection names are hardcoded here; this
+        method is the canonical, curated definition of what "remove a set of
+        files" means at the persistence level.
+
+        Does NOT touch per-library vector documents — those live in
+        library-scoped collections and are handled by remove_library().
+        """
+        if not file_ids:
+            return
+
+        normalized_ids = [_as_document_id(self.FILE_COLLECTION, fid) for fid in file_ids]
+
+        self._db.aql.execute(
+            """
+            LET stream_ids = (
+                FOR e IN file_has_output_stream
+                    FILTER e._from IN @fids
+                    RETURN e._to
+            )
+            FOR e IN output_has_stream
+                FILTER e._to IN stream_ids
+                REMOVE e IN output_has_stream
+            FOR sid IN stream_ids
+                REMOVE sid IN ml_output_streams OPTIONS { ignoreErrors: true }
+            FOR e IN file_has_output_stream
+                FILTER e._from IN @fids
+                REMOVE e IN file_has_output_stream
+            FOR e IN file_has_vectors
+                FILTER e._from IN @fids
+                REMOVE e IN file_has_vectors
+            FOR e IN song_has_tags
+                FILTER e._from IN @fids
+                REMOVE e IN song_has_tags
+            FOR c IN worker_claims
+                FILTER c.file_id IN @fids
+                REMOVE c IN worker_claims
+            FOR e IN file_has_state
+                FILTER e._from IN @fids
+                REMOVE e IN file_has_state
+            FOR e IN library_contains_file
+                FILTER e._to IN @fids
+                REMOVE e IN library_contains_file
+            FOR fid IN @fids
+                REMOVE fid IN library_files OPTIONS { ignoreErrors: true }
+            """,
+            bind_vars={"fids": normalized_ids},
+        )
+
+        # ── Orphaned tag documents ────────────────────────────────────────────
+        # Tags that are no longer referenced by any song or model-output edge.
+        self._db.aql.execute(
+            """
+            FOR tag IN tags
+                FILTER LENGTH(FOR e IN song_has_tags FILTER e._to == tag._id LIMIT 1 RETURN 1) == 0
+                FILTER LENGTH(FOR e IN tag_model_output FILTER e._from == tag._id LIMIT 1 RETURN 1) == 0
+                REMOVE tag IN tags
+            """
+        )
+
     def list_files(self, *, filters: dict[str, Any] | None = None, limit: int | None = None) -> list[Document]:
         bind_vars: dict[str, Any] = {"@collection": self.FILE_COLLECTION}
         query_lines = ["FOR file IN @@collection"]
@@ -360,18 +424,32 @@ class LibraryFilesAqlOperations:
         results = list(cursor)
         return int(results[0]) if results else 0
 
-    def delete_files_for_library(self, library_key: str) -> int:
-        file_docs = primitives.get_many_by_field(
-            self._db,
-            self.FILE_COLLECTION,
-            "library_key",
-            library_key,
-            limit=None,
-            allowed_fields=self.ALLOWED_FILE_FIELDS,
+    def list_orphaned_file_ids(self) -> list[str]:
+        """Return IDs of library_files documents with no library_contains_file inbound edge."""
+        cursor = self._db.aql.execute(
+            """
+            FOR file IN @@file_collection
+                LET edge_count = LENGTH(
+                    FOR edge IN @@edge_collection
+                        FILTER edge._to == file._id
+                        LIMIT 1
+                        RETURN 1
+                )
+                FILTER edge_count == 0
+                RETURN file._id
+            """,
+            bind_vars={
+                "@file_collection": self.FILE_COLLECTION,
+                "@edge_collection": self.LIBRARY_FILE_EDGE_COLLECTION,
+            },
         )
-        keys = [doc["_key"] for doc in file_docs if isinstance(doc.get("_key"), str)]
-        if not keys:
+        return list(cursor)
+
+    def delete_files_for_library(self, library_id: str) -> int:
+        file_ids = self.list_library_file_ids(library_id, limit=None)
+        if not file_ids:
             return 0
+        keys = [_extract_key(file_id) for file_id in file_ids]
         return primitives.delete_many_by_keys(self._db, self.FILE_COLLECTION, keys)
 
     def delete_all_file_links_for_library(self, library_id: str) -> None:

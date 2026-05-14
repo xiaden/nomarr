@@ -79,3 +79,109 @@ class LibrariesAqlOperations:
 
     def delete_library(self, library_id: str) -> None:
         primitives.delete_many_by_keys(self._db, self.COLLECTION, [_extract_key(library_id)])
+
+    def remove_library(self, library_id: str) -> None:
+        """Delete a library and all its associated data.
+
+        Executes two AQL queries (each covering multiple collections via LET
+        chaining), a Python loop for dynamically-named vector collections
+        (AQL collection names must be static literals), and a final orphaned
+        tag sweep.
+
+        Collection names are hardcoded here; this method is the canonical,
+        curated definition of what "remove a library" means at the persistence
+        level.
+        """
+        lib_key = _extract_key(library_id)
+        normalized_id = f"libraries/{lib_key}"
+
+        # ── Query 1: all file-level derived data ───────────────────────────
+        # Collects file and stream IDs via LET, then removes each dependent
+        # collection in order.  Each REMOVE targets a single collection.
+        self._db.aql.execute(
+            """
+            LET file_ids = (
+                FOR e IN library_contains_file
+                    FILTER e._from == @lib
+                    RETURN e._to
+            )
+            LET stream_ids = (
+                FOR e IN file_has_output_stream
+                    FILTER e._from IN file_ids
+                    RETURN e._to
+            )
+            FOR e IN output_has_stream
+                FILTER e._to IN stream_ids
+                REMOVE e IN output_has_stream
+            FOR sid IN stream_ids
+                REMOVE sid IN ml_output_streams OPTIONS { ignoreErrors: true }
+            FOR e IN file_has_output_stream
+                FILTER e._from IN file_ids
+                REMOVE e IN file_has_output_stream
+            FOR e IN file_has_vectors
+                FILTER e._from IN file_ids
+                REMOVE e IN file_has_vectors
+            FOR e IN song_has_tags
+                FILTER e._from IN file_ids
+                REMOVE e IN song_has_tags
+            FOR c IN worker_claims
+                FILTER c.file_id IN file_ids
+                REMOVE c IN worker_claims
+            FOR e IN file_has_state
+                FILTER e._from IN file_ids
+                REMOVE e IN file_has_state
+            FOR fid IN file_ids
+                REMOVE fid IN library_files OPTIONS { ignoreErrors: true }
+            """,
+            bind_vars={"lib": normalized_id},
+        )
+
+        # ── Query 2: library-level data ────────────────────────────────────
+        self._db.aql.execute(
+            """
+            FOR e IN library_contains_file
+                FILTER e._from == @lib
+                REMOVE e IN library_contains_file
+            FOR e IN library_contains_folder
+                FILTER e._from == @lib
+                REMOVE e._to IN library_folders OPTIONS { ignoreErrors: true }
+            FOR e IN library_contains_folder
+                FILTER e._from == @lib
+                REMOVE e IN library_contains_folder
+            FOR e IN library_has_scan
+                FILTER e._from == @lib
+                REMOVE e._to IN library_scans OPTIONS { ignoreErrors: true }
+            FOR e IN library_has_scan
+                FILTER e._from == @lib
+                REMOVE e IN library_has_scan
+            FOR e IN library_has_pipeline_state
+                FILTER e._from == @lib
+                REMOVE e._to IN library_pipeline_states OPTIONS { ignoreErrors: true }
+            FOR e IN library_has_pipeline_state
+                FILTER e._from == @lib
+                REMOVE e IN library_has_pipeline_state
+            REMOVE @lib_key IN libraries OPTIONS { ignoreErrors: true }
+            """,
+            bind_vars={"lib": normalized_id, "lib_key": lib_key},
+        )
+
+        # ── Per-library vector collections ─────────────────────────────────
+        # Named vectors_track_*__{lib_key}.  Collection names are dynamic so
+        # they cannot be referenced in AQL; discovered and deleted via the
+        # DB API instead.
+        suffix = f"__{lib_key}"
+        for coll_meta in self._db.collections():
+            name = coll_meta["name"]
+            if name.startswith("vectors_track") and name.endswith(suffix):
+                self._db.delete_collection(name, ignore_missing=True)
+
+        # ── Orphaned tag documents ────────────────────────────────────────────
+        # Tags that are no longer referenced by any song or model-output edge.
+        self._db.aql.execute(
+            """
+            FOR tag IN tags
+                FILTER LENGTH(FOR e IN song_has_tags FILTER e._to == tag._id LIMIT 1 RETURN 1) == 0
+                FILTER LENGTH(FOR e IN tag_model_output FILTER e._from == tag._id LIMIT 1 RETURN 1) == 0
+                REMOVE tag IN tags
+            """
+        )

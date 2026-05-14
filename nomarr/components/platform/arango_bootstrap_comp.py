@@ -22,6 +22,7 @@ from arango.exceptions import CollectionCreateError, DocumentInsertError, IndexC
 
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones, discover_heads_no_db
 from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES
+from nomarr.helpers.constants.pipeline_states import ALL_PIPELINE_STATES
 from nomarr.persistence.arango_client import SafeDatabase
 from nomarr.persistence.database.libraries_aql import LibrariesAqlOperations
 from nomarr.persistence.schema_types import VectorsTrackCold, VectorsTrackHot
@@ -182,6 +183,28 @@ def _seed_file_states(db: SafeDatabase) -> None:
     for vertex in ALL_STATE_VERTICES:
         with contextlib.suppress(DocumentInsertError):
             coll.insert({"_key": vertex.split("/")[1]})  # type: ignore[union-attr]
+
+
+def _seed_pipeline_states(db: SafeDatabase) -> None:
+    """Ensure all library_pipeline_states vertex documents exist.
+
+    Idempotent — inserts only if the document is missing.
+    """
+    coll = db.collection("library_pipeline_states")  # type: ignore[union-attr]
+    for state in ALL_PIPELINE_STATES:
+        with contextlib.suppress(DocumentInsertError):
+            coll.insert({"_key": state.split("/")[1]})  # type: ignore[union-attr]
+
+
+def seed_state_documents(db: Database) -> None:
+    """Reseed all singleton state vertex documents.
+
+    Idempotent — runs on every startup to restore any accidentally-deleted
+    state documents without requiring a migration.  Both collections must
+    already exist (created by ensure_schema or a migration).
+    """
+    _seed_file_states(db.db)
+    _seed_pipeline_states(db.db)
 
 
 def _create_indexes(db: SafeDatabase) -> None:
@@ -387,10 +410,14 @@ def _ensure_index(
             coll.add_persistent_index(fields=fields, unique=unique, sparse=sparse)
     except IndexCreateError as exc:
         # 409 (HTTP Conflict) means the index already exists — safe to ignore.
-        # Any other error code indicates a genuine failure (wrong field type,
-        # missing collection, etc.) that should surface immediately.
-        if exc.http_code != 409:
-            raise
+        # ArangoDB 3.12 may also return HTTP 400 / ERR 1210 (unique constraint
+        # violated) when re-adding a unique index that already exists on the
+        # same fields. Both cases are idempotent — the index is already there.
+        if exc.http_code == 409:
+            return
+        if exc.http_code == 400 and exc.error_code == 1210:
+            return
+        raise
 
 
 def _create_graphs(db: SafeDatabase) -> None:

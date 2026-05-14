@@ -16,6 +16,7 @@ from nomarr.components.platform.arango_bootstrap_comp import (
     ensure_schema_from_database,
     list_template_collection_names,
     register_template_collection,
+    seed_state_documents,
 )
 from nomarr.components.platform.migration_runner_comp import (
     MigrationError,
@@ -129,6 +130,21 @@ def prepare_database_workflow(
     # Step 3: Discover and register existing dynamic template collections
     _discover_template_collections(db)
 
-    # Step 4: Register ML models and seed known labels
+    # Step 4: Prune orphaned library_files documents (no ownership edge).
+    # Runs before ML model registration so any orphan-related vector collections
+    # are already clean before models are re-registered.
+    try:
+        from nomarr.workflows.platform.prune_orphaned_files_wf import prune_orphaned_files_workflow
+
+        prune_orphaned_files_workflow(db)
+    except Exception as exc:
+        logger.warning("Orphaned file pruning failed (non-fatal): %s", exc)
+
+    # Step 5: Reseed singleton state vertex documents.
+    # file_states and library_pipeline_states vertices are fixed sets that
+    # should always exist.  This is idempotent and repairs any accidental deletion.
+    seed_state_documents(db)
+
+    # Step 6: Register ML models and seed known labels
     if models_dir is not None:
         register_ml_models_workflow(db, models_dir)

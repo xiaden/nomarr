@@ -43,6 +43,7 @@ DOCUMENT_COLLECTIONS = {
     "ml_capacity_probe_locks",
     "ml_model_outputs",
     "ml_models",
+    "ml_output_streams",
     "navidrome_playcounts",
     "navidrome_tracks",
     "segment_scores_stats",
@@ -55,6 +56,7 @@ DOCUMENT_COLLECTIONS = {
 }
 
 EDGE_COLLECTIONS = {
+    "file_has_output_stream",
     "file_has_state",
     "file_has_segment_stats",
     "file_has_vectors",
@@ -66,6 +68,7 @@ EDGE_COLLECTIONS = {
     "library_has_scan",
     "model_has_calibration",
     "model_has_output",
+    "output_has_stream",
     "song_has_tags",
     "tag_model_output",
 }

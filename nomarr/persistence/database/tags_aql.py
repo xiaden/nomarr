@@ -212,10 +212,11 @@ class TagsAqlOperations:
         return int(results[0]) if results else 0
 
     def aggregate_tag_field(self, field: str, *, limit: int | None = None, offset: int = 0) -> list[Document]:
-        primitives._validate_field_name(field)
         if field not in self.ALLOWED_AGGREGATE_FIELDS:
             msg = f"Field {field!r} is not allowed for tag aggregation"
             raise ValueError(msg)
+        if field not in {"_id", "_key"}:
+            primitives._validate_field_name(field)
         bind_vars: dict[str, Any] = {"@collection": self.COLLECTION, "offset": max(offset, 0)}
         query_lines = [
             "FOR tag IN @@collection",

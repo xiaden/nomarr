@@ -108,8 +108,11 @@ class LibraryDb:
     def count_library_file_links(self, library_id: str) -> int:
         return self._files.count_library_file_links(library_id)
 
-    def delete_files_for_library(self, library_key: str) -> int:
-        return self._files.delete_files_for_library(library_key)
+    def list_orphaned_file_ids(self) -> list[str]:
+        return self._files.list_orphaned_file_ids()
+
+    def delete_files_for_library(self, library_id: str) -> int:
+        return self._files.delete_files_for_library(library_id)
 
     def delete_all_file_links_for_library(self, library_id: str) -> None:
         return self._files.delete_all_file_links_for_library(library_id)
@@ -262,3 +265,29 @@ class LibraryDb:
 
     def truncate_song_tag_edges(self) -> None:
         return self._tags.truncate_song_tag_edges()
+
+    # ------------------------------------------------------------------
+    # High-level cascading operations
+    # ------------------------------------------------------------------
+
+    def remove_files(self, file_ids: list[str]) -> None:
+        """Delete a set of file documents and all their derived data.
+
+        Delegates to the hand-written AQL cascade in LibraryFilesAqlOperations.
+        Does not clean up orphaned tag documents — callers should run
+        cleanup_orphaned_tags() afterwards if needed.
+        """
+        self._files.remove_files(file_ids)
+
+    def remove_library(self, library_id: str) -> bool:
+        """Delete a library and all associated data.
+
+        Returns True if the library was found and deleted, False if not found.
+        Delegates to the hand-written AQL cascade in LibrariesAqlOperations.
+        Orphaned tag documents are not cleaned up — callers should invoke
+        cleanup_orphaned_tags() separately if needed.
+        """
+        if not self._libraries.get_library(library_id):
+            return False
+        self._libraries.remove_library(library_id)
+        return True
