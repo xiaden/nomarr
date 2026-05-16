@@ -48,7 +48,7 @@ def _parse_single_value(value: str | None) -> str | None:
             if isinstance(parsed, list) and parsed:
                 return str(parsed[0])
         except json.JSONDecodeError:
-            pass
+            pass  # Not valid JSON; fall through to return value as-is
     return value
 
 
@@ -120,7 +120,7 @@ def _parse_tag_value(value: str | None) -> str | list[str] | None:
             if isinstance(parsed, list):
                 return [str(v) for v in parsed if v]
         except json.JSONDecodeError:
-            pass
+            pass  # Not valid JSON; fall through to return value as plain string
     return value
 
 
@@ -237,7 +237,7 @@ def extract_metadata(file_path: LibraryPath, namespace: str = "nom") -> dict[str
     }
     file_ext = os.path.splitext(path_str)[1].lower()
     try:
-        audio = mutagen.File(path_str)
+        audio = mutagen.File(path_str)  # pyright: ignore[reportPrivateImportUsage]
         if audio is None:
             return metadata
         if hasattr(audio.info, "length"):
@@ -249,7 +249,7 @@ def extract_metadata(file_path: LibraryPath, namespace: str = "nom") -> dict[str
         elif file_ext in (".mp3", ".mp2", ".aac"):
             _extract_mp3_metadata(file_path, metadata, namespace)
     except Exception as e:
-        logger.debug(f"[metadata_extraction] Failed to extract metadata from {file_path}: {e}")
+        logger.warning(f"[metadata_extraction] Failed to extract metadata from {file_path}: {e}", exc_info=True)
     return metadata
 
 
@@ -319,7 +319,7 @@ def _extract_mp3_metadata(file_path: LibraryPath, metadata: dict[str, Any], name
         metadata["all_tags"] = normalize_id3_tags(dict(id3))
         _apply_common_tag_fields(metadata, namespace)
     except Exception as e:
-        logger.debug("[metadata_extraction] Failed to extract MP3 tags from %s: %s", file_path, e)
+        logger.warning("[metadata_extraction] Failed to extract MP3 tags from %s: %s", file_path, e, exc_info=True)
 
 
 def _get_first(tags: Any, key: str) -> str | None:

@@ -15,18 +15,6 @@ const EXTENDED_TAG = { key: "composer", value: "Lennon/McCartney", type: "string
 const EXTENDED_TAG_2 = { key: "bpm", value: "120", type: "string", is_nomarr: false };
 const NOMARR_TAG = { key: "nom:mood-strict", value: "happy, energetic", type: "string", is_nomarr: true };
 const NOMARR_TAG_2 = { key: "nom:effnet_engaging", value: "0.85", type: "string", is_nomarr: true };
-const RAW_HEAD_TAG = {
-  key: "nom:tonal_essentia21-beta6-dev_musicnn20200331_tonal20220825",
-  value: "0.72",
-  type: "float",
-  is_nomarr: true,
-};
-const RAW_HEAD_TAG_2 = {
-  key: "nom:happy_essentia21-beta6-dev_musicnn20200331_happy20220825",
-  value: "0.91",
-  type: "float",
-  is_nomarr: true,
-};
 
 const ALL_TAGS = [
   METADATA_TAG,
@@ -35,8 +23,6 @@ const ALL_TAGS = [
   EXTENDED_TAG_2,
   NOMARR_TAG,
   NOMARR_TAG_2,
-  RAW_HEAD_TAG,
-  RAW_HEAD_TAG_2,
 ];
 
 function getAccordionByLabel(label: string): HTMLElement {
@@ -53,12 +39,11 @@ function getAccordionByLabel(label: string): HTMLElement {
 
 describe("FileTagsDataGrid", () => {
   describe("tag grouping", () => {
-    it("renders 4 groups when all tag types present", () => {
+    it("renders 3 groups when all remaining tag types are present", () => {
       renderWithProviders(<FileTagsDataGrid tags={ALL_TAGS} />);
 
       expect(screen.getByText("Metadata")).toBeInTheDocument();
       expect(screen.getByText("Nomarr Tags")).toBeInTheDocument();
-      expect(screen.getByText("Raw Head Outputs")).toBeInTheDocument();
       expect(screen.getByText("Extended Metadata")).toBeInTheDocument();
     });
 
@@ -67,7 +52,6 @@ describe("FileTagsDataGrid", () => {
 
       expect(screen.getByText("Metadata")).toBeInTheDocument();
       expect(screen.queryByText("Nomarr Tags")).not.toBeInTheDocument();
-      expect(screen.queryByText("Raw Head Outputs")).not.toBeInTheDocument();
       expect(screen.queryByText("Extended Metadata")).not.toBeInTheDocument();
     });
 
@@ -86,18 +70,11 @@ describe("FileTagsDataGrid", () => {
       expect(within(accordion).getByText("composer")).toBeInTheDocument();
     });
 
-    it("classifies nom: keys without _essentia as Nomarr Tags", () => {
+    it("classifies nom: keys as Nomarr Tags", () => {
       renderWithProviders(<FileTagsDataGrid tags={[NOMARR_TAG]} />);
 
       const accordion = getAccordionByLabel("Nomarr Tags");
       expect(within(accordion).getByText("nom:mood-strict")).toBeInTheDocument();
-    });
-
-    it("classifies nom: keys with _essentia as Raw Head Outputs", () => {
-      renderWithProviders(<FileTagsDataGrid tags={[RAW_HEAD_TAG]} />);
-
-      const accordion = getAccordionByLabel("Raw Head Outputs");
-      expect(within(accordion).getByText(RAW_HEAD_TAG.key)).toBeInTheDocument();
     });
 
     it("sorts tags alphabetically within each group", () => {
@@ -111,7 +88,7 @@ describe("FileTagsDataGrid", () => {
     });
 
     it("shows tag count per group in accordion summary", () => {
-      renderWithProviders(<FileTagsDataGrid tags={[METADATA_TAG, NOMARR_TAG, RAW_HEAD_TAG]} />);
+      renderWithProviders(<FileTagsDataGrid tags={[METADATA_TAG, NOMARR_TAG]} />);
 
       // Each group with 1 tag shows (1)
       const metadataAccordion = getAccordionByLabel("Metadata");
@@ -134,15 +111,6 @@ describe("FileTagsDataGrid", () => {
       expect(within(nomarrAccordion).getByText("happy, energetic")).toBeInTheDocument();
     });
 
-    it("collapses Raw Head Outputs by default", () => {
-      renderWithProviders(<FileTagsDataGrid tags={ALL_TAGS} />);
-
-      const accordion = getAccordionByLabel("Raw Head Outputs");
-      // The expand button should have aria-expanded=false
-      const button = within(accordion).getByRole("button");
-      expect(button).toHaveAttribute("aria-expanded", "false");
-    });
-
     it("collapses Extended Metadata by default", () => {
       renderWithProviders(<FileTagsDataGrid tags={ALL_TAGS} />);
 
@@ -163,7 +131,6 @@ describe("FileTagsDataGrid", () => {
       // Only Metadata group should remain (with "artist" key)
       expect(screen.getByText("Metadata")).toBeInTheDocument();
       expect(screen.queryByText("Nomarr Tags")).not.toBeInTheDocument();
-      expect(screen.queryByText("Raw Head Outputs")).not.toBeInTheDocument();
       expect(screen.queryByText("Extended Metadata")).not.toBeInTheDocument();
     });
 
@@ -204,9 +171,8 @@ describe("FileTagsDataGrid", () => {
       expect(screen.queryByText("Metadata")).not.toBeInTheDocument();
       expect(screen.queryByText("Extended Metadata")).not.toBeInTheDocument();
 
-      // Nomarr groups should remain
+      // Nomarr group should remain
       expect(screen.getByText("Nomarr Tags")).toBeInTheDocument();
-      expect(screen.getByText("Raw Head Outputs")).toBeInTheDocument();
     });
   });
 

@@ -45,7 +45,6 @@ helpers/
     ├── library_dto.py            # Library domain DTOs
     ├── metadata_dto.py           # Metadata DTOs
     ├── ml_dto.py                 # ML pipeline DTOs
-    ├── ml_edge_dto.py            # ML edge/boundary DTOs
     ├── navidrome_dto.py          # Navidrome integration DTOs
     ├── path_dto.py               # Path resolution DTOs
     ├── playlist_import_dto.py    # Playlist import DTOs

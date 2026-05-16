@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -23,7 +23,7 @@ class TestDiscoverTemplateCollections:
 
         _discover_template_collections(db)
 
-        db.ml.register_vector_collection.assert_called_once_with("vectors_track_hot__effnet__lib1", "vectors_track_hot")
+        db.ml.add_vector_collection.assert_called_once_with("vectors_track_hot__effnet__lib1", "vectors_track_hot")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -36,9 +36,7 @@ class TestDiscoverTemplateCollections:
 
         _discover_template_collections(db)
 
-        db.ml.register_vector_collection.assert_called_once_with(
-            "vectors_track_cold__effnet__lib1", "vectors_track_cold"
-        )
+        db.ml.add_vector_collection.assert_called_once_with("vectors_track_cold__effnet__lib1", "vectors_track_cold")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -53,7 +51,7 @@ class TestDiscoverTemplateCollections:
 
         _discover_template_collections(db)
 
-        db.ml.register_vector_collection.assert_not_called()
+        db.ml.add_vector_collection.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -69,7 +67,7 @@ class TestDiscoverTemplateCollections:
 
         _discover_template_collections(db)
 
-        db.ml.register_vector_collection.assert_not_called()
+        db.ml.add_vector_collection.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -80,12 +78,12 @@ class TestDiscoverTemplateCollections:
             "vectors_track_hot__effnet__lib1",
             "vectors_track_hot__yamnet__lib1",
         ]
-        db.ml.register_vector_collection.side_effect = [ValueError("collection missing in ArangoDB"), None]
+        db.ml.add_vector_collection.side_effect = [ValueError("collection missing in ArangoDB"), None]
 
         _discover_template_collections(db)  # must not propagate ValueError
 
-        assert db.ml.register_vector_collection.call_count == 2
-        db.ml.register_vector_collection.assert_any_call("vectors_track_hot__yamnet__lib1", "vectors_track_hot")
+        assert db.ml.add_vector_collection.call_count == 2
+        db.ml.add_vector_collection.assert_any_call("vectors_track_hot__yamnet__lib1", "vectors_track_hot")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -100,9 +98,9 @@ class TestDiscoverTemplateCollections:
 
         _discover_template_collections(db)
 
-        assert db.ml.register_vector_collection.call_count == 2
-        db.ml.register_vector_collection.assert_any_call("vectors_track_hot__effnet__lib1", "vectors_track_hot")
-        db.ml.register_vector_collection.assert_any_call("vectors_track_cold__effnet__lib1", "vectors_track_cold")
+        assert db.ml.add_vector_collection.call_count == 2
+        db.ml.add_vector_collection.assert_any_call("vectors_track_hot__effnet__lib1", "vectors_track_hot")
+        db.ml.add_vector_collection.assert_any_call("vectors_track_cold__effnet__lib1", "vectors_track_cold")
 
 
 class TestIsFreshDatabase:
@@ -113,52 +111,37 @@ class TestIsFreshDatabase:
     def test_returns_true_when_version_entry_missing(self) -> None:
         """No version document in meta means fresh database."""
         db = MagicMock()
-        db.app.get_meta.return_value = None
+        db.app.get_schema_version.return_value = None
 
         assert _is_fresh_database(db) is True
-        db.app.get_meta.assert_called_once_with("version")
+        db.app.get_schema_version.assert_called_once_with()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_false_when_version_entry_exists(self) -> None:
         """Existing version document means existing (not fresh) database."""
         db = MagicMock()
-        db.app.get_meta.return_value = {"key": "version", "value": "028"}
+        db.app.get_schema_version.return_value = "028"
 
         assert _is_fresh_database(db) is False
-        db.app.get_meta.assert_called_once_with("version")
+        db.app.get_schema_version.assert_called_once_with()
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_true_on_err_1203_collection_not_found(self) -> None:
-        """ERR 1203 (meta collection missing) is treated as a fresh database."""
-
-        class _Err1203Error(Exception):
-            def __str__(self) -> str:
-                return "[ERR 1203] collection or view not found"
-
+    def test_propagates_exception_from_get_schema_version(self) -> None:
+        """Exceptions from get_schema_version propagate to the caller."""
         db = MagicMock()
-        db.app.get_meta.side_effect = _Err1203Error()
+        db.app.get_schema_version.side_effect = RuntimeError("db unavailable")
 
-        with patch("nomarr.workflows.platform.prepare_database_wf.AQLQueryExecuteError", _Err1203Error):
-            result = _is_fresh_database(db)
-
-        assert result is True
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_reraises_non_1203_aql_errors(self) -> None:
-        """AQL errors other than ERR 1203 should propagate to the caller."""
-
-        class _OtherAQLError(Exception):
-            def __str__(self) -> str:
-                return "[ERR 1600] some other aql error"
-
-        db = MagicMock()
-        db.app.get_meta.side_effect = _OtherAQLError()
-
-        with (
-            patch("nomarr.workflows.platform.prepare_database_wf.AQLQueryExecuteError", _OtherAQLError),
-            pytest.raises(_OtherAQLError),
-        ):
+        with pytest.raises(RuntimeError):
             _is_fresh_database(db)
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_false_for_any_non_none_version(self) -> None:
+        """Any non-None value from get_schema_version means an existing database."""
+        db = MagicMock()
+        db.app.get_schema_version.return_value = "001"
+
+        assert _is_fresh_database(db) is False
+        db.app.get_schema_version.assert_called_once_with()

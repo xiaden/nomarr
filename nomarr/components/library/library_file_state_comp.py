@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, cast
-
-from arango.exceptions import DocumentInsertError
 
 from nomarr.components.library.library_id_comp import normalize_library_id
 from nomarr.helpers.constants.file_states import (
@@ -23,12 +22,11 @@ from nomarr.helpers.constants.file_states import (
     STATE_TOO_SHORT,
     STATE_VECTORS_EXTRACTED,
 )
+from nomarr.persistence.exceptions import DuplicateKeyError
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
-
-DUPLICATE_KEY_ERROR_CODE = 1210
 
 # Build reverse lookup: given (from_vertex, to_vertex), verify the pair belongs to the same axis.
 _VALID_TRANSITIONS: set[tuple[str, str]] = set()
@@ -52,16 +50,29 @@ def transition_file_state(db: Database, file_ids: list[str], from_state: str, to
             f"Transitions must swap between poles of the same axis (see AXIS_PAIRS)."
         )
         raise ValueError(msg)
-    db.app.transition_file_states(file_ids, from_state, to_state)
+    if not file_ids:
+        return
+
+    unique_file_ids = list(dict.fromkeys(file_ids))
+    state_membership = _state_membership_for_files(db, unique_file_ids)
+    db.app.remove_file_states(unique_file_ids)
+
+    next_state_groups: defaultdict[str, list[str]] = defaultdict(list)
+    for file_id in unique_file_ids:
+        next_states = set(state_membership.get(file_id, set()))
+        next_states.discard(from_state)
+        next_states.add(to_state)
+        for state in sorted(next_states):
+            next_state_groups[state].append(file_id)
+
+    for state, grouped_file_ids in next_state_groups.items():
+        db.app.add_file_states(grouped_file_ids, state)
 
 
 def _insert_file_state_edges_ignoring_duplicates(db: Database, edge_docs: list[dict[str, str]]) -> None:
     for edge_doc in edge_docs:
-        try:
-            db.app.add_file_state_edge(edge_doc["_from"], edge_doc["_to"])
-        except DocumentInsertError as exc:
-            if exc.error_code != DUPLICATE_KEY_ERROR_CODE:
-                raise
+        with contextlib.suppress(DuplicateKeyError):
+            db.app.add_file_states([edge_doc["_from"]], edge_doc["_to"])
 
 
 def _state_file_docs(db: Database, state_id: str) -> list[dict[str, Any]]:
@@ -85,6 +96,20 @@ def _count_state_edges_for_files(db: Database, file_ids: list[str]) -> int:
         return 0
     file_id_set = set(file_ids)
     return sum(len(_state_file_ids(db, state_id) & file_id_set) for state_id in ALL_STATE_VERTICES)
+
+
+def _state_membership_for_files(db: Database, file_ids: list[str]) -> dict[str, set[str]]:
+    if not file_ids:
+        return {}
+
+    file_id_set = set(file_ids)
+    membership: dict[str, set[str]] = {file_id: set() for file_id in file_ids}
+    for state_id in ALL_STATE_VERTICES:
+        for file_doc in _state_file_docs(db, state_id):
+            file_id = str(file_doc["_id"])
+            if file_id in file_id_set:
+                membership[file_id].add(state_id)
+    return membership
 
 
 def _extract_matching_head_keys(
@@ -138,7 +163,7 @@ def initialize_file_states_batch(db: Database, file_ids: list[str]) -> None:
 def clear_all_states(db: Database, file_id: str) -> int:
     """Remove all state edges for one file."""
     deleted_count = _count_state_edges_for_files(db, [file_id])
-    db.app.delete_file_state_edges([file_id])
+    db.app.remove_file_states([file_id])
     return deleted_count
 
 
@@ -147,7 +172,7 @@ def clear_all_states_batch(db: Database, file_ids: list[str]) -> int:
     if not file_ids:
         return 0
     deleted_count = _count_state_edges_for_files(db, file_ids)
-    db.app.delete_file_state_edges(file_ids)
+    db.app.remove_file_states(file_ids)
     return deleted_count
 
 
@@ -266,7 +291,7 @@ def library_has_tagged_files(db: Database, library_id: str) -> bool:
 
 def file_has_tagged_state(db: Database, file_id: str) -> bool:
     """Return whether one file currently has the tagged-state edge."""
-    return db.library.count_song_tag_edges_for_file_state(file_id, STATE_TAGGED) > 0
+    return db.library.count_file_states(file_id, STATE_TAGGED) > 0
 
 
 def find_short_files_missing_too_short(db: Database, library_id: str, min_duration_s: int) -> list[str]:
@@ -310,14 +335,7 @@ def get_files_with_incomplete_tags(
         library_file_ids = _library_file_ids(db, normalized_library_id)
         tagged_files = [file_doc for file_doc in tagged_files if file_doc["_id"] in library_file_ids]
     file_ids = [file_doc["_id"] for file_doc in tagged_files]
-    all_rows = db.library.get_tags_for_files_batch(file_ids, name_starts_with=namespace_prefix) if file_ids else []
-    tags_by_file: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
-    for row in all_rows:
-        start_id = row.get("start_id")
-        tag = row.get("v")
-        if not isinstance(start_id, str) or not isinstance(tag, dict):
-            continue
-        tags_by_file[start_id].append(tag)
+    tags_by_file = db.library.list_file_tags_for_files(file_ids, name_starts_with=namespace_prefix) if file_ids else {}
 
     results: list[dict[str, Any]] = []
     for file_doc in tagged_files:

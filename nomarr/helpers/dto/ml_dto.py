@@ -150,7 +150,6 @@ class SingleHeadResult:
     status: str  # "success", "error_processing", "error_aggregation"
     model_path: str | None = None
     error: str | None = None
-    head_tags: dict[str, Any] | None = None
     head_outputs: list[Any] | None = None
     regression_data: tuple[Any, list[float]] | None = None
     raw_output_streams: list[RawOutputStream] | None = None

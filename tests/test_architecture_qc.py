@@ -16,6 +16,7 @@ Architecture rules enforced:
 3. Helpers must not import upward layers - ALSO in import-linter
 4. Leaf slices (ml/tagging/analytics) must not import orchestration layers - ALSO in import-linter
 5. Essentia imports ONLY in ml_audio_comp.py and ml_preprocess_comp.py - NOT in import-linter
+6. Higher layers must not import Tier 1/Tier 2 persistence internals - NOT in import-linter
 """
 
 import re
@@ -27,6 +28,9 @@ import pytest
 # Get project root
 PROJECT_ROOT = Path(__file__).parent.parent
 NOMARR_DIR = PROJECT_ROOT / "nomarr"
+PERSISTENCE_TIER_BOOTSTRAP_ALLOWLIST = {
+    NOMARR_DIR / "components" / "platform" / "arango_bootstrap_comp.py",
+}
 
 
 def find_python_files(directory: Path, exclude_dirs: set[str] | None = None) -> Generator[Path, None, None]:
@@ -464,3 +468,51 @@ def test_higher_layers_do_not_import_persistence_collection_or_accessor_internal
             "Violations:\n" + "\n".join(violations)
         )
         pytest.fail(msg)
+
+
+@pytest.mark.code_smell
+def test_higher_layers_do_not_import_persistence_tier1_or_tier2_internals():
+    """Ensure higher layers cross persistence through `Database`, not lower tiers.
+
+    ADR-031 makes `db.library`, `db.app`, and `db.ml` the supported caller
+    boundary. Tier 2 (`nomarr.persistence.database`) and Tier 1
+    (`nomarr.persistence.aql`) remain private implementation layers.
+
+    A narrow bootstrap seam is allowlisted because schema setup intentionally
+    works below the normal caller boundary.
+    """
+    forbidden_imports = [
+        "nomarr.persistence.database",
+        "nomarr.persistence.aql",
+    ]
+    violations = []
+
+    for layer_name in ("components", "services", "workflows"):
+        layer_dir = NOMARR_DIR / layer_name
+        for py_file in find_python_files(layer_dir, exclude_dirs={"__pycache__", ".pytest_cache"}):
+            if py_file in PERSISTENCE_TIER_BOOTSTRAP_ALLOWLIST:
+                continue
+            file_violations = find_import_violations(py_file, forbidden_imports)
+            if file_violations:
+                rel_path = py_file.relative_to(PROJECT_ROOT)
+                for line_num, line in file_violations:
+                    violations.append(f"  {rel_path}:{line_num}: {line}")
+
+    if violations:
+        msg = (
+            "Found higher-layer imports of Tier 1/Tier 2 persistence internals.\n"
+            "Components, services, and workflows must cross the persistence boundary\n"
+            "through `Database` and its Tier 3 intent facades (`db.library`, `db.app`, `db.ml`).\n"
+            "Do not import `nomarr.persistence.database` or `nomarr.persistence.aql` directly\n"
+            "outside persistence-local code.\n\n"
+            "Violations:\n" + "\n".join(violations)
+        )
+        pytest.fail(msg)
+
+
+@pytest.mark.code_smell
+def test_persistence_tier_bootstrap_allowlist_stays_single_file() -> None:
+    """Keep the lower-tier bootstrap exception narrow and explicit."""
+    assert {
+        NOMARR_DIR / "components" / "platform" / "arango_bootstrap_comp.py",
+    } == PERSISTENCE_TIER_BOOTSTRAP_ALLOWLIST

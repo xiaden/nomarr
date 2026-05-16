@@ -182,7 +182,7 @@ class InfoService:
 
         # Close pipe
         if self._gpu_pipe_parent:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(OSError):  # Pipe may already be closed
                 self._gpu_pipe_parent.close()
             self._gpu_pipe_parent = None
 
@@ -330,7 +330,7 @@ class InfoService:
             monitor_healthy = status in ("healthy", "recovering")
 
         # Read GPU resources from DB
-        gpu_resources_doc = self.cfg.db.meta.get(key="gpu_resources")
+        gpu_resources_doc = self.cfg.db.app.get_config_option("gpu_resources")
         gpu_resources_json = None if gpu_resources_doc is None else gpu_resources_doc.get("value")
         if not gpu_resources_json:
             # No GPU resource data in DB yet

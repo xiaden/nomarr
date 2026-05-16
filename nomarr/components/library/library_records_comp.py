@@ -194,7 +194,7 @@ def find_library_containing_path(db: Database, file_path: str) -> dict[str, Any]
             normalized_path.relative_to(Path(library_root).resolve())
             return library
         except ValueError:
-            continue
+            continue  # Path is not under this library root; try the next one
 
     return None
 
@@ -212,16 +212,17 @@ def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, A
         where each dictionary contains ``library_id`` and ``tagged_count``.
     """
     del min_files
-    state_docs = cast(
-        "list[dict[str, Any]]",
-        db.app.list_libraries_in_pipeline_state(PIPELINE_ML_RUNNING),
-    )
+    library_docs = cast("list[dict[str, Any]]", db.library.list_libraries())
     counts = get_library_counts(db)
     completed: list[dict[str, Any]] = []
 
-    for state_doc in state_docs:
-        library_key = str(state_doc["library_key"])
-        library_id = normalize_library_id(library_key)
+    for library_doc in library_docs:
+        library_ref = library_doc.get("_id") or library_doc.get("_key")
+        if not isinstance(library_ref, str):
+            continue
+        library_id = normalize_library_id(library_ref)
+        if db.app.get_pipeline_state(library_id) != PIPELINE_ML_RUNNING:
+            continue
         if count_untagged_files(db, library_id) != 0:
             continue
 

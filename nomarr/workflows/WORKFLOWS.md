@@ -212,7 +212,7 @@ def cleanup_workflow(db: Database, library_id: str) -> CleanupResult:
 
 # ❌ Bad — workflow calling persistence
 def cleanup_workflow(db: Database, library_id: str) -> CleanupResult:
-    tags = db.tags.get_all()  # ← Only components may call db.*
+    tags = db.library.list_tags(limit=100)  # ← Only components may call db.*
 ```
 
 ---
@@ -222,7 +222,7 @@ def cleanup_workflow(db: Database, library_id: str) -> CleanupResult:
  | Anti-Pattern | Why It's Wrong | Fix |
  | --- | --- | --- |
  | Complex computation in workflow | Logic belongs in components | Extract to component |
- | Calling `db.tags.*`, `db.libraries.*` | Only components access persistence | Pass `db` to component function |
+ | Calling `db.library.*`, `db.app.*`, or `db.ml.*` directly | Only components access persistence | Pass `db` to component function |
  | Importing services | Violates layer direction | Services call workflows, not reverse |
  | Importing Pydantic models | Interface concern only | Use DTOs from `helpers/dto/` |
  | Returning raw dicts | Untyped, fragile contract | Return a DTO |

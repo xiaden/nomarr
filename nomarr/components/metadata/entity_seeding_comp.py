@@ -7,10 +7,6 @@ Part of hybrid model: seed edges from imports, then rebuild cache.
 import logging
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.metadata.metadata_cache_comp import (
-    compute_metadata_cache_fields,
-    update_metadata_cache_batch,
-)
 from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
 from nomarr.components.tagging.tag_write_comp import set_song_tags, set_song_tags_batch
 
@@ -228,14 +224,10 @@ def seed_entities_for_scan_batch(
     file_ids: list[str],
     metadata_by_id: dict[str, dict[str, Any]],
 ) -> int:
-    """Persist scan-derived tags and update metadata caches for scanned files.
+    """Persist scan-derived tags for scanned files.
 
     Batch-optimised: collects per-file tag entries in-memory, then executes
-    ``set_song_tags_batch`` once for the authoritative source-tag graph and
-    ``update_metadata_cache_batch`` once for the embedded read cache.
-
-    Despite the historical name, this step is responsible for preserving the
-    full raw tag set discovered during scan, not just the entity-oriented subset.
+    ``set_song_tags_batch`` once for the authoritative source-tag graph.
 
     Args:
         db: Database instance
@@ -243,15 +235,15 @@ def seed_entities_for_scan_batch(
         metadata_by_id: Map of file_id -> raw metadata dict
 
     Returns:
-        Number of files successfully prepared for cache updates
+        Number of files successfully processed
 
     """
     if not file_ids:
         return 0
 
-    # Build all tag entries and cache updates in-memory (no DB lookups needed)
+    # Build all tag entries in-memory (no DB lookups needed)
     all_tag_entries: list[dict[str, Any]] = []
-    cache_updates: list[dict[str, Any]] = []
+    files_processed = 0
 
     for file_id in file_ids:
         metadata = metadata_by_id.get(file_id)
@@ -265,11 +257,11 @@ def seed_entities_for_scan_batch(
             all_tag_entries.extend(
                 {"song_id": file_id, "name": name, "values": values} for name, values in persisted_tags.items()
             )
-            cache_updates.append({"song_id": file_id, **compute_metadata_cache_fields(metadata)})
+            files_processed += 1
         except Exception as e:
             logger.warning("Failed to build entities for file_id %s: %s", file_id, e)
 
-    # 3) Batch persist tags (3 AQL total instead of per-file writes)
+    # Batch persist tags (3 AQL total instead of per-file writes)
     if all_tag_entries:
         try:
             set_song_tags_batch(db, all_tag_entries)
@@ -277,11 +269,4 @@ def seed_entities_for_scan_batch(
             logger.warning("Batch tag persistence failed: %s", e)
             return 0
 
-    # 4) Batch update metadata cache (1 AQL instead of N)
-    if cache_updates:
-        try:
-            update_metadata_cache_batch(db, cache_updates)
-        except Exception as e:
-            logger.warning("Batch cache update failed: %s", e)
-
-    return len(cache_updates)
+    return files_processed

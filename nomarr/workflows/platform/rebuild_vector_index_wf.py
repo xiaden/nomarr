@@ -10,10 +10,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from nomarr.components.ml.vectors.ml_vector_maintenance_comp import (
-    derive_embed_dim,
-    rebuild_cold_vector_index,
-)
+from nomarr.components.ml.vectors.ml_vector_maintenance_comp import derive_embed_dim
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -56,6 +53,6 @@ def rebuild_vector_index_workflow(
     embed_dim = derive_embed_dim(models_dir, backbone_id)
     logger.info("[rebuild index wf] embed_dim=%d for %s", embed_dim, backbone_id)
 
-    rebuild_cold_vector_index(db, backbone_id, library_key, embed_dim, nlists)
+    db.ml.rebuild_library_embedding_index(backbone_id, library_key, embed_dim, nlists)
 
     logger.info("[rebuild index wf] Completed for backbone=%s library=%s", backbone_id, library_key)

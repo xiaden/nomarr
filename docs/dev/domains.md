@@ -162,7 +162,7 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 **Owns:**
 
 - `tags` — Edge collection linking files to tag labels with scores
-- `tag_model_output` — Edge collection linking files to model outputs
+
 
 **Invariants:**
 

@@ -289,6 +289,89 @@ class TestClearCalibration:
         with pytest.raises(RuntimeError, match="Cannot clear calibration while generation is running"):
             service.clear_calibration()
 
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_clear_calibration_delegates_to_clear_all_calibration_data_when_not_running(self) -> None:
+        """Clearing calibration should delegate when no generation is active."""
+        service = _make_service()
+        expected = {"files_updated": 4, "meta_keys_cleared": 2}
+
+        with (
+            patch.object(service, "is_generation_running", return_value=False),
+            patch(
+                "nomarr.services.domain.calibration_svc.clear_all_calibration_data",
+                return_value=expected,
+            ) as mock_clear_all,
+        ):
+            result = service.clear_calibration()
+
+        assert result == expected
+        mock_clear_all.assert_called_once_with(service._db)
+
+
+class TestGetHistogramForHead:
+    """Tests for per-head histogram retrieval."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_get_histogram_for_head_raises_when_state_missing(self) -> None:
+        service = _make_service()
+
+        with (
+            patch("nomarr.services.domain.calibration_svc.load_calibration_state", return_value=None),
+            pytest.raises(ValueError, match="No calibration state found for model-1:mood_happy:happy"),
+        ):
+            service.get_histogram_for_head("model-1", "mood_happy", "happy")
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_get_histogram_for_head_returns_histogram_payload_when_state_exists(self) -> None:
+        service = _make_service()
+        state = {
+            "histogram_bins": [{"val": 0.1, "count": 2}],
+            "p5": 0.1,
+            "p95": 0.9,
+            "n": 12,
+            "histogram": {"lo": 0.0, "hi": 1.0, "bins": 10, "bin_width": 0.1},
+        }
+
+        with patch(
+            "nomarr.services.domain.calibration_svc.load_calibration_state",
+            return_value=state,
+        ) as mock_load_state:
+            result = service.get_histogram_for_head("model-1", "mood_happy", "happy")
+
+        assert result == {
+            "model_key": "model-1",
+            "head_name": "mood_happy",
+            "label": "happy",
+            "histogram_bins": [{"val": 0.1, "count": 2}],
+            "p5": 0.1,
+            "p95": 0.9,
+            "n": 12,
+            "histogram_spec": {"lo": 0.0, "hi": 1.0, "bins": 10, "bin_width": 0.1},
+        }
+        mock_load_state.assert_called_once_with(service._db, "mood_happy", "happy")
+
+
+class TestGetAllCalibrationStates:
+    """Tests for loading all calibration states."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_get_all_calibration_states_delegates_to_component(self) -> None:
+        service = _make_service()
+        expected = [{"label": "happy", "p5": 0.1, "p95": 0.9}]
+
+        with patch(
+            "nomarr.services.domain.calibration_svc.load_all_calibration_states",
+            return_value=expected,
+        ) as mock_load_all:
+            result = service.get_all_calibration_states()
+
+        assert result == expected
+        mock_load_all.assert_called_once_with(service._db)
+
 
 class TestRunHistogramGeneration:
     """Tests for managed histogram generation execution."""

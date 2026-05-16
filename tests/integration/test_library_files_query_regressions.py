@@ -23,20 +23,22 @@ class TestLibraryFilesQueryRegressions:
             "artist": "Test Artist",
             "album": "Test Album",
             "title": "Test Song",
+            "library_key": "1",
         }
         mock_db = MagicMock()
-        # query_text-only search: OR across artist/album/title via db.library.search_files_by_text
-        mock_db.library.search_files_by_text.side_effect = [[], [], [file_doc]]
+        # query_text-only search: title via search_files_by_text, artist/album via search_files_by_tag_pattern
+        mock_db.library.search_files_by_text.return_value = []
+        mock_db.library.search_files_by_tag_pattern.side_effect = [[], [file_doc]]
         # hydration: fetch by ids, then tags + library ownership
-        mock_db.library.get_files_by_ids.return_value = [file_doc]
-        mock_db.library.get_tags_for_files_batch.return_value = []
+        mock_db.library.list_files_by_ids.return_value = [file_doc]
+        mock_db.library.list_file_tags_for_files.return_value = {"library_files/1": []}
         mock_db.library.get_library_ids_for_files.return_value = {"library_files/1": "libraries/1"}
 
         files, total = search_library_files_with_tags(mock_db, query_text="Test Song")
 
         assert total == 1
         assert files[0]["library_id"] == "libraries/1"
-        mock_db.library.get_library_ids_for_files.assert_called_once_with(["library_files/1"])
+        mock_db.library.list_file_tags_for_files.assert_called_once_with(["library_files/1"])
 
 
 class TestGetRecentlyProcessed:

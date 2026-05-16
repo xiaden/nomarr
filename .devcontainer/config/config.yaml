@@ -1,0 +1,25 @@
+# Nomarr dev configuration.
+# Consumed by the nomarr service on first start.
+# This file is gitignored — feel free to customize for your dev session.
+
+# Filesystem paths (container-internal — do not change)
+models_dir: /app/models
+db_path: /app/config/db/nomarr.db
+library_root: /media
+
+# Library scanning
+library_auto_tag: true
+library_ignore_patterns: ""
+
+# Worker settings
+tagger_worker_count: 1
+
+# Vector search defaults
+vector_group_size: 15
+vector_search_thoroughness: 10
+calibrate_heads: false
+
+# Authentication
+# Set a dev password here so it is stable across container rebuilds.
+# The agent uses this to authenticate against the API.
+admin_password: nomarr_dev_password

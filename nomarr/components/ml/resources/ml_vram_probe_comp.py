@@ -22,7 +22,7 @@ import logging
 import pathlib
 import sys
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
@@ -232,7 +232,7 @@ def probe_all_models(db: Database, models_dir: str) -> None:
         delta = _probe_single_model(model, waveform)
         delta_with_headroom = int(delta * 1.1) if delta is not None else None
         value = str(delta_with_headroom) if delta_with_headroom is not None else str(sys.maxsize)
-        db.app.upsert_meta(f"{_META_PREFIX}{model._path}", {"value": value})
+        db.app.update_config_option(f"{_META_PREFIX}{model._path}", {"value": value})
         readable = _fmt_bytes(delta_with_headroom) if delta_with_headroom is not None else "unmeasured"
         results.append(f"  {model._path} -> {readable}")
 
@@ -256,8 +256,8 @@ def has_model_vram_measurements(db: Database) -> bool:
     Returns:
         True if at least one ``ml_model_vram:*`` key is present.
     """
-    keys = db.app.list_meta_keys_by_prefix(_META_PREFIX)
-    return bool(keys)
+    docs = cast("list[dict[str, Any]]", db.app.list_config_options(prefix=_META_PREFIX))
+    return bool(docs)
 
 
 def clear_model_vram_measurements(db: Database) -> None:
@@ -266,10 +266,15 @@ def clear_model_vram_measurements(db: Database) -> None:
     Args:
         db: Database instance.
     """
-    existing_keys = db.app.list_meta_keys_by_prefix(_META_PREFIX)
-    for key in existing_keys:
-        db.app.delete_meta(key)
-    logger.info("[vram_probe] Cleared %d VRAM measurement(s)", len(existing_keys))
+    existing_docs = cast("list[dict[str, Any]]", db.app.list_config_options(prefix=_META_PREFIX))
+    removed = 0
+    for doc in existing_docs:
+        key = doc.get("_key")
+        if not isinstance(key, str) or not key:
+            continue
+        db.app.remove_config_option(key)
+        removed += 1
+    logger.info("[vram_probe] Cleared %d VRAM measurement(s)", removed)
 
 
 def _make_probe_waveform() -> np.ndarray:

@@ -171,9 +171,52 @@ class VectorCollection:
         cast("Any", self.collection).update_many(docs)
 
     def move_collection(self, dest: str) -> int:
-        from nomarr.persistence.constructor import verbs
+        """Move all documents to dest, re-point every edge, then truncate source.
 
-        return cast("int", verbs.move_collection(self._db, self._name, dest))
+        UPSERT semantics on ``_key`` make this safe to run multiple times.
+
+        Args:
+            dest: Destination collection name.
+
+        Returns:
+            Number of documents moved (count of source before drain).
+        """
+        if not self._db.has_collection(self._name):
+            return 0
+        source_col = cast("Any", self._db.collection(self._name))
+        count = cast("int", source_col.count())
+        if count == 0:
+            return 0
+
+        source_prefix = f"{self._name}/"
+        dest_prefix = f"{dest}/"
+
+        # 1. UPSERT all docs from source into dest
+        self._db.aql.execute(
+            "FOR doc IN @@source UPSERT { _key: doc._key } INSERT doc UPDATE doc IN @@dest",
+            bind_vars={"@source": self._name, "@dest": dest},
+        )
+
+        # 2. Re-point edges that reference source docs → dest docs
+        self._db.aql.execute(
+            """
+            FOR edge IN @@edge_col
+                FILTER STARTS_WITH(edge._to, @source_prefix)
+                UPDATE edge WITH {
+                    _to: CONCAT(@dest_prefix, PARSE_IDENTIFIER(edge._to).key)
+                } IN @@edge_col
+            """,
+            bind_vars={
+                "@edge_col": _VECTOR_EDGE_COLLECTION,
+                "source_prefix": source_prefix,
+                "dest_prefix": dest_prefix,
+            },
+        )
+
+        # 3. Truncate source
+        source_col.truncate()
+
+        return count
 
     def get_vector(self, file_id: str) -> dict[str, Any] | None:
         cursor = self._db.aql.execute(
@@ -331,17 +374,12 @@ class VectorsTrackCold(VectorCollection):
             FOR doc IN @@collection
                 FILTER @genre == null OR @genre IN doc.genres
                 LET score = APPROX_NEAR_COSINE(doc.vector_n, @query_vector, { nProbe: @nprobe })
-                LET file_id = FIRST(
-                    FOR file IN INBOUND doc @@edge_collection
-                        RETURN file._id
-                )
                 SORT score DESC
                 LIMIT @limit
-                RETURN MERGE(doc, { score: score, file_id: file_id })
+                RETURN MERGE(doc, { score: score, file_id: doc.file_id })
             """,
             bind_vars={
                 "@collection": self._name,
-                "@edge_collection": self.EDGE_COLLECTION,
                 "genre": genre_filter,
                 "query_vector": vector,
                 "nprobe": nprobe,

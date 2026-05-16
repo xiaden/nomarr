@@ -202,7 +202,7 @@ class Application:
         def heartbeat_loop() -> None:
             while self._running:
                 try:
-                    db.app.upsert_health(
+                    db.app.update_health(
                         "app",
                         {
                             "component_type": "app",
@@ -236,8 +236,8 @@ class Application:
             return
         logger.debug("[Application] Starting...")
         logger.debug("[Application] Cleaning ephemeral runtime state...")
-        self.db.app.truncate_health()
-        self.db.app.upsert_health(
+        self.db.app.maintenance.truncate_health()
+        self.db.app.update_health(
             "app",
             {
                 "component_type": "app",
@@ -292,23 +292,6 @@ class Application:
         logger.debug("[Application] Initializing PlaylistImportService...")
         playlist_import_service = PlaylistImportService(db=self.db, config_service=self._config_service)
         self.register_service("playlist_import", playlist_import_service)
-        from nomarr.services.infrastructure.info_svc import InfoConfig, InfoService
-
-        info_cfg = InfoConfig(
-            version="1.2",
-            namespace=self.namespace,
-            models_dir=str(self.models_dir),
-            db=self.db,
-            health_monitor=self.health_monitor,
-            db_path=self.db_path,
-            api_host=self.api_host,
-            api_port=self.api_port,
-            worker_enabled_default=self.worker_enabled_default,
-            tagger_worker_count=self._config_service.get_worker_count("tagger"),
-            poll_interval=float(self.worker_poll_interval),
-        )
-        info_service = InfoService(cfg=info_cfg, workers_coordinator=self.worker_system, ml_service=ml_service)
-        self.register_service("info", info_service)
         if self.library_root:
             logger.debug(f"[Application] Registering LibraryService with namespace={self.namespace}")
             library_cfg = LibraryServiceConfig(
@@ -399,6 +382,24 @@ class Application:
             self.worker_system.start_all_workers()
         else:
             logger.debug("[Application] Worker system disabled, not starting workers")
+        logger.debug("[Application] Initializing InfoService...")
+        from nomarr.services.infrastructure.info_svc import InfoConfig, InfoService
+
+        info_cfg = InfoConfig(
+            version="1.2",
+            namespace=self.namespace,
+            models_dir=str(self.models_dir),
+            db=self.db,
+            health_monitor=self.health_monitor,
+            db_path=self.db_path,
+            api_host=self.api_host,
+            api_port=self.api_port,
+            worker_enabled_default=self.worker_enabled_default,
+            tagger_worker_count=self._config_service.get_worker_count("tagger"),
+            poll_interval=float(self.worker_poll_interval),
+        )
+        info_service = InfoService(cfg=info_cfg, workers_coordinator=self.worker_system, ml_service=ml_service)
+        self.register_service("info", info_service)
         logger.debug("[Application] Starting InfoService (GPU monitor)...")
         info_service.start()
         self._running = True
@@ -451,7 +452,7 @@ class Application:
                 {"status": "stopping", "exit_code": 0},
             )
             logger.info("[Application] Cleaning ephemeral runtime state...")
-            self.db.app.truncate_health()
+            self.db.app.maintenance.truncate_health()
         except Exception as e:
             logger.warning(f"[Application] DB unavailable during shutdown (expected if containers stopping): {e}")
         self._running = False

@@ -123,15 +123,16 @@ class MLService:
         """
         return list_model_outputs_for_model(self.db, model_id)
 
-    def update_output_label(self, output_id: str, label: str) -> None:
+    def update_output_label(self, model_id: str, output_id: str, label: str) -> None:
         """Write a human-readable label for a model output vertex.
 
         Args:
+            model_id: ArangoDB ``_id`` of the parent model vertex.
             output_id: ArangoDB ``_id`` of the output vertex.
             label: Human-readable tag label for this activation.
 
         """
-        update_model_output_label(self.db, output_id=output_id, label=label)
+        update_model_output_label(self.db, model_id=model_id, output_id=output_id, label=label)
 
     def mark_model_configured(self, model_id: str, value: bool) -> None:
         """Set the fully_configured flag on a model vertex.

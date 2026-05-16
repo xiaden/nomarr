@@ -319,6 +319,7 @@ def compute_model_suite_hash(
         return hashlib.md5(sig_str.encode("utf-8")).hexdigest()[:12]
 
     except Exception:
+        logger.debug("Failed to compute model suite hash for %s", models_dir, exc_info=True)
         return "unknown"
 
 

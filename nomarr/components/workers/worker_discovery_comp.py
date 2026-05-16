@@ -9,10 +9,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
-from arango.exceptions import DocumentInsertError
-
 from nomarr.components.library.library_file_state_comp import discover_next_untagged_file
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.exceptions import DuplicateKeyError
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -75,8 +74,8 @@ def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
         "claimed_at": now_ms().value,
     }
     try:
-        db.app.claim_file(file_id, worker_id, payload)
-    except DocumentInsertError:
+        db.app.add_claim(payload)
+    except DuplicateKeyError:
         return False
     return True
 
@@ -89,7 +88,7 @@ def release_claim(db: Database, file_id: str) -> None:
         file_id: Full file document _id
 
     """
-    db.app.release_claim(file_id)
+    db.app.remove_claim(file_id)
 
 
 def try_insert_or_steal_claim(
@@ -113,7 +112,32 @@ def try_insert_or_steal_claim(
         False if an active un-expired claim already exists.
 
     """
-    return db.app.steal_claim(payload, now, lease_ms)
+    try:
+        db.app.add_claim(payload)
+    except DuplicateKeyError:
+        file_id = str(payload["file_id"])
+        existing_claim = next(
+            (claim for claim in _get_all_claims(db) if str(claim.get("file_id")) == file_id),
+            None,
+        )
+        if existing_claim is None:
+            try:
+                db.app.add_claim(payload)
+            except DuplicateKeyError:
+                return False
+            return True
+
+        claimed_at = int(existing_claim.get("claimed_at", 0))
+        if claimed_at > now - lease_ms:
+            return False
+
+        db.app.remove_claim(file_id)
+        try:
+            db.app.add_claim(payload)
+        except DuplicateKeyError:
+            return False
+        return True
+    return True
 
 
 def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
@@ -154,12 +178,13 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
     stale_file_ids: set[str] = set()
     candidate_file_ids = sorted({str(claim["file_id"]) for claim in active_ml_claims})
     if candidate_file_ids:
-        file_docs = cast("list[dict[str, Any]]", db.library.get_files_by_ids(candidate_file_ids))
+        file_docs = cast("list[dict[str, Any]]", db.library.list_files_by_ids(candidate_file_ids))
         existing_file_ids = {str(doc["_id"]) for doc in file_docs if "_id" in doc}
 
-        tagged_edges = cast("list[dict[str, Any]]", db.app.get_state_edges_for_files(candidate_file_ids))
         tagged_file_ids = {
-            str(edge["_from"]) for edge in tagged_edges if "_from" in edge and edge.get("_to") == _TAGGED_STATE_ID
+            str(file_doc["_id"])
+            for file_doc in cast("list[dict[str, Any]]", db.app.list_file_docs_in_state(_TAGGED_STATE_ID))
+            if "_id" in file_doc and str(file_doc["_id"]) in candidate_file_ids
         }
         stale_file_ids = {
             file_id for file_id in candidate_file_ids if file_id not in existing_file_ids or file_id in tagged_file_ids
@@ -167,9 +192,9 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
 
     removed = 0
     if inactive_worker_ids:
-        removed += db.app.delete_claims_for_workers(sorted(inactive_worker_ids))
+        removed += db.app.remove_claims(worker_ids=sorted(inactive_worker_ids))
     if stale_file_ids:
-        removed += db.app.delete_claims_for_files(sorted(stale_file_ids))
+        removed += db.app.remove_claims(file_ids=sorted(stale_file_ids))
     return removed
 
 
@@ -242,5 +267,5 @@ def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
         return []
 
     file_ids = [str(claim["file_id"]) for claim in claims]
-    db.app.delete_claims_for_workers([worker_id])
+    db.app.remove_claims(worker_ids=[worker_id])
     return file_ids

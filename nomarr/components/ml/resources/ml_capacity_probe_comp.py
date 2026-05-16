@@ -19,8 +19,6 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
-from arango.exceptions import DocumentInsertError
-
 from nomarr.components.ml.onnx.ml_cache import ONNXModelCache
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
 from nomarr.components.platform.resource_monitor_comp import (
@@ -29,6 +27,7 @@ from nomarr.components.platform.resource_monitor_comp import (
     get_vram_usage_for_pid_mb,
 )
 from nomarr.helpers.time_helper import internal_ms, now_ms
+from nomarr.persistence.exceptions import DuplicateKeyError
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -78,7 +77,7 @@ def _try_acquire_probe_lock(db: Database, model_set_hash: str, worker_id: str) -
         existing_expires_at = float(existing.get("expires_at", 0.0))
         if existing_expires_at >= now_value and existing.get("holder") != worker_id:
             return False
-        db.app.release_lock(reference)
+        db.app.remove_lock(reference)
 
     payload = {
         "document_reference": reference,
@@ -89,9 +88,10 @@ def _try_acquire_probe_lock(db: Database, model_set_hash: str, worker_id: str) -
         "status": "active",
     }
     try:
-        return db.app.acquire_lock(reference, payload)
-    except DocumentInsertError:
+        db.app.add_lock(payload)
+    except DuplicateKeyError:
         return False
+    return True
 
 
 def _get_probe_lock_status(db: Database, model_set_hash: str) -> dict[str, Any] | None:
@@ -110,20 +110,21 @@ def _complete_probe_lock(db: Database, model_set_hash: str) -> None:
     updated.pop("_id", None)
     updated["document_reference"] = reference
     updated["status"] = "complete"
-    db.app.upsert_lock(
-        reference,
-        {key: value for key, value in updated.items() if key != "document_reference"},
-    )
+    db.app.remove_lock(reference)
+    try:
+        db.app.add_lock({key: value for key, value in updated.items() if key != "_key"})
+    except DuplicateKeyError:
+        logger.debug("[capacity_probe] Probe lock changed before completion write: %s", reference)
 
 
 def _release_probe_lock(db: Database, model_set_hash: str) -> None:
     """Delete the lock document for a capacity probe."""
-    db.app.release_lock(_probe_lock_reference(model_set_hash))
+    db.app.remove_lock(_probe_lock_reference(model_set_hash))
 
 
 def _get_capacity_estimate(db: Database, model_set_hash: str) -> dict[str, Any] | None:
     """Read the persisted capacity estimate document for one model set."""
-    return cast("dict[str, Any] | None", db.app.get_meta(f"{_CAPACITY_META_PREFIX}{model_set_hash}"))
+    return cast("dict[str, Any] | None", db.app.get_config_option(f"{_CAPACITY_META_PREFIX}{model_set_hash}"))
 
 
 def _save_capacity_estimate(
@@ -146,7 +147,7 @@ def _save_capacity_estimate(
         "created_at": timestamp if existing is None else existing.get("created_at"),
         "updated_at": None if existing is None else timestamp,
     }
-    db.app.upsert_meta(
+    db.app.update_config_option(
         f"{_CAPACITY_META_PREFIX}{model_set_hash}",
         {k: v for k, v in payload.items() if k != "model_set_hash"},
     )
@@ -154,7 +155,7 @@ def _save_capacity_estimate(
 
 def _delete_capacity_estimate(db: Database, model_set_hash: str) -> None:
     """Delete the stored capacity estimate and any related probe lock."""
-    db.app.delete_meta(f"{_CAPACITY_META_PREFIX}{model_set_hash}")
+    db.app.remove_config_option(f"{_CAPACITY_META_PREFIX}{model_set_hash}")
     _release_probe_lock(db, model_set_hash)
 
 

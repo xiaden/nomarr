@@ -24,11 +24,10 @@ from nomarr.components.ml.inference.ml_backbone_embed_comp import compute_backbo
 from nomarr.components.ml.inference.ml_head_pipeline_comp import run_heads
 from nomarr.components.ml.onnx.ml_cache import ONNXModelCache
 from nomarr.components.ml.onnx.ml_discovery_comp import compute_model_suite_hash
-from nomarr.components.ml.onnx.ml_model_registry_comp import build_model_output_id_map, build_model_output_index_map
+from nomarr.components.ml.onnx.ml_model_registry_comp import build_model_output_index_map
 from nomarr.components.ml.resources.ml_timing_comp import build_timing_summary
 from nomarr.components.ml.vectors.ml_vector_persist_comp import persist_backbone_vector
 from nomarr.components.tagging.tagging_aggregation_comp import collect_mood_outputs
-from nomarr.helpers.dto.ml_edge_dto import MLEdgeWrites
 from nomarr.helpers.dto.processing_dto import (
     DeferredFileWrites,
     DeferredOutputStreamWrite,
@@ -151,7 +150,7 @@ def process_file_workflow(
     for item in embed_result.embeddings:
         backbone, backbone_heads, embeddings_2d = item.backbone, item.heads, item.embeddings
         t_heads_start = internal_ms()
-        result = run_heads(backbone_heads, embeddings_2d, tags_accum)
+        result = run_heads(backbone_heads, embeddings_2d)
         timings[f"heads_{backbone}"] = internal_ms().value - t_heads_start.value
         # Store per-head timings
         for head_name, head_time_ms in result.per_head_timings.items():
@@ -197,18 +196,6 @@ def process_file_workflow(
     mood_tags = collect_mood_outputs(regression_heads, all_head_outputs)
     timings["mood_aggregation"] = internal_ms().value - t_mood.value
     tags_accum.update(mood_tags)
-    # Build tag→output edge mapping for deferred tag_model_output writes.
-    # Queries the graph once to map model ONNX path+label → output vertex _id.
-    output_edges: dict[str, tuple[str, float]] = {}
-    if all_head_outputs:
-        output_id_map = build_model_output_id_map(db)
-        for ho in all_head_outputs:
-            path_map = output_id_map.get(ho.head.model_path)
-            if path_map is not None:
-                output_id = path_map.get(ho.label)
-                if output_id is not None:
-                    output_edges[f"nom:{ho.model_key}"] = (output_id, ho.value)
-
     resolved_output_streams: list[DeferredOutputStreamWrite] = []
     if all_raw_output_streams:
         output_index_map = build_model_output_index_map(db)
@@ -247,7 +234,6 @@ def process_file_workflow(
             tagger_version=config.tagger_version,
             chromaprint=shared_chromaprint,
             raw_output_streams=resolved_output_streams,
-            ml_edges=MLEdgeWrites(output_edges=output_edges) if output_edges else None,
         )
     elapsed_ms = internal_ms().value - start_all.value
     elapsed = round(elapsed_ms / 1000, 2)

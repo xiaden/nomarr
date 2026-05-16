@@ -19,7 +19,7 @@ from nomarr.components.ml.resources.ml_vram_coordinator_comp import (
 class TestRegisterVramPromise:
     def test_registers_promise_via_app_facade(self) -> None:
         db = MagicMock()
-        db.app.get_vram_promises.return_value = []
+        db.app.list_vram_promises.return_value = []
 
         with (
             patch(
@@ -39,8 +39,8 @@ class TestRegisterVramPromise:
         assert result is True
         mock_reset.assert_called_once_with()
         promise_id = f"vram_promises/{_promise_key('worker:1', 'model.onnx')}"
-        db.app.delete_vram_promise.assert_called_once_with(promise_id)
-        db.app.upsert_vram_promise.assert_called_once_with(
+        db.app.remove_vram_promise.assert_called_once_with(promise_id)
+        db.app.add_vram_promise.assert_called_once_with(
             {
                 "_key": _promise_key("worker:1", "model.onnx"),
                 "worker_id": "worker:1",
@@ -55,7 +55,7 @@ class TestRegisterVramPromise:
 
     def test_returns_false_when_headroom_is_insufficient(self) -> None:
         db = MagicMock()
-        db.app.get_vram_promises.return_value = [{"promised_mb": 7000.0}]
+        db.app.list_vram_promises.return_value = [{"promised_mb": 7000.0}]
 
         with (
             patch("nomarr.components.ml.resources.ml_vram_coordinator_comp._resource_monitor.reset_telemetry_cache"),
@@ -67,8 +67,8 @@ class TestRegisterVramPromise:
             result = register_vram_promise(db, "worker:1", 999, "model.onnx", 512.0)
 
         assert result is False
-        db.app.delete_vram_promise.assert_not_called()
-        db.app.upsert_vram_promise.assert_not_called()
+        db.app.remove_vram_promise.assert_not_called()
+        db.app.add_vram_promise.assert_not_called()
 
 
 @pytest.mark.unit
@@ -78,14 +78,14 @@ class TestReleaseVramPromise:
 
         release_vram_promise(db, "worker:1", "model.onnx")
 
-        db.app.delete_vram_promise.assert_called_once_with(f"vram_promises/{_promise_key('worker:1', 'model.onnx')}")
+        db.app.remove_vram_promise.assert_called_once_with(f"vram_promises/{_promise_key('worker:1', 'model.onnx')}")
 
 
 @pytest.mark.unit
 class TestReleaseWorkerPromises:
     def test_deletes_promises_by_id_or_key_for_matching_worker(self) -> None:
         db = MagicMock()
-        db.app.get_vram_promises.return_value = [
+        db.app.list_vram_promises.return_value = [
             {"_id": "vram_promises/first", "worker_id": "worker:1"},
             {"_key": "second", "worker_id": "worker:1"},
             {"_id": "vram_promises/other", "worker_id": "worker:2"},
@@ -94,7 +94,7 @@ class TestReleaseWorkerPromises:
         result = release_worker_promises(db, "worker:1")
 
         assert result == 2
-        assert db.app.delete_vram_promise.call_args_list == [
+        assert db.app.remove_vram_promise.call_args_list == [
             call("vram_promises/first"),
             call("vram_promises/second"),
         ]

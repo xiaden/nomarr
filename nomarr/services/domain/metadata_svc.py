@@ -111,8 +111,7 @@ class MetadataService:
         if not tag:
             return None
 
-        # Get song count for this tag
-        song_count = self.db.library.count_song_tag_edges(entity_id)
+        song_count = self.db.library.count_songs_for_tag(entity_id)
 
         return EntityDict(
             _id=tag["_id"],
@@ -141,7 +140,7 @@ class MetadataService:
 
         """
         song_ids = list_songs_for_tag(self.db, entity_id, limit=limit, offset=offset)
-        total = self.db.library.count_song_tag_edges(entity_id)
+        total = self.db.library.count_songs_for_tag(entity_id)
 
         return SongListForEntityResult(
             song_ids=song_ids,

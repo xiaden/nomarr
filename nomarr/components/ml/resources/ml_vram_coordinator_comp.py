@@ -40,7 +40,7 @@ def _promise_key(worker_id: str, model_path: str) -> str:
 
 def _get_all_promises(db: Database) -> list[dict[str, Any]]:
     """Return all VRAM promise documents via app-level accessors."""
-    return db.app.get_vram_promises()
+    return db.app.list_vram_promises()
 
 
 def register_vram_promise(
@@ -101,9 +101,9 @@ def register_vram_promise(
         return False
 
     promise_id = f"vram_promises/{_promise_key(worker_id, model_path)}"
-    db.app.delete_vram_promise(promise_id)
+    db.app.remove_vram_promise(promise_id)
 
-    db.app.upsert_vram_promise(
+    db.app.add_vram_promise(
         {
             "_key": _promise_key(worker_id, model_path),
             "worker_id": worker_id,
@@ -156,7 +156,7 @@ def release_vram_promise(
         model_path:  Absolute path to the ONNX model file.
 
     """
-    db.app.delete_vram_promise(f"vram_promises/{_promise_key(worker_id, model_path)}")
+    db.app.remove_vram_promise(f"vram_promises/{_promise_key(worker_id, model_path)}")
     logger.debug(
         "[vram_coordinator] Released promise: worker=%s model=%s",
         worker_id,
@@ -214,11 +214,11 @@ def release_worker_promises(
         promise_id = promise.get("_id")
         promise_key = promise.get("_key")
         if isinstance(promise_id, str) and promise_id:
-            db.app.delete_vram_promise(promise_id)
+            db.app.remove_vram_promise(promise_id)
             removed += 1
             continue
         if isinstance(promise_key, str) and promise_key:
-            db.app.delete_vram_promise(f"vram_promises/{promise_key}")
+            db.app.remove_vram_promise(f"vram_promises/{promise_key}")
             removed += 1
     if removed:
         logger.info(

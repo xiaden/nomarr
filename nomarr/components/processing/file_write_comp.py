@@ -1,6 +1,6 @@
 """Persistence wrappers for the file tag-writing workflow.
 
-Absorbs all db.library_files / db.libraries / db.tags calls from
+Absorbs the intent-level `db.library.*` / `db.app.*` calls used by
 ``write_file_tags_wf`` so the workflow never touches persistence directly.
 """
 
@@ -177,8 +177,9 @@ def release_file_claim(
     try:
         release_claim(db, file_key)
     except Exception as exc:
-        logger.debug(
+        logger.warning(
             "[file_write_comp] Failed to release claim for %s: %s",
             file_key,
             exc,
+            exc_info=True,
         )

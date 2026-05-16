@@ -26,5 +26,5 @@ Entity lifecycle management — seeding tag relationships from raw metadata, reb
 ## Dependencies
 
 - **Upstream:** Called by scan workflows and metadata repair services
-- **Downstream:** Calls persistence directly (ArangoDB tag operations via `db.tags`, song document updates)
+- **Downstream:** Calls the intent-level persistence facade (`db.library`) for tag reads and metadata repair updates
 - **External:** Standard library only

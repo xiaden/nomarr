@@ -1,7 +1,7 @@
 """Tag query persistence wrappers for navidrome workflows.
 
-Absorbs all db.tags.* and related calls from navidrome workflows so they
-never touch persistence directly.
+Absorbs all intent-level `db.library.*` tag queries from navidrome workflows
+so they never touch persistence directly.
 """
 
 from __future__ import annotations

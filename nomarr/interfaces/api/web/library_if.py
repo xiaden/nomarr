@@ -125,7 +125,8 @@ async def create_library(
             library_auto_write=request.library_auto_write,
         )
         return LibraryResponse.from_dto(library)
-    except ValueError:
+    except ValueError as e:
+        logger.warning("[Web API] Library configuration error: %s", e)
         raise HTTPException(status_code=400, detail="Invalid library configuration") from None
     except Exception as e:
         logger.exception("[Web API] Error creating library")
@@ -213,6 +214,31 @@ async def delete_library(
     except Exception as e:
         logger.exception(f"[Web API] Error deleting library {library_id}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to delete library")) from e
+
+
+@router.post("/clear-data", dependencies=[Depends(verify_session)])
+async def clear_library_data(
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
+) -> dict[str, str]:
+    """Clear all library data (files, tags, vectors, pipeline states).
+
+    Wipes the entire library database — all files, tags, edges, vectors, scan
+    records, and pipeline states — and resets the system to a clean slate.
+    Requires no scans to be running. Intended for use from the admin UI when a
+    full re-import is needed.
+    """
+    try:
+        library_service.clear_library_data()
+        return {"status": "success", "message": "Library data cleared"}
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    except Exception as e:
+        logger.exception("[Web API] Error clearing library data")
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to clear library data")
+        ) from e
 
 
 @router.get("/{library_id}/vector-config", dependencies=[Depends(verify_session)])

@@ -21,17 +21,7 @@ def _all_tags(db: Database) -> list[dict[str, Any]]:
     tags: list[dict[str, Any]] = []
     current_offset = 0
     while current_offset < total:
-        page_ids = [
-            str(row["value"])
-            for row in cast(
-                "list[dict[str, Any]]",
-                db.library.aggregate_tag_field("_id", limit=page_size, offset=current_offset),
-            )
-            if isinstance(row.get("value"), str)
-        ]
-        page = [
-            tag for tag_id in page_ids if (tag := cast("dict[str, Any] | None", db.library.get_tag(tag_id))) is not None
-        ]
+        page = cast("list[dict[str, Any]]", db.library.list_tags(limit=page_size, offset=current_offset))
         if not page:
             break
         tags.extend(page)
@@ -124,14 +114,27 @@ def _matches_tag_operator(tag_value: Any, operator: str, value: TagValue) -> boo
     return bool(tag_value == value)
 
 
-def _file_ids_for_tag_docs(db: Database, tags: list[dict[str, Any]]) -> set[str]:
-    """Traverse from tags to linked file ids and return the union set."""
-    tag_ids = [tag_id for tag in tags if isinstance(tag_id := tag.get("_id"), str)]
-    if not tag_ids:
-        return set()
+def _file_docs_for_tag(db: Database, tag: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return file documents associated with one tag via the intent-level library facade."""
+    tag_name = tag.get("name")
+    tag_value = tag.get("value")
+    if not isinstance(tag_name, str) or tag_value is None:
+        return []
+    return cast(
+        "list[dict[str, Any]]",
+        db.library.search_files_by_tag(tag_name, str(tag_value), limit=None),
+    )
 
-    edges = cast("list[dict[str, Any]]", db.library.get_song_tag_edges_for_tags(tag_ids))
-    return {str(edge["_from"]) for edge in edges if isinstance(edge.get("_from"), str)}
+
+def _file_ids_for_tag_docs(db: Database, tags: list[dict[str, Any]]) -> set[str]:
+    """Return the union of file ids matched by the supplied tag documents."""
+    file_ids: set[str] = set()
+    for tag in tags:
+        for file_doc in _file_docs_for_tag(db, tag):
+            file_id = file_doc.get("_id")
+            if isinstance(file_id, str):
+                file_ids.add(file_id)
+    return file_ids
 
 
 def _library_file_ids(db: Database, library_id: str | None) -> set[str] | None:
@@ -194,6 +197,14 @@ def get_tag(db: Database, tag_id: str) -> dict[str, Any] | None:
     return cast("dict[str, Any] | None", db.library.get_tag(tag_id))
 
 
+def count_songs_for_tag(db: Database, tag_id: str) -> int:
+    """Count files linked to one tag using the intent-level library facade."""
+    tag = get_tag(db, tag_id)
+    if tag is None:
+        return 0
+    return len(db.library.list_file_ids_for_tag_id(tag_id, limit=None))
+
+
 def list_tags_by_name(
     db: Database,
     name: str | None = None,
@@ -203,35 +214,32 @@ def list_tags_by_name(
     sort_by_count: bool = False,
 ) -> list[dict[str, Any]]:
     """List tag values, optionally filtered by tag name and search text."""
-    matched_tags = _filter_tags_by_search(_tags_for_name(db, name), search)
-    count_by_tag_id = {
-        tag_id: db.library.count_song_tag_edges(tag_id)
-        for tag in matched_tags
-        if isinstance(tag_id := tag.get("_id"), str)
-    }
-
     if sort_by_count:
-        counted_tags = [
-            (tag, count_by_tag_id.get(str(tag["_id"]), 0)) for tag in matched_tags if isinstance(tag.get("_id"), str)
-        ]
-        counted_tags.sort(key=lambda item: (-item[1], str(item[0].get("value", "")).lower()))
-        return [_enrich_tag(tag, song_count) for tag, song_count in counted_tags[offset : offset + limit]]
+        # For sort_by_count we need all matching tags sorted by count desc — fetch all, then sort.
+        # This is an uncommon path so the cost is acceptable.
+        total = db.library.count_tags_filtered(name=name, search=search)
+        raw_tags = cast(
+            "list[dict[str, Any]]",
+            db.library.list_tags_with_song_count(name=name, search=search, limit=total, offset=0),
+        )
+        raw_tags.sort(key=lambda item: (-item.get("song_count", 0), str(item.get("value", "")).lower()))
+        return raw_tags[offset : offset + limit]
 
-    matched_tags.sort(key=lambda tag: str(tag.get("value", "")).lower())
-    page = matched_tags[offset : offset + limit]
-    return [
-        _enrich_tag(tag, count_by_tag_id.get(tag_id, 0)) for tag in page if isinstance(tag_id := tag.get("_id"), str)
-    ]
+    # Default path: sort by value, efficient pagination via AQL
+    return cast(
+        "list[dict[str, Any]]",
+        db.library.list_tags_with_song_count(name=name, search=search, limit=limit, offset=offset),
+    )
 
 
 def count_tags_by_name(db: Database, name: str | None = None, search: str | None = None) -> int:
     """Count tags, optionally filtered by tag name and search text."""
-    return len(_filter_tags_by_search(_tags_for_name(db, name), search))
+    return db.library.count_tags_filtered(name=name, search=search)
 
 
 def get_song_tags(db: Database, song_id: str, name: str | None = None, nomarr_only: bool = False) -> Tags:
     """Return tags for one song as a ``Tags`` DTO."""
-    tag_docs = cast("list[dict[str, Any]]", db.library.get_tags_for_file(song_id))
+    tag_docs = cast("list[dict[str, Any]]", db.library.list_tags_for_file(song_id))
     rows: list[dict[str, Any]] = []
     for tag in tag_docs:
         tag_name = tag.get("name")
@@ -250,31 +258,34 @@ def get_nomarr_tags_bulk(db: Database, file_ids: list[str]) -> dict[str, Tags]:
     if not file_ids:
         return {}
 
-    rows = cast(
-        "list[dict[str, Any]]",
-        db.library.get_tags_for_files_batch(
+    tags_by_file = cast(
+        "dict[str, list[dict[str, Any]]]",
+        db.library.list_file_tags_for_files(
             list(file_ids),
             name_starts_with="nom:",
         ),
     )
-    rows_by_file: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        start_id = row.get("start_id")
-        tag = row.get("v")
-        if not isinstance(start_id, str) or not isinstance(tag, dict):
-            continue
-        tag_name = tag.get("name")
-        if not isinstance(tag_name, str) or "value" not in tag:
-            continue
-        rows_by_file.setdefault(start_id, []).append({"name": tag_name, "value": tag["value"]})
-    return {file_id: Tags.from_db_rows(rows) for file_id, rows in rows_by_file.items()}
+    result: dict[str, Tags] = {}
+    for file_id, tag_docs in tags_by_file.items():
+        rows = [
+            {"name": tag_name, "value": tag["value"]}
+            for tag in tag_docs
+            if isinstance(tag_name := tag.get("name"), str) and "value" in tag
+        ]
+        if rows:
+            result[file_id] = Tags.from_db_rows(rows)
+    return result
 
 
 def list_songs_for_tag(db: Database, tag_id: str, limit: int = 100, offset: int = 0) -> list[str]:
-    """List song ids connected to one tag."""
-    edges = cast("list[dict[str, Any]]", db.library.get_song_tag_edges_for_tags([tag_id]))
-    page = edges[offset : offset + limit]
-    return [str(edge["_from"]) for edge in page if edge.get("_from")]
+    """List song ids connected to one tag via the intent-level library facade."""
+    tag = get_tag(db, tag_id)
+    if tag is None:
+        return []
+    return cast(
+        "list[str]",
+        db.library.list_file_ids_for_tag_id(tag_id, limit=limit, offset=offset),
+    )
 
 
 def get_file_ids_matching_tag(db: Database, name: str, operator: str, value: TagValue) -> set[str]:
@@ -341,13 +352,15 @@ def get_distinct_tag_values_for_files(db: Database, file_ids: list[str], name: s
     if not file_ids:
         return []
 
-    rows = cast("list[dict[str, Any]]", db.library.get_tags_for_files_batch(list(file_ids)))
+    tags_by_file = cast(
+        "dict[str, list[dict[str, Any]]]",
+        db.library.list_file_tags_for_files(list(file_ids)),
+    )
     values = {
         value
-        for row in rows
-        if isinstance(tag := row.get("v"), dict)
-        and tag.get("name") == name
-        and isinstance(value := tag.get("value"), str)
+        for tag_docs in tags_by_file.values()
+        for tag in tag_docs
+        if tag.get("name") == name and isinstance(value := tag.get("value"), str)
     }
     return sorted(values)
 
@@ -357,32 +370,30 @@ def get_tag_values_grouped_by_file(db: Database, file_ids: list[str], name: str)
     if not file_ids:
         return {}
 
-    rows = cast("list[dict[str, Any]]", db.library.get_tags_for_files_batch(list(file_ids)))
+    tags_by_file = cast(
+        "dict[str, list[dict[str, Any]]]",
+        db.library.list_file_tags_for_files(list(file_ids)),
+    )
     result: dict[str, set[str]] = {}
-    for row in rows:
-        start_id = row.get("start_id")
-        tag = row.get("v")
-        if not isinstance(start_id, str) or not isinstance(tag, dict):
-            continue
-        if tag.get("name") != name:
-            continue
-        value = tag.get("value")
-        if not isinstance(value, str):
-            continue
-        result.setdefault(start_id, set()).add(value)
+    for file_id, tag_docs in tags_by_file.items():
+        for tag in tag_docs:
+            if tag.get("name") != name:
+                continue
+            value = tag.get("value")
+            if not isinstance(value, str):
+                continue
+            result.setdefault(file_id, set()).add(value)
     return result
 
 
 def get_tag_songs_with_metadata(db: Database, tag_id: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
     """Return song rows for a tag with basic file metadata."""
     result: list[dict[str, Any]] = []
-    edges = cast("list[dict[str, Any]]", db.library.get_song_tag_edges_for_tags([tag_id]))
-    file_ids = [str(file_id) for edge in edges if (file_id := edge.get("_from"))]
-    for file_id in file_ids[offset : offset + limit]:
+    for file_id in list_songs_for_tag(db, tag_id, limit=limit, offset=offset):
         file_doc = cast("dict[str, Any] | None", db.library.get_file(file_id))
         if file_doc is None:
             continue
-        tag_docs = cast("list[dict[str, Any]]", db.library.get_tags_for_file(file_id))
+        tag_docs = cast("list[dict[str, Any]]", db.library.list_tags_for_file(file_id))
         result.append(
             {
                 "file_id": file_id,

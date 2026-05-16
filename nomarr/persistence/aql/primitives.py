@@ -1,14 +1,21 @@
 """Low-level Tier 1 AQL primitive helpers used by the Tier 2 binding classes in `nomarr/persistence/database/`.
 
-These functions provide validated building blocks for composing AQL queries."""
+These functions provide validated building blocks for composing AQL queries.
+"""
 
 from __future__ import annotations
 
 import re
-from collections.abc import Set
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.persistence.arango_client import SafeDatabase
+from arango.exceptions import DocumentInsertError
+
+from nomarr.persistence.exceptions import DuplicateKeyError
+
+if TYPE_CHECKING:
+    from collections.abc import Set as AbstractSet
+
+    from nomarr.persistence.arango_client import SafeDatabase
 
 Document = dict[str, Any]
 
@@ -24,7 +31,8 @@ def _validate_field_name(field_name: str) -> None:
         raise ValueError(msg)
 
 
-def _require_allowed_field(field_name: str, allowed_fields: Set[str]) -> None:
+def _require_allowed_field(field_name: str, allowed_fields: AbstractSet[str]) -> None:
+    """Validate ``field_name`` and require it to be a member of ``allowed_fields``."""
     _validate_field_name(field_name)
     if field_name not in allowed_fields:
         msg = f"Field {field_name!r} is not allowed for this query"
@@ -40,7 +48,7 @@ def _build_filter_lines(
     doc_name: str,
     filters: dict[str, Any],
     bind_vars: dict[str, Any],
-    allowed_fields: Set[str],
+    allowed_fields: AbstractSet[str],
 ) -> list[str]:
     filter_lines: list[str] = []
     for index, (field_name, value) in enumerate(sorted(filters.items())):
@@ -87,7 +95,7 @@ def get_many_by_field(
     value: Any,
     *,
     limit: int | None,
-    allowed_fields: Set[str],
+    allowed_fields: AbstractSet[str],
 ) -> list[Document]:
     """Fetch documents that match one equality filter."""
     _require_allowed_field(field_name, allowed_fields)
@@ -114,7 +122,7 @@ def get_filtered_docs(
     filters: dict[str, Any],
     sort_field: str | None,
     limit: int | None,
-    allowed_fields: Set[str],
+    allowed_fields: AbstractSet[str],
 ) -> list[Document]:
     """Fetch documents matching equality filters with optional sort and limit."""
     bind_vars: dict[str, Any] = {"@collection": collection}
@@ -131,35 +139,6 @@ def get_filtered_docs(
         bind_vars["limit"] = normalized_limit
     query_lines.append("    RETURN doc")
     return execute(db, "\n".join(query_lines), bind_vars)
-
-
-def list_field_values(
-    db: SafeDatabase,
-    collection: str,
-    value_field: str,
-    *,
-    sort_field: str | None,
-    limit: int | None,
-    filters: dict[str, Any],
-    allowed_fields: Set[str],
-) -> list[Any]:
-    """Return a flat list of one projected field from filtered documents."""
-    _require_allowed_field(value_field, allowed_fields)
-    bind_vars: dict[str, Any] = {"@collection": collection}
-    query_lines = ["FOR doc IN @@collection"]
-    query_lines.extend(
-        _build_filter_lines(doc_name="doc", filters=filters, bind_vars=bind_vars, allowed_fields=allowed_fields),
-    )
-    if sort_field is not None:
-        _require_allowed_field(sort_field, allowed_fields)
-        query_lines.append(f"    SORT doc.{sort_field}")
-    normalized_limit = normalize_limit(limit)
-    if normalized_limit is not None:
-        query_lines.append("    LIMIT @limit")
-        bind_vars["limit"] = normalized_limit
-    query_lines.append(f"    RETURN doc.{value_field}")
-    cursor = db.aql.execute("\n".join(query_lines), bind_vars=bind_vars)
-    return list(cursor)
 
 
 def count_distinct_edge_sources_to_filtered_vertices(
@@ -215,6 +194,42 @@ def delete_many_by_keys(db: SafeDatabase, collection: str, keys: list[str]) -> i
     return int(results[0]) if results else 0
 
 
+def delete_many_by_field(
+    db: SafeDatabase,
+    collection: str,
+    field_name: str,
+    field_value: Any,
+    *,
+    allowed_fields: AbstractSet[str],
+) -> int:
+    """Delete documents by a validated field filter and return the number removed. ``field_name`` must be present in ``allowed_fields`` or validation raises an error. A list ``field_value`` uses an ``IN`` filter, while a scalar uses ``==``; an empty list short-circuits and returns 0 without executing AQL."""
+    _require_allowed_field(field_name, allowed_fields)
+    if isinstance(field_value, list) and not field_value:
+        return 0
+
+    filter_expression = (
+        f"doc.{field_name} IN @field_value" if isinstance(field_value, list) else f"doc.{field_name} == @field_value"
+    )
+    query = "\n".join(
+        [
+            "LET removed = (",
+            "    FOR doc IN @@collection",
+            f"        FILTER {filter_expression}",
+            "        REMOVE doc IN @@collection",
+            "        OPTIONS { ignoreErrors: true }",
+            "        RETURN 1",
+            ")",
+            "RETURN LENGTH(removed)",
+        ],
+    )
+    cursor = db.aql.execute(
+        query,
+        bind_vars={"@collection": collection, "field_value": field_value},
+    )
+    results = list(cursor)
+    return int(results[0]) if results else 0
+
+
 def upsert_by_field(
     db: SafeDatabase,
     collection: str,
@@ -238,34 +253,12 @@ def upsert_by_field(
     return cast("str", next(iter(cursor)))
 
 
-def upsert_many_by_field(
-    db: SafeDatabase,
-    collection: str,
-    field_name: str,
-    payloads: list[dict[str, Any]],
-) -> list[str]:
-    """Batch-upsert documents matched by ``field_name``, returning ``_id`` list in input order."""
-    if not payloads:
-        return []
-    _validate_field_name(field_name)
-    query = f"""
-    FOR doc IN @docs
-        UPSERT {{ {field_name}: doc.{field_name} }}
-            INSERT doc
-            UPDATE doc
-            IN @@collection
-        RETURN NEW._id
-    """
-    cursor = db.aql.execute(
-        query,
-        bind_vars={"@collection": collection, "docs": payloads},
-    )
-    return cast("list[str]", list(cursor))
-
-
 def insert_document(db: SafeDatabase, collection: str, payload: dict[str, Any]) -> str:
     """Insert one document and return its ``_id``."""
-    result = cast("dict[str, Any]", db.collection(collection).insert(payload))
+    try:
+        result = cast("dict[str, Any]", db.collection(collection).insert(payload))
+    except DocumentInsertError as exc:
+        raise DuplicateKeyError(str(exc)) from exc
     return cast("str", result["_id"])
 
 

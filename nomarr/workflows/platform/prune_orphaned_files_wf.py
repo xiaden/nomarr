@@ -33,14 +33,12 @@ def prune_orphaned_files_workflow(db: Database) -> dict[str, int]:
 
     Returns a stats dict with ``files_pruned``.
     """
-    orphan_ids = db.library.list_orphaned_file_ids()
+    orphan_ids = db.library.maintenance.list_orphaned_file_ids()
     if not orphan_ids:
         logger.debug("[PruneOrphanedFiles] No orphaned files found")
         return {"files_pruned": 0}
 
     logger.warning("[PruneOrphanedFiles] Found %d orphaned file(s) — pruning", len(orphan_ids))
-    db.library.remove_files(orphan_ids)
-    return {"files_pruned": len(orphan_ids)}
-
-    logger.info("[PruneOrphanedFiles] Pruned %d orphaned file(s)", len(orphan_ids))
+    for file_id in orphan_ids:
+        db.library.remove_file(file_id)
     return {"files_pruned": len(orphan_ids)}

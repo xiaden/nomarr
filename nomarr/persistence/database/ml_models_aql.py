@@ -22,8 +22,6 @@ class MlModelsAqlOperations:
     MODEL_COLLECTION = "ml_models"
     MODEL_OUTPUT_COLLECTION = "ml_model_outputs"
     MODEL_OUTPUT_EDGE_COLLECTION = "model_has_output"
-    TAG_MODEL_OUTPUT_COLLECTION = "tag_model_output"
-    TAG_COLLECTION = "tags"
     CALIBRATION_COLLECTION = "calibration_state"
     CALIBRATION_EDGE_COLLECTION = "model_has_calibration"
     CALIBRATION_HISTORY_COLLECTION = "calibration_history"
@@ -155,10 +153,38 @@ class MlModelsAqlOperations:
             },
         )
 
+    def delete_model_output_edge(self, output_id: str) -> None:
+        """Delete the model→output edge whose _key or _to matches output_id."""
+        self._db.aql.execute(
+            """
+            FOR edge IN @@collection
+                FILTER edge._key == @edge_key OR edge._to == @output_id
+                REMOVE edge IN @@collection
+            """,
+            bind_vars={
+                "@collection": self.MODEL_OUTPUT_EDGE_COLLECTION,
+                "edge_key": _extract_key(output_id),
+                "output_id": _as_document_id(self.MODEL_OUTPUT_COLLECTION, output_id),
+            },
+        )
+
     def delete_model_output(self, output_id: str) -> None:
         primitives.delete_many_by_keys(self._db, self.MODEL_OUTPUT_COLLECTION, [_extract_key(output_id)])
 
     def delete_model_outputs_for_model(self, model_id: str) -> list[str]:
+        """Delete all output documents and their edges for a model.
+
+        Collects output IDs via ``model_has_output`` edge traversal, then removes
+        the output documents and the edge rows in a single multi-collection AQL pass.
+
+        Args:
+            model_id: Model document ID or ``_key``.
+
+        Returns:
+            List of output document IDs that were deleted.
+        """
+        # Part C keeps this handwritten because it removes model-output documents
+        # together with their edge rows; that multi-collection graph cleanup stays Tier 2.
         normalized_model_id = _as_document_id(self.MODEL_COLLECTION, model_id)
         cursor = self._db.aql.execute(
             """
@@ -189,146 +215,6 @@ class MlModelsAqlOperations:
             },
         )
         return output_ids
-
-    def get_tag_model_output(self, key: str) -> Document | None:
-        results = primitives.get_many_by_keys(self._db, self.TAG_MODEL_OUTPUT_COLLECTION, [_extract_key(key)])
-        return results[0] if results else None
-
-    def get_tag_model_output_edges_for_tags(self, tag_ids: list[str]) -> list[Document]:
-        normalized_tag_ids = [_as_document_id(self.TAG_COLLECTION, tag_id) for tag_id in tag_ids]
-        if not normalized_tag_ids:
-            return []
-        return primitives.execute(
-            self._db,
-            """
-            FOR edge IN @@collection
-                FILTER edge._from IN @tag_ids
-                SORT edge._from, edge._to, edge._key
-                RETURN edge
-            """,
-            {"@collection": self.TAG_MODEL_OUTPUT_COLLECTION, "tag_ids": normalized_tag_ids},
-        )
-
-    def upsert_tag_model_output(self, payload: dict[str, Any]) -> None:
-        edge_from = payload.get("_from")
-        edge_to = payload.get("_to")
-        edge_key = payload.get("_key")
-        if isinstance(edge_from, str) and isinstance(edge_to, str):
-            self._db.aql.execute(
-                """
-                UPSERT { _from: @edge_from, _to: @edge_to }
-                    INSERT MERGE(@payload, { _from: @edge_from, _to: @edge_to })
-                    UPDATE @payload
-                    IN @@collection
-                """,
-                bind_vars={
-                    "@collection": self.TAG_MODEL_OUTPUT_COLLECTION,
-                    "edge_from": edge_from,
-                    "edge_to": edge_to,
-                    "payload": payload,
-                },
-            )
-            return
-        if isinstance(edge_key, str) and edge_key:
-            self._db.aql.execute(
-                """
-                UPSERT { _key: @edge_key }
-                    INSERT MERGE(@payload, { _key: @edge_key })
-                    UPDATE @payload
-                    IN @@collection
-                """,
-                bind_vars={"@collection": self.TAG_MODEL_OUTPUT_COLLECTION, "edge_key": edge_key, "payload": payload},
-            )
-            return
-        msg = "Tag model output payload must include '_key' or both '_from' and '_to'"
-        raise ValueError(msg)
-
-    def insert_tag_model_output_edges_batch(self, docs: list[dict[str, Any]]) -> None:
-        if not docs:
-            return
-        self._db.aql.execute(
-            """
-            FOR doc IN @docs
-                INSERT doc INTO @@collection
-            """,
-            bind_vars={"@collection": self.TAG_MODEL_OUTPUT_COLLECTION, "docs": docs},
-        )
-
-    def update_tag_model_output_edges_batch(self, docs: list[dict[str, Any]]) -> None:
-        if not docs:
-            return
-        self._db.aql.execute(
-            """
-            FOR doc IN @docs
-                UPDATE doc IN @@collection
-            """,
-            bind_vars={"@collection": self.TAG_MODEL_OUTPUT_COLLECTION, "docs": docs},
-        )
-
-    def delete_tag_model_outputs_for_model(self, model_id: str) -> None:
-        self._db.aql.execute(
-            """
-            LET output_ids = (
-                FOR edge IN @@model_output_edges
-                    FILTER edge._from == @model_id
-                    RETURN edge._to
-            )
-            FOR edge IN @@tag_output_edges
-                FILTER edge._to IN output_ids
-                REMOVE edge IN @@tag_output_edges
-            """,
-            bind_vars={
-                "@model_output_edges": self.MODEL_OUTPUT_EDGE_COLLECTION,
-                "@tag_output_edges": self.TAG_MODEL_OUTPUT_COLLECTION,
-                "model_id": _as_document_id(self.MODEL_COLLECTION, model_id),
-            },
-        )
-
-    def delete_tag_model_output_edges_for_tag(self, tag_id: str) -> int:
-        cursor = self._db.aql.execute(
-            """
-            FOR edge IN @@collection
-                FILTER edge._from == @tag_id
-                REMOVE edge IN @@collection
-                RETURN 1
-            """,
-            bind_vars={
-                "@collection": self.TAG_MODEL_OUTPUT_COLLECTION,
-                "tag_id": _as_document_id(self.TAG_COLLECTION, tag_id),
-            },
-        )
-        return len(list(cursor))
-
-    def count_tag_model_output_edges_for_tag(self, tag_id: str) -> int:
-        cursor = self._db.aql.execute(
-            """
-            FOR edge IN @@collection
-                FILTER edge._from == @tag_id
-                COLLECT WITH COUNT INTO count
-                RETURN count
-            """,
-            bind_vars={
-                "@collection": self.TAG_MODEL_OUTPUT_COLLECTION,
-                "tag_id": _as_document_id(self.TAG_COLLECTION, tag_id),
-            },
-        )
-        results = list(cursor)
-        return int(results[0]) if results else 0
-
-    def delete_tag_model_output_edges_for_outputs(self, output_ids: list[str]) -> int:
-        normalized_output_ids = [_as_document_id(self.MODEL_OUTPUT_COLLECTION, output_id) for output_id in output_ids]
-        if not normalized_output_ids:
-            return 0
-        cursor = self._db.aql.execute(
-            """
-            FOR edge IN @@collection
-                FILTER edge._to IN @output_ids
-                REMOVE edge IN @@collection
-                RETURN 1
-            """,
-            bind_vars={"@collection": self.TAG_MODEL_OUTPUT_COLLECTION, "output_ids": normalized_output_ids},
-        )
-        return len(list(cursor))
 
     def get_calibration_state(self, model_id: str) -> Document | None:
         results = primitives.execute(
@@ -362,6 +248,41 @@ class MlModelsAqlOperations:
                 RETURN doc
             """,
             {"@collection": self.CALIBRATION_COLLECTION},
+        )
+
+    def list_calibration_states_with_models(self) -> list[Document]:
+        """Return all calibration states enriched with owning model metadata.
+
+        Joins calibration_state documents with model_has_calibration edges and
+        ml_models documents in a single AQL traversal. Results sorted by
+        (head_name, label).
+        """
+        return primitives.execute(
+            self._db,
+            """
+            FOR calibration IN @@calibration_collection
+                LET edge = FIRST(
+                    FOR e IN @@calibration_edge_collection
+                        FILTER e._to == calibration._id
+                        LIMIT 1
+                        RETURN e
+                )
+                LET model = edge != null ? DOCUMENT(edge._from) : null
+                SORT calibration.head_name, calibration.label
+                RETURN MERGE(
+                    calibration,
+                    {
+                        model: model == null ? null : {
+                            backbone: model.backbone,
+                            embedder_release_date: model.embedder_release_date
+                        }
+                    }
+                )
+            """,
+            {
+                "@calibration_collection": self.CALIBRATION_COLLECTION,
+                "@calibration_edge_collection": self.CALIBRATION_EDGE_COLLECTION,
+            },
         )
 
     def get_model_has_calibration_edges_by_ids(self, edge_ids: list[str]) -> list[Document]:

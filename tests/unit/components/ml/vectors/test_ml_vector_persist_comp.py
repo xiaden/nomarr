@@ -17,17 +17,17 @@ PATCH_BASE = "nomarr.components.ml.vectors.ml_vector_persist_comp"
 class TestUpsertHotTrackVector:
     """Tests for ``upsert_hot_track_vector``."""
 
-    def test_uses_generic_collection_and_edge_upserts(self) -> None:
-        """Writes the vector document and edge through normalized collection-first surfaces."""
+    def test_replaces_file_vectors_and_reloads_vector_id(self) -> None:
+        """Writes the vector document through normalized file-vector methods and reloads its id."""
         mock_db = MagicMock()
-        hot_namespace = MagicMock()
-        hot_namespace.upsert.return_value = ["vectors_track_hot__effnet__lib1/vector-doc"]
-        hot_namespace.upsert_vector = MagicMock()
+        mock_db.ml.list_file_vectors.return_value = [
+            {
+                "_id": "vectors_track_hot__effnet__lib1/vector-doc",
+                "_key": hashlib.sha1(b"library_files/f1|abc123").hexdigest(),
+            }
+        ]
 
-        with (
-            patch(f"{PATCH_BASE}.internal_ms", return_value=MagicMock(value=1234)),
-            patch(f"{PATCH_BASE}.get_hot_namespace", return_value=hot_namespace) as mock_get_hot_namespace,
-        ):
+        with patch(f"{PATCH_BASE}.internal_ms", return_value=MagicMock(value=1234)):
             vector_id = upsert_hot_track_vector(
                 db=mock_db,
                 file_id="library_files/f1",
@@ -52,12 +52,14 @@ class TestUpsertHotTrackVector:
         }
 
         assert vector_id == "vectors_track_hot__effnet__lib1/vector-doc"
-        mock_get_hot_namespace.assert_called_once_with(mock_db, "effnet", "lib1")
-        hot_namespace.upsert.assert_called_once_with(_key=expected_key, fields=expected_doc)
-        hot_namespace.upsert_vector.assert_not_called()
-        mock_db.ml.upsert_file_has_vector_edge.assert_called_once_with(
+        mock_db.ml.replace_file_vectors.assert_called_once_with(
+            "vectors_track_hot__effnet__lib1",
             "library_files/f1",
-            "vectors_track_hot__effnet__lib1/vector-doc",
+            [expected_doc],
+        )
+        mock_db.ml.list_file_vectors.assert_called_once_with(
+            "vectors_track_hot__effnet__lib1",
+            "library_files/f1",
         )
 
 

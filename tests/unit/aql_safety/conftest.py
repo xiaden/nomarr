@@ -70,7 +70,6 @@ EDGE_COLLECTIONS = {
     "model_has_output",
     "output_has_stream",
     "song_has_tags",
-    "tag_model_output",
 }
 
 _VALID_COLLECTIONS = DOCUMENT_COLLECTIONS | EDGE_COLLECTIONS
@@ -174,6 +173,11 @@ def _is_field_assignments_interpolation(node: ast.AST) -> bool:
     return _is_name_with_id(node, "field_assignments")
 
 
+def _is_field_name_interpolation(node: ast.AST) -> bool:
+    """Return True for validated field-name identifiers (UPSERT key lookups)."""
+    return _is_name_with_id(node, "field_name", "field")
+
+
 def _is_conditional_fragment_interpolation(node: ast.AST) -> bool:
     """Return True for hardcoded conditional AQL fragments."""
     return _contains_if_expression(node)
@@ -191,6 +195,7 @@ SAFE_FSTRING_INTERPOLATION_TAXONOMY: dict[str, _InterpolationClassifier] = {
     "sort_clause": _is_sort_clause_interpolation,
     "filter_clause": _is_filter_clause_interpolation,
     "field_assignments": _is_field_assignments_interpolation,
+    "field_name": _is_field_name_interpolation,
     "conditional_fragment": _is_conditional_fragment_interpolation,
     "operator": _is_operator_interpolation,
 }

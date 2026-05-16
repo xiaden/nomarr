@@ -10,12 +10,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from arango.exceptions import AQLQueryExecuteError
-
 from nomarr.components.platform.arango_bootstrap_comp import (
     ensure_schema_from_database,
     list_template_collection_names,
-    register_template_collection,
     seed_state_documents,
 )
 from nomarr.components.platform.migration_runner_comp import (
@@ -47,13 +44,7 @@ def _is_fresh_database(db: Database) -> bool:
         True if this is a fresh (uninitialized) database.
 
     """
-    try:
-        return db.app.get_meta("version") is None
-    except AQLQueryExecuteError as exc:
-        # ERR 1203: collection or view not found — truly fresh database
-        if "[ERR 1203]" in str(exc):
-            return True
-        raise
+    return db.app.get_schema_version() is None
 
 
 def _discover_template_collections(db: Database) -> None:
@@ -68,7 +59,7 @@ def _discover_template_collections(db: Database) -> None:
         for template_name in template_names:
             if name.startswith(f"{template_name}__"):
                 try:
-                    register_template_collection(db, name, template_name)
+                    db.ml.add_vector_collection(name, template_name)
                     registered += 1
                 except ValueError:
                     logger.warning(
@@ -138,7 +129,7 @@ def prepare_database_workflow(
 
         prune_orphaned_files_workflow(db)
     except Exception as exc:
-        logger.warning("Orphaned file pruning failed (non-fatal): %s", exc)
+        logger.warning("Orphaned file pruning failed (non-fatal): %s", exc, exc_info=True)
 
     # Step 5: Reseed singleton state vertex documents.
     # file_states and library_pipeline_states vertices are fixed sets that

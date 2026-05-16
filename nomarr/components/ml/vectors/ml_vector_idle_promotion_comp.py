@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 
 from nomarr.components.library.library_records_comp import get_library_record, list_library_records
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones
-from nomarr.components.ml.vectors.ml_vector_registry_comp import get_maintenance_namespace
 from nomarr.helpers.vector_params_helper import compute_nlists
 
 if TYPE_CHECKING:
@@ -48,7 +47,7 @@ def list_hot_vector_targets(db: Database, models_dir: str) -> list[tuple[str, st
     for backbone_id in backbones:
         for lib_doc in libraries:
             library_key: str = lib_doc["_key"]
-            stats = get_maintenance_namespace(db, backbone_id, library_key).get_stats()
+            stats = db.ml.get_embedding_stats(backbone_id, library_key)
             if int(stats["hot_count"]) > 0:
                 targets.append((backbone_id, library_key))
 
@@ -80,7 +79,7 @@ def compute_promotion_nlists(db: Database, backbone_id: str, library_key: str) -
             group_size = int(lib_group_size)
 
     # Sum hot + cold counts
-    stats = get_maintenance_namespace(db, backbone_id, library_key).get_stats()
+    stats = db.ml.get_embedding_stats(backbone_id, library_key)
     hot_count = int(stats["hot_count"])
     cold_count = int(stats["cold_count"])
 

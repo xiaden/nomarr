@@ -118,26 +118,31 @@ class Database:
         self.app_aql = AppAqlOperations(self.db)
         self.navidrome_aql = NavidromeAqlOperations(self.db)
 
+        # Direct Tier 2 aliases remain only where compatibility evidence still
+        # justifies keeping the debt temporarily explicit.
+        # Higher-layer callers must treat db.library / db.app / db.ml as the
+        # supported Tier 3 persistence API.
         self.libraries = self.libraries_aql
         self.library_files = self.library_files_aql
-        self.tags = self.tags_aql
-        self.scan = self.scan_aql
         self.file_states = self.file_states_aql
-        self.ml_streams = self.ml_streams_aql
-        self.ml_models = self.ml_models_aql
 
-        self.library = LibraryDb(
+        # Canonical Tier 3 caller entrypoints. Shared maintenance scaffolding is
+        # nested under these three domain facades; no top-level db.admin surface.
+        self.library: LibraryDb = LibraryDb(
             libraries=self.libraries_aql,
             files=self.library_files_aql,
             tags=self.tags_aql,
             scan=self.scan_aql,
+            file_states=self.file_states_aql,
+            vectors=self.vectors_aql,
+            streams=self.ml_streams_aql,
         )
-        self.ml = MlDb(
+        self.ml: MlDb = MlDb(
             streams=self.ml_streams_aql,
             vectors=self.vectors_aql,
             models=self.ml_models_aql,
         )
-        self.app = AppDb(
+        self.app: AppDb = AppDb(
             db=self.db,
             file_states=self.file_states_aql,
             scan=self.scan_aql,

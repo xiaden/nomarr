@@ -197,7 +197,7 @@ class TestRestartWorkerHelper:
     @patch("nomarr.services.infrastructure.worker_system_svc.create_discovery_worker")
     def test_restart_worker_spawns_replacement(self, mock_create_worker, worker_service, mock_db):
         """When enabled, spawns replacement worker and registers with health monitor."""
-        mock_db.app.get_meta.return_value = {"key": "worker_enabled", "value": "true"}  # enabled
+        mock_db.app.get_config_option.return_value = {"key": "worker_enabled", "value": "true"}  # enabled
         mock_worker = MagicMock()
         mock_worker.worker_id = "worker_1"
         mock_worker.health_pipe = MagicMock()

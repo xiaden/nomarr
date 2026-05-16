@@ -43,6 +43,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_TOO_SHORT,
     STATE_VECTORS_EXTRACTED,
 )
+from nomarr.persistence.exceptions import DuplicateKeyError
 
 
 def _make_mock_db() -> MagicMock:
@@ -53,7 +54,7 @@ def _make_mock_db() -> MagicMock:
     mock_db.app.list_claims.return_value = []
     mock_db.library.list_library_files.return_value = []
     mock_db.library.list_libraries.return_value = []
-    mock_db.library.get_tags_for_files_batch.return_value = []
+    mock_db.library.list_file_tags_for_files.return_value = {}
     mock_db.library.count_song_tag_edges_for_file_state.return_value = 0
     return mock_db
 
@@ -70,8 +71,8 @@ class TestInitializeFileStates:
 
         initialize_file_states(mock_db, "library_files/1")
 
-        assert mock_db.app.add_file_state_edge.call_args_list == [
-            call("library_files/1", state) for state in expected_negative_states
+        assert mock_db.app.add_file_states.call_args_list == [
+            call(["library_files/1"], state) for state in expected_negative_states
         ]
 
     @pytest.mark.unit
@@ -80,20 +81,18 @@ class TestInitializeFileStates:
         expected_negative_states = [
             state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_") or state == STATE_TAGS_STALE
         ]
-        err = DocumentInsertError.__new__(DocumentInsertError)
-        err.error_code = 1210
-        mock_db.app.add_file_state_edge.side_effect = err
+        mock_db.app.add_file_states.side_effect = DuplicateKeyError()
 
         initialize_file_states(mock_db, "library_files/1")
 
-        assert mock_db.app.add_file_state_edge.call_count == len(expected_negative_states)
+        assert mock_db.app.add_file_states.call_count == len(expected_negative_states)
 
     @pytest.mark.unit
     def test_reraises_non_duplicate_insert_error(self) -> None:
         mock_db = _make_mock_db()
         err = DocumentInsertError.__new__(DocumentInsertError)
         err.error_code = 1200
-        mock_db.app.add_file_state_edge.side_effect = err
+        mock_db.app.add_file_states.side_effect = err
 
         with pytest.raises(DocumentInsertError):
             initialize_file_states(mock_db, "library_files/1")
@@ -116,9 +115,7 @@ class TestInitializeFileStatesBatch:
 
         initialize_file_states_batch(mock_db, ["library_files/1", "library_files/2"])
 
-        assert mock_db.app.add_file_state_edge.call_args_list == [
-            call(doc["_from"], doc["_to"]) for doc in expected_docs
-        ]
+        assert mock_db.app.add_file_states.call_args_list == [call([doc["_from"]], doc["_to"]) for doc in expected_docs]
 
     @pytest.mark.unit
     def test_skips_query_when_batch_empty(self) -> None:
@@ -126,7 +123,7 @@ class TestInitializeFileStatesBatch:
 
         initialize_file_states_batch(mock_db, [])
 
-        mock_db.app.add_file_state_edge.assert_not_called()
+        mock_db.app.add_file_states.assert_not_called()
 
     @pytest.mark.unit
     def test_silently_skips_duplicate_key_error(self) -> None:
@@ -134,20 +131,18 @@ class TestInitializeFileStatesBatch:
         expected_negative_states = [
             state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_") or state == STATE_TAGS_STALE
         ]
-        err = DocumentInsertError.__new__(DocumentInsertError)
-        err.error_code = 1210
-        mock_db.app.add_file_state_edge.side_effect = err
+        mock_db.app.add_file_states.side_effect = DuplicateKeyError()
 
         initialize_file_states_batch(mock_db, ["library_files/1", "library_files/2"])
 
-        assert mock_db.app.add_file_state_edge.call_count == 2 * len(expected_negative_states)
+        assert mock_db.app.add_file_states.call_count == 2 * len(expected_negative_states)
 
     @pytest.mark.unit
     def test_reraises_non_duplicate_insert_error(self) -> None:
         mock_db = _make_mock_db()
         err = DocumentInsertError.__new__(DocumentInsertError)
         err.error_code = 1200
-        mock_db.app.add_file_state_edge.side_effect = err
+        mock_db.app.add_file_states.side_effect = err
 
         with pytest.raises(DocumentInsertError):
             initialize_file_states_batch(mock_db, ["library_files/1", "library_files/2"])
@@ -172,7 +167,7 @@ class TestClearAllStates:
         result = clear_all_states(mock_db, "library_files/1")
 
         assert result == 4
-        mock_db.app.delete_file_state_edges.assert_called_once_with(["library_files/1"])
+        mock_db.app.remove_file_states.assert_called_once_with(["library_files/1"])
 
 
 class TestClearAllStatesBatch:
@@ -192,7 +187,7 @@ class TestClearAllStatesBatch:
         result = clear_all_states_batch(mock_db, ["library_files/1", "library_files/2"])
 
         assert result == 7
-        mock_db.app.delete_file_state_edges.assert_called_once_with(["library_files/1", "library_files/2"])
+        mock_db.app.remove_file_states.assert_called_once_with(["library_files/1", "library_files/2"])
 
     @pytest.mark.unit
     def test_returns_zero_without_query_when_batch_empty(self) -> None:
@@ -219,12 +214,12 @@ class TestSimpleStateLookups:
     @pytest.mark.unit
     def test_file_has_tagged_state_uses_library_facade_counter(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.library.count_song_tag_edges_for_file_state.return_value = 1
+        mock_db.library.count_file_states.return_value = 1
 
         result = file_has_tagged_state(mock_db, "library_files/1")
 
         assert result is True
-        mock_db.library.count_song_tag_edges_for_file_state.assert_called_once_with(
+        mock_db.library.count_file_states.assert_called_once_with(
             "library_files/1",
             STATE_TAGGED,
         )
@@ -250,7 +245,7 @@ class TestSimpleStateLookups:
     @pytest.mark.unit
     def test_file_has_tagged_state_returns_false_when_count_is_zero(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.library.count_song_tag_edges_for_file_state.return_value = 0
+        mock_db.library.count_file_states.return_value = 0
 
         result = file_has_tagged_state(mock_db, "library_files/1")
 
@@ -553,11 +548,13 @@ class TestIncompleteTags:
             {"head_key": "energy", "labels": ["energy"], "model_key_for_tag": "modelB"},
         ]
         mock_db.app.list_file_docs_in_state.return_value = [{"_id": "library_files/1", "_key": "1"}]
-        mock_db.library.get_tags_for_files_batch.return_value = [
-            {"start_id": "library_files/1", "v": {"name": "nom:mood_modelA_happy"}},
-            {"start_id": "library_files/1", "v": {"name": "nom:energy_modelB_high"}},
-            {"start_id": "library_files/1", "v": {"name": "nom:energy_other_model"}},
-        ]
+        mock_db.library.list_file_tags_for_files.return_value = {
+            "library_files/1": [
+                {"name": "nom:mood_modelA_happy"},
+                {"name": "nom:energy_modelB_high"},
+                {"name": "nom:energy_other_model"},
+            ]
+        }
 
         result = get_files_with_incomplete_tags(mock_db, expected_heads, namespace_prefix="nom:")
 
@@ -571,7 +568,7 @@ class TestIncompleteTags:
                 "missing_heads": [],
             }
         ]
-        mock_db.library.get_tags_for_files_batch.assert_called_once_with(
+        mock_db.library.list_file_tags_for_files.assert_called_once_with(
             ["library_files/1"],
             name_starts_with="nom:",
         )
@@ -588,9 +585,9 @@ class TestIncompleteTags:
             {"_id": "library_files/2", "_key": "2"},
         ]
         mock_db.library.list_library_files.return_value = [{"_id": "library_files/2"}]
-        mock_db.library.get_tags_for_files_batch.return_value = [
-            {"start_id": "library_files/2", "v": {"name": "nom:mood_modelA_happy"}},
-        ]
+        mock_db.library.list_file_tags_for_files.return_value = {
+            "library_files/2": [{"name": "nom:mood_modelA_happy"}],
+        }
 
         result = get_files_with_incomplete_tags(mock_db, expected_heads, namespace_prefix="nom:", library_id="main")
 
@@ -605,7 +602,7 @@ class TestIncompleteTags:
             }
         ]
         mock_db.library.list_library_files.assert_called_once_with("libraries/main")
-        mock_db.library.get_tags_for_files_batch.assert_called_once_with(
+        mock_db.library.list_file_tags_for_files.assert_called_once_with(
             ["library_files/2"],
             name_starts_with="nom:",
         )
@@ -615,17 +612,20 @@ class TestTransitionFileState:
     """Tests for ``transition_file_state()``."""
 
     @pytest.mark.unit
-    def test_delegates_to_file_states_transition_for_valid_axis_pair(self) -> None:
+    def test_rewrites_state_membership_via_normalized_file_state_methods_for_valid_axis_pair(self) -> None:
         mock_db = _make_mock_db()
         file_ids = ["library_files/1", "library_files/2"]
         from_state = STATE_NOT_TAGGED
         to_state = STATE_TAGGED
+        mock_db.app.list_file_docs_in_state.side_effect = lambda state: list(
+            [{"_id": file_id} for file_id in file_ids] if state == from_state else []
+        )
 
         transition_file_state(mock_db, file_ids, from_state, to_state)
 
-        mock_db.app.transition_file_states.assert_called_once_with(file_ids, from_state, to_state)
-        mock_db.app.add_file_state_edge.assert_not_called()
-        mock_db.app.delete_file_state_edges.assert_not_called()
+        mock_db.app.remove_file_states.assert_called_once_with(file_ids)
+        mock_db.app.add_file_states.assert_called_once_with(file_ids, to_state)
+        mock_db.app.transition_file_states.assert_not_called()
 
     @pytest.mark.unit
     def test_raises_value_error_for_invalid_axis_pair(self) -> None:
@@ -635,6 +635,8 @@ class TestTransitionFileState:
         with pytest.raises(ValueError):
             transition_file_state(mock_db, file_ids, STATE_NOT_TAGGED, STATE_CALIBRATED)
 
+        mock_db.app.remove_file_states.assert_not_called()
+        mock_db.app.add_file_states.assert_not_called()
         mock_db.app.transition_file_states.assert_not_called()
 
 
@@ -642,42 +644,42 @@ class TestBulkTransitions:
     """Tests for the bulk state transition helpers."""
 
     @pytest.mark.unit
-    def test_bulk_set_not_calibrated_uses_transition_for_all_calibrated_files(self) -> None:
+    def test_bulk_set_not_calibrated_uses_normalized_state_writes_for_all_calibrated_files(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.app.list_file_docs_in_state.return_value = [
-            {"_id": "library_files/1"},
-            {"_id": "library_files/2"},
-        ]
+        calibrated_ids = ["library_files/1", "library_files/2"]
+        mock_db.app.list_file_docs_in_state.side_effect = lambda state: list(
+            [{"_id": file_id} for file_id in calibrated_ids] if state == STATE_CALIBRATED else []
+        )
 
         result = bulk_set_not_calibrated(mock_db)
 
         assert result == 2
-        mock_db.app.list_file_docs_in_state.assert_called_once_with(STATE_CALIBRATED)
-        mock_db.app.transition_file_states.assert_called_once_with(
-            ["library_files/1", "library_files/2"],
-            STATE_CALIBRATED,
-            STATE_NOT_CALIBRATED,
-        )
+        mock_db.app.list_file_docs_in_state.assert_any_call(STATE_CALIBRATED)
+        mock_db.app.remove_file_states.assert_called_once_with(calibrated_ids)
+        mock_db.app.add_file_states.assert_called_once_with(calibrated_ids, STATE_NOT_CALIBRATED)
+        mock_db.app.transition_file_states.assert_not_called()
 
     @pytest.mark.unit
     def test_bulk_set_tags_stale_filters_to_library_before_transition(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.app.list_file_docs_in_state.return_value = [
-            {"_id": "library_files/1"},
-            {"_id": "library_files/2"},
-        ]
+        mock_db.app.list_file_docs_in_state.side_effect = lambda state: list(
+            [
+                {"_id": "library_files/1"},
+                {"_id": "library_files/2"},
+            ]
+            if state == STATE_TAGS_CURRENT
+            else []
+        )
         mock_db.library.list_library_files.return_value = [{"_id": "library_files/2"}]
 
         result = bulk_set_tags_stale(mock_db, library_id="libraries/1")
 
         assert result == 1
-        mock_db.app.transition_file_states.assert_called_once_with(
-            ["library_files/2"],
-            STATE_TAGS_CURRENT,
-            STATE_TAGS_STALE,
-        )
-        mock_db.app.list_file_docs_in_state.assert_called_once_with(STATE_TAGS_CURRENT)
+        mock_db.app.remove_file_states.assert_called_once_with(["library_files/2"])
+        mock_db.app.add_file_states.assert_called_once_with(["library_files/2"], STATE_TAGS_STALE)
+        mock_db.app.list_file_docs_in_state.assert_any_call(STATE_TAGS_CURRENT)
         mock_db.library.list_library_files.assert_called_once_with("libraries/1")
+        mock_db.app.transition_file_states.assert_not_called()
 
     @pytest.mark.unit
     def test_bulk_set_not_vectors_extracted_skips_empty_transition(self) -> None:
@@ -686,6 +688,8 @@ class TestBulkTransitions:
         result = bulk_set_not_vectors_extracted(mock_db)
 
         assert result == 0
+        mock_db.app.remove_file_states.assert_not_called()
+        mock_db.app.add_file_states.assert_not_called()
         mock_db.app.transition_file_states.assert_not_called()
 
     @pytest.mark.unit
@@ -696,25 +700,25 @@ class TestBulkTransitions:
         result = bulk_set_not_calibrated(mock_db)
 
         assert result == 0
+        mock_db.app.remove_file_states.assert_not_called()
+        mock_db.app.add_file_states.assert_not_called()
         mock_db.app.transition_file_states.assert_not_called()
 
     @pytest.mark.unit
     def test_bulk_set_tags_stale_transitions_all_tags_current_files_when_no_library_id(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.app.list_file_docs_in_state.return_value = [
-            {"_id": "library_files/1"},
-            {"_id": "library_files/2"},
-        ]
+        current_ids = ["library_files/1", "library_files/2"]
+        mock_db.app.list_file_docs_in_state.side_effect = lambda state: list(
+            [{"_id": file_id} for file_id in current_ids] if state == STATE_TAGS_CURRENT else []
+        )
 
         result = bulk_set_tags_stale(mock_db)
 
         assert result == 2
-        mock_db.app.transition_file_states.assert_called_once_with(
-            ["library_files/1", "library_files/2"],
-            STATE_TAGS_CURRENT,
-            STATE_TAGS_STALE,
-        )
+        mock_db.app.remove_file_states.assert_called_once_with(current_ids)
+        mock_db.app.add_file_states.assert_called_once_with(current_ids, STATE_TAGS_STALE)
         mock_db.library.list_library_files.assert_not_called()
+        mock_db.app.transition_file_states.assert_not_called()
 
     @pytest.mark.unit
     def test_bulk_set_tags_stale_returns_zero_and_skips_transition_when_no_tags_current_files(self) -> None:
@@ -724,19 +728,22 @@ class TestBulkTransitions:
         result = bulk_set_tags_stale(mock_db)
 
         assert result == 0
+        mock_db.app.remove_file_states.assert_not_called()
+        mock_db.app.add_file_states.assert_not_called()
         mock_db.app.transition_file_states.assert_not_called()
 
     @pytest.mark.unit
     def test_bulk_set_not_vectors_extracted_transitions_all_vector_extracted_files(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.app.list_file_docs_in_state.return_value = [{"_id": "library_files/7"}]
+        vector_ids = ["library_files/7"]
+        mock_db.app.list_file_docs_in_state.side_effect = lambda state: list(
+            [{"_id": file_id} for file_id in vector_ids] if state == STATE_VECTORS_EXTRACTED else []
+        )
 
         result = bulk_set_not_vectors_extracted(mock_db)
 
         assert result == 1
-        mock_db.app.list_file_docs_in_state.assert_called_once_with(STATE_VECTORS_EXTRACTED)
-        mock_db.app.transition_file_states.assert_called_once_with(
-            ["library_files/7"],
-            STATE_VECTORS_EXTRACTED,
-            STATE_NOT_VECTORS_EXTRACTED,
-        )
+        mock_db.app.list_file_docs_in_state.assert_any_call(STATE_VECTORS_EXTRACTED)
+        mock_db.app.remove_file_states.assert_called_once_with(vector_ids)
+        mock_db.app.add_file_states.assert_called_once_with(vector_ids, STATE_NOT_VECTORS_EXTRACTED)
+        mock_db.app.transition_file_states.assert_not_called()

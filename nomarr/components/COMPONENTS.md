@@ -239,10 +239,10 @@ Aim for **pure, stateless functions**. Avoid long-lived mutable globals. If cach
 Components access the database through the persistence layer (`db.module.method()`). No raw AQL inside components.
 
 ```python
-# ✅ Uses persistence
-def compute_tag_frequencies(db: Database, library_id: str) -> dict[str, int]:
-    tags = db.tags.get_library_tags(library_id)
-    return {tag["name"]: tag["count"] for tag in tags}
+# ✅ Uses persistence through the intent-level facade
+def compute_tag_frequencies(db: Database, tag_name: str) -> list[dict[str, Any]]:
+    total = db.library.count_tags()
+    return db.library.list_tags(name=tag_name, limit=total)
 ```
 
 ### Configuration

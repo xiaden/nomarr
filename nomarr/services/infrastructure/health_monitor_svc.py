@@ -181,7 +181,7 @@ class HealthMonitorService:
         with self._lock:
             state = self._components.pop(component_id, None)
             if state:
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(OSError):  # Pipe may already be closed
                     state.pipe_conn.close()
 
         logger.debug("[HealthMonitor] Unregistered component: %s", component_id)
@@ -284,7 +284,7 @@ class HealthMonitorService:
         # Close all pipes
         with self._lock:
             for state in self._components.values():
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(OSError):  # Pipe may already be closed during shutdown
                     state.pipe_conn.close()
 
         if self._monitor_thread:
@@ -581,7 +581,7 @@ class HealthMonitorService:
                 try:
                     # Convert monotonic time to wall-clock for DB storage
                     wall_ms = to_wall_ms(internal_s_to_ms(last_time))
-                    self.db.app.upsert_health(
+                    self.db.app.update_health(
                         component_id,
                         {
                             "status": status,
@@ -591,7 +591,7 @@ class HealthMonitorService:
                         },
                     )
                 except Exception as e:
-                    logger.debug("[HealthMonitor] History write failed for %s: %s", component_id, e)
+                    logger.warning("[HealthMonitor] History write failed for %s: %s", component_id, e, exc_info=True)
 
         except Exception as e:
-            logger.debug("[HealthMonitor] History snapshot failed: %s", e)
+            logger.warning("[HealthMonitor] History snapshot failed: %s", e, exc_info=True)

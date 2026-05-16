@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.components.ml.onnx.tag_model_output_comp import delete_tag_model_output_edges_for_outputs
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
@@ -98,12 +97,11 @@ def upsert_registered_model(
             }
         )
 
-    db.ml.upsert_model(payload)
-    model_doc = get_registered_model_by_path(db, path)
-    if model_doc is None:
+    try:
+        return cast("dict[str, Any]", db.ml.add_model(payload))
+    except RuntimeError as exc:
         msg = f"Failed to load persisted ml_models document for path={path}"
-        raise RuntimeError(msg)
-    return model_doc
+        raise RuntimeError(msg) from exc
 
 
 def mark_model_fully_configured(db: Database, model_id: str, value: bool) -> None:
@@ -112,12 +110,12 @@ def mark_model_fully_configured(db: Database, model_id: str, value: bool) -> Non
     if model_doc is None:
         return
 
-    db.ml.upsert_model(
+    db.ml.update_model(
+        model_id,
         {
-            **{key: field for key, field in model_doc.items() if key not in {"_id", "_rev"}},
             "fully_configured": value,
             "updated_at": now_ms().value,
-        }
+        },
     )
 
 
@@ -127,18 +125,18 @@ def mark_model_known(db: Database, model_id: str, value: bool) -> None:
     if model_doc is None:
         return
 
-    db.ml.upsert_model(
+    db.ml.update_model(
+        model_id,
         {
-            **{key: field for key, field in model_doc.items() if key not in {"_id", "_rev"}},
             "is_known": value,
             "updated_at": now_ms().value,
-        }
+        },
     )
 
 
 def delete_registered_model(db: Database, model_id: str) -> None:
     """Delete one registered model vertex by ``_id``."""
-    db.ml.delete_model(model_id)
+    db.ml.remove_model(model_id)
 
 
 def list_model_outputs_for_model(db: Database, model_id: str) -> list[dict[str, Any]]:
@@ -157,28 +155,33 @@ def ensure_model_outputs(db: Database, model_id: str, output_count: int) -> list
         output_key = _output_key(model_id, output_index)
         output_id = f"ml_model_outputs/{output_key}"
         existing_output = cast("dict[str, Any] | None", db.ml.get_model_output(output_id))
-        if existing_output is None:
-            output_id = db.ml.add_model_output(
-                {
-                    "_key": output_key,
-                    "output_index": output_index,
-                    "label": None,
-                    "fully_labeled": False,
-                }
-            )
-        else:
-            output_id = cast("str", existing_output["_id"])
+        payload = {
+            "_key": output_key,
+            "output_index": output_index,
+            "label": None,
+            "fully_labeled": False,
+        }
+        if existing_output is not None:
+            payload["label"] = existing_output.get("label")
+            payload["fully_labeled"] = existing_output.get("fully_labeled", False)
 
-        db.ml.upsert_model_output_edge(output_key, model_id, output_id)
+        db.ml.replace_model_output(model_id, output_key, payload)
 
     return list_model_outputs_for_model(db, model_id)
 
 
-def update_model_output_label(db: Database, output_id: str, label: str) -> None:
+def update_model_output_label(db: Database, model_id: str, output_id: str, label: str) -> None:
     """Write label metadata for one output vertex."""
-    db.ml.update_model_output(
-        output_id,
+    existing_output = cast("dict[str, Any] | None", db.ml.get_model_output(output_id))
+    if existing_output is None:
+        return
+
+    db.ml.replace_model_output(
+        model_id,
+        output_id.split("/", 1)[-1],
         {
+            "_key": output_id.split("/", 1)[-1],
+            "output_index": existing_output.get("output_index"),
             "label": label,
             "fully_labeled": True,
         },
@@ -201,44 +204,24 @@ def build_model_output_index_map(db: Database) -> dict[str, dict[int, str]]:
     return result
 
 
-def build_model_output_id_map(db: Database) -> dict[str, dict[str, str]]:
-    """Return ``{model_path: {label: output_id}}`` for labeled outputs."""
-    result: dict[str, dict[str, str]] = {}
-    for model_doc in list_registered_models(db):
-        model_path = model_doc.get("path")
-        model_id = model_doc.get("_id")
-        if not isinstance(model_path, str) or not isinstance(model_id, str):
-            continue
-        for output_doc in list_model_outputs_for_model(db, model_id):
-            label = output_doc.get("label")
-            output_id = output_doc.get("_id")
-            if isinstance(label, str) and isinstance(output_id, str):
-                result.setdefault(model_path, {})[label] = output_id
-    return result
-
-
 def delete_model_outputs_for_model(db: Database, model_id: str) -> list[str]:
     """Delete all output vertices and model-output edges for one model."""
-    return cast("list[str]", db.ml.delete_model_outputs_for_model(model_id))
+    return cast("list[str]", db.ml.remove_model_outputs_for_model(model_id))
 
 
-def prune_registered_model(db: Database, model_id: str) -> dict[str, int | list[str]]:
-    """Delete a stale model along with its outputs and tag edges.
+def prune_registered_model(db: Database, model_id: str) -> dict[str, list[str]]:
+    """Delete a stale model along with its outputs.
 
     Args:
         db: Database instance
         model_id: ArangoDB ``_id`` of the model to delete.
 
     Returns:
-        Summary containing ``output_ids`` for deleted output vertices and
-        ``tag_model_output_edges_deleted`` for the number of removed tag edges.
+        Summary containing ``output_ids`` for deleted output vertices.
 
     """
-    output_ids = [cast("str", output_doc["_id"]) for output_doc in list_model_outputs_for_model(db, model_id)]
-    edge_count = delete_tag_model_output_edges_for_outputs(db, output_ids) if output_ids else 0
     deleted_output_ids = delete_model_outputs_for_model(db, model_id)
     delete_registered_model(db, model_id)
     return {
         "output_ids": deleted_output_ids,
-        "tag_model_output_edges_deleted": edge_count,
     }

@@ -1,14 +1,12 @@
 """Domain-specific vector collection registry.
 
-Wraps `db.ml.register_vector_collection()` to resolve hot/cold/maintenance
+Wraps `db.ml.add_vector_collection()` to resolve hot/cold/maintenance
 namespaces by backbone+library, and owns batch vector deletion.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol, cast
-
-from nomarr.persistence.arango_client import SafeDatabase
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -22,10 +20,6 @@ class _FieldDeleteProtocol(Protocol):
 
 class _FieldDeleteAccessorProtocol(Protocol):
     delete: _FieldDeleteProtocol
-
-
-class _VectorDeleteByFileIdNamespace(Protocol):
-    file_id: _FieldDeleteAccessorProtocol
 
 
 class VectorsTrackHotNamespace(Protocol):
@@ -86,78 +80,11 @@ class VectorsTrackMaintenanceProtocol(Protocol):
     def get_stats(self) -> dict[str, int | bool]: ...
 
 
-class _VectorsTrackMaintenance:
-    """Maintenance operations spanning a vectors_track hot/cold collection pair."""
-
-    def __init__(self, db: SafeDatabase, hot_collection_name: str, cold_collection_name: str) -> None:
-        self._db = db
-        self._hot_collection_name = hot_collection_name
-        self._cold_collection_name = cold_collection_name
-
-    def drop_index(self) -> None:
-        """Drop the cold collection vector index if it exists."""
-        if not self._db.has_collection(self._cold_collection_name):
-            msg = f"Cold collection '{self._cold_collection_name}' does not exist"
-            raise ValueError(msg)
-
-        cold_collection = self._db.collection(self._cold_collection_name)
-        existing_indexes = cast("list[dict[str, Any]]", cold_collection.indexes())
-        for index in existing_indexes:
-            if index.get("type") == "vector" and index.get("id"):
-                cold_collection.delete_index(index["id"])
-
-    def build_index(self, *, embed_dim: int, nlists: int) -> None:
-        """Create the cold collection vector index."""
-        if not self._db.has_collection(self._cold_collection_name):
-            msg = f"Cold collection '{self._cold_collection_name}' does not exist"
-            raise ValueError(msg)
-
-        cold_collection = self._db.collection(self._cold_collection_name)
-        cold_collection.add_index(
-            {
-                "type": "vector",
-                "fields": ["vector_n"],
-                "params": {
-                    "metric": "cosine",
-                    "dimension": embed_dim,
-                    "nLists": nlists,
-                },
-                "storedValues": ["genres"],
-            }
-        )
-
-    def rebuild_index(self, *, embed_dim: int, nlists: int) -> None:
-        """Drop and rebuild the cold collection vector index."""
-        self.drop_index()
-        self.build_index(embed_dim=embed_dim, nlists=nlists)
-
-    def get_stats(self) -> dict[str, int | bool]:
-        """Return current hot/cold counts and cold-index state."""
-        hot_count = 0
-        if self._db.has_collection(self._hot_collection_name):
-            hot_count = cast("int", self._db.collection(self._hot_collection_name).count())
-
-        cold_count = 0
-        index_exists = False
-        if self._db.has_collection(self._cold_collection_name):
-            cold_collection = self._db.collection(self._cold_collection_name)
-            cold_count = cast("int", cold_collection.count())
-            existing_indexes = cast("list[dict[str, Any]]", cold_collection.indexes())
-            index_exists = any(index.get("type") == "vector" for index in existing_indexes)
-
-        return {
-            "hot_count": hot_count,
-            "cold_count": cold_count,
-            "index_exists": index_exists,
-        }
-
-
 __all__ = [
     "delete_vectors_by_file_id",
     "delete_vectors_by_file_ids",
     "get_cold_namespace",
     "get_hot_namespace",
-    "get_maintenance_namespace",
 ]
 
 
@@ -173,11 +100,11 @@ def get_hot_namespace(db: Database, backbone_id: str, library_key: str) -> Vecto
         Registered hot vectors namespace for the ``backbone_id`` and ``library_key`` pair.
 
     Raises:
-        Exception: Propagates errors raised by ``db.ml.register_vector_collection()``
+        Exception: Propagates errors raised by ``db.ml.add_vector_collection()``
             while resolving the namespace.
     """
     col_name = f"vectors_track_hot__{backbone_id}__{library_key}"
-    return cast("VectorsTrackHotNamespace", db.ml.register_vector_collection(col_name, "vectors_track_hot"))
+    return cast("VectorsTrackHotNamespace", db.ml.add_vector_collection(col_name, "vectors_track_hot"))
 
 
 def get_cold_namespace(
@@ -200,43 +127,13 @@ def get_cold_namespace(
         pair, with ``collection_suffix`` appended to the collection name when set.
 
     Raises:
-        Exception: Propagates errors raised by ``db.ml.register_vector_collection()``
+        Exception: Propagates errors raised by ``db.ml.add_vector_collection()``
             while resolving the namespace.
     """
     col_name = f"vectors_track_cold__{backbone_id}__{library_key}"
     if collection_suffix:
         col_name = f"{col_name}__{collection_suffix}"
-    return cast("VectorsTrackColdNamespace", db.ml.register_vector_collection(col_name, "vectors_track_cold"))
-
-
-def get_maintenance_namespace(
-    db: Database,
-    backbone_id: str,
-    library_key: str,
-) -> VectorsTrackMaintenanceProtocol:
-    """Build a maintenance namespace for the vectors hot/cold collection pair.
-
-    Args:
-        db: Database façade.
-        backbone_id: Backbone identifier used to derive the paired collection names.
-        library_key: Library ``_key`` used to derive the paired collection names.
-
-    Returns:
-        Maintenance namespace wrapping the resolved hot and cold vector collection
-        pair for the ``backbone_id`` and ``library_key``.
-
-    Raises:
-        Exception: Propagates database errors encountered while constructing the
-            maintenance namespace.
-    """
-    return cast(
-        "VectorsTrackMaintenanceProtocol",
-        _VectorsTrackMaintenance(
-            db.db,
-            hot_collection_name=f"vectors_track_hot__{backbone_id}__{library_key}",
-            cold_collection_name=f"vectors_track_cold__{backbone_id}__{library_key}",
-        ),
-    )
+    return cast("VectorsTrackColdNamespace", db.ml.add_vector_collection(col_name, "vectors_track_cold"))
 
 
 def delete_vectors_by_file_id(db: Database, file_id: str) -> int:
@@ -256,13 +153,11 @@ def delete_vectors_by_file_id(db: Database, file_id: str) -> int:
             removing ``file_has_vectors`` edges.
     """
     total_deleted = 0
-    registered_collections = cast("dict[str, Any]", db.ml.list_registered_vector_namespaces())
+    registered_collections = cast("dict[str, Any]", db.ml.list_vector_namespaces())
 
-    for namespace in registered_collections.values():
-        typed_namespace = cast("_VectorDeleteByFileIdNamespace", namespace)
-        total_deleted += typed_namespace.file_id.delete(file_id)
-
-    db.ml.delete_file_has_vector_edges_for_file(file_id)
+    for collection_name in registered_collections:
+        total_deleted += len(db.ml.list_file_vectors(collection_name, file_id))
+        db.ml.remove_file_vectors(collection_name, file_id)
 
     return total_deleted
 
@@ -288,12 +183,11 @@ def delete_vectors_by_file_ids(db: Database, file_ids: list[str]) -> int:
         return 0
 
     total_deleted = 0
-    registered_collections = cast("dict[str, Any]", db.ml.list_registered_vector_namespaces())
+    registered_collections = cast("dict[str, Any]", db.ml.list_vector_namespaces())
 
-    for namespace in registered_collections.values():
-        typed_namespace = cast("_VectorDeleteByFileIdNamespace", namespace)
-        total_deleted += typed_namespace.file_id.delete.in_(file_ids)
-
-    db.ml.delete_file_has_vector_edges_for_files(file_ids)
+    for collection_name in registered_collections:
+        for file_id in file_ids:
+            total_deleted += len(db.ml.list_file_vectors(collection_name, file_id))
+        db.ml.remove_vectors_for_files(collection_name, file_ids)
 
     return total_deleted

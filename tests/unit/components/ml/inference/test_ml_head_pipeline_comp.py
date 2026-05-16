@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -162,9 +161,10 @@ class TestRunSingleHeadWithRealObjects:
 
         result = run_single_head(model, predict_fn)
 
-        assert result.head_tags is not None
-        assert "happy_effnet_mood_happy" in result.head_tags
-        assert "not_happy_effnet_mood_happy" in result.head_tags
+        assert result.head_outputs is not None
+        model_keys = [o.model_key for o in result.head_outputs]
+        assert "happy_effnet_mood_happy" in model_keys
+        assert "not_happy_effnet_mood_happy" in model_keys
 
     def test_head_outputs_created_from_real_head_info(self) -> None:
         hi = _make_sigmoid_head_info()
@@ -282,21 +282,19 @@ class TestRunHeads:
         hi = _make_sigmoid_head_info()
         head_model = _StubSigmoidHeadModel("/models/effnet/heads/sigmoid/mood_happy.onnx", meta=hi)
 
-        tags_accum: dict[str, Any] = {}
-        result = run_heads([head_model], np.zeros((1, 64), dtype=np.float32), tags_accum)
+        result = run_heads([head_model], np.zeros((1, 64), dtype=np.float32))
 
         assert result.heads_succeeded == 1
-        assert "happy_effnet_mood_happy" in tags_accum
+        assert any(output.model_key == "happy_effnet_mood_happy" for output in result.all_head_outputs)
 
-    def test_tags_accumulated_in_passed_dict(self) -> None:
+    def test_head_outputs_populated_in_result(self) -> None:
         hi = _make_sigmoid_head_info()
         head_model = _StubSigmoidHeadModel("/models/effnet/heads/sigmoid/mood_happy.onnx", meta=hi)
 
-        tags_accum: dict[str, Any] = {"existing_tag": 1.0}
-        run_heads([head_model], np.zeros((1, 64), dtype=np.float32), tags_accum)
+        result = run_heads([head_model], np.zeros((1, 64), dtype=np.float32))
 
-        assert "existing_tag" in tags_accum
-        assert "happy_effnet_mood_happy" in tags_accum
+        assert result.heads_succeeded == 1
+        assert any(output.model_key == "happy_effnet_mood_happy" for output in result.all_head_outputs)
 
     def test_run_heads_aggregates_raw_output_streams_by_model_path(self) -> None:
         sigmoid_head_info = _make_sigmoid_head_info()
@@ -307,11 +305,9 @@ class TestRunHeads:
             meta=regression_head_info,
         )
 
-        tags_accum: dict[str, Any] = {}
         result = run_heads(
             [sigmoid_head, regression_head],
             np.zeros((3, 64), dtype=np.float32),
-            tags_accum,
         )
 
         assert result.heads_succeeded == 2
@@ -336,8 +332,7 @@ class TestRunHeads:
         )
 
     def test_empty_head_list_returns_zero_successes(self) -> None:
-        tags_accum: dict[str, Any] = {}
-        result = run_heads([], np.zeros((1, 64), dtype=np.float32), tags_accum)
+        result = run_heads([], np.zeros((1, 64), dtype=np.float32))
 
         assert result.heads_succeeded == 0
         assert result.head_results == {}

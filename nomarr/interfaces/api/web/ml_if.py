@@ -84,10 +84,14 @@ async def ml_update_output_label(
     ml_service: Annotated[MLService, Depends(get_ml_service)],
 ) -> dict[str, str]:
     """Assign a human-readable label to a model output activation."""
-    decode_path_id(model_id)  # validate format; model_id not used directly
+    decoded_model_id = decode_path_id(model_id)
     decoded_output_id = decode_path_id(output_id)
     try:
-        ml_service.update_output_label(output_id=decoded_output_id, label=body.label)
+        ml_service.update_output_label(
+            model_id=decoded_model_id,
+            output_id=decoded_output_id,
+            label=body.label,
+        )
         return {"status": "updated"}
     except Exception as e:
         logger.exception("[ml_if] Failed to update output label for %s", output_id)

@@ -100,7 +100,12 @@ def register_ml_models_workflow(
                 output_doc = outputs[output_index]
                 if output_doc.get("fully_labeled", False):
                     continue
-                update_model_output_label(db, output_id=output_doc["_id"], label=label)
+                update_model_output_label(
+                    db,
+                    model_id=model_id,
+                    output_id=output_doc["_id"],
+                    label=label,
+                )
             fully_labeled = list_fully_labeled_model_outputs(db, model_id)
             if len(fully_labeled) == output_count:
                 mark_model_fully_configured(db, model_id, value=True)

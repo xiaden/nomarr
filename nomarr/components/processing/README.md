@@ -24,5 +24,5 @@ File-level write operations for persisting ML results to the database.
 ## Dependencies
 
 - **Upstream:** Called by ML tag-writing workflows and calibration pipelines
-- **Downstream:** Calls persistence directly (ArangoDB tag operations via `db.tags`, file document reads, claim management)
+- **Downstream:** Calls the intent-level persistence facade (`db.library` / `db.app`) for tag writes, file reads, and claim management
 - **External:** Standard library only

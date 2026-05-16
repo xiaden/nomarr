@@ -311,6 +311,7 @@ class NavidromeService:
         except ValueError as e:
             return False, str(e)
         except Exception as e:
+            logger.exception("Navidrome ping failed unexpectedly")
             return False, str(e)
 
     # ------------------------------------------------------------------

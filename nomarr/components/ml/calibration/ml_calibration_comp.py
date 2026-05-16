@@ -91,7 +91,7 @@ def get_sparse_histogram(
     for matched_name in matching_names:
         tag_docs = cast(
             "list[dict[str, Any]]",
-            db.library.get_tags_by_name(name=matched_name, limit=50000),
+            db.library.list_tags_by_name(name=matched_name, limit=50000),
         )
         for tag_doc in tag_docs:
             value = tag_doc.get("value")
@@ -301,10 +301,10 @@ def get_default_histogram_spec(head_name: str) -> dict[str, Any]:
         head_name: Head name (e.g., "mood_happy", "genre_rock")
 
     Returns:
-        {"lo": float, "hi": float, "bins": int}
+        {"lo": float, "hi": float, "bins": int, "bin_width": float}
 
     """
-    return {"lo": 0.0, "hi": 1.0, "bins": 10000}
+    return {"lo": 0.0, "hi": 1.0, "bins": 10000, "bin_width": 0.0001}
 
 
 def derive_percentiles_from_sparse_histogram(

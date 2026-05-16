@@ -214,7 +214,9 @@ async def get_vector_stats(
                         )
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to get stats for backbone {backbone_id}, library {library_key}: {e}")
+                    logger.warning(
+                        f"Failed to get stats for backbone {backbone_id}, library {library_key}: {e}", exc_info=True
+                    )
                     continue
         return stats_list
 

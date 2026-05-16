@@ -117,20 +117,76 @@ def test_get_filtered_docs_builds_multi_filter_query() -> None:
     assert call.kwargs["bind_vars"]["limit"] == 10
 
 
-def test_list_field_values_returns_flat_values() -> None:
-    db = make_db(cursor_rows=["a", "b", "c"])
+def test_delete_many_by_field_returns_removed_count_for_scalar_filter() -> None:
+    db = make_db(cursor_rows=[2])
 
-    result = primitives.list_field_values(
+    result = primitives.delete_many_by_field(
         as_safe_db(db),
         "libraries",
         "name",
-        sort_field="name",
-        limit=3,
-        filters={"watch_mode": "poll"},
-        allowed_fields={"name", "watch_mode"},
+        "Main",
+        allowed_fields={"name"},
     )
 
-    assert result == ["a", "b", "c"]
+    assert result == 2
+    assert isinstance(result, int)
+    call = db.aql.execute.call_args
+    assert call is not None
+    assert "FILTER doc.name == @field_value" in call.args[0]
+    assert "REMOVE doc IN @@collection" in call.args[0]
+    assert call.kwargs["bind_vars"] == {"@collection": "libraries", "field_value": "Main"}
+
+
+def test_delete_many_by_field_uses_in_filter_for_list_values() -> None:
+    db = make_db(cursor_rows=[3])
+
+    result = primitives.delete_many_by_field(
+        as_safe_db(db),
+        "libraries",
+        "name",
+        ["Main", "Side"],
+        allowed_fields={"name"},
+    )
+
+    assert result == 3
+    assert isinstance(result, int)
+    call = db.aql.execute.call_args
+    assert call is not None
+    assert "FILTER doc.name IN @field_value" in call.args[0]
+    assert call.kwargs["bind_vars"] == {"@collection": "libraries", "field_value": ["Main", "Side"]}
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+def test_delete_many_by_field_query_includes_ignore_errors_option() -> None:
+    db = make_db(cursor_rows=[1])
+
+    primitives.delete_many_by_field(
+        as_safe_db(db),
+        "libraries",
+        "name",
+        "Main",
+        allowed_fields={"name"},
+    )
+
+    call = db.aql.execute.call_args
+    assert call is not None
+    assert "OPTIONS { ignoreErrors: true }" in call.args[0]
+
+
+def test_delete_many_by_field_returns_zero_for_empty_list_without_query() -> None:
+    db = make_db(cursor_rows=[99])
+
+    result = primitives.delete_many_by_field(
+        as_safe_db(db),
+        "libraries",
+        "name",
+        [],
+        allowed_fields={"name"},
+    )
+
+    assert result == 0
+    db.aql.execute.assert_not_called()
 
 
 def test_count_distinct_edge_sources_to_filtered_vertices_unwraps_integer() -> None:
@@ -230,3 +286,61 @@ def test_get_filtered_docs_no_sort_when_sort_field_is_none() -> None:
     assert call is not None
     query = call.args[0]
     assert "SORT" not in query
+
+
+def test_delete_many_by_field_rejects_disallowed_field() -> None:
+    db = make_db()
+
+    with pytest.raises(ValueError):
+        primitives.delete_many_by_field(
+            as_safe_db(db),
+            "libraries",
+            "forbidden",
+            "value",
+            allowed_fields={"name"},
+        )
+
+    db.aql.execute.assert_not_called()
+
+
+def test_delete_many_by_field_rejects_invalid_field_name_before_query_execution() -> None:
+    db = make_db()
+
+    with pytest.raises(ValueError):
+        primitives.delete_many_by_field(
+            as_safe_db(db),
+            "libraries",
+            "bad-field",
+            "value",
+            allowed_fields={"bad-field"},
+        )
+
+    db.aql.execute.assert_not_called()
+
+
+def test_delete_many_by_field_returns_zero_when_cursor_is_empty() -> None:
+    db = make_db(cursor_rows=[])
+
+    result = primitives.delete_many_by_field(
+        as_safe_db(db),
+        "libraries",
+        "name",
+        "Main",
+        allowed_fields={"name"},
+    )
+
+    assert result == 0
+    assert isinstance(result, int)
+
+
+@pytest.mark.parametrize(
+    "helper_name",
+    ["upsert_many_by_field", "list_field_values"],
+)
+def test_removed_helpers_are_not_publicly_importable(helper_name: str) -> None:
+    namespace: dict[str, Any] = {}
+
+    with pytest.raises(ImportError):
+        exec(f"from nomarr.persistence.aql.primitives import {helper_name}", namespace)
+
+    assert not hasattr(primitives, helper_name)

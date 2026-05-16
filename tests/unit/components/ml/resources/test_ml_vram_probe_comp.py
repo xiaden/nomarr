@@ -16,7 +16,7 @@ from nomarr.components.ml.resources.ml_vram_probe_comp import (
 
 @pytest.mark.unit
 class TestProbeAllModels:
-    def test_persists_measurements_via_app_meta(self) -> None:
+    def test_persists_measurements_via_app_config_options(self) -> None:
         db = MagicMock()
         backbone = MagicMock()
         backbone._path = "backbone.onnx"
@@ -48,7 +48,7 @@ class TestProbeAllModels:
         ):
             probe_all_models(db, "models")
 
-        assert db.app.upsert_meta.call_args_list == [
+        assert db.app.update_config_option.call_args_list == [
             call("ml_model_vram:backbone.onnx", {"value": "110"}),
             call("ml_model_vram:head.onnx", {"value": str(sys.maxsize)}),
         ]
@@ -56,33 +56,33 @@ class TestProbeAllModels:
 
 @pytest.mark.unit
 class TestHasModelVramMeasurements:
-    def test_returns_true_when_matching_keys_exist(self) -> None:
+    def test_returns_true_when_matching_docs_exist(self) -> None:
         db = MagicMock()
-        db.app.list_meta_keys_by_prefix.return_value = ["ml_model_vram:model.onnx"]
+        db.app.list_config_options.return_value = [{"_key": "ml_model_vram:model.onnx", "value": "123"}]
 
         assert has_model_vram_measurements(db) is True
-        db.app.list_meta_keys_by_prefix.assert_called_once_with("ml_model_vram:")
+        db.app.list_config_options.assert_called_once_with(prefix="ml_model_vram:")
 
-    def test_returns_false_when_no_matching_keys_exist(self) -> None:
+    def test_returns_false_when_no_matching_docs_exist(self) -> None:
         db = MagicMock()
-        db.app.list_meta_keys_by_prefix.return_value = []
+        db.app.list_config_options.return_value = []
 
         assert has_model_vram_measurements(db) is False
 
 
 @pytest.mark.unit
 class TestClearModelVramMeasurements:
-    def test_deletes_each_matching_meta_key(self) -> None:
+    def test_deletes_each_matching_config_option(self) -> None:
         db = MagicMock()
-        db.app.list_meta_keys_by_prefix.return_value = [
-            "ml_model_vram:first.onnx",
-            "ml_model_vram:second.onnx",
+        db.app.list_config_options.return_value = [
+            {"_key": "ml_model_vram:first.onnx", "value": "101"},
+            {"_key": "ml_model_vram:second.onnx", "value": "202"},
         ]
 
         clear_model_vram_measurements(db)
 
-        db.app.list_meta_keys_by_prefix.assert_called_once_with("ml_model_vram:")
-        assert db.app.delete_meta.call_args_list == [
+        db.app.list_config_options.assert_called_once_with(prefix="ml_model_vram:")
+        assert db.app.remove_config_option.call_args_list == [
             call("ml_model_vram:first.onnx"),
             call("ml_model_vram:second.onnx"),
         ]

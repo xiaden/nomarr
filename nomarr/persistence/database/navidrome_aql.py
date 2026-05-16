@@ -321,26 +321,50 @@ class NavidromeAqlOperations:
         track_id = _as_document_id(self.TRACK_COLLECTION, nd_id)
         bucket_key = f"{playcount}:{user_id}"
         bucket_id = _as_document_id(self.PLAYCOUNT_COLLECTION, bucket_key)
+        # Step 1: Remove stale edges and orphaned buckets for this track+user (separate query
+        # to avoid ERR 1579 read-after-write on the same collection in one AQL statement).
+        stale_ids = primitives.execute(
+            self._db,
+            """
+            FOR edge IN @@play_edge_collection
+                FILTER edge._from == @track_id
+                LET bucket = DOCUMENT(edge._to)
+                FILTER bucket != null AND bucket.userid == @user_id
+                REMOVE edge IN @@play_edge_collection
+                RETURN edge._to
+            """,
+            {
+                "@play_edge_collection": self.PLAY_EDGE_COLLECTION,
+                "track_id": track_id,
+                "user_id": user_id,
+            },
+        )
+        # Step 2: Remove buckets that are now orphaned (no remaining edges pointing to them).
+        if stale_ids:
+            primitives.execute(
+                self._db,
+                """
+                FOR bucket_id IN @stale_bucket_ids
+                    LET edge_count = LENGTH(
+                        FOR edge IN @@play_edge_collection
+                            FILTER edge._to == bucket_id
+                            LIMIT 1
+                            RETURN 1
+                    )
+                    FILTER edge_count == 0
+                    REMOVE bucket_id IN @@playcount_collection
+                    OPTIONS { ignoreErrors: true }
+                """,
+                {
+                    "@play_edge_collection": self.PLAY_EDGE_COLLECTION,
+                    "@playcount_collection": self.PLAYCOUNT_COLLECTION,
+                    "stale_bucket_ids": list(stale_ids),
+                },
+            )
+        # Step 3: Upsert new bucket + edge.
         primitives.execute(
             self._db,
             """
-            LET stale_bucket_ids = UNIQUE(
-                FOR edge IN @@play_edge_collection
-                    FILTER edge._from == @track_id
-                    LET bucket = DOCUMENT(edge._to)
-                    FILTER bucket != null AND bucket.userid == @user_id
-                    REMOVE edge IN @@play_edge_collection
-                    RETURN edge._to
-            )
-            FOR bucket_id IN stale_bucket_ids
-                FILTER LENGTH(
-                    FOR edge IN @@play_edge_collection
-                        FILTER edge._to == bucket_id
-                        LIMIT 1
-                        RETURN 1
-                ) == 0
-                REMOVE bucket_id IN @@playcount_collection
-                OPTIONS { ignoreErrors: true }
             UPSERT { _key: @bucket_key }
                 INSERT { _key: @bucket_key, playcount: @playcount, userid: @user_id }
                 UPDATE { playcount: @playcount, userid: @user_id }
@@ -354,9 +378,9 @@ class NavidromeAqlOperations:
                 "@play_edge_collection": self.PLAY_EDGE_COLLECTION,
                 "@playcount_collection": self.PLAYCOUNT_COLLECTION,
                 "track_id": track_id,
-                "user_id": user_id,
                 "bucket_key": bucket_key,
                 "bucket_id": bucket_id,
+                "user_id": user_id,
                 "playcount": playcount,
                 "last_played": last_played,
                 "edge_key": _edge_key(track_id, bucket_id),

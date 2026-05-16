@@ -5,7 +5,6 @@ from typing import Any
 
 from nomarr.components.library.library_file_mutation_comp import get_file_library_key
 from nomarr.components.library.library_records_comp import list_library_records
-from nomarr.components.ml.vectors.ml_vector_maintenance_comp import has_vector_index
 from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
 from nomarr.components.ml.vectors.ml_vector_retrieve_comp import get_cold_track_vector
 from nomarr.helpers.vector_params_helper import compute_nlists, compute_nprobe
@@ -103,7 +102,7 @@ class VectorSearchService:
         target_library = library_key if library_scope is None or library_scope == "own" else library_scope
 
         # Validate vector index exists
-        if not has_vector_index(self.db, backbone_id, target_library):
+        if not self.db.ml.has_embedding_index(backbone_id, target_library):
             msg = (
                 f"Vector search not available for backbone '{backbone_id}' "
                 f"library '{target_library}': cold collection has no vector index. "

@@ -1,0 +1,224 @@
+
+=== library.py ===
+[C] LibraryMaintenanceDb:
+  Maintenance-only companion surface for library persistence operations. |  | Wired as ``LibraryDb.maintenance`` by Part A. Destructive, reset, repair, | and diagnostics-only operations belong here, not on the routine top-level | ``LibraryDb`` surface. Parts B
+[C] LibraryDb:
+  Persistence sub-facade for library, file, tag, and scan operations. |  | Routine callers use the normalized library intent methods on this facade. | Maintenance operations live on ``.maintenance`` (a | ``LibraryMaintenanceDb`` instance) instead of the routin
+[F] list_files:
+  Return library file documents matching the optional filters and limit.
+[F] list_tags:
+  Return tag documents matching the optional equality filters and paging arguments. |  | Args: |     name: Optional tag name to match exactly. |     value: Optional tag value to match exactly. |     limit: Maximum number of tag documents to return. |     offset: N
+[F] list_file_tags_for_files:
+  Return tags for many files, grouped by file id. |  | Uses a single batch read for all supplied files. When | ``name_starts_with`` is provided, only tags whose names start with that | prefix are included. |  | Args: |     file_ids: Files whose tags should be fetche
+[F] remove_library:
+  Delete a library and all associated data. |  | Returns True if the library was found and deleted, False if not found. | Delegates to the hand-written AQL cascade in LibrariesAqlOperations. | Orphaned tag documents are not cleaned up — callers should invoke | c
+[F] add_file_to_library:
+  Insert or update one library-file document and initialize its state edges. |  | Returns the ``_id`` of the upserted document.
+[F] add_files_to_library:
+  Insert or update library-file documents for one library. |  | Initializes file-state edges only for genuinely new files so existing files | do not re-run their initial transitions. Files whose payload already has | ``last_tagged_at`` set are marked as tagged
+[F] update_library_files:
+  Upsert a library's files and optionally remove files missing from the batch. |  | Calls `add_files_to_library`, then removes previously linked files whose ids | were not returned by the upsert when ``remove_missing`` is true. |  | Args: |     library_id: Library
+[F] update_library_file_scan_metadata:
+  Patch a file document with scan metadata and mark it valid for the current scan. |  | Args: |     file_id: File document ``_id``. |     file_size: File size recorded during scanning. |     modified_time: File modification time recorded during scanning. |     art
+[F] update_library_file_metadata_cache:
+  Update the cached audio metadata fields stored on a library file document.
+[F] remove_file_by_path:
+  Remove a file by path if a matching file document can be resolved. |  | Resolves the path first, scoped to ``library_id`` when provided or across | all libraries otherwise, then delegates to ``remove_file``. Returns | silently when no matching file exists.
+[F] replace_tag_references:
+  Remap song→tag edges from one tag to another across all affected files. |  | Collects every file currently linked to ``source_tag_id`` and delegates the | remap to ``replace_selected_tag_references``.
+[F] replace_selected_tag_references:
+  Remap song→tag edges for a selected set of files. |  | Inserts target-tag edges only for files that do not already have them, | then deletes the source-tag edges. If the source tag is left unused after | the remap, orphaned tag cleanup is triggered. |  | Args: |  
+[F] remove_file_tags:
+  Remove tag edges for one file and clean up orphaned tags. |  | When ``tag_keys`` is omitted, removes every tag edge for the file. When | provided, removes only edges whose tag names match the supplied keys. | Orphaned tag documents are cleaned up in either c
+
+=== application.py ===
+[C] AppMaintenanceDb:
+  Maintenance-only companion surface for application persistence. |  | Wired as ``AppDb.maintenance`` by Part A. Destructive, reset, repair, | and diagnostics-only operations belong here, not on the routine top-level | ``AppDb`` surface. Parts C/E add new main
+[C] AppLegacyNavidromeDb:
+  Legacy-only Navidrome persistence surface. |  | These plugin-era mapping/play methods are intentionally isolated from the | routine ``AppDb`` contract. Canonical app callers should continue to use | the normalized ``AppDb`` routine methods; legacy compatibil
+[C] AppDb:
+  Persistence sub-facade for app-state, locks, claims, config, and admin helpers. |  | Routine methods expose the normalized app-domain intent surface. Destructive | maintenance operations live on ``.maintenance`` and legacy Navidrome | persistence is isolated
+[F] remove_claims:
+  Delete claims matching the supplied worker ids and/or file ids. |  | Args: |     worker_ids: Optional worker ids whose claims should be removed. |     file_ids: Optional file ids whose claims should be removed. |  | Returns: |     Total number of claims removed ac
+
+=== ml.py ===
+[C] MlMaintenanceDb:
+  Maintenance-only companion surface for ML persistence operations. |  | Wired as ``MlDb.maintenance`` by Part A. Destructive, reset, repair, | and diagnostics-only operations belong here, not on the routine top-level | ``MlDb`` surface. Parts D/E add new main
+[C] MlDb:
+  Persistence sub-facade for ML model, stream, and vector operations. |  | Routine callers use the normalized ML intent methods on this facade. | Maintenance operations live on ``.maintenance`` (an ``MlMaintenanceDb`` | instance) instead of the routine top-lev
+[F] truncate_vectors_in_collection:
+  Truncate all vectors stored in the given registered vector collection.
+[F] truncate_vector_collection:
+  Compatibility shim for `truncate_vectors_in_collection`; truncates all vectors in the collection.
+[F] truncate_vector_edges:
+  Truncate all file-to-vector edge documents.
+[F] truncate_calibration_states:
+  Truncate all calibration state documents.
+[F] truncate_calibration_history:
+  Truncate all calibration history documents.
+[F] add_vector_collection:
+  Register a named vector collection from the given template.
+[F] list_vector_collection_names:
+  Return all registered vector collection names.
+[F] list_vector_namespaces:
+  Return all registered vector namespace mappings.
+[F] list_output_streams_for_file:
+  Return all canonical output stream documents linked to one file.
+[F] list_file_vectors:
+  Return all vector documents stored for one file in a collection.
+[F] search_vectors:
+  Return nearest-neighbour vectors for ``query_vector`` in ``collection_name``. |  | Canonical caller entrypoint for vector similarity search; higher layers | should use this method instead of the removed legacy ``vector_search`` | facade name.
+[F] get_model:
+  Return the ml_models document for model_id, or None if absent.
+[F] get_model_by_path:
+  Return the ml_models document whose path matches, or None.
+[F] add_model:
+  Upsert a model document and return the persisted ml_models document. |  | Raises: |     RuntimeError: If the upsert succeeds but the persisted document cannot be reloaded.
+[F] update_model:
+  Apply field updates to an existing ml_models document.
+[F] remove_model:
+  Delete one ml_models document by _id.
+[F] list_models:
+  Return all ml_models documents.
+[F] count_models:
+  Return the total number of registered ml_models documents.
+[F] list_models_by_ids:
+  Return ml_models documents whose _ids are in model_ids.
+[F] get_model_output:
+  Return one ml_model_outputs document by _id, or None.
+[F] list_model_outputs:
+  Return all ml_model_outputs documents linked to one model, ordered by index.
+[F] get_tag_model_output:
+  Return one tag-model output document by key, or None.
+[F] get_calibration_state:
+  Return the calibration_state document for model_id, or None.
+[F] get_calibration_state_view:
+  Return a calibration_state document by logical (head_name, label) identity.
+[F] list_calibration_states:
+  Return all calibration_state documents.
+[F] list_calibration_history_snapshots:
+  Return all calibration_history snapshot documents for one calibration key.
+[F] add_calibration_history:
+  Insert a calibration_history snapshot and return its _id.
+[F] count_calibration_history:
+  Return the number of calibration history entries for one model.
+[F] replace_output_streams_for_file:
+  Replace all canonical output streams for one file (delete-then-insert).
+[F] remove_output_streams_for_file:
+  Delete all canonical output streams linked to one file.
+[F] replace_file_vectors:
+  Replace all vector documents for one file in a collection (delete-then-insert).
+[F] remove_file_vectors:
+  Delete all vector documents for one file in a collection.
+[F] remove_vectors_for_files:
+  Delete all vector documents for each file_id in file_ids.
+[F] replace_model_output:
+  Upsert one output vertex and ensure the model→output edge exists; returns the output _id.
+[F] remove_model_output:
+  Delete one output vertex and its associated edges.
+[F] remove_model_outputs_for_model:
+  Delete all output vertices for one model and return their _ids.
+[F] replace_tag_model_outputs:
+  Replace all tag-model output records for one model (delete-then-insert).
+[F] remove_tag_model_outputs_for_model:
+  Delete all tag-model output records for one model.
+[F] remove_tag_model_outputs_for_tag:
+  Delete all outbound tag-model output edges for one tag.
+[F] count_tag_model_outputs_for_tag:
+  Return the number of provenance edges that originate from one tag.
+[F] remove_tag_model_outputs_for_outputs:
+  Delete all tag-model output provenance edges targeting the given outputs.
+[F] replace_tag_model_outputs_for_output:
+  Replace all tag-model output provenance edges that target one output.
+[F] list_all_calibration_states_with_models:
+  Return all calibration states enriched with their owning model metadata.
+[F] replace_calibration_state:
+  Upsert a calibration_state document and ensure the model→calibration edge.
+[F] remove_calibration_state:
+  Delete one calibration_state document and its model→calibration edge.
+[F] remove_calibration_history_for_model:
+  Delete all calibration history entries for one model.
+[F] remove_calibration_history_entries:
+  Delete calibration history documents by _id list.
+[F] get_embedding_stats:
+  Return hot_count, cold_count, and index_exists for a backbone+library.
+[F] has_embedding_index:
+  Return True if the cold collection has an ANN vector index.
+[F] index_library_embeddings:
+  Drain hot vectors to cold and build the ANN index. |  | Idempotent: no-op if hot is already empty and index exists. | Returns number of documents drained.
+[F] rebuild_library_embedding_index:
+  Drop and rebuild the ANN index without draining hot.
+
+=== db.py ===
+[C] Database:
+  Application database (ArangoDB). |  | Handles all data persistence: queue, library, sessions, meta config. | Single source of truth for database operations across all services. |  | Connection pooling is handled automatically by python-arango. | Thread-safe with
+[F] get_version:
+  Read the current schema version from the meta store.
+[F] set_version:
+  Persist the schema version to the meta store.
+[F] close:
+  Close database connection (cleanup).
+
+=== library_records_comp.py ===
+[F] create_library_record:
+  Insert a library document through the constructor namespace. |  | Args: |     db: Database handle used to insert the library document. |     name: Human-readable library name. |     root_path: Absolute root path scanned for this library. |     is_enabled: Whethe
+[F] get_library_record:
+  Get one library by ``_id`` or ``_key`` and optionally merge scan state.
+[F] get_library_by_name:
+  Get one library by unique name.
+[F] list_library_records:
+  List libraries through constructor verbs, preserving legacy sort order.
+[F] list_watchable_library_records:
+  Return enabled libraries with file watching turned on.
+[F] update_library_record:
+  Update a library document by ``_id`` through the constructor namespace.
+[F] update_library_config_fields:
+  Update optional library config fields. |  | Constructor ``update`` does not expose Arango's ``keepNull: false`` toggle, | so clearing an override persists ``null``. Callers should treat missing and | ``None`` values equivalently for inheritance.
+[F] list_all_library_keys:
+  Return all library document keys for bootstrap-style callers.
+[F] find_library_containing_path:
+  Find the most specific library root containing ``file_path``.
+[F] find_ml_complete_libraries:
+  Find ML-running libraries whose file set is fully tagged. |  | Args: |     db: Database handle used to read pipeline state and tagged file counts. |     min_files: Unused minimum file-count threshold accepted for interface |         compatibility; it currently
+
+=== pipeline_svc.py ===
+[C] LibraryPipelineService:
+  Coordinate pipeline state recovery and post-ML orchestration. |  | This infrastructure service owns startup recovery and the callback wiring | between calibration generation, calibration apply, and file writeback.
+[F] recover_stale_states:
+  Recover pipeline states that require missing BTS tasks.
+[F] trigger_calibration:
+  Start calibration or shortcut directly to calibration apply.
+[F] on_calibration_complete:
+  Advance all calibrating libraries into the apply stage.
+[F] on_apply_complete:
+  Route libraries from applying to writing or write_ready.
+[F] get_pipeline_status:
+  Return state-aware pipeline status details for a library.
+[F] stop_write:
+  Request graceful cancellation of an in-flight write task.
+[F] handle_auto_write_enabled:
+  React to auto-write being enabled for a library.
+[F] handle_auto_write_disabled:
+  React to auto-write being disabled for a library.
+[F] on_write_complete:
+  Mark a library done and trigger Navidrome rescan.
+
+=== info_svc.py ===
+[C] InfoConfig:
+  Configuration for InfoService.
+[C] InfoService:
+  Service for system information. |  | Owns GPUHealthMonitor lifecycle - starts/stops the subprocess and | registers it with HealthMonitorService for liveness tracking. |  | GPU resource snapshot is written to DB by GPUHealthMonitor. | GPU monitor liveness is trac
+[F] on_status_change:
+  Handle GPU monitor status changes from HealthMonitorService.
+[F] start:
+  Start InfoService - initializes GPU monitor subprocess. |  | Call this after all services are registered.
+[F] stop:
+  Stop InfoService - gracefully shuts down GPU monitor.
+[F] get_system_info:
+  Get system information for API endpoints. |  | Returns: |     SystemInfoResult DTO with version, namespace, models_dir, worker status
+[F] get_health_status:
+  Get health status with warnings and diagnostics. |  | Analyzes worker status and generates warnings for potential issues. | Queue-based statistics removed in favor of discovery workers. |  | Returns: |     HealthStatusResult DTO with status, warnings, worker cou
+[F] get_public_info:
+  Get comprehensive public info for API endpoint. |  | Orchestrates calls to multiple services and computes: | - Worker enabled/alive status and heartbeat | - Queue summary | - Models/heads breakdown | - Config subset |  | Returns: |     PublicInfoResult DTO with config
+[F] get_gpu_health:
+  Get GPU resource snapshot and monitor liveness. |  | Reads cached GPU probe results written by GPUHealthMonitor process. | Does NOT run nvidia-smi inline (non-blocking). |  | Monitor liveness is determined by HealthMonitorService. |  | Returns: |     GPUHealthResult

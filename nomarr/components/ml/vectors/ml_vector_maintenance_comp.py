@@ -1,7 +1,6 @@
 """Vector store maintenance operations.
 
-Provides primitives for hot/cold vector store promotion and index rebuilding.
-Never called during bootstrap (maintenance workflow only).
+Provides utilities for embedding dimension inference and cold vector data maintenance.
 """
 
 from __future__ import annotations
@@ -10,11 +9,7 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.ml.onnx.ml_discovery_comp import _resolve_embedding_graph
-from nomarr.components.ml.vectors.ml_vector_registry_comp import (
-    get_cold_namespace,
-    get_hot_namespace,
-    get_maintenance_namespace,
-)
+from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
 from nomarr.persistence.schema_types import Field
 
 if TYPE_CHECKING:
@@ -52,7 +47,7 @@ def _get_genres_for_files(db: Database, file_ids: list[str]) -> dict[str, list[s
 
     result: dict[str, list[str]] = {fid: [] for fid in file_ids}
     seen: dict[str, set[str]] = {fid: set() for fid in file_ids}
-    genre_rows = cast("list[dict[str, Any]]", db.library.get_genre_tags_for_files(file_ids))
+    genre_rows = cast("list[dict[str, Any]]", db.library.list_genre_tags_for_files(file_ids))
     for row in genre_rows:
         fid = row.get("fid")
         genre = row.get("genre")
@@ -104,172 +99,6 @@ def derive_embed_dim(models_dir: str, backbone_id: str) -> int:
         f"Cannot determine embed_dim for backbone '{backbone_id}'. "
         "Ensure backbone ONNX model has output named 'embeddings' with valid shape."
     )
-
-
-def drain_hot_to_cold(db: Database, backbone_id: str, library_key: str) -> int:
-    """Drain all vectors from hot to cold collection (convergent UPSERT + truncate).
-
-    Moves all documents from hot to cold, re-pointing every edge, then truncates hot.
-    Safe to run multiple times (UPSERT semantics on ``_key``).
-
-    Args:
-        db: Database façade.
-        backbone_id: Backbone identifier.
-        library_key: ArangoDB ``_key`` of the library document.
-
-    Returns:
-        Number of documents drained from hot.
-
-    Raises:
-        ValueError: If the hot collection does not exist.
-
-    """
-    cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    hot_ops = get_hot_namespace(db, backbone_id, library_key)
-    drained = cast("int", hot_ops.move_collection(cold_name))
-    db.ml.register_vector_collection(cold_name, "vectors_track_cold")
-    return drained
-
-
-def verify_hot_empty(db: Database, backbone_id: str, library_key: str) -> None:
-    """Verify hot collection is empty after drain (completeness check).
-
-    Args:
-        db: Database façade.
-        backbone_id: Backbone identifier.
-        library_key: ArangoDB ``_key`` of the library document.
-
-    Raises:
-        RuntimeError: If hot collection is not empty.
-
-    """
-    maintenance = get_maintenance_namespace(db, backbone_id, library_key)
-    hot_count = cast("int", maintenance.get_stats()["hot_count"])
-
-    if hot_count > 0:
-        raise RuntimeError(
-            f"Hot collection 'vectors_track_hot__{backbone_id}__{library_key}' "
-            f"not empty after drain: {hot_count} documents remain. "
-            "This indicates drain operation failed or concurrent writes occurred during promotion."
-        )
-
-
-def drop_cold_vector_index(db: Database, backbone_id: str, library_key: str) -> None:
-    """Drop vector index from cold collection (free memory before drain).
-
-    Args:
-        db: Database façade.
-        backbone_id: Backbone identifier.
-        library_key: ArangoDB ``_key`` of the library document.
-
-    """
-    maintenance = get_maintenance_namespace(db, backbone_id, library_key)
-    try:
-        maintenance.drop_index()
-    except ValueError:
-        return
-
-
-def has_vector_index(db: Database, backbone_id: str, library_key: str) -> bool:
-    """Check if cold collection has a vector index.
-
-    Args:
-        db: Database façade.
-        backbone_id: Backbone identifier.
-        library_key: ArangoDB ``_key`` of the library document.
-
-    Returns:
-        True if cold collection has vector index, False otherwise.
-
-    """
-    maintenance = get_maintenance_namespace(db, backbone_id, library_key)
-    return bool(maintenance.get_stats()["index_exists"])
-
-
-def build_cold_vector_index(
-    db: Database,
-    backbone_id: str,
-    library_key: str,
-    embed_dim: int,
-    nlists: int,
-) -> None:
-    """Build vector index on cold collection.
-
-    Args:
-        db: Database façade.
-        backbone_id: Backbone identifier.
-        library_key: ArangoDB ``_key`` of the library document.
-        embed_dim: Embedding dimension (from derive_embed_dim).
-        nlists: Number of HNSW graph lists (controls memory/accuracy tradeoff).
-
-    Raises:
-        ValueError: If cold collection doesn't exist.
-        Exception: If index creation fails.
-
-    """
-    cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    maintenance = get_maintenance_namespace(db, backbone_id, library_key)
-    doc_count = cast("int", maintenance.get_stats()["cold_count"])
-
-    logger.info(
-        "Building vector index on %s (dim=%d, nlists=%d, docs=%d)",
-        cold_name,
-        embed_dim,
-        nlists,
-        doc_count,
-    )
-
-    try:
-        maintenance.build_index(embed_dim=embed_dim, nlists=nlists)
-        logger.info("Vector index created successfully on %s", cold_name)
-    except Exception as exc:
-        logger.error(
-            "Failed to create vector index on %s (dim=%d, nlists=%d)",
-            cold_name,
-            embed_dim,
-            nlists,
-            exc_info=True,
-        )
-        raise RuntimeError(f"Vector index creation failed on {cold_name}: {exc}") from exc
-
-
-def rebuild_cold_vector_index(
-    db: Database,
-    backbone_id: str,
-    library_key: str,
-    embed_dim: int,
-    nlists: int,
-) -> None:
-    """Drop existing vector index and rebuild it on the cold collection.
-
-    Combines drop + build as a single operation for use when data is already
-    fully promoted and only the index parameters need updating.
-
-    Args:
-        db: Database façade.
-        backbone_id: Backbone identifier.
-        library_key: ArangoDB ``_key`` of the library document.
-        embed_dim: Embedding dimension (from derive_embed_dim).
-        nlists: Number of Voronoi cells (controls recall/speed tradeoff).
-
-    Raises:
-        ValueError: If cold collection doesn't exist.
-        RuntimeError: If index creation fails.
-
-    """
-    cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    maintenance = get_maintenance_namespace(db, backbone_id, library_key)
-
-    logger.info(
-        "[rebuild index] Starting for %s (dim=%d, nlists=%d)",
-        cold_name,
-        embed_dim,
-        nlists,
-    )
-
-    maintenance.rebuild_index(embed_dim=embed_dim, nlists=nlists)
-
-    logger.info("[rebuild index] Completed for %s", cold_name)
 
 
 def backfill_genres(db: Database, backbone_id: str, library_key: str) -> int:

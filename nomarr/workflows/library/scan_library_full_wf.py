@@ -22,6 +22,7 @@ from nomarr.components.library.library_root_comp import validate_library_root
 from nomarr.components.library.scan_lifecycle_comp import (
     cleanup_stale_folders,
     count_library_files,
+    get_cached_folders,
     mark_scan_completed,
     mark_scan_started,
     remove_deleted_files,
@@ -97,15 +98,14 @@ def scan_library_full_workflow(
         # Step 2 — Pre-scan DB lookups
         db_folder_paths = get_folder_rel_paths(db, library_id)
         file_count = count_library_files(db, library_id)
+        cached_folders = get_cached_folders(db, library_id)
 
         # Step 3 — Discover folders on disk
         all_folders = discover_library_folders(library_root, [library_root])
         discovered_folder_paths = {f.rel_path for f in all_folders}
 
-        stats["folders_scanned"] = len(all_folders)
-        stats["folders_skipped"] = 0
-        stats["files_discovered"] = sum(f.file_count for f in all_folders)
-        update_scan_progress(db, library_id, total=file_count or stats["files_discovered"])
+        estimated_total = sum(f.file_count for f in all_folders)
+        update_scan_progress(db, library_id, total=file_count or estimated_total)
 
         # Step 4 — Track which folders vanished so their files can be deleted after the loop
         vanished_folder_paths = db_folder_paths - discovered_folder_paths
@@ -154,12 +154,25 @@ def scan_library_full_workflow(
                     if deleted_paths:
                         stats["files_removed"] += remove_deleted_files(db, deleted_paths)
 
-                    save_folder_record(db, library_id, folder.rel_path, folder.mtime, folder.file_count)
+                    cached_folder = cached_folders.get(folder.rel_path)
+                    save_folder_record(
+                        db,
+                        library_id,
+                        folder.rel_path,
+                        folder.mtime,
+                        folder.file_count,
+                        existing_folder_id=str(cached_folder["_id"]) if cached_folder is not None else None,
+                    )
                     break
 
                 except Exception as e:
                     if attempt == 0:
-                        pass  # retry silently
+                        logger.debug(
+                            "Folder %r failed on first attempt, retrying: %s",
+                            folder.rel_path,
+                            e,
+                            exc_info=True,
+                        )
                     else:
                         logger.error("Folder %r failed after retry, skipping: %s", folder.rel_path, e)
                         stats["files_failed"] += folder.file_count
@@ -180,7 +193,7 @@ def scan_library_full_workflow(
         try:
             cleanup_orphaned_entities_workflow(db, dry_run=False)
         except Exception as e:
-            logger.warning("Entity cleanup failed: %s", e)
+            logger.warning("Entity cleanup failed: %s", e, exc_info=True)
 
         # Step 9b — Tag graph validation (optional, requires models_dir)
         if models_dir:
@@ -213,7 +226,7 @@ def scan_library_full_workflow(
                         validation["expected_heads"],
                     )
             except Exception as e:
-                logger.warning("Tag validation failed: %s", e)
+                logger.warning("Tag validation failed: %s", e, exc_info=True)
                 warnings.append(f"Tag validation error: {e}")
 
         # Step 9c — Validate scan state for unchanged files (heal short files)
@@ -222,7 +235,7 @@ def scan_library_full_workflow(
                 validation_stats = validate_unchanged_files(db, library_id, min_duration_s)
                 stats["short_files_healed"] = validation_stats.short_files_healed
             except Exception as e:
-                logger.warning("Scan state validation failed: %s", e)
+                logger.warning("Scan state validation failed: %s", e, exc_info=True)
 
         # Step 10 — Finalize
         scan_duration = internal_ms().value - start_time.value
@@ -231,6 +244,7 @@ def scan_library_full_workflow(
             db,
             library_id,
             progress=stats["files_discovered"],
+            total=stats["files_discovered"],
             scan_error=None,
         )
 

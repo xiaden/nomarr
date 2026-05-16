@@ -23,8 +23,8 @@ class TestWriteToDb:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_calls_flat_upsert_api(self) -> None:
-        """Writes should use the flat ``meta.upsert`` API."""
+    def test_calls_update_config_option_api(self) -> None:
+        """Writes should use ``db.app.update_config_option``."""
         service = _make_service()
 
         with patch("nomarr.services.infrastructure.config_svc.Database") as mock_database:
@@ -32,7 +32,7 @@ class TestWriteToDb:
 
             service._write_to_db("namespace", "myns")
 
-        mock_db_instance.app.upsert_meta.assert_called_once_with(
+        mock_db_instance.app.update_config_option.assert_called_once_with(
             "config_namespace",
             {"value": "myns"},
         )
@@ -73,20 +73,20 @@ class TestBootstrapAndLoad:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_uses_flat_like_api_to_read_existing_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Bootstrap should read existing config through ``meta.get.like`` twice."""
+    def test_reads_existing_config_via_list_config_options(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Bootstrap should list config docs twice: existing keys, then loaded values."""
         service = _make_service()
         monkeypatch.setattr(service, "_build_bootstrap_config", MagicMock(return_value={"library_root": "/test-root"}))
 
         with patch("nomarr.services.infrastructure.config_svc.Database") as mock_database:
             mock_db_instance = mock_database.return_value
-            mock_db_instance.app.list_meta_keys_by_prefix.return_value = []
+            mock_db_instance.app.list_config_options.return_value = []
 
             service._bootstrap_and_load()
 
-        assert mock_db_instance.app.list_meta_keys_by_prefix.call_count == 2
-        mock_db_instance.app.list_meta_keys_by_prefix.assert_has_calls(
-            [call("config_"), call("config_")],
+        assert mock_db_instance.app.list_config_options.call_count == 2
+        mock_db_instance.app.list_config_options.assert_has_calls(
+            [call(prefix="config_"), call(prefix="config_")],
         )
 
     @pytest.mark.unit
@@ -98,11 +98,11 @@ class TestBootstrapAndLoad:
 
         with patch("nomarr.services.infrastructure.config_svc.Database") as mock_database:
             mock_db_instance = mock_database.return_value
-            mock_db_instance.app.list_meta_keys_by_prefix.return_value = []
+            mock_db_instance.app.list_config_options.side_effect = [[], []]
 
             service._bootstrap_and_load()
 
-        mock_db_instance.app.upsert_meta.assert_called_once_with(
+        mock_db_instance.app.update_config_option.assert_called_once_with(
             "config_library_root",
             {"value": "/test-root"},
         )
@@ -118,11 +118,10 @@ class TestBootstrapAndLoad:
 
         with patch("nomarr.services.infrastructure.config_svc.Database") as mock_database:
             mock_db_instance = mock_database.return_value
-            mock_db_instance.app.list_meta_keys_by_prefix.side_effect = [
+            mock_db_instance.app.list_config_options.side_effect = [
                 [],
-                ["config_library_root"],
+                [{"key": "config_library_root", "value": "/myns"}],
             ]
-            mock_db_instance.app.get_meta.return_value = {"key": "config_library_root", "value": "/myns"}
 
             service._bootstrap_and_load()
 

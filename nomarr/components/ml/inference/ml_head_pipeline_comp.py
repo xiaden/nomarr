@@ -120,19 +120,12 @@ def run_single_head(
             head_info=head_model.meta,
             key_builder=key_builder,
         )
-        head_tags = decision.as_tags(key_builder=key_builder)
-        logger.debug(f"[processor] Head {head_name} ({head_model.meta.head_type}) produced {len(head_tags)} tags")
-        if head_tags:
-            sample_keys = list(head_tags.keys())[:3]
-            logger.debug(f"[processor]   Sample keys: {sample_keys}")
         elapsed_ms = internal_ms().value - t_head.value
         logger.debug(
             f"[processor] Head {head_name} complete: "
-            f"{len(segment_scores)} patches \u2192 {len(head_tags)} tags "
+            f"{len(segment_scores)} patches \u2192 {len(head_outputs)} outputs "
             f"in {elapsed_ms / 1000:.1f}s",
         )
-        if len(head_tags) == 0:
-            logger.warning(f"[processor] Head {head_name} produced ZERO tags")
         # Regression data
         regression_data: tuple[Any, list[float]] | None = None
         if head_model.meta.is_regression_head:
@@ -165,7 +158,6 @@ def run_single_head(
             head_name=head_name,
             status="success",
             model_path=head_model.meta.model_path,
-            head_tags=head_tags,
             head_outputs=head_outputs,
             regression_data=regression_data,
             raw_output_streams=raw_output_streams or None,
@@ -185,7 +177,6 @@ def run_single_head(
 def run_heads(
     backbone_heads: list[ONNXHeadModel],
     embeddings_2d: np.ndarray,
-    tags_accum: dict[str, Any],
 ) -> ProcessHeadPredictionsResult:
     """Process all head predictions for a single backbone using cached embeddings.
 
@@ -197,7 +188,6 @@ def run_heads(
     Args:
         backbone_heads: List of heads for this backbone.
         embeddings_2d: Pre-computed embeddings.
-        tags_accum: Accumulator dict for tags (modified in place).
 
     Returns:
         ProcessHeadPredictionsResult with per-head outcomes.
@@ -231,8 +221,6 @@ def run_heads(
         per_head_timings[r.head_name] = r.elapsed_ms
         if r.status == "success":
             heads_succeeded += 1
-            if r.head_tags:
-                tags_accum.update(r.head_tags)
             if r.head_outputs:
                 all_head_outputs.extend(r.head_outputs)
             if r.regression_data:
@@ -241,7 +229,6 @@ def run_heads(
                 raw_output_streams_by_model_path[r.model_path] = r.raw_output_streams
             head_results[r.head_name] = {
                 "status": "success",
-                "tags_written": len(r.head_tags or {}),
                 "decisions": r.decisions_count,
             }
         elif r.status == "error_processing":

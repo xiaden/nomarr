@@ -258,7 +258,7 @@ class LibraryFileWithTagsResponse(BaseModel):
 
     file_id: str  # ArangoDB _id
     path: str
-    library_id: str  # ArangoDB _id
+    library_id: str | None  # ArangoDB _id (None for orphaned files)
     file_size: int | None
     modified_time: int | None
     duration_seconds: float | None
@@ -294,7 +294,7 @@ class SearchFilesResponse(BaseModel):
                 LibraryFileWithTagsResponse(
                     file_id=encode_id(f._id),
                     path=f.path,
-                    library_id=encode_id(f.library_id),
+                    library_id=encode_id(f.library_id) if f.library_id else None,
                     file_size=f.file_size,
                     modified_time=f.modified_time,
                     duration_seconds=f.duration_seconds,

@@ -117,7 +117,7 @@ class LibraryFileWithTags:
 
     _id: str  # ArangoDB _id
     path: str
-    library_id: str  # ArangoDB _id
+    library_id: str | None  # ArangoDB _id (None for orphaned files)
     file_size: int | None
     modified_time: int | None
     duration_seconds: float | None

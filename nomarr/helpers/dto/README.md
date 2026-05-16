@@ -21,7 +21,6 @@ Typed dataclasses and TypedDicts shared across all layers — the canonical data
  | `library_dto.py` | `LibraryPath`, `LibraryDict`, `SearchFilesResult`, `StartScanResult`, `WriteTagsResult` (largest — 14 types) |
  | `metadata_dto.py` | Entity cleanup and metadata seeding types |
  | `ml_dto.py` | `LoadAudioMonoResult`, `AnalyzeWithSegmentsResult`, `SingleHeadResult`, `ProcessHeadPredictionsResult` |
- | `ml_edge_dto.py` | ML model→output edge types for graph operations |
  | `navidrome_dto.py` | `NdSyncResult`, `TasteProfile`, `TasteCluster`, `NavidromePersonalPlaylistContext` |
  | `path_dto.py` | `LibraryPath` — validated file path with status tracking |
  | `playlist_import_dto.py` | `PlaylistMetadata`, `PlaylistTrackInput`, `MatchResult`, `PlaylistConversionResult` |

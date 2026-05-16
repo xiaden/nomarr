@@ -6,15 +6,11 @@ Part of hybrid entity graph: tags are truth, embedded fields are read cache.
 
 from __future__ import annotations
 
-import contextlib
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nomarr.components.library.library_file_mutation_comp import (
     update_metadata_cache,
-)
-from nomarr.components.library.library_file_mutation_comp import (
-    update_metadata_cache_batch as write_metadata_cache_batch,
 )
 from nomarr.components.library.library_file_query_comp import list_all_file_ids
 from nomarr.components.tagging.tag_query_comp import get_song_tags
@@ -73,99 +69,6 @@ def rebuild_song_metadata_cache(db: Database, song_id: str) -> None:
         genres=genres,
         year=year,
     )
-
-
-def compute_metadata_cache_fields(metadata: dict[str, Any]) -> dict[str, Any]:
-    """Derive metadata cache fields from raw scan metadata (no DB access).
-
-    Produces the same result as :func:`rebuild_song_metadata_cache` would
-    after a full round-trip through entity seeding, but without any DB reads.
-    Use this during scan to avoid the redundant read-back.
-
-    Args:
-        metadata: Raw file metadata dict (from mutagen)
-
-    Returns:
-        Dict with cache fields: artist, artists, album, labels, genres, year
-
-    """
-    # — artist / artists (same fallback logic as seed_song_entities_from_tags) —
-    artist_raw = metadata.get("artist")
-    artists_raw = metadata.get("artists")
-
-    primary_artist: str | None = None
-    if artist_raw:
-        val = artist_raw[0] if isinstance(artist_raw, list) else artist_raw
-        primary_artist = str(val) if val else None
-    elif artists_raw:
-        val = artists_raw[0] if isinstance(artists_raw, list) else artists_raw
-        primary_artist = str(val) if val else None
-
-    all_artists: list[str] | None = None
-    if artists_raw:
-        if isinstance(artists_raw, list):
-            all_artists = sorted(str(a) for a in artists_raw if a)
-        else:
-            all_artists = [str(artists_raw)]
-    elif primary_artist:
-        all_artists = [primary_artist]
-
-    # — album —
-    album_raw = metadata.get("album")
-    album: str | None = None
-    if album_raw:
-        album = str(album_raw[0]) if isinstance(album_raw, list) else str(album_raw)
-
-    # — labels —
-    label_raw = metadata.get("label")
-    labels: list[str] | None = None
-    if label_raw:
-        if isinstance(label_raw, list):
-            labels = sorted(str(lbl) for lbl in label_raw if lbl)
-        else:
-            labels = [str(label_raw)]
-
-    # — genres —
-    genre_raw = metadata.get("genre")
-    genres: list[str] | None = None
-    if genre_raw:
-        if isinstance(genre_raw, list):
-            genres = sorted(str(g) for g in genre_raw if g)
-        else:
-            genres = [str(genre_raw)]
-
-    # — year —
-    year_raw = metadata.get("year")
-    year: int | None = None
-    if year_raw:
-        with contextlib.suppress(ValueError, TypeError):
-            year = year_raw if isinstance(year_raw, int) else int(year_raw)
-
-    return {
-        "artist": primary_artist,
-        "artists": all_artists or None,
-        "album": album,
-        "labels": labels or None,
-        "genres": genres or None,
-        "year": year,
-    }
-
-
-def update_metadata_cache_batch(db: Database, updates: list[dict[str, Any]]) -> None:
-    """Write pre-computed metadata cache fields for multiple songs in one AQL.
-
-    Each entry in *updates* must have ``song_id`` plus the cache fields
-    (artist, artists, album, labels, genres, year).
-
-    Args:
-        db: Database handle
-        updates: List of dicts ``{song_id, artist, artists, album, labels, genres, year}``
-
-    """
-    if not updates:
-        return
-
-    write_metadata_cache_batch(db, updates)
 
 
 def rebuild_all_song_metadata_caches(db: Database, limit: int | None = None) -> int:

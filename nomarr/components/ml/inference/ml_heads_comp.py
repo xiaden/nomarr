@@ -88,7 +88,7 @@ def decide_regression(values: np.ndarray, labels: list[str]) -> dict[str, float]
         try:
             out[lab] = float(values[i])
         except Exception as e:
-            logger.debug("[ml_heads] Failed to cast regression output for label %r at index %d: %s", lab, i, e)
+            logger.warning("[ml_heads] Failed to cast regression output for label %r at index %d: %s", lab, i, e)
             continue
     return out
 
@@ -300,32 +300,6 @@ class HeadDecision:
         self.head = head
         self.details = details
         self.all_probs = all_probs or {}
-
-    def as_tags(self, prefix: str = "", key_builder: Callable[[str], str] | None = None) -> dict[str, Any]:
-        """Produce a flat tag dict with numeric values only.
-
-        Tier information is preserved in self.details but not emitted as *_tier tags.
-        Use HeadOutput objects to access tier information for aggregation.
-
-        Args:
-            prefix: Legacy simple prefix (e.g., "yamnet_")
-            key_builder: Optional function(label) -> versioned_key for modern tag naming
-
-        """
-        tags: dict[str, Any] = {}
-        if head_is_regression(self.head):
-            for key, value in self.details.items():
-                tag_key = key_builder(key) if key_builder else f"{prefix}{key}"
-                tags[tag_key] = value
-            return tags
-        for key, value in self.details.items():
-            tag_key = key_builder(key) if key_builder else f"{prefix}{key}"
-            tags[tag_key] = float(value.get("p", 0.0))
-        for lab, prob in (self.all_probs or {}).items():
-            tag_key = key_builder(lab) if key_builder else f"{prefix}{lab}"
-            if tag_key not in tags:
-                tags[tag_key] = float(prob)
-        return tags
 
     def to_head_outputs(
         self,

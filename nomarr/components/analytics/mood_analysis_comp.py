@@ -49,58 +49,40 @@ def _get_tag_docs_for_name(db: Database, name: str) -> list[dict[str, Any]]:
 
 
 def _get_tag_edge_rows(db: Database, name: str, library_id: str | None = None) -> list[tuple[str, str]]:
-    """Return ``(file_id, tag_value)`` rows for one tag name."""
+    """Return ``(file_id, tag_value)`` rows for one tag name via intent-level searches."""
     library_file_ids = _get_library_file_ids(db, library_id)
-
-    tag_docs = _get_tag_docs_for_name(db, name)
-    tag_id_to_value: dict[str, str] = {}
-    for tag_doc in tag_docs:
-        tag_id = tag_doc.get("_id")
-        tag_value = tag_doc.get("value")
-        if isinstance(tag_id, str) and tag_value is not None:
-            tag_id_to_value[tag_id] = str(tag_value)
-
-    if not tag_id_to_value:
-        return []
-
-    edge_docs = cast(
-        "list[dict[str, Any]]",
-        db.library.get_song_tag_edges_for_tags(list(tag_id_to_value)),
-    )
     rows: list[tuple[str, str]] = []
-    for edge_doc in edge_docs:
-        file_id = edge_doc.get("_from")
-        to_id = edge_doc.get("_to")
-        if not isinstance(file_id, str) or to_id not in tag_id_to_value:
+    for tag_doc in _get_tag_docs_for_name(db, name):
+        tag_value = tag_doc.get("value")
+        if tag_value is None:
             continue
-        if library_file_ids is not None and file_id not in library_file_ids:
-            continue
-        rows.append((file_id, tag_id_to_value[str(to_id)]))
+        for file_doc in cast(
+            "list[dict[str, Any]]",
+            db.library.search_files_by_tag(name, str(tag_value), limit=None),
+        ):
+            file_id = file_doc.get("_id")
+            if not isinstance(file_id, str):
+                continue
+            if library_file_ids is not None and file_id not in library_file_ids:
+                continue
+            rows.append((file_id, str(tag_value)))
 
     return rows
 
 
 def _get_tier_tag_keys(db: Database) -> list[str]:
     """Return all distinct Nomarr tier tag names."""
+    total_tags = int(db.library.count_tags())
+    if total_tags <= 0:
+        return []
+
     tier_tag_keys: list[str] = []
     seen: set[str] = set()
-    offset = 0
-    while True:
-        name_page = [
-            row["value"]
-            for row in db.library.aggregate_tag_field("name", limit=_PAGE_SIZE, offset=offset)
-            if "value" in row
-        ]
-        if not name_page:
-            break
-        for name_value in name_page:
-            name = str(name_value)
-            if name.startswith("nom:") and name.endswith("_tier") and name not in seen:
-                seen.add(name)
-                tier_tag_keys.append(name)
-        if len(name_page) < _PAGE_SIZE:
-            break
-        offset += len(name_page)
+    for name_value in db.library.list_all_tag_names(limit=total_tags):
+        name = str(name_value)
+        if name.startswith("nom:") and name.endswith("_tier") and name not in seen:
+            seen.add(name)
+            tier_tag_keys.append(name)
     return tier_tag_keys
 
 

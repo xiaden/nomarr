@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_NOT_TAGGED, STATE_TAGGED, STATE_TAGS_STALE
 from nomarr.persistence.aql import primitives
 from nomarr.persistence.arango_client import SafeDatabase
+
+_NEGATIVE_FILE_STATES = tuple(
+    state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_") or state == STATE_TAGS_STALE
+)
 
 
 def _as_document_id(collection: str, document_id_or_key: str) -> str:
@@ -58,19 +63,20 @@ class FileStatesAqlOperations:
         if not file_ids:
             return
         normalized_ids = [_as_document_id("library_files", file_id) for file_id in file_ids]
-        bind_vars = {
-            "@edge_collection": self.EDGE_COLLECTION,
-            "file_ids": normalized_ids,
-            "from_state_id": _as_document_id(self.STATE_COLLECTION, from_state),
-            "to_state_id": _as_document_id(self.STATE_COLLECTION, to_state),
-        }
+        edge_collection = self.EDGE_COLLECTION
+        from_state_id = _as_document_id(self.STATE_COLLECTION, from_state)
+        to_state_id = _as_document_id(self.STATE_COLLECTION, to_state)
         self._db.aql.execute(
             """
             FOR edge IN @@edge_collection
                 FILTER edge._from IN @file_ids AND edge._to == @from_state_id
                 REMOVE edge IN @@edge_collection
             """,
-            bind_vars=bind_vars,
+            bind_vars={
+                "@edge_collection": edge_collection,
+                "file_ids": normalized_ids,
+                "from_state_id": from_state_id,
+            },
         )
         self._db.aql.execute(
             """
@@ -80,8 +86,35 @@ class FileStatesAqlOperations:
                     UPDATE {}
                     IN @@edge_collection
             """,
-            bind_vars=bind_vars,
+            bind_vars={
+                "@edge_collection": edge_collection,
+                "file_ids": normalized_ids,
+                "to_state_id": to_state_id,
+            },
         )
+
+    def bootstrap_file_states(self, file_ids: list[str]) -> None:
+        """Create the initial negative state edges for each new file.
+
+        Args:
+            file_ids: File document IDs to initialize. Duplicate IDs are ignored.
+        """
+        unique_file_ids = list(dict.fromkeys(file_ids))
+        for file_id in unique_file_ids:
+            for state in _NEGATIVE_FILE_STATES:
+                self.add_file_state_edge(file_id, state)
+
+    def mark_files_tagged(self, file_ids: list[str]) -> None:
+        """Transition files from the not-tagged state to the tagged state.
+
+        Args:
+            file_ids: File document IDs to mark as tagged. Duplicate IDs are
+                ignored.
+        """
+        unique_file_ids = list(dict.fromkeys(file_ids))
+        if not unique_file_ids:
+            return
+        self.transition_file_states(unique_file_ids, STATE_NOT_TAGGED, STATE_TAGGED)
 
     def add_file_state_edge(self, file_id: str, state: str) -> None:
         self._db.aql.execute(

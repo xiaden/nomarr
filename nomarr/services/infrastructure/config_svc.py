@@ -133,7 +133,7 @@ class ConfigService:
         try:
             db = Database()
             try:
-                db.app.upsert_meta(f"config_{key}", {"value": value})
+                db.app.update_config_option(f"config_{key}", {"value": value})
             finally:
                 db.close()
         except Exception:
@@ -195,7 +195,7 @@ class ConfigService:
         cfg = self.get_config().config
 
         pool_key = f"{kind}_worker_count"
-        if pool_key in cfg and cfg[pool_key] is not None:
+        if pool_key in cfg and cfg[pool_key] not in (None, ""):
             count = int(cfg[pool_key])
             self._logger.debug(f"[ConfigService] Using {pool_key}={count}")
             return max(1, min(8, count))
@@ -225,23 +225,25 @@ class ConfigService:
             db = Database()
             try:
                 # Batch-read existing config keys from DB
-                keys = db.app.list_meta_keys_by_prefix("config_")
-                existing_keys = {k[7:] for k in keys}  # Strip 'config_' prefix
+                docs = db.app.list_config_options(prefix="config_")
+                existing_keys = {str(doc["key"])[7:] for doc in docs if "key" in doc}  # Strip 'config_' prefix
 
                 # Seed: write only keys NOT already in DB
                 for key in _ALLOWED_CONFIG_KEYS:
                     if key not in existing_keys and key in bootstrap_config:
                         value = bootstrap_config[key]
-                        db.app.upsert_meta(f"config_{key}", {"value": str(value) if value is not None else ""})
+                        db.app.update_config_option(
+                            f"config_{key}",
+                            {"value": str(value) if value is not None else ""},
+                        )
 
                 # Load: read all config_* keys back into cache
-                all_keys = db.app.list_meta_keys_by_prefix("config_")
-                for meta_key in all_keys:
+                all_docs = db.app.list_config_options(prefix="config_")
+                for meta_doc in all_docs:
+                    meta_key = str(meta_doc.get("key", ""))
                     config_key = meta_key[7:]  # Strip 'config_' prefix
                     if config_key in _ALLOWED_CONFIG_KEYS:
-                        meta_doc = db.app.get_meta(meta_key)
-                        if meta_doc is not None:
-                            self._cache[config_key] = self._parse_db_value(meta_doc.get("value", ""))
+                        self._cache[config_key] = self._parse_db_value(str(meta_doc.get("value", "")))
 
                 self._logger.debug("Config bootstrap complete: %d keys loaded", len(self._cache))
             finally:
@@ -331,6 +333,7 @@ class ConfigService:
             with open(path, encoding="utf-8") as f:
                 return yaml.safe_load(f) or {}
         except Exception:
+            self._logger.warning("Failed to load config YAML from %s — using defaults", path, exc_info=True)
             return {}
 
     def _apply_env_overrides(self, cfg: dict[str, Any]) -> None:

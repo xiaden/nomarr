@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace, get_maintenance_namespace
+from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
 from nomarr.helpers.vector_params_helper import compute_nlists, compute_nprobe
 
 if TYPE_CHECKING:
@@ -38,9 +38,7 @@ def get_cold_track_vector(
 
     """
     cold_coll_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    maintenance_stats = get_maintenance_namespace(db, backbone_id, library_key).get_stats()
-
-    if int(maintenance_stats["cold_count"]) <= 0:
+    if int(db.ml.get_embedding_stats(backbone_id, library_key)["cold_count"]) <= 0:
         logger.debug(
             "Cold collection %s does not exist for backbone=%s, library=%s",
             cold_coll_name,

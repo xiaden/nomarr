@@ -143,3 +143,83 @@ class TestMlIfRoutes:
         assert response.status_code == 200
         assert response.json() == []
         mock_ml_service.list_all_models.assert_called_once_with()
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestMlIfModelOutputRoutes:
+    """Tests for model-output routes that thread model_id (Plan D)."""
+
+    def test_get_model_outputs_delegates_to_service(
+        self,
+        client: TestClient,
+        mock_ml_service: MagicMock,
+    ) -> None:
+        """GET /model/{model_id}/output decodes the model_id and returns serialised outputs."""
+        mock_ml_service.get_model_outputs.return_value = [
+            {
+                "_id": "ml_model_outputs/out1",
+                "output_index": 0,
+                "label": "happy",
+                "fully_labeled": True,
+            },
+        ]
+
+        response = client.get("/api/web/machine-learning/model/ml_models:m1/output")
+
+        assert response.status_code == 200
+        assert response.json() == [
+            {
+                "id": "ml_model_outputs:out1",
+                "output_index": 0,
+                "label": "happy",
+                "fully_labeled": True,
+            },
+        ]
+        mock_ml_service.get_model_outputs.assert_called_once_with("ml_models/m1")
+
+    def test_update_output_label_threads_model_id(
+        self,
+        client: TestClient,
+        mock_ml_service: MagicMock,
+    ) -> None:
+        """PATCH /model/{model_id}/output/{output_id} decodes both IDs and passes model_id."""
+        response = client.patch(
+            "/api/web/machine-learning/model/ml_models:m1/output/ml_model_outputs:o1",
+            json={"label": "happy"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "updated"}
+        mock_ml_service.update_output_label.assert_called_once_with(
+            model_id="ml_models/m1",
+            output_id="ml_model_outputs/o1",
+            label="happy",
+        )
+
+    def test_mark_model_configured_threads_model_id(
+        self,
+        client: TestClient,
+        mock_ml_service: MagicMock,
+    ) -> None:
+        """POST /model/{model_id}/mark-configured decodes the model_id and passes it."""
+        response = client.post(
+            "/api/web/machine-learning/model/ml_models:m1/mark-configured",
+            json={"value": True},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "updated", "fully_configured": "true"}
+        mock_ml_service.mark_model_configured.assert_called_once_with(model_id="ml_models/m1", value=True)
+
+    def test_trigger_vram_probe_delegates_to_service(
+        self,
+        client: TestClient,
+        mock_ml_service: MagicMock,
+    ) -> None:
+        """POST /vram-probe clears VRAM measurements and returns probe_scheduled status."""
+        response = client.post("/api/web/machine-learning/vram-probe")
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "probe_scheduled"}
+        mock_ml_service.clear_vram_measurements.assert_called_once_with()

@@ -10,6 +10,7 @@ from nomarr.components.library.library_file_state_comp import count_pending_tag_
 from nomarr.components.library.library_records_comp import list_library_records
 from nomarr.components.library.search_files_comp import get_unique_tag_values
 from nomarr.components.tagging.tag_query_comp import (
+    count_songs_for_tag,
     count_tags_by_name,
     get_tag_songs_with_metadata,
     get_unique_mood_values,
@@ -101,7 +102,7 @@ class TaggingQueryMixin:
 
         """
         raw_songs = get_tag_songs_with_metadata(self.db, tag_id, limit=limit, offset=offset)
-        total = self.db.library.count_song_tag_edges(tag_id)
+        total = count_songs_for_tag(self.db, tag_id)
 
         songs: list[TagSongItem] = [
             TagSongItem(

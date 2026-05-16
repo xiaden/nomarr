@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.components.tagging.tag_cleanup_comp import cleanup_orphaned_tags
 from nomarr.helpers.dto.tag_curation_dto import RelinkResult
 from nomarr.helpers.dto.tags_dto import TagValue
 
@@ -18,145 +16,73 @@ def find_or_create_tag(db: Database, name: str, value: TagValue) -> str:
     return db.library.find_or_create_tag(name, value)
 
 
-def resolve_tag_ids(
-    db: Database,
-    pairs: Sequence[tuple[str, TagValue]],
-) -> dict[tuple[str, TagValue], str]:
-    """Batch-resolve tag ids for ``(name, value)`` pairs."""
-    if not pairs:
-        return {}
-
-    resolved: dict[tuple[str, TagValue], str] = {}
-    for name, value in dict.fromkeys(pairs):
-        matches = cast(
-            "list[dict[str, Any]]",
-            db.library.list_tags(name=name, value=value, limit=1),
-        )
-        if not matches:
-            continue
-        tag_id = matches[0].get("_id")
-        if tag_id is not None:
-            resolved[(name, value)] = str(tag_id)
-    return resolved
+def _tag_name(tag_doc: dict[str, Any]) -> str | None:
+    tag_name = tag_doc.get("name", tag_doc.get("key"))
+    return str(tag_name) if isinstance(tag_name, str) else None
 
 
-def _find_song_name_edge_ids(db: Database, song_id: str, name: str) -> list[str]:
-    """Return ``song_has_tags`` edge ids for one song + name pair."""
-    return [
-        str(edge_id)
-        for row in cast(
-            "list[dict[str, Any]]",
-            db.library.get_tags_for_files_batch([song_id], include_edge=True),
-        )
-        if isinstance((tag := row.get("v")), dict)
-        and tag.get("name") == name
-        and isinstance((edge := row.get("e")), dict)
-        and (edge_id := edge.get("_id")) is not None
-    ]
+def _tag_id(tag_doc: dict[str, Any]) -> str | None:
+    tag_id = tag_doc.get("_id")
+    return str(tag_id) if isinstance(tag_id, str) else None
+
+
+def _merge_replaced_tags(
+    existing_tags: list[dict[str, Any]],
+    *,
+    replacements_by_name: dict[str, list[TagValue]],
+) -> list[dict[str, Any]]:
+    replaced_names = set(replacements_by_name)
+    merged_tags = [dict(tag_doc) for tag_doc in existing_tags if _tag_name(tag_doc) not in replaced_names]
+    for name, values in replacements_by_name.items():
+        merged_tags.extend({"name": name, "value": value} for value in dict.fromkeys(values))
+    return merged_tags
 
 
 def set_song_tags(db: Database, song_id: str, name: str, values: list[TagValue]) -> None:
     """Replace all tags for one ``song_id`` + ``name`` pair."""
-    edge_ids = _find_song_name_edge_ids(db, song_id, name)
-    for edge_id in edge_ids:
-        db.library.delete_song_tag_edge_by_id(edge_id)
-    if not values:
-        return
-
-    tag_id_map = {value: find_or_create_tag(db, name, value) for value in values}
-    edge_docs = [{"_from": song_id, "_to": tag_id_map[value]} for value in values if value in tag_id_map]
-    for edge_doc in edge_docs:
-        db.library.upsert_song_tag_edge(edge_doc["_from"], edge_doc["_to"])
+    existing_tags = db.library.list_file_tags_for_files([song_id]).get(song_id, [])
+    db.library.replace_file_tags(
+        song_id,
+        _merge_replaced_tags(existing_tags, replacements_by_name={name: values}),
+    )
 
 
 def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
-    """Replace tags for many ``(song_id, name)`` pairs as component composition.
-
-    This supersedes the old persistence primitive from ADR-010. The operation is
-    now expressed as component-layer coordination of constructor-backed verbs:
-    targeted edge deletion, tag upsert, then edge upsert (idempotent).
-
-    Args:
-        db: Database handle used to replace tag edges and upsert referenced tags.
-        entries: Batch entries to apply. Each entry must contain ``song_id`` for
-            the song vertex id, ``name`` for the tag name being replaced, and
-            ``values`` for the list of tag values to attach for that pair.
-    """
+    """Replace tags for many ``(song_id, name)`` pairs using intent-level file-tag writes."""
     if not entries:
         return
 
-    upsert_pairs: list[tuple[str, TagValue]] = []
-    entry_pairs: list[tuple[str, str, list[TagValue]]] = []
+    replacements_by_song: dict[str, dict[str, list[TagValue]]] = {}
     for entry in entries:
         song_id = str(entry["song_id"])
         name = str(entry["name"])
         values = [cast("TagValue", value) for value in entry["values"]]
-        entry_pairs.append((song_id, name, values))
-        upsert_pairs.extend((name, value) for value in values)
+        song_replacements = replacements_by_song.setdefault(song_id, {})
+        song_replacements.setdefault(name, []).extend(values)
 
-    song_ids = list(dict.fromkeys(song_id for song_id, _, _ in entry_pairs))
-    existing_rows = cast(
-        "list[dict[str, Any]]",
-        db.library.get_tags_for_files_batch(song_ids, include_edge=True),
-    )
-    wanted_pairs = {(song_id, name) for song_id, name, _ in entry_pairs}
-    edge_ids: list[str] = []
-    for row in existing_rows:
-        row_song_id = row.get("start_id")
-        row_tag = row.get("v")
-        row_edge = row.get("e")
-
-        if not isinstance(row_song_id, str):
-            continue
-        if not isinstance(row_tag, dict):
-            continue
-
-        tag_name = row_tag.get("name")
-        if not isinstance(tag_name, str):
-            continue
-        if (row_song_id, tag_name) not in wanted_pairs:
-            continue
-        if not isinstance(row_edge, dict):
-            continue
-
-        edge_id = row_edge.get("_id")
-        if edge_id is not None:
-            edge_ids.append(str(edge_id))
-
-    for edge_id in edge_ids:
-        db.library.delete_song_tag_edge_by_id(edge_id)
-
-    if not upsert_pairs:
-        return
-
-    tag_ids = {(name, value): find_or_create_tag(db, name, value) for name, value in upsert_pairs}
-
-    edge_docs: list[dict[str, str]] = []
-    seen_edges: set[tuple[str, str]] = set()
-    for song_id, name, values in entry_pairs:
-        for value in values:
-            tag_id = tag_ids.get((name, value))
-            if tag_id is None:
-                continue
-            edge_key = (song_id, tag_id)
-            if edge_key in seen_edges:
-                continue
-            seen_edges.add(edge_key)
-            edge_docs.append({"_from": song_id, "_to": tag_id})
-
-    for edge_doc in edge_docs:
-        db.library.upsert_song_tag_edge(edge_doc["_from"], edge_doc["_to"])
+    existing_tags_by_song = db.library.list_file_tags_for_files(list(replacements_by_song))
+    for song_id, replacements_by_name in replacements_by_song.items():
+        db.library.replace_file_tags(
+            song_id,
+            _merge_replaced_tags(
+                existing_tags_by_song.get(song_id, []),
+                replacements_by_name=replacements_by_name,
+            ),
+        )
 
 
 def add_song_tag(db: Database, song_id: str, name: str, value: TagValue) -> None:
     """Add one tag value to a song without replacing other values for the name."""
-    tag_id = find_or_create_tag(db, name, value)
-    db.library.upsert_song_tag_edge(song_id, tag_id)
+    existing_tags = db.library.list_file_tags_for_files([song_id]).get(song_id, [])
+    db.library.replace_file_tags(
+        song_id,
+        [*existing_tags, {"name": name, "value": value}],
+    )
 
 
 def delete_song_tags(db: Database, song_id: str) -> None:
     """Delete all tag edges for one song."""
-    db.library.delete_song_tag_edges_for_file(song_id)
+    db.library.remove_file_tags(song_id)
 
 
 def relink_tag_edges(
@@ -165,59 +91,48 @@ def relink_tag_edges(
     target_tag_id: str,
     song_ids: list[str] | None = None,
 ) -> RelinkResult:
-    """Move ``song_has_tags`` edges from one tag vertex to another.
-
-    This supersedes the old persistence primitive from ADR-014. The relink is a
-    component composition of constructor verbs: get source edges, insert target
-    edges, remove moved source edges, then cascade-delete the source tag when it
-    becomes orphaned.
-
-    Args:
-        db: Database handle used to read, insert, and delete tag edges.
-        source_tag_id: Tag vertex id whose outgoing song edges should be moved.
-        target_tag_id: Tag vertex id that should receive moved song edges.
-        song_ids: Optional song vertex ids to limit the relink scope. When ``None``,
-            all songs linked to the source tag are considered. When provided,
-            only source edges whose ``_from`` is in the list are relinked.
-
-    Returns:
-        A summary of the relink operation containing ``moved`` for the number of
-        target edges inserted, ``skipped`` for source edges whose songs already
-        had target edges, and ``source_orphaned`` indicating whether the source
-        tag has no remaining ``song_has_tags`` edges after the relink.
-    """
-    all_candidate_edges = cast(
-        "list[dict[str, Any]]",
-        db.library.get_song_tag_edges_for_tags([source_tag_id, target_tag_id]),
-    )
-    source_edges = [edge for edge in all_candidate_edges if edge.get("_to") == source_tag_id]
-    if song_ids is not None:
-        allowed = set(song_ids)
-        source_edges = [edge for edge in source_edges if edge.get("_from") in allowed]
-    if not source_edges:
+    """Move song tag references from one tag vertex to another via library intents."""
+    if source_tag_id == target_tag_id:
         return {"moved": 0, "skipped": 0, "source_orphaned": False}
 
-    target_existing = {
-        str(edge_from)
-        for edge in all_candidate_edges
-        if edge.get("_to") == target_tag_id and (edge_from := edge.get("_from")) is not None
+    all_file_docs = cast("list[dict[str, Any]]", db.library.list_files(limit=None))
+    all_file_ids = [file_id for file_doc in all_file_docs if isinstance((file_id := file_doc.get("_id")), str)]
+    if not all_file_ids:
+        return {"moved": 0, "skipped": 0, "source_orphaned": False}
+
+    all_tags_by_file = db.library.list_file_tags_for_files(all_file_ids)
+    allowed_song_ids = set(song_ids) if song_ids is not None else None
+    selected_source_file_ids: list[str] = []
+    moved = 0
+    skipped = 0
+    source_outside_selection = False
+
+    for file_id in all_file_ids:
+        tag_docs = all_tags_by_file.get(file_id, [])
+        has_source = any(_tag_id(tag_doc) == source_tag_id for tag_doc in tag_docs)
+        if not has_source:
+            continue
+        if allowed_song_ids is not None and file_id not in allowed_song_ids:
+            source_outside_selection = True
+            continue
+
+        selected_source_file_ids.append(file_id)
+        has_target = any(_tag_id(tag_doc) == target_tag_id for tag_doc in tag_docs)
+        if has_target:
+            skipped += 1
+        else:
+            moved += 1
+
+    if not selected_source_file_ids:
+        return {"moved": 0, "skipped": 0, "source_orphaned": False}
+
+    if song_ids is None:
+        db.library.replace_tag_references(source_tag_id, target_tag_id)
+    else:
+        db.library.replace_selected_tag_references(selected_source_file_ids, source_tag_id, target_tag_id)
+
+    return {
+        "moved": moved,
+        "skipped": skipped,
+        "source_orphaned": not source_outside_selection,
     }
-    edges_to_insert = [
-        {"_from": str(edge["_from"]), "_to": target_tag_id}
-        for edge in source_edges
-        if str(edge["_from"]) not in target_existing
-    ]
-    if edges_to_insert:
-        db.library.insert_song_tag_edges(edges_to_insert)
-
-    moved_edge_ids = [str(edge_id) for edge in source_edges if (edge_id := edge.get("_id"))]
-    for edge_id in moved_edge_ids:
-        db.library.delete_song_tag_edge_by_id(edge_id)
-
-    source_orphaned = db.library.count_song_tag_edges(source_tag_id) == 0
-    if source_orphaned:
-        cleanup_orphaned_tags(db)
-
-    moved = len(edges_to_insert)
-    skipped = len(source_edges) - moved
-    return {"moved": moved, "skipped": skipped, "source_orphaned": source_orphaned}

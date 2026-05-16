@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.exceptions import DuplicateKeyError
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -35,19 +36,21 @@ def acquire_distributed_lock(
         existing_expires_at = float(existing.get("expires_at", 0.0))
         if existing_expires_at >= now and existing.get("holder") != holder:
             return False
-        db.app.release_lock(reference)
+        db.app.remove_lock(reference)
 
-    return db.app.acquire_lock(
-        reference,
-        {
-            "document_reference": reference,
-            "lock_type": lock_type,
-            "holder": holder,
-            "expires_at": expires_at,
-            "acquired_at": now,
-            "status": "active",
-        },
-    )
+    payload = {
+        "document_reference": reference,
+        "lock_type": lock_type,
+        "holder": holder,
+        "expires_at": expires_at,
+        "acquired_at": now,
+        "status": "active",
+    }
+    try:
+        db.app.add_lock(payload)
+    except DuplicateKeyError:
+        return False
+    return True
 
 
 def release_distributed_lock(db: Database, lock_type: str, resource_id: str, holder: str) -> bool:
@@ -57,7 +60,7 @@ def release_distributed_lock(db: Database, lock_type: str, resource_id: str, hol
     if existing is None or existing.get("holder") != holder:
         return False
 
-    db.app.release_lock(reference)
+    db.app.remove_lock(reference)
     remaining = cast("dict[str, Any] | None", db.app.get_lock(reference))
     return remaining is None or remaining.get("holder") != holder
 
@@ -84,5 +87,5 @@ def reap_stale_locks(db: Database, worker_id: str, stale_after_ms: int) -> None:
             continue
 
         resource_id = reference.split(":", maxsplit=1)[1]
-        db.app.release_lock(reference)
+        db.app.remove_lock(reference)
         logger.warning("[%s] Reaped stale promotion lock for %s", worker_id, resource_id)

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import hashlib
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from nomarr.components.ml.onnx.ml_model_registry_comp import (
-    build_model_output_id_map,
+    build_model_output_index_map,
     delete_model_outputs_for_model,
     delete_registered_model,
     ensure_model_outputs,
@@ -88,8 +88,8 @@ class TestUpsertRegisteredModel:
             "fully_configured": False,
             "is_known": False,
         }
-        # First call (existing check) returns None, second (post-upsert) returns doc
-        mock_db.ml.get_model_by_path.side_effect = [None, model_doc]
+        mock_db.ml.get_model_by_path.return_value = None
+        mock_db.ml.add_model.return_value = model_doc
 
         result = upsert_registered_model(
             mock_db,
@@ -101,7 +101,7 @@ class TestUpsertRegisteredModel:
         )
 
         assert result == model_doc
-        upserted = mock_db.ml.upsert_model.call_args.args[0]
+        upserted = mock_db.ml.add_model.call_args.args[0]
         assert upserted["fully_configured"] is False
         assert upserted["is_known"] is False
         assert "registered_at" in upserted
@@ -117,7 +117,8 @@ class TestUpsertRegisteredModel:
             "registered_at": 9999,
         }
         updated = {**existing, "output_count": 4}
-        mock_db.ml.get_model_by_path.side_effect = [existing, updated]
+        mock_db.ml.get_model_by_path.return_value = existing
+        mock_db.ml.add_model.return_value = updated
 
         result = upsert_registered_model(
             mock_db,
@@ -129,7 +130,7 @@ class TestUpsertRegisteredModel:
         )
 
         assert result == updated
-        upserted = mock_db.ml.upsert_model.call_args.args[0]
+        upserted = mock_db.ml.add_model.call_args.args[0]
         assert upserted["fully_configured"] is True
         assert upserted["is_known"] is True
         assert upserted["registered_at"] == 9999
@@ -137,7 +138,8 @@ class TestUpsertRegisteredModel:
     def test_raises_when_post_upsert_read_fails(self) -> None:
         mock_db = MagicMock()
         # First call returns None (no existing), second returns None (upsert failure)
-        mock_db.ml.get_model_by_path.side_effect = [None, None]
+        mock_db.ml.get_model_by_path.return_value = None
+        mock_db.ml.add_model.side_effect = RuntimeError("reload failed")
 
         with pytest.raises(RuntimeError, match="Failed to load persisted ml_models document"):
             upsert_registered_model(
@@ -160,7 +162,7 @@ class TestMarkModelFullyConfigured:
 
         mark_model_fully_configured(mock_db, "ml_models/missing", True)
 
-        mock_db.ml.upsert_model.assert_not_called()
+        mock_db.ml.update_model.assert_not_called()
 
     def test_updates_fully_configured_flag(self) -> None:
         mock_db = MagicMock()
@@ -174,10 +176,10 @@ class TestMarkModelFullyConfigured:
 
         mark_model_fully_configured(mock_db, "ml_models/abc", True)
 
-        upserted = mock_db.ml.upsert_model.call_args.args[0]
-        assert upserted["fully_configured"] is True
-        assert "_rev" not in upserted
-        assert "_id" not in upserted
+        update_fields = mock_db.ml.update_model.call_args.args[1]
+        assert mock_db.ml.update_model.call_args.args[0] == "ml_models/abc"
+        assert update_fields["fully_configured"] is True
+        assert "updated_at" in update_fields
 
 
 @pytest.mark.unit
@@ -190,7 +192,7 @@ class TestMarkModelKnown:
 
         mark_model_known(mock_db, "ml_models/missing", True)
 
-        mock_db.ml.upsert_model.assert_not_called()
+        mock_db.ml.update_model.assert_not_called()
 
     def test_updates_is_known_flag(self) -> None:
         mock_db = MagicMock()
@@ -204,10 +206,10 @@ class TestMarkModelKnown:
 
         mark_model_known(mock_db, "ml_models/abc", True)
 
-        upserted = mock_db.ml.upsert_model.call_args.args[0]
-        assert upserted["is_known"] is True
-        assert "_rev" not in upserted
-        assert "_id" not in upserted
+        update_fields = mock_db.ml.update_model.call_args.args[1]
+        assert mock_db.ml.update_model.call_args.args[0] == "ml_models/abc"
+        assert update_fields["is_known"] is True
+        assert "updated_at" in update_fields
 
 
 @pytest.mark.unit
@@ -219,7 +221,7 @@ class TestDeleteRegisteredModel:
 
         delete_registered_model(mock_db, "ml_models/abc")
 
-        mock_db.ml.delete_model.assert_called_once_with("ml_models/abc")
+        mock_db.ml.remove_model.assert_called_once_with("ml_models/abc")
 
 
 @pytest.mark.unit
@@ -283,19 +285,20 @@ class TestEnsureModelOutputs:
     def test_inserts_missing_output_and_upserts_edge(self) -> None:
         mock_db = MagicMock()
         mock_db.ml.get_model_output.return_value = None
-        mock_db.ml.add_model_output.return_value = "ml_model_outputs/new-output"
         mock_db.ml.list_model_outputs.return_value = [{"_id": "ml_model_outputs/new-output", "output_index": 0}]
 
         ensure_model_outputs(mock_db, "ml_models/abc", 1)
 
-        mock_db.ml.add_model_output.assert_called_once()
-        inserted = mock_db.ml.add_model_output.call_args.args[0]
-        assert inserted["output_index"] == 0
-        assert inserted["fully_labeled"] is False
-        mock_db.ml.upsert_model_output_edge.assert_called_once_with(
-            inserted["_key"],
+        output_key = hashlib.sha256(b"ml_models/abc:0").hexdigest()[:16]
+        mock_db.ml.replace_model_output.assert_called_once_with(
             "ml_models/abc",
-            "ml_model_outputs/new-output",
+            output_key,
+            {
+                "_key": output_key,
+                "output_index": 0,
+                "label": None,
+                "fully_labeled": False,
+            },
         )
 
     def test_skips_insert_when_output_exists(self) -> None:
@@ -307,11 +310,15 @@ class TestEnsureModelOutputs:
 
         ensure_model_outputs(mock_db, "ml_models/abc", 1)
 
-        mock_db.ml.add_model_output.assert_not_called()
-        mock_db.ml.upsert_model_output_edge.assert_called_once_with(
-            output_key,
+        mock_db.ml.replace_model_output.assert_called_once_with(
             "ml_models/abc",
-            existing_output["_id"],
+            output_key,
+            {
+                "_key": output_key,
+                "output_index": 0,
+                "label": existing_output.get("label"),
+                "fully_labeled": existing_output.get("fully_labeled", False),
+            },
         )
 
 
@@ -321,42 +328,60 @@ class TestUpdateModelOutputLabel:
 
     def test_updates_output_doc(self) -> None:
         mock_db = MagicMock()
+        mock_db.ml.get_model_output.return_value = {
+            "_id": "ml_model_outputs/abc123",
+            "output_index": 7,
+        }
 
-        update_model_output_label(mock_db, "ml_model_outputs/abc123", "mood")
+        update_model_output_label(mock_db, "ml_models/abc", "ml_model_outputs/abc123", "mood")
 
-        mock_db.ml.update_model_output.assert_called_once_with(
-            "ml_model_outputs/abc123",
-            {"label": "mood", "fully_labeled": True},
+        mock_db.ml.replace_model_output.assert_called_once_with(
+            "ml_models/abc",
+            "abc123",
+            {
+                "_key": "abc123",
+                "output_index": 7,
+                "label": "mood",
+                "fully_labeled": True,
+            },
         )
 
 
 @pytest.mark.unit
-class TestBuildModelOutputIdMap:
-    """Tests for ``build_model_output_id_map``."""
+class TestBuildModelOutputIndexMap:
+    """Tests for ``build_model_output_index_map``."""
 
     def test_returns_empty_when_no_models(self) -> None:
         mock_db = MagicMock()
         mock_db.ml.list_models.return_value = []
 
-        result = build_model_output_id_map(mock_db)
+        result = build_model_output_index_map(mock_db)
 
         assert result == {}
 
-    def test_builds_nested_map_for_labeled_outputs(self) -> None:
+    def test_builds_nested_map_and_skips_invalid_output_entries(self) -> None:
         mock_db = MagicMock()
-        mock_db.ml.list_models.return_value = [{"_id": "ml_models/m1", "path": "/effnet.onnx"}]
-        mock_db.ml.list_model_outputs.return_value = [
-            {"_id": "ml_model_outputs/o1", "_key": "o1", "output_index": 0, "label": "genre", "fully_labeled": True},
-            {"_id": "ml_model_outputs/o2", "_key": "o2", "output_index": 1, "label": "mood", "fully_labeled": True},
+        mock_db.ml.list_models.return_value = [
+            {"_id": "ml_models/m1", "path": "/effnet.onnx"},
+            {"_id": "ml_models/m2", "path": "/ast.onnx"},
+        ]
+        mock_db.ml.list_model_outputs.side_effect = [
+            [
+                {"_id": "ml_model_outputs/o1", "output_index": 0},
+                {"_id": "ml_model_outputs/o2", "output_index": "1"},
+                {"_id": 123, "output_index": 2},
+            ],
+            [
+                {"_id": "ml_model_outputs/o3", "output_index": 4},
+                {"_id": "ml_model_outputs/o4", "output_index": None},
+            ],
         ]
 
-        result = build_model_output_id_map(mock_db)
+        result = build_model_output_index_map(mock_db)
 
         assert result == {
-            "/effnet.onnx": {
-                "genre": "ml_model_outputs/o1",
-                "mood": "ml_model_outputs/o2",
-            }
+            "/effnet.onnx": {0: "ml_model_outputs/o1"},
+            "/ast.onnx": {4: "ml_model_outputs/o3"},
         }
 
 
@@ -366,54 +391,47 @@ class TestDeleteModelOutputsForModel:
 
     def test_returns_empty_when_no_outputs(self) -> None:
         mock_db = MagicMock()
-        mock_db.ml.delete_model_outputs_for_model.return_value = []
+        mock_db.ml.remove_model_outputs_for_model.return_value = []
 
         result = delete_model_outputs_for_model(mock_db, "ml_models/abc")
 
         assert result == []
-        mock_db.ml.delete_model_outputs_for_model.assert_called_once_with("ml_models/abc")
+        mock_db.ml.remove_model_outputs_for_model.assert_called_once_with("ml_models/abc")
 
     def test_deletes_edges_and_outputs(self) -> None:
         mock_db = MagicMock()
-        mock_db.ml.delete_model_outputs_for_model.return_value = ["ml_model_outputs/o1", "ml_model_outputs/o2"]
+        mock_db.ml.remove_model_outputs_for_model.return_value = ["ml_model_outputs/o1", "ml_model_outputs/o2"]
 
         result = delete_model_outputs_for_model(mock_db, "ml_models/abc")
 
         assert result == ["ml_model_outputs/o1", "ml_model_outputs/o2"]
-        mock_db.ml.delete_model_outputs_for_model.assert_called_once_with("ml_models/abc")
+        mock_db.ml.remove_model_outputs_for_model.assert_called_once_with("ml_models/abc")
 
 
 @pytest.mark.unit
 class TestPruneRegisteredModel:
     """Tests for ``prune_registered_model``."""
 
-    @patch("nomarr.components.ml.onnx.ml_model_registry_comp.delete_tag_model_output_edges_for_outputs")
-    def test_prunes_model_with_outputs(self, mock_delete_tag_edges: MagicMock) -> None:
+    def test_prunes_model_with_outputs(self) -> None:
         mock_db = MagicMock()
-        mock_delete_tag_edges.return_value = 3
         mock_db.ml.list_model_outputs.return_value = [
             {"_id": "ml_model_outputs/o1", "_key": "o1", "output_index": 0},
         ]
-        mock_db.ml.delete_model_outputs_for_model.return_value = ["ml_model_outputs/o1"]
+        mock_db.ml.remove_model_outputs_for_model.return_value = ["ml_model_outputs/o1"]
 
         result = prune_registered_model(mock_db, "ml_models/abc")
 
-        mock_delete_tag_edges.assert_called_once_with(mock_db, ["ml_model_outputs/o1"])
-        mock_db.ml.delete_model.assert_called_once_with("ml_models/abc")
-        assert result["tag_model_output_edges_deleted"] == 3
+        mock_db.ml.remove_model.assert_called_once_with("ml_models/abc")
         output_ids = result["output_ids"]
         assert isinstance(output_ids, list)
         assert "ml_model_outputs/o1" in output_ids
 
-    @patch("nomarr.components.ml.onnx.ml_model_registry_comp.delete_tag_model_output_edges_for_outputs")
-    def test_prunes_model_with_no_outputs(self, mock_delete_tag_edges: MagicMock) -> None:
+    def test_prunes_model_with_no_outputs(self) -> None:
         mock_db = MagicMock()
         mock_db.ml.list_model_outputs.return_value = []
-        mock_db.ml.delete_model_outputs_for_model.return_value = []
+        mock_db.ml.remove_model_outputs_for_model.return_value = []
 
         result = prune_registered_model(mock_db, "ml_models/abc")
 
-        mock_delete_tag_edges.assert_not_called()
-        mock_db.ml.delete_model.assert_called_once_with("ml_models/abc")
-        assert result["tag_model_output_edges_deleted"] == 0
+        mock_db.ml.remove_model.assert_called_once_with("ml_models/abc")
         assert result["output_ids"] == []

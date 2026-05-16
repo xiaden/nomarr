@@ -212,6 +212,6 @@ Config is loaded once by `ConfigService` and passed via parameters. No global si
  | Business logic in services | Domain rules belong in workflows/components | Extract to workflow |
  | Returning raw dicts | Untyped contracts | Return a DTO |
  | Transport logic (`status_code`, `HTTPException`) | Interface concern | Keep HTTP in interfaces |
- | Calling `db.tags.*`, `db.libraries.*` directly | Only components access persistence | Route through workflow → component |
+ | Calling `db.library.*`, `db.app.*`, or `db.ml.*` directly | Services should route persistence through workflows/components | Route through workflow → component |
  | Global state or singletons | Hidden dependency, test-unfriendly | Use constructor injection |
  | Embedding Pydantic models | Interface concern | Use DTOs from `helpers/dto/` |

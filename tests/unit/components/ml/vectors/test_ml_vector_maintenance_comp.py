@@ -8,72 +8,11 @@ import pytest
 
 from nomarr.components.ml.vectors.ml_vector_maintenance_comp import (
     backfill_genres,
-    build_cold_vector_index,
     derive_embed_dim,
-    drain_hot_to_cold,
-    drop_cold_vector_index,
-    has_vector_index,
-    rebuild_cold_vector_index,
-    verify_hot_empty,
 )
 from nomarr.persistence.schema_types import Field
 
 PATCH_BASE = "nomarr.components.ml.vectors.ml_vector_maintenance_comp"
-
-
-class TestDrainHotToCold:
-    """Tests for ``drain_hot_to_cold``."""
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_raises_when_hot_collection_missing(self) -> None:
-        mock_db = MagicMock()
-        hot_ops = MagicMock()
-        hot_ops.move_collection.side_effect = ValueError(
-            "Source collection 'vectors_track_hot__ast__lib1' does not exist"
-        )
-
-        with (
-            patch(f"{PATCH_BASE}.get_hot_namespace", return_value=hot_ops) as mock_get_hot,
-            pytest.raises(ValueError, match="Source collection 'vectors_track_hot__ast__lib1' does not exist"),
-        ):
-            drain_hot_to_cold(mock_db, "ast", "lib1")
-
-        mock_get_hot.assert_called_once_with(mock_db, "ast", "lib1")
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_returns_zero_when_hot_collection_empty(self) -> None:
-        mock_db = MagicMock()
-        hot_ops = MagicMock()
-        hot_ops.move_collection.return_value = 0
-
-        with patch(f"{PATCH_BASE}.get_hot_namespace", return_value=hot_ops) as mock_get_hot:
-            result = drain_hot_to_cold(mock_db, "ast", "lib1")
-
-        assert result == 0
-        mock_get_hot.assert_called_once_with(mock_db, "ast", "lib1")
-        hot_ops.move_collection.assert_called_once_with("vectors_track_cold__ast__lib1")
-        mock_db.ml.register_vector_collection.assert_called_once_with(
-            "vectors_track_cold__ast__lib1", "vectors_track_cold"
-        )
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_delegates_to_move_collection(self) -> None:
-        mock_db = MagicMock()
-        hot_ops = MagicMock()
-        hot_ops.move_collection.return_value = 2
-
-        with patch(f"{PATCH_BASE}.get_hot_namespace", return_value=hot_ops) as mock_get_hot:
-            drained = drain_hot_to_cold(mock_db, "ast", "lib1")
-
-        assert drained == 2
-        mock_get_hot.assert_called_once_with(mock_db, "ast", "lib1")
-        hot_ops.move_collection.assert_called_once_with("vectors_track_cold__ast__lib1")
-        mock_db.ml.register_vector_collection.assert_called_once_with(
-            "vectors_track_cold__ast__lib1", "vectors_track_cold"
-        )
 
 
 class TestBackfillGenres:
@@ -108,7 +47,7 @@ class TestBackfillGenres:
             {"_id": "vectors_track_cold__ast__lib1/k1", "_key": "k1", "file_id": "library_files/f1"},
             {"_id": "vectors_track_cold__ast__lib1/k2", "_key": "k2", "file_id": "library_files/f2"},
         ]
-        mock_db.library.get_genre_tags_for_files.return_value = [
+        mock_db.library.list_genre_tags_for_files.return_value = [
             {"fid": "library_files/f1", "genre": "ambient", "tag_id": "tags/g1"},
             {"fid": "library_files/f2", "genre": "jazz", "tag_id": "tags/g2"},
             {"fid": "library_files/f2", "genre": "fusion", "tag_id": "tags/g3"},
@@ -133,7 +72,7 @@ class TestBackfillGenres:
             "vectors_track_cold__ast__lib1/k2",
         ]
         cold_ops.get.in_.assert_called_once_with(field_arg, limit=None)
-        mock_db.library.get_genre_tags_for_files.assert_called_once_with(["library_files/f1", "library_files/f2"])
+        mock_db.library.list_genre_tags_for_files.assert_called_once_with(["library_files/f1", "library_files/f2"])
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -148,145 +87,6 @@ class TestBackfillGenres:
         assert result == 0
         mock_get_cold.assert_called_once_with(mock_db, "ast", "lib1")
         cold_ops.update_many.assert_not_called()
-
-
-class TestVerifyHotEmpty:
-    """Tests for ``verify_hot_empty``."""
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_passes_when_hot_count_is_zero(self) -> None:
-        mock_db = MagicMock()
-        maintenance = MagicMock()
-        maintenance.get_stats.return_value = {"hot_count": 0}
-
-        with patch(f"{PATCH_BASE}.get_maintenance_namespace", return_value=maintenance) as mock_get_maintenance:
-            verify_hot_empty(mock_db, "ast", "lib1")
-
-        mock_get_maintenance.assert_called_once_with(mock_db, "ast", "lib1")
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_raises_when_hot_collection_not_empty(self) -> None:
-        mock_db = MagicMock()
-        maintenance = MagicMock()
-        maintenance.get_stats.return_value = {"hot_count": 3}
-
-        with (
-            patch(f"{PATCH_BASE}.get_maintenance_namespace", return_value=maintenance) as mock_get_maintenance,
-            pytest.raises(RuntimeError, match="not empty after drain"),
-        ):
-            verify_hot_empty(mock_db, "ast", "lib1")
-
-        mock_get_maintenance.assert_called_once_with(mock_db, "ast", "lib1")
-
-
-class TestDropColdVectorIndex:
-    """Tests for ``drop_cold_vector_index``."""
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_calls_drop_index(self) -> None:
-        mock_db = MagicMock()
-        maintenance = MagicMock()
-
-        with patch(f"{PATCH_BASE}.get_maintenance_namespace", return_value=maintenance) as mock_get_maintenance:
-            drop_cold_vector_index(mock_db, "ast", "lib1")
-
-        mock_get_maintenance.assert_called_once_with(mock_db, "ast", "lib1")
-        maintenance.drop_index.assert_called_once_with()
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_swallows_value_error(self) -> None:
-        mock_db = MagicMock()
-        maintenance = MagicMock()
-        maintenance.drop_index.side_effect = ValueError("missing index")
-
-        with patch(f"{PATCH_BASE}.get_maintenance_namespace", return_value=maintenance) as mock_get_maintenance:
-            drop_cold_vector_index(mock_db, "ast", "lib1")
-
-        mock_get_maintenance.assert_called_once_with(mock_db, "ast", "lib1")
-        maintenance.drop_index.assert_called_once_with()
-
-
-class TestHasVectorIndex:
-    """Tests for ``has_vector_index``."""
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_returns_true_when_index_exists(self) -> None:
-        mock_db = MagicMock()
-        maintenance = MagicMock()
-        maintenance.get_stats.return_value = {"index_exists": True}
-
-        with patch(f"{PATCH_BASE}.get_maintenance_namespace", return_value=maintenance) as mock_get_maintenance:
-            result = has_vector_index(mock_db, "ast", "lib1")
-
-        assert result is True
-        mock_get_maintenance.assert_called_once_with(mock_db, "ast", "lib1")
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_returns_false_when_index_absent(self) -> None:
-        mock_db = MagicMock()
-        maintenance = MagicMock()
-        maintenance.get_stats.return_value = {"index_exists": False}
-
-        with patch(f"{PATCH_BASE}.get_maintenance_namespace", return_value=maintenance) as mock_get_maintenance:
-            result = has_vector_index(mock_db, "ast", "lib1")
-
-        assert result is False
-        mock_get_maintenance.assert_called_once_with(mock_db, "ast", "lib1")
-
-
-class TestBuildColdVectorIndex:
-    """Tests for ``build_cold_vector_index``."""
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_calls_build_index_with_params(self) -> None:
-        mock_db = MagicMock()
-        maintenance = MagicMock()
-        maintenance.get_stats.return_value = {"cold_count": 12}
-
-        with patch(f"{PATCH_BASE}.get_maintenance_namespace", return_value=maintenance) as mock_get_maintenance:
-            build_cold_vector_index(mock_db, "ast", "lib1", embed_dim=256, nlists=10)
-
-        mock_get_maintenance.assert_called_once_with(mock_db, "ast", "lib1")
-        maintenance.build_index.assert_called_once_with(embed_dim=256, nlists=10)
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_raises_runtime_error_on_failure(self) -> None:
-        mock_db = MagicMock()
-        maintenance = MagicMock()
-        maintenance.get_stats.return_value = {"cold_count": 12}
-        maintenance.build_index.side_effect = Exception("db error")
-
-        with (
-            patch(f"{PATCH_BASE}.get_maintenance_namespace", return_value=maintenance) as mock_get_maintenance,
-            pytest.raises(RuntimeError, match="Vector index creation failed"),
-        ):
-            build_cold_vector_index(mock_db, "ast", "lib1", embed_dim=256, nlists=10)
-
-        mock_get_maintenance.assert_called_once_with(mock_db, "ast", "lib1")
-
-
-class TestRebuildColdVectorIndex:
-    """Tests for ``rebuild_cold_vector_index``."""
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_delegates_to_rebuild_index(self) -> None:
-        mock_db = MagicMock()
-        maintenance = MagicMock()
-
-        with patch(f"{PATCH_BASE}.get_maintenance_namespace", return_value=maintenance) as mock_get_maintenance:
-            rebuild_cold_vector_index(mock_db, "ast", "lib1", embed_dim=256, nlists=10)
-
-        mock_get_maintenance.assert_called_once_with(mock_db, "ast", "lib1")
-        maintenance.rebuild_index.assert_called_once_with(embed_dim=256, nlists=10)
 
 
 class TestDeriveEmbedDim:

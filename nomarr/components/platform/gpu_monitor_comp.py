@@ -70,7 +70,7 @@ class GPUHealthMonitor(multiprocessing.Process):
             frame = HEALTH_FRAME_PREFIX + json.dumps({"component_id": "gpu_monitor", "status": status})
             self._health_pipe.send(frame)
         except Exception as e:
-            logger.warning(f"[GPUHealthMonitor] Failed to send heartbeat: {e}")
+            logger.warning(f"[GPUHealthMonitor] Failed to send heartbeat: {e}", exc_info=True)
 
     def run(self) -> None:
         """Main monitoring loop (runs in separate process).
@@ -96,7 +96,7 @@ class GPUHealthMonitor(multiprocessing.Process):
                     "error_summary": result.get("error_summary"),
                 }
                 try:
-                    db.app.upsert_meta("gpu_resources", {"value": json.dumps(resource_snapshot)})
+                    db.app.update_config_option("gpu_resources", {"value": json.dumps(resource_snapshot)})
                     consecutive_errors = 0
                     self._send_heartbeat("healthy")
                 except Exception as db_error:

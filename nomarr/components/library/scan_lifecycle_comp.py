@@ -112,13 +112,12 @@ def _folder_doc(
 def ensure_scan_state(db: Database, library_id: str) -> dict[str, Any]:
     """Return the scan document for a library, creating or repairing it when needed."""
     library_key = library_key_from_ref(library_id)
-    scan_id = _scan_doc_id(library_id)
-    scan_doc = cast("dict[str, Any] | None", db.app.get_scan_record(library_id))
+    scan_doc = cast("dict[str, Any] | None", db.app.get_scan(library_id))
 
     if scan_doc is None:
         default_doc = _default_scan_doc(library_id)
-        db.app.add_scan_record(default_doc)
-        scan_doc = cast("dict[str, Any] | None", db.app.get_scan_record(library_id)) or default_doc
+        db.app.add_scan(library_id, default_doc)
+        scan_doc = cast("dict[str, Any] | None", db.app.get_scan(library_id)) or default_doc
     elif scan_doc.get("library_key") != library_key:
         repaired_doc = {
             **_DEFAULT_SCAN_FIELDS,
@@ -126,23 +125,20 @@ def ensure_scan_state(db: Database, library_id: str) -> dict[str, Any]:
             "_key": library_key,
             "library_key": library_key,
         }
-        db.app.delete_scan_record(scan_id)
-        db.app.add_scan_record(repaired_doc)
-        scan_doc = cast("dict[str, Any] | None", db.app.get_scan_record(library_id)) or repaired_doc
+        db.app.remove_scan(library_id)
+        db.app.add_scan(library_id, repaired_doc)
+        scan_doc = cast("dict[str, Any] | None", db.app.get_scan(library_id)) or repaired_doc
 
-    db.app.upsert_library_scan_edge(library_id, scan_id)
     return scan_doc
 
 
 def get_scan_state(db: Database, library_id: str) -> dict[str, Any] | None:
     """Return the scan document for a library, repairing legacy rows when found."""
-    scan_id = _scan_doc_id(library_id)
-    scan_doc = cast("dict[str, Any] | None", db.app.get_scan_record(library_id))
+    scan_doc = cast("dict[str, Any] | None", db.app.get_scan(library_id))
     if scan_doc is None:
         return None
     if scan_doc.get("library_key") != library_key_from_ref(library_id):
         return ensure_scan_state(db, library_id)
-    db.app.upsert_library_scan_edge(library_id, scan_id)
     return scan_doc
 
 
@@ -152,9 +148,8 @@ def update_scan_state(db: Database, library_id: str, **fields: Any) -> dict[str,
     if not fields:
         return scan_doc
 
-    scan_id = _scan_doc_id(library_id)
-    db.app.update_scan_record(scan_id, fields)
-    refreshed = cast("dict[str, Any] | None", db.app.get_scan_record(library_id))
+    db.app.update_scan(library_id, fields)
+    refreshed = cast("dict[str, Any] | None", db.app.get_scan(library_id))
     if refreshed is not None:
         return refreshed
     return {**scan_doc, **fields}
@@ -162,12 +157,16 @@ def update_scan_state(db: Database, library_id: str, **fields: Any) -> dict[str,
 
 def transition_pipeline_state(db: Database, library_id: str, next_state: str) -> None:
     """Persist a library's current pipeline state via the constructor namespace."""
-    db.app.upsert_pipeline_state(library_id, next_state)
+    db.app.update_pipeline_state(library_id, next_state)
 
 
 def delete_pipeline_state(db: Database, library_id: str) -> int:
     """Delete a library's persisted pipeline state document."""
-    return int(db.app.delete_pipeline_state(library_id))
+    existing_state = db.app.get_pipeline_state(library_id)
+    if existing_state is None:
+        return 0
+    db.app.remove_pipeline_state(library_id)
+    return 1
 
 
 def get_pipeline_state(db: Database, library_id: str) -> str:
@@ -176,25 +175,29 @@ def get_pipeline_state(db: Database, library_id: str) -> str:
     Raises:
         ValueError: If the library has no persisted pipeline state.
     """
-    state_doc = cast("dict[str, Any] | None", db.app.get_pipeline_state_doc(library_id))
-    if state_doc is None:
+    state = db.app.get_pipeline_state(library_id)
+    if state is None:
         msg = f"No pipeline state edge found for library {library_id}"
         raise ValueError(msg)
-    return str(state_doc["pipeline_state"]).rsplit("/", 1)[-1]
+    return state
 
 
 def get_libraries_in_pipeline_state(db: Database, state: str) -> list[str]:
     """Return library document ids whose current pipeline state matches `state`."""
-    docs = cast("list[dict[str, Any]]", db.app.list_libraries_in_pipeline_state(state))
-    return [normalize_library_id(str(doc["library_key"])) for doc in docs]
+    libraries = cast("list[dict[str, Any]]", db.library.list_libraries())
+    return [
+        normalize_library_id(str(doc["_id"]))
+        for doc in libraries
+        if db.app.get_pipeline_state(normalize_library_id(str(doc["_id"]))) == state
+    ]
 
 
 def bulk_transition_pipeline_state(db: Database, from_state: str, to_state: str) -> int:
     """Transition every library currently in `from_state` to `to_state`."""
-    docs = cast("list[dict[str, Any]]", db.app.list_libraries_in_pipeline_state(from_state))
-    for doc in docs:
-        db.app.update_pipeline_state(normalize_library_id(str(doc["library_key"])), to_state)
-    return len(docs)
+    library_ids = get_libraries_in_pipeline_state(db, from_state)
+    for library_id in library_ids:
+        db.app.update_pipeline_state(library_id, to_state)
+    return len(library_ids)
 
 
 def _get_library_record(db: Database, library_id: str) -> dict[str, Any] | None:
@@ -232,16 +235,6 @@ def _list_library_records(db: Database) -> list[dict[str, Any]]:
     return enriched_docs
 
 
-def _delete_output_streams_for_files(db: Database, file_ids: list[str]) -> int:
-    """Delete all canonical output streams linked to the provided files."""
-    from nomarr.components.ml.inference.ml_output_stream_store_comp import delete_output_streams
-
-    deleted = 0
-    for file_id in file_ids:
-        deleted += delete_output_streams(db, file_id)
-    return deleted
-
-
 def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
     """Batch-upsert library files, ownership edges, and initial state edges."""
     if not file_docs:
@@ -263,12 +256,19 @@ def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
         msg = "All docs in a scan batch must share the same string library_id"
         raise ValueError(msg)
 
-    file_ids = db.library.upsert_files_for_library(library_id, clean_docs)
+    file_ids = db.library.add_files_to_library(library_id, clean_docs)
 
-    new_file_ids = [
-        file_id for file_id, doc in zip(file_ids, clean_docs, strict=True) if doc.get("path") not in existing_paths
+    # Repair existing files whose state edges are missing (e.g. interrupted prior scan).
+    # Using insert-ignoring semantics means already-transitioned edges are untouched.
+    existing_file_ids = [
+        file_id for file_id, doc in zip(file_ids, clean_docs, strict=True) if doc.get("path") in existing_paths
     ]
-    initialize_file_states_batch(db, new_file_ids)
+    if existing_file_ids:
+        missing_state_ids = [fid for fid in existing_file_ids if db.app.get_file_state(fid) is None]
+        if missing_state_ids:
+            logger.warning("[scan] Repairing %d file(s) with missing state edges", len(missing_state_ids))
+            initialize_file_states_batch(db, missing_state_ids)
+
     return file_ids
 
 
@@ -593,9 +593,6 @@ def bootstrap_file_state_edges(
 def remove_deleted_files(db: Database, paths: list[str]) -> int:
     """Bulk-delete files that are no longer on disk.
 
-    Canonical raw output streams are explicitly removed first because the
-    library-files cascade only covers directly linked graph data.
-
     Args:
         db: Database instance
         paths: Absolute file paths to remove
@@ -604,17 +601,15 @@ def remove_deleted_files(db: Database, paths: list[str]) -> int:
         Number of files deleted
 
     """
-    from nomarr.components.library.library_file_mutation_comp import bulk_delete_files
-
     file_ids = [
         str(file_doc["_id"])
         for path in paths
-        if (file_doc := cast("dict[str, Any] | None", db.library.get_file_by_path_unscoped(path))) is not None
+        if (file_doc := cast("dict[str, Any] | None", db.library.find_file_by_path_any_library(path))) is not None
     ]
-    if file_ids:
-        _delete_output_streams_for_files(db, file_ids)
+    for file_id in file_ids:
+        db.library.remove_file(file_id)
 
-    return bulk_delete_files(db, paths)
+    return len(file_ids)
 
 
 # ---------------------------------------------------------------------------
@@ -646,6 +641,7 @@ def save_folder_record(
     rel_path: str,
     mtime: int,
     file_count: int,
+    existing_folder_id: str | None = None,
 ) -> None:
     """Upsert a single folder cache record.
 
@@ -655,16 +651,13 @@ def save_folder_record(
         rel_path: Folder path relative to library root (POSIX-style)
         mtime: Folder modification time
         file_count: Number of audio files in the folder
+        existing_folder_id: Existing cached folder document ``_id`` when known
 
     """
-    folder_id = _folder_doc_id(library_id, rel_path)
-    existing = cast("dict[str, Any] | None", db.library.get_folder(folder_id))
-    if existing is not None:
-        db.library.delete_folder_link(library_id, folder_id)
-        db.library.delete_folder(folder_id)
+    if existing_folder_id is not None:
+        db.library.remove_library_folder(library_id, existing_folder_id)
 
-    db.library.add_folder(_folder_doc(library_id, rel_path, mtime, file_count))
-    db.library.link_folder_to_library(library_id, folder_id)
+    db.library.add_library_folder(library_id, _folder_doc(library_id, rel_path, mtime, file_count))
 
 
 def cleanup_stale_folders(
@@ -691,7 +684,6 @@ def cleanup_stale_folders(
         ]
         if stale_ids:
             for stale_id in stale_ids:
-                db.library.delete_folder_link(library_id, stale_id)
-                db.library.delete_folder(stale_id)
+                db.library.remove_library_folder(library_id, stale_id)
     except Exception as e:
         logger.warning("Failed to clean up folder records: %s", e)

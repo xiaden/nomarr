@@ -55,7 +55,6 @@ EDGE_DEFINITIONS: dict[str, dict[str, list[str]]] = {
     "song_has_tags": {"from": ["library_files"], "to": ["tags"]},
     "model_has_output": {"from": ["ml_models"], "to": ["ml_model_outputs"]},
     "model_has_calibration": {"from": ["ml_models"], "to": ["calibration_state"]},
-    "tag_model_output": {"from": ["tags"], "to": ["ml_model_outputs"]},
 }
 
 

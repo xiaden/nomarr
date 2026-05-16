@@ -155,12 +155,25 @@ def scan_library_quick_workflow(
                     if deleted_paths:
                         stats["files_removed"] += remove_deleted_files(db, deleted_paths)
 
-                    save_folder_record(db, library_id, folder.rel_path, folder.mtime, folder.file_count)
+                    cached_folder = cached_folders.get(folder.rel_path)
+                    save_folder_record(
+                        db,
+                        library_id,
+                        folder.rel_path,
+                        folder.mtime,
+                        folder.file_count,
+                        existing_folder_id=str(cached_folder["_id"]) if cached_folder is not None else None,
+                    )
                     break
 
                 except Exception as e:
                     if attempt == 0:
-                        pass  # retry silently
+                        logger.debug(
+                            "Folder %r failed on first attempt, retrying: %s",
+                            folder.rel_path,
+                            e,
+                            exc_info=True,
+                        )
                     else:
                         logger.error(
                             "Folder %r failed after retry, skipping: %s",
@@ -187,7 +200,7 @@ def scan_library_quick_workflow(
             try:
                 cleanup_orphaned_entities_workflow(db, dry_run=False)
             except Exception as e:
-                logger.warning("Entity cleanup failed: %s", e)
+                logger.warning("Entity cleanup failed: %s", e, exc_info=True)
 
         # Step 10 — Finalize
         scan_duration = internal_s().value - start_time.value

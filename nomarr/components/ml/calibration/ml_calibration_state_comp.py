@@ -51,7 +51,7 @@ def load_calibration_state(
     label: str,
 ) -> dict[str, Any] | None:
     """Load one calibration_state document by its logical identity."""
-    return cast("dict[str, Any] | None", db.ml.get_calibration_state_doc(head_name, label))
+    return cast("dict[str, Any] | None", db.ml.get_calibration_state_view(head_name, label))
 
 
 # ---------------------------------------------------------------------------
@@ -106,16 +106,10 @@ def save_calibration_state(
         "overflow_count": overflow_count,
         "updated_at": now_ms().value,
     }
-    db.ml.upsert_calibration_state_doc(
+    db.ml.replace_calibration_state(
+        model_id=model_id,
         key=_key,
         payload={key: value for key, value in doc.items() if key != "_key"},
-    )
-
-    cs_id = f"calibration_state/{_key}"
-    db.ml.upsert_model_has_calibration_edge(
-        key=_key,
-        model_id=model_id,
-        calibration_state_id=cs_id,
     )
 
 
@@ -123,40 +117,7 @@ def load_all_calibration_states(
     db: Database,
 ) -> list[dict[str, Any]]:
     """Return every calibration_state document enriched with model metadata."""
-    calibration_docs = db.ml.list_calibration_states()
-    if not calibration_docs:
-        return []
-
-    # Batch-fetch all edges and models instead of one query per calibration doc.
-    mhc_ids = [f"model_has_calibration/{doc['_key']}" for doc in calibration_docs if doc.get("_key")]
-    edge_docs = db.ml.get_model_has_calibration_edges_by_ids(mhc_ids) if mhc_ids else []
-    edge_by_key: dict[str, dict[str, Any]] = {str(e["_key"]): e for e in edge_docs if "_key" in e}
-
-    unique_model_ids = list({str(e["_from"]) for e in edge_docs if e.get("_from")})
-    model_docs = db.ml.get_models_by_ids(unique_model_ids) if unique_model_ids else []
-    model_by_id: dict[str, dict[str, Any]] = {str(m["_id"]): m for m in model_docs if "_id" in m}
-
-    enriched: list[dict[str, Any]] = []
-    for calibration_doc in calibration_docs:
-        model_info: dict[str, Any] | None = None
-        calibration_key = calibration_doc.get("_key")
-        if isinstance(calibration_key, str):
-            edge = edge_by_key.get(calibration_key)
-            model_id = str(edge["_from"]) if edge and edge.get("_from") else None
-            if model_id is not None:
-                model_doc = model_by_id.get(model_id)
-                if model_doc is not None:
-                    model_info = {
-                        "backbone": model_doc.get("backbone"),
-                        "embedder_release_date": model_doc.get("embedder_release_date"),
-                    }
-
-        enriched.append({**calibration_doc, "model": model_info})
-
-    return sorted(
-        enriched,
-        key=lambda row: (str(row.get("head_name", "")), str(row.get("label", ""))),
-    )
+    return db.ml.list_all_calibration_states_with_models()
 
 
 def load_calibration_lookup(db: Database) -> dict[str, dict[str, Any]]:
@@ -194,9 +155,8 @@ def delete_calibration_state(
         return
 
     _key = _make_calibration_state_key(head_name, label)
-    db.ml.delete_model_has_calibration_edge(edge_id=f"model_has_calibration/{_key}")
     calibration_id = cast("str", calibration_doc.get("_id", f"calibration_state/{_key}"))
-    db.ml.delete_calibration_state_doc(calibration_id=calibration_id)
+    db.ml.remove_calibration_state(calibration_id=calibration_id)
 
 
 def create_calibration_history_snapshot(
@@ -234,7 +194,7 @@ def get_latest_calibration_history_snapshot(
     """Return the newest history snapshot for one calibration key."""
     snapshots = cast(
         "list[dict[str, Any]]",
-        db.ml.get_calibration_history_snapshots(calibration_key=calibration_key),
+        db.ml.list_calibration_history_snapshots(calibration_key=calibration_key),
     )
     if not snapshots:
         return None
@@ -253,7 +213,7 @@ def delete_old_calibration_history_snapshots(
     """Delete old history snapshots, keeping the newest ``keep_count`` rows."""
     snapshots = cast(
         "list[dict[str, Any]]",
-        db.ml.get_calibration_history_snapshots(calibration_key=calibration_key),
+        db.ml.list_calibration_history_snapshots(calibration_key=calibration_key),
     )
     if len(snapshots) <= keep_count:
         return 0
@@ -267,7 +227,7 @@ def delete_old_calibration_history_snapshots(
     if not stale_ids:
         return 0
 
-    db.ml.delete_calibration_history_entries(entry_ids=stale_ids)
+    db.ml.remove_calibration_history_entries(entry_ids=stale_ids)
     return len(stale_ids)
 
 
@@ -278,25 +238,25 @@ def delete_old_calibration_history_snapshots(
 
 def get_calibration_version(db: Database) -> str | None:
     """Return the current global calibration version hash, or ``None``."""
-    calibration_doc = cast("dict[str, Any] | None", db.app.get_meta(key="calibration_version"))
+    calibration_doc = cast("dict[str, Any] | None", db.app.get_config_option(key="calibration_version"))
     return None if calibration_doc is None else calibration_doc.get("value")
 
 
 def set_calibration_version(db: Database, version_hash: str) -> None:
     """Set the global calibration version hash."""
-    db.app.upsert_meta(key="calibration_version", payload={"value": version_hash})
+    db.app.update_config_option(key="calibration_version", payload={"value": version_hash})
 
 
 def get_calibration_last_run(db: Database) -> int | None:
     """Return the timestamp (ms) of the last calibration run, or ``None``."""
-    last_run_doc = cast("dict[str, Any] | None", db.app.get_meta(key="calibration_last_run"))
+    last_run_doc = cast("dict[str, Any] | None", db.app.get_config_option(key="calibration_last_run"))
     last_run_str = None if last_run_doc is None else last_run_doc.get("value")
     return int(last_run_str) if last_run_str else None
 
 
 def set_calibration_last_run(db: Database, timestamp: str) -> None:
     """Record the timestamp of the last calibration run."""
-    db.app.upsert_meta(key="calibration_last_run", payload={"value": timestamp})
+    db.app.update_config_option(key="calibration_last_run", payload={"value": timestamp})
 
 
 # ---------------------------------------------------------------------------
@@ -388,14 +348,14 @@ def clear_all_calibration_data(db: Database) -> dict[str, int]:
 
     """
     # Truncate calibration collections
-    db.ml.truncate_calibration_states()
-    db.ml.truncate_calibration_history()
+    db.ml.maintenance.truncate_calibration_states()
+    db.ml.maintenance.truncate_calibration_history()
 
     # Clear calibration meta keys
     meta_keys_cleared = 0
     for key in ("calibration_version", "calibration_last_run"):
-        if db.app.get_meta(key=key) is not None:
-            db.app.delete_meta(key=key)
+        if db.app.get_config_option(key=key) is not None:
+            db.app.remove_config_option(key=key)
             meta_keys_cleared += 1
 
     # Mark all files as not calibrated and not vectors extracted

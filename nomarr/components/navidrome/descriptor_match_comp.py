@@ -85,7 +85,7 @@ def _search_candidate_docs(db: Database, field_name: str, value: str) -> list[di
     docs = db.library.search_files_by_text(field_name, value, limit=None)
     if isinstance(docs, list):
         return cast("list[dict[str, Any]]", docs)
-    return cast("list[dict[str, Any]]", db.library_files.get.many(limit=None, **{field_name: value}))
+    return cast("list[dict[str, Any]]", db.library.list_files(filters={field_name: value}, limit=None))
 
 
 def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
@@ -96,7 +96,7 @@ def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
 
     artist = seed.get("artist", "")
     if artist:
-        artist_docs = _search_candidate_docs(db, "artist", artist)
+        artist_docs = cast("list[dict[str, Any]]", db.library.search_files_by_tag("artist", artist, limit=None))
         return {file_id for doc in artist_docs if isinstance((file_id := doc.get("_id")), str)}
 
     return set()

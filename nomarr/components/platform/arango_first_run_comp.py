@@ -95,6 +95,7 @@ def _has_db_config(config_path: Path) -> bool:
             config = yaml.safe_load(f)
         return bool(config.get("arango_password"))
     except Exception:
+        logger.debug("Failed to read DB config from %s — treating as unconfigured", config_path, exc_info=True)
         return False
 
 
@@ -121,7 +122,7 @@ def _database_exists(hosts: str | None = None) -> bool:
         sys_db = client.db("_system", username="root", password=root_password)
         return bool(sys_db.has_database(DB_NAME))
     except Exception as e:
-        logger.warning(f"Database existence check failed: {e}")
+        logger.warning(f"Database existence check failed: {e}", exc_info=True)
         return False
 
 

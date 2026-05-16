@@ -173,7 +173,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
                 )
                 logger.info("[WorkerSystemService] Reset restart count for %s (worker confirmed healthy)", component_id)
         except Exception:
-            logger.debug("[WorkerSystemService] Failed to reset restart count for %s", component_id, exc_info=True)
+            logger.warning("[WorkerSystemService] Failed to reset restart count for %s", component_id, exc_info=True)
 
     def _handle_worker_death(self, component_id: str) -> None:
         released_file_ids = release_claims_for_worker(self.db, component_id)
@@ -186,7 +186,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
         try:
             release_worker_promises(self.db, component_id)
         except Exception:
-            logger.debug(
+            logger.warning(
                 "[WorkerSystemService] Failed to release VRAM promises for dead worker %s", component_id, exc_info=True
             )
         if self._stop_event.is_set():
@@ -339,19 +339,19 @@ class WorkerSystemService(ComponentLifecycleHandler):
 
     def is_worker_system_enabled(self) -> bool:
         """Return whether the worker system is globally enabled."""
-        meta = cast("dict[str, Any] | None", self.db.app.get_meta("worker_enabled"))
+        meta = cast("dict[str, Any] | None", self.db.app.get_config_option("worker_enabled"))
         if meta is None:
             return self.default_enabled
         return cast("str | None", meta.get("value")) == "true"
 
     def enable_worker_system(self) -> None:
         """Enable worker system globally (sets worker_enabled=true in DB meta)."""
-        self.db.app.upsert_meta("worker_enabled", {"value": "true"})
+        self.db.app.update_config_option("worker_enabled", {"value": "true"})
         logger.info("[WorkerSystemService] Worker system globally enabled")
 
     def disable_worker_system(self) -> None:
         """Disable worker system globally (sets worker_enabled=false in DB meta)."""
-        self.db.app.upsert_meta("worker_enabled", {"value": "false"})
+        self.db.app.update_config_option("worker_enabled", {"value": "false"})
         logger.info("[WorkerSystemService] Worker system globally disabled")
 
     # ---------------------------- Worker Lifecycle ----------------------------
@@ -450,7 +450,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
             try:
                 release_worker_promises(self.db, worker.worker_id)
             except Exception:
-                logger.debug(
+                logger.warning(
                     "[WorkerSystemService] Failed to release VRAM promises for worker %s",
                     worker.worker_id,
                     exc_info=True,

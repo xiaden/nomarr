@@ -122,7 +122,7 @@ def apply_calibration_wf(
             write_calibrated_tags_wf(db=db, params=params, batch_ctx=ctx)
             return True
         except Exception as e:
-            logger.warning(f"Failed to write calibrated tags for {file_path}: {e}")
+            logger.warning(f"Failed to write calibrated tags for {file_path}: {e}", exc_info=True)
             return False
 
     # --- Chunk loop: process → flush ---
@@ -185,7 +185,7 @@ def apply_calibration_wf(
             try:
                 save_mood_tags_batch(db, batch_ctx.pending_mood_tags)
             except Exception as e:
-                logger.warning(f"[apply_calibration] Batch mood tag flush failed: {e}")
+                logger.warning(f"[apply_calibration] Batch mood tag flush failed: {e}", exc_info=True)
 
         if batch_ctx.pending_calibration_hashes:
             logger.debug(
@@ -195,7 +195,7 @@ def apply_calibration_wf(
             try:
                 update_file_calibration_hashes_batch(db, batch_ctx.pending_calibration_hashes)
             except Exception as e:
-                logger.warning(f"[apply_calibration] Batch calibration hash flush failed: {e}")
+                logger.warning(f"[apply_calibration] Batch calibration hash flush failed: {e}", exc_info=True)
 
         logger.debug(f"[apply_calibration] Chunk {chunk_num}/{n_chunks} done in {_t_io_chunk:.2f}s I/O")
 

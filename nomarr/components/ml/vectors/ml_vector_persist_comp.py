@@ -5,12 +5,11 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from nomarr.components.ml.vectors.ml_vector_pool_comp import get_embedding_dimension, pool_embedding_for_storage
-from nomarr.components.ml.vectors.ml_vector_registry_comp import get_hot_namespace
 from nomarr.helpers.time_helper import internal_ms
 
 if TYPE_CHECKING:
@@ -45,8 +44,8 @@ def upsert_hot_track_vector(
     """Upsert one pooled track vector into the hot collection.
 
     Builds the hot vector document for the given file and model suite,
-    upserts it into the hot namespace for the selected backbone/library, and
-    ensures the ``file_has_vectors`` edge points at the stored vector.
+    replaces that file's vectors in the selected hot namespace through the
+    normalized ``db.ml`` intent API, and returns the stored vector document id.
 
     Args:
         db: Database instance.
@@ -62,7 +61,7 @@ def upsert_hot_track_vector(
         The stored vector document ``_id``.
 
     Raises:
-        RuntimeError: If the hot vector upsert does not return any document ids.
+        RuntimeError: If the persisted vector cannot be reloaded after replacement.
 
     """
     vector_key = _make_vector_key(file_id, model_suite_hash)
@@ -77,15 +76,24 @@ def upsert_hot_track_vector(
         "created_at": internal_ms().value,
     }
 
-    hot_ops = cast("Any", get_hot_namespace(db, backbone, library_key))
-    vector_ids = cast("list[str]", hot_ops.upsert(_key=vector_key, fields=vector_doc))
-    if not vector_ids:
-        msg = f"Vector upsert returned no ids for file '{file_id}' in backbone '{backbone}'"
+    collection_name = f"vectors_track_hot__{backbone}__{library_key}"
+    db.ml.replace_file_vectors(collection_name, file_id, [vector_doc])
+
+    stored_vectors = db.ml.list_file_vectors(collection_name, file_id)
+    stored_vector_id = next(
+        (
+            str(stored_vector_id)
+            for stored_vector in stored_vectors
+            if stored_vector.get("_key") == vector_key
+            and isinstance((stored_vector_id := stored_vector.get("_id")), str)
+        ),
+        None,
+    )
+    if stored_vector_id is None:
+        msg = f"Vector replacement returned no ids for file '{file_id}' in backbone '{backbone}'"
         raise RuntimeError(msg)
 
-    vector_id = str(vector_ids[0])
-    db.ml.upsert_file_has_vector_edge(file_id, vector_id)
-    return vector_id
+    return stored_vector_id
 
 
 def persist_backbone_vector(

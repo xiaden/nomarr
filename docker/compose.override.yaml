@@ -1,0 +1,9 @@
+# Local dev override — use local image build, no GPU required
+services:
+  nomarr:
+    image: nomarr-local:dev
+    volumes:
+      - ./config:/app/config
+      - ./media:/media
+    deploy:
+      resources: {}

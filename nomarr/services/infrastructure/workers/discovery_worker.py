@@ -83,9 +83,7 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
     from nomarr.components.library.library_file_mutation_comp import set_chromaprint
     from nomarr.components.library.library_file_state_comp import transition_file_state
     from nomarr.components.ml.inference.ml_output_stream_store_comp import StreamWrite, upsert_output_streams
-    from nomarr.components.ml.onnx.tag_model_output_comp import write_tag_model_output_edges_batch
     from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
-    from nomarr.components.tagging.tag_write_comp import resolve_tag_ids
     from nomarr.components.workers.worker_discovery_comp import release_claim
 
     file_id = writes.file_id
@@ -95,17 +93,6 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
             (f"nom:{name}" if not name.startswith("nom:") else name): values for name, values in parsed_nom_tags.items()
         }
         save_file_tags(db, file_id, prefixed_nom_tags)
-        if writes.ml_edges:
-            output_edges = writes.ml_edges.output_edges
-            pairs = [(name, score) for name, (_, score) in output_edges.items()]
-            tag_ids = resolve_tag_ids(db, pairs)
-            edge_tuples: list[tuple[str, str, float]] = []
-            for tag_name, (output_id, score) in output_edges.items():
-                tag_id = tag_ids.get((tag_name, score))
-                if tag_id is not None:
-                    edge_tuples.append((tag_id, output_id, score))
-            if edge_tuples:
-                write_tag_model_output_edges_batch(db, edge_tuples)
         if writes.chromaprint:
             set_chromaprint(db, file_id, writes.chromaprint)
         if writes.raw_output_streams:
@@ -125,7 +112,7 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
         try:
             transition_file_state(db, [file_id], STATE_NOT_ERRORED, STATE_ERRORED)
         except Exception:
-            logger.debug("[%s] Failed to set errored state for %s", worker_id, file_id, exc_info=True)
+            logger.warning("[%s] Failed to set errored state for %s", worker_id, file_id, exc_info=True)
         logger.exception("[%s] Async write failed for %s — file will be retried", worker_id, writes.path)
     finally:
         release_claim(db, file_id)
@@ -227,10 +214,10 @@ class DiscoveryWorker(multiprocessing.Process):
         try:
             release_worker_promises(db, self.worker_id)
         except Exception:
-            logger.debug("[%s] Failed to clear stale VRAM promises at startup", self.worker_id, exc_info=True)
+            logger.warning("[%s] Failed to clear stale VRAM promises at startup", self.worker_id, exc_info=True)
         config = ProcessorConfig(**self.processor_config_dict)
         self._current_status = "healthy"
-        db.app.upsert_health(
+        db.app.update_health(
             self.worker_id,
             {
                 "component_type": "worker",
@@ -428,7 +415,7 @@ class DiscoveryWorker(multiprocessing.Process):
         try:
             transition_file_state(db, [file_id], STATE_NOT_ERRORED, STATE_ERRORED)
         except Exception:
-            logger.debug("[%s] Failed to set errored state for %s", self.worker_id, file_id, exc_info=True)
+            logger.warning("[%s] Failed to set errored state for %s", self.worker_id, file_id, exc_info=True)
         release_claim(db, file_id)
         if next_errors >= MAX_CONSECUTIVE_ERRORS:
             logger.exception("[%s] Too many consecutive errors (%d), shutting down", self.worker_id, next_errors)
@@ -475,7 +462,7 @@ class DiscoveryWorker(multiprocessing.Process):
                     try:
                         _check_idle_pipeline_completion(db, self._health_pipe)
                     except Exception:
-                        logger.debug("[%s] _check_idle_pipeline_completion failed", self.worker_id, exc_info=True)
+                        logger.warning("[%s] _check_idle_pipeline_completion failed", self.worker_id, exc_info=True)
                     time.sleep(IDLE_SLEEP_S)
                     continue
 
@@ -537,14 +524,14 @@ class DiscoveryWorker(multiprocessing.Process):
 
                 release_worker_promises(db, self.worker_id)
             except Exception:
-                logger.debug("[%s] Failed to release VRAM promises on shutdown", self.worker_id, exc_info=True)
+                logger.warning("[%s] Failed to release VRAM promises on shutdown", self.worker_id, exc_info=True)
             from nomarr.components.ml.audio.ml_audio_comp import shutdown_audio_loader
             from nomarr.components.ml.inference.ml_head_pipeline_comp import shutdown_head_pool
 
             shutdown_audio_loader()
             shutdown_head_pool()
             if self._health_pipe is not None:
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(OSError):  # Pipe may already be closed during shutdown
                     self._health_pipe.close()
 
     def stop(self) -> None:

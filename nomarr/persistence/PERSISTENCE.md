@@ -2,9 +2,9 @@
 
 The **persistence layer** owns ArangoDB access for Nomarr.
 
-This package is no longer the descriptor-based collection system described in older docs. In the current code, persistence is organized around a top-level `Database` facade in `db.py`, a set of thin AQL operation classes under `database/`, and higher-level intent facades under `api/`.
+This package is no longer the descriptor-based collection system described in older docs. In the current code, persistence is organized around a top-level `Database` facade in `db.py`, a private Tier 2 binding layer under `database/`, a narrow Tier 1 primitive layer under `aql/`, and higher-level intent facades under `api/`.
 
-> **Access rule:** Higher layers should depend on the injected `Database` facade. Reach for `db.library`, `db.app`, and `db.ml` first. Import persistence internals directly only when you are extending the persistence layer itself.
+> **Access rule:** Higher layers should depend on the injected `Database` facade. Reach for `db.library`, `db.app`, and `db.ml`. Tier 2 (`database/`) and Tier 1 (`aql/`) are persistence-internal layers, not caller APIs.
 
 ---
 
@@ -90,21 +90,17 @@ These are the cleanest entry points for higher layers:
 
 These group related persistence actions by domain rather than by physical collection.
 
-### Available: direct operation namespaces
+### Compatibility-only: direct operation namespaces
 
-`Database` also exposes the thin operation bindings directly:
+`Database` still exposes a small set of thin operation bindings directly as intentional compatibility debt during the current migration window:
 
 - `db.libraries`
 - `db.library_files`
-- `db.tags`
-- `db.scan`
 - `db.file_states`
-- `db.ml_streams`
-- `db.ml_models`
 
-These are aliases of the underlying AQL operation objects and are useful inside persistence-heavy code where collection-oriented access is appropriate.
+These are aliases of the underlying AQL operation objects. They are compatibility surfaces, not the supported caller-facing API for components, workflows, or services. New higher-layer code should not depend on them.
 
-### Lowest-level compatibility names
+### Lowest-level implementation names
 
 The explicit `*_aql` attributes are also still present:
 
@@ -119,7 +115,7 @@ The explicit `*_aql` attributes are also still present:
 - `db.app_aql`
 - `db.navidrome_aql`
 
-These are implementation-facing names. Prefer the intent facades unless you are working within the persistence layer or need a very collection-specific capability.
+These are implementation-facing names. Use them only inside persistence-layer code or narrowly scoped migration/bootstrap seams that intentionally work below Tier 3.
 
 ---
 
@@ -131,11 +127,10 @@ These are implementation-facing names. Prefer the intent facades unless you are 
 
 It wraps operations such as:
 
-- library CRUD (`add_library`, `get_library`, `list_libraries`, `update_library`, `delete_library`)
-- file CRUD and queries (`add_file`, `get_file`, `upsert_file`, `list_files`, `search_files_by_text`)
-- file↔library links and folder links
-- tag creation, upsert, lookup, aggregation, and cleanup
-- library-scoped cleanup helpers like deleting files, folders, or links for a library
+- library CRUD and library-domain queries
+- file and folder queries plus intent-level file lifecycle operations
+- tag lookup, replacement, aggregation, and cleanup routed through library-domain methods
+- maintenance-only routines on `db.library.maintenance`
 
 Use `db.library` when the caller thinks in terms of libraries, files, folders, and tags rather than specific Arango collections.
 
@@ -145,16 +140,11 @@ Use `db.library` when the caller thinks in terms of libraries, files, folders, a
 
 It wraps operations such as:
 
-- file state reads and transitions
-- scan records and library↔scan edges
-- pipeline state storage
-- locks and worker claims
-- health records
-- sessions
-- worker restart policy documents
-- meta and migration records
-- VRAM promise tracking
-- Navidrome track mappings and playcount persistence
+- file state reads and state-oriented intents
+- scan and pipeline-state persistence hidden behind app-domain methods
+- locks, claims, health, migration/config, and VRAM promise persistence
+- maintenance-only routines on `db.app.maintenance`
+- legacy Navidrome persistence isolated as compatibility debt, not future public contract
 
 Use `db.app` for coordination data and operational state rather than music-library content.
 
@@ -164,12 +154,9 @@ Use `db.app` for coordination data and operational state rather than music-libra
 
 It wraps operations such as:
 
-- ML output stream storage and cleanup
-- vector registration and vector search
-- file↔vector links
-- model CRUD
-- model outputs and tag-model-output edges
-- calibration state and calibration history persistence
+- ML output stream, vector, model, model-output, and calibration intents
+- runtime vector-collection registration/query surfaces routed through ML-domain methods
+- maintenance-only routines on `db.ml.maintenance`
 
 Use `db.ml` when the caller works with embeddings, models, output streams, or calibration artifacts.
 
@@ -194,7 +181,7 @@ Examples include:
 
 These classes are intentionally narrow. They are not business services; they are focused collection/edge/query adapters over `SafeDatabase`.
 
-Several of their docstrings describe them as **thin Tier 2 bindings**, which is a good mental model: they sit below the intent facades and above the generic AQL helper functions.
+Several of their docstrings describe them as **thin Tier 2 bindings**, which is the intended mental model: they sit below the intent facades and above the generic AQL helper functions. They are private to persistence and should not be imported by higher layers.
 
 ---
 
@@ -209,14 +196,23 @@ That module currently provides helpers such as:
 - `get_many_by_keys(...)`
 - `get_many_by_field(...)`
 - `get_filtered_docs(...)`
-- `list_field_values(...)`
 - `count_distinct_edge_sources_to_filtered_vertices(...)`
 - `delete_many_by_keys(...)`
+- `delete_many_by_field(...)`
 - `upsert_by_field(...)`
 - `insert_document(...)`
 - `update_document_by_key(...)`
 
-Use these helpers when several operation classes need the same safe query-building pattern. Keep collection-specific intent in the `database/` modules.
+### Tier 1 safety rules
+
+When adding or modifying helpers in `aql/primitives.py`, contributors must follow these architectural requirements:
+
+1. **Field-name validation** — every primitive that interpolates a field name into AQL text must call `_validate_field_name(...)` or `_require_allowed_field(...)` before the field name is used.
+2. **Bind-var discipline** — all data values must flow through bind vars; never interpolate user-supplied values directly into AQL text.
+3. **No other string interpolation** — the only permitted string interpolation in Tier 1 helpers is validated structural text, such as field names inserted into known-safe AQL positions.
+4. **`SafeDatabase` boundary** — Tier 1 primitives rely on `SafeDatabase` to sanitize bind vars before execution, so they must pass clean, predictable bind-var structures rather than rich or ambiguous value shapes.
+
+Use these helpers when several operation classes need the same safe query-building pattern. Keep collection-specific and domain-specific intent in the `database/` modules; do not grow `primitives.py` into a generic query framework.
 
 ---
 
@@ -254,7 +250,7 @@ It contains:
 Vector collections are registered at runtime through the ML layer:
 
 ```python
-db.ml.register_vector_collection(
+db.ml.add_vector_collection(
     "vectors_track_hot__demo_model__main",
     "vectors_track_hot",
 )
@@ -274,15 +270,15 @@ Prefer intent-level calls from higher layers:
 library = db.library.get_library(library_id)
 files = db.library.list_library_files(library_id, limit=100)
 db.app.transition_file_states(file_ids, "queued", "processing")
-streams = db.ml.get_output_streams_for_file(file_id)
+streams = db.ml.list_output_streams_for_file(file_id)
 ```
 
-Drop to direct operation bindings only when you need collection-oriented behavior:
+Within higher layers, do **not** drop to direct operation bindings just because they exist:
 
 ```python
-doc = db.library_files.get_file(file_id)
-db.tags.upsert_tag(file_id, "genre", {"name": "genre", "value": "rock"})
-db.scan.update_scan_record(scan_id, {"status": "complete"})
+file_doc = db.library.get_file(file_id)
+db.library.replace_file_tags(file_id, [{"name": "genre", "value": "rock"}])
+db.app.update_scan(library_id, {"status": "complete"})
 ```
 
 Use raw database access only for capabilities that are not already wrapped:
@@ -295,7 +291,7 @@ exists = db.db.has_collection("example_collection")
 The rule of thumb is simple:
 
 - **Domain intent first** → `db.library`, `db.app`, `db.ml`
-- **Collection-specific persistence second** → `db.<thing>` or `db.<thing>_aql`
+- **Persistence internals second** → Tier 2 bindings inside `nomarr.persistence`
 - **Raw Arango last** → `db.db`
 
 ---
@@ -342,9 +338,9 @@ If code starts deciding *what should happen* instead of *how data is read or wri
 Think about the current persistence layer like this:
 
 - **`db.py` wires the world together**
-- **`api/` presents intent-level domain facades**
-- **`database/` holds thin collection and edge adapters**
-- **`aql/primitives.py` provides reusable query building blocks**
+- **`api/` presents the only supported caller-facing persistence API**
+- **`database/` holds private Tier 2 collection and edge adapters**
+- **`aql/primitives.py` provides the narrow private Tier 1 query-shape toolbox**
 - **`arango_client.py` keeps AQL execution safe**
 - **`schema_types.py` preserves the runtime vector namespace machinery**
 - **`db.db` is the escape hatch for advanced raw Arango work**

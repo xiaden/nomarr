@@ -19,8 +19,8 @@ def _make_cleanup_db(
 ) -> MagicMock:
     """Build a db mock for orphan cleanup tests."""
     mock_db = MagicMock()
-    mock_db.library.get_orphaned_tag_ids.return_value = orphan_ids
-    mock_db.library.delete_tags_by_ids.return_value = delete_result
+    mock_db.library.maintenance.list_orphaned_tag_ids.return_value = orphan_ids
+    mock_db.library.maintenance.delete_tags_by_ids.return_value = delete_result
     return mock_db
 
 
@@ -35,7 +35,7 @@ class TestCleanupOrphanedTags:
         result = cleanup_orphaned_tags(mock_db)
 
         assert result == 0
-        mock_db.library.delete_tags_by_ids.assert_not_called()
+        mock_db.library.maintenance.delete_tags_by_ids.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -46,7 +46,7 @@ class TestCleanupOrphanedTags:
         result = cleanup_orphaned_tags(mock_db)
 
         assert result == 2
-        mock_db.library.delete_tags_by_ids.assert_called_once_with(orphan_ids)
+        mock_db.library.maintenance.delete_tags_by_ids.assert_called_once_with(orphan_ids)
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -55,7 +55,7 @@ class TestCleanupOrphanedTags:
 
         cleanup_orphaned_tags(mock_db)
 
-        mock_db.library.get_orphaned_tag_ids.assert_called_once()
+        mock_db.library.maintenance.list_orphaned_tag_ids.assert_called_once()
 
 
 class TestGetOrphanedTagCount:
@@ -86,4 +86,4 @@ class TestGetOrphanedTagCount:
 
         get_orphaned_tag_count(mock_db)
 
-        mock_db.library.get_orphaned_tag_ids.assert_called_once()
+        mock_db.library.maintenance.list_orphaned_tag_ids.assert_called_once()

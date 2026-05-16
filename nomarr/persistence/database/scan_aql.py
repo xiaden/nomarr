@@ -49,5 +49,5 @@ class ScanAqlOperations:
     def update_scan_record(self, scan_id: str, fields: dict[str, Any]) -> None:
         primitives.update_document_by_key(self._db, self.COLLECTION, _extract_key(scan_id), fields)
 
-    def delete_scan_record(self, scan_id: str) -> None:
+    def _delete_scan_record(self, scan_id: str) -> None:
         primitives.delete_many_by_keys(self._db, self.COLLECTION, [_extract_key(scan_id)])

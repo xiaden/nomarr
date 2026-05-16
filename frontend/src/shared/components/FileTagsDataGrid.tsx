@@ -2,7 +2,7 @@
  * FileTagsDataGrid - Display file tags in grouped accordions
  *
  * Features:
- * - Tags grouped into 4 categories: Metadata, Nomarr Tags, Raw Head Outputs, Extended Metadata
+ * - Tags grouped into 3 categories: Metadata, Nomarr Tags, Extended Metadata
  * - Accordion expand/collapse per group
  * - Quick filter search across all groups
  * - Toggle to show only Nomarr tags
@@ -43,7 +43,7 @@ interface FileTagsDataGridProps {
 // Tag Grouping
 // ──────────────────────────────────────────────────────────────────────
 
-type TagGroupId = "metadata" | "nomarr" | "rawHeads" | "extended";
+type TagGroupId = "metadata" | "nomarr" | "extended";
 
 interface TagGroup {
   id: TagGroupId;
@@ -66,13 +66,12 @@ const METADATA_WHITELIST = new Set([
 const GROUP_DEFS: Omit<TagGroup, "tags">[] = [
   { id: "metadata", label: "Metadata", defaultExpanded: true },
   { id: "nomarr", label: "Nomarr Tags", defaultExpanded: true },
-  { id: "rawHeads", label: "Raw Head Outputs", defaultExpanded: false },
   { id: "extended", label: "Extended Metadata", defaultExpanded: false },
 ];
 
 function classifyTag(tag: FileTag): TagGroupId {
   if (tag.key.startsWith("nom:")) {
-    return tag.key.includes("_essentia") ? "rawHeads" : "nomarr";
+    return "nomarr";
   }
   return METADATA_WHITELIST.has(tag.key) ? "metadata" : "extended";
 }
@@ -81,7 +80,6 @@ function groupTags(tags: FileTag[]): TagGroup[] {
   const buckets: Record<TagGroupId, FileTag[]> = {
     metadata: [],
     nomarr: [],
-    rawHeads: [],
     extended: [],
   };
 

@@ -16,10 +16,9 @@ from nomarr.components.platform.locks_comp import (
 
 @pytest.mark.unit
 class TestAcquireDistributedLock:
-    def test_calls_app_acquire_lock_with_expected_payload(self) -> None:
+    def test_calls_app_add_lock_with_expected_payload(self) -> None:
         db = MagicMock()
         db.app.get_lock.return_value = None
-        db.app.acquire_lock.return_value = True
 
         with patch(
             "nomarr.components.platform.locks_comp.now_ms",
@@ -29,8 +28,7 @@ class TestAcquireDistributedLock:
 
         assert result is True
         db.app.get_lock.assert_called_once_with("vector_promotion:file-1")
-        db.app.acquire_lock.assert_called_once_with(
-            "vector_promotion:file-1",
+        db.app.add_lock.assert_called_once_with(
             {
                 "document_reference": "vector_promotion:file-1",
                 "lock_type": "vector_promotion",
@@ -38,7 +36,7 @@ class TestAcquireDistributedLock:
                 "expires_at": 40_000.0,
                 "acquired_at": 10_000.0,
                 "status": "active",
-            },
+            }
         )
 
     def test_returns_false_when_active_lock_is_held_by_other_owner(self) -> None:
@@ -52,13 +50,12 @@ class TestAcquireDistributedLock:
             result = acquire_distributed_lock(db, "vector_promotion", "file-1", "worker-1", 30)
 
         assert result is False
-        db.app.release_lock.assert_not_called()
-        db.app.acquire_lock.assert_not_called()
+        db.app.remove_lock.assert_not_called()
+        db.app.add_lock.assert_not_called()
 
     def test_releases_expired_lock_before_reacquiring(self) -> None:
         db = MagicMock()
         db.app.get_lock.return_value = {"expires_at": 5_000.0, "holder": "worker-2"}
-        db.app.acquire_lock.return_value = True
 
         with patch(
             "nomarr.components.platform.locks_comp.now_ms",
@@ -67,8 +64,8 @@ class TestAcquireDistributedLock:
             result = acquire_distributed_lock(db, "vector_promotion", "file-1", "worker-1", 30)
 
         assert result is True
-        db.app.release_lock.assert_called_once_with("vector_promotion:file-1")
-        db.app.acquire_lock.assert_called_once()
+        db.app.remove_lock.assert_called_once_with("vector_promotion:file-1")
+        db.app.add_lock.assert_called_once()
 
 
 @pytest.mark.unit
@@ -87,7 +84,7 @@ class TestReleaseDistributedLock:
             call("vector_promotion:file-1"),
             call("vector_promotion:file-1"),
         ]
-        db.app.release_lock.assert_called_once_with("vector_promotion:file-1")
+        db.app.remove_lock.assert_called_once_with("vector_promotion:file-1")
 
     def test_returns_false_for_missing_or_foreign_lock(self) -> None:
         db = MagicMock()
@@ -96,7 +93,7 @@ class TestReleaseDistributedLock:
         result = release_distributed_lock(db, "vector_promotion", "file-1", "worker-1")
 
         assert result is False
-        db.app.release_lock.assert_not_called()
+        db.app.remove_lock.assert_not_called()
 
 
 @pytest.mark.unit
@@ -140,4 +137,4 @@ class TestReapStaleLocks:
             reap_stale_locks(db, "worker-1", stale_after_ms=1000)
 
         db.app.list_locks.assert_called_once_with()
-        assert db.app.release_lock.call_args_list == [call("vector_promotion:file-1")]
+        assert db.app.remove_lock.call_args_list == [call("vector_promotion:file-1")]

@@ -1,11 +1,24 @@
 from __future__ import annotations
 
-from typing import Any
+import re
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from nomarr.persistence.aql import primitives
 from nomarr.persistence.arango_client import SafeDatabase
 
 Document = dict[str, Any]
+
+_FIELD_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.]*$")
+
+if TYPE_CHECKING:
+    from nomarr.persistence.database.file_states_aql import FileStatesAqlOperations
+    from nomarr.persistence.database.ml_streams_aql import MlStreamsAqlOperations
+    from nomarr.persistence.database.vectors_aql import VectorsAqlOperations
+
+
+class LibraryFileUpsertResult(TypedDict):
+    file_ids: list[str]
+    added: int
 
 
 def _extract_key(document_id_or_key: str) -> str:
@@ -14,6 +27,12 @@ def _extract_key(document_id_or_key: str) -> str:
 
 def _as_document_id(collection: str, document_id_or_key: str) -> str:
     return document_id_or_key if "/" in document_id_or_key else f"{collection}/{document_id_or_key}"
+
+
+def _validate_field_name(field_name: str) -> None:
+    if not field_name or field_name.startswith(("_", ".")) or _FIELD_NAME_PATTERN.fullmatch(field_name) is None:
+        msg = f"Invalid field name for AQL interpolation: {field_name!r}"
+        raise ValueError(msg)
 
 
 class LibraryFilesAqlOperations:
@@ -49,12 +68,12 @@ class LibraryFilesAqlOperations:
         },
     )
     ALLOWED_FOLDER_FIELDS = frozenset({"path", "library_key"})
-    TEXT_SEARCH_FIELDS = frozenset({"artist", "album", "title"})
+    TEXT_SEARCH_FIELDS = frozenset({"title"})
 
     def __init__(self, db: SafeDatabase) -> None:
         self._db = db
 
-    def add_file(self, payload: dict[str, Any]) -> str:
+    def _add_file(self, payload: dict[str, Any]) -> str:
         return primitives.insert_document(self._db, self.FILE_COLLECTION, payload)
 
     def get_file(self, file_id: str) -> Document | None:
@@ -83,33 +102,163 @@ class LibraryFilesAqlOperations:
         )
         return results[0] if results else None
 
-    def upsert_file(self, payload: dict[str, Any]) -> str:
+    def _upsert_file(self, payload: dict[str, Any]) -> str:
         path = payload.get("path")
         if not isinstance(path, str) or not path:
             msg = "File payload must include a non-empty 'path' string"
             raise ValueError(msg)
         return primitives.upsert_by_field(self._db, self.FILE_COLLECTION, "path", path, payload)
 
-    def upsert_files_batch(self, payloads: list[dict[str, Any]]) -> list[str]:
+    def _upsert_many_by_field(
+        self,
+        collection: str,
+        field_name: str,
+        payloads: list[dict[str, Any]],
+    ) -> list[str]:
+        if not payloads:
+            return []
+        _validate_field_name(field_name)
+        query = f"""
+        FOR doc IN @docs
+            UPSERT {{ {field_name}: doc.{field_name} }}
+                INSERT doc
+                UPDATE doc
+                IN @@collection
+            RETURN NEW._id
+        """
+        cursor = self._db.aql.execute(
+            query,
+            bind_vars={"@collection": collection, "docs": payloads},
+        )
+        return cast("list[str]", list(cursor))
+
+    def _upsert_files_batch(self, payloads: list[dict[str, Any]]) -> list[str]:
         for payload in payloads:
             path = payload.get("path")
             if not isinstance(path, str) or not path:
                 msg = "File payload must include a non-empty 'path' string"
                 raise ValueError(msg)
-        return primitives.upsert_many_by_field(self._db, self.FILE_COLLECTION, "path", payloads)
+        return self._upsert_many_by_field(self.FILE_COLLECTION, "path", payloads)
 
     def upsert_files_for_library(self, library_id: str, payloads: list[dict[str, Any]]) -> list[str]:
         """Upsert file docs and ensure library→file ownership edges, returning _ids."""
-        file_ids = self.upsert_files_batch(payloads)
+        file_ids = self._upsert_files_batch(payloads)
         edge_docs = [{"_from": library_id, "_to": file_id} for file_id in file_ids]
         if edge_docs:
-            self.upsert_library_file_links_batch(edge_docs)
+            self._upsert_library_file_links_batch(edge_docs)
         return file_ids
 
-    def update_file(self, file_id: str, fields: dict[str, Any]) -> None:
+    def upsert_files_for_library_with_state_init(
+        self,
+        library_id: str,
+        payloads: list[dict[str, Any]],
+        *,
+        file_states: FileStatesAqlOperations,
+    ) -> LibraryFileUpsertResult:
+        """Upsert library files and initialize state edges for newly created rows.
+
+        Args:
+            library_id: Document ID of the owning library.
+            payloads: File payloads to upsert, keyed by file path.
+            file_states: State operations used to bootstrap and transition file states.
+
+        Returns:
+            A mapping containing the upserted file document IDs and the count of
+            files that were newly added by this batch.
+        """
+        if not payloads:
+            return {"file_ids": [], "added": 0}
+        existing_paths = set(
+            self.list_existing_file_paths([str(payload["path"]) for payload in payloads if "path" in payload])
+        )
+        file_ids = self.upsert_files_for_library(library_id, payloads)
+        new_file_ids = [
+            file_id
+            for file_id, payload in zip(file_ids, payloads, strict=True)
+            if payload.get("path") not in existing_paths
+        ]
+        file_states.bootstrap_file_states(new_file_ids)
+        tagged_file_ids = [
+            file_id
+            for file_id, payload in zip(file_ids, payloads, strict=True)
+            if payload.get("last_tagged_at") is not None
+        ]
+        file_states.mark_files_tagged(tagged_file_ids)
+        return {"file_ids": file_ids, "added": len(new_file_ids)}
+
+    def reconcile_library_files(
+        self,
+        library_id: str,
+        payloads: list[dict[str, Any]],
+        *,
+        remove_missing: bool,
+        file_states: FileStatesAqlOperations,
+        streams: MlStreamsAqlOperations,
+        vectors: VectorsAqlOperations,
+    ) -> dict[str, int]:
+        """Reconcile a library's file set against the provided payload batch.
+
+        Args:
+            library_id: Document ID of the library being reconciled.
+            payloads: File payloads that should remain linked to the library after
+                reconciliation.
+            remove_missing: Whether to remove previously linked files that are not
+                present in ``payloads``.
+            file_states: State operations used during file upsert initialization.
+            streams: Stream operations used to clean up derived ML outputs for
+                removed files.
+            vectors: Vector operations used to clean up embeddings for removed
+                files.
+
+        Returns:
+            A count mapping for files added, updated, and removed by the
+            reconciliation.
+        """
+        existing_file_ids = set(self.list_library_file_ids(library_id)) if remove_missing else set()
+        upsert_result = self.upsert_files_for_library_with_state_init(
+            library_id,
+            payloads,
+            file_states=file_states,
+        )
+        removed_file_ids = sorted(existing_file_ids - set(upsert_result["file_ids"]))
+        if removed_file_ids:
+            self.remove_files_with_derived_cleanup(removed_file_ids, streams=streams, vectors=vectors)
+        return {
+            "added": upsert_result["added"],
+            "updated": len(upsert_result["file_ids"]) - upsert_result["added"],
+            "removed": len(removed_file_ids),
+        }
+
+    def remove_files_with_derived_cleanup(
+        self,
+        file_ids: list[str],
+        *,
+        streams: MlStreamsAqlOperations,
+        vectors: VectorsAqlOperations,
+    ) -> None:
+        """Delete files after removing derived streams and vectors for each one.
+
+        Args:
+            file_ids: File document IDs to remove. Duplicate IDs are ignored.
+            streams: Stream operations used to delete output streams for each
+                file.
+            vectors: Vector operations used to delete vectors from every
+                registered vector collection for each file.
+        """
+        unique_file_ids = list(dict.fromkeys(file_ids))
+        if not unique_file_ids:
+            return
+        for file_id in unique_file_ids:
+            streams.delete_output_streams_for_file(file_id)
+        for collection_name in vectors.list_registered_vector_collection_names():
+            for file_id in unique_file_ids:
+                vectors.delete_vectors_for_file(collection_name, file_id)
+        self.remove_files(unique_file_ids)
+
+    def _update_file(self, file_id: str, fields: dict[str, Any]) -> None:
         primitives.update_document_by_key(self._db, self.FILE_COLLECTION, _extract_key(file_id), fields)
 
-    def delete_file(self, file_id: str) -> None:
+    def _delete_file(self, file_id: str) -> None:
         primitives.delete_many_by_keys(self._db, self.FILE_COLLECTION, [_extract_key(file_id)])
 
     def remove_files(self, file_ids: list[str]) -> None:
@@ -166,12 +315,11 @@ class LibraryFilesAqlOperations:
         )
 
         # ── Orphaned tag documents ────────────────────────────────────────────
-        # Tags that are no longer referenced by any song or model-output edge.
+        # Tags that are no longer referenced by any song_has_tags edge.
         self._db.aql.execute(
             """
             FOR tag IN tags
                 FILTER LENGTH(FOR e IN song_has_tags FILTER e._to == tag._id LIMIT 1 RETURN 1) == 0
-                FILTER LENGTH(FOR e IN tag_model_output FILTER e._from == tag._id LIMIT 1 RETURN 1) == 0
                 REMOVE tag IN tags
             """
         )
@@ -445,14 +593,14 @@ class LibraryFilesAqlOperations:
         )
         return list(cursor)
 
-    def delete_files_for_library(self, library_id: str) -> int:
+    def _delete_files_for_library(self, library_id: str) -> int:
         file_ids = self.list_library_file_ids(library_id, limit=None)
         if not file_ids:
             return 0
         keys = [_extract_key(file_id) for file_id in file_ids]
         return primitives.delete_many_by_keys(self._db, self.FILE_COLLECTION, keys)
 
-    def delete_all_file_links_for_library(self, library_id: str) -> None:
+    def _delete_all_file_links_for_library(self, library_id: str) -> None:
         self._db.aql.execute(
             """
             FOR edge IN @@collection
@@ -473,45 +621,6 @@ class LibraryFilesAqlOperations:
             vertex_filters={"name": tag_key, "value": target_value},
         )
 
-    def get_artist_album_frequencies(self, limit: int) -> dict[str, list[tuple[str, int]]]:
-        bind_vars = {"@collection": self.FILE_COLLECTION, "limit": limit}
-        artist_rows = primitives.execute(
-            self._db,
-            """
-            FOR file IN @@collection
-                FILTER file.artist != null
-                COLLECT value = file.artist WITH COUNT INTO count
-                SORT count DESC, value
-                LIMIT @limit
-                RETURN { value: value, count: count }
-            """,
-            bind_vars,
-        )
-        album_rows = primitives.execute(
-            self._db,
-            """
-            FOR file IN @@collection
-                FILTER file.album != null
-                COLLECT value = file.album WITH COUNT INTO count
-                SORT count DESC, value
-                LIMIT @limit
-                RETURN { value: value, count: count }
-            """,
-            bind_vars,
-        )
-        return {
-            "artist_rows": [
-                (value, row["count"])
-                for row in artist_rows
-                if isinstance((value := row.get("value")), str) and isinstance(row.get("count"), int)
-            ],
-            "album_rows": [
-                (value, row["count"])
-                for row in album_rows
-                if isinstance((value := row.get("value")), str) and isinstance(row.get("count"), int)
-            ],
-        }
-
     def get_tracks_for_matching(self, library_id: str, *, limit: int | None) -> list[Document]:
         bind_vars: dict[str, Any] = {
             "@edge_collection": self.LIBRARY_FILE_EDGE_COLLECTION,
@@ -531,7 +640,7 @@ class LibraryFilesAqlOperations:
         query_lines.append("    RETURN file")
         return primitives.execute(self._db, "\n".join(query_lines), bind_vars)
 
-    def link_file_to_library(self, library_id: str, file_id: str) -> None:
+    def _link_file_to_library(self, library_id: str, file_id: str) -> None:
         self._db.aql.execute(
             """
             UPSERT { _from: @library_id, _to: @file_id }
@@ -546,16 +655,16 @@ class LibraryFilesAqlOperations:
             },
         )
 
-    def upsert_file_links_batch(self, links: list[dict[str, Any]]) -> None:
+    def _upsert_file_links_batch(self, links: list[dict[str, Any]]) -> None:
         for link in links:
-            self.link_file_to_library(
+            self._link_file_to_library(
                 str(link["library_id"]),
                 str(link["file_id"]),
             )
 
-    def upsert_library_file_links_batch(self, links: list[dict[str, Any]]) -> None:
+    def _upsert_library_file_links_batch(self, links: list[dict[str, Any]]) -> None:
         for link in links:
-            self.link_file_to_library(
+            self._link_file_to_library(
                 str(link["_from"]),
                 str(link["_to"]),
             )
@@ -563,7 +672,21 @@ class LibraryFilesAqlOperations:
     def add_folder(self, payload: dict[str, Any]) -> str:
         return primitives.insert_document(self._db, self.FOLDER_COLLECTION, payload)
 
-    def link_folder_to_library(self, library_id: str, folder_id: str) -> None:
+    def add_library_folder(self, library_id: str, payload: dict[str, Any]) -> str:
+        """Create a folder document and link it to a library.
+
+        Args:
+            library_id: Document ID of the library that should own the folder.
+            payload: Folder fields to store in the new document.
+
+        Returns:
+            The document ID of the created folder.
+        """
+        folder_id = self.add_folder(payload)
+        self._link_folder_to_library(library_id, folder_id)
+        return folder_id
+
+    def _link_folder_to_library(self, library_id: str, folder_id: str) -> None:
         self._db.aql.execute(
             """
             UPSERT { _from: @library_id, _to: @folder_id }
@@ -599,10 +722,10 @@ class LibraryFilesAqlOperations:
             },
         )
 
-    def delete_folder(self, folder_id: str) -> None:
+    def _delete_folder(self, folder_id: str) -> None:
         primitives.delete_many_by_keys(self._db, self.FOLDER_COLLECTION, [_extract_key(folder_id)])
 
-    def delete_folder_link(self, library_id: str, folder_id: str) -> None:
+    def _delete_folder_link(self, library_id: str, folder_id: str) -> None:
         self._db.aql.execute(
             """
             FOR edge IN @@collection
@@ -617,21 +740,45 @@ class LibraryFilesAqlOperations:
             },
         )
 
-    def delete_folders_for_library(self, library_key: str) -> int:
-        folder_docs = primitives.get_many_by_field(
+    def remove_library_folder(self, library_id: str, folder_id: str) -> None:
+        """Remove a library's folder link and then delete the folder document.
+
+        Args:
+            library_id: Document ID of the library linked to the folder.
+            folder_id: Document ID of the folder to unlink and delete.
+        """
+        self._delete_folder_link(library_id, folder_id)
+        self._delete_folder(folder_id)
+
+    def replace_library_folders(self, library_id: str, payloads: list[dict[str, Any]]) -> None:
+        """Replace all folders linked to a library with the provided set.
+
+        Args:
+            library_id: Document ID of the library whose folders should be
+                replaced.
+            payloads: Folder payloads to insert after existing folders are
+                removed.
+        """
+        existing_folder_ids = [
+            str(folder_id)
+            for folder in self.list_folders_for_library(library_id)
+            if isinstance(folder, dict) and (folder_id := folder.get("_id")) is not None
+        ]
+        for folder_id in existing_folder_ids:
+            self.remove_library_folder(library_id, folder_id)
+        for payload in payloads:
+            self.add_library_folder(library_id, payload)
+
+    def _delete_folders_for_library(self, library_key: str) -> int:
+        return primitives.delete_many_by_field(
             self._db,
             self.FOLDER_COLLECTION,
             "library_key",
             library_key,
-            limit=None,
             allowed_fields=self.ALLOWED_FOLDER_FIELDS,
         )
-        keys = [doc["_key"] for doc in folder_docs if isinstance(doc.get("_key"), str)]
-        if not keys:
-            return 0
-        return primitives.delete_many_by_keys(self._db, self.FOLDER_COLLECTION, keys)
 
-    def delete_all_folder_links_for_library(self, library_id: str) -> None:
+    def _delete_all_folder_links_for_library(self, library_id: str) -> None:
         self._db.aql.execute(
             """
             FOR edge IN @@collection

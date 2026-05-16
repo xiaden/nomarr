@@ -44,7 +44,6 @@ class TestClaimFilesForReconciliation:
         mock_db = MagicMock()
         candidate = {"_id": "library_files/abc", "_key": "abc"}
         mock_db.library.get_file.return_value = candidate
-        mock_db.app.steal_claim.return_value = True
 
         with (
             patch(
@@ -55,12 +54,16 @@ class TestClaimFilesForReconciliation:
                 "nomarr.components.library.reconciliation_comp.now_ms",
                 return_value=Milliseconds(10_000),
             ),
+            patch(
+                "nomarr.components.library.reconciliation_comp.try_insert_or_steal_claim",
+                return_value=True,
+            ) as mock_try_claim,
         ):
             result = claim_files_for_reconciliation(mock_db, "libraries/test", "workers/test")
 
         assert result == [candidate]
         mock_db.library.get_file.assert_called_once_with("library_files/abc")
-        claim_payload, claim_now, claim_lease_ms = mock_db.app.steal_claim.call_args.args
+        claim_payload, claim_now, claim_lease_ms = mock_try_claim.call_args.args[1:]
         assert claim_payload["_key"] == "claim_reconcile_abc"
         assert claim_payload["file_id"] == "library_files/abc"
         assert claim_payload["worker_id"] == "workers/test"
@@ -76,7 +79,6 @@ class TestClaimFilesForReconciliation:
         stale_ids = [f"library_files/{index}" for index in range(5)]
         candidates = [{"_id": stale_id, "_key": str(index)} for index, stale_id in enumerate(stale_ids)]
         mock_db.library.get_file.side_effect = candidates
-        mock_db.app.steal_claim.return_value = True
 
         with (
             patch(
@@ -87,6 +89,10 @@ class TestClaimFilesForReconciliation:
                 "nomarr.components.library.reconciliation_comp.now_ms",
                 return_value=Milliseconds(20_000),
             ),
+            patch(
+                "nomarr.components.library.reconciliation_comp.try_insert_or_steal_claim",
+                return_value=True,
+            ) as mock_try_claim,
         ):
             result = claim_files_for_reconciliation(
                 mock_db,
@@ -97,9 +103,9 @@ class TestClaimFilesForReconciliation:
 
         assert result == candidates[:2]
         assert mock_db.library.get_file.call_count == len(stale_ids)
-        assert mock_db.app.steal_claim.call_count == 2
-        first_payload, first_now, first_lease_ms = mock_db.app.steal_claim.call_args_list[0].args
-        second_payload, second_now, second_lease_ms = mock_db.app.steal_claim.call_args_list[1].args
+        assert mock_try_claim.call_count == 2
+        first_payload, first_now, first_lease_ms = mock_try_claim.call_args_list[0].args[1:]
+        second_payload, second_now, second_lease_ms = mock_try_claim.call_args_list[1].args[1:]
         assert first_payload["_key"] == "claim_reconcile_0"
         assert second_payload["_key"] == "claim_reconcile_1"
         assert first_now == second_now == 20_000
@@ -111,7 +117,6 @@ class TestClaimFilesForReconciliation:
         mock_db = MagicMock()
         candidate = {"_id": "library_files/abc", "_key": "abc"}
         mock_db.library.get_file.return_value = candidate
-        mock_db.app.steal_claim.return_value = False
 
         with (
             patch(
@@ -122,6 +127,10 @@ class TestClaimFilesForReconciliation:
                 "nomarr.components.library.reconciliation_comp.now_ms",
                 return_value=Milliseconds(60_000),
             ),
+            patch(
+                "nomarr.components.library.reconciliation_comp.try_insert_or_steal_claim",
+                return_value=False,
+            ) as mock_try_claim,
         ):
             result = claim_files_for_reconciliation(
                 mock_db,
@@ -132,7 +141,8 @@ class TestClaimFilesForReconciliation:
 
         assert result == []
         mock_db.library.get_file.assert_called_once_with("library_files/abc")
-        mock_db.app.steal_claim.assert_called_once_with(
+        mock_try_claim.assert_called_once_with(
+            mock_db,
             {
                 "_key": "claim_reconcile_abc",
                 "file_id": "library_files/abc",
@@ -150,7 +160,6 @@ class TestClaimFilesForReconciliation:
         mock_db = MagicMock()
         candidate = {"_id": "library_files/abc", "_key": "abc"}
         mock_db.library.get_file.return_value = candidate
-        mock_db.app.steal_claim.return_value = True
 
         with (
             patch(
@@ -161,6 +170,10 @@ class TestClaimFilesForReconciliation:
                 "nomarr.components.library.reconciliation_comp.now_ms",
                 return_value=Milliseconds(120_000),
             ),
+            patch(
+                "nomarr.components.library.reconciliation_comp.try_insert_or_steal_claim",
+                return_value=True,
+            ) as mock_try_claim,
         ):
             result = claim_files_for_reconciliation(
                 mock_db,
@@ -171,7 +184,8 @@ class TestClaimFilesForReconciliation:
 
         assert result == [candidate]
         mock_db.library.get_file.assert_called_once_with("library_files/abc")
-        mock_db.app.steal_claim.assert_called_once_with(
+        mock_try_claim.assert_called_once_with(
+            mock_db,
             {
                 "_key": "claim_reconcile_abc",
                 "file_id": "library_files/abc",

@@ -227,10 +227,19 @@ class TestGetTagEdgeRows:
             ],
             [],
         ]
-        mock_db.library.get_song_tag_edges_for_tags.return_value = [
-            {"_from": "library_files/1", "_to": "tags/1"},
-            {"_from": "library_files/2", "_to": "tags/2"},
-        ]
+
+        def search_files_by_tag_side_effect(
+            _name: str,
+            tag_value: str,
+            **kwargs: object,
+        ) -> list[dict[str, str]]:
+            assert kwargs == {"limit": None}
+            return {
+                "happy": [{"_id": "library_files/1"}],
+                "calm": [{"_id": "library_files/2"}],
+            }[tag_value]
+
+        mock_db.library.search_files_by_tag.side_effect = search_files_by_tag_side_effect
 
         result = _get_tag_edge_rows(mock_db, "nom:mood-strict")
 
@@ -238,4 +247,6 @@ class TestGetTagEdgeRows:
             ("library_files/1", "happy"),
             ("library_files/2", "calm"),
         ]
-        mock_db.library.get_song_tag_edges_for_tags.assert_called_once_with(["tags/1", "tags/2"])
+        mock_db.library.search_files_by_tag.assert_any_call("nom:mood-strict", "happy", limit=None)
+        mock_db.library.search_files_by_tag.assert_any_call("nom:mood-strict", "calm", limit=None)
+        assert mock_db.library.search_files_by_tag.call_count == 2

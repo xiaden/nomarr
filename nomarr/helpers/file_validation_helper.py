@@ -77,7 +77,7 @@ def check_already_tagged(path: str, namespace: str, version_tag_key: str, curren
                     return str(values.text[0]) == current_version
         return False
     except Exception as e:
-        logger.debug(f"[validation] Could not check version tag for {path}: {e}")
+        logger.warning(f"[validation] Could not check version tag for {path}: {e}", exc_info=True)
         return False
 
 

@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
 
 import pytest
-from arango.exceptions import DocumentInsertError
 
 from nomarr.components.workers.worker_discovery_comp import (
     claim_file,
@@ -14,6 +13,7 @@ from nomarr.components.workers.worker_discovery_comp import (
     discover_next_file,
     release_claims_for_worker,
 )
+from nomarr.persistence.exceptions import DuplicateKeyError
 
 
 class TestDiscoverNextFile:
@@ -49,17 +49,17 @@ class TestClaimFile:
     """Tests for claim_file."""
 
     @staticmethod
-    def _duplicate_claim_error() -> DocumentInsertError:
-        """Build a minimal duplicate-insert error for the claim path."""
-        return DocumentInsertError(MagicMock(), MagicMock())
+    def _duplicate_claim_error() -> DuplicateKeyError:
+        """Build a duplicate key error for the claim path."""
+        return DuplicateKeyError()
 
     @pytest.mark.unit
     def test_returns_true_on_success(self) -> None:
         mock_db = MagicMock()
         result = claim_file(mock_db, "library_files/abc", "worker:tag:0")
         assert result is True
-        mock_db.app.claim_file.assert_called_once()
-        inserted = mock_db.app.claim_file.call_args.args[2]
+        mock_db.app.add_claim.assert_called_once()
+        inserted = mock_db.app.add_claim.call_args.args[0]
         assert inserted["_key"] == "claim_abc"
         assert inserted["file_id"] == "library_files/abc"
         assert inserted["worker_id"] == "worker:tag:0"
@@ -67,18 +67,20 @@ class TestClaimFile:
     @pytest.mark.unit
     def test_returns_false_when_duplicate_insert_raises(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.claim_file.side_effect = self._duplicate_claim_error()
+        mock_db.app.add_claim.side_effect = self._duplicate_claim_error()
 
         result = claim_file(mock_db, "library_files/abc", "worker:tag:0")
 
         assert result is False
+        mock_db.app.add_claim.assert_called_once()
 
     @pytest.mark.unit
     def test_returns_false_when_already_claimed(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.claim_file.side_effect = self._duplicate_claim_error()
+        mock_db.app.add_claim.side_effect = self._duplicate_claim_error()
         result = claim_file(mock_db, "library_files/abc", "worker:tag:1")
         assert result is False
+        mock_db.app.add_claim.assert_called_once()
 
 
 class TestCleanupStaleClaims:
@@ -101,15 +103,14 @@ class TestCleanupStaleClaims:
         mock_db.app.list_worker_health.return_value = [
             {"component_id": "worker:active", "last_heartbeat": 9001},
         ]
-        mock_db.library.get_files_by_ids.return_value = [
+        mock_db.library.list_files_by_ids.return_value = [
             {"_id": "library_files/file3"},
         ]
-        mock_db.app.get_state_edges_for_files.return_value = [
-            {"_from": "library_files/file2", "_to": "file_states/not_tagged"},
-            {"_from": "library_files/file3", "_to": "file_states/tagged"},
+        mock_db.app.list_file_docs_in_state.return_value = [
+            {"_id": "library_files/file3"},
+            {"_id": "library_files/unrelated"},
         ]
-        mock_db.app.delete_claims_for_workers.return_value = 1
-        mock_db.app.delete_claims_for_files.return_value = 2
+        mock_db.app.remove_claims.side_effect = [1, 2]
 
         with patch(
             "nomarr.components.workers.worker_discovery_comp.now_ms",
@@ -120,11 +121,11 @@ class TestCleanupStaleClaims:
         assert result == 3
         mock_db.app.list_claims.assert_called_once_with()
         mock_db.app.list_worker_health.assert_called_once_with()
-        mock_db.library.get_files_by_ids.assert_called_once_with(["library_files/file2", "library_files/file3"])
-        mock_db.app.get_state_edges_for_files.assert_called_once_with(["library_files/file2", "library_files/file3"])
-        assert mock_db.app.delete_claims_for_workers.call_args_list == [call(["worker:stale"])]
-        assert mock_db.app.delete_claims_for_files.call_args_list == [
-            call(["library_files/file2", "library_files/file3"])
+        mock_db.library.list_files_by_ids.assert_called_once_with(["library_files/file2", "library_files/file3"])
+        mock_db.app.list_file_docs_in_state.assert_called_once_with("file_states/tagged")
+        assert mock_db.app.remove_claims.call_args_list == [
+            call(worker_ids=["worker:stale"]),
+            call(file_ids=["library_files/file2", "library_files/file3"]),
         ]
 
     @pytest.mark.unit
@@ -137,10 +138,9 @@ class TestCleanupStaleClaims:
         assert result == 0
         mock_db.app.list_claims.assert_called_once_with()
         mock_db.app.list_worker_health.assert_not_called()
-        mock_db.library.get_files_by_ids.assert_not_called()
-        mock_db.app.get_state_edges_for_files.assert_not_called()
-        mock_db.app.delete_claims_for_workers.assert_not_called()
-        mock_db.app.delete_claims_for_files.assert_not_called()
+        mock_db.library.list_files_by_ids.assert_not_called()
+        mock_db.app.list_file_docs_in_state.assert_not_called()
+        mock_db.app.remove_claims.assert_not_called()
 
 
 class TestReleaseClaimsForWorker:
@@ -158,7 +158,7 @@ class TestReleaseClaimsForWorker:
 
         assert result == ["library_files/file1", "library_files/file2"]
         mock_db.app.list_claims.assert_called_once_with()
-        mock_db.app.delete_claims_for_workers.assert_called_once_with(["worker:tag:0"])
+        mock_db.app.remove_claims.assert_called_once_with(worker_ids=["worker:tag:0"])
 
     @pytest.mark.unit
     def test_returns_empty_list_without_claims(self) -> None:
@@ -169,4 +169,4 @@ class TestReleaseClaimsForWorker:
 
         assert result == []
         mock_db.app.list_claims.assert_called_once_with()
-        mock_db.app.delete_claims_for_workers.assert_not_called()
+        mock_db.app.remove_claims.assert_not_called()

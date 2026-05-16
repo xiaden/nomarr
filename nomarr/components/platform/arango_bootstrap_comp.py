@@ -49,7 +49,7 @@ def ensure_schema_from_database(db: Database, *, models_dir: str | None = None) 
 
 def register_template_collection(db: Database, collection_name: str, template_name: str) -> None:
     """Register an existing dynamic collection against its template family."""
-    db.ml.register_vector_collection(collection_name, template_name)
+    db.ml.add_vector_collection(collection_name, template_name)
 
 
 def wait_for_arango(hosts: str, max_attempts: int = 30, delay_s: float = 2.0) -> bool:
@@ -156,7 +156,6 @@ def _create_collections(db: SafeDatabase) -> None:
     # Edge collections
     edge_collections = [
         "song_has_tags",  # song→tag relationships (unified)
-        "tag_model_output",  # tag→ml_model_output edges
         "file_has_state",  # library_files→file_states state edges
         "file_has_output_stream",  # library_files→ml_output_streams canonical stream links
         "output_has_stream",  # ml_model_outputs→ml_output_streams canonical stream links
@@ -344,11 +343,6 @@ def _create_indexes(db: SafeDatabase) -> None:
     _ensure_index(db, "ml_models", "persistent", ["path"], unique=True)
     _ensure_index(db, "ml_model_outputs", "persistent", ["model_id", "output_index"], unique=True)
 
-    # tag_model_output: tag→ml_model_output edges (bidirectional traversal)
-    _ensure_index(db, "tag_model_output", "persistent", ["_from"])
-    _ensure_index(db, "tag_model_output", "persistent", ["_to"])
-    _ensure_index(db, "tag_model_output", "persistent", ["_from", "_to"], unique=True)
-
     # canonical stream graph indexes
     _ensure_index(db, "file_has_output_stream", "persistent", ["_from"])
     _ensure_index(db, "file_has_output_stream", "persistent", ["_to"])
@@ -465,7 +459,9 @@ def _discover_backbone_ids(models_dir: str) -> list[str]:
         logger.debug("[bootstrap] Discovered backbones for vectors_track: %s", backbones)
         return backbones
     except Exception:
-        logger.warning("[bootstrap] Could not discover backbones from %s — skipping vectors_track", models_dir)
+        logger.warning(
+            "[bootstrap] Could not discover backbones from %s — skipping vectors_track", models_dir, exc_info=True
+        )
         return []
 
 
@@ -488,6 +484,7 @@ def provision_vectors_track_for_library(db: SafeDatabase, models_dir: str, libra
         logger.warning(
             "[bootstrap] Could not discover backbones from %s — skipping vectors_track provisioning",
             models_dir,
+            exc_info=True,
         )
         return
 

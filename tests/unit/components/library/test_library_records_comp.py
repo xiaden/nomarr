@@ -299,7 +299,7 @@ class TestFindMlCompleteLibraries:
     @pytest.mark.unit
     def test_returns_empty_list_when_no_state_docs(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.list_libraries_in_pipeline_state.return_value = []
+        mock_db.library.list_libraries.return_value = []
 
         with (
             patch(
@@ -311,14 +311,16 @@ class TestFindMlCompleteLibraries:
             result = find_ml_complete_libraries(mock_db, min_files=10)
 
         assert result == []
-        mock_db.app.list_libraries_in_pipeline_state.assert_called_once_with(PIPELINE_ML_RUNNING)
+        mock_db.library.list_libraries.assert_called_once_with()
+        mock_db.app.get_pipeline_state.assert_not_called()
         mock_get_library_counts.assert_called_once_with(mock_db)
         mock_count_untagged_files.assert_not_called()
 
     @pytest.mark.unit
     def test_excludes_library_with_untagged_files(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.list_libraries_in_pipeline_state.return_value = [{"library_key": "42"}]
+        mock_db.library.list_libraries.return_value = [{"_key": "42"}]
+        mock_db.app.get_pipeline_state.return_value = PIPELINE_ML_RUNNING
 
         with (
             patch(
@@ -338,7 +340,8 @@ class TestFindMlCompleteLibraries:
     @pytest.mark.unit
     def test_includes_fully_tagged_library(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.list_libraries_in_pipeline_state.return_value = [{"library_key": "42"}]
+        mock_db.library.list_libraries.return_value = [{"_key": "42"}]
+        mock_db.app.get_pipeline_state.return_value = PIPELINE_ML_RUNNING
 
         with (
             patch(
@@ -358,9 +361,13 @@ class TestFindMlCompleteLibraries:
     @pytest.mark.unit
     def test_returns_only_fully_tagged_libraries_when_state_docs_are_mixed(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.list_libraries_in_pipeline_state.return_value = [
-            {"library_key": "7"},
-            {"library_key": "42"},
+        mock_db.library.list_libraries.return_value = [
+            {"_key": "7"},
+            {"_key": "42"},
+        ]
+        mock_db.app.get_pipeline_state.side_effect = [
+            PIPELINE_ML_RUNNING,
+            PIPELINE_ML_RUNNING,
         ]
 
         with (

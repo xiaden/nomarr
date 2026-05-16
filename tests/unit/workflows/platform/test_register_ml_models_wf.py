@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
 
@@ -30,7 +31,7 @@ class TestRegisterMlModelsWorkflow:
 
     def test_preserves_existing_known_labels_and_only_seeds_missing_outputs(
         self,
-        tmp_path: pytest.TempPathFactory,
+        tmp_path: Path,
     ) -> None:
         """Known-model reseeding must not overwrite already labeled outputs on restart."""
 
@@ -95,6 +96,7 @@ class TestRegisterMlModelsWorkflow:
 
         mock_update_label.assert_called_once_with(
             db,
+            model_id=model_id,
             output_id="ml_model_outputs/output-1",
             label="sad",
         )
@@ -104,7 +106,7 @@ class TestRegisterMlModelsWorkflow:
 
     def test_seeds_all_known_outputs_when_model_is_new(
         self,
-        tmp_path: pytest.TempPathFactory,
+        tmp_path: Path,
     ) -> None:
         """New known models should still receive all default labels."""
 
@@ -168,6 +170,6 @@ class TestRegisterMlModelsWorkflow:
             register_ml_models_workflow(db, str(tmp_path))
 
         assert mock_update_label.call_args_list == [
-            call(db, output_id="ml_model_outputs/output-0", label="happy"),
-            call(db, output_id="ml_model_outputs/output-1", label="sad"),
+            call(db, model_id=model_id, output_id="ml_model_outputs/output-0", label="happy"),
+            call(db, model_id=model_id, output_id="ml_model_outputs/output-1", label="sad"),
         ]

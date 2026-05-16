@@ -79,7 +79,7 @@ def _sync_tags_and_entities(
         rebuild_song_metadata_cache(db, file_id)
         logger.debug(f"[sync_file_to_library] Seeded entities for {file_path}")
     except Exception as entity_error:
-        logger.warning(f"[sync_file_to_library] Failed to seed entities: {entity_error}")
+        logger.warning(f"[sync_file_to_library] Failed to seed entities: {entity_error}", exc_info=True)
 
     chromaprint = metadata.get("chromaprint")
     if chromaprint:
@@ -177,4 +177,4 @@ def sync_file_to_library(
         _sync_tags_and_entities(db, resolved_file_id, file_path, metadata, namespace, tagged_version)
 
     except Exception as e:
-        logger.warning(f"[sync_file_to_library] Failed to sync {file_path}: {e}")
+        logger.warning(f"[sync_file_to_library] Failed to sync {file_path}: {e}", exc_info=True)

@@ -195,7 +195,7 @@ def compute_artist_tag_profile(params: ComputeArtistTagProfileParams) -> ArtistT
                         numeric_value = float(tag_value)
                         tag_values[tag_name].append(numeric_value)
                     except (ValueError, TypeError):
-                        pass
+                        pass  # Tag value is non-numeric (e.g. a string label); skip for numeric aggregation
         except json.JSONDecodeError as e:
             logger.debug(
                 "[analytics] Skipping malformed artist tag JSON for %r: %s (value=%r)", tag_name, e, tag_value[:80]

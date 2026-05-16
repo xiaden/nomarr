@@ -133,7 +133,7 @@ class LibraryPipelineService:
 
     def trigger_calibration(self) -> None:
         """Start calibration or shortcut directly to calibration apply."""
-        calibration_exists = self.db.app.count_calibration_states() > 0
+        calibration_exists = len(self.db.ml.list_calibration_states()) > 0
         calibrating_count = bulk_transition_pipeline_state(
             self.db,
             PIPELINE_AWAITING_CALIBRATION,

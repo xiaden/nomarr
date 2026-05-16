@@ -1,0 +1,12 @@
+# Generated/ephemeral data — not committed to source control.
+
+# Dev ArangoDB data (delete to reset the database)
+arangodb-data/
+
+# Dev config directory (config.yaml is committed; generated files are not)
+config/db/
+config/nomarr.yaml
+
+# Audio test files added by developers
+test-media/*
+!test-media/.gitkeep

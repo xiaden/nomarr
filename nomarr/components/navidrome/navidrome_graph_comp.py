@@ -32,7 +32,7 @@ def _is_dict_list(value: object) -> bool:
 
 def upsert_navidrome_track(db: Database, nd_id: str) -> None:
     """Ensure one Navidrome track vertex exists."""
-    db.app.upsert_nd_track({"_key": nd_id})
+    db.app.legacy_navidrome.upsert_nd_track({"_key": nd_id})
 
 
 def bulk_upsert_navidrome_tracks(db: Database, nd_ids: list[str]) -> int:
@@ -40,7 +40,7 @@ def bulk_upsert_navidrome_tracks(db: Database, nd_ids: list[str]) -> int:
     if not nd_ids:
         return 0
 
-    return db.app.bulk_upsert_nd_tracks(nd_ids)
+    return db.app.legacy_navidrome.bulk_upsert_nd_tracks(nd_ids)
 
 
 def ensure_navidrome_file_link(db: Database, nd_id: str, file_id: str) -> None:
@@ -53,12 +53,12 @@ def bulk_ensure_navidrome_file_links(db: Database, mappings: list[dict[str, str]
     if not mappings:
         return 0
 
-    return db.app.bulk_ensure_nd_file_links(mappings)
+    return db.app.legacy_navidrome.bulk_ensure_nd_file_links(mappings)
 
 
 def list_navidrome_track_keys(db: Database) -> list[str]:
     """Return all Navidrome track `_key` values."""
-    return [str(key) for key in db.app.list_nd_track_keys()]
+    return [str(key) for key in db.app.legacy_navidrome.list_nd_track_keys()]
 
 
 def delete_navidrome_tracks_cascade(db: Database, nd_ids: list[str]) -> int:
@@ -75,17 +75,17 @@ def delete_navidrome_tracks_cascade(db: Database, nd_ids: list[str]) -> int:
     if not nd_ids:
         return 0
 
-    return db.app.delete_nd_tracks_cascade(nd_ids)
+    return db.app.legacy_navidrome.delete_nd_tracks_cascade(nd_ids)
 
 
 def resolve_navidrome_track_to_file(db: Database, nd_id: str) -> str | None:
     """Resolve one Navidrome track id to a library file `_id`."""
-    return db.app.resolve_nd_track_to_file(nd_id)
+    return db.app.legacy_navidrome.resolve_nd_track_to_file(nd_id)
 
 
 def resolve_file_to_navidrome_track(db: Database, file_id: str) -> str | None:
     """Resolve one library file `_id` to its Navidrome track key."""
-    return db.app.resolve_file_to_nd_track(file_id)
+    return db.app.legacy_navidrome.resolve_file_to_nd_track(file_id)
 
 
 def bulk_resolve_navidrome_tracks_to_files(db: Database, nd_ids: list[str]) -> dict[str, str]:
@@ -93,7 +93,10 @@ def bulk_resolve_navidrome_tracks_to_files(db: Database, nd_ids: list[str]) -> d
     if not nd_ids:
         return {}
 
-    return {str(nd_id): str(file_id) for nd_id, file_id in db.app.bulk_resolve_nd_tracks_to_files(nd_ids).items()}
+    return {
+        str(nd_id): str(file_id)
+        for nd_id, file_id in db.app.legacy_navidrome.bulk_resolve_nd_tracks_to_files(nd_ids).items()
+    }
 
 
 def bulk_resolve_files_to_navidrome_ids(db: Database, file_ids: list[str]) -> dict[str, str]:
@@ -101,7 +104,10 @@ def bulk_resolve_files_to_navidrome_ids(db: Database, file_ids: list[str]) -> di
     if not file_ids:
         return {}
 
-    return {str(file_id): str(nd_id) for file_id, nd_id in db.app.bulk_resolve_files_to_nd_ids(file_ids).items()}
+    return {
+        str(file_id): str(nd_id)
+        for file_id, nd_id in db.app.legacy_navidrome.bulk_resolve_files_to_nd_ids(file_ids).items()
+    }
 
 
 def upsert_navidrome_play(
@@ -115,17 +121,17 @@ def upsert_navidrome_play(
     if playcount < 0:
         return
 
-    db.app.upsert_nd_playcount(user_id, nd_id, playcount, last_played)
+    db.app.legacy_navidrome.upsert_nd_playcount(user_id, nd_id, playcount, last_played)
 
 
 def increment_navidrome_play(db: Database, user_id: str, nd_id: str, timestamp_ms: int) -> None:
     """Move one track to the next playcount bucket for the user."""
-    db.app.increment_nd_play(user_id, nd_id, timestamp_ms)
+    db.app.legacy_navidrome.increment_nd_play(user_id, nd_id, timestamp_ms)
 
 
 def bulk_upsert_navidrome_plays(db: Database, user_id: str, plays: list[dict[str, Any]]) -> int:
     """Replace the user's existing bucketed play graph with the provided payload."""
-    return db.app.bulk_upsert_nd_plays(user_id, plays)
+    return db.app.legacy_navidrome.bulk_upsert_nd_plays(user_id, plays)
 
 
 def _coerce_top_play_rows(rows: list[dict[str, Any]]) -> list[TrackPlayData]:
@@ -145,4 +151,4 @@ def get_top_navidrome_plays(db: Database, user_id: str, top_n: int) -> list[Trac
     if top_n <= 0:
         return []
 
-    return _coerce_top_play_rows(db.app.get_top_nd_plays(user_id, top_n))
+    return _coerce_top_play_rows(db.app.legacy_navidrome.get_top_nd_plays(user_id, top_n))

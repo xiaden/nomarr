@@ -1,0 +1,11 @@
+# Drop audio files here to create a scannable library in the dev container
+
+# This directory is mounted as /media inside the nomarr-dev container
+
+# Add subdirectories (e.g. test-media/Artist/Album/) — Nomarr expects a
+
+# library with folder structure
+
+#
+
+# This .gitkeep is committed; the audio files you add are not

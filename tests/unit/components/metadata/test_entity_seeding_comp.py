@@ -37,10 +37,7 @@ class TestSeedEntitiesForScanBatch:
             "track_number": 7,
         }
 
-        with (
-            patch(f"{MODULE}.set_song_tags_batch") as mock_set_song_tags_batch,
-            patch(f"{MODULE}.update_metadata_cache_batch") as mock_update_metadata_cache_batch,
-        ):
+        with patch(f"{MODULE}.set_song_tags_batch") as mock_set_song_tags_batch:
             result = seed_entities_for_scan_batch(
                 mock_db,
                 ["library_files/1"],
@@ -63,18 +60,3 @@ class TestSeedEntitiesForScanBatch:
         assert persisted_map["artist"] == ["Canonical Artist"]
         assert persisted_map["artists"] == ["Canonical Artist", "Guest Artist"]
         assert persisted_map["album"] == ["Selected Ambient Works"]
-
-        mock_update_metadata_cache_batch.assert_called_once_with(
-            mock_db,
-            [
-                {
-                    "song_id": "library_files/1",
-                    "artist": "Canonical Artist",
-                    "artists": ["Canonical Artist", "Guest Artist"],
-                    "album": "Selected Ambient Works",
-                    "labels": None,
-                    "genres": ["Ambient", "Drone"],
-                    "year": 1994,
-                }
-            ],
-        )

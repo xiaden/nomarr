@@ -134,6 +134,17 @@ class VectorsAqlOperations:
         )
 
     def delete_vectors_for_file(self, collection_name: str, file_id: str) -> None:
+        """Delete vector documents and their edges for a file.
+
+        Removes vector documents from ``collection_name`` whose ``file_id`` matches,
+        then removes the corresponding ``file_has_vectors`` edges in a single AQL pass.
+
+        Args:
+            collection_name: Name of the vector collection to delete from.
+            file_id: File document ID or ``_key``.
+        """
+        # Part C keeps this handwritten because vector-document deletion must stay
+        # paired with vector-edge cleanup, which is vector-lifecycle logic, not Tier 1.
         self._db.aql.execute(
             """
             LET vector_ids = (
@@ -216,3 +227,127 @@ class VectorsAqlOperations:
             """,
             bind_vars={"@collection": collection_name},
         )
+
+    # ------------------------------------------------------------------ #
+    # High-level embedding index operations                                #
+    # These are the only methods callers need to make vectors searchable.  #
+    # The hot/cold split is an implementation detail of this layer.        #
+    # ------------------------------------------------------------------ #
+
+    def _hot_name(self, backbone_id: str, library_key: str) -> str:
+        return f"vectors_track_hot__{backbone_id}__{library_key}"
+
+    def _cold_name(self, backbone_id: str, library_key: str) -> str:
+        return f"vectors_track_cold__{backbone_id}__{library_key}"
+
+    def _drop_cold_index(self, cold_name: str) -> None:
+        if not self._db.has_collection(cold_name):
+            return
+        cold_col = cast("Any", self._db.collection(cold_name))
+        for idx in cast("list[dict[str, Any]]", cold_col.indexes()):
+            if idx.get("type") == "vector" and idx.get("id"):
+                cold_col.delete_index(idx["id"])
+
+    def _build_cold_index(self, cold_name: str, embed_dim: int, nlists: int) -> None:
+        if not self._db.has_collection(cold_name):
+            msg = f"Cold collection '{cold_name}' does not exist"
+            raise ValueError(msg)
+        cold_col = cast("Any", self._db.collection(cold_name))
+        cold_col.add_index(
+            {
+                "type": "vector",
+                "fields": ["vector_n"],
+                "params": {"metric": "cosine", "dimension": embed_dim, "nLists": nlists},
+                "storedValues": ["genres"],
+            }
+        )
+
+    def get_embedding_stats(self, backbone_id: str, library_key: str) -> dict[str, int | bool]:
+        """Return hot count, cold count, and whether the cold index exists."""
+        hot_name = self._hot_name(backbone_id, library_key)
+        cold_name = self._cold_name(backbone_id, library_key)
+
+        hot_count = 0
+        if self._db.has_collection(hot_name):
+            hot_count = cast("int", self._db.collection(hot_name).count())
+
+        cold_count = 0
+        index_exists = False
+        if self._db.has_collection(cold_name):
+            cold_col = cast("Any", self._db.collection(cold_name))
+            cold_count = cast("int", cold_col.count())
+            index_exists = any(idx.get("type") == "vector" for idx in cast("list[dict[str, Any]]", cold_col.indexes()))
+
+        return {"hot_count": hot_count, "cold_count": cold_count, "index_exists": index_exists}
+
+    def has_embedding_index(self, backbone_id: str, library_key: str) -> bool:
+        """Return True if the cold collection has an ANN vector index."""
+        return bool(self.get_embedding_stats(backbone_id, library_key)["index_exists"])
+
+    def index_library_embeddings(self, backbone_id: str, library_key: str, embed_dim: int, nlists: int) -> int:
+        """Drain hot vectors to cold and build ANN index.
+
+        Idempotent: if hot is already empty and the cold index exists, returns 0
+        immediately without touching the database.
+
+        Args:
+            backbone_id: Backbone identifier (e.g. ``"discogs_effnet"``).
+            library_key: ArangoDB ``_key`` of the library document.
+            embed_dim: Embedding dimension (from the ONNX model).
+            nlists: Number of Voronoi cells for the HNSW index.
+
+        Returns:
+            Number of documents drained from hot to cold.
+
+        Raises:
+            RuntimeError: If hot is not empty after drain.
+        """
+        hot_name = self._hot_name(backbone_id, library_key)
+        cold_name = self._cold_name(backbone_id, library_key)
+
+        stats = self.get_embedding_stats(backbone_id, library_key)
+        hot_count = int(stats["hot_count"])
+        index_exists = bool(stats["index_exists"])
+
+        if hot_count == 0 and index_exists:
+            return 0
+
+        # Drop existing index before drain (keeps memory usage bounded)
+        if index_exists:
+            self._drop_cold_index(cold_name)
+
+        # Drain hot → cold via move_collection (handles edge re-pointing + truncate)
+        if hot_count > 0:
+            if hot_name not in self._registered_namespaces:
+                self.register_vector_collection(hot_name, "vectors_track_hot")
+            hot_ops = self._registered_namespaces[hot_name]
+            # Ensure the cold collection exists before the UPSERT in move_collection
+            if not self._db.has_collection(cold_name):
+                self._db.create_collection(cold_name)
+            drained = cast("int", hot_ops.move_collection(cold_name))
+            self.register_vector_collection(cold_name, "vectors_track_cold")
+
+            remaining = cast("int", cast("Any", self._db.collection(hot_name)).count())
+            if remaining > 0:
+                raise RuntimeError(f"Hot collection '{hot_name}' not empty after drain: {remaining} documents remain.")
+        else:
+            drained = 0
+
+        self._build_cold_index(cold_name, embed_dim, nlists)
+        return drained
+
+    def rebuild_library_embedding_index(self, backbone_id: str, library_key: str, embed_dim: int, nlists: int) -> None:
+        """Drop and rebuild the ANN index without draining hot.
+
+        Use when cold data is already complete and only index parameters
+        need updating (e.g., after a full re-index or nlists tuning).
+
+        Args:
+            backbone_id: Backbone identifier.
+            library_key: ArangoDB ``_key`` of the library document.
+            embed_dim: Embedding dimension.
+            nlists: Number of Voronoi cells for the HNSW index.
+        """
+        cold_name = self._cold_name(backbone_id, library_key)
+        self._drop_cold_index(cold_name)
+        self._build_cold_index(cold_name, embed_dim, nlists)

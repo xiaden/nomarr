@@ -88,7 +88,7 @@ def upsert_output_streams(db: Database, *, file_id: str, streams: list[StreamWri
 
     normalized_file_id = _as_document_id(_FILE_COLLECTION, file_id)
     normalized_streams = _normalize_streams(streams)
-    db.ml.upsert_output_streams_batch(
+    db.ml.replace_output_streams_for_file(
         file_id=normalized_file_id,
         stream_payloads=[
             {
@@ -103,7 +103,7 @@ def upsert_output_streams(db: Database, *, file_id: str, streams: list[StreamWri
 def fetch_output_streams(db: Database, file_id: str) -> list[StreamRecord]:
     """Fetch all canonical output streams linked to one file."""
     normalized_file_id = _as_document_id(_FILE_COLLECTION, file_id)
-    stream_docs = db.ml.get_output_streams_for_file(normalized_file_id)
+    stream_docs = db.ml.list_output_streams_for_file(normalized_file_id)
     if not stream_docs:
         return []
 
@@ -235,12 +235,12 @@ def load_output_streams_for_file(
 def delete_output_streams(db: Database, file_id: str) -> int:
     """Delete all canonical output streams and both edge types for one file."""
     normalized_file_id = _as_document_id(_FILE_COLLECTION, file_id)
-    stream_docs = db.ml.get_output_streams_for_file(normalized_file_id)
+    stream_docs = db.ml.list_output_streams_for_file(normalized_file_id)
     stream_ids = sorted(
         {stream_id for stream_doc in stream_docs if isinstance((stream_id := stream_doc.get("_id")), str)}
     )
     if not stream_ids:
         return 0
 
-    db.ml.delete_output_streams_for_file(normalized_file_id)
+    db.ml.replace_output_streams_for_file(normalized_file_id, [])
     return len(stream_ids)

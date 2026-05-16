@@ -90,58 +90,39 @@ Rules:
 
 **Contains:**
 
-- `db.py` — `Database` facade, static collection binding, dynamic vector registration, and cascade compilation
-- `collections.py` — concrete typed collection declarations
-- `collections_base.py` — shared collection wrapper bases (`DocumentCollection`, `EdgeCollection`, `StateGraphCollection`, `VectorCollection`)
-- `accessors.py` — field and collection accessors that expose the descriptor-bound API
-- `constructor/` — shared AQL helpers (`verbs.py`, `filters.py`, `pagination.py`)
-- `cascade.py` — cascade compilation helpers derived from collection `EDGES` metadata
+- `db.py` — `Database` facade that creates the shared Arango connection, wires the thin AQL operation objects, and exposes intent-level sub-facades
+- `database/` — thin AQL operation classes grouped by collection/domain concern (`LibrariesAqlOperations`, `LibraryFilesAqlOperations`, `TagsAqlOperations`, `ScanAqlOperations`, `FileStatesAqlOperations`, `MlStreamsAqlOperations`, `MlModelsAqlOperations`, `VectorsAqlOperations`, `AppAqlOperations`, `NavidromeAqlOperations`)
+- `api/` — intent-level sub-facades for higher layers: `db.library` (`LibraryDb`), `db.app` (`AppDb`), and `db.ml` (`MlDb`)
 
-**Access pattern:** Always go through the injected `Database` facade and use the descriptor-bound collection API.
-
-**Governing ADR:** See [ADR-030](../../artifacts/decisions/ADR-030-adopt-descriptor-based-database-facade-for-persistence-access.md).
+**Access pattern:** Go through the injected `Database` facade and use the intent-level namespaces (`db.library`, `db.app`, `db.ml`). Lower persistence tiers (`nomarr.persistence.database/*_aql.py` and `nomarr.persistence.aql/primitives.py`) are persistence-internal implementation layers, not higher-layer APIs.
 
 ```python
-# ✅ Via Database facade
-file_doc = db.library_files.path.get("/music/track.flac")
-rows = db.library_files.get.many(library_key="main", limit=100, offset=0)
+# ✅ Preferred: intent-level persistence access
+file_doc = db.library.get_file(file_id)
+tags_by_file = db.library.list_file_tags_for_files(file_ids)
+db.library.replace_file_tags(file_id, tags)
 
-# ✅ Dynamic vector collections when a physical name is resolved at runtime
-vectors = db.register("vectors_track_hot__discogs_effnet__main", "vectors_track_hot")
+tagged_file_ids = db.app.list_files_in_state(STATE_TAGGED)
+vector_namespaces = db.ml.list_vector_namespaces()
+vectors = db.ml.add_vector_collection(
+    "vectors_track_hot__discogs_effnet__main",
+    "vectors_track_hot",
+)
 
-# ❌ Do not import persistence internals from higher layers
+# ❌ Do not import `nomarr.persistence.database` or `nomarr.persistence.aql` internals from higher layers
+# ❌ Do not treat `db.libraries`, `db.tags`, `db.file_states`, etc. as new caller APIs
 ```
 
-**Key collections (via `db.*`):**
+**Key namespaces (via `db.*`):**
 
-| Accessor | Collection(s) | Domain |
+| Namespace | Role | Notes |
 | --- | --- | --- |
-| `db.libraries` | `libraries` | Library |
-| `db.library_files` | `library_files` | Library |
-| `db.library_folders` | `library_folders` | Library |
-| `db.tags` | `tags` | Tagging |
-| `db.tag_model_output` | `tag_model_output` | Tagging |
-| `db.ml_models` | `ml_models` | ML |
-| `db.ml_model_outputs` | `ml_model_outputs` | ML |
-| `db.calibration_state` | `calibration_state` | ML / Calibration |
-| `db.calibration_history` | `calibration_history` | ML / Calibration |
-| `db.ml_output_streams` | `ml_output_streams` | ML |
-| `db.file_has_output_stream` | `file_has_output_stream` | ML |
-| `db.output_has_stream` | `output_has_stream` | ML |
-| `db.file_has_vectors` | `file_has_vectors` | ML |
-| `db.worker_claims` | `worker_claims` | Workers |
-| `db.worker_restart_policy` | `worker_restart_policy` | Workers |
-| `db.health` | `health` | Infrastructure |
-| `db.file_states` | `file_states` | Library |
-| `db.navidrome_tracks` | `navidrome_tracks` | Navidrome |
-| `db.navidrome_playcounts` | `navidrome_playcounts` | Navidrome |
-| `db.sessions` | `sessions` | Infrastructure |
-| `db.meta` | `meta` | Infrastructure |
-| `db.vram_promises` | `vram_promises` | ML / Resources |
-| `db.ml_capacity` | `ml_capacity_estimates` | ML / Resources |
-| `db.migrations` | `applied_migrations` | Platform |
+| `db.library` | Library, file, tag, and scan persistence | Preferred facade for library-domain callers |
+| `db.app` | Application state, file states, locks/claims, sessions, health, meta/migrations, and Navidrome-related persistence | Preferred facade for operational/app-state callers |
+| `db.ml` | ML models, streams, vectors, and calibration persistence | Preferred facade for ML-domain callers |
+| `db.libraries`, `db.library_files`, `db.tags`, `db.scan`, `db.file_states`, `db.ml_streams`, `db.ml_models` | Legacy compatibility aliases | Temporary migration surfaces; not supported higher-layer APIs |
 
-Dynamic vector collections use `db.register(resolved_name, template_name)` and return the runtime-wired collection instance.
+The explicit `*_aql` attributes also still exist inside `Database` as implementation-facing compatibility names. Treat them as persistence-internal or migration/bootstrap-only seams, not normal caller dependencies.
 
 ### Helpers (`helpers/`)
 
@@ -165,7 +146,8 @@ Dynamic vector collections use `db.register(resolved_name, template_name)` and r
 - Prefer dependency injection for major resources like DB/config/backends
 - Public contracts belong in service and workflow boundaries, not persistence internals
 - Breaking internal architecture changes are acceptable in alpha as long as callers and migrations are updated together
-- If persistence contracts change, update the callers and keep the descriptor-based docs/examples in sync
+- If persistence contracts change, update the callers and keep the intent-level facade docs/examples in sync (`db.library`, `db.app`, `db.ml`)
+- Do not solve higher-layer needs by importing Tier 1/Tier 2 persistence modules directly; add or adjust a Tier 3 intent method instead
 
 ---
 

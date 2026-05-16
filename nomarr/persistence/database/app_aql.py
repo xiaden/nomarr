@@ -89,16 +89,13 @@ class AppAqlOperations:
         primitives.upsert_by_field(self._db, self.LOCK_COLLECTION, "document_reference", resource_id, merged_payload)
 
     def release_lock(self, resource_id: str) -> None:
-        lock_docs = primitives.get_many_by_field(
+        primitives.delete_many_by_field(
             self._db,
             self.LOCK_COLLECTION,
             "document_reference",
             resource_id,
-            limit=None,
             allowed_fields=self.LOCK_FIELDS,
         )
-        keys = [doc["_key"] for doc in lock_docs if isinstance(doc.get("_key"), str)]
-        primitives.delete_many_by_keys(self._db, self.LOCK_COLLECTION, keys)
 
     def get_lock(self, resource_id: str) -> Document | None:
         results = primitives.get_many_by_field(
@@ -130,8 +127,8 @@ class AppAqlOperations:
             allowed_fields=self.LOCK_FIELDS,
         )
 
-    def insert_worker_claim(self, payload: dict[str, Any]) -> None:
-        primitives.insert_document(self._db, self.WORKER_CLAIM_COLLECTION, payload)
+    def insert_worker_claim(self, payload: dict[str, Any]) -> str:
+        return primitives.insert_document(self._db, self.WORKER_CLAIM_COLLECTION, payload)
 
     def claim_file(self, file_id: str, worker_id: str, payload: dict[str, Any]) -> None:
         merged_payload = dict(payload)
@@ -140,16 +137,13 @@ class AppAqlOperations:
         primitives.insert_document(self._db, self.WORKER_CLAIM_COLLECTION, merged_payload)
 
     def release_claim(self, file_id: str) -> None:
-        claim_docs = primitives.get_many_by_field(
+        primitives.delete_many_by_field(
             self._db,
             self.WORKER_CLAIM_COLLECTION,
             "file_id",
             _as_document_id("library_files", file_id),
-            limit=None,
             allowed_fields=self.WORKER_CLAIM_FIELDS,
         )
-        keys = [doc["_key"] for doc in claim_docs if isinstance(doc.get("_key"), str)]
-        primitives.delete_many_by_keys(self._db, self.WORKER_CLAIM_COLLECTION, keys)
 
     def delete_claims_for_workers(self, worker_ids: list[str]) -> int:
         if not worker_ids:
@@ -312,22 +306,28 @@ class AppAqlOperations:
         )
         return results[0] if results else None
 
+    def get_schema_version(self) -> str | None:
+        """Get the schema version stored as ``_key='version'`` in meta."""
+        cursor = self._db.aql.execute(
+            "FOR doc IN @@collection FILTER doc._key == 'version' LIMIT 1 RETURN doc.value",
+            bind_vars={"@collection": self.META_COLLECTION},
+        )
+        results = list(cursor)
+        return str(results[0]) if results else None
+
     def upsert_meta(self, key: str, payload: dict[str, Any]) -> None:
         merged_payload = dict(payload)
         merged_payload.setdefault("key", key)
         primitives.upsert_by_field(self._db, self.META_COLLECTION, "key", key, merged_payload)
 
     def delete_meta(self, key: str) -> None:
-        meta_docs = primitives.get_many_by_field(
+        primitives.delete_many_by_field(
             self._db,
             self.META_COLLECTION,
             "key",
             key,
-            limit=None,
             allowed_fields=self.META_FIELDS,
         )
-        keys = [doc["_key"] for doc in meta_docs if isinstance(doc.get("_key"), str)]
-        primitives.delete_many_by_keys(self._db, self.META_COLLECTION, keys)
 
     def list_meta_keys_by_prefix(self, prefix: str) -> list[str]:
         cursor = self._db.aql.execute(
@@ -434,18 +434,13 @@ class AppAqlOperations:
             )
 
     def delete_pipeline_state(self, library_id: str) -> int:
-        pipeline_state_docs = primitives.get_many_by_field(
+        return primitives.delete_many_by_field(
             self._db,
             self.PIPELINE_STATE_COLLECTION,
             "library_key",
             _extract_key(library_id),
-            limit=None,
             allowed_fields=self.PIPELINE_STATE_FIELDS,
         )
-        keys = [doc["_key"] for doc in pipeline_state_docs if isinstance(doc.get("_key"), str)]
-        if not keys:
-            return 0
-        return primitives.delete_many_by_keys(self._db, self.PIPELINE_STATE_COLLECTION, keys)
 
     def count_pipeline_states(self) -> int:
         cursor = self._db.aql.execute(
@@ -517,18 +512,13 @@ class AppAqlOperations:
         )
 
     def delete_scan_records_for_library(self, library_key: str) -> int:
-        scan_docs = primitives.get_many_by_field(
+        return primitives.delete_many_by_field(
             self._db,
             self.SCAN_COLLECTION,
             "library_key",
             library_key,
-            limit=None,
             allowed_fields=self.SCAN_FIELDS,
         )
-        keys = [doc["_key"] for doc in scan_docs if isinstance(doc.get("_key"), str)]
-        if not keys:
-            return 0
-        return primitives.delete_many_by_keys(self._db, self.SCAN_COLLECTION, keys)
 
     def upsert_library_scan_edge(self, library_id: str, scan_id: str) -> None:
         self._db.aql.execute(
@@ -594,12 +584,13 @@ class AppAqlOperations:
             primitives.insert_document(self._db, self.SESSION_COLLECTION, doc)
 
     def delete_session(self, session_id: str) -> None:
-        docs = primitives.get_many_by_field(
-            self._db, self.SESSION_COLLECTION, "session_id", session_id, limit=None, allowed_fields=self.SESSION_FIELDS
+        primitives.delete_many_by_field(
+            self._db,
+            self.SESSION_COLLECTION,
+            "session_id",
+            session_id,
+            allowed_fields=self.SESSION_FIELDS,
         )
-        keys = [doc["_key"] for doc in docs if isinstance(doc.get("_key"), str)]
-        if keys:
-            primitives.delete_many_by_keys(self._db, self.SESSION_COLLECTION, keys)
 
     def get_sessions_expiring_before(self, timestamp_ms: int, limit: int) -> list[Document]:
         cursor = self._db.aql.execute(

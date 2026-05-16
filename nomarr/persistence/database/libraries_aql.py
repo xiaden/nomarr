@@ -95,6 +95,9 @@ class LibrariesAqlOperations:
         lib_key = _extract_key(library_id)
         normalized_id = f"libraries/{lib_key}"
 
+        # Part C keeps this flow in Tier 2 because it coordinates multi-collection
+        # graph/path cleanup and vector lifecycle semantics, not a storage-generic
+        # field delete shape.
         # ── Query 1: all file-level derived data ───────────────────────────
         # Collects file and stream IDs via LET, then removes each dependent
         # collection in order.  Each REMOVE targets a single collection.
@@ -176,12 +179,11 @@ class LibrariesAqlOperations:
                 self._db.delete_collection(name, ignore_missing=True)
 
         # ── Orphaned tag documents ────────────────────────────────────────────
-        # Tags that are no longer referenced by any song or model-output edge.
+        # Tags that are no longer referenced by any song_has_tags edge.
         self._db.aql.execute(
             """
             FOR tag IN tags
                 FILTER LENGTH(FOR e IN song_has_tags FILTER e._to == tag._id LIMIT 1 RETURN 1) == 0
-                FILTER LENGTH(FOR e IN tag_model_output FILTER e._from == tag._id LIMIT 1 RETURN 1) == 0
                 REMOVE tag IN tags
             """
         )

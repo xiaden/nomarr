@@ -96,7 +96,7 @@ class TaggingWriteMixin:
             raise ValueError(msg)
 
         target_mode = library.get("file_write_mode", "full")
-        calibration_doc = cast("dict[str, Any] | None", self.db.app.get_meta("calibration_version"))
+        calibration_doc = cast("dict[str, Any] | None", self.db.app.get_config_option("calibration_version"))
         calibration_hash = None if calibration_doc is None else calibration_doc.get("value")
         has_calibration = bool(calibration_hash)
 
@@ -138,7 +138,7 @@ class TaggingWriteMixin:
                 try:
                     release_claim(self.db, file_key)
                 except Exception as release_err:
-                    logger.debug(f"[reconcile] Failed to release claim for {file_key}: {release_err}")
+                    logger.warning(f"[reconcile] Failed to release claim for {file_key}: {release_err}", exc_info=True)
 
         remaining = count_files_needing_reconciliation(self.db, library_id=library_id)
 

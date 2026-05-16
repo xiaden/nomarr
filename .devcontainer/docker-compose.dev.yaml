@@ -1,0 +1,66 @@
+# Dev environment for Nomarr.
+# Standalone compose file — builds nomarr from source.
+# Requires NVIDIA GPU + NVIDIA Container Toolkit (same requirement as production).
+#
+# DO NOT reference this file directly. It is consumed by devcontainer.json.
+# Drop audio files into ./test-media/ to have a library to scan.
+# Generated config and DB data are written to ./config/ and ./arangodb-data/
+# (both gitignored — see .gitignore in this directory).
+
+services:
+
+  nomarr:
+    build:
+      context: ..
+      dockerfile: dockerfile
+    container_name: nomarr-dev
+    stop_grace_period: 30s
+    ports:
+      - "8356:8356"
+    volumes:
+      # Full repo mounted read-write — lets the agent read/write from /workspace
+      - ..:/workspace:rw,cached
+      # Live source mount — source edits are visible without rebuilding the image.
+      # Restart the container (or the nomarr process) to pick up Python changes.
+      - ../nomarr:/app/nomarr
+      # Dev-local config and SQLite DB (gitignored).
+      # Populated from config/config.yaml on first start.
+      - ./config:/app/config
+      # Drop audio files here to create a scannable library.
+      - ./test-media:/media
+    env_file:
+      - nomarr.dev.env
+    depends_on:
+      nomarr-arangodb:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8356/info || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  nomarr-arangodb:
+    image: arangodb:3.12
+    container_name: nomarr-arangodb-dev
+    env_file:
+      - nomarr-arangodb.dev.env
+    command: ["--vector-index", "--query.memory-limit=1073741824"]
+    volumes:
+      # Dev-local ArangoDB data (gitignored — delete to reset the database).
+      - ./arangodb-data:/var/lib/arangodb3
+    ports:
+      - "8529:8529"
+    healthcheck:
+      test: ["CMD-SHELL", "arangosh --server.endpoint tcp://127.0.0.1:8529 --server.username root --server.password \"$$ARANGO_ROOT_PASSWORD\" --javascript.execute-string 'db._version()' >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
