@@ -308,6 +308,14 @@ class Application:
             file_watcher = FileWatcherService(db=self.db, library_service=library_service, debounce_seconds=2.0)
             self.register_service("file_watcher", file_watcher)
 
+            # Tag extraction worker: reads audio tags for files discovered in Pass 1
+            from nomarr.services.infrastructure.workers.tag_extraction_worker import TagExtractionWorker
+
+            tag_worker = TagExtractionWorker(db=self.db)
+            self.register_service("tag_worker", tag_worker)
+            tag_worker.start()
+            logger.debug("[Application] Tag extraction worker started")
+
             # Sync watchers in background - observer.start() traverses the entire
             # directory tree to register inotify watches, which blocks for large libraries.
             # Nothing downstream depends on watchers being active at startup.
@@ -435,6 +443,11 @@ class Application:
             file_watcher = self.services["file_watcher"]
             file_watcher.stop_all()
             logger.info("[Application] File watchers stopped")
+        if "tag_worker" in self.services:
+            logger.info("[Application] Stopping tag extraction worker...")
+            self.services["tag_worker"].stop()
+            self.services["tag_worker"].join(timeout=5)
+            logger.info("[Application] Tag extraction worker stopped")
         if self.worker_system:
             logger.info("[Application] Stopping worker processes...")
             self.worker_system.stop_all_workers()

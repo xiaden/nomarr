@@ -18,7 +18,6 @@ from nomarr.components.library.library_file_state_comp import (
     count_untagged_files,
     discover_next_untagged_file,
     file_has_tagged_state,
-    find_short_files_missing_too_short,
     get_calibration_status_by_library,
     get_errored_file_ids,
     get_files_with_incomplete_tags,
@@ -40,7 +39,6 @@ from nomarr.helpers.constants.file_states import (
     STATE_TAGS_CURRENT,
     STATE_TAGS_NOT_WRITTEN,
     STATE_TAGS_STALE,
-    STATE_TOO_SHORT,
     STATE_VECTORS_EXTRACTED,
 )
 from nomarr.persistence.exceptions import DuplicateKeyError
@@ -289,7 +287,6 @@ class TestDiscoverNextUntaggedFile:
         assert result == {"_id": "library_files/1", "_key": "a"}
         assert mock_db.app.list_file_docs_in_state.call_args_list == [
             call(STATE_NOT_TAGGED),
-            call(STATE_TOO_SHORT),
             call(STATE_ERRORED),
         ]
         mock_db.app.list_claims.assert_called_once_with()
@@ -299,7 +296,6 @@ class TestDiscoverNextUntaggedFile:
         mock_db = _make_mock_db()
         mock_db.app.list_file_docs_in_state.side_effect = [
             [{"_id": "library_files/1", "_key": "a"}],
-            [{"_id": "library_files/1"}],
             [],
         ]
 
@@ -316,7 +312,6 @@ class TestDiscoverNextUntaggedFile:
                 {"_id": "library_files/1", "_key": "a"},
             ],
             [],
-            [],
         ]
 
         result = discover_next_untagged_file(mock_db, exclude_claimed=False)
@@ -329,7 +324,7 @@ class TestLibraryScopedStateQueries:
     """Tests for library-scoped state query helpers."""
 
     @pytest.mark.unit
-    def test_count_untagged_files_excludes_too_short_after_library_intersection(self) -> None:
+    def test_count_untagged_files_excludes_errored_after_library_intersection(self) -> None:
         mock_db = _make_mock_db()
         mock_db.app.list_file_docs_in_state.side_effect = [
             [
@@ -337,7 +332,6 @@ class TestLibraryScopedStateQueries:
                 {"_id": "library_files/2"},
                 {"_id": "library_files/3"},
             ],
-            [{"_id": "library_files/3"}],
         ]
         mock_db.library.list_library_files.return_value = [
             {"_id": "library_files/2"},
@@ -349,7 +343,6 @@ class TestLibraryScopedStateQueries:
         assert result == 1
         assert mock_db.app.list_file_docs_in_state.call_args_list == [
             call(STATE_NOT_TAGGED),
-            call(STATE_TOO_SHORT),
         ]
 
     @pytest.mark.unit
@@ -514,27 +507,6 @@ class TestMultiStateComposition:
         assert result == []
         mock_db.library.list_libraries.assert_called_once_with()
         mock_db.library.list_library_files.assert_not_called()
-
-
-class TestShortFileValidation:
-    """Tests for short-file state validation helpers."""
-
-    @pytest.mark.unit
-    def test_find_short_files_missing_too_short_filters_duration_and_existing_state(self) -> None:
-        mock_db = _make_mock_db()
-        mock_db.library.list_library_files.return_value = [
-            {"_id": "library_files/1", "duration_seconds": 15},
-            {"_id": "library_files/2", "duration_seconds": 45},
-            {"_id": "library_files/3", "duration_seconds": 12},
-            {"_id": "library_files/4", "duration_seconds": None},
-        ]
-        mock_db.app.list_file_docs_in_state.return_value = [{"_id": "library_files/3"}]
-
-        result = find_short_files_missing_too_short(mock_db, "main", min_duration_s=30)
-
-        assert result == ["library_files/1"]
-        mock_db.library.list_library_files.assert_called_once_with("main")
-        mock_db.app.list_file_docs_in_state.assert_called_once_with(STATE_TOO_SHORT)
 
 
 class TestIncompleteTags:

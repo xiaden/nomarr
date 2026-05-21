@@ -17,9 +17,9 @@ from nomarr.helpers.constants.file_states import (
     STATE_NOT_VECTORS_EXTRACTED,
     STATE_TAGGED,
     STATE_TAGS_CURRENT,
+    STATE_TAGS_NOT_EXTRACTED,
     STATE_TAGS_NOT_WRITTEN,
     STATE_TAGS_STALE,
-    STATE_TOO_SHORT,
     STATE_VECTORS_EXTRACTED,
 )
 from nomarr.persistence.exceptions import DuplicateKeyError
@@ -143,7 +143,9 @@ def _extract_matching_head_keys(
 def initialize_file_states(db: Database, file_id: str) -> None:
     """Create all-negative state edges for one file."""
     negative_states = [
-        state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_") or state == STATE_TAGS_STALE
+        state
+        for state in ALL_STATE_VERTICES
+        if state.startswith("file_states/not_") or state in (STATE_TAGS_STALE, STATE_TAGS_NOT_EXTRACTED)
     ]
     edge_docs = [{"_from": file_id, "_to": state} for state in negative_states]
     _insert_file_state_edges_ignoring_duplicates(db, edge_docs)
@@ -154,7 +156,9 @@ def initialize_file_states_batch(db: Database, file_ids: list[str]) -> None:
     if not file_ids:
         return
     negative_states = [
-        state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_") or state == STATE_TAGS_STALE
+        state
+        for state in ALL_STATE_VERTICES
+        if state.startswith("file_states/not_") or state in (STATE_TAGS_STALE, STATE_TAGS_NOT_EXTRACTED)
     ]
     edge_docs = [{"_from": file_id, "_to": state} for file_id in file_ids for state in negative_states]
     _insert_file_state_edges_ignoring_duplicates(db, edge_docs)
@@ -190,11 +194,10 @@ def discover_next_untagged_file(
 
     Returns:
         A single library-file document dict, or ``None`` if no eligible file exists;
-            files in ``too_short`` or ``errored`` states are always excluded.
+            files in ``errored`` states are always excluded.
     """
     untagged_files = _state_file_docs(db, STATE_NOT_TAGGED)
     candidate_ids = {doc["_id"] for doc in untagged_files}
-    candidate_ids -= _state_file_ids(db, STATE_TOO_SHORT)
     candidate_ids -= _state_file_ids(db, STATE_ERRORED)
     if library_id is not None:
         candidate_ids &= _library_file_ids(db, library_id)
@@ -213,16 +216,45 @@ def discover_next_untagged_file(
 
 
 def count_untagged_files(db: Database, library_id: str | None = None) -> int:
-    """Count files in the ``not_tagged`` state that are still taggable.
-
-    Files already marked ``too_short`` are excluded because they are no longer
-    eligible for ML tagging work and should not inflate pending-work counts.
-    """
+    """Count files in the ``not_tagged`` state that are still taggable."""
     untagged_ids = _state_file_ids(db, STATE_NOT_TAGGED)
-    untagged_ids -= _state_file_ids(db, STATE_TOO_SHORT)
     if library_id is not None:
         untagged_ids &= _library_file_ids(db, library_id)
     return len(untagged_ids)
+
+
+def discover_next_file_needing_tags(
+    db: Database,
+    library_id: str | None = None,
+    exclude_claimed: bool = True,
+) -> dict[str, Any] | None:
+    """Find the next file needing audio tag extraction.
+
+    Args:
+        db: Database handle used to query file state and ownership edges.
+        library_id: Optional library ``_id`` to scope the search.
+        exclude_claimed: When ``True``, skips files that already have a ``worker_claims`` entry.
+
+    Returns:
+        A single library-file document dict, or ``None`` if no eligible file exists.
+    """
+    pending_files = _state_file_docs(db, STATE_TAGS_NOT_EXTRACTED)
+    candidate_ids = {doc["_id"] for doc in pending_files}
+    candidate_ids -= _state_file_ids(db, STATE_ERRORED)
+    if library_id is not None:
+        candidate_ids &= _library_file_ids(db, library_id)
+    if exclude_claimed:
+        claimed_ids = {
+            cast("str", file_id)
+            for claim in db.app.list_claims()
+            for file_id in [claim.get("file_id")]
+            if isinstance(file_id, str)
+        }
+        candidate_ids -= claimed_ids
+    candidate_docs = [doc for doc in pending_files if doc["_id"] in candidate_ids]
+    if not candidate_docs:
+        return None
+    return min(candidate_docs, key=lambda doc: str(doc.get("_key") or doc.get("_id") or ""))
 
 
 def count_pending_tag_writes(db: Database) -> int:
@@ -292,21 +324,6 @@ def library_has_tagged_files(db: Database, library_id: str) -> bool:
 def file_has_tagged_state(db: Database, file_id: str) -> bool:
     """Return whether one file currently has the tagged-state edge."""
     return db.library.count_file_states(file_id, STATE_TAGGED) > 0
-
-
-def find_short_files_missing_too_short(db: Database, library_id: str, min_duration_s: int) -> list[str]:
-    """Return short files that are missing the ``too_short`` state."""
-    library_files = db.library.list_library_files(library_id)
-    too_short_ids = {
-        file_doc["_id"] for file_doc in cast("list[dict[str, Any]]", db.app.list_file_docs_in_state(STATE_TOO_SHORT))
-    }
-    return [
-        file_doc["_id"]
-        for file_doc in library_files
-        if file_doc.get("duration_seconds") is not None
-        and file_doc["duration_seconds"] < min_duration_s
-        and file_doc["_id"] not in too_short_ids
-    ]
 
 
 def get_files_with_incomplete_tags(

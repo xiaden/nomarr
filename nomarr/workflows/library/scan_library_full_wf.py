@@ -1,7 +1,10 @@
 """Full library scan workflow.
 
 Walks every folder in the library regardless of cached mtime/file_count.
-All files are re-examined for metadata changes.
+All files are re-examined for disk-level changes (mtime, size).
+
+Pass 1 of the two-pass scan: fast disk walk → upsert files to DB + seed state edges.
+Pass 2 (audio tag extraction + entity seeding) runs in the background tag extraction worker.
 """
 
 from __future__ import annotations
@@ -32,13 +35,13 @@ from nomarr.components.library.scan_lifecycle_comp import (
     update_scan_progress,
     upsert_scanned_files,
 )
-from nomarr.components.library.validate_scan_state_comp import validate_unchanged_files
-from nomarr.components.metadata import seed_entities_for_scan_batch
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
     STATE_NOT_ERRORED,
     STATE_NOT_SCANNED,
     STATE_SCANNED,
+    STATE_TAGS_EXTRACTED,
+    STATE_TAGS_NOT_EXTRACTED,
 )
 from nomarr.helpers.constants.pipeline_states import PIPELINE_IDLE
 from nomarr.helpers.time_helper import internal_ms, now_ms
@@ -57,12 +60,14 @@ def scan_library_full_workflow(
     tagger_version: str,
     models_dir: str | None = None,
     namespace: str = "nom",
-    min_duration_s: int | None = None,
 ) -> dict[str, Any]:
     """Run a full library scan (ignores folder cache).
 
     Walks every folder in the library regardless of cached mtime/file_count.
-    All files are re-examined for metadata changes.
+    All files are re-examined for disk-level changes.
+
+    Pass 1: fast disk walk — upsert files to DB, seed initial state edges.
+    Pass 2: background tag extraction worker reads audio tags and seeds entities.
 
     Args:
         db: Database instance
@@ -70,8 +75,6 @@ def scan_library_full_workflow(
         tagger_version: Model suite hash for version comparison
         models_dir: Path to ML models (enables tag validation when provided)
         namespace: Tag namespace (default ``"nom"``)
-        min_duration_s: Minimum duration for ML tagging. Files shorter
-            than this are marked ``needs_tagging=False`` at scan time.
 
     Returns:
         Dict with scan statistics (files_discovered, files_added,
@@ -125,7 +128,6 @@ def scan_library_full_workflow(
                         existing_files=existing_for_folder,
                         tagger_version=tagger_version,
                         db=db,
-                        min_duration_s=min_duration_s,
                     )
 
                     stats["files_updated"] += batch.stats["files_updated"]
@@ -141,13 +143,20 @@ def scan_library_full_workflow(
                         file_ids = upsert_scanned_files(db, batch.file_entries, batch.edge_bootstraps)
                         transition_file_state(db, file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
                         transition_file_state(db, file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
-                        stats["files_added"] += sum(1 for e in batch.file_entries if e["path"] in new_paths)
-                        metadata_by_id = {
-                            fid: batch.metadata_map[entry["path"]]
-                            for fid, entry in zip(file_ids, batch.file_entries, strict=True)
-                            if entry["path"] in batch.metadata_map
-                        }
-                        seed_entities_for_scan_batch(db, file_ids, metadata_by_id)
+                        # Reset tags_extracted → tags_not_extracted for modified files
+                        # so the tag extraction worker re-extracts their audio tags.
+                        # New files already get tags_not_extracted from state bootstrap.
+                        modified_file_ids = [
+                            fid
+                            for fid, e in zip(file_ids, batch.file_entries, strict=True)
+                            if e["path"] not in new_paths
+                        ]
+                        if modified_file_ids:
+                            transition_file_state(db, modified_file_ids, STATE_TAGS_EXTRACTED, STATE_TAGS_NOT_EXTRACTED)
+                        new_file_ids = [
+                            fid for fid, e in zip(file_ids, batch.file_entries, strict=True) if e["path"] in new_paths
+                        ]
+                        stats["files_added"] += len(new_file_ids)
 
                     # Files in DB for this folder no longer on disk → delete
                     deleted_paths = [p for p in existing_for_folder if p not in batch.discovered_paths]
@@ -228,14 +237,6 @@ def scan_library_full_workflow(
             except Exception as e:
                 logger.warning("Tag validation failed: %s", e, exc_info=True)
                 warnings.append(f"Tag validation error: {e}")
-
-        # Step 9c — Validate scan state for unchanged files (heal short files)
-        if min_duration_s is not None:
-            try:
-                validation_stats = validate_unchanged_files(db, library_id, min_duration_s)
-                stats["short_files_healed"] = validation_stats.short_files_healed
-            except Exception as e:
-                logger.warning("Scan state validation failed: %s", e, exc_info=True)
 
         # Step 10 — Finalize
         scan_duration = internal_ms().value - start_time.value

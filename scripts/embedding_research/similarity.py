@@ -43,7 +43,7 @@ except ImportError:
 def l2_normalise(vecs: np.ndarray) -> np.ndarray:
     """Return unit-norm vectors [n, d]."""
     norms = np.linalg.norm(vecs, axis=1, keepdims=True)
-    return vecs / np.where(norms == 0, 1.0, norms)
+    return np.asarray(vecs / np.where(norms == 0, 1.0, norms))
 
 
 # -- Pairwise similarity / distance matrices --------------------------------
@@ -52,7 +52,7 @@ def l2_normalise(vecs: np.ndarray) -> np.ndarray:
 def cosine_matrix(vecs: np.ndarray) -> np.ndarray:
     """[n, n] cosine similarity matrix."""
     normed = l2_normalise(vecs.astype(np.float32))
-    return (normed @ normed.T).astype(np.float32)
+    return np.asarray((normed @ normed.T).astype(np.float32))
 
 
 def l2_similarity_matrix(vecs: np.ndarray) -> np.ndarray:
@@ -61,7 +61,7 @@ def l2_similarity_matrix(vecs: np.ndarray) -> np.ndarray:
     sq = np.sum(vf**2, axis=1)
     dist2 = sq[:, None] + sq[None, :] - 2.0 * (vf @ vf.T)
     dist2 = np.maximum(dist2, 0.0)
-    return (1.0 / (1.0 + np.sqrt(dist2))).astype(np.float32)
+    return np.asarray((1.0 / (1.0 + np.sqrt(dist2))).astype(np.float32))
 
 
 def dot_matrix(vecs: np.ndarray) -> np.ndarray:
@@ -69,10 +69,11 @@ def dot_matrix(vecs: np.ndarray) -> np.ndarray:
     return vecs.astype(np.float32) @ vecs.astype(np.float32).T
 
 
+# dot is excluded: on L2-normalised vectors it is identical to cosine.
+# All callers normalise before passing in, so dot would add no signal.
 METRICS: dict[str, Callable[[np.ndarray], np.ndarray]] = {
     "cosine": cosine_matrix,
     "l2": l2_similarity_matrix,
-    "dot": dot_matrix,
 }
 
 
@@ -86,7 +87,8 @@ def _rankings_from_sim(sim_matrix: np.ndarray) -> np.ndarray:
     for i in range(n):
         row = sim_matrix[i].copy()
         row[i] = -np.inf
-        out[i] = np.argsort(-row)
+        sorted_idx = np.argsort(-row)  # shape (n,)
+        out[i] = sorted_idx[sorted_idx != i][: n - 1]  # drop self, take n-1
     return out
 
 
@@ -94,10 +96,24 @@ def compute_retrieval_metrics(
     sim_matrix: np.ndarray,
     labels: list[str],
     k: int = 10,
-) -> dict[str, float]:
+    *,
+    albums: list[str] | None = None,
+    genres: list[str] | None = None,
+    head_scores: np.ndarray | None = None,
+    head_names: list[str] | None = None,
+) -> dict:
     """
-    MAP@k, MRR, NDCG@k, Recall@k, discrimination score.
-    Relevance = same artist label.
+    MAP@k, MRR, NDCG@k, Recall@k, and discrimination scores.
+
+    Discrimination metrics (mean within-group sim minus mean cross-group sim,
+    computed over upper-triangle pairs):
+      disc_artist    : labels (artist)
+      disc_album     : optional albums list; 0.0 if not provided or unusable
+      disc_genre     : optional genres list (real tag); 0.0 if not provided or unusable
+      disc_head      : Spearman rank corr of sim vs mean-abs head-score diff (collapsed average)
+      per_head_corr  : dict[head_name, corr] — individual Spearman r per head (empty if head_names absent)
+
+    `disc_score` is preserved as an alias of `disc_artist` for back-compat.
     """
     n = len(labels)
     label_arr = np.array(labels)
@@ -114,7 +130,8 @@ def compute_retrieval_metrics(
         ranked = rankings[i]
 
         # AP@k
-        hits = ap = 0
+        hits = 0
+        ap = 0.0
         for rank, idx in enumerate(ranked, 1):
             if idx in relevant_set:
                 hits += 1
@@ -125,12 +142,13 @@ def compute_retrieval_metrics(
         first_rel = next((r for r, idx in enumerate(ranked, 1) if idx in relevant_set), n)
         rrs.append(1.0 / first_rel)
 
-        # NDCG@k
+        # NDCG@k — skip if fewer than 2 relevant docs (sklearn requires > 1 document)
         n_rel = len(relevant_set)
         if _SKLEARN:
             true_rel = np.array([1 if idx in relevant_set else 0 for idx in ranked[:k]])
             ideal_rel = np.concatenate([np.ones(min(k, n_rel)), np.zeros(max(0, k - n_rel))])
-            ndcgs.append(float(_sklearn_ndcg(ideal_rel[None, :], true_rel[None, :])))
+            if len(ideal_rel) > 1:
+                ndcgs.append(float(_sklearn_ndcg(ideal_rel[None, :], true_rel[None, :])))
         else:
 
             def _dcg(hits_arr):
@@ -141,7 +159,7 @@ def compute_retrieval_metrics(
             ideal = _dcg(ideal_hits)
             ndcgs.append(_dcg(actual_hits) / ideal if ideal > 0 else 0.0)
 
-        # Recall@k
+        # Recall@k (artist)
         top_k_set = set(ranked[:k].tolist())
         recalls.append(len(top_k_set & relevant_set) / min(k, n_rel))
 
@@ -152,12 +170,88 @@ def compute_retrieval_metrics(
 
     disc = float(np.mean(within_sims) - np.mean(cross_sims)) if within_sims and cross_sims else 0.0
 
+    # -- recall_k_album / recall_k_genre -----------------------------------
+    album_recalls: list[float] = []
+    if albums is not None and len(albums) == n:
+        album_arr = np.array(albums)
+        for i in range(n):
+            album_rel = {j for j in range(n) if j != i and album_arr[j] == album_arr[i]}
+            if not album_rel:
+                continue
+            top_k = set(rankings[i][:k].tolist())
+            album_recalls.append(len(top_k & album_rel) / min(k, len(album_rel)))
+
+    genre_recalls: list[float] = []
+    if genres is not None and len(genres) == n:
+        genre_arr_g = np.array(genres)
+        for i in range(n):
+            genre_rel = {j for j in range(n) if j != i and genre_arr_g[j] == genre_arr_g[i]}
+            if not genre_rel:
+                continue
+            top_k = set(rankings[i][:k].tolist())
+            genre_recalls.append(len(top_k & genre_rel) / min(k, len(genre_rel)))
+
+    def _disc_from_groups(groups: list[str] | None) -> float:
+        if groups is None or len(groups) != n:
+            return 0.0
+        g = np.asarray(groups)
+        eye = np.eye(n, dtype=bool)
+        within_mask = (g[:, None] == g[None, :]) & ~eye
+        cross_mask = g[:, None] != g[None, :]
+        if within_mask.any() and cross_mask.any():
+            return float(sim_matrix[within_mask].mean() - sim_matrix[cross_mask].mean())
+        return 0.0
+
+    # -- disc_album ---------------------------------------------------------
+    disc_album = _disc_from_groups(albums)
+
+    # -- disc_genre ---------------------------------------------------------
+    disc_genre = _disc_from_groups(genres)
+
+    # -- disc_head (Spearman rank corr of sim vs -mean head_distance) ----------
+    disc_head = 0.0
+    per_head_corr: dict[str, float] = {}
+    if head_scores is not None and head_scores.shape[0] == n and head_scores.shape[1] > 0:
+        iu, ju = np.triu_indices(n, k=1)
+        sim_pairs = sim_matrix[iu, ju].astype(np.float64)
+
+        # collapsed average across all heads
+        head_diff = np.abs(head_scores[iu] - head_scores[ju]).mean(axis=1).astype(np.float64)
+        if sim_pairs.std() > 0 and head_diff.std() > 0:
+            r1 = np.argsort(np.argsort(sim_pairs))
+            r2 = np.argsort(np.argsort(-head_diff))
+            with np.errstate(invalid="ignore"):
+                c = np.corrcoef(r1, r2)
+            if c.shape == (2, 2) and not np.isnan(c[0, 1]):
+                disc_head = float(c[0, 1])
+
+        # per-head individual correlations
+        if head_names is not None and len(head_names) == head_scores.shape[1]:
+            for h_idx, h_name in enumerate(head_names):
+                h_diff = np.abs(head_scores[iu, h_idx] - head_scores[ju, h_idx]).astype(np.float64)
+                if sim_pairs.std() > 0 and h_diff.std() > 0:
+                    r1h = np.argsort(np.argsort(sim_pairs))
+                    r2h = np.argsort(np.argsort(-h_diff))
+                    with np.errstate(invalid="ignore"):
+                        ch = np.corrcoef(r1h, r2h)
+                    if ch.shape == (2, 2) and not np.isnan(ch[0, 1]):
+                        per_head_corr[h_name] = float(ch[0, 1])
+                        continue
+                per_head_corr[h_name] = 0.0
+
     return {
         f"map_{k}": float(np.mean(aps)) if aps else 0.0,
         "mrr": float(np.mean(rrs)) if rrs else 0.0,
         f"ndcg_{k}": float(np.mean(ndcgs)) if ndcgs else 0.0,
         f"recall_{k}": float(np.mean(recalls)) if recalls else 0.0,
+        f"recall_{k}_album": float(np.mean(album_recalls)) if album_recalls else 0.0,
+        f"recall_{k}_genre": float(np.mean(genre_recalls)) if genre_recalls else 0.0,
         "disc_score": disc,
+        "disc_artist": disc,
+        "disc_album": disc_album,
+        "disc_genre": disc_genre,
+        "disc_head": disc_head,
+        "per_head_corr": per_head_corr,
         "mean_within": float(np.mean(within_sims)) if within_sims else 0.0,
         "mean_cross": float(np.mean(cross_sims)) if cross_sims else 0.0,
     }
@@ -229,10 +323,10 @@ class ANNIndex:
         if _FAISS and self._index is not None:
             if self.metric == "cosine":
                 qn = l2_normalise(qvec[None, :])[0]
-                _, I = self._index.search(qn[None, :], k)
+                _, nn_idx = self._index.search(qn[None, :], k)
             else:
-                _, I = self._index.search(qvec[None, :], k)
-            return I[0]
+                _, nn_idx = self._index.search(qvec[None, :], k)
+            return nn_idx[0]
         # numpy fallback
         if self.metric == "cosine":
             normed = l2_normalise(self._vecs)

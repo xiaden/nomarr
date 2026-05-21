@@ -23,7 +23,6 @@ from nomarr.components.library.scan_lifecycle_comp import (
 )
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.dto.library_dto import LibraryScanStatusResult, StartScanResult
-from nomarr.services.infrastructure.config_svc import INTERNAL_MIN_DURATION_S
 from nomarr.workflows.library.scan_library_full_wf import scan_library_full_workflow
 from nomarr.workflows.library.scan_library_quick_wf import scan_library_quick_workflow
 from nomarr.workflows.library.scan_setup_wf import scan_setup_workflow
@@ -73,7 +72,6 @@ class LibraryScanMixin:
                 db=self.db,
                 library_id=library_id,
                 tagger_version=self.cfg.tagger_version,
-                min_duration_s=INTERNAL_MIN_DURATION_S,
             ),
             on_complete=on_complete,
             daemon=True,
@@ -119,7 +117,6 @@ class LibraryScanMixin:
                 tagger_version=self.cfg.tagger_version,
                 models_dir=self.cfg.models_dir,
                 namespace=self.cfg.namespace,
-                min_duration_s=INTERNAL_MIN_DURATION_S,
             ),
             on_complete=on_complete,
             daemon=True,

@@ -1,0 +1,43 @@
+# Embedding Research Pipeline Configuration
+# Edit this file to control what the pipeline computes.
+# Re-run `python run.py reset` then a fresh pipeline run to apply changes cleanly.
+
+[pipeline]
+# Number of songs to process.  0 = all songs (full run).
+# Set to a small number like 50 for a quick verification run.
+limit = 200
+# Recompute rows that are already in the DB.  Leave false for normal incremental runs.
+force = false
+# ONNX execution device.  "cpu" or "cuda".
+device = "cuda"
+# Restrict to specific backbones.  Comment out to run all.
+# backbones = ["effnet", "musicnn"]
+# Restrict to specific heads.  Comment out to run all.
+# heads = ["mood_happy", "mood_sad"]
+
+[binning]
+# STD multipliers used as segment-boundary thresholds.
+# Range 0.1–2.0 in 0.1 steps gives a systematic sweep across fine→coarse segmentation.
+std_thresholds = [
+  0.1, 0.4, 0.6, 1.0,
+  1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2
+]
+# Segmentation algorithm variants
+bin_modes = ["temporal_global", "temporal_perdim"]
+
+[pooling]
+# Representations computed per bin segment and used to build the sim matrix
+rep_types   = ["mean", "median", "max"]
+# How the NxM per-bin sim matrix is collapsed to one score per song pair
+agg_methods = ["mean", "median", "max"]
+
+[similarity]
+metrics = ["cosine", "l2"]
+
+[analysis]
+# Retrieval list depth
+k = 15
+# ThreadPoolExecutor workers for the analysis phase
+workers = 6
+# Set blas_threads to an integer to cap BLAS threads via threadpoolctl; 0 = no cap
+blas_threads = 1

@@ -198,6 +198,8 @@ ignore = [
 "nomarr/services/infrastructure/workers/*.py" = ["PLC0415"]
 # ML processing workflows defer imports to control TF/ML component loading order
 "nomarr/workflows/processing/*.py" = ["PLC0415"]
+# Embedding research scripts are standalone runners — not nomarr package code
+"scripts/embedding_research/*.py" = ["TID251", "E402"]
 # Calibration workflows are tightly coupled with ML layer
 "nomarr/workflows/calibration/*.py" = ["PLC0415"]
 # Persistence layer is the canonical owner of raw arango access

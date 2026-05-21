@@ -2,6 +2,9 @@
 
 Uses folder-level caching to skip unchanged folders.  Only folders whose
 mtime or file count changed since the last scan are walked.
+
+Pass 1 of the two-pass scan: fast disk walk → upsert files to DB + seed state edges.
+Pass 2 (audio tag extraction + entity seeding) runs in the background tag extraction worker.
 """
 
 from __future__ import annotations
@@ -32,12 +35,13 @@ from nomarr.components.library.scan_lifecycle_comp import (
     update_scan_progress,
     upsert_scanned_files,
 )
-from nomarr.components.metadata import seed_entities_for_scan_batch
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
     STATE_NOT_ERRORED,
     STATE_NOT_SCANNED,
     STATE_SCANNED,
+    STATE_TAGS_EXTRACTED,
+    STATE_TAGS_NOT_EXTRACTED,
 )
 from nomarr.helpers.constants.pipeline_states import PIPELINE_IDLE
 from nomarr.helpers.time_helper import internal_s, now_ms
@@ -53,19 +57,19 @@ def scan_library_quick_workflow(
     db: Database,
     library_id: str,
     tagger_version: str,
-    min_duration_s: int | None = None,
 ) -> dict[str, Any]:
     """Run a quick (incremental) library scan.
 
     Uses folder-level caching to skip unchanged folders.  Only folders
     whose mtime or file count changed since the last scan are walked.
 
+    Pass 1: fast disk walk — upsert files to DB, seed initial state edges.
+    Pass 2: background tag extraction worker reads audio tags and seeds entities.
+
     Args:
         db: Database instance
         library_id: Library document ``_id``
         tagger_version: Model suite hash for version comparison
-        min_duration_s: Minimum duration for ML tagging. Files shorter
-            than this are marked ``needs_tagging=False`` at scan time.
 
     Returns:
         Dict with scan statistics (files_discovered, files_added,
@@ -92,7 +96,7 @@ def scan_library_quick_workflow(
         # Step 2 — Pre-scan DB lookups
         db_folder_paths = get_folder_rel_paths(db, library_id)
         file_count = count_library_files(db, library_id)
-        cached_folders = get_cached_folders(db, library_id)  # one upfront call
+        cached_folders = get_cached_folders(db, library_id)
 
         # Step 3 — Discover folders on disk
         all_folders = discover_library_folders(library_root, [library_root])
@@ -126,7 +130,6 @@ def scan_library_quick_workflow(
                         existing_files=existing_for_folder,
                         tagger_version=tagger_version,
                         db=db,
-                        min_duration_s=min_duration_s,
                     )
 
                     stats["files_updated"] += batch.stats["files_updated"]
@@ -142,13 +145,17 @@ def scan_library_quick_workflow(
                         file_ids = upsert_scanned_files(db, batch.file_entries, batch.edge_bootstraps)
                         transition_file_state(db, file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
                         transition_file_state(db, file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
+                        # Reset tags_extracted → tags_not_extracted for modified files
+                        # so the tag extraction worker re-extracts their audio tags.
+                        # New files already get tags_not_extracted from state bootstrap.
+                        modified_file_ids = [
+                            fid
+                            for fid, e in zip(file_ids, batch.file_entries, strict=True)
+                            if e["path"] not in new_paths
+                        ]
+                        if modified_file_ids:
+                            transition_file_state(db, modified_file_ids, STATE_TAGS_EXTRACTED, STATE_TAGS_NOT_EXTRACTED)
                         stats["files_added"] += sum(1 for e in batch.file_entries if e["path"] in new_paths)
-                        metadata_by_id = {
-                            fid: batch.metadata_map[entry["path"]]
-                            for fid, entry in zip(file_ids, batch.file_entries, strict=True)
-                            if entry["path"] in batch.metadata_map
-                        }
-                        seed_entities_for_scan_batch(db, file_ids, metadata_by_id)
 
                     # Files in DB for this folder no longer on disk → delete
                     deleted_paths = [p for p in existing_for_folder if p not in batch.discovered_paths]
@@ -202,7 +209,7 @@ def scan_library_quick_workflow(
             except Exception as e:
                 logger.warning("Entity cleanup failed: %s", e, exc_info=True)
 
-        # Step 10 — Finalize
+        # Step 9 — Finalize
         scan_duration = internal_s().value - start_time.value
         mark_scan_completed(db, library_id)
         update_scan_progress(

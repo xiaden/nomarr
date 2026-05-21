@@ -8,7 +8,7 @@ description: Reference for the Nomarr Docker development environment. Use when w
 The containerized dev environment lives in `.devcontainer/`. The compose file is `.devcontainer/docker-compose.dev.yaml` and brings up two services:
 
 | Service name | Container name | Image |
-|---|---|---|
+| --- | --- | --- |
 | `nomarr` | `nomarr-dev` | built from repo `dockerfile` |
 | `nomarr-arangodb` | `nomarr-arangodb-dev` | `arangodb:3.12` |
 
@@ -17,7 +17,7 @@ The `devcontainer.json` wires this compose stack into VS Code Dev Containers. Th
 Key paths inside `.devcontainer/` (all gitignored except the compose and JSON files):
 
 | Path | Purpose |
-|---|---|
+| --- | --- |
 | `docker-compose.dev.yaml` | Compose definition |
 | `devcontainer.json` | VS Code Dev Containers config |
 | `nomarr.dev.env` | Env vars for the `nomarr` service |
@@ -182,7 +182,7 @@ Disconnects VS Code from the container but does not stop it. `shutdownAction: "s
 ### Expected timing on first run (empty DB)
 
 | Milestone | Typical time |
-|---|---|
+| --- | --- |
 | ArangoDB healthy | 30–60s |
 | Nomarr started | 60–90s after ArangoDB |
 | `/info` endpoint responding | Up to 120s total |

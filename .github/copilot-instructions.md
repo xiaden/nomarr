@@ -63,6 +63,7 @@ Import-linter enforces layer boundaries.
 
 **Never:**
 
+- Assume causality without evidence.
 - Import `essentia` anywhere except `components/ml/audio/ml_audio_comp.py` (MonoLoader audio loading) and `components/ml/audio/ml_preprocess_comp.py` (mel spectrogram preprocessing). Essentia is no longer the ML backend — ONNX is. Essentia is a thin set of functions for audio I/O and preprocessing only.
 - Rename `_id` or `_key` (ArangoDB-native identifiers)
 - Let workflows import services or interfaces

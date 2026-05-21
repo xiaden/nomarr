@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -118,27 +119,23 @@ def create_session(
         if "CUDAExecutionProvider" in available:
             cuda_opts = _build_cuda_provider_options(vram_limit_bytes)
             providers.append(("CUDAExecutionProvider", cuda_opts))
-            if vram_limit_bytes is not None:
-                logger.debug(
-                    "[onnx] Using CUDAExecutionProvider for %s (gpu_mem_limit=%dMB)",
-                    model_path,
-                    vram_limit_bytes // (1024 * 1024),
-                )
-            else:
-                logger.debug(
-                    "[onnx] Using CUDAExecutionProvider for %s (no explicit limit)",
-                    model_path,
-                )
+            logger.info(
+                "[onnx] CUDAExecutionProvider selected for %s (gpu_mem_limit=%s)",
+                model_path,
+                f"{vram_limit_bytes // (1024 * 1024)}MB" if vram_limit_bytes is not None else "unlimited",
+            )
         else:
-            logger.warning(
-                "[onnx] GPU requested but CUDAExecutionProvider not available; falling back to CPU for %s",
+            logger.error(
+                "[onnx] GPU requested but CUDAExecutionProvider not available "
+                "(available: %s); falling back to CPU for %s",
+                available,
                 model_path,
             )
 
     providers.append("CPUExecutionProvider")
 
     sess_options = _ort.SessionOptions()  # type: ignore[union-attr]
-    sess_options.log_severity_level = 3  # ERROR only — suppress ONNX RT info/warnings
+    sess_options.log_severity_level = 2  # WARNING — lets ORT report EP fallbacks
     # Cap thread pools per session.  Head models are tiny (< 1MB) and gain
     # nothing from parallelism; backbone runs on GPU so CPU threads are idle.
     # Without limits, ORT spawns one pool per session x nproc threads, which
@@ -152,11 +149,19 @@ def create_session(
         providers=providers,
     )
 
-    logger.debug(
-        "[onnx] Session created: %s (providers=%s)",
-        model_path,
-        session.get_providers(),
+    active_providers = session.get_providers()
+    logger.info(
+        "[onnx] Session ready: %s  providers=%s",
+        Path(model_path).name,
+        active_providers,
     )
+    if device == "gpu" and "CUDAExecutionProvider" not in active_providers:
+        logger.error(
+            "[onnx] CUDA EP was requested but is NOT active for %s — running on CPU. "
+            "Check CUDA/cuDNN versions match onnxruntime-gpu %s.",
+            Path(model_path).name,
+            get_version(),
+        )
     return session
 
 
