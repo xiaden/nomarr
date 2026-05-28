@@ -28,7 +28,8 @@
       "root_package": null,
       "search_paths": [
         "nomarr",
-        "code-intel/src/mcp_code_intel"
+        "code-intel/src/mcp_code_intel",
+        "scripts/embedding_research"
       ]
     },
     "dependency_injection": {

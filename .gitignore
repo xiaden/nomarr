@@ -151,3 +151,6 @@ build_resources/models-prepatch/
 # Code graph database (generated)
 .codegraph/
 .codegraphrc.json
+
+# repowise API keys (local)
+.repowise/.env

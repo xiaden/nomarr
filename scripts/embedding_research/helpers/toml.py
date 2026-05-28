@@ -6,12 +6,15 @@ Both ``strategy_binned`` and ``run`` previously duplicated the logic for loading
 
 from __future__ import annotations
 
-import sys
+import logging
+from functools import lru_cache
 from pathlib import Path
 
 _CONFIG_PATH = Path(__file__).parent.parent / "research_config.toml"
+_LOG = logging.getLogger(__name__)
 
 
+@lru_cache(maxsize=None)
 def load_research_config() -> dict:
     """Load ``research_config.toml``; return ``{}`` if missing or unparseable.
 
@@ -21,20 +24,26 @@ def load_research_config() -> dict:
     """
     if not _CONFIG_PATH.exists():
         return {}
-    if sys.version_info >= (3, 11):
+
+    try:
         import tomllib
 
         with open(_CONFIG_PATH, "rb") as f:
             return tomllib.load(f)
+    except ImportError:
+        pass
+    except Exception as exc:
+        _LOG.warning("research_config.toml failed to parse with tomllib; using defaults (%s)", exc)
+        return {}
+
     try:
         import tomli  # type: ignore[import]
 
         with open(_CONFIG_PATH, "rb") as f:
             return tomli.load(f)
     except ImportError:
-        import logging
-
-        logging.getLogger(__name__).warning(
-            "research_config.toml found but tomllib/tomli not available; using defaults"
-        )
+        _LOG.warning("research_config.toml found but tomllib/tomli not available; using defaults")
+        return {}
+    except Exception as exc:
+        _LOG.warning("research_config.toml failed to parse with tomli; using defaults (%s)", exc)
         return {}

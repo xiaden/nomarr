@@ -1,80 +1,26 @@
-"""Flat-embedding pipeline: pooled_vecs, head_results, retrieval_rows, ann_rows, ptc_ctp_rows."""
+"""Flat-embedding pipeline scalar tables and filesystem-backed caches.
+
+Pooled vectors and head activations are no longer stored in DuckDB — they
+live on the filesystem via cache modules. This module only handles
+scalar/metadata tables plus unified analyze metrics.
+"""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import logging
 
 import numpy as np
+import pandas as pd
 
-if TYPE_CHECKING:
-    import pandas as pd
-
-
-# ── pooled_vecs ───────────────────────────────────────────────────────────────
+_log = logging.getLogger(__name__)
 
 
-def upsert_pooled(con, song_id: str, backbone: str, strategy: str, vec: np.ndarray) -> None:
-    con.execute(
-        """
-        INSERT INTO pooled_vecs (song_id, backbone, strategy, vec) VALUES (?,?,?,?)
-        ON CONFLICT (song_id, backbone, strategy) DO UPDATE SET vec=excluded.vec
-        """,
-        [song_id, backbone, strategy, vec.astype(np.float32).tolist()],
-    )
-
-
-def pooled_exists(con, song_id: str, backbone: str, strategy: str) -> bool:
-    return (
-        con.execute(
-            "SELECT 1 FROM pooled_vecs WHERE song_id=? AND backbone=? AND strategy=?",
-            [song_id, backbone, strategy],
-        ).fetchone()
-        is not None
-    )
-
-
-def load_pooled_matrix(
-    con,
-    backbone: str,
-    strategy: str,
-) -> tuple[np.ndarray, list[str], list[str], list[str], list[str]]:
-    """
-    Load all pooled vectors for (backbone, strategy).
-
-    Returns:
-      vecs    [n, d] float32
-      sids    [n] song_id strings
-      artists [n] artist label strings
-      albums  [n] album label strings (used for disc_album)
-      genres  [n] genre tag strings (used for disc_genre)
-    """
-    rows = con.execute(
-        """
-        SELECT p.song_id, p.vec, s.artist, s.album, s.genre
-        FROM pooled_vecs p
-        JOIN songs s USING (song_id)
-        WHERE p.backbone=? AND p.strategy=?
-        ORDER BY p.song_id
-        """,
-        [backbone, strategy],
-    ).fetchall()
-
-    if not rows:
-        return np.empty((0, 0), dtype=np.float32), [], [], [], []
-
-    sids = [r[0] for r in rows]
-    vecs = np.array([r[1] for r in rows], dtype=np.float32)
-    artists = [r[2] or "unknown" for r in rows]
-    albums = [r[3] or "unknown" for r in rows]
-    genres = [r[4] or "unknown" for r in rows]
-    return vecs, sids, artists, albums, genres
-
-
-# ── head_results ──────────────────────────────────────────────────────────────
+# ── head activations (filesystem) ────────────────────────────────────────────
+# head_results was a DuckDB table that stored flat PTC/CTP softmax outputs.
+# All reads/writes now go through cache.flat_heads instead.
 
 
 def upsert_head(
-    con,
     song_id: str,
     backbone: str,
     head: str,
@@ -82,30 +28,22 @@ def upsert_head(
     pathway: str,
     act: list[float],
 ) -> None:
-    con.execute(
-        """
-        INSERT INTO head_results (song_id, backbone, head, strategy, pathway, act)
-        VALUES (?,?,?,?,?,?)
-        ON CONFLICT (song_id, backbone, head, strategy, pathway)
-        DO UPDATE SET act=excluded.act
-        """,
-        [song_id, backbone, head, strategy, pathway, act],
-    )
+    """Write a single head activation to the filesystem cache."""
+    import numpy as _np
+
+    from scripts.embedding_research.cache import flat_heads as _fh
+
+    _fh.save(backbone, head, strategy, pathway, song_id, _np.asarray(act, dtype=_np.float32))
 
 
-def head_strategy_done(con, song_id: str, backbone: str, head: str, strategy: str) -> bool:
-    n = con.execute(
-        """
-        SELECT COUNT(*) FROM head_results
-        WHERE song_id=? AND backbone=? AND head=? AND strategy=?
-        """,
-        [song_id, backbone, head, strategy],
-    ).fetchone()[0]
-    return bool(n >= 2)  # both ptc and ctp
+def head_strategy_done(song_id: str, backbone: str, head: str, strategy: str) -> bool:
+    """Return True iff both ptc and ctp activations are cached for this combination."""
+    from scripts.embedding_research.cache import flat_heads as _fh
+
+    return _fh.is_done(backbone, head, strategy, song_id)
 
 
 def load_head_labels(
-    con,
     sids: list[str],
     backbone: str,
     head: str,
@@ -113,18 +51,13 @@ def load_head_labels(
     pathway: str,
     label_names: list[str],
 ) -> list[str] | None:
-    """
-    Return per-song majority-class label for (head, strategy, pathway).
+    """Return per-song majority-class label for (head, strategy, pathway).
+
     Returns None if >20% of songs are missing.
     """
-    rows = con.execute(
-        """
-        SELECT song_id, act FROM head_results
-        WHERE backbone=? AND head=? AND strategy=? AND pathway=?
-        """,
-        [backbone, head, strategy, pathway],
-    ).fetchall()
-    act_map = {r[0]: r[1] for r in rows}
+    from scripts.embedding_research.cache import flat_heads as _fh
+
+    act_map = _fh.load_bulk(backbone, head, strategy, pathway, sids)
 
     labels = []
     missing = 0
@@ -142,119 +75,110 @@ def load_head_labels(
     return labels
 
 
-# ── retrieval_rows ────────────────────────────────────────────────────────────
+def query_flat_head_labels(con, backbone: str, sids: list[str]) -> list[list[float]]:
+    """Return per-head score matrix for ``sids`` from the ``flat_head_labels`` table.
 
+    Args:
+        con: DuckDB connection.
+        backbone: Backbone identifier used to filter rows.
+        sids: Ordered list of song IDs to include.
 
-def load_retrieval_flat(con) -> "pd.DataFrame":
-    """Return all retrieval_rows as a DataFrame, ordered by disc_score DESC."""
-    import pandas as pd
+    Returns:
+        A list of ``len(heads)`` rows, each of length ``len(sids)``, ordered by
+        sorted head name. Missing songs default to ``0.0``.
+    """
+    rows = con.execute(
+        "SELECT song_id, head, score FROM flat_head_labels WHERE backbone = ?",
+        [backbone],
+    ).fetchall()
+    score_map: dict[str, dict[str, float]] = {}
+    heads: set[str] = set()
+    for song_id, head, score in rows:
+        song_scores = score_map.setdefault(song_id, {})
+        song_scores[head] = float(score)
+        heads.add(head)
 
-    con.execute("ALTER TABLE retrieval_rows ADD COLUMN IF NOT EXISTS recall_k_album DOUBLE")
-    con.execute("ALTER TABLE retrieval_rows ADD COLUMN IF NOT EXISTS recall_k_genre DOUBLE")
-    return con.execute(
-        "SELECT backbone, strategy, sim_metric, k, "
-        "disc_artist, disc_album, disc_genre, disc_head, disc_score, "
-        "mean_within, mean_cross, map_k, mrr, ndcg_k, recall_k, recall_k_album, recall_k_genre "
-        "FROM retrieval_rows ORDER BY disc_score DESC"
-    ).df()
-
-
-def load_retrieval_binned(con) -> "pd.DataFrame":
-    """Return all binned_retrieval_rows as a DataFrame, ordered by disc_score DESC."""
-    import pandas as pd
-
-    con.execute("ALTER TABLE binned_retrieval_rows ADD COLUMN IF NOT EXISTS recall_k_album DOUBLE")
-    con.execute("ALTER TABLE binned_retrieval_rows ADD COLUMN IF NOT EXISTS recall_k_genre DOUBLE")
-    return con.execute(
-        "SELECT backbone, bin_mode, std_thresh, rep_a, rep_b, sim_metric, agg_method, k, "
-        "disc_artist, disc_album, disc_genre, disc_head, disc_score, "
-        "mean_within, mean_cross, map_k, mrr, ndcg_k, recall_k, recall_k_album, recall_k_genre "
-        "FROM binned_retrieval_rows ORDER BY disc_score DESC"
-    ).df()
-
-
-def upsert_retrieval(con, backbone: str, strategy: str, sim_metric: str, k: int, metrics: dict) -> None:
-    # Ensure disc_album column exists (forward migration for alpha DBs).
-    con.execute("ALTER TABLE retrieval_rows ADD COLUMN IF NOT EXISTS disc_album DOUBLE")
-    con.execute("ALTER TABLE retrieval_rows ADD COLUMN IF NOT EXISTS recall_k_album DOUBLE")
-    con.execute("ALTER TABLE retrieval_rows ADD COLUMN IF NOT EXISTS recall_k_genre DOUBLE")
-    con.execute(
-        """
-        INSERT INTO retrieval_rows
-          (backbone, strategy, sim_metric, k, map_k, mrr, ndcg_k, recall_k,
-           recall_k_album, recall_k_genre,
-           disc_score, mean_within, mean_cross,
-           disc_artist, disc_album, disc_genre, disc_head)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        ON CONFLICT (backbone, strategy, sim_metric, k)
-        DO UPDATE SET
-          map_k=excluded.map_k, mrr=excluded.mrr, ndcg_k=excluded.ndcg_k,
-          recall_k=excluded.recall_k, recall_k_album=excluded.recall_k_album,
-          recall_k_genre=excluded.recall_k_genre, disc_score=excluded.disc_score,
-          mean_within=excluded.mean_within, mean_cross=excluded.mean_cross,
-          disc_artist=excluded.disc_artist, disc_album=excluded.disc_album,
-          disc_genre=excluded.disc_genre, disc_head=excluded.disc_head
-        """,
-        [
+    if not heads:
+        _log.warning(
+            "[query_flat_head_labels] no head scores found in DB for backbone=%s — disc_head will be 0", backbone
+        )
+        return []
+    missing_songs = [sid for sid in sids if sid not in score_map]
+    if missing_songs:
+        _log.warning(
+            "[query_flat_head_labels] %d/%d songs have no head scores for backbone=%s — defaulting to 0.0 (classify ran partially?)",
+            len(missing_songs),
+            len(sids),
             backbone,
-            strategy,
-            sim_metric,
-            k,
-            metrics.get(f"map_{k}"),
-            metrics.get("mrr"),
-            metrics.get(f"ndcg_{k}"),
-            metrics.get(f"recall_{k}"),
-            metrics.get(f"recall_{k}_album"),
-            metrics.get(f"recall_{k}_genre"),
-            metrics.get("disc_score"),
-            metrics.get("mean_within"),
-            metrics.get("mean_cross"),
-            metrics.get("disc_artist"),
-            metrics.get("disc_album"),
-            metrics.get("disc_genre"),
-            metrics.get("disc_head"),
-        ],
-    )
+        )
+    ordered_heads = sorted(heads)
+    from scripts.embedding_research.config import HEADS as _HEADS
 
-
-# ── ann_rows ──────────────────────────────────────────────────────────────────
-
-
-def upsert_ann(con, backbone: str, strategy: str, ef_search: int, recall_k: float, backend: str) -> None:
-    con.execute(
-        """
-        INSERT INTO ann_rows (backbone, strategy, ef_search, recall_k, backend)
-        VALUES (?,?,?,?,?)
-        ON CONFLICT (backbone, strategy, ef_search) DO UPDATE SET
-          recall_k=excluded.recall_k, backend=excluded.backend
-        """,
-        [backbone, strategy, ef_search, recall_k, backend],
-    )
-
-
-# ── ptc_ctp_rows ──────────────────────────────────────────────────────────────
-
-
-def upsert_ptc_ctp(con, backbone: str, head: str, strategy: str, row: dict) -> None:
-    con.execute(
-        """
-        INSERT INTO ptc_ctp_rows
-          (backbone, head, strategy, ptc_disc, ctp_disc, delta_disc, ptc_map, ctp_map, delta_map)
-        VALUES (?,?,?,?,?,?,?,?,?)
-        ON CONFLICT (backbone, head, strategy) DO UPDATE SET
-          ptc_disc=excluded.ptc_disc, ctp_disc=excluded.ctp_disc,
-          delta_disc=excluded.delta_disc, ptc_map=excluded.ptc_map,
-          ctp_map=excluded.ctp_map, delta_map=excluded.delta_map
-        """,
-        [
+    config_heads = list(_HEADS.get(backbone, {}).keys())
+    if config_heads and ordered_heads != config_heads:
+        _log.warning(
+            "[query_flat_head_labels] DB heads %s differ from config heads %s for backbone=%s — using DB order",
+            ordered_heads,
+            config_heads,
             backbone,
-            head,
-            strategy,
-            row.get("ptc_disc"),
-            row.get("ctp_disc"),
-            row.get("delta_disc"),
-            row.get("ptc_map"),
-            row.get("ctp_map"),
-            row.get("delta_map"),
-        ],
+        )
+    return [[score_map.get(song_id, {}).get(head, 0.0) for song_id in sids] for head in ordered_heads]
+
+
+# ── analyze_metrics ───────────────────────────────────────────────────────────
+
+
+def write_analyze_metrics(
+    con,
+    strategy_key: str,
+    strategy_type: str,
+    sim_metric: str,
+    k: int,
+    metrics: dict,
+) -> None:
+    """Insert non-`None` analysis metrics into `analyze_metrics`.
+
+    Args:
+        metrics: Metric values keyed by metric name; entries with `None` values are skipped.
+    """
+    rows: list[tuple] = []
+    for name, value in metrics.items():
+        if value is None:
+            continue
+        if isinstance(value, dict):
+            for sub_name, sub_value in value.items():
+                if sub_value is not None:
+                    rows.append((strategy_key, strategy_type, sim_metric, k, f"{name}_{sub_name}", float(sub_value)))
+        else:
+            rows.append((strategy_key, strategy_type, sim_metric, k, name, value))
+    con.executemany("INSERT OR REPLACE INTO analyze_metrics VALUES (?,?,?,?,?,?)", rows)
+
+
+def load_analyze_metrics(con) -> pd.DataFrame:
+    """Load `analyze_metrics` as a wide DataFrame keyed by strategy and query settings.
+
+    Returns:
+        A DataFrame pivoted on `metric` so each metric name becomes a column, sorted by
+        `disc_general` descending when that column is present.
+    """
+    df = con.execute("SELECT * FROM analyze_metrics").df()
+    if df.empty:
+        return df
+    df = df.pivot_table(
+        index=["strategy_key", "strategy_type", "sim_metric", "k"],
+        columns="metric",
+        values="value",
+        aggfunc="first",
+    )
+    df.columns.name = None
+    df = df.reset_index()
+    if "disc_general" in df.columns:
+        df = df.sort_values("disc_general", ascending=False, na_position="last")
+    return df
+
+
+def upsert_flat_head_labels(con, song_id: str, backbone: str, head: str, score: float) -> None:
+    con.execute(
+        "INSERT INTO flat_head_labels (song_id, backbone, head, score) VALUES (?,?,?,?) ON CONFLICT (song_id, backbone, head) DO UPDATE SET score=excluded.score",
+        [song_id, backbone, head, score],
     )

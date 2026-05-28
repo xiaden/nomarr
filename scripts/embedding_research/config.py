@@ -6,12 +6,16 @@ All paths are written for execution inside the nomarr devcontainer.
 from __future__ import annotations
 
 import hashlib
+import logging as _logging
 import os
 import sys
 from pathlib import Path
 
+_log = _logging.getLogger(__name__)
+
 # ── nomarr package on the container path ─────────────────────────────────────
-NOMARR_APP = Path("/app")
+# Override with NOMARR_APP_PATH env var when running outside the default devcontainer layout.
+NOMARR_APP = Path(os.environ.get("NOMARR_APP_PATH", "/app"))
 WORKSPACE = Path("/workspace")
 
 MEDIA_ROOT = WORKSPACE / ".devcontainer/test-media"
@@ -60,6 +64,12 @@ def _discover_heads() -> dict[str, dict[str, str]]:
                 # e.g. timbre-discogs-effnet-1.onnx  ->  "timbre"
                 head_name = f.stem.split("-")[0]
                 result[backbone][head_name] = str(f)
+    if not any(result.values()):
+        _log.warning(
+            "No ONNX head classifiers found under %s — disc_head will be 0 for all strategies. "
+            "Is the devcontainer running with head models mounted at /app/models/?",
+            NOMARR_APP / "models",
+        )
     return result
 
 
@@ -103,84 +113,155 @@ def patches_path(sid: str, backbone: str) -> Path:
 
 
 def stratify_songs(songs: list[dict], limit: int | None) -> list[dict]:
-    """Return a stratified subset of *songs* (dicts with 'artist' and 'album' keys).
+    """Return a stratified subset of *songs*.
 
-    Selection order:
-      Round 1 – 2 songs per artist (different albums when possible)
-      Round 2 – 2 more per artist (next-unused albums)
-      … continue until *limit* is reached or all songs are included.
+    Each song dict must have 'artist' and 'album' keys.  An optional 'genre'
+    key is used when present to guarantee ≥2 songs per genre as well.
 
-    Within each round songs are picked in sorted order so results are
+    Selection passes (in priority order):
+      Pass 1 – guarantee ≥2 songs per artist       (essential for disc_artist)
+      Pass 2 – guarantee ≥2 songs per album        (essential for disc_album)
+      Pass 3 – guarantee ≥2 songs per genre        (only when genre != 'unknown')
+      Pass 4 – fill remaining capacity round-robin by artist/album interleave
+
+    Within each pass songs are picked in sorted order so results are
     deterministic across runs.
     """
     if not limit:
         return songs
 
-    # Group by artist, then within each artist by album, sorted deterministically
     from collections import defaultdict
 
-    by_artist: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
-    for s in sorted(songs, key=lambda x: (x.get("artist", ""), x.get("album", ""), x.get("title", x.get("path", "")))):
-        by_artist[s["artist"]][s["album"]].append(s)
-
-    # Per-artist: flatten into a list that interleaves albums
-    # e.g. [alb1_song1, alb2_song1, alb1_song2, alb2_song2, alb3_song1, ...]
-    artist_queues: dict[str, list[dict]] = {}
-    for artist, albums in sorted(by_artist.items()):
-        interleaved: list[dict] = []
-        album_lists = [v for v in sorted(albums.values(), key=lambda lst: lst[0].get("album", ""))]
-        max_per_album = max(len(lst) for lst in album_lists)
-        for i in range(max_per_album):
-            for alb in album_lists:
-                if i < len(alb):
-                    interleaved.append(alb[i])
-        artist_queues[artist] = interleaved
-
-    # Round-robin 2-at-a-time across artists until limit reached
+    all_songs = sorted(
+        songs,
+        key=lambda x: (x.get("artist", ""), x.get("album", ""), x.get("title", x.get("path", ""))),
+    )
     selected: list[dict] = []
-    artists = sorted(artist_queues.keys())
-    positions = {a: 0 for a in artists}
-    chunk = 2
-    while len(selected) < limit:
-        added_this_round = 0
-        for artist in artists:
-            if len(selected) >= limit:
+    selected_ids: set[str] = set()
+
+    def _song_id(s: dict) -> str:
+        return str(s.get("_path", s.get("path", id(s))))
+
+    def _pick_up_to(candidates: list[dict], n: int) -> None:
+        """Add up to n candidates not already selected, respecting limit."""
+        added = 0
+        for s in candidates:
+            if len(selected) >= limit or added >= n:
                 break
-            pos = positions[artist]
-            batch = artist_queues[artist][pos: pos + chunk]
-            take = min(len(batch), limit - len(selected))
-            selected.extend(batch[:take])
-            positions[artist] = pos + take
-            added_this_round += take
-        if added_this_round == 0:
-            break  # all artists exhausted
+            sid = _song_id(s)
+            if sid not in selected_ids:
+                selected.append(s)
+                selected_ids.add(sid)
+                added += 1
+
+    # ── Pass 1: ≥2 per artist ────────────────────────────────────────────────
+    by_artist: dict[str, list[dict]] = defaultdict(list)
+    for s in all_songs:
+        by_artist[s.get("artist", "unknown")].append(s)
+    for artist in sorted(by_artist):
+        _pick_up_to(by_artist[artist], 2)
+
+    # ── Pass 2: ≥2 per album ─────────────────────────────────────────────────
+    by_album: dict[str, list[dict]] = defaultdict(list)
+    for s in all_songs:
+        key = f"{s.get('artist', 'unknown')}::{s.get('album', 'unknown')}"
+        by_album[key].append(s)
+    for key in sorted(by_album):
+        _pick_up_to(by_album[key], 2)
+
+    # ── Pass 3: ≥2 per genre (skip 'unknown') ────────────────────────────────
+    by_genre: dict[str, list[dict]] = defaultdict(list)
+    for s in all_songs:
+        g = s.get("genre") or "unknown"
+        if g != "unknown":
+            by_genre[g].append(s)
+    for genre in sorted(by_genre):
+        _pick_up_to(by_genre[genre], 2)
+
+    # ── Pass 4: fill remaining round-robin by artist, interleaving albums ────
+    if len(selected) < limit:
+        artist_queues: dict[str, list[dict]] = {}
+        for artist, _ in sorted({a: defaultdict(list) for a in by_artist}.items()):
+            # rebuild per-album interleave for fill pass
+            alb: dict[str, list[dict]] = defaultdict(list)
+            for s in by_artist[artist]:
+                alb[s.get("album", "unknown")].append(s)
+            album_lists = sorted(alb.values(), key=lambda lst: lst[0].get("album", ""))
+            interleaved: list[dict] = []
+            max_pa = max(len(lst) for lst in album_lists)
+            for i in range(max_pa):
+                for alst in album_lists:
+                    if i < len(alst):
+                        interleaved.append(alst[i])
+            artist_queues[artist] = interleaved
+
+        artist_order = sorted(artist_queues.keys())
+        positions = dict.fromkeys(artist_order, 0)
+        chunk = 2
+        while len(selected) < limit:
+            added_this_round = 0
+            for artist in artist_order:
+                if len(selected) >= limit:
+                    break
+                pos = positions[artist]
+                batch = artist_queues[artist][pos : pos + chunk]
+                took = 0
+                for s in batch:
+                    if len(selected) >= limit:
+                        break
+                    sid = _song_id(s)
+                    if sid not in selected_ids:
+                        selected.append(s)
+                        selected_ids.add(sid)
+                        took += 1
+                positions[artist] = pos + len(batch)
+                added_this_round += took
+            if added_this_round == 0:
+                break
 
     return selected
 
 
-def discover_audio(limit: int | None = None) -> list[Path]:
+def discover_audio(limit: int | None = None, *, con=None) -> list[Path]:
     """Return a stratified list of audio files.
 
-    With *limit*, picks 2 songs per artist (across different albums) and keeps
-    cycling through artists until *limit* is reached, rather than just taking
-    the first N alphabetically.
+    When *con* is provided (a DuckDB connection with an ingested songs table),
+    genre data from the DB is used for genre-aware stratification so disc_genre
+    pairs are guaranteed.  Falls back gracefully when the table is absent or
+    when songs haven't been ingested yet.
 
-    Genre tags are NOT read here — path-based artist/album/title are sufficient
-    for stratification. Genre is read lazily during DB upsert only.
+    Without *limit*, all discovered files are returned in sorted order.
     """
     files = sorted(p for p in MEDIA_ROOT.rglob("*") if p.suffix.lower() in _AUDIO_EXTS)
     if not limit:
         return files
-    # Build lightweight path-only meta (no file I/O) purely for stratification.
-    metas = []
+
+    # Build path-only meta first (no file I/O)
+    path_to_meta_quick: dict[str, dict] = {}
     for f in files:
         parts = f.relative_to(MEDIA_ROOT).parts
-        metas.append({
+        sid = song_id(str(f))
+        path_to_meta_quick[sid] = {
             "_path": f,
             "artist": parts[0] if len(parts) > 0 else "unknown",
             "album": parts[1] if len(parts) > 1 else "unknown",
             "title": f.stem,
-        })
+            "genre": "unknown",
+        }
+
+    # Overlay genre from DB if available
+    if con is not None:
+        try:
+            rows = con.execute(
+                "SELECT song_id, genre FROM songs WHERE genre IS NOT NULL AND genre != '' AND genre != 'unknown'"
+            ).fetchall()
+            for db_song_id, genre in rows:
+                if db_song_id in path_to_meta_quick and genre:
+                    path_to_meta_quick[db_song_id]["genre"] = genre
+        except Exception:
+            pass  # songs table absent or query failed — proceed without genre
+
+    metas = list(path_to_meta_quick.values())
     selected = stratify_songs(metas, limit)
     return [s["_path"] for s in selected]
 
@@ -193,8 +274,8 @@ def path_to_meta(path: Path) -> dict:
     """
     parts = path.relative_to(MEDIA_ROOT).parts
     path_artist = parts[0] if len(parts) > 0 else "unknown"
-    path_album  = parts[1] if len(parts) > 1 else "unknown"
-    path_title  = path.stem
+    path_album = parts[1] if len(parts) > 1 else "unknown"
+    path_title = path.stem
 
     try:
         from nomarr.components.library.metadata_extraction_comp import extract_metadata
@@ -211,17 +292,22 @@ def path_to_meta(path: Path) -> dict:
         return {
             "path": str(path),
             "artist": meta.get("artist") or path_artist,
-            "album":  meta.get("album")  or path_album,
-            "title":  meta.get("title")  or path_title,
-            "genre":  genres[0] if genres else "unknown",
+            "album": meta.get("album") or path_album,
+            "title": meta.get("title") or path_title,
+            "genre": genres[0] if genres else "unknown",
         }
-    except Exception:
+    except Exception as exc:
+        _log.warning(
+            "path_to_meta: tag extraction failed for %s: %s — using path-derived fallback",
+            path.name,
+            exc,
+        )
         return {
             "path": str(path),
             "artist": path_artist,
-            "album":  path_album,
-            "title":  path_title,
-            "genre":  "unknown",
+            "album": path_album,
+            "title": path_title,
+            "genre": "unknown",
         }
 
 

@@ -1,50 +1,36 @@
 """
 DuckDB schema, connection management, and DDL for the embedding research DB.
 
-Tables (20 total)
+Tables (16 total)
 -----------------
 Flat-embedding pipeline:
   songs                     (song_id PK, path, artist, album, title, genre)
   pooled_vecs               (song_id, backbone, strategy, vec FLOAT[])
   head_results              (song_id, backbone, head, strategy, pathway, act FLOAT[])
-  retrieval_rows            (backbone, strategy, sim_metric, k, map_k, mrr, ndcg_k,
-                             recall_k, disc_score, mean_within, mean_cross,
-                             disc_artist, disc_album, disc_genre, disc_head)
-  ann_rows                  (backbone, strategy, ef_search, recall_k, backend)
-  ptc_ctp_rows              (backbone, head, strategy, ptc_disc, ctp_disc, delta_disc,
-                             ptc_map, ctp_map, delta_map)
+  flat_head_labels          (song_id, backbone, head, score)
+  analyze_metrics           (strategy_key, strategy_type, sim_metric, k, metric, value)
 
 Binned-embedding pipeline (one vector per STD-threshold bin per song):
   binned_calibration        (backbone, dist_mode, p10, p25, p50, p75, mean_d, sigma_d,
                              n_patches)
-  binned_vecs               (song_id, backbone, bin_mode, std_thresh, bin_id,
-                             pool_strategy, vec_raw BLOB, vec_norm BLOB, weight,
-                             outlier_count)
-  binned_head_results       (song_id, backbone, head, bin_mode, std_thresh, bin_id,
-                             act BLOB, weight)
-  binned_retrieval_rows     (backbone, bin_mode, std_thresh, rep_a, rep_b, sim_metric,
-                             agg_method, k, disc_score, map_k, mrr, ndcg_k, recall_k,
-                             mean_within, mean_cross, disc_artist, disc_album,
-                             disc_genre, disc_head)
   head_agreement_rows       (backbone, head, bin_mode, std_thresh, agreement_rate,
                              n_songs)
   binned_song_stats         (song_id, backbone, bin_mode, std_thresh, n_bins,
                              n_patches, n_outliers, min_bin_size, max_bin_size,
-                             mean_bin_size, bin_div_std)
+                             mean_bin_size)
   binned_pair_sims          (song_a, song_b, backbone, bin_mode, std_thresh, rep_a,
                              rep_b, sim_metric, agg_method, score)
   patch_features            (song_id, patch_idx, rms, spectral_centroid,
                              onset_strength, chroma_key)
   binned_classify_ctp       (song_id, backbone, head, bin_mode, std_thresh, bin_id,
                              act BLOB, weight)
+  truncation_robustness_rows (backbone, bin_mode, std_thresh, flat_mean_sim,
+                              binned_mean_sim, truncation_robustness_delta)
 
 CTP-derived (segment boundaries from classifier score stream, head-specific):
   binned_ctp_vecs           (song_id, backbone, head, bin_mode, std_thresh, bin_id,
                              pool_strategy, vec_raw BLOB, vec_norm BLOB, weight,
                              outlier_count)
-  binned_ctp_retrieval_rows (backbone, head, bin_mode, std_thresh, rep_a, rep_b,
-                             sim_metric, agg_method, k, + same metrics as
-                             binned_retrieval_rows)
   binned_ptc_ctp_metrics    (backbone, bin_mode, std_thresh, head, divergence_mean,
                              bin_count_var, sim_align_corr)
   head_sim_corr_rows        (backbone, bin_mode, std_thresh, rep_a, rep_b, sim_metric,
@@ -68,7 +54,7 @@ try:
 except ImportError:
     _HAS_DUCKDB = False
 
-from ..config import DB_PATH
+from scripts.embedding_research.config import DB_PATH
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS songs (
@@ -98,47 +84,22 @@ CREATE TABLE IF NOT EXISTS head_results (
     PRIMARY KEY (song_id, backbone, head, strategy, pathway)
 );
 
-CREATE TABLE IF NOT EXISTS retrieval_rows (
-    backbone    TEXT NOT NULL,
-    strategy    TEXT NOT NULL,
-    sim_metric  TEXT NOT NULL,
-    k           INTEGER NOT NULL,
-    map_k       DOUBLE,
-    mrr         DOUBLE,
-    ndcg_k      DOUBLE,
-    recall_k    DOUBLE,
-    recall_k_album DOUBLE,
-    recall_k_genre DOUBLE,
-    disc_score  DOUBLE,
-    mean_within DOUBLE,
-    mean_cross  DOUBLE,
-    disc_artist DOUBLE,
-    disc_album  DOUBLE,
-    disc_genre  DOUBLE,
-    disc_head   DOUBLE,
-    PRIMARY KEY (backbone, strategy, sim_metric, k)
+CREATE TABLE IF NOT EXISTS flat_head_labels (
+    song_id  TEXT NOT NULL,
+    backbone TEXT NOT NULL,
+    head     TEXT NOT NULL,
+    score DOUBLE NOT NULL,  -- raw flat PTC activation score in [0, 1]
+    PRIMARY KEY (song_id, backbone, head)
 );
 
-CREATE TABLE IF NOT EXISTS ann_rows (
-    backbone   TEXT NOT NULL,
-    strategy   TEXT NOT NULL,
-    ef_search  INTEGER NOT NULL,
-    recall_k   DOUBLE,
-    backend    TEXT,
-    PRIMARY KEY (backbone, strategy, ef_search)
-);
-
-CREATE TABLE IF NOT EXISTS ptc_ctp_rows (
-    backbone   TEXT NOT NULL,
-    head       TEXT NOT NULL,
-    strategy   TEXT NOT NULL,
-    ptc_disc   DOUBLE,
-    ctp_disc   DOUBLE,
-    delta_disc DOUBLE,
-    ptc_map    DOUBLE,
-    ctp_map    DOUBLE,
-    delta_map  DOUBLE,
-    PRIMARY KEY (backbone, head, strategy)
+CREATE TABLE IF NOT EXISTS analyze_metrics (
+    strategy_key  TEXT NOT NULL,
+    strategy_type TEXT NOT NULL,
+    sim_metric    TEXT NOT NULL,
+    k             INTEGER NOT NULL,
+    metric        TEXT NOT NULL,
+    value         DOUBLE,
+    PRIMARY KEY (strategy_key, sim_metric, k, metric)
 );
 
 -- ── Binned-embedding tables ───────────────────────────────────────────────────
@@ -161,71 +122,6 @@ CREATE TABLE IF NOT EXISTS binned_calibration (
     PRIMARY KEY (backbone, dist_mode)
 );
 
--- One row per (song, backbone, bin_mode, std_thresh, bin_id, pool_strategy).
--- Stores both raw and L2-normalised pooled patch vectors for each segment.
--- weight         = number of patches in this segment
--- outlier_count  = patches rejected by the outlier lookahead window
--- bin_mode       = 'temporal_global' | 'temporal_perdim'
---   temporal_global : segment boundary when global L2 distance exceeds thresh
---   temporal_perdim : segment boundary when max per-dim deviation exceeds thresh
--- pool_strategy   = 'mean' | 'median' | 'max' | 'min'
-CREATE TABLE IF NOT EXISTS binned_vecs (
-    song_id       TEXT NOT NULL,
-    backbone      TEXT NOT NULL,
-    bin_mode      TEXT NOT NULL,
-    std_thresh    DOUBLE NOT NULL,
-    bin_id        INTEGER NOT NULL,   -- sequential segment index 0,1,2,...
-    pool_strategy TEXT NOT NULL,      -- 'mean' | 'median' | 'max' | 'min'
-    vec_raw       BLOB NOT NULL,      -- float32 bytes: np.frombuffer(v, np.float32)
-    vec_norm      BLOB NOT NULL,      -- float32 bytes: np.frombuffer(v, np.float32)
-    weight        INTEGER NOT NULL,
-    outlier_count INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (song_id, backbone, bin_mode, std_thresh, bin_id, pool_strategy)
-);
-
--- Head activations per bin segment.
-CREATE TABLE IF NOT EXISTS binned_head_results (
-    song_id    TEXT NOT NULL,
-    backbone   TEXT NOT NULL,
-    head       TEXT NOT NULL,
-    bin_mode   TEXT NOT NULL,
-    std_thresh DOUBLE NOT NULL,
-    bin_id     INTEGER NOT NULL,
-    act        BLOB NOT NULL,        -- float32 bytes: np.frombuffer(v, np.float32)
-    weight     INTEGER NOT NULL,
-    PRIMARY KEY (song_id, backbone, head, bin_mode, std_thresh, bin_id)
-);
-
--- Retrieval metrics for binned multi-vector similarity search.
--- rep_a / rep_b  : which pool representation is used for each song in a pair
---                  ('mean' | 'median' | 'max' | 'min')
--- sim_metric     : 'cosine' | 'l2'
--- agg_method     : how the [N_a x N_b] bin-vs-bin matrix is collapsed
---                  ('mean' | 'median' | 'max' | 'min')
-CREATE TABLE IF NOT EXISTS binned_retrieval_rows (
-    backbone      TEXT NOT NULL,
-    bin_mode      TEXT NOT NULL,
-    std_thresh    DOUBLE NOT NULL,
-    rep_a         TEXT NOT NULL,
-    rep_b         TEXT NOT NULL,
-    sim_metric    TEXT NOT NULL,
-    agg_method    TEXT NOT NULL,
-    k             INTEGER NOT NULL,
-    disc_score    DOUBLE,
-    map_k         DOUBLE,
-    mrr           DOUBLE,
-    ndcg_k        DOUBLE,
-    recall_k      DOUBLE,
-    recall_k_album DOUBLE,
-    recall_k_genre DOUBLE,
-    mean_within   DOUBLE,
-    mean_cross    DOUBLE,
-    disc_artist   DOUBLE,
-    disc_album    DOUBLE,
-    disc_genre    DOUBLE,
-    disc_head     DOUBLE,
-    PRIMARY KEY (backbone, bin_mode, std_thresh, rep_a, rep_b, sim_metric, agg_method, k)
-);
 
 -- Fraction of songs where binned weighted-majority head decision matches
 -- the baseline PTC/median single-vector decision.
@@ -270,8 +166,6 @@ CREATE TABLE IF NOT EXISTS binned_pair_sims (
 );
 
 -- Per-song structural stats for a given (backbone, bin_mode, std_thresh).
--- bin_div_std = STD of pairwise L2 distances between bin mean vectors
---               (0 = all bins identical, high = very diverse segments).
 CREATE TABLE IF NOT EXISTS binned_song_stats (
     song_id       TEXT NOT NULL,
     backbone      TEXT NOT NULL,
@@ -283,7 +177,6 @@ CREATE TABLE IF NOT EXISTS binned_song_stats (
     min_bin_size  INTEGER,
     max_bin_size  INTEGER,
     mean_bin_size FLOAT,
-    bin_div_std   FLOAT,
     PRIMARY KEY (song_id, backbone, bin_mode, std_thresh)
 );
 
@@ -301,6 +194,16 @@ CREATE TABLE IF NOT EXISTS binned_classify_ctp (
     act         BLOB NOT NULL,
     weight      INTEGER NOT NULL,
     PRIMARY KEY (song_id, backbone, head, bin_mode, std_thresh, bin_id)
+);
+
+CREATE TABLE IF NOT EXISTS truncation_robustness_rows (
+    backbone                     TEXT NOT NULL,
+    bin_mode                     TEXT NOT NULL,
+    std_thresh                   DOUBLE NOT NULL,
+    flat_mean_sim                DOUBLE,
+    binned_mean_sim              DOUBLE,
+    truncation_robustness_delta  DOUBLE,
+    PRIMARY KEY (backbone, bin_mode, std_thresh)
 );
 
 -- CTP-derived embedding pools.
@@ -325,34 +228,6 @@ CREATE TABLE IF NOT EXISTS binned_ctp_vecs (
     PRIMARY KEY (song_id, backbone, head, bin_mode, std_thresh, bin_id, pool_strategy)
 );
 
--- CTP-derived retrieval metrics. Same schema as binned_retrieval_rows but keyed
--- on (backbone, head, ...) because CTP segment boundaries are head-specific.
--- head = the head whose score stream was STD-binned to determine segment indices.
-CREATE TABLE IF NOT EXISTS binned_ctp_retrieval_rows (
-    backbone      TEXT NOT NULL,
-    head          TEXT NOT NULL,
-    bin_mode      TEXT NOT NULL,
-    std_thresh    DOUBLE NOT NULL,
-    rep_a         TEXT NOT NULL,
-    rep_b         TEXT NOT NULL,
-    sim_metric    TEXT NOT NULL,
-    agg_method    TEXT NOT NULL,
-    k             INTEGER NOT NULL,
-    disc_score    DOUBLE,
-    map_k         DOUBLE,
-    mrr           DOUBLE,
-    ndcg_k        DOUBLE,
-    recall_k      DOUBLE,
-    recall_k_album DOUBLE,
-    recall_k_genre DOUBLE,
-    mean_within   DOUBLE,
-    mean_cross    DOUBLE,
-    disc_artist   DOUBLE,
-    disc_album    DOUBLE,
-    disc_genre    DOUBLE,
-    disc_head     DOUBLE,
-    PRIMARY KEY (backbone, head, bin_mode, std_thresh, rep_a, rep_b, sim_metric, agg_method, k)
-);
 
 -- PTC-vs-CTP divergence metrics. Per (backbone, bin_mode, std_thresh, head):
 --   divergence_mean = mean over songs of |ptc_score - ctp_score|, where each per-song
@@ -410,58 +285,6 @@ def ensure_schema(con) -> None:
     """Execute the DDL against an already-open connection. Safe to call multiple times."""
     _require_duckdb()
     con.execute(_DDL)
-    # Forward migrations — safe to run on both new and existing DBs.
-    con.execute("ALTER TABLE songs ADD COLUMN IF NOT EXISTS genre TEXT")
-    con.execute("ALTER TABLE retrieval_rows ADD COLUMN IF NOT EXISTS disc_album DOUBLE")
-    con.execute("ALTER TABLE binned_retrieval_rows ADD COLUMN IF NOT EXISTS disc_album DOUBLE")
-    con.execute("ALTER TABLE binned_retrieval_rows ADD COLUMN IF NOT EXISTS disc_artist DOUBLE")
-    con.execute("ALTER TABLE binned_retrieval_rows ADD COLUMN IF NOT EXISTS disc_genre DOUBLE")
-    con.execute("ALTER TABLE binned_retrieval_rows ADD COLUMN IF NOT EXISTS disc_head DOUBLE")
-    # Legacy: binned_ctp_vecs and binned_ctp_retrieval_rows were added to the DDL after
-    # being introduced as forward migrations. Kept here for pre-DDL databases.
-    con.execute(
-        "CREATE TABLE IF NOT EXISTS binned_ctp_vecs ("
-        "  song_id       TEXT NOT NULL,"
-        "  backbone      TEXT NOT NULL,"
-        "  head          TEXT NOT NULL,"
-        "  bin_mode      TEXT NOT NULL,"
-        "  std_thresh    DOUBLE NOT NULL,"
-        "  bin_id        INTEGER NOT NULL,"
-        "  pool_strategy TEXT NOT NULL,"
-        "  vec_raw       BLOB NOT NULL,"
-        "  vec_norm      BLOB NOT NULL,"
-        "  weight        INTEGER NOT NULL,"
-        "  outlier_count INTEGER NOT NULL DEFAULT 0,"
-        "  PRIMARY KEY (song_id, backbone, head, bin_mode, std_thresh, bin_id, pool_strategy)"
-        ")"
-    )
-    con.execute(
-        "CREATE TABLE IF NOT EXISTS binned_ctp_retrieval_rows ("
-        "  backbone      TEXT NOT NULL,"
-        "  head          TEXT NOT NULL,"
-        "  bin_mode      TEXT NOT NULL,"
-        "  std_thresh    DOUBLE NOT NULL,"
-        "  rep_a         TEXT NOT NULL,"
-        "  rep_b         TEXT NOT NULL,"
-        "  sim_metric    TEXT NOT NULL,"
-        "  agg_method    TEXT NOT NULL,"
-        "  k             INTEGER NOT NULL,"
-        "  disc_score    DOUBLE,"
-        "  map_k         DOUBLE,"
-        "  mrr           DOUBLE,"
-        "  ndcg_k        DOUBLE,"
-        "  recall_k      DOUBLE,"
-        "  recall_k_album DOUBLE,"
-        "  recall_k_genre DOUBLE,"
-        "  mean_within   DOUBLE,"
-        "  mean_cross    DOUBLE,"
-        "  disc_artist   DOUBLE,"
-        "  disc_album    DOUBLE,"
-        "  disc_genre    DOUBLE,"
-        "  disc_head     DOUBLE,"
-        "  PRIMARY KEY (backbone, head, bin_mode, std_thresh, rep_a, rep_b, sim_metric, agg_method, k)"
-        ")"
-    )
 
 
 def upsert_phase_timing(con, run_ts: str, phase: str, elapsed_s: float) -> None:

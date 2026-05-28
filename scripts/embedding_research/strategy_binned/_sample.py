@@ -6,7 +6,7 @@ import hashlib as _hashlib
 
 import numpy as _np
 
-from .. import db as _db
+from scripts.embedding_research import db as _db
 
 
 def _quantile_bucket(values: _np.ndarray, n_buckets: int) -> _np.ndarray:
@@ -60,9 +60,7 @@ def _select_stratified_sample(
 
     bins_bucket = _quantile_bucket(n_bins, n_buckets)
     div_bucket = _quantile_bucket(divs, n_buckets)
-    artist_bucket = _np.array(
-        [_artist_pop_bucket(artist_counts[r["artist"]]) for r in rows], dtype=_np.int32
-    )
+    artist_bucket = _np.array([_artist_pop_bucket(artist_counts[r["artist"]]) for r in rows], dtype=_np.int32)
 
     strata: dict[tuple[int, int, int], list[int]] = {}
     for idx, key in enumerate(zip(bins_bucket.tolist(), div_bucket.tolist(), artist_bucket.tolist(), strict=False)):

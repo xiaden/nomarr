@@ -14,12 +14,20 @@ from tqdm import tqdm as _tqdm
 
 from .config import (
     bootstrap_nomarr as _bootstrap_nomarr,
+)
+from .config import (
     discover_audio as _discover_audio,
+)
+from .config import (
     path_to_meta as _path_to_meta,
+)
+from .config import (
     song_id as _song_id,
 )
 from .db import (
     song_exists as _song_exists,
+)
+from .db import (
     upsert_song as _upsert_song,
 )
 
@@ -49,13 +57,17 @@ def ingest(con, *, limit: int | None = None, force: bool = False) -> None:
         try:
             meta = _path_to_meta(path)
             _upsert_song(
-                con, sid,
-                meta["path"], meta["artist"], meta["album"],
-                meta["title"], meta.get("genre", "unknown"),
+                con,
+                sid,
+                meta["path"],
+                meta["artist"],
+                meta["album"],
+                meta["title"],
+                meta.get("genre", "unknown"),
             )
             new += 1
         except Exception as exc:
             errors += 1
-            _tqdm.write(f"  [ERROR] {path.name}: {exc}")
+            _log.error("%s: %s", path.name, exc)
 
     _log.info("Ingest complete: new=%d  skipped=%d  errors=%d", new, skipped, errors)

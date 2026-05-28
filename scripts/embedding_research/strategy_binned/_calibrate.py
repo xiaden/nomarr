@@ -8,15 +8,17 @@ from typing import cast as _cast
 
 import numpy as _np
 
-from .. import db as _db
-from ..config import patches_path as _patches_path
-from ..config import song_id as _song_id
-from ..helpers.binning import BIN_MODES, DIST_FNS as _DIST_FNS
-from ..similarity import l2_normalise as _l2_normalise
+from scripts.embedding_research import db as _db
+from scripts.embedding_research.config import patches_path as _patches_path
+from scripts.embedding_research.config import song_id as _song_id
+from scripts.embedding_research.helpers.binning import BIN_MODES
+from scripts.embedding_research.helpers.binning import DIST_FNS as _DIST_FNS
+from scripts.embedding_research.similarity import l2_normalise as _l2_normalise
+from scripts.embedding_research.vector_types import RawTensor as _RawTensor
 
 
 def _load_cached_calibration(con, backbone: str) -> dict[str, dict] | None:
-    """Return per-bin-mode calibration stats dict, or None if unavailable."""
+    """Return per-bin-mode calibration stats dict (plus amplitude), or None if unavailable."""
     load_calibration = _cast("_Any", _db.load_calibration)
     try:
         cached = load_calibration(con, backbone)
@@ -33,6 +35,7 @@ def _load_cached_calibration(con, backbone: str) -> dict[str, dict] | None:
             row = None
         if row is not None:
             per_mode[bin_mode] = row
+
     return per_mode or None
 
 
@@ -42,9 +45,16 @@ def _calibrate(
     audio_paths: list[_Path],
     force: bool = False,
 ) -> dict[str, dict]:
-    """Compute per-dist-mode calibration stats and persist to DuckDB."""
+    """Compute per-dist-mode calibration stats and persist to DuckDB.
+
+    Returns a dict keyed by bin_mode (e.g. ``"temporal_global"``) with distance
+    distribution stats.  All centroids are renormalized to the unit sphere for
+    consistency with the fixed ``temporal_segment`` implementation.
+    """
     results: dict[str, dict] = {}
     load_calibration = _cast("_Any", _db.load_calibration)
+
+    # ── Distance calibration (one pass per dist mode) ──────────────────────
     for dist_mode, dist_fn in _DIST_FNS.items():
         if not force:
             cached = load_calibration(con, backbone, dist_mode)
@@ -59,9 +69,11 @@ def _calibrate(
             raw = _np.load(str(song_sidecar), mmap_mode="r")
             if len(raw) < 2:
                 continue
-            norm = _l2_normalise(raw.astype(_np.float32))
-            centroid = norm.mean(axis=0)
-            dists.extend(dist_fn(patch, centroid) for patch in norm)
+            norm = _l2_normalise(_RawTensor(raw.astype(_np.float32)))
+            centroid_mean = norm.data.mean(axis=0)
+            centroid_n = float(_np.linalg.norm(centroid_mean))
+            centroid = centroid_mean / centroid_n if centroid_n > 1e-9 else centroid_mean
+            dists.extend(dist_fn(patch, centroid) for patch in norm.data)
         if not dists:
             continue
         arr = _np.array(dists, dtype=_np.float64)
@@ -87,4 +99,5 @@ def _calibrate(
             int(stats["n_patches"]),
         )
         results[dist_mode] = stats
+
     return results

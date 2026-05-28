@@ -60,14 +60,6 @@ def _extract_patch_features(path: _Path | str, n_patches: int) -> list[dict] | N
     return features
 
 
-def _run_head_on_vec(session, vec: _np.ndarray) -> _np.ndarray:
-    inp = vec[None, :].astype(_np.float32)
-    outputs = _cast("_Any", session.run(["activations"], {"embeddings": inp}))
-    if not outputs:
-        raise RuntimeError("Head session returned no activations")
-    return _np.asarray(outputs[0][0], dtype=_np.float32)
-
-
 def _run_head_batch(session, vecs: _np.ndarray) -> _np.ndarray:
     """Run a head model on a batch of vectors.
 
