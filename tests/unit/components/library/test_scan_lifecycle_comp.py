@@ -493,19 +493,14 @@ class TestOnScanCompletePipelineHook:
 
     def test_transitions_to_ml_running_when_library_has_files(self) -> None:
         mock_db = MagicMock()
+        mock_db.library.count_library_file_links.return_value = 5
 
-        with (
-            patch(
-                "nomarr.components.library.scan_lifecycle_comp.count_library_files",
-                return_value=5,
-            ) as mock_count_library_files,
-            patch(
-                "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_state"
-            ) as mock_transition_pipeline_state,
-        ):
+        with patch(
+            "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_state"
+        ) as mock_transition_pipeline_state:
             on_scan_complete_pipeline_hook(mock_db, "libraries/1")
 
-        mock_count_library_files.assert_called_once_with(mock_db, "libraries/1")
+        mock_db.library.count_library_file_links.assert_called_once_with("libraries/1")
         mock_transition_pipeline_state.assert_called_once_with(
             mock_db,
             "libraries/1",
@@ -514,19 +509,14 @@ class TestOnScanCompletePipelineHook:
 
     def test_transitions_to_idle_when_library_has_no_files(self) -> None:
         mock_db = MagicMock()
+        mock_db.library.count_library_file_links.return_value = 0
 
-        with (
-            patch(
-                "nomarr.components.library.scan_lifecycle_comp.count_library_files",
-                return_value=0,
-            ) as mock_count_library_files,
-            patch(
-                "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_state"
-            ) as mock_transition_pipeline_state,
-        ):
+        with patch(
+            "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_state"
+        ) as mock_transition_pipeline_state:
             on_scan_complete_pipeline_hook(mock_db, "libraries/1")
 
-        mock_count_library_files.assert_called_once_with(mock_db, "libraries/1")
+        mock_db.library.count_library_file_links.assert_called_once_with("libraries/1")
         mock_transition_pipeline_state.assert_called_once_with(
             mock_db,
             "libraries/1",

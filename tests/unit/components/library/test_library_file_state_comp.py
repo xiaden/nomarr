@@ -37,6 +37,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_NOT_VECTORS_EXTRACTED,
     STATE_TAGGED,
     STATE_TAGS_CURRENT,
+    STATE_TAGS_NOT_EXTRACTED,
     STATE_TAGS_NOT_WRITTEN,
     STATE_TAGS_STALE,
     STATE_VECTORS_EXTRACTED,
@@ -64,7 +65,7 @@ class TestInitializeFileStates:
     def test_inserts_negative_state_edges_for_single_file(self) -> None:
         mock_db = _make_mock_db()
         expected_negative_states = [
-            state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_") or state == STATE_TAGS_STALE
+            state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_") or state in (STATE_TAGS_STALE, STATE_TAGS_NOT_EXTRACTED)
         ]
 
         initialize_file_states(mock_db, "library_files/1")
@@ -77,7 +78,9 @@ class TestInitializeFileStates:
     def test_silently_skips_duplicate_key_error(self) -> None:
         mock_db = _make_mock_db()
         expected_negative_states = [
-            state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_") or state == STATE_TAGS_STALE
+            state
+            for state in ALL_STATE_VERTICES
+            if state.startswith("file_states/not_") or state in (STATE_TAGS_STALE, STATE_TAGS_NOT_EXTRACTED)
         ]
         mock_db.app.add_file_states.side_effect = DuplicateKeyError()
 
@@ -103,7 +106,9 @@ class TestInitializeFileStatesBatch:
     def test_inserts_negative_state_edges_for_multiple_files(self) -> None:
         mock_db = _make_mock_db()
         expected_negative_states = [
-            state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_") or state == STATE_TAGS_STALE
+            state
+            for state in ALL_STATE_VERTICES
+            if state.startswith("file_states/not_") or state in (STATE_TAGS_STALE, STATE_TAGS_NOT_EXTRACTED)
         ]
         expected_docs = [
             {"_from": file_id, "_to": state}
@@ -127,7 +132,9 @@ class TestInitializeFileStatesBatch:
     def test_silently_skips_duplicate_key_error(self) -> None:
         mock_db = _make_mock_db()
         expected_negative_states = [
-            state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_") or state == STATE_TAGS_STALE
+            state
+            for state in ALL_STATE_VERTICES
+            if state.startswith("file_states/not_") or state in (STATE_TAGS_STALE, STATE_TAGS_NOT_EXTRACTED)
         ]
         mock_db.app.add_file_states.side_effect = DuplicateKeyError()
 
@@ -296,7 +303,7 @@ class TestDiscoverNextUntaggedFile:
         mock_db = _make_mock_db()
         mock_db.app.list_file_docs_in_state.side_effect = [
             [{"_id": "library_files/1", "_key": "a"}],
-            [],
+            [{"_id": "library_files/1"}],  # same file is errored, so it's filtered out
         ]
 
         result = discover_next_untagged_file(mock_db)
@@ -340,7 +347,7 @@ class TestLibraryScopedStateQueries:
 
         result = count_untagged_files(mock_db, library_id="libraries/1")
 
-        assert result == 1
+        assert result == 2
         assert mock_db.app.list_file_docs_in_state.call_args_list == [
             call(STATE_NOT_TAGGED),
         ]
@@ -422,12 +429,11 @@ class TestLibraryScopedStateQueries:
                 {"_id": "library_files/2"},
                 {"_id": "library_files/3"},
             ],
-            [{"_id": "library_files/2"}],
         ]
 
         result = count_untagged_files(mock_db)
 
-        assert result == 2
+        assert result == 3
         mock_db.library.list_library_files.assert_not_called()
 
     @pytest.mark.unit
