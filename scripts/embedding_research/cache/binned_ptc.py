@@ -32,6 +32,7 @@ import numpy as np
 from scripts.embedding_research.config import OUTPUT_ROOT as _OUTPUT_ROOT
 from scripts.embedding_research.helpers.binning import cache_semantics_tag as _cache_semantics_tag
 from scripts.embedding_research.helpers.binning import threshold_key as _threshold_key
+from scripts.embedding_research.helpers.cache_utils import build_done_set as _build_done_set
 from scripts.embedding_research.helpers.cache_utils import missing_sids as _missing_sids
 from scripts.embedding_research.vector_types import UnitTensor
 
@@ -115,17 +116,8 @@ def list_configs(backbone: str | None = None) -> set[tuple[str, str, float]]:
 
 
 def list_sids(backbone: str, bin_mode: str, std_thresh: float) -> list[str]:
-    """Return song_ids present in the filesystem cache for a given config. Zero-length files are purged."""
-    d = config_dir(backbone, bin_mode, std_thresh)
-    if not d.exists():
-        return []
-    valid = []
-    for f in d.glob("*.npz"):
-        if f.stat().st_size == 0:
-            _purge_corrupt(f)
-        else:
-            valid.append(f.stem)
-    return sorted(valid)
+    """Return song_ids present in the filesystem cache for a given config."""
+    return sorted(_build_done_set(config_dir(backbone, bin_mode, std_thresh), suffix=".npz"))
 
 
 def missing_for_config(song_ids: list[str], backbone: str, bin_mode: str, std_thresh: float) -> list[str]:
@@ -243,8 +235,8 @@ def save(
     p = cache_path(backbone, bin_mode, std_thresh, song_id)
     p.parent.mkdir(parents=True, exist_ok=True)
     np.savez(str(p), **arrays)
-    _log.info(
-        "cache.save  %s/%s/%.3f/%s  bins=%d strats=%d heads=%d",
+    _log.debug(
+        "cache.  %s/%s/%.3f/%s  bins=%d strats=%d heads=%d",
         backbone,
         bin_mode,
         std_thresh,
@@ -253,6 +245,7 @@ def save(
         len(strategies),
         len(heads),
     )
+
 
 
 # ---------------------------------------------------------------------------

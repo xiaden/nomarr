@@ -10,8 +10,11 @@ from __future__ import annotations
 import logging
 
 import numpy as np
+import pytest
 
 from scripts.embedding_research.similarity import (
+    DISC_HEAD_GAP,
+    DISC_HEAD_WINDOW,
     _rankings_from_sim,
     compute_retrieval_metrics,
     cosine_matrix,
@@ -87,17 +90,12 @@ def test_disc_genre_none_input():
 
 
 # ---------------------------------------------------------------------------
-# Test 4: disc_head — two bin groups produce non-zero discrimination
+# Test 4: disc_head — separated score groups produce non-zero discrimination
 # ---------------------------------------------------------------------------
 
 
 def test_disc_head_score_bins():
-    """head_scores (1,4), bins [0,0,8,8] with separating sim → disc_head != 0.
-
-    Scores [0.05, 0.05, 0.85, 0.85]:
-      bin = min(int(score*10), 9) → [0, 0, 8, 8]
-    Two songs per bin allows within-group vs cross-group discrimination.
-    """
+    """head_scores (1,4), scores [0.05, 0.05, 0.85, 0.85] → wide score gap → in-set and out-set both non-empty → disc_head != 0."""
     sim = _block_sim(within=0.9, cross=0.1)
     labels = ["A", "A", "B", "B"]
     head_scores = [[0.05, 0.05, 0.85, 0.85]]  # shape (1, 4): n_heads=1, n=4
@@ -106,17 +104,48 @@ def test_disc_head_score_bins():
 
 
 # ---------------------------------------------------------------------------
-# Test 5: disc_head — constant bin → skipped → 0.0
+# Test 5: disc_head — identical scores → skipped → 0.0
 # ---------------------------------------------------------------------------
 
 
 def test_disc_head_constant_bin_skipped():
-    """All head scores 0.5 → bin 5 for every song → disc_head == 0.0."""
+    """All head scores 0.5 → every song within window of every other → out-set empty for all → disc_head == 0.0."""
     sim = _block_sim()
     labels = ["A", "A", "B", "B"]
-    # 0.5 * 10 = 5.0 → int32 = 5 → min(5, 9) = 5 for all four songs
+    # scores 0.5: |0.5 - 0.5| = 0.0 <= DISC_HEAD_WINDOW, so all songs are in-set; out-set is empty
     head_scores = [[0.5, 0.5, 0.5, 0.5]]
     m = compute_retrieval_metrics(sim, labels, k=2, head_scores=head_scores)
+    assert m["disc_head"] == 0.0
+
+
+def test_disc_head_window_basic():
+    """5 songs with spread scores: constants are exported and the window metric produces a non-zero value."""
+    assert DISC_HEAD_WINDOW == 0.1
+    assert DISC_HEAD_GAP == 0.1
+
+    n = 5
+    sim = np.eye(n, dtype=np.float32)
+    sim[0, 1] = sim[1, 0] = 0.8
+    sim[3, 4] = sim[4, 3] = 0.8
+    sim[0, 4] = sim[4, 0] = 0.1
+    scores = [0.0, 0.1, 0.5, 0.9, 1.0]
+    head_scores = [scores]
+    labels = ["A"] * n
+
+    m = compute_retrieval_metrics(sim, labels, k=4, head_scores=head_scores)
+
+    assert m["disc_head"] != 0.0
+
+
+def test_disc_head_all_same_score():
+    """All songs share score 0.5: every song's window covers all others, out-set empty → disc_head == 0.0."""
+    n = 5
+    sim = _block_sim(within=0.8, cross=0.2, n=n)
+    head_scores = [[0.5] * n]
+    labels = ["A"] * n
+
+    m = compute_retrieval_metrics(sim, labels, k=4, head_scores=head_scores)
+
     assert m["disc_head"] == 0.0
 
 
@@ -130,7 +159,7 @@ def test_disc_general_all_three_components():
     sim = _block_sim(within=0.8, cross=0.2)
     labels = ["A", "A", "B", "B"]
     genres = ["G1", "G1", "G2", "G2"]
-    head_scores = [[0.1, 0.1, 0.9, 0.9]]  # bins [1, 1, 9, 9]
+    head_scores = [[0.1, 0.1, 0.9, 0.9]]  # wide score split with valid in/out windows
     m = compute_retrieval_metrics(sim, labels, k=2, genres=genres, head_scores=head_scores)
     assert m["disc_artist"] != 0.0
     assert m["disc_genre"] != 0.0
@@ -148,7 +177,7 @@ def test_disc_general_zero_component_warning(caplog):
     """genres=None → disc_genre excluded; disc_general==mean(artist,head); INFO (not WARNING) logged."""
     sim = _block_sim(within=0.8, cross=0.2)
     labels = ["A", "A", "B", "B"]
-    head_scores = [[0.1, 0.1, 0.9, 0.9]]  # bins [1, 1, 9, 9] → disc_head != 0
+    head_scores = [[0.1, 0.1, 0.9, 0.9]]  # wide score split → disc_head != 0
     with caplog.at_level(logging.INFO, logger="scripts.embedding_research.similarity"):
         m = compute_retrieval_metrics(sim, labels, k=2, genres=None, head_scores=head_scores)
     assert m["disc_genre"] == 0.0
@@ -165,7 +194,7 @@ def test_disc_general_zero_component_warning(caplog):
 
 
 # ---------------------------------------------------------------------------
-# Test 8: disc_head log levels — None and empty-list → INFO; constant bin → WARNING
+# Test 8: disc_head log levels — None and empty-list → INFO; same-score window → WARNING
 # ---------------------------------------------------------------------------
 
 
@@ -194,28 +223,16 @@ def test_disc_head_empty_list_logs_info(caplog):
 
 
 def test_disc_head_constant_bin_logs_warning(caplog):
-    """Scores provided but all in same bin → disc_head=0 logged at WARNING."""
+    """Scores provided but every song shares the same score window → disc_head=0 logged at WARNING."""
     sim = _block_sim()
     labels = ["A", "A", "B", "B"]
-    head_scores = [[0.5, 0.5, 0.5, 0.5]]  # all bin 5
+    head_scores = [[0.5, 0.5, 0.5, 0.5]]  # all score 0.5 → out-set empty for every song
     with caplog.at_level(logging.INFO, logger="scripts.embedding_research.similarity"):
         m = compute_retrieval_metrics(sim, labels, k=2, head_scores=head_scores)
     assert m["disc_head"] == 0.0
     head_msgs = [(r.levelno, r.message) for r in caplog.records if "disc_head" in r.message]
     assert head_msgs, "expected a disc_head log entry"
-    assert all(lvl == logging.WARNING for lvl, _ in head_msgs), "constant-bin head scores must log WARNING, not INFO"
-
-
-# ---------------------------------------------------------------------------
-# Test 9 (was 8): bin_idx formula — boundary and edge values
-# ---------------------------------------------------------------------------
-
-
-def test_bin_idx_formula():
-    """Verify bin = min(int(score * 10), 9) for boundary scores."""
-    scores = np.array([0.0, 0.09, 0.10, 0.99, 1.0], dtype=np.float64)
-    bins = np.minimum((scores * 10).astype(np.int32), 9)
-    assert list(bins) == [0, 0, 1, 9, 9]
+    assert all(lvl == logging.WARNING for lvl, _ in head_msgs), "same-score head scores must log WARNING, not INFO"
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +241,7 @@ def test_bin_idx_formula():
 
 
 def test_head_scores_shape_transposed():
-    """(n_heads, n) and (n, n_heads) layouts produce identical disc_head and precision."""
+    """(n_heads, n) and (n, n_heads) layouts produce identical disc_head and head MAP."""
     sim = _block_sim(within=0.9, cross=0.1)
     labels = ["A", "A", "B", "B"]
     # n=4, n_heads=2 (distinct sizes avoid the ambiguous n==n_heads case)
@@ -235,7 +252,7 @@ def test_head_scores_shape_transposed():
     m_nh = compute_retrieval_metrics(sim, labels, k=2, head_scores=head_scores_nh)
     m_hn = compute_retrieval_metrics(sim, labels, k=2, head_scores=head_scores_hn)
     assert abs(m_nh["disc_head"] - m_hn["disc_head"]) < 1e-7
-    assert abs(m_nh["precision_k_head_mean"] - m_hn["precision_k_head_mean"]) < 1e-7
+    assert abs(m_nh["map_k_head"] - m_hn["map_k_head"]) < 1e-7
 
 
 # ---------------------------------------------------------------------------
@@ -293,3 +310,288 @@ def test_l2_normalise():
     normed = l2_normalise(RawTensor(raw))
     norms = np.linalg.norm(np.array(normed), axis=1)
     np.testing.assert_allclose(norms, 1.0, atol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Test 14: disc_head — isolated scores leave no in-set neighbors
+# ---------------------------------------------------------------------------
+
+
+def test_disc_head_score_isolation_no_inset_neighbors():
+    """Two songs with scores [0.0, 1.0]: after self-exclusion, each song has no in-set neighbor (distance > DISC_HEAD_WINDOW) → in_mask all-False → all songs skipped → disc_head == 0.0."""
+    sim = np.eye(2, dtype=np.float32)
+    labels = ["A", "B"]
+    head_scores = [[0.0, 1.0]]
+
+    m = compute_retrieval_metrics(sim, labels, k=1, head_scores=head_scores)
+
+    assert m["disc_head"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Test 15: disc_head — single-song corpus skips cleanly
+# ---------------------------------------------------------------------------
+
+
+def test_disc_head_single_song_corpus():
+    """n=1 corpus: single song has no neighbors after self-exclusion → disc_head == 0.0 and the Phase 4 payload keys are present."""
+    sim = np.eye(1, dtype=np.float32)
+    labels = ["A"]
+    head_scores = [[0.5]]
+
+    m = compute_retrieval_metrics(sim, labels, head_scores=head_scores)
+
+    assert m["disc_head"] == 0.0
+    assert set(m) == {
+        "ap_k_genre",
+        "ap_k_head",
+        "disc_artist",
+        "disc_general",
+        "disc_genre",
+        "disc_head",
+        "disc_score",
+        "map_k_artist",
+        "map_k_genre",
+        "map_k_head",
+        "mean_cross",
+        "mean_cross_artist",
+        "mean_cross_genre",
+        "mean_cross_head",
+        "mean_within",
+        "mean_within_artist",
+        "mean_within_genre",
+        "mean_within_head",
+        "mrr",
+        "mrr_genre",
+        "mrr_head",
+        "ndcg_k_artist",
+        "ndcg_k_genre",
+        "ndcg_k_head",
+        "per_head_corr",
+        "per_song",
+        "precision_k_genre",
+        "recall_k_artist",
+        "recall_k_genre",
+        "recall_k_head",
+        "var_cross_artist",
+        "var_cross_genre",
+        "var_cross_head",
+        "var_within_artist",
+        "var_within_genre",
+        "var_within_head",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 additions: retrieval-family and within/cross coverage
+# ---------------------------------------------------------------------------
+
+
+def test_map_k_genre_nonzero():
+    """Balanced two-genre corpus with block similarity should produce non-zero genre retrieval metrics."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+    genres = ["G1", "G1", "G2", "G2"]
+
+    m = compute_retrieval_metrics(sim, labels, k=2, genres=genres)
+
+    assert m["map_k_genre"] > 0
+    assert m["mrr_genre"] > 0
+    assert m["ndcg_k_genre"] > 0
+
+
+def test_map_k_genre_none_when_no_genres():
+    """Missing genre labels should disable genre retrieval metrics cleanly."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+
+    m = compute_retrieval_metrics(sim, labels, k=2, genres=None)
+
+    assert m["map_k_genre"] is None
+
+
+def test_map_k_head_nonzero():
+    """Separated head score groups should produce a positive head MAP@k value."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+    head_scores = [[0.1, 0.1, 0.9, 0.9]]
+
+    m = compute_retrieval_metrics(sim, labels, k=2, head_scores=head_scores)
+
+    assert m["map_k_head"] is not None
+    assert m["map_k_head"] > 0
+
+
+def test_map_k_head_none_when_no_head_scores():
+    """Missing head scores should leave head retrieval metrics unset."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+
+    m = compute_retrieval_metrics(sim, labels, k=2, head_scores=None)
+
+    assert m["map_k_head"] is None
+
+
+def test_var_within_cross_artist_nonneg():
+    """Artist within/cross variance metrics should be non-negative and preserve the back-compat alias."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+
+    m = compute_retrieval_metrics(sim, labels, k=2)
+
+    assert m["var_within_artist"] >= 0
+    assert m["var_cross_artist"] >= 0
+    assert m["mean_within_artist"] == m["mean_within"]
+
+
+def test_var_within_cross_genre_nonneg():
+    """Genre within/cross variance metrics should be populated and non-negative when genre tags are present."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+    genres = ["G1", "G1", "G2", "G2"]
+
+    m = compute_retrieval_metrics(sim, labels, k=2, genres=genres)
+
+    assert m["var_within_genre"] >= 0
+    assert m["var_cross_genre"] >= 0
+
+
+def test_var_genre_none_when_no_genres():
+    """Genre within/cross metrics should be None when no genre labels are provided."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+
+    m = compute_retrieval_metrics(sim, labels, k=2, genres=None)
+
+    assert m["mean_within_genre"] is None
+    assert m["var_within_genre"] is None
+
+
+def test_head_within_cross_present_when_head_scores():
+    """Separated head scores should populate all head within/cross summary metrics."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+    head_scores = [[0.1, 0.1, 0.9, 0.9]]
+
+    m = compute_retrieval_metrics(sim, labels, k=2, head_scores=head_scores)
+
+    assert m["mean_within_head"] is not None
+    assert m["var_within_head"] is not None
+    assert m["mean_cross_head"] is not None
+    assert m["var_cross_head"] is not None
+
+
+def test_head_within_cross_none_when_no_head_scores():
+    """Missing head scores should leave head within/cross summaries unset."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+
+    m = compute_retrieval_metrics(sim, labels, k=2, head_scores=None)
+
+    assert m["mean_within_head"] is None
+    assert m["var_within_head"] is None
+    assert m["mean_cross_head"] is None
+    assert m["var_cross_head"] is None
+
+
+# ---------------------------------------------------------------------------
+# Gap coverage: ndcg_k_genre None, ndcg_k_head nonzero, recall_k_genre/head,
+# ap_k_genre/head list lengths, per_song mrr_genre list length
+# ---------------------------------------------------------------------------
+
+
+def test_ndcg_k_genre_is_none_when_no_genres():
+    """ndcg_k_genre must be None when genres=None (mirrors map_k_genre/mrr_genre behaviour)."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+
+    m = compute_retrieval_metrics(sim, labels, k=2, genres=None)
+
+    assert m["ndcg_k_genre"] is None
+
+
+def test_ndcg_k_head_nonzero_when_head_scores_present():
+    """Separated head-score groups must produce a non-None, positive ndcg_k_head."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+    head_scores = [[0.1, 0.1, 0.9, 0.9]]
+
+    m = compute_retrieval_metrics(sim, labels, k=2, head_scores=head_scores)
+
+    assert m["ndcg_k_head"] is not None
+    assert m["ndcg_k_head"] > 0
+
+
+def test_recall_k_genre_exact_value_for_perfect_block_sim():
+    """Two-genre block-sim: every song's top-1 neighbour is same-genre → recall_k_genre == 1.0."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+    genres = ["G1", "G1", "G2", "G2"]
+
+    m = compute_retrieval_metrics(sim, labels, k=2, genres=genres)
+
+    # With within=0.9, cross=0.1, k=2, each song's genre_rel_set has size 1.
+    # The single same-genre song always ranks first → recall == 1/min(2,1) == 1.0.
+    assert m["recall_k_genre"] == pytest.approx(1.0)
+
+
+def test_recall_k_genre_is_none_when_no_genres():
+    """recall_k_genre must be None when genres=None."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+
+    m = compute_retrieval_metrics(sim, labels, k=2, genres=None)
+
+    assert m["recall_k_genre"] is None
+
+
+def test_recall_k_head_exact_value_for_separated_scores():
+    """Separated head scores: each song's single in-window peer ranks first → recall_k_head == 1.0."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+    # Scores [0.1, 0.1, 0.9, 0.9]: within-window peers are {0↔1} and {2↔3}.
+    head_scores = [[0.1, 0.1, 0.9, 0.9]]
+
+    m = compute_retrieval_metrics(sim, labels, k=2, head_scores=head_scores)
+
+    assert m["recall_k_head"] is not None
+    assert m["recall_k_head"] == pytest.approx(1.0)
+
+
+def test_ap_k_genre_list_length_matches_n_when_genres_present():
+    """Top-level ap_k_genre is a per-song list of length n when genre tags cover all songs."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+    genres = ["G1", "G1", "G2", "G2"]
+    n = 4
+
+    m = compute_retrieval_metrics(sim, labels, k=2, genres=genres)
+
+    assert isinstance(m["ap_k_genre"], list)
+    assert len(m["ap_k_genre"]) == n
+
+
+def test_ap_k_head_list_length_matches_n_when_head_scores_present():
+    """Top-level ap_k_head is a per-song list of length n when head_scores are provided."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+    head_scores = [[0.1, 0.1, 0.9, 0.9]]
+    n = 4
+
+    m = compute_retrieval_metrics(sim, labels, k=2, head_scores=head_scores)
+
+    assert isinstance(m["ap_k_head"], list)
+    assert len(m["ap_k_head"]) == n
+
+
+def test_per_song_mrr_genre_list_length_matches_n_when_genres_present():
+    """per_song['mrr_genre'] must be a list of length n when genre tags cover all songs."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+    genres = ["G1", "G1", "G2", "G2"]
+    n = 4
+
+    m = compute_retrieval_metrics(sim, labels, k=2, genres=genres)
+
+    assert isinstance(m["per_song"]["mrr_genre"], list)
+    assert len(m["per_song"]["mrr_genre"]) == n

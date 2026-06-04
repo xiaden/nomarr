@@ -18,6 +18,7 @@ _cfg = load_research_config()
 
 DIST_THRESHOLDS: list[float] = _cfg.get("binning", {}).get("dist_thresholds", [0.3, 0.5, 0.7, 1.0])
 BIN_MODES: list[str] = _cfg.get("binning", {}).get("bin_modes", ["temporal_global", "temporal_perdim"])
+CTP_SCORE_THRESHOLDS: list[float] = _cfg.get("binning", {}).get("ctp_score_thresholds", [0.05, 0.10, 0.15, 0.20])
 
 # Cache/data semantics versions used for cache identity and invalidation.
 VECTOR_SEMANTICS_VERSION: int = 2

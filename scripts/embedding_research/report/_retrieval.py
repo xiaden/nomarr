@@ -77,7 +77,12 @@ def query_analyze_metrics(con) -> pd.DataFrame:
 
 
 def section_unified_table(df: pd.DataFrame) -> dict:
-    """Unified ranking table: top configs across all backbones, flat + binned."""
+    """Unified ranking table: top configs across all backbones, flat + binned.
+
+    Rows are sorted by ``map_k_general`` descending, then ``map_k_artist`` descending
+    (NaNs last); the top 20 are shown.  Also renders a per-backbone bar chart of the
+    best disc_genre score (flat vs binned).
+    """
     flat_df = df[df["strategy_type"] == "global_pool"]
     binned_df = df[df["strategy_type"].isin(["ptc", "ctp"])]
     if flat_df.empty and binned_df.empty:
@@ -106,6 +111,37 @@ def section_unified_table(df: pd.DataFrame) -> dict:
         "recall_k_genre",
         "precision_k_genre",
         "precision_k_head_mean",
+        "map_k_artist",
+        "ndcg_k_artist",
+        "recall_k_artist",
+        "map_k_genre",
+        "mrr_genre",
+        "ndcg_k_genre",
+        "map_k_head",
+        "mrr_head",
+        "ndcg_k_head",
+        "recall_k_head",
+        "map_k_general",
+        "mean_within_artist",
+        "var_within_artist",
+        "mean_cross_artist",
+        "var_cross_artist",
+        "mean_within_genre",
+        "var_within_genre",
+        "mean_cross_genre",
+        "var_cross_genre",
+        "mean_within_head",
+        "var_within_head",
+        "mean_cross_head",
+        "var_cross_head",
+        "var_ap_k_genre",
+        "kurt_ap_k_genre",
+        "var_ap_k_head",
+        "kurt_ap_k_head",
+        "var_mrr_genre",
+        "kurt_mrr_genre",
+        "var_mrr_head",
+        "kurt_mrr_head",
     ]
     binned_columns = [
         "backbone",
@@ -130,6 +166,37 @@ def section_unified_table(df: pd.DataFrame) -> dict:
         "recall_k_genre",
         "precision_k_genre",
         "precision_k_head_mean",
+        "map_k_artist",
+        "ndcg_k_artist",
+        "recall_k_artist",
+        "map_k_genre",
+        "mrr_genre",
+        "ndcg_k_genre",
+        "map_k_head",
+        "mrr_head",
+        "ndcg_k_head",
+        "recall_k_head",
+        "map_k_general",
+        "mean_within_artist",
+        "var_within_artist",
+        "mean_cross_artist",
+        "var_cross_artist",
+        "mean_within_genre",
+        "var_within_genre",
+        "mean_cross_genre",
+        "var_cross_genre",
+        "mean_within_head",
+        "var_within_head",
+        "mean_cross_head",
+        "var_cross_head",
+        "var_ap_k_genre",
+        "kurt_ap_k_genre",
+        "var_ap_k_head",
+        "kurt_ap_k_head",
+        "var_mrr_genre",
+        "kurt_mrr_genre",
+        "var_mrr_head",
+        "kurt_mrr_head",
         "flat_binned_spearman",
         "flat_binned_beneficial_reorder_rate",
     ]
@@ -170,7 +237,7 @@ def section_unified_table(df: pd.DataFrame) -> dict:
 
     combined = pd.concat(combined_parts, ignore_index=True, sort=False)
     combined = combined.sort_values(
-        ["disc_genre", "disc_artist"],
+        ["map_k_general", "map_k_artist"],
         ascending=False,
         na_position="last",
     )
@@ -260,6 +327,10 @@ def section_unified_table(df: pd.DataFrame) -> dict:
         "type",
         "backbone",
         "config",
+        "map_k_general",
+        "map_k_artist",
+        "map_k_genre",
+        "map_k_head",
         "disc_general",
         "disc_artist",
         "disc_genre",
@@ -270,8 +341,6 @@ def section_unified_table(df: pd.DataFrame) -> dict:
         "ndcg_k",
         "recall_k",
         "recall_k_genre",
-        "precision_k_genre",
-        "precision_k_head_mean",
         "flat_binned_spearman",
         "flat_binned_beneficial_reorder_rate",
     ]
@@ -281,10 +350,10 @@ def section_unified_table(df: pd.DataFrame) -> dict:
         "unified-ranking",
         "Unified Ranking",
         description=(
-            "Flat and binned configurations ranked together by `disc_genre` across all backbones. "
-            "Available columns include `precision_k_genre`, `precision_k_head_mean`, "
+            "Flat and binned configurations ranked by `map_k_general`, `map_k_artist` across all backbones. "
+            "Table columns include `map_k_general`, `map_k_artist`, `map_k_genre`, `map_k_head`, disc scores, "
             "`flat_binned_spearman`, and `flat_binned_beneficial_reorder_rate`. "
-            "Blue bars = flat, amber bars = binned."
+            "Blue bars = flat, amber bars = binned (bar chart shows best `disc_genre` per backbone)."
         ),
         charts=charts,
         tables=[
@@ -292,7 +361,7 @@ def section_unified_table(df: pd.DataFrame) -> dict:
                 tbl_rows,
                 id="top20",
                 collapsible=True,
-                summary_text="Top-20 table (disc_genre)",
+                summary_text="Top-20 table (map_k_general)",
             )
         ],
         panels=panels,
@@ -300,7 +369,12 @@ def section_unified_table(df: pd.DataFrame) -> dict:
 
 
 def section_per_backbone(df: pd.DataFrame) -> dict:
-    """Per-backbone sections: scatter (disc vs MAP@k), delta bar chart, top-N table."""
+    """Per-backbone sections: scatter (disc vs MAP@k), delta bar chart, top-N table.
+
+    The top-N table includes columns: disc_col, ``map_k_general``, ``map_k_artist``,
+    ``map_k``, ``mrr``, ``ndcg_k``, and ``recall_k``.
+    The delta bar shows each binned config's best disc minus the flat median baseline.
+    """
     flat_df = df[df["strategy_type"] == "global_pool"]
     binned_df = df[df["strategy_type"].isin(["ptc", "ctp"])]
     all_backbones = sorted(
@@ -445,7 +519,7 @@ def section_per_backbone(df: pd.DataFrame) -> dict:
         # ── top-N table ────────────────────────────────────────────────────
         tables: list[dict] = []
         top_rows: list[dict] = []
-        metric_cols = [disc_col_f, "map_k", "mrr", "ndcg_k", "recall_k"]
+        metric_cols = [disc_col_f, "map_k_general", "map_k_artist", "map_k", "mrr", "ndcg_k", "recall_k"]
 
         if not flat_bb.empty:
             for _, row in flat_bb.head(5).iterrows():

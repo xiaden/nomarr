@@ -9,23 +9,26 @@ from time import perf_counter
 from typing import Any, cast
 
 import numpy as np
-from tqdm import tqdm
+from alive_progress import alive_bar, alive_it
 
 from .cache import binned_ctp as _binned_ctp_cache
 from .cache import binned_ctp_heads as _binned_ctp_heads_cache
 from .cache import binned_ptc as _binned_ptc_cache
+from .cache import binned_ptc_heads as _binned_ptc_heads_cache
 from .cache import flat_heads as _flat_heads_cache
 from .cache.flat_vecs import load_matrix as _load_flat_matrix
 from .config import BACKBONES, HEAD_VRAM_BYTES, HEADS, bootstrap_nomarr, discover_audio, patches_path, song_id
 from .helpers.binning import BIN_MODES, global_dist, temporal_segment
+from .helpers.binning import CTP_SCORE_THRESHOLDS as DEFAULT_CTP_THRESHOLDS
 from .helpers.binning import DIST_THRESHOLDS as DEFAULT_STD_THRESHOLDS
+from .helpers.cache_utils import build_done_set as _build_done_set
 from .pooling import STRATEGIES
 
-__all__ = ["run_binned", "run_flat"]
+__all__ = ["run_binned", "run_flat", "run_ptc_heads"]
 
 _log = logging.getLogger(__name__)
 
-from scripts.embedding_research.strategy_binned._constants import _BIN_POOL_STRATEGIES as _BIN_POOL_FNS  # noqa: E402
+from scripts.embedding_research.strategy_binned._constants import _BIN_POOL_STRATEGIES as _BIN_POOL_FNS
 
 
 def _l2_normalise_vec(v: np.ndarray) -> np.ndarray:
@@ -39,8 +42,6 @@ def _run_head_session(session, embed_batch: np.ndarray) -> np.ndarray:
     inp = embed_batch if embed_batch.ndim == 2 else embed_batch[None, :]
     out = session.run(["activations"], {"embeddings": inp.astype(np.float32)})[0]
     return np.asarray(out, dtype=np.float32)
-
-
 
 
 def _classify_song(
@@ -184,13 +185,14 @@ def _process_song_head_missing(
 
     scores = acts[:, 1]
     score_column = scores.reshape(-1, 1).astype(np.float32)
-    score_std = float(scores.std())
-    if score_std < 1e-9:
-        score_std = 1.0
 
     saved_heads = saved_vecs = 0
     for bin_mode, std_thresh in missing_combos:
-        threshold = float(std_thresh) * score_std
+        # std_thresh is an absolute half-width in score space: a patch whose
+        # score differs from the current segment mean by more than std_thresh
+        # starts a new bin.  This is corpus- and song-variance-independent —
+        # a song that doesn't vary on this head simply produces one bin.
+        threshold = float(std_thresh)
         segments = temporal_segment(score_column, threshold, global_dist)
 
         bin_acts_list: list[np.ndarray] = []
@@ -214,11 +216,21 @@ def _process_song_head_missing(
             for pool_name, pool_fn in _BIN_POOL_FNS.items():
                 vec_raw = pool_fn(seg_patches)
                 vec_norm = _l2_normalise_vec(vec_raw)
-                vec_rows_for_combo.append((
-                    sid, backbone, head_name, bin_mode, float(std_thresh),
-                    int(bin_id), pool_name, vec_raw.tobytes(), vec_norm.tobytes(),
-                    len(indices), outlier_count,
-                ))
+                vec_rows_for_combo.append(
+                    (
+                        sid,
+                        backbone,
+                        head_name,
+                        bin_mode,
+                        float(std_thresh),
+                        int(bin_id),
+                        pool_name,
+                        vec_raw.tobytes(),
+                        vec_norm.tobytes(),
+                        len(indices),
+                        outlier_count,
+                    )
+                )
 
         if bin_acts_list:
             acts_arr = np.stack(bin_acts_list).astype(np.float32)
@@ -266,145 +278,230 @@ def _process_song_head(
         )
     else:
         missing = frozenset((bm, float(st)) for bm in BIN_MODES for st in std_thresholds)
-    return _process_song_head_missing(sid, backbone, head_name, head_session, run_in_batches_fn, batch_size, patches, missing)
+    return _process_song_head_missing(
+        sid, backbone, head_name, head_session, run_in_batches_fn, batch_size, patches, missing
+    )
 
 
-def _weighted_song_score_from_acts(acts: np.ndarray, weights: np.ndarray) -> float | None:
-    """Return the weight-averaged positive-class score from per-bin acts and weights."""
-    total_weight = float(weights.sum())
-    if total_weight <= 0.0 or acts.ndim != 2 or acts.shape[1] < 2:
-        return None
-    return float(float((acts[:, 1] * weights).sum()) / total_weight)
+def _compute_ptc_head_acts_for_bins(
+    acts: np.ndarray,
+    bin_start_idx: np.ndarray,
+    bin_end_idx: np.ndarray,
+) -> np.ndarray:
+    """Return ``[n_bins, C]`` mean head activations from patch-level acts.
 
-
-def _safe_pearson(x: np.ndarray, y: np.ndarray) -> float:
-    """Return a defensive Pearson correlation for small or degenerate inputs."""
-    if x.size < 2 or y.size < 2:
-        return 0.0
-    if float(x.std()) < 1e-12 or float(y.std()) < 1e-12:
-        return 0.0
-    corr = np.corrcoef(x, y)
-    if not np.isfinite(corr[0, 1]):
-        return 0.0
-    return float(corr[0, 1])
-
-
-def compute_metrics(
-    con,
-    backbones: list[str],
-    bin_modes: list[str],
-    std_thresholds: list[float],
-    heads_filter: list[str] | None,
-) -> int:
-    """Compare binned PTC and CTP results and upsert divergence metrics.
-
-    Reads head activations directly from the filesystem cache:
-
-    * PTC head data from ``binned_ptc`` npz files (``head_{name}`` + ``weights`` arrays)
-    * CTP head data from ``binned_ctp_heads`` npz files (``acts`` + ``weights`` arrays)
-
-    Still writes computed divergence metrics to the DuckDB analysis database.
+    For each bin, averages *acts* over the inclusive patch range
+    ``[bin_start_idx[i], bin_end_idx[i]]``.  Bins with invalid indices
+    (``< 0`` or start > end) produce a zero row.
     """
-    metric_rows: list[tuple] = []
+    n_bins = len(bin_start_idx)
+    n_classes = acts.shape[1]
+    result = np.zeros((n_bins, n_classes), dtype=np.float32)
+    for i in range(n_bins):
+        s, e = int(bin_start_idx[i]), int(bin_end_idx[i])
+        if s >= 0 and e >= s:
+            seg = acts[s : e + 1]
+            if seg.shape[0] > 0:
+                result[i] = seg.mean(axis=0)
+    return result
 
-    # One directory scan per cache — group by combo for O(1) lookups
-    ctp_keys = _binned_ctp_heads_cache.list_done_keys()   # (sid, backbone, head, bin_mode, std_thresh)
-    ptc_keys = _binned_ptc_cache.list_done_keys()          # (sid, backbone, bin_mode, std_thresh)
 
-    ctp_sids_by_combo: dict[tuple[str, str, str, float], set[str]] = {}
-    for sid_d, bb_d, hd_d, bm_d, st_d in ctp_keys:
-        ctp_sids_by_combo.setdefault((bb_d, hd_d, bm_d, st_d), set()).add(sid_d)
+def run_ptc_heads(
+    con,
+    *,
+    song_ids: frozenset[str] | None = None,
+    force: bool = False,
+    backbones: list[str] | None = None,
+    heads: list[str] | None = None,
+    device: str = "cpu",
+    head_sessions: dict[str, dict[str, Any]] | None = None,
+) -> None:
+    """Inject per-bin PTC head activations into the binned_ptc filesystem cache.
 
-    ptc_sids_by_combo: dict[tuple[str, str, float], set[str]] = {}
-    for sid_d, bb_d, bm_d, st_d in ptc_keys:
-        ptc_sids_by_combo.setdefault((bb_d, bm_d, st_d), set()).add(sid_d)
+    For each song that has PTC-binned embeddings, runs head inference on all
+    patches and averages activations per PTC bin (using the ``bin_start_idx``
+    and ``bin_end_idx`` boundaries already stored in the cache npz).
 
-    for backbone in backbones:
-        head_map = HEADS.get(backbone, {})
-        head_names = [head for head in head_map if heads_filter is None or head in heads_filter]
-        for head in head_names:
-            for bin_mode in bin_modes:
-                for std_thresh in std_thresholds:
-                    ctp_sids = ctp_sids_by_combo.get((backbone, head, bin_mode, std_thresh), set())
-                    ptc_sids = ptc_sids_by_combo.get((backbone, bin_mode, std_thresh), set())
-                    shared_song_ids = sorted(ctp_sids & ptc_sids)
-                    if not shared_song_ids:
-                        _log.info(
-                            "[%s/%s/%s/t=%.2f] no overlap between PTC and CTP — skip",
-                            backbone, head, bin_mode, std_thresh,
-                        )
-                        continue
+    Skips ``(backbone, bin_mode, std_thresh, song_id)`` combos where all
+    requested head arrays are already present, unless *force* is ``True``.
 
-                    ptc_song_score: dict[str, float] = {}
-                    ctp_song_score: dict[str, float] = {}
-                    ctp_bin_counts: list[int] = []
-                    head_key = f"head_{head}"
+    If *head_sessions* is provided (``{backbone: {head_name: session}}``) those
+    sessions are used directly and ``create_session`` is not called.
+    """
+    bootstrap_nomarr()
 
-                    for sid in shared_song_ids:
-                        # PTC: load from binned_ptc npz and extract head activations
-                        ptc_path = _binned_ptc_cache.cache_path(backbone, bin_mode, std_thresh, sid)
-                        if ptc_path.exists():
-                            try:
-                                ptc_data = np.load(str(ptc_path))
-                                if head_key in ptc_data.files:
-                                    ptc_acts = ptc_data[head_key]
-                                    ptc_wts = ptc_data["weights"]
-                                    ptc_data.close()
-                                    score = _weighted_song_score_from_acts(ptc_acts, ptc_wts)
-                                    if score is not None:
-                                        ptc_song_score[sid] = score
-                                else:
-                                    ptc_data.close()
-                            except (EOFError, OSError, ValueError, KeyError):
-                                pass
+    from nomarr.components.ml.onnx.ml_session_comp import _BACKBONE_BATCH_SIZE, _run_in_batches, create_session
 
-                        # CTP: load from binned_ctp_heads npz
-                        ctp_result = _binned_ctp_heads_cache.load(backbone, head, bin_mode, std_thresh, sid)
-                        if ctp_result is not None:
-                            ctp_acts, ctp_wts = ctp_result
-                            score = _weighted_song_score_from_acts(ctp_acts, ctp_wts)
-                            if score is not None:
-                                ctp_song_score[sid] = score
-                            ctp_bin_counts.append(len(ctp_wts))
+    backbone_names = backbones or list(BACKBONES)
+    ptc_keys = _binned_ptc_cache.list_done_keys()  # (sid, backbone, bin_mode, std_thresh)
 
-                    shared_scored = sorted(set(ptc_song_score) & set(ctp_song_score))
-                    if not shared_scored:
-                        _log.info(
-                            "[%s/%s/%s/t=%.2f] no overlap between PTC and CTP — skip",
-                            backbone, head, bin_mode, std_thresh,
-                        )
-                        continue
+    # Group: backbone -> sid -> [(bin_mode, std_thresh)]
+    ptc_by_bb: dict[str, dict[str, list[tuple[str, float]]]] = {}
+    for sid_k, bb_k, bm_k, st_k in ptc_keys:
+        if bb_k not in backbone_names:
+            continue
+        if song_ids is not None and sid_k not in song_ids:
+            continue
+        ptc_by_bb.setdefault(bb_k, {}).setdefault(sid_k, []).append((bm_k, st_k))
 
-                    ptc_vec = np.array([ptc_song_score[sid] for sid in shared_scored], dtype=np.float64)
-                    ctp_vec = np.array([ctp_song_score[sid] for sid in shared_scored], dtype=np.float64)
-                    divergence_mean = float(np.mean(np.abs(ptc_vec - ctp_vec)))
-                    bin_count_var = (
-                        float(np.var(np.array(ctp_bin_counts, dtype=np.float64))) if len(ctp_bin_counts) >= 2 else 0.0
+    for backbone_name in backbone_names:
+        sids_with_combos = ptc_by_bb.get(backbone_name)
+        if not sids_with_combos:
+            _log.info("[%s] No PTC cache entries — skipping PTC head phase", backbone_name)
+            continue
+
+        head_map = {
+            head: model for head, model in HEADS.get(backbone_name, {}).items() if heads is None or head in heads
+        }
+        if not head_map:
+            _log.info("[%s] No heads configured — skipping PTC head phase", backbone_name)
+            continue
+
+        loaded_sessions: dict[str, Any] = {}
+        for head_name, head_model_path in head_map.items():
+            if head_sessions is not None:
+                session = head_sessions.get(backbone_name, {}).get(head_name)
+                if session is None:
+                    _log.error("[%s/%s] No cached session — skipping", backbone_name, head_name)
+                    continue
+                loaded_sessions[head_name] = session
+            else:
+                try:
+                    loaded_sessions[head_name] = create_session(
+                        head_model_path,
+                        device=device,
+                        vram_limit_bytes=HEAD_VRAM_BYTES,
                     )
-                    sim_align_corr = _safe_pearson(ptc_vec, ctp_vec)
+                except Exception as exc:
+                    _log.error("[%s/%s] Failed to load head: %s", backbone_name, head_name, exc)
 
-                    metric_rows.append((
-                        backbone,
-                        bin_mode,
-                        float(std_thresh),
-                        head,
-                        divergence_mean,
-                        bin_count_var,
-                        sim_align_corr,
-                    ))
+        if not loaded_sessions:
+            continue
 
-    if metric_rows:
-        con.executemany(
-            "INSERT INTO binned_ptc_ctp_metrics "
-            "(backbone, bin_mode, std_thresh, head, divergence_mean, bin_count_var, sim_align_corr) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT (backbone, bin_mode, std_thresh, head) DO UPDATE SET "
-            "divergence_mean=excluded.divergence_mean, "
-            "bin_count_var=excluded.bin_count_var, "
-            "sim_align_corr=excluded.sim_align_corr",
-            metric_rows,
+        done = skipped = errors = 0
+        started = perf_counter()
+        sid_list = sorted(sids_with_combos)
+
+        # Pre-build done sets — one frozenset per (head, bin_mode, std_thresh) so
+        # is_done() checks are O(1) set membership, not one stat() per song.
+        all_combos: set[tuple[str, float]] = {
+            combo for combos in sids_with_combos.values() for combo in combos
+        }
+        ptc_heads_done: dict[tuple[str, str, float], frozenset[str]] = {
+            (head_name, bin_mode, std_thresh): _build_done_set(
+                _binned_ptc_heads_cache.config_dir(backbone_name, head_name, bin_mode, std_thresh),
+                suffix=".npz",
+            )
+            for head_name in loaded_sessions
+            for bin_mode, std_thresh in all_combos
+        }
+
+        pbar = alive_it(sid_list, title=f"  [{backbone_name}] PTC-heads")
+
+        for sid in pbar:
+            combos = sids_with_combos[sid]
+            sidecar = patches_path(sid, backbone_name)
+            if not sidecar.exists():
+                skipped += 1
+                pbar.text(f"done={done} skip={skipped} err={errors}")
+                continue
+
+            try:
+                patches = np.load(str(sidecar)).astype(np.float32)
+            except Exception:
+                skipped += 1
+                pbar.text(f"done={done} skip={skipped} err={errors}")
+                continue
+
+            if patches.size == 0:
+                skipped += 1
+                pbar.text(f"done={done} skip={skipped} err={errors}")
+                continue
+
+            # For each (bin_mode, std_thresh) combo: use is_done() for the skip
+            # check, then load the PTC npz only when there are missing heads.
+            pending: dict[tuple[str, float], tuple[list[str], np.ndarray, np.ndarray, np.ndarray]] = {}
+            for bin_mode, std_thresh in combos:
+                missing_heads = (
+                    list(loaded_sessions)
+                    if force
+                    else [
+                        h
+                        for h in loaded_sessions
+                        if not _binned_ptc_heads_cache.is_done(
+                            backbone_name,
+                            h,
+                            bin_mode,
+                            std_thresh,
+                            sid,
+                            done_set=ptc_heads_done.get((h, bin_mode, std_thresh)),
+                        )
+                    ]
+                )
+                if not missing_heads:
+                    continue
+                ptc_path = _binned_ptc_cache.cache_path(backbone_name, bin_mode, std_thresh, sid)
+                if not ptc_path.exists():
+                    continue
+                try:
+                    ptc_data = np.load(str(ptc_path))
+                    bin_start = ptc_data["bin_start_idx"].astype(np.int32)
+                    bin_end = ptc_data["bin_end_idx"].astype(np.int32)
+                    ptc_wts = ptc_data["weights"].astype(np.int32)
+                    ptc_data.close()
+                except (EOFError, OSError, ValueError, KeyError):
+                    continue
+                pending[(bin_mode, std_thresh)] = (missing_heads, bin_start, bin_end, ptc_wts)
+
+            if not pending:
+                skipped += 1
+                pbar.text(f"done={done} skip={skipped} err={errors}")
+                continue
+
+            # Run head inference once per head per song (shared across all combos)
+            needed_heads = sorted({h for miss, _, _, _ in pending.values() for h in miss})
+            head_acts: dict[str, np.ndarray] = {}
+            for head_name in needed_heads:
+                session = loaded_sessions[head_name]
+                try:
+                    acts = _run_in_batches(
+                        lambda batch, _s=session: _run_head_session(_s, batch),
+                        patches,
+                        _BACKBONE_BATCH_SIZE,
+                    ).astype(np.float32)
+                    head_acts[head_name] = acts
+                except Exception as exc:
+                    _log.error("[%s/%s/%s] head inference failed: %s", backbone_name, head_name, sid, exc)
+
+            if not head_acts:
+                errors += 1
+                pbar.text(f"done={done} skip={skipped} err={errors}")
+                continue
+
+            wrote_any = False
+            for (bin_mode, std_thresh), (missing_heads, bin_start, bin_end, ptc_wts) in pending.items():
+                for head_name in missing_heads:
+                    if head_name not in head_acts:
+                        continue
+                    bin_acts = _compute_ptc_head_acts_for_bins(head_acts[head_name], bin_start, bin_end)
+                    _binned_ptc_heads_cache.save(backbone_name, head_name, bin_mode, std_thresh, sid, bin_acts, ptc_wts)
+                    wrote_any = True
+
+            if wrote_any:
+                done += 1
+            else:
+                skipped += 1
+            pbar.text(f"done={done} skip={skipped} err={errors}")
+
+        elapsed = perf_counter() - started
+        _log.info(
+            "[%s] PTC-heads done=%d skip=%d err=%d  %.0fs",
+            backbone_name,
+            done,
+            skipped,
+            errors,
+            elapsed,
         )
-    return len(metric_rows)
 
 
 def run_flat(
@@ -433,7 +530,7 @@ def run_flat(
 
     # Build (sid, backbone, head) -> set[done strategies] from one DB query
     if not force:
-        fully_done_flat = _flat_heads_cache.list_done_keys()   # (song_id, backbone, head_name, strategy)
+        fully_done_flat = _flat_heads_cache.list_done_keys()  # (song_id, backbone, head_name, strategy)
         done_strats_by_key: dict[tuple[str, str, str], set[str]] = {}
         for sid_d, bb_d, head_d, strat_d in fully_done_flat:
             done_strats_by_key.setdefault((sid_d, bb_d, head_d), set()).add(strat_d)
@@ -448,7 +545,17 @@ def run_flat(
             _log.info("[%s] No heads configured — skipping", backbone_name)
             continue
 
-        _log.info("[%s] Pre-loading pooled vectors from DB ...", backbone_name)
+        # Skip the expensive pre-load if every (song, head) combo is already cached.
+        any_pending = any(
+            bool(all_strategies - done_strats_by_key.get((song_id(p), backbone_name, head_name), set()))
+            for p in audio_paths
+            for head_name in head_map
+        )
+        if not any_pending:
+            _log.info("[%s] All heads fully cached — skipping pre-load", backbone_name)
+            continue
+
+        _log.info("[%s] Pre-loading pooled vectors from Filesystem ...", backbone_name)
         strat_to_pooled: dict[str, dict[str, np.ndarray]] = {}
         for strategy_name in STRATEGIES:
             vecs, sids, _artists, _albums, _genres = _load_flat_matrix(backbone_name, strategy_name, con)
@@ -491,7 +598,7 @@ def run_flat(
 
             n_done = skipped = errors = 0
             started = perf_counter()
-            pbar = tqdm(work_flat, desc=f"  [{backbone_name}/{head_name}]", unit="song")
+            pbar = alive_it(work_flat, title=f"  [{backbone_name}/{head_name}]")
             for path, missing_strats in pbar:
                 sid = song_id(path)
                 pooled_map = {strategy_name: strat_to_pooled[strategy_name].get(sid) for strategy_name in STRATEGIES}
@@ -510,10 +617,10 @@ def run_flat(
                         n_done += 1
                     else:
                         skipped += 1
-                    pbar.set_postfix(done=n_done, skip=skipped, err=errors)
+                    pbar.text(f"done={n_done} skip={skipped} err={errors}")
                 except Exception as exc:
                     errors += 1
-                    pbar.set_postfix(done=n_done, skip=skipped, err=errors)
+                    pbar.text(f"done={n_done} skip={skipped} err={errors}")
                     _log.error("%s: %s", path.name, exc)
 
             elapsed = perf_counter() - started
@@ -550,7 +657,7 @@ def run_binned(
             (bm, st) for (_, bm), thresholds in thresholds_by_backbone_mode.items() for st in thresholds
         )
     else:
-        all_combos_binned = frozenset((bm, float(st)) for bm in BIN_MODES for st in DEFAULT_STD_THRESHOLDS)
+        all_combos_binned = frozenset((bm, float(st)) for bm in BIN_MODES for st in DEFAULT_CTP_THRESHOLDS)
 
     # Build (sid, backbone, head) -> set[done (bin_mode, std_thresh)] from filesystem cache
     if not force:
@@ -616,13 +723,13 @@ def run_binned(
 
         done = skipped = errors = 0
         started = perf_counter()
-        pbar = tqdm(work.items(), desc=f"[{backbone_name}] binned-classify", unit="song", total=pending_songs)
+        pbar = alive_it(work.items(), title=f"[{backbone_name}] binned-classify")
         for path, heads_missing in pbar:
             sid = song_id(path)
             sidecar = patches_path(sid, backbone_name)
             if not sidecar.exists():
                 skipped += 1
-                pbar.set_postfix(done=done, skip=skipped, err=errors)
+                pbar.text(f"done={done} skip={skipped} err={errors}")
                 continue
 
             try:
@@ -646,10 +753,10 @@ def run_binned(
                     done += 1
                 else:
                     skipped += 1
-                pbar.set_postfix(done=done, skip=skipped, err=errors)
+                pbar.text(f"done={done} skip={skipped} err={errors}")
             except Exception as exc:
                 errors += 1
-                pbar.set_postfix(done=done, skip=skipped, err=errors)
+                pbar.text(f"done={done} skip={skipped} err={errors}")
                 _log.error("%s: %s", path.name, exc)
 
         elapsed = perf_counter() - started
@@ -662,11 +769,12 @@ def run_binned(
             elapsed,
         )
 
-    upserted = compute_metrics(
+    run_ptc_heads(
         con,
+        song_ids=song_ids,
+        force=force,
         backbones=backbone_names,
-        bin_modes=BIN_MODES,
-        std_thresholds=sorted({st for _, st in all_combos_binned}),
-        heads_filter=heads,
+        heads=heads,
+        device=device,
+        head_sessions=head_sessions,
     )
-    _log.info("binned_ptc_ctp_metrics rows upserted: %d", upserted)

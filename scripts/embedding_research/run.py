@@ -1,8 +1,8 @@
 """
 CLI entrypoint for the embedding research pipeline.
 
-Running with no arguments executes all six phases in order:
-  ingest -> embed -> segment -> classify -> analyze -> report
+Running with no arguments executes all seven phases in order:
+  ingest -> embed -> stratify -> segment -> classify -> analyze -> report
 
 Each phase checks what is already in the DB and skips completed work.
 All configuration lives in research_config.toml next to this file.
@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import logging
 import shutil
 import subprocess
@@ -34,6 +35,9 @@ from typing import Any
 
 import duckdb
 import numpy as np
+from alive_progress import config_handler as _ap_config
+
+_ap_config.set_global(theme="musical")
 
 # Ensure the workspace root is on sys.path so the package resolves correctly
 # when run as `python run.py` inside the container.
@@ -46,8 +50,10 @@ from scripts.embedding_research.cache import binned_ctp, binned_ptc, flat_vecs
 from scripts.embedding_research.common.analyze import AnalyzeCfg
 from scripts.embedding_research.config import DB_PATH, HEAD_LABELS, HEADS, OUTPUT_ROOT, PATCHES_DIR
 from scripts.embedding_research.helpers.binning import BIN_MODES
+from scripts.embedding_research.helpers.binning import CTP_SCORE_THRESHOLDS
 from scripts.embedding_research.helpers.binning import DIST_THRESHOLDS as STD_THRESHOLDS
 from scripts.embedding_research.helpers.toml import load_research_config as _load_research_config
+from scripts.embedding_research.helpers.toml import load_research_config_bytes as _load_raw_cfg
 from scripts.embedding_research.strategy_binned import _constants as _strategy_binned_constants
 from scripts.embedding_research.strategy_ctp import segment_fn as _ctp_seg_fn
 from scripts.embedding_research.strategy_global_pool import segment_fn as _gp_seg_fn
@@ -119,8 +125,7 @@ def _build_model_cache(device: str) -> ModelCache:
     _head_parts: list[str] = []
     for bb_name, head_map in HEADS.items():
         cache.head_sessions[bb_name] = {}
-        for head_name in head_map:
-            _head_parts.append(f"{bb_name}/{head_name} ({_head_mb}MB)")
+        _head_parts.extend(f"{bb_name}/{head_name} ({_head_mb}MB)" for head_name in head_map)
     _log.info("[cache] Loading classifiers: %s", ", ".join(_head_parts))
     for bb_name, head_map in HEADS.items():
         for head_name, head_model_path in head_map.items():
@@ -337,7 +342,7 @@ CTP_ANALYZE_CFG: AnalyzeCfg = {
         f"ctp_{head_name}_{bin_mode}_{std_thresh:.2f}"
         for head_name in _KNOWN_CTP_HEAD_NAMES
         for bin_mode in BIN_MODES
-        for std_thresh in STD_THRESHOLDS
+        for std_thresh in CTP_SCORE_THRESHOLDS
     ],
     "load_vecs_fn": _load_ctp_analyze_vecs,
     "db_write_fn": db.write_analyze_metrics,
@@ -440,6 +445,17 @@ def _embed_phase(con, cfg: dict) -> None:
     )
 
 
+def _stratify_phase(con, cfg: dict) -> None:
+    from scripts.embedding_research.common.stratify import run_stratify
+
+    raw_bytes = _load_raw_cfg()
+    config_hash = hashlib.sha256(raw_bytes).hexdigest()[:16]
+    before = len(cfg["song_ids"]) if cfg["song_ids"] is not None else "?"
+    stratified = run_stratify(con, cfg, config_hash)
+    cfg["song_ids"] = stratified
+    _log.info("[stratify] song_ids: %s → %d (config_hash=%s)", before, len(stratified), config_hash)
+
+
 def _segment_phase(con, cfg: dict) -> None:
     _kw = {"song_ids": cfg["song_ids"], "force": cfg["force"], "backbones": cfg["backbones"]}
     common.segment.segment(
@@ -530,6 +546,7 @@ def _report_phase(con, cfg: dict) -> None:
 _PHASES: dict[str, Callable[..., None]] = {
     "ingest": _ingest_phase,
     "embed": _embed_phase,
+    "stratify": _stratify_phase,
     "segment": _segment_phase,
     "classify": _classify_phase,
     "analyze": _analyze_phase,
@@ -599,8 +616,7 @@ def main() -> None:
     _mem_logger.propagate = False
     _mem_logger.addHandler(_fh)
     # Suppress verbose DEBUG spam from third-party libraries
-    for _noisy in ("PIL", "onnxruntime", "numba", "h5py", "numexpr",
-                   "nomarr.components.ml.onnx.ml_session_comp"):
+    for _noisy in ("PIL", "onnxruntime", "numba", "h5py", "numexpr", "nomarr.components.ml.onnx.ml_session_comp"):
         logging.getLogger(_noisy).setLevel(logging.WARNING)
     ap = argparse.ArgumentParser(
         description="Embedding research pipeline — configure via research_config.toml",
@@ -642,6 +658,7 @@ def main() -> None:
     _raw_limit = _pipe.get("limit", 0)
     _pooling = _toml.get("pooling", {})
     cfg: dict = {
+        # Budget target used by stratify selector (applied after full-corpus scoring).
         "limit": int(_raw_limit) if _raw_limit else None,
         "force": bool(_pipe.get("force", False)),
         "device": "gpu" if str(_pipe.get("device", "cpu")).lower() in ("cuda", "gpu") else "cpu",
@@ -654,7 +671,7 @@ def main() -> None:
         "song_ids": None,  # populated below after discover_audio
     }
     _log.info(
-        "Config: limit=%s  force=%s  device=%s  backbones=%s  heads=%s",
+        "Config: limit=%s (stratify budget target)  force=%s  device=%s  backbones=%s  heads=%s",
         cfg["limit"],
         cfg["force"],
         cfg["device"],
@@ -672,9 +689,11 @@ def main() -> None:
             from scripts.embedding_research.config import discover_audio as _discover_audio_fn
             from scripts.embedding_research.config import song_id as _song_id_fn
 
-            cfg["song_ids"] = frozenset(_song_id_fn(p) for p in _discover_audio_fn(limit=cfg["limit"]))
+            # Always discover the full corpus here. Any budgeting is applied in stratify,
+            # not as an early candidate clip.
+            cfg["song_ids"] = frozenset(_song_id_fn(p) for p in _discover_audio_fn(limit=None))
             _log.info(
-                "Working set: %d songs selected (limit=%s)",
+                "Working set: %d songs selected from full corpus (stratify limit=%s)",
                 len(cfg["song_ids"]),
                 cfg["limit"],
             )

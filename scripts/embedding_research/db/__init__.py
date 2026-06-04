@@ -9,7 +9,7 @@ Submodules
 ----------
 _schema  — DDL, connect(), ensure_schema()
 songs    — songs table + song-level read helpers
-flat     — head_results, flat_head_labels, analyze_metrics  (scalars + filesystem caches)
+flat     — head_results, analyze_metrics, song_retrieval_metrics  (scalars + filesystem caches)
 binned   — all binned_* tables
 patch    — patch_features table
 queries  — query_* progress-check helpers
@@ -22,21 +22,18 @@ from .binned import (
     load_classify_ctp_rows,
     query_classify_ctp_sids,
     upsert_binned_classify_ctp_bulk,
-    upsert_binned_ptc_ctp_metrics,
     upsert_binned_song_stats,
     upsert_calibration,
-    upsert_head_agreement,
     upsert_head_sim_corr_batch,
-    upsert_ptc_ctp_metrics_bulk,
 )
 from .flat import (
+    clear_song_retrieval_metrics,
     head_strategy_done,
     load_analyze_metrics,
     load_head_labels,
-    query_flat_head_labels,
-    upsert_flat_head_labels,
     upsert_head,
     write_analyze_metrics,
+    write_song_retrieval_metrics,
 )
 from .patch import patch_features_done
 from .queries import (
@@ -56,10 +53,13 @@ from .songs import (
     song_exists,
     upsert_song,
 )
+from .stratify import clear_stale_stratification, load_stratified_sids, write_stratified_sids
 from .truncation import upsert_truncation_robustness
 
 __all__ = [
+    "clear_song_retrieval_metrics",
     # connection / schema
+    "clear_stale_stratification",
     "connect",
     "ensure_schema",
     "head_strategy_done",
@@ -73,6 +73,7 @@ __all__ = [
     "load_song_albums",
     "load_song_genres",
     "load_song_head_scores",
+    "load_stratified_sids",
     # patch features
     "patch_features_done",
     "query_analysis_done",
@@ -81,24 +82,21 @@ __all__ = [
     "query_binned_embed_done",
     "query_classify_ctp_sids",
     "query_classify_done",
-    "query_flat_head_labels",
     # progress queries
     "query_head_sim_corr_done",
     "song_exists",
     "upsert_binned_classify_ctp_bulk",
-    "upsert_binned_ptc_ctp_metrics",
     "upsert_binned_song_stats",
     # binned pipeline
     "upsert_calibration",
     # flat pipeline
-    "upsert_flat_head_labels",
     "upsert_head",
-    "upsert_head_agreement",
     "upsert_head_sim_corr_batch",
     "upsert_phase_timing",
-    "upsert_ptc_ctp_metrics_bulk",
     # songs
     "upsert_song",
     "upsert_truncation_robustness",
     "write_analyze_metrics",
+    "write_song_retrieval_metrics",
+    "write_stratified_sids",
 ]

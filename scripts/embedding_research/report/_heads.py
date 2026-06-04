@@ -175,7 +175,6 @@ def section_head_sim_corr(con) -> dict:
 def section_head_value(con, flat_df: pd.DataFrame | None = None) -> dict:
     """CTP vs PTC: does classifying before pooling add value over geometry alone?"""
     has_ptc_ctp = table_exists(con, "ptc_ctp_rows")
-    has_alignment = table_exists(con, "binned_ptc_ctp_metrics")
 
     if not has_ptc_ctp:
         return make_section(
@@ -351,62 +350,6 @@ def section_head_value(con, flat_df: pd.DataFrame | None = None) -> dict:
             )
         )
 
-    # Structural alignment
-    alignment_panel = None
-    if has_alignment:
-        try:
-            aln_df = con.execute(
-                f"""
-                SELECT backbone, head,
-                       ROUND(AVG(sim_align_corr), 4) AS sim_align_corr
-                FROM binned_ptc_ctp_metrics
-                WHERE std_thresh IN ({_THRESH_SQL})
-                  AND bin_mode IN ({_BIN_MODE_SQL})
-                GROUP BY backbone, head
-                """
-            ).df()
-        except Exception:
-            aln_df = pd.DataFrame()
-
-        if not aln_df.empty:
-            all_bbs_a = sorted(aln_df["backbone"].unique())
-            all_hs_a = sorted(aln_df["head"].unique())
-            piv_a = aln_df.pivot(index="head", columns="backbone", values="sim_align_corr").reindex(
-                index=all_hs_a, columns=all_bbs_a
-            )
-            data_aln = piv_a.values.astype(float)
-            text_aln = [[f"{v:.2f}" if not _np.isnan(v) else "" for v in row] for row in data_aln]
-            h_aln = max(240, len(all_hs_a) * 44 + 100)
-            fig_aln = go.Figure(
-                go.Heatmap(
-                    z=data_aln.tolist(),
-                    x=all_bbs_a,
-                    y=all_hs_a,
-                    text=text_aln,
-                    texttemplate="%{text}",
-                    textfont={"size": 9},
-                    colorscale="RdYlGn",
-                    zmin=0,
-                    zmax=1,
-                    colorbar={"title": "sim_align_corr", "tickfont": {"color": "#aaa", "size": 9}},
-                )
-            )
-            apply_dark_theme(fig_aln, grid=False)
-            fig_aln.update_layout(
-                title={
-                    "text": "Structural alignment: mean Pearson r(PTC rank, CTP rank)",
-                    "font": {"color": _FONT_COLOR},
-                },
-                height=h_aln,
-                xaxis={"tickfont": {"color": _FONT_COLOR, "size": 9}},
-                yaxis={"tickfont": {"color": _FONT_COLOR, "size": 9}},
-            )
-            alignment_panel = make_panel(
-                id="structural_alignment",
-                title="Structural alignment (sim_align_corr: 1.0 = PTC and CTP rank identically)",
-                charts=[make_chart(fig_aln, id="alignment_heatmap", title="Structural alignment")],
-            )
-
     panels: list[dict] = []
     if bb_panels:
         panels.append(
@@ -431,9 +374,6 @@ def section_head_value(con, flat_df: pd.DataFrame | None = None) -> dict:
                 ],
             )
         )
-    if alignment_panel is not None:
-        panels.append(alignment_panel)
-
     return make_section(
         "head-value",
         "Head Value",

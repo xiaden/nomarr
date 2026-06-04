@@ -3,9 +3,10 @@
 # Re-run `python run.py reset` then a fresh pipeline run to apply changes cleanly.
 
 [pipeline]
-# Number of songs to process.  0 = all songs (full run).
-# Set to a small number like 50 for a quick verification run.
-limit = 200
+# Budget target for stratified selection (applied after full-corpus membership scoring).
+# 0 = no budget cap (keep full selected set).
+# Small values are useful for quick verification runs.
+limit = 0
 # Recompute rows that are already in the DB.  Leave false for normal incremental runs.
 force = false
 # ONNX execution device.  "cpu" or "cuda".
@@ -21,6 +22,36 @@ device = "cuda"
 dist_thresholds = [0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5]
 # Segmentation algorithm variants default: "temporal_global", "temporal_perdim"
 bin_modes = ["temporal_global", "temporal_perdim"]
+# CTP score-space thresholds: absolute half-width in head-score space [0, 1].
+# A patch whose score differs from the current segment mean by more than this
+# value opens a new bin.  Corpus- and song-variance-independent.
+# A song that doesn't vary on a head produces exactly one bin (expected).
+ctp_score_thresholds = [0.05, 0.10, 0.15, 0.20]
+
+[stratify]
+# Genres with fewer than this count are bucketed into "__other__" for
+# balancing purposes (songs are still eligible for selection).
+min_genre_size = 10
+
+# Soft objective weights for greedy budgeted subset selection.
+weight_genre = 1.0
+weight_head = 1.0
+weight_artist = 0.35
+
+# Anchor-based overbudget tolerance curve (log-space interpolation).
+# Example intention: ~+10 tolerated around limit=20, ~+100 around limit=2000.
+budget_anchor_small_limit = 20
+budget_anchor_small_over = 10
+budget_anchor_large_limit = 2000
+budget_anchor_large_over = 100
+
+# Size penalty controls: objective subtracts size_penalty_weight * |n-limit|
+# and adds extra quadratic cost for overbudget beyond tolerance.
+size_penalty_weight = 0.6
+overbudget_quad_weight = 0.05
+
+# Hard guardrail: max selected size = limit + tolerance * hard_overbudget_multiplier.
+hard_overbudget_multiplier = 3.0
 
 [pooling]
 # Representations computed per bin segment and used to build the sim matrix
@@ -41,7 +72,6 @@ k = 10
 workers = 6
 # Set blas_threads to an integer to cap BLAS threads via threadpoolctl; 0 = no cap
 blas_threads = 1
-
 
 [optimization]
 # Set enabled = true to optimize per-(backbone, bin_mode) distance threshold

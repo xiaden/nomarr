@@ -19,6 +19,7 @@ from pathlib import Path
 import numpy as _np
 
 from scripts.embedding_research.config import OUTPUT_ROOT as _OUTPUT_ROOT
+from scripts.embedding_research.helpers.cache_utils import build_done_set as _build_done_set
 from scripts.embedding_research.helpers.cache_utils import missing_sids as _missing_sids
 
 _log = logging.getLogger(__name__)
@@ -64,11 +65,6 @@ def load(
     p = _path(backbone, head_name, strategy, pathway, song_id)
     if not p.exists():
         return None
-    if p.stat().st_size == 0:
-        _log.warning("Deleted zero-length head cache file (will recompute): %s", p)
-        with contextlib.suppress(OSError):
-            p.unlink()
-        return None
     try:
         return _np.load(str(p))
     except (EOFError, OSError, ValueError) as exc:
@@ -78,16 +74,25 @@ def load(
         return None
 
 
-def is_done(backbone: str, head_name: str, strategy: str, song_id: str) -> bool:
-    """Return True iff both ptc and ctp activations are cached and non-empty."""
+def is_done(
+    backbone: str,
+    head_name: str,
+    strategy: str,
+    song_id: str,
+    *,
+    done_set_ptc: frozenset[str] | None = None,
+    done_set_ctp: frozenset[str] | None = None,
+) -> bool:
+    """Return True iff both ptc and ctp activations are cached.
+
+    Pass *done_set_ptc* and *done_set_ctp* (from :func:`build_done_set`) to
+    avoid two ``stat()`` calls per song.  Corruption is detected and purged at
+    load time by :func:`load`.
+    """
+    if done_set_ptc is not None and done_set_ctp is not None:
+        return song_id in done_set_ptc and song_id in done_set_ctp
     for pathway in ("ptc", "ctp"):
-        p = _path(backbone, head_name, strategy, pathway, song_id)
-        if not p.exists():
-            return False
-        if p.stat().st_size == 0:
-            _log.warning("Deleted zero-length head cache file (will recompute): %s", p)
-            with contextlib.suppress(OSError):
-                p.unlink()
+        if not _path(backbone, head_name, strategy, pathway, song_id).exists():
             return False
     return True
 
@@ -121,31 +126,12 @@ def load_bulk(
 
 
 def list_done_sids(backbone: str, head_name: str, strategy: str) -> list[str]:
-    """Return sorted song IDs where both ptc and ctp files exist and are non-empty."""
+    """Return sorted song IDs where both ptc and ctp files exist."""
     ptc_dir = _CACHE_ROOT / backbone / "heads" / head_name / strategy / "ptc"
     ctp_dir = _CACHE_ROOT / backbone / "heads" / head_name / strategy / "ctp"
-    if not ptc_dir.exists():
-        return []
-    # Collect ptc candidates (purges zero-length via stat check)
-    ptc_sids = []
-    for p in ptc_dir.glob("*.npy"):
-        if p.stat().st_size == 0:
-            _log.warning("Deleted zero-length head cache file (will recompute): %s", p)
-            with contextlib.suppress(OSError):
-                p.unlink()
-        else:
-            ptc_sids.append(p.stem)
-    # Keep only those that also have a valid ctp file
-    result = []
-    for sid in ptc_sids:
-        ctp = ctp_dir / f"{sid}.npy"
-        if ctp.exists() and ctp.stat().st_size > 0:
-            result.append(sid)
-        elif ctp.exists():
-            _log.warning("Deleted zero-length head cache file (will recompute): %s", ctp)
-            with contextlib.suppress(OSError):
-                ctp.unlink()
-    return sorted(result)
+    ptc_sids = _build_done_set(ptc_dir)
+    ctp_sids = _build_done_set(ctp_dir)
+    return sorted(ptc_sids & ctp_sids)
 
 
 def list_all_heads(backbone: str) -> list[str]:

@@ -11,7 +11,6 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_file_query_comp import (
-    count_library_files,
     get_existing_file_paths,
     list_library_files,
 )
@@ -487,7 +486,7 @@ def on_scan_complete_pipeline_hook(db: Database, library_id: str) -> None:
         library_id: Library document ``_id``
 
     """
-    file_count = count_library_files(db, library_id)
+    file_count = db.library.count_library_file_links(normalize_library_id(library_id))
     next_state = PIPELINE_ML_RUNNING if file_count > 0 else PIPELINE_IDLE
     transition_pipeline_state(db, library_id, next_state)
 

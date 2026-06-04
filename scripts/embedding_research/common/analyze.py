@@ -7,11 +7,26 @@ import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, Literal, TypedDict, cast
 
+import numpy as _np
 import numpy as np
-from tqdm import tqdm
+from alive_progress import alive_it
+
+try:
+    from scipy.stats import kurtosis as _scipy_kurtosis
+
+    def _kurt(arr: list[float] | _np.ndarray) -> float:
+        return float(_scipy_kurtosis(arr, fisher=True))
+
+except ImportError:
+
+    def _kurt(arr: list[float] | _np.ndarray) -> float:
+        return float("nan")
+
 
 from scripts.embedding_research import db, similarity
-from scripts.embedding_research.config import BACKBONES
+from scripts.embedding_research.cache import flat_heads as _flat_heads_cache
+from scripts.embedding_research.cache.sim_pairs import sim_pair_exists, store_sim_pair
+from scripts.embedding_research.config import BACKBONES, HEADS
 from scripts.embedding_research.strategy_binned._constants import AGG_METHODS
 from scripts.embedding_research.strategy_binned._process import compute_agg_mats
 
@@ -41,6 +56,13 @@ class _BinnedPairPayload(TypedDict, total=False):
 
 
 _log = logging.getLogger(__name__)
+
+
+def _var_kurt(values_possibly_none: Sequence[float | None]) -> tuple[float | None, float | None]:
+    vals = [v for v in values_possibly_none if v is not None]
+    if len(vals) < 2:
+        return None, None
+    return float(_np.var(vals)), _kurt(vals)
 
 
 def _copy_extra_cfg(extra_cfg: Mapping[str, Any], **updates: Any) -> dict[str, Any]:
@@ -187,26 +209,39 @@ def _filter_binned_pairs(vecs: Any, keep: list[int], extra_cfg: Mapping[str, Any
 
 
 def _load_head_scores_and_names(
-    con, backbone: str, sids: list[str]
+    backbone: str, sids: list[str]
 ) -> tuple[list[list[float]] | None, list[str] | None]:
-    head_scores = cast("list[list[float]] | None", db.query_flat_head_labels(con, backbone, sids))
-    if not head_scores:
-        return None, None
+    """Load mean/ptc head scores from the filesystem cache.
 
-    head_rows = con.execute(
-        "SELECT DISTINCT head FROM flat_head_labels WHERE backbone = ? ORDER BY head",
-        [backbone],
-    ).fetchall()
-    head_names: list[str] | None = [str(row[0]) for row in head_rows]
-    if len(head_names) != len(head_scores):
+    Returns one row per head (sorted by head name), each row a list of
+    per-song scores aligned to *sids*.  Missing activations default to 0.0.
+    """
+    head_map = HEADS.get(backbone, {})
+    if not head_map:
+        return None, None
+    head_names = sorted(head_map)
+    matrix: list[list[float]] = []
+    sids_with_any: set[str] = set()
+    for head_name in head_names:
+        acts = _flat_heads_cache.load_bulk(backbone, head_name, "mean", "ptc", sids)
+        row = [float(acts[sid][-1]) if sid in acts and acts[sid].size >= 2 else 0.0 for sid in sids]
+        matrix.append(row)
+        sids_with_any.update(acts)
+    if not sids_with_any:
         _log.warning(
-            "[%s] head score/name mismatch (%d score rows vs %d names); disabling per-head labels",
+            "[%s] no head scores found in filesystem cache (mean/ptc) — disc_head will be 0",
             backbone,
-            len(head_scores),
-            len(head_names),
         )
-        head_names = None
-    return head_scores, head_names
+        return None, None
+    missing = sum(1 for sid in sids if sid not in sids_with_any)
+    if missing:
+        _log.warning(
+            "[%s] %d/%d songs have no head scores in filesystem cache — defaulting to 0.0 (classify ran partially?)",
+            backbone,
+            missing,
+            len(sids),
+        )
+    return matrix, head_names
 
 
 def analyze(
@@ -228,9 +263,9 @@ def analyze(
     for backbone in bb_names:
         written_for_backbone = 0
         skipped_for_backbone = 0
-        progress = tqdm(strategy_names, desc=f"[{backbone}] analyze", unit="strategy")
+        progress = alive_it(strategy_names, title=f"[{backbone}] analyze")
         for strategy_name in progress:
-            progress.set_postfix(written=written_for_backbone, skip=skipped_for_backbone, refresh=False)
+            progress.text(f"written={written_for_backbone} skip={skipped_for_backbone}")
             if not force and _strategy_fully_done(done_set, backbone, strategy_name, cfg, k):
                 skipped_for_backbone += 1
                 continue
@@ -261,7 +296,7 @@ def analyze(
                 skipped_for_backbone += 1
                 continue
 
-            head_scores, head_names = _load_head_scores_and_names(con, backbone, sids)
+            head_scores, head_names = _load_head_scores_and_names(backbone, sids)
 
             if cfg["strategy_type"] == "global_pool":
                 strategy_key = cfg["strategy_key_fn"](backbone, strategy_name, dict(cfg["extra_cfg"]))
@@ -278,7 +313,35 @@ def analyze(
                         genres=genres,
                         head_scores=cast("list[list[float]] | None", head_scores),
                         head_names=head_names,
+                        sids=sids,
                     )
+                    per_song = metrics.pop("per_song", {})
+                    metrics.pop("ap_k_genre", None)
+                    metrics.pop("ap_k_head", None)
+                    db.clear_song_retrieval_metrics(con, strategy_key, sim_metric, k)
+                    db.write_song_retrieval_metrics(con, strategy_key, sim_metric, k, per_song)
+                    extra: dict[str, float] = {}
+                    for flat_name, src_key in [
+                        ("var_ap_k", "ap_k"),
+                        ("var_disc_artist", "disc_artist_contrib"),
+                        ("var_disc_genre", "disc_genre_contrib"),
+                        ("var_disc_head", "disc_head_contrib"),
+                        ("var_ap_k_genre", "ap_k_genre"),
+                        ("var_ap_k_head", "ap_k_head"),
+                        ("var_mrr_genre", "mrr_genre"),
+                        ("var_mrr_head", "mrr_head"),
+                    ]:
+                        value, kurt = _var_kurt(per_song.get(src_key, []))
+                        if value is not None:
+                            extra[flat_name] = value
+                            extra[flat_name.replace("var_", "kurt_")] = cast("float", kurt)
+                    metrics.update(extra)
+                    _map_vals = [
+                        metrics.get(_mk)
+                        for _mk in ("map_k_artist", "map_k_genre", "map_k_head")
+                        if metrics.get(_mk) is not None
+                    ]
+                    metrics["map_k_general"] = float(np.mean(_map_vals)) if _map_vals else None
                     cfg["db_write_fn"](con, strategy_key, cfg["strategy_type"], sim_metric, k, metrics)
                     done_set.add((strategy_key, sim_metric, k))
                     rows_written += 1
@@ -294,7 +357,7 @@ def analyze(
                 )
                 continue
 
-            rows_all: list[tuple[str, str, dict[str, Any]]] = []
+            rows_all: list[tuple[str, str, dict[str, Any], dict[str, Any]]] = []
             pair_payloads = _normalise_binned_pairs(vecs, cfg["extra_cfg"])
             for pair_payload in pair_payloads:
                 rep_a = pair_payload.get("rep_a")
@@ -303,22 +366,22 @@ def analyze(
                 norm_b_all = pair_payload["norm_b_all"]
                 bin_counts = np.asarray(pair_payload["bin_counts"], dtype=np.float32)
 
+                data_a = [v.data for v in norm_a_all]
+                data_b = [v.data for v in norm_b_all]
+                for i in range(len(sids)):
+                    for j in range(i + 1, len(sids)):
+                        if sim_pair_exists(backbone, strategy_name, sids[i], sids[j]):
+                            continue
+                        raw_sim = (data_a[i] @ data_b[j].T).astype(np.float32)
+                        store_sim_pair(backbone, strategy_name, sids[i], sids[j], raw_sim)
+
                 for sim_metric in sim_metric_names:
-                    inner_bar = tqdm(
-                        total=len(sids),
-                        leave=False,
-                        desc=f"  {strategy_name}:{rep_a or '?'}:{rep_b or '?'}:{sim_metric}",
+                    agg_mats = compute_agg_mats(
+                        norm_a_all,
+                        norm_b_all,
+                        bin_counts,
+                        sim_metric,
                     )
-                    try:
-                        agg_mats = compute_agg_mats(
-                            norm_a_all,
-                            norm_b_all,
-                            bin_counts,
-                            sim_metric,
-                            progress=inner_bar,
-                        )
-                    finally:
-                        inner_bar.close()
 
                     for agg_method, sim_mat in agg_mats.items():
                         strategy_key = cfg["strategy_key_fn"](
@@ -341,10 +404,38 @@ def analyze(
                             genres=genres,
                             head_scores=cast("list[list[float]] | None", head_scores),
                             head_names=head_names,
+                            sids=sids,
                         )
-                        rows_all.append((strategy_key, sim_metric, metrics))
+                        per_song = metrics.pop("per_song", {})
+                        metrics.pop("ap_k_genre", None)
+                        metrics.pop("ap_k_head", None)
+                        rows_all.append((strategy_key, sim_metric, metrics, per_song))
 
-            for strategy_key, sim_metric, metrics in rows_all:
+            for strategy_key, sim_metric, metrics, per_song in rows_all:
+                db.clear_song_retrieval_metrics(con, strategy_key, sim_metric, k)
+                db.write_song_retrieval_metrics(con, strategy_key, sim_metric, k, per_song)
+                extra: dict[str, float] = {}
+                for flat_name, src_key in [
+                    ("var_ap_k", "ap_k"),
+                    ("var_disc_artist", "disc_artist_contrib"),
+                    ("var_disc_genre", "disc_genre_contrib"),
+                    ("var_disc_head", "disc_head_contrib"),
+                    ("var_ap_k_genre", "ap_k_genre"),
+                    ("var_ap_k_head", "ap_k_head"),
+                    ("var_mrr_genre", "mrr_genre"),
+                    ("var_mrr_head", "mrr_head"),
+                ]:
+                    value, kurt = _var_kurt(per_song.get(src_key, []))
+                    if value is not None:
+                        extra[flat_name] = value
+                        extra[flat_name.replace("var_", "kurt_")] = cast("float", kurt)
+                metrics.update(extra)
+                _map_vals = [
+                    metrics.get(_mk)
+                    for _mk in ("map_k_artist", "map_k_genre", "map_k_head")
+                    if metrics.get(_mk) is not None
+                ]
+                metrics["map_k_general"] = float(np.mean(_map_vals)) if _map_vals else None
                 cfg["db_write_fn"](con, strategy_key, cfg["strategy_type"], sim_metric, k, metrics)
                 done_set.add((strategy_key, sim_metric, k))
 

@@ -217,7 +217,7 @@ def save(
     p = cache_path(backbone, head, bin_mode, std_thresh, song_id)
     p.parent.mkdir(parents=True, exist_ok=True)
     np.savez(str(p), **arrays)
-    _log.info(
+    _log.debug(
         "ctp_cache.save  %s/%s/%s/%.3f/%s  bins=%d strats=%d",
         backbone,
         head,

@@ -7,14 +7,14 @@ Both ``strategy_binned`` and ``run`` previously duplicated the logic for loading
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 
 _CONFIG_PATH = Path(__file__).parent.parent / "research_config.toml"
 _LOG = logging.getLogger(__name__)
 
 
-@lru_cache(maxsize=None)
+@cache
 def load_research_config() -> dict:
     """Load ``research_config.toml``; return ``{}`` if missing or unparseable.
 
@@ -47,3 +47,11 @@ def load_research_config() -> dict:
     except Exception as exc:
         _LOG.warning("research_config.toml failed to parse with tomli; using defaults (%s)", exc)
         return {}
+
+
+@cache
+def load_research_config_bytes() -> bytes:
+    """Return raw bytes of research_config.toml (used for config hashing)."""
+    if not _CONFIG_PATH.exists():
+        return b""
+    return _CONFIG_PATH.read_bytes()

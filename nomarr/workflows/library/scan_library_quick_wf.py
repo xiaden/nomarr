@@ -21,10 +21,10 @@ from nomarr.components.library.library_file_query_comp import (
     get_folder_rel_paths,
 )
 from nomarr.components.library.library_file_state_comp import transition_file_state
+from nomarr.components.library.library_id_comp import normalize_library_id
 from nomarr.components.library.library_root_comp import validate_library_root
 from nomarr.components.library.scan_lifecycle_comp import (
     cleanup_stale_folders,
-    count_library_files,
     get_cached_folders,
     mark_scan_completed,
     mark_scan_started,
@@ -95,7 +95,7 @@ def scan_library_quick_workflow(
     try:
         # Step 2 — Pre-scan DB lookups
         db_folder_paths = get_folder_rel_paths(db, library_id)
-        file_count = count_library_files(db, library_id)
+        file_count = db.library.count_library_file_links(normalize_library_id(library_id))
         cached_folders = get_cached_folders(db, library_id)
 
         # Step 3 — Discover folders on disk

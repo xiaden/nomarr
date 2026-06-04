@@ -103,7 +103,6 @@ def test_classify_song_missing_returns_false_without_patch_cache(con, monkeypatc
         head_session=object(),
         run_in_batches_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected inference")),
         batch_size=8,
-        con=con,
         pooled_map={"mean": None},
         missing_strats=frozenset({"mean"}),
     )
@@ -120,7 +119,6 @@ def test_run_binned_no_cache_files_writes_no_rows(con, monkeypatch):
     monkeypatch.setattr(classify_mod, "discover_audio", list)
     monkeypatch.setattr(classify_mod, "HEADS", {}, raising=False)
     monkeypatch.setattr(classify_mod, "thresholds", [], raising=False)
-    monkeypatch.setattr(classify_mod, "compute_metrics", lambda *_args, **_kwargs: 0)
 
     run_binned(con, backbones=["missing_backbone"])
 
@@ -151,7 +149,7 @@ def test_analyze_no_flat_cache_data_leaves_analyze_metrics_empty(con, monkeypatc
     }
 
     monkeypatch.setattr(common_analyze_mod.db, "query_analysis_done", lambda _con: set())
-    monkeypatch.setattr(common_analyze_mod, "_load_head_scores_and_names", lambda _con, _bb, _sids: (None, None))
+    monkeypatch.setattr(common_analyze_mod, "_load_head_scores_and_names", lambda _bb, _sids: (None, None))
 
     analyze_common(con, cfg, backbones=["bb"], k=2)
 
@@ -189,7 +187,7 @@ def test_analyze_writes_analyze_metrics_with_expected_identifiers(con, monkeypat
     }
 
     monkeypatch.setattr(common_analyze_mod.db, "query_analysis_done", lambda _con: set())
-    monkeypatch.setattr(common_analyze_mod, "_load_head_scores_and_names", lambda _con, _bb, _sids: (None, None))
+    monkeypatch.setattr(common_analyze_mod, "_load_head_scores_and_names", lambda _bb, _sids: (None, None))
     monkeypatch.setattr(
         common_analyze_mod.similarity,
         "compute_retrieval_metrics",
@@ -267,3 +265,168 @@ def test_analysis_modules_and_vector_types_import():
     assert callable(run_binned)
     assert callable(analyze_common)
     assert UnitVector.__name__ == "UnitVector"
+
+
+def test_analyze_new_per_song_keys_write_var_kurt_fields(con, monkeypatch):
+    """common.analyze() writes variance and kurtosis fields for new per-song metrics."""
+    sids = ["s1", "s2", "s3", "s4"]
+    vecs = _raw_tensor(
+        [
+            [1.0, 0.0, 0.0],
+            [0.9, 0.1, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.9, 0.1],
+        ]
+    )
+    artists = ["A", "A", "B", "B"]
+    albums = ["AL", "AL", "BL", "BL"]
+    genres = ["Rock", "Rock", "Jazz", "Jazz"]
+
+    cfg: AnalyzeCfg = {
+        "strategy_names": ["mean"],
+        "load_vecs_fn": lambda _bb, _strategy, _con, _extra: (
+            vecs,
+            list(sids),
+            list(artists),
+            list(albums),
+            list(genres),
+        ),
+        "db_write_fn": common_analyze_mod.db.write_analyze_metrics,
+        "strategy_key_fn": lambda bb, strat, _extra: f"{bb}:{strat}",
+        "strategy_type": "global_pool",
+        "extra_cfg": {},
+    }
+
+    monkeypatch.setattr(common_analyze_mod.db, "query_analysis_done", lambda _con: set())
+    monkeypatch.setattr(common_analyze_mod, "_load_head_scores_and_names", lambda _bb, _sids: (None, None))
+    monkeypatch.setattr(
+        common_analyze_mod.similarity,
+        "compute_retrieval_metrics",
+        lambda *_args, **_kwargs: {
+            "map_k_artist": 0.7,
+            "map_k_genre": 0.5,
+            "map_k_head": 0.6,
+            "disc_general": 0.4,
+            "per_song": {
+                "ap_k_genre": [0.8, 0.6, 0.4, 0.2],
+                "ap_k_head": [0.7, 0.5, 0.3, 0.1],
+                "mrr_genre": [1.0, 0.5, 1.0, 0.5],
+                "mrr_head": [0.9, 0.4, 0.8, 0.3],
+            },
+        },
+    )
+
+    analyze_common(con, cfg, backbones=["bb"], k=2)
+
+    df = load_analyze_metrics(con)
+    written = set(df.columns)
+
+    for field in (
+        "var_ap_k_genre",
+        "kurt_ap_k_genre",
+        "var_ap_k_head",
+        "kurt_ap_k_head",
+        "var_mrr_genre",
+        "kurt_mrr_genre",
+        "var_mrr_head",
+        "kurt_mrr_head",
+    ):
+        assert field in written, f"{field} not found in analyze_metrics"
+        assert df[field].notna().all(), f"{field} should be populated for every similarity metric"
+
+
+def test_analyze_writes_map_k_general_when_component_metrics_present(con, monkeypatch):
+    """common.analyze() writes map_k_general when artist, genre, and head MAP scores exist."""
+    sids = ["s1", "s2", "s3", "s4"]
+    vecs = _raw_tensor(
+        [
+            [1.0, 0.0, 0.0],
+            [0.9, 0.1, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.9, 0.1],
+        ]
+    )
+    artists = ["A", "A", "B", "B"]
+    albums = ["AL", "AL", "BL", "BL"]
+    genres = ["Rock", "Rock", "Jazz", "Jazz"]
+
+    cfg: AnalyzeCfg = {
+        "strategy_names": ["mean"],
+        "load_vecs_fn": lambda _bb, _strategy, _con, _extra: (
+            vecs,
+            list(sids),
+            list(artists),
+            list(albums),
+            list(genres),
+        ),
+        "db_write_fn": common_analyze_mod.db.write_analyze_metrics,
+        "strategy_key_fn": lambda bb, strat, _extra: f"{bb}:{strat}",
+        "strategy_type": "global_pool",
+        "extra_cfg": {},
+    }
+
+    monkeypatch.setattr(common_analyze_mod.db, "query_analysis_done", lambda _con: set())
+    monkeypatch.setattr(common_analyze_mod, "_load_head_scores_and_names", lambda _bb, _sids: (None, None))
+    monkeypatch.setattr(
+        common_analyze_mod.similarity,
+        "compute_retrieval_metrics",
+        lambda *_args, **_kwargs: {
+            "map_k_artist": 0.7,
+            "map_k_genre": 0.5,
+            "map_k_head": 0.6,
+            "disc_general": 0.4,
+        },
+    )
+
+    analyze_common(con, cfg, backbones=["bb"], k=2)
+
+    df = load_analyze_metrics(con)
+    expected = float(np.mean([0.7, 0.5, 0.6]))
+
+    assert "map_k_general" in df.columns
+    np.testing.assert_allclose(df["map_k_general"].to_numpy(), np.full(len(df), expected), rtol=1e-5)
+
+
+def test_analyze_skips_map_k_general_when_component_metrics_absent(con, monkeypatch):
+    """common.analyze() omits map_k_general when the component MAP scores are unavailable."""
+    sids = ["s1", "s2", "s3", "s4"]
+    vecs = _raw_tensor(
+        [
+            [1.0, 0.0, 0.0],
+            [0.9, 0.1, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.9, 0.1],
+        ]
+    )
+    artists = ["A", "A", "B", "B"]
+    albums = ["AL", "AL", "BL", "BL"]
+    genres = ["Rock", "Rock", "Jazz", "Jazz"]
+
+    cfg: AnalyzeCfg = {
+        "strategy_names": ["mean"],
+        "load_vecs_fn": lambda _bb, _strategy, _con, _extra: (
+            vecs,
+            list(sids),
+            list(artists),
+            list(albums),
+            list(genres),
+        ),
+        "db_write_fn": common_analyze_mod.db.write_analyze_metrics,
+        "strategy_key_fn": lambda bb, strat, _extra: f"{bb}:{strat}",
+        "strategy_type": "global_pool",
+        "extra_cfg": {},
+    }
+
+    monkeypatch.setattr(common_analyze_mod.db, "query_analysis_done", lambda _con: set())
+    monkeypatch.setattr(common_analyze_mod, "_load_head_scores_and_names", lambda _bb, _sids: (None, None))
+    monkeypatch.setattr(
+        common_analyze_mod.similarity,
+        "compute_retrieval_metrics",
+        lambda *_args, **_kwargs: {"disc_general": 0.4},
+    )
+
+    analyze_common(con, cfg, backbones=["bb"], k=2)
+
+    df = load_analyze_metrics(con)
+
+    assert "map_k_general" not in df.columns

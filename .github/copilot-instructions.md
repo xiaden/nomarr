@@ -59,6 +59,19 @@ Import-linter enforces layer boundaries.
 
 ---
 
+## Subsystem Skill Policy
+
+After performing deep research on a **stable, non-churning** subsystem — reading multiple files, tracing call chains, or mapping architecture to answer a question or complete a task — check whether a subsystem orientation skill exists for that area. If not, load the `subsystem-orientation` skill and create one before the session ends.
+
+**Trigger condition:** You had to read 5+ files, trace complex topology manually, or reconstruct a mental model from scratch to do the work. The research cost is already paid. Capturing it in a skill costs one more step and saves every future session.
+
+**Do not create a skill for:**
+- Code that changes frequently (active refactor, new feature in flight)
+- Something already covered by an existing skill
+- One-off scripts or tooling
+
+---
+
 ## Hard Rules
 
 **Never:**

@@ -14,12 +14,17 @@ import pytest
 from scripts.embedding_research.db import load_analyze_metrics, write_analyze_metrics
 from scripts.embedding_research.db._schema import ensure_schema
 from scripts.embedding_research.db.flat import (
+    clear_song_retrieval_metrics,
     head_strategy_done,
-    query_flat_head_labels,
-    upsert_flat_head_labels,
     upsert_head,
+    write_song_retrieval_metrics,
 )
 from scripts.embedding_research.db.queries import query_analysis_done
+from scripts.embedding_research.db.stratify import (
+    clear_stale_stratification,
+    load_stratified_sids,
+    write_stratified_sids,
+)
 
 # ---------------------------------------------------------------------------
 # Fixture
@@ -44,7 +49,6 @@ EXPECTED_TABLES = {
     "songs",
     "pooled_vecs",
     "head_results",
-    "flat_head_labels",
     "analyze_metrics",
     "binned_calibration",
     "head_agreement_rows",
@@ -57,6 +61,8 @@ EXPECTED_TABLES = {
     "binned_ptc_ctp_metrics",
     "head_sim_corr_rows",
     "phase_timings",
+    "song_retrieval_metrics",
+    "stratified_corpus",
 }
 
 
@@ -94,35 +100,7 @@ def test_head_strategy_done_true_when_both_pathways(con, tmp_flat_head_cache):
 
 
 # ---------------------------------------------------------------------------
-# 5-7. flat_head_labels / query_flat_head_labels
-# ---------------------------------------------------------------------------
-
-
-def test_upsert_flat_head_labels_roundtrip(con):
-    upsert_flat_head_labels(con, "s1", "bb", "genre", 0.85)
-    row = con.execute(
-        "SELECT score FROM flat_head_labels WHERE song_id='s1' AND backbone='bb' AND head='genre'"
-    ).fetchone()
-    assert row is not None
-    assert row[0] == pytest.approx(0.85)
-
-
-def test_query_flat_head_labels_empty_returns_empty_list(con):
-    result = query_flat_head_labels(con, "bb", ["s1", "s2"])
-    assert result == []
-
-
-def test_query_flat_head_labels_partial_songs_warns(con, caplog):
-    upsert_flat_head_labels(con, "s1", "bb", "genre", 0.9)
-    upsert_flat_head_labels(con, "s2", "bb", "genre", 0.8)
-    sids = ["s1", "s2", "s3", "s4"]  # s3, s4 are missing
-    with caplog.at_level(logging.WARNING, logger="scripts.embedding_research.db.flat"):
-        query_flat_head_labels(con, "bb", sids)
-    assert any("2/4" in m for m in caplog.messages), f"Expected partial-songs warning, got: {caplog.messages}"
-
-
-# ---------------------------------------------------------------------------
-# 8-10. write_analyze_metrics / load_analyze_metrics
+# 5. write_analyze_metrics / load_analyze_metrics
 # ---------------------------------------------------------------------------
 
 
@@ -202,3 +180,104 @@ def test_query_analysis_done_returns_empty_set_on_missing_table(con):
     con.execute("DROP TABLE analyze_metrics")
     result = query_analysis_done(con)
     assert result == set()
+
+
+def test_load_stratified_sids_returns_empty_frozenset_when_no_rows(con):
+    result = load_stratified_sids(con, "hash-empty")
+
+    assert result == frozenset()
+
+
+def test_load_stratified_sids_returns_only_rows_for_matching_hash(con):
+    con.executemany(
+        "INSERT INTO stratified_corpus (config_hash, song_id) VALUES (?, ?)",
+        [("hash-a", "s001"), ("hash-a", "s002"), ("hash-b", "s999")],
+    )
+
+    result = load_stratified_sids(con, "hash-a")
+
+    assert result == frozenset({"s001", "s002"})
+
+
+def test_write_stratified_sids_inserts_rows(con):
+    write_stratified_sids(con, "hash-write", frozenset({"s003", "s001", "s002"}))
+
+    rows = con.execute(
+        "SELECT song_id FROM stratified_corpus WHERE config_hash = ? ORDER BY song_id",
+        ["hash-write"],
+    ).fetchall()
+
+    assert rows == [("s001",), ("s002",), ("s003",)]
+
+
+def test_write_stratified_sids_ignores_duplicate_inserts(con):
+    song_ids = frozenset({"s010", "s011"})
+
+    write_stratified_sids(con, "hash-dup", song_ids)
+    write_stratified_sids(con, "hash-dup", song_ids)
+
+    rows = con.execute(
+        "SELECT song_id FROM stratified_corpus WHERE config_hash = ? ORDER BY song_id",
+        ["hash-dup"],
+    ).fetchall()
+
+    assert rows == [("s010",), ("s011",)]
+
+
+def test_clear_stale_stratification_deletes_rows_with_different_hash_only(con):
+    con.executemany(
+        "INSERT INTO stratified_corpus (config_hash, song_id) VALUES (?, ?)",
+        [("keep-hash", "s001"), ("keep-hash", "s002"), ("stale-hash", "s999")],
+    )
+
+    clear_stale_stratification(con, "keep-hash")
+
+    rows = con.execute("SELECT config_hash, song_id FROM stratified_corpus ORDER BY config_hash, song_id").fetchall()
+
+    assert rows == [("keep-hash", "s001"), ("keep-hash", "s002")]
+
+
+def test_clear_song_retrieval_metrics_deletes_only_matching_rows(con):
+    write_song_retrieval_metrics(
+        con,
+        "strategy-a",
+        "cosine",
+        10,
+        {
+            "song_ids": ["s1", "s2"],
+            "ap_k": [1.0, 0.5],
+            "mrr": [1.0, 0.5],
+            "recall_k": [1.0, 1.0],
+            "disc_artist_contrib": [0.8, 0.6],
+            "disc_genre_contrib": [0.7, 0.4],
+            "disc_head_contrib": [0.3, 0.1],
+        },
+    )
+    write_song_retrieval_metrics(
+        con,
+        "strategy-b",
+        "l2",
+        5,
+        {
+            "song_ids": ["s3"],
+            "ap_k": [0.25],
+            "mrr": [0.25],
+            "recall_k": [1.0],
+            "disc_artist_contrib": [0.2],
+            "disc_genre_contrib": [0.15],
+            "disc_head_contrib": [0.05],
+        },
+    )
+
+    clear_song_retrieval_metrics(con, "strategy-a", "cosine", 10)
+
+    cleared_rows = con.execute(
+        "SELECT song_id FROM song_retrieval_metrics WHERE strategy_key = ? AND sim_metric = ? AND k = ?",
+        ["strategy-a", "cosine", 10],
+    ).fetchall()
+    remaining_rows = con.execute(
+        "SELECT strategy_key, sim_metric, k, song_id FROM song_retrieval_metrics ORDER BY strategy_key, sim_metric, k, song_id"
+    ).fetchall()
+
+    assert cleared_rows == []
+    assert remaining_rows == [("strategy-b", "l2", 5, "s3")]

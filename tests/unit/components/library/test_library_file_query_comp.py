@@ -11,7 +11,6 @@ from nomarr.components.library.library_file_query_comp import (
     _collect_file_ids_for_tag_ids,
     clear_library_data,
     count_files_by_tag,
-    count_library_files,
     count_recently_tagged,
     detect_nd_path_prefix,
     find_move_candidate_by_chromaprint,
@@ -383,20 +382,6 @@ def test_get_files_for_folders_matches_root_and_nested_paths() -> None:
         root_doc["path"]: {**root_doc, "has_tagged_state": False},
         nested_doc["path"]: {**nested_doc, "has_tagged_state": True},
     }
-
-
-@pytest.mark.unit
-def test_count_library_files_normalizes_library_id_for_facade_count() -> None:
-
-    db = make_db()
-
-    db.library.count_library_file_links.return_value = 7
-
-    result = count_library_files(db, "abc123")
-
-    assert result == 7
-
-    db.library.count_library_file_links.assert_called_once_with("libraries/abc123")
 
 
 @pytest.mark.unit

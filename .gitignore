@@ -89,6 +89,7 @@ radon
 classification_results.json
 scripts/outputs/
 scripts/human-scripts/outputs/
+scripts/embedding_research/scripts/outputs/
 
 # ADR staging drafts (local only, not for review)
 artifacts/decisions/drafts/
@@ -153,4 +154,14 @@ build_resources/models-prepatch/
 .codegraphrc.json
 
 # repowise API keys (local)
-.repowise/.env
+.repowise/
+
+.agents/
+
+.clinerules/
+
+.continue/
+
+.devcontainer/
+
+.clineignore

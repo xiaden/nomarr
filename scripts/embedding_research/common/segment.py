@@ -8,7 +8,7 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import numpy as np
-from tqdm import tqdm
+from alive_progress import alive_it
 
 from scripts.embedding_research import db as _db
 from scripts.embedding_research.common.embed import _patches_path as patches_path
@@ -67,14 +67,14 @@ def segment(
         skipped = 0
         errors = 0
         started_at = time.perf_counter()
-        progress = tqdm(songs, desc=f"[{backbone}] segment", unit="song")
+        progress = alive_it(songs, title=f"[{backbone}] segment")
         for song in progress:
             sid = str(song["song_id"])
             sidecar = patches_path(sid, backbone)
             if not sidecar.exists():
                 skipped += len(strategy_names)
                 _log.warning("[%s] Missing patches sidecar for %s: %s", backbone, sid, sidecar)
-                progress.set_postfix(done=done, skip=skipped, err=errors, refresh=False)
+                progress.text(f"done={done} skip={skipped} err={errors}")
                 continue
 
             pending_strategy_names: list[str] = []
@@ -85,7 +85,7 @@ def segment(
                 pending_strategy_names.append(strategy_name)
 
             if not pending_strategy_names:
-                progress.set_postfix(done=done, skip=skipped, err=errors, refresh=False)
+                progress.text(f"done={done} skip={skipped} err={errors}")
                 continue
 
             try:
@@ -93,7 +93,7 @@ def segment(
             except Exception as exc:
                 errors += len(pending_strategy_names)
                 _log.error("%s %s: failed to load patches: %s", backbone, sid, exc)
-                progress.set_postfix(done=done, skip=skipped, err=errors, refresh=False)
+                progress.text(f"done={done} skip={skipped} err={errors}")
                 continue
 
             for strategy_name in pending_strategy_names:
@@ -105,7 +105,7 @@ def segment(
                     errors += 1
                     _log.error("%s %s %s: %s", backbone, sid, strategy_name, exc)
 
-            progress.set_postfix(done=done, skip=skipped, err=errors, refresh=False)
+            progress.text(f"done={done} skip={skipped} err={errors}")
 
         elapsed = time.perf_counter() - started_at
         rate = done / elapsed if elapsed > 0 and done > 0 else 0.0

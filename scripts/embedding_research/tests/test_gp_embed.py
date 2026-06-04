@@ -14,10 +14,6 @@ from uuid import uuid4
 import numpy as np
 import pytest
 
-_tqdm_module: Any = ModuleType("tqdm")
-_tqdm_module.tqdm = lambda iterable=None, **_kwargs: iterable
-sys.modules.setdefault("tqdm", _tqdm_module)
-
 _time_helper_module: Any = ModuleType("nomarr.helpers.time_helper")
 _time_helper_module.internal_ms = lambda: 0
 _helpers_module: Any = sys.modules.setdefault("nomarr.helpers", ModuleType("nomarr.helpers"))
@@ -39,22 +35,18 @@ def tmp_path(request):
     return Path(tempfile.mkdtemp(prefix=f"{safe_name}-{uuid4().hex[:8]}-"))
 
 
-def _make_tqdm_stub() -> Any:
-    """Return a tqdm-compatible stub with set_postfix and write."""
+def _make_alive_it_stub() -> Any:
+    """Return an alive_it-compatible stub with text()."""
 
     class _ProgressBar(list):
-        def set_postfix(self, **_kwargs) -> None:
+        def text(self, _msg: str) -> None:
             return None
 
-    class _TqdmStub:
+    class _AliveItStub:
         def __call__(self, iterable=None, **_kwargs):
             return _ProgressBar([] if iterable is None else iterable)
 
-        @staticmethod
-        def write(*_args, **_kwargs) -> None:
-            return None
-
-    return _TqdmStub()
+    return _AliveItStub()
 
 
 @pytest.mark.unit
@@ -74,7 +66,7 @@ def test_gp_embed_delegates_to_common_embed(con, monkeypatch, tmp_path):
     monkeypatch.setattr(gp_embed_mod, "_patches_path", lambda _sid, _backbone: sidecar)
     monkeypatch.setattr(gp_embed_mod, "_STRATEGIES", {"mean": strategy})
     monkeypatch.setattr(gp_embed_mod, "_save_pooled", save_pooled)
-    monkeypatch.setattr(gp_embed_mod, "_tqdm", _make_tqdm_stub())
+    monkeypatch.setattr(gp_embed_mod, "_alive_it", _make_alive_it_stub())
     monkeypatch.setattr(gp_embed_mod._np, "load", Mock(return_value=np.array([[1.0, 2.0]], dtype=np.float32)))
 
     gp_embed_mod.embed(
@@ -107,7 +99,7 @@ def test_gp_embed_skips_missing_sidecar(con, monkeypatch, tmp_path):
     monkeypatch.setattr(gp_embed_mod, "_patches_path", lambda sid, backbone: tmp_path / f"{sid}.{backbone}.npy")
     monkeypatch.setattr(gp_embed_mod, "_STRATEGIES", {"mean": Mock(return_value=np.array([1.0], dtype=np.float32))})
     monkeypatch.setattr(gp_embed_mod, "_save_pooled", save_pooled)
-    monkeypatch.setattr(gp_embed_mod, "_tqdm", _make_tqdm_stub())
+    monkeypatch.setattr(gp_embed_mod, "_alive_it", _make_alive_it_stub())
 
     gp_embed_mod.embed(con, backbones=["bb"])
 
@@ -130,7 +122,7 @@ def test_gp_embed_pools_when_sidecar_exists_and_config_not_done(con, monkeypatch
     monkeypatch.setattr(gp_embed_mod, "_patches_path", lambda _sid, _backbone: sidecar)
     monkeypatch.setattr(gp_embed_mod, "_STRATEGIES", {"mean": strategy})
     monkeypatch.setattr(gp_embed_mod, "_save_pooled", save_pooled)
-    monkeypatch.setattr(gp_embed_mod, "_tqdm", _make_tqdm_stub())
+    monkeypatch.setattr(gp_embed_mod, "_alive_it", _make_alive_it_stub())
     monkeypatch.setattr(gp_embed_mod._np, "load", Mock(return_value=np.array([[3.0, 4.0]], dtype=np.float32)))
 
     gp_embed_mod.embed(con, backbones=["bb"])
@@ -157,7 +149,7 @@ def test_gp_embed_skips_already_done_config_without_force(con, monkeypatch, tmp_
     monkeypatch.setattr(gp_embed_mod, "_patches_path", lambda _sid, _backbone: sidecar)
     monkeypatch.setattr(gp_embed_mod, "_STRATEGIES", {"mean": strategy})
     monkeypatch.setattr(gp_embed_mod, "_save_pooled", save_pooled)
-    monkeypatch.setattr(gp_embed_mod, "_tqdm", _make_tqdm_stub())
+    monkeypatch.setattr(gp_embed_mod, "_alive_it", _make_alive_it_stub())
     monkeypatch.setattr(gp_embed_mod._np, "load", Mock(return_value=np.array([[5.0, 6.0]], dtype=np.float32)))
 
     gp_embed_mod.embed(con, backbones=["bb"])
@@ -182,7 +174,7 @@ def test_gp_embed_force_repools_even_when_config_done(con, monkeypatch, tmp_path
     monkeypatch.setattr(gp_embed_mod, "_patches_path", lambda _sid, _backbone: sidecar)
     monkeypatch.setattr(gp_embed_mod, "_STRATEGIES", {"mean": strategy})
     monkeypatch.setattr(gp_embed_mod, "_save_pooled", save_pooled)
-    monkeypatch.setattr(gp_embed_mod, "_tqdm", _make_tqdm_stub())
+    monkeypatch.setattr(gp_embed_mod, "_alive_it", _make_alive_it_stub())
     monkeypatch.setattr(gp_embed_mod._np, "load", Mock(return_value=np.array([[8.0, 9.0]], dtype=np.float32)))
 
     gp_embed_mod.embed(con, backbones=["bb"], force=True)

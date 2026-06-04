@@ -6,7 +6,7 @@ import logging as _logging
 import time as _time
 
 import numpy as _np
-from tqdm import tqdm as _tqdm
+from alive_progress import alive_it as _alive_it
 
 from scripts.embedding_research.cache.flat_vecs import list_configs as _list_embedded_configs
 from scripts.embedding_research.cache.flat_vecs import save_pooled as _save_pooled
@@ -47,14 +47,14 @@ def embed(
     for bb_name in bb_names:
         done = skipped = errors = 0
         t0 = _time.perf_counter()
-        pbar = _tqdm(audio_paths, desc=f"[{bb_name}]", unit="song")
+        pbar = _alive_it(audio_paths, title=f"[{bb_name}]")
         for path in pbar:
             sid = _song_id(path)
             sidecar = _patches_path(sid, bb_name)
             if not sidecar.exists():
                 skipped += 1
                 _log.warning("[%s] missing sidecar for %s; skipping pooling", bb_name, path.name)
-                pbar.set_postfix(done=done, skip=skipped, err=errors)
+                pbar.text(f"done={done} skip={skipped} err={errors}")
                 continue
 
             try:
@@ -69,7 +69,7 @@ def embed(
                     done += 1
                 else:
                     skipped += 1
-                pbar.set_postfix(done=done, skip=skipped, err=errors)
+                pbar.text(f"done={done} skip={skipped} err={errors}")
             except Exception as exc:
                 errors += 1
                 _log.error("%s %s: %s", bb_name, path.name, exc)

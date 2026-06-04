@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging as _logging
 
-from tqdm import tqdm as _tqdm
+from alive_progress import alive_it as _alive_it
 
 from .config import (
     bootstrap_nomarr as _bootstrap_nomarr,
@@ -49,7 +49,7 @@ def ingest(con, *, limit: int | None = None, force: bool = False) -> None:
     _log.info("Ingesting metadata for %d audio file(s) ...", len(audio_paths))
 
     new = skipped = errors = 0
-    for path in _tqdm(audio_paths, desc="[ingest]", unit="song"):
+    for path in _alive_it(audio_paths, title="[ingest]"):
         sid = _song_id(path)
         if not force and _song_exists(con, sid):
             skipped += 1

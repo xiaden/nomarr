@@ -12,22 +12,18 @@ import scripts.embedding_research.common.segment as segment_mod
 from scripts.embedding_research.common.segment import _skip_never, segment
 
 
-def _make_tqdm_stub():
-    """Return a tqdm-compatible stub with set_postfix and write."""
+def _make_alive_it_stub():
+    """Return an alive_it-compatible stub with text()."""
 
     class _ProgressBar(list):
-        def set_postfix(self, **_kwargs) -> None:
+        def text(self, _msg: str) -> None:
             return None
 
-    class _TqdmStub:
+    class _AliveItStub:
         def __call__(self, iterable=None, **_kwargs):
             return _ProgressBar([] if iterable is None else iterable)
 
-        @staticmethod
-        def write(*_args, **_kwargs) -> None:
-            return None
-
-    return _TqdmStub()
+    return _AliveItStub()
 
 
 def _write_patches(tmp_path: Path) -> tuple[Path, np.ndarray]:
@@ -45,7 +41,7 @@ def test_skip_never_always_returns_false() -> None:
 
 def test_segment_raises_when_cache_write_fn_missing(con, monkeypatch) -> None:
     """segment() requires a cache writer in extra_cfg."""
-    monkeypatch.setattr(segment_mod, "tqdm", _make_tqdm_stub())
+    monkeypatch.setattr(segment_mod, "alive_it", _make_alive_it_stub())
 
     with pytest.raises(ValueError, match="cache_write_fn"):
         segment(con, lambda *_args: {}, ["mean"])
@@ -57,7 +53,7 @@ def test_segment_skips_song_with_missing_sidecar(con, monkeypatch, tmp_path: Pat
     cache_write_fn = Mock()
     segment_fn = Mock(return_value={"mean": np.array([1.0], dtype=np.float32)})
 
-    monkeypatch.setattr(segment_mod, "tqdm", _make_tqdm_stub())
+    monkeypatch.setattr(segment_mod, "alive_it", _make_alive_it_stub())
     monkeypatch.setattr(
         "scripts.embedding_research.common.segment._db.load_all_songs",
         lambda _con: [{"song_id": "s1"}],
@@ -88,7 +84,7 @@ def test_segment_calls_segment_fn_and_cache_write_for_each_strategy(con, monkeyp
     )
     strategy_names = ["mean", "max"]
 
-    monkeypatch.setattr(segment_mod, "tqdm", _make_tqdm_stub())
+    monkeypatch.setattr(segment_mod, "alive_it", _make_alive_it_stub())
     monkeypatch.setattr(
         "scripts.embedding_research.common.segment._db.load_all_songs",
         lambda _con: [{"song_id": "s1"}],
@@ -129,7 +125,7 @@ def test_segment_skips_already_done_without_force(con, monkeypatch, tmp_path: Pa
     segment_fn = Mock(return_value={"mean": np.array([1.0], dtype=np.float32)})
     skip_check_fn = Mock(return_value=True)
 
-    monkeypatch.setattr(segment_mod, "tqdm", _make_tqdm_stub())
+    monkeypatch.setattr(segment_mod, "alive_it", _make_alive_it_stub())
     monkeypatch.setattr(
         "scripts.embedding_research.common.segment._db.load_all_songs",
         lambda _con: [{"song_id": "s1"}],
@@ -159,7 +155,7 @@ def test_segment_force_bypasses_skip_check(con, monkeypatch, tmp_path: Path) -> 
     segment_fn = Mock(return_value={"mean": np.array([1.0], dtype=np.float32)})
     skip_check_fn = Mock(return_value=True)
 
-    monkeypatch.setattr(segment_mod, "tqdm", _make_tqdm_stub())
+    monkeypatch.setattr(segment_mod, "alive_it", _make_alive_it_stub())
     monkeypatch.setattr(
         "scripts.embedding_research.common.segment._db.load_all_songs",
         lambda _con: [{"song_id": "s1"}],
@@ -193,7 +189,7 @@ def test_segment_swallows_per_strategy_errors(con, monkeypatch, tmp_path: Path) 
             raise RuntimeError("boom")
         return {strategy_name: np.array([2.0], dtype=np.float32)}
 
-    monkeypatch.setattr(segment_mod, "tqdm", _make_tqdm_stub())
+    monkeypatch.setattr(segment_mod, "alive_it", _make_alive_it_stub())
     monkeypatch.setattr(
         "scripts.embedding_research.common.segment._db.load_all_songs",
         lambda _con: [{"song_id": "s1"}],

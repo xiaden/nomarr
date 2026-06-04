@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 
 from scripts.embedding_research.config import OUTPUT_ROOT as _OUTPUT_ROOT
+from scripts.embedding_research.helpers.cache_utils import build_done_set as _build_done_set
 from scripts.embedding_research.helpers.cache_utils import missing_sids as _missing_sids
 from scripts.embedding_research.vector_types import RawTensor
 
@@ -52,20 +53,15 @@ def save_pooled(song_id: str, backbone: str, strategy: str, vec: np.ndarray) -> 
 # ── Read ──────────────────────────────────────────────────────────────────────
 
 
-def is_done(song_id: str, backbone: str, strategy: str) -> bool:
-    """Return True if the pooled vec for this (song, backbone, strategy) is on disk and readable."""
-    p = _vec_path(song_id, backbone, strategy)
-    if not p.exists():
-        return False
-    if p.stat().st_size == 0:
-        _purge_corrupt(p)
-        return False
-    try:
-        np.load(str(p))
-        return True
-    except (EOFError, OSError, ValueError):
-        _purge_corrupt(p)
-        return False
+def is_done(song_id: str, backbone: str, strategy: str, *, done_set: frozenset[str] | None = None) -> bool:
+    """Return True if the pooled vec for this (song, backbone, strategy) is on disk.
+
+    Pass *done_set* (from :func:`build_done_set`) to avoid a ``stat()`` call per
+    song.  Corruption is detected and purged at load time by :func:`load_pooled`.
+    """
+    if done_set is not None:
+        return song_id in done_set
+    return _vec_path(song_id, backbone, strategy).exists()
 
 
 def list_done_keys() -> set[tuple[str, str, str]]:
@@ -100,9 +96,6 @@ def load_pooled(song_id: str, backbone: str, strategy: str) -> np.ndarray | None
     p = _vec_path(song_id, backbone, strategy)
     if not p.exists():
         return None
-    if p.stat().st_size == 0:
-        _purge_corrupt(p)
-        return None
     try:
         return np.load(str(p))
     except (EOFError, OSError, ValueError):
@@ -114,17 +107,9 @@ def load_pooled(song_id: str, backbone: str, strategy: str) -> np.ndarray | None
 
 
 def list_done_sids(backbone: str, strategy: str) -> list[str]:
-    """Return sorted list of song IDs that have a cached pooled vec. Zero-length files are purged."""
+    """Return sorted list of song IDs that have a cached pooled vec."""
     d = _CACHE_ROOT / backbone / strategy / "flat"
-    if not d.exists():
-        return []
-    valid = []
-    for p in d.glob("*.npy"):
-        if p.stat().st_size == 0:
-            _purge_corrupt(p)
-        else:
-            valid.append(p.stem)
-    return sorted(valid)
+    return sorted(_build_done_set(d))
 
 
 def list_configs() -> set[tuple[str, str]]:

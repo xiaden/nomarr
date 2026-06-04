@@ -397,37 +397,34 @@ def test_section_unified_table_with_mixed_data():
     assert row_types == {"flat", "binned"}
 
 
-def test_section_unified_table_prefers_disc_genre_sort():
-    """Row with highest disc_genre should rank first in the top-20 table."""
-    row_high_genre = _minimal_unified_df(
+def test_section_unified_table_sorts_by_map_k_general_then_artist():
+    """Row with highest map_k_general should rank first in the top-20 table."""
+    row_high_map_general = _minimal_unified_df(
         strategy_key="global_pool:bb_a:mean",
         backbone="bb_a",
         strategy="mean",
-        disc_general=0.3,
-        disc_artist=0.3,
-        disc_genre=0.9,
-        disc_score=0.1,
-    )
-    row_high_score = _minimal_unified_df(
-        strategy_key="global_pool:bb_a:cls",
-        backbone="bb_a",
-        strategy="cls",
-        disc_general=0.3,
-        disc_artist=0.3,
+        map_k_general=0.91,
+        map_k_artist=0.35,
         disc_genre=0.1,
         disc_score=0.95,
     )
-    df = pd.concat([row_high_score, row_high_genre], ignore_index=True)
+    row_low_map_general = _minimal_unified_df(
+        strategy_key="global_pool:bb_a:cls",
+        backbone="bb_a",
+        strategy="cls",
+        map_k_general=0.42,
+        map_k_artist=0.99,
+        disc_genre=0.9,
+        disc_score=0.1,
+    )
+    df = pd.concat([row_low_map_general, row_high_map_general], ignore_index=True)
 
     result = section_unified_table(df)
     table = result["tables"][0]
-    disc_genre_idx = table["columns"].index("disc_genre")
-    disc_score_idx = table["columns"].index("disc_score")
+    map_k_general_idx = table["columns"].index("map_k_general")
 
-    assert table["rows"][0][disc_genre_idx] == "0.9000"
-    assert table["rows"][0][disc_score_idx] == "0.1000"
-    assert table["rows"][1][disc_genre_idx] == "0.1000"
-    assert table["rows"][1][disc_score_idx] == "0.9500"
+    assert table["rows"][0][map_k_general_idx] == "0.9100"
+    assert table["rows"][1][map_k_general_idx] == "0.4200"
 
 
 # ---------------------------------------------------------------------------
@@ -494,7 +491,17 @@ def test_section_threshold_sweep_with_data():
 
     assert not result["empty_message"]
     assert len(result["subsections"]) == 1
-    assert len(result["subsections"][0]["charts"]) == 1
+    assert result["subsections"][0]["charts"] == []
+    disc_diag_panels = [
+        panel for panel in result["subsections"][0]["panels"] if "Discrimination Diagnostics" in panel["title"]
+    ]
+
+    assert len(disc_diag_panels) == 1
+    assert {chart["id"] for chart in disc_diag_panels[0]["charts"]} == {
+        "sweep_mean_test_backbone",
+        "sweep_var_test_backbone",
+        "sweep_kurt_test_backbone",
+    }
 
 
 def test_section_bin_mode_comparison_empty():
@@ -587,6 +594,109 @@ def test_disc_score_warning_triggers_no_within_artist_pairs():
     assert isinstance(warnings, list)
     assert len(warnings) > 0
     assert any(w["id"] == "no_within_artist_pairs" for w in warnings)
+
+
+def test_analyze_metrics_columns_excludes_precision_k_head_mean():
+    assert "precision_k_head_mean" not in ANALYZE_METRICS_COLUMNS
+
+
+def test_analyze_metrics_columns_includes_new_map_metrics():
+    expected_columns = {
+        "map_k_artist",
+        "map_k_genre",
+        "map_k_head",
+        "map_k_general",
+        "var_ap_k_genre",
+        "kurt_ap_k_genre",
+        "var_mrr_genre",
+        "kurt_mrr_genre",
+    }
+
+    assert expected_columns <= set(ANALYZE_METRICS_COLUMNS)
+
+
+def test_analyze_metrics_columns_has_no_duplicates():
+    assert len(ANALYZE_METRICS_COLUMNS) == len(set(ANALYZE_METRICS_COLUMNS))
+
+
+def test_section_unified_table_columns_order_map_before_disc():
+    result = section_unified_table(_minimal_unified_df(strategy_type="global_pool"))
+    columns = result["tables"][0]["columns"]
+
+    assert columns.index("map_k_general") < columns.index("disc_general")
+    assert columns.index("map_k_artist") < columns.index("disc_artist")
+
+
+def test_section_unified_table_backwards_compat_no_map_k_general():
+    df = pd.concat(
+        [
+            _minimal_unified_df(strategy_key="global_pool:test_backbone:mean"),
+            _minimal_unified_df(strategy_key="global_pool:test_backbone:cls", strategy="cls"),
+        ],
+        ignore_index=True,
+    )
+
+    result = section_unified_table(df)
+
+    assert isinstance(result, dict)
+    assert result.keys() >= _V2_KEYS
+    assert not result["empty_message"]
+    assert len(result["tables"]) == 1
+
+
+def test_section_unified_table_output_excludes_precision_k_head_mean():
+    """precision_k_head_mean was removed from table_columns even though flat_columns still lists it.
+
+    This verifies the backward-compat contract: the intermediate reindex includes
+    precision_k_head_mean (so old data won't crash), but the rendered table column
+    list intentionally omits it.
+    """
+    result = section_unified_table(_minimal_unified_df())
+    table = result["tables"][0]
+    assert "precision_k_head_mean" not in table["columns"]
+
+
+def test_section_threshold_sweep_map_chart_present_when_map_k_general_available():
+    df = pd.concat(
+        [empty_df(ANALYZE_METRICS_COLUMNS), _minimal_ptc_df(map_k_general=0.72)],
+        ignore_index=True,
+    )
+
+    result = section_threshold_sweep(df)
+
+    assert len(result["subsections"]) == 1
+    assert len(result["subsections"][0]["charts"]) == 1
+    assert result["subsections"][0]["charts"][0]["id"] == "sweep_map_test_backbone"
+
+
+def test_section_bin_mode_comparison_uses_disc_col_as_fallback_when_no_map():
+    df = pd.concat(
+        [
+            _minimal_ptc_df(map_k_general=None),
+            _minimal_ctp_df(map_k_general=None),
+        ],
+        ignore_index=True,
+    )
+
+    result = section_bin_mode_comparison(df)
+
+    assert not result["empty_message"]
+    assert "disc_" in result["description"]
+
+
+def test_section_bin_mode_comparison_uses_map_k_general_when_available():
+    df = pd.concat(
+        [
+            _minimal_ptc_df(map_k_general=0.65),
+            _minimal_ctp_df(map_k_general=0.58),
+        ],
+        ignore_index=True,
+    )
+
+    result = section_bin_mode_comparison(df)
+
+    assert not result["empty_message"]
+    assert "map_k_general" in result["description"]
 
 
 '''

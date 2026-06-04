@@ -99,21 +99,6 @@ def load_classify_ctp_rows(
     return result
 
 
-def upsert_ptc_ctp_metrics_bulk(con, rows: list[tuple]) -> None:
-    if not rows:
-        return
-    con.executemany(
-        "INSERT INTO binned_ptc_ctp_metrics "
-        "(backbone, bin_mode, std_thresh, head, divergence_mean, bin_count_var, sim_align_corr) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT (backbone, bin_mode, std_thresh, head) DO UPDATE SET "
-        "divergence_mean=excluded.divergence_mean, "
-        "bin_count_var=excluded.bin_count_var, "
-        "sim_align_corr=excluded.sim_align_corr",
-        rows,
-    )
-
-
 # ── head_sim_corr_rows ────────────────────────────────────────────────────────
 
 
@@ -135,57 +120,6 @@ def upsert_head_sim_corr_batch(con, rows: list[tuple]) -> None:
         DO UPDATE SET corr=excluded.corr
         """,
         rows,
-    )
-
-
-# ── head_agreement_rows ───────────────────────────────────────────────────────
-
-
-def upsert_head_agreement(
-    con,
-    backbone: str,
-    head: str,
-    bin_mode: str,
-    std_thresh: float,
-    agreement_rate: float,
-    n_songs: int,
-) -> None:
-    con.execute(
-        """
-        INSERT INTO head_agreement_rows (backbone, head, bin_mode, std_thresh, agreement_rate, n_songs)
-        VALUES (?,?,?,?,?,?)
-        ON CONFLICT (backbone, head, bin_mode, std_thresh) DO UPDATE SET
-          agreement_rate=excluded.agreement_rate, n_songs=excluded.n_songs
-        """,
-        [backbone, head, bin_mode, std_thresh, agreement_rate, n_songs],
-    )
-
-
-# ── binned_ptc_ctp_metrics ────────────────────────────────────────────────────
-
-
-def upsert_binned_ptc_ctp_metrics(
-    con,
-    backbone: str,
-    bin_mode: str,
-    std_thresh: float,
-    head: str,
-    divergence_mean: float,
-    bin_count_var: float,
-    sim_align_corr: float,
-) -> None:
-    con.execute(
-        """
-        INSERT INTO binned_ptc_ctp_metrics
-          (backbone, bin_mode, std_thresh, head,
-           divergence_mean, bin_count_var, sim_align_corr)
-        VALUES (?,?,?,?,?,?,?)
-        ON CONFLICT (backbone, bin_mode, std_thresh, head) DO UPDATE SET
-          divergence_mean=excluded.divergence_mean,
-          bin_count_var=excluded.bin_count_var,
-          sim_align_corr=excluded.sim_align_corr
-        """,
-        [backbone, bin_mode, std_thresh, head, divergence_mean, bin_count_var, sim_align_corr],
     )
 
 

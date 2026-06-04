@@ -13,10 +13,6 @@ from uuid import uuid4
 import numpy as np
 import pytest
 
-_tqdm_module: Any = ModuleType("tqdm")
-_tqdm_module.tqdm = lambda iterable=None, **_kwargs: iterable
-sys.modules.setdefault("tqdm", _tqdm_module)
-
 _time_helper_module: Any = ModuleType("nomarr.helpers.time_helper")
 _time_helper_module.internal_ms = lambda: 0
 _helpers_module: Any = sys.modules.setdefault("nomarr.helpers", ModuleType("nomarr.helpers"))
@@ -260,22 +256,18 @@ def _install_embed_runtime_stubs() -> dict[str, Mock]:
     }
 
 
-def _make_tqdm_stub() -> Any:
-    """Return a tqdm-compatible stub with set_postfix and write."""
+def _make_alive_it_stub() -> Any:
+    """Return an alive_it-compatible stub with text()."""
 
     class _ProgressBar(list):
-        def set_postfix(self, **_kwargs) -> None:
+        def text(self, _msg: str) -> None:
             return None
 
-    class _TqdmStub:
+    class _AliveItStub:
         def __call__(self, iterable=None, **_kwargs):
             return _ProgressBar([] if iterable is None else iterable)
 
-        @staticmethod
-        def write(*_args, **_kwargs) -> None:
-            return None
-
-    return _TqdmStub()
+    return _AliveItStub()
 
 
 @pytest.mark.unit
@@ -290,7 +282,7 @@ def test_embed_no_audio_files_is_noop(con, monkeypatch, tmp_path):
     monkeypatch.setattr(embed_mod, "_discover_audio", Mock(return_value=[]))
     monkeypatch.setattr(embed_mod, "_BACKBONES", {"bb": {"path": "model.onnx", "backbone_name": "bb-model"}})
     monkeypatch.setattr(embed_mod, "_embed_song_raw", embed_song_raw)
-    monkeypatch.setattr(embed_mod, "_tqdm", _make_tqdm_stub())
+    monkeypatch.setattr(embed_mod, "_alive_it", _make_alive_it_stub())
 
     embed_mod.embed(con, backbones=["bb"])
 
@@ -313,7 +305,7 @@ def test_embed_filters_by_song_ids(con, monkeypatch, tmp_path):
     monkeypatch.setattr(embed_mod, "_song_id", lambda path: Path(path).stem)
     monkeypatch.setattr(embed_mod, "_BACKBONES", {"bb": {"path": "model.onnx", "backbone_name": "bb-model"}})
     monkeypatch.setattr(embed_mod, "_embed_song_raw", embed_song_raw)
-    monkeypatch.setattr(embed_mod, "_tqdm", _make_tqdm_stub())
+    monkeypatch.setattr(embed_mod, "_alive_it", _make_alive_it_stub())
 
     embed_mod.embed(con, song_ids=frozenset({"keep"}), backbones=["bb"])
 
@@ -334,7 +326,7 @@ def test_embed_counts_done_and_skipped(con, monkeypatch, tmp_path):
     monkeypatch.setattr(embed_mod, "_discover_audio", Mock(return_value=[first_path, second_path]))
     monkeypatch.setattr(embed_mod, "_BACKBONES", {"bb": {"path": "model.onnx", "backbone_name": "bb-model"}})
     monkeypatch.setattr(embed_mod, "_embed_song_raw", embed_song_raw)
-    monkeypatch.setattr(embed_mod, "_tqdm", _make_tqdm_stub())
+    monkeypatch.setattr(embed_mod, "_alive_it", _make_alive_it_stub())
 
     embed_mod.embed(con, backbones=["bb"])
 
@@ -353,7 +345,7 @@ def test_embed_errors_dont_propagate(con, monkeypatch, tmp_path):
     monkeypatch.setattr(embed_mod, "_discover_audio", Mock(return_value=[song_path]))
     monkeypatch.setattr(embed_mod, "_BACKBONES", {"bb": {"path": "model.onnx", "backbone_name": "bb-model"}})
     monkeypatch.setattr(embed_mod, "_embed_song_raw", embed_song_raw)
-    monkeypatch.setattr(embed_mod, "_tqdm", _make_tqdm_stub())
+    monkeypatch.setattr(embed_mod, "_alive_it", _make_alive_it_stub())
 
     embed_mod.embed(con, backbones=["bb"])
 

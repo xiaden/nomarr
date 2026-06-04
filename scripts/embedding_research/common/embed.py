@@ -8,7 +8,7 @@ from pathlib import Path as _Path
 from typing import Any as _Any
 
 import numpy as _np
-from tqdm import tqdm as _tqdm
+from alive_progress import alive_it as _alive_it
 
 from scripts.embedding_research.config import BACKBONES as _BACKBONES
 from scripts.embedding_research.config import PATCHES_DIR as _PATCHES_DIR
@@ -122,7 +122,7 @@ def embed(
             )
         done = skipped = errors = 0
         t0 = time.perf_counter()
-        pbar = _tqdm(audio_paths, desc=f"[{bb_name}]", unit="song")
+        pbar = _alive_it(audio_paths, title=f"[{bb_name}]")
         for path in pbar:
             try:
                 worked = _embed_song_raw(
@@ -141,7 +141,7 @@ def embed(
                     done += 1
                 else:
                     skipped += 1
-                pbar.set_postfix(done=done, skip=skipped, err=errors)
+                pbar.text(f"done={done} skip={skipped} err={errors}")
             except Exception as exc:
                 errors += 1
                 _log.error("%s %s: %s", bb_name, path.name, exc)

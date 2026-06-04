@@ -57,10 +57,11 @@
 		},
 		"chat.useCustomAgentHooks": true,
 		"chat.subagents.allowInvocationsFromSubagents": true,
-		"python.analysis.typeCheckingMode": "basic",
+		"python.analysis.typeCheckingMode": "off",
 		"github.copilot.chat.tools.memory.enabled": false,
 		"gitlens.currentLine.enabled": true,
-		"gitlens.hovers.currentLine.over": "line"
+		"gitlens.hovers.currentLine.over": "line",
+		"git.ignoreLimitWarning": true
 	},
 	"extensions": {
 		"recommendations": [

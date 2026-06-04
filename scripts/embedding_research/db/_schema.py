@@ -7,7 +7,6 @@ Flat-embedding pipeline:
   songs                     (song_id PK, path, artist, album, title, genre)
   pooled_vecs               (song_id, backbone, strategy, vec FLOAT[])
   head_results              (song_id, backbone, head, strategy, pathway, act FLOAT[])
-  flat_head_labels          (song_id, backbone, head, score)
   analyze_metrics           (strategy_key, strategy_type, sim_metric, k, metric, value)
 
 Binned-embedding pipeline (one vector per STD-threshold bin per song):
@@ -35,6 +34,9 @@ CTP-derived (segment boundaries from classifier score stream, head-specific):
                              bin_count_var, sim_align_corr)
   head_sim_corr_rows        (backbone, bin_mode, std_thresh, rep_a, rep_b, sim_metric,
                              agg_method, k, head, corr)
+
+Corpus stratification:
+  stratified_corpus         (config_hash TEXT, song_id TEXT)
 
 Infrastructure:
   phase_timings             (run_ts, phase, elapsed_s)
@@ -84,14 +86,6 @@ CREATE TABLE IF NOT EXISTS head_results (
     PRIMARY KEY (song_id, backbone, head, strategy, pathway)
 );
 
-CREATE TABLE IF NOT EXISTS flat_head_labels (
-    song_id  TEXT NOT NULL,
-    backbone TEXT NOT NULL,
-    head     TEXT NOT NULL,
-    score DOUBLE NOT NULL,  -- raw flat PTC activation score in [0, 1]
-    PRIMARY KEY (song_id, backbone, head)
-);
-
 CREATE TABLE IF NOT EXISTS analyze_metrics (
     strategy_key  TEXT NOT NULL,
     strategy_type TEXT NOT NULL,
@@ -125,7 +119,6 @@ CREATE TABLE IF NOT EXISTS binned_calibration (
 
 -- Fraction of songs where binned weighted-majority head decision matches
 -- the baseline PTC/median single-vector decision.
--- NOTE: upsert_head_agreement() exists but has no call site in the current pipeline.
 CREATE TABLE IF NOT EXISTS head_agreement_rows (
     backbone       TEXT NOT NULL,
     head           TEXT NOT NULL,
@@ -270,6 +263,26 @@ CREATE TABLE IF NOT EXISTS phase_timings (
     phase     TEXT NOT NULL,
     elapsed_s DOUBLE NOT NULL,
     PRIMARY KEY (run_ts, phase)
+);
+
+CREATE TABLE IF NOT EXISTS stratified_corpus (
+    config_hash  TEXT NOT NULL,
+    song_id      TEXT NOT NULL,
+    PRIMARY KEY (config_hash, song_id)
+);
+
+CREATE TABLE IF NOT EXISTS song_retrieval_metrics (
+    strategy_key          TEXT    NOT NULL,
+    sim_metric            TEXT    NOT NULL,
+    k                     INTEGER NOT NULL,
+    song_id               TEXT    NOT NULL,
+    ap_k                  DOUBLE,
+    mrr                   DOUBLE,
+    recall_k              DOUBLE,
+    disc_artist_contrib   DOUBLE,
+    disc_genre_contrib    DOUBLE,
+    disc_head_contrib     DOUBLE,
+    PRIMARY KEY (strategy_key, sim_metric, k, song_id)
 );
 """
 

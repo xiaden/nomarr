@@ -75,57 +75,63 @@ def load_head_labels(
     return labels
 
 
-def query_flat_head_labels(con, backbone: str, sids: list[str]) -> list[list[float]]:
-    """Return per-head score matrix for ``sids`` from the ``flat_head_labels`` table.
+# ── analyze_metrics ───────────────────────────────────────────────────────────
+
+
+def clear_song_retrieval_metrics(con, strategy_key: str, sim_metric: str, k: int) -> None:
+    """Delete all per-song retrieval metric rows for the given (strategy_key, sim_metric, k) combination."""
+    con.execute(
+        "DELETE FROM song_retrieval_metrics WHERE strategy_key = ? AND sim_metric = ? AND k = ?",
+        [strategy_key, sim_metric, k],
+    )
+
+
+def write_song_retrieval_metrics(
+    con,
+    strategy_key: str,
+    sim_metric: str,
+    k: int,
+    per_song: dict,
+) -> None:
+    """Write per-song retrieval metrics into the ``song_retrieval_metrics`` table.
 
     Args:
         con: DuckDB connection.
-        backbone: Backbone identifier used to filter rows.
-        sids: Ordered list of song IDs to include.
-
-    Returns:
-        A list of ``len(heads)`` rows, each of length ``len(sids)``, ordered by
-        sorted head name. Missing songs default to ``0.0``.
+        strategy_key: Strategy identifier.
+        sim_metric: Similarity metric name (e.g. ``"cosine"``).
+        k: Retrieval cut-off.
+        per_song: Dict returned by ``compute_retrieval_metrics`` under key ``"per_song"``.
+            Expected keys: ``song_ids``, ``ap_k``, ``mrr``, ``recall_k``,
+            ``disc_artist_contrib``, ``disc_genre_contrib``, ``disc_head_contrib``.
     """
-    rows = con.execute(
-        "SELECT song_id, head, score FROM flat_head_labels WHERE backbone = ?",
-        [backbone],
-    ).fetchall()
-    score_map: dict[str, dict[str, float]] = {}
-    heads: set[str] = set()
-    for song_id, head, score in rows:
-        song_scores = score_map.setdefault(song_id, {})
-        song_scores[head] = float(score)
-        heads.add(head)
+    song_ids = per_song.get("song_ids", [])
+    ap_k = per_song.get("ap_k", [])
+    mrr = per_song.get("mrr", [])
+    recall_k = per_song.get("recall_k", [])
+    disc_artist_contrib = per_song.get("disc_artist_contrib", [])
+    disc_genre_contrib = per_song.get("disc_genre_contrib", [])
+    disc_head_contrib = per_song.get("disc_head_contrib", [])
 
-    if not heads:
-        _log.warning(
-            "[query_flat_head_labels] no head scores found in DB for backbone=%s — disc_head will be 0", backbone
+    rows = [
+        (
+            strategy_key,
+            sim_metric,
+            k,
+            song_id,
+            ap_k[idx] if idx < len(ap_k) else None,
+            mrr[idx] if idx < len(mrr) else None,
+            recall_k[idx] if idx < len(recall_k) else None,
+            disc_artist_contrib[idx] if idx < len(disc_artist_contrib) else None,
+            disc_genre_contrib[idx] if idx < len(disc_genre_contrib) else None,
+            disc_head_contrib[idx] if idx < len(disc_head_contrib) else None,
         )
-        return []
-    missing_songs = [sid for sid in sids if sid not in score_map]
-    if missing_songs:
-        _log.warning(
-            "[query_flat_head_labels] %d/%d songs have no head scores for backbone=%s — defaulting to 0.0 (classify ran partially?)",
-            len(missing_songs),
-            len(sids),
-            backbone,
+        for idx, song_id in enumerate(song_ids)
+    ]
+    if rows:
+        con.executemany(
+            "INSERT OR REPLACE INTO song_retrieval_metrics (strategy_key, sim_metric, k, song_id, ap_k, mrr, recall_k, disc_artist_contrib, disc_genre_contrib, disc_head_contrib) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            rows,
         )
-    ordered_heads = sorted(heads)
-    from scripts.embedding_research.config import HEADS as _HEADS
-
-    config_heads = list(_HEADS.get(backbone, {}).keys())
-    if config_heads and ordered_heads != config_heads:
-        _log.warning(
-            "[query_flat_head_labels] DB heads %s differ from config heads %s for backbone=%s — using DB order",
-            ordered_heads,
-            config_heads,
-            backbone,
-        )
-    return [[score_map.get(song_id, {}).get(head, 0.0) for song_id in sids] for head in ordered_heads]
-
-
-# ── analyze_metrics ───────────────────────────────────────────────────────────
 
 
 def write_analyze_metrics(
@@ -149,8 +155,10 @@ def write_analyze_metrics(
             for sub_name, sub_value in value.items():
                 if sub_value is not None:
                     rows.append((strategy_key, strategy_type, sim_metric, k, f"{name}_{sub_name}", float(sub_value)))
+        elif isinstance(value, (list, np.ndarray)):
+            continue  # per-song lists are never written as aggregate metrics
         else:
-            rows.append((strategy_key, strategy_type, sim_metric, k, name, value))
+            rows.append((strategy_key, strategy_type, sim_metric, k, name, float(value)))
     con.executemany("INSERT OR REPLACE INTO analyze_metrics VALUES (?,?,?,?,?,?)", rows)
 
 
@@ -176,9 +184,3 @@ def load_analyze_metrics(con) -> pd.DataFrame:
         df = df.sort_values("disc_general", ascending=False, na_position="last")
     return df
 
-
-def upsert_flat_head_labels(con, song_id: str, backbone: str, head: str, score: float) -> None:
-    con.execute(
-        "INSERT INTO flat_head_labels (song_id, backbone, head, score) VALUES (?,?,?,?) ON CONFLICT (song_id, backbone, head) DO UPDATE SET score=excluded.score",
-        [song_id, backbone, head, score],
-    )

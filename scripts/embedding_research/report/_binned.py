@@ -50,9 +50,13 @@ def _kurt(series: pd.Series) -> float:
 def section_threshold_sweep(df: pd.DataFrame) -> dict:
     """Mean/variance/kurtosis of disc per combinatorial vs std_thresh, per backbone.
 
-    Each (backbone × bin_mode × rep_a × rep_b × agg_method × std_thresh) is its own
+    Each (backbone x bin_mode x rep_a x rep_b x agg_method x std_thresh) is its own
     bin — thresholds are never collapsed.  The statistics describe how the disc metric
-    varies over evaluation settings (sim_metric × k) within that bin.
+    varies over evaluation settings (sim_metric x k) within that bin.
+
+    When ``map_k_general`` data is available, an additional MAP@k sweep chart is
+    rendered as the primary chart.  Disc mean/variance/kurtosis charts are grouped
+    inside a collapsible "Discrimination Diagnostics" panel.
     """
     binned_df = df[df["strategy_type"].isin(["ptc", "ctp"])]
     flat_df = df[df["strategy_type"] == "global_pool"]
@@ -94,17 +98,18 @@ def section_threshold_sweep(df: pd.DataFrame) -> dict:
                 flat_ref_std = float(fb.std()) if len(fb) > 1 else 0.0
 
         # Aggregate: each full combinatorial is its own bin.
-        agg = (
-            bb.groupby(_COMBO_COLS, as_index=False, dropna=False)
-            .agg(
-                mean_disc=(disc_col, "mean"),
-                var_disc=(disc_col, "var"),
-                std_disc=(disc_col, "std"),
-                kurt_disc=(disc_col, _kurt),
-                n=(disc_col, "count"),
-            )
-            .sort_values(_COMBO_COLS)
-        )
+        has_map_general = "map_k_general" in bb.columns and bb["map_k_general"].notna().any()
+        agg_kwargs: dict = {
+            "mean_disc": (disc_col, "mean"),
+            "var_disc": (disc_col, "var"),
+            "std_disc": (disc_col, "std"),
+            "kurt_disc": (disc_col, _kurt),
+            "n": (disc_col, "count"),
+        }
+        if has_map_general:
+            agg_kwargs["mean_map_general"] = ("map_k_general", "mean")
+            agg_kwargs["var_map_general"] = ("map_k_general", "var")
+        agg = bb.groupby(_COMBO_COLS, as_index=False, dropna=False).agg(**agg_kwargs).sort_values(_COMBO_COLS)
 
         # Assign a stable color index per (rep_a, rep_b, agg_method) triple.
         rep_triples = (
@@ -113,22 +118,18 @@ def section_threshold_sweep(df: pd.DataFrame) -> dict:
             .sort_values(["rep_a", "rep_b", "agg_method"])
             .reset_index(drop=True)
         )
-        triple_to_idx: dict = {
-            (row["rep_a"], row["rep_b"], row["agg_method"]): i
-            for i, row in rep_triples.iterrows()
-        }
+        triple_to_idx: dict = {(row["rep_a"], row["rep_b"], row["agg_method"]): i for i, row in rep_triples.iterrows()}
 
+        fig_map = None
         fig_mean = go.Figure()
         fig_var = go.Figure()
         fig_kurt = go.Figure()
 
-        for (bm, ra, rb, am), grp in agg.groupby(
-            ["bin_mode", "rep_a", "rep_b", "agg_method"], sort=True, dropna=False
-        ):
+        for (bm, ra, rb, am), grp in agg.groupby(["bin_mode", "rep_a", "rep_b", "agg_method"], sort=True, dropna=False):
             g = grp.sort_values("std_thresh")
             color = _REP_PALETTE[triple_to_idx.get((ra, rb, am), 0) % len(_REP_PALETTE)]
             dash = _BM_DASH.get(str(bm), "solid")
-            name = f"{bm}/{rep_label(ra)}×{rep_label(rb)}/{agg_label(am)}"
+            name = f"{bm}/{rep_label(ra)}x{rep_label(rb)}/{agg_label(am)}"
 
             # Mean with ±std error bars.
             fig_mean.add_trace(
@@ -170,6 +171,41 @@ def section_threshold_sweep(df: pd.DataFrame) -> dict:
                 )
             )
 
+        if has_map_general and "mean_map_general" in agg.columns:
+            fig_map = go.Figure()
+            for (bm, ra, rb, am), grp in agg.groupby(
+                ["bin_mode", "rep_a", "rep_b", "agg_method"], sort=True, dropna=False
+            ):
+                g = grp.sort_values("std_thresh")
+                color = _REP_PALETTE[triple_to_idx.get((ra, rb, am), 0) % len(_REP_PALETTE)]
+                dash = _BM_DASH.get(str(bm), "solid")
+                name = f"{bm}/{rep_label(ra)}x{rep_label(rb)}/{agg_label(am)}"
+                fig_map.add_trace(
+                    go.Scatter(
+                        x=g["std_thresh"].tolist(),
+                        y=g["mean_map_general"].tolist(),
+                        error_y={
+                            "type": "data",
+                            "array": (g["var_map_general"].fillna(0) ** 0.5).tolist(),
+                            "visible": True,
+                            "thickness": 1.0,
+                            "width": 4,
+                            "color": color,
+                        },
+                        mode="lines+markers",
+                        name=name,
+                        line={"color": color, "width": 1.5, "dash": dash},
+                        marker={"size": 5},
+                    )
+                )
+            apply_dark_theme(fig_map)
+            fig_map.update_layout(
+                title={"text": f"{backbone} — mean MAP@k (general) vs threshold", "font": {"color": _FONT_COLOR}},
+                height=_H_MED,
+                xaxis_title="std_thresh",
+                yaxis_title="mean map_k_general",
+            )
+
         # Flat baseline on the mean chart.
         if flat_ref_mean is not None:
             fig_mean.add_hline(
@@ -187,7 +223,8 @@ def section_threshold_sweep(df: pd.DataFrame) -> dict:
                     x_lo, x_hi = x_range[0], x_range[-1]
                     fig_mean.add_shape(
                         type="rect",
-                        x0=x_lo, x1=x_hi,
+                        x0=x_lo,
+                        x1=x_hi,
                         y0=flat_ref_mean - flat_ref_std,
                         y1=flat_ref_mean + flat_ref_std,
                         fillcolor="#f59e0b",
@@ -225,14 +262,25 @@ def section_threshold_sweep(df: pd.DataFrame) -> dict:
             for _, row in agg.iterrows()
         ]
 
-        charts = [
+        charts: list[dict] = []
+        if fig_map is not None:
+            charts.append(make_chart(fig_map, id=f"sweep_map_{backbone}", title=f"{backbone} mean map_k_general"))
+
+        disc_charts = [
             make_chart(fig_mean, id=f"sweep_mean_{backbone}", title=f"{backbone} mean {disc_col}"),
             make_chart(fig_var, id=f"sweep_var_{backbone}", title=f"{backbone} variance {disc_col}"),
             make_chart(fig_kurt, id=f"sweep_kurt_{backbone}", title=f"{backbone} kurtosis {disc_col}"),
         ]
-        panels = [make_panel(id=f"sweep_tbl_{backbone}", title="Raw stats", tables=[
-            make_table(tbl_rows, id=f"sweep_tbl_data_{backbone}", title="Mean/var/kurtosis per combinatorial")
-        ])]
+        panels = [
+            make_panel(id=f"disc_diag_{backbone}", title="Discrimination Diagnostics", charts=disc_charts),
+            make_panel(
+                id=f"sweep_tbl_{backbone}",
+                title="Raw stats",
+                tables=[
+                    make_table(tbl_rows, id=f"sweep_tbl_data_{backbone}", title="Mean/var/kurtosis per combinatorial")
+                ],
+            ),
+        ]
 
         subsections.append(
             {
@@ -255,9 +303,11 @@ def section_threshold_sweep(df: pd.DataFrame) -> dict:
         "Threshold Sweep",
         description=(
             f"Mean/variance/kurtosis of {disc_col} per combinatorial "
-            "(backbone × bin_mode × rep_a × rep_b × agg_method × std_thresh). "
+            "(backbone x bin_mode x rep_a x rep_b x agg_method x std_thresh). "
             "Each threshold is its own bin — no collapsing across thresholds. "
-            "Statistics are computed over all (sim_metric × k) evaluation variants within each bin. "
+            "Statistics are computed over all (sim_metric x k) evaluation variants within each bin. "
+            "When MAP@k general data is available, a mean MAP@k sweep chart is shown as the primary chart; "
+            "disc charts (mean ±std, variance, kurtosis) are grouped in a 'Discrimination Diagnostics' panel. "
             "Error bars on the mean chart show ±1 std. "
             "Amber dashed line = flat baseline mean; shaded band = flat ±1 std."
         ),
@@ -593,7 +643,7 @@ def section_segment_counts(con) -> dict:
 
 
 def section_bin_mode_comparison(df: pd.DataFrame) -> dict:
-    """Head-to-head: temporal_global vs temporal_perdim per backbone, using mean disc."""
+    """Head-to-head: temporal_global vs temporal_perdim per backbone, using mean MAP@k general (falls back to disc)."""
     binned_df = df[df["strategy_type"].isin(["ptc", "ctp"])]
     flat_df = df[df["strategy_type"] == "global_pool"]
     if binned_df.empty:
@@ -624,6 +674,9 @@ def section_bin_mode_comparison(df: pd.DataFrame) -> dict:
         if ("disc_general" in binned_df.columns and binned_df["disc_general"].notna().any())
         else "disc_score"
     )
+    map_col = disc_col
+    if "map_k_general" in binned_df.columns and binned_df["map_k_general"].notna().any():
+        map_col = "map_k_general"
 
     subsections: list[dict] = []
     for backbone, bb_full in binned_df.groupby("backbone", sort=True):
@@ -639,18 +692,10 @@ def section_bin_mode_comparison(df: pd.DataFrame) -> dict:
                 flat_ref_mean = float(fb.mean())
 
         # Re-aggregate per (bin_mode, std_thresh) — mean over all rep combos at each threshold.
-        thresh_mean = (
-            bb_full.groupby(["bin_mode", "std_thresh"], as_index=False, dropna=False)[disc_col].mean()
-        )
+        thresh_mean = bb_full.groupby(["bin_mode", "std_thresh"], as_index=False, dropna=False)[map_col].mean()
 
-        g_scores = (
-            thresh_mean[thresh_mean["bin_mode"] == "temporal_global"]
-            .set_index("std_thresh")[disc_col]
-        )
-        p_scores = (
-            thresh_mean[thresh_mean["bin_mode"] == "temporal_perdim"]
-            .set_index("std_thresh")[disc_col]
-        )
+        g_scores = thresh_mean[thresh_mean["bin_mode"] == "temporal_global"].set_index("std_thresh")[map_col]
+        p_scores = thresh_mean[thresh_mean["bin_mode"] == "temporal_perdim"].set_index("std_thresh")[map_col]
         common = sorted(set(g_scores.index) & set(p_scores.index))
         g_wins = sum(1 for t in common if g_scores.get(t, 0) > p_scores.get(t, 0))
         p_wins = sum(1 for t in common if p_scores.get(t, 0) > g_scores.get(t, 0))
@@ -676,7 +721,7 @@ def section_bin_mode_comparison(df: pd.DataFrame) -> dict:
 
         detail_parts = [
             f"global wins {g_wins}, perdim wins {p_wins}, ties {ties} "
-            f"(out of {len(common)} thresholds, compared by mean {disc_col})"
+            f"(out of {len(common)} thresholds, compared by mean {map_col})"
         ]
         if flat_ref_mean is not None:
             detail_parts.append(
@@ -691,7 +736,7 @@ def section_bin_mode_comparison(df: pd.DataFrame) -> dict:
             fig.add_trace(
                 go.Scatter(
                     x=g["std_thresh"].tolist(),
-                    y=g[disc_col].tolist(),
+                    y=g[map_col].tolist(),
                     mode="lines+markers",
                     name=str(bm),
                     line={"color": _LINE_COLORS_BM.get(str(bm), "#999"), "width": 1.5},
@@ -709,10 +754,10 @@ def section_bin_mode_comparison(df: pd.DataFrame) -> dict:
             )
         apply_dark_theme(fig)
         fig.update_layout(
-            title={"text": f"{backbone} \u2014 global vs perdim (mean {disc_col})", "font": {"color": _FONT_COLOR}},
+            title={"text": f"{backbone} \u2014 global vs perdim (mean {map_col})", "font": {"color": _FONT_COLOR}},
             height=_H_MED,
             xaxis_title="std_thresh",
-            yaxis_title=f"mean {disc_col}",
+            yaxis_title=f"mean {map_col}",
         )
 
         subsections.append(
@@ -737,7 +782,7 @@ def section_bin_mode_comparison(df: pd.DataFrame) -> dict:
         description=(
             "temporal_global: one std across all dimensions. "
             "temporal_perdim: per-dimension std, boundary where any dimension exceeds its own threshold. "
-            "Y-axis shows mean disc across all (rep_a × rep_b × agg_method × sim_metric × k) variants "
+            f"Y-axis shows mean {map_col} across all (rep_a x rep_b x agg_method x sim_metric x k) variants "
             "at each threshold — no max-collapsing. "
             "Amber dashed line = flat baseline mean."
         ),
