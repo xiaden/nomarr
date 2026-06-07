@@ -12,6 +12,7 @@ __pycache__/
 *.egg-info/
 build/
 .venv/
+.venv-*/
 venv/
 *.py[cod]
 *$py.class
@@ -153,15 +154,12 @@ build_resources/models-prepatch/
 .codegraph/
 .codegraphrc.json
 
-# repowise API keys (local)
-.repowise/
-
 .agents/
-
-.clinerules/
 
 .continue/
 
 .devcontainer/
 
-.clineignore
+opencode.json
+
+.opencode/

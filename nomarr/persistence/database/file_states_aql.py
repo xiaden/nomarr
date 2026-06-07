@@ -80,10 +80,20 @@ class FileStatesAqlOperations:
         )
         self._db.aql.execute(
             """
+            FOR edge IN @@edge_collection
+                FILTER edge._from IN @file_ids AND edge._to == @to_state_id
+                REMOVE edge IN @@edge_collection
+            """,
+            bind_vars={
+                "@edge_collection": edge_collection,
+                "file_ids": normalized_ids,
+                "to_state_id": to_state_id,
+            },
+        )
+        self._db.aql.execute(
+            """
             FOR file_id IN @file_ids
-                UPSERT { _from: file_id, _to: @to_state_id }
                 INSERT { _from: file_id, _to: @to_state_id }
-                UPDATE {}
                 IN @@edge_collection
             """,
             bind_vars={
