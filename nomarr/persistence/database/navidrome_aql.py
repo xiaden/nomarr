@@ -106,30 +106,38 @@ class NavidromeAqlOperations:
         self._db.aql.execute(
             """
             LET track_ids = (
-                FOR edge IN @@nd_edge_collection
-                    FILTER edge._to == @file_id
-                    RETURN edge._from
+                FOR e IN @@nd_edge_collection
+                    FILTER e._to == @file_id
+                    RETURN e._from
             )
             LET playcount_ids = UNIQUE(
-                FOR edge IN @@play_edge_collection
-                    FILTER edge._from IN track_ids
-                    RETURN edge._to
+                FOR e IN @@play_edge_collection
+                    FILTER e._from IN track_ids
+                    RETURN e._to
             )
-            FOR edge IN @@play_edge_collection
-                FILTER edge._from IN track_ids
-                REMOVE edge IN @@play_edge_collection
+            LET play_edges = (
+                FOR e IN @@play_edge_collection
+                    FILTER e._from IN track_ids
+                    RETURN e
+            )
+            LET nd_edges = (
+                FOR e IN @@nd_edge_collection
+                    FILTER e._to == @file_id
+                    RETURN e
+            )
+            FOR pe IN play_edges
+                REMOVE pe IN @@play_edge_collection
             FOR playcount_id IN playcount_ids
                 FILTER LENGTH(
-                    FOR edge IN @@play_edge_collection
-                        FILTER edge._to == playcount_id
+                    FOR e IN @@play_edge_collection
+                        FILTER e._to == playcount_id
                         LIMIT 1
                         RETURN 1
                 ) == 0
                 REMOVE playcount_id IN @@playcount_collection
                 OPTIONS { ignoreErrors: true }
-            FOR edge IN @@nd_edge_collection
-                FILTER edge._to == @file_id
-                REMOVE edge IN @@nd_edge_collection
+            FOR ne IN nd_edges
+                REMOVE ne IN @@nd_edge_collection
             FOR track_id IN track_ids
                 REMOVE track_id IN @@track_collection
                 OPTIONS { ignoreErrors: true }
@@ -160,20 +168,28 @@ class NavidromeAqlOperations:
                     RETURN 1
             )
             LET playcount_ids = UNIQUE(
-                FOR edge IN @@play_edge_collection
-                    FILTER edge._from IN track_ids
-                    RETURN edge._to
+                FOR e IN @@play_edge_collection
+                    FILTER e._from IN track_ids
+                    RETURN e._to
             )
-            FOR edge IN @@nd_edge_collection
-                FILTER edge._from IN track_ids
-                REMOVE edge IN @@nd_edge_collection
-            FOR edge IN @@play_edge_collection
-                FILTER edge._from IN track_ids
-                REMOVE edge IN @@play_edge_collection
+            LET nd_edges = (
+                FOR e IN @@nd_edge_collection
+                    FILTER e._from IN track_ids
+                    RETURN e
+            )
+            LET play_edges = (
+                FOR e IN @@play_edge_collection
+                    FILTER e._from IN track_ids
+                    RETURN e
+            )
+            FOR ne IN nd_edges
+                REMOVE ne IN @@nd_edge_collection
+            FOR pe IN play_edges
+                REMOVE pe IN @@play_edge_collection
             FOR playcount_id IN playcount_ids
                 FILTER LENGTH(
-                    FOR edge IN @@play_edge_collection
-                        FILTER edge._to == playcount_id
+                    FOR e IN @@play_edge_collection
+                        FILTER e._to == playcount_id
                         LIMIT 1
                         RETURN 1
                 ) == 0

@@ -113,26 +113,46 @@ class LibrariesAqlOperations:
                     FILTER e._from IN file_ids
                     RETURN e._to
             )
-            FOR e IN output_has_stream
-                FILTER e._to IN stream_ids
-                REMOVE e IN output_has_stream
+            LET output_edges = (
+                FOR e IN output_has_stream
+                    FILTER e._to IN stream_ids
+                    RETURN e
+            )
+            LET file_stream_edges = (
+                FOR e IN file_has_output_stream
+                    FILTER e._from IN file_ids
+                    RETURN e
+            )
+            LET vector_edges = (
+                FOR e IN file_has_vectors
+                    FILTER e._from IN file_ids
+                    RETURN e
+            )
+            LET tag_edges = (
+                FOR e IN song_has_tags
+                    FILTER e._from IN file_ids
+                    RETURN e
+            )
+            LET state_edges = (
+                FOR e IN file_has_state
+                    FILTER e._from IN file_ids
+                    RETURN e
+            )
+            FOR oe IN output_edges
+                REMOVE oe IN output_has_stream
             FOR sid IN stream_ids
                 REMOVE sid IN ml_output_streams OPTIONS { ignoreErrors: true }
-            FOR e IN file_has_output_stream
-                FILTER e._from IN file_ids
-                REMOVE e IN file_has_output_stream
-            FOR e IN file_has_vectors
-                FILTER e._from IN file_ids
-                REMOVE e IN file_has_vectors
-            FOR e IN song_has_tags
-                FILTER e._from IN file_ids
-                REMOVE e IN song_has_tags
+            FOR fse IN file_stream_edges
+                REMOVE fse IN file_has_output_stream
+            FOR ve IN vector_edges
+                REMOVE ve IN file_has_vectors
+            FOR te IN tag_edges
+                REMOVE te IN song_has_tags
             FOR c IN worker_claims
                 FILTER c.file_id IN file_ids
                 REMOVE c IN worker_claims
-            FOR e IN file_has_state
-                FILTER e._from IN file_ids
-                REMOVE e IN file_has_state
+            FOR se IN state_edges
+                REMOVE se IN file_has_state
             FOR fid IN file_ids
                 REMOVE fid IN library_files OPTIONS { ignoreErrors: true }
             """,
@@ -142,27 +162,36 @@ class LibrariesAqlOperations:
         # ── Query 2: library-level data ────────────────────────────────────
         self._db.aql.execute(
             """
-            FOR e IN library_contains_file
-                FILTER e._from == @lib
-                REMOVE e IN library_contains_file
-            FOR e IN library_contains_folder
-                FILTER e._from == @lib
-                REMOVE e._to IN library_folders OPTIONS { ignoreErrors: true }
-            FOR e IN library_contains_folder
-                FILTER e._from == @lib
-                REMOVE e IN library_contains_folder
-            FOR e IN library_has_scan
-                FILTER e._from == @lib
-                REMOVE e._to IN library_scans OPTIONS { ignoreErrors: true }
-            FOR e IN library_has_scan
-                FILTER e._from == @lib
-                REMOVE e IN library_has_scan
-            FOR e IN library_has_pipeline_state
-                FILTER e._from == @lib
-                REMOVE e._to IN library_pipeline_states OPTIONS { ignoreErrors: true }
-            FOR e IN library_has_pipeline_state
-                FILTER e._from == @lib
-                REMOVE e IN library_has_pipeline_state
+            LET folder_edges = (
+                FOR e IN library_contains_folder
+                    FILTER e._from == @lib
+                    RETURN e
+            )
+            LET scan_edges = (
+                FOR e IN library_has_scan
+                    FILTER e._from == @lib
+                    RETURN e
+            )
+            LET pipeline_edges = (
+                FOR e IN library_has_pipeline_state
+                    FILTER e._from == @lib
+                    RETURN e
+            )
+            FOR file_edge IN library_contains_file
+                FILTER file_edge._from == @lib
+                REMOVE file_edge IN library_contains_file
+            FOR folder_target IN folder_edges
+                REMOVE folder_target._to IN library_folders OPTIONS { ignoreErrors: true }
+            FOR folder_edge IN folder_edges
+                REMOVE folder_edge IN library_contains_folder
+            FOR scan_target IN scan_edges
+                REMOVE scan_target._to IN library_scans OPTIONS { ignoreErrors: true }
+            FOR scan_edge IN scan_edges
+                REMOVE scan_edge IN library_has_scan
+            FOR pipeline_target IN pipeline_edges
+                REMOVE pipeline_target._to IN library_pipeline_states OPTIONS { ignoreErrors: true }
+            FOR pipeline_edge IN pipeline_edges
+                REMOVE pipeline_edge IN library_has_pipeline_state
             REMOVE @lib_key IN libraries OPTIONS { ignoreErrors: true }
             """,
             bind_vars={"lib": normalized_id, "lib_key": lib_key},

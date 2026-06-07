@@ -285,29 +285,53 @@ class LibraryFilesAqlOperations:
                     FILTER e._from IN @fids
                     RETURN e._to
             )
-            FOR e IN output_has_stream
-                FILTER e._to IN stream_ids
-                REMOVE e IN output_has_stream
+            LET output_edges = (
+                FOR e IN output_has_stream
+                    FILTER e._to IN stream_ids
+                    RETURN e
+            )
+            LET file_stream_edges = (
+                FOR e IN file_has_output_stream
+                    FILTER e._from IN @fids
+                    RETURN e
+            )
+            LET vector_edges = (
+                FOR e IN file_has_vectors
+                    FILTER e._from IN @fids
+                    RETURN e
+            )
+            LET tag_edges = (
+                FOR e IN song_has_tags
+                    FILTER e._from IN @fids
+                    RETURN e
+            )
+            LET state_edges = (
+                FOR e IN file_has_state
+                    FILTER e._from IN @fids
+                    RETURN e
+            )
+            LET lib_file_edges = (
+                FOR e IN library_contains_file
+                    FILTER e._to IN @fids
+                    RETURN e
+            )
+            FOR oe IN output_edges
+                REMOVE oe IN output_has_stream
             FOR sid IN stream_ids
                 REMOVE sid IN ml_output_streams OPTIONS { ignoreErrors: true }
-            FOR e IN file_has_output_stream
-                FILTER e._from IN @fids
-                REMOVE e IN file_has_output_stream
-            FOR e IN file_has_vectors
-                FILTER e._from IN @fids
-                REMOVE e IN file_has_vectors
-            FOR e IN song_has_tags
-                FILTER e._from IN @fids
-                REMOVE e IN song_has_tags
+            FOR fse IN file_stream_edges
+                REMOVE fse IN file_has_output_stream
+            FOR ve IN vector_edges
+                REMOVE ve IN file_has_vectors
+            FOR te IN tag_edges
+                REMOVE te IN song_has_tags
             FOR c IN worker_claims
                 FILTER c.file_id IN @fids
                 REMOVE c IN worker_claims
-            FOR e IN file_has_state
-                FILTER e._from IN @fids
-                REMOVE e IN file_has_state
-            FOR e IN library_contains_file
-                FILTER e._to IN @fids
-                REMOVE e IN library_contains_file
+            FOR se IN state_edges
+                REMOVE se IN file_has_state
+            FOR lfe IN lib_file_edges
+                REMOVE lfe IN library_contains_file
             FOR fid IN @fids
                 REMOVE fid IN library_files OPTIONS { ignoreErrors: true }
             """,
