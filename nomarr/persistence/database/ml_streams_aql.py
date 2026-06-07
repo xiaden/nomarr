@@ -67,16 +67,16 @@ class MlStreamsAqlOperations:
         self._db.aql.execute(
             """
             LET stream_ids = (
-                FOR edge IN @@file_edge_collection
-                    FILTER edge._from == @file_id
-                    RETURN edge._to
+                FOR file_edge IN @@file_edge_collection
+                    FILTER file_edge._from == @file_id
+                    RETURN file_edge._to
             )
-            FOR edge IN @@output_edge_collection
-                FILTER edge._to IN stream_ids
-                REMOVE edge IN @@output_edge_collection
-            FOR edge IN @@file_edge_collection
-                FILTER edge._from == @file_id
-                REMOVE edge IN @@file_edge_collection
+            FOR output_edge IN @@output_edge_collection
+                FILTER output_edge._to IN stream_ids
+                REMOVE output_edge IN @@output_edge_collection
+            FOR file_edge IN @@file_edge_collection
+                FILTER file_edge._from == @file_id
+                REMOVE file_edge IN @@file_edge_collection
             FOR stream_id IN stream_ids
                 REMOVE stream_id IN @@collection
                 OPTIONS { ignoreErrors: true }
