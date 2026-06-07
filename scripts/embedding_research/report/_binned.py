@@ -38,7 +38,8 @@ _BM_DASH = {"temporal_global": "solid", "temporal_perdim": "dash"}
 _LINE_COLORS_BM = {"temporal_global": "#7ec8e3", "temporal_perdim": "#a78bfa"}
 
 # Groupby key for a full combinatorial: threshold stays as its own bin.
-_COMBO_COLS = ["bin_mode", "std_thresh", "rep_a", "rep_b", "agg_method"]
+# `head` is included so CTP heads are treated as separate combinatorials.
+_COMBO_COLS = ["bin_mode", "std_thresh", "rep_a", "rep_b", "agg_method", "head"]
 
 
 def _kurt(series: pd.Series) -> float:
@@ -125,11 +126,20 @@ def section_threshold_sweep(df: pd.DataFrame) -> dict:
         fig_var = go.Figure()
         fig_kurt = go.Figure()
 
-        for (bm, ra, rb, am), grp in agg.groupby(["bin_mode", "rep_a", "rep_b", "agg_method"], sort=True, dropna=False):
+        def _trace_label(bm: str, head, ra: str, rb: str, am: str) -> str:
+            """Build a human-readable trace name, including head when present."""
+            base = f"{bm}/{rep_label(ra)}x{rep_label(rb)}/{agg_label(am)}"
+            if head is not None and not (isinstance(head, float) and pd.isna(head)):
+                return f"{head}/{base}"
+            return base
+
+        for (bm, ra, rb, am, head), grp in agg.groupby(
+            ["bin_mode", "rep_a", "rep_b", "agg_method", "head"], sort=True, dropna=False
+        ):
             g = grp.sort_values("std_thresh")
             color = _REP_PALETTE[triple_to_idx.get((ra, rb, am), 0) % len(_REP_PALETTE)]
             dash = _BM_DASH.get(str(bm), "solid")
-            name = f"{bm}/{rep_label(ra)}x{rep_label(rb)}/{agg_label(am)}"
+            name = _trace_label(bm, head, ra, rb, am)
 
             # Mean with ±std error bars.
             fig_mean.add_trace(
@@ -173,13 +183,13 @@ def section_threshold_sweep(df: pd.DataFrame) -> dict:
 
         if has_map_general and "mean_map_general" in agg.columns:
             fig_map = go.Figure()
-            for (bm, ra, rb, am), grp in agg.groupby(
-                ["bin_mode", "rep_a", "rep_b", "agg_method"], sort=True, dropna=False
+            for (bm, ra, rb, am, head), grp in agg.groupby(
+                ["bin_mode", "rep_a", "rep_b", "agg_method", "head"], sort=True, dropna=False
             ):
                 g = grp.sort_values("std_thresh")
                 color = _REP_PALETTE[triple_to_idx.get((ra, rb, am), 0) % len(_REP_PALETTE)]
                 dash = _BM_DASH.get(str(bm), "solid")
-                name = f"{bm}/{rep_label(ra)}x{rep_label(rb)}/{agg_label(am)}"
+                name = _trace_label(bm, head, ra, rb, am)
                 fig_map.add_trace(
                     go.Scatter(
                         x=g["std_thresh"].tolist(),
@@ -249,6 +259,7 @@ def section_threshold_sweep(df: pd.DataFrame) -> dict:
         # Summary table.
         tbl_rows = [
             {
+                "head": str(row.get("head", "")) if not pd.isna(row.get("head")) else "—",
                 "bin_mode": str(row["bin_mode"]),
                 "std_thresh": fmt(row["std_thresh"]),
                 "rep_a": rep_label(row.get("rep_a")),
@@ -303,8 +314,9 @@ def section_threshold_sweep(df: pd.DataFrame) -> dict:
         "Threshold Sweep",
         description=(
             f"Mean/variance/kurtosis of {disc_col} per combinatorial "
-            "(backbone x bin_mode x rep_a x rep_b x agg_method x std_thresh). "
+            "(backbone x bin_mode x head x rep_a x rep_b x agg_method x std_thresh). "
             "Each threshold is its own bin — no collapsing across thresholds. "
+            "Each CTP head is its own combinatorial — PTC rows show head as '—'. "
             "Statistics are computed over all (sim_metric x k) evaluation variants within each bin. "
             "When MAP@k general data is available, a mean MAP@k sweep chart is shown as the primary chart; "
             "disc charts (mean ±std, variance, kurtosis) are grouped in a 'Discrimination Diagnostics' panel. "
@@ -661,13 +673,16 @@ def section_bin_mode_comparison(df: pd.DataFrame) -> dict:
     except ImportError:
         pass
 
-    modes = binned_df["bin_mode"].unique()
+    modes = [m for m in binned_df["bin_mode"].unique() if m is not None and not (isinstance(m, float) and pd.isna(m))]
     if len(modes) < 2:
         return make_section(
             "bin-mode-comparison",
             "Bin Mode Comparison",
             empty_message="Only one bin mode found \u2014 need both temporal_global and temporal_perdim.",
         )
+
+    # Filter out rows with no bin_mode (CTP rows after refactor).
+    binned_df = binned_df[binned_df["bin_mode"].notna()]
 
     disc_col = (
         "disc_general"
@@ -785,6 +800,150 @@ def section_bin_mode_comparison(df: pd.DataFrame) -> dict:
             f"Y-axis shows mean {map_col} across all (rep_a x rep_b x agg_method x sim_metric x k) variants "
             "at each threshold — no max-collapsing. "
             "Amber dashed line = flat baseline mean."
+        ),
+        subsections=subsections,
+    )
+
+
+def section_flat_binned_correlation(df: pd.DataFrame) -> dict:
+    """Flat-binned rank correlation: does segmentation change the retrieval ranking?
+
+    Shows ``flat_binned_spearman`` (Spearman ρ between flat and binned retrieval rankings)
+    and ``flat_binned_beneficial_reorder_rate`` (fraction of rank changes that are improvements)
+    per backbone, grouped by strategy configuration.
+
+    A Spearman close to 1.0 means the binned strategy preserves the flat ranking.
+    A beneficial reorder rate > 0.5 means most rank changes are improvements.
+    """
+    binned_df = df[df["strategy_type"].isin(["ptc", "ctp"])]
+    if binned_df.empty:
+        return make_section(
+            "flat-binned-corr",
+            "Flat-Binned Rank Correlation",
+            empty_message="No binned results yet.",
+        )
+
+    has_spearman = "flat_binned_spearman" in binned_df.columns and binned_df["flat_binned_spearman"].notna().any()
+    has_reorder = "flat_binned_beneficial_reorder_rate" in binned_df.columns and binned_df[
+        "flat_binned_beneficial_reorder_rate"
+    ].notna().any()
+    if not has_spearman and not has_reorder:
+        return make_section(
+            "flat-binned-corr",
+            "Flat-Binned Rank Correlation",
+            empty_message="No flat-binned correlation data available.",
+        )
+
+    try:
+        from scripts.embedding_research.helpers.binning import DIST_THRESHOLDS
+
+        if DIST_THRESHOLDS:
+            binned_df = binned_df[binned_df["std_thresh"].isin(DIST_THRESHOLDS)]
+    except ImportError:
+        pass
+
+    subsections: list[dict] = []
+    for backbone, bb in binned_df.groupby("backbone", sort=True):
+        combo_cols = ["strategy_type", "bin_mode", "head", "std_thresh", "rep_a", "rep_b", "agg_method"]
+        present_cols = [c for c in combo_cols if c in bb.columns]
+        agg_cols: dict = {}
+        if has_spearman:
+            agg_cols["mean_spearman"] = ("flat_binned_spearman", "mean")
+            agg_cols["std_spearman"] = ("flat_binned_spearman", "std")
+        if has_reorder:
+            agg_cols["mean_reorder"] = ("flat_binned_beneficial_reorder_rate", "mean")
+            agg_cols["std_reorder"] = ("flat_binned_beneficial_reorder_rate", "std")
+        agg_cols["n"] = ("flat_binned_spearman", "count")
+
+        agg = bb.groupby(present_cols, as_index=False, dropna=False).agg(**agg_cols).sort_values(present_cols)
+
+        # Build table rows.
+        tbl_rows = []
+        for _, row in agg.iterrows():
+            tbl_row: dict = {}
+            for col in present_cols:
+                val = row[col]
+                if col == "head":
+                    tbl_row[col] = str(val) if val is not None and not (isinstance(val, float) and pd.isna(val)) else "—"
+                elif col == "std_thresh":
+                    tbl_row[col] = fmt(val)
+                else:
+                    tbl_row[col] = str(val) if val is not None else "—"
+            if has_spearman:
+                tbl_row["spearman"] = fmt(row.get("mean_spearman"))
+            if has_reorder:
+                tbl_row["reorder_rate"] = fmt(row.get("mean_reorder"))
+            tbl_row["n"] = str(int(row["n"]))
+            tbl_rows.append(tbl_row)
+
+        # Chart: spearman vs threshold, grouped by strategy type and head.
+        charts: list[dict] = []
+        if has_spearman:
+            fig = go.Figure()
+            for (st, head), grp in agg.groupby(["strategy_type", "head"], sort=True, dropna=False):
+                g = grp.sort_values("std_thresh")
+                label = str(st)
+                if head is not None and not (isinstance(head, float) and pd.isna(head)):
+                    label = f"{st}/{head}"
+                fig.add_trace(
+                    go.Scatter(
+                        x=g["std_thresh"].tolist(),
+                        y=g["mean_spearman"].tolist(),
+                        error_y={
+                            "type": "data",
+                            "array": g["std_spearman"].fillna(0).tolist(),
+                            "visible": True,
+                            "thickness": 1.0,
+                            "width": 4,
+                        },
+                        mode="lines+markers",
+                        name=label,
+                        marker={"size": 5},
+                    )
+                )
+            apply_dark_theme(fig)
+            fig.update_layout(
+                title={"text": f"{backbone} \u2014 flat-binned Spearman ρ vs threshold", "font": {"color": _FONT_COLOR}},
+                height=_H_MED,
+                xaxis_title="std_thresh",
+                yaxis_title="Spearman ρ",
+            )
+            charts.append(make_chart(fig, id=f"fb_corr_{backbone}", title=f"{backbone} flat-binned correlation"))
+
+        panels: list[dict] = []
+        if tbl_rows:
+            panels.append(
+                make_panel(
+                    id=f"fb_corr_tbl_{backbone}",
+                    title="Raw stats",
+                    tables=[make_table(tbl_rows, id=f"fb_corr_tbl_data_{backbone}", title="Flat-binned correlation per config")],
+                )
+            )
+
+        subsections.append(
+            {
+                "id": f"fbcorr-{backbone}",
+                "title": str(backbone),
+                "description": "",
+                "stats": [],
+                "charts": charts,
+                "tables": [],
+                "panels": panels,
+                "subsections": [],
+                "warnings": [],
+                "headline": None,
+                "empty_message": "",
+            }
+        )
+
+    return make_section(
+        "flat-binned-corr",
+        "Flat-Binned Rank Correlation",
+        description=(
+            "Does segmentation change the retrieval ranking compared to flat pooling? "
+            "Spearman ρ close to 1.0 means the binned strategy preserves the flat ranking. "
+            "Beneficial reorder rate > 0.5 means most rank changes are improvements. "
+            "Statistics are computed over all (sim_metric x k) evaluation variants within each config."
         ),
         subsections=subsections,
     )

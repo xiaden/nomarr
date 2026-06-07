@@ -82,9 +82,9 @@ class FileStatesAqlOperations:
             """
             FOR file_id IN @file_ids
                 UPSERT { _from: file_id, _to: @to_state_id }
-                    INSERT { _from: file_id, _to: @to_state_id }
-                    UPDATE {}
-                    IN @@edge_collection
+                INSERT { _from: file_id, _to: @to_state_id }
+                UPDATE {}
+                IN @@edge_collection
             """,
             bind_vars={
                 "@edge_collection": edge_collection,

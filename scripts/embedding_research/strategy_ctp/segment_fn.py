@@ -9,16 +9,15 @@ import numpy as np
 from scripts.embedding_research.cache import binned_ctp
 from scripts.embedding_research.common.segment import SegmentFn
 from scripts.embedding_research.config import HEAD_LABELS, HEADS
-from scripts.embedding_research.helpers.binning import BIN_MODES, global_dist, temporal_segment
+from scripts.embedding_research.helpers.binning import global_dist, temporal_segment
 from scripts.embedding_research.helpers.binning import DIST_THRESHOLDS as STD_THRESHOLDS
-from scripts.embedding_research.pooling import STRATEGIES
+from scripts.embedding_research.strategy_binned._constants import _BIN_POOL_STRATEGIES, REP_TYPES
 
 _KNOWN_HEAD_NAMES: list[str] = sorted({head for head_map in HEADS.values() for head in head_map} or HEAD_LABELS.keys())
 
 STRATEGY_NAMES: list[str] = [
-    f"ctp_{head_name}_{bin_mode}_{std_thresh:.2f}"
+    f"ctp_{head_name}_{std_thresh:.2f}"
     for head_name in _KNOWN_HEAD_NAMES
-    for bin_mode in BIN_MODES
     for std_thresh in STD_THRESHOLDS
 ]
 
@@ -26,33 +25,24 @@ STRATEGY_NAMES: list[str] = [
 def make_strategy_names(head_names) -> list[str]:
     """Return CTP strategy names for the given head names only."""
     return [
-        f"ctp_{head_name}_{bin_mode}_{std_thresh:.2f}"
+        f"ctp_{head_name}_{std_thresh:.2f}"
         for head_name in sorted(head_names)
-        for bin_mode in BIN_MODES
         for std_thresh in STD_THRESHOLDS
     ]
 
 
-def _decode_strategy_name(strategy_name: str) -> tuple[str, str, float]:
+def _decode_strategy_name(strategy_name: str) -> tuple[str, float]:
     prefix = "ctp_"
     if not strategy_name.startswith(prefix):
         raise ValueError(f"Unsupported CTP strategy name: {strategy_name}")
 
     encoded = strategy_name[len(prefix) :]
     try:
-        encoded_head_mode, std_thresh_text = encoded.rsplit("_", 1)
+        head_name, std_thresh_text = encoded.rsplit("_", 1)
     except ValueError as exc:
         raise ValueError(f"Malformed CTP strategy name: {strategy_name}") from exc
 
-    for bin_mode in sorted(BIN_MODES, key=len, reverse=True):
-        suffix = f"_{bin_mode}"
-        if encoded_head_mode.endswith(suffix):
-            head_name = encoded_head_mode[: -len(suffix)]
-            if not head_name:
-                break
-            return head_name, bin_mode, float(std_thresh_text)
-
-    raise ValueError(f"Unknown CTP bin mode in strategy name: {strategy_name}")
+    return head_name, float(std_thresh_text)
 
 
 def _l2_normalise_vec(v: np.ndarray) -> np.ndarray:
@@ -78,7 +68,7 @@ def _empty_result() -> dict[str, np.ndarray]:
 
 
 def _cache_write(song_id: str, backbone: str, strategy_name: str, result: dict[str, np.ndarray]) -> None:
-    head_name, bin_mode, std_thresh = _decode_strategy_name(strategy_name)
+    head_name, std_thresh = _decode_strategy_name(strategy_name)
     bins = np.asarray(result.get("bins", np.empty(0, dtype=np.int32)), dtype=np.int32)
     if bins.size == 0:
         return
@@ -99,7 +89,6 @@ def _cache_write(song_id: str, backbone: str, strategy_name: str, result: dict[s
                     song_id,
                     backbone,
                     head_name,
-                    bin_mode,
                     std_thresh,
                     int(bin_id),
                     pool_name,
@@ -115,15 +104,15 @@ def _cache_write(song_id: str, backbone: str, strategy_name: str, result: dict[s
                 )
             )
 
-    binned_ctp.save(backbone, head_name, bin_mode, std_thresh, song_id, bulk_vecs)
+    binned_ctp.save(backbone, head_name, std_thresh, song_id, bulk_vecs)
 
 
 CACHE_WRITE_FN = _cache_write
 
-_DONE_KEYS_CACHE: set[tuple[str, str, str, str, float]] | None = None
+_DONE_KEYS_CACHE: set[tuple[str, str, str, float]] | None = None
 
 
-def _get_done_keys() -> set[tuple[str, str, str, str, float]]:
+def _get_done_keys() -> set[tuple[str, str, str, float]]:
     global _DONE_KEYS_CACHE
     if _DONE_KEYS_CACHE is None:
         _DONE_KEYS_CACHE = binned_ctp.list_done_keys()
@@ -131,11 +120,21 @@ def _get_done_keys() -> set[tuple[str, str, str, str, float]]:
 
 
 def _skip_check(song_id: str, backbone: str, strategy_name: str) -> bool:
-    head_name, bin_mode, std_thresh = _decode_strategy_name(strategy_name)
-    return (song_id, backbone, head_name, bin_mode, std_thresh) in _get_done_keys()
+    head_name, std_thresh = _decode_strategy_name(strategy_name)
+    return (song_id, backbone, head_name, std_thresh) in _get_done_keys()
 
 
 SKIP_CHECK_FN = _skip_check
+
+
+def _segment_score_stream(scores: np.ndarray, threshold: float) -> list[dict]:
+    """Segment a 1-D score stream.
+    
+    The scores are reshaped to (-1, 1) for temporal_segment, which requires
+    2-D input.  For a 1-D signal the distance function choice (global vs
+    per-dimension) is irrelevant — both reduce to absolute difference.
+    """
+    return temporal_segment(scores.reshape(-1, 1).astype(np.float32), threshold, global_dist)
 
 
 def make_segment_fn(head_sessions: dict[str, object], run_in_batches_fn) -> SegmentFn:
@@ -164,7 +163,7 @@ def make_segment_fn(head_sessions: dict[str, object], run_in_batches_fn) -> Segm
         if patches.size == 0:
             return _empty_result()
 
-        head_name, bin_mode, std_thresh = _decode_strategy_name(strategy_name)
+        head_name, std_thresh = _decode_strategy_name(strategy_name)
         head_session = head_sessions.get(head_name)
         if head_session is None:
             raise KeyError(f"Missing CTP head session for {head_name!r}")
@@ -188,15 +187,13 @@ def make_segment_fn(head_sessions: dict[str, object], run_in_batches_fn) -> Segm
         if score_std < 1e-9:
             score_std = 1.0
 
-        # The original classify.py CTP path encodes bin_mode in the cache key but
-        # always bins score streams with global_dist over the 1-D score column.
-        del bin_mode
         threshold = float(std_thresh) * score_std
-        segments = temporal_segment(scores.reshape(-1, 1).astype(np.float32), threshold, global_dist)
+        segments = _segment_score_stream(scores, threshold)
         if not segments:
             return _empty_result()
 
-        pool_names = list(STRATEGIES.keys())
+        rep_set = set(REP_TYPES)
+        pool_names = [name for name in _BIN_POOL_STRATEGIES if name in rep_set]
         pooled_by_name: dict[str, list[np.ndarray]] = {pool_name: [] for pool_name in pool_names}
         pooled_norm_by_name: dict[str, list[np.ndarray]] = {pool_name: [] for pool_name in pool_names}
         weights: list[int] = []
@@ -215,7 +212,8 @@ def make_segment_fn(head_sessions: dict[str, object], run_in_batches_fn) -> Segm
             bin_start_idx.append(indices[0])
             bin_end_idx.append(indices[-1])
 
-            for pool_name, pool_fn in STRATEGIES.items():
+            for pool_name in pool_names:
+                pool_fn = _BIN_POOL_STRATEGIES[pool_name]
                 pooled_raw = np.asarray(pool_fn(seg_patches), dtype=np.float32)
                 pooled_by_name[pool_name].append(pooled_raw)
                 pooled_norm_by_name[pool_name].append(_l2_normalise_vec(pooled_raw))

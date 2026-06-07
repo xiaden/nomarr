@@ -113,6 +113,9 @@ def embed(
     for bb_name in bb_names:
         bb_cfg = _BACKBONES[bb_name]
         if backbone_sessions is not None:
+            if bb_name not in backbone_sessions:
+                _log.error("[%s] backbone session not found in pre-loaded cache — skipping", bb_name)
+                continue
             session = backbone_sessions[bb_name]
         else:
             session = create_session(

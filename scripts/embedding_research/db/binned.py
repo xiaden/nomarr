@@ -142,8 +142,7 @@ def load_binned_sampling_stats(con) -> list[dict]:
             AVG(bs.n_bins) AS avg_n_bins,
             AVG(bs.n_patches) AS avg_n_patches,
             AVG(bs.n_outliers) AS avg_n_outliers,
-            AVG(bs.mean_bin_size) AS avg_mean_bin_size,
-            AVG(bs.bin_div_std) AS avg_bin_div_std
+            AVG(bs.mean_bin_size) AS avg_mean_bin_size
         FROM binned_song_stats bs
         JOIN songs s USING (song_id)
         GROUP BY bs.song_id, s.artist
@@ -159,7 +158,6 @@ def load_binned_sampling_stats(con) -> list[dict]:
             "avg_n_patches": float(r[4]) if r[4] is not None else 0.0,
             "avg_n_outliers": float(r[5]) if r[5] is not None else 0.0,
             "avg_mean_bin_size": float(r[6]) if r[6] is not None else 0.0,
-            "avg_bin_div_std": float(r[7]) if r[7] is not None else 0.0,
         }
         for r in rows
     ]

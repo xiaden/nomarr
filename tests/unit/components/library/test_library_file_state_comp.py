@@ -65,7 +65,9 @@ class TestInitializeFileStates:
     def test_inserts_negative_state_edges_for_single_file(self) -> None:
         mock_db = _make_mock_db()
         expected_negative_states = [
-            state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_") or state in (STATE_TAGS_STALE, STATE_TAGS_NOT_EXTRACTED)
+            state
+            for state in ALL_STATE_VERTICES
+            if state.startswith("file_states/not_") or state in (STATE_TAGS_STALE, STATE_TAGS_NOT_EXTRACTED)
         ]
 
         initialize_file_states(mock_db, "library_files/1")

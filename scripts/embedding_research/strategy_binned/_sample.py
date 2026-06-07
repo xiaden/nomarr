@@ -32,8 +32,8 @@ def _artist_pop_bucket(count: int) -> int:
     return 3
 
 
-def _stable_stratum_seed(seed: int, key: tuple[int, int, int]) -> int:
-    payload = f"{seed}|{key[0]}|{key[1]}|{key[2]}".encode()
+def _stable_stratum_seed(seed: int, key: tuple[int, int]) -> int:
+    payload = f"{seed}|{key[0]}|{key[1]}".encode()
     return int.from_bytes(_hashlib.blake2b(payload, digest_size=8).digest(), "little", signed=False)
 
 
@@ -53,21 +53,19 @@ def _select_stratified_sample(
         return [r["song_id"] for r in rows]
 
     n_bins = _np.array([r["avg_n_bins"] for r in rows], dtype=_np.float64)
-    divs = _np.array([r["avg_bin_div_std"] for r in rows], dtype=_np.float64)
     artist_counts: dict[str, int] = {}
     for r in rows:
         artist_counts[r["artist"]] = artist_counts.get(r["artist"], 0) + 1
 
     bins_bucket = _quantile_bucket(n_bins, n_buckets)
-    div_bucket = _quantile_bucket(divs, n_buckets)
     artist_bucket = _np.array([_artist_pop_bucket(artist_counts[r["artist"]]) for r in rows], dtype=_np.int32)
 
-    strata: dict[tuple[int, int, int], list[int]] = {}
-    for idx, key in enumerate(zip(bins_bucket.tolist(), div_bucket.tolist(), artist_bucket.tolist(), strict=False)):
+    strata: dict[tuple[int, int], list[int]] = {}
+    for idx, key in enumerate(zip(bins_bucket.tolist(), artist_bucket.tolist(), strict=False)):
         strata.setdefault(key, []).append(idx)
 
     ordered_keys = sorted(strata)
-    quotas: dict[tuple[int, int, int], int] = dict.fromkeys(ordered_keys, 0)
+    quotas: dict[tuple[int, int], int] = dict.fromkeys(ordered_keys, 0)
 
     if sample_size >= len(ordered_keys):
         for key in ordered_keys:

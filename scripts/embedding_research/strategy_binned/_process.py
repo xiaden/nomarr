@@ -41,6 +41,13 @@ except ImportError:
         flat_binned_spearman: float | None
         flat_binned_beneficial_reorder_rate: float | None
         n_songs: int | None = None
+        map_k_genre: float | None = None
+        mrr_genre: float | None = None
+        ndcg_k_genre: float | None = None
+        map_k_head: float | None = None
+        mrr_head: float | None = None
+        ndcg_k_head: float | None = None
+        recall_k_head: float | None = None
 
         def as_tuple(self) -> tuple:
             return tuple(self)
@@ -68,11 +75,11 @@ except ImportError:
                 agg_method=agg_method,
                 k=k,
                 disc_score=metrics.get("disc_score"),
-                map_k=metrics.get(f"map_{k}"),
+                map_k=metrics.get("map_k_artist"),
                 mrr=metrics.get("mrr"),
-                ndcg_k=metrics.get(f"ndcg_{k}"),
-                recall_k=metrics.get(f"recall_{k}"),
-                recall_k_genre=metrics.get(f"recall_{k}_genre"),
+                ndcg_k=metrics.get("ndcg_k_artist"),
+                recall_k=metrics.get("recall_k_artist"),
+                recall_k_genre=metrics.get("recall_k_genre"),
                 mean_within=metrics.get("mean_within"),
                 mean_cross=metrics.get("mean_cross"),
                 disc_artist=metrics.get("disc_artist"),
@@ -84,6 +91,13 @@ except ImportError:
                 flat_binned_spearman=metrics.get("flat_binned_spearman"),
                 flat_binned_beneficial_reorder_rate=metrics.get("flat_binned_beneficial_reorder_rate"),
                 n_songs=metrics.get("n_songs"),
+                map_k_genre=metrics.get("map_k_genre"),
+                mrr_genre=metrics.get("mrr_genre"),
+                ndcg_k_genre=metrics.get("ndcg_k_genre"),
+                map_k_head=metrics.get("map_k_head"),
+                mrr_head=metrics.get("mrr_head"),
+                ndcg_k_head=metrics.get("ndcg_k_head"),
+                recall_k_head=metrics.get("recall_k_head"),
             )
 
 
@@ -139,7 +153,7 @@ def compute_agg_mats(
     bin_counts:
         Number of bins per song ``[n_songs] float32``.
     metric:
-        One of ``"cosine"`` or ``"l2"``.
+        Only ``"cosine"`` is supported (l2 was removed).
     progress:
         Optional tqdm-compatible progress object; updated once per song row.
 
@@ -154,19 +168,16 @@ def compute_agg_mats(
     data_a = [v.data for v in norm_a]
     data_b = [v.data for v in norm_b]
 
-    if metric == "cosine":
-        sums_a = _np.stack([da.sum(axis=0) for da in data_a])
-        sums_b = _np.stack([db.sum(axis=0) for db in data_b])
-        mean_mat = (sums_a @ sums_b.T) / _np.outer(bin_counts, bin_counts)
-        _np.fill_diagonal(mean_mat, 1.0)
-        if "mean" in agg_mats:
-            agg_mats["mean"] = mean_mat.astype(_np.float32)
+    # Fast path: mean aggregation for cosine metric.
+    sums_a = _np.stack([da.sum(axis=0) for da in data_a])
+    sums_b = _np.stack([db.sum(axis=0) for db in data_b])
+    mean_mat = (sums_a @ sums_b.T) / _np.outer(bin_counts, bin_counts)
+    _np.fill_diagonal(mean_mat, 1.0)
+    if "mean" in agg_mats:
+        agg_mats["mean"] = mean_mat.astype(_np.float32)
 
-    loop_aggs = [agg for agg in AGG_METHODS if not (metric == "cosine" and agg == "mean")]
+    loop_aggs = [agg for agg in AGG_METHODS if agg != "mean"]
     if loop_aggs:
-        sq_list_a = [(da * da).sum(axis=1).astype(_np.float32) for da in data_a] if metric == "l2" else None
-        sq_list_b = [(db * db).sum(axis=1).astype(_np.float32) for db in data_b] if metric == "l2" else None
-
         for i in range(n):
             va = data_a[i]
             js = list(range(i + 1, n))
@@ -174,16 +185,7 @@ def compute_agg_mats(
                 vb_blocks = [data_b[j] for j in js]
                 sizes = [block.shape[0] for block in vb_blocks]
                 vb_cat = _np.concatenate(vb_blocks, axis=0)
-                dot_cat = (va @ vb_cat.T).astype(_np.float32)
-                if metric == "l2":
-                    if sq_list_a is None or sq_list_b is None:
-                        raise RuntimeError("L2 cache lists were not initialised")
-                    sq_a = sq_list_a[i][:, None]
-                    sq_b_cat = _np.concatenate([sq_list_b[j] for j in js], axis=0)[None, :]
-                    sq_dist = _np.maximum(sq_a + sq_b_cat - 2.0 * dot_cat, 0.0)
-                    sim_cat = (1.0 / (1.0 + _np.sqrt(sq_dist))).astype(_np.float32)
-                else:
-                    sim_cat = dot_cat
+                sim_cat = (va @ vb_cat.T).astype(_np.float32)
 
                 start = 0
                 for j, width in zip(js, sizes, strict=False):

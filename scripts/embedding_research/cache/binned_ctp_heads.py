@@ -7,7 +7,7 @@ without re-running inference.
 
 Layout::
 
-    {CACHE_BASE}/{backbone}/{head}/{bin_mode}/{std_thresh:.3f}/{song_id}.npz
+    {CACHE_BASE}/{backbone}/{head}/{std_thresh:.3f}/{song_id}.npz
 
 npz contents
 ------------
@@ -44,12 +44,12 @@ def _purge_corrupt(p: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def cache_path(backbone: str, head: str, bin_mode: str, std_thresh: float, song_id: str) -> Path:
-    return CACHE_BASE / backbone / head / bin_mode / _threshold_key(std_thresh) / f"{song_id}.npz"
+def cache_path(backbone: str, head: str, std_thresh: float, song_id: str) -> Path:
+    return CACHE_BASE / backbone / head / _threshold_key(std_thresh) / f"{song_id}.npz"
 
 
-def config_dir(backbone: str, head: str, bin_mode: str, std_thresh: float) -> Path:
-    return CACHE_BASE / backbone / head / bin_mode / _threshold_key(std_thresh)
+def config_dir(backbone: str, head: str, std_thresh: float) -> Path:
+    return CACHE_BASE / backbone / head / _threshold_key(std_thresh)
 
 
 # ---------------------------------------------------------------------------
@@ -57,9 +57,9 @@ def config_dir(backbone: str, head: str, bin_mode: str, std_thresh: float) -> Pa
 # ---------------------------------------------------------------------------
 
 
-def is_done(backbone: str, head: str, bin_mode: str, std_thresh: float, song_id: str) -> bool:
+def is_done(backbone: str, head: str, std_thresh: float, song_id: str) -> bool:
     """Return True iff the npz for this combo exists and is readable."""
-    p = cache_path(backbone, head, bin_mode, std_thresh, song_id)
+    p = cache_path(backbone, head, std_thresh, song_id)
     if not p.exists():
         return False
     try:
@@ -71,32 +71,29 @@ def is_done(backbone: str, head: str, bin_mode: str, std_thresh: float, song_id:
         return False
 
 
-def list_done_keys() -> set[tuple[str, str, str, str, float]]:
-    """Return ``(song_id, backbone, head, bin_mode, std_thresh)`` for every cached file.
+def list_done_keys() -> set[tuple[str, str, str, float]]:
+    """Return ``(song_id, backbone, head, std_thresh)`` for every cached file.
 
     Scans the directory tree once; callers should cache the result.
     """
     if not CACHE_BASE.exists():
         return set()
-    out: set[tuple[str, str, str, str, float]] = set()
+    out: set[tuple[str, str, str, float]] = set()
     for bb_dir in CACHE_BASE.iterdir():
         if not bb_dir.is_dir():
             continue
         for hd_dir in bb_dir.iterdir():
             if not hd_dir.is_dir():
                 continue
-            for bm_dir in hd_dir.iterdir():
-                if not bm_dir.is_dir():
+            for th_dir in hd_dir.iterdir():
+                if not th_dir.is_dir():
                     continue
-                for th_dir in bm_dir.iterdir():
-                    if not th_dir.is_dir():
-                        continue
-                    try:
-                        th = float(th_dir.name)
-                    except ValueError:
-                        continue
-                    for f in th_dir.glob("*.npz"):
-                        out.add((f.stem, bb_dir.name, hd_dir.name, bm_dir.name, th))
+                try:
+                    th = float(th_dir.name)
+                except ValueError:
+                    continue
+                for f in th_dir.glob("*.npz"):
+                    out.add((f.stem, bb_dir.name, hd_dir.name, th))
     return out
 
 
@@ -108,7 +105,6 @@ def list_done_keys() -> set[tuple[str, str, str, str, float]]:
 def save(
     backbone: str,
     head: str,
-    bin_mode: str,
     std_thresh: float,
     song_id: str,
     acts: np.ndarray,
@@ -125,7 +121,7 @@ def save(
     """
     if acts.size == 0:
         return
-    p = cache_path(backbone, head, bin_mode, std_thresh, song_id)
+    p = cache_path(backbone, head, std_thresh, song_id)
     p.parent.mkdir(parents=True, exist_ok=True)
     np.savez(
         str(p),
@@ -142,7 +138,6 @@ def save(
 def load(
     backbone: str,
     head: str,
-    bin_mode: str,
     std_thresh: float,
     song_id: str,
 ) -> tuple[np.ndarray, np.ndarray] | None:
@@ -153,7 +148,7 @@ def load(
     ``(acts, weights)`` where *acts* is ``[n_bins, C]`` float32 and
     *weights* is ``[n_bins]`` int32, or ``None`` if the file is absent or corrupt.
     """
-    p = cache_path(backbone, head, bin_mode, std_thresh, song_id)
+    p = cache_path(backbone, head, std_thresh, song_id)
     if not p.exists():
         return None
     try:

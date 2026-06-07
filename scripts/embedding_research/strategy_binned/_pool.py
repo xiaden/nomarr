@@ -9,7 +9,7 @@ from scripts.embedding_research.vector_types import RawVector as _RawVector
 from scripts.embedding_research.vector_types import UnitTensor as _UnitTensor
 from scripts.embedding_research.vector_types import UnitVector as _UnitVector
 
-from ._constants import _BIN_POOL_STRATEGIES
+from ._constants import _BIN_POOL_STRATEGIES, REP_TYPES
 
 
 def _build_pool_payload(
@@ -92,8 +92,13 @@ def _pool_segment(
                on assignment so the result is always a unit vector (‖v‖ ≈ 1),
                keeping downstream cosine dot-products in [−1, 1].
     """
+    rep_set = set(REP_TYPES)
     pooled: dict[str, dict] = {}
     for name, fn in _BIN_POOL_STRATEGIES.items():
-        pooled[name] = _build_pool_payload(raw_patches, unit_patches, indices, fn)
-    pooled["medoid"] = _build_medoid_payload(raw_patches, unit_patches, indices)
+        if name not in rep_set:
+            continue
+        if name == "medoid":
+            pooled[name] = _build_medoid_payload(raw_patches, unit_patches, indices)
+        else:
+            pooled[name] = _build_pool_payload(raw_patches, unit_patches, indices, fn)
     return pooled

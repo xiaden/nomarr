@@ -310,8 +310,21 @@ class _FakeMlDb:
     def register_vector_collection(self, collection_name: str, template_name: str) -> Any:
         return self.adapter.register(collection_name, template_name)
 
+    def add_vector_collection(self, collection_name: str, template_name: str) -> Any:
+        return self.register_vector_collection(collection_name, template_name)
+
     def list_registered_vector_namespaces(self) -> dict[str, Any]:
         return self.adapter._registered
+
+    def has_embedding_index(self, backbone_id: str, library_key: str) -> bool:
+        return self.adapter.harness.has_vector_index(backbone_id)
+
+    def get_embedding_stats(self, backbone_id: str, library_key: str) -> dict[str, int | bool]:
+        return {
+            "hot_count": self.adapter.harness.hot_count(backbone_id),
+            "cold_count": self.adapter.harness.cold_count(backbone_id),
+            "index_exists": self.adapter.harness.has_vector_index(backbone_id),
+        }
 
     def delete_file_has_vector_edges_for_file(self, file_id: str) -> int:
         self.deleted_edge_file_ids.append(file_id)
@@ -571,36 +584,27 @@ def test_cascade_delete_calls_hot_and_cold_ops() -> None:
 
     database = object.__new__(Database)
 
-    class _DeleteField:
-        def __init__(self, deleted: int) -> None:
-            self.deleted = deleted
-            self.calls: list[str] = []
-
-        def delete(self, file_id: str) -> int:
-            self.calls.append(file_id)
-            return self.deleted
-
-    class _VectorNamespace:
-        def __init__(self, deleted: int) -> None:
-            self.file_id = _DeleteField(deleted)
-
-    hot_namespace = _VectorNamespace(1)
-    cold_namespace = _VectorNamespace(2)
     database.ml = MagicMock()
-    database.ml.list_registered_vector_namespaces.return_value = cast(
+    database.ml.list_vector_namespaces.return_value = cast(
         "dict[str, Any]",
         {
-            "vectors_track_hot__effnet__lib": hot_namespace,
-            "vectors_track_cold__effnet__lib": cold_namespace,
+            "vectors_track_hot__effnet__lib": object(),
+            "vectors_track_cold__effnet__lib": object(),
         },
     )
+    database.ml.list_file_vectors.side_effect = lambda col_name, _file_id: (
+        [{"_key": "v1"}] if "hot" in col_name else [{"_key": "v2"}, {"_key": "v3"}]
+    )
+    database.ml.remove_file_vectors = MagicMock()
 
     deleted = delete_vectors_by_file_id(database, "library_files/7")
 
     assert deleted == 3
-    assert hot_namespace.file_id.calls == ["library_files/7"]
-    assert cold_namespace.file_id.calls == ["library_files/7"]
-    database.ml.delete_file_has_vector_edges_for_file.assert_called_once_with("library_files/7")
+    database.ml.list_vector_namespaces.assert_called_once_with()
+    database.ml.list_file_vectors.assert_any_call("vectors_track_hot__effnet__lib", "library_files/7")
+    database.ml.list_file_vectors.assert_any_call("vectors_track_cold__effnet__lib", "library_files/7")
+    database.ml.remove_file_vectors.assert_any_call("vectors_track_hot__effnet__lib", "library_files/7")
+    database.ml.remove_file_vectors.assert_any_call("vectors_track_cold__effnet__lib", "library_files/7")
 
 
 def test_promote_is_safe_no_op_when_hot_empty(

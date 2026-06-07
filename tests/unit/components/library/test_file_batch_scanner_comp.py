@@ -224,12 +224,6 @@ class TestScanFolderFiles:
         folder_path = library_root / "Rock"
         track_path = _make_audio_file(folder_path / "song.mp3")
 
-        metadata = {
-            "duration": 180,
-            "title": "Song Title",
-            "nom_tags": {"nom_version": "suite-v1"},
-        }
-
         with (
             patch(
                 f"{MODULE}.build_library_path_from_input",

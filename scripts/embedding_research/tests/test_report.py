@@ -131,10 +131,9 @@ def _minimal_ctp_df(**overrides) -> pd.DataFrame:
     """Minimal unified result row with strategy_type='ctp'."""
     row = dict.fromkeys(ANALYZE_METRICS_COLUMNS)
     row.update(
-        strategy_key="ctp:test_backbone:genre:temporal_perdim:1.0:median:max:median",
+        strategy_key="ctp:test_backbone:genre:1.0:median:max:median",
         strategy_type="ctp",
         backbone="test_backbone",
-        bin_mode="temporal_perdim",
         std_thresh=1.0,
         rep_a="median",
         rep_b="max",
@@ -254,7 +253,7 @@ def test_decode_strategy_key_ctp():
     row = decoded.iloc[0]
 
     assert row["backbone"] == "test_backbone"
-    assert row["bin_mode"] == "temporal_perdim"
+    assert row["head"] == "genre"
     assert row["std_thresh"] == 1.0
     assert row["rep_a"] == "median"
     assert row["rep_b"] == "max"
@@ -516,7 +515,11 @@ def test_section_bin_mode_comparison_with_data():
         [
             _minimal_unified_df(),
             _minimal_ptc_df(bin_mode="temporal_global", disc_general=0.61),
-            _minimal_ctp_df(bin_mode="temporal_perdim", disc_general=0.59),
+            _minimal_ptc_df(
+                strategy_key="ptc:test_backbone:temporal_perdim:1.0:mean:max:mean",
+                bin_mode="temporal_perdim",
+                disc_general=0.59,
+            ),
         ],
         ignore_index=True,
     )
@@ -673,7 +676,11 @@ def test_section_bin_mode_comparison_uses_disc_col_as_fallback_when_no_map():
     df = pd.concat(
         [
             _minimal_ptc_df(map_k_general=None),
-            _minimal_ctp_df(map_k_general=None),
+            _minimal_ptc_df(
+                strategy_key="ptc:test_backbone:temporal_perdim:1.0:mean:max:mean",
+                bin_mode="temporal_perdim",
+                map_k_general=None,
+            ),
         ],
         ignore_index=True,
     )
@@ -688,7 +695,11 @@ def test_section_bin_mode_comparison_uses_map_k_general_when_available():
     df = pd.concat(
         [
             _minimal_ptc_df(map_k_general=0.65),
-            _minimal_ctp_df(map_k_general=0.58),
+            _minimal_ptc_df(
+                strategy_key="ptc:test_backbone:temporal_perdim:1.0:mean:max:mean",
+                bin_mode="temporal_perdim",
+                map_k_general=0.58,
+            ),
         ],
         ignore_index=True,
     )

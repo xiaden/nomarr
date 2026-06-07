@@ -172,21 +172,18 @@ def _decode_ptc_strategy_name(strategy_name: str) -> tuple[str, float]:
     raise ValueError(f"Unknown PTC bin mode in strategy name: {strategy_name}")
 
 
-def _decode_ctp_strategy_name(strategy_name: str) -> tuple[str, str, float]:
+def _decode_ctp_strategy_name(strategy_name: str) -> tuple[str, float]:
     prefix = "ctp_"
     if not strategy_name.startswith(prefix):
         raise ValueError(f"Unsupported CTP strategy name: {strategy_name}")
 
     encoded = strategy_name[len(prefix) :]
-    encoded_head_mode, std_thresh_text = encoded.rsplit("_", 1)
-    for bin_mode in sorted(BIN_MODES, key=len, reverse=True):
-        suffix = f"_{bin_mode}"
-        if encoded_head_mode.endswith(suffix):
-            head_name = encoded_head_mode[: -len(suffix)]
-            if head_name:
-                return head_name, bin_mode, float(std_thresh_text)
+    try:
+        head_name, std_thresh_text = encoded.rsplit("_", 1)
+    except ValueError as exc:
+        raise ValueError(f"Malformed CTP strategy name: {strategy_name}") from exc
 
-    raise ValueError(f"Unknown CTP bin mode in strategy name: {strategy_name}")
+    return head_name, float(std_thresh_text)
 
 
 def _global_pool_strategy_key(backbone: str, strategy_name: str, _extra: dict[str, Any]) -> str:
@@ -200,9 +197,9 @@ def _ptc_strategy_key(backbone: str, strategy_name: str, extra: dict[str, Any]) 
 
 
 def _ctp_strategy_key(backbone: str, strategy_name: str, extra: dict[str, Any]) -> str:
-    head_name, bin_mode, std_thresh = _decode_ctp_strategy_name(strategy_name)
+    head_name, std_thresh = _decode_ctp_strategy_name(strategy_name)
     return (
-        f"ctp:{backbone}:{extra.get('head', head_name)}:{extra.get('bin_mode', bin_mode)}:"
+        f"ctp:{backbone}:{extra.get('head', head_name)}:"
         f"{float(extra.get('std_thresh', std_thresh)):.2f}:{extra['rep_a']}:{extra['rep_b']}:{extra['agg_method']}"
     )
 
@@ -263,9 +260,9 @@ def _load_ctp_analyze_vecs(
     con: Any,
     extra_cfg: dict[str, Any],
 ) -> tuple[Any, list[str], list[str], list[str], list[str]]:
-    head_name, bin_mode, std_thresh = _decode_ctp_strategy_name(strategy_name)
+    head_name, std_thresh = _decode_ctp_strategy_name(strategy_name)
     rep_types = [str(rep) for rep in extra_cfg.get("rep_types", _strategy_binned_constants.REP_TYPES)]
-    ctp_sids, _ctp_artists, song_data = binned_ctp.load_all_reps(con, backbone, head_name, bin_mode, std_thresh)
+    ctp_sids, _ctp_artists, song_data = binned_ctp.load_all_reps(con, backbone, head_name, std_thresh)
 
     filtered_sids: list[str] = []
     filtered_song_data: list[list[dict[str, Any]]] = []
@@ -339,9 +336,8 @@ PTC_ANALYZE_CFG: AnalyzeCfg = {
 # Wires the centroid-to-patch (CTP) binned strategy (head-guided bins) into the shared analyze phase.
 CTP_ANALYZE_CFG: AnalyzeCfg = {
     "strategy_names": [
-        f"ctp_{head_name}_{bin_mode}_{std_thresh:.2f}"
+        f"ctp_{head_name}_{std_thresh:.2f}"
         for head_name in _KNOWN_CTP_HEAD_NAMES
-        for bin_mode in BIN_MODES
         for std_thresh in CTP_SCORE_THRESHOLDS
     ],
     "load_vecs_fn": _load_ctp_analyze_vecs,
@@ -522,7 +518,7 @@ def _classify_phase(con, cfg: dict) -> None:
         backbones=cfg["backbones"],
         heads=cfg["heads"],
         device=cfg["device"],
-        thresholds_by_backbone_mode=cfg.get("thresholds_by_backbone_mode"),
+        thresholds_by_backbone=cfg.get("thresholds_by_backbone"),
         head_sessions=_head_sessions,
     )
     _log.info("  <- sub-phase: binned classify done (%.0fs)", time.perf_counter() - _t0)
@@ -600,11 +596,11 @@ def main() -> None:
     _fmt = logging.Formatter("%(asctime)s  %(levelname)-8s  %(message)s", datefmt="%H:%M:%S")
     _sh = logging.StreamHandler()
     _sh.setFormatter(_fmt)
-    _log_dir = Path(__file__).parent.parent / "outputs" / "embedding_research"
+    _log_dir = OUTPUT_ROOT
     _log_dir.mkdir(parents=True, exist_ok=True)
     _log_path = _log_dir / "post_pipeline_run.log"
-    _log_file = open(_log_path, "w", encoding="utf-8", buffering=1)  # noqa: SIM115
-    _fh = logging.StreamHandler(_log_file)
+    _log_file_handle = open(_log_path, "w", encoding="utf-8", buffering=1)
+    _fh = logging.StreamHandler(_log_file_handle)
     _fh.setFormatter(_fmt)
     root = logging.getLogger()
     root.setLevel(logging.INFO)
@@ -725,6 +721,7 @@ def main() -> None:
     finally:
         _watcher.stop()
         _log.info("Memory watcher stopped")
+        _log_file_handle.close()
 
 
 if __name__ == "__main__":

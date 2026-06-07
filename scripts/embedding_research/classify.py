@@ -11,7 +11,6 @@ from typing import Any, cast
 import numpy as np
 from alive_progress import alive_bar, alive_it
 
-from .cache import binned_ctp as _binned_ctp_cache
 from .cache import binned_ctp_heads as _binned_ctp_heads_cache
 from .cache import binned_ptc as _binned_ptc_cache
 from .cache import binned_ptc_heads as _binned_ptc_heads_cache
@@ -27,14 +26,6 @@ from .pooling import STRATEGIES
 __all__ = ["run_binned", "run_flat", "run_ptc_heads"]
 
 _log = logging.getLogger(__name__)
-
-from scripts.embedding_research.strategy_binned._constants import _BIN_POOL_STRATEGIES as _BIN_POOL_FNS
-
-
-def _l2_normalise_vec(v: np.ndarray) -> np.ndarray:
-    """L2-normalise a single 1-D float32 vector; returns unchanged if near-zero."""
-    norm = float(np.linalg.norm(v))
-    return (v / norm).astype(np.float32) if norm > 1e-9 else v.astype(np.float32)
 
 
 def _run_head_session(session, embed_batch: np.ndarray) -> np.ndarray:
@@ -161,19 +152,18 @@ def _process_song_head_missing(
     run_in_batches_fn,
     batch_size: int,
     patches: np.ndarray,
-    missing_combos: frozenset[tuple[str, float]],
-) -> tuple[int, int]:
-    """Run a head on patches for exactly the missing (bin_mode, std_thresh) combos.
+    missing_thresholds: frozenset[float],
+) -> int:
+    """Run a head on patches for exactly the missing std_thresh values.
 
     Saves results directly to the filesystem cache:
 
     * ``binned_ctp_heads`` — per-bin mean head activations
-    * ``binned_ctp`` — per-bin embedding pool vectors (one strategy × one bin)
 
-    Returns ``(n_head_combos_saved, n_vec_combos_saved)``.
+    Returns the number of std_thresh values saved.
     """
-    if not missing_combos:
-        return 0, 0
+    if not missing_thresholds:
+        return 0
 
     acts = run_in_batches_fn(
         lambda batch: _run_head_session(head_session, batch),
@@ -181,68 +171,36 @@ def _process_song_head_missing(
         batch_size,
     ).astype(np.float32)
     if acts.size == 0:
-        return 0, 0
+        return 0
 
     scores = acts[:, 1]
     score_column = scores.reshape(-1, 1).astype(np.float32)
 
-    saved_heads = saved_vecs = 0
-    for bin_mode, std_thresh in missing_combos:
-        # std_thresh is an absolute half-width in score space: a patch whose
-        # score differs from the current segment mean by more than std_thresh
-        # starts a new bin.  This is corpus- and song-variance-independent —
-        # a song that doesn't vary on this head simply produces one bin.
+    saved_heads = 0
+    for std_thresh in missing_thresholds:
         threshold = float(std_thresh)
         segments = temporal_segment(score_column, threshold, global_dist)
 
         bin_acts_list: list[np.ndarray] = []
         bin_weights_list: list[int] = []
-        vec_rows_for_combo: list[tuple] = []
 
-        for bin_id, seg in enumerate(segments):
+        for seg in segments:
             indices = seg["indices"]
             if not indices:
                 continue
-            outlier_count = int(seg.get("outlier_count", 0))
 
-            # Head activations for this bin
             seg_acts = acts[indices]
             mean_act = seg_acts.mean(axis=0).astype(np.float32)
             bin_acts_list.append(mean_act)
             bin_weights_list.append(len(indices))
 
-            # Embedding pool vecs for this bin
-            seg_patches = patches[indices].astype(np.float32)
-            for pool_name, pool_fn in _BIN_POOL_FNS.items():
-                vec_raw = pool_fn(seg_patches)
-                vec_norm = _l2_normalise_vec(vec_raw)
-                vec_rows_for_combo.append(
-                    (
-                        sid,
-                        backbone,
-                        head_name,
-                        bin_mode,
-                        float(std_thresh),
-                        int(bin_id),
-                        pool_name,
-                        vec_raw.tobytes(),
-                        vec_norm.tobytes(),
-                        len(indices),
-                        outlier_count,
-                    )
-                )
-
         if bin_acts_list:
             acts_arr = np.stack(bin_acts_list).astype(np.float32)
             wts_arr = np.array(bin_weights_list, dtype=np.int32)
-            _binned_ctp_heads_cache.save(backbone, head_name, bin_mode, std_thresh, sid, acts_arr, wts_arr)
+            _binned_ctp_heads_cache.save(backbone, head_name, std_thresh, sid, acts_arr, wts_arr)
             saved_heads += 1
 
-        if vec_rows_for_combo:
-            _binned_ctp_cache.save(backbone, head_name, bin_mode, std_thresh, sid, vec_rows_for_combo)
-            saved_vecs += 1
-
-    return saved_heads, saved_vecs
+    return saved_heads
 
 
 def _process_song_head(
@@ -255,29 +213,27 @@ def _process_song_head(
     patches: np.ndarray,
     std_thresholds: list[float],
     force: bool,
-    done_set: set[tuple[str, str, str, str, float]] | None = None,
+    done_set: set[tuple[str, str, str, float]] | None = None,
 ) -> tuple[int, int]:
-    """Run a head on all patches for all (bin_mode, std_thresh) combos (force path).
+    """Run a head on all patches for all std_thresh values (force path).
 
     Same filesystem-save behaviour as :func:`_process_song_head_missing`.
     """
-    missing: frozenset[tuple[str, float]]
+    missing: frozenset[float]
     if not force and done_set is not None:
         all_done = all(
-            (sid, backbone, head_name, bin_mode, float(std_thresh)) in done_set
-            for bin_mode in BIN_MODES
+            (sid, backbone, head_name, float(std_thresh)) in done_set
             for std_thresh in std_thresholds
         )
         if all_done:
             return 0, 0
         missing = frozenset(
-            (bm, float(st))
-            for bm in BIN_MODES
+            float(st)
             for st in std_thresholds
-            if (sid, backbone, head_name, bm, float(st)) not in done_set
+            if (sid, backbone, head_name, float(st)) not in done_set
         )
     else:
-        missing = frozenset((bm, float(st)) for bm in BIN_MODES for st in std_thresholds)
+        missing = frozenset(float(st) for st in std_thresholds)
     return _process_song_head_missing(
         sid, backbone, head_name, head_session, run_in_batches_fn, batch_size, patches, missing
     )
@@ -637,7 +593,7 @@ def run_binned(
     backbones: list[str] | None = None,
     heads: list[str] | None = None,
     device: str = "cpu",
-    thresholds_by_backbone_mode: dict[tuple[str, str], list[float]] | None = None,
+    thresholds_by_backbone: dict[str, list[float]] | None = None,
     head_sessions: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     """Run classify-then-pool binned head inference using one bulk cache query.
@@ -652,21 +608,21 @@ def run_binned(
     _all_paths = discover_audio()
     audio_paths = [p for p in _all_paths if song_id(p) in song_ids] if song_ids is not None else _all_paths
     backbone_names = backbones or list(BACKBONES)
-    if thresholds_by_backbone_mode:
-        all_combos_binned: frozenset[tuple[str, float]] = frozenset(
-            (bm, st) for (_, bm), thresholds in thresholds_by_backbone_mode.items() for st in thresholds
+    if thresholds_by_backbone:
+        all_thresholds: frozenset[float] = frozenset(
+            st for thresholds in thresholds_by_backbone.values() for st in thresholds
         )
     else:
-        all_combos_binned = frozenset((bm, float(st)) for bm in BIN_MODES for st in DEFAULT_CTP_THRESHOLDS)
+        all_thresholds = frozenset(float(st) for st in DEFAULT_CTP_THRESHOLDS)
 
-    # Build (sid, backbone, head) -> set[done (bin_mode, std_thresh)] from filesystem cache
+    # Build (sid, backbone, head) -> set[done std_thresh] from filesystem cache
     if not force:
-        ctp_heads_done = _binned_ctp_heads_cache.list_done_keys()  # (sid, backbone, head, bin_mode, std_thresh)
-        done_combos_by_key: dict[tuple[str, str, str], set[tuple[str, float]]] = {}
-        for sid_d, bb_d, head_d, bm_d, st_d in ctp_heads_done:
-            done_combos_by_key.setdefault((sid_d, bb_d, head_d), set()).add((bm_d, st_d))
+        ctp_heads_done = _binned_ctp_heads_cache.list_done_keys()  # (sid, backbone, head, std_thresh)
+        done_thresholds_by_key: dict[tuple[str, str, str], set[float]] = {}
+        for sid_d, bb_d, head_d, st_d in ctp_heads_done:
+            done_thresholds_by_key.setdefault((sid_d, bb_d, head_d), set()).add(st_d)
     else:
-        done_combos_by_key = {}
+        done_thresholds_by_key = {}
 
     for backbone_name in backbone_names:
         head_map = {
@@ -698,15 +654,15 @@ def run_binned(
         if not loaded_head_sessions:
             continue
 
-        # Build work dict: song_path → {head_name: frozenset[missing (bin_mode, std_thresh)]}
-        # Only include entries where at least one combo is missing.
-        work: dict[Path, dict[str, frozenset[tuple[str, float]]]] = {}
+        # Build work dict: song_path → {head_name: frozenset[missing std_thresh]}
+        # Only include entries where at least one threshold is missing.
+        work: dict[Path, dict[str, frozenset[float]]] = {}
         for p in audio_paths:
             sid = song_id(p)
-            heads_missing: dict[str, frozenset[tuple[str, float]]] = {}
+            heads_missing: dict[str, frozenset[float]] = {}
             for head_name in loaded_head_sessions:
-                done_c = done_combos_by_key.get((sid, backbone_name, head_name), set())
-                missing = all_combos_binned - done_c if not force else all_combos_binned
+                done_c = done_thresholds_by_key.get((sid, backbone_name, head_name), set())
+                missing = all_thresholds - done_c if not force else all_thresholds
                 if missing:
                     heads_missing[head_name] = missing
             if heads_missing:
@@ -734,10 +690,10 @@ def run_binned(
 
             try:
                 patches = np.load(str(sidecar)).astype(np.float32)
-                total_saved_heads = total_saved_vecs = 0
-                for head_name, missing_combos in heads_missing.items():
+                total_saved_heads = 0
+                for head_name, missing_thresholds in heads_missing.items():
                     head_session = loaded_head_sessions[head_name]
-                    n_heads, n_vecs = _process_song_head_missing(
+                    saved = _process_song_head_missing(
                         sid,
                         backbone_name,
                         head_name,
@@ -745,11 +701,10 @@ def run_binned(
                         _run_in_batches,
                         _BACKBONE_BATCH_SIZE,
                         patches,
-                        missing_combos,
+                        missing_thresholds,
                     )
-                    total_saved_heads += n_heads
-                    total_saved_vecs += n_vecs
-                if total_saved_heads > 0 or total_saved_vecs > 0:
+                    total_saved_heads += saved
+                if total_saved_heads > 0:
                     done += 1
                 else:
                     skipped += 1

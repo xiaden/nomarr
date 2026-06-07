@@ -12,6 +12,7 @@ from plotly.offline import get_plotlyjs
 from ._binned import (
     section_bin_diversity,
     section_bin_mode_comparison,
+    section_flat_binned_correlation,
     section_segment_counts,
     section_threshold_sweep,
 )
@@ -327,6 +328,7 @@ def run(con, out_path=None) -> None:
         ("bin-diversity", lambda: section_bin_diversity(con)),
         ("segment-counts", lambda: section_segment_counts(con)),
         ("bin-mode-comparison", lambda: section_bin_mode_comparison(df)),
+        ("flat-binned-corr", lambda: section_flat_binned_correlation(df)),
         ("head-sim-corr", lambda: section_head_sim_corr(con)),
         ("head-value", lambda: section_head_value(con)),
         ("efficiency", lambda: section_efficiency(con)),

@@ -20,13 +20,6 @@ from scripts.embedding_research.vector_types import RawTensor as _RawTensor
 def _load_cached_calibration(con, backbone: str) -> dict[str, dict] | None:
     """Return per-bin-mode calibration stats dict (plus amplitude), or None if unavailable."""
     load_calibration = _cast("_Any", _db.load_calibration)
-    try:
-        cached = load_calibration(con, backbone)
-    except TypeError:
-        cached = None
-    if isinstance(cached, dict) and cached and "p50" not in cached:
-        return cached
-
     per_mode: dict[str, dict] = {}
     for bin_mode in BIN_MODES:
         try:

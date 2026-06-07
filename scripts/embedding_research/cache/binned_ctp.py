@@ -5,7 +5,7 @@ STD-binning rather than embedding-space distance. The extra ``head`` dimension
 is encoded in the path so each head gets its own slice.
 
 Layout:
-    {CACHE_BASE}/{backbone}/{head}/{bin_mode}/{std_thresh:.3f}/{song_id}.npz
+    {CACHE_BASE}/{backbone}/{head}/{std_thresh:.3f}/{song_id}.npz
 
 npz contents
 ------------
@@ -46,12 +46,12 @@ def _purge_corrupt(p: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def cache_path(backbone: str, head: str, bin_mode: str, std_thresh: float, song_id: str) -> Path:
-    return CACHE_BASE / backbone / head / bin_mode / _threshold_key(std_thresh) / f"{song_id}.npz"
+def cache_path(backbone: str, head: str, std_thresh: float, song_id: str) -> Path:
+    return CACHE_BASE / backbone / head / _threshold_key(std_thresh) / f"{song_id}.npz"
 
 
-def config_dir(backbone: str, head: str, bin_mode: str, std_thresh: float) -> Path:
-    return CACHE_BASE / backbone / head / bin_mode / _threshold_key(std_thresh)
+def config_dir(backbone: str, head: str, std_thresh: float) -> Path:
+    return CACHE_BASE / backbone / head / _threshold_key(std_thresh)
 
 
 # ---------------------------------------------------------------------------
@@ -59,9 +59,9 @@ def config_dir(backbone: str, head: str, bin_mode: str, std_thresh: float) -> Pa
 # ---------------------------------------------------------------------------
 
 
-def is_done(backbone: str, head: str, bin_mode: str, std_thresh: float, song_id: str) -> bool:
-    """Return True iff the CTP npz for this (song, backbone, head, bin_mode, std_thresh) exists and is readable."""
-    p = cache_path(backbone, head, bin_mode, std_thresh, song_id)
+def is_done(backbone: str, head: str, std_thresh: float, song_id: str) -> bool:
+    """Return True iff the CTP npz for this (song, backbone, head, std_thresh) exists and is readable."""
+    p = cache_path(backbone, head, std_thresh, song_id)
     if not p.exists():
         return False
     try:
@@ -73,8 +73,31 @@ def is_done(backbone: str, head: str, bin_mode: str, std_thresh: float, song_id:
         return False
 
 
-def query_ctp_configs() -> set[tuple[str, str, str, float]]:
-    """Return ``(backbone, head, bin_mode, std_thresh)`` for every non-empty config directory."""
+def query_ctp_configs() -> set[tuple[str, str, float]]:
+    """Return ``(backbone, head, std_thresh)`` for every non-empty config directory."""
+    if not CACHE_BASE.exists():
+        return set()
+    out: set[tuple[str, str, float]] = set()
+    for bb_dir in CACHE_BASE.iterdir():
+        if not bb_dir.is_dir():
+            continue
+        for hd_dir in bb_dir.iterdir():
+            if not hd_dir.is_dir():
+                continue
+            for th_dir in hd_dir.iterdir():
+                if not th_dir.is_dir():
+                    continue
+                try:
+                    th = float(th_dir.name)
+                except ValueError:
+                    continue
+                if any(th_dir.glob("*.npz")):
+                    out.add((bb_dir.name, hd_dir.name, th))
+    return out
+
+
+def list_done_keys() -> set[tuple[str, str, str, float]]:
+    """Return ``(song_id, backbone, head, std_thresh)`` for every cached file."""
     if not CACHE_BASE.exists():
         return set()
     out: set[tuple[str, str, str, float]] = set()
@@ -84,44 +107,15 @@ def query_ctp_configs() -> set[tuple[str, str, str, float]]:
         for hd_dir in bb_dir.iterdir():
             if not hd_dir.is_dir():
                 continue
-            for bm_dir in hd_dir.iterdir():
-                if not bm_dir.is_dir():
+            for th_dir in hd_dir.iterdir():
+                if not th_dir.is_dir():
                     continue
-                for th_dir in bm_dir.iterdir():
-                    if not th_dir.is_dir():
-                        continue
-                    try:
-                        th = float(th_dir.name)
-                    except ValueError:
-                        continue
-                    if any(th_dir.glob("*.npz")):
-                        out.add((bb_dir.name, hd_dir.name, bm_dir.name, th))
-    return out
-
-
-def list_done_keys() -> set[tuple[str, str, str, str, float]]:
-    """Return ``(song_id, backbone, head, bin_mode, std_thresh)`` for every cached file."""
-    if not CACHE_BASE.exists():
-        return set()
-    out: set[tuple[str, str, str, str, float]] = set()
-    for bb_dir in CACHE_BASE.iterdir():
-        if not bb_dir.is_dir():
-            continue
-        for hd_dir in bb_dir.iterdir():
-            if not hd_dir.is_dir():
-                continue
-            for bm_dir in hd_dir.iterdir():
-                if not bm_dir.is_dir():
+                try:
+                    th = float(th_dir.name)
+                except ValueError:
                     continue
-                for th_dir in bm_dir.iterdir():
-                    if not th_dir.is_dir():
-                        continue
-                    try:
-                        th = float(th_dir.name)
-                    except ValueError:
-                        continue
-                    for f in th_dir.glob("*.npz"):
-                        out.add((f.stem, bb_dir.name, hd_dir.name, bm_dir.name, th))
+                for f in th_dir.glob("*.npz"):
+                    out.add((f.stem, bb_dir.name, hd_dir.name, th))
     return out
 
 
@@ -133,7 +127,6 @@ def list_done_keys() -> set[tuple[str, str, str, str, float]]:
 def save(
     backbone: str,
     head: str,
-    bin_mode: str,
     std_thresh: float,
     song_id: str,
     bulk_vecs: list[tuple],
@@ -144,18 +137,17 @@ def save(
     ----------
     bulk_vecs:
         Rows with schema
-        ``(sid, backbone, head, bin_mode, std_thresh, bin_id, pool_strategy,
+        ``(sid, backbone, head, std_thresh, bin_id, pool_strategy,
               vec_raw_bytes, vec_norm_bytes, weight, outlier_count,
               selected_global_idx, selected_local_idx, medoid_centrality,
               bin_start_idx, bin_end_idx)``
-        — the exact format produced by ``_process_song_head_missing`` in classify.py.
     """
     if not bulk_vecs:
         return
 
     bins: dict[int, dict] = {}
     for row in bulk_vecs:
-        _, _, _, _, _, bin_id, pool_strategy, raw_b, norm_b, weight, outlier_count, *meta = row
+        _, _, _, _, bin_id, pool_strategy, raw_b, norm_b, weight, outlier_count, *meta = row
         selected_global_idx = int(meta[0]) if len(meta) >= 1 else -1
         selected_local_idx = int(meta[1]) if len(meta) >= 2 else -1
         centrality = float(meta[2]) if len(meta) >= 3 else float("nan")
@@ -214,14 +206,13 @@ def save(
                 dtype=np.float32,
             )
 
-    p = cache_path(backbone, head, bin_mode, std_thresh, song_id)
+    p = cache_path(backbone, head, std_thresh, song_id)
     p.parent.mkdir(parents=True, exist_ok=True)
     np.savez(str(p), **arrays)
     _log.debug(
-        "ctp_cache.save  %s/%s/%s/%.3f/%s  bins=%d strats=%d",
+        "ctp_cache.save  %s/%s/%.3f/%s  bins=%d strats=%d",
         backbone,
         head,
-        bin_mode,
         std_thresh,
         song_id,
         len(sorted_ids),
@@ -238,11 +229,10 @@ def load_all_reps(
     con,
     backbone: str,
     head: str,
-    bin_mode: str,
     std_thresh: float,
     song_ids: frozenset[str] | None = None,
 ) -> tuple[list[str], list[str], list[list[dict]]]:
-    """Load all four pool-strategy CTP vectors for every bin of every song.
+    """Load all pool-strategy CTP vectors for every bin of every song.
 
     Reads from the filesystem cache (``binned_ctp_cache``).  The ``con``
     argument is used only to look up artist labels from the ``songs`` table.
@@ -255,10 +245,8 @@ def load_all_reps(
                    bin_id, weight, outlier_count,
                    vec_{strategy}_raw and (when present) vec_{strategy}_norm
                    for each pool strategy (float32 arrays)
-
-    Songs missing any of the four pool strategies for any bin are excluded.
     """
-    d = config_dir(backbone, head, bin_mode, std_thresh)
+    d = config_dir(backbone, head, std_thresh)
     _log.info("load_all_reps: scanning %s", d)
     if not d.exists():
         _log.info("load_all_reps: path does not exist — 0 songs")
@@ -272,19 +260,12 @@ def load_all_reps(
         _log.info("load_all_reps: 0 .npz files found")
         return [], [], []
 
-    # Look up artist labels in one query
     candidate_sids = [f.stem for f in npz_files]
     artist_rows = con.execute(
         "SELECT song_id, artist FROM songs WHERE song_id = ANY(?)",
         [candidate_sids],
     ).fetchall()
     artist_map: dict[str, str] = {sid: (artist or "unknown") for sid, artist in artist_rows}
-
-    from scripts.embedding_research.strategy_binned._constants import _BIN_POOL_STRATEGIES
-
-    required = {f"pool_{name}_raw" for name in _BIN_POOL_STRATEGIES}
-    suffix_raw = "_raw"
-    suffix_norm = "_norm"
 
     sids: list[str] = []
     artists: list[str] = []
@@ -298,14 +279,14 @@ def load_all_reps(
             _purge_corrupt(f)
             continue
         try:
-            if not required.issubset(set(data.files)):
-                missing = required - set(data.files)
-                _log.info("load_all_reps: skip %s — missing pool keys: %s", sid, sorted(missing))
-                continue
             n_bins = int(data["weights"].shape[0])
+            suffix_raw = "_raw"
+            suffix_norm = "_norm"
             strategies = sorted(
                 k[5 : -len(suffix_raw)] for k in data.files if k.startswith("pool_") and k.endswith(suffix_raw)
             )
+            if not strategies:
+                continue
             bins_list: list[dict] = []
             complete = True
             for i in range(n_bins):
@@ -322,8 +303,6 @@ def load_all_reps(
                     if raw_key not in data.files:
                         complete = False
                         break
-                    # Compatibility: keep vec_{st} as raw alias for callers that
-                    # still expect the historical key.
                     b[f"vec_{st}"] = data[raw_key][i].copy()
                     b[f"vec_{st}_raw"] = data[raw_key][i].copy()
                     if norm_key in data.files:

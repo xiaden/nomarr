@@ -37,7 +37,7 @@ REP_TYPES: list[str] = _validated_choices(
 if "medoid" in AGG_METHODS:
     raise ValueError("agg_method=medoid is not implemented; use agg_method=median with rep_type=medoid.")
 
-SIM_METRICS: list[str] = _cfg.get("similarity", {}).get("metrics", ["cosine", "l2"])
+SIM_METRICS: list[str] = _cfg.get("similarity", {}).get("metrics", ["cosine"])
 
 _BACKBONE_SR: int = 16_000
 _EXPECTED_ROWS_PER_CONFIG = len(REP_TYPES) * len(REP_TYPES) * len(SIM_METRICS) * len(AGG_METHODS)

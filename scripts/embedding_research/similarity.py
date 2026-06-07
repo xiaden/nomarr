@@ -66,19 +66,10 @@ def cosine_matrix(vecs: RawTensor) -> np.ndarray:
     return np.asarray((normed @ normed.T).astype(np.float32))
 
 
-def l2_similarity_matrix(vecs: RawTensor) -> np.ndarray:
-    """[n, n] Euclidean distance -> similarity: 1 / (1 + d)."""
-    vf = vecs.data
-    sq = np.sum(vf**2, axis=1)
-    dist2 = sq[:, None] + sq[None, :] - 2.0 * (vf @ vf.T)
-    dist2 = np.maximum(dist2, 0.0)
-    return np.asarray((1.0 / (1.0 + np.sqrt(dist2))).astype(np.float32))
-
-
 # dot omitted: on L2-normalised vectors it equals cosine; no additional signal.
+# l2 removed: prior testing determined cosine is superior across the board.
 METRICS: dict[str, Callable[[RawTensor], np.ndarray]] = {
     "cosine": cosine_matrix,
-    "l2": l2_similarity_matrix,
 }
 
 
@@ -595,7 +586,7 @@ class ANNIndex:
         recall = idx.recall_at_k(exact_top_k, k=10)
     """
 
-    SUPPORTED_METRICS = ("cosine", "l2")
+    SUPPORTED_METRICS = ("cosine",)
 
     def __init__(
         self,
@@ -618,47 +609,31 @@ class ANNIndex:
             self._build_faiss(hnsw_m, hnsw_ef_construction, hnsw_ef_search, nlist)
 
     def _build_faiss(self, hnsw_m, hnsw_ef_construction, hnsw_ef_search, nlist) -> None:
-        if self.metric == "cosine":
-            normed = l2_normalise(RawTensor(self._vecs)).data
-            index = faiss.IndexHNSWFlat(self.d, hnsw_m, faiss.METRIC_INNER_PRODUCT)
-            index.hnsw.efConstruction = hnsw_ef_construction
-            index.hnsw.efSearch = hnsw_ef_search
-            index.add(normed)
-            self._normed = normed
-        else:
-            if self.n > 4 * nlist:
-                quantiser = faiss.IndexFlatL2(self.d)
-                index = faiss.IndexIVFFlat(quantiser, self.d, nlist, faiss.METRIC_L2)
-                index.train(self._vecs)
-                index.nprobe = max(1, nlist // 10)
-            else:
-                index = faiss.IndexFlatL2(self.d)
-            index.add(self._vecs)
+        normed = l2_normalise(RawTensor(self._vecs)).data
+        index = faiss.IndexHNSWFlat(self.d, hnsw_m, faiss.METRIC_INNER_PRODUCT)
+        index.hnsw.efConstruction = hnsw_ef_construction
+        index.hnsw.efSearch = hnsw_ef_search
+        index.add(normed)
+        self._normed = normed
         self._index = index
 
     def set_ef_search(self, ef: int) -> None:
         self._hnsw_ef_search = ef
-        if _FAISS and self._index and self.metric == "cosine":
+        if _FAISS and self._index:
             self._index.hnsw.efSearch = ef
 
     def query(self, qvec: RawVector, k: int) -> np.ndarray:
         """Return [k] indices of approximate nearest neighbours."""
         qvec_np = qvec.data
         if _FAISS and self._index is not None:
-            if self.metric == "cosine":
-                qn = l2_normalise(RawTensor(qvec_np[None, :])).data[0]
-                _, nn_idx = self._index.search(qn[None, :], k)
-            else:
-                _, nn_idx = self._index.search(qvec_np[None, :], k)
+            qn = l2_normalise(RawTensor(qvec_np[None, :])).data[0]
+            _, nn_idx = self._index.search(qn[None, :], k)
             return nn_idx[0]
         # numpy fallback
-        if self.metric == "cosine":
-            normed = l2_normalise(RawTensor(self._vecs)).data
-            qn = l2_normalise(RawTensor(qvec_np[None, :])).data[0]
-            sims = normed @ qn
-            return np.argsort(-sims)[:k]
-        dists = np.linalg.norm(self._vecs - qvec_np, axis=1)
-        return np.argsort(dists)[:k]
+        normed = l2_normalise(RawTensor(self._vecs)).data
+        qn = l2_normalise(RawTensor(qvec_np[None, :])).data[0]
+        sims = normed @ qn
+        return np.argsort(-sims)[:k]
 
     def recall_at_k(
         self,

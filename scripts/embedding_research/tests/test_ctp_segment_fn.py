@@ -11,7 +11,6 @@ from scripts.embedding_research.strategy_ctp.segment_fn import (
     STRATEGY_NAMES,
     _decode_strategy_name,
     _empty_result,
-    _l2_normalise_vec,
     _run_head_session,
     make_segment_fn,
 )
@@ -21,9 +20,9 @@ def test_ctp_decode_strategy_name_valid() -> None:
     """A known CTP strategy name decodes to its original parts."""
     strategy_name = STRATEGY_NAMES[0]
 
-    head_name, bin_mode, std_thresh = _decode_strategy_name(strategy_name)
+    head_name, std_thresh = _decode_strategy_name(strategy_name)
 
-    assert f"ctp_{head_name}_{bin_mode}_{std_thresh:.2f}" == strategy_name
+    assert f"ctp_{head_name}_{std_thresh:.2f}" == strategy_name
 
 
 def test_ctp_decode_strategy_name_rejects_wrong_prefix() -> None:
@@ -36,26 +35,6 @@ def test_ctp_decode_strategy_name_rejects_malformed() -> None:
     """Malformed strategy names fail validation."""
     with pytest.raises(ValueError):
         _decode_strategy_name("ctp_")
-
-
-def test_ctp_l2_normalise_vec_normalizes_to_unit_length() -> None:
-    """Non-zero vectors are normalized and returned as float32."""
-    vec = np.array([3.0, 4.0], dtype=np.float32)
-
-    result = _l2_normalise_vec(vec)
-
-    assert result.dtype == np.float32
-    assert np.linalg.norm(result) == pytest.approx(1.0)
-
-
-def test_ctp_l2_normalise_vec_handles_zero_vector() -> None:
-    """Zero vectors remain zero and do not error."""
-    vec = np.zeros(4, dtype=np.float32)
-
-    result = _l2_normalise_vec(vec)
-
-    assert result.dtype == np.float32
-    np.testing.assert_array_equal(result, np.zeros(4, dtype=np.float32))
 
 
 def test_ctp_run_head_session_calls_session_run() -> None:
@@ -115,7 +94,7 @@ def test_ctp_segment_fn_missing_head_session_raises() -> None:
 def test_ctp_segment_fn_bad_activation_shape_raises() -> None:
     """Activations with fewer than 2 classes raise ValueError."""
     strategy_name = STRATEGY_NAMES[0]
-    head_name, _bin_mode, _thresh = _decode_strategy_name(strategy_name)
+    head_name, _thresh = _decode_strategy_name(strategy_name)
 
     session = Mock()
     segment_fn = make_segment_fn(
@@ -131,7 +110,7 @@ def test_ctp_segment_fn_bad_activation_shape_raises() -> None:
 def test_ctp_segment_fn_returns_populated_result_for_valid_activations() -> None:
     """Valid activations produce a populated result dict."""
     strategy_name = STRATEGY_NAMES[0]
-    head_name, _bin_mode, _std_thresh = _decode_strategy_name(strategy_name)
+    head_name, _std_thresh = _decode_strategy_name(strategy_name)
 
     n_patches, dim = 6, 8
     patches = np.ones((n_patches, dim), dtype=np.float32)

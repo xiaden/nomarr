@@ -164,10 +164,10 @@ def test_load_analyze_metrics_sorted_by_disc_general_desc(con):
 
 def test_query_analysis_done_returns_tuples(con):
     write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42})
-    write_analyze_metrics(con, "bb/max", "flat", "l2", 5, {"disc_general": 0.55})
+    write_analyze_metrics(con, "bb/max", "flat", "cosine", 5, {"disc_general": 0.55})
     result = query_analysis_done(con)
     assert ("bb/mean", "cosine", 10) in result
-    assert ("bb/max", "l2", 5) in result
+    assert ("bb/max", "cosine", 5) in result
     assert len(result) == 2
 
 
@@ -256,7 +256,7 @@ def test_clear_song_retrieval_metrics_deletes_only_matching_rows(con):
     write_song_retrieval_metrics(
         con,
         "strategy-b",
-        "l2",
+        "cosine",
         5,
         {
             "song_ids": ["s3"],
@@ -280,4 +280,4 @@ def test_clear_song_retrieval_metrics_deletes_only_matching_rows(con):
     ).fetchall()
 
     assert cleared_rows == []
-    assert remaining_rows == [("strategy-b", "l2", 5, "s3")]
+    assert remaining_rows == [("strategy-b", "cosine", 5, "s3")]

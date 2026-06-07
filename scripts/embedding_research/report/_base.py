@@ -70,6 +70,7 @@ ANALYZE_METRICS_COLUMNS = [
     "k",
     "backbone",
     "strategy",
+    "head",
     "bin_mode",
     "std_thresh",
     "rep_a",
@@ -141,6 +142,7 @@ def _decode_strategy_key(df: pd.DataFrame) -> pd.DataFrame:
     decoded = decoded.assign(
         backbone=None,
         strategy=None,
+        head=None,
         bin_mode=None,
         std_thresh=None,
         rep_a=None,
@@ -166,11 +168,11 @@ def _decode_strategy_key(df: pd.DataFrame) -> pd.DataFrame:
     decoded.loc[ptc_mask, "agg_method"] = parts[ptc_mask].str[6]
 
     decoded.loc[ctp_mask, "backbone"] = parts[ctp_mask].str[1]
-    decoded.loc[ctp_mask, "bin_mode"] = parts[ctp_mask].str[3]
-    decoded.loc[ctp_mask, "std_thresh"] = pd.to_numeric(parts[ctp_mask].str[4], errors="coerce")
-    decoded.loc[ctp_mask, "rep_a"] = parts[ctp_mask].str[5]
-    decoded.loc[ctp_mask, "rep_b"] = parts[ctp_mask].str[6]
-    decoded.loc[ctp_mask, "agg_method"] = parts[ctp_mask].str[7]
+    decoded.loc[ctp_mask, "head"] = parts[ctp_mask].str[2]
+    decoded.loc[ctp_mask, "std_thresh"] = pd.to_numeric(parts[ctp_mask].str[3], errors="coerce")
+    decoded.loc[ctp_mask, "rep_a"] = parts[ctp_mask].str[4]
+    decoded.loc[ctp_mask, "rep_b"] = parts[ctp_mask].str[5]
+    decoded.loc[ctp_mask, "agg_method"] = parts[ctp_mask].str[6]
 
     return decoded
 

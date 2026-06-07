@@ -100,12 +100,10 @@ CREATE TABLE IF NOT EXISTS analyze_metrics (
 
 -- Per-backbone threshold calibration: empirical percentiles of pairwise
 -- patch distances so we can choose data-driven thresholds.
--- dist_mode maps to binned_vecs.bin_mode:
---   'global' → bin_mode='temporal_global'
---   'perdim' → bin_mode='temporal_perdim'
+-- dist_mode values are 'temporal_global' | 'temporal_perdim'
 CREATE TABLE IF NOT EXISTS binned_calibration (
     backbone      TEXT NOT NULL,
-    dist_mode     TEXT NOT NULL,   -- 'global' | 'perdim'
+    dist_mode     TEXT NOT NULL,   -- 'temporal_global' | 'temporal_perdim'
     p10           DOUBLE,
     p25           DOUBLE,
     p50           DOUBLE,
