@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import threading
 from typing import cast
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -14,6 +15,9 @@ def _make_service() -> ConfigService:
     """Build a ``ConfigService`` instance without running ``__init__``."""
     service = ConfigService.__new__(ConfigService)
     service._cache = {}
+    service._subscriptions = {}
+    service._background_tasks: set = set()
+    service._lock = threading.Lock()
     service._logger = MagicMock()  # type: ignore[assignment]
     return service
 
@@ -144,3 +148,84 @@ class TestBootstrapAndLoad:
 
         assert service._cache
         assert service._cache["library_root"] == "/fallback-root"
+
+
+class TestSubscribe:
+    """Tests for ``ConfigService.subscribe()``."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_observable_key_accepted(self) -> None:
+        """subscribe() does not raise for keys in OBSERVABLE_KEYS."""
+        service = _make_service()
+        cb = AsyncMock()
+
+        service.subscribe("tagger_worker_count", cb)
+
+        assert "tagger_worker_count" in service._subscriptions
+        assert cb in service._subscriptions["tagger_worker_count"]
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_non_observable_raises_valueerror(self) -> None:
+        """subscribe() raises ValueError for keys not in OBSERVABLE_KEYS."""
+        service = _make_service()
+        cb = AsyncMock()
+
+        with pytest.raises(ValueError, match="not observable"):
+            service.subscribe("db_path", cb)
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_callback_registered(self) -> None:
+        """subscribe() registers callback that is fired on set()."""
+        service = _make_service()
+        cb = AsyncMock()
+
+        service.subscribe("tagger_worker_count", cb)
+        assert cb in service._subscriptions["tagger_worker_count"]
+
+
+class TestSetCallbacks:
+    """Tests for ``ConfigService.set()`` callback firing."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_observable_key_fires_callbacks(self) -> None:
+        """set() fires registered callbacks for observable keys."""
+        service = _make_service()
+        cb = AsyncMock()
+
+        service.subscribe("tagger_worker_count", cb)
+
+        with (
+            patch("nomarr.services.infrastructure.config_svc.asyncio") as mock_asyncio,
+            patch.object(service, "_write_to_db"),
+        ):
+            mock_task = MagicMock()
+            mock_asyncio.create_task.return_value = mock_task
+
+            service.set("tagger_worker_count", 3)
+
+        mock_asyncio.create_task.assert_called_once()
+        # Verify the callback was wrapped in create_task
+        coro = mock_asyncio.create_task.call_args[0][0]
+        assert coro is not None
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_non_observable_key_no_callback(self) -> None:
+        """set() does NOT fire callbacks for non-observable keys."""
+        service = _make_service()
+        cb = AsyncMock()
+
+        # calibrate_heads is in ALL_CONFIG_KEYS but NOT in OBSERVABLE_KEYS
+        service._subscriptions["calibrate_heads"] = [cb]
+
+        with (
+            patch("nomarr.services.infrastructure.config_svc.asyncio") as mock_asyncio,
+            patch.object(service, "_write_to_db"),
+        ):
+            service.set("calibrate_heads", True)
+
+        mock_asyncio.create_task.assert_not_called()

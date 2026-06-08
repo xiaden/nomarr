@@ -15,7 +15,6 @@ from nomarr.components.library.library_file_mutation_comp import (
     update_file_modified_time,
     update_file_path,
     update_last_tagged_at,
-    update_metadata_cache,
     upsert_batch,
     upsert_library_file,
 )
@@ -231,9 +230,6 @@ class TestUpsertLibraryFile:
                 "file_size": 1234,
                 "modified_time": 5678,
                 "duration_seconds": None,
-                "artist": None,
-                "album": None,
-                "title": None,
                 "scanned_at": 1000,
                 "chromaprint": None,
                 "last_tagged_at": None,
@@ -275,9 +271,6 @@ class TestUpdateFilePath:
                 "C:/music/new-song.mp3",
                 file_size=4321,
                 modified_time=8765,
-                artist="Artist",
-                album="Album",
-                title="Title",
                 duration_seconds=123.4,
             )
 
@@ -291,9 +284,6 @@ class TestUpdateFilePath:
                 "file_size": 4321,
                 "modified_time": 8765,
                 "is_valid": 1,
-                "artist": "Artist",
-                "album": "Album",
-                "title": "Title",
                 "duration_seconds": 123.4,
                 "scanned_at": 2000,
             },
@@ -320,9 +310,6 @@ class TestUpdateFilePath:
                 "file_size": 4321,
                 "modified_time": 8765,
                 "is_valid": 1,
-                "artist": None,
-                "album": None,
-                "title": None,
                 "duration_seconds": None,
                 "scanned_at": 2000,
                 "normalized_path": "relative/new-song.mp3",
@@ -342,37 +329,6 @@ class TestUpdateFileModifiedTime:
         mock_db.library.update_file.assert_called_once_with(
             "library_files/abc123",
             {"modified_time": 7777},
-        )
-
-
-class TestUpdateMetadataCache:
-    """Tests for embedded metadata cache writes."""
-
-    @pytest.mark.unit
-    def test_updates_all_cached_metadata_fields(self) -> None:
-        mock_db = MagicMock()
-
-        update_metadata_cache(
-            mock_db,
-            "library_files/123",
-            artist="Artist",
-            artists=["Artist", "Featured"],
-            album="Album",
-            labels=["Label"],
-            genres=["Rock", "Indie"],
-            year=1999,
-        )
-
-        mock_db.library.update_file.assert_called_once_with(
-            "library_files/123",
-            {
-                "artist": "Artist",
-                "artists": ["Artist", "Featured"],
-                "album": "Album",
-                "labels": ["Label"],
-                "genres": ["Rock", "Indie"],
-                "year": 1999,
-            },
         )
 
 

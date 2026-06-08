@@ -119,18 +119,11 @@ class VectorsAqlOperations:
             self.upsert_file_has_vector_edge(file_id, vector_id)
 
     def upsert_file_has_vector_edge(self, file_id: str, vector_id: str) -> None:
-        self._db.aql.execute(
-            """
-            UPSERT { _from: @file_id, _to: @vector_id }
-                INSERT { _from: @file_id, _to: @vector_id }
-                UPDATE {}
-                IN @@collection
-            """,
-            bind_vars={
-                "@collection": self.EDGE_COLLECTION,
-                "file_id": _as_document_id("library_files", file_id),
-                "vector_id": vector_id,
-            },
+        primitives.upsert_edge(
+            self._db,
+            self.EDGE_COLLECTION,
+            _as_document_id("library_files", file_id),
+            vector_id,
         )
 
     def delete_vectors_for_file(self, collection_name: str, file_id: str) -> None:
@@ -154,7 +147,7 @@ class VectorsAqlOperations:
             )
             FOR edge IN @@edge_collection
                 FILTER edge._from == @file_id AND edge._to IN vector_ids
-                REMOVE edge IN @@edge_collection
+                REMOVE edge IN @@edge_collection OPTIONS { ignoreErrors: true }
             FOR vector_id IN vector_ids
                 REMOVE vector_id IN @@collection
                 OPTIONS { ignoreErrors: true }
@@ -167,34 +160,15 @@ class VectorsAqlOperations:
         )
 
     def delete_file_has_vector_edges_for_file(self, file_id: str) -> int:
-        cursor = self._db.aql.execute(
-            """
-            FOR edge IN @@collection
-                FILTER edge._from == @file_id
-                REMOVE edge IN @@collection
-                RETURN 1
-            """,
-            bind_vars={
-                "@collection": self.EDGE_COLLECTION,
-                "file_id": _as_document_id("library_files", file_id),
-            },
+        return primitives.delete_edges(
+            self._db,
+            self.EDGE_COLLECTION,
+            from_id=_as_document_id("library_files", file_id),
         )
-        return len(list(cursor))
 
     def delete_file_has_vector_edges_for_files(self, file_ids: list[str]) -> int:
         normalized_file_ids = [_as_document_id("library_files", file_id) for file_id in file_ids]
-        if not normalized_file_ids:
-            return 0
-        cursor = self._db.aql.execute(
-            """
-            FOR edge IN @@collection
-                FILTER edge._from IN @file_ids
-                REMOVE edge IN @@collection
-                RETURN 1
-            """,
-            bind_vars={"@collection": self.EDGE_COLLECTION, "file_ids": normalized_file_ids},
-        )
-        return len(list(cursor))
+        return primitives.delete_edges_by_from_list(self._db, self.EDGE_COLLECTION, normalized_file_ids)
 
     def vector_search(self, collection_name: str, query_vector: list[float], *, limit: int) -> list[Document]:
         return primitives.execute(
@@ -223,7 +197,7 @@ class VectorsAqlOperations:
         self._db.aql.execute(
             """
             FOR doc IN @@collection
-                REMOVE doc IN @@collection
+                REMOVE doc IN @@collection OPTIONS { ignoreErrors: true }
             """,
             bind_vars={"@collection": collection_name},
         )

@@ -30,10 +30,14 @@ def _seed(**overrides: object) -> TrackDescriptor:
 @pytest.mark.mocked
 def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
     db = MagicMock()
-    db.library.search_files_by_text.return_value = [{"_id": "library_files/1"}]
+    db.library.search_files_by_tag_pattern.return_value = [{"_id": "library_files/1"}]
     db.library.list_file_tags_for_files.return_value = {
         "library_files/1": [
+            {"name": "title", "value": "Song A"},
+            {"name": "artist", "value": "Artist A"},
+            {"name": "album", "value": "Album A"},
             {"name": "album_artist", "value": "Album Artist A"},
+            {"name": "year", "value": "2024"},
             {"name": "tracknumber", "value": "3"},
             {"name": "discnumber", "value": "1"},
         ]
@@ -41,11 +45,7 @@ def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
     db.library.list_files_by_ids.return_value = [
         {
             "_id": "library_files/1",
-            "title": "Song A",
-            "artist": "Artist A",
-            "album": "Album A",
             "duration_seconds": 201.0,
-            "year": 2024,
         }
     ]
 
@@ -53,7 +53,7 @@ def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
 
     assert status == ""
     assert resolved == "library_files/1"
-    db.library.search_files_by_text.assert_called_once_with("title", "Song A", limit=None)
+    db.library.search_files_by_tag_pattern.assert_called_once_with("title", "Song A", limit=None)
     db.library_files.get.many.assert_not_called()
 
 

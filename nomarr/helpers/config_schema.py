@@ -259,6 +259,13 @@ STATIC_KEYS: frozenset[str] = frozenset(f.name for f in dataclasses.fields(Stati
 DYNAMIC_KEYS: frozenset[str] = frozenset(f.name for f in dataclasses.fields(DynamicConfig))
 ALL_CONFIG_KEYS: frozenset[str] = STATIC_KEYS | DYNAMIC_KEYS
 WEB_EDITABLE_KEYS: frozenset[str] = DYNAMIC_KEYS  # all dynamic keys are web-editable
+OBSERVABLE_KEYS: frozenset[str] = frozenset({"tagger_worker_count"})
+"""Keys that support runtime subscription via ConfigService.subscribe().
+
+Only keys listed here can be subscribed to.  Adding a key to this set is
+an explicit acknowledgment that consumers can react to mid-runtime changes
+safely.
+"""
 
 
 # ---------------------------------------------------------------------------

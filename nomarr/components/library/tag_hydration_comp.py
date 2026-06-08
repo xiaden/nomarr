@@ -1,8 +1,8 @@
 """Tag hydration component.
 
-Extracts canonical metadata fields from raw tag documents for library files.
-Part of the tag-first architecture: tags are authoritative, embedded fields
-are derived on read.
+Derives canonical song metadata (artist, album, title, etc.) from a song's tags.
+Part of the tag-first architecture: tags are the authoritative source, and
+display metadata is derived on read rather than stored redundantly.
 """
 
 from __future__ import annotations
@@ -16,19 +16,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def extract_canonical_metadata(tag_docs: list[dict[str, Any]]) -> dict[str, Any]:
-    """Extract canonical metadata fields from raw tag documents for one file.
+def extract_canonical_metadata(song_tags: list[dict[str, Any]]) -> dict[str, Any]:
+    """Derive canonical metadata from a song's tags.
 
-    Accepts raw tag documents (list of dicts with "name" and "value" fields)
-    and returns a dict with derived scalar and list metadata fields.
-
-    Mirrors derivation semantics from metadata_cache_comp.py:rebuild_song_metadata_cache()
-    to ensure behavioral parity: same fallback logic for artist-from-artists,
-    same int coercion for year, same sorted-list normalization.
+    Accepts a list of tag entries (each with a "name" and "value") and returns
+    a dict of derived metadata fields suitable for display and sorting.
 
     Args:
-        tag_docs: Raw tag documents for one file. Each dict has "name" (tag name)
-                  and "value" (list of values) fields.
+        song_tags: Tag entries for one song. Each dict has "name" (tag name)
+                   and "value" (list of values) fields.
 
     Returns:
         Dict with keys: artist, album, title, artists, labels, genres, year.
@@ -36,30 +32,25 @@ def extract_canonical_metadata(tag_docs: list[dict[str, Any]]) -> dict[str, Any]
         List fields (artists, labels, genres) are None when absent.
 
     """
-    # Group tag documents by key
-    tags_by_key = _group_tags_by_key(tag_docs)
+    tags_by_name = _group_tags_by_name(song_tags)
 
-    # Extract raw values per key
-    artist_raw = [str(v) for v in tags_by_key.get("artist", [])]
-    artists_raw = [str(v) for v in tags_by_key.get("artists", [])]
-    album_raw = [str(v) for v in tags_by_key.get("album", [])]
-    title_raw = [str(v) for v in tags_by_key.get("title", [])]
-    label_raw = [str(v) for v in tags_by_key.get("label", [])]
-    genre_raw = [str(v) for v in tags_by_key.get("genre", [])]
-    year_raw = [str(v) for v in tags_by_key.get("year", [])]
+    artist_raw = [str(v) for v in tags_by_name.get("artist", [])]
+    artists_raw = [str(v) for v in tags_by_name.get("artists", [])]
+    album_raw = [str(v) for v in tags_by_name.get("album", [])]
+    title_raw = [str(v) for v in tags_by_name.get("title", [])]
+    label_raw = [str(v) for v in tags_by_name.get("label", [])]
+    genre_raw = [str(v) for v in tags_by_name.get("genre", [])]
+    year_raw = [str(v) for v in tags_by_name.get("year", [])]
 
-    # Derive scalar fields
     # artist: first of "artist" tag, fallback to first of "artists" tag
     artist = str(artist_raw[0]) if artist_raw else (str(artists_raw[0]) if artists_raw else None)
     album = str(album_raw[0]) if album_raw else None
     title = str(title_raw[0]) if title_raw else None
 
-    # Derive list fields (sorted)
     artists = sorted([str(a) for a in artists_raw]) if artists_raw else None
     labels = sorted([str(lbl) for lbl in label_raw]) if label_raw else None
     genres = sorted([str(g) for g in genre_raw]) if genre_raw else None
 
-    # Year: convert to int if present
     year = None
     if year_raw:
         try:
@@ -78,94 +69,83 @@ def extract_canonical_metadata(tag_docs: list[dict[str, Any]]) -> dict[str, Any]
     }
 
 
-def hydrate_file_docs_with_metadata(db: Database, file_docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Hydrate file docs with canonical metadata extracted from tags.
+def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Enrich songs with canonical metadata derived from their tags.
 
-    Batch-reads tags for all file docs and merges extracted metadata into each doc.
+    Batch-reads tags for all songs and merges derived metadata into each.
     Returns new dicts (does not mutate input). Metadata fields are merged on top
-    of original file doc fields, so doc["artist"], doc["album"], etc. resolve to
+    of original song fields, so song["artist"], song["album"], etc. resolve to
     tag-derived values.
 
     Args:
         db: Database instance
-        file_docs: List of file documents to hydrate
+        songs: List of song dicts to hydrate
 
     Returns:
-        List of new dicts with metadata fields merged in. Files without string _id
-        are returned as shallow copies. Files with no tags get None for all metadata fields.
+        List of new dicts with metadata fields merged in. Songs without a
+        string _id are returned as shallow copies. Songs with no tags get
+        None for all metadata fields.
 
     """
-    # Extract file_ids (only those with string _id)
-    file_ids = [file_id for file_doc in file_docs if isinstance(file_id := file_doc.get("_id"), str)]
+    song_ids = [song_id for song in songs if isinstance(song_id := song.get("_id"), str)]
 
-    # If no valid file_ids, return copies of original docs unchanged
-    if not file_ids:
-        return [{**file_doc} for file_doc in file_docs]
+    if not song_ids:
+        return [{**song} for song in songs]
 
-    # Batch read all tags for all files
-    raw_tags_by_file = db.library.list_file_tags_for_files(file_ids)
+    tags_by_song = db.library.list_file_tags_for_files(song_ids)
 
-    # For each file_doc, extract canonical metadata and merge onto a copy
     result: list[dict[str, Any]] = []
-    for file_doc in file_docs:
-        file_id = file_doc.get("_id")
+    for song in songs:
+        song_id = song.get("_id")
 
-        # Files without string _id are returned as shallow copy
-        if not isinstance(file_id, str):
-            result.append({**file_doc})
+        if not isinstance(song_id, str):
+            result.append({**song})
             continue
 
-        # Get tags for this file
-        tag_docs = raw_tags_by_file.get(file_id, [])
-
-        # Extract canonical metadata from tags
-        metadata = extract_canonical_metadata(tag_docs)
-
-        # Merge metadata onto copy of original doc
-        hydrated_doc = {**file_doc, **metadata}
-        result.append(hydrated_doc)
+        song_tags = tags_by_song.get(song_id, [])
+        metadata = extract_canonical_metadata(song_tags)
+        result.append({**song, **metadata})
 
     return result
 
 
-def hydrate_file_doc_with_metadata(db: Database, file_doc: dict[str, Any]) -> dict[str, Any]:
-    """Hydrate a single file doc with canonical metadata extracted from tags.
+def hydrate_song_with_metadata(db: Database, song: dict[str, Any]) -> dict[str, Any]:
+    """Enrich a single song with canonical metadata derived from its tags.
 
-    Convenience wrapper around hydrate_file_docs_with_metadata() for call sites
-    that have exactly one file doc (e.g., get_file_by_id callers).
+    Convenience wrapper around hydrate_songs_with_metadata() for call sites
+    that have exactly one song.
 
     Args:
         db: Database instance
-        file_doc: Single file document to hydrate
+        song: Single song dict to hydrate
 
     Returns:
-        New dict with metadata fields merged in. If the doc has no string _id,
+        New dict with metadata fields merged in. If the song has no string _id,
         returns a shallow copy unchanged.
 
     """
-    return hydrate_file_docs_with_metadata(db, [file_doc])[0]
+    return hydrate_songs_with_metadata(db, [song])[0]
 
 
-def _group_tags_by_key(tag_docs: list[dict[str, Any]]) -> dict[str, list[Any]]:
-    """Group raw tag documents by name, collecting all values per name.
+def _group_tags_by_name(song_tags: list[dict[str, Any]]) -> dict[str, list[Any]]:
+    """Group tag entries by name, collecting all values per name.
 
     Args:
-        tag_docs: Raw tag documents, each with "name" and "value" fields.
+        song_tags: Tag entries, each with "name" and "value" fields.
 
     Returns:
         Dict mapping tag name to list of all values for that name.
 
     """
     grouped: dict[str, list[Any]] = {}
-    for doc in tag_docs:
-        key = doc.get("name", doc.get("key"))
-        if key is None:
+    for tag in song_tags:
+        name = tag.get("name", tag.get("key"))
+        if name is None:
             continue
-        value = doc.get("value", [])
-        # value may be a scalar or a list; normalize to list
+        value = tag.get("value", [])
         if not isinstance(value, list):
             value = [value]
-        if key not in grouped:
-            grouped[key] = []
-        grouped[key].extend(value)
+        if name not in grouped:
+            grouped[name] = []
+        grouped[name].extend(value)
     return grouped

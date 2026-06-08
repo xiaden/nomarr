@@ -260,11 +260,15 @@ worker_svc.enable_worker_system()   # Enables processing, starts workers
 
 When `WorkerSystemService.stop_all_workers()` is called:
 
-1. Service sets the shared `stop_event`
-2. Workers finish current file (drain pending async writes, up to 30s)
-3. Workers release VRAM promises, shut down audio loader and head pool
-4. Workers close health pipe (signals EOF to parent → status transitions to `dead`)
-5. If worker doesn't exit within timeout, service force-kills the process
+1. Service sets `self._shutting_down = True` to gate restart decisions during global shutdown
+2. Service cancels all pending restart timers (no new restarts while shutting down)
+3. Each worker receives a signal via its **own per-worker `multiprocessing.Event`** (created in `_spawn_worker()` or `_restart_worker()`)
+4. Workers finish current file (drain pending async writes, up to 30s)
+5. Workers release VRAM promises, shut down audio loader and head pool
+6. Workers close health pipe (signals EOF to parent → status transitions to `dead`)
+7. If worker doesn't exit within timeout, service force-kills the process
+
+The `_shutting_down` flag is checked in `_handle_worker_death()` and `_restart_worker()` — when set, death events are logged but no restart is attempted, and pending restarts are skipped.
 
 ---
 
@@ -327,6 +331,8 @@ Manages the worker pool lifecycle and implements `ComponentLifecycleHandler` for
  | -------- | -------- |
  | `start_all_workers()` | Admission control → tier selection → spawn workers |
  | `stop_all_workers(timeout)` | Graceful shutdown with force-kill fallback |
+ | `add_workers(n)` | Dynamically add n workers to the pool (no admission control re-run) |
+ | `remove_workers(n)` | Dynamically drain and remove n workers from end of pool |
  | `disable_worker_system()` | Disable processing, stop workers |
  | `enable_worker_system()` | Enable processing, start workers |
  | `is_running()` | Check if any workers are running |

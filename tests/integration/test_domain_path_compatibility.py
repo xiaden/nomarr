@@ -89,9 +89,6 @@ def mock_db_with_file():
         "file_size": 5000000,
         "modified_time": 1705600000000,
         "duration_seconds": 180.5,
-        "artist": "Test Artist",
-        "album": "Test Album",
-        "title": "Test Song",
         "tagged": 1,
         "tagged_version": "1.0.0",
         "is_valid": 1,
@@ -204,9 +201,6 @@ class TestSearchDomain:
                     "_id": "library_files/file1",
                     "path": test_absolute_path,  # Absolute path in results
                     "normalized_path": test_normalized_path,  # Also has normalized
-                    "artist": "Test Artist",
-                    "album": "Test Album",
-                    "title": "Test Song",
                     "tags": [],
                 },
             ],

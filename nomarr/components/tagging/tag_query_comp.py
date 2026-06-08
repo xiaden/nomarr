@@ -397,7 +397,7 @@ def get_tag_songs_with_metadata(db: Database, tag_id: str, limit: int = 50, offs
         result.append(
             {
                 "file_id": file_id,
-                "title": str(file_doc.get("title", "")),
+                "title": _first_name_value(tag_docs, "title"),
                 "artist": _first_name_value(tag_docs, "artist"),
                 "album": _first_name_value(tag_docs, "album"),
                 "path": str(file_doc.get("path", "")),

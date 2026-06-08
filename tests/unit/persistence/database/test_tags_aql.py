@@ -9,24 +9,6 @@ import pytest
 from nomarr.persistence.database.tags_aql import TagsAqlOperations
 
 
-class TestAggregateTagField:
-    """Tests for TagsAqlOperations.aggregate_tag_field."""
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_allows_underscore_id_field(self) -> None:
-        mock_safe_db = MagicMock()
-        mock_safe_db.aql.execute.return_value = [{"value": "tags/1", "count": 1}]
-        ops = TagsAqlOperations(mock_safe_db)
-
-        result = ops.aggregate_tag_field("_id", limit=5, offset=2)
-
-        assert result == [{"value": "tags/1", "count": 1}]
-        mock_safe_db.aql.execute.assert_called_once()
-        query = mock_safe_db.aql.execute.call_args.kwargs["bind_vars"]
-        assert query == {"@collection": "tags", "offset": 2, "limit": 5}
-
-
 @pytest.mark.unit
 @pytest.mark.mocked
 def test_replace_file_tags_rebuilds_edges_and_cleans_orphans() -> None:
@@ -39,7 +21,7 @@ def test_replace_file_tags_rebuilds_edges_and_cleans_orphans() -> None:
     with (
         patch.object(ops, "_delete_song_tag_edges_for_file") as delete_edges,
         patch.object(ops, "_find_or_create_tag", side_effect=["tags/genre", "tags/mood"]) as find_or_create,
-        patch.object(ops, "_upsert_song_tag_edge") as upsert_edge,
+        patch.object(ops, "_upsert_tag_edge") as upsert_edge,
         patch.object(ops, "_cleanup_orphaned_tags") as cleanup,
     ):
         ops.replace_file_tags("library_files/1", tags)

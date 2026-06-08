@@ -1,6 +1,5 @@
 """Unit tests for WorkerSystemService restart integration."""
 
-from multiprocessing import Event
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -46,7 +45,7 @@ def worker_service(mock_db, mock_health_monitor, mock_pipeline_svc):
         version_tag_key="nom_version",
         tagger_version="test",
     )
-    service = WorkerSystemService(
+    return WorkerSystemService(
         db=mock_db,
         processor_config=processor_config,
         pipeline_svc=mock_pipeline_svc,
@@ -54,8 +53,6 @@ def worker_service(mock_db, mock_health_monitor, mock_pipeline_svc):
         default_enabled=True,
         worker_count=2,
     )
-    service._stop_event = Event()
-    return service
 
 
 class TestOnStatusChangeRestartLogic:
@@ -63,7 +60,7 @@ class TestOnStatusChangeRestartLogic:
 
     def test_graceful_shutdown_prevents_restart(self, worker_service):
         """When stop_event is set, no restart attempted."""
-        worker_service._stop_event.set()
+        worker_service._shutting_down = True
 
         worker_service.on_status_change("worker_0", "healthy", "dead", StatusChangeContext())
 
@@ -233,7 +230,7 @@ class TestStopAllWorkersTimerCleanup:
     """Test stop_all_workers() cancels pending restart timers."""
 
     def test_stop_all_workers_cancels_pending_timers(self, worker_service):
-        """When stopping, cancels all pending restart timers BEFORE setting stop_event."""
+        """When stopping, cancels all pending restart timers BEFORE setting _shutting_down."""
         # Setup pending timers
         mock_timer_1 = MagicMock()
         mock_timer_2 = MagicMock()
@@ -257,8 +254,8 @@ class TestStopAllWorkersTimerCleanup:
         # Verify dict cleared
         assert len(worker_service._pending_restart_timers) == 0
 
-        # Verify stop_event was set (after timer cancellation)
-        assert worker_service._stop_event.is_set()
+        # Verify _shutting_down was set (after timer cancellation)
+        assert worker_service._shutting_down
 
 
 class TestDrainOldWorker:
@@ -302,3 +299,145 @@ class TestDrainOldWorker:
         mock_worker.terminate.assert_called_once()
         mock_worker.kill.assert_called_once()
         assert mock_worker.join.call_count == 3
+
+
+class TestAddRemoveWorkers:
+    """Tests for add_workers() and remove_workers() dynamic scaling methods."""
+
+    def test_add_workers_normal(self, worker_service):
+        """Normal path spawns workers and adds to pool."""
+        worker_service._tier_selection = MagicMock()
+        worker_service._tier_selection.tier = 1
+        worker_service._tier_selection.config.prefer_gpu = True
+
+        with patch.object(worker_service, "_spawn_worker") as mock_spawn:
+            workers = []
+
+            def side_effect(index, tier):
+                w = MagicMock()
+                w.worker_id = f"worker:{index}"
+                workers.append(w)
+                worker_service._workers.append(w)
+                return w
+
+            mock_spawn.side_effect = side_effect
+
+            worker_service.add_workers(3)
+
+            assert mock_spawn.call_count == 3
+            assert len(worker_service._workers) == 3
+
+    def test_add_workers_zero(self, worker_service, caplog):
+        """add_workers(0) is a no-op with warning logged."""
+        caplog.set_level("WARNING")
+        worker_service.add_workers(0)
+        assert len(worker_service._workers) == 0
+        assert "add_workers called with count=0" in caplog.text
+
+    def test_add_workers_no_tier_selection(self, worker_service, caplog):
+        """When _tier_selection is None, no-op with warning logged."""
+        caplog.set_level("WARNING")
+        worker_service._tier_selection = None
+        worker_service.add_workers(2)
+        assert len(worker_service._workers) == 0
+        assert "No tier selection exists" in caplog.text
+
+    def test_add_workers_empty_pool(self, worker_service):
+        """When pool is empty, spawns workers without re-running admission control."""
+        worker_service._tier_selection = MagicMock()
+        worker_service._tier_selection.tier = 1
+        worker_service._tier_selection.config.prefer_gpu = True
+
+        with patch.object(worker_service, "_spawn_worker") as mock_spawn:
+            workers = []
+
+            def side_effect(index, tier):
+                w = MagicMock()
+                w.worker_id = f"worker:{index}"
+                workers.append(w)
+                worker_service._workers.append(w)
+                return w
+
+            mock_spawn.side_effect = side_effect
+
+            worker_service.add_workers(2)
+
+            # Should spawn directly without re-running admission control
+            assert mock_spawn.call_count == 2
+            assert len(worker_service._workers) == 2
+
+    def test_remove_workers_normal(self, worker_service):
+        """Normal path stops workers, joins, unregisters, removes from pool."""
+        mock_workers = [MagicMock() for _ in range(3)]
+        for i, mw in enumerate(mock_workers):
+            mw.worker_id = f"worker_{i}"
+            mw.is_alive.return_value = False
+        worker_service._workers = list(mock_workers)
+
+        worker_service.remove_workers(2)
+
+        # Last two workers should have been stopped
+        mock_workers[1].stop.assert_called_once()
+        mock_workers[2].stop.assert_called_once()
+        mock_workers[0].stop.assert_not_called()
+
+        # Should unregister from health monitor
+        assert worker_service.health_monitor.unregister_component.call_count == 2
+
+        # Should remove from pool
+        assert len(worker_service._workers) == 1
+        assert worker_service._workers[0] == mock_workers[0]
+
+    def test_remove_workers_zero(self, worker_service, caplog):
+        """remove_workers(0) is a no-op with warning logged."""
+        caplog.set_level("WARNING")
+        worker_service.remove_workers(0)
+        assert "remove_workers called with count=0" in caplog.text
+
+    def test_remove_workers_all_when_count_ge_pool(self, worker_service):
+        """When n >= len(pool), calls stop_all_workers."""
+        mock_workers = [MagicMock() for _ in range(2)]
+        for i, mw in enumerate(mock_workers):
+            mw.worker_id = f"worker_{i}"
+        worker_service._workers = list(mock_workers)
+
+        with patch.object(worker_service, "stop_all_workers") as mock_stop_all:
+            worker_service.remove_workers(3)
+
+            mock_stop_all.assert_called_once()
+
+    def test_shutting_down_gates_restart_in_handle_worker_death(self, worker_service):
+        """When _shutting_down is True, _handle_worker_death returns without restart."""
+        worker_service._shutting_down = True
+        worker_service.on_status_change("worker_0", "healthy", "dead", StatusChangeContext())
+        # Verify no restart-related DB calls since we return early
+        assert worker_service.db.app.get_worker_restart_policy.call_count == 0
+
+    def test_shutting_down_gates_restart_in_restart_worker(self, worker_service):
+        """When _shutting_down is True, _restart_worker skips restart."""
+        worker_service._shutting_down = True
+        worker_service._restart_worker("discovery_worker:0")
+        # Verify no worker was created
+        assert len(worker_service._workers) == 0
+
+
+class TestGetWorkerCount:
+    """Tests for ``WorkerSystemService.get_worker_count()``."""
+
+    def test_returns_zero_initially(self, worker_service: WorkerSystemService) -> None:
+        """get_worker_count() returns 0 before any workers are spawned."""
+        assert worker_service.get_worker_count() == 0
+
+    def test_returns_correct_count_after_manual_append(self, worker_service: WorkerSystemService) -> None:
+        """get_worker_count() returns actual worker list length."""
+        worker_service._workers.extend([MagicMock(), MagicMock(), MagicMock()])
+        assert worker_service.get_worker_count() == 3
+
+    def test_reflects_worker_removal(self, worker_service: WorkerSystemService) -> None:
+        """get_worker_count() decreases after workers are removed."""
+        w1, w2 = MagicMock(), MagicMock()
+        worker_service._workers.extend([w1, w2])
+        assert worker_service.get_worker_count() == 2
+
+        worker_service._workers.remove(w1)
+        assert worker_service.get_worker_count() == 1

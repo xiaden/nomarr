@@ -13,42 +13,9 @@ from nomarr.components.library.library_file_mutation_comp import (
     set_chromaprint,
     update_file_modified_time,
     update_file_path,
-    update_metadata_cache,
     upsert_batch,
     upsert_library_file,
 )
-
-
-class TestUpdateMetadataCache:
-    """Tests for update_metadata_cache()."""
-
-    @pytest.mark.unit
-    def test_updates_library_file_by_id_with_metadata_fields(self) -> None:
-        """Updates one library-file document through the flat collection update verb."""
-        mock_db = MagicMock()
-
-        update_metadata_cache(
-            mock_db,
-            "library_files/123",
-            artist="Artist",
-            artists=["Artist"],
-            album="Album",
-            labels=None,
-            genres=["Rock"],
-            year=2020,
-        )
-
-        mock_db.library.update_file.assert_called_once_with(
-            "library_files/123",
-            {
-                "artist": "Artist",
-                "artists": ["Artist"],
-                "album": "Album",
-                "labels": None,
-                "genres": ["Rock"],
-                "year": 2020,
-            },
-        )
 
 
 class TestUpdateFileModifiedTime:
@@ -85,9 +52,6 @@ class TestUpdateFilePath:
                 "D:/Music/new-song.flac",
                 4096,
                 123456789,
-                artist="Artist",
-                album="Album",
-                title="Title",
                 duration_seconds=245.5,
             )
 
@@ -101,9 +65,6 @@ class TestUpdateFilePath:
                 "file_size": 4096,
                 "modified_time": 123456789,
                 "is_valid": 1,
-                "artist": "Artist",
-                "album": "Album",
-                "title": "Title",
                 "duration_seconds": 245.5,
                 "scanned_at": 987654321,
             },
@@ -357,9 +318,6 @@ class TestUpsertLibraryFile:
                 4096,
                 123456789,
                 duration_seconds=245.5,
-                artist="Artist",
-                album="Album",
-                title="Title",
                 last_tagged_at=987654321,
             )
 
@@ -373,9 +331,6 @@ class TestUpsertLibraryFile:
                 "file_size": 4096,
                 "modified_time": 123456789,
                 "duration_seconds": 245.5,
-                "artist": "Artist",
-                "album": "Album",
-                "title": "Title",
                 "scanned_at": 111222333,
                 "chromaprint": None,
                 "last_tagged_at": 987654321,
@@ -413,9 +368,6 @@ class TestUpsertLibraryFile:
                 "file_size": 8192,
                 "modified_time": 987654321,
                 "duration_seconds": None,
-                "artist": None,
-                "album": None,
-                "title": None,
                 "scanned_at": 222333444,
                 "chromaprint": None,
                 "last_tagged_at": None,
@@ -500,9 +452,6 @@ class TestUpdateFilePathCurrentContract:
                 "D:/Music/new-song.flac",
                 4096,
                 123456789,
-                artist="Artist",
-                album="Album",
-                title="Title",
                 duration_seconds=245.5,
             )
 
@@ -516,9 +465,6 @@ class TestUpdateFilePathCurrentContract:
                 "file_size": 4096,
                 "modified_time": 123456789,
                 "is_valid": 1,
-                "artist": "Artist",
-                "album": "Album",
-                "title": "Title",
                 "duration_seconds": 245.5,
                 "scanned_at": 987654321,
             },
@@ -698,9 +644,6 @@ class TestUpsertLibraryFileCurrentContract:
                 4096,
                 123456789,
                 duration_seconds=245.5,
-                artist="Artist",
-                album="Album",
-                title="Title",
                 last_tagged_at=987654321,
             )
 
@@ -714,9 +657,6 @@ class TestUpsertLibraryFileCurrentContract:
                 "file_size": 4096,
                 "modified_time": 123456789,
                 "duration_seconds": 245.5,
-                "artist": "Artist",
-                "album": "Album",
-                "title": "Title",
                 "scanned_at": 111222333,
                 "chromaprint": None,
                 "last_tagged_at": 987654321,
@@ -756,9 +696,6 @@ class TestUpsertLibraryFileCurrentContract:
                 "file_size": 8192,
                 "modified_time": 987654321,
                 "duration_seconds": None,
-                "artist": None,
-                "album": None,
-                "title": None,
                 "scanned_at": 222333444,
                 "chromaprint": None,
                 "last_tagged_at": None,

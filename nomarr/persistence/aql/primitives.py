@@ -276,3 +276,132 @@ def update_document_by_key(db: SafeDatabase, collection: str, key: str, fields: 
         """,
         bind_vars={"@collection": collection, "key": key, "fields": fields},
     )
+
+
+# ------------------------------------------------------------------
+# Edge primitives — shared by all Tier 2 *AqlOperations classes.
+# ------------------------------------------------------------------
+
+
+def upsert_edge(db: SafeDatabase, edge_collection: str, from_id: str, to_id: str) -> None:
+    """UPSERT an edge keyed by ``{_from, _to}`` with a no-op update.
+
+    Creates the edge if it does not exist; does nothing if it already does.
+    """
+    db.aql.execute(
+        """
+        UPSERT { _from: @from_id, _to: @to_id }
+            INSERT { _from: @from_id, _to: @to_id }
+            UPDATE {}
+            IN @@edge_collection
+        """,
+        bind_vars={"@edge_collection": edge_collection, "from_id": from_id, "to_id": to_id},
+    )
+
+
+def delete_edges(
+    db: SafeDatabase,
+    edge_collection: str,
+    *,
+    from_id: str | None = None,
+    to_id: str | None = None,
+) -> int:
+    """Delete edges matching optional ``_from`` and/or ``_to`` filters.
+
+    At least one of ``from_id`` or ``to_id`` must be provided.  Returns the
+    number of edges removed.
+    """
+    filters: list[str] = []
+    bind_vars: dict[str, Any] = {"@edge_collection": edge_collection}
+    if from_id is not None:
+        filters.append("FILTER edge._from == @from_id")
+        bind_vars["from_id"] = from_id
+    if to_id is not None:
+        filters.append("FILTER edge._to == @to_id")
+        bind_vars["to_id"] = to_id
+    filter_clause = "\n            ".join(filters)
+    cursor = db.aql.execute(
+        f"""
+        LET removed = (
+            FOR edge IN @@edge_collection
+                {filter_clause}
+                REMOVE edge IN @@edge_collection OPTIONS {{ ignoreErrors: true }}
+                RETURN 1
+        )
+        RETURN LENGTH(removed)
+        """,
+        bind_vars=bind_vars,
+    )
+    results = list(cursor)
+    return int(results[0]) if results else 0
+
+
+def delete_edges_by_from_list(db: SafeDatabase, edge_collection: str, from_ids: list[str]) -> int:
+    """Delete edges whose ``_from`` is in ``from_ids``.
+
+    Returns the number of edges removed.  Short-circuits with 0 when
+    ``from_ids`` is empty.
+    """
+    if not from_ids:
+        return 0
+    cursor = db.aql.execute(
+        """
+        LET removed = (
+            FOR edge IN @@edge_collection
+                FILTER edge._from IN @from_ids
+                REMOVE edge IN @@edge_collection OPTIONS { ignoreErrors: true }
+                RETURN 1
+        )
+        RETURN LENGTH(removed)
+        """,
+        bind_vars={"@edge_collection": edge_collection, "from_ids": from_ids},
+    )
+    results = list(cursor)
+    return int(results[0]) if results else 0
+
+
+def delete_edge_by_key(db: SafeDatabase, edge_collection: str, edge_key: str) -> None:
+    """Remove a single edge document by its ``_key``."""
+    db.aql.execute(
+        """
+        REMOVE { _key: @edge_key } IN @@edge_collection OPTIONS { ignoreErrors: true }
+        """,
+        bind_vars={"@edge_collection": edge_collection, "edge_key": edge_key},
+    )
+
+
+def insert_edges_batch(db: SafeDatabase, edge_collection: str, edges: list[dict[str, str]]) -> None:
+    """Insert multiple edge documents from a list.
+
+    Each edge dict must include ``_from`` and ``_to`` keys.
+    Short-circuits when ``edges`` is empty.
+    """
+    if not edges:
+        return
+    db.aql.execute(
+        """
+        FOR edge IN @edges
+            INSERT edge INTO @@edge_collection
+        """,
+        bind_vars={"@edge_collection": edge_collection, "edges": edges},
+    )
+
+
+def count_edges(db: SafeDatabase, edge_collection: str, field: str, value: Any) -> int:
+    """Count edges matching ``edge.<field> == @value``.
+
+    ``field`` must be a valid AQL field name (validated).  Use ``_from`` or
+    ``_to`` for edge-direction counts.
+    """
+    _validate_field_name(field)
+    cursor = db.aql.execute(
+        f"""
+        FOR edge IN @@edge_collection
+            FILTER edge.{field} == @value
+            COLLECT WITH COUNT INTO count
+            RETURN count
+        """,
+        bind_vars={"@edge_collection": edge_collection, "value": value},
+    )
+    results = list(cursor)
+    return int(results[0]) if results else 0

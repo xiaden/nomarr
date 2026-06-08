@@ -73,7 +73,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
         self._db_hosts: str = db.hosts
         self._db_password: str = db.password
         self._workers: list[DiscoveryWorker] = []
-        self._stop_event = Event()
+        self._shutting_down: bool = False
         self._started = False
         self._pending_restart_timers: dict[str, threading.Timer] = {}
         self._gpu_capable: bool | None = None
@@ -189,7 +189,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
             logger.warning(
                 "[WorkerSystemService] Failed to release VRAM promises for dead worker %s", component_id, exc_info=True
             )
-        if self._stop_event.is_set():
+        if self._shutting_down:
             logger.info("[WorkerSystemService] Worker %s stopped gracefully, not restarting", component_id)
             return
         existing_timer = self._pending_restart_timers.pop(component_id, None)
@@ -286,7 +286,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
 
     def _restart_worker(self, component_id: str) -> None:
         self._pending_restart_timers.pop(component_id, None)
-        if self._stop_event.is_set():
+        if self._shutting_down:
             logger.info("[WorkerSystemService] Skipping restart for %s (shutdown in progress)", component_id)
             return
         if not self.is_worker_system_enabled():
@@ -311,7 +311,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
                 db_hosts=self._db_hosts,
                 db_password=self._db_password,
                 processor_config=self.processor_config,
-                stop_event=self._stop_event,
+                stop_event=Event(),
                 health_pipe=child_conn,
                 execution_tier=self._tier_selection.tier if self._tier_selection else 0,
                 prefer_gpu=self._tier_selection.config.prefer_gpu if self._tier_selection else True,
@@ -380,7 +380,6 @@ class WorkerSystemService(ComponentLifecycleHandler):
         removed_claims = self.cleanup_stale_claims()
         if removed_claims > 0:
             logger.info("[WorkerSystemService] Cleaned up %d stale claim(s) from previous session", removed_claims)
-        self._stop_event.clear()
         started_workers: list[str] = []
         for i in range(actual_worker_count):
             if i > 0:
@@ -397,7 +396,7 @@ class WorkerSystemService(ComponentLifecycleHandler):
             db_hosts=self._db_hosts,
             db_password=self._db_password,
             processor_config=self.processor_config,
-            stop_event=self._stop_event,
+            stop_event=Event(),
             health_pipe=child_conn,
             execution_tier=tier_selection.tier,
             prefer_gpu=tier_selection.config.prefer_gpu,
@@ -419,12 +418,14 @@ class WorkerSystemService(ComponentLifecycleHandler):
         if not self._workers:
             logger.debug("[WorkerSystemService] No workers to stop")
             return
+        self._shutting_down = True
         logger.info("[WorkerSystemService] Stopping %d worker(s)", len(self._workers))
         for component_id, timer in list(self._pending_restart_timers.items()):
             timer.cancel()
             logger.debug("[WorkerSystemService] Cancelled pending restart timer for %s", component_id)
         self._pending_restart_timers.clear()
-        self._stop_event.set()
+        for worker in self._workers:
+            worker.stop()
         if self.health_monitor:
             for worker in self._workers:
                 self.health_monitor.unregister_component(worker.worker_id)
@@ -458,6 +459,91 @@ class WorkerSystemService(ComponentLifecycleHandler):
         self._workers.clear()
         self._started = False
         logger.info("[WorkerSystemService] All workers stopped")
+
+    def add_workers(self, count: int) -> None:
+        """Add worker processes to the pool dynamically.
+
+        Args:
+            count: Number of workers to add. Must be > 0.
+
+        Edge cases handled:
+            - count <= 0: warning, no-op
+            - No tier selection exists: warning, recommends start_all_workers()
+            - Pool is empty: spawns workers without re-running admission control
+        """
+        if count <= 0:
+            logger.warning("[WorkerSystemService] add_workers called with count=%d (must be > 0)", count)
+            return
+        if self._tier_selection is None:
+            logger.warning(
+                "[WorkerSystemService] No tier selection exists yet - start_all_workers must be used instead"
+            )
+            return
+        if not self._workers:
+            logger.info("[WorkerSystemService] Pool empty, spawning %d worker(s) with existing tier selection", count)
+        else:
+            logger.info("[WorkerSystemService] Adding %d worker(s) to pool of %d", count, len(self._workers))
+        start_index = len(self._workers)
+        for i in range(count):
+            worker = self._spawn_worker(start_index + i, self._tier_selection)
+            logger.info(
+                "[WorkerSystemService] Added worker %s (pid=%s, index=%d)",
+                worker.worker_id,
+                worker.pid,
+                start_index + i,
+            )
+        logger.info("[WorkerSystemService] Added %d worker(s), total=%d", count, len(self._workers))
+
+    def remove_workers(self, count: int) -> None:
+        """Remove worker processes from the pool dynamically.
+
+        Args:
+            count: Number of workers to remove from the end of the pool. Must be > 0.
+
+        Edge cases handled:
+            - count <= 0: warning, no-op
+            - count >= len(self._workers): stops all workers via stop_all_workers()
+        """
+        if count <= 0:
+            logger.warning("[WorkerSystemService] remove_workers called with count=%d (must be > 0)", count)
+            return
+        if count >= len(self._workers):
+            logger.warning(
+                "[WorkerSystemService] remove_workers(%d) >= current pool size (%d) - stopping all workers",
+                count,
+                len(self._workers),
+            )
+            self.stop_all_workers()
+            return
+        logger.info("[WorkerSystemService] Removing %d worker(s) from pool of %d", count, len(self._workers))
+        workers_to_remove = self._workers[-count:]
+        for worker in workers_to_remove:
+            worker.stop()
+        for worker in workers_to_remove:
+            worker.join(timeout=2.0)
+            if worker.is_alive():
+                logger.warning(
+                    "[WorkerSystemService] Worker %s (pid=%s) did not stop gracefully during scale-down",
+                    worker.worker_id,
+                    worker.pid,
+                )
+        if self.health_monitor:
+            for worker in workers_to_remove:
+                try:
+                    self.health_monitor.unregister_component(worker.worker_id)
+                except Exception:
+                    logger.warning(
+                        "[WorkerSystemService] Failed to unregister worker %s from health monitor",
+                        worker.worker_id,
+                        exc_info=True,
+                    )
+        for worker in workers_to_remove:
+            self._workers.remove(worker)
+        logger.info("[WorkerSystemService] Removed %d worker(s), remaining=%d", count, len(self._workers))
+
+    def get_worker_count(self) -> int:
+        """Return the current number of workers in the pool."""
+        return len(self._workers)
 
     def is_running(self) -> bool:
         """Check if any workers are running."""

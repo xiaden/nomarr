@@ -60,14 +60,14 @@ def _duration_close(lhs_ms: int | None, rhs_ms: int | None, tolerance_ms: int = 
 
 def _descriptor_from_doc(file_doc: dict[str, Any]) -> TrackDescriptor:
     return TrackDescriptor(
-        title=str(file_doc.get("title") or ""),
-        artist=str(file_doc.get("artist") or ""),
-        album=str(file_doc.get("album") or ""),
+        title=str(_tag_value(file_doc, "title") or ""),
+        artist=str(_tag_value(file_doc, "artist") or ""),
+        album=str(_tag_value(file_doc, "album") or ""),
         album_artist=str(_tag_value(file_doc, "album_artist", "albumartist") or ""),
         duration_ms=_duration_ms(file_doc),
         track_number=_tag_int(file_doc, "track_number", "tracknumber"),
         disc_number=_tag_int(file_doc, "disc_number", "discnumber"),
-        year=int(file_doc["year"]) if isinstance(file_doc.get("year"), int) else None,
+        year=_tag_int(file_doc, "year"),
         nomarr_file_key=str(file_doc.get("_key") or "") or None,
     )
 
@@ -82,10 +82,7 @@ def build_track_descriptor(file_doc: dict[str, Any]) -> TrackDescriptor:
 
 
 def _search_candidate_docs(db: Database, field_name: str, value: str) -> list[dict[str, Any]]:
-    docs = db.library.search_files_by_text(field_name, value, limit=None)
-    if isinstance(docs, list):
-        return cast("list[dict[str, Any]]", docs)
-    return cast("list[dict[str, Any]]", db.library.list_files(filters={field_name: value}, limit=None))
+    return cast("list[dict[str, Any]]", db.library.search_files_by_tag_pattern(field_name, value, limit=None))
 
 
 def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:

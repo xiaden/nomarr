@@ -159,8 +159,3 @@ build_resources/models-prepatch/
 .continue/
 
 .devcontainer/
-
-opencode.json
-
-.opencode/
-!.opencode/mcp-code-intel/

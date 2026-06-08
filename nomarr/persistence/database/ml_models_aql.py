@@ -159,7 +159,7 @@ class MlModelsAqlOperations:
             """
             FOR edge IN @@collection
                 FILTER edge._key == @edge_key OR edge._to == @output_id
-                REMOVE edge IN @@collection
+                REMOVE edge IN @@collection OPTIONS { ignoreErrors: true }
             """,
             bind_vars={
                 "@collection": self.MODEL_OUTPUT_EDGE_COLLECTION,
@@ -205,7 +205,7 @@ class MlModelsAqlOperations:
                 OPTIONS { ignoreErrors: true }
             FOR edge IN @@edge_collection
                 FILTER edge._from == @model_id
-                REMOVE edge IN @@edge_collection
+                REMOVE edge IN @@edge_collection OPTIONS { ignoreErrors: true }
             """,
             bind_vars={
                 "@output_collection": self.MODEL_OUTPUT_COLLECTION,
@@ -394,7 +394,7 @@ class MlModelsAqlOperations:
             """
             FOR doc IN @@collection
                 FILTER doc.calibration_key == @calibration_key OR doc.calibration_key == @calibration_id
-                REMOVE doc IN @@collection
+                REMOVE doc IN @@collection OPTIONS { ignoreErrors: true }
             """,
             bind_vars={
                 "@collection": self.CALIBRATION_HISTORY_COLLECTION,
@@ -416,21 +416,13 @@ class MlModelsAqlOperations:
         self._truncate_collection(self.CALIBRATION_HISTORY_COLLECTION)
 
     def _upsert_edge(self, collection: str, from_id: str, to_id: str) -> None:
-        self._db.aql.execute(
-            """
-            UPSERT { _from: @from_id, _to: @to_id }
-                INSERT { _from: @from_id, _to: @to_id }
-                UPDATE {}
-                IN @@collection
-            """,
-            bind_vars={"@collection": collection, "from_id": from_id, "to_id": to_id},
-        )
+        primitives.upsert_edge(self._db, collection, from_id, to_id)
 
     def _truncate_collection(self, collection_name: str) -> None:
         self._db.aql.execute(
             """
             FOR doc IN @@collection
-                REMOVE doc IN @@collection
+                REMOVE doc IN @@collection OPTIONS { ignoreErrors: true }
             """,
             bind_vars={"@collection": collection_name},
         )

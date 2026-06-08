@@ -105,39 +105,33 @@ class NavidromeAqlOperations:
     def delete_nd_tracks_for_file(self, file_id: str) -> None:
         self._db.aql.execute(
             """
-            LET track_ids = (
+            LET nd_edge_data = (
                 FOR e IN @@nd_edge_collection
                     FILTER e._to == @file_id
-                    RETURN e._from
+                    RETURN {id: e._from, edge: e}
             )
-            LET playcount_ids = UNIQUE(
+            LET track_ids = nd_edge_data[* RETURN CURRENT.id]
+            LET nd_edges = nd_edge_data[* RETURN CURRENT.edge]
+            LET play_edge_data = (
                 FOR e IN @@play_edge_collection
                     FILTER e._from IN track_ids
-                    RETURN e._to
+                    RETURN {id: e._to, edge: e}
             )
-            LET play_edges = (
-                FOR e IN @@play_edge_collection
-                    FILTER e._from IN track_ids
-                    RETURN e
-            )
-            LET nd_edges = (
-                FOR e IN @@nd_edge_collection
-                    FILTER e._to == @file_id
-                    RETURN e
-            )
+            LET playcount_ids = UNIQUE(play_edge_data[* RETURN CURRENT.id])
+            LET play_edges = play_edge_data[* RETURN CURRENT.edge]
             FOR pe IN play_edges
-                REMOVE pe IN @@play_edge_collection
+                REMOVE pe IN @@play_edge_collection OPTIONS { ignoreErrors: true }
             FOR playcount_id IN playcount_ids
-                FILTER LENGTH(
+                FILTER FIRST(
                     FOR e IN @@play_edge_collection
                         FILTER e._to == playcount_id
                         LIMIT 1
                         RETURN 1
-                ) == 0
+                ) == null
                 REMOVE playcount_id IN @@playcount_collection
                 OPTIONS { ignoreErrors: true }
             FOR ne IN nd_edges
-                REMOVE ne IN @@nd_edge_collection
+                REMOVE ne IN @@nd_edge_collection OPTIONS { ignoreErrors: true }
             FOR track_id IN track_ids
                 REMOVE track_id IN @@track_collection
                 OPTIONS { ignoreErrors: true }
@@ -183,16 +177,16 @@ class NavidromeAqlOperations:
                     RETURN e
             )
             FOR ne IN nd_edges
-                REMOVE ne IN @@nd_edge_collection
+                REMOVE ne IN @@nd_edge_collection OPTIONS { ignoreErrors: true }
             FOR pe IN play_edges
-                REMOVE pe IN @@play_edge_collection
+                REMOVE pe IN @@play_edge_collection OPTIONS { ignoreErrors: true }
             FOR playcount_id IN playcount_ids
-                FILTER LENGTH(
+                FILTER FIRST(
                     FOR e IN @@play_edge_collection
                         FILTER e._to == playcount_id
                         LIMIT 1
                         RETURN 1
-                ) == 0
+                ) == null
                 REMOVE playcount_id IN @@playcount_collection
                 OPTIONS { ignoreErrors: true }
             FOR track_id IN track_ids
@@ -346,7 +340,7 @@ class NavidromeAqlOperations:
                 FILTER edge._from == @track_id
                 LET bucket = DOCUMENT(edge._to)
                 FILTER bucket != null AND bucket.userid == @user_id
-                REMOVE edge IN @@play_edge_collection
+                REMOVE edge IN @@play_edge_collection OPTIONS { ignoreErrors: true }
                 RETURN edge._to
             """,
             {
@@ -361,13 +355,13 @@ class NavidromeAqlOperations:
                 self._db,
                 """
                 FOR bucket_id IN @stale_bucket_ids
-                    LET edge_count = LENGTH(
+                    LET edge_exists = FIRST(
                         FOR edge IN @@play_edge_collection
                             FILTER edge._to == bucket_id
                             LIMIT 1
                             RETURN 1
                     )
-                    FILTER edge_count == 0
+                    FILTER edge_exists == null
                     REMOVE bucket_id IN @@playcount_collection
                     OPTIONS { ignoreErrors: true }
                 """,
@@ -459,7 +453,7 @@ class NavidromeAqlOperations:
             )
             FOR edge IN @@play_edge_collection
                 FILTER edge._to IN old_bucket_ids
-                REMOVE edge IN @@play_edge_collection
+                REMOVE edge IN @@play_edge_collection OPTIONS { ignoreErrors: true }
             FOR bucket_id IN old_bucket_ids
                 REMOVE bucket_id IN @@playcount_collection
                 OPTIONS { ignoreErrors: true }

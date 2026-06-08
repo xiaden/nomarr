@@ -12,6 +12,7 @@ from typing import Any, Literal, cast
 
 from nomarr.components.library.library_file_state_comp import count_untagged_files
 from nomarr.components.library.library_id_comp import normalize_library_id
+from nomarr.components.library.tag_hydration_comp import hydrate_songs_with_metadata
 from nomarr.helpers.constants.file_states import STATE_TAGGED
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.db import Database
@@ -167,15 +168,6 @@ def _hydrate_files_with_tagged_state(db: Database, file_docs: list[dict[str, Any
 
 def _matches_file_filters(file_doc: dict[str, Any], filter_dict: dict[str, Any]) -> bool:
     return all(file_doc.get(field_name) == expected_value for field_name, expected_value in filter_dict.items())
-
-
-def _matches_text_query(file_doc: dict[str, Any], query_text: str) -> bool:
-    lowered_query = query_text.casefold()
-    return any(
-        lowered_query in field_value.casefold()
-        for field_name in ("title", "artist", "album")
-        if isinstance((field_value := file_doc.get(field_name)), str)
-    )
 
 
 def _is_numeric_tag_value(value: Any) -> bool:
@@ -368,24 +360,20 @@ def list_library_files(
     AQL query that accepts (library_id, artist, album, limit, offset) and
     returns (rows, total) so this entire function body collapses to one call.
     """
+    if library_id is not None:
+        file_docs = _library_file_docs_for_library(db, library_id)
+    else:
+        file_docs = _get_all_library_file_docs(db, DEFAULT_LIMIT)
+
+    file_docs = hydrate_songs_with_metadata(db, file_docs)
+
     filter_dict: dict[str, Any] = {}
     if artist:
         filter_dict["artist"] = artist
     if album:
         filter_dict["album"] = album
-
-    if library_id is not None:
-        file_docs = [
-            file_doc
-            for file_doc in _library_file_docs_for_library(db, library_id)
-            if _matches_file_filters(file_doc, filter_dict)
-        ]
-    else:
-        file_docs = (
-            cast("list[dict[str, Any]]", db.library.list_files(filters=filter_dict, limit=DEFAULT_LIMIT))
-            if filter_dict
-            else _get_all_library_file_docs(db, DEFAULT_LIMIT)
-        )
+    if filter_dict:
+        file_docs = [doc for doc in file_docs if _matches_file_filters(doc, filter_dict)]
 
     file_docs.sort(key=_library_file_sort_key)
     total = len(file_docs)
@@ -462,11 +450,11 @@ def search_library_files_with_tags(
         q_pattern = f"%{query_text}%"
         if artist or album:
             # t: prefix (query_text alongside a:/al:) → narrow to title only
-            _intersect(_ids(db.library.search_files_by_text("title", q_pattern, limit=None)))
+            _intersect(_ids(db.library.search_files_by_tag_pattern("title", q_pattern, limit=None)))
         else:
-            # Unprefixed → OR across title (document field) and artist/album (tags)
+            # Unprefixed → OR across title (tag) and artist/album (tags)
             matched: set[str] = set()
-            matched |= _ids(db.library.search_files_by_text("title", q_pattern, limit=None))
+            matched |= _ids(db.library.search_files_by_tag_pattern("title", q_pattern, limit=None))
             for tag_name in ("artist", "album"):
                 matched |= _ids(db.library.search_files_by_tag_pattern(tag_name, q_pattern, limit=None))
             _intersect(matched)
@@ -490,6 +478,7 @@ def search_library_files_with_tags(
     else:
         file_docs = _get_library_files_by_ids(db, sorted(candidate_ids))
 
+    file_docs = hydrate_songs_with_metadata(db, file_docs)
     file_docs.sort(key=_library_file_sort_key)
     total = len(file_docs)
     page_files = _paginate_rows(file_docs, limit=limit, offset=offset)
@@ -511,6 +500,7 @@ def get_recently_processed(
     if library_id is not None:
         library_file_ids = set(db.library.list_library_file_ids(normalize_library_id(library_id), limit=DEFAULT_LIMIT))
         tagged_file_docs = [file_doc for file_doc in tagged_file_docs if file_doc.get("_id") in library_file_ids]
+    tagged_file_docs = hydrate_songs_with_metadata(db, tagged_file_docs)
     tagged_file_docs.sort(
         key=lambda file_doc: _sort_key(
             max(
@@ -781,6 +771,7 @@ def search_files_by_tag(
 
         all_file_ids = list(best_match_by_file_id.keys())
         file_docs_list = cast("list[dict[str, Any]]", db.library.list_files_by_ids(all_file_ids))
+        file_docs_list = hydrate_songs_with_metadata(db, file_docs_list)
         file_docs_by_id = {
             file_id: file_doc for file_doc in file_docs_list if isinstance((file_id := file_doc.get("_id")), str)
         }
@@ -807,6 +798,7 @@ def search_files_by_tag(
         "list[dict[str, Any]]",
         db.library.search_files_by_tag(tag_key, str(target_value), limit=None),
     )
+    file_docs = hydrate_songs_with_metadata(db, file_docs)
     file_docs.sort(key=_library_file_sort_key)
 
     results = []
@@ -878,6 +870,7 @@ def get_tracks_by_file_ids(
         return []
 
     file_docs = _get_library_files_by_ids(db, list(file_ids))
+    file_docs = hydrate_songs_with_metadata(db, file_docs)
     if order_by:
         for column, direction in reversed(order_by):
             file_docs.sort(key=lambda file_doc: _sort_key(file_doc.get(column)), reverse=direction == "desc")
@@ -897,6 +890,8 @@ def get_tracks_for_matching(db: Database, library_id: str | None = None) -> list
         )
     else:
         file_docs = cast("list[dict[str, Any]]", db.library.list_files(filters={"is_valid": True}, limit=DEFAULT_LIMIT))
+
+    file_docs = hydrate_songs_with_metadata(db, file_docs)
 
     file_ids = [file_id for file_doc in file_docs if isinstance(file_id := file_doc.get("_id"), str)]
     isrc_by_file = {

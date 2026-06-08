@@ -164,7 +164,7 @@ class TagsAqlOperations:
             if edge_key in seen_edges:
                 continue
             seen_edges.add(edge_key)
-            self._upsert_song_tag_edge(file_id, tag_id)
+            self._upsert_tag_edge(file_id, tag_id)
 
         self._cleanup_orphaned_tags()
 
@@ -278,337 +278,31 @@ class TagsAqlOperations:
         self._add_tag(file_id, merged_payload)
 
     def get_tags_for_file(self, file_id: str) -> list[Document]:
-        return primitives.execute(
-            self._db,
-            """
-            FOR edge IN @@edge_collection
-                FILTER edge._from == @file_id
-                LET tag = DOCUMENT(edge._to)
-                FILTER tag != null
-                SORT tag.name, tag.value
-                RETURN tag
-            """,
-            {
-                "@edge_collection": self.EDGE_COLLECTION,
-                "file_id": _as_document_id("library_files", file_id),
-            },
-        )
-
-    def get_tags_for_files_batch(
-        self,
-        file_ids: list[str],
-        *,
-        name_starts_with: str | None = None,
-        include_edge: bool = False,
-    ) -> list[Document]:
-        normalized_file_ids = [_as_document_id("library_files", file_id) for file_id in file_ids]
-        if not normalized_file_ids:
-            return []
-        bind_vars: dict[str, Any] = {
-            "@edge_collection": self.EDGE_COLLECTION,
-            "file_ids": normalized_file_ids,
-        }
-        query_lines = [
-            "FOR edge IN @@edge_collection",
-            "    FILTER edge._from IN @file_ids",
-            "    LET tag = DOCUMENT(edge._to)",
-            "    FILTER tag != null",
-        ]
-        if name_starts_with is not None:
-            query_lines.append("    FILTER STARTS_WITH(tag.name, @name_starts_with)")
-            bind_vars["name_starts_with"] = name_starts_with
-        query_lines.append("    SORT edge._from, tag.name, tag.value, tag._key")
-        if include_edge:
-            query_lines.append("    RETURN { start_id: edge._from, v: tag, e: edge }")
-        else:
-            query_lines.append("    RETURN { start_id: edge._from, v: tag }")
-        return primitives.execute(self._db, "\n".join(query_lines), bind_vars)
-
-    def list_all_tag_names(self, limit: int) -> list[str]:
-        bind_vars: dict[str, Any] = {"@collection": self.COLLECTION}
-        query_lines = [
-            "FOR tag IN @@collection",
-            "    COLLECT name = tag.name",
-            "    SORT name",
-        ]
-        normalized_limit = primitives.normalize_limit(limit)
-        if normalized_limit is not None:
-            query_lines.append("    LIMIT @limit")
-            bind_vars["limit"] = normalized_limit
-        query_lines.append("    RETURN name")
-        cursor = self._db.aql.execute("\n".join(query_lines), bind_vars=bind_vars)
-        return [str(name) for name in cursor]
-
-    def get_tags_by_name(self, name: str, limit: int) -> list[Document]:
-        return primitives.get_many_by_field(
-            self._db,
-            self.COLLECTION,
-            "name",
-            name,
-            limit=limit,
-            allowed_fields=self.ALLOWED_FIELDS,
-        )
-
-    def get_genre_tags_for_files(self, file_ids: list[str]) -> list[Document]:
-        normalized_file_ids = [_as_document_id("library_files", file_id) for file_id in file_ids]
-        if not normalized_file_ids:
-            return []
-        return primitives.execute(
-            self._db,
-            """
-            FOR edge IN @@edge_collection
-                FILTER edge._from IN @file_ids
-                LET tag = DOCUMENT(edge._to)
-                FILTER tag != null AND tag.name == "genre"
-                SORT edge._from, tag.value, tag._key
-                RETURN { fid: edge._from, genre: tag.value, tag_id: tag._id }
-            """,
-            {"@edge_collection": self.EDGE_COLLECTION, "file_ids": normalized_file_ids},
-        )
-
-    def list_tags(
-        self,
-        *,
-        name: str | None = None,
-        value: Any = None,
-        limit: int | None = None,
-        offset: int = 0,
-    ) -> list[Document]:
-        bind_vars: dict[str, Any] = {"@collection": self.COLLECTION, "offset": max(offset, 0)}
-        query_lines = ["FOR tag IN @@collection"]
-        if name is not None:
-            query_lines.append("    FILTER tag.name == @name")
-            bind_vars["name"] = name
-        if value is not None:
-            query_lines.append("    FILTER tag.value == @value")
-            bind_vars["value"] = value
-        query_lines.append("    SORT tag.name, tag.value, tag._key")
-        normalized_limit = primitives.normalize_limit(limit)
-        if normalized_limit is not None:
-            query_lines.append("    LIMIT @offset, @limit")
-            bind_vars["limit"] = normalized_limit
-        elif offset > 0:
-            query_lines.append("    LIMIT @offset, @full_count")
-            bind_vars["full_count"] = _NO_LIMIT_COUNT
-        query_lines.append("    RETURN tag")
-        return primitives.execute(self._db, "\n".join(query_lines), bind_vars)
-
-    def list_tags_with_song_count(
-        self,
-        *,
-        name: str | None = None,
-        search: str | None = None,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> list[Document]:
-        """List tags with pre-computed song counts using a single AQL query.
-
-        Args:
-            name: Optional tag name filter.
-            search: Optional substring filter on tag value.
-            limit: Max results.
-            offset: Pagination offset.
-
-        Returns:
-            List of dicts with _id, _key, name, value, song_count.
-        """
-        bind_vars: dict[str, Any] = {
-            "@collection": self.COLLECTION,
-            "@edge_collection": self.EDGE_COLLECTION,
-            "offset": max(offset, 0),
-            "limit": limit,
-        }
-        query_lines = ["FOR tag IN @@collection"]
-        if name is not None:
-            query_lines.append("    FILTER tag.name == @name")
-            bind_vars["name"] = name
-        if search is not None:
-            query_lines.append("    FILTER CONTAINS(LOWER(TO_STRING(tag.value)), LOWER(@search))")
-            bind_vars["search"] = search
-        query_lines.extend(
-            [
-                "    SORT tag.value, tag._key",
-                "    LIMIT @offset, @limit",
-                "    LET song_count = LENGTH(FOR e IN @@edge_collection FILTER e._to == tag._id RETURN 1)",
-                "    RETURN {_id: tag._id, _key: tag._key, name: tag.name, value: tag.value, song_count: song_count}",
-            ]
-        )
-        return primitives.execute(self._db, "\n".join(query_lines), bind_vars)
-
-    def count_tags_filtered(
-        self,
-        *,
-        name: str | None = None,
-        search: str | None = None,
-    ) -> int:
-        """Count tags matching name/search filters efficiently."""
-        bind_vars: dict[str, Any] = {"@collection": self.COLLECTION}
-        query_lines = ["FOR tag IN @@collection"]
-        if name is not None:
-            query_lines.append("    FILTER tag.name == @name")
-            bind_vars["name"] = name
-        if search is not None:
-            query_lines.append("    FILTER CONTAINS(LOWER(TO_STRING(tag.value)), LOWER(@search))")
-            bind_vars["search"] = search
-        query_lines.append("    COLLECT WITH COUNT INTO count")
-        query_lines.append("    RETURN count")
-        cursor = self._db.aql.execute("\n".join(query_lines), bind_vars=bind_vars)
-        results = list(cursor)
-        return int(results[0]) if results else 0
-
-    def count_tags(self) -> int:
-        cursor = self._db.aql.execute(
-            """
-            FOR tag IN @@collection
-                COLLECT WITH COUNT INTO count
-                RETURN count
-            """,
-            bind_vars={"@collection": self.COLLECTION},
-        )
-        results = list(cursor)
-        return int(results[0]) if results else 0
-
-    def aggregate_tag_field(self, field: str, *, limit: int | None = None, offset: int = 0) -> list[Document]:
-        if field not in self.ALLOWED_AGGREGATE_FIELDS:
-            msg = f"Field {field!r} is not allowed for tag aggregation"
-            raise ValueError(msg)
-        if field not in {"_id", "_key"}:
-            primitives._validate_field_name(field)
-        bind_vars: dict[str, Any] = {"@collection": self.COLLECTION, "offset": max(offset, 0)}
-        query_lines = [
-            "FOR tag IN @@collection",
-            f"    COLLECT value = tag.{field} WITH COUNT INTO count",
-            "    SORT value",
-        ]
-        normalized_limit = primitives.normalize_limit(limit)
-        if normalized_limit is not None:
-            query_lines.append("    LIMIT @offset, @limit")
-            bind_vars["limit"] = normalized_limit
-        elif offset > 0:
-            query_lines.append("    LIMIT @offset, @full_count")
-            bind_vars["full_count"] = _NO_LIMIT_COUNT
-        query_lines.append("    RETURN { value: value, count: count }")
-        return primitives.execute(self._db, "\n".join(query_lines), bind_vars)
-
-    def _get_song_tag_edges_for_tags(self, tag_ids: list[str], *, limit: int | None = None) -> list[Document]:
-        if not tag_ids:
-            return []
-        bind_vars: dict[str, Any] = {
-            "@edge_collection": self.EDGE_COLLECTION,
-            "tag_ids": [_as_document_id(self.COLLECTION, tag_id) for tag_id in tag_ids],
-        }
-        query_lines = [
-            "FOR edge IN @@edge_collection",
-            "    FILTER edge._to IN @tag_ids",
-            "    SORT edge._from, edge._to, edge._key",
-        ]
-        normalized_limit = primitives.normalize_limit(limit)
-        if normalized_limit is not None:
-            query_lines.append("    LIMIT @limit")
-            bind_vars["limit"] = normalized_limit
-        query_lines.append("    RETURN edge")
-        return primitives.execute(self._db, "\n".join(query_lines), bind_vars)
-
-    def _insert_song_tag_edges(self, docs: list[dict[str, Any]]) -> None:
-        if not docs:
-            return
-        self._db.aql.execute(
-            """
-            FOR doc IN @docs
-                INSERT doc INTO @@edge_collection
-            """,
-            bind_vars={"@edge_collection": self.EDGE_COLLECTION, "docs": docs},
-        )
-
-    def _delete_song_tag_edge_by_id(self, edge_id: str) -> None:
-        primitives.delete_many_by_keys(self._db, self.EDGE_COLLECTION, [_extract_key(edge_id)])
-
-    def delete_tag(self, file_id: str, tag_key: str) -> None:
-        """Delete a specific tag edge and tag document for a file by tag name.
-
-        Finds all edges from ``file_id`` whose tag document matches ``tag_key``,
-        removes those edges, and deletes the matched tag documents.
-
-        Args:
-            file_id: File document ID or ``_key`` whose tag should be removed.
-            tag_key: Name of the tag to delete (matched against ``tag.name``).
-        """
-        # Part C keeps this handwritten because it coordinates edge cleanup with
-        # tag-document deletion; that graph-specific choreography stays in Tier 2.
-        self._db.aql.execute(
-            """
-            LET tag_ids = (
+        return cast(
+            "list[Document]",
+            primitives.execute(
+                self._db,
+                """
                 FOR edge IN @@edge_collection
                     FILTER edge._from == @file_id
                     LET tag = DOCUMENT(edge._to)
-                    FILTER tag != null AND tag.name == @tag_key
-                    RETURN tag._id
-            )
-            FOR edge IN @@edge_collection
-                FILTER edge._from == @file_id AND edge._to IN tag_ids
-                REMOVE edge IN @@edge_collection
-            FOR tag_id IN tag_ids
-                REMOVE tag_id IN @@tag_collection
-                OPTIONS { ignoreErrors: true }
-            """,
-            bind_vars={
-                "@edge_collection": self.EDGE_COLLECTION,
-                "@tag_collection": self.COLLECTION,
-                "file_id": _as_document_id("library_files", file_id),
-                "tag_key": tag_key,
-            },
-        )
-
-    def _delete_all_tags_for_file(self, file_id: str) -> None:
-        self._db.aql.execute(
-            """
-            LET tag_ids = (
-                FOR edge IN @@edge_collection
-                    FILTER edge._from == @file_id
-                    RETURN edge._to
-            )
-            FOR edge IN @@edge_collection
-                FILTER edge._from == @file_id
-                REMOVE edge IN @@edge_collection
-            FOR tag_id IN tag_ids
-                REMOVE tag_id IN @@tag_collection
-                OPTIONS { ignoreErrors: true }
-            """,
-            bind_vars={
-                "@edge_collection": self.EDGE_COLLECTION,
-                "@tag_collection": self.COLLECTION,
-                "file_id": _as_document_id("library_files", file_id),
-            },
-        )
-
-    def _upsert_song_tag_edge(self, song_id: str, tag_id: str) -> None:
-        self._upsert_tag_edge(song_id, tag_id)
-
-    def _delete_song_tag_edges_for_file(self, file_id: str) -> None:
-        self._db.aql.execute(
-            """
-            FOR edge IN @@edge_collection
-                FILTER edge._from == @file_id
-                REMOVE edge IN @@edge_collection
-            """,
-            bind_vars={
-                "@edge_collection": self.EDGE_COLLECTION,
-                "file_id": _as_document_id("library_files", file_id),
-            },
+                    FILTER tag != null
+                    RETURN tag
+                """,
+                bind_vars={
+                    "@edge_collection": self.EDGE_COLLECTION,
+                    "file_id": _as_document_id("library_files", file_id),
+                },
+            ),
         )
 
     def _count_song_tag_edges(self, tag_id: str) -> int:
-        cursor = self._db.aql.execute(
-            """
-            FOR edge IN @@edge_collection
-                FILTER edge._to == @tag_id
-                COLLECT WITH COUNT INTO count
-                RETURN count
-            """,
-            bind_vars={"@edge_collection": self.EDGE_COLLECTION, "tag_id": _as_document_id(self.COLLECTION, tag_id)},
+        return primitives.count_edges(
+            self._db,
+            self.EDGE_COLLECTION,
+            "_to",
+            _as_document_id(self.COLLECTION, tag_id),
         )
-        results = list(cursor)
-        return int(results[0]) if results else 0
 
     def count_song_tag_edges_for_file_state(self, file_id: str, state_tag_id: str) -> int:
         cursor = self._db.aql.execute(
@@ -649,6 +343,197 @@ class TagsAqlOperations:
         )
         return [str(r) for r in results]
 
+    def get_tags_for_files_batch(
+        self,
+        file_ids: list[str],
+        *,
+        name_starts_with: str | None = None,
+        include_edge: bool = False,
+    ) -> list[Document]:
+        if not file_ids:
+            return []
+        normalized_file_ids = [_as_document_id("library_files", f) for f in file_ids]
+        return_clause = "RETURN { start_id: start_file._id, v: tag }"
+        if include_edge:
+            return_clause = "RETURN { start_id: start_file._id, v: tag, e: edge }"
+        filter_clause = ""
+        if name_starts_with:
+            filter_clause = "FILTER LIKE(tag.name, @name_starts_with || '%', true)"
+        query = f"""
+            FOR start_file IN library_files
+                FILTER start_file._id IN @file_ids
+                FOR edge IN @@edge_collection
+                    FILTER edge._from == start_file._id
+                    LET tag = DOCUMENT(edge._to)
+                    FILTER tag != null
+                    {filter_clause}
+                    {return_clause}
+        """
+        bind_vars: dict[str, Any] = {
+            "@edge_collection": self.EDGE_COLLECTION,
+            "file_ids": normalized_file_ids,
+        }
+        if name_starts_with:
+            bind_vars["name_starts_with"] = name_starts_with
+        return cast("list[Document]", primitives.execute(self._db, query, bind_vars))
+
+    def list_all_tag_names(self, limit: int) -> list[str]:
+        return cast(
+            "list[str]",
+            primitives.execute(
+                self._db,
+                """
+                FOR tag IN @@tag_collection
+                    COLLECT name = tag.name
+                    LIMIT @limit
+                    RETURN name
+                """,
+                {"@tag_collection": self.COLLECTION, "limit": limit},
+            ),
+        )
+
+    def list_tags(
+        self,
+        *,
+        name: str | None = None,
+        value: Any = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Document]:
+        query_lines = ["FOR tag IN @@tag_collection"]
+        bind_vars: dict[str, Any] = {"@tag_collection": self.COLLECTION}
+        if name is not None:
+            query_lines.append("    FILTER tag.name == @name")
+            bind_vars["name"] = name
+        if value is not None:
+            query_lines.append("    FILTER tag.value == @value")
+            bind_vars["value"] = value
+        query_lines.append("    SORT tag.name, tag.value")
+        normalized_limit = primitives.normalize_limit(limit)
+        if normalized_limit is not None:
+            query_lines.append("    LIMIT @offset, @limit")
+            bind_vars["offset"] = offset
+            bind_vars["limit"] = normalized_limit
+        query_lines.append("    RETURN tag")
+        return cast("list[Document]", primitives.execute(self._db, "\n".join(query_lines), bind_vars))
+
+    def count_tags(self) -> int:
+        cursor = self._db.aql.execute(
+            "RETURN LENGTH(@@collection)",
+            bind_vars={"@collection": self.COLLECTION},
+        )
+        results = list(cursor)
+        return int(results[0]) if results else 0
+
+    def count_tags_filtered(
+        self,
+        *,
+        name: str | None = None,
+        search: str | None = None,
+    ) -> int:
+        bind_vars: dict[str, Any] = {"@collection": self.COLLECTION}
+        filters: list[str] = []
+        if name is not None:
+            filters.append("FILTER tag.name == @name")
+            bind_vars["name"] = name
+        if search is not None:
+            filters.append("FILTER LIKE(tag.name, @search, true)")
+            bind_vars["search"] = search
+        filter_clause = "\n            ".join(filters)
+        cursor = self._db.aql.execute(
+            f"""
+            FOR tag IN @@collection
+                {filter_clause}
+                COLLECT WITH COUNT INTO count
+                RETURN count
+            """,
+            bind_vars=bind_vars,
+        )
+        results = list(cursor)
+        return int(results[0]) if results else 0
+
+    def list_tags_with_song_count(
+        self,
+        *,
+        name: str | None = None,
+        search: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[Document]:
+        bind_vars: dict[str, Any] = {
+            "@tag_collection": self.COLLECTION,
+            "@edge_collection": self.EDGE_COLLECTION,
+            "limit": limit,
+            "offset": offset,
+        }
+        filters: list[str] = []
+        if name is not None:
+            filters.append("FILTER tag.name == @name")
+            bind_vars["name"] = name
+        if search is not None:
+            filters.append("FILTER LIKE(tag.name, @search, true)")
+            bind_vars["search"] = search
+        filter_clause = "\n            ".join(filters)
+        query = f"""
+            FOR tag IN @@tag_collection
+                {filter_clause}
+                LET song_count = LENGTH(
+                    FOR edge IN @@edge_collection
+                        FILTER edge._to == tag._id
+                        LIMIT 1
+                        RETURN 1
+                )
+                FILTER song_count > 0
+                SORT song_count DESC, tag.name
+                LIMIT @offset, @limit
+                RETURN {{
+                    _id: tag._id,
+                    _key: tag._key,
+                    name: tag.name,
+                    value: tag.value,
+                    song_count: song_count
+                }}
+        """
+        return cast("list[Document]", primitives.execute(self._db, query, bind_vars))
+
+    def get_tags_by_name(self, name: str, limit: int) -> list[Document]:
+        return cast(
+            "list[Document]",
+            primitives.execute(
+                self._db,
+                """
+                FOR tag IN @@tag_collection
+                    FILTER tag.name == @name
+                    LIMIT @limit
+                    RETURN tag
+                """,
+                {"@tag_collection": self.COLLECTION, "name": name, "limit": limit},
+            ),
+        )
+
+    def get_genre_tags_for_files(self, file_ids: list[str]) -> list[Document]:
+        if not file_ids:
+            return []
+        normalized_file_ids = [_as_document_id("library_files", f) for f in file_ids]
+        return cast(
+            "list[Document]",
+            primitives.execute(
+                self._db,
+                """
+                FOR file_id IN @file_ids
+                    FOR edge IN @@edge_collection
+                        FILTER edge._from == file_id
+                        LET tag = DOCUMENT(edge._to)
+                        FILTER tag != null AND tag.name == "genre"
+                        RETURN tag
+                """,
+                {
+                    "@edge_collection": self.EDGE_COLLECTION,
+                    "file_ids": normalized_file_ids,
+                },
+            ),
+        )
+
     def delete_tags_by_ids(self, tag_ids: list[str]) -> int:
         """Delete tag documents by their IDs. Returns the count of tags deleted."""
         if not tag_ids:
@@ -663,25 +548,58 @@ class TagsAqlOperations:
         self._truncate_collection(self.EDGE_COLLECTION)
 
     def _upsert_tag_edge(self, file_id: str, tag_id: str) -> None:
-        self._db.aql.execute(
-            """
-            UPSERT { _from: @file_id, _to: @tag_id }
-                INSERT { _from: @file_id, _to: @tag_id }
-                UPDATE {}
-                IN @@edge_collection
-            """,
-            bind_vars={
-                "@edge_collection": self.EDGE_COLLECTION,
-                "file_id": _as_document_id("library_files", file_id),
-                "tag_id": _as_document_id(self.COLLECTION, tag_id),
-            },
+        primitives.upsert_edge(
+            self._db,
+            self.EDGE_COLLECTION,
+            _as_document_id("library_files", file_id),
+            _as_document_id(self.COLLECTION, tag_id),
         )
+
+    def _delete_song_tag_edges_for_file(self, file_id: str) -> None:
+        primitives.delete_edges(
+            self._db,
+            self.EDGE_COLLECTION,
+            from_id=_as_document_id("library_files", file_id),
+        )
+
+    def _get_song_tag_edges_for_tags(self, tag_ids: list[str], *, limit: int | None = None) -> list[Document]:
+        normalized_limit = primitives.normalize_limit(limit) if limit is not None else _NO_LIMIT_COUNT
+        return cast(
+            "list[Document]",
+            primitives.execute(
+                self._db,
+                """
+                FOR edge IN @@edge_collection
+                    FILTER edge._to IN @tag_ids
+                    LIMIT @limit
+                    RETURN edge
+                """,
+                {
+                    "@edge_collection": self.EDGE_COLLECTION,
+                    "tag_ids": [_as_document_id(self.COLLECTION, t) if "/" not in t else t for t in tag_ids],
+                    "limit": normalized_limit,
+                },
+            ),
+        )
+
+    def _insert_song_tag_edges(self, edges: list[dict[str, str]]) -> None:
+        primitives.insert_edges_batch(self._db, self.EDGE_COLLECTION, edges)
+
+    def _delete_song_tag_edge_by_id(self, edge_id: str) -> None:
+        primitives.delete_edge_by_key(
+            self._db,
+            self.EDGE_COLLECTION,
+            _extract_key(edge_id),
+        )
+
+    def delete_tag(self, file_id: str, tag_key: str) -> None:
+        self.remove_file_tags(file_id, [tag_key])
 
     def _truncate_collection(self, collection_name: str) -> None:
         self._db.aql.execute(
             """
             FOR doc IN @@collection
-                REMOVE doc IN @@collection
+                REMOVE doc IN @@collection OPTIONS { ignoreErrors: true }
             """,
             bind_vars={"@collection": collection_name},
         )

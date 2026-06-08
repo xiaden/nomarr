@@ -66,28 +66,25 @@ class MlStreamsAqlOperations:
     def delete_output_streams_for_file(self, file_id: str) -> None:
         self._db.aql.execute(
             """
-            LET stream_ids = (
+            LET file_edge_data = (
                 FOR e IN @@file_edge_collection
                     FILTER e._from == @file_id
-                    RETURN e._to
+                    RETURN {id: e._to, edge: e}
             )
+            LET stream_ids = file_edge_data[* RETURN CURRENT.id]
+            LET file_edges = file_edge_data[* RETURN CURRENT.edge]
             LET output_edges = (
                 FOR e IN @@output_edge_collection
                     FILTER e._to IN stream_ids
                     RETURN e
             )
-            LET file_edges = (
-                FOR e IN @@file_edge_collection
-                    FILTER e._from == @file_id
-                    RETURN e
-            )
             FOR oe IN output_edges
-                REMOVE oe IN @@output_edge_collection
+                REMOVE oe IN @@output_edge_collection OPTIONS { ignoreErrors: true }
             FOR stream_id IN stream_ids
                 REMOVE stream_id IN @@collection
                 OPTIONS { ignoreErrors: true }
             FOR fe IN file_edges
-                REMOVE fe IN @@file_edge_collection
+                REMOVE fe IN @@file_edge_collection OPTIONS { ignoreErrors: true }
             """,
             bind_vars={
                 "@collection": self.COLLECTION,
@@ -115,12 +112,4 @@ class MlStreamsAqlOperations:
         return primitives.insert_document(self._db, self.COLLECTION, payload)
 
     def _upsert_edge(self, collection: str, from_id: str, to_id: str) -> None:
-        self._db.aql.execute(
-            """
-            UPSERT { _from: @from_id, _to: @to_id }
-                INSERT { _from: @from_id, _to: @to_id }
-                UPDATE {}
-                IN @@collection
-            """,
-            bind_vars={"@collection": collection, "from_id": from_id, "to_id": to_id},
-        )
+        primitives.upsert_edge(self._db, collection, from_id, to_id)

@@ -24,9 +24,6 @@ def upsert_library_file(
     file_size: int,
     modified_time: int,
     duration_seconds: float | None = None,
-    artist: str | None = None,
-    album: str | None = None,
-    title: str | None = None,
     last_tagged_at: int | None = None,
 ) -> str:
     """Insert or update one library-file document plus its ownership/state edges.
@@ -38,9 +35,6 @@ def upsert_library_file(
         file_size: File size in bytes to persist on the library-file document.
         modified_time: File modified timestamp in milliseconds.
         duration_seconds: Optional audio duration in seconds.
-        artist: Optional cached artist metadata.
-        album: Optional cached album metadata.
-        title: Optional cached title metadata.
         last_tagged_at: Optional marker indicating the file was already tagged.
 
     Returns:
@@ -66,9 +60,6 @@ def upsert_library_file(
             "file_size": file_size,
             "modified_time": modified_time,
             "duration_seconds": duration_seconds,
-            "artist": artist,
-            "album": album,
-            "title": title,
             "scanned_at": scanned_at,
             "chromaprint": None,
             "last_tagged_at": last_tagged_at,
@@ -135,9 +126,6 @@ def update_file_path(
     new_path: str,
     file_size: int,
     modified_time: int,
-    artist: str | None = None,
-    album: str | None = None,
-    title: str | None = None,
     duration_seconds: float | None = None,
     normalized_path: str | None = None,
 ) -> None:
@@ -147,9 +135,6 @@ def update_file_path(
         "file_size": file_size,
         "modified_time": modified_time,
         "is_valid": 1,
-        "artist": artist,
-        "album": album,
-        "title": title,
         "duration_seconds": duration_seconds,
         "scanned_at": now_ms().value,
     }
@@ -161,31 +146,6 @@ def update_file_path(
 def update_file_modified_time(db: Database, file_key: str, modified_time_ms: int) -> None:
     """Update the stored modified-time after a successful file write."""
     db.library.update_file(_normalize_file_id(file_key), {"modified_time": modified_time_ms})
-
-
-def update_metadata_cache(
-    db: Database,
-    song_id: str,
-    *,
-    artist: str | None,
-    artists: list[str] | None,
-    album: str | None,
-    labels: list[str] | None,
-    genres: list[str] | None,
-    year: int | None,
-) -> None:
-    """Update embedded metadata-cache fields for one song."""
-    db.library.update_file(
-        song_id,
-        {
-            "artist": artist,
-            "artists": artists,
-            "album": album,
-            "labels": labels,
-            "genres": genres,
-            "year": year,
-        },
-    )
 
 
 def bulk_delete_files(db: Database, paths: list[str]) -> int:

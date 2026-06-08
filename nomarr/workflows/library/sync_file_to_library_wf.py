@@ -16,7 +16,6 @@ from nomarr.components.library.library_file_mutation_comp import set_chromaprint
 from nomarr.components.library.library_file_query_comp import get_library_file
 from nomarr.components.library.library_records_comp import find_library_containing_path
 from nomarr.components.metadata.entity_seeding_comp import seed_song_entities_from_tags
-from nomarr.components.metadata.metadata_cache_comp import rebuild_song_metadata_cache
 from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
 
 logger = logging.getLogger(__name__)
@@ -76,7 +75,6 @@ def _sync_tags_and_entities(
             "year": metadata.get("year"),
         }
         seed_song_entities_from_tags(db, file_id, entity_tags)
-        rebuild_song_metadata_cache(db, file_id)
         logger.debug(f"[sync_file_to_library] Seeded entities for {file_path}")
     except Exception as entity_error:
         logger.warning(f"[sync_file_to_library] Failed to seed entities: {entity_error}", exc_info=True)
@@ -109,7 +107,7 @@ def sync_file_to_library(
     Orchestrates:
     1. Library domain: Update library_files record (by _id when available)
     2. Tagging domain: Parse and upsert file_tags (external + nomarr tags)
-    3. Metadata domain: Seed entity graph and rebuild cache
+    3. Metadata domain: Seed entity graph
 
     Args:
         db: Database instance
@@ -163,9 +161,6 @@ def sync_file_to_library(
             file_size=file_size,
             modified_time=modified_time,
             duration_seconds=metadata.get("duration"),
-            artist=metadata.get("artist"),
-            album=metadata.get("album"),
-            title=metadata.get("title"),
         )
 
         file_record = get_library_file(db, file_path)

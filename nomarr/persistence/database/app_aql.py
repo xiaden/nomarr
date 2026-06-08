@@ -153,7 +153,7 @@ class AppAqlOperations:
             """
             FOR claim IN @@collection
                 FILTER claim.worker_id IN @worker_ids
-                REMOVE claim IN @@collection
+                REMOVE claim IN @@collection OPTIONS { ignoreErrors: true }
                 RETURN 1
             """,
             {"@collection": self.WORKER_CLAIM_COLLECTION, "worker_ids": worker_ids},
@@ -169,7 +169,7 @@ class AppAqlOperations:
             """
             FOR claim IN @@collection
                 FILTER claim.file_id IN @file_ids
-                REMOVE claim IN @@collection
+                REMOVE claim IN @@collection OPTIONS { ignoreErrors: true }
                 RETURN 1
             """,
             {"@collection": self.WORKER_CLAIM_COLLECTION, "file_ids": normalized_ids},
@@ -201,7 +201,7 @@ class AppAqlOperations:
             )
             FILTER active_claim == null
             FOR claim IN matching_claims
-                REMOVE claim IN @@collection
+                REMOVE claim IN @@collection OPTIONS { ignoreErrors: true }
             INSERT @payload INTO @@collection
             RETURN NEW._id
             """,
@@ -256,7 +256,7 @@ class AppAqlOperations:
         self._db.aql.execute(
             """
             FOR claim IN @@collection
-                REMOVE claim IN @@collection
+                REMOVE claim IN @@collection OPTIONS { ignoreErrors: true }
             """,
             bind_vars={"@collection": self.WORKER_CLAIM_COLLECTION},
         )
@@ -465,16 +465,10 @@ class AppAqlOperations:
         )
 
     def delete_pipeline_state_edges_for_library(self, library_id: str) -> None:
-        self._db.aql.execute(
-            """
-            FOR edge IN @@collection
-                FILTER edge._from == @library_id
-                REMOVE edge IN @@collection
-            """,
-            bind_vars={
-                "@collection": self.PIPELINE_STATE_EDGE_COLLECTION,
-                "library_id": _as_document_id("libraries", library_id),
-            },
+        primitives.delete_edges(
+            self._db,
+            self.PIPELINE_STATE_EDGE_COLLECTION,
+            from_id=_as_document_id("libraries", library_id),
         )
 
     def list_file_docs_in_state(self, state: str, *, limit: int | None = None) -> list[Document]:
@@ -521,31 +515,18 @@ class AppAqlOperations:
         )
 
     def upsert_library_scan_edge(self, library_id: str, scan_id: str) -> None:
-        self._db.aql.execute(
-            """
-            UPSERT { _from: @library_id, _to: @scan_id }
-                INSERT { _from: @library_id, _to: @scan_id }
-                UPDATE {}
-                IN @@collection
-            """,
-            bind_vars={
-                "@collection": self.LIBRARY_SCAN_EDGE_COLLECTION,
-                "library_id": _as_document_id("libraries", library_id),
-                "scan_id": _as_document_id(self.SCAN_COLLECTION, scan_id),
-            },
+        primitives.upsert_edge(
+            self._db,
+            self.LIBRARY_SCAN_EDGE_COLLECTION,
+            _as_document_id("libraries", library_id),
+            _as_document_id(self.SCAN_COLLECTION, scan_id),
         )
 
     def delete_library_scan_edge(self, library_id: str) -> None:
-        self._db.aql.execute(
-            """
-            FOR edge IN @@collection
-                FILTER edge._from == @library_id
-                REMOVE edge IN @@collection
-            """,
-            bind_vars={
-                "@collection": self.LIBRARY_SCAN_EDGE_COLLECTION,
-                "library_id": _as_document_id("libraries", library_id),
-            },
+        primitives.delete_edges(
+            self._db,
+            self.LIBRARY_SCAN_EDGE_COLLECTION,
+            from_id=_as_document_id("libraries", library_id),
         )
 
     def truncate_file_state_edges(self) -> None:
@@ -623,7 +604,7 @@ class AppAqlOperations:
             """
             FOR doc IN @@collection
                 FILTER doc._id IN @ids
-                REMOVE doc IN @@collection
+                REMOVE doc IN @@collection OPTIONS { ignoreErrors: true }
             """,
             bind_vars={"@collection": self.SESSION_COLLECTION, "ids": ids},
         )
@@ -682,7 +663,7 @@ class AppAqlOperations:
         self._db.aql.execute(
             """
             FOR doc IN @@collection
-                REMOVE doc IN @@collection
+                REMOVE doc IN @@collection OPTIONS { ignoreErrors: true }
             """,
             bind_vars={"@collection": collection_name},
         )

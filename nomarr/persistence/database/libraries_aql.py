@@ -108,19 +108,16 @@ class LibrariesAqlOperations:
                     FILTER e._from == @lib
                     RETURN e._to
             )
-            LET stream_ids = (
+            LET file_stream_data = (
                 FOR e IN file_has_output_stream
                     FILTER e._from IN file_ids
-                    RETURN e._to
+                    RETURN {id: e._to, edge: e}
             )
+            LET stream_ids = file_stream_data[* RETURN CURRENT.id]
+            LET file_stream_edges = file_stream_data[* RETURN CURRENT.edge]
             LET output_edges = (
                 FOR e IN output_has_stream
                     FILTER e._to IN stream_ids
-                    RETURN e
-            )
-            LET file_stream_edges = (
-                FOR e IN file_has_output_stream
-                    FILTER e._from IN file_ids
                     RETURN e
             )
             LET vector_edges = (
@@ -139,20 +136,20 @@ class LibrariesAqlOperations:
                     RETURN e
             )
             FOR oe IN output_edges
-                REMOVE oe IN output_has_stream
+                REMOVE oe IN output_has_stream OPTIONS { ignoreErrors: true }
             FOR sid IN stream_ids
                 REMOVE sid IN ml_output_streams OPTIONS { ignoreErrors: true }
             FOR fse IN file_stream_edges
-                REMOVE fse IN file_has_output_stream
+                REMOVE fse IN file_has_output_stream OPTIONS { ignoreErrors: true }
             FOR ve IN vector_edges
-                REMOVE ve IN file_has_vectors
+                REMOVE ve IN file_has_vectors OPTIONS { ignoreErrors: true }
             FOR te IN tag_edges
-                REMOVE te IN song_has_tags
+                REMOVE te IN song_has_tags OPTIONS { ignoreErrors: true }
             FOR c IN worker_claims
                 FILTER c.file_id IN file_ids
-                REMOVE c IN worker_claims
+                REMOVE c IN worker_claims OPTIONS { ignoreErrors: true }
             FOR se IN state_edges
-                REMOVE se IN file_has_state
+                REMOVE se IN file_has_state OPTIONS { ignoreErrors: true }
             FOR fid IN file_ids
                 REMOVE fid IN library_files OPTIONS { ignoreErrors: true }
             """,
@@ -179,19 +176,19 @@ class LibrariesAqlOperations:
             )
             FOR file_edge IN library_contains_file
                 FILTER file_edge._from == @lib
-                REMOVE file_edge IN library_contains_file
+                REMOVE file_edge IN library_contains_file OPTIONS { ignoreErrors: true }
             FOR folder_target IN folder_edges
                 REMOVE folder_target._to IN library_folders OPTIONS { ignoreErrors: true }
             FOR folder_edge IN folder_edges
-                REMOVE folder_edge IN library_contains_folder
+                REMOVE folder_edge IN library_contains_folder OPTIONS { ignoreErrors: true }
             FOR scan_target IN scan_edges
                 REMOVE scan_target._to IN library_scans OPTIONS { ignoreErrors: true }
             FOR scan_edge IN scan_edges
-                REMOVE scan_edge IN library_has_scan
+                REMOVE scan_edge IN library_has_scan OPTIONS { ignoreErrors: true }
             FOR pipeline_target IN pipeline_edges
                 REMOVE pipeline_target._to IN library_pipeline_states OPTIONS { ignoreErrors: true }
             FOR pipeline_edge IN pipeline_edges
-                REMOVE pipeline_edge IN library_has_pipeline_state
+                REMOVE pipeline_edge IN library_has_pipeline_state OPTIONS { ignoreErrors: true }
             REMOVE @lib_key IN libraries OPTIONS { ignoreErrors: true }
             """,
             bind_vars={"lib": normalized_id, "lib_key": lib_key},
@@ -212,7 +209,7 @@ class LibrariesAqlOperations:
         self._db.aql.execute(
             """
             FOR tag IN tags
-                FILTER LENGTH(FOR e IN song_has_tags FILTER e._to == tag._id LIMIT 1 RETURN 1) == 0
-                REMOVE tag IN tags
+                FILTER FIRST(FOR e IN song_has_tags FILTER e._to == tag._id LIMIT 1 RETURN 1) == null
+                REMOVE tag IN tags OPTIONS { ignoreErrors: true }
             """
         )

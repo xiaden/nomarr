@@ -249,7 +249,11 @@ def test_list_library_files_unscoped_sorts_and_paginates() -> None:
         {"_id": "library_files/1", "artist": "A", "album": "A", "title": "T1"},
     ]
 
-    rows, total = list_library_files(db, limit=1, offset=1)
+    with patch(
+        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        side_effect=lambda _db, docs: docs,
+    ):
+        rows, total = list_library_files(db, limit=1, offset=1)
 
     assert rows == [{"_id": "library_files/2", "artist": "B", "album": "A", "title": "T2"}]
 
@@ -270,7 +274,11 @@ def test_list_library_files_scoped_filters_in_python() -> None:
         matching_row,
     ]
 
-    rows, total = list_library_files(db, artist="Artist", album="Album", library_id="libraries/1")
+    with patch(
+        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        side_effect=lambda _db, docs: docs,
+    ):
+        rows, total = list_library_files(db, artist="Artist", album="Album", library_id="libraries/1")
 
     assert rows == [matching_row]
 
@@ -408,7 +416,11 @@ def test_get_recently_processed_sorts_by_latest_activity() -> None:
         },
     ]
 
-    result = get_recently_processed(db, limit=1)
+    with patch(
+        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        side_effect=lambda _db, docs: docs,
+    ):
+        result = get_recently_processed(db, limit=1)
 
     assert result == [
         {
@@ -437,7 +449,11 @@ def test_get_recently_processed_scopes_to_library_ids() -> None:
 
     db.library.list_library_file_ids.return_value = ["library_files/1"]
 
-    result = get_recently_processed(db, library_id="main")
+    with patch(
+        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        side_effect=lambda _db, docs: docs,
+    ):
+        result = get_recently_processed(db, library_id="main")
 
     assert [row["file_id"] for row in result] == ["library_files/1"]
 
@@ -484,7 +500,11 @@ def test_get_tracks_by_file_ids_sorts_and_applies_defaults() -> None:
         {"path": "D:/Music/two.flac", "title": "Two", "artist": "Artist", "album": "Album", "sort_rank": 2},
     ]
 
-    result = get_tracks_by_file_ids(db, {"library_files/1", "library_files/2"}, [("sort_rank", "desc")], limit=1)
+    with patch(
+        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        side_effect=lambda _db, docs: docs,
+    ):
+        result = get_tracks_by_file_ids(db, {"library_files/1", "library_files/2"}, [("sort_rank", "desc")], limit=1)
 
     assert result == [{"path": "D:/Music/two.flac", "title": "Two", "artist": "Artist", "album": "Album"}]
 
@@ -586,9 +606,7 @@ def _obsolete_search_library_files_with_tags_filters_and_hydrates_page() -> None
         {"_id": "library_files/2", "artist": "Artist", "album": "Album", "title": "Other", "path": "D:/Music/two.flac"},
     ]
 
-    db.library.search_files_by_tag_pattern.side_effect = [file_docs, file_docs]
-
-    db.library.search_files_by_text.side_effect = [[file_docs[0]]]
+    db.library.search_files_by_tag_pattern.side_effect = [file_docs, file_docs, [file_docs[0]]]
 
     db.library.list_tags.return_value = [{"_id": "tags/1"}]
 
@@ -630,9 +648,6 @@ def _obsolete_search_library_files_with_tags_filters_and_hydrates_page() -> None
     assert db.library.search_files_by_tag_pattern.call_args_list == [
         call("artist", "%Artist%", limit=None),
         call("album", "%Album%", limit=None),
-    ]
-
-    assert db.library.search_files_by_text.call_args_list == [
         call("title", "%song%", limit=None),
     ]
 
@@ -738,7 +753,11 @@ def test_get_tracks_for_matching_filters_valid_files_and_projects_isrc() -> None
 
     db.library.list_file_tags_for_files.return_value = {"library_files/1": [{"name": "isrc", "value": "ABC123"}]}
 
-    result = get_tracks_for_matching(db)
+    with patch(
+        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        side_effect=lambda _db, docs: docs,
+    ):
+        result = get_tracks_for_matching(db)
 
     assert result == [
         {
@@ -774,7 +793,11 @@ def test_get_tracks_for_matching_scopes_to_library_and_projects_isrc() -> None:
 
     db.library.list_file_tags_for_files.return_value = {"library_files/1": [{"name": "isrc", "value": "XYZ789"}]}
 
-    result = get_tracks_for_matching(db, library_id="main")
+    with patch(
+        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        side_effect=lambda _db, docs: docs,
+    ):
+        result = get_tracks_for_matching(db, library_id="main")
 
     assert result == [
         {
@@ -872,8 +895,7 @@ def test_search_library_files_with_tags_filters_and_hydrates_page() -> None:
         },
         {"_id": "library_files/2", "artist": "Artist", "album": "Album", "title": "Other", "path": "D:/Music/two.flac"},
     ]
-    db.library.search_files_by_tag_pattern.side_effect = [file_docs, file_docs]
-    db.library.search_files_by_text.side_effect = [[file_docs[0]]]
+    db.library.search_files_by_tag_pattern.side_effect = [file_docs, file_docs, [file_docs[0]]]
     db.library.count_tags.return_value = 1
     db.library.list_tags_by_name.return_value = [{"_id": "tags/1", "value": "rock"}]
     db.library.get_song_tag_edges_for_tags.return_value = [{"_from": "library_files/1", "_to": "tags/1"}]
@@ -882,17 +904,21 @@ def test_search_library_files_with_tags_filters_and_hydrates_page() -> None:
     db.library.list_file_tags_for_files.return_value = {"library_files/1": [{"name": "genre", "value": "rock"}]}
     db.library.get_library_ids_for_files.return_value = {"library_files/1": "libraries/1"}
 
-    rows, total = search_library_files_with_tags(
-        db,
-        query_text="song",
-        artist="Artist",
-        album="Album",
-        tag_key="genre",
-        tag_value="rock",
-        tagged_only=True,
-        limit=10,
-        offset=0,
-    )
+    with patch(
+        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        side_effect=lambda _db, docs: docs,
+    ):
+        rows, total = search_library_files_with_tags(
+            db,
+            query_text="song",
+            artist="Artist",
+            album="Album",
+            tag_key="genre",
+            tag_value="rock",
+            tagged_only=True,
+            limit=10,
+            offset=0,
+        )
 
     assert total == 1
     assert rows == [
@@ -910,8 +936,6 @@ def test_search_library_files_with_tags_filters_and_hydrates_page() -> None:
     assert db.library.search_files_by_tag_pattern.call_args_list == [
         call("artist", "%Artist%", limit=None),
         call("album", "%Album%", limit=None),
-    ]
-    assert db.library.search_files_by_text.call_args_list == [
         call("title", "%song%", limit=None),
     ]
     db.library.count_tags.assert_called_once_with()
@@ -977,7 +1001,11 @@ def test_search_files_by_tag_numeric_sorts_by_distance_and_hydrates_tags() -> No
     }
     db.library.get_library_ids_for_files.return_value = {"library_files/2": "libraries/1"}
 
-    result = search_files_by_tag(db, "nom:bpm", 120.0, limit=1, offset=0)
+    with patch(
+        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        side_effect=lambda _db, docs: docs,
+    ):
+        result = search_files_by_tag(db, "nom:bpm", 120.0, limit=1, offset=0)
 
     assert result[0]["_id"] == "library_files/2"
     assert result[0]["distance"] == 1.0

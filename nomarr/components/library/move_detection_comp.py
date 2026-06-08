@@ -16,7 +16,6 @@ from nomarr.components.metadata.entity_seeding_comp import (
     _extract_entity_tags,
     seed_song_entities_from_tags,
 )
-from nomarr.components.metadata.metadata_cache_comp import rebuild_song_metadata_cache
 from nomarr.persistence import Database
 
 logger = logging.getLogger(__name__)
@@ -218,7 +217,6 @@ def apply_detected_moves(
     For each move:
     1. Updates the file record path / size / mtime via ``update_file_path``
     2. Re-seeds entity tags from the new file's metadata
-    3. Rebuilds the song metadata cache
 
     Args:
         moves: Detected moves from :func:`detect_file_moves`
@@ -256,7 +254,6 @@ def apply_detected_moves(
             try:
                 entity_tags = _extract_entity_tags(new_metadata)
                 seed_song_entities_from_tags(db, move.file_id, entity_tags)
-                rebuild_song_metadata_cache(db, move.file_id)
             except Exception as e:
                 logger.warning(
                     "Failed to update entities for moved file %s: %s",

@@ -8,17 +8,25 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import dataclasses
 import logging
 import os
 import threading
+from collections.abc import Callable, Coroutine
 from typing import Any, Literal
 
 import yaml
 
 from nomarr.components.ml.onnx.ml_discovery_comp import compute_model_suite_hash
-from nomarr.helpers.config_schema import ALL_CONFIG_KEYS, WEB_EDITABLE_KEYS, DynamicConfig, StaticConfig
+from nomarr.helpers.config_schema import (
+    ALL_CONFIG_KEYS,
+    OBSERVABLE_KEYS,
+    WEB_EDITABLE_KEYS,
+    DynamicConfig,
+    StaticConfig,
+)
 from nomarr.helpers.dto.config_dto import ConfigResult, GetInternalInfoResult, WebConfigResult
 from nomarr.helpers.dto.processing_dto import ProcessorConfig
 from nomarr.persistence.db import Database
@@ -81,6 +89,8 @@ class ConfigService:
         """Initialize ConfigService: bootstrap config to DB, load cache."""
         self._cache: dict[str, Any] = {}
         self._lock = threading.Lock()
+        self._subscriptions: dict[str, list[Callable[[str, Any], Coroutine[Any, Any, None]]]] = {}
+        self._background_tasks: set[asyncio.Task[None]] = set()
         self._logger = logging.getLogger(__name__)
         self._bootstrap_and_load()
 
@@ -111,6 +121,10 @@ class ConfigService:
     def set(self, key: str, value: Any) -> None:
         """Write-through setter: update cache then persist to DB.
 
+        If the key is in ``OBSERVABLE_KEYS``, registered callbacks are
+        scheduled via ``asyncio.create_task`` *after* the cache and DB
+        writes complete.
+
         Args:
             key: Config key (must be in _ALLOWED_CONFIG_KEYS)
             value: Typed Python value (stored as-is in cache, stringified for DB)
@@ -125,8 +139,43 @@ class ConfigService:
 
         with self._lock:
             self._cache[key] = value
+            # Snapshot callbacks under the lock — fire them after releasing it.
+            callbacks: list[Callable[[str, Any], Coroutine[Any, Any, None]]] = (
+                list(self._subscriptions.get(key, [])) if key in OBSERVABLE_KEYS else []
+            )
+
         self._write_to_db(key, str(value) if value is not None else "")
         self._logger.info("Config '%s' updated (cache + DB)", key)
+
+        for cb in callbacks:
+            # Keep a strong reference to prevent garbage collection of the task.
+            task = asyncio.create_task(cb(key, value))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+
+    def subscribe(self, key: str, callback: Callable[[str, Any], Coroutine[Any, Any, None]]) -> None:
+        """Register a callback for runtime config changes.
+
+        The callback is fired (via ``asyncio.create_task``) after the value
+        has been written to cache and DB.  Only keys in ``OBSERVABLE_KEYS``
+        can be subscribed to.
+
+        Args:
+            key: Config key to observe (must be in OBSERVABLE_KEYS).
+            callback: Async callable ``(key, new_value) -> None``.
+
+        Raises:
+            ValueError: If *key* is not in OBSERVABLE_KEYS.
+
+        """
+        if key not in OBSERVABLE_KEYS:
+            msg = f"Config key '{key}' is not observable (must be one of {sorted(OBSERVABLE_KEYS)})"
+            raise ValueError(msg)
+
+        with self._lock:
+            self._subscriptions.setdefault(key, []).append(callback)
+
+        self._logger.debug("Subscribed callback for observable key '%s'", key)
 
     def _write_to_db(self, key: str, value: str) -> None:
         """Persist a config value to DB meta table via throwaway connection."""

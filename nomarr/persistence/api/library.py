@@ -159,15 +159,6 @@ class LibraryDb:
     def count_recently_tagged(self, cutoff_ms: int) -> int:
         return self._files.count_recently_tagged(cutoff_ms)
 
-    def search_files_by_text(
-        self,
-        field_name: str,
-        pattern: str,
-        *,
-        limit: int | None = None,
-    ) -> list[dict]:
-        return self._files.search_files_by_text(field_name, pattern, limit=limit)
-
     def list_library_file_ids(
         self,
         library_id: str,
@@ -394,9 +385,6 @@ class LibraryDb:
         *,
         file_size: int,
         modified_time: int,
-        artist: str | None = None,
-        album: str | None = None,
-        title: str | None = None,
         duration_seconds: float | None = None,
         normalized_path: str | None = None,
     ) -> None:
@@ -406,9 +394,6 @@ class LibraryDb:
             file_id: File document ``_id``.
             file_size: File size recorded during scanning.
             modified_time: File modification time recorded during scanning.
-            artist: Scan-time artist value, if available.
-            album: Scan-time album value, if available.
-            title: Scan-time title value, if available.
             duration_seconds: Scan-time duration value, if available.
             normalized_path: Normalized path to store when one was computed.
         """
@@ -416,9 +401,6 @@ class LibraryDb:
             "file_size": file_size,
             "modified_time": modified_time,
             "is_valid": 1,
-            "artist": artist,
-            "album": album,
-            "title": title,
             "duration_seconds": duration_seconds,
             "scanned_at": now_ms().value,
         }
@@ -428,30 +410,6 @@ class LibraryDb:
 
     def update_library_file_modified_time(self, file_id: str, modified_time_ms: int) -> None:
         self._files._update_file(file_id, {"modified_time": modified_time_ms})
-
-    def update_library_file_metadata_cache(
-        self,
-        file_id: str,
-        *,
-        artist: str | None,
-        artists: list[str] | None,
-        album: str | None,
-        labels: list[str] | None,
-        genres: list[str] | None,
-        year: int | None,
-    ) -> None:
-        """Update the cached audio metadata fields stored on a library file document."""
-        self._files._update_file(
-            file_id,
-            {
-                "artist": artist,
-                "artists": artists,
-                "album": album,
-                "labels": labels,
-                "genres": genres,
-                "year": year,
-            },
-        )
 
     def set_library_file_chromaprint(self, file_id: str, chromaprint: str) -> None:
         self._files._update_file(file_id, {"chromaprint": chromaprint})

@@ -98,15 +98,15 @@ class TestFindSimilarTracksHappyPath:
                 {
                     "_id": "library_files/match-1",
                     "_key": "match-1",
-                    "title": "Song A",
-                    "artist": "Artist A",
-                    "album": "Album A",
                     "duration_seconds": 201.2,
-                    "year": 2024,
                     "tags": [
+                        {"key": "title", "value": "Song A"},
+                        {"key": "artist", "value": "Artist A"},
+                        {"key": "album", "value": "Album A"},
                         {"key": "album_artist", "value": "Album Artist A"},
                         {"key": "tracknumber", "value": "3"},
                         {"key": "discnumber", "value": "1"},
+                        {"key": "year", "value": "2024"},
                     ],
                 }
             ],

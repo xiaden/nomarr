@@ -8,8 +8,8 @@ import pytest
 
 from nomarr.components.library.tag_hydration_comp import (
     extract_canonical_metadata,
-    hydrate_file_doc_with_metadata,
-    hydrate_file_docs_with_metadata,
+    hydrate_song_with_metadata,
+    hydrate_songs_with_metadata,
 )
 
 
@@ -122,14 +122,14 @@ class TestExtractCanonicalMetadata:
 
 
 class TestHydrateFileDocsWithMetadata:
-    """Tests for ``hydrate_file_docs_with_metadata()``."""
+    """Tests for ``hydrate_songs_with_metadata()``."""
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_empty_input(self) -> None:
         mock_db = MagicMock()
 
-        result = hydrate_file_docs_with_metadata(mock_db, [])
+        result = hydrate_songs_with_metadata(mock_db, [])
 
         assert result == []
         mock_db.library.list_file_tags_for_files.assert_not_called()
@@ -163,7 +163,7 @@ class TestHydrateFileDocsWithMetadata:
             ],
         }
 
-        result = hydrate_file_docs_with_metadata(mock_db, file_docs)
+        result = hydrate_songs_with_metadata(mock_db, file_docs)
 
         mock_db.library.list_file_tags_for_files.assert_called_once_with(["library_files/1", "library_files/2"])
         assert len(result) == 2
@@ -187,7 +187,7 @@ class TestHydrateFileDocsWithMetadata:
             "library_files/1": [],
         }
 
-        result = hydrate_file_docs_with_metadata(mock_db, file_docs)
+        result = hydrate_songs_with_metadata(mock_db, file_docs)
 
         assert len(result) == 1
         assert result[0]["artist"] is None
@@ -210,7 +210,7 @@ class TestHydrateFileDocsWithMetadata:
             ],
         }
 
-        result = hydrate_file_docs_with_metadata(mock_db, file_docs)
+        result = hydrate_songs_with_metadata(mock_db, file_docs)
 
         assert "artist" not in file_docs[0]
         assert result[0]["artist"] == "New Artist"
@@ -225,7 +225,7 @@ class TestHydrateFileDocsWithMetadata:
             {"_id": None, "path": "/music/none_id.flac"},
         ]
 
-        result = hydrate_file_docs_with_metadata(mock_db, file_docs)
+        result = hydrate_songs_with_metadata(mock_db, file_docs)
 
         mock_db.library.list_file_tags_for_files.assert_not_called()
         assert len(result) == 3
@@ -239,7 +239,7 @@ class TestHydrateFileDocsWithMetadata:
 
 
 class TestHydrateFileDocWithMetadata:
-    """Tests for ``hydrate_file_doc_with_metadata()``."""
+    """Tests for ``hydrate_song_with_metadata()``."""
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -258,7 +258,7 @@ class TestHydrateFileDocWithMetadata:
             ],
         }
 
-        result = hydrate_file_doc_with_metadata(mock_db, file_doc)
+        result = hydrate_song_with_metadata(mock_db, file_doc)
 
         assert result["artist"] == "Solo Artist"
         assert result["album"] == "Solo Album"

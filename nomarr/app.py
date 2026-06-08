@@ -390,6 +390,8 @@ class Application:
             self.worker_system.start_all_workers()
         else:
             logger.debug("[Application] Worker system disabled, not starting workers")
+        self._config_service.subscribe("tagger_worker_count", self._on_tagger_worker_count_changed)
+        logger.debug("[Application] Subscribed to tagger_worker_count changes")
         logger.debug("[Application] Initializing InfoService...")
         from nomarr.services.infrastructure.info_svc import InfoConfig, InfoService
 
@@ -421,7 +423,9 @@ class Application:
         from nomarr.services.infrastructure import keys_svc
 
         sessions = len(keys_svc._session_cache) if "keys" in self.services else 0
-        worker_count = len(self.worker_system._workers) if self.worker_system and self.worker_system._started else 0
+        worker_count = (
+            self.worker_system.get_worker_count() if self.worker_system and self.worker_system._started else 0
+        )
         logger.info(
             "[Application] Ready | %d session(s) | %d worker(s) | GPU monitor: %s",
             sessions,
@@ -429,6 +433,42 @@ class Application:
             "enabled" if "info" in self.services else "disabled",
         )
         logger.debug("[Application] Started successfully")
+
+    async def _on_tagger_worker_count_changed(self, key: str, value: Any) -> None:
+        """Handle live changes to tagger_worker_count config.
+
+        Computes the delta between desired and current worker count, then
+        delegates to WorkerSystemService to add or remove workers.
+
+        Args:
+            key: The config key that changed (always "tagger_worker_count").
+            value: The new config value.
+
+        """
+        if self.worker_system is None:
+            logger.debug("[Application] _on_tagger_worker_count_changed: no worker_system, ignoring")
+            return
+        new_count = self._config_service.get_worker_count("tagger")
+        current_count = self.worker_system.get_worker_count()
+        delta = new_count - current_count
+        if delta > 0:
+            logger.info(
+                "[Application] tagger_worker_count changed: %d → %d, adding %d worker(s)",
+                current_count,
+                new_count,
+                delta,
+            )
+            self.worker_system.add_workers(delta)
+        elif delta < 0:
+            logger.info(
+                "[Application] tagger_worker_count changed: %d → %d, removing %d worker(s)",
+                current_count,
+                new_count,
+                abs(delta),
+            )
+            self.worker_system.remove_workers(abs(delta))
+        else:
+            logger.debug("[Application] tagger_worker_count unchanged at %d", new_count)
 
     def stop(self) -> None:
         """Stop the application - clean shutdown of all services and workers.

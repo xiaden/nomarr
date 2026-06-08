@@ -54,13 +54,6 @@ class LibraryFilesAqlOperations:
             "modified_time",
             "duration_seconds",
             "file_size",
-            "album",
-            "title",
-            "artist",
-            "artists",
-            "labels",
-            "genres",
-            "year",
             "scanned_at",
             "chromaprint",
             "is_valid",
@@ -68,7 +61,6 @@ class LibraryFilesAqlOperations:
         },
     )
     ALLOWED_FOLDER_FIELDS = frozenset({"path", "library_key"})
-    TEXT_SEARCH_FIELDS = frozenset({"title"})
 
     def __init__(self, db: SafeDatabase) -> None:
         self._db = db
@@ -280,19 +272,16 @@ class LibraryFilesAqlOperations:
 
         self._db.aql.execute(
             """
-            LET stream_ids = (
+            LET file_stream_data = (
                 FOR e IN file_has_output_stream
                     FILTER e._from IN @fids
-                    RETURN e._to
+                    RETURN {id: e._to, edge: e}
             )
+            LET stream_ids = file_stream_data[* RETURN CURRENT.id]
+            LET file_stream_edges = file_stream_data[* RETURN CURRENT.edge]
             LET output_edges = (
                 FOR e IN output_has_stream
                     FILTER e._to IN stream_ids
-                    RETURN e
-            )
-            LET file_stream_edges = (
-                FOR e IN file_has_output_stream
-                    FILTER e._from IN @fids
                     RETURN e
             )
             LET vector_edges = (
@@ -316,22 +305,22 @@ class LibraryFilesAqlOperations:
                     RETURN e
             )
             FOR oe IN output_edges
-                REMOVE oe IN output_has_stream
+                REMOVE oe IN output_has_stream OPTIONS { ignoreErrors: true }
             FOR sid IN stream_ids
                 REMOVE sid IN ml_output_streams OPTIONS { ignoreErrors: true }
             FOR fse IN file_stream_edges
-                REMOVE fse IN file_has_output_stream
+                REMOVE fse IN file_has_output_stream OPTIONS { ignoreErrors: true }
             FOR ve IN vector_edges
-                REMOVE ve IN file_has_vectors
+                REMOVE ve IN file_has_vectors OPTIONS { ignoreErrors: true }
             FOR te IN tag_edges
-                REMOVE te IN song_has_tags
+                REMOVE te IN song_has_tags OPTIONS { ignoreErrors: true }
             FOR c IN worker_claims
                 FILTER c.file_id IN @fids
-                REMOVE c IN worker_claims
+                REMOVE c IN worker_claims OPTIONS { ignoreErrors: true }
             FOR se IN state_edges
-                REMOVE se IN file_has_state
+                REMOVE se IN file_has_state OPTIONS { ignoreErrors: true }
             FOR lfe IN lib_file_edges
-                REMOVE lfe IN library_contains_file
+                REMOVE lfe IN library_contains_file OPTIONS { ignoreErrors: true }
             FOR fid IN @fids
                 REMOVE fid IN library_files OPTIONS { ignoreErrors: true }
             """,
@@ -343,8 +332,8 @@ class LibraryFilesAqlOperations:
         self._db.aql.execute(
             """
             FOR tag IN tags
-                FILTER LENGTH(FOR e IN song_has_tags FILTER e._to == tag._id LIMIT 1 RETURN 1) == 0
-                REMOVE tag IN tags
+                FILTER FIRST(FOR e IN song_has_tags FILTER e._to == tag._id LIMIT 1 RETURN 1) == null
+                REMOVE tag IN tags OPTIONS { ignoreErrors: true }
             """
         )
 
@@ -447,48 +436,6 @@ class LibraryFilesAqlOperations:
         )
         return [path for path in cursor if isinstance(path, str)]
 
-    def search_files_by_text(self, field_name: str, pattern: str, *, limit: int | None = None) -> list[Document]:
-        primitives._validate_field_name(field_name)
-        if field_name not in self.TEXT_SEARCH_FIELDS:
-            msg = f"Unsupported text-search field: {field_name}"
-            raise ValueError(msg)
-        bind_vars: dict[str, Any] = {
-            "@collection": self.FILE_COLLECTION,
-            "pattern": pattern,
-        }
-        query_lines = [
-            "FOR file IN @@collection",
-            f"    FILTER LIKE(file.{field_name}, @pattern, true)",
-            "    SORT file._key",
-        ]
-        normalized_limit = primitives.normalize_limit(limit)
-        if normalized_limit is not None:
-            query_lines.append("    LIMIT @limit")
-            bind_vars["limit"] = normalized_limit
-        query_lines.append("    RETURN file")
-        return primitives.execute(self._db, "\n".join(query_lines), bind_vars)
-
-    def search_library_files_by_field(self, field: str, value: str, *, limit: int | None = None) -> list[Document]:
-        primitives._validate_field_name(field)
-        if field not in self.TEXT_SEARCH_FIELDS:
-            msg = f"Unsupported library-file search field: {field}"
-            raise ValueError(msg)
-        bind_vars: dict[str, Any] = {
-            "@collection": self.FILE_COLLECTION,
-            "value": value,
-        }
-        query_lines = [
-            "FOR file IN @@collection",
-            f"    FILTER LOWER(TO_STRING(file.{field})) == LOWER(@value)",
-            "    SORT file._key",
-        ]
-        normalized_limit = primitives.normalize_limit(limit)
-        if normalized_limit is not None:
-            query_lines.append("    LIMIT @limit")
-            bind_vars["limit"] = normalized_limit
-        query_lines.append("    RETURN file")
-        return primitives.execute(self._db, "\n".join(query_lines), bind_vars)
-
     def list_library_file_ids(self, library_id: str, *, limit: int | None = None) -> list[str]:
         bind_vars: dict[str, Any] = {
             "@collection": self.LIBRARY_FILE_EDGE_COLLECTION,
@@ -581,20 +528,12 @@ class LibraryFilesAqlOperations:
         return primitives.execute(self._db, "\n".join(query_lines), bind_vars)
 
     def count_library_file_links(self, library_id: str) -> int:
-        cursor = self._db.aql.execute(
-            """
-            FOR edge IN @@collection
-                FILTER edge._from == @library_id
-                COLLECT WITH COUNT INTO count
-                RETURN count
-            """,
-            bind_vars={
-                "@collection": self.LIBRARY_FILE_EDGE_COLLECTION,
-                "library_id": _as_document_id("libraries", library_id),
-            },
+        return primitives.count_edges(
+            self._db,
+            self.LIBRARY_FILE_EDGE_COLLECTION,
+            "_from",
+            _as_document_id("libraries", library_id),
         )
-        results = list(cursor)
-        return int(results[0]) if results else 0
 
     def list_orphaned_file_ids(self) -> list[str]:
         """Return IDs of library_files documents with no library_contains_file inbound edge."""
@@ -625,16 +564,10 @@ class LibraryFilesAqlOperations:
         return primitives.delete_many_by_keys(self._db, self.FILE_COLLECTION, keys)
 
     def _delete_all_file_links_for_library(self, library_id: str) -> None:
-        self._db.aql.execute(
-            """
-            FOR edge IN @@collection
-                FILTER edge._from == @library_id
-                REMOVE edge IN @@collection
-            """,
-            bind_vars={
-                "@collection": self.LIBRARY_FILE_EDGE_COLLECTION,
-                "library_id": _as_document_id("libraries", library_id),
-            },
+        primitives.delete_edges(
+            self._db,
+            self.LIBRARY_FILE_EDGE_COLLECTION,
+            from_id=_as_document_id("libraries", library_id),
         )
 
     def count_files_by_tag(self, tag_key: str, target_value: str) -> int:
@@ -665,18 +598,11 @@ class LibraryFilesAqlOperations:
         return primitives.execute(self._db, "\n".join(query_lines), bind_vars)
 
     def _link_file_to_library(self, library_id: str, file_id: str) -> None:
-        self._db.aql.execute(
-            """
-            UPSERT { _from: @library_id, _to: @file_id }
-                INSERT { _from: @library_id, _to: @file_id }
-                UPDATE {}
-                IN @@collection
-            """,
-            bind_vars={
-                "@collection": self.LIBRARY_FILE_EDGE_COLLECTION,
-                "library_id": _as_document_id("libraries", library_id),
-                "file_id": _as_document_id(self.FILE_COLLECTION, file_id),
-            },
+        primitives.upsert_edge(
+            self._db,
+            self.LIBRARY_FILE_EDGE_COLLECTION,
+            _as_document_id("libraries", library_id),
+            _as_document_id(self.FILE_COLLECTION, file_id),
         )
 
     def _upsert_file_links_batch(self, links: list[dict[str, Any]]) -> None:
@@ -711,18 +637,11 @@ class LibraryFilesAqlOperations:
         return folder_id
 
     def _link_folder_to_library(self, library_id: str, folder_id: str) -> None:
-        self._db.aql.execute(
-            """
-            UPSERT { _from: @library_id, _to: @folder_id }
-                INSERT { _from: @library_id, _to: @folder_id }
-                UPDATE {}
-                IN @@collection
-            """,
-            bind_vars={
-                "@collection": self.LIBRARY_FOLDER_EDGE_COLLECTION,
-                "library_id": _as_document_id("libraries", library_id),
-                "folder_id": _as_document_id(self.FOLDER_COLLECTION, folder_id),
-            },
+        primitives.upsert_edge(
+            self._db,
+            self.LIBRARY_FOLDER_EDGE_COLLECTION,
+            _as_document_id("libraries", library_id),
+            _as_document_id(self.FOLDER_COLLECTION, folder_id),
         )
 
     def get_folder(self, folder_id: str) -> Document | None:
@@ -750,18 +669,11 @@ class LibraryFilesAqlOperations:
         primitives.delete_many_by_keys(self._db, self.FOLDER_COLLECTION, [_extract_key(folder_id)])
 
     def _delete_folder_link(self, library_id: str, folder_id: str) -> None:
-        self._db.aql.execute(
-            """
-            FOR edge IN @@collection
-                FILTER edge._from == @library_id
-                FILTER edge._to == @folder_id
-                REMOVE edge IN @@collection
-            """,
-            bind_vars={
-                "@collection": self.LIBRARY_FOLDER_EDGE_COLLECTION,
-                "library_id": _as_document_id("libraries", library_id),
-                "folder_id": _as_document_id(self.FOLDER_COLLECTION, folder_id),
-            },
+        primitives.delete_edges(
+            self._db,
+            self.LIBRARY_FOLDER_EDGE_COLLECTION,
+            from_id=_as_document_id("libraries", library_id),
+            to_id=_as_document_id(self.FOLDER_COLLECTION, folder_id),
         )
 
     def remove_library_folder(self, library_id: str, folder_id: str) -> None:
@@ -803,16 +715,10 @@ class LibraryFilesAqlOperations:
         )
 
     def _delete_all_folder_links_for_library(self, library_id: str) -> None:
-        self._db.aql.execute(
-            """
-            FOR edge IN @@collection
-                FILTER edge._from == @library_id
-                REMOVE edge IN @@collection
-            """,
-            bind_vars={
-                "@collection": self.LIBRARY_FOLDER_EDGE_COLLECTION,
-                "library_id": _as_document_id("libraries", library_id),
-            },
+        primitives.delete_edges(
+            self._db,
+            self.LIBRARY_FOLDER_EDGE_COLLECTION,
+            from_id=_as_document_id("libraries", library_id),
         )
 
     def truncate_files(self) -> None:
@@ -831,7 +737,7 @@ class LibraryFilesAqlOperations:
         self._db.aql.execute(
             """
             FOR doc IN @@collection
-                REMOVE doc IN @@collection
+                REMOVE doc IN @@collection OPTIONS { ignoreErrors: true }
             """,
             bind_vars={"@collection": collection_name},
         )

@@ -70,7 +70,7 @@ class FileStatesAqlOperations:
             """
             FOR edge IN @@edge_collection
                 FILTER edge._from IN @file_ids AND edge._to == @from_state_id
-                REMOVE edge IN @@edge_collection
+                REMOVE edge IN @@edge_collection OPTIONS { ignoreErrors: true }
             """,
             bind_vars={
                 "@edge_collection": edge_collection,
@@ -82,7 +82,7 @@ class FileStatesAqlOperations:
             """
             FOR edge IN @@edge_collection
                 FILTER edge._from IN @file_ids AND edge._to == @to_state_id
-                REMOVE edge IN @@edge_collection
+                REMOVE edge IN @@edge_collection OPTIONS { ignoreErrors: true }
             """,
             bind_vars={
                 "@edge_collection": edge_collection,
@@ -127,45 +127,21 @@ class FileStatesAqlOperations:
         self.transition_file_states(unique_file_ids, STATE_NOT_TAGGED, STATE_TAGGED)
 
     def add_file_state_edge(self, file_id: str, state: str) -> None:
-        self._db.aql.execute(
-            """
-            UPSERT { _from: @file_id, _to: @state_id }
-                INSERT { _from: @file_id, _to: @state_id }
-                UPDATE {}
-                IN @@edge_collection
-            """,
-            bind_vars={
-                "@edge_collection": self.EDGE_COLLECTION,
-                "file_id": _as_document_id("library_files", file_id),
-                "state_id": _as_document_id(self.STATE_COLLECTION, state),
-            },
+        primitives.upsert_edge(
+            self._db,
+            self.EDGE_COLLECTION,
+            _as_document_id("library_files", file_id),
+            _as_document_id(self.STATE_COLLECTION, state),
         )
 
     def delete_file_state_edges(self, file_ids: list[str]) -> None:
-        if not file_ids:
-            return
         normalized_ids = [_as_document_id("library_files", file_id) for file_id in file_ids]
-        self._db.aql.execute(
-            """
-            FOR edge IN @@edge_collection
-                FILTER edge._from IN @file_ids
-                REMOVE edge IN @@edge_collection
-            """,
-            bind_vars={"@edge_collection": self.EDGE_COLLECTION, "file_ids": normalized_ids},
-        )
+        primitives.delete_edges_by_from_list(self._db, self.EDGE_COLLECTION, normalized_ids)
 
     def count_files_in_state(self, state: str) -> int:
-        cursor = self._db.aql.execute(
-            """
-            FOR edge IN @@edge_collection
-                FILTER edge._to == @state_id
-                COLLECT WITH COUNT INTO count
-                RETURN count
-            """,
-            bind_vars={
-                "@edge_collection": self.EDGE_COLLECTION,
-                "state_id": _as_document_id(self.STATE_COLLECTION, state),
-            },
+        return primitives.count_edges(
+            self._db,
+            self.EDGE_COLLECTION,
+            "_to",
+            _as_document_id(self.STATE_COLLECTION, state),
         )
-        results = list(cursor)
-        return int(results[0]) if results else 0
