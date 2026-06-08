@@ -12,6 +12,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library import (
+    bulk_set_tags_not_extracted,
     get_library_scan_histories,
     resolve_library_for_scan,
 )
@@ -151,6 +152,32 @@ class LibraryScanMixin:
             raise ValueError(msg)
         logger.warning("[LibraryService] Scan cancellation not yet implemented for direct scans")
         return False
+
+    def repair_library_tags(self, library_id: str) -> StartScanResult:
+        """Mark all files for tag re-hydration and start a full scan.
+
+        Transitions every file in the library to the ``tags_not_extracted``
+        state so the tag extraction worker re-reads audio metadata and
+        re-creates tag edges (artist, album, genre, etc.), then starts a
+        normal full scan.
+
+        Args:
+            library_id: ID of the library to repair
+
+        Returns:
+            StartScanResult DTO with files_queued count and task_id
+
+        Raises:
+            LibraryNotFoundError: If library not found
+            LibraryAlreadyScanningError: If library is already being scanned
+
+        """
+        resolve_library_for_scan(self.db, library_id)
+        files_queued = bulk_set_tags_not_extracted(self.db, library_id)
+        logger.info("[LibraryService] Marked %d files for tag re-hydration in library %s", files_queued, library_id)
+        scan_result = self.start_full_scan(library_id)
+        scan_result.files_queued = files_queued
+        return scan_result
 
     def get_status(self, library_id: str | None = None) -> LibraryScanStatusResult:
         """Get current library scan status.

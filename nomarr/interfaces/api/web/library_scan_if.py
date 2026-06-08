@@ -80,6 +80,34 @@ async def scan_library_full(
         ) from e
 
 
+@router.post("/{library_id}/repair-tags", dependencies=[Depends(verify_session)])
+async def repair_library_tags(
+    library_id: str,
+    library_service: "LibraryService" = Depends(get_library_service),
+) -> StartScanWithStatusResponse:
+    """Mark all files for tag re-hydration and start a full scan.
+
+    Transitions every file in the library to the ``tags_not_extracted``
+    state so the tag extraction worker re-reads audio metadata and
+    re-creates tag edges (artist, album, genre, etc.), then starts a
+    normal full scan.
+    """
+    library_id = decode_path_id(library_id)
+    try:
+        stats = library_service.repair_library_tags(library_id=library_id)
+        return StartScanWithStatusResponse.from_dto(stats, library_id)
+    except LibraryNotFoundError:
+        raise HTTPException(status_code=404, detail="Library not found") from None
+    except LibraryAlreadyScanningError:
+        raise HTTPException(status_code=409, detail="Library is already being scanned") from None
+    except Exception as e:
+        logger.exception(f"[Web API] Error repairing tags for library {library_id}")
+        raise HTTPException(
+            status_code=500,
+            detail=sanitize_exception_message(e, "Failed to repair library tags"),
+        ) from e
+
+
 @router.post("/{library_id}/reconcile", dependencies=[Depends(verify_session)])
 async def reconcile_library_paths(
     library_id: str,

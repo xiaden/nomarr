@@ -169,6 +169,17 @@ export async function scanFull(id: string): Promise<ScanResult> {
   return post<ScanResult>(`/api/web/library/${id}/scan/full`, {});
 }
 
+/**
+ * Repair tags for a specific library by marking all files for re-hydration
+ * and starting a full scan. This forces the tag extraction worker to re-read
+ * audio metadata and re-create tag edges (artist, album, genre, etc.).
+ * @param id - Library ID
+ */
+export async function repairTags(id: string): Promise<ScanResult> {
+  // ID is already HTTP-encoded (e.g., "libraries:3970")
+  return post<ScanResult>(`/api/web/library/${id}/repair-tags`, {});
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Tag Reconciliation API
 // ──────────────────────────────────────────────────────────────────────────────

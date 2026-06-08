@@ -17,6 +17,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_NOT_VECTORS_EXTRACTED,
     STATE_TAGGED,
     STATE_TAGS_CURRENT,
+    STATE_TAGS_EXTRACTED,
     STATE_TAGS_NOT_EXTRACTED,
     STATE_TAGS_NOT_WRITTEN,
     STATE_TAGS_STALE,
@@ -404,4 +405,29 @@ def bulk_set_not_vectors_extracted(db: Database) -> int:
     if not file_ids:
         return 0
     transition_file_state(db, file_ids, STATE_VECTORS_EXTRACTED, STATE_NOT_VECTORS_EXTRACTED)
+    return len(file_ids)
+
+
+def bulk_set_tags_not_extracted(db: Database, library_id: str | None = None) -> int:
+    """Transition ``tags_extracted`` files to ``tags_not_extracted`` for re-hydration.
+
+    This forces the tag extraction worker to re-read audio metadata and
+    re-create tag edges (artist, album, genre, etc.) for the affected files.
+
+    Args:
+        db: Database instance
+        library_id: Optional library ``_id`` to scope the transition; when
+            ``None``, all ``tags_extracted`` files are transitioned.
+
+    Returns:
+        Number of files transitioned.
+
+    """
+    file_ids = [file_doc["_id"] for file_doc in _state_file_docs(db, STATE_TAGS_EXTRACTED)]
+    if library_id is not None:
+        library_file_ids = _library_file_ids(db, library_id)
+        file_ids = [file_id for file_id in file_ids if file_id in library_file_ids]
+    if not file_ids:
+        return 0
+    transition_file_state(db, file_ids, STATE_TAGS_EXTRACTED, STATE_TAGS_NOT_EXTRACTED)
     return len(file_ids)

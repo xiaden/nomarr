@@ -37,6 +37,7 @@ import {
   deleteLibrary,
   list as listLibraries,
   writeTags,
+  repairTags,
   scanFull,
   scanQuick,
   update as updateLibrary,
@@ -441,6 +442,27 @@ export function LibraryManagement() {
       showSuccess("Tag write started");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start tag write");
+    }
+  };
+
+  const handleRepairTags = async (libraryId: string, libraryName: string) => {
+    const confirmed = await confirm({
+      title: "Repair Tags?",
+      message: `This will mark all files in "${libraryName}" for tag re-hydration and start a full scan. The tag extraction worker will re-read audio metadata and re-create tag edges (artist, album, genre, etc.) for every file. Continue?`,
+      severity: "warning",
+    });
+
+    if (!confirmed) return;
+
+    try {
+      setError(null);
+      const result = await repairTags(libraryId);
+      showSuccess(
+        `Tag repair started (${result.stats?.files_queued ?? 0} files queued for re-hydration)`
+      );
+      await loadLibraries();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to repair tags");
     }
   };
 
@@ -875,6 +897,27 @@ export function LibraryManagement() {
                   title="Write tags from database to audio files"
                 >
                   Write Tags
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  size="small"
+                  onClick={() => handleRepairTags(lib.library_id, lib.name)}
+                  disabled={
+                    !lib.isEnabled || 
+                    scanningId === lib.library_id || 
+                    pipelineState === "scanning" ||
+                    isOutsideLibraryRoot(lib.rootPath)
+                  }
+                  title={
+                    pipelineState === "scanning"
+                      ? "Scan already in progress"
+                      : isOutsideLibraryRoot(lib.rootPath)
+                      ? "Cannot scan: library is outside library_root"
+                      : "Re-hydrate all tag edges (artist, album, genre, etc.) and rescan"
+                  }
+                >
+                  Repair Tags
                 </Button>
                 <Button
                   variant="contained"
