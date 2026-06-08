@@ -22,10 +22,13 @@ Document = dict[str, Any]
 # Dots are allowed intentionally so callers can reference nested AQL attribute
 # paths like "metadata.title" when interpolating validated field names.
 _FIELD_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.]*$")
+_ARANGO_SYSTEM_FIELDS = frozenset({"_from", "_to", "_key", "_id", "_rev"})
 
 
 def _validate_field_name(field_name: str) -> None:
     """Validate a field name before embedding it into AQL text."""
+    if field_name in _ARANGO_SYSTEM_FIELDS:
+        return
     if not field_name or field_name.startswith(("_", ".")) or _FIELD_NAME_PATTERN.fullmatch(field_name) is None:
         msg = f"Invalid field name for AQL interpolation: {field_name!r}"
         raise ValueError(msg)

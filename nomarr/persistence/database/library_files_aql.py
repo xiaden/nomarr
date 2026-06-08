@@ -9,6 +9,7 @@ from nomarr.persistence.arango_client import SafeDatabase
 Document = dict[str, Any]
 
 _FIELD_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.]*$")
+_ARANGO_SYSTEM_FIELDS = frozenset({"_from", "_to", "_key", "_id", "_rev"})
 
 if TYPE_CHECKING:
     from nomarr.persistence.database.file_states_aql import FileStatesAqlOperations
@@ -30,6 +31,8 @@ def _as_document_id(collection: str, document_id_or_key: str) -> str:
 
 
 def _validate_field_name(field_name: str) -> None:
+    if field_name in _ARANGO_SYSTEM_FIELDS:
+        return
     if not field_name or field_name.startswith(("_", ".")) or _FIELD_NAME_PATTERN.fullmatch(field_name) is None:
         msg = f"Invalid field name for AQL interpolation: {field_name!r}"
         raise ValueError(msg)
