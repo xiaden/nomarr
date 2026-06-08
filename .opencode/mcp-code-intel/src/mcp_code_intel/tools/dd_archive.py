@@ -7,12 +7,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from ..helpers.dd_md import (
-    DD_PREFIX,
-    DESIGNS_COMPLETED_DIR,
-    DESIGNS_PENDING_DIR,
-    parse_dd,
-)
+from mcp_code_intel.helpers.dd_md import DD_PREFIX, DESIGNS_COMPLETED_DIR, DESIGNS_PENDING_DIR, parse_dd
 
 PLANS_PENDING_DIR = "artifacts/plans/pending"
 
@@ -40,8 +35,7 @@ def dd_archive(
         }
 
     # Normalize name
-    if name.endswith(".md"):
-        name = name[:-3]
+    name = name.removesuffix(".md")
     if not name.startswith(DD_PREFIX):
         name = f"{DD_PREFIX}{name}"
     filename = f"{name}.md"
@@ -70,8 +64,7 @@ def dd_archive(
 
     if pending_dir.exists():
         pattern = f"TASK-{slug}-*.md"
-        for plan_file in pending_dir.glob(pattern):
-            pending_plans.append(plan_file.name)
+        pending_plans.extend(plan_file.name for plan_file in pending_dir.glob(pattern))
 
     if pending_plans:
         return {
@@ -84,8 +77,7 @@ def dd_archive(
     completed_dir = workspace_root / "artifacts/plans/completed"
     if completed_dir.exists():
         pattern = f"TASK-{slug}-*.md"
-        for plan_file in completed_dir.glob(pattern):
-            completed_plans.append(plan_file.name)
+        completed_plans.extend(plan_file.name for plan_file in completed_dir.glob(pattern))
 
     # Also check parts directory for plan names
     parts_readme = workspace_root / f"artifacts/designs/parts/{slug}/README.md"
@@ -96,9 +88,8 @@ def dd_archive(
             task_refs = re.findall(r"TASK-[\w-]+", readme_text)
             for ref in task_refs:
                 ref_file = f"{ref}.md"
-                if (pending_dir / ref_file).exists():
-                    if ref_file not in pending_plans:
-                        pending_plans.append(ref_file)
+                if (pending_dir / ref_file).exists() and ref_file not in pending_plans:
+                    pending_plans.append(ref_file)
         except OSError:
             pass
 

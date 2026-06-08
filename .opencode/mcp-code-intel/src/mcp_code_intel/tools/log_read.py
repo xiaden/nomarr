@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..helpers.log_jsonl import (
+from mcp_code_intel.helpers.log_jsonl import (
     LOGS_DIR,
     parse_time_filter,
     read_entries,
@@ -129,8 +129,7 @@ def _log_read_all(
     all_entries: list[tuple[str, Any]] = []
     for log_file in sorted(logs_dir.glob("*.log.jsonl")):
         agent_name = log_file.name.removesuffix(".log.jsonl")
-        for entry in read_entries(log_file):
-            all_entries.append((agent_name, entry))
+        all_entries.extend((agent_name, entry) for entry in read_entries(log_file))
 
     # ISO timestamps sort correctly as strings (lexicographic == chronological)
     all_entries.sort(key=lambda x: x[1].ts, reverse=True)

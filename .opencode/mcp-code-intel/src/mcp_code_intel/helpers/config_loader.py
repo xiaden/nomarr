@@ -336,9 +336,10 @@ def get_python_search_paths(
 
     # If no paths found, auto-detect Python packages
     if not search_paths:
-        for item in workspace_root.iterdir():
-            if item.is_dir() and (item / "__init__.py").exists():
-                search_paths.append(item)
+        search_paths.extend(
+            item for item in workspace_root.iterdir()
+            if item.is_dir() and (item / "__init__.py").exists()
+        )
 
     return search_paths
 

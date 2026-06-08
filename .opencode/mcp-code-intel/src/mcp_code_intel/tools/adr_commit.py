@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import Any
 
-from ..helpers.adr_md import (
+from mcp_code_intel.helpers.adr_md import (
     ADR,
     DECISIONS_DIR,
     DRAFTS_DIR,
@@ -190,7 +191,7 @@ def adr_commit(
             status=status,
             date=today_iso(),
             tags=[t.strip() for t in tags if t.strip()],
-            source_log=source_log if source_log else None,
+            source_log=source_log or None,
             supersedes=supersedes,
             sections=sections,
         )
@@ -223,10 +224,8 @@ def adr_commit(
 
             # Remove the staging draft now that the ADR is committed
             if _draft_file is not None:
-                try:
+                with contextlib.suppress(OSError):
                     _draft_file.unlink(missing_ok=True)
-                except OSError:
-                    pass  # Don't fail the commit just because cleanup failed
 
             return result
         except FileExistsError:

@@ -25,21 +25,21 @@ from typing import Any
 
 try:
     from jsonschema import ValidationError, validate
-except ImportError:
+except ImportError as err:
     raise ImportError(
         "jsonschema is required for plan validation. Install with: pip install jsonschema"
-    )
+    ) from err
 
 try:
     from tree_sitter import Language, Parser
     from tree_sitter_markdown import language as md_language
 
     HAS_TREE_SITTER = True
-except ImportError:
+except ImportError as err:
     raise ImportError(
         "tree-sitter-markdown is required for plan parsing. "
         "Install with: pip install tree-sitter tree-sitter-markdown"
-    )
+    ) from err
 
 # --- Regex patterns ---
 
@@ -121,7 +121,7 @@ def _add_to_dict(d: dict[str, Any], key: str, value: str | list[str]) -> None:
                 existing.append(value)
         else:
             if isinstance(value, list):
-                d[key] = [existing] + value
+                d[key] = [existing, *value]
             else:
                 d[key] = [existing, value]
     else:
@@ -149,7 +149,7 @@ def _finalize_content(lines: list[str]) -> str | list[str] | None:
 
     # Raw text - join with newlines, strip extra whitespace
     text = "\n".join(lines).strip()
-    return text if text else None
+    return text or None
 
 
 def _parse_steps_with_tree_sitter(phase_heading_line: int, raw_lines: list[str]) -> list[Step]:

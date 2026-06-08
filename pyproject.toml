@@ -113,6 +113,7 @@ exclude = [
     "^scripts/",
     "^artifacts/scratch/",
     "^build_resources/essentia/",
+    "^.opencode/",
 ]
 show_error_codes = true
 show_column_numbers = true
@@ -139,6 +140,7 @@ exclude = [
     "scripts/",
     ".github/skills/",
     "build_resources/essentia/",
+    ".opencode/",
 ]
 
 [tool.ruff.lint]

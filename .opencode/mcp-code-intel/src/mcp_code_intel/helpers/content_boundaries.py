@@ -37,9 +37,10 @@ def _find_all_substring_matches(
     boundary_len = len(stripped_boundary)
     last_possible_start = len(file_lines) - boundary_len
 
-    for i in range(search_start, last_possible_start + 1):
-        if all(stripped_boundary[j] in file_lines[i + j].strip() for j in range(boundary_len)):
-            matches.append(i)
+    matches.extend(
+        i for i in range(search_start, last_possible_start + 1)
+        if all(stripped_boundary[j] in file_lines[i + j].strip() for j in range(boundary_len))
+    )
 
     return matches
 

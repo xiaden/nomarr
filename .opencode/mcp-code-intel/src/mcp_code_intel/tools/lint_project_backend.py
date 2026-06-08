@@ -8,6 +8,7 @@ from __future__ import annotations
 
 __all__ = ["lint_project_backend"]
 
+import contextlib
 import json
 import re
 import subprocess
@@ -362,15 +363,13 @@ def lint_project_backend(path: str | None = None, check_all: bool = False) -> di
             total_errors += sum(len(v["occurrences"]) for v in result_json["ruff"].values())
 
         # Auto-format files in place — fixes formatting without reporting it as an error
-        try:
+        with contextlib.suppress(Exception):
             subprocess.run(
                 [str(venv_ruff), "format", *target_files],
                 capture_output=True,
                 stdin=subprocess.DEVNULL,
                 cwd=project_root,
             )
-        except Exception:
-            pass  # format failures are non-critical
 
     # Run mypy (skip if no files to check)
     if target_files and (DEBUG_LINTER is None or DEBUG_LINTER == "mypy"):

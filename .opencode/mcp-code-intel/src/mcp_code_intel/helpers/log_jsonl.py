@@ -100,7 +100,7 @@ def parse_time_filter(value: str) -> datetime | None:
             "h": timedelta(hours=amount),
             "d": timedelta(days=amount),
         }
-        return datetime.now(UTC) - deltas[unit]
+        return datetime.now(UTC) - deltas[unit]  # noqa: TID251
     # ISO timestamp (with or without Z)
     try:
         return datetime.fromisoformat(value.rstrip("Z")).replace(tzinfo=UTC)

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ..helpers.log_jsonl import (
+from mcp_code_intel.helpers.log_jsonl import (
     LOGS_DIR,
     LogEntry,
     append_entry,
@@ -47,7 +47,7 @@ def log_write(
     entry_id = next_entry_id(log_file)
     entry = LogEntry(
         id=entry_id,
-        ts=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        ts=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),  # noqa: TID251
         category=category,
         title=title.strip(),
         tags=[t.strip() for t in (tags or []) if t.strip()],

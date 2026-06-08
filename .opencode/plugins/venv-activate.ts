@@ -12,6 +12,7 @@ export const VenvActivatePlugin: Plugin = async ({ directory }) => {
 
       const command = output.args?.command
       if (typeof command !== "string" || command.trim() === "") return
+      if (command.includes(activateScript)) return
 
       output.args.command = `. ${activateScript} && ${command}`
     },
