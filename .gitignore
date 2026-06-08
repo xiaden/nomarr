@@ -163,3 +163,4 @@ build_resources/models-prepatch/
 opencode.json
 
 .opencode/
+!.opencode/mcp-code-intel/
