@@ -14,6 +14,9 @@ build/
 .venv/
 .venv-*/
 venv/
+.venv
+venv
+.venv-*
 *.py[cod]
 *$py.class
 
@@ -159,5 +162,3 @@ build_resources/models-prepatch/
 .continue/
 
 .devcontainer/
-.venv
-venv
