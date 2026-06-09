@@ -7,7 +7,7 @@ import threading
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.components.library.library_file_state_comp import bulk_set_tags_stale
+from nomarr.components.library.library_file_state_comp import bulk_set_tags_not_fresh
 from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.components.library.reconciliation_comp import (
     claim_files_for_reconciliation,
@@ -194,17 +194,17 @@ class TaggingWriteMixin:
             ),
         )
 
-    def mark_tags_stale(self, library_id: str) -> int:
-        """Mark all file tags in a library as stale.
+    def mark_tags_not_fresh(self, library_id: str) -> int:
+        """Mark all file tags in a library as not fresh.
 
         Args:
             library_id: Library document _id
 
         Returns:
-            Number of files marked stale
+            Number of files marked not fresh
 
         """
-        return bulk_set_tags_stale(self.db, library_id)
+        return bulk_set_tags_not_fresh(self.db, library_id)
 
     def get_reconcile_status(self, library_id: str) -> dict[str, Any]:
         """Get reconciliation status for a library.

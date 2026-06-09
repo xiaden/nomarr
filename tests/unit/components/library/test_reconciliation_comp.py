@@ -14,8 +14,8 @@ from nomarr.components.library.reconciliation_comp import (
 )
 from nomarr.helpers.constants.file_states import (
     STATE_TAGS_CURRENT,
+    STATE_TAGS_NOT_FRESH,
     STATE_TAGS_NOT_WRITTEN,
-    STATE_TAGS_STALE,
     STATE_TAGS_WRITTEN,
 )
 from nomarr.helpers.time_helper import Milliseconds
@@ -250,7 +250,7 @@ class TestSetFileWritten:
         assert second_transition == (
             mock_db,
             ["library_files/abc"],
-            STATE_TAGS_STALE,
+            STATE_TAGS_NOT_FRESH,
             STATE_TAGS_CURRENT,
         )
 

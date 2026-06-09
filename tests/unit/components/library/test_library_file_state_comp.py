@@ -10,7 +10,7 @@ from arango.exceptions import DocumentInsertError
 from nomarr.components.library.library_file_state_comp import (
     bulk_set_not_calibrated,
     bulk_set_not_vectors_extracted,
-    bulk_set_tags_stale,
+    bulk_set_tags_not_fresh,
     clear_all_states,
     clear_all_states_batch,
     count_errored_files,
@@ -38,8 +38,8 @@ from nomarr.helpers.constants.file_states import (
     STATE_TAGGED,
     STATE_TAGS_CURRENT,
     STATE_TAGS_NOT_EXTRACTED,
+    STATE_TAGS_NOT_FRESH,
     STATE_TAGS_NOT_WRITTEN,
-    STATE_TAGS_STALE,
     STATE_VECTORS_EXTRACTED,
 )
 from nomarr.persistence.exceptions import DuplicateKeyError
@@ -67,7 +67,7 @@ class TestInitializeFileStates:
         expected_negative_states = [
             state
             for state in ALL_STATE_VERTICES
-            if state.startswith("file_states/not_") or state in (STATE_TAGS_STALE, STATE_TAGS_NOT_EXTRACTED)
+            if state.startswith("file_states/not_")
         ]
 
         initialize_file_states(mock_db, "library_files/1")
@@ -82,7 +82,7 @@ class TestInitializeFileStates:
         expected_negative_states = [
             state
             for state in ALL_STATE_VERTICES
-            if state.startswith("file_states/not_") or state in (STATE_TAGS_STALE, STATE_TAGS_NOT_EXTRACTED)
+            if state.startswith("file_states/not_")
         ]
         mock_db.app.add_file_states.side_effect = DuplicateKeyError()
 
@@ -110,7 +110,7 @@ class TestInitializeFileStatesBatch:
         expected_negative_states = [
             state
             for state in ALL_STATE_VERTICES
-            if state.startswith("file_states/not_") or state in (STATE_TAGS_STALE, STATE_TAGS_NOT_EXTRACTED)
+            if state.startswith("file_states/not_")
         ]
         expected_docs = [
             {"_from": file_id, "_to": state}
@@ -136,7 +136,7 @@ class TestInitializeFileStatesBatch:
         expected_negative_states = [
             state
             for state in ALL_STATE_VERTICES
-            if state.startswith("file_states/not_") or state in (STATE_TAGS_STALE, STATE_TAGS_NOT_EXTRACTED)
+            if state.startswith("file_states/not_")
         ]
         mock_db.app.add_file_states.side_effect = DuplicateKeyError()
 
@@ -419,7 +419,7 @@ class TestLibraryScopedStateQueries:
         result = get_stale_file_ids(mock_db, library_id="libraries/1")
 
         assert result == ["library_files/2"]
-        mock_db.app.list_file_docs_in_state.assert_called_once_with(STATE_TAGS_STALE)
+        mock_db.app.list_file_docs_in_state.assert_called_once_with(STATE_TAGS_NOT_FRESH)
         mock_db.library.list_library_files.assert_called_once_with("libraries/1")
 
     @pytest.mark.unit
@@ -640,7 +640,7 @@ class TestBulkTransitions:
         mock_db.app.transition_file_states.assert_not_called()
 
     @pytest.mark.unit
-    def test_bulk_set_tags_stale_filters_to_library_before_transition(self) -> None:
+    def test_bulk_set_tags_not_fresh_filters_to_library_before_transition(self) -> None:
         mock_db = _make_mock_db()
         mock_db.app.list_file_docs_in_state.side_effect = lambda state: list(
             [
@@ -652,11 +652,11 @@ class TestBulkTransitions:
         )
         mock_db.library.list_library_files.return_value = [{"_id": "library_files/2"}]
 
-        result = bulk_set_tags_stale(mock_db, library_id="libraries/1")
+        result = bulk_set_tags_not_fresh(mock_db, library_id="libraries/1")
 
         assert result == 1
         mock_db.app.remove_file_states.assert_called_once_with(["library_files/2"])
-        mock_db.app.add_file_states.assert_called_once_with(["library_files/2"], STATE_TAGS_STALE)
+        mock_db.app.add_file_states.assert_called_once_with(["library_files/2"], STATE_TAGS_NOT_FRESH)
         mock_db.app.list_file_docs_in_state.assert_any_call(STATE_TAGS_CURRENT)
         mock_db.library.list_library_files.assert_called_once_with("libraries/1")
         mock_db.app.transition_file_states.assert_not_called()
@@ -685,27 +685,27 @@ class TestBulkTransitions:
         mock_db.app.transition_file_states.assert_not_called()
 
     @pytest.mark.unit
-    def test_bulk_set_tags_stale_transitions_all_tags_current_files_when_no_library_id(self) -> None:
+    def test_bulk_set_tags_not_fresh_transitions_all_tags_current_files_when_no_library_id(self) -> None:
         mock_db = _make_mock_db()
         current_ids = ["library_files/1", "library_files/2"]
         mock_db.app.list_file_docs_in_state.side_effect = lambda state: list(
             [{"_id": file_id} for file_id in current_ids] if state == STATE_TAGS_CURRENT else []
         )
 
-        result = bulk_set_tags_stale(mock_db)
+        result = bulk_set_tags_not_fresh(mock_db)
 
         assert result == 2
         mock_db.app.remove_file_states.assert_called_once_with(current_ids)
-        mock_db.app.add_file_states.assert_called_once_with(current_ids, STATE_TAGS_STALE)
+        mock_db.app.add_file_states.assert_called_once_with(current_ids, STATE_TAGS_NOT_FRESH)
         mock_db.library.list_library_files.assert_not_called()
         mock_db.app.transition_file_states.assert_not_called()
 
     @pytest.mark.unit
-    def test_bulk_set_tags_stale_returns_zero_and_skips_transition_when_no_tags_current_files(self) -> None:
+    def test_bulk_set_tags_not_fresh_returns_zero_and_skips_transition_when_no_tags_current_files(self) -> None:
         mock_db = _make_mock_db()
         mock_db.app.list_file_docs_in_state.return_value = []
 
-        result = bulk_set_tags_stale(mock_db)
+        result = bulk_set_tags_not_fresh(mock_db)
 
         assert result == 0
         mock_db.app.remove_file_states.assert_not_called()

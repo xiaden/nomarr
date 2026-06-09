@@ -13,17 +13,18 @@ The file processing pipeline tracked file state (tagged, calibrated, scanned, re
 
 Adopt a pure boolean state model with 8 axes, each having positive and negative singleton vertices in `file_states`:
 
-- tagged/not_tagged, too_short/not_too_short, calibrated/not_calibrated
-- tags_written/tags_not_written, tags_current/tags_stale
-- scanned/not_scanned, vectors_extracted/not_vectors_extracted, errored/not_errored
+- tagged/not_tagged, calibrated/not_calibrated
+- tags_written/tags_not_written, tags_current/tags_not_fresh
+- tags_extracted/tags_not_extracted, scanned/not_scanned
+- vectors_extracted/not_vectors_extracted, errored/not_errored
 
 Key design choices:
 
 1. **Every file has exactly one edge per axis** (invariant enforced by REMOVE+INSERT transitions)
 2. **Zero payload on edges** — all domain data lives on documents or in separate collections
 3. **Negative vertices enable O(1) discovery** via INBOUND traversal (vs old O(n) scans)
-4. **"Reconciled" split** into two independent axes: tags_written/tags_not_written (disk state) and tags_current/tags_stale (model freshness)
-5. **too_short is a proper boolean axis** with set_too_short/set_not_too_short like all others
+4. **"Reconciled" split** into two independent axes: tags_written/tags_not_written (disk state) and tags_current/tags_not_fresh (model freshness)
+5. **Negative poles always use `not_` prefix** for consistency (tags_not_fresh, tags_not_extracted)
 6. **Library-scoped queries use set intersection** via OUTBOUND library_contains_file + INTERSECTION()
 7. **Edge payloads dropped entirely** — alpha policy allows breaking changes, no migration of old payload data
 8. **has_nomarr_namespace dropped** (YAGNI — write-only, never read)

@@ -203,7 +203,7 @@ async def update_write_mode(
         raise HTTPException(status_code=400, detail="file_write_mode must be 'none', 'minimal', or 'full'")
     try:
         library_service.update_library(library_id, file_write_mode=file_write_mode)
-        tagging_service.mark_tags_stale(library_id)
+        tagging_service.mark_tags_not_fresh(library_id)
         status = tagging_service.get_reconcile_status(library_id=library_id)
         return UpdateWriteModeResponse(
             file_write_mode=file_write_mode,

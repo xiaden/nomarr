@@ -11,7 +11,7 @@ STATE_NOT_CALIBRATED = "file_states/not_calibrated"
 STATE_TAGS_WRITTEN = "file_states/tags_written"
 STATE_TAGS_NOT_WRITTEN = "file_states/tags_not_written"
 STATE_TAGS_CURRENT = "file_states/tags_current"
-STATE_TAGS_STALE = "file_states/tags_stale"
+STATE_TAGS_NOT_FRESH = "file_states/tags_not_fresh"
 STATE_TAGS_EXTRACTED = "file_states/tags_extracted"
 STATE_TAGS_NOT_EXTRACTED = "file_states/tags_not_extracted"
 STATE_SCANNED = "file_states/scanned"
@@ -40,7 +40,7 @@ ALL_STATE_VERTICES = (
     STATE_TAGS_WRITTEN,
     STATE_TAGS_NOT_WRITTEN,
     STATE_TAGS_CURRENT,
-    STATE_TAGS_STALE,
+    STATE_TAGS_NOT_FRESH,
     STATE_TAGS_EXTRACTED,
     STATE_TAGS_NOT_EXTRACTED,
     STATE_SCANNED,
@@ -55,7 +55,7 @@ AXIS_PAIRS: dict[StateAxis, tuple[str, str]] = {
     "tagged": (STATE_TAGGED, STATE_NOT_TAGGED),
     "calibrated": (STATE_CALIBRATED, STATE_NOT_CALIBRATED),
     "tags_written": (STATE_TAGS_WRITTEN, STATE_TAGS_NOT_WRITTEN),
-    "tags_current": (STATE_TAGS_CURRENT, STATE_TAGS_STALE),
+    "tags_current": (STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH),
     "tags_extracted": (STATE_TAGS_EXTRACTED, STATE_TAGS_NOT_EXTRACTED),
     "scanned": (STATE_SCANNED, STATE_NOT_SCANNED),
     "vectors_extracted": (STATE_VECTORS_EXTRACTED, STATE_NOT_VECTORS_EXTRACTED),
@@ -77,8 +77,8 @@ __all__ = [
     "STATE_TAGS_CURRENT",
     "STATE_TAGS_EXTRACTED",
     "STATE_TAGS_NOT_EXTRACTED",
+    "STATE_TAGS_NOT_FRESH",
     "STATE_TAGS_NOT_WRITTEN",
-    "STATE_TAGS_STALE",
     "STATE_TAGS_WRITTEN",
     "STATE_VECTORS_EXTRACTED",
     "StateAxis",

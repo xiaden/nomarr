@@ -15,6 +15,26 @@ This module contains the status contract and callback protocols for health monit
 | dead        | HealthMonitor | Intervention needed (timeout/misses/EOF)     |
 | failed      | Domain        | Permanent, not restarting                    |
 
+### State Transitions
+
+```
+pending ──(startup timeout)──> dead
+pending ──(healthy frame)──> healthy
+
+healthy ──(miss)──> unhealthy
+healthy ──(recovering frame)──> recovering
+
+unhealthy ──(healthy frame)──> healthy
+unhealthy ──(max misses)──> dead
+unhealthy ──(recovering frame)──> recovering
+
+recovering ──(healthy frame)──> healthy
+recovering ──(recovery timeout)──> dead
+
+Any state ──(EOF on pipe)──> dead
+Any state ──(set_failed called)──> failed (terminal)
+```
+
 ### Key Rules
 
 1. A frame with status="healthy" resets consecutive misses and transitions to healthy;
@@ -24,6 +44,8 @@ This module contains the status contract and callback protocols for health monit
    health checks, callbacks, or state transitions occur.
 
 3. EOF on pipe → dead (from any state except failed).
+
+4. Terminal states (dead, failed) cannot transition to any other state.
 """
 
 from dataclasses import dataclass

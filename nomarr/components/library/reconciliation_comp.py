@@ -8,8 +8,8 @@ from nomarr.components.library.library_file_state_comp import get_stale_file_ids
 from nomarr.components.workers.worker_discovery_comp import try_insert_or_steal_claim
 from nomarr.helpers.constants.file_states import (
     STATE_TAGS_CURRENT,
+    STATE_TAGS_NOT_FRESH,
     STATE_TAGS_NOT_WRITTEN,
-    STATE_TAGS_STALE,
     STATE_TAGS_WRITTEN,
 )
 from nomarr.helpers.time_helper import now_ms
@@ -83,7 +83,7 @@ def set_file_written(db: Database, file_key: str) -> None:
         file_id = f"library_files/{file_key}"
 
     transition_file_state(db, [file_id], STATE_TAGS_NOT_WRITTEN, STATE_TAGS_WRITTEN)
-    transition_file_state(db, [file_id], STATE_TAGS_STALE, STATE_TAGS_CURRENT)
+    transition_file_state(db, [file_id], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
     db.app.release_claim(file_id)
 
 
@@ -97,5 +97,5 @@ def release_claim(db: Database, file_key: str) -> None:
 
 
 def count_files_needing_reconciliation(db: Database, library_id: str) -> int:
-    """Count files that are still in the ``tags_stale`` state."""
+    """Count files that are still in the ``tags_not_fresh`` state."""
     return len(get_stale_file_ids(db, library_id=library_id))

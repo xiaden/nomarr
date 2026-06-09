@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_NOT_TAGGED, STATE_TAGGED, STATE_TAGS_STALE
+from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_NOT_TAGGED, STATE_TAGGED
 from nomarr.persistence.aql import primitives
 from nomarr.persistence.arango_client import SafeDatabase
 
 _NEGATIVE_FILE_STATES = tuple(
-    state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_") or state == STATE_TAGS_STALE
+    state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_")
 )
 
 

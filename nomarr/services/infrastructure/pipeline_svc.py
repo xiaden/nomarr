@@ -12,6 +12,7 @@ from nomarr.components.library.scan_lifecycle_comp import (
     bulk_transition_pipeline_state,
     get_libraries_in_pipeline_state,
     get_pipeline_state,
+    is_scan_stale,
     transition_pipeline_state,
     update_scan_progress,
 )
@@ -130,6 +131,37 @@ class LibraryPipelineService:
             logger.info("Recovered stale writing library %s to write_ready", library_id)
 
         return recovery_counts
+
+    def recover_stale_heartbeats(self, timeout_ms: int = 300000) -> int:
+        """Recover scanning libraries with stale heartbeats.
+
+        Checks all libraries in the scanning state and recovers those whose
+        heartbeat is older than the timeout.
+
+        Args:
+            timeout_ms: Maximum age of heartbeat in milliseconds before considered stale.
+                Defaults to 300000 (5 minutes).
+
+        Returns:
+            Number of libraries recovered.
+
+        """
+        scanning_libraries = get_libraries_in_pipeline_state(self.db, PIPELINE_SCANNING)
+        recovered = 0
+        for library_id in scanning_libraries:
+            if is_scan_stale(self.db, library_id, timeout_ms):
+                transition_pipeline_state(self.db, library_id, PIPELINE_IDLE)
+                update_scan_progress(
+                    self.db,
+                    library_id,
+                    scan_error="Scan timed out: no heartbeat received",
+                )
+                recovered += 1
+                logger.warning(
+                    "Recovered scanning library %s due to stale heartbeat",
+                    library_id,
+                )
+        return recovered
 
     def trigger_calibration(self) -> None:
         """Start calibration or shortcut directly to calibration apply."""

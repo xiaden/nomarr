@@ -25,6 +25,7 @@ from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_IDLE,
     PIPELINE_ML_RUNNING,
     PIPELINE_SCANNING,
+    VALID_PIPELINE_TRANSITIONS,
 )
 from nomarr.helpers.exceptions import LibraryNotFoundError
 from nomarr.helpers.time_helper import now_ms
@@ -44,6 +45,7 @@ _DEFAULT_SCAN_FIELDS: dict[str, Any] = {
     "started_at": None,
     "error": None,
     "scan_type": None,
+    "scan_heartbeat": None,
 }
 
 
@@ -155,7 +157,23 @@ def update_scan_state(db: Database, library_id: str, **fields: Any) -> dict[str,
 
 
 def transition_pipeline_state(db: Database, library_id: str, next_state: str) -> None:
-    """Persist a library's current pipeline state via the constructor namespace."""
+    """Persist a library's current pipeline state via the constructor namespace.
+
+    Validates that the transition is allowed from the current state.
+
+    Raises:
+        ValueError: If the transition is not valid from the current state.
+    """
+    current_state = db.app.get_pipeline_state(library_id)
+    if current_state is not None:
+        allowed = VALID_PIPELINE_TRANSITIONS.get(current_state, set())
+        if next_state not in allowed:
+            msg = (
+                f"Invalid pipeline transition for library {library_id}: "
+                f"{current_state!r} -> {next_state!r}. "
+                f"Allowed targets: {sorted(allowed)}"
+            )
+            raise ValueError(msg)
     db.app.update_pipeline_state(library_id, next_state)
 
 
@@ -192,7 +210,20 @@ def get_libraries_in_pipeline_state(db: Database, state: str) -> list[str]:
 
 
 def bulk_transition_pipeline_state(db: Database, from_state: str, to_state: str) -> int:
-    """Transition every library currently in `from_state` to `to_state`."""
+    """Transition every library currently in `from_state` to `to_state`.
+
+    Validates that the transition is allowed from the source state.
+
+    Raises:
+        ValueError: If the transition is not valid from the source state.
+    """
+    allowed = VALID_PIPELINE_TRANSITIONS.get(from_state, set())
+    if to_state not in allowed:
+        msg = (
+            f"Invalid bulk pipeline transition: {from_state!r} -> {to_state!r}. "
+            f"Allowed targets: {sorted(allowed)}"
+        )
+        raise ValueError(msg)
     library_ids = get_libraries_in_pipeline_state(db, from_state)
     for library_id in library_ids:
         db.app.update_pipeline_state(library_id, to_state)
@@ -435,6 +466,7 @@ def update_scan_progress(
     scan_error: str | None | object = _UNSET,
     completed_at: int | None | object = _UNSET,
     started_at: int | None | object = _UNSET,
+    heartbeat: bool = False,
 ) -> None:
     """Update persisted scan progress fields on the scan document.
 
@@ -449,6 +481,7 @@ def update_scan_progress(
         scan_error: Error message to persist on the scan document, or ``None`` to clear it
         completed_at: Completion timestamp in milliseconds, or ``None`` to clear it
         started_at: Start timestamp in milliseconds, or ``None`` to clear it
+        heartbeat: If True, updates the scan_heartbeat timestamp to now
 
     """
     update_fields: dict[str, Any] = {}
@@ -462,9 +495,61 @@ def update_scan_progress(
         update_fields["completed_at"] = completed_at
     if started_at is not _UNSET:
         update_fields["started_at"] = started_at
+    if heartbeat:
+        update_fields["scan_heartbeat"] = now_ms().value
 
     if update_fields:
         update_scan_state(db, library_id, **update_fields)
+
+
+def get_scan_heartbeat(db: Database, library_id: str) -> int | None:
+    """Return the scan heartbeat timestamp for a library.
+
+    Args:
+        db: Database instance
+        library_id: Library document ``_id``
+
+    Returns:
+        Heartbeat timestamp in milliseconds, or None if not set.
+
+    """
+    scan_doc = get_scan_state(db, library_id)
+    if scan_doc is None:
+        return None
+    return scan_doc.get("scan_heartbeat")
+
+
+def is_scan_stale(db: Database, library_id: str, timeout_ms: int = 300000) -> bool:
+    """Check whether a scanning library has a stale heartbeat.
+
+    Args:
+        db: Database instance
+        library_id: Library document ``_id``
+        timeout_ms: Maximum age of heartbeat in milliseconds before considered stale.
+            Defaults to 300000 (5 minutes).
+
+    Returns:
+        True if the scan is stale (heartbeat older than timeout), False otherwise.
+
+    """
+    try:
+        pipeline_state = get_pipeline_state(db, library_id)
+    except ValueError:
+        return False
+
+    if pipeline_state != PIPELINE_SCANNING:
+        return False
+
+    heartbeat = get_scan_heartbeat(db, library_id)
+    if heartbeat is None:
+        scan_doc = get_scan_state(db, library_id)
+        started_at = scan_doc.get("started_at") if scan_doc else None
+        if started_at is None:
+            return False
+        heartbeat = started_at
+
+    age_ms = now_ms().value - heartbeat
+    return age_ms > timeout_ms
 
 
 def transition_to_scanning(db: Database, library_id: str) -> None:

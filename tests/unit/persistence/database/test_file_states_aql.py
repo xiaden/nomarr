@@ -6,11 +6,11 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_NOT_TAGGED, STATE_TAGGED, STATE_TAGS_STALE
+from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_NOT_TAGGED, STATE_TAGGED
 from nomarr.persistence.database.file_states_aql import FileStatesAqlOperations
 
 _EXPECTED_NEGATIVE_FILE_STATES = tuple(
-    state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_") or state == STATE_TAGS_STALE
+    state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_")
 )
 
 

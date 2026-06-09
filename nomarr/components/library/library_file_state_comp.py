@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, cast
 
@@ -19,14 +20,16 @@ from nomarr.helpers.constants.file_states import (
     STATE_TAGS_CURRENT,
     STATE_TAGS_EXTRACTED,
     STATE_TAGS_NOT_EXTRACTED,
+    STATE_TAGS_NOT_FRESH,
     STATE_TAGS_NOT_WRITTEN,
-    STATE_TAGS_STALE,
     STATE_VECTORS_EXTRACTED,
 )
 from nomarr.persistence.exceptions import DuplicateKeyError
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
+
+logger = logging.getLogger(__name__)
 
 
 # Build reverse lookup: given (from_vertex, to_vertex), verify the pair belongs to the same axis.
@@ -143,11 +146,7 @@ def _extract_matching_head_keys(
 
 def initialize_file_states(db: Database, file_id: str) -> None:
     """Create all-negative state edges for one file."""
-    negative_states = [
-        state
-        for state in ALL_STATE_VERTICES
-        if state.startswith("file_states/not_") or state in (STATE_TAGS_STALE, STATE_TAGS_NOT_EXTRACTED)
-    ]
+    negative_states = [state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_")]
     edge_docs = [{"_from": file_id, "_to": state} for state in negative_states]
     _insert_file_state_edges_ignoring_duplicates(db, edge_docs)
 
@@ -156,11 +155,7 @@ def initialize_file_states_batch(db: Database, file_ids: list[str]) -> None:
     """Create all-negative state edges for multiple files."""
     if not file_ids:
         return
-    negative_states = [
-        state
-        for state in ALL_STATE_VERTICES
-        if state.startswith("file_states/not_") or state in (STATE_TAGS_STALE, STATE_TAGS_NOT_EXTRACTED)
-    ]
+    negative_states = [state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_")]
     edge_docs = [{"_from": file_id, "_to": state} for file_id in file_ids for state in negative_states]
     _insert_file_state_edges_ignoring_duplicates(db, edge_docs)
 
@@ -279,6 +274,29 @@ def count_errored_files(db: Database, library_id: str) -> int:
     return len(get_errored_file_ids(db, library_id, limit=None))
 
 
+def mark_file_errored(db: Database, file_id: str) -> None:
+    """Transition a file to the errored state from its current state.
+
+    This helper queries the file's current state and transitions it to errored,
+    avoiding the need for callers to know the current state. Logs the transition
+    for observability.
+
+    Args:
+        db: Database instance
+        file_id: File document ``_id`` to mark as errored
+
+    """
+    membership = _state_membership_for_files(db, [file_id])
+    current_states = membership.get(file_id, set())
+    positive_states = [s for s in current_states if not s.startswith("file_states/not_")]
+    if not positive_states:
+        logger.warning("File %s has no positive state to transition from", file_id)
+        return
+    from_state = positive_states[0]
+    transition_file_state(db, [file_id], from_state, STATE_ERRORED)
+    logger.info("File %s transitioned to errored from %s", file_id, from_state)
+
+
 def get_uncalibrated_tagged_file_ids(db: Database, library_id: str) -> list[str]:
     """Return ids that are tagged and not calibrated within one library."""
     tagged_ids = _state_file_ids(db, STATE_TAGGED)
@@ -289,8 +307,8 @@ def get_uncalibrated_tagged_file_ids(db: Database, library_id: str) -> list[str]
 
 
 def get_stale_file_ids(db: Database, library_id: str | None = None) -> list[str]:
-    """Return file ids in the ``tags_stale`` state."""
-    stale_files = _state_file_docs(db, STATE_TAGS_STALE)
+    """Return file ids in the ``tags_not_fresh`` state."""
+    stale_files = _state_file_docs(db, STATE_TAGS_NOT_FRESH)
     if library_id is None:
         return [doc["_id"] for doc in stale_files]
     library_file_ids = _library_file_ids(db, library_id)
@@ -387,15 +405,15 @@ def bulk_set_not_calibrated(db: Database) -> int:
     return len(file_ids)
 
 
-def bulk_set_tags_stale(db: Database, library_id: str | None = None) -> int:
-    """Transition ``tags_current`` files to ``tags_stale``."""
+def bulk_set_tags_not_fresh(db: Database, library_id: str | None = None) -> int:
+    """Transition ``tags_current`` files to ``tags_not_fresh``."""
     file_ids = [file_doc["_id"] for file_doc in _state_file_docs(db, STATE_TAGS_CURRENT)]
     if library_id is not None:
         library_file_ids = _library_file_ids(db, library_id)
         file_ids = [file_id for file_id in file_ids if file_id in library_file_ids]
     if not file_ids:
         return 0
-    transition_file_state(db, file_ids, STATE_TAGS_CURRENT, STATE_TAGS_STALE)
+    transition_file_state(db, file_ids, STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH)
     return len(file_ids)
 
 
