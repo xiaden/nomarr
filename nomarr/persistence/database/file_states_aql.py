@@ -6,9 +6,7 @@ from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_NOT_T
 from nomarr.persistence.aql import primitives
 from nomarr.persistence.arango_client import SafeDatabase
 
-_NEGATIVE_FILE_STATES = tuple(
-    state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_")
-)
+_NEGATIVE_FILE_STATES = tuple(state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_"))
 
 
 def _as_document_id(collection: str, document_id_or_key: str) -> str:

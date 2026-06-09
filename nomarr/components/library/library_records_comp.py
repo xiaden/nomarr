@@ -18,7 +18,7 @@ from nomarr.components.library.scan_lifecycle_comp import (
     get_pipeline_state,
     get_scan_state,
 )
-from nomarr.helpers.constants.pipeline_states import PIPELINE_ML_RUNNING
+from nomarr.helpers.constants.pipeline_states import ML_IN_PROGRESS
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
@@ -221,7 +221,8 @@ def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, A
         if not isinstance(library_ref, str):
             continue
         library_id = normalize_library_id(library_ref)
-        if db.app.get_pipeline_state(library_id) != PIPELINE_ML_RUNNING:
+        pipeline_state = db.library.get_pipeline_state(library_id)
+        if not pipeline_state or pipeline_state.get("ml_state") != ML_IN_PROGRESS:
             continue
         if count_untagged_files(db, library_id) != 0:
             continue

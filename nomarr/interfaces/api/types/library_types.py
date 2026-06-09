@@ -420,7 +420,10 @@ class PipelineStatusResponse(BaseModel):
     """Response for the per-library pipeline status endpoint."""
 
     library_id: str
-    state: str
+    scan_state: str
+    ml_state: str
+    calibration_state: str
+    tag_write_state: str
     untagged_count: int | None
     uncalibrated_count: int | None
     pending_write_count: int | None
@@ -433,7 +436,10 @@ class PipelineStatusResponse(BaseModel):
         assert isinstance(dto, LibraryPipelineStatusDTO)
         return cls(
             library_id=dto.library_id,
-            state=dto.state,
+            scan_state=dto.scan_state,
+            ml_state=dto.ml_state,
+            calibration_state=dto.calibration_state,
+            tag_write_state=dto.tag_write_state,
             untagged_count=dto.untagged_count,
             uncalibrated_count=dto.uncalibrated_count,
             pending_write_count=dto.pending_write_count,

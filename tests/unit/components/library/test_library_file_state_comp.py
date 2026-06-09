@@ -37,7 +37,6 @@ from nomarr.helpers.constants.file_states import (
     STATE_NOT_VECTORS_EXTRACTED,
     STATE_TAGGED,
     STATE_TAGS_CURRENT,
-    STATE_TAGS_NOT_EXTRACTED,
     STATE_TAGS_NOT_FRESH,
     STATE_TAGS_NOT_WRITTEN,
     STATE_VECTORS_EXTRACTED,
@@ -64,11 +63,7 @@ class TestInitializeFileStates:
     @pytest.mark.unit
     def test_inserts_negative_state_edges_for_single_file(self) -> None:
         mock_db = _make_mock_db()
-        expected_negative_states = [
-            state
-            for state in ALL_STATE_VERTICES
-            if state.startswith("file_states/not_")
-        ]
+        expected_negative_states = [state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_")]
 
         initialize_file_states(mock_db, "library_files/1")
 
@@ -79,11 +74,7 @@ class TestInitializeFileStates:
     @pytest.mark.unit
     def test_silently_skips_duplicate_key_error(self) -> None:
         mock_db = _make_mock_db()
-        expected_negative_states = [
-            state
-            for state in ALL_STATE_VERTICES
-            if state.startswith("file_states/not_")
-        ]
+        expected_negative_states = [state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_")]
         mock_db.app.add_file_states.side_effect = DuplicateKeyError()
 
         initialize_file_states(mock_db, "library_files/1")
@@ -107,11 +98,7 @@ class TestInitializeFileStatesBatch:
     @pytest.mark.unit
     def test_inserts_negative_state_edges_for_multiple_files(self) -> None:
         mock_db = _make_mock_db()
-        expected_negative_states = [
-            state
-            for state in ALL_STATE_VERTICES
-            if state.startswith("file_states/not_")
-        ]
+        expected_negative_states = [state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_")]
         expected_docs = [
             {"_from": file_id, "_to": state}
             for file_id in ["library_files/1", "library_files/2"]
@@ -133,11 +120,7 @@ class TestInitializeFileStatesBatch:
     @pytest.mark.unit
     def test_silently_skips_duplicate_key_error(self) -> None:
         mock_db = _make_mock_db()
-        expected_negative_states = [
-            state
-            for state in ALL_STATE_VERTICES
-            if state.startswith("file_states/not_")
-        ]
+        expected_negative_states = [state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_")]
         mock_db.app.add_file_states.side_effect = DuplicateKeyError()
 
         initialize_file_states_batch(mock_db, ["library_files/1", "library_files/2"])

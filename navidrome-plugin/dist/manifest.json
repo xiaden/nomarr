@@ -13,7 +13,7 @@
       "reason": "Schedule recurring personal playlist generation"
     },
     "users": {
-      "reason": "Receive scrobble events and access user information for Subsonic API calls and playlist generation"
+      "reason": "Access user information for Subsonic API calls and playlist generation"
     },
     "subsonicapi": {
       "reason": "Manage personal playlists in Navidrome on behalf of configured users"

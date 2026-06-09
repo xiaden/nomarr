@@ -225,7 +225,7 @@ request. When omitted, Nomarr uses its normal backend default behavior.
 - Verify Nomarr is reachable from the Navidrome host:
 
   ```bash
-  curl -H "X-API-Key: YOUR_KEY" http://nomarr:8356/api/v1/navidrome/similar-track \
+  curl -H "Authorization: Bearer YOUR_KEY" http://nomarr:8356/api/v1/navidrome/similar-track \
     -H "Content-Type: application/json" \
     -d '{"seed":{"title":"Song","artist":"Artist"},"count":10}'
   ```

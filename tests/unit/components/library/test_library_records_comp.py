@@ -8,7 +8,6 @@ import pytest
 
 from nomarr.components.library.library_id_comp import library_key_from_ref, normalize_library_id
 from nomarr.components.library.library_records_comp import (
-    PIPELINE_ML_RUNNING,
     create_library_record,
     find_library_containing_path,
     find_ml_complete_libraries,
@@ -20,6 +19,7 @@ from nomarr.components.library.library_records_comp import (
     update_library_config_fields,
     update_library_record,
 )
+from nomarr.helpers.constants.pipeline_states import ML_IN_PROGRESS
 
 
 class TestListAllLibraryKeys:
@@ -320,7 +320,12 @@ class TestFindMlCompleteLibraries:
     def test_excludes_library_with_untagged_files(self) -> None:
         mock_db = MagicMock()
         mock_db.library.list_libraries.return_value = [{"_key": "42"}]
-        mock_db.app.get_pipeline_state.return_value = PIPELINE_ML_RUNNING
+        mock_db.library.get_pipeline_state.return_value = {
+            "scan_state": "scanned",
+            "ml_state": ML_IN_PROGRESS,
+            "calibration_state": "not_calibrated",
+            "tag_write_state": "not_written",
+        }
 
         with (
             patch(
@@ -341,7 +346,12 @@ class TestFindMlCompleteLibraries:
     def test_includes_fully_tagged_library(self) -> None:
         mock_db = MagicMock()
         mock_db.library.list_libraries.return_value = [{"_key": "42"}]
-        mock_db.app.get_pipeline_state.return_value = PIPELINE_ML_RUNNING
+        mock_db.library.get_pipeline_state.return_value = {
+            "scan_state": "scanned",
+            "ml_state": ML_IN_PROGRESS,
+            "calibration_state": "not_calibrated",
+            "tag_write_state": "not_written",
+        }
 
         with (
             patch(
@@ -365,9 +375,19 @@ class TestFindMlCompleteLibraries:
             {"_key": "7"},
             {"_key": "42"},
         ]
-        mock_db.app.get_pipeline_state.side_effect = [
-            PIPELINE_ML_RUNNING,
-            PIPELINE_ML_RUNNING,
+        mock_db.library.get_pipeline_state.side_effect = [
+            {
+                "scan_state": "scanned",
+                "ml_state": ML_IN_PROGRESS,
+                "calibration_state": "not_calibrated",
+                "tag_write_state": "not_written",
+            },
+            {
+                "scan_state": "scanned",
+                "ml_state": ML_IN_PROGRESS,
+                "calibration_state": "not_calibrated",
+                "tag_write_state": "not_written",
+            },
         ]
 
         with (

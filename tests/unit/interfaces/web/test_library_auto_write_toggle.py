@@ -86,7 +86,7 @@ class TestLibraryAutoWriteToggle:
         new_library = make_library(auto_write=True)
         mock_library_service.get_library.return_value = old_library
         mock_library_service.update_library.return_value = new_library
-        mock_pipeline_service.get_pipeline_status.return_value = MagicMock(state="write_ready")
+        mock_pipeline_service.get_pipeline_status.return_value = MagicMock(tag_write_state="not_written")
 
         response = client.patch(
             "/api/web/library/libraries:test-lib",
@@ -110,7 +110,7 @@ class TestLibraryAutoWriteToggle:
         new_library = make_library(auto_write=False)
         mock_library_service.get_library.return_value = old_library
         mock_library_service.update_library.return_value = new_library
-        mock_pipeline_service.get_pipeline_status.return_value = MagicMock(state="writing")
+        mock_pipeline_service.get_pipeline_status.return_value = MagicMock(tag_write_state="writing")
 
         response = client.patch(
             "/api/web/library/libraries:test-lib",

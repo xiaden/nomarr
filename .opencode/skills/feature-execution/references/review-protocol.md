@@ -62,10 +62,10 @@ matches what was planned — not just that the code compiles.}
 Use git diff or plan step annotations to identify these.
 Example:
 - nomarr/persistence/constructor/builder.py (modified)
-- nomarr/workflows/scrobble_ingest_wf.py (new)
-- nomarr/services/domain/scrobble_svc.py (new)
-- nomarr/interfaces/api/v1/scrobble_if.py (new)
-- nomarr/helpers/dto/scrobble_dto.py (new)}
+- nomarr/workflows/navidrome/generate_playlists_wf.py (modified)
+- nomarr/services/domain/navidrome_svc.py (modified)
+- nomarr/interfaces/api/v1/navidrome_v1_if.py (modified)
+- nomarr/helpers/dto/navidrome_dto.py (modified)}
 
 ## Review Checklist
 
@@ -168,7 +168,7 @@ For each issue:
 ## Constraints
 - Do NOT fix issues yourself. Report them. The orchestrator handles fixes.
 - Do NOT skip categories because "the code looks fine." Run the actual checks.
-- Be specific. "Code quality could be better" is not a finding. "bare except on line 47 of scrobble_wf.py swallows ConnectionError" is.
+- Be specific. "Code quality could be better" is not a finding. "bare except on line 47 of generate_playlists_wf.py swallows ConnectionError" is.
 - Severity guide:
   - critical: Breaks architecture rules, layer violation, missing implementation
   - major: Contract drift, missing error handling, type safety holes

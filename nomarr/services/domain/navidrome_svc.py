@@ -34,7 +34,6 @@ from nomarr.workflows.navidrome import (
 )
 from nomarr.workflows.navidrome.find_similar_tracks_wf import find_similar_tracks
 from nomarr.workflows.navidrome.generate_playlists_wf import generate_playlists
-from nomarr.workflows.navidrome.ingest_scrobble_wf import ingest_scrobble
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -349,23 +348,6 @@ class NavidromeService:
             vector_group_size=group_size,
             vector_search_thoroughness=thoroughness,
         )
-
-    # ------------------------------------------------------------------
-    # Scrobble ingestion
-    # ------------------------------------------------------------------
-
-    def ingest_scrobble(self, user_id: str, nd_id: str, timestamp_ms: int) -> None:
-        """Ingest a real-time scrobble event.
-
-        Thin delegation to the scrobble ingestion workflow.
-
-        Args:
-            user_id: Navidrome user identifier.
-            nd_id: Navidrome track (song) identifier.
-            timestamp_ms: Epoch milliseconds of the scrobble event.
-
-        """
-        ingest_scrobble(db=self._db, user_id=user_id, nd_id=nd_id, timestamp_ms=timestamp_ms)
 
     # ------------------------------------------------------------------
     # Playlist generation

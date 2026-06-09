@@ -9,9 +9,7 @@ import pytest
 from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_NOT_TAGGED, STATE_TAGGED
 from nomarr.persistence.database.file_states_aql import FileStatesAqlOperations
 
-_EXPECTED_NEGATIVE_FILE_STATES = tuple(
-    state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_")
-)
+_EXPECTED_NEGATIVE_FILE_STATES = tuple(state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_"))
 
 
 @pytest.mark.unit

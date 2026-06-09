@@ -240,7 +240,7 @@ class TestGetWorkStatus:
                 return_value=self._make_stats(),
             ),
             patch(
-                "nomarr.services.domain.library_svc.query.get_libraries_in_pipeline_state",
+                "nomarr.services.domain.library_svc.query.get_libraries_in_axis_state",
                 return_value=[],
             ),
         ):
@@ -250,12 +250,12 @@ class TestGetWorkStatus:
 
     @pytest.mark.unit
     def test_pipeline_states_bulk_fetched(self) -> None:
-        """Library in write_ready state registry maps to state='write_ready' in result."""
+        """Library in not_written tag_write state maps to state='write_ready' in result."""
         mock_db = MagicMock()
         mixin = _ConcreteQueryMixin(mock_db)
 
-        def _state_side_effect(_db: MagicMock, doc_id: str) -> list[str]:
-            if doc_id == "library_pipeline_states/write_ready":
+        def _state_side_effect(_db: MagicMock, axis_field: str, axis_value: str) -> list[str]:
+            if axis_field == "tag_write_state" and axis_value == "not_written":
                 return ["libraries/1"]
             return []
 
@@ -270,7 +270,7 @@ class TestGetWorkStatus:
                 return_value=self._make_stats(),
             ),
             patch(
-                "nomarr.services.domain.library_svc.query.get_libraries_in_pipeline_state",
+                "nomarr.services.domain.library_svc.query.get_libraries_in_axis_state",
                 side_effect=_state_side_effect,
             ),
         ):
@@ -303,7 +303,7 @@ class TestGetWorkStatus:
                 ),
             ),
             patch(
-                "nomarr.services.domain.library_svc.query.get_libraries_in_pipeline_state",
+                "nomarr.services.domain.library_svc.query.get_libraries_in_axis_state",
                 return_value=[],
             ),
         ):

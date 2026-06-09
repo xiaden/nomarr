@@ -722,9 +722,8 @@ def clear_library_data(db: Database) -> None:
     db.library.clear_files()
     db.library.clear_folders()
     db.app.clear_scans()
-    # Note: pipeline state *vertices* (library_pipeline_states/idle, scanning, etc.)
-    # are singleton schema documents seeded at startup — do NOT truncate them.
-    # Only the edges linking libraries to those vertices need clearing.
+    # Pipeline states are now fields on library documents (scan_state, ml_state, etc.)
+    # They are reset to defaults when libraries are recreated or via migration.
 
 
 def search_files_by_tag(

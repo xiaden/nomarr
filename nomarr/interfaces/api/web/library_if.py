@@ -172,13 +172,13 @@ async def update_library(
                 if (
                     not current_library.library_auto_write
                     and library.library_auto_write
-                    and pipeline_status.state == "write_ready"
+                    and pipeline_status.tag_write_state == "not_written"
                 ):
                     pipeline_service.handle_auto_write_enabled(library_id)
                 elif (
                     current_library.library_auto_write
                     and not library.library_auto_write
-                    and pipeline_status.state == "writing"
+                    and pipeline_status.tag_write_state == "writing"
                 ):
                     pipeline_service.handle_auto_write_disabled(library_id)
 

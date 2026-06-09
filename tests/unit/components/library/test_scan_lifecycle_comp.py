@@ -29,9 +29,15 @@ from nomarr.components.library.scan_lifecycle_comp import (
 )
 from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
 from nomarr.helpers.constants.pipeline_states import (
-    PIPELINE_IDLE,
-    PIPELINE_ML_RUNNING,
-    PIPELINE_SCANNING,
+    CAL_NOT_CALIBRATED,
+    CAL_STATE_FIELD,
+    ML_IN_PROGRESS,
+    ML_NOT_PROCESSED,
+    ML_STATE_FIELD,
+    SCAN_IN_PROGRESS,
+    SCAN_STATE_FIELD,
+    WRITE_NOT_WRITTEN,
+    WRITE_STATE_FIELD,
 )
 from nomarr.helpers.time_helper import Milliseconds
 
@@ -113,14 +119,14 @@ class TestGetScanningLibraryIds:
         mock_db = MagicMock()
 
         with patch(
-            "nomarr.components.library.scan_lifecycle_comp.get_libraries_in_pipeline_state",
+            "nomarr.components.library.scan_lifecycle_comp.get_libraries_in_axis_state",
             return_value=["libraries/one", "libraries/two", "libraries/one"],
         ) as mock_get_libraries:
             result = get_scanning_library_ids(mock_db)
 
         assert result == {"libraries/one", "libraries/two"}
         assert isinstance(result, set)
-        mock_get_libraries.assert_called_once_with(mock_db, PIPELINE_SCANNING)
+        mock_get_libraries.assert_called_once_with(mock_db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
 
 
 class TestGetLibraryScanHistories:
@@ -216,7 +222,12 @@ class TestGetLibraryScanHistories:
     def test_returns_true_when_pipeline_state_is_scanning(self) -> None:
         mock_db = MagicMock()
         library_id = "libraries/test"
-        mock_db.app.get_pipeline_state.return_value = PIPELINE_SCANNING.rsplit("/", maxsplit=1)[-1]
+        mock_db.app.get_pipeline_state.return_value = {
+            SCAN_STATE_FIELD: SCAN_IN_PROGRESS,
+            ML_STATE_FIELD: ML_NOT_PROCESSED,
+            CAL_STATE_FIELD: CAL_NOT_CALIBRATED,
+            WRITE_STATE_FIELD: WRITE_NOT_WRITTEN,
+        }
 
         result = is_library_scanning(mock_db, library_id)
 
@@ -228,7 +239,12 @@ class TestGetLibraryScanHistories:
     def test_returns_false_when_pipeline_state_is_not_scanning(self) -> None:
         mock_db = MagicMock()
         library_id = "libraries/test"
-        mock_db.app.get_pipeline_state.return_value = "idle"
+        mock_db.app.get_pipeline_state.return_value = {
+            SCAN_STATE_FIELD: "scanned",
+            ML_STATE_FIELD: ML_NOT_PROCESSED,
+            CAL_STATE_FIELD: CAL_NOT_CALIBRATED,
+            WRITE_STATE_FIELD: WRITE_NOT_WRITTEN,
+        }
 
         result = is_library_scanning(mock_db, library_id)
 
@@ -471,18 +487,19 @@ class TestResolveLibraryForScan:
 class TestTransitionToScanning:
     """Tests for pipeline transition into scanning."""
 
-    def test_delegates_to_transition_pipeline_state_with_scanning(self) -> None:
+    def test_delegates_to_transition_pipeline_axis_with_scanning(self) -> None:
         mock_db = MagicMock()
 
         with patch(
-            "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_state"
-        ) as mock_transition_pipeline_state:
+            "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis"
+        ) as mock_transition_pipeline_axis:
             transition_to_scanning(mock_db, "libraries/1")
 
-        mock_transition_pipeline_state.assert_called_once_with(
+        mock_transition_pipeline_axis.assert_called_once_with(
             mock_db,
             "libraries/1",
-            PIPELINE_SCANNING,
+            SCAN_STATE_FIELD,
+            SCAN_IN_PROGRESS,
         )
 
 
@@ -491,36 +508,55 @@ class TestTransitionToScanning:
 class TestOnScanCompletePipelineHook:
     """Tests for post-scan pipeline state transitions."""
 
-    def test_transitions_to_ml_running_when_library_has_files(self) -> None:
+    def test_transitions_scan_axis_to_complete_and_ml_to_in_progress(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.count_library_file_links.return_value = 5
 
-        with patch(
-            "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_state"
-        ) as mock_transition_pipeline_state:
+        with (
+            patch(
+                "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis"
+            ) as mock_transition_pipeline_axis,
+            patch(
+                "nomarr.components.library.library_file_state_comp.count_untagged_files",
+                return_value=5,
+            ),
+        ):
             on_scan_complete_pipeline_hook(mock_db, "libraries/1")
 
-        mock_db.library.count_library_file_links.assert_called_once_with("libraries/1")
-        mock_transition_pipeline_state.assert_called_once_with(
+        # Should transition scan axis to complete and ML axis to in_progress
+        assert mock_transition_pipeline_axis.call_count == 2
+        mock_transition_pipeline_axis.assert_any_call(
             mock_db,
             "libraries/1",
-            PIPELINE_ML_RUNNING,
+            SCAN_STATE_FIELD,
+            "scanned",
+        )
+        mock_transition_pipeline_axis.assert_any_call(
+            mock_db,
+            "libraries/1",
+            ML_STATE_FIELD,
+            ML_IN_PROGRESS,
         )
 
-    def test_transitions_to_idle_when_library_has_no_files(self) -> None:
+    def test_transitions_scan_axis_to_complete_when_library_has_no_untagged_files(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.count_library_file_links.return_value = 0
 
-        with patch(
-            "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_state"
-        ) as mock_transition_pipeline_state:
+        with (
+            patch(
+                "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis"
+            ) as mock_transition_pipeline_axis,
+            patch(
+                "nomarr.components.library.library_file_state_comp.count_untagged_files",
+                return_value=0,
+            ),
+        ):
             on_scan_complete_pipeline_hook(mock_db, "libraries/1")
 
-        mock_db.library.count_library_file_links.assert_called_once_with("libraries/1")
-        mock_transition_pipeline_state.assert_called_once_with(
+        # Should transition scan axis to complete but NOT ML axis
+        mock_transition_pipeline_axis.assert_called_once_with(
             mock_db,
             "libraries/1",
-            PIPELINE_IDLE,
+            SCAN_STATE_FIELD,
+            "scanned",
         )
 
 

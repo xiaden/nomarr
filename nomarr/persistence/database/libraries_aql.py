@@ -28,6 +28,10 @@ class LibrariesAqlOperations:
             "updated_at",
             "vector_group_size",
             "vector_search_thoroughness",
+            "scan_state",
+            "ml_state",
+            "calibration_state",
+            "tag_write_state",
         },
     )
 
@@ -79,6 +83,44 @@ class LibrariesAqlOperations:
 
     def delete_library(self, library_id: str) -> None:
         primitives.delete_many_by_keys(self._db, self.COLLECTION, [_extract_key(library_id)])
+
+    def update_pipeline_axis(self, library_id: str, axis_field: str, axis_value: str) -> None:
+        """Update a single pipeline axis field on a library document."""
+        primitives.update_document_by_key(
+            self._db,
+            self.COLLECTION,
+            _extract_key(library_id),
+            {axis_field: axis_value},
+        )
+
+    def get_pipeline_state(self, library_id: str) -> dict[str, str] | None:
+        """Return the four pipeline axis values for a library, or None if not found."""
+        lib = self.get_library(library_id)
+        if lib is None:
+            return None
+        return {
+            "scan_state": lib.get("scan_state", "not_scanned"),
+            "ml_state": lib.get("ml_state", "not_ML_processed"),
+            "calibration_state": lib.get("calibration_state", "not_calibrated"),
+            "tag_write_state": lib.get("tag_write_state", "not_written"),
+        }
+
+    def get_libraries_in_axis_state(self, axis_field: str, axis_value: str) -> list[str]:
+        """Return library document IDs where the given axis field matches the value."""
+        cursor = self._db.aql.execute(
+            """
+            FOR doc IN @@collection
+                FILTER doc[@field] == @value
+                SORT doc._key
+                RETURN doc._id
+            """,
+            bind_vars={
+                "@collection": self.COLLECTION,
+                "field": axis_field,
+                "value": axis_value,
+            },
+        )
+        return list(cursor)
 
     def remove_library(self, library_id: str) -> None:
         """Delete a library and all its associated data.

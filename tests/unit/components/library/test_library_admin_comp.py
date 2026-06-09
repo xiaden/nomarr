@@ -12,11 +12,7 @@ from nomarr.components.library.library_admin_comp import create_library, delete_
 @pytest.fixture(autouse=True)
 def pipeline_state_shims(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep tests focused on admin behavior while production code uses helper seams."""
-
-    def _transition(db: MagicMock, library_id: str, state: str) -> None:
-        db.library_pipeline_states.transition_state(library_id, state)
-
-    monkeypatch.setattr("nomarr.components.library.library_admin_comp.transition_pipeline_state", _transition)
+    # No shims needed - pipeline state is now handled via PIPELINE_DEFAULTS passed to create_library_record
 
 
 class TestCreateLibrary:
@@ -64,8 +60,11 @@ class TestCreateLibrary:
             watch_mode="off",
             file_write_mode="minimal",
             library_auto_write=False,
+            scan_state="not_scanned",
+            ml_state="not_ML_processed",
+            calibration_state="not_calibrated",
+            tag_write_state="not_written",
         )
-        mock_db.library_pipeline_states.transition_state.assert_called_once()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -108,8 +107,11 @@ class TestCreateLibrary:
             watch_mode="off",
             file_write_mode="full",
             library_auto_write=False,
+            scan_state="not_scanned",
+            ml_state="not_ML_processed",
+            calibration_state="not_calibrated",
+            tag_write_state="not_written",
         )
-        mock_db.library_pipeline_states.transition_state.assert_called_once()
 
 
 class TestDeleteLibrary:

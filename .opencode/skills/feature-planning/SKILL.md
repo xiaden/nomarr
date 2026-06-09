@@ -221,8 +221,8 @@ After validating **each plan** (not after each round), update CONTRACTS.md:
 
  | What to record | Example |
  | --- | --- |
- | Methods created | `upsert_scrobble(nd_user: str, nd_id: str, file_id: str \ | None, artist: str, timestamp_ms: int)` |
- | API endpoints | `POST /api/v1/scrobble` — body: ScrobbleRequest, auth: verify_key, returns: 204 |
+  | Methods created | `resolve_file_to_library(db: Database, file_id: str) -> LibraryFileDict` |
+  | API endpoints | `POST /api/v1/navidrome/similar-track` — body: SimilarTracksRequest, auth: verify_key, returns: SimilarTracksResponse |
  | DTOs | `TasteProfile(nd_user, clusters, backbone_id, total_track_count, generated_at_ms)` |
  | Collections | `navidrome_play_history` — _key: `{nd_user}:{nd_id}`, indexes: [...] |
  | Decisions | "Workflows take `db: Database` directly, not service wrappers" |

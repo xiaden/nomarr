@@ -205,7 +205,12 @@ def delete_many_by_field(
     *,
     allowed_fields: AbstractSet[str],
 ) -> int:
-    """Delete documents by a validated field filter and return the number removed. ``field_name`` must be present in ``allowed_fields`` or validation raises an error. A list ``field_value`` uses an ``IN`` filter, while a scalar uses ``==``; an empty list short-circuits and returns 0 without executing AQL."""
+    """Delete documents by a validated field filter and return the number removed.
+
+    ``field_name`` must be present in ``allowed_fields`` or validation raises
+    an error. A list ``field_value`` uses an ``IN`` filter, while a scalar
+    uses ``==``; an empty list short-circuits and returns 0 without executing AQL.
+    """
     _require_allowed_field(field_name, allowed_fields)
     if isinstance(field_value, list) and not field_value:
         return 0

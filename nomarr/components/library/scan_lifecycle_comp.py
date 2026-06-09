@@ -22,10 +22,24 @@ from nomarr.components.library.library_file_state_comp import (
 from nomarr.components.library.library_id_comp import library_key_from_ref, normalize_library_id
 from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
 from nomarr.helpers.constants.pipeline_states import (
-    PIPELINE_IDLE,
-    PIPELINE_ML_RUNNING,
-    PIPELINE_SCANNING,
+    CAL_COMPLETE,
+    CAL_IN_PROGRESS,
+    CAL_NOT_CALIBRATED,
+    CAL_STATE_FIELD,
+    ML_COMPLETE,
+    ML_IN_PROGRESS,
+    ML_NOT_PROCESSED,
+    ML_STATE_FIELD,
+    PIPELINE_DEFAULTS,
+    SCAN_COMPLETE,
+    SCAN_IN_PROGRESS,
+    SCAN_NOT_SCANNED,
+    SCAN_STATE_FIELD,
     VALID_PIPELINE_TRANSITIONS,
+    WRITE_COMPLETE,
+    WRITE_IN_PROGRESS,
+    WRITE_NOT_WRITTEN,
+    WRITE_STATE_FIELD,
 )
 from nomarr.helpers.exceptions import LibraryNotFoundError
 from nomarr.helpers.time_helper import now_ms
@@ -37,7 +51,6 @@ logger = logging.getLogger(__name__)
 
 
 _UNSET: object = object()
-_PIPELINE_SCANNING_KEY: str = PIPELINE_SCANNING.rsplit("/", 1)[-1]
 _DEFAULT_SCAN_FIELDS: dict[str, Any] = {
     "files_processed": 0,
     "files_total": 0,
@@ -49,16 +62,16 @@ _DEFAULT_SCAN_FIELDS: dict[str, Any] = {
 }
 
 
-def _pipeline_state_to_scan_status(pipeline_state: str | None, scan_doc: dict[str, Any] | None) -> str:
+def _pipeline_state_to_scan_status(pipeline_state: dict[str, str] | None, scan_doc: dict[str, Any] | None) -> str:
     """Derive legacy scan_status string from pipeline state and scan doc.
 
     Rules:
-        - pipeline_state == "scanning" -> "scanning"
-        - scan_doc.error present       -> "error"
-        - scan_doc.completed_at set    -> "complete"
-        - otherwise                    -> "idle"
+        - scan_state == "scanning" -> "scanning"
+        - scan_doc.error present   -> "error"
+        - scan_doc.completed_at set -> "complete"
+        - otherwise                -> "idle"
     """
-    if pipeline_state == "scanning":
+    if pipeline_state and pipeline_state.get("scan_state") == "scanning":
         return "scanning"
     if scan_doc and scan_doc.get("error"):
         return "error"
@@ -156,78 +169,115 @@ def update_scan_state(db: Database, library_id: str, **fields: Any) -> dict[str,
     return {**scan_doc, **fields}
 
 
-def transition_pipeline_state(db: Database, library_id: str, next_state: str) -> None:
-    """Persist a library's current pipeline state via the constructor namespace.
+def transition_pipeline_axis(db: Database, library_id: str, axis_field: str, next_state: str) -> None:
+    """Update a single pipeline axis on a library document.
 
-    Validates that the transition is allowed from the current state.
+    Validates that the transition is allowed from the current axis state.
 
     Raises:
-        ValueError: If the transition is not valid from the current state.
+        ValueError: If the transition is not valid from the current axis state.
     """
-    current_state = db.app.get_pipeline_state(library_id)
-    if current_state is not None:
-        allowed = VALID_PIPELINE_TRANSITIONS.get(current_state, set())
-        if next_state not in allowed:
-            msg = (
-                f"Invalid pipeline transition for library {library_id}: "
-                f"{current_state!r} -> {next_state!r}. "
-                f"Allowed targets: {sorted(allowed)}"
-            )
-            raise ValueError(msg)
-    db.app.update_pipeline_state(library_id, next_state)
+    current = db.app.get_pipeline_state(library_id)
+    if current is not None:
+        current_value = current.get(axis_field)
+        if current_value is not None:
+            allowed = VALID_PIPELINE_TRANSITIONS.get(axis_field, {}).get(current_value, set())
+            if next_state not in allowed:
+                msg = (
+                    f"Invalid pipeline transition for library {library_id} "
+                    f"axis {axis_field!r}: {current_value!r} -> {next_state!r}. "
+                    f"Allowed targets: {sorted(allowed)}"
+                )
+                raise ValueError(msg)
+    db.app.update_pipeline_axis(library_id, axis_field, next_state)
 
 
-def delete_pipeline_state(db: Database, library_id: str) -> int:
-    """Delete a library's persisted pipeline state document."""
-    existing_state = db.app.get_pipeline_state(library_id)
-    if existing_state is None:
-        return 0
-    db.app.remove_pipeline_state(library_id)
-    return 1
+def get_pipeline_state(db: Database, library_id: str) -> dict[str, str]:
+    """Return the four pipeline axis values for a library.
 
-
-def get_pipeline_state(db: Database, library_id: str) -> str:
-    """Return the current pipeline state key for a library.
-
-    Raises:
-        ValueError: If the library has no persisted pipeline state.
+    Returns default values if the library has no pipeline state fields set.
     """
     state = db.app.get_pipeline_state(library_id)
     if state is None:
-        msg = f"No pipeline state edge found for library {library_id}"
-        raise ValueError(msg)
+        return dict(PIPELINE_DEFAULTS)
     return state
 
 
-def get_libraries_in_pipeline_state(db: Database, state: str) -> list[str]:
-    """Return library document ids whose current pipeline state matches `state`."""
-    libraries = cast("list[dict[str, Any]]", db.library.list_libraries())
-    return [
-        normalize_library_id(str(doc["_id"]))
-        for doc in libraries
-        if db.app.get_pipeline_state(normalize_library_id(str(doc["_id"]))) == state
-    ]
+def get_libraries_in_axis_state(db: Database, axis_field: str, axis_value: str) -> list[str]:
+    """Return library document IDs where the given axis field matches the value."""
+    return db.app.get_libraries_in_axis_state(axis_field, axis_value)
 
 
-def bulk_transition_pipeline_state(db: Database, from_state: str, to_state: str) -> int:
-    """Transition every library currently in `from_state` to `to_state`.
+def bulk_transition_pipeline_axis(db: Database, axis_field: str, from_state: str, to_state: str) -> int:
+    """Transition every library currently in `from_state` on the given axis to `to_state`.
 
     Validates that the transition is allowed from the source state.
 
     Raises:
         ValueError: If the transition is not valid from the source state.
     """
-    allowed = VALID_PIPELINE_TRANSITIONS.get(from_state, set())
+    allowed = VALID_PIPELINE_TRANSITIONS.get(axis_field, {}).get(from_state, set())
     if to_state not in allowed:
         msg = (
-            f"Invalid bulk pipeline transition: {from_state!r} -> {to_state!r}. "
+            f"Invalid bulk pipeline transition for axis {axis_field!r}: "
+            f"{from_state!r} -> {to_state!r}. "
             f"Allowed targets: {sorted(allowed)}"
         )
         raise ValueError(msg)
-    library_ids = get_libraries_in_pipeline_state(db, from_state)
+    library_ids = get_libraries_in_axis_state(db, axis_field, from_state)
     for library_id in library_ids:
-        db.app.update_pipeline_state(library_id, to_state)
+        db.app.update_pipeline_axis(library_id, axis_field, to_state)
     return len(library_ids)
+
+
+# Legacy shims — these map old single-value API to new per-axis API.
+# They will be removed once all callers are updated.
+
+
+def transition_pipeline_state(db: Database, library_id: str, next_state: str) -> None:
+    """Legacy shim: map a single-value state to the appropriate axis transition."""
+    axis_map = {
+        SCAN_IN_PROGRESS: (SCAN_STATE_FIELD, SCAN_IN_PROGRESS),
+        SCAN_COMPLETE: (SCAN_STATE_FIELD, SCAN_COMPLETE),
+        SCAN_NOT_SCANNED: (SCAN_STATE_FIELD, SCAN_NOT_SCANNED),
+        ML_IN_PROGRESS: (ML_STATE_FIELD, ML_IN_PROGRESS),
+        ML_NOT_PROCESSED: (ML_STATE_FIELD, ML_NOT_PROCESSED),
+        ML_COMPLETE: (ML_STATE_FIELD, ML_COMPLETE),
+        CAL_IN_PROGRESS: (CAL_STATE_FIELD, CAL_IN_PROGRESS),
+        CAL_NOT_CALIBRATED: (CAL_STATE_FIELD, CAL_NOT_CALIBRATED),
+        CAL_COMPLETE: (CAL_STATE_FIELD, CAL_COMPLETE),
+        WRITE_IN_PROGRESS: (WRITE_STATE_FIELD, WRITE_IN_PROGRESS),
+        WRITE_NOT_WRITTEN: (WRITE_STATE_FIELD, WRITE_NOT_WRITTEN),
+        WRITE_COMPLETE: (WRITE_STATE_FIELD, WRITE_COMPLETE),
+    }
+    if next_state not in axis_map:
+        msg = f"Unknown pipeline state: {next_state!r}"
+        raise ValueError(msg)
+    axis_field, axis_value = axis_map[next_state]
+    transition_pipeline_axis(db, library_id, axis_field, axis_value)
+
+
+def bulk_transition_pipeline_state(db: Database, from_state: str, to_state: str) -> int:
+    """Legacy shim: map single-value states to per-axis bulk transition."""
+    axis_map = {
+        SCAN_IN_PROGRESS: SCAN_STATE_FIELD,
+        SCAN_COMPLETE: SCAN_STATE_FIELD,
+        SCAN_NOT_SCANNED: SCAN_STATE_FIELD,
+        ML_IN_PROGRESS: ML_STATE_FIELD,
+        ML_NOT_PROCESSED: ML_STATE_FIELD,
+        ML_COMPLETE: ML_STATE_FIELD,
+        CAL_IN_PROGRESS: CAL_STATE_FIELD,
+        CAL_NOT_CALIBRATED: CAL_STATE_FIELD,
+        CAL_COMPLETE: CAL_STATE_FIELD,
+        WRITE_IN_PROGRESS: WRITE_STATE_FIELD,
+        WRITE_NOT_WRITTEN: WRITE_STATE_FIELD,
+        WRITE_COMPLETE: WRITE_STATE_FIELD,
+    }
+    axis_field = axis_map.get(from_state)
+    if axis_field is None:
+        msg = f"Unknown pipeline state: {from_state!r}"
+        raise ValueError(msg)
+    return bulk_transition_pipeline_axis(db, axis_field, from_state, to_state)
 
 
 def _get_library_record(db: Database, library_id: str) -> dict[str, Any] | None:
@@ -246,7 +296,7 @@ def _list_library_records(db: Database) -> list[dict[str, Any]]:
         scan_doc = get_scan_state(db, library_id)
         try:
             pipeline_state = get_pipeline_state(db, library_id)
-        except ValueError:
+        except Exception:
             pipeline_state = None
 
         enriched_docs.append(
@@ -357,26 +407,25 @@ def check_interrupted_scan(db: Database, library_id: str) -> tuple[bool, str | N
 
 
 def is_library_scanning(db: Database, library_id: str) -> bool:
-    """Return whether the library pipeline is currently in the scanning state.
+    """Return whether the library scan axis is currently in the scanning state.
 
     Args:
         db: Database instance
         library_id: Library document ``_id``
 
     Returns:
-        ``True`` when the library pipeline state is ``scanning``; otherwise ``False``.
+        ``True`` when the library scan axis is ``scanning``; otherwise ``False``.
 
     """
-    try:
-        pipeline_state_key = get_pipeline_state(db, library_id)
-    except ValueError:
+    state = db.app.get_pipeline_state(library_id)
+    if state is None:
         return False
-    return pipeline_state_key == _PIPELINE_SCANNING_KEY
+    return state.get(SCAN_STATE_FIELD) == SCAN_IN_PROGRESS
 
 
 def get_scanning_library_ids(db: Database) -> set[str]:
-    """Return the set of library IDs currently in PIPELINE_SCANNING state."""
-    return set(get_libraries_in_pipeline_state(db, PIPELINE_SCANNING))
+    """Return the set of library IDs currently in the scanning scan state."""
+    return set(get_libraries_in_axis_state(db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS))
 
 
 def get_library_scan_histories(
@@ -399,8 +448,8 @@ def get_library_scan_histories(
         library_id = str(library["_id"])
         scan_doc = get_scan_state(db, library_id)
         try:
-            pipeline_state: str | None = get_pipeline_state(db, library_id)
-        except ValueError:
+            pipeline_state: dict[str, str] | None = get_pipeline_state(db, library_id)
+        except Exception:
             pipeline_state = None
 
         histories.append(
@@ -532,12 +581,8 @@ def is_scan_stale(db: Database, library_id: str, timeout_ms: int = 300000) -> bo
         True if the scan is stale (heartbeat older than timeout), False otherwise.
 
     """
-    try:
-        pipeline_state = get_pipeline_state(db, library_id)
-    except ValueError:
-        return False
-
-    if pipeline_state != PIPELINE_SCANNING:
+    state = db.app.get_pipeline_state(library_id)
+    if state is None or state.get(SCAN_STATE_FIELD) != SCAN_IN_PROGRESS:
         return False
 
     heartbeat = get_scan_heartbeat(db, library_id)
@@ -553,27 +598,34 @@ def is_scan_stale(db: Database, library_id: str, timeout_ms: int = 300000) -> bo
 
 
 def transition_to_scanning(db: Database, library_id: str) -> None:
-    """Transition a library pipeline into the scanning state.
+    """Transition a library scan axis into the scanning state.
 
     Args:
         db: Database instance
         library_id: Library document ``_id``
 
     """
-    transition_pipeline_state(db, library_id, PIPELINE_SCANNING)
+    transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
 
 
 def on_scan_complete_pipeline_hook(db: Database, library_id: str) -> None:
-    """Transition pipeline state after scan completion based on file count.
+    """Transition scan axis to scanned, then derive ml axis from file states.
+
+    After a scan completes:
+    - scan axis → scanned
+    - ml axis → ML_processing if untagged files exist, else stays where it is
 
     Args:
         db: Database instance
         library_id: Library document ``_id``
 
     """
-    file_count = db.library.count_library_file_links(normalize_library_id(library_id))
-    next_state = PIPELINE_ML_RUNNING if file_count > 0 else PIPELINE_IDLE
-    transition_pipeline_state(db, library_id, next_state)
+    transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_COMPLETE)
+    from nomarr.components.library.library_file_state_comp import count_untagged_files
+
+    untagged = count_untagged_files(db, library_id)
+    if untagged > 0:
+        transition_pipeline_axis(db, library_id, ML_STATE_FIELD, ML_IN_PROGRESS)
 
 
 # ---------------------------------------------------------------------------

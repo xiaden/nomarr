@@ -237,7 +237,7 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 **Owns:**
 
 - `navidrome_tracks` — Track mapping between Nomarr and Navidrome
-- `navidrome_playcounts` — Playcount/scrobble data from Navidrome
+- `navidrome_playcounts` — Playcount data from Navidrome
 
 **Invariants:**
 

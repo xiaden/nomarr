@@ -110,7 +110,12 @@ class TestScanStateQueries:
             ),
             patch(
                 "nomarr.services.domain.library_svc.scan.get_pipeline_state",
-                return_value="scanning",
+                return_value={
+                    "scan_state": "scanning",
+                    "ml_state": "not_ML_processed",
+                    "calibration_state": "not_calibrated",
+                    "tag_write_state": "not_written",
+                },
             ),
         ):
             result = service.get_status("libraries/lib1")
@@ -137,7 +142,12 @@ class TestScanStateQueries:
             ),
             patch(
                 "nomarr.services.domain.library_svc.scan.get_pipeline_state",
-                return_value="idle",
+                return_value={
+                    "scan_state": "not_scanned",
+                    "ml_state": "not_ML_processed",
+                    "calibration_state": "not_calibrated",
+                    "tag_write_state": "not_written",
+                },
             ),
         ):
             result = service.get_status("libraries/lib1")

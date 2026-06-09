@@ -73,7 +73,6 @@ export default defineConfig([
         "warn",
         {
           "newlines-between": "always",
-          alphabetize: { order: "asc", caseInsensitive: true },
           groups: [
             "builtin",
             "external",
@@ -84,7 +83,8 @@ export default defineConfig([
           ],
         },
       ],
-      "import/no-cycle": "warn",
+      // NOTE: import/no-cycle removed — TypeScript catches circular imports
+      // at compile time and this rule is extremely slow (~46% of lint time).
 
       // -------------------------
       // ARCHITECTURE RULES

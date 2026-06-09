@@ -5,6 +5,7 @@ from arango.exceptions import AQLQueryExecuteError
 from nomarr.persistence.arango_client import SafeDatabase
 from nomarr.persistence.database.app_aql import AppAqlOperations
 from nomarr.persistence.database.file_states_aql import FileStatesAqlOperations
+from nomarr.persistence.database.libraries_aql import LibrariesAqlOperations
 from nomarr.persistence.database.navidrome_aql import NavidromeAqlOperations
 from nomarr.persistence.database.scan_aql import ScanAqlOperations
 
@@ -37,10 +38,10 @@ class AppMaintenanceDb:
         return self._app.truncate_library_scan_edges()
 
     def truncate_pipeline_states(self) -> None:
-        return self._app.truncate_pipeline_states()
+        """No-op — pipeline state is now stored as fields on library documents."""
 
     def truncate_pipeline_state_edges(self) -> None:
-        return self._app.truncate_pipeline_state_edges()
+        """No-op — pipeline state edges no longer exist."""
 
     def truncate_worker_claims(self) -> None:
         return self._app.delete_all_worker_claims()
@@ -143,12 +144,14 @@ class AppDb:
         scan: ScanAqlOperations,
         app: AppAqlOperations,
         navidrome: NavidromeAqlOperations,
+        libraries: LibrariesAqlOperations,
     ) -> None:
         self._db = db
         self._file_states = file_states
         self._scan = scan
         self._app = app
         self._navidrome = navidrome
+        self._libraries = libraries
         self.maintenance: AppMaintenanceDb = AppMaintenanceDb(
             db=db,
             app=app,
@@ -216,12 +219,17 @@ class AppDb:
             self._scan._delete_scan_record(scan_id)
         self._app.delete_library_scan_edge(library_id)
 
-    def get_pipeline_state(self, library_id: str) -> str | None:
-        doc = self._app.get_pipeline_state_doc(library_id)
-        if not isinstance(doc, dict):
-            return None
-        state = doc.get("state")
-        return state if isinstance(state, str) else None
+    def get_pipeline_state(self, library_id: str) -> dict[str, str] | None:
+        """Return the four pipeline axis values for a library."""
+        return self._libraries.get_pipeline_state(library_id)
+
+    def update_pipeline_axis(self, library_id: str, axis_field: str, axis_value: str) -> None:
+        """Update a single pipeline axis field on a library document."""
+        self._libraries.update_pipeline_axis(library_id, axis_field, axis_value)
+
+    def get_libraries_in_axis_state(self, axis_field: str, axis_value: str) -> list[str]:
+        """Return library document IDs where the given axis field matches the value."""
+        return self._libraries.get_libraries_in_axis_state(axis_field, axis_value)
 
     def get_lock(self, resource_id: str) -> dict | None:
         return self._app.get_lock(resource_id)
@@ -355,11 +363,18 @@ class AppDb:
         return self._app.count_vram_promises()
 
     def update_pipeline_state(self, library_id: str, state: str) -> None:
-        return self._app.update_pipeline_state(library_id, state)
+        """Legacy single-value pipeline state update. DEPRECATED — use update_pipeline_axis."""
+        # This method is kept for backwards compatibility during migration.
+        # It should not be called by new code.
+        msg = "update_pipeline_state is deprecated — use update_pipeline_axis"
+        raise NotImplementedError(msg)
 
     def remove_pipeline_state(self, library_id: str) -> None:
-        self._app.delete_pipeline_state(library_id)
-        self._app.delete_pipeline_state_edges_for_library(library_id)
+        """Reset all pipeline axes to their default not_started values."""
+        from nomarr.helpers.constants.pipeline_states import PIPELINE_DEFAULTS
+
+        for axis_field, default_value in PIPELINE_DEFAULTS.items():
+            self._libraries.update_pipeline_axis(library_id, axis_field, default_value)
 
     def insert_session(self, payload: list[dict]) -> None:
         return self._app.insert_session(payload)

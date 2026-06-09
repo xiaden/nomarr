@@ -43,8 +43,13 @@ HEALTH_FRAME_PREFIX = "HEALTH|"
 def _check_idle_pipeline_completion(db: Database, health_pipe: Any) -> int:
     """Transition idle ML-complete libraries and signal calibration health updates."""
     from nomarr.components.library.library_records_comp import find_ml_complete_libraries
-    from nomarr.components.library.scan_lifecycle_comp import transition_pipeline_state
-    from nomarr.helpers.constants.pipeline_states import PIPELINE_AWAITING_CALIBRATION, PIPELINE_TOO_SMALL
+    from nomarr.components.library.scan_lifecycle_comp import transition_pipeline_axis
+    from nomarr.helpers.constants.pipeline_states import (
+        CAL_NOT_CALIBRATED,
+        CAL_STATE_FIELD,
+        ML_COMPLETE,
+        ML_STATE_FIELD,
+    )
     from nomarr.helpers.dto.health_dto import PIPELINE_FRAME_PREFIX
     from nomarr.services.infrastructure.config_svc import INTERNAL_CALIBRATION_MIN_FILES
 
@@ -53,10 +58,11 @@ def _check_idle_pipeline_completion(db: Database, health_pipe: Any) -> int:
     for result in completed:
         library_id = result["library_id"]
         tagged_count = result["tagged_count"]
-        target_state = (
-            PIPELINE_AWAITING_CALIBRATION if tagged_count >= INTERNAL_CALIBRATION_MIN_FILES else PIPELINE_TOO_SMALL
-        )
-        transition_pipeline_state(db, library_id, target_state)
+        # Mark ML axis as complete
+        transition_pipeline_axis(db, library_id, ML_STATE_FIELD, ML_COMPLETE)
+        # If enough files, mark calibration axis as needing work
+        if tagged_count >= INTERNAL_CALIBRATION_MIN_FILES:
+            transition_pipeline_axis(db, library_id, CAL_STATE_FIELD, CAL_NOT_CALIBRATED)
         transitions_fired += 1
     if transitions_fired > 0 and health_pipe is not None:
         try:

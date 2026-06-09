@@ -128,6 +128,18 @@ class LibraryDb:
     def update_library(self, library_id: str, fields: dict) -> None:
         return self._libraries.update_library(library_id, fields)
 
+    def get_pipeline_state(self, library_id: str) -> dict[str, str] | None:
+        """Return the four pipeline axis values for a library."""
+        return self._libraries.get_pipeline_state(library_id)
+
+    def get_libraries_in_axis_state(self, axis_field: str, axis_value: str) -> list[str]:
+        """Return library document IDs where the given axis field matches the value."""
+        return self._libraries.get_libraries_in_axis_state(axis_field, axis_value)
+
+    def update_pipeline_axis(self, library_id: str, axis_field: str, axis_value: str) -> None:
+        """Update a single pipeline axis field on a library document."""
+        self._libraries.update_pipeline_axis(library_id, axis_field, axis_value)
+
     def get_file(self, file_id: str) -> dict | None:
         return self._files.get_file(file_id)
 

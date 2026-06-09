@@ -52,19 +52,19 @@ Example:
 - `nomarr/persistence/constructor/builder.py` (modified)
 
 ### Workflows  
-- `nomarr/workflows/scrobble_ingest_wf.py` (new)
+- `nomarr/workflows/navidrome/generate_playlists_wf.py` (modified)
 
 ### Services
-- `nomarr/services/domain/scrobble_svc.py` (new)
+- `nomarr/services/domain/navidrome_svc.py` (modified)
 
 ### Interfaces
-- `nomarr/interfaces/api/v1/scrobble_if.py` (new)
+- `nomarr/interfaces/api/v1/navidrome_v1_if.py` (modified)
 
 ### Helpers
-- `nomarr/helpers/dto/scrobble_dto.py` (new)
+- `nomarr/helpers/dto/navidrome_dto.py` (modified)
 
 ### Frontend
-- `frontend/src/features/scrobble/ScrobblePage.tsx` (new)
+- `frontend/src/shared/api/navidrome.ts` (modified)
 }
 
 ## Final Lint Status

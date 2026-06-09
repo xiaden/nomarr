@@ -57,7 +57,6 @@ workflows/
 │   ├── generate_playlists_wf.py           # Batch playlist generation
 │   ├── generate_smart_playlist_wf.py      # Generate smart playlist
 │   ├── generate_static_playlist_wf.py     # Generate static playlist
-│   ├── ingest_scrobble_wf.py              # Ingest scrobble data
 │   ├── parse_smart_playlist_query_wf.py   # Parse playlist query syntax
 │   ├── preview_smart_playlist_wf.py       # Preview playlist results
 │   ├── preview_tag_stats_wf.py            # Preview tag statistics

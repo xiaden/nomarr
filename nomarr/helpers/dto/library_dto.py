@@ -235,7 +235,10 @@ class LibraryPipelineStatusDTO:
     """Pipeline status payload for a single library."""
 
     library_id: str
-    state: str
+    scan_state: str
+    ml_state: str
+    calibration_state: str
+    tag_write_state: str
     untagged_count: int | None
     uncalibrated_count: int | None
     pending_write_count: int | None

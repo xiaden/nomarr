@@ -31,7 +31,7 @@ from nomarr.components.library.scan_lifecycle_comp import (
     remove_deleted_files,
     resolve_library_for_scan,
     save_folder_record,
-    transition_pipeline_state,
+    transition_pipeline_axis,
     update_scan_progress,
     upsert_scanned_files,
 )
@@ -43,7 +43,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_TAGS_EXTRACTED,
     STATE_TAGS_NOT_EXTRACTED,
 )
-from nomarr.helpers.constants.pipeline_states import PIPELINE_IDLE
+from nomarr.helpers.constants.pipeline_states import SCAN_NOT_SCANNED, SCAN_STATE_FIELD
 from nomarr.helpers.time_helper import internal_ms, now_ms
 from nomarr.workflows.library.validate_library_tags_wf import validate_library_tags_workflow
 from nomarr.workflows.metadata.cleanup_orphaned_entities_wf import cleanup_orphaned_entities_workflow
@@ -266,10 +266,10 @@ def scan_library_full_workflow(
         logger.error("Full scan crashed: %s", e, exc_info=True)
         update_scan_progress(db, library_id, scan_error=str(e))
         try:
-            transition_pipeline_state(db, library_id, PIPELINE_IDLE)
+            transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
         except Exception:
             logger.exception(
-                "Failed to reset pipeline state to IDLE after scan failure for library %s",
+                "Failed to reset scan axis to not_scanned after scan failure for library %s",
                 library_id,
             )
         raise

@@ -10,14 +10,15 @@ import pytest
 from nomarr.persistence.api.application import AppDb, AppMaintenanceDb
 
 
-def _make_app_db() -> tuple[AppDb, MagicMock, MagicMock, MagicMock, MagicMock]:
+def _make_app_db() -> tuple[AppDb, MagicMock, MagicMock, MagicMock, MagicMock, MagicMock]:
     file_states = MagicMock()
     scan = MagicMock()
     app = MagicMock()
     navidrome = MagicMock()
+    libraries = MagicMock()
     raw_db = MagicMock()
-    db = AppDb(db=raw_db, file_states=file_states, scan=scan, app=app, navidrome=navidrome)
-    return db, file_states, scan, app, navidrome
+    db = AppDb(db=raw_db, file_states=file_states, scan=scan, app=app, navidrome=navidrome, libraries=libraries)
+    return db, file_states, scan, app, navidrome, libraries
 
 
 def _make_app_maintenance_db() -> tuple[AppMaintenanceDb, MagicMock, MagicMock]:
@@ -29,7 +30,7 @@ def _make_app_maintenance_db() -> tuple[AppMaintenanceDb, MagicMock, MagicMock]:
 
 @pytest.mark.unit
 def test_get_file_state_delegates_to_file_states() -> None:
-    db, file_states, _, _, _ = _make_app_db()
+    db, file_states, _, _, _, _ = _make_app_db()
     file_states.get_file_state.return_value = sentinel.result
 
     result = db.get_file_state("library_files/1")
@@ -40,7 +41,7 @@ def test_get_file_state_delegates_to_file_states() -> None:
 
 @pytest.mark.unit
 def test_list_files_in_state_delegates_to_file_states() -> None:
-    db, file_states, _, _, _ = _make_app_db()
+    db, file_states, _, _, _, _ = _make_app_db()
     file_states.list_files_in_state.return_value = sentinel.result
 
     result = db.list_files_in_state("queued", limit=12)
@@ -51,7 +52,7 @@ def test_list_files_in_state_delegates_to_file_states() -> None:
 
 @pytest.mark.unit
 def test_count_files_in_state_delegates_to_file_states() -> None:
-    db, file_states, _, _, _ = _make_app_db()
+    db, file_states, _, _, _, _ = _make_app_db()
     file_states.count_files_in_state.return_value = sentinel.result
 
     result = db.count_files_in_state("queued")
@@ -62,7 +63,7 @@ def test_count_files_in_state_delegates_to_file_states() -> None:
 
 @pytest.mark.unit
 def test_get_lock_delegates_to_app() -> None:
-    db, _, _, app, _ = _make_app_db()
+    db, _, _, app, _, _ = _make_app_db()
     app.get_lock.return_value = sentinel.result
 
     result = db.get_lock("scan:1")
@@ -73,7 +74,7 @@ def test_get_lock_delegates_to_app() -> None:
 
 @pytest.mark.unit
 def test_get_health_delegates_to_app() -> None:
-    db, _, _, app, _ = _make_app_db()
+    db, _, _, app, _, _ = _make_app_db()
     app.get_health.return_value = sentinel.result
 
     result = db.get_health("ml-worker")
@@ -84,7 +85,7 @@ def test_get_health_delegates_to_app() -> None:
 
 @pytest.mark.unit
 def test_list_worker_health_delegates_to_app() -> None:
-    db, _, _, app, _ = _make_app_db()
+    db, _, _, app, _, _ = _make_app_db()
     app.list_worker_health.return_value = sentinel.result
 
     result = db.list_worker_health()
@@ -95,7 +96,7 @@ def test_list_worker_health_delegates_to_app() -> None:
 
 @pytest.mark.unit
 def test_update_health_delegates_to_app() -> None:
-    db, _, _, app, _ = _make_app_db()
+    db, _, _, app, _, _ = _make_app_db()
     fields = {"status": "healthy", "heartbeat_ms": 1234}
     app.update_health.return_value = None
 
@@ -107,7 +108,7 @@ def test_update_health_delegates_to_app() -> None:
 
 @pytest.mark.unit
 def test_count_healthy_delegates_to_app() -> None:
-    db, _, _, app, _ = _make_app_db()
+    db, _, _, app, _, _ = _make_app_db()
     app.count_healthy.return_value = sentinel.result
 
     result = db.count_healthy()
@@ -118,7 +119,7 @@ def test_count_healthy_delegates_to_app() -> None:
 
 @pytest.mark.unit
 def test_count_vram_promises_delegates_to_app() -> None:
-    db, _, _, app, _ = _make_app_db()
+    db, _, _, app, _, _ = _make_app_db()
     app.count_vram_promises.return_value = sentinel.result
 
     result = db.count_vram_promises()
@@ -129,7 +130,7 @@ def test_count_vram_promises_delegates_to_app() -> None:
 
 @pytest.mark.unit
 def test_legacy_navidrome_surface_get_nd_track_delegates_to_navidrome() -> None:
-    db, _, _, _, navidrome = _make_app_db()
+    db, _, _, _, navidrome, _ = _make_app_db()
     navidrome.get_nd_track.return_value = sentinel.result
 
     result = db.legacy_navidrome.get_nd_track("navidrome_tracks/1")
@@ -140,7 +141,7 @@ def test_legacy_navidrome_surface_get_nd_track_delegates_to_navidrome() -> None:
 
 @pytest.mark.unit
 def test_legacy_navidrome_surface_upsert_nd_track_delegates_to_navidrome() -> None:
-    db, _, _, _, navidrome = _make_app_db()
+    db, _, _, _, navidrome, _ = _make_app_db()
     payload = {"media_file_id": "123"}
     navidrome.upsert_nd_track.return_value = sentinel.result
 
@@ -152,7 +153,7 @@ def test_legacy_navidrome_surface_upsert_nd_track_delegates_to_navidrome() -> No
 
 @pytest.mark.unit
 def test_legacy_navidrome_surface_delete_tracks_for_file_delegates_to_navidrome() -> None:
-    db, _, _, _, navidrome = _make_app_db()
+    db, _, _, _, navidrome, _ = _make_app_db()
     navidrome.delete_nd_tracks_for_file.return_value = sentinel.result
 
     result = db.legacy_navidrome.delete_nd_tracks_for_file("library_files/1")
@@ -163,7 +164,7 @@ def test_legacy_navidrome_surface_delete_tracks_for_file_delegates_to_navidrome(
 
 @pytest.mark.unit
 def test_app_db_does_not_expose_top_level_navidrome_methods() -> None:
-    db, _, _, _, _ = _make_app_db()
+    db, _, _, _, _, _ = _make_app_db()
 
     assert hasattr(db, "legacy_navidrome")
     assert not hasattr(db, "get_nd_track")
@@ -205,25 +206,23 @@ def test_truncate_library_scan_edges_delegates_to_app() -> None:
 
 
 @pytest.mark.unit
-def test_truncate_pipeline_states_delegates_to_app() -> None:
-    db, _, app = _make_app_maintenance_db()
-    app.truncate_pipeline_states.return_value = sentinel.result
+def test_truncate_pipeline_states_is_noop() -> None:
+    db, _, _app = _make_app_maintenance_db()
 
     result = db.truncate_pipeline_states()
 
-    assert result is sentinel.result
-    app.truncate_pipeline_states.assert_called_once_with()
+    # Pipeline states are now fields on library documents, not a separate collection
+    assert result is None
 
 
 @pytest.mark.unit
-def test_truncate_pipeline_state_edges_delegates_to_app() -> None:
-    db, _, app = _make_app_maintenance_db()
-    app.truncate_pipeline_state_edges.return_value = sentinel.result
+def test_truncate_pipeline_state_edges_is_noop() -> None:
+    db, _, _app = _make_app_maintenance_db()
 
     result = db.truncate_pipeline_state_edges()
 
-    assert result is sentinel.result
-    app.truncate_pipeline_state_edges.assert_called_once_with()
+    # Pipeline state edges are no longer used
+    assert result is None
 
 
 @pytest.mark.unit
@@ -272,7 +271,7 @@ def test_list_collections_delegates_to_app() -> None:
 
 @pytest.mark.unit
 def test_exposes_app_maintenance_surface() -> None:
-    db, _, _, _, _ = _make_app_db()
+    db, _, _, _, _, _ = _make_app_db()
 
     assert isinstance(db.maintenance, AppMaintenanceDb)
     assert hasattr(db.maintenance, "truncate_worker_claims")
@@ -290,7 +289,7 @@ def test_exposes_app_maintenance_surface() -> None:
 
 @pytest.mark.unit
 def test_add_file_states_delegates_each_file_to_file_states() -> None:
-    db, file_states, _, _, _ = _make_app_db()
+    db, file_states, _, _, _, _ = _make_app_db()
     file_ids = ["library_files/1", "library_files/2"]
 
     result = db.add_file_states(file_ids, "queued")
@@ -304,7 +303,7 @@ def test_add_file_states_delegates_each_file_to_file_states() -> None:
 
 @pytest.mark.unit
 def test_replace_file_states_routes_via_remove_then_add() -> None:
-    db, _, _, _, _ = _make_app_db()
+    db, _, _, _, _, _ = _make_app_db()
     file_ids = ["library_files/1", "library_files/2"]
 
     with (
@@ -320,7 +319,7 @@ def test_replace_file_states_routes_via_remove_then_add() -> None:
 
 @pytest.mark.unit
 def test_remove_file_states_skips_empty_batches() -> None:
-    db, file_states, _, _, _ = _make_app_db()
+    db, file_states, _, _, _, _ = _make_app_db()
 
     result = db.remove_file_states([])
 
@@ -330,7 +329,7 @@ def test_remove_file_states_skips_empty_batches() -> None:
 
 @pytest.mark.unit
 def test_get_scan_delegates_to_scan() -> None:
-    db, _, scan, _, _ = _make_app_db()
+    db, _, scan, _, _, _ = _make_app_db()
     scan.get_scan_record.return_value = sentinel.result
 
     result = db.get_scan("libraries/1")
@@ -341,7 +340,7 @@ def test_get_scan_delegates_to_scan() -> None:
 
 @pytest.mark.unit
 def test_add_scan_creates_record_and_links_library() -> None:
-    db, _, scan, app, _ = _make_app_db()
+    db, _, scan, app, _, _ = _make_app_db()
     payload = {"status": "running"}
     scan.add_scan_record.return_value = "library_scans/1"
 
@@ -354,7 +353,7 @@ def test_add_scan_creates_record_and_links_library() -> None:
 
 @pytest.mark.unit
 def test_update_scan_updates_existing_scan_and_relinks_library() -> None:
-    db, _, scan, app, _ = _make_app_db()
+    db, _, scan, app, _, _ = _make_app_db()
     scan.get_scan_record.return_value = {"_id": "library_scans/1"}
 
     result = db.update_scan("libraries/1", {"status": "done"})
@@ -366,7 +365,7 @@ def test_update_scan_updates_existing_scan_and_relinks_library() -> None:
 
 @pytest.mark.unit
 def test_update_scan_adds_when_no_existing_scan_is_found() -> None:
-    db, _, scan, _, _ = _make_app_db()
+    db, _, scan, _, _, _ = _make_app_db()
     scan.get_scan_record.return_value = None
 
     with patch.object(db, "add_scan", return_value=None) as add_scan:
@@ -378,7 +377,7 @@ def test_update_scan_adds_when_no_existing_scan_is_found() -> None:
 
 @pytest.mark.unit
 def test_remove_scan_deletes_record_and_edge() -> None:
-    db, _, scan, app, _ = _make_app_db()
+    db, _, scan, app, _, _ = _make_app_db()
     scan.get_scan_record.return_value = {"_id": "library_scans/1"}
 
     result = db.remove_scan("libraries/1")
@@ -390,18 +389,18 @@ def test_remove_scan_deletes_record_and_edge() -> None:
 
 @pytest.mark.unit
 def test_get_pipeline_state_returns_state_value_from_doc() -> None:
-    db, _, _, app, _ = _make_app_db()
-    app.get_pipeline_state_doc.return_value = {"state": "running"}
+    db, _, _, _, _, libraries = _make_app_db()
+    libraries.get_pipeline_state.return_value = {"scan_state": "scanning"}
 
     result = db.get_pipeline_state("libraries/1")
 
-    assert result == "running"
-    app.get_pipeline_state_doc.assert_called_once_with("libraries/1")
+    assert result == {"scan_state": "scanning"}
+    libraries.get_pipeline_state.assert_called_once_with("libraries/1")
 
 
 @pytest.mark.unit
 def test_add_lock_delegates_to_insert_lock() -> None:
-    db, _, _, app, _ = _make_app_db()
+    db, _, _, app, _, _ = _make_app_db()
     payload = {"resource_id": "scan:1"}
     app.insert_lock.return_value = sentinel.result
 
@@ -413,7 +412,7 @@ def test_add_lock_delegates_to_insert_lock() -> None:
 
 @pytest.mark.unit
 def test_remove_lock_delegates_to_release_lock() -> None:
-    db, _, _, app, _ = _make_app_db()
+    db, _, _, app, _, _ = _make_app_db()
     app.release_lock.return_value = sentinel.result
 
     result = db.remove_lock("scan:1")
@@ -424,7 +423,7 @@ def test_remove_lock_delegates_to_release_lock() -> None:
 
 @pytest.mark.unit
 def test_add_claim_delegates_to_insert_worker_claim() -> None:
-    db, _, _, app, _ = _make_app_db()
+    db, _, _, app, _, _ = _make_app_db()
     payload = {"file_id": "library_files/1"}
     app.insert_worker_claim.return_value = "worker_claims/claim_1"
 
@@ -436,7 +435,7 @@ def test_add_claim_delegates_to_insert_worker_claim() -> None:
 
 @pytest.mark.unit
 def test_remove_claims_combines_worker_and_file_removals() -> None:
-    db, _, _, app, _ = _make_app_db()
+    db, _, _, app, _, _ = _make_app_db()
     app.delete_claims_for_workers.return_value = 2
     app.delete_claims_for_files.return_value = 3
 
@@ -449,7 +448,7 @@ def test_remove_claims_combines_worker_and_file_removals() -> None:
 
 @pytest.mark.unit
 def test_get_config_option_delegates_to_meta() -> None:
-    db, _, _, app, _ = _make_app_db()
+    db, _, _, app, _, _ = _make_app_db()
     app.get_meta.return_value = sentinel.result
 
     result = db.get_config_option("config_scan_interval")
@@ -460,7 +459,7 @@ def test_get_config_option_delegates_to_meta() -> None:
 
 @pytest.mark.unit
 def test_list_config_options_loads_documents_for_matching_keys() -> None:
-    db, _, _, app, _ = _make_app_db()
+    db, _, _, app, _, _ = _make_app_db()
     app.list_meta_keys_by_prefix.return_value = ["config_a", "config_b"]
     app.get_meta.side_effect = [{"key": "config_a", "value": 1}, {"key": "config_b", "value": 2}]
 
@@ -473,7 +472,7 @@ def test_list_config_options_loads_documents_for_matching_keys() -> None:
 
 @pytest.mark.unit
 def test_update_config_option_delegates_to_upsert_meta() -> None:
-    db, _, _, app, _ = _make_app_db()
+    db, _, _, app, _, _ = _make_app_db()
     payload = {"key": "config_a", "value": 1}
     app.upsert_meta.return_value = sentinel.result
 
@@ -485,7 +484,7 @@ def test_update_config_option_delegates_to_upsert_meta() -> None:
 
 @pytest.mark.unit
 def test_remove_config_option_delegates_to_delete_meta() -> None:
-    db, _, _, app, _ = _make_app_db()
+    db, _, _, app, _, _ = _make_app_db()
     app.delete_meta.return_value = sentinel.result
 
     result = db.remove_config_option("config_a")
@@ -496,7 +495,7 @@ def test_remove_config_option_delegates_to_delete_meta() -> None:
 
 @pytest.mark.unit
 def test_add_vram_promise_delegates_to_upsert_vram_promise() -> None:
-    db, _, _, app, _ = _make_app_db()
+    db, _, _, app, _, _ = _make_app_db()
     payload = {"worker_id": "worker-1", "promised_mb": 512}
     app.upsert_vram_promise.return_value = sentinel.result
 
@@ -508,7 +507,7 @@ def test_add_vram_promise_delegates_to_upsert_vram_promise() -> None:
 
 @pytest.mark.unit
 def test_list_vram_promises_delegates_to_get_vram_promises() -> None:
-    db, _, _, app, _ = _make_app_db()
+    db, _, _, app, _, _ = _make_app_db()
     app.get_vram_promises.return_value = sentinel.result
 
     result = db.list_vram_promises()
@@ -519,7 +518,7 @@ def test_list_vram_promises_delegates_to_get_vram_promises() -> None:
 
 @pytest.mark.unit
 def test_remove_vram_promise_delegates_to_delete_vram_promise() -> None:
-    db, _, _, app, _ = _make_app_db()
+    db, _, _, app, _, _ = _make_app_db()
     app.delete_vram_promise.return_value = sentinel.result
 
     result = db.remove_vram_promise("vram_promises/1")
@@ -529,19 +528,19 @@ def test_remove_vram_promise_delegates_to_delete_vram_promise() -> None:
 
 
 @pytest.mark.unit
-def test_remove_pipeline_state_delegates_to_delete_doc_and_edges() -> None:
-    db, _, _, app, _ = _make_app_db()
+def test_remove_pipeline_state_is_noop() -> None:
+    db, _, _, _, _, _ = _make_app_db()
 
-    result = db.remove_pipeline_state("libraries/1")
-
-    assert result is None
-    app.delete_pipeline_state.assert_called_once_with("libraries/1")
-    app.delete_pipeline_state_edges_for_library.assert_called_once_with("libraries/1")
+    # Pipeline states are now fields on library documents, not a separate collection
+    # This method is kept for backward compatibility but is a no-op
+    if hasattr(db, "remove_pipeline_state"):
+        result = db.remove_pipeline_state("libraries/1")
+        assert result is None
 
 
 @pytest.mark.unit
 def test_exposes_legacy_navidrome_surface() -> None:
-    db, _, _, _, _ = _make_app_db()
+    db, _, _, _, _, _ = _make_app_db()
 
     assert hasattr(db, "legacy_navidrome")
     assert hasattr(db.legacy_navidrome, "get_nd_track")

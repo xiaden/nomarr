@@ -32,7 +32,7 @@ def get_config(
 
 
 @router.post("")
-def update_config(
+async def update_config(
     request: ConfigUpdateRequest,
     _session: Annotated[dict, Depends(verify_session)],
     config_service: Annotated["ConfigService", Depends(get_config_service)],

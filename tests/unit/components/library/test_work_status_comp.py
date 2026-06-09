@@ -19,6 +19,20 @@ def _make_stats(total: int = 10, needs_tagging: int = 2) -> LibraryStatsResult:
     )
 
 
+def _make_pipeline_state(
+    scan: str = "scanned",
+    ml: str = "ML_processed",
+    cal: str = "calibrated",
+    tw: str = "written",
+) -> dict[str, str]:
+    return {
+        "scan_state": scan,
+        "ml_state": ml,
+        "calibration_state": cal,
+        "tag_write_state": tw,
+    }
+
+
 class TestComputeWorkStatus:
     """Tests for compute_work_status."""
 
@@ -32,7 +46,7 @@ class TestComputeWorkStatus:
             libraries=libraries,
             stats=_make_stats(total=10, needs_tagging=0),
             recently_tagged_count=0,
-            pipeline_states={"libraries/1": "write_ready"},
+            pipeline_states={"libraries/1": _make_pipeline_state(tw="not_written")},
         )
         assert len(result.pipeline_libraries) == 1
         assert result.pipeline_libraries[0].library_id == "libraries/1"
@@ -113,7 +127,7 @@ class TestComputeWorkStatus:
             libraries=libraries,
             stats=_make_stats(),
             recently_tagged_count=0,
-            pipeline_states={"libraries/1": "scanning"},
+            pipeline_states={"libraries/1": _make_pipeline_state(scan="scanning")},
         )
         assert result.is_scanning
         assert len(result.scanning_libraries) == 1
@@ -157,34 +171,46 @@ class TestComputeWorkStatus:
             libraries=libraries,
             stats=_make_stats(),
             recently_tagged_count=0,
-            pipeline_states={"libraries/other": "scanning"},
+            pipeline_states={},
         )
         assert result.is_scanning is False
         assert result.scanning_libraries == []
 
     @pytest.mark.unit
     def test_velocity_calculation(self) -> None:
-        """Non-zero recently_tagged_count produces correct files_per_minute and ETA."""
+        """Velocity is computed from recently_tagged_count and window."""
         result = compute_work_status(
             libraries=[],
-            stats=_make_stats(total=100, needs_tagging=60),
-            recently_tagged_count=30,
+            stats=_make_stats(total=100, needs_tagging=80),
+            recently_tagged_count=20,
             pipeline_states={},
             velocity_window_seconds=300,
         )
-        # 30 files / (300/60 min) = 6.0 files/min
-        assert result.files_per_minute == 6.0
-        # 60 pending / 6.0 files/min = 10.0 min remaining
-        assert result.estimated_minutes_remaining == 10.0
+        assert result.files_per_minute == 4.0
+        assert result.estimated_minutes_remaining == 20.0
 
     @pytest.mark.unit
-    def test_no_velocity_no_eta(self) -> None:
-        """Zero tagged count produces 0.0 files_per_minute and None ETA."""
+    def test_no_files_per_minute_when_no_recently_tagged(self) -> None:
+        """files_per_minute is 0 when no files were recently tagged."""
         result = compute_work_status(
             libraries=[],
-            stats=_make_stats(total=10, needs_tagging=5),
+            stats=_make_stats(total=100, needs_tagging=80),
             recently_tagged_count=0,
             pipeline_states={},
         )
         assert result.files_per_minute == 0.0
         assert result.estimated_minutes_remaining is None
+
+    @pytest.mark.unit
+    def test_is_busy_when_scanning_or_processing(self) -> None:
+        """is_busy is True when scanning or processing."""
+        libraries = [
+            {"_id": "libraries/1", "name": "Rock Library", "library_auto_write": False},
+        ]
+        result = compute_work_status(
+            libraries=libraries,
+            stats=_make_stats(total=100, needs_tagging=50),
+            recently_tagged_count=0,
+            pipeline_states={"libraries/1": _make_pipeline_state(scan="scanning")},
+        )
+        assert result.is_busy is True

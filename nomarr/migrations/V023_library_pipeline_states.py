@@ -21,19 +21,19 @@ from nomarr.helpers.constants.file_states import (
     STATE_TAGGED,
     STATE_TAGS_WRITTEN,
 )
-from nomarr.helpers.constants.pipeline_states import (
-    PIPELINE_APPLYING,
-    PIPELINE_AWAITING_CALIBRATION,
-    PIPELINE_CALIBRATING,
-    PIPELINE_DONE,
-    PIPELINE_IDLE,
-    PIPELINE_ML_RUNNING,
-    PIPELINE_SCANNING,
-    PIPELINE_TOO_SMALL,
-    PIPELINE_WRITE_READY,
-    PIPELINE_WRITING,
-)
 from nomarr.services.infrastructure.config_svc import INTERNAL_CALIBRATION_MIN_FILES
+
+# Legacy pipeline state document keys (used only by this historical migration)
+_PIPELINE_IDLE = "library_pipeline_states/idle"
+_PIPELINE_SCANNING = "library_pipeline_states/scanning"
+_PIPELINE_ML_RUNNING = "library_pipeline_states/ml_running"
+_PIPELINE_TOO_SMALL = "library_pipeline_states/too_small"
+_PIPELINE_AWAITING_CALIBRATION = "library_pipeline_states/awaiting_calibration"
+_PIPELINE_CALIBRATING = "library_pipeline_states/calibrating"
+_PIPELINE_APPLYING = "library_pipeline_states/applying"
+_PIPELINE_WRITE_READY = "library_pipeline_states/write_ready"
+_PIPELINE_WRITING = "library_pipeline_states/writing"
+_PIPELINE_DONE = "library_pipeline_states/done"
 
 if TYPE_CHECKING:
     from arango.cursor import Cursor
@@ -46,16 +46,16 @@ MIGRATION_VERSION: str = "0.2.3"
 DESCRIPTION: str = "Create library pipeline state graph, seed singleton states, and derive initial library state edges"
 
 _PIPELINE_STATE_IDS: tuple[str, ...] = (
-    PIPELINE_IDLE,
-    PIPELINE_SCANNING,
-    PIPELINE_ML_RUNNING,
-    PIPELINE_TOO_SMALL,
-    PIPELINE_AWAITING_CALIBRATION,
-    PIPELINE_CALIBRATING,
-    PIPELINE_APPLYING,
-    PIPELINE_WRITE_READY,
-    PIPELINE_WRITING,
-    PIPELINE_DONE,
+    _PIPELINE_IDLE,
+    _PIPELINE_SCANNING,
+    _PIPELINE_ML_RUNNING,
+    _PIPELINE_TOO_SMALL,
+    _PIPELINE_AWAITING_CALIBRATION,
+    _PIPELINE_CALIBRATING,
+    _PIPELINE_APPLYING,
+    _PIPELINE_WRITE_READY,
+    _PIPELINE_WRITING,
+    _PIPELINE_DONE,
 )
 _PIPELINE_GRAPH = "pipeline_graph"
 _PIPELINE_VERTEX_COLLECTION = "library_pipeline_states"
@@ -71,16 +71,16 @@ def _derive_pipeline_state(
 ) -> str:
     """Derive the initial library pipeline state from file-state counts."""
     if total_files == 0 or tagged_count == 0:
-        return PIPELINE_IDLE
+        return _PIPELINE_IDLE
     if untagged_count > 0 or tagged_count < total_files:
-        return PIPELINE_ML_RUNNING
+        return _PIPELINE_ML_RUNNING
     if tagged_count < INTERNAL_CALIBRATION_MIN_FILES:
-        return PIPELINE_TOO_SMALL
+        return _PIPELINE_TOO_SMALL
     if calibrated_count < total_files:
-        return PIPELINE_AWAITING_CALIBRATION
+        return _PIPELINE_AWAITING_CALIBRATION
     if written_count < total_files:
-        return PIPELINE_WRITE_READY
-    return PIPELINE_DONE
+        return _PIPELINE_WRITE_READY
+    return _PIPELINE_DONE
 
 
 def upgrade(db: DatabaseLike) -> None:

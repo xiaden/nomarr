@@ -28,9 +28,8 @@ from nomarr.components.library.library_root_comp import (
 from nomarr.components.library.scan_lifecycle_comp import (
     ensure_scan_state,
     get_scanning_library_ids,
-    transition_pipeline_state,
 )
-from nomarr.helpers.constants.pipeline_states import PIPELINE_IDLE
+from nomarr.helpers.constants.pipeline_states import PIPELINE_DEFAULTS
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -81,9 +80,9 @@ def create_library(
                 watch_mode=watch_mode,
                 file_write_mode=file_write_mode,
                 library_auto_write=library_auto_write,
+                **PIPELINE_DEFAULTS,
             ),
         )
-        transition_pipeline_state(db, library_id, PIPELINE_IDLE)
         ensure_scan_state(db, library_id)
     except Exception as e:
         msg = f"Failed to create library: {e}"

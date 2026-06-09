@@ -26,7 +26,7 @@ from nomarr.components.library.library_file_state_comp import (
     get_uncalibrated_tagged_file_ids,
 )
 from nomarr.components.library.library_records_comp import get_library_record, list_library_records
-from nomarr.components.library.scan_lifecycle_comp import get_libraries_in_pipeline_state
+from nomarr.components.library.scan_lifecycle_comp import get_libraries_in_axis_state
 from nomarr.components.library.search_files_comp import (
     get_unique_tag_values,
     search_library_files,
@@ -35,16 +35,14 @@ from nomarr.components.library.work_status_comp import compute_work_status
 from nomarr.components.tagging.tag_query_comp import get_unique_mood_values
 from nomarr.components.tagging.tag_stats_comp import get_unique_names
 from nomarr.helpers.constants.pipeline_states import (
-    PIPELINE_APPLYING,
-    PIPELINE_AWAITING_CALIBRATION,
-    PIPELINE_CALIBRATING,
-    PIPELINE_DONE,
-    PIPELINE_IDLE,
-    PIPELINE_ML_RUNNING,
-    PIPELINE_SCANNING,
-    PIPELINE_TOO_SMALL,
-    PIPELINE_WRITE_READY,
-    PIPELINE_WRITING,
+    CAL_NOT_CALIBRATED,
+    CAL_STATE_FIELD,
+    ML_NOT_PROCESSED,
+    ML_STATE_FIELD,
+    SCAN_NOT_SCANNED,
+    SCAN_STATE_FIELD,
+    WRITE_NOT_WRITTEN,
+    WRITE_STATE_FIELD,
 )
 from nomarr.helpers.dto.info_dto import WorkStatusResult
 from nomarr.helpers.dto.library_dto import (
@@ -61,20 +59,6 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
     from .config import LibraryServiceConfig
-
-
-_PIPELINE_STATE_DOC_IDS: tuple[str, ...] = (
-    PIPELINE_IDLE,
-    PIPELINE_SCANNING,
-    PIPELINE_ML_RUNNING,
-    PIPELINE_TOO_SMALL,
-    PIPELINE_AWAITING_CALIBRATION,
-    PIPELINE_CALIBRATING,
-    PIPELINE_APPLYING,
-    PIPELINE_WRITE_READY,
-    PIPELINE_WRITING,
-    PIPELINE_DONE,
-)
 
 
 class LibraryQueryMixin:
@@ -227,11 +211,21 @@ class LibraryQueryMixin:
         libraries = list_library_records(self.db, enabled_only=False)
         stats = self.get_library_stats()
         recently_tagged = count_recently_tagged(self.db)
-        pipeline_states: dict[str, str] = {}
-        for state_doc_id in _PIPELINE_STATE_DOC_IDS:
-            state_key = state_doc_id.rsplit("/", 1)[-1]
-            for library_id in get_libraries_in_pipeline_state(self.db, state_doc_id):
-                pipeline_states[library_id] = state_key
+
+        # Build per-axis pipeline states for all libraries
+        pipeline_states: dict[str, dict[str, str]] = {}
+        for lib in libraries:
+            lib_id = lib["_id"]
+            scan = get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
+            ml = get_libraries_in_axis_state(self.db, ML_STATE_FIELD, ML_NOT_PROCESSED)
+            cal = get_libraries_in_axis_state(self.db, CAL_STATE_FIELD, CAL_NOT_CALIBRATED)
+            tw = get_libraries_in_axis_state(self.db, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
+            pipeline_states[lib_id] = {
+                SCAN_STATE_FIELD: "not_scanned" if lib_id in scan else "scanned",
+                ML_STATE_FIELD: "not_ML_processed" if lib_id in ml else "ML_processed",
+                CAL_STATE_FIELD: "not_calibrated" if lib_id in cal else "calibrated",
+                WRITE_STATE_FIELD: "not_written" if lib_id in tw else "written",
+            }
 
         return compute_work_status(
             libraries,

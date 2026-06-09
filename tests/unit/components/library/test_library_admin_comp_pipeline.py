@@ -7,25 +7,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.components.library.library_admin_comp import _is_scan_running, create_library
-from nomarr.helpers.constants.pipeline_states import PIPELINE_IDLE, PIPELINE_SCANNING
-
-
-@pytest.fixture(autouse=True)
-def pipeline_state_shims(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Bridge helper-based production code to the legacy test mock surface."""
-
-    def _transition(db: MagicMock, library_id: str, state: str) -> None:
-        db.library_pipeline_states.transition_state(library_id, state)
-
-    def _get_scanning_ids(db: MagicMock) -> set[str]:
-        return set(db.library_pipeline_states.get_libraries_in_state(PIPELINE_SCANNING))
-
-    monkeypatch.setattr("nomarr.components.library.library_admin_comp.transition_pipeline_state", _transition)
-    monkeypatch.setattr("nomarr.components.library.library_admin_comp.get_scanning_library_ids", _get_scanning_ids)
-    monkeypatch.setattr(
-        "nomarr.components.library.library_admin_comp.ensure_scan_state",
-        lambda db, library_id: db.library_scans.get_or_create_scan(library_id),
-    )
+from nomarr.helpers.constants.pipeline_states import (
+    PIPELINE_DEFAULTS,
+)
 
 
 class TestCreateLibraryPipeline:
@@ -34,7 +18,7 @@ class TestCreateLibraryPipeline:
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_create_library_initializes_pipeline_state_after_persisting(self) -> None:
-        """Library creation should insert the initial idle pipeline edge after persistence."""
+        """Library creation should pass pipeline defaults to create_library_record."""
         mock_db = MagicMock()
 
         with (
@@ -72,8 +56,8 @@ class TestCreateLibraryPipeline:
             watch_mode="off",
             file_write_mode="full",
             library_auto_write=False,
+            **PIPELINE_DEFAULTS,
         )
-        mock_db.library_pipeline_states.transition_state.assert_called_once_with("libraries/abc123", PIPELINE_IDLE)
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -116,10 +100,7 @@ class TestCreateLibraryPipeline:
             watch_mode="off",
             file_write_mode="full",
             library_auto_write=True,
-        )
-        mock_db.library_pipeline_states.transition_state.assert_called_once_with(
-            "libraries/abc123",
-            PIPELINE_IDLE,
+            **PIPELINE_DEFAULTS,
         )
 
     @pytest.mark.unit
@@ -146,6 +127,7 @@ class TestCreateLibraryPipeline:
                 "nomarr.components.library.library_admin_comp.create_library_record",
                 return_value="libraries/abc123",
             ),
+            patch("nomarr.components.library.library_admin_comp.ensure_scan_state") as mock_ensure_scan_state,
         ):
             create_library(
                 db=mock_db,
@@ -154,31 +136,36 @@ class TestCreateLibraryPipeline:
                 root_path="rock",
             )
 
-        mock_db.library_pipeline_states.transition_state.assert_called_once_with("libraries/abc123", PIPELINE_IDLE)
-        mock_db.library_scans.get_or_create_scan.assert_called_once_with("libraries/abc123")
+        mock_ensure_scan_state.assert_called_once_with(mock_db, "libraries/abc123")
 
 
 class TestIsScanRunning:
-    """Tests for pipeline-backed scan detection."""
+    """Tests for _is_scan_running helper."""
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_true_when_pipeline_has_scanning_library(self) -> None:
-        """A non-empty scanning pipeline result should report an active scan."""
+    def test_returns_true_when_libraries_are_scanning(self) -> None:
+        """Should return True when there are scanning libraries."""
         mock_db = MagicMock()
-        mock_db.library_pipeline_states.get_libraries_in_state.return_value = ["libraries/lib1"]
 
-        assert _is_scan_running(mock_db) is True
+        with patch(
+            "nomarr.components.library.library_admin_comp.get_scanning_library_ids",
+            return_value={"libraries/abc123"},
+        ):
+            result = _is_scan_running(mock_db)
 
-        mock_db.library_pipeline_states.get_libraries_in_state.assert_called_once_with(PIPELINE_SCANNING)
+        assert result is True
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_false_when_pipeline_has_no_scanning_libraries(self) -> None:
-        """An empty scanning pipeline result should report no active scan."""
+    def test_returns_false_when_no_libraries_are_scanning(self) -> None:
+        """Should return False when there are no scanning libraries."""
         mock_db = MagicMock()
-        mock_db.library_pipeline_states.get_libraries_in_state.return_value = []
 
-        assert _is_scan_running(mock_db) is False
+        with patch(
+            "nomarr.components.library.library_admin_comp.get_scanning_library_ids",
+            return_value=set(),
+        ):
+            result = _is_scan_running(mock_db)
 
-        mock_db.library_pipeline_states.get_libraries_in_state.assert_called_once_with(PIPELINE_SCANNING)
+        assert result is False

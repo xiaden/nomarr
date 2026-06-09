@@ -2,7 +2,6 @@
 //
 // This plugin bridges Navidrome to Nomarr's ML-powered APIs:
 //   - metadata.SimilarSongsByTrackProvider — Instant Mix via vector ANN search
-//   - scrobbler.Scrobbler — forwards scrobble events to Nomarr for taste profiling
 //   - scheduler.CallbackProvider — scheduled personal playlist generation and push
 package main
 
@@ -17,16 +16,14 @@ import (
 	"github.com/navidrome/navidrome/plugins/pdk/go/metadata"
 	"github.com/navidrome/navidrome/plugins/pdk/go/pdk"
 	"github.com/navidrome/navidrome/plugins/pdk/go/scheduler"
-	"github.com/navidrome/navidrome/plugins/pdk/go/scrobbler"
 )
 
-// nomarrPlugin implements metadata.SimilarSongsByTrackProvider,
-// scrobbler.Scrobbler, and scheduler.CallbackProvider.
+// nomarrPlugin implements metadata.SimilarSongsByTrackProvider
+// and scheduler.CallbackProvider.
 type nomarrPlugin struct{}
 
 func init() {
 	metadata.Register(&nomarrPlugin{})
-	scrobbler.Register(&nomarrPlugin{})
 	scheduler.Register(&nomarrPlugin{})
 
 	// Register playlist generation scheduler if enabled.
@@ -448,24 +445,6 @@ func fetchCandidatesForDescriptor(descriptor nomarrSongDescriptor) ([]subsonicSo
 }
 
 // ---------------------------------------------------------------------------
-// Scrobble types (Nomarr API payload)
-// ---------------------------------------------------------------------------
-
-// scrobbleTrack represents a single track in a scrobble event sent to Nomarr.
-type scrobbleTrack struct {
-	ID       string  `json:"id"`
-	Title    string  `json:"title"`
-	Duration float64 `json:"duration"`
-}
-
-// scrobbleRequest is the JSON body sent to Nomarr's scrobble endpoint.
-type scrobbleRequest struct {
-	Username  string        `json:"username"`
-	Track     scrobbleTrack `json:"track"`
-	Timestamp int64         `json:"timestamp"`
-}
-
-// ---------------------------------------------------------------------------
 // Playlist generation types
 // ---------------------------------------------------------------------------
 
@@ -625,7 +604,7 @@ func (p *nomarrPlugin) GetSimilarSongsByTrack(req metadata.SimilarSongsByTrackRe
 		URL:    endpoint,
 		Headers: map[string]string{
 			"Content-Type": "application/json",
-			"X-API-Key":    apiKey,
+			"Authorization": "Bearer " + apiKey,
 		},
 		Body:      bodyBytes,
 		TimeoutMs: 30000,
@@ -722,77 +701,6 @@ func (p *nomarrPlugin) GetSimilarSongsByTrack(req metadata.SimilarSongsByTrackRe
 }
 
 // ---------------------------------------------------------------------------
-// Scrobbler implementation
-// ---------------------------------------------------------------------------
-
-// IsAuthorized always returns true — Nomarr accepts all scrobbles from
-// configured users. Auth is handled via the API key, not per-user.
-func (p *nomarrPlugin) IsAuthorized(_ scrobbler.IsAuthorizedRequest) (bool, error) {
-	_, _, ok := readConfig()
-	if !ok {
-		return false, nil
-	}
-	return true, nil
-}
-
-// NowPlaying is a no-op. Nomarr only needs completed scrobbles, not
-// now-playing notifications.
-func (p *nomarrPlugin) NowPlaying(_ scrobbler.NowPlayingRequest) error {
-	return nil
-}
-
-// Scrobble forwards a scrobble event to Nomarr's ingestion API.
-// Best-effort: on any error, logs and returns nil so the scrobble pipeline
-// in Navidrome is never blocked.
-func (p *nomarrPlugin) Scrobble(req scrobbler.ScrobbleRequest) error {
-	nomarrURL, apiKey, ok := readConfig()
-	if !ok {
-		return nil
-	}
-
-	body := scrobbleRequest{
-		Username: req.Username,
-		Track: scrobbleTrack{
-			ID:       req.Track.ID,
-			Title:    req.Track.Title,
-			Duration: float64(req.Track.Duration),
-		},
-		Timestamp: req.Timestamp,
-	}
-	bodyBytes, err := json.Marshal(body)
-	if err != nil {
-		pdk.Log(pdk.LogError, fmt.Sprintf("nomarr: failed to marshal scrobble request: %v", err))
-		return nil
-	}
-
-	endpoint := strings.TrimRight(nomarrURL, "/") + "/api/v1/navidrome/scrobble"
-
-	pdk.Log(pdk.LogInfo, fmt.Sprintf("nomarr: scrobbling track %s (%s) for user %s", req.Track.ID, req.Track.Title, req.Username))
-	pdk.Log(pdk.LogDebug, fmt.Sprintf("nomarr: scrobble request body: %s", string(bodyBytes)))
-
-	resp, err := host.HTTPSend(host.HTTPRequest{
-		Method: "POST",
-		URL:    endpoint,
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-			"X-API-Key":    apiKey,
-		},
-		Body:      bodyBytes,
-		TimeoutMs: 10000,
-	})
-	if err != nil {
-		pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: scrobble HTTP request failed: %v", err))
-		return nil
-	}
-
-	if resp.StatusCode != 204 && resp.StatusCode != 200 {
-		pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: scrobble API returned status %d: %s", resp.StatusCode, string(resp.Body)))
-	}
-
-	return nil
-}
-
-// ---------------------------------------------------------------------------
 // Scheduler callback implementation
 // ---------------------------------------------------------------------------
 
@@ -871,11 +779,11 @@ func generateAndPushPlaylists() {
 			URL:    endpoint,
 			Headers: map[string]string{
 				"Content-Type": "application/json",
-				"X-API-Key":    apiKey,
-			},
-			Body:      bodyBytes,
-			TimeoutMs: 60000,
-		})
+		"Authorization": "Bearer " + apiKey,
+		},
+		Body:      bodyBytes,
+		TimeoutMs: 60000,
+	})
 		if err != nil {
 			pdk.Log(pdk.LogWarn, fmt.Sprintf("nomarr: generate-playlists HTTP request failed for user %s: %v", user.Username, err))
 			continue

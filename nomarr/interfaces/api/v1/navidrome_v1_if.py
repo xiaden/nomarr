@@ -1,6 +1,6 @@
 """Navidrome v1 API endpoints for integration use.
 
-Routes: /v1/navidrome/similar-track, /v1/navidrome/scrobble, /v1/navidrome/playlist/generate.
+Routes: /v1/navidrome/similar-track, /v1/navidrome/playlist/generate.
 Auth: API key (verify_key).
 """
 
@@ -10,7 +10,7 @@ import asyncio
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from nomarr.helpers.exceptions import MisconfiguredError
@@ -120,54 +120,6 @@ async def navidrome_similar_tracks(
             for r in results
         ],
     )
-
-
-# ------------------------------------------------------------------
-# Scrobble models
-# ------------------------------------------------------------------
-
-
-class ScrobbleTrack(BaseModel):
-    """Track identification from a scrobble event."""
-
-    id: str
-    title: str = ""
-    duration: float = 0.0
-
-
-class ScrobbleRequest(BaseModel):
-    """Scrobble request body (Navidrome Scrobbler plugin format).
-
-    ``timestamp`` is epoch seconds (Navidrome convention).
-    """
-
-    username: str
-    track: ScrobbleTrack
-    timestamp: int
-
-
-@router.post("/scrobble", dependencies=[Depends(verify_key)], status_code=204)
-async def navidrome_scrobble(
-    body: ScrobbleRequest,
-    svc: Annotated[NavidromeService, Depends(get_navidrome_service)],
-) -> Response:
-    """Ingest a real-time scrobble event from Navidrome."""
-    logger.info(
-        "[navidrome] scrobble request: user=%s track_id=%s title=%r duration=%.1fs timestamp=%d",
-        body.username,
-        body.track.id,
-        body.track.title,
-        body.track.duration,
-        body.timestamp,
-    )
-    timestamp_ms = body.timestamp * 1000
-    await asyncio.to_thread(
-        svc.ingest_scrobble,
-        user_id=body.username,
-        nd_id=body.track.id,
-        timestamp_ms=timestamp_ms,
-    )
-    return Response(status_code=204)
 
 
 # ------------------------------------------------------------------

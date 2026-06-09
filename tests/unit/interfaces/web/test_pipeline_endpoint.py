@@ -56,7 +56,10 @@ class TestPipelineEndpoint:
         """The endpoint should serialize a pipeline DTO into the response body."""
         mock_pipeline_service.get_pipeline_status.return_value = LibraryPipelineStatusDTO(
             library_id="libraries/test-lib",
-            state="write_ready",
+            scan_state="scanned",
+            ml_state="ML_processed",
+            calibration_state="not_calibrated",
+            tag_write_state="not_written",
             untagged_count=None,
             uncalibrated_count=None,
             pending_write_count=17,
@@ -69,7 +72,10 @@ class TestPipelineEndpoint:
         assert response.status_code == 200
         assert response.json() == {
             "library_id": "libraries/test-lib",
-            "state": "write_ready",
+            "scan_state": "scanned",
+            "ml_state": "ML_processed",
+            "calibration_state": "not_calibrated",
+            "tag_write_state": "not_written",
             "untagged_count": None,
             "uncalibrated_count": None,
             "pending_write_count": 17,

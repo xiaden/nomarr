@@ -148,6 +148,7 @@ class Database:
             scan=self.scan_aql,
             app=self.app_aql,
             navidrome=self.navidrome_aql,
+            libraries=self.libraries_aql,
         )
 
     def get_version(self) -> str | None:

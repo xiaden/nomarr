@@ -22,7 +22,6 @@ from arango.exceptions import CollectionCreateError, DocumentInsertError, IndexC
 
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones, discover_heads_no_db
 from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES
-from nomarr.helpers.constants.pipeline_states import ALL_PIPELINE_STATES
 from nomarr.persistence.arango_client import SafeDatabase
 from nomarr.persistence.database.libraries_aql import LibrariesAqlOperations
 from nomarr.persistence.schema_types import VectorsTrackCold, VectorsTrackHot
@@ -185,14 +184,11 @@ def _seed_file_states(db: SafeDatabase) -> None:
 
 
 def _seed_pipeline_states(db: SafeDatabase) -> None:
-    """Ensure all library_pipeline_states vertex documents exist.
+    """No-op: pipeline states are now fields on library documents.
 
-    Idempotent — inserts only if the document is missing.
+    Kept for backward compatibility during migration. The old
+    library_pipeline_states collection is no longer used.
     """
-    coll = db.collection("library_pipeline_states")  # type: ignore[union-attr]
-    for state in ALL_PIPELINE_STATES:
-        with contextlib.suppress(DocumentInsertError):
-            coll.insert({"_key": state.split("/")[1]})  # type: ignore[union-attr]
 
 
 def seed_state_documents(db: Database) -> None:

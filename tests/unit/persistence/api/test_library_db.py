@@ -10,9 +10,7 @@ import pytest
 from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES
 from nomarr.persistence.api.library import LibraryDb, LibraryMaintenanceDb
 
-_NEGATIVE_FILE_STATES = [
-    state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_")
-]
+_NEGATIVE_FILE_STATES = [state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_")]
 
 
 def _make_library_db() -> tuple[

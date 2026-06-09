@@ -1,6 +1,6 @@
 # Navidrome Workflows
 
-Workflows for Navidrome integration — smart/static playlist generation, config export, Subsonic API sync, scrobble ingestion, and vector-based track similarity.
+Workflows for Navidrome integration — smart/static playlist generation, config export, Subsonic API sync, and vector-based track similarity.
 
 ## Responsibilities
 
@@ -12,7 +12,6 @@ Workflows for Navidrome integration — smart/static playlist generation, config
 - Generate Navidrome TOML config for custom tag fields
 - Preview tag statistics for config generation
 - Sync Navidrome song inventory into graph collections
-- Ingest real-time scrobble events with dedup
 - Find similar tracks via vector ANN search
 - Generate personal playlists from user taste profiles
 
@@ -28,9 +27,8 @@ Workflows for Navidrome integration — smart/static playlist generation, config
  | `push_playlist_wf.py` | Resolve file IDs to Navidrome song IDs, create/replace playlist via Subsonic API |
  | `generate_navidrome_config_wf.py` | Query tags collection, detect types, generate TOML with field aliases |
  | `preview_tag_stats_wf.py` | Batched tag statistics for all tags (type, multivalue, summary, short_name) |
- | `sync_navidrome_wf.py` | Walk Navidrome albums, auto-detect path prefix, upsert tracks/edges, cascade-delete orphans |
- | `ingest_scrobble_wf.py` | Dedup check (30s window), upsert track vertex, atomic play count increment |
- | `find_similar_tracks_wf.py` | Resolve seed ND ID → vector → ANN search → resolve results to ND IDs + metadata |
+  | `sync_navidrome_wf.py` | Walk Navidrome albums, auto-detect path prefix, upsert tracks/edges, cascade-delete orphans |
+  | `find_similar_tracks_wf.py` | Resolve seed ND ID → vector → ANN search → resolve results to ND IDs + metadata |
  | `generate_playlists_wf.py` | Taste profile computation, dispatch to playlist type builders (familiar, discovery, hidden gems, genre) |
 
 ## Patterns
