@@ -27,7 +27,7 @@ from nomarr.components.library.scan_lifecycle_comp import (
     update_scan_progress,
     upsert_scanned_files,
 )
-from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
+from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.helpers.constants.pipeline_states import (
     CAL_NOT_CALIBRATED,
     CAL_STATE_FIELD,
@@ -55,7 +55,7 @@ class TestBootstrapFileStateEdges:
     def test_ml_tagged_type_creates_edge_via_transition(self) -> None:
         mock_db = MagicMock()
         mock_db.app.list_file_docs_in_state.side_effect = lambda state: list(
-            [{"_id": "library_files/abc"}] if state == STATE_NOT_TAGGED else []
+            [{"_id": "library_files/abc"}] if state == STATE_NOT_PROCESSED else []
         )
         bootstraps = [
             {"normalized_path": "/music/song.mp3", "type": "ml_tagged"},
@@ -64,7 +64,7 @@ class TestBootstrapFileStateEdges:
         result = bootstrap_file_state_edges(mock_db, bootstraps, file_id_by_path)
         assert result == 1
         mock_db.app.remove_file_states.assert_called_once_with(["library_files/abc"])
-        mock_db.app.add_file_states.assert_called_once_with(["library_files/abc"], STATE_TAGGED)
+        mock_db.app.add_file_states.assert_called_once_with(["library_files/abc"], STATE_PROCESSED)
         mock_db.app.transition_file_states.assert_not_called()
 
     @pytest.mark.unit

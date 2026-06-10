@@ -11,7 +11,7 @@ import os
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
-from nomarr.components.library.file_sync_comp import mark_file_tagged, save_file_tags
+from nomarr.components.library.file_sync_comp import mark_file_processed, save_file_tags
 from nomarr.components.library.library_file_mutation_comp import set_chromaprint, upsert_library_file
 from nomarr.components.library.library_file_query_comp import get_library_file
 from nomarr.components.library.library_records_comp import find_library_containing_path
@@ -85,7 +85,7 @@ def _sync_tags_and_entities(
         logger.debug(f"[sync_file_to_library] Stored chromaprint for {file_path}")
 
     if tagged_version:
-        mark_file_tagged(db, file_id)
+        mark_file_processed(db, file_id)
 
     logger.debug(f"[sync_file_to_library] Synced {file_path}")
 

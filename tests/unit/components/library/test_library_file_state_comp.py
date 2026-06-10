@@ -33,12 +33,12 @@ from nomarr.helpers.constants.file_states import (
     STATE_CALIBRATED,
     STATE_ERRORED,
     STATE_NOT_CALIBRATED,
-    STATE_NOT_TAGGED,
+    STATE_NOT_PROCESSED,
     STATE_NOT_VECTORS_EXTRACTED,
-    STATE_TAGGED,
+    STATE_NOT_WRITTEN,
+    STATE_PROCESSED,
     STATE_TAGS_CURRENT,
     STATE_TAGS_NOT_FRESH,
-    STATE_TAGS_NOT_WRITTEN,
     STATE_VECTORS_EXTRACTED,
 )
 from nomarr.persistence.exceptions import DuplicateKeyError
@@ -145,7 +145,7 @@ class TestClearAllStates:
     def test_deletes_single_file_edges_via_app_facade(self) -> None:
         mock_db = _make_mock_db()
         states_with_file = {
-            STATE_TAGGED,
+            STATE_PROCESSED,
             STATE_TAGS_CURRENT,
             STATE_NOT_CALIBRATED,
             STATE_NOT_VECTORS_EXTRACTED,
@@ -167,7 +167,7 @@ class TestClearAllStatesBatch:
     def test_deletes_file_batch_edges_via_app_facade(self) -> None:
         mock_db = _make_mock_db()
         docs_by_state = {
-            STATE_TAGGED: [{"_id": "library_files/1"}, {"_id": "library_files/2"}],
+            STATE_PROCESSED: [{"_id": "library_files/1"}, {"_id": "library_files/2"}],
             STATE_TAGS_CURRENT: [{"_id": "library_files/1"}],
             STATE_NOT_CALIBRATED: [{"_id": "library_files/1"}, {"_id": "library_files/2"}],
             STATE_NOT_VECTORS_EXTRACTED: [{"_id": "library_files/1"}, {"_id": "library_files/2"}],
@@ -199,7 +199,7 @@ class TestSimpleStateLookups:
         result = count_pending_tag_writes(mock_db)
 
         assert result == 2
-        mock_db.app.count_files_in_state.assert_called_once_with(STATE_TAGS_NOT_WRITTEN)
+        mock_db.app.count_files_in_state.assert_called_once_with(STATE_NOT_WRITTEN)
 
     @pytest.mark.unit
     def test_file_has_tagged_state_uses_library_facade_counter(self) -> None:
@@ -211,7 +211,7 @@ class TestSimpleStateLookups:
         assert result is True
         mock_db.library.count_file_states.assert_called_once_with(
             "library_files/1",
-            STATE_TAGGED,
+            STATE_PROCESSED,
         )
 
     @pytest.mark.unit
@@ -229,7 +229,7 @@ class TestSimpleStateLookups:
         result = library_has_tagged_files(mock_db, "libraries/1")
 
         assert result is True
-        mock_db.app.list_file_docs_in_state.assert_called_once_with(STATE_TAGGED)
+        mock_db.app.list_file_docs_in_state.assert_called_once_with(STATE_PROCESSED)
         mock_db.library.list_library_files.assert_called_once_with("libraries/1")
 
     @pytest.mark.unit
@@ -278,7 +278,7 @@ class TestDiscoverNextUntaggedFile:
 
         assert result == {"_id": "library_files/1", "_key": "a"}
         assert mock_db.app.list_file_docs_in_state.call_args_list == [
-            call(STATE_NOT_TAGGED),
+            call(STATE_NOT_PROCESSED),
             call(STATE_ERRORED),
         ]
         mock_db.app.list_claims.assert_called_once_with()
@@ -334,7 +334,7 @@ class TestLibraryScopedStateQueries:
 
         assert result == 2
         assert mock_db.app.list_file_docs_in_state.call_args_list == [
-            call(STATE_NOT_TAGGED),
+            call(STATE_NOT_PROCESSED),
         ]
 
     @pytest.mark.unit
@@ -578,8 +578,8 @@ class TestTransitionFileState:
     def test_rewrites_state_membership_via_normalized_file_state_methods_for_valid_axis_pair(self) -> None:
         mock_db = _make_mock_db()
         file_ids = ["library_files/1", "library_files/2"]
-        from_state = STATE_NOT_TAGGED
-        to_state = STATE_TAGGED
+        from_state = STATE_NOT_PROCESSED
+        to_state = STATE_PROCESSED
         mock_db.app.list_file_docs_in_state.side_effect = lambda state: list(
             [{"_id": file_id} for file_id in file_ids] if state == from_state else []
         )
@@ -596,7 +596,7 @@ class TestTransitionFileState:
         file_ids = ["library_files/1"]
 
         with pytest.raises(ValueError):
-            transition_file_state(mock_db, file_ids, STATE_NOT_TAGGED, STATE_CALIBRATED)
+            transition_file_state(mock_db, file_ids, STATE_NOT_PROCESSED, STATE_CALIBRATED)
 
         mock_db.app.remove_file_states.assert_not_called()
         mock_db.app.add_file_states.assert_not_called()

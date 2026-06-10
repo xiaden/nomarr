@@ -6,12 +6,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nomarr.components.library.file_sync_comp import mark_file_tagged
-from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
+from nomarr.components.library.file_sync_comp import mark_file_processed
+from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
 
 
 class TestMarkFileTagged:
-    """Tests for mark_file_tagged delegation."""
+    """Tests for mark_file_processed delegation."""
 
     @pytest.mark.unit
     @patch("nomarr.components.library.file_sync_comp.persist_last_tagged_at")
@@ -23,12 +23,12 @@ class TestMarkFileTagged:
     ) -> None:
         mock_db = MagicMock()
 
-        mark_file_tagged(mock_db, "library_files/xyz")
+        mark_file_processed(mock_db, "library_files/xyz")
 
         mock_transition_file_state.assert_called_once_with(
             mock_db,
             ["library_files/xyz"],
-            STATE_NOT_TAGGED,
-            STATE_TAGGED,
+            STATE_NOT_PROCESSED,
+            STATE_PROCESSED,
         )
         mock_persist_last_tagged_at.assert_called_once_with(mock_db, "library_files/xyz")

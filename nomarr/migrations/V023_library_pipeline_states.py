@@ -15,13 +15,16 @@ from arango.exceptions import (
     IndexCreateError,
 )
 
-from nomarr.helpers.constants.file_states import (
-    STATE_CALIBRATED,
-    STATE_NOT_TAGGED,
-    STATE_TAGGED,
-    STATE_TAGS_WRITTEN,
-)
-from nomarr.services.infrastructure.config_svc import INTERNAL_CALIBRATION_MIN_FILES
+# Historical file state constants (frozen at V023 schema state)
+# These represent the state names as they existed when this migration was created.
+# Do not import from application code - migrations must be self-contained.
+_FILE_STATE_TAGGED = "file_states/tagged"
+_FILE_STATE_NOT_TAGGED = "file_states/not_tagged"
+_FILE_STATE_CALIBRATED = "file_states/calibrated"
+_FILE_STATE_TAGS_WRITTEN = "file_states/tags_written"
+
+# Historical calibration threshold (frozen at V023 config state)
+_CALIBRATION_MIN_FILES = 100
 
 # Legacy pipeline state document keys (used only by this historical migration)
 _PIPELINE_IDLE = "library_pipeline_states/idle"
@@ -74,7 +77,7 @@ def _derive_pipeline_state(
         return _PIPELINE_IDLE
     if untagged_count > 0 or tagged_count < total_files:
         return _PIPELINE_ML_RUNNING
-    if tagged_count < INTERNAL_CALIBRATION_MIN_FILES:
+    if tagged_count < _CALIBRATION_MIN_FILES:
         return _PIPELINE_TOO_SMALL
     if calibrated_count < total_files:
         return _PIPELINE_AWAITING_CALIBRATION
@@ -213,10 +216,10 @@ def upgrade(db: DatabaseLike) -> None:
             }
     """,
             bind_vars={
-                "tagged": STATE_TAGGED,
-                "not_tagged": STATE_NOT_TAGGED,
-                "calibrated": STATE_CALIBRATED,
-                "tags_written": STATE_TAGS_WRITTEN,
+                "tagged": _FILE_STATE_TAGGED,
+                "not_tagged": _FILE_STATE_NOT_TAGGED,
+                "calibrated": _FILE_STATE_CALIBRATED,
+                "tags_written": _FILE_STATE_TAGS_WRITTEN,
             },
         ),
     )

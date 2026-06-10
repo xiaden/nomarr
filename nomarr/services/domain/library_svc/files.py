@@ -17,8 +17,8 @@ from nomarr.components.library.library_root_comp import resolve_path_within_libr
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
     STATE_NOT_ERRORED,
-    STATE_NOT_TAGGED,
-    STATE_TAGGED,
+    STATE_NOT_PROCESSED,
+    STATE_PROCESSED,
 )
 from nomarr.helpers.dto.library_dto import FileTag, FileTagsResult, RetryErroredResult, TagCleanupResult
 from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
@@ -201,6 +201,6 @@ class LibraryFilesMixin:
             errored_ids = [fid for fid in errored_ids if fid in allowed]
         if errored_ids:
             transition_file_state(self.db, errored_ids, STATE_ERRORED, STATE_NOT_ERRORED)
-            transition_file_state(self.db, errored_ids, STATE_TAGGED, STATE_NOT_TAGGED)
+            transition_file_state(self.db, errored_ids, STATE_PROCESSED, STATE_NOT_PROCESSED)
         cleared = len(errored_ids)
         return RetryErroredResult(retried=cleared)

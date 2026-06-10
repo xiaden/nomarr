@@ -9,8 +9,8 @@ from nomarr.helpers.constants.file_states import (
     AXIS_PAIRS,
     STATE_ERRORED,
     STATE_NOT_ERRORED,
-    STATE_NOT_TAGGED,
-    STATE_TAGGED,
+    STATE_NOT_PROCESSED,
+    STATE_PROCESSED,
 )
 
 
@@ -56,7 +56,7 @@ class TestAxisPairs:
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_axis_pairs_poles_are_opposites(self) -> None:
-        assert AXIS_PAIRS["tagged"] == (STATE_TAGGED, STATE_NOT_TAGGED)
+        assert AXIS_PAIRS["processed"] == (STATE_PROCESSED, STATE_NOT_PROCESSED)
         assert AXIS_PAIRS["errored"] == (STATE_ERRORED, STATE_NOT_ERRORED)
 
     @pytest.mark.unit

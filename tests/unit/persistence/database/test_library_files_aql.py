@@ -39,7 +39,7 @@ def test_upsert_files_for_library_with_state_init_bootstraps_new_and_tagged_file
     list_existing.assert_called_once_with(["C:/music/existing.flac", "C:/music/new.flac"])
     upsert_files.assert_called_once_with("libraries/1", payloads)
     file_states.bootstrap_file_states.assert_called_once_with(["library_files/new"])
-    file_states.mark_files_tagged.assert_called_once_with(["library_files/new"])
+    file_states.mark_files_processed.assert_called_once_with(["library_files/new"])
 
 
 @pytest.mark.unit

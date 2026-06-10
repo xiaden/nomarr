@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_NOT_TAGGED, STATE_TAGGED
+from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.persistence.database.file_states_aql import FileStatesAqlOperations
 
 _EXPECTED_NEGATIVE_FILE_STATES = tuple(state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_"))
@@ -46,27 +46,27 @@ def test_bootstrap_file_states_deduplicates_duplicate_file_ids() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-def test_mark_files_tagged_returns_early_for_empty_input() -> None:
+def test_mark_files_processed_returns_early_for_empty_input() -> None:
     db = MagicMock()
     ops = FileStatesAqlOperations(db)
 
     with patch.object(ops, "transition_file_states") as transition_states:
-        ops.mark_files_tagged([])
+        ops.mark_files_processed([])
 
     transition_states.assert_not_called()
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-def test_mark_files_tagged_transitions_deduplicated_files_to_tagged() -> None:
+def test_mark_files_processed_transitions_deduplicated_files_to_tagged() -> None:
     db = MagicMock()
     ops = FileStatesAqlOperations(db)
 
     with patch.object(ops, "transition_file_states") as transition_states:
-        ops.mark_files_tagged(["library_files/1", "library_files/1", "library_files/2"])
+        ops.mark_files_processed(["library_files/1", "library_files/1", "library_files/2"])
 
     transition_states.assert_called_once_with(
         ["library_files/1", "library_files/2"],
-        STATE_NOT_TAGGED,
-        STATE_TAGGED,
+        STATE_NOT_PROCESSED,
+        STATE_PROCESSED,
     )

@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING, Any, cast
 from nomarr.components.library.library_file_state_comp import get_stale_file_ids, transition_file_state
 from nomarr.components.workers.worker_discovery_comp import try_insert_or_steal_claim
 from nomarr.helpers.constants.file_states import (
+    STATE_NOT_WRITTEN,
     STATE_TAGS_CURRENT,
     STATE_TAGS_NOT_FRESH,
-    STATE_TAGS_NOT_WRITTEN,
-    STATE_TAGS_WRITTEN,
+    STATE_WRITTEN,
 )
 from nomarr.helpers.time_helper import now_ms
 
@@ -82,7 +82,7 @@ def set_file_written(db: Database, file_key: str) -> None:
     else:
         file_id = f"library_files/{file_key}"
 
-    transition_file_state(db, [file_id], STATE_TAGS_NOT_WRITTEN, STATE_TAGS_WRITTEN)
+    transition_file_state(db, [file_id], STATE_NOT_WRITTEN, STATE_WRITTEN)
     transition_file_state(db, [file_id], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
     db.app.release_claim(file_id)
 

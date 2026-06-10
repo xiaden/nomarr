@@ -17,9 +17,9 @@ from nomarr.components.library.library_file_mutation_comp import update_last_tag
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
     STATE_NOT_ERRORED,
-    STATE_NOT_TAGGED,
+    STATE_NOT_PROCESSED,
     STATE_NOT_VECTORS_EXTRACTED,
-    STATE_TAGGED,
+    STATE_PROCESSED,
     STATE_VECTORS_EXTRACTED,
 )
 from nomarr.helpers.time_helper import internal_s, now_ms
@@ -110,7 +110,7 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
                     for stream in writes.raw_output_streams
                 ],
             )
-        transition_file_state(db, [file_id], STATE_NOT_TAGGED, STATE_TAGGED)
+        transition_file_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
         update_last_tagged_at(db, file_id)
         transition_file_state(db, [file_id], STATE_NOT_VECTORS_EXTRACTED, STATE_VECTORS_EXTRACTED)
         logger.debug("[%s] Async writes done for %s (%d tags)", worker_id, writes.path, len(writes.db_tags))
@@ -392,7 +392,7 @@ class DiscoveryWorker(multiprocessing.Process):
             pending_write = None
         if result.heads_processed == 0 and result.tags_written == 0:
             logger.info("[%s] Skipped %s (all heads skipped - likely too short)", self.worker_id, file_path)
-            transition_file_state(db, [file_id], STATE_NOT_TAGGED, STATE_TAGGED)
+            transition_file_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
             update_last_tagged_at(db, file_id)
             release_claim(db, file_id)
             return None, True

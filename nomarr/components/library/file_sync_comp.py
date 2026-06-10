@@ -15,7 +15,7 @@ from nomarr.components.library.library_file_mutation_comp import (
 )
 from nomarr.components.library.library_file_state_comp import transition_file_state
 from nomarr.components.tagging.tag_write_comp import set_song_tags_batch
-from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
+from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -28,15 +28,15 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def mark_file_tagged(db: Database, file_id: str) -> None:
-    """Mark a file as tagged.
+def mark_file_processed(db: Database, file_id: str) -> None:
+    """Mark a file as ML processed.
 
     Args:
         db: Database instance
         file_id: Document ``_id``
 
     """
-    transition_file_state(db, [file_id], STATE_NOT_TAGGED, STATE_TAGGED)
+    transition_file_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
     persist_last_tagged_at(db, file_id)
 
 

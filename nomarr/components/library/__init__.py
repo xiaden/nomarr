@@ -1,6 +1,6 @@
 """Library package."""
 
-from .file_sync_comp import mark_file_tagged, save_file_tags
+from .file_sync_comp import mark_file_processed, save_file_tags
 from .file_tags_comp import get_file_tags_with_path
 from .library_file_mutation_comp import get_file_library_key, set_chromaprint, upsert_library_file
 from .library_file_query_comp import get_library_file
@@ -80,7 +80,7 @@ __all__ = [
     "list_library_records",
     "list_watchable_libraries",
     "list_watchable_library_records",
-    "mark_file_tagged",
+    "mark_file_processed",
     "mark_scan_completed",
     "mark_scan_started",
     "normalize_library_id",

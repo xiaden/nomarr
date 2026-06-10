@@ -9,8 +9,8 @@ import pytest
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
     STATE_NOT_ERRORED,
-    STATE_NOT_TAGGED,
-    STATE_TAGGED,
+    STATE_NOT_PROCESSED,
+    STATE_PROCESSED,
 )
 from nomarr.helpers.dto.library_dto import RetryErroredResult
 from nomarr.services.domain.library_svc.files import LibraryFilesMixin
@@ -48,7 +48,7 @@ class TestRetryErroredFiles:
         mock_get_errored_file_ids.assert_called_once_with(mock_db, "abc123")
         assert mock_transition_file_state.call_args_list == [
             call(mock_db, ["library_files/1", "library_files/2"], STATE_ERRORED, STATE_NOT_ERRORED),
-            call(mock_db, ["library_files/1", "library_files/2"], STATE_TAGGED, STATE_NOT_TAGGED),
+            call(mock_db, ["library_files/1", "library_files/2"], STATE_PROCESSED, STATE_NOT_PROCESSED),
         ]
 
     @pytest.mark.unit
@@ -74,7 +74,7 @@ class TestRetryErroredFiles:
         mock_get_errored_file_ids.assert_called_once_with(mock_db, "abc123")
         assert mock_transition_file_state.call_args_list == [
             call(mock_db, ["library_files/1", "library_files/3"], STATE_ERRORED, STATE_NOT_ERRORED),
-            call(mock_db, ["library_files/1", "library_files/3"], STATE_TAGGED, STATE_NOT_TAGGED),
+            call(mock_db, ["library_files/1", "library_files/3"], STATE_PROCESSED, STATE_NOT_PROCESSED),
         ]
 
     @pytest.mark.unit

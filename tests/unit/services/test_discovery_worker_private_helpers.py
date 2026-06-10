@@ -10,8 +10,8 @@ import pytest
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
     STATE_NOT_ERRORED,
-    STATE_NOT_TAGGED,
-    STATE_TAGGED,
+    STATE_NOT_PROCESSED,
+    STATE_PROCESSED,
 )
 
 pytestmark = [pytest.mark.unit, pytest.mark.mocked]
@@ -460,8 +460,8 @@ class TestProcessClaimedFile:
         mock_transition_file_state.assert_called_once_with(
             mock_db,
             ["library_files/abc"],
-            STATE_NOT_TAGGED,
-            STATE_TAGGED,
+            STATE_NOT_PROCESSED,
+            STATE_PROCESSED,
         )
         mock_release_claim.assert_called_once_with(mock_db, "library_files/abc")
         mock_malloc_trim.assert_called_once_with()

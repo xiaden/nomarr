@@ -20,7 +20,7 @@ from nomarr.components.library.library_file_state_comp import (
     transition_file_state,
 )
 from nomarr.components.library.library_id_comp import library_key_from_ref, normalize_library_id
-from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
+from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.helpers.constants.pipeline_states import (
     CAL_COMPLETE,
     CAL_IN_PROGRESS,
@@ -721,7 +721,7 @@ def bootstrap_file_state_edges(
             continue
 
         if bootstrap["type"] == "ml_tagged":
-            transition_file_state(db, [file_id], STATE_NOT_TAGGED, STATE_TAGGED)
+            transition_file_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
             count += 1
     return count
 

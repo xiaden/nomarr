@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_file_state_comp import get_files_with_incomplete_tags, transition_file_state
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
-from nomarr.helpers.constants.file_states import STATE_NOT_TAGGED, STATE_TAGGED
+from nomarr.helpers.constants.file_states import STATE_NOT_WRITTEN, STATE_WRITTEN
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -25,10 +25,10 @@ def validate_library_tags_workflow(
 ) -> dict[str, Any]:
     """Validate per-file completeness of nom:* names for all discovered heads.
 
-    A file with a ``tagged`` edge is considered *complete* only if it has
+    A file with a ``written`` edge is considered *complete* only if it has
     at least one tag edge for every discovered head (model_key + label) under
     the namespace.  Missing any head name marks the file incomplete.  Auto-repair
-    removes the ``tagged`` edge so the file is rediscovered for tagging.
+    removes the ``written`` edge so the file is rediscovered for tag writing.
     """
     heads = discover_heads(models_dir, db)
     expected_heads: list[dict[str, Any]] = []
@@ -72,7 +72,7 @@ def validate_library_tags_workflow(
     repaired = 0
     if auto_repair and incomplete:
         file_ids = [row["file_id"] for row in incomplete]
-        transition_file_state(db, file_ids, STATE_TAGGED, STATE_NOT_TAGGED)
+        transition_file_state(db, file_ids, STATE_WRITTEN, STATE_NOT_WRITTEN)
         repaired = len(incomplete)
 
     return {

@@ -14,15 +14,16 @@ from nomarr.helpers.constants.file_states import (
     STATE_CALIBRATED,
     STATE_ERRORED,
     STATE_NOT_CALIBRATED,
-    STATE_NOT_TAGGED,
+    STATE_NOT_PROCESSED,
     STATE_NOT_VECTORS_EXTRACTED,
-    STATE_TAGGED,
+    STATE_NOT_WRITTEN,
+    STATE_PROCESSED,
     STATE_TAGS_CURRENT,
     STATE_TAGS_EXTRACTED,
     STATE_TAGS_NOT_EXTRACTED,
     STATE_TAGS_NOT_FRESH,
-    STATE_TAGS_NOT_WRITTEN,
     STATE_VECTORS_EXTRACTED,
+    STATE_WRITTEN,
 )
 from nomarr.persistence.exceptions import DuplicateKeyError
 
@@ -192,7 +193,7 @@ def discover_next_untagged_file(
         A single library-file document dict, or ``None`` if no eligible file exists;
             files in ``errored`` states are always excluded.
     """
-    untagged_files = _state_file_docs(db, STATE_NOT_TAGGED)
+    untagged_files = _state_file_docs(db, STATE_NOT_PROCESSED)
     candidate_ids = {doc["_id"] for doc in untagged_files}
     candidate_ids -= _state_file_ids(db, STATE_ERRORED)
     if library_id is not None:
@@ -213,7 +214,7 @@ def discover_next_untagged_file(
 
 def count_untagged_files(db: Database, library_id: str | None = None) -> int:
     """Count files in the ``not_tagged`` state that are still taggable."""
-    untagged_ids = _state_file_ids(db, STATE_NOT_TAGGED)
+    untagged_ids = _state_file_ids(db, STATE_NOT_PROCESSED)
     if library_id is not None:
         untagged_ids &= _library_file_ids(db, library_id)
     return len(untagged_ids)
@@ -255,7 +256,7 @@ def discover_next_file_needing_tags(
 
 def count_pending_tag_writes(db: Database) -> int:
     """Count files still waiting for file-tag writeback."""
-    return int(db.app.count_files_in_state(STATE_TAGS_NOT_WRITTEN))
+    return int(db.app.count_files_in_state(STATE_NOT_WRITTEN))
 
 
 def get_errored_file_ids(db: Database, library_id: str, limit: int | None = 500) -> list[str]:
@@ -299,7 +300,7 @@ def mark_file_errored(db: Database, file_id: str) -> None:
 
 def get_uncalibrated_tagged_file_ids(db: Database, library_id: str) -> list[str]:
     """Return ids that are tagged and not calibrated within one library."""
-    tagged_ids = _state_file_ids(db, STATE_TAGGED)
+    tagged_ids = _state_file_ids(db, STATE_PROCESSED)
     not_calibrated_ids = _state_file_ids(db, STATE_NOT_CALIBRATED)
     library_file_ids = [file_doc["_id"] for file_doc in _library_file_edges(db, library_id)]
     eligible_ids = tagged_ids & not_calibrated_ids
@@ -336,13 +337,13 @@ def get_calibration_status_by_library(db: Database) -> list[dict[str, Any]]:
 
 def library_has_tagged_files(db: Database, library_id: str) -> bool:
     """Return whether a library contains at least one tagged file."""
-    tagged_ids = _state_file_ids(db, STATE_TAGGED)
+    tagged_ids = _state_file_ids(db, STATE_PROCESSED)
     return bool(tagged_ids & _library_file_ids(db, library_id))
 
 
 def file_has_tagged_state(db: Database, file_id: str) -> bool:
     """Return whether one file currently has the tagged-state edge."""
-    return db.library.count_file_states(file_id, STATE_TAGGED) > 0
+    return db.library.count_file_states(file_id, STATE_PROCESSED) > 0
 
 
 def get_files_with_incomplete_tags(
@@ -351,10 +352,10 @@ def get_files_with_incomplete_tags(
     namespace_prefix: str,
     library_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Return tagged files missing one or more expected model heads.
+    """Return written files missing one or more expected model heads.
 
     Args:
-        db: Database handle used to inspect tagged files and their tag names.
+        db: Database handle used to inspect written files and their tag names.
         expected_heads: List of dicts where each item defines ``head_key``,
             ``labels``, and ``model_key_for_tag`` for one expected model head.
         namespace_prefix: Tag name prefix used to identify model-generated tags, such as ``"nom:"``.
@@ -363,18 +364,18 @@ def get_files_with_incomplete_tags(
     Returns:
         List of dicts with ``file_id``, ``file_key``, ``library_id``,
             ``matched_count``, ``missing_count``, and ``missing_heads`` for each
-            tagged file missing one or more expected heads.
+            written file missing one or more expected heads.
     """
-    tagged_files = _state_file_docs(db, STATE_TAGGED)
+    written_files = _state_file_docs(db, STATE_WRITTEN)
     normalized_library_id = normalize_library_id(library_id) if library_id is not None else None
     if normalized_library_id is not None:
         library_file_ids = _library_file_ids(db, normalized_library_id)
-        tagged_files = [file_doc for file_doc in tagged_files if file_doc["_id"] in library_file_ids]
-    file_ids = [file_doc["_id"] for file_doc in tagged_files]
+        written_files = [file_doc for file_doc in written_files if file_doc["_id"] in library_file_ids]
+    file_ids = [file_doc["_id"] for file_doc in written_files]
     tags_by_file = db.library.list_file_tags_for_files(file_ids, name_starts_with=namespace_prefix) if file_ids else {}
 
     results: list[dict[str, Any]] = []
-    for file_doc in tagged_files:
+    for file_doc in written_files:
         matched_heads = _extract_matching_head_keys(
             tags_by_file.get(file_doc["_id"], []),
             expected_heads,

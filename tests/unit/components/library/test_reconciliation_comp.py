@@ -13,10 +13,10 @@ from nomarr.components.library.reconciliation_comp import (
     set_file_written,
 )
 from nomarr.helpers.constants.file_states import (
+    STATE_NOT_WRITTEN,
     STATE_TAGS_CURRENT,
     STATE_TAGS_NOT_FRESH,
-    STATE_TAGS_NOT_WRITTEN,
-    STATE_TAGS_WRITTEN,
+    STATE_WRITTEN,
 )
 from nomarr.helpers.time_helper import Milliseconds
 
@@ -213,8 +213,8 @@ class TestSetFileWritten:
         assert first_transition == (
             mock_db,
             ["library_files/abc123"],
-            STATE_TAGS_NOT_WRITTEN,
-            STATE_TAGS_WRITTEN,
+            STATE_NOT_WRITTEN,
+            STATE_WRITTEN,
         )
         mock_db.app.release_claim.assert_called_once_with("library_files/abc123")
 
@@ -244,8 +244,8 @@ class TestSetFileWritten:
         assert first_transition == (
             mock_db,
             ["library_files/abc"],
-            STATE_TAGS_NOT_WRITTEN,
-            STATE_TAGS_WRITTEN,
+            STATE_NOT_WRITTEN,
+            STATE_WRITTEN,
         )
         assert second_transition == (
             mock_db,

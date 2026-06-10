@@ -178,7 +178,7 @@ class LibraryFilesAqlOperations:
             for file_id, payload in zip(file_ids, payloads, strict=True)
             if payload.get("last_tagged_at") is not None
         ]
-        file_states.mark_files_tagged(tagged_file_ids)
+        file_states.mark_files_processed(tagged_file_ids)
         return {"file_ids": file_ids, "added": len(new_file_ids)}
 
     def reconcile_library_files(

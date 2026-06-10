@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Literal
 
-STATE_TAGGED = "file_states/tagged"
-STATE_NOT_TAGGED = "file_states/not_tagged"
+STATE_PROCESSED = "file_states/processed"
+STATE_NOT_PROCESSED = "file_states/not_processed"
 STATE_CALIBRATED = "file_states/calibrated"
 STATE_NOT_CALIBRATED = "file_states/not_calibrated"
-STATE_TAGS_WRITTEN = "file_states/tags_written"
-STATE_TAGS_NOT_WRITTEN = "file_states/tags_not_written"
+STATE_WRITTEN = "file_states/written"
+STATE_NOT_WRITTEN = "file_states/not_written"
 STATE_TAGS_CURRENT = "file_states/tags_current"
 STATE_TAGS_NOT_FRESH = "file_states/tags_not_fresh"
 STATE_TAGS_EXTRACTED = "file_states/tags_extracted"
@@ -22,9 +22,9 @@ STATE_ERRORED = "file_states/errored"
 STATE_NOT_ERRORED = "file_states/not_errored"
 
 type StateAxis = Literal[
-    "tagged",
+    "processed",
     "calibrated",
-    "tags_written",
+    "written",
     "tags_current",
     "tags_extracted",
     "scanned",
@@ -33,12 +33,12 @@ type StateAxis = Literal[
 ]
 
 ALL_STATE_VERTICES = (
-    STATE_TAGGED,
-    STATE_NOT_TAGGED,
+    STATE_PROCESSED,
+    STATE_NOT_PROCESSED,
     STATE_CALIBRATED,
     STATE_NOT_CALIBRATED,
-    STATE_TAGS_WRITTEN,
-    STATE_TAGS_NOT_WRITTEN,
+    STATE_WRITTEN,
+    STATE_NOT_WRITTEN,
     STATE_TAGS_CURRENT,
     STATE_TAGS_NOT_FRESH,
     STATE_TAGS_EXTRACTED,
@@ -52,9 +52,9 @@ ALL_STATE_VERTICES = (
 )
 
 AXIS_PAIRS: dict[StateAxis, tuple[str, str]] = {
-    "tagged": (STATE_TAGGED, STATE_NOT_TAGGED),
+    "processed": (STATE_PROCESSED, STATE_NOT_PROCESSED),
     "calibrated": (STATE_CALIBRATED, STATE_NOT_CALIBRATED),
-    "tags_written": (STATE_TAGS_WRITTEN, STATE_TAGS_NOT_WRITTEN),
+    "written": (STATE_WRITTEN, STATE_NOT_WRITTEN),
     "tags_current": (STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH),
     "tags_extracted": (STATE_TAGS_EXTRACTED, STATE_TAGS_NOT_EXTRACTED),
     "scanned": (STATE_SCANNED, STATE_NOT_SCANNED),
@@ -69,17 +69,17 @@ __all__ = [
     "STATE_ERRORED",
     "STATE_NOT_CALIBRATED",
     "STATE_NOT_ERRORED",
+    "STATE_NOT_PROCESSED",
     "STATE_NOT_SCANNED",
-    "STATE_NOT_TAGGED",
     "STATE_NOT_VECTORS_EXTRACTED",
+    "STATE_NOT_WRITTEN",
+    "STATE_PROCESSED",
     "STATE_SCANNED",
-    "STATE_TAGGED",
     "STATE_TAGS_CURRENT",
     "STATE_TAGS_EXTRACTED",
     "STATE_TAGS_NOT_EXTRACTED",
     "STATE_TAGS_NOT_FRESH",
-    "STATE_TAGS_NOT_WRITTEN",
-    "STATE_TAGS_WRITTEN",
     "STATE_VECTORS_EXTRACTED",
+    "STATE_WRITTEN",
     "StateAxis",
 ]

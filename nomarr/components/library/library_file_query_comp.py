@@ -13,7 +13,7 @@ from typing import Any, Literal, cast
 from nomarr.components.library.library_file_state_comp import count_untagged_files
 from nomarr.components.library.library_id_comp import normalize_library_id
 from nomarr.components.library.tag_hydration_comp import hydrate_songs_with_metadata
-from nomarr.helpers.constants.file_states import STATE_TAGGED
+from nomarr.helpers.constants.file_states import STATE_PROCESSED
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.db import Database
 
@@ -156,7 +156,7 @@ def _hydrate_files_with_tagged_state(db: Database, file_docs: list[dict[str, Any
     if not file_ids:
         return list(file_docs)
 
-    tagged_file_ids = set(db.app.list_files_in_state(STATE_TAGGED, limit=None))
+    tagged_file_ids = set(db.app.list_files_in_state(STATE_PROCESSED, limit=None))
 
     return [
         {**file_doc, "has_tagged_state": file_id in tagged_file_ids}
@@ -382,7 +382,7 @@ def list_library_files(
 
 def get_tagged_file_paths(db: Database) -> list[str]:
     """Return absolute paths for files currently in the tagged state."""
-    tagged_file_docs = db.app.list_file_docs_in_state(STATE_TAGGED, limit=DEFAULT_LIMIT)
+    tagged_file_docs = db.app.list_file_docs_in_state(STATE_PROCESSED, limit=DEFAULT_LIMIT)
     return [str(file_doc["path"]) for file_doc in tagged_file_docs if isinstance(file_doc.get("path"), str)]
 
 
@@ -467,7 +467,7 @@ def search_library_files_with_tags(
         _intersect(_collect_file_ids_for_tag_ids(db, tag_ids))
 
     if tagged_only:
-        tagged_ids = set(db.app.list_files_in_state(STATE_TAGGED, limit=DEFAULT_LIMIT))
+        tagged_ids = set(db.app.list_files_in_state(STATE_PROCESSED, limit=DEFAULT_LIMIT))
         _intersect(tagged_ids)
 
     if candidate_ids is None:
@@ -496,7 +496,7 @@ def get_recently_processed(
     Should be replaced by an AQL query with ORDER BY MAX(scanned_at,
     last_tagged_at) DESC LIMIT n, optionally filtered by library_id.
     """
-    tagged_file_docs = db.app.list_file_docs_in_state(STATE_TAGGED, limit=DEFAULT_LIMIT)
+    tagged_file_docs = db.app.list_file_docs_in_state(STATE_PROCESSED, limit=DEFAULT_LIMIT)
     if library_id is not None:
         library_file_ids = set(db.library.list_library_file_ids(normalize_library_id(library_id), limit=DEFAULT_LIMIT))
         tagged_file_docs = [file_doc for file_doc in tagged_file_docs if file_doc.get("_id") in library_file_ids]

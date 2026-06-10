@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_NOT_TAGGED, STATE_TAGGED
+from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.persistence.aql import primitives
 from nomarr.persistence.arango_client import SafeDatabase
 
@@ -112,17 +112,17 @@ class FileStatesAqlOperations:
             for state in _NEGATIVE_FILE_STATES:
                 self.add_file_state_edge(file_id, state)
 
-    def mark_files_tagged(self, file_ids: list[str]) -> None:
-        """Transition files from the not-tagged state to the tagged state.
+    def mark_files_processed(self, file_ids: list[str]) -> None:
+        """Transition files from the not-processed state to the processed state.
 
         Args:
-            file_ids: File document IDs to mark as tagged. Duplicate IDs are
+            file_ids: File document IDs to mark as processed. Duplicate IDs are
                 ignored.
         """
         unique_file_ids = list(dict.fromkeys(file_ids))
         if not unique_file_ids:
             return
-        self.transition_file_states(unique_file_ids, STATE_NOT_TAGGED, STATE_TAGGED)
+        self.transition_file_states(unique_file_ids, STATE_NOT_PROCESSED, STATE_PROCESSED)
 
     def add_file_state_edge(self, file_id: str, state: str) -> None:
         primitives.upsert_edge(

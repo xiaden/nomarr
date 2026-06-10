@@ -39,7 +39,7 @@ from nomarr.components.library.library_file_query_comp import (
     search_files_by_tag,
     search_library_files_with_tags,
 )
-from nomarr.helpers.constants.file_states import STATE_TAGGED
+from nomarr.helpers.constants.file_states import STATE_PROCESSED
 
 
 def make_db() -> MagicMock:
@@ -333,7 +333,7 @@ def test_get_tagged_file_paths_reads_tagged_file_docs_from_app_facade() -> None:
 
     assert result == ["D:/Music/a.flac", "D:/Music/b.flac"]
 
-    db.app.list_file_docs_in_state.assert_called_once_with(STATE_TAGGED, limit=DEFAULT_LIMIT)
+    db.app.list_file_docs_in_state.assert_called_once_with(STATE_PROCESSED, limit=DEFAULT_LIMIT)
 
 
 @pytest.mark.unit
@@ -434,7 +434,7 @@ def test_get_recently_processed_sorts_by_latest_activity() -> None:
         }
     ]
 
-    db.app.list_file_docs_in_state.assert_called_once_with(STATE_TAGGED, limit=DEFAULT_LIMIT)
+    db.app.list_file_docs_in_state.assert_called_once_with(STATE_PROCESSED, limit=DEFAULT_LIMIT)
 
 
 @pytest.mark.unit
@@ -655,7 +655,7 @@ def _obsolete_search_library_files_with_tags_filters_and_hydrates_page() -> None
 
     db.library.get_song_tag_edges_for_tags.assert_called_once_with(["tags/1"])
 
-    db.app.list_files_in_state.assert_called_once_with(STATE_TAGGED, limit=DEFAULT_LIMIT)
+    db.app.list_files_in_state.assert_called_once_with(STATE_PROCESSED, limit=DEFAULT_LIMIT)
 
     db.library.list_files_by_ids.assert_called_once_with(["library_files/1"])
 
@@ -941,7 +941,7 @@ def test_search_library_files_with_tags_filters_and_hydrates_page() -> None:
     db.library.count_tags.assert_called_once_with()
     db.library.list_tags_by_name.assert_called_once_with("genre", limit=1)
     db.library.get_song_tag_edges_for_tags.assert_called_once_with(["tags/1"])
-    db.app.list_files_in_state.assert_called_once_with(STATE_TAGGED, limit=DEFAULT_LIMIT)
+    db.app.list_files_in_state.assert_called_once_with(STATE_PROCESSED, limit=DEFAULT_LIMIT)
     db.library.list_files_by_ids.assert_called_once_with(["library_files/1"])
     db.library.list_file_tags_for_files.assert_called_once_with(["library_files/1"])
 
