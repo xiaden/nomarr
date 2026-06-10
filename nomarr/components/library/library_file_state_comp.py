@@ -13,14 +13,14 @@ from nomarr.helpers.constants.file_states import (
     AXIS_PAIRS,
     STATE_CALIBRATED,
     STATE_ERRORED,
+    STATE_HYDRATED,
     STATE_NOT_CALIBRATED,
+    STATE_NOT_HYDRATED,
     STATE_NOT_PROCESSED,
     STATE_NOT_VECTORS_EXTRACTED,
     STATE_NOT_WRITTEN,
     STATE_PROCESSED,
     STATE_TAGS_CURRENT,
-    STATE_TAGS_EXTRACTED,
-    STATE_TAGS_NOT_EXTRACTED,
     STATE_TAGS_NOT_FRESH,
     STATE_VECTORS_EXTRACTED,
     STATE_WRITTEN,
@@ -235,7 +235,7 @@ def discover_next_file_needing_tags(
     Returns:
         A single library-file document dict, or ``None`` if no eligible file exists.
     """
-    pending_files = _state_file_docs(db, STATE_TAGS_NOT_EXTRACTED)
+    pending_files = _state_file_docs(db, STATE_NOT_HYDRATED)
     candidate_ids = {doc["_id"] for doc in pending_files}
     candidate_ids -= _state_file_ids(db, STATE_ERRORED)
     if library_id is not None:
@@ -427,8 +427,8 @@ def bulk_set_not_vectors_extracted(db: Database) -> int:
     return len(file_ids)
 
 
-def bulk_set_tags_not_extracted(db: Database, library_id: str | None = None) -> int:
-    """Transition ``tags_extracted`` files to ``tags_not_extracted`` for re-hydration.
+def bulk_set_not_hydrated(db: Database, library_id: str | None = None) -> int:
+    """Transition ``hydrated`` files to ``not_hydrated`` for re-hydration.
 
     This forces the tag extraction worker to re-read audio metadata and
     re-create tag edges (artist, album, genre, etc.) for the affected files.
@@ -436,17 +436,17 @@ def bulk_set_tags_not_extracted(db: Database, library_id: str | None = None) -> 
     Args:
         db: Database instance
         library_id: Optional library ``_id`` to scope the transition; when
-            ``None``, all ``tags_extracted`` files are transitioned.
+            ``None``, all ``hydrated`` files are transitioned.
 
     Returns:
         Number of files transitioned.
 
     """
-    file_ids = [file_doc["_id"] for file_doc in _state_file_docs(db, STATE_TAGS_EXTRACTED)]
+    file_ids = [file_doc["_id"] for file_doc in _state_file_docs(db, STATE_HYDRATED)]
     if library_id is not None:
         library_file_ids = _library_file_ids(db, library_id)
         file_ids = [file_id for file_id in file_ids if file_id in library_file_ids]
     if not file_ids:
         return 0
-    transition_file_state(db, file_ids, STATE_TAGS_EXTRACTED, STATE_TAGS_NOT_EXTRACTED)
+    transition_file_state(db, file_ids, STATE_HYDRATED, STATE_NOT_HYDRATED)
     return len(file_ids)

@@ -4,7 +4,7 @@ from .file_sync_comp import mark_file_processed, save_file_tags
 from .file_tags_comp import get_file_tags_with_path
 from .library_file_mutation_comp import get_file_library_key, set_chromaprint, upsert_library_file
 from .library_file_query_comp import get_library_file
-from .library_file_state_comp import bulk_set_tags_not_extracted
+from .library_file_state_comp import bulk_set_not_hydrated
 from .library_id_comp import library_key_from_ref, normalize_library_id
 from .library_records_comp import (
     create_library_record,
@@ -55,7 +55,7 @@ from .search_files_comp import (
 )
 
 __all__ = [
-    "bulk_set_tags_not_extracted",
+    "bulk_set_not_hydrated",
     "check_interrupted_scan",
     "cleanup_stale_folders",
     "compute_chromaprint_for_file",

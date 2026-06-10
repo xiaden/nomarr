@@ -1,6 +1,6 @@
 """Tag extraction worker component.
 
-Claim/release/discover logic for the tags_not_extracted state axis.
+Claim/release/discover logic for the not_hydrated state axis.
 """
 
 from __future__ import annotations

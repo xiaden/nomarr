@@ -87,7 +87,7 @@ async def repair_library_tags(
 ) -> StartScanWithStatusResponse:
     """Mark all files for tag re-hydration and start a full scan.
 
-    Transitions every file in the library to the ``tags_not_extracted``
+    Transitions every file in the library to the ``not_hydrated``
     state so the tag extraction worker re-reads audio metadata and
     re-creates tag edges (artist, album, genre, etc.), then starts a
     normal full scan.

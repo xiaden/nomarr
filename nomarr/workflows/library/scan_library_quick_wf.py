@@ -37,11 +37,11 @@ from nomarr.components.library.scan_lifecycle_comp import (
 )
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
+    STATE_HYDRATED,
     STATE_NOT_ERRORED,
+    STATE_NOT_HYDRATED,
     STATE_NOT_SCANNED,
     STATE_SCANNED,
-    STATE_TAGS_EXTRACTED,
-    STATE_TAGS_NOT_EXTRACTED,
 )
 from nomarr.helpers.constants.pipeline_states import SCAN_NOT_SCANNED, SCAN_STATE_FIELD
 from nomarr.helpers.time_helper import internal_s, now_ms
@@ -145,16 +145,16 @@ def scan_library_quick_workflow(
                         file_ids = upsert_scanned_files(db, batch.file_entries, batch.edge_bootstraps)
                         transition_file_state(db, file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
                         transition_file_state(db, file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
-                        # Reset tags_extracted → tags_not_extracted for modified files
+                        # Reset hydrated → not_hydrated for modified files
                         # so the tag extraction worker re-extracts their audio tags.
-                        # New files already get tags_not_extracted from state bootstrap.
+                        # New files already get not_hydrated from state bootstrap.
                         modified_file_ids = [
                             fid
                             for fid, e in zip(file_ids, batch.file_entries, strict=True)
                             if e["path"] not in new_paths
                         ]
                         if modified_file_ids:
-                            transition_file_state(db, modified_file_ids, STATE_TAGS_EXTRACTED, STATE_TAGS_NOT_EXTRACTED)
+                            transition_file_state(db, modified_file_ids, STATE_HYDRATED, STATE_NOT_HYDRATED)
                         stats["files_added"] += sum(1 for e in batch.file_entries if e["path"] in new_paths)
 
                     # Files in DB for this folder no longer on disk → delete

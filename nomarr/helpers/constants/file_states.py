@@ -12,8 +12,8 @@ STATE_WRITTEN = "file_states/written"
 STATE_NOT_WRITTEN = "file_states/not_written"
 STATE_TAGS_CURRENT = "file_states/tags_current"
 STATE_TAGS_NOT_FRESH = "file_states/tags_not_fresh"
-STATE_TAGS_EXTRACTED = "file_states/tags_extracted"
-STATE_TAGS_NOT_EXTRACTED = "file_states/tags_not_extracted"
+STATE_HYDRATED = "file_states/hydrated"
+STATE_NOT_HYDRATED = "file_states/not_hydrated"
 STATE_SCANNED = "file_states/scanned"
 STATE_NOT_SCANNED = "file_states/not_scanned"
 STATE_VECTORS_EXTRACTED = "file_states/vectors_extracted"
@@ -26,7 +26,7 @@ type StateAxis = Literal[
     "calibrated",
     "written",
     "tags_current",
-    "tags_extracted",
+    "hydrated",
     "scanned",
     "vectors_extracted",
     "errored",
@@ -41,8 +41,8 @@ ALL_STATE_VERTICES = (
     STATE_NOT_WRITTEN,
     STATE_TAGS_CURRENT,
     STATE_TAGS_NOT_FRESH,
-    STATE_TAGS_EXTRACTED,
-    STATE_TAGS_NOT_EXTRACTED,
+    STATE_HYDRATED,
+    STATE_NOT_HYDRATED,
     STATE_SCANNED,
     STATE_NOT_SCANNED,
     STATE_VECTORS_EXTRACTED,
@@ -56,7 +56,7 @@ AXIS_PAIRS: dict[StateAxis, tuple[str, str]] = {
     "calibrated": (STATE_CALIBRATED, STATE_NOT_CALIBRATED),
     "written": (STATE_WRITTEN, STATE_NOT_WRITTEN),
     "tags_current": (STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH),
-    "tags_extracted": (STATE_TAGS_EXTRACTED, STATE_TAGS_NOT_EXTRACTED),
+    "hydrated": (STATE_HYDRATED, STATE_NOT_HYDRATED),
     "scanned": (STATE_SCANNED, STATE_NOT_SCANNED),
     "vectors_extracted": (STATE_VECTORS_EXTRACTED, STATE_NOT_VECTORS_EXTRACTED),
     "errored": (STATE_ERRORED, STATE_NOT_ERRORED),
@@ -67,8 +67,10 @@ __all__ = [
     "AXIS_PAIRS",
     "STATE_CALIBRATED",
     "STATE_ERRORED",
+    "STATE_HYDRATED",
     "STATE_NOT_CALIBRATED",
     "STATE_NOT_ERRORED",
+    "STATE_NOT_HYDRATED",
     "STATE_NOT_PROCESSED",
     "STATE_NOT_SCANNED",
     "STATE_NOT_VECTORS_EXTRACTED",
@@ -76,8 +78,6 @@ __all__ = [
     "STATE_PROCESSED",
     "STATE_SCANNED",
     "STATE_TAGS_CURRENT",
-    "STATE_TAGS_EXTRACTED",
-    "STATE_TAGS_NOT_EXTRACTED",
     "STATE_TAGS_NOT_FRESH",
     "STATE_VECTORS_EXTRACTED",
     "STATE_WRITTEN",

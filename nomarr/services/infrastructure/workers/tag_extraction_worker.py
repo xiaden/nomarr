@@ -1,12 +1,12 @@
 """Tag extraction worker thread.
 
 Single background threading.Thread that reads audio tags for files in the
-``tags_not_extracted`` state and seeds entities (artist, album, genre etc.)
+``not_hydrated`` state and seeds entities (artist, album, genre etc.)
 into the graph.  This is Pass 2 of the two-pass scan pipeline:
 
   Pass 1 (scan): fast disk walk → upsert files → seed initial state edges
   Pass 2 (this): claim file → read audio tags → write to DB → seed entities
-                 → transition tags_not_extracted → tags_extracted
+                 → transition not_hydrated → hydrated
 
 """
 
@@ -21,9 +21,9 @@ from nomarr.components.workers.worker_discovery_comp import release_claim
 from nomarr.components.workers.worker_tag_comp import discover_and_claim_file_for_tags
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
+    STATE_HYDRATED,
     STATE_NOT_ERRORED,
-    STATE_TAGS_EXTRACTED,
-    STATE_TAGS_NOT_EXTRACTED,
+    STATE_NOT_HYDRATED,
 )
 
 if TYPE_CHECKING:
@@ -36,14 +36,14 @@ MAX_CONSECUTIVE_ERRORS = 10
 
 
 def _process_file(db: Database, file_id: str) -> None:
-    """Extract tags for one file and transition it to tags_extracted.
+    """Extract tags for one file and transition it to hydrated.
 
     Steps:
     1. Load file document and resolve absolute path
     2. Extract audio metadata (mutagen via extract_metadata)
     3. Persist nom: tags to DB (save_file_tags)
     4. Seed entity graph (artist, album, genre etc.)
-    5. Transition state: tags_not_extracted → tags_extracted
+    5. Transition state: not_hydrated → hydrated
     6. Clear any error state that may have been set previously
 
     Args:
@@ -87,15 +87,15 @@ def _process_file(db: Database, file_id: str) -> None:
     if duration is not None and not file_doc.get("duration_seconds"):
         db.library.update_file(file_id, {"duration_seconds": duration})
 
-    transition_file_state(db, [file_id], STATE_TAGS_NOT_EXTRACTED, STATE_TAGS_EXTRACTED)
+    transition_file_state(db, [file_id], STATE_NOT_HYDRATED, STATE_HYDRATED)
 
 
 class TagExtractionWorker(threading.Thread):
     """Background thread that extracts audio tags for unprocessed library files.
 
-    Claims files in the ``tags_not_extracted`` state, reads their audio
+    Claims files in the ``not_hydrated`` state, reads their audio
     metadata via mutagen, writes tags and entity graph edges to DB, then
-    transitions the state to ``tags_extracted``.
+    transitions the state to ``hydrated``.
 
     Args:
         db: Shared Database instance (same as the application's main db)
