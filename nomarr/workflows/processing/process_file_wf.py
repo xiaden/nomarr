@@ -17,7 +17,6 @@ from nomarr.components.ml.audio.ml_audio_comp import (
     AudioLoadCrashError,
     AudioLoadShutdownError,
     load_audio_mono,
-    should_skip_short,
 )
 from nomarr.components.ml.audio.ml_chromaprint_comp import compute_chromaprint
 from nomarr.components.ml.inference.ml_backbone_embed_comp import compute_backbone_embeddings
@@ -117,21 +116,6 @@ def process_file_workflow(
             heads_processed=0,
             tags_written=0,
             head_results={"_crash": {"status": "crash", "reason": str(e)}},
-            mood_aggregations=None,
-            tags=Tags.from_dict({}),
-        )
-    if should_skip_short(shared_audio.duration, config.min_duration_s, config.allow_short):
-        elapsed = round((internal_ms().value - start_all.value) / 1000, 2)
-        logger.info(
-            f"[processor] Audio too short ({shared_audio.duration:.1f}s < {config.min_duration_s}s) - skipping {path}"
-        )
-        return ProcessFileResult(
-            file_path=path,
-            elapsed=elapsed,
-            duration=shared_audio.duration,
-            heads_processed=0,
-            tags_written=0,
-            head_results={"_short": {"status": "skipped", "reason": f"audio too short ({shared_audio.duration:.1f}s)"}},
             mood_aggregations=None,
             tags=Tags.from_dict({}),
         )

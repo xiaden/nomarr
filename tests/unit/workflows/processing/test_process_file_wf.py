@@ -70,7 +70,6 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
             "nomarr.workflows.processing.process_file_wf.load_audio_mono",
             return_value=LoadAudioMonoResult(waveform=MagicMock(), sample_rate=16000, duration=120.0),
         ),
-        patch("nomarr.workflows.processing.process_file_wf.should_skip_short", return_value=False),
         patch("nomarr.workflows.processing.process_file_wf.compute_chromaprint", return_value="fp"),
         patch("nomarr.workflows.processing.process_file_wf.compute_backbone_embeddings", return_value=embed_result),
         patch("nomarr.workflows.processing.process_file_wf.run_heads", return_value=head_result),

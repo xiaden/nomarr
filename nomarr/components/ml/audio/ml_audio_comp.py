@@ -94,20 +94,3 @@ def load_audio_mono(path: LibraryPath | str, target_sr: int = 16000) -> LoadAudi
         raise
     except Exception as exc:
         raise AudioLoadCrashError(f"Failed to decode audio: {path_str}") from exc
-
-
-def should_skip_short(duration_s: float, min_duration_s: int, allow_short: bool) -> bool:
-    """Check if audio file should be skipped due to insufficient duration.
-
-    Args:
-        duration_s: Audio duration in seconds
-        min_duration_s: Minimum required duration in seconds
-        allow_short: If True, allow short files regardless of duration
-
-    Returns:
-        True if file should be skipped, False otherwise
-
-    """
-    if allow_short:
-        return False
-    return duration_s < float(min_duration_s)

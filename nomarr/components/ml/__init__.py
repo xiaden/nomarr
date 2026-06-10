@@ -5,7 +5,6 @@ from .audio.ml_audio_comp import (
     AudioLoadShutdownError,
     load_audio_mono,
     set_stop_event,
-    should_skip_short,
     shutdown_audio_loader,
 )
 from .calibration.ml_calibration_comp import apply_minmax_calibration, save_calibration_sidecars
@@ -44,7 +43,6 @@ __all__ = [
     "save_calibration_sidecars",
     "select_execution_tier",
     "set_stop_event",
-    "should_skip_short",
     "shutdown_audio_loader",
     "update_model_vram_from_oom",
 ]
