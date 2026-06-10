@@ -60,6 +60,7 @@ def scan_library_full_workflow(
     tagger_version: str,
     models_dir: str | None = None,
     namespace: str = "nom",
+    skip_validation_autorepair: bool = False,
 ) -> dict[str, Any]:
     """Run a full library scan (ignores folder cache).
 
@@ -75,6 +76,9 @@ def scan_library_full_workflow(
         tagger_version: Model suite hash for version comparison
         models_dir: Path to ML models (enables tag validation when provided)
         namespace: Tag namespace (default ``"nom"``)
+        skip_validation_autorepair: If True, tag validation will not auto-repair
+            incomplete files by transitioning them to not_tagged. Used during
+            repair operations to avoid triggering ML reruns.
 
     Returns:
         Dict with scan statistics (files_discovered, files_added,
@@ -212,7 +216,7 @@ def scan_library_full_workflow(
                     models_dir,
                     library_id=library_id,
                     namespace=namespace,
-                    auto_repair=True,
+                    auto_repair=not skip_validation_autorepair,
                 )
                 stats["validation_checked"] = validation["files_checked"]
                 stats["validation_incomplete"] = validation["incomplete_files"]

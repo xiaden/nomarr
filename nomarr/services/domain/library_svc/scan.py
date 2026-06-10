@@ -86,7 +86,7 @@ class LibraryScanMixin:
             job_ids=[task_id],
         )
 
-    def start_full_scan(self, library_id: str) -> StartScanResult:
+    def start_full_scan(self, library_id: str, skip_validation_autorepair: bool = False) -> StartScanResult:
         """Start a full library scan.
 
         Validates the library synchronously then dispatches the scan as a
@@ -94,6 +94,9 @@ class LibraryScanMixin:
 
         Args:
             library_id: ID of the library to scan
+            skip_validation_autorepair: If True, tag validation will not auto-repair
+                incomplete files. Used during repair operations to avoid triggering
+                ML reruns.
 
         Returns:
             StartScanResult DTO with scan statistics and task_id
@@ -118,6 +121,7 @@ class LibraryScanMixin:
                 tagger_version=self.cfg.tagger_version,
                 models_dir=self.cfg.models_dir,
                 namespace=self.cfg.namespace,
+                skip_validation_autorepair=skip_validation_autorepair,
             ),
             on_complete=on_complete,
             daemon=True,
@@ -175,7 +179,7 @@ class LibraryScanMixin:
         resolve_library_for_scan(self.db, library_id)
         files_queued = bulk_set_tags_not_extracted(self.db, library_id)
         logger.info("[LibraryService] Marked %d files for tag re-hydration in library %s", files_queued, library_id)
-        scan_result = self.start_full_scan(library_id)
+        scan_result = self.start_full_scan(library_id, skip_validation_autorepair=True)
         scan_result.files_queued = files_queued
         return scan_result
 
