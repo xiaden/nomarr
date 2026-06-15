@@ -193,18 +193,25 @@ class VectorCollection:
 
         # 1. UPSERT all docs from source into dest
         self._db.aql.execute(
-            "FOR doc IN @@source UPSERT { _key: doc._key } INSERT doc UPDATE doc IN @@dest",
+            "FOR doc IN @@source UPSERT { _key: doc._key } INSERT doc UPDATE doc IN @@dest OPTIONS { ignoreErrors: true }",
             bind_vars={"@source": self._name, "@dest": dest},
         )
 
         # 2. Re-point edges that reference source docs → dest docs
+        # When re-promoting after a rescan, cold edges from a prior promotion may
+        # already exist. Use ignoreErrors to skip duplicates, then delete source edges.
         self._db.aql.execute(
             """
-            FOR edge IN @@edge_col
-                FILTER STARTS_WITH(edge._to, @source_prefix)
-                UPDATE edge WITH {
-                    _to: CONCAT(@dest_prefix, PARSE_IDENTIFIER(edge._to).key)
-                } IN @@edge_col
+            LET hot_edges = (
+                FOR edge IN @@edge_col
+                    FILTER STARTS_WITH(edge._to, @source_prefix)
+                    RETURN edge
+            )
+            FOR edge IN hot_edges
+                LET new_to = CONCAT(@dest_prefix, PARSE_IDENTIFIER(edge._to).key)
+                INSERT { _from: edge._from, _to: new_to } INTO @@edge_col OPTIONS { ignoreErrors: true }
+            FOR edge IN hot_edges
+                REMOVE edge IN @@edge_col OPTIONS { ignoreErrors: true }
             """,
             bind_vars={
                 "@edge_col": _VECTOR_EDGE_COLLECTION,
