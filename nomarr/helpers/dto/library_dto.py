@@ -70,6 +70,11 @@ class LibraryDict:
     last_scan_started_at: int | None = None  # Timestamp (ms) when scan started
     last_scan_at: int | None = None  # Timestamp (ms) of last scan completion
     scan_type_in_progress: str | None = None  # "quick" or "full" if a scan is running
+    # Pipeline axis states (stored on library document)
+    scan_state: str = "not_scanned"
+    ml_state: str = "not_ML_processed"
+    calibration_state: str = "not_calibrated"
+    tag_write_state: str = "not_written"
     # Vector search settings (per-library overrides)
     vector_search_thoroughness: int | None = None  # Percentage of neighbourhoods to probe (1-100)
     vector_group_size: int | None = None  # Number of tracks per FAISS group
