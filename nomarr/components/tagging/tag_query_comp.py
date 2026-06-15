@@ -325,13 +325,32 @@ def get_file_ids_for_mood_tags(
     mood_tier: str = "mood-strict",
     library_id: str | None = None,
 ) -> dict[str, set[str]]:
-    """Get file-id sets for many mood values within one mood tier."""
+    """Get file-id sets for many mood values within one mood tier.
+
+    Uses CONTAINS matching since mood tags are stored as arrays (e.g.,
+    nom:mood-strict = ["aggressive", "happy"]). This allows finding files
+    that have a specific mood value within their mood array.
+
+    Args:
+        db: Database instance
+        mood_values: List of mood values to search for (e.g., ["aggressive", "happy"])
+        mood_tier: Mood tier name (e.g., "mood-strict", "mood-regular", "mood-loose")
+        library_id: Optional library ID to scope the search
+
+    Returns:
+        Dict mapping each mood value to the set of file IDs that contain it
+    """
     result: dict[str, set[str]] = {}
     name = f"nom:{mood_tier}" if not mood_tier.startswith("nom:") else mood_tier
     library_ids = _library_file_ids(db, library_id)
 
     for mood_value in mood_values:
-        file_ids = _file_ids_for_tag_docs(db, _exact_tags_for_name_value(db, name, mood_value))
+        # Use CONTAINS matching for mood tags (stored as arrays)
+        file_docs = cast(
+            "list[dict[str, Any]]",
+            db.library.search_files_by_tag_contains(name, mood_value, limit=None),
+        )
+        file_ids: set[str] = {file_id for file_doc in file_docs if isinstance((file_id := file_doc.get("_id")), str)}
         if library_ids is not None:
             file_ids &= library_ids
         result[mood_value] = file_ids

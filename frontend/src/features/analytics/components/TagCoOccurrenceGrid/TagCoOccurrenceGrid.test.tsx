@@ -7,6 +7,7 @@ import { renderWithProviders, screen } from "../../../../test/render";
 import { TagCoOccurrenceGrid } from "../TagCoOccurrenceGrid";
 
 import { useAxisState } from "./useAxisState";
+import { clearMatrixCache, useMatrixCache } from "./useMatrixCache";
 import { fetchPresetTags } from "./usePresetData";
 
 // Mock the API calls
@@ -177,5 +178,122 @@ describe("preset switching", () => {
     const calls = vi.mocked(getTagCoOccurrence).mock.calls;
     const lastCall = calls[calls.length - 1];
     expect(lastCall[0].x.every((tag) => tag.key === "nom:mood-strict")).toBe(true);
+  });
+});
+
+describe("matrix caching", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearMatrixCache();
+  });
+
+  it("caches matrix results and avoids redundant API calls", async () => {
+    const { result } = renderHook(() => useMatrixCache());
+
+    const xTags = [{ key: "genre", value: "Rock" }];
+    const yTags = [{ key: "year", value: "2020" }];
+    const matrixData = {
+      x: xTags,
+      y: yTags,
+      matrix: [[5]],
+    };
+
+    // Initially cache is empty
+    expect(result.current.getCached(xTags, yTags)).toBeNull();
+
+    // Store in cache
+    act(() => {
+      result.current.setCached(xTags, yTags, undefined, matrixData);
+    });
+
+    // Now cache should return the data
+    const cached = result.current.getCached(xTags, yTags);
+    expect(cached).toEqual(matrixData);
+  });
+
+  it("cache keys are normalized (order-independent within axis)", async () => {
+    const { result } = renderHook(() => useMatrixCache());
+
+    const xTags1 = [
+      { key: "genre", value: "Rock" },
+      { key: "genre", value: "Pop" },
+    ];
+    const xTags2 = [
+      { key: "genre", value: "Pop" },
+      { key: "genre", value: "Rock" },
+    ];
+    const yTags = [{ key: "year", value: "2020" }];
+    const matrixData = {
+      x: xTags1,
+      y: yTags,
+      matrix: [[5, 3]],
+    };
+
+    // Store with one order
+    act(() => {
+      result.current.setCached(xTags1, yTags, undefined, matrixData);
+    });
+
+    // Retrieve with different order - should hit cache
+    const cached = result.current.getCached(xTags2, yTags);
+    expect(cached).toEqual(matrixData);
+  });
+
+  it("cache distinguishes between different library IDs", async () => {
+    const { result } = renderHook(() => useMatrixCache());
+
+    const xTags = [{ key: "genre", value: "Rock" }];
+    const yTags = [{ key: "year", value: "2020" }];
+    const matrixData1 = {
+      x: xTags,
+      y: yTags,
+      matrix: [[5]],
+    };
+    const matrixData2 = {
+      x: xTags,
+      y: yTags,
+      matrix: [[10]],
+    };
+
+    // Store with library1
+    act(() => {
+      result.current.setCached(xTags, yTags, "library1", matrixData1);
+    });
+
+    // Store with library2
+    act(() => {
+      result.current.setCached(xTags, yTags, "library2", matrixData2);
+    });
+
+    // Retrieve should get correct data for each library
+    expect(result.current.getCached(xTags, yTags, "library1")).toEqual(matrixData1);
+    expect(result.current.getCached(xTags, yTags, "library2")).toEqual(matrixData2);
+    expect(result.current.getCached(xTags, yTags)).toBeNull(); // No library = different key
+  });
+
+  it("clearMatrixCache removes all cached data", async () => {
+    const { result } = renderHook(() => useMatrixCache());
+
+    const xTags = [{ key: "genre", value: "Rock" }];
+    const yTags = [{ key: "year", value: "2020" }];
+    const matrixData = {
+      x: xTags,
+      y: yTags,
+      matrix: [[5]],
+    };
+
+    // Store in cache
+    act(() => {
+      result.current.setCached(xTags, yTags, undefined, matrixData);
+    });
+
+    // Verify it's cached
+    expect(result.current.getCached(xTags, yTags)).toEqual(matrixData);
+
+    // Clear cache
+    clearMatrixCache();
+
+    // Verify it's gone
+    expect(result.current.getCached(xTags, yTags)).toBeNull();
   });
 });

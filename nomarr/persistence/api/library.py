@@ -206,6 +206,28 @@ class LibraryDb:
     ) -> list[dict]:
         return self._tags.search_files_by_tag(tag_key, value, limit=limit)
 
+    def search_files_by_tag_contains(
+        self,
+        tag_key: str,
+        value: str,
+        *,
+        limit: int | None,
+    ) -> list[dict]:
+        """Search for files where tag.value array contains the given value.
+
+        Used for array-valued tags like mood tags where multiple values are stored
+        in a single tag document (e.g., nom:mood-strict = ["aggressive", "happy"]).
+
+        Args:
+            tag_key: Tag name to search for (e.g., "nom:mood-strict")
+            value: Value to find within the tag's value array
+            limit: Maximum number of file documents to return
+
+        Returns:
+            List of file documents that have tags containing the value
+        """
+        return self._tags.search_files_by_tag_contains(tag_key, value, limit=limit)
+
     def list_file_ids_for_tag_id(self, tag_id: str, *, limit: int | None, offset: int = 0) -> list[str]:
         return self._tags.list_file_ids_for_tag_id(tag_id, limit=limit, offset=offset)
 

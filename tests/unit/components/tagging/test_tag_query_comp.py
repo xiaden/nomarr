@@ -544,3 +544,87 @@ class TestGetFileIdsMatchingTag:
 
         assert result == {"library_files/1", "library_files/2"}
         mock_db.library.search_files_by_tag.assert_called_once_with("genre", "Rock", limit=None)
+
+
+class TestGetFileIdsForMoodTags:
+    """Tests for get_file_ids_for_mood_tags."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_uses_contains_matching_for_mood_tags(self) -> None:
+        """Mood tags are stored as arrays, so we need CONTAINS matching."""
+        from nomarr.components.tagging.tag_query_comp import get_file_ids_for_mood_tags
+
+        mock_db = MagicMock()
+        # Simulate files with mood arrays
+        mock_db.library.search_files_by_tag_contains.side_effect = [
+            # Files with "aggressive" in their mood array
+            [
+                {"_id": "library_files/1"},
+                {"_id": "library_files/2"},
+            ],
+            # Files with "happy" in their mood array
+            [
+                {"_id": "library_files/2"},
+                {"_id": "library_files/3"},
+            ],
+        ]
+
+        result = get_file_ids_for_mood_tags(
+            mock_db,
+            mood_values=["aggressive", "happy"],
+            mood_tier="mood-strict",
+        )
+
+        assert result == {
+            "aggressive": {"library_files/1", "library_files/2"},
+            "happy": {"library_files/2", "library_files/3"},
+        }
+        # Verify CONTAINS method was called (not exact match)
+        assert mock_db.library.search_files_by_tag_contains.call_count == 2
+        mock_db.library.search_files_by_tag_contains.assert_any_call("nom:mood-strict", "aggressive", limit=None)
+        mock_db.library.search_files_by_tag_contains.assert_any_call("nom:mood-strict", "happy", limit=None)
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_scopes_to_library_when_provided(self) -> None:
+        """Library ID should restrict results to files in that library."""
+        from nomarr.components.tagging.tag_query_comp import get_file_ids_for_mood_tags
+
+        mock_db = MagicMock()
+        mock_db.library.list_library_files.return_value = [
+            {"_id": "library_files/1"},
+            {"_id": "library_files/2"},
+        ]
+        mock_db.library.search_files_by_tag_contains.return_value = [
+            {"_id": "library_files/1"},
+            {"_id": "library_files/2"},
+            {"_id": "library_files/3"},  # Not in library
+        ]
+
+        result = get_file_ids_for_mood_tags(
+            mock_db,
+            mood_values=["aggressive"],
+            mood_tier="mood-strict",
+            library_id="libraries/123",
+        )
+
+        # Should only include files 1 and 2 (file 3 is not in the library)
+        assert result == {"aggressive": {"library_files/1", "library_files/2"}}
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_handles_empty_results(self) -> None:
+        """Empty results should return empty sets."""
+        from nomarr.components.tagging.tag_query_comp import get_file_ids_for_mood_tags
+
+        mock_db = MagicMock()
+        mock_db.library.search_files_by_tag_contains.return_value = []
+
+        result = get_file_ids_for_mood_tags(
+            mock_db,
+            mood_values=["nonexistent"],
+            mood_tier="mood-strict",
+        )
+
+        assert result == {"nonexistent": set()}

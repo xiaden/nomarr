@@ -111,3 +111,52 @@ def test_get_orphaned_tag_ids_filters_only_on_song_edges() -> None:
     assert bind_vars["@tag_collection"] == TagsAqlOperations.COLLECTION
     assert bind_vars["@song_edge_collection"] == TagsAqlOperations.EDGE_COLLECTION
     assert result == ["tags/1", "tags/2"]
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+def test_search_files_by_tag_contains_uses_in_operator() -> None:
+    """CONTAINS query should use @value IN tag.value for array matching."""
+    db = MagicMock()
+    ops = TagsAqlOperations(db)
+    expected_files = [{"_id": "library_files/1"}, {"_id": "library_files/2"}]
+
+    with patch(
+        "nomarr.persistence.database.tags_aql.primitives.execute",
+        return_value=expected_files,
+    ) as execute:
+        result = ops.search_files_by_tag_contains("nom:mood-strict", "aggressive", limit=None)
+
+    execute.assert_called_once()
+    assert execute.call_args.args[0] is db
+    query = execute.call_args.args[1]
+    bind_vars = execute.call_args.args[2]
+
+    # Verify the query uses IN operator for array containment
+    assert "@value IN tag.value" in query
+    assert "tag.name == @tag_key" in query
+    assert bind_vars["tag_key"] == "nom:mood-strict"
+    assert bind_vars["value"] == "aggressive"
+    assert bind_vars["@tag_collection"] == TagsAqlOperations.COLLECTION
+    assert bind_vars["@edge_collection"] == TagsAqlOperations.EDGE_COLLECTION
+    assert result == expected_files
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+def test_search_files_by_tag_contains_respects_limit() -> None:
+    """CONTAINS query should apply LIMIT when specified."""
+    db = MagicMock()
+    ops = TagsAqlOperations(db)
+
+    with patch(
+        "nomarr.persistence.database.tags_aql.primitives.execute",
+        return_value=[{"_id": "library_files/1"}],
+    ) as execute:
+        ops.search_files_by_tag_contains("nom:mood-strict", "happy", limit=10)
+
+    query = execute.call_args.args[1]
+    bind_vars = execute.call_args.args[2]
+
+    assert "LIMIT @limit" in query
+    assert bind_vars["limit"] == 10

@@ -100,6 +100,43 @@ class TagsAqlOperations:
         query_lines.append("        RETURN file")
         return primitives.execute(self._db, "\n".join(query_lines), bind_vars)
 
+    def search_files_by_tag_contains(self, tag_key: str, value: str, *, limit: int | None) -> list[Document]:
+        """Search for files where tag.value array contains the given value.
+
+        Used for array-valued tags like mood tags where multiple values are stored
+        in a single tag document (e.g., nom:mood-strict = ["aggressive", "happy"]).
+
+        Args:
+            tag_key: Tag name to search for (e.g., "nom:mood-strict")
+            value: Value to find within the tag's value array
+            limit: Maximum number of file documents to return
+
+        Returns:
+            List of file documents that have tags containing the value
+        """
+        bind_vars: dict[str, Any] = {
+            "@tag_collection": self.COLLECTION,
+            "@edge_collection": self.EDGE_COLLECTION,
+            "tag_key": tag_key,
+            "value": value,
+        }
+        query_lines = [
+            "FOR tag IN @@tag_collection",
+            "    FILTER tag.name == @tag_key AND @value IN tag.value",
+            "    FOR edge IN @@edge_collection",
+            "        FILTER edge._to == tag._id",
+            "        COLLECT file_id = edge._from",
+            "        LET file = DOCUMENT(file_id)",
+            "        FILTER file != null",
+            "        SORT file._key",
+        ]
+        normalized_limit = primitives.normalize_limit(limit)
+        if normalized_limit is not None:
+            query_lines.append("        LIMIT @limit")
+            bind_vars["limit"] = normalized_limit
+        query_lines.append("        RETURN file")
+        return primitives.execute(self._db, "\n".join(query_lines), bind_vars)
+
     def get_tag_value_frequencies(self, tag_name: str, *, limit: int) -> list[tuple[str, int]]:
         rows = primitives.execute(
             self._db,
