@@ -16,12 +16,12 @@ from nomarr.components.library import (
     get_library_scan_histories,
     resolve_library_for_scan,
 )
-from nomarr.components.library.scan_lifecycle_comp import (
+from nomarr.components.library.library_scan_state_comp import (
     _pipeline_state_to_scan_status,
     get_pipeline_state,
     get_scan_state,
-    on_scan_complete_pipeline_hook,
 )
+from nomarr.components.library.scan_lifecycle_comp import on_scan_complete_pipeline_hook
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.dto.library_dto import LibraryScanStatusResult, StartScanResult
 from nomarr.workflows.library.scan_library_full_wf import scan_library_full_workflow

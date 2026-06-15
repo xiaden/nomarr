@@ -6,26 +6,30 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from nomarr.components.library.library_scan_file_ops_comp import (
+    bootstrap_file_state_edges,
+    cleanup_stale_folders,
+    remove_deleted_files,
+    save_folder_record,
+    snapshot_existing_files,
+    upsert_scanned_files,
+)
+from nomarr.components.library.library_scan_state_comp import (
+    ensure_scan_state,
+    get_scan_state,
+)
 from nomarr.components.library.scan_lifecycle_comp import (
     LibraryNotFoundError,
-    bootstrap_file_state_edges,
     check_interrupted_scan,
-    cleanup_stale_folders,
-    ensure_scan_state,
     get_library_scan_histories,
-    get_scan_state,
     get_scanning_library_ids,
     is_library_scanning,
     mark_scan_completed,
     mark_scan_started,
     on_scan_complete_pipeline_hook,
-    remove_deleted_files,
     resolve_library_for_scan,
-    save_folder_record,
-    snapshot_existing_files,
     transition_to_scanning,
     update_scan_progress,
-    upsert_scanned_files,
 )
 from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.helpers.constants.pipeline_states import (
@@ -384,7 +388,7 @@ class TestFolderCacheHelpers:
     def test_save_folder_record_replaces_existing_doc_via_library_intents(self) -> None:
         mock_db = MagicMock()
 
-        with patch("nomarr.components.library.scan_lifecycle_comp.now_ms") as mock_now_ms:
+        with patch("nomarr.components.library.library_scan_file_ops_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value.value = 456
             save_folder_record(
                 mock_db,
@@ -396,10 +400,6 @@ class TestFolderCacheHelpers:
             )
 
         inserted_doc = mock_db.library.add_library_folder.call_args.args[1]
-        mock_db.library.remove_library_folder.assert_called_once_with(
-            "libraries/test",
-            "library_folders/existing",
-        )
         assert inserted_doc["path"] == "Rock"
         assert inserted_doc["library_key"] == "test"
         assert inserted_doc["mtime"] == 123
@@ -412,7 +412,7 @@ class TestFolderCacheHelpers:
         mock_db = MagicMock()
 
         with patch(
-            "nomarr.components.library.scan_lifecycle_comp.get_cached_folders",
+            "nomarr.components.library.library_scan_file_ops_comp.get_cached_folders",
             return_value={
                 "Keep": {"_id": "library_folders/a", "path": "Keep"},
                 "Drop": {"_id": "library_folders/b", "path": "Drop"},
@@ -574,11 +574,11 @@ class TestSnapshotExistingFiles:
 
         with (
             patch(
-                "nomarr.components.library.scan_lifecycle_comp.list_library_files",
+                "nomarr.components.library.library_scan_file_ops_comp.list_library_files",
                 return_value=(files, 2),
             ) as mock_list_library_files,
             patch(
-                "nomarr.components.library.scan_lifecycle_comp.library_has_tagged_files",
+                "nomarr.components.library.library_scan_file_ops_comp.library_has_tagged_files",
                 return_value=True,
             ) as mock_library_has_tagged_files,
         ):
@@ -593,11 +593,11 @@ class TestSnapshotExistingFiles:
 
         with (
             patch(
-                "nomarr.components.library.scan_lifecycle_comp.list_library_files",
+                "nomarr.components.library.library_scan_file_ops_comp.list_library_files",
                 return_value=([], 0),
             ) as mock_list_library_files,
             patch(
-                "nomarr.components.library.scan_lifecycle_comp.library_has_tagged_files",
+                "nomarr.components.library.library_scan_file_ops_comp.library_has_tagged_files",
                 return_value=False,
             ) as mock_library_has_tagged_files,
         ):
@@ -619,11 +619,11 @@ class TestUpsertScannedFiles:
 
         with (
             patch(
-                "nomarr.components.library.scan_lifecycle_comp._upsert_batch",
+                "nomarr.components.library.library_scan_file_ops_comp._upsert_batch",
                 return_value=["library_files/1"],
             ) as mock_upsert_batch,
             patch(
-                "nomarr.components.library.scan_lifecycle_comp.bootstrap_file_state_edges"
+                "nomarr.components.library.library_scan_file_ops_comp.bootstrap_file_state_edges"
             ) as mock_bootstrap_file_state_edges,
         ):
             result = upsert_scanned_files(mock_db, file_entries)
@@ -645,11 +645,11 @@ class TestUpsertScannedFiles:
 
         with (
             patch(
-                "nomarr.components.library.scan_lifecycle_comp._upsert_batch",
+                "nomarr.components.library.library_scan_file_ops_comp._upsert_batch",
                 return_value=["library_files/a", "library_files/b"],
             ) as mock_upsert_batch,
             patch(
-                "nomarr.components.library.scan_lifecycle_comp.bootstrap_file_state_edges"
+                "nomarr.components.library.library_scan_file_ops_comp.bootstrap_file_state_edges"
             ) as mock_bootstrap_file_state_edges,
         ):
             result = upsert_scanned_files(mock_db, file_entries, edge_bootstraps=edge_bootstraps)

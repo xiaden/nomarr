@@ -1,36 +1,4 @@
-"""Health monitoring service.
-
-## Health Monitoring Contract
-
-HealthMonitor OWNS:
-- Single consolidated monitor thread (polls all pipes + checks staleness)
-- In-memory status registry
-- Per-component policies and deadlines
-
-HealthMonitor EMITS:
-- Status change callbacks to handlers (domain decides actions)
-
-### Status Model
-
-| Status      | Set by        | Meaning                                      |
-|-------------|---------------|----------------------------------------------|
-| pending     | HealthMonitor | Waiting for first frame after registration   |
-| healthy     | HealthMonitor | Receiving healthy frames                     |
-| unhealthy   | HealthMonitor | Missed 1+ staleness checks                   |
-| recovering  | HealthMonitor | Component requested recovery window          |
-| dead        | HealthMonitor | Intervention needed (timeout/misses/EOF)     |
-| failed      | Domain        | Permanent, not restarting                    |
-
-### Key Rules
-
-1. A frame with status="healthy" resets consecutive misses and transitions to healthy;
-   any other frame does not.
-
-2. Calling set_failed permanently transitions the component to failed; no further
-   health checks, callbacks, or state transitions occur.
-
-3. EOF on pipe → dead (from any state except failed).
-"""
+"""Main HealthMonitorService class — assembles mixins into the public interface."""
 
 from __future__ import annotations
 
@@ -40,7 +8,6 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from multiprocessing.connection import wait
 from typing import TYPE_CHECKING, Any
 
@@ -50,9 +17,12 @@ from nomarr.helpers.dto.health_dto import (
     ComponentLifecycleHandler,
     ComponentPolicy,
     ComponentStatus,
-    StatusChangeContext,
 )
 from nomarr.helpers.time_helper import InternalSeconds, internal_s, internal_s_to_ms, to_wall_ms
+
+from ._helpers import HealthMonitorConfig, _ComponentState
+from .deadline_ops import DeadlineOpsMixin
+from .state_transition_ops import StateTransitionOpsMixin
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -60,30 +30,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class HealthMonitorConfig:
-    """Configuration for HealthMonitorService."""
-
-    monitor_poll_timeout_s: float = 1.0  # Timeout for pipe polling
-    history_snapshot_interval_s: int = 30  # Seconds between DB history writes
-
-
-@dataclass
-class _ComponentState:
-    """Internal state tracking for a monitored component."""
-
-    handler: ComponentLifecycleHandler
-    pipe_conn: Any
-    policy: ComponentPolicy
-    status: ComponentStatus = "pending"
-    last_frame_time: InternalSeconds = field(default_factory=internal_s)
-    consecutive_misses: int = 0
-    startup_deadline: InternalSeconds | None = None
-    recovery_deadline: InternalSeconds | None = None
-    reported_recover_for_s: float | None = None
-
-
-class HealthMonitorService:
+class HealthMonitorService(StateTransitionOpsMixin, DeadlineOpsMixin):
     """Health monitor that owns component status registry.
 
     Uses a single consolidated monitor thread to:
@@ -383,173 +330,6 @@ class HealthMonitorService:
 
         except json.JSONDecodeError:
             logger.warning("Dropped malformed HEALTH frame from %s", component_id)
-
-    def _transition_to_healthy(self, component_id: str) -> None:
-        """Transition component to healthy status."""
-        with self._lock:
-            state = self._components.get(component_id)
-            if not state or state.status == "failed":
-                return
-
-            old_status = state.status
-            state.status = "healthy"
-            state.last_frame_time = internal_s()
-            state.consecutive_misses = 0
-            state.recovery_deadline = None
-            state.reported_recover_for_s = None
-            handler = state.handler
-
-        if old_status != "healthy":
-            logger.debug("[HealthMonitor] %s: %s -> healthy", component_id, old_status)
-            self._emit_status_change(component_id, old_status, "healthy", handler, state)
-
-    def _transition_to_recovering(self, component_id: str, reported_recover_for_s: float | None) -> None:
-        """Transition component to recovering status with deadline."""
-        with self._lock:
-            state = self._components.get(component_id)
-            if not state or state.status == "failed":
-                return
-
-            # Clamp recovery duration to [min, max]
-            policy = state.policy
-            if reported_recover_for_s is None:
-                recover_s = policy.max_recovery_s
-            else:
-                recover_s = max(policy.min_recovery_s, min(reported_recover_for_s, policy.max_recovery_s))
-
-            old_status = state.status
-            state.status = "recovering"
-            state.last_frame_time = internal_s()
-            state.recovery_deadline = InternalSeconds(internal_s().value + int(recover_s))
-            state.reported_recover_for_s = reported_recover_for_s
-            handler = state.handler
-
-        if old_status != "recovering":
-            logger.debug(
-                "[HealthMonitor] %s: %s -> recovering (%.1fs)",
-                component_id,
-                old_status,
-                recover_s,
-            )
-            self._emit_status_change(component_id, old_status, "recovering", handler, state)
-
-    def _handle_pipe_closed(self, component_id: str) -> None:
-        """Handle pipe EOF - component exited."""
-        with self._lock:
-            state = self._components.get(component_id)
-            if not state or state.status in ("failed", "dead"):
-                return  # Idempotent: only emit dead transition once
-
-            old_status = state.status
-            state.status = "dead"
-            state.recovery_deadline = None
-            handler = state.handler
-
-        logger.debug("[HealthMonitor] %s: %s -> dead (pipe closed)", component_id, old_status)
-        self._emit_status_change(component_id, old_status, "dead", handler, state)
-
-    def _check_all_deadlines(self, now: InternalSeconds) -> None:
-        """Check startup timeouts, staleness, and recovery deadlines."""
-        # Collect state changes to emit outside lock
-        changes: list[tuple[str, ComponentStatus, ComponentStatus, ComponentLifecycleHandler, _ComponentState]] = []
-
-        with self._lock:
-            for component_id, state in self._components.items():
-                if state.status in {"failed", "dead"}:
-                    continue  # Don't check failed/dead
-
-                change = self._check_component_deadline(component_id, state, now)
-                if change:
-                    changes.append(change)
-
-        # Emit callbacks outside lock
-        for component_id, old_status, new_status, handler, state in changes:
-            self._emit_status_change(component_id, old_status, new_status, handler, state)
-
-    def _check_component_deadline(
-        self,
-        component_id: str,
-        state: _ComponentState,
-        now: InternalSeconds,
-    ) -> tuple[str, ComponentStatus, ComponentStatus, ComponentLifecycleHandler, _ComponentState] | None:
-        """Check deadlines for a single component. Returns state change if any."""
-        policy = state.policy
-
-        # Pending: check startup timeout
-        if state.status == "pending":
-            if state.startup_deadline and now.value >= state.startup_deadline.value:
-                old_status: ComponentStatus = state.status
-                state.status = "dead"
-                logger.warning(
-                    "[HealthMonitor] %s: pending -> dead (startup timeout)",
-                    component_id,
-                )
-                return (component_id, old_status, "dead", state.handler, state)
-            return None
-
-        # Recovering: check recovery deadline
-        if state.status == "recovering":
-            if state.recovery_deadline and now.value >= state.recovery_deadline.value:
-                old_status = state.status
-                state.status = "dead"
-                logger.warning(
-                    "[HealthMonitor] %s: recovering -> dead (recovery timeout)",
-                    component_id,
-                )
-                return (component_id, old_status, "dead", state.handler, state)
-            return None
-
-        # Healthy/Unhealthy: check staleness
-        if state.status in ("healthy", "unhealthy"):
-            time_since_frame = now.value - state.last_frame_time.value
-            if time_since_frame >= policy.staleness_interval_s:
-                state.consecutive_misses += 1
-                state.last_frame_time = now  # Reset for next interval
-
-                if state.consecutive_misses >= policy.max_consecutive_misses:
-                    prev_status: ComponentStatus = state.status
-                    state.status = "dead"
-                    logger.warning(
-                        "[HealthMonitor] %s: %s -> dead (%d consecutive misses)",
-                        component_id,
-                        prev_status,
-                        state.consecutive_misses,
-                    )
-                    return (component_id, prev_status, "dead", state.handler, state)
-                if state.status == "healthy":
-                    prev_healthy: ComponentStatus = state.status
-                    state.status = "unhealthy"
-                    logger.debug(
-                        "[HealthMonitor] %s: healthy -> unhealthy (miss %d/%d)",
-                        component_id,
-                        state.consecutive_misses,
-                        policy.max_consecutive_misses,
-                    )
-                    return (component_id, prev_healthy, "unhealthy", state.handler, state)
-                # Already unhealthy, just increment miss count (no callback)
-            return None
-
-        return None
-
-    def _emit_status_change(
-        self,
-        component_id: str,
-        old_status: ComponentStatus,
-        new_status: ComponentStatus,
-        handler: ComponentLifecycleHandler,
-        state: _ComponentState,
-    ) -> None:
-        """Emit status change callback to handler."""
-        context = StatusChangeContext(
-            consecutive_misses=state.consecutive_misses,
-            recovery_deadline=state.recovery_deadline.value if state.recovery_deadline else None,
-            reported_recover_for_s=state.reported_recover_for_s,
-        )
-
-        try:
-            handler.on_status_change(component_id, old_status, new_status, context)
-        except Exception as e:
-            logger.exception("[HealthMonitor] Handler error on status change: %s", e)
 
     # ------------------------- History Writer --------------------------------
 

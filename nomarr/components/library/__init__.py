@@ -25,6 +25,14 @@ from .library_root_comp import (
     resolve_path_within_library,
     validate_library_root,
 )
+from .library_scan_file_ops_comp import (
+    cleanup_stale_folders,
+    get_cached_folders,
+    remove_deleted_files,
+    save_folder_record,
+    snapshot_existing_files,
+    upsert_scanned_files,
+)
 from .library_watch_config_comp import (
     get_library_watch_config,
     list_watchable_libraries,
@@ -36,18 +44,12 @@ from .metadata_extraction_comp import (
 )
 from .scan_lifecycle_comp import (
     check_interrupted_scan,
-    cleanup_stale_folders,
-    get_cached_folders,
     get_library_scan_histories,
     get_scanning_library_ids,
     mark_scan_completed,
     mark_scan_started,
-    remove_deleted_files,
     resolve_library_for_scan,
-    save_folder_record,
-    snapshot_existing_files,
     update_scan_progress,
-    upsert_scanned_files,
 )
 from .search_files_comp import (
     get_unique_tag_values,

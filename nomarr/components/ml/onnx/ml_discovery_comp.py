@@ -318,7 +318,7 @@ def compute_model_suite_hash(
         sig_str = "|".join(f"{p}:{s}" for p, s in entries)
         return hashlib.md5(sig_str.encode("utf-8")).hexdigest()[:12]
 
-    except Exception:
+    except (OSError, ValueError):
         logger.debug("Failed to compute model suite hash for %s", models_dir, exc_info=True)
         return "unknown"
 
@@ -438,7 +438,7 @@ def discover_head_models(
         for hi in heads:
             key = (hi.backbone, hi.head_type, hi.model_stem)
             head_info_map[key] = hi
-    except Exception:
+    except (OSError, KeyError, ValueError, RuntimeError):
         logger.warning("Failed to load HeadInfo from DB; labels will be empty")
 
     models: list[ONNXHeadModel] = []

@@ -30,6 +30,7 @@ def ops(mock_db: MagicMock) -> AppAqlOperations:
         "expected_field_value",
         "expected_allowed_fields",
         "expected_result",
+        "primitives_module",
     ),
     [
         (
@@ -40,6 +41,7 @@ def ops(mock_db: MagicMock) -> AppAqlOperations:
             "resource-123",
             AppAqlOperations.LOCK_FIELDS,
             None,
+            "nomarr.persistence.database.app_aql.main",
         ),
         (
             "release_claim",
@@ -49,6 +51,7 @@ def ops(mock_db: MagicMock) -> AppAqlOperations:
             "library_files/file-123",
             AppAqlOperations.WORKER_CLAIM_FIELDS,
             None,
+            "nomarr.persistence.database.app_aql.worker_claim_ops",
         ),
         (
             "delete_meta",
@@ -58,6 +61,7 @@ def ops(mock_db: MagicMock) -> AppAqlOperations:
             "schema-version",
             AppAqlOperations.META_FIELDS,
             None,
+            "nomarr.persistence.database.app_aql.main",
         ),
         (
             "delete_pipeline_state",
@@ -67,6 +71,7 @@ def ops(mock_db: MagicMock) -> AppAqlOperations:
             "lib123",
             AppAqlOperations.PIPELINE_STATE_FIELDS,
             7,
+            "nomarr.persistence.database.app_aql.pipeline_state_ops",
         ),
         (
             "delete_scan_records_for_library",
@@ -76,6 +81,7 @@ def ops(mock_db: MagicMock) -> AppAqlOperations:
             "lib123",
             AppAqlOperations.SCAN_FIELDS,
             7,
+            "nomarr.persistence.database.app_aql.pipeline_state_ops",
         ),
         (
             "delete_session",
@@ -85,6 +91,7 @@ def ops(mock_db: MagicMock) -> AppAqlOperations:
             "session-123",
             AppAqlOperations.SESSION_FIELDS,
             None,
+            "nomarr.persistence.database.app_aql.main",
         ),
     ],
 )
@@ -98,11 +105,12 @@ def test_refactored_delete_callers_delegate_to_delete_many_by_field(
     expected_field_value: str,
     expected_allowed_fields: frozenset[str],
     expected_result: int | None,
+    primitives_module: str,
 ) -> None:
     with (
-        patch("nomarr.persistence.database.app_aql.primitives.delete_many_by_field", return_value=7) as delete_many,
-        patch("nomarr.persistence.database.app_aql.primitives.get_many_by_field") as get_many,
-        patch("nomarr.persistence.database.app_aql.primitives.delete_many_by_keys") as delete_keys,
+        patch(f"{primitives_module}.primitives.delete_many_by_field", return_value=7) as delete_many,
+        patch(f"{primitives_module}.primitives.get_many_by_field") as get_many,
+        patch(f"{primitives_module}.primitives.delete_many_by_keys") as delete_keys,
     ):
         result = getattr(ops, method_name)(*args)
 

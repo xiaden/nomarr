@@ -41,15 +41,30 @@ persistence/
 ├── aql/
 │   └── primitives.py            # Shared AQL helper functions
 ├── database/
-│   ├── app_aql.py               # App-domain collection/edge operations
+│   ├── app_aql/                 # App-domain operations (subpackage with mixins)
+│   │   ├── __init__.py          # Re-exports AppAqlOperations
+│   │   ├── _helpers.py          # Shared utilities
+│   │   ├── main.py              # AppAqlOperations class
+│   │   ├── worker_claim_ops.py  # Worker claim operations mixin
+│   │   └── pipeline_state_ops.py # Pipeline state operations mixin
 │   ├── file_states_aql.py       # File state edge operations
 │   ├── libraries_aql.py         # Libraries collection operations
-│   ├── library_files_aql.py     # Files, folders, and link operations
+│   ├── library_files_aql/       # File and folder operations (subpackage with mixins)
+│   │   ├── __init__.py          # Re-exports LibraryFilesAqlOperations
+│   │   ├── _helpers.py          # Shared utilities
+│   │   ├── main.py              # LibraryFilesAqlOperations class
+│   │   ├── folder_ops.py        # Folder operations mixin
+│   │   └── file_link_ops.py     # File-link operations mixin
 │   ├── ml_models_aql.py         # ML model and calibration persistence
 │   ├── ml_streams_aql.py        # ML output stream persistence
 │   ├── navidrome_aql.py         # Navidrome mapping/playcount persistence
 │   ├── scan_aql.py              # Library scan record operations
-│   ├── tags_aql.py              # Tag and file↔tag operations
+│   ├── tags_aql/                # Tag operations (subpackage with mixins)
+│   │   ├── __init__.py          # Re-exports TagsAqlOperations
+│   │   ├── _helpers.py          # Shared utilities
+│   │   ├── main.py              # TagsAqlOperations class
+│   │   ├── tag_search_ops.py    # Tag search operations mixin
+│   │   └── tag_edge_ops.py      # Tag edge operations mixin
 │   └── vectors_aql.py           # Runtime vector collection operations
 └── models/
     ├── base.py                  # Shared persistence models

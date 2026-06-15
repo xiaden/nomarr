@@ -44,13 +44,18 @@ components/
 │   ├── file_tags_comp.py              # File tag operations
 │   ├── folder_analysis_comp.py        # Folder structure analysis
 │   ├── library_admin_comp.py          # Library CRUD
+│   ├── library_file_query_comp.py     # File query operations (split into 3 modules)
+│   ├── library_file_tag_queries_comp.py # Tag enrichment queries
+│   ├── library_file_library_queries_comp.py # Library-scoped aggregates
 │   ├── library_root_comp.py           # Root path operations
 │   ├── list_libraries_comp.py         # Library listing
 │   ├── metadata_extraction_comp.py    # Audio metadata extraction
 │   ├── missing_file_detection_comp.py # Detect removed files
 │   ├── move_detection_comp.py         # Detect moved files
 │   ├── reconcile_paths_comp.py        # Path reconciliation
-│   ├── scan_lifecycle_comp.py         # Scan state management
+│   ├── scan_lifecycle_comp.py         # Scan orchestration (split into 3 modules)
+│   ├── library_scan_state_comp.py     # Pipeline state management
+│   ├── library_scan_file_ops_comp.py  # File/folder scan operations
 │   ├── search_files_comp.py           # File search
 │   ├── tag_cleanup_comp.py            # Orphan tag cleanup
 │   ├── update_library_metadata_comp.py # Library metadata updates

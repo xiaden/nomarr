@@ -72,7 +72,7 @@ def load_calibrations_from_db_wf(db: Database) -> dict[str, dict[str, Any]]:
         logger.info(f"[calibration_loader] Loaded {len(calibrations)} calibrations from database")
         return calibrations
 
-    except Exception as e:
+    except (KeyError, TypeError, ValueError, OSError) as e:
         logger.exception(f"[calibration_loader] Failed to load calibrations: {e}")
         return {}
 

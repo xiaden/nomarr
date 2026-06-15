@@ -60,7 +60,7 @@ class TestIdlePipelineCompletion:
                 "nomarr.components.library.library_records_comp.find_ml_complete_libraries",
                 return_value=completed,
             ) as mock_find_ml_complete_libraries,
-            patch("nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis") as mock_transition,
+            patch("nomarr.components.library.library_scan_state_comp.transition_pipeline_axis") as mock_transition,
         ):
             transitions = _check_idle_pipeline_completion(worker_db, health_pipe)
 
@@ -85,7 +85,7 @@ class TestIdlePipelineCompletion:
                 "nomarr.components.library.library_records_comp.find_ml_complete_libraries",
                 return_value=[],
             ),
-            patch("nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis") as mock_transition,
+            patch("nomarr.components.library.library_scan_state_comp.transition_pipeline_axis") as mock_transition,
         ):
             transitions = _check_idle_pipeline_completion(worker_db, health_pipe)
 
@@ -110,7 +110,7 @@ class TestIdlePipelineCompletion:
                 "nomarr.components.library.library_records_comp.find_ml_complete_libraries",
                 return_value=completed,
             ) as mock_find_ml_complete_libraries,
-            patch("nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis") as mock_transition,
+            patch("nomarr.components.library.library_scan_state_comp.transition_pipeline_axis") as mock_transition,
         ):
             transitions = _check_idle_pipeline_completion(worker_db, None)
 
@@ -136,7 +136,7 @@ class TestIdlePipelineCompletion:
                 "nomarr.components.library.library_records_comp.find_ml_complete_libraries",
                 return_value=completed,
             ) as mock_find_ml_complete_libraries,
-            patch("nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis") as mock_transition,
+            patch("nomarr.components.library.library_scan_state_comp.transition_pipeline_axis") as mock_transition,
         ):
             transitions = _check_idle_pipeline_completion(worker_db, health_pipe)
 

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 from nomarr.components.library.library_file_query_comp import get_library_counts
 from nomarr.components.library.library_file_state_comp import count_untagged_files
 from nomarr.components.library.library_id_comp import normalize_library_id
-from nomarr.components.library.scan_lifecycle_comp import (
+from nomarr.components.library.library_scan_state_comp import (
     _pipeline_state_to_scan_status,
     get_pipeline_state,
     get_scan_state,

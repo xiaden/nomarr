@@ -23,17 +23,19 @@ from nomarr.components.library.library_file_query_comp import (
 from nomarr.components.library.library_file_state_comp import transition_file_state
 from nomarr.components.library.library_id_comp import normalize_library_id
 from nomarr.components.library.library_root_comp import validate_library_root
-from nomarr.components.library.scan_lifecycle_comp import (
+from nomarr.components.library.library_scan_file_ops_comp import (
     cleanup_stale_folders,
     get_cached_folders,
+    remove_deleted_files,
+    save_folder_record,
+    upsert_scanned_files,
+)
+from nomarr.components.library.library_scan_state_comp import transition_pipeline_axis
+from nomarr.components.library.scan_lifecycle_comp import (
     mark_scan_completed,
     mark_scan_started,
-    remove_deleted_files,
     resolve_library_for_scan,
-    save_folder_record,
-    transition_pipeline_axis,
     update_scan_progress,
-    upsert_scanned_files,
 )
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,

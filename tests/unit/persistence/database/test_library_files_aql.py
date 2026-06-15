@@ -231,10 +231,11 @@ def test_delete_folders_for_library_delegates_to_delete_many_by_field() -> None:
 
     with (
         patch(
-            "nomarr.persistence.database.library_files_aql.primitives.delete_many_by_field", return_value=5
+            "nomarr.persistence.database.library_files_aql.folder_ops.primitives.delete_many_by_field",
+            return_value=5,
         ) as delete_many,
-        patch("nomarr.persistence.database.library_files_aql.primitives.get_many_by_field") as get_many,
-        patch("nomarr.persistence.database.library_files_aql.primitives.delete_many_by_keys") as delete_keys,
+        patch("nomarr.persistence.database.library_files_aql.folder_ops.primitives.get_many_by_field") as get_many,
+        patch("nomarr.persistence.database.library_files_aql.folder_ops.primitives.delete_many_by_keys") as delete_keys,
     ):
         result = ops._delete_folders_for_library("lib123")
 

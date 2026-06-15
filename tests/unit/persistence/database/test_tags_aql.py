@@ -96,7 +96,7 @@ def test_get_orphaned_tag_ids_filters_only_on_song_edges() -> None:
     ops = TagsAqlOperations(db)
 
     with patch(
-        "nomarr.persistence.database.tags_aql.primitives.execute",
+        "nomarr.persistence.database.tags_aql.tag_edge_ops.primitives.execute",
         return_value=["tags/1", "tags/2"],
     ) as execute:
         result = ops.get_orphaned_tag_ids()
@@ -122,7 +122,7 @@ def test_search_files_by_tag_contains_uses_in_operator() -> None:
     expected_files = [{"_id": "library_files/1"}, {"_id": "library_files/2"}]
 
     with patch(
-        "nomarr.persistence.database.tags_aql.primitives.execute",
+        "nomarr.persistence.database.tags_aql.tag_search_ops.primitives.execute",
         return_value=expected_files,
     ) as execute:
         result = ops.search_files_by_tag_contains("nom:mood-strict", "aggressive", limit=None)
@@ -150,7 +150,7 @@ def test_search_files_by_tag_contains_respects_limit() -> None:
     ops = TagsAqlOperations(db)
 
     with patch(
-        "nomarr.persistence.database.tags_aql.primitives.execute",
+        "nomarr.persistence.database.tags_aql.tag_search_ops.primitives.execute",
         return_value=[{"_id": "library_files/1"}],
     ) as execute:
         ops.search_files_by_tag_contains("nom:mood-strict", "happy", limit=10)

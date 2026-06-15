@@ -68,7 +68,7 @@ class TestOnStatusChangeRestartLogic:
         assert worker_service.db.app.get_worker_restart_policy.call_count == 0
         assert worker_service.db.app.update_worker_restart_policy.call_count == 0
 
-    @patch("nomarr.services.infrastructure.worker_system_svc.should_restart_worker")
+    @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.should_restart_worker")
     def test_restart_decision_schedules_timer(self, mock_should_restart, worker_service, mock_db):
         """When decision is 'restart', schedules timer with backoff."""
         mock_should_restart.return_value = RestartDecision(
@@ -111,7 +111,7 @@ class TestOnStatusChangeRestartLogic:
             assert update_args[0] == "worker_1"
             assert update_args[1]["restart_count"] == 3
 
-    @patch("nomarr.services.infrastructure.worker_system_svc.should_restart_worker")
+    @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.should_restart_worker")
     def test_mark_failed_decision(self, mock_should_restart, worker_service, mock_db):
         """When decision is 'mark_failed', marks worker as permanently failed."""
         mock_should_restart.return_value = RestartDecision(
@@ -140,7 +140,7 @@ class TestOnStatusChangeRestartLogic:
         # Verify no timer scheduled
         assert "worker_2" not in worker_service._pending_restart_timers
 
-    @patch("nomarr.services.infrastructure.worker_system_svc.should_restart_worker")
+    @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.should_restart_worker")
     def test_idempotent_restart_cancels_existing_timer(self, mock_should_restart, worker_service):
         """When worker crashes again during backoff, cancels old timer."""
         mock_should_restart.return_value = RestartDecision(
@@ -191,7 +191,7 @@ class TestRestartWorkerHelper:
         # Verify no worker created
         assert len(worker_service._workers) == 0
 
-    @patch("nomarr.services.infrastructure.worker_system_svc.create_discovery_worker")
+    @patch("nomarr.services.infrastructure.workers.discovery_worker.create_discovery_worker")
     def test_restart_worker_spawns_replacement(self, mock_create_worker, worker_service, mock_db):
         """When enabled, spawns replacement worker and registers with health monitor."""
         mock_db.app.get_config_option.return_value = {"key": "worker_enabled", "value": "true"}  # enabled

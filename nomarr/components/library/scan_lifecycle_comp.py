@@ -1,45 +1,30 @@
-"""Scan lifecycle component — sub-facade-backed persistence helpers.
+"""Scan lifecycle component — orchestration-only.
 
-Owns the small amount of multi-collection orchestration required for library
-scan state and folder-cache persistence via ``db.app`` and ``db.library``.
+Extracted pipeline-state management to ``library_scan_state_comp`` and
+file/folder scan operations to ``library_scan_file_ops_comp``.  This module
+retains orchestration glue: library resolution, scan lifecycle markers,
+progress tracking, heartbeat, and the ``on_scan_complete_pipeline_hook``.
 """
 
 from __future__ import annotations
 
-import hashlib
-import logging
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.components.library.library_file_query_comp import (
-    get_existing_file_paths,
-    list_library_files,
+from nomarr.components.library.library_id_comp import normalize_library_id
+from nomarr.components.library.library_scan_state_comp import (
+    _pipeline_state_to_scan_status,
+    get_libraries_in_axis_state,
+    get_pipeline_state,
+    get_scan_state,
+    transition_pipeline_axis,
+    update_scan_state,
 )
-from nomarr.components.library.library_file_state_comp import (
-    initialize_file_states_batch,
-    library_has_tagged_files,
-    transition_file_state,
-)
-from nomarr.components.library.library_id_comp import library_key_from_ref, normalize_library_id
-from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.helpers.constants.pipeline_states import (
-    CAL_COMPLETE,
-    CAL_IN_PROGRESS,
-    CAL_NOT_CALIBRATED,
-    CAL_STATE_FIELD,
-    ML_COMPLETE,
     ML_IN_PROGRESS,
-    ML_NOT_PROCESSED,
     ML_STATE_FIELD,
-    PIPELINE_DEFAULTS,
     SCAN_COMPLETE,
     SCAN_IN_PROGRESS,
-    SCAN_NOT_SCANNED,
     SCAN_STATE_FIELD,
-    VALID_PIPELINE_TRANSITIONS,
-    WRITE_COMPLETE,
-    WRITE_IN_PROGRESS,
-    WRITE_NOT_WRITTEN,
-    WRITE_STATE_FIELD,
 )
 from nomarr.helpers.exceptions import LibraryNotFoundError
 from nomarr.helpers.time_helper import now_ms
@@ -47,241 +32,17 @@ from nomarr.helpers.time_helper import now_ms
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
-logger = logging.getLogger(__name__)
-
 
 _UNSET: object = object()
-_DEFAULT_SCAN_FIELDS: dict[str, Any] = {
-    "files_processed": 0,
-    "files_total": 0,
-    "completed_at": None,
-    "started_at": None,
-    "error": None,
-    "scan_type": None,
-    "scan_heartbeat": None,
-}
 
 
-def _pipeline_state_to_scan_status(pipeline_state: dict[str, str] | None, scan_doc: dict[str, Any] | None) -> str:
-    """Derive legacy scan_status string from pipeline state and scan doc.
-
-    Rules:
-        - scan_state == "scanning" -> "scanning"
-        - scan_doc.error present   -> "error"
-        - scan_doc.completed_at set -> "complete"
-        - otherwise                -> "idle"
-    """
-    if pipeline_state and pipeline_state.get("scan_state") == "scanning":
-        return "scanning"
-    if scan_doc and scan_doc.get("error"):
-        return "error"
-    if scan_doc and scan_doc.get("completed_at"):
-        return "complete"
-    return "idle"
-
-
-def _scan_doc_id(library_id: str) -> str:
-    """Return the canonical scan document id for a library."""
-    return f"library_scans/{library_key_from_ref(library_id)}"
-
-
-def _default_scan_doc(library_id: str) -> dict[str, Any]:
-    """Build the canonical default scan document payload."""
-    library_key = library_key_from_ref(library_id)
-    return {
-        "_key": library_key,
-        "library_key": library_key,
-        **_DEFAULT_SCAN_FIELDS,
-    }
-
-
-def _folder_key(library_id: str, folder_path: str) -> str:
-    """Generate the legacy-stable folder `_key` from library id and relative path."""
-    composite = f"{library_id}/{folder_path}"
-    return hashlib.md5(composite.encode("utf-8")).hexdigest()
-
-
-def _folder_doc_id(library_id: str, folder_path: str) -> str:
-    """Return the canonical folder document id for a library/path pair."""
-    return f"library_folders/{_folder_key(library_id, folder_path)}"
-
-
-def _folder_doc(
-    library_id: str,
-    folder_path: str,
-    mtime: int,
-    file_count: int,
-) -> dict[str, Any]:
-    """Build the folder-cache document persisted for quick scans."""
-    return {
-        "_key": _folder_key(library_id, folder_path),
-        "path": folder_path,
-        "library_key": library_key_from_ref(library_id),
-        "mtime": mtime,
-        "file_count": file_count,
-        "last_scanned_at": now_ms().value,
-    }
-
-
-def ensure_scan_state(db: Database, library_id: str) -> dict[str, Any]:
-    """Return the scan document for a library, creating or repairing it when needed."""
-    library_key = library_key_from_ref(library_id)
-    scan_doc = cast("dict[str, Any] | None", db.app.get_scan(library_id))
-
-    if scan_doc is None:
-        default_doc = _default_scan_doc(library_id)
-        db.app.add_scan(library_id, default_doc)
-        scan_doc = cast("dict[str, Any] | None", db.app.get_scan(library_id)) or default_doc
-    elif scan_doc.get("library_key") != library_key:
-        repaired_doc = {
-            **_DEFAULT_SCAN_FIELDS,
-            **scan_doc,
-            "_key": library_key,
-            "library_key": library_key,
-        }
-        db.app.remove_scan(library_id)
-        db.app.add_scan(library_id, repaired_doc)
-        scan_doc = cast("dict[str, Any] | None", db.app.get_scan(library_id)) or repaired_doc
-
-    return scan_doc
-
-
-def get_scan_state(db: Database, library_id: str) -> dict[str, Any] | None:
-    """Return the scan document for a library, repairing legacy rows when found."""
-    scan_doc = cast("dict[str, Any] | None", db.app.get_scan(library_id))
-    if scan_doc is None:
-        return None
-    if scan_doc.get("library_key") != library_key_from_ref(library_id):
-        return ensure_scan_state(db, library_id)
-    return scan_doc
-
-
-def update_scan_state(db: Database, library_id: str, **fields: Any) -> dict[str, Any]:
-    """Persist scan-state changes through the constructor-backed namespace."""
-    scan_doc = ensure_scan_state(db, library_id)
-    if not fields:
-        return scan_doc
-
-    db.app.update_scan(library_id, fields)
-    refreshed = cast("dict[str, Any] | None", db.app.get_scan(library_id))
-    if refreshed is not None:
-        return refreshed
-    return {**scan_doc, **fields}
-
-
-def transition_pipeline_axis(db: Database, library_id: str, axis_field: str, next_state: str) -> None:
-    """Update a single pipeline axis on a library document.
-
-    Validates that the transition is allowed from the current axis state.
-
-    Raises:
-        ValueError: If the transition is not valid from the current axis state.
-    """
-    current = db.app.get_pipeline_state(library_id)
-    if current is not None:
-        current_value = current.get(axis_field)
-        if current_value is not None:
-            allowed = VALID_PIPELINE_TRANSITIONS.get(axis_field, {}).get(current_value, set())
-            if next_state not in allowed:
-                msg = (
-                    f"Invalid pipeline transition for library {library_id} "
-                    f"axis {axis_field!r}: {current_value!r} -> {next_state!r}. "
-                    f"Allowed targets: {sorted(allowed)}"
-                )
-                raise ValueError(msg)
-    db.app.update_pipeline_axis(library_id, axis_field, next_state)
-
-
-def get_pipeline_state(db: Database, library_id: str) -> dict[str, str]:
-    """Return the four pipeline axis values for a library.
-
-    Returns default values if the library has no pipeline state fields set.
-    """
-    state = db.app.get_pipeline_state(library_id)
-    if state is None:
-        return dict(PIPELINE_DEFAULTS)
-    return state
-
-
-def get_libraries_in_axis_state(db: Database, axis_field: str, axis_value: str) -> list[str]:
-    """Return library document IDs where the given axis field matches the value."""
-    return db.app.get_libraries_in_axis_state(axis_field, axis_value)
-
-
-def bulk_transition_pipeline_axis(db: Database, axis_field: str, from_state: str, to_state: str) -> int:
-    """Transition every library currently in `from_state` on the given axis to `to_state`.
-
-    Validates that the transition is allowed from the source state.
-
-    Raises:
-        ValueError: If the transition is not valid from the source state.
-    """
-    allowed = VALID_PIPELINE_TRANSITIONS.get(axis_field, {}).get(from_state, set())
-    if to_state not in allowed:
-        msg = (
-            f"Invalid bulk pipeline transition for axis {axis_field!r}: "
-            f"{from_state!r} -> {to_state!r}. "
-            f"Allowed targets: {sorted(allowed)}"
-        )
-        raise ValueError(msg)
-    library_ids = get_libraries_in_axis_state(db, axis_field, from_state)
-    for library_id in library_ids:
-        db.app.update_pipeline_axis(library_id, axis_field, to_state)
-    return len(library_ids)
-
-
-# Legacy shims — these map old single-value API to new per-axis API.
-# They will be removed once all callers are updated.
-
-
-def transition_pipeline_state(db: Database, library_id: str, next_state: str) -> None:
-    """Legacy shim: map a single-value state to the appropriate axis transition."""
-    axis_map = {
-        SCAN_IN_PROGRESS: (SCAN_STATE_FIELD, SCAN_IN_PROGRESS),
-        SCAN_COMPLETE: (SCAN_STATE_FIELD, SCAN_COMPLETE),
-        SCAN_NOT_SCANNED: (SCAN_STATE_FIELD, SCAN_NOT_SCANNED),
-        ML_IN_PROGRESS: (ML_STATE_FIELD, ML_IN_PROGRESS),
-        ML_NOT_PROCESSED: (ML_STATE_FIELD, ML_NOT_PROCESSED),
-        ML_COMPLETE: (ML_STATE_FIELD, ML_COMPLETE),
-        CAL_IN_PROGRESS: (CAL_STATE_FIELD, CAL_IN_PROGRESS),
-        CAL_NOT_CALIBRATED: (CAL_STATE_FIELD, CAL_NOT_CALIBRATED),
-        CAL_COMPLETE: (CAL_STATE_FIELD, CAL_COMPLETE),
-        WRITE_IN_PROGRESS: (WRITE_STATE_FIELD, WRITE_IN_PROGRESS),
-        WRITE_NOT_WRITTEN: (WRITE_STATE_FIELD, WRITE_NOT_WRITTEN),
-        WRITE_COMPLETE: (WRITE_STATE_FIELD, WRITE_COMPLETE),
-    }
-    if next_state not in axis_map:
-        msg = f"Unknown pipeline state: {next_state!r}"
-        raise ValueError(msg)
-    axis_field, axis_value = axis_map[next_state]
-    transition_pipeline_axis(db, library_id, axis_field, axis_value)
-
-
-def bulk_transition_pipeline_state(db: Database, from_state: str, to_state: str) -> int:
-    """Legacy shim: map single-value states to per-axis bulk transition."""
-    axis_map = {
-        SCAN_IN_PROGRESS: SCAN_STATE_FIELD,
-        SCAN_COMPLETE: SCAN_STATE_FIELD,
-        SCAN_NOT_SCANNED: SCAN_STATE_FIELD,
-        ML_IN_PROGRESS: ML_STATE_FIELD,
-        ML_NOT_PROCESSED: ML_STATE_FIELD,
-        ML_COMPLETE: ML_STATE_FIELD,
-        CAL_IN_PROGRESS: CAL_STATE_FIELD,
-        CAL_NOT_CALIBRATED: CAL_STATE_FIELD,
-        CAL_COMPLETE: CAL_STATE_FIELD,
-        WRITE_IN_PROGRESS: WRITE_STATE_FIELD,
-        WRITE_NOT_WRITTEN: WRITE_STATE_FIELD,
-        WRITE_COMPLETE: WRITE_STATE_FIELD,
-    }
-    axis_field = axis_map.get(from_state)
-    if axis_field is None:
-        msg = f"Unknown pipeline state: {from_state!r}"
-        raise ValueError(msg)
-    return bulk_transition_pipeline_axis(db, axis_field, from_state, to_state)
+# ---------------------------------------------------------------------------
+# Library record helpers
+# ---------------------------------------------------------------------------
 
 
 def _get_library_record(db: Database, library_id: str) -> dict[str, Any] | None:
-    """Return one library document by `_id` or bare key without scan enrichment."""
+    """Return one library document by ``_id`` or bare key without scan enrichment."""
     normalized_id = normalize_library_id(library_id)
     return cast("dict[str, Any] | None", db.library.get_library(normalized_id))
 
@@ -313,43 +74,6 @@ def _list_library_records(db: Database) -> list[dict[str, Any]]:
         )
 
     return enriched_docs
-
-
-def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
-    """Batch-upsert library files, ownership edges, and initial state edges."""
-    if not file_docs:
-        return []
-
-    library_ids = [doc.get("library_id") for doc in file_docs]
-    clean_docs = [{key: value for key, value in doc.items() if key != "library_id"} for doc in file_docs]
-
-    # Identify which paths already exist before upserting so state edges are
-    # only initialised for genuinely new files.  Re-initialising an existing
-    # file would silently re-insert the negative-side edges for every axis
-    # (e.g. not_tagged), overwriting transitions that have already occurred
-    # and pushing those files backwards through the pipeline.
-    paths = [d["path"] for d in clean_docs if "path" in d]
-    existing_paths = get_existing_file_paths(db, paths)
-
-    library_id = library_ids[0]
-    if not isinstance(library_id, str) or not all(lid == library_id for lid in library_ids):
-        msg = "All docs in a scan batch must share the same string library_id"
-        raise ValueError(msg)
-
-    file_ids = db.library.add_files_to_library(library_id, clean_docs)
-
-    # Repair existing files whose state edges are missing (e.g. interrupted prior scan).
-    # Using insert-ignoring semantics means already-transitioned edges are untouched.
-    existing_file_ids = [
-        file_id for file_id, doc in zip(file_ids, clean_docs, strict=True) if doc.get("path") in existing_paths
-    ]
-    if existing_file_ids:
-        missing_state_ids = [fid for fid in existing_file_ids if db.app.get_file_state(fid) is None]
-        if missing_state_ids:
-            logger.warning("[scan] Repairing %d file(s) with missing state edges", len(missing_state_ids))
-            initialize_file_states_batch(db, missing_state_ids)
-
-    return file_ids
 
 
 # ---------------------------------------------------------------------------
@@ -612,8 +336,8 @@ def on_scan_complete_pipeline_hook(db: Database, library_id: str) -> None:
     """Transition scan axis to scanned, then derive ml axis from file states.
 
     After a scan completes:
-    - scan axis → scanned
-    - ml axis → ML_processing if untagged files exist, else stays where it is
+    - scan axis to scanned
+    - ml axis to ML_processing if untagged files exist, else stays where it is
 
     Args:
         db: Database instance
@@ -626,200 +350,3 @@ def on_scan_complete_pipeline_hook(db: Database, library_id: str) -> None:
     untagged = count_untagged_files(db, library_id)
     if untagged > 0:
         transition_pipeline_axis(db, library_id, ML_STATE_FIELD, ML_IN_PROGRESS)
-
-
-# ---------------------------------------------------------------------------
-# File snapshots
-# ---------------------------------------------------------------------------
-
-
-def snapshot_existing_files(
-    db: Database,
-    library_id: str,
-) -> tuple[dict[str, dict[str, Any]], bool]:
-    """Load all existing library files and check for tagged files.
-
-    Returns a snapshot of what the DB knows before scanning, used for
-    comparison during the scan loop.
-
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-
-    Returns:
-        Tuple of (existing_files_dict, has_tagged_files) where
-        *existing_files_dict* maps file path → file document.
-
-    """
-    files_tuple = list_library_files(db, limit=1_000_000, offset=0)
-    existing_files_dict: dict[str, dict[str, Any]] = {f["path"]: f for f in files_tuple[0]}
-    has_tagged_files = library_has_tagged_files(db, library_id)
-    return existing_files_dict, has_tagged_files
-
-
-# ---------------------------------------------------------------------------
-# Batch file operations
-# ---------------------------------------------------------------------------
-
-
-def upsert_scanned_files(
-    db: Database,
-    file_entries: list[dict[str, Any]],
-    edge_bootstraps: list[dict[str, Any]] | None = None,
-) -> list[str]:
-    """Batch-upsert scanned file documents and optionally bootstrap state edges.
-
-    Args:
-        db: Database instance
-        file_entries: File documents to upsert
-        edge_bootstraps: Optional edge bootstrap metadata from FileBatchResult.
-            If provided, creates ml_tagged state edges for matching files.
-
-    Returns:
-        List of document _ids (inserted or updated)
-
-    """
-    file_ids = _upsert_batch(db, file_entries)
-
-    if edge_bootstraps:
-        # Build path → id map from results
-        file_id_by_path: dict[str, str] = {}
-        for fid, entry in zip(file_ids, file_entries, strict=True):
-            normalized = entry.get("normalized_path")
-            if normalized:
-                file_id_by_path[normalized] = fid
-
-        bootstrap_file_state_edges(db, edge_bootstraps, file_id_by_path)
-
-    return file_ids
-
-
-def bootstrap_file_state_edges(
-    db: Database,
-    edge_bootstraps: list[dict[str, Any]],
-    file_id_by_path: dict[str, str],
-) -> int:
-    """Create state edges for files based on scan-time metadata.
-
-    Called after upsert_scanned_files to create ml_tagged state edges
-    for files that should skip ML tagging.
-
-    Args:
-        db: Database instance
-        edge_bootstraps: List of edge bootstrap dicts from FileBatchResult
-        file_id_by_path: Map of normalized_path → file _id from upsert results
-
-    Returns:
-        Number of edges created
-
-    """
-    count = 0
-    for bootstrap in edge_bootstraps:
-        normalized_path = bootstrap["normalized_path"]
-        file_id = file_id_by_path.get(normalized_path)
-        if not file_id:
-            continue
-
-        if bootstrap["type"] == "ml_tagged":
-            transition_file_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
-            count += 1
-    return count
-
-
-def remove_deleted_files(db: Database, paths: list[str]) -> int:
-    """Bulk-delete files that are no longer on disk.
-
-    Args:
-        db: Database instance
-        paths: Absolute file paths to remove
-
-    Returns:
-        Number of files deleted
-
-    """
-    file_ids = [
-        str(file_doc["_id"])
-        for path in paths
-        if (file_doc := cast("dict[str, Any] | None", db.library.find_file_by_path_any_library(path))) is not None
-    ]
-    for file_id in file_ids:
-        db.library.remove_file(file_id)
-
-    return len(file_ids)
-
-
-# ---------------------------------------------------------------------------
-# Folder cache
-# ---------------------------------------------------------------------------
-
-
-def get_cached_folders(
-    db: Database,
-    library_id: str,
-) -> dict[str, dict[str, Any]]:
-    """Load all cached folder records for a library.
-
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-
-    Returns:
-        Dict mapping relative folder path → folder record
-
-    """
-    folders = cast("list[dict[str, Any]]", db.library.list_folders_for_library(library_id))
-    return {str(folder["path"]): folder for folder in folders}
-
-
-def save_folder_record(
-    db: Database,
-    library_id: str,
-    rel_path: str,
-    mtime: int,
-    file_count: int,
-    existing_folder_id: str | None = None,
-) -> None:
-    """Upsert a single folder cache record.
-
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-        rel_path: Folder path relative to library root (POSIX-style)
-        mtime: Folder modification time
-        file_count: Number of audio files in the folder
-        existing_folder_id: Existing cached folder document ``_id`` when known
-
-    """
-    if existing_folder_id is not None:
-        db.library.remove_library_folder(library_id, existing_folder_id)
-
-    db.library.add_library_folder(library_id, _folder_doc(library_id, rel_path, mtime, file_count))
-
-
-def cleanup_stale_folders(
-    db: Database,
-    library_id: str,
-    existing_folder_rel_paths: set[str],
-) -> None:
-    """Delete folder records that no longer exist on disk.
-
-    Logs a warning on failure instead of propagating.
-
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-        existing_folder_rel_paths: Set of folder relative paths still on disk
-
-    """
-    try:
-        cached_folders = get_cached_folders(db, library_id)
-        stale_ids = [
-            cast("str", folder_doc.get("_id", _folder_doc_id(library_id, rel_path)))
-            for rel_path, folder_doc in cached_folders.items()
-            if rel_path not in existing_folder_rel_paths
-        ]
-        if stale_ids:
-            for stale_id in stale_ids:
-                db.library.remove_library_folder(library_id, stale_id)
-    except Exception as e:
-        logger.warning("Failed to clean up folder records: %s", e)

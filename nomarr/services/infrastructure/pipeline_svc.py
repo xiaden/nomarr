@@ -8,10 +8,12 @@ import threading
 
 from nomarr.components.library.library_file_state_comp import count_untagged_files, get_uncalibrated_tagged_file_ids
 from nomarr.components.library.library_records_comp import get_library_record
-from nomarr.components.library.scan_lifecycle_comp import (
+from nomarr.components.library.library_scan_state_comp import (
     bulk_transition_pipeline_axis,
     get_libraries_in_axis_state,
     get_pipeline_state,
+)
+from nomarr.components.library.scan_lifecycle_comp import (
     is_scan_stale,
     transition_pipeline_axis,
     update_scan_progress,

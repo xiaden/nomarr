@@ -25,10 +25,8 @@ from nomarr.components.library.library_root_comp import (
     get_base_library_root,
     normalize_library_root,
 )
-from nomarr.components.library.scan_lifecycle_comp import (
-    ensure_scan_state,
-    get_scanning_library_ids,
-)
+from nomarr.components.library.library_scan_state_comp import ensure_scan_state
+from nomarr.components.library.scan_lifecycle_comp import get_scanning_library_ids
 from nomarr.helpers.constants.pipeline_states import PIPELINE_DEFAULTS
 
 logger = logging.getLogger(__name__)

@@ -43,7 +43,7 @@ HEALTH_FRAME_PREFIX = "HEALTH|"
 def _check_idle_pipeline_completion(db: Database, health_pipe: Any) -> int:
     """Transition idle ML-complete libraries and signal calibration health updates."""
     from nomarr.components.library.library_records_comp import find_ml_complete_libraries
-    from nomarr.components.library.scan_lifecycle_comp import transition_pipeline_axis
+    from nomarr.components.library.library_scan_state_comp import transition_pipeline_axis
     from nomarr.helpers.constants.pipeline_states import (
         CAL_NOT_CALIBRATED,
         CAL_STATE_FIELD,

@@ -26,7 +26,7 @@ from nomarr.components.library.library_file_state_comp import (
     get_uncalibrated_tagged_file_ids,
 )
 from nomarr.components.library.library_records_comp import get_library_record, list_library_records
-from nomarr.components.library.scan_lifecycle_comp import get_libraries_in_axis_state
+from nomarr.components.library.library_scan_state_comp import get_libraries_in_axis_state
 from nomarr.components.library.search_files_comp import (
     get_unique_tag_values,
     search_library_files,

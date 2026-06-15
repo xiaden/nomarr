@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from nomarr.persistence.aql import primitives
 from nomarr.persistence.arango_client import SafeDatabase
 
-Document = dict[str, Any]
-
-_FIELD_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.]*$")
-_ARANGO_SYSTEM_FIELDS = frozenset({"_from", "_to", "_key", "_id", "_rev"})
+from ._helpers import Document, _as_document_id, _extract_key, _validate_field_name
+from .file_link_ops import FileLinkOpsMixin
+from .folder_ops import FolderOpsMixin
 
 if TYPE_CHECKING:
     from nomarr.persistence.database.file_states_aql import FileStatesAqlOperations
@@ -22,23 +20,7 @@ class LibraryFileUpsertResult(TypedDict):
     added: int
 
 
-def _extract_key(document_id_or_key: str) -> str:
-    return document_id_or_key.split("/", 1)[1] if "/" in document_id_or_key else document_id_or_key
-
-
-def _as_document_id(collection: str, document_id_or_key: str) -> str:
-    return document_id_or_key if "/" in document_id_or_key else f"{collection}/{document_id_or_key}"
-
-
-def _validate_field_name(field_name: str) -> None:
-    if field_name in _ARANGO_SYSTEM_FIELDS:
-        return
-    if not field_name or field_name.startswith(("_", ".")) or _FIELD_NAME_PATTERN.fullmatch(field_name) is None:
-        msg = f"Invalid field name for AQL interpolation: {field_name!r}"
-        raise ValueError(msg)
-
-
-class LibraryFilesAqlOperations:
+class LibraryFilesAqlOperations(FolderOpsMixin, FileLinkOpsMixin):
     """Thin Tier 2 bindings for library file, folder, and edge operations."""
 
     FILE_COLLECTION = "library_files"
@@ -559,20 +541,6 @@ class LibraryFilesAqlOperations:
         )
         return list(cursor)
 
-    def _delete_files_for_library(self, library_id: str) -> int:
-        file_ids = self.list_library_file_ids(library_id, limit=None)
-        if not file_ids:
-            return 0
-        keys = [_extract_key(file_id) for file_id in file_ids]
-        return primitives.delete_many_by_keys(self._db, self.FILE_COLLECTION, keys)
-
-    def _delete_all_file_links_for_library(self, library_id: str) -> None:
-        primitives.delete_edges(
-            self._db,
-            self.LIBRARY_FILE_EDGE_COLLECTION,
-            from_id=_as_document_id("libraries", library_id),
-        )
-
     def count_files_by_tag(self, tag_key: str, target_value: str) -> int:
         return primitives.count_distinct_edge_sources_to_filtered_vertices(
             self._db,
@@ -600,141 +568,8 @@ class LibraryFilesAqlOperations:
         query_lines.append("    RETURN file")
         return primitives.execute(self._db, "\n".join(query_lines), bind_vars)
 
-    def _link_file_to_library(self, library_id: str, file_id: str) -> None:
-        primitives.upsert_edge(
-            self._db,
-            self.LIBRARY_FILE_EDGE_COLLECTION,
-            _as_document_id("libraries", library_id),
-            _as_document_id(self.FILE_COLLECTION, file_id),
-        )
-
-    def _upsert_file_links_batch(self, links: list[dict[str, Any]]) -> None:
-        for link in links:
-            self._link_file_to_library(
-                str(link["library_id"]),
-                str(link["file_id"]),
-            )
-
-    def _upsert_library_file_links_batch(self, links: list[dict[str, Any]]) -> None:
-        for link in links:
-            self._link_file_to_library(
-                str(link["_from"]),
-                str(link["_to"]),
-            )
-
-    def add_folder(self, payload: dict[str, Any]) -> str:
-        return primitives.insert_document(self._db, self.FOLDER_COLLECTION, payload)
-
-    def add_library_folder(self, library_id: str, payload: dict[str, Any]) -> str:
-        """Create a folder document and link it to a library.
-
-        Args:
-            library_id: Document ID of the library that should own the folder.
-            payload: Folder fields to store in the new document.
-
-        Returns:
-            The document ID of the created folder.
-        """
-        folder_id = self.add_folder(payload)
-        self._link_folder_to_library(library_id, folder_id)
-        return folder_id
-
-    def _link_folder_to_library(self, library_id: str, folder_id: str) -> None:
-        primitives.upsert_edge(
-            self._db,
-            self.LIBRARY_FOLDER_EDGE_COLLECTION,
-            _as_document_id("libraries", library_id),
-            _as_document_id(self.FOLDER_COLLECTION, folder_id),
-        )
-
-    def get_folder(self, folder_id: str) -> Document | None:
-        results = primitives.get_many_by_keys(self._db, self.FOLDER_COLLECTION, [_extract_key(folder_id)])
-        return results[0] if results else None
-
-    def list_folders_for_library(self, library_id: str) -> list[Document]:
-        return primitives.execute(
-            self._db,
-            """
-            FOR edge IN @@edge_collection
-                FILTER edge._from == @library_id
-                LET folder = DOCUMENT(edge._to)
-                FILTER folder != null
-                SORT folder._key
-                RETURN folder
-            """,
-            {
-                "@edge_collection": self.LIBRARY_FOLDER_EDGE_COLLECTION,
-                "library_id": _as_document_id("libraries", library_id),
-            },
-        )
-
-    def _delete_folder(self, folder_id: str) -> None:
-        primitives.delete_many_by_keys(self._db, self.FOLDER_COLLECTION, [_extract_key(folder_id)])
-
-    def _delete_folder_link(self, library_id: str, folder_id: str) -> None:
-        primitives.delete_edges(
-            self._db,
-            self.LIBRARY_FOLDER_EDGE_COLLECTION,
-            from_id=_as_document_id("libraries", library_id),
-            to_id=_as_document_id(self.FOLDER_COLLECTION, folder_id),
-        )
-
-    def remove_library_folder(self, library_id: str, folder_id: str) -> None:
-        """Remove a library's folder link and then delete the folder document.
-
-        Args:
-            library_id: Document ID of the library linked to the folder.
-            folder_id: Document ID of the folder to unlink and delete.
-        """
-        self._delete_folder_link(library_id, folder_id)
-        self._delete_folder(folder_id)
-
-    def replace_library_folders(self, library_id: str, payloads: list[dict[str, Any]]) -> None:
-        """Replace all folders linked to a library with the provided set.
-
-        Args:
-            library_id: Document ID of the library whose folders should be
-                replaced.
-            payloads: Folder payloads to insert after existing folders are
-                removed.
-        """
-        existing_folder_ids = [
-            str(folder_id)
-            for folder in self.list_folders_for_library(library_id)
-            if isinstance(folder, dict) and (folder_id := folder.get("_id")) is not None
-        ]
-        for folder_id in existing_folder_ids:
-            self.remove_library_folder(library_id, folder_id)
-        for payload in payloads:
-            self.add_library_folder(library_id, payload)
-
-    def _delete_folders_for_library(self, library_key: str) -> int:
-        return primitives.delete_many_by_field(
-            self._db,
-            self.FOLDER_COLLECTION,
-            "library_key",
-            library_key,
-            allowed_fields=self.ALLOWED_FOLDER_FIELDS,
-        )
-
-    def _delete_all_folder_links_for_library(self, library_id: str) -> None:
-        primitives.delete_edges(
-            self._db,
-            self.LIBRARY_FOLDER_EDGE_COLLECTION,
-            from_id=_as_document_id("libraries", library_id),
-        )
-
     def truncate_files(self) -> None:
         self._truncate_collection(self.FILE_COLLECTION)
-
-    def truncate_file_links(self) -> None:
-        self._truncate_collection(self.LIBRARY_FILE_EDGE_COLLECTION)
-
-    def truncate_folder_links(self) -> None:
-        self._truncate_collection(self.LIBRARY_FOLDER_EDGE_COLLECTION)
-
-    def truncate_folders(self) -> None:
-        self._truncate_collection(self.FOLDER_COLLECTION)
 
     def _truncate_collection(self, collection_name: str) -> None:
         self._db.aql.execute(
