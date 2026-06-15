@@ -210,8 +210,8 @@ class VectorCollection:
             FOR edge IN hot_edges
                 LET new_to = CONCAT(@dest_prefix, PARSE_IDENTIFIER(edge._to).key)
                 INSERT { _from: edge._from, _to: new_to } INTO @@edge_col OPTIONS { ignoreErrors: true }
-            FOR edge IN hot_edges
-                REMOVE edge IN @@edge_col OPTIONS { ignoreErrors: true }
+            FOR rem_edge IN hot_edges
+                REMOVE rem_edge IN @@edge_col OPTIONS { ignoreErrors: true }
             """,
             bind_vars={
                 "@edge_col": _VECTOR_EDGE_COLLECTION,

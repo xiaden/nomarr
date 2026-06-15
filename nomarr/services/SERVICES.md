@@ -66,11 +66,21 @@ services/infrastructure/
 ├── cli_bootstrap_svc.py        # CLI initialization
 ├── config_svc.py               # Configuration loading
 ├── file_watcher_svc.py         # Filesystem watching
-├── health_monitor_svc.py       # Component health monitoring
+├── health_monitor_svc/         # Component health monitoring (subpackage with mixins)
+│   ├── __init__.py             # Re-exports HealthMonitorService
+│   ├── _helpers.py             # Shared dataclasses
+│   ├── main.py                 # HealthMonitorService class
+│   ├── deadline_ops.py         # Deadline checking mixin
+│   └── state_transition_ops.py # State transition mixin
 ├── info_svc.py                 # System information
 ├── keys_svc.py                 # API key management
 ├── ml_svc.py                   # ML backend management
-├── worker_system_svc.py        # Worker lifecycle management
+├── worker_system_svc/          # Worker lifecycle management (subpackage with mixins)
+│   ├── __init__.py             # Re-exports WorkerSystemService
+│   ├── _helpers.py             # Shared constants
+│   ├── main.py                 # WorkerSystemService class
+│   ├── gpu_admission_ops.py    # GPU admission mixin
+│   └── worker_death_ops.py     # Worker death handling mixin
 └── workers/                    # Worker implementations
     └── discovery_worker.py     # File discovery worker
 ```
