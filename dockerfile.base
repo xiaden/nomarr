@@ -73,7 +73,7 @@ RUN apt-get purge -y g++ pkg-config git python3-dev \
 RUN python3 -m pip install --no-cache-dir --break-system-packages \
     "numpy==1.26.4" \
     "scipy>=1.13.1" \
-    "onnxruntime-gpu>=1.18.0" \
+    "onnxruntime-gpu>=1.18.0,<1.27.0" \
     "mutagen==1.47.0" \
     "pyyaml==6.0.2" \
     "fastapi==0.115.0" \
