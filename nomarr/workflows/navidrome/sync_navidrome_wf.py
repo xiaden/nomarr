@@ -1,7 +1,7 @@
-"""Sync Navidrome song inventory to graph-based collections.
+"""Sync Navidrome song inventory to graph-based stores.
 
 Walks Navidrome's album inventory via the Subsonic API, resolves song paths to
-Nomarr ``library_files`` using either raw paths or configured prefix remaps,
+Nomarr ``songs`` using either raw paths or configured prefix remaps,
 upserts ``navidrome_tracks`` vertices + ``has_nd_id`` edges, captures per-user
 play counts as ``has_plays`` edges, and removes orphaned tracks no longer
 present in Navidrome.
@@ -97,13 +97,13 @@ def sync_navidrome(
     user_id: str,
     path_prefix_map: list[tuple[str, str]] | None = None,
 ) -> NdSyncResult:
-    """Sync Navidrome's song inventory into graph collections.
+    """Sync Navidrome's song inventory into graph stores.
 
     Walks all albums via ``getAlbumList2`` (paginated), fetches each album's
     songs, optionally rewrites their paths via configured prefix mappings,
     resolves Nomarr file IDs via ``get_files_by_paths_bulk(db, ...)``, and writes
     to ``navidrome_tracks``, ``has_nd_id``, ``navidrome_playcounts``, and
-    ``has_plays`` collections.  Orphan tracks (present in DB but absent from
+    play records.  Orphan tracks (present in DB but absent from
     Navidrome) are cascade-deleted.
 
     Args:
@@ -123,7 +123,7 @@ def sync_navidrome(
     # Step 2: Resolve ND paths via raw paths or configured prefix remapping
     remapped_paths, path_to_doc = _resolve_song_paths(all_songs, db, path_prefix_map or [])
 
-    # Step 3: Build resolved mappings and play edge data
+    # Step 3: Build resolved mappings and play relationships
     nd_ids: list[str] = []
     file_link_mappings: list[dict[str, str]] = []
     play_edges: list[dict[str, Any]] = []
@@ -150,7 +150,7 @@ def sync_navidrome(
                 }
             )
 
-    # Step 4: Upsert track vertices and file link edges (batched)
+    # Step 4: Upsert track vertices and file links (batched)
     tracks_upserted = 0
     for i in range(0, len(nd_ids), _UPSERT_BATCH_SIZE):
         tracks_upserted += bulk_upsert_navidrome_tracks(db, nd_ids[i : i + _UPSERT_BATCH_SIZE])

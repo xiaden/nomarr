@@ -355,7 +355,7 @@ def compute_chromaprint_for_file(path: LibraryPath) -> str:
         path: Validated LibraryPath to audio file
 
     Returns:
-        Chromaprint hash (32-character hex string)
+        Chromaprint fingerprint string
 
     Raises:
         RuntimeError: If audio loading or chromaprint computation fails

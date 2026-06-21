@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from scripts.embedding_research.strategy_binned._constants import AGG_METHODS
 from scripts.embedding_research.strategy_binned._process import compute_agg_mats, compute_retrieval_rows

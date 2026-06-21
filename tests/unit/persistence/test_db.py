@@ -12,6 +12,7 @@ from nomarr.persistence.api import AppDb, AppMaintenanceDb, LibraryDb, LibraryMa
 from nomarr.persistence.api.application import AppLegacyNavidromeDb
 from nomarr.persistence.database.app_aql import AppAqlOperations
 from nomarr.persistence.database.library_files_aql import LibraryFilesAqlOperations
+from nomarr.persistence.schema import CollectionNames
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -169,7 +170,7 @@ def test_database_keeps_compatibility_aliases_pointing_at_tier2_bindings(
 
     expected_aliases = {
         "libraries": "libraries_aql",
-        "library_files": "library_files_aql",
+        CollectionNames.LIBRARY_FILES.value: "library_files_aql",
         "file_states": "file_states_aql",
     }
 

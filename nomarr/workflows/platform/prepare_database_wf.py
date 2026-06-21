@@ -48,7 +48,7 @@ def _is_fresh_database(db: Database) -> bool:
 
 
 def _discover_template_collections(db: Database) -> None:
-    """Scan ArangoDB and register all collections matching template name patterns."""
+    """Scan ArangoDB and register all dynamic template storage names."""
     template_names = list_template_collection_names()
     registered = 0
 
@@ -121,8 +121,8 @@ def prepare_database_workflow(
     # Step 3: Discover and register existing dynamic template collections
     _discover_template_collections(db)
 
-    # Step 4: Prune orphaned library_files documents (no ownership edge).
-    # Runs before ML model registration so any orphan-related vector collections
+    # Step 4: Prune orphaned song documents (no ownership edge).
+    # Runs before ML model registration so any orphan-related vector data
     # are already clean before models are re-registered.
     try:
         from nomarr.workflows.platform.prune_orphaned_files_wf import prune_orphaned_files_workflow
@@ -131,7 +131,7 @@ def prepare_database_workflow(
     except Exception as exc:
         logger.warning("Orphaned file pruning failed (non-fatal): %s", exc, exc_info=True)
 
-    # Step 5: Reseed singleton state vertex documents.
+    # Step 5: Reseed state records.
     # file_states and library_pipeline_states vertices are fixed sets that
     # should always exist.  This is idempotent and repairs any accidental deletion.
     seed_state_documents(db)

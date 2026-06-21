@@ -27,13 +27,13 @@ logger = logging.getLogger(__name__)
 
 
 def _make_calibration_state_key(head_name: str, label: str) -> str:
-    """Build the deterministic calibration_state document key."""
+    """Build the deterministic calibration state key."""
     raw = f"{head_name}:{label}"
     return re.sub(r"[^a-zA-Z0-9_:.@()+,=;$!*'%-]", "_", raw)
 
 
 def count_recent_calibration_states(db: Database, threshold: int) -> int:
-    """Count calibration_state documents updated at or after ``threshold``."""
+    """Count calibration state records updated at or after ``threshold``."""
     docs = db.ml.list_calibration_states()
     return sum(1 for doc in docs if isinstance(doc.get("updated_at"), int) and int(doc["updated_at"]) >= threshold)
 
@@ -50,7 +50,7 @@ def load_calibration_state(
     head_name: str,
     label: str,
 ) -> dict[str, Any] | None:
-    """Load one calibration_state document by its logical identity."""
+    """Load one calibration state record by its logical identity."""
     return cast("dict[str, Any] | None", db.ml.get_calibration_state_view(head_name, label))
 
 
@@ -116,7 +116,7 @@ def save_calibration_state(
 def load_all_calibration_states(
     db: Database,
 ) -> list[dict[str, Any]]:
-    """Return every calibration_state document enriched with model metadata."""
+    """Return every calibration state record enriched with model metadata."""
     return db.ml.list_all_calibration_states_with_models()
 
 
@@ -149,7 +149,7 @@ def delete_calibration_state(
     head_name: str,
     label: str,
 ) -> None:
-    """Delete one calibration_state document and its edge."""
+    """Delete one calibration state record and its edge."""
     calibration_doc = load_calibration_state(db, head_name, label)
     if calibration_doc is None:
         return
@@ -171,7 +171,7 @@ def create_calibration_history_snapshot(
     p95_delta: float | None = None,
     n_delta: int | None = None,
 ) -> str:
-    """Insert a calibration_history snapshot document."""
+    """Insert a calibration history snapshot."""
     doc = {
         "calibration_key": calibration_key,
         "snapshot_at": now_ms().value,
@@ -280,7 +280,7 @@ def update_file_calibration_hashes_batch(
 
     Args:
         db: Database instance
-        file_ids: List of file _id values (e.g. "library_files/abc123").
+        file_ids: List of file _id values (e.g. ``song/abc123``).
 
     """
     for file_id in file_ids:
@@ -347,7 +347,7 @@ def clear_all_calibration_data(db: Database) -> dict[str, int]:
         Summary containing ``files_updated`` and ``meta_keys_cleared``.
 
     """
-    # Truncate calibration collections
+    # Truncate calibration data
     db.ml.maintenance.truncate_calibration_states()
     db.ml.maintenance.truncate_calibration_history()
 

@@ -155,8 +155,8 @@ that user:
 
  | `enabled_types` value | Playlist Name | Description |
  | ----------------------- | --------------- | ------------- |
- | `familiar` | Your Favorites | Sonically coherent mix of tracks near your taste centroid |
- | `discovery` | Discover Weekly | Unplayed tracks near your taste centroid |
+ | `familiar` | Your Favorites | Sonically coherent mix of tracks from your most-played genres, proportionally interleaved from each taste cluster |
+ | `discovery` | Discover Weekly | Unplayed tracks matched across your taste clusters, proportionally interleaved |
  | `hidden_gems` | Hidden Gems | Unplayed tracks from unfamiliar artists |
  | `universal` | Your Mix | Diversified blend sampled across your full taste profile |
  | `genre` | Your {Genre} Mix | One playlist per genre in your taste profile (e.g. "Your Rock Mix") |

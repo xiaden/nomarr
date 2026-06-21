@@ -8,6 +8,7 @@ import pytest
 
 from nomarr.components.library.file_sync_comp import mark_file_processed
 from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
+from nomarr.persistence.schema import CollectionNames
 
 
 class TestMarkFileTagged:
@@ -23,12 +24,12 @@ class TestMarkFileTagged:
     ) -> None:
         mock_db = MagicMock()
 
-        mark_file_processed(mock_db, "library_files/xyz")
+        mark_file_processed(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/xyz")
 
         mock_transition_file_state.assert_called_once_with(
             mock_db,
-            ["library_files/xyz"],
+            [f"{CollectionNames.LIBRARY_FILES.value}/xyz"],
             STATE_NOT_PROCESSED,
             STATE_PROCESSED,
         )
-        mock_persist_last_tagged_at.assert_called_once_with(mock_db, "library_files/xyz")
+        mock_persist_last_tagged_at.assert_called_once_with(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/xyz")

@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from nomarr.services.infrastructure.config_svc import ConfigService
 
-from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones
 from nomarr.helpers.vector_params_helper import compute_nlists
 from nomarr.persistence.db import Database
@@ -43,7 +42,6 @@ class VectorMaintenanceService:
     def promote_and_rebuild(
         self,
         backbone_id: str,
-        library_key: str,
         nlists: int | None = None,
     ) -> None:
         """Promote vectors from hot to cold and rebuild vector index.
@@ -53,7 +51,6 @@ class VectorMaintenanceService:
 
         Args:
             backbone_id: Backbone identifier (e.g., "effnet", "yamnet")
-            library_key: ArangoDB ``_key`` of the library document.
             nlists: Number of HNSW graph lists (optional, auto-calculated if None)
 
         Raises:
@@ -62,39 +59,37 @@ class VectorMaintenanceService:
         """
         # Auto-calculate nlists if not provided
         if nlists is None:
-            stats = self.get_hot_cold_stats(backbone_id, library_key)
+            stats = self.get_hot_cold_stats(backbone_id)
             # Use cold count + hot count for sizing (total vectors after merge)
             total_count = stats["hot_count"] + stats["cold_count"]
-            nlists = self.calculate_optimal_nlists(total_count, library_key)
+            nlists = self.calculate_optimal_nlists(total_count)
             logger.info(
                 f"Auto-calculated nlists={nlists} for backbone={backbone_id} "
                 f"(hot={stats['hot_count']}, cold={stats['cold_count']})"
             )
 
-        logger.info(f"Starting promote & rebuild: backbone={backbone_id}, library={library_key}, nlists={nlists}")
+        logger.info(f"Starting promote & rebuild: backbone={backbone_id}, nlists={nlists}")
 
         try:
             promote_and_rebuild_workflow(
                 db=self.db,
                 backbone_id=backbone_id,
-                library_key=library_key,
                 nlists=nlists,
                 models_dir=self.models_dir,
             )
-            logger.info(f"Promote & rebuild completed: backbone={backbone_id}, library={library_key}")
+            logger.info(f"Promote & rebuild completed: backbone={backbone_id}")
         except Exception as e:
             logger.error(
-                f"Promote & rebuild failed: backbone={backbone_id}, library={library_key}, error={e}",
+                f"Promote & rebuild failed: backbone={backbone_id}, error={e}",
                 exc_info=True,
             )
             raise
 
-    def get_hot_cold_stats(self, backbone_id: str, library_key: str) -> dict[str, int | bool]:
-        """Get hot/cold statistics for a backbone+library.
+    def get_hot_cold_stats(self, backbone_id: str) -> dict[str, int | bool]:
+        """Get hot/cold statistics for a backbone.
 
         Args:
             backbone_id: Backbone identifier
-            library_key: ArangoDB ``_key`` of the library document.
 
         Returns:
             Dict with keys:
@@ -102,32 +97,21 @@ class VectorMaintenanceService:
                 - cold_count: Number of vectors in cold collection
                 - index_exists: Whether cold collection has vector index
         """
-        return self.db.ml.get_embedding_stats(backbone_id, library_key)
+        return self.db.ml.get_embedding_stats(backbone_id)
 
-    def get_library_vector_stats(self, library_id: str) -> list[dict[str, str | int | bool]]:
-        """Get per-backbone vector statistics for a library.
+    def get_backbone_vector_stats(self) -> list[dict[str, str | int | bool]]:
+        """Get per-backbone vector statistics for all backbones.
 
-        Args:
-            library_id: Library document ``_id`` or ``_key``.
+        Iterates all discovered backbones and returns hot/cold stats for each.
 
         Returns:
             List of stats rows containing ``backbone_id``, ``hot_count``,
             ``cold_count``, and ``index_exists``.
-
-        Raises:
-            ValueError: If library not found
-
         """
-        library = get_library_record(self.db, library_id, include_scan=False)
-        if library is None:
-            msg = f"Library not found: {library_id}"
-            raise ValueError(msg)
-
-        library_key = str(library["_key"])
         stats: list[dict[str, str | int | bool]] = []
         for backbone_id in discover_backbones(self.models_dir):
             try:
-                backbone_stats = self.get_hot_cold_stats(backbone_id, library_key)
+                backbone_stats = self.get_hot_cold_stats(backbone_id)
                 stats.append(
                     {
                         "backbone_id": backbone_id,
@@ -137,45 +121,32 @@ class VectorMaintenanceService:
                     }
                 )
             except Exception:
-                logger.warning(
-                    "Failed to get vector stats for backbone %s, library %s", backbone_id, library_key, exc_info=True
-                )
+                logger.warning("Failed to get vector stats for backbone %s", backbone_id, exc_info=True)
                 continue
 
         return stats
 
-    def calculate_optimal_nlists(self, doc_count: int, library_key: str | None = None) -> int:
+    def calculate_optimal_nlists(self, doc_count: int) -> int:
         """Calculate optimal nlists for vector index based on document count.
 
-        Reads per-library ``vector_group_size`` from the library document when
-        *library_key* is provided, falling back to the global
-        ``DynamicConfig.vector_group_size`` default.
+        Uses the global ``vector_group_size`` from dynamic config.
+        No per-library config lookup is performed (vector config is global-only).
 
         Delegates to ``compute_nlists`` helper which uses the N/group_size
         heuristic bounded to [10, 4000].
 
         Args:
             doc_count: Total number of documents
-            library_key: Optional library ``_key`` for per-library config lookup
 
         Returns:
             Optimal nlists value (10-4000)
         """
         group_size: int = self._config_svc.get("vector_group_size", 15)
-
-        if library_key is not None:
-            lib_doc = get_library_record(self.db, library_key, include_scan=False)
-            if lib_doc is not None:
-                lib_group_size = lib_doc.get("vector_group_size")
-                if lib_group_size is not None:
-                    group_size = int(lib_group_size)
-
         return compute_nlists(doc_count, group_size)
 
     def rebuild_index(
         self,
         backbone_id: str,
-        library_key: str,
         nlists: int | None = None,
     ) -> None:
         """Drop and rebuild the vector index without promoting hot vectors.
@@ -186,7 +157,6 @@ class VectorMaintenanceService:
 
         Args:
             backbone_id: Backbone identifier (e.g., "effnet", "yamnet")
-            library_key: ArangoDB ``_key`` of the library document.
             nlists: Number of Voronoi cells (auto-calculated if None)
 
         Raises:
@@ -195,24 +165,23 @@ class VectorMaintenanceService:
             RuntimeError: If index creation fails
         """
         if nlists is None:
-            stats = self.get_hot_cold_stats(backbone_id, library_key)
-            nlists = self.calculate_optimal_nlists(int(stats["cold_count"]), library_key)
+            stats = self.get_hot_cold_stats(backbone_id)
+            nlists = self.calculate_optimal_nlists(int(stats["cold_count"]))
             logger.info(f"Auto-calculated nlists={nlists} for backbone={backbone_id} (cold={stats['cold_count']})")
 
-        logger.info(f"Starting index rebuild: backbone={backbone_id}, library={library_key}, nlists={nlists}")
+        logger.info(f"Starting index rebuild: backbone={backbone_id}, nlists={nlists}")
 
         try:
             rebuild_vector_index_workflow(
                 db=self.db,
                 backbone_id=backbone_id,
-                library_key=library_key,
                 nlists=nlists,
                 models_dir=self.models_dir,
             )
-            logger.info(f"Index rebuild completed: backbone={backbone_id}, library={library_key}")
+            logger.info(f"Index rebuild completed: backbone={backbone_id}")
         except Exception as e:
             logger.error(
-                f"Index rebuild failed: backbone={backbone_id}, library={library_key}, error={e}",
+                f"Index rebuild failed: backbone={backbone_id}, error={e}",
                 exc_info=True,
             )
             raise

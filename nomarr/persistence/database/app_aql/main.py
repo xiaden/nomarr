@@ -6,6 +6,7 @@ from arango.exceptions import DocumentInsertError
 
 from nomarr.persistence.aql import primitives
 from nomarr.persistence.arango_client import SafeDatabase
+from nomarr.persistence.schema import CollectionNames
 
 from ._helpers import Document, _extract_key
 from .pipeline_state_ops import PipelineStateOpsMixin
@@ -15,20 +16,20 @@ from .worker_claim_ops import WorkerClaimOpsMixin
 class AppAqlOperations(WorkerClaimOpsMixin, PipelineStateOpsMixin):
     """Thin Tier 2 bindings for app-domain persistence collections."""
 
-    META_COLLECTION = "meta"
-    LOCK_COLLECTION = "locks"
-    WORKER_CLAIM_COLLECTION = "worker_claims"
-    HEALTH_COLLECTION = "health"
-    VRAM_PROMISE_COLLECTION = "vram_promises"
-    PIPELINE_STATE_COLLECTION = "library_pipeline_states"
-    PIPELINE_STATE_EDGE_COLLECTION = "library_has_pipeline_state"
-    FILE_STATE_EDGE_COLLECTION = "file_has_state"
-    SCAN_COLLECTION = "library_scans"
-    LIBRARY_SCAN_EDGE_COLLECTION = "library_has_scan"
-    MIGRATION_COLLECTION = "applied_migrations"
-    SESSION_COLLECTION = "sessions"
-    WORKER_RESTART_POLICY_COLLECTION = "worker_restart_policy"
-    CALIBRATION_STATE_COLLECTION = "calibration_state"
+    META_COLLECTION = CollectionNames.META.value
+    LOCK_COLLECTION = CollectionNames.LOCKS.value
+    WORKER_CLAIM_COLLECTION = CollectionNames.WORKER_CLAIMS.value
+    HEALTH_COLLECTION = CollectionNames.HEALTH.value
+    VRAM_PROMISE_COLLECTION = CollectionNames.VRAM_PROMISES.value
+    PIPELINE_STATE_COLLECTION = CollectionNames.LIBRARY_PIPELINE_STATES.value
+    PIPELINE_STATE_EDGE_COLLECTION = CollectionNames.LIBRARY_HAS_PIPELINE_STATE.value
+    FILE_STATE_EDGE_COLLECTION = CollectionNames.FILE_HAS_STATE.value
+    SCAN_COLLECTION = CollectionNames.LIBRARY_SCANS.value
+    LIBRARY_SCAN_EDGE_COLLECTION = CollectionNames.LIBRARY_HAS_SCAN.value
+    MIGRATION_COLLECTION = CollectionNames.APPLIED_MIGRATIONS.value
+    SESSION_COLLECTION = CollectionNames.SESSIONS.value
+    WORKER_RESTART_POLICY_COLLECTION = CollectionNames.WORKER_RESTART_POLICY.value
+    CALIBRATION_STATE_COLLECTION = CollectionNames.CALIBRATION_STATE.value
 
     META_FIELDS = frozenset({"key", "value"})
     MIGRATION_FIELDS = frozenset({"name", "status", "applied_at", "started_at", "migration_version", "duration_ms"})

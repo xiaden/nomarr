@@ -33,14 +33,16 @@ def get_file_tags_with_path(db: Database, file_id: str, nomarr_only: bool = Fals
     tags = get_song_tags(db, file_id, nomarr_only=nomarr_only)
 
     # Transform to expected format for API compatibility
+    # Expand each multi-valued Tag into individual entries
     tags_data = [
         {
-            "key": tag.key,  # API uses "key" for backward compat
+            "key": tag.key,
             "name": tag.key,
-            "value": tag.value[0] if len(tag.value) == 1 else tag.value,  # Flatten single values for API
+            "value": single_value,
             "is_nomarr_tag": tag.key.startswith("nom:"),
         }
         for tag in tags
+        for single_value in tag.value
     ]
 
     return {

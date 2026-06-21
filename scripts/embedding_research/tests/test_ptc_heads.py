@@ -14,7 +14,6 @@ import pytest
 
 from scripts.embedding_research.classify import _compute_ptc_head_acts_for_bins
 
-
 # ---------------------------------------------------------------------------
 # _compute_ptc_head_acts_for_bins
 # ---------------------------------------------------------------------------

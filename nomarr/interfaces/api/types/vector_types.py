@@ -9,19 +9,16 @@ from pydantic import BaseModel, Field
 
 
 class VectorSearchRequest(BaseModel):
-    """Request model for vector similarity search."""
+    """Request model for vector similarity search.
+
+    Cross-library search is the default — collections are per-backbone,
+    not per-library, so library_scope is no longer applicable.
+    """
 
     file_id: str = Field(..., description="Library file document ID to find similar tracks for")
     backbone_id: str = Field(..., description="Backbone identifier (e.g., 'effnet', 'yamnet')")
     limit: int = Field(10, description="Maximum number of results", ge=1, le=100)
     min_score: float = Field(0.0, description="Minimum similarity score threshold", ge=0.0)
-    library_scope: str | None = Field(
-        None,
-        description=(
-            "Search scope: 'own' (same library, default), 'all' (fan-out across "
-            "all libraries), or a specific library _key to search."
-        ),
-    )
 
 
 class VectorSearchResultItem(BaseModel):
@@ -39,10 +36,13 @@ class VectorSearchResponse(BaseModel):
 
 
 class VectorHotColdStats(BaseModel):
-    """Hot/cold statistics for a single backbone."""
+    """Hot/cold statistics for a single backbone.
+
+    Vector collections are now per-backbone (not per-library), so
+    ``library_key`` is removed. Stats are aggregated across all libraries.
+    """
 
     backbone_id: str = Field(..., description="Backbone identifier")
-    library_key: str = Field(..., description="ArangoDB library _key")
     hot_count: int = Field(..., description="Number of vectors in hot collection")
     cold_count: int = Field(..., description="Number of vectors in cold collection")
     index_exists: bool = Field(..., description="Whether cold collection has vector index")
@@ -55,10 +55,13 @@ class VectorStatsResponse(BaseModel):
 
 
 class VectorPromoteRequest(BaseModel):
-    """Request model for promote & rebuild operation."""
+    """Request model for promote & rebuild operation.
+
+    Per-backbone only — ``library_key`` is removed because vector collections
+    are per-backbone, not per-library.
+    """
 
     backbone_id: str = Field(..., description="Backbone identifier (e.g., 'effnet', 'yamnet')")
-    library_key: str = Field(..., description="ArangoDB library _key")
     nlists: int | None = Field(
         None,
         description="Number of HNSW graph lists (auto-calculated if omitted)",
@@ -84,10 +87,13 @@ class VectorGetResponse(BaseModel):
 
 
 class VectorRebuildIndexRequest(BaseModel):
-    """Request model for rebuild-index operation."""
+    """Request model for rebuild-index operation.
+
+    Per-backbone only — ``library_key`` is removed because vector collections
+    are per-backbone, not per-library.
+    """
 
     backbone_id: str = Field(..., description="Backbone identifier (e.g., 'effnet', 'yamnet')")
-    library_key: str = Field(..., description="ArangoDB library _key")
     nlists: int | None = Field(
         None,
         description="Number of Voronoi cells (auto-calculated if omitted)",

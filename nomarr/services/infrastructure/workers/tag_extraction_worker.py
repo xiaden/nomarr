@@ -39,7 +39,7 @@ def _process_file(db: Database, file_id: str) -> None:
     """Extract tags for one file and transition it to hydrated.
 
     Steps:
-    1. Load file document and resolve absolute path
+    1. Load track record and resolve absolute path
     2. Extract audio metadata (mutagen via extract_metadata)
     3. Persist nom: tags to DB (save_file_tags)
     4. Seed entity graph (artist, album, genre etc.)
@@ -48,7 +48,7 @@ def _process_file(db: Database, file_id: str) -> None:
 
     Args:
         db: Database instance
-        file_id: Full file document ``_id`` (e.g. ``library_files/12345``)
+        file_id: Full track record ``_id`` (e.g. ``"song/12345"``)
 
     Raises:
         Exception: Propagated to caller for error counting and state transition
@@ -58,6 +58,7 @@ def _process_file(db: Database, file_id: str) -> None:
     from nomarr.components.library.file_sync_comp import save_file_tags
     from nomarr.components.library.metadata_extraction_comp import extract_metadata
     from nomarr.components.metadata.entity_seeding_comp import seed_entities_for_scan_batch
+    from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
 
     file_doc = db.library.get_file(file_id)
     if file_doc is None:
@@ -76,13 +77,17 @@ def _process_file(db: Database, file_id: str) -> None:
     # Persist nom: tags stored inside the audio file
     nom_tags: dict = metadata.get("nom_tags") or {}
     if nom_tags:
-        prefixed = {k if k.startswith(f"{namespace}:") else f"{namespace}:{k}": [v] for k, v in nom_tags.items()}
+        parsed_nom_tags = parse_tag_values(nom_tags)
+        prefixed = {
+            (f"{namespace}:{name}" if not name.startswith(f"{namespace}:") else name): values
+            for name, values in parsed_nom_tags.items()
+        }
         save_file_tags(db, file_id, prefixed)
 
     # Seed entity graph (artist, album, genre etc.)
     seed_entities_for_scan_batch(db, [file_id], {file_id: metadata})
 
-    # Update duration_seconds on the file document if not already set
+    # Update duration_seconds on the track record if not already set
     duration = metadata.get("duration")
     if duration is not None and not file_doc.get("duration_seconds"):
         db.library.update_file(file_id, {"duration_seconds": duration})

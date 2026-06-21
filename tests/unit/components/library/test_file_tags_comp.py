@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.components.library.file_tags_comp import get_file_tags_with_path
+from nomarr.persistence.schema import CollectionNames
 
 
 class TestGetFileTagsWithPath:
@@ -26,10 +27,10 @@ class TestGetFileTagsWithPath:
                 "nomarr.components.library.file_tags_comp.get_song_tags",
             ) as mock_get_song_tags,
         ):
-            result = get_file_tags_with_path(mock_db, "library_files/missing")
+            result = get_file_tags_with_path(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/missing")
 
         assert result is None
-        mock_get_file_by_id.assert_called_once_with(mock_db, "library_files/missing")
+        mock_get_file_by_id.assert_called_once_with(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/missing")
         mock_get_song_tags.assert_not_called()
 
     @pytest.mark.unit
@@ -48,11 +49,13 @@ class TestGetFileTagsWithPath:
                 return_value=[],
             ) as mock_get_song_tags,
         ):
-            result = get_file_tags_with_path(mock_db, "library_files/1")
+            result = get_file_tags_with_path(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/1")
 
         assert result == {"path": "D:/Music/song.flac", "tags": []}
-        mock_get_file_by_id.assert_called_once_with(mock_db, "library_files/1")
-        mock_get_song_tags.assert_called_once_with(mock_db, "library_files/1", nomarr_only=False)
+        mock_get_file_by_id.assert_called_once_with(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/1")
+        mock_get_song_tags.assert_called_once_with(
+            mock_db, f"{CollectionNames.LIBRARY_FILES.value}/1", nomarr_only=False
+        )
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -73,7 +76,7 @@ class TestGetFileTagsWithPath:
                 return_value=[tag],
             ),
         ):
-            result = get_file_tags_with_path(mock_db, "library_files/1")
+            result = get_file_tags_with_path(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/1")
 
         assert result == {
             "path": "D:/Music/song.flac",
@@ -89,7 +92,7 @@ class TestGetFileTagsWithPath:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_transforms_multi_value_tags(self) -> None:
+    def test_transforms_multi_value_tags_to_individual_entries(self) -> None:
         mock_db = MagicMock()
         file_doc = {"path": "D:/Music/song.flac"}
         tag = MagicMock()
@@ -106,7 +109,7 @@ class TestGetFileTagsWithPath:
                 return_value=[tag],
             ),
         ):
-            result = get_file_tags_with_path(mock_db, "library_files/1")
+            result = get_file_tags_with_path(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/1")
 
         assert result == {
             "path": "D:/Music/song.flac",
@@ -114,9 +117,15 @@ class TestGetFileTagsWithPath:
                 {
                     "key": "genre",
                     "name": "genre",
-                    "value": ["a", "b"],
+                    "value": "a",
                     "is_nomarr_tag": False,
-                }
+                },
+                {
+                    "key": "genre",
+                    "name": "genre",
+                    "value": "b",
+                    "is_nomarr_tag": False,
+                },
             ],
         }
 
@@ -136,6 +145,8 @@ class TestGetFileTagsWithPath:
                 return_value=[],
             ) as mock_get_song_tags,
         ):
-            get_file_tags_with_path(mock_db, "library_files/1", nomarr_only=True)
+            get_file_tags_with_path(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/1", nomarr_only=True)
 
-        mock_get_song_tags.assert_called_once_with(mock_db, "library_files/1", nomarr_only=True)
+        mock_get_song_tags.assert_called_once_with(
+            mock_db, f"{CollectionNames.LIBRARY_FILES.value}/1", nomarr_only=True
+        )

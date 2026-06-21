@@ -5,6 +5,7 @@ from typing import Any
 from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.persistence.aql import primitives
 from nomarr.persistence.arango_client import SafeDatabase
+from nomarr.persistence.schema import CollectionNames
 
 _NEGATIVE_FILE_STATES = tuple(state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_"))
 
@@ -16,8 +17,9 @@ def _as_document_id(collection: str, document_id_or_key: str) -> str:
 class FileStatesAqlOperations:
     """Thin Tier 2 bindings for file-state graph operations."""
 
-    STATE_COLLECTION = "file_states"
-    EDGE_COLLECTION = "file_has_state"
+    FILE_COLLECTION = CollectionNames.LIBRARY_FILES.value
+    STATE_COLLECTION = CollectionNames.FILE_STATES.value
+    EDGE_COLLECTION = CollectionNames.FILE_HAS_STATE.value
 
     def __init__(self, db: SafeDatabase) -> None:
         self._db = db
@@ -33,7 +35,7 @@ class FileStatesAqlOperations:
             """,
             bind_vars={
                 "@edge_collection": self.EDGE_COLLECTION,
-                "file_id": _as_document_id("library_files", file_id),
+                "file_id": _as_document_id(self.FILE_COLLECTION, file_id),
             },
         )
         results = list(cursor)
@@ -60,7 +62,7 @@ class FileStatesAqlOperations:
     def transition_file_states(self, file_ids: list[str], from_state: str, to_state: str) -> None:
         if not file_ids:
             return
-        normalized_ids = [_as_document_id("library_files", file_id) for file_id in file_ids]
+        normalized_ids = [_as_document_id(self.FILE_COLLECTION, file_id) for file_id in file_ids]
         edge_collection = self.EDGE_COLLECTION
         from_state_id = _as_document_id(self.STATE_COLLECTION, from_state)
         to_state_id = _as_document_id(self.STATE_COLLECTION, to_state)
@@ -128,12 +130,12 @@ class FileStatesAqlOperations:
         primitives.upsert_edge(
             self._db,
             self.EDGE_COLLECTION,
-            _as_document_id("library_files", file_id),
+            _as_document_id(self.FILE_COLLECTION, file_id),
             _as_document_id(self.STATE_COLLECTION, state),
         )
 
     def delete_file_state_edges(self, file_ids: list[str]) -> None:
-        normalized_ids = [_as_document_id("library_files", file_id) for file_id in file_ids]
+        normalized_ids = [_as_document_id(self.FILE_COLLECTION, file_id) for file_id in file_ids]
         primitives.delete_edges_by_from_list(self._db, self.EDGE_COLLECTION, normalized_ids)
 
     def count_files_in_state(self, state: str) -> int:

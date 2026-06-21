@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, TypedDict
 
-from nomarr.components.library.library_file_mutation_comp import get_file_library_key
 from nomarr.components.library.library_file_query_comp import get_files_by_ids_with_tags
 from nomarr.components.ml.vectors.ml_vector_retrieve_comp import (
     get_cold_track_vector,
@@ -86,16 +85,8 @@ def find_similar_tracks(
 
     logger.debug("Seed descriptor resolved to file_id %s", seed_file_id)
 
-    # Auto-resolve library_key from the file document (library_id field is "libraries/{key}")
-    library_key = get_file_library_key(db, seed_file_id)
-    if library_key is None:
-        msg = f"Could not resolve library for file '{seed_file_id}'. File may have been deleted."
-        raise ValueError(msg)
-
-    logger.debug("Resolved library_key=%s for file_id %s", library_key, seed_file_id)
-
-    # 2. Get seed vector from cold collection through the vector component
-    seed_doc = get_cold_track_vector(db, seed_file_id, backbone_id, library_key)
+    # 2. Get seed vector from per-backbone cold collection (no library_key needed)
+    seed_doc = get_cold_track_vector(db, seed_file_id, backbone_id)
     if seed_doc is None:
         msg = (
             f"No vector embedding found for file '{seed_file_id}' "
@@ -106,12 +97,11 @@ def find_similar_tracks(
     seed_vector: list[float] = seed_doc["vector_n"]
     logger.debug("Seed vector retrieved, dim=%d", len(seed_vector))
 
-    # 3. ANN search on cold collection
+    # 3. ANN search on per-backbone cold collection
     fetch_limit = count + 1  # +1 for potential self-match
     raw_results = search_similar_cold_track_vectors(
         db=db,
         backbone_id=backbone_id,
-        library_key=library_key,
         seed_vector=seed_vector,
         result_limit=fetch_limit,
         vector_group_size=vector_group_size,

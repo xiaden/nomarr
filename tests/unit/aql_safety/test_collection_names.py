@@ -94,6 +94,7 @@ class TestExtractBindVarCollectionNames:
 
 
 @pytest.mark.unit
+@pytest.mark.slow
 def test_aql_collection_names_are_valid() -> None:
     """Persistence AQL should reference only whitelisted collection names."""
     violations: list[tuple[str, int, str]] = []

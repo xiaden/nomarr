@@ -33,12 +33,10 @@ from nomarr.interfaces.api.types.vector_types import (
     VectorStatsResponse,
 )
 from nomarr.interfaces.api.web.dependencies import (
-    get_library_service,
     get_ml_service,
     get_vector_maintenance_service,
     get_vector_search_service,
 )
-from nomarr.services.domain.library_svc import LibraryService
 from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
 from nomarr.services.domain.vector_search_svc import VectorSearchService
 from nomarr.services.infrastructure.ml_svc import MLService
@@ -75,7 +73,8 @@ async def search_vectors(
     """Search for similar vectors using ANN.
 
     Resolves the source track's vector internally from file_id, then
-    searches cold collection(s). Returns results as of last rebuild.
+    searches the per-backbone cold collection. Cross-library search is
+    the default (collections are per-backbone, not per-library).
 
     Requires:
     - Authentication (admin or library owner)
@@ -93,13 +92,12 @@ async def search_vectors(
 
     """
     try:
-        # Call service layer
+        # Call service layer (library_scope removed — collections are per-backbone)
         results = vector_search_service.search_similar_tracks(
             file_id=decode_id(request.file_id),
             backbone_id=request.backbone_id,
             limit=request.limit,
             min_score=request.min_score,
-            library_scope=request.library_scope,
         )
 
         # Convert to response model
@@ -145,7 +143,7 @@ async def get_track_vector(
 
     Args:
         backbone_id: Backbone identifier (e.g., "effnet", "yamnet")
-        file_id: Library file document ID (HTTP-encoded, e.g. "library_files:123")
+        file_id: Library file document ID (HTTP-encoded, e.g. "<collection_name>:<id>")
 
     Returns:
         VectorGetResponse with the track's embedding vector
@@ -177,14 +175,13 @@ async def get_track_vector(
 
 @router.get("/stats", dependencies=[Depends(verify_session)])
 async def get_vector_stats(
-    ml_service: MLService = Depends(get_ml_service),
     vector_maintenance_service: VectorMaintenanceService = Depends(get_vector_maintenance_service),
-    library_service: LibraryService = Depends(get_library_service),
 ) -> VectorStatsResponse:
     """Get hot/cold statistics for all backbones.
 
-    Returns stats for all registered vector backbones.
-    Use this endpoint to monitor hot collection sizes and decide when to rebuild.
+    Returns per-backbone stats (library enumeration removed — collections
+    are per-backbone, not per-library). Use this endpoint to monitor hot
+    collection sizes and decide when to rebuild.
 
     Requires:
     - Authentication (admin only)
@@ -193,32 +190,19 @@ async def get_vector_stats(
         VectorStatsResponse with stats for all backbones
 
     """
-    known_backbones = ml_service.list_backbones()
 
     def _get_stats_sync() -> list[VectorHotColdStats]:
         """Run blocking DB queries in thread pool."""
-        stats_list = []
-        libraries = library_service.list_libraries()
-        for lib in libraries:
-            library_key = lib._key
-            for backbone_id in known_backbones:
-                try:
-                    stats = vector_maintenance_service.get_hot_cold_stats(backbone_id, library_key=library_key)
-                    stats_list.append(
-                        VectorHotColdStats(
-                            backbone_id=backbone_id,
-                            library_key=library_key,
-                            hot_count=int(stats["hot_count"]),
-                            cold_count=int(stats["cold_count"]),
-                            index_exists=bool(stats["index_exists"]),
-                        )
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to get stats for backbone {backbone_id}, library {library_key}: {e}", exc_info=True
-                    )
-                    continue
-        return stats_list
+        stats_rows = vector_maintenance_service.get_backbone_vector_stats()
+        return [
+            VectorHotColdStats(
+                backbone_id=str(row["backbone_id"]),
+                hot_count=int(row["hot_count"]),
+                cold_count=int(row["cold_count"]),
+                index_exists=bool(row["index_exists"]),
+            )
+            for row in stats_rows
+        ]
 
     # Run blocking DB operations in thread pool to avoid blocking event loop
     loop = asyncio.get_running_loop()
@@ -255,9 +239,9 @@ async def promote_vectors(
     """
     try:
         # Call service layer (synchronous - blocks until complete)
+        # library_key removed — collections are per-backbone, not per-library
         vector_maintenance_service.promote_and_rebuild(
             backbone_id=request.backbone_id,
-            library_key=request.library_key,
             nlists=request.nlists,
         )
 
@@ -310,9 +294,9 @@ async def rebuild_vector_index(
         504: If operation times out (>10 minutes)
     """
     try:
+        # library_key removed — collections are per-backbone, not per-library
         vector_maintenance_service.rebuild_index(
             backbone_id=request.backbone_id,
-            library_key=request.library_key,
             nlists=request.nlists,
         )
 

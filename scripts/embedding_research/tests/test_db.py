@@ -5,8 +5,6 @@ All tests use an in-memory DuckDB connection -- no file I/O.
 
 from __future__ import annotations
 
-import logging
-
 import duckdb
 import pandas as pd
 import pytest

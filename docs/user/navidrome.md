@@ -213,7 +213,7 @@ If you’ve enabled **calibration**, tag thresholds are automatically tuned to y
 
 ## Personal Playlists (Taste-Based)
 
-Nomarr can generate playlists automatically based on your Navidrome play history by building a *taste profile* — a vector centroid derived from your most-played tracks. These playlists are distinct from the rule-builder playlists: they require no configuration of tag thresholds and adapt to your listening over time.
+Nomarr can generate playlists automatically based on your Navidrome play history by building a *taste profile* — a set of genre-scoped clusters derived from your most-played tracks, capturing each facet of your listening taste. These playlists are distinct from the rule-builder playlists: they require no configuration of tag thresholds and adapt to your listening over time.
 
 **Playlist types generated:**
 
@@ -245,6 +245,7 @@ All `pp_*` settings are configurable from the Web UI settings panel:
  | `pp_max_songs` | `50` | Maximum songs per generated playlist |
  | `pp_min_songs` | `10` | Minimum songs required for a playlist to be kept |
  | `pp_max_genre_playlists` | `5` | Maximum number of genre-focused playlists to generate per run (max: 25) |
+ | `pp_max_clusters` | `10` | Maximum number of genre clusters per taste profile. Caps ANN query count to clusters × 4 builders. |
  | `pp_overwrite_playlists` | `true` | Replace existing playlists instead of appending |
  | `pp_type_familiar` | `true` | Generate Familiar Favorites playlist |
  | `pp_type_discovery` | `true` | Generate Discovery playlist |

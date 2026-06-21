@@ -8,6 +8,7 @@ import pytest
 
 from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.persistence.database.file_states_aql import FileStatesAqlOperations
+from nomarr.persistence.schema import CollectionNames
 
 _EXPECTED_NEGATIVE_FILE_STATES = tuple(state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_"))
 
@@ -17,14 +18,14 @@ _EXPECTED_NEGATIVE_FILE_STATES = tuple(state for state in ALL_STATE_VERTICES if 
 def test_bootstrap_file_states_adds_negative_states_for_each_unique_file() -> None:
     db = MagicMock()
     ops = FileStatesAqlOperations(db)
-    file_ids = ["library_files/1", "library_files/2"]
+    file_ids = [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"]
 
     with patch.object(ops, "add_file_state_edge") as add_edge:
         ops.bootstrap_file_states(file_ids)
 
     assert add_edge.call_args_list == [
-        *(call("library_files/1", state) for state in _EXPECTED_NEGATIVE_FILE_STATES),
-        *(call("library_files/2", state) for state in _EXPECTED_NEGATIVE_FILE_STATES),
+        *(call(f"{CollectionNames.LIBRARY_FILES.value}/1", state) for state in _EXPECTED_NEGATIVE_FILE_STATES),
+        *(call(f"{CollectionNames.LIBRARY_FILES.value}/2", state) for state in _EXPECTED_NEGATIVE_FILE_STATES),
     ]
 
 
@@ -35,12 +36,18 @@ def test_bootstrap_file_states_deduplicates_duplicate_file_ids() -> None:
     ops = FileStatesAqlOperations(db)
 
     with patch.object(ops, "add_file_state_edge") as add_edge:
-        ops.bootstrap_file_states(["library_files/1", "library_files/1", "library_files/2"])
+        ops.bootstrap_file_states(
+            [
+                f"{CollectionNames.LIBRARY_FILES.value}/1",
+                f"{CollectionNames.LIBRARY_FILES.value}/1",
+                f"{CollectionNames.LIBRARY_FILES.value}/2",
+            ]
+        )
 
     processed_file_ids = [mock_call.args[0] for mock_call in add_edge.call_args_list]
 
-    assert processed_file_ids.count("library_files/1") == len(_EXPECTED_NEGATIVE_FILE_STATES)
-    assert processed_file_ids.count("library_files/2") == len(_EXPECTED_NEGATIVE_FILE_STATES)
+    assert processed_file_ids.count(f"{CollectionNames.LIBRARY_FILES.value}/1") == len(_EXPECTED_NEGATIVE_FILE_STATES)
+    assert processed_file_ids.count(f"{CollectionNames.LIBRARY_FILES.value}/2") == len(_EXPECTED_NEGATIVE_FILE_STATES)
     assert len(add_edge.call_args_list) == 2 * len(_EXPECTED_NEGATIVE_FILE_STATES)
 
 
@@ -63,10 +70,16 @@ def test_mark_files_processed_transitions_deduplicated_files_to_tagged() -> None
     ops = FileStatesAqlOperations(db)
 
     with patch.object(ops, "transition_file_states") as transition_states:
-        ops.mark_files_processed(["library_files/1", "library_files/1", "library_files/2"])
+        ops.mark_files_processed(
+            [
+                f"{CollectionNames.LIBRARY_FILES.value}/1",
+                f"{CollectionNames.LIBRARY_FILES.value}/1",
+                f"{CollectionNames.LIBRARY_FILES.value}/2",
+            ]
+        )
 
     transition_states.assert_called_once_with(
-        ["library_files/1", "library_files/2"],
+        [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"],
         STATE_NOT_PROCESSED,
         STATE_PROCESSED,
     )

@@ -67,6 +67,7 @@ class TestWebAdminRestartEndpoint:
         mock_create_task.assert_called_once()
         mock_execv.assert_not_called()
 
+    @pytest.mark.slow
     def test_do_restart_calls_stop_before_execv(self, client: TestClient) -> None:
         class FakeTask:
             def __init__(self) -> None:

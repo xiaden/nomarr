@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 def rebuild_vector_index_workflow(
     db: Database,
     backbone_id: str,
-    library_key: str,
     nlists: int,
     models_dir: str,
 ) -> None:
@@ -29,11 +28,11 @@ def rebuild_vector_index_workflow(
 
     Does not touch hot collection or perform any hot-to-cold drain.
     Cold collection must already exist and be populated.
+    Vector collections are per-backbone (no library_key needed).
 
     Args:
         db: Database instance.
         backbone_id: Backbone identifier (e.g., "discogs_effnet").
-        library_key: ArangoDB ``_key`` of the library document.
         nlists: Number of Voronoi cells for the new index.
         models_dir: Path to ML models directory (for embed_dim derivation).
 
@@ -44,15 +43,14 @@ def rebuild_vector_index_workflow(
 
     """
     logger.info(
-        "[rebuild index wf] Starting for backbone=%s library=%s nlists=%d",
+        "[rebuild index wf] Starting for backbone=%s nlists=%d",
         backbone_id,
-        library_key,
         nlists,
     )
 
     embed_dim = derive_embed_dim(models_dir, backbone_id)
     logger.info("[rebuild index wf] embed_dim=%d for %s", embed_dim, backbone_id)
 
-    db.ml.rebuild_library_embedding_index(backbone_id, library_key, embed_dim, nlists)
+    db.ml.rebuild_backbone_embedding_index(backbone_id, embed_dim, nlists)
 
-    logger.info("[rebuild index wf] Completed for backbone=%s library=%s", backbone_id, library_key)
+    logger.info("[rebuild index wf] Completed for backbone=%s", backbone_id)

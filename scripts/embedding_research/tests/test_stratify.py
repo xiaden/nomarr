@@ -27,7 +27,7 @@ def test_budget_guardrail(con) -> None:
 
     result = run_stratify(con, {"limit": 9, "song_ids": None}, "aabbccdd00000000")
     tol = _budget_tolerance(9, {})
-    assert 1 <= len(result) <= (9 + int(round(tol * 3)))
+    assert 1 <= len(result) <= (9 + round(tol * 3))
 
 
 def test_genre_pass(con) -> None:

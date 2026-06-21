@@ -82,6 +82,8 @@ Run the test suite for the affected area.
 
 Let sub-analyzers work one cycle. Incorporate results.
 
+**Critical: Sub-analyzers handle their own gaps.** QA-TestAnalyzer spawns QA-TestGenerator for any missing tests. Do NOT report TEST_GAP issues as individual findings in your report — the sub-analyzer chain resolves them. Only the sub-analyzer reports (testAnalyzerReport, docsAnalyzerReport) reflect their status. You never create issues for gaps the sub-analyzers handle; they either self-heal (PASS) or surface via their report status.
+
 ### 5. Report — every time, all findings
 
 ```yaml
@@ -113,15 +115,18 @@ ALL findings in one report. No holding back for round 2.
 
 | Severity | Criteria | Routing |
 | --- | --- | --- |
-| `MINOR` | Typos, lint, missing type hints, simple gaps | → Fixer |
-| `PLANNING_GAP` | Missing methods, wrong scope, plan was incomplete | → Planner |
+| `MINOR` | Typos, lint, missing type hints, simple gaps, TEST_GAP/DOC_GAP (handled via sub-analyzers) | → Fixer |
+| `PLANNING_GAP` | Missing methods, wrong scope, plan was incomplete, missing logic | → Planner |
 | `CRITICAL` | Architectural violation, impossible requirement | → Director |
 | `PLAN_ERROR` | Plan/contract is the defective party | → amend plan |
+
+**TEST_GAP and DOC_GAP are NEVER PLANNING_GAP.** Test/documentation gaps are MINOR severity and are resolved by the sub-analyzer chain (QA-TestAnalyzer → QA-TestGenerator, QA-DocsAnalyzer → QA-DocsGenerator). Only report TEST_GAP/DOC_GAP as individual issues if the sub-analyzer report indicates GENERATION_FAILED — and even then, severity is MINOR, never PLANNING_GAP.
 
 ## Principles
 
 1. **One pass, full review.** Every check category runs. No early exits. All findings in one report.
 2. **Depth scales with tier.** Shallow for trivial, thorough for risky. But always complete.
 3. **Sub-analyzers on tier.** Tier 1 skips both. Tier 2 dispatches on need. Tier 3 dispatches both.
-4. **No re-dos within a round.** Once you've read a file, linted a layer, or run tests — you're done. Don't go back.
+4. **Sub-analyzers self-heal.** QA-TestAnalyzer spawns QA-TestGenerator for gaps. The reviewer does NOT create individual issues for gaps the sub-analyzers handle. Only the sub-reports reflect test/documentation status.
+5. **No re-dos within a round.** Once you've read a file, linted a layer, or run tests — you're done. Don't go back.
 5. **Specificity matters.** File, line, exact issue. Vague findings waste everyone's time.

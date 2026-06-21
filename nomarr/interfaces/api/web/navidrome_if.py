@@ -17,6 +17,7 @@ from nomarr.interfaces.api.types.navidrome_types import (
     GetTemplateSummaryResponse,
     NavidromeConfigResponse,
     NavidromeStatusResponse,
+    PersonalPlaylistsRequest,
     PingResponse,
     PlaylistDescriptorEntry,
     PlaylistGenerateRequest,
@@ -222,15 +223,27 @@ async def web_navidrome_sync_songs(
 
 @router.post("/generate-personal-playlists", dependencies=[Depends(verify_session)])
 async def web_generate_personal_playlists(
+    request: PersonalPlaylistsRequest,
     navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> TriggerPersonalPlaylistsResponse:
     """Generate personal playlists and return portable track descriptors.
 
-    Returns playlists with track descriptors that the Navidrome plugin can use
-    to resolve to Navidrome mediafile IDs and push on its side.
+    Accepts play history from the Navidrome plugin and returns playlists
+    with track descriptors the plugin resolves to Navidrome mediafile IDs.
     """
+    from nomarr.helpers.dto.navidrome_dto import TrackPlayData
+
+    top_plays: list[TrackPlayData] = [
+        TrackPlayData(
+            file_id=p.file_id,
+            playcount=p.playcount,
+            last_played=p.last_played,
+        )
+        for p in request.top_plays
+    ]
+
     try:
-        gen_result = await asyncio.to_thread(navidrome_service.generate_personal_playlists)
+        gen_result = await asyncio.to_thread(navidrome_service.generate_personal_playlists, top_plays)
 
         if gen_result.status != "ok":
             return TriggerPersonalPlaylistsResponse(

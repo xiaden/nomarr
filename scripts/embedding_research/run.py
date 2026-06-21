@@ -49,8 +49,7 @@ from scripts.embedding_research import common, db, pooling
 from scripts.embedding_research.cache import binned_ctp, binned_ptc, flat_vecs
 from scripts.embedding_research.common.analyze import AnalyzeCfg
 from scripts.embedding_research.config import DB_PATH, HEAD_LABELS, HEADS, OUTPUT_ROOT, PATCHES_DIR
-from scripts.embedding_research.helpers.binning import BIN_MODES
-from scripts.embedding_research.helpers.binning import CTP_SCORE_THRESHOLDS
+from scripts.embedding_research.helpers.binning import BIN_MODES, CTP_SCORE_THRESHOLDS
 from scripts.embedding_research.helpers.binning import DIST_THRESHOLDS as STD_THRESHOLDS
 from scripts.embedding_research.helpers.toml import load_research_config as _load_research_config
 from scripts.embedding_research.helpers.toml import load_research_config_bytes as _load_raw_cfg

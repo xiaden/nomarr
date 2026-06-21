@@ -70,6 +70,7 @@ class DynamicConfig:
     pp_max_songs: int = 50
     pp_min_songs: int = 10
     pp_max_genre_playlists: int = 5
+    pp_max_clusters: int = 10
     pp_overwrite_playlists: bool = True
     pp_type_familiar: bool = True
     pp_type_discovery: bool = True
@@ -209,6 +210,11 @@ DYNAMIC_FIELD_META: dict[str, FieldMeta] = {
     "pp_max_genre_playlists": {
         "label": "Max Genre Playlists",
         "description": "Maximum number of genre-focused playlists to generate per run",
+        "ui_type": "number",
+    },
+    "pp_max_clusters": {
+        "label": "Max Taste Clusters",
+        "description": "Maximum number of genre clusters per taste profile. Caps ANN query count to clusters x 4 builders.",
         "ui_type": "number",
     },
     "pp_overwrite_playlists": {

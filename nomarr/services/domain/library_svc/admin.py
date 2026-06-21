@@ -20,17 +20,12 @@ from nomarr.components.library.library_file_query_comp import get_library_counts
 from nomarr.components.library.library_records_comp import (
     get_library_record,
     list_library_records,
-    update_library_config_fields,
 )
 from nomarr.components.library.update_library_metadata_comp import UpdateLibraryMetadataComp
-from nomarr.components.platform.arango_bootstrap_comp import provision_vectors_track_for_library
-from nomarr.helpers.config_schema import validate_library_config
 from nomarr.helpers.dto.library_dto import LibraryDict
-from nomarr.helpers.dto.vector_config_dto import VectorConfigResult
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
-    from nomarr.services.infrastructure.config_svc import ConfigService
     from nomarr.services.infrastructure.file_watcher_svc import FileWatcherService
 
     from .config import LibraryServiceConfig
@@ -127,11 +122,11 @@ class LibraryAdminMixin:
         file_write_mode: str = "full",
         library_auto_write: bool = False,
     ) -> LibraryDict:
-        """Create a new library and provision vector collections for it.
+        """Create a new library record.
 
-        Creates the library record, then performs idempotent vector
-        provisioning for the new library. Vector provisioning is skipped when
-        no ML models are configured.
+        Creates the library record. Per-backbone vector collections are
+        created once during schema setup (not per-library), so no vector
+        provisioning is needed here.
 
         Args:
             name: Optional display name for the library.
@@ -155,8 +150,6 @@ class LibraryAdminMixin:
             file_write_mode=file_write_mode,
             library_auto_write=library_auto_write,
         )
-        library_key = library_id.split("/", 1)[-1]
-        provision_vectors_track_for_library(self.db.db, self.cfg.models_dir, library_key)
 
         library = self._get_library_or_error(library_id)
         return LibraryDict(**library)
@@ -262,72 +255,3 @@ class LibraryAdminMixin:
     def clear_library_data(self) -> None:
         """Clear all library data (files, tags, scan queue)."""
         clear_library_data(db=self.db, library_root=self.cfg.library_root)
-
-    def get_vector_config(self, library_id: str, config_service: ConfigService) -> VectorConfigResult:
-        """Resolve effective vector config for a library.
-
-        Per-library overrides fall back to global defaults from DynamicConfig.
-
-        Args:
-            library_id: Library _id or _key
-            config_service: ConfigService for global defaults
-
-        Returns:
-            VectorConfigResult with effective values and inheritance flags
-
-        Raises:
-            ValueError: If library not found
-
-        """
-        lib = self._get_library_or_error(library_id)
-        global_group_size: int = config_service.get("vector_group_size", 15)
-        global_thoroughness: int = config_service.get("vector_search_thoroughness", 10)
-        return VectorConfigResult(
-            vector_group_size=global_group_size if lib.get("vector_group_size") is None else lib["vector_group_size"],
-            vector_search_thoroughness=(
-                global_thoroughness
-                if lib.get("vector_search_thoroughness") is None
-                else lib["vector_search_thoroughness"]
-            ),
-            is_group_size_inherited=lib.get("vector_group_size") is None,
-            is_thoroughness_inherited=lib.get("vector_search_thoroughness") is None,
-        )
-
-    def update_vector_config(
-        self,
-        library_id: str,
-        *,
-        vector_group_size: int | None = None,
-        vector_search_thoroughness: int | None = None,
-    ) -> None:
-        """Update per-library vector config fields.
-
-        Non-None values are validated and persisted on the library document.
-        None values clear the override so the library inherits the global default.
-
-        Args:
-            library_id: Library _id or _key
-            vector_group_size: New group size (None to inherit global)
-            vector_search_thoroughness: New thoroughness (None to inherit global)
-
-        Raises:
-            ValueError: If library not found or values out of range
-
-        """
-        self._get_library_or_error(library_id)
-        set_fields: dict[str, Any] = {}
-        unset_fields: list[str] = []
-
-        if vector_group_size is not None:
-            validate_library_config({"vector_group_size": vector_group_size})
-            set_fields["vector_group_size"] = vector_group_size
-        else:
-            unset_fields.append("vector_group_size")
-
-        if vector_search_thoroughness is not None:
-            validate_library_config({"vector_search_thoroughness": vector_search_thoroughness})
-            set_fields["vector_search_thoroughness"] = vector_search_thoroughness
-        else:
-            unset_fields.append("vector_search_thoroughness")
-
-        update_library_config_fields(self.db, library_id, set_fields or None, unset_fields or None)

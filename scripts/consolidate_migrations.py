@@ -86,6 +86,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from nomarr.persistence.schema import CollectionNames
+
 if TYPE_CHECKING:
     from nomarr.persistence.arango_client import DatabaseLike
 
@@ -99,7 +101,7 @@ DESCRIPTION: str = "Consolidated baseline schema verification"
 _REQUIRED_DOCUMENT_COLLECTIONS: list[str] = [
     "meta",
     "libraries",
-    "library_files",
+    CollectionNames.LIBRARY_FILES.value,
     "library_folders",
     "tags",
     "sessions",

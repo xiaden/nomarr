@@ -15,7 +15,7 @@ Audio loading and preprocessing — the entry point of the ML pipeline.
  | -------- | ---------- |
  | `ml_audio_comp` | Audio loading via Essentia MonoLoader (ffmpeg-backed), shutdown handling, duration checks |
  | `ml_preprocess_comp` | Mel spectrogram computation (Essentia Windowing → Spectrum → MelBands), patch extraction with per-backbone parameters |
- | `ml_chromaprint_comp` | Content-based audio fingerprinting (spectral hash) for file move detection |
+ | `ml_chromaprint_comp` | Content-based audio fingerprinting (real Chromaprint via pyacoustid) for file move detection |
 
 ## Patterns
 
@@ -27,4 +27,4 @@ Audio loading and preprocessing — the entry point of the ML pipeline.
 
 - **Upstream:** Called by `inference/` (embedding pipeline) and `library/` (chromaprint for move detection)
 - **Downstream:** Calls `helpers/` for LibraryPath validation
-- **External:** `essentia.standard` (MonoLoader, Windowing, Spectrum, MelBands), `numpy`
+- **External:** `essentia.standard` (MonoLoader, Windowing, Spectrum, MelBands), `numpy`, `chromaprint` (pyacoustid / libchromaprint for audio fingerprinting)

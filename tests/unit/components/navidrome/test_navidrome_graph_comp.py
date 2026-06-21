@@ -23,6 +23,7 @@ from nomarr.components.navidrome.navidrome_graph_comp import (
     upsert_navidrome_play,
     upsert_navidrome_track,
 )
+from nomarr.persistence.schema import CollectionNames
 
 
 @pytest.mark.unit
@@ -30,23 +31,23 @@ class TestEdgeKey:
     """Tests for ``_edge_key``."""
 
     def test_returns_16_char_hex_string(self) -> None:
-        key = _edge_key("navidrome_tracks/abc", "library_files/xyz")
+        key = _edge_key("navidrome_tracks/abc", f"{CollectionNames.LIBRARY_FILES.value}/xyz")
         assert len(key) == 16
         assert all(c in "0123456789abcdef" for c in key)
 
     def test_same_inputs_produce_same_key(self) -> None:
-        assert _edge_key("navidrome_tracks/abc", "library_files/xyz") == _edge_key(
-            "navidrome_tracks/abc", "library_files/xyz"
+        assert _edge_key("navidrome_tracks/abc", f"{CollectionNames.LIBRARY_FILES.value}/xyz") == _edge_key(
+            "navidrome_tracks/abc", f"{CollectionNames.LIBRARY_FILES.value}/xyz"
         )
 
     def test_different_inputs_produce_different_keys(self) -> None:
-        assert _edge_key("navidrome_tracks/abc", "library_files/xyz") != _edge_key(
-            "navidrome_tracks/abc", "library_files/other"
+        assert _edge_key("navidrome_tracks/abc", f"{CollectionNames.LIBRARY_FILES.value}/xyz") != _edge_key(
+            "navidrome_tracks/abc", f"{CollectionNames.LIBRARY_FILES.value}/other"
         )
 
     def test_order_matters(self) -> None:
-        assert _edge_key("navidrome_tracks/abc", "library_files/xyz") != _edge_key(
-            "library_files/xyz", "navidrome_tracks/abc"
+        assert _edge_key("navidrome_tracks/abc", f"{CollectionNames.LIBRARY_FILES.value}/xyz") != _edge_key(
+            f"{CollectionNames.LIBRARY_FILES.value}/xyz", "navidrome_tracks/abc"
         )
 
 
@@ -88,9 +89,11 @@ class TestEnsureNavidromeFileLink:
         db = MagicMock()
 
         with patch("nomarr.components.navidrome.navidrome_graph_comp.bulk_ensure_navidrome_file_links") as mock_bulk:
-            ensure_navidrome_file_link(db, "nd-1", "library_files/f1")
+            ensure_navidrome_file_link(db, "nd-1", f"{CollectionNames.LIBRARY_FILES.value}/f1")
 
-        mock_bulk.assert_called_once_with(db, [{"nd_id": "nd-1", "file_id": "library_files/f1"}])
+        mock_bulk.assert_called_once_with(
+            db, [{"nd_id": "nd-1", "file_id": f"{CollectionNames.LIBRARY_FILES.value}/f1"}]
+        )
 
 
 @pytest.mark.unit
@@ -107,8 +110,8 @@ class TestBulkEnsureNavidromeFileLinks:
         db = MagicMock()
         db.app.legacy_navidrome.bulk_ensure_nd_file_links.return_value = 2
         mappings = [
-            {"nd_id": "nd-1", "file_id": "library_files/f1"},
-            {"nd_id": "nd-2", "file_id": "library_files/f2"},
+            {"nd_id": "nd-1", "file_id": f"{CollectionNames.LIBRARY_FILES.value}/f1"},
+            {"nd_id": "nd-2", "file_id": f"{CollectionNames.LIBRARY_FILES.value}/f2"},
         ]
 
         result = bulk_ensure_navidrome_file_links(db, mappings)
@@ -153,11 +156,11 @@ class TestDeleteNavidromeTracksCascade:
 class TestResolveNavidromeTrackToFile:
     def test_returns_app_result(self) -> None:
         db = MagicMock()
-        db.app.legacy_navidrome.resolve_nd_track_to_file.return_value = "library_files/f1"
+        db.app.legacy_navidrome.resolve_nd_track_to_file.return_value = f"{CollectionNames.LIBRARY_FILES.value}/f1"
 
         result = resolve_navidrome_track_to_file(db, "nd-1")
 
-        assert result == "library_files/f1"
+        assert result == f"{CollectionNames.LIBRARY_FILES.value}/f1"
         db.app.legacy_navidrome.resolve_nd_track_to_file.assert_called_once_with("nd-1")
 
     def test_returns_none_when_app_has_no_mapping(self) -> None:
@@ -175,16 +178,18 @@ class TestResolveFileToNavidromeTrack:
         db = MagicMock()
         db.app.legacy_navidrome.resolve_file_to_nd_track.return_value = "nd-42"
 
-        result = resolve_file_to_navidrome_track(db, "library_files/f1")
+        result = resolve_file_to_navidrome_track(db, f"{CollectionNames.LIBRARY_FILES.value}/f1")
 
         assert result == "nd-42"
-        db.app.legacy_navidrome.resolve_file_to_nd_track.assert_called_once_with("library_files/f1")
+        db.app.legacy_navidrome.resolve_file_to_nd_track.assert_called_once_with(
+            f"{CollectionNames.LIBRARY_FILES.value}/f1"
+        )
 
     def test_returns_none_when_app_has_no_mapping(self) -> None:
         db = MagicMock()
         db.app.legacy_navidrome.resolve_file_to_nd_track.return_value = None
 
-        result = resolve_file_to_navidrome_track(db, "library_files/f1")
+        result = resolve_file_to_navidrome_track(db, f"{CollectionNames.LIBRARY_FILES.value}/f1")
 
         assert result is None
 
@@ -202,13 +207,16 @@ class TestBulkResolveNavidromeTracksToFiles:
     def test_delegates_to_app_bulk_resolution(self) -> None:
         db = MagicMock()
         db.app.legacy_navidrome.bulk_resolve_nd_tracks_to_files.return_value = {
-            "nd-1": "library_files/f1",
-            "nd-3": "library_files/f3",
+            "nd-1": f"{CollectionNames.LIBRARY_FILES.value}/f1",
+            "nd-3": f"{CollectionNames.LIBRARY_FILES.value}/f3",
         }
 
         result = bulk_resolve_navidrome_tracks_to_files(db, ["nd-1", "nd-2", "nd-3"])
 
-        assert result == {"nd-1": "library_files/f1", "nd-3": "library_files/f3"}
+        assert result == {
+            "nd-1": f"{CollectionNames.LIBRARY_FILES.value}/f1",
+            "nd-3": f"{CollectionNames.LIBRARY_FILES.value}/f3",
+        }
         db.app.legacy_navidrome.bulk_resolve_nd_tracks_to_files.assert_called_once_with(["nd-1", "nd-2", "nd-3"])
 
 
@@ -224,13 +232,17 @@ class TestBulkResolveFilesToNavidromeIds:
 
     def test_delegates_to_app_bulk_reverse_resolution(self) -> None:
         db = MagicMock()
-        db.app.legacy_navidrome.bulk_resolve_files_to_nd_ids.return_value = {"library_files/f1": "nd-1"}
+        db.app.legacy_navidrome.bulk_resolve_files_to_nd_ids.return_value = {
+            f"{CollectionNames.LIBRARY_FILES.value}/f1": "nd-1"
+        }
 
-        result = bulk_resolve_files_to_navidrome_ids(db, ["library_files/f1", "library_files/f2"])
+        result = bulk_resolve_files_to_navidrome_ids(
+            db, [f"{CollectionNames.LIBRARY_FILES.value}/f1", f"{CollectionNames.LIBRARY_FILES.value}/f2"]
+        )
 
-        assert result == {"library_files/f1": "nd-1"}
+        assert result == {f"{CollectionNames.LIBRARY_FILES.value}/f1": "nd-1"}
         db.app.legacy_navidrome.bulk_resolve_files_to_nd_ids.assert_called_once_with(
-            ["library_files/f1", "library_files/f2"]
+            [f"{CollectionNames.LIBRARY_FILES.value}/f1", f"{CollectionNames.LIBRARY_FILES.value}/f2"]
         )
 
 
@@ -309,7 +321,12 @@ class TestGetTopNavidromePlays:
     def test_coerces_rows_from_app(self) -> None:
         db = MagicMock()
         db.app.legacy_navidrome.get_top_nd_plays.return_value = [
-            {"nd_id": "nd-1", "file_id": "library_files/f1", "playcount": 10, "last_played": 1700000000},
+            {
+                "nd_id": "nd-1",
+                "file_id": f"{CollectionNames.LIBRARY_FILES.value}/f1",
+                "playcount": 10,
+                "last_played": 1700000000,
+            },
             {"nd_id": "nd-2", "playcount": 3, "last_played": None},
         ]
 
@@ -317,7 +334,7 @@ class TestGetTopNavidromePlays:
 
         assert len(result) == 2
         assert result[0]["nd_id"] == "nd-1"
-        assert result[0]["file_id"] == "library_files/f1"
+        assert result[0]["file_id"] == f"{CollectionNames.LIBRARY_FILES.value}/f1"
         assert result[0]["playcount"] == 10
         assert result[0]["last_played"] == 1700000000
         assert result[1]["nd_id"] == "nd-2"

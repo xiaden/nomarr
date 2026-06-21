@@ -15,6 +15,7 @@ from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.components.library.reconciliation_comp import release_claim
 from nomarr.components.tagging.tag_query_comp import get_song_tags
 from nomarr.components.tagging.tag_write_comp import set_song_tags, set_song_tags_batch
+from nomarr.persistence.schema import CollectionNames
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -39,11 +40,11 @@ def get_file_for_writing(
         (file_id, file_key, file_doc) — *file_doc* is ``None`` when the
         document does not exist.
     """
-    if file_key.startswith("library_files/"):
+    if file_key.startswith(f"{CollectionNames.LIBRARY_FILES.value}/"):
         file_id = file_key
         file_key = file_key.split("/")[1]
     else:
-        file_id = f"library_files/{file_key}"
+        file_id = f"{CollectionNames.LIBRARY_FILES.value}/{file_key}"
 
     file_doc = get_file_by_id(db, file_id)
     return file_id, file_key, file_doc
@@ -102,7 +103,7 @@ def save_mood_tags(
 
     Args:
         db: Database instance
-        file_id: File document ID (e.g. 'library_files/abc123')
+        file_id: File document ID (e.g. '{CollectionNames.LIBRARY_FILES.value}/abc123')
         mood_tags: Tags DTO containing mood tags to write
 
     Returns:

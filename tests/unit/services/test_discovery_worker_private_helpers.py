@@ -13,6 +13,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_NOT_PROCESSED,
     STATE_PROCESSED,
 )
+from nomarr.persistence.schema import CollectionNames
 
 pytestmark = [pytest.mark.unit, pytest.mark.mocked]
 
@@ -115,7 +116,9 @@ class TestHandleProcessError:
     def test_returns_incremented_error_count(self, mock_release):
         """Error count should be incremented by 1."""
         mock_self = _make_worker_self()
-        result = self._call(mock_self, MagicMock(), "library_files/abc", RuntimeError("oops"), 3)
+        result = self._call(
+            mock_self, MagicMock(), f"{CollectionNames.LIBRARY_FILES.value}/abc", RuntimeError("oops"), 3
+        )
         assert result == 4
 
     @pytest.mark.unit
@@ -126,11 +129,11 @@ class TestHandleProcessError:
         mock_self = _make_worker_self()
         mock_db = MagicMock()
 
-        self._call(mock_self, mock_db, "library_files/xyz", ValueError("bad"), 0)
+        self._call(mock_self, mock_db, f"{CollectionNames.LIBRARY_FILES.value}/xyz", ValueError("bad"), 0)
 
         mock_transition_file_state.assert_called_once_with(
             mock_db,
-            ["library_files/xyz"],
+            [f"{CollectionNames.LIBRARY_FILES.value}/xyz"],
             STATE_NOT_ERRORED,
             STATE_ERRORED,
         )
@@ -142,9 +145,9 @@ class TestHandleProcessError:
         mock_self = _make_worker_self()
         mock_db = MagicMock()
 
-        self._call(mock_self, mock_db, "library_files/abc", RuntimeError("x"), 0)
+        self._call(mock_self, mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc", RuntimeError("x"), 0)
 
-        mock_release.assert_called_once_with(mock_db, "library_files/abc")
+        mock_release.assert_called_once_with(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc")
 
     @pytest.mark.unit
     @patch(
@@ -156,15 +159,15 @@ class TestHandleProcessError:
         mock_self = _make_worker_self()
         mock_db = MagicMock()
 
-        self._call(mock_self, mock_db, "library_files/abc", RuntimeError("x"), 0)
+        self._call(mock_self, mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc", RuntimeError("x"), 0)
 
         mock_transition_file_state.assert_called_once_with(
             mock_db,
-            ["library_files/abc"],
+            [f"{CollectionNames.LIBRARY_FILES.value}/abc"],
             STATE_NOT_ERRORED,
             STATE_ERRORED,
         )
-        mock_release.assert_called_once_with(mock_db, "library_files/abc")
+        mock_release.assert_called_once_with(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc")
 
     @pytest.mark.unit
     @patch(_PATCH_RELEASE)
@@ -173,7 +176,13 @@ class TestHandleProcessError:
         from nomarr.services.infrastructure.workers.discovery_worker import MAX_CONSECUTIVE_ERRORS
 
         mock_self = _make_worker_self()
-        result = self._call(mock_self, MagicMock(), "library_files/abc", RuntimeError("x"), MAX_CONSECUTIVE_ERRORS - 1)
+        result = self._call(
+            mock_self,
+            MagicMock(),
+            f"{CollectionNames.LIBRARY_FILES.value}/abc",
+            RuntimeError("x"),
+            MAX_CONSECUTIVE_ERRORS - 1,
+        )
         assert result == MAX_CONSECUTIVE_ERRORS
 
 
@@ -310,7 +319,7 @@ class TestCheckResourceHeadroom:
     def test_returns_none_when_resource_management_config_is_none(self):
         mock_self = _make_worker_self()
 
-        result = self._call(mock_self, MagicMock(), "library_files/abc", None)
+        result = self._call(mock_self, MagicMock(), f"{CollectionNames.LIBRARY_FILES.value}/abc", None)
 
         assert result is None
 
@@ -320,7 +329,7 @@ class TestCheckResourceHeadroom:
         mock_rm = MagicMock()
         mock_rm.enabled = False
 
-        result = self._call(mock_self, MagicMock(), "library_files/abc", mock_rm)
+        result = self._call(mock_self, MagicMock(), f"{CollectionNames.LIBRARY_FILES.value}/abc", mock_rm)
 
         assert result is None
 
@@ -346,7 +355,7 @@ class TestCheckResourceHeadroom:
         )
         mock_internal_s.return_value = MagicMock(value=100.0)
 
-        result = self._call(mock_self, mock_db, "library_files/abc", mock_rm)
+        result = self._call(mock_self, mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc", mock_rm)
 
         assert result == 130.0
         assert mock_self._current_status == "recovering"
@@ -357,7 +366,7 @@ class TestCheckResourceHeadroom:
             ram_estimate_mb=2048,
             ram_detection_mode="rss",
         )
-        mock_release_claim.assert_called_once_with(mock_db, "library_files/abc")
+        mock_release_claim.assert_called_once_with(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc")
 
     @pytest.mark.unit
     @patch(_PATCH_RELEASE)
@@ -379,7 +388,7 @@ class TestCheckResourceHeadroom:
             ram_used_mb=12000,
         )
 
-        result = self._call(mock_self, mock_db, "library_files/abc", mock_rm)
+        result = self._call(mock_self, mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc", mock_rm)
 
         assert result is None
         mock_release_claim.assert_not_called()
@@ -414,11 +423,17 @@ class TestProcessClaimedFile:
         pending_write = MagicMock()
 
         result = self._call(
-            mock_self, mock_db, "library_files/missing", MagicMock(), MagicMock(), pending_write, MagicMock()
+            mock_self,
+            mock_db,
+            f"{CollectionNames.LIBRARY_FILES.value}/missing",
+            MagicMock(),
+            MagicMock(),
+            pending_write,
+            MagicMock(),
         )
 
         assert result == (pending_write, False)
-        mock_release_claim.assert_called_once_with(mock_db, "library_files/missing")
+        mock_release_claim.assert_called_once_with(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/missing")
 
     @pytest.mark.unit
     @patch("nomarr.components.library.library_file_state_comp.transition_file_state")
@@ -448,7 +463,7 @@ class TestProcessClaimedFile:
         result = self._call(
             mock_self,
             mock_db,
-            "library_files/abc",
+            f"{CollectionNames.LIBRARY_FILES.value}/abc",
             MagicMock(),
             MagicMock(),
             pending_write,
@@ -459,11 +474,11 @@ class TestProcessClaimedFile:
         pending_write.result.assert_called_once_with()
         mock_transition_file_state.assert_called_once_with(
             mock_db,
-            ["library_files/abc"],
+            [f"{CollectionNames.LIBRARY_FILES.value}/abc"],
             STATE_NOT_PROCESSED,
             STATE_PROCESSED,
         )
-        mock_release_claim.assert_called_once_with(mock_db, "library_files/abc")
+        mock_release_claim.assert_called_once_with(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc")
         mock_malloc_trim.assert_called_once_with()
 
     @pytest.mark.unit
@@ -496,7 +511,7 @@ class TestProcessClaimedFile:
         result = self._call(
             mock_self,
             mock_db,
-            "library_files/abc",
+            f"{CollectionNames.LIBRARY_FILES.value}/abc",
             MagicMock(),
             MagicMock(),
             None,
@@ -534,7 +549,7 @@ class TestProcessClaimedFile:
         result = self._call(
             mock_self,
             mock_db,
-            "library_files/abc",
+            f"{CollectionNames.LIBRARY_FILES.value}/abc",
             MagicMock(),
             MagicMock(),
             None,
@@ -542,5 +557,5 @@ class TestProcessClaimedFile:
         )
 
         assert result == (None, True)
-        mock_release_claim.assert_called_once_with(mock_db, "library_files/abc")
+        mock_release_claim.assert_called_once_with(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc")
         mock_malloc_trim.assert_called_once_with()

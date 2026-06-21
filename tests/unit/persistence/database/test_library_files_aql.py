@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from nomarr.persistence.database.library_files_aql import LibraryFilesAqlOperations
+from nomarr.persistence.schema import CollectionNames
 
 
 @pytest.mark.unit
@@ -26,7 +27,10 @@ def test_upsert_files_for_library_with_state_init_bootstraps_new_and_tagged_file
         patch.object(
             ops,
             "upsert_files_for_library",
-            return_value=["library_files/existing", "library_files/new"],
+            return_value=[
+                f"{CollectionNames.LIBRARY_FILES.value}/existing",
+                f"{CollectionNames.LIBRARY_FILES.value}/new",
+            ],
         ) as upsert_files,
     ):
         result = ops.upsert_files_for_library_with_state_init(
@@ -35,11 +39,14 @@ def test_upsert_files_for_library_with_state_init_bootstraps_new_and_tagged_file
             file_states=file_states,
         )
 
-    assert result == {"file_ids": ["library_files/existing", "library_files/new"], "added": 1}
+    assert result == {
+        "file_ids": [f"{CollectionNames.LIBRARY_FILES.value}/existing", f"{CollectionNames.LIBRARY_FILES.value}/new"],
+        "added": 1,
+    }
     list_existing.assert_called_once_with(["C:/music/existing.flac", "C:/music/new.flac"])
     upsert_files.assert_called_once_with("libraries/1", payloads)
-    file_states.bootstrap_file_states.assert_called_once_with(["library_files/new"])
-    file_states.mark_files_processed.assert_called_once_with(["library_files/new"])
+    file_states.bootstrap_file_states.assert_called_once_with([f"{CollectionNames.LIBRARY_FILES.value}/new"])
+    file_states.mark_files_processed.assert_called_once_with([f"{CollectionNames.LIBRARY_FILES.value}/new"])
 
 
 @pytest.mark.unit
@@ -56,12 +63,15 @@ def test_reconcile_library_files_delegates_to_canonical_helpers_and_reports_coun
         patch.object(
             ops,
             "list_library_file_ids",
-            return_value=["library_files/current", "library_files/stale"],
+            return_value=[
+                f"{CollectionNames.LIBRARY_FILES.value}/current",
+                f"{CollectionNames.LIBRARY_FILES.value}/stale",
+            ],
         ) as list_file_ids,
         patch.object(
             ops,
             "upsert_files_for_library_with_state_init",
-            return_value={"file_ids": ["library_files/current"], "added": 0},
+            return_value={"file_ids": [f"{CollectionNames.LIBRARY_FILES.value}/current"], "added": 0},
         ) as upsert_files,
         patch.object(ops, "remove_files_with_derived_cleanup") as remove_files,
     ):
@@ -77,7 +87,9 @@ def test_reconcile_library_files_delegates_to_canonical_helpers_and_reports_coun
     assert result == {"added": 0, "updated": 1, "removed": 1}
     list_file_ids.assert_called_once_with("libraries/1")
     upsert_files.assert_called_once_with("libraries/1", payloads, file_states=file_states)
-    remove_files.assert_called_once_with(["library_files/stale"], streams=streams, vectors=vectors)
+    remove_files.assert_called_once_with(
+        [f"{CollectionNames.LIBRARY_FILES.value}/stale"], streams=streams, vectors=vectors
+    )
 
 
 @pytest.mark.unit
@@ -91,22 +103,28 @@ def test_remove_files_with_derived_cleanup_deletes_streams_vectors_then_files() 
 
     with patch.object(ops, "remove_files") as remove_files:
         ops.remove_files_with_derived_cleanup(
-            ["library_files/1", "library_files/1", "library_files/2"],
+            [
+                f"{CollectionNames.LIBRARY_FILES.value}/1",
+                f"{CollectionNames.LIBRARY_FILES.value}/1",
+                f"{CollectionNames.LIBRARY_FILES.value}/2",
+            ],
             streams=streams,
             vectors=vectors,
         )
 
     assert streams.delete_output_streams_for_file.call_args_list == [
-        call("library_files/1"),
-        call("library_files/2"),
+        call(f"{CollectionNames.LIBRARY_FILES.value}/1"),
+        call(f"{CollectionNames.LIBRARY_FILES.value}/2"),
     ]
     assert vectors.delete_vectors_for_file.call_args_list == [
-        call("vectors_a", "library_files/1"),
-        call("vectors_a", "library_files/2"),
-        call("vectors_b", "library_files/1"),
-        call("vectors_b", "library_files/2"),
+        call("vectors_a", f"{CollectionNames.LIBRARY_FILES.value}/1"),
+        call("vectors_a", f"{CollectionNames.LIBRARY_FILES.value}/2"),
+        call("vectors_b", f"{CollectionNames.LIBRARY_FILES.value}/1"),
+        call("vectors_b", f"{CollectionNames.LIBRARY_FILES.value}/2"),
     ]
-    remove_files.assert_called_once_with(["library_files/1", "library_files/2"])
+    remove_files.assert_called_once_with(
+        [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"]
+    )
 
 
 @pytest.mark.unit
@@ -262,10 +280,14 @@ def test_upsert_files_batch_uses_internal_upsert_many_by_field() -> None:
         {"path": "C:/music/two.flac"},
     ]
 
-    with patch.object(ops, "_upsert_many_by_field", return_value=["library_files/1", "library_files/2"]) as upsert_many:
+    with patch.object(
+        ops,
+        "_upsert_many_by_field",
+        return_value=[f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"],
+    ) as upsert_many:
         result = ops._upsert_files_batch(payloads)
 
-    assert result == ["library_files/1", "library_files/2"]
+    assert result == [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"]
     upsert_many.assert_called_once_with(ops.FILE_COLLECTION, "path", payloads)
 
 
@@ -298,7 +320,9 @@ def test_upsert_many_by_field_rejects_invalid_field_name_before_query_execution(
 @pytest.mark.mocked
 def test_upsert_many_by_field_builds_upsert_query_and_returns_ids() -> None:
     db = MagicMock()
-    db.aql.execute.return_value = iter(["library_files/1", "library_files/2"])
+    db.aql.execute.return_value = iter(
+        [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"]
+    )
     ops = LibraryFilesAqlOperations(db)
     payloads: list[dict[str, Any]] = [
         {"path": "C:/music/one.flac", "size": 123},
@@ -307,7 +331,7 @@ def test_upsert_many_by_field_builds_upsert_query_and_returns_ids() -> None:
 
     result = ops._upsert_many_by_field(ops.FILE_COLLECTION, "path", payloads)
 
-    assert result == ["library_files/1", "library_files/2"]
+    assert result == [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"]
     call = db.aql.execute.call_args
     assert call is not None
     query = call.args[0]
@@ -325,7 +349,7 @@ def test_remove_files_orphaned_tag_cleanup_only_queries_song_edges() -> None:
     db = MagicMock()
     ops = LibraryFilesAqlOperations(db)
 
-    ops.remove_files(["library_files/1", "library_files/2"])
+    ops.remove_files([f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"])
 
     executed_queries = [call.args[0] for call in db.aql.execute.call_args_list]
 

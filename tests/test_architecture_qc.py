@@ -98,6 +98,7 @@ def find_import_violations(file_path: Path, forbidden_imports: list[str]) -> lis
 
 
 @pytest.mark.code_smell
+@pytest.mark.slow
 def test_no_raw_db_execute_outside_persistence():
     """Test 1: Ensure raw SQL (db.conn.execute) is only used in persistence layer.
 
@@ -135,6 +136,7 @@ def test_no_raw_db_execute_outside_persistence():
         pytest.fail(msg)
 
 
+@pytest.mark.code_smell
 def test_workflows_do_not_import_services_or_app():
     """Test 2: Ensure workflows don't import services or app.
 
@@ -169,6 +171,7 @@ def test_workflows_do_not_import_services_or_app():
         pytest.fail(msg)
 
 
+@pytest.mark.code_smell
 def test_helpers_do_not_import_upwards():
     """Test 3: Ensure helpers don't import upward layers.
 
@@ -212,6 +215,7 @@ def test_helpers_do_not_import_upwards():
         pytest.fail(msg)
 
 
+@pytest.mark.code_smell
 def test_leaf_slices_do_not_depend_on_higher_layers():
     """Test 4: Ensure leaf domain slices don't import orchestration layers.
 
@@ -256,6 +260,8 @@ def test_leaf_slices_do_not_depend_on_higher_layers():
         pytest.fail(msg)
 
 
+@pytest.mark.code_smell
+@pytest.mark.slow
 def test_no_essentia_imports_outside_backend():
     """Test 5: Ensure Essentia is only imported in its two permitted components.
 
@@ -306,6 +312,7 @@ def test_no_essentia_imports_outside_backend():
 # === Additional helper tests for architecture validation ===
 
 
+@pytest.mark.code_smell
 def test_persistence_layer_structure():
     """Sanity check: Verify persistence layer exists and has expected structure.
 
@@ -323,6 +330,7 @@ def test_persistence_layer_structure():
         assert len(py_files) > 0, "database/ directory should contain operation modules"
 
 
+@pytest.mark.code_smell
 def test_workflows_layer_structure():
     """Sanity check: Verify workflows layer exists and follows naming convention.
 
@@ -343,6 +351,7 @@ def test_workflows_layer_structure():
         )
 
 
+@pytest.mark.code_smell
 def test_services_do_not_import_interfaces():
     """Additional check: Ensure services don't import interfaces.
 
@@ -375,6 +384,7 @@ def test_services_do_not_import_interfaces():
 
 
 @pytest.mark.code_smell
+@pytest.mark.slow
 def test_no_raw_aql_outside_persistence_and_migrations():
     """Test: Ensure raw AQL (db.aql / .aql.execute) is only used in persistence and migrations.
 
@@ -437,6 +447,7 @@ def test_no_raw_aql_outside_persistence_and_migrations():
 
 
 @pytest.mark.code_smell
+@pytest.mark.slow
 def test_higher_layers_do_not_import_persistence_collection_or_accessor_internals():
     """Test: Ensure higher layers use the `Database` facade, not persistence internals.
 
@@ -471,6 +482,7 @@ def test_higher_layers_do_not_import_persistence_collection_or_accessor_internal
 
 
 @pytest.mark.code_smell
+@pytest.mark.slow
 def test_higher_layers_do_not_import_persistence_tier1_or_tier2_internals():
     """Ensure higher layers cross persistence through `Database`, not lower tiers.
 
@@ -511,6 +523,7 @@ def test_higher_layers_do_not_import_persistence_tier1_or_tier2_internals():
 
 
 @pytest.mark.code_smell
+@pytest.mark.slow
 def test_persistence_tier_bootstrap_allowlist_stays_single_file() -> None:
     """Keep the lower-tier bootstrap exception narrow and explicit."""
     assert {

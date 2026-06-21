@@ -1,7 +1,7 @@
 """Domain-specific vector collection registry.
 
 Wraps `db.ml.add_vector_collection()` to resolve hot/cold/maintenance
-namespaces by backbone+library, and owns batch vector deletion.
+namespaces by backbone, and owns batch vector deletion.
 """
 
 from __future__ import annotations
@@ -88,49 +88,46 @@ __all__ = [
 ]
 
 
-def get_hot_namespace(db: Database, backbone_id: str, library_key: str) -> VectorsTrackHotNamespace:
-    """Resolve the hot vectors namespace for a backbone/library pair.
+def get_hot_namespace(db: Database, backbone_id: str) -> VectorsTrackHotNamespace:
+    """Resolve the hot vectors namespace for a backbone.
 
     Args:
         db: Database façade.
         backbone_id: Backbone identifier used to namespace vector collections.
-        library_key: Library ``_key`` used to namespace vector collections.
 
     Returns:
-        Registered hot vectors namespace for the ``backbone_id`` and ``library_key`` pair.
+        Registered hot vectors namespace for the ``backbone_id``.
 
     Raises:
         Exception: Propagates errors raised by ``db.ml.add_vector_collection()``
             while resolving the namespace.
     """
-    col_name = f"vectors_track_hot__{backbone_id}__{library_key}"
+    col_name = f"vectors_track_hot__{backbone_id}"
     return cast("VectorsTrackHotNamespace", db.ml.add_vector_collection(col_name, "vectors_track_hot"))
 
 
 def get_cold_namespace(
     db: Database,
     backbone_id: str,
-    library_key: str,
     collection_suffix: str | None = None,
 ) -> VectorsTrackColdNamespace:
-    """Resolve the cold vectors namespace for a backbone/library pair.
+    """Resolve the cold vectors namespace for a backbone.
 
     Args:
         db: Database façade.
         backbone_id: Backbone identifier used to namespace vector collections.
-        library_key: Library ``_key`` used to namespace vector collections.
         collection_suffix: Optional suffix appended to the resolved collection name
             when provided.
 
     Returns:
-        Registered cold vectors namespace for the ``backbone_id`` and ``library_key``
-        pair, with ``collection_suffix`` appended to the collection name when set.
+        Registered cold vectors namespace for the ``backbone_id``, with
+        ``collection_suffix`` appended to the collection name when set.
 
     Raises:
         Exception: Propagates errors raised by ``db.ml.add_vector_collection()``
             while resolving the namespace.
     """
-    col_name = f"vectors_track_cold__{backbone_id}__{library_key}"
+    col_name = f"vectors_track_cold__{backbone_id}"
     if collection_suffix:
         col_name = f"{col_name}__{collection_suffix}"
     return cast("VectorsTrackColdNamespace", db.ml.add_vector_collection(col_name, "vectors_track_cold"))

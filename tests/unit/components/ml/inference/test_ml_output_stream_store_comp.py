@@ -18,6 +18,7 @@ from nomarr.components.ml.inference.ml_output_stream_store_comp import (
     resolve_output_stream_lookup,
     upsert_output_streams,
 )
+from nomarr.persistence.schema import CollectionNames
 
 
 @pytest.mark.unit
@@ -28,7 +29,7 @@ class TestUpsertOutputStreams:
     def test_returns_early_for_empty_streams(self) -> None:
         mock_db = MagicMock()
 
-        upsert_output_streams(mock_db, file_id="library_files/file-1", streams=[])
+        upsert_output_streams(mock_db, file_id=f"{CollectionNames.LIBRARY_FILES.value}/file-1", streams=[])
 
         mock_db.ml.replace_output_streams_for_file.assert_not_called()
 
@@ -48,7 +49,7 @@ class TestUpsertOutputStreams:
         )
 
         mock_db.ml.replace_output_streams_for_file.assert_called_once_with(
-            file_id="library_files/file-1",
+            file_id=f"{CollectionNames.LIBRARY_FILES.value}/file-1",
             stream_payloads=[
                 {"output_id": "ml_model_outputs/out-1", "values": [0.1, 0.2]},
                 {"output_id": "ml_model_outputs/out-2", "values": [0.3, 0.4]},
@@ -60,7 +61,7 @@ class TestUpsertOutputStreams:
 
         upsert_output_streams(
             mock_db,
-            file_id="library_files/file-1",
+            file_id=f"{CollectionNames.LIBRARY_FILES.value}/file-1",
             streams=[
                 StreamWrite(output_id="out-1", values=[0.1]),
                 StreamWrite(output_id="ml_model_outputs/out-1", values=[0.9, 1.1]),
@@ -68,7 +69,7 @@ class TestUpsertOutputStreams:
         )
 
         mock_db.ml.replace_output_streams_for_file.assert_called_once_with(
-            file_id="library_files/file-1",
+            file_id=f"{CollectionNames.LIBRARY_FILES.value}/file-1",
             stream_payloads=[
                 {"output_id": "ml_model_outputs/out-1", "values": [0.9, 1.1]},
             ],
@@ -87,7 +88,7 @@ class TestFetchOutputStreams:
         result = fetch_output_streams(mock_db, "file-7")
 
         assert result == []
-        mock_db.ml.list_output_streams_for_file.assert_called_once_with("library_files/file-7")
+        mock_db.ml.list_output_streams_for_file.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/file-7")
 
     def test_fetches_stream_records_sorted_by_output_index_then_id(self) -> None:
         mock_db = MagicMock()
@@ -113,7 +114,7 @@ class TestFetchOutputStreams:
             },
         ]
 
-        result = fetch_output_streams(mock_db, "library_files/file-2")
+        result = fetch_output_streams(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/file-2")
 
         assert result == [
             StreamRecord(output_id="ml_model_outputs/out-a", output_index=1, values=[3.5, 4.5]),
@@ -134,7 +135,7 @@ class TestFetchOutputStreams:
             },
         ]
 
-        result = fetch_output_streams(mock_db, "library_files/file-3")
+        result = fetch_output_streams(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/file-3")
 
         assert result == []
 
@@ -151,7 +152,7 @@ class TestDeleteOutputStreams:
         result = delete_output_streams(mock_db, "file-9")
 
         assert result == 0
-        mock_db.ml.list_output_streams_for_file.assert_called_once_with("library_files/file-9")
+        mock_db.ml.list_output_streams_for_file.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/file-9")
         mock_db.ml.replace_output_streams_for_file.assert_not_called()
 
     def test_deletes_stream_docs_for_file_once(self) -> None:
@@ -163,10 +164,12 @@ class TestDeleteOutputStreams:
             {"values": [0.2]},
         ]
 
-        result = delete_output_streams(mock_db, "library_files/file-4")
+        result = delete_output_streams(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/file-4")
 
         assert result == 2
-        mock_db.ml.replace_output_streams_for_file.assert_called_once_with("library_files/file-4", [])
+        mock_db.ml.replace_output_streams_for_file.assert_called_once_with(
+            f"{CollectionNames.LIBRARY_FILES.value}/file-4", []
+        )
 
 
 @pytest.mark.unit
@@ -253,18 +256,27 @@ class TestLoadOutputStreamsForFile:
                 return_value=[],
             ) as mock_fetch,
             patch(
+                "nomarr.components.ml.inference.ml_output_stream_store_comp.transition_file_state"
+            ) as mock_transition,
+            patch(
                 "nomarr.components.ml.inference.ml_output_stream_store_comp.resolve_output_stream_lookup"
             ) as mock_resolve,
         ):
             result = load_output_streams_for_file(
                 mock_db,
-                file_id="library_files/file-1",
+                file_id=f"{CollectionNames.LIBRARY_FILES.value}/file-1",
                 file_path="music/file-1.mp3",
                 head_infos=head_infos,
             )
 
         assert result == []
-        mock_fetch.assert_called_once_with(mock_db, "library_files/file-1")
+        mock_fetch.assert_called_once_with(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/file-1")
+        mock_transition.assert_called_once_with(
+            mock_db,
+            [f"{CollectionNames.LIBRARY_FILES.value}/file-1"],
+            "file_states/processed",
+            "file_states/not_processed",
+        )
         mock_resolve.assert_not_called()
 
     def test_returns_empty_when_streams_cannot_be_matched_to_lookup(self) -> None:
@@ -284,19 +296,28 @@ class TestLoadOutputStreamsForFile:
                 return_value=stream_records,
             ) as mock_fetch,
             patch(
+                "nomarr.components.ml.inference.ml_output_stream_store_comp.transition_file_state"
+            ) as mock_transition,
+            patch(
                 "nomarr.components.ml.inference.ml_output_stream_store_comp.resolve_output_stream_lookup",
                 return_value={"ml_model_outputs/out-1": ("mood", "happy")},
             ) as mock_resolve,
         ):
             result = load_output_streams_for_file(
                 mock_db,
-                file_id="library_files/file-2",
+                file_id=f"{CollectionNames.LIBRARY_FILES.value}/file-2",
                 file_path="music/file-2.mp3",
                 head_infos=head_infos,
             )
 
         assert result == []
-        mock_fetch.assert_called_once_with(mock_db, "library_files/file-2")
+        mock_fetch.assert_called_once_with(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/file-2")
+        mock_transition.assert_called_once_with(
+            mock_db,
+            [f"{CollectionNames.LIBRARY_FILES.value}/file-2"],
+            "file_states/processed",
+            "file_states/not_processed",
+        )
         mock_resolve.assert_called_once_with(mock_db, head_infos, cached_lookup=None)
 
     def test_returns_enriched_loaded_output_streams_when_all_streams_match(self) -> None:
@@ -332,7 +353,7 @@ class TestLoadOutputStreamsForFile:
         ):
             result = load_output_streams_for_file(
                 mock_db,
-                file_id="library_files/file-3",
+                file_id=f"{CollectionNames.LIBRARY_FILES.value}/file-3",
                 file_path="music/file-3.mp3",
                 head_infos=head_infos,
             )
@@ -353,7 +374,7 @@ class TestLoadOutputStreamsForFile:
                 values=[0.3, 0.7],
             ),
         ]
-        mock_fetch.assert_called_once_with(mock_db, "library_files/file-3")
+        mock_fetch.assert_called_once_with(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/file-3")
         mock_resolve.assert_called_once_with(mock_db, head_infos, cached_lookup=None)
 
     def test_passes_cached_output_lookup_to_resolver_when_provided(self) -> None:
@@ -380,7 +401,7 @@ class TestLoadOutputStreamsForFile:
         ):
             result = load_output_streams_for_file(
                 mock_db,
-                file_id="library_files/file-4",
+                file_id=f"{CollectionNames.LIBRARY_FILES.value}/file-4",
                 file_path="music/file-4.mp3",
                 head_infos=head_infos,
                 output_lookup=cached_lookup,
@@ -395,5 +416,5 @@ class TestLoadOutputStreamsForFile:
                 values=[0.6],
             )
         ]
-        mock_fetch.assert_called_once_with(mock_db, "library_files/file-4")
+        mock_fetch.assert_called_once_with(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/file-4")
         mock_resolve.assert_called_once_with(mock_db, head_infos, cached_lookup=cached_lookup)

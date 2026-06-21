@@ -21,6 +21,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from nomarr.persistence.schema import CollectionNames
+
 REPO_ROOT = Path(__file__).parent.parent
 PERSISTENCE_DIR = REPO_ROOT / "nomarr" / "persistence" / "database"
 BOOTSTRAP_FILE = REPO_ROOT / "nomarr" / "components" / "platform" / "arango_bootstrap_comp.py"
@@ -45,7 +47,7 @@ VALID_COLLECTIONS = frozenset(
     {
         "meta",
         "libraries",
-        "library_files",
+        CollectionNames.LIBRARY_FILES.value,
         "library_folders",
         "tags",
         "song_has_tags",

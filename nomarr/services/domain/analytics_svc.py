@@ -86,9 +86,9 @@ class AnalyticsService:
 
         """
         namespace_prefix = f"{self.cfg.namespace}:"
-        # Get tag frequencies from tags collection
+        # Get tag frequencies from tags
         tag_data = get_tag_frequencies(self._db, limit=limit, namespace_prefix=namespace_prefix)
-        # Get artist/album frequencies from library_files
+        # Get artist/album frequencies from songs
         file_data = get_artist_album_frequencies(self._db, limit=limit)
         # Get total file count
         _, total_count = list_library_files(self._db, limit=1)

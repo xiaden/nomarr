@@ -4,6 +4,7 @@ from typing import Any, cast
 
 from nomarr.persistence.aql import primitives
 from nomarr.persistence.arango_client import SafeDatabase
+from nomarr.persistence.schema import CollectionNames
 
 Document = dict[str, Any]
 
@@ -15,9 +16,10 @@ def _as_document_id(collection: str, document_id_or_key: str) -> str:
 class MlStreamsAqlOperations:
     """Thin Tier 2 bindings for ML output streams and related edges."""
 
-    COLLECTION = "ml_output_streams"
-    FILE_EDGE_COLLECTION = "file_has_output_stream"
-    OUTPUT_EDGE_COLLECTION = "output_has_stream"
+    COLLECTION = CollectionNames.ML_OUTPUT_STREAMS.value
+    FILE_EDGE_COLLECTION = CollectionNames.FILE_HAS_OUTPUT_STREAM.value
+    OUTPUT_EDGE_COLLECTION = CollectionNames.OUTPUT_HAS_STREAM.value
+    FILE_COLLECTION = CollectionNames.LIBRARY_FILES.value
 
     def __init__(self, db: SafeDatabase) -> None:
         self._db = db
@@ -50,12 +52,12 @@ class MlStreamsAqlOperations:
             {
                 "@file_edge_collection": self.FILE_EDGE_COLLECTION,
                 "@output_edge_collection": self.OUTPUT_EDGE_COLLECTION,
-                "file_id": _as_document_id("library_files", file_id),
+                "file_id": _as_document_id(self.FILE_COLLECTION, file_id),
             },
         )
 
     def upsert_output_streams_batch(self, file_id: str, stream_payloads: list[dict[str, Any]]) -> None:
-        normalized_file_id = _as_document_id("library_files", file_id)
+        normalized_file_id = _as_document_id(self.FILE_COLLECTION, file_id)
         for payload in stream_payloads:
             stream_id = self._upsert_stream_document(payload)
             self._upsert_edge(self.FILE_EDGE_COLLECTION, normalized_file_id, stream_id)
@@ -90,7 +92,7 @@ class MlStreamsAqlOperations:
                 "@collection": self.COLLECTION,
                 "@file_edge_collection": self.FILE_EDGE_COLLECTION,
                 "@output_edge_collection": self.OUTPUT_EDGE_COLLECTION,
-                "file_id": _as_document_id("library_files", file_id),
+                "file_id": _as_document_id(self.FILE_COLLECTION, file_id),
             },
         )
 

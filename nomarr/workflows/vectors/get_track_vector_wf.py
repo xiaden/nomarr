@@ -1,7 +1,7 @@
 """Retrieve a track's normalized embedding vector.
 
-Resolves the owning library from the file, then fetches the promoted
-vector from the cold collection.  Hot collections are never searched.
+Fetches the promoted vector directly from the per-backbone cold collection.
+No library resolution needed — vector collections are per-backbone.
 """
 
 from __future__ import annotations
@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_file_mutation_comp import get_file_library_key
 from nomarr.components.ml.vectors.ml_vector_retrieve_comp import get_cold_track_vector
 
 if TYPE_CHECKING:
@@ -25,28 +24,17 @@ def get_track_vector(
 ) -> dict[str, Any] | None:
     """Get a track's promoted vector by file ID and backbone.
 
-    Pipeline:
-        1. Resolve the library that owns the file
-        2. Fetch the normalized vector from the cold collection
+    Single step: fetches the normalized vector from the per-backbone cold
+    collection. No library resolution needed.
 
     Args:
         db: Database instance.
-        file_id: Library file document ``_id`` (e.g. ``"library_files/12345"``).
+        file_id: Song document ``_id`` (e.g. ``"song/12345"``).
         backbone_id: Backbone identifier (e.g. ``"effnet"``).
 
     Returns:
         Vector document dict (includes ``vector_n``, ``file_id``, etc.)
-        or ``None`` when:
-        - The file does not exist
-        - The file's library cannot be resolved
-        - No promoted vector exists in the cold collection
+        or ``None`` when no promoted vector exists in the cold collection.
 
     """
-    # Step 1: Resolve library from file
-    library_key = get_file_library_key(db, file_id)
-    if library_key is None:
-        logger.debug("Cannot resolve library for file_id=%s", file_id)
-        return None
-
-    # Step 2: Get vector from cold collection
-    return get_cold_track_vector(db, file_id, backbone_id, library_key)
+    return get_cold_track_vector(db, file_id, backbone_id)

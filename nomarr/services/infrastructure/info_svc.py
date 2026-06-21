@@ -270,7 +270,7 @@ class InfoService:
             worker_alive = status.get("running", 0) > 0
 
         # Queue info - deprecated in discovery worker model
-        # TODO: Phase 2 - Replace with needs_tagging count from library_files
+        # TODO: Phase 2 - Replace with needs_tagging count from songs
         queue_info = QueueInfo(
             depth=0,
             counts={},

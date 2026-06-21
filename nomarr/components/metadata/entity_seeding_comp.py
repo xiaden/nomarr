@@ -1,6 +1,6 @@
 """Entity seeding component - derive entities from raw metadata tags.
 
-Converts raw metadata strings into song tag edges via component-owned tag helpers.
+Converts raw metadata strings into tag relationships via component-owned tag helpers.
 Part of hybrid model: seed edges from imports, then rebuild cache.
 """
 
@@ -43,7 +43,7 @@ def _derive_artists(tags: dict[str, Any]) -> tuple[str | None, list[str]]:
 
 
 def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, Any]) -> None:
-    """Derive song tag edges from raw imported metadata tags.
+    """Derive tag relationships from raw imported metadata tags.
 
     Uses component-owned tag helpers to set tags directly from raw values.
 
@@ -57,7 +57,7 @@ def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, A
 
     Args:
         db: Database handle
-        song_id: Song _id (e.g., "library_files/12345")
+        song_id: Song _id (e.g., ``song/12345``)
         tags: Raw metadata tags dict (from mutagen/external source)
 
     """

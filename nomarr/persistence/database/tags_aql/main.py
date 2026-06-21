@@ -4,6 +4,7 @@ from typing import cast
 
 from nomarr.persistence.aql import primitives
 from nomarr.persistence.arango_client import SafeDatabase
+from nomarr.persistence.schema import CollectionNames
 
 from ._helpers import Document, _as_document_id, _extract_key
 from .tag_edge_ops import TagEdgeOpsMixin
@@ -13,9 +14,10 @@ from .tag_search_ops import TagSearchOpsMixin
 class TagsAqlOperations(TagSearchOpsMixin, TagEdgeOpsMixin):
     """Thin Tier 2 bindings for tag documents and file↔tag traversals."""
 
-    COLLECTION = "tags"
-    EDGE_COLLECTION = "song_has_tags"
-    FILE_STATE_EDGE_COLLECTION = "file_has_state"
+    COLLECTION = CollectionNames.TAGS.value
+    EDGE_COLLECTION = CollectionNames.SONG_HAS_TAGS.value
+    FILE_STATE_EDGE_COLLECTION = CollectionNames.FILE_HAS_STATE.value
+    FILE_COLLECTION = CollectionNames.LIBRARY_FILES.value
     ALLOWED_FIELDS = frozenset({"name", "value"})
     ALLOWED_AGGREGATE_FIELDS = frozenset({"_id", "_key", "name", "value"})
 
@@ -40,7 +42,7 @@ class TagsAqlOperations(TagSearchOpsMixin, TagEdgeOpsMixin):
                 """,
                 bind_vars={
                     "@edge_collection": self.EDGE_COLLECTION,
-                    "file_id": _as_document_id("library_files", file_id),
+                    "file_id": _as_document_id(self.FILE_COLLECTION, file_id),
                 },
             ),
         )

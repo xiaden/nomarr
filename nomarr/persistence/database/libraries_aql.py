@@ -4,6 +4,7 @@ from typing import Any
 
 from nomarr.persistence.aql import primitives
 from nomarr.persistence.arango_client import SafeDatabase
+from nomarr.persistence.schema import CollectionNames
 
 Document = dict[str, Any]
 
@@ -15,7 +16,7 @@ def _extract_key(document_id_or_key: str) -> str:
 class LibrariesAqlOperations:
     """Thin Tier 2 bindings for the ``libraries`` collection."""
 
-    COLLECTION = "libraries"
+    COLLECTION = CollectionNames.LIBRARIES.value
     ALLOWED_FIELDS = frozenset(
         {
             "name",
@@ -126,16 +127,31 @@ class LibrariesAqlOperations:
         """Delete a library and all its associated data.
 
         Executes two AQL queries (each covering multiple collections via LET
-        chaining), a Python loop for dynamically-named vector collections
-        (AQL collection names must be static literals), and a final orphaned
-        tag sweep.
+        chaining) and a final orphaned tag sweep.
 
         Collection names are hardcoded here; this method is the canonical,
         curated definition of what "remove a library" means at the persistence
         level.
         """
         lib_key = _extract_key(library_id)
-        normalized_id = f"libraries/{lib_key}"
+        normalized_id = f"{self.COLLECTION}/{lib_key}"
+        # Local AQL collection name variables (derived from CollectionNames)
+        lcf = CollectionNames.LIBRARY_CONTAINS_FILE.value  # library_contains_file
+        fhe = CollectionNames.FILE_HAS_OUTPUT_STREAM.value  # file_has_output_stream
+        ohs = CollectionNames.OUTPUT_HAS_STREAM.value  # output_has_stream
+        fhv = CollectionNames.FILE_HAS_VECTORS.value  # file_has_vectors
+        sht = CollectionNames.SONG_HAS_TAGS.value  # song_has_tags
+        fhs = CollectionNames.FILE_HAS_STATE.value  # file_has_state
+        wc = CollectionNames.WORKER_CLAIMS.value  # worker_claims
+        mos = CollectionNames.ML_OUTPUT_STREAMS.value  # ml_output_streams
+        lcf_ = CollectionNames.LIBRARY_CONTAINS_FOLDER.value  # library_contains_folder
+        lfol = CollectionNames.LIBRARY_FOLDERS.value  # library_folders
+        lhs = CollectionNames.LIBRARY_HAS_SCAN.value  # library_has_scan
+        lsc = CollectionNames.LIBRARY_SCANS.value  # library_scans
+        lhp = CollectionNames.LIBRARY_HAS_PIPELINE_STATE.value  # library_has_pipeline_state
+        lps = CollectionNames.LIBRARY_PIPELINE_STATES.value  # library_pipeline_states
+        lfi = CollectionNames.LIBRARY_FILES.value  # library_files
+        tg = CollectionNames.TAGS.value  # tags
 
         # Part C keeps this flow in Tier 2 because it coordinates multi-collection
         # graph/path cleanup and vector lifecycle semantics, not a storage-generic
@@ -144,114 +160,104 @@ class LibrariesAqlOperations:
         # Collects file and stream IDs via LET, then removes each dependent
         # collection in order.  Each REMOVE targets a single collection.
         self._db.aql.execute(
-            """
+            f"""
             LET file_ids = (
-                FOR e IN library_contains_file
+                FOR e IN {lcf}
                     FILTER e._from == @lib
                     RETURN e._to
             )
             LET file_stream_data = (
-                FOR e IN file_has_output_stream
+                FOR e IN {fhe}
                     FILTER e._from IN file_ids
-                    RETURN {id: e._to, edge: e}
+                    RETURN {{id: e._to, edge: e}}
             )
             LET stream_ids = file_stream_data[* RETURN CURRENT.id]
             LET file_stream_edges = file_stream_data[* RETURN CURRENT.edge]
             LET output_edges = (
-                FOR e IN output_has_stream
+                FOR e IN {ohs}
                     FILTER e._to IN stream_ids
                     RETURN e
             )
             LET vector_edges = (
-                FOR e IN file_has_vectors
+                FOR e IN {fhv}
                     FILTER e._from IN file_ids
                     RETURN e
             )
             LET tag_edges = (
-                FOR e IN song_has_tags
+                FOR e IN {sht}
                     FILTER e._from IN file_ids
                     RETURN e
             )
             LET state_edges = (
-                FOR e IN file_has_state
+                FOR e IN {fhs}
                     FILTER e._from IN file_ids
                     RETURN e
             )
             FOR oe IN output_edges
-                REMOVE oe IN output_has_stream OPTIONS { ignoreErrors: true }
+                REMOVE oe IN {ohs} OPTIONS {{ ignoreErrors: true }}
             FOR sid IN stream_ids
-                REMOVE sid IN ml_output_streams OPTIONS { ignoreErrors: true }
+                REMOVE sid IN {mos} OPTIONS {{ ignoreErrors: true }}
             FOR fse IN file_stream_edges
-                REMOVE fse IN file_has_output_stream OPTIONS { ignoreErrors: true }
+                REMOVE fse IN {fhe} OPTIONS {{ ignoreErrors: true }}
             FOR ve IN vector_edges
-                REMOVE ve IN file_has_vectors OPTIONS { ignoreErrors: true }
+                REMOVE ve IN {fhv} OPTIONS {{ ignoreErrors: true }}
             FOR te IN tag_edges
-                REMOVE te IN song_has_tags OPTIONS { ignoreErrors: true }
-            FOR c IN worker_claims
+                REMOVE te IN {sht} OPTIONS {{ ignoreErrors: true }}
+            FOR c IN {wc}
                 FILTER c.file_id IN file_ids
-                REMOVE c IN worker_claims OPTIONS { ignoreErrors: true }
+                REMOVE c IN {wc} OPTIONS {{ ignoreErrors: true }}
             FOR se IN state_edges
-                REMOVE se IN file_has_state OPTIONS { ignoreErrors: true }
+                REMOVE se IN {fhs} OPTIONS {{ ignoreErrors: true }}
             FOR fid IN file_ids
-                REMOVE fid IN library_files OPTIONS { ignoreErrors: true }
+                REMOVE fid IN {lfi} OPTIONS {{ ignoreErrors: true }}
             """,
             bind_vars={"lib": normalized_id},
         )
 
         # ── Query 2: library-level data ────────────────────────────────────
         self._db.aql.execute(
-            """
+            f"""
             LET folder_edges = (
-                FOR e IN library_contains_folder
+                FOR e IN {lcf_}
                     FILTER e._from == @lib
                     RETURN e
             )
             LET scan_edges = (
-                FOR e IN library_has_scan
+                FOR e IN {lhs}
                     FILTER e._from == @lib
                     RETURN e
             )
             LET pipeline_edges = (
-                FOR e IN library_has_pipeline_state
+                FOR e IN {lhp}
                     FILTER e._from == @lib
                     RETURN e
             )
-            FOR file_edge IN library_contains_file
+            FOR file_edge IN {lcf}
                 FILTER file_edge._from == @lib
-                REMOVE file_edge IN library_contains_file OPTIONS { ignoreErrors: true }
+                REMOVE file_edge IN {lcf} OPTIONS {{ ignoreErrors: true }}
             FOR folder_target IN folder_edges
-                REMOVE folder_target._to IN library_folders OPTIONS { ignoreErrors: true }
+                REMOVE folder_target._to IN {lfol} OPTIONS {{ ignoreErrors: true }}
             FOR folder_edge IN folder_edges
-                REMOVE folder_edge IN library_contains_folder OPTIONS { ignoreErrors: true }
+                REMOVE folder_edge IN {lcf_} OPTIONS {{ ignoreErrors: true }}
             FOR scan_target IN scan_edges
-                REMOVE scan_target._to IN library_scans OPTIONS { ignoreErrors: true }
+                REMOVE scan_target._to IN {lsc} OPTIONS {{ ignoreErrors: true }}
             FOR scan_edge IN scan_edges
-                REMOVE scan_edge IN library_has_scan OPTIONS { ignoreErrors: true }
+                REMOVE scan_edge IN {lhs} OPTIONS {{ ignoreErrors: true }}
             FOR pipeline_target IN pipeline_edges
-                REMOVE pipeline_target._to IN library_pipeline_states OPTIONS { ignoreErrors: true }
+                REMOVE pipeline_target._to IN {lps} OPTIONS {{ ignoreErrors: true }}
             FOR pipeline_edge IN pipeline_edges
-                REMOVE pipeline_edge IN library_has_pipeline_state OPTIONS { ignoreErrors: true }
-            REMOVE @lib_key IN libraries OPTIONS { ignoreErrors: true }
+                REMOVE pipeline_edge IN {lhp} OPTIONS {{ ignoreErrors: true }}
+            REMOVE @lib_key IN {self.COLLECTION} OPTIONS {{ ignoreErrors: true }}
             """,
             bind_vars={"lib": normalized_id, "lib_key": lib_key},
         )
 
-        # ── Per-library vector collections ─────────────────────────────────
-        # Named vectors_track_*__{lib_key}.  Collection names are dynamic so
-        # they cannot be referenced in AQL; discovered and deleted via the
-        # DB API instead.
-        suffix = f"__{lib_key}"
-        for coll_meta in self._db.collections():
-            name = coll_meta["name"]
-            if name.startswith("vectors_track") and name.endswith(suffix):
-                self._db.delete_collection(name, ignore_missing=True)
-
         # ── Orphaned tag documents ────────────────────────────────────────────
         # Tags that are no longer referenced by any song_has_tags edge.
         self._db.aql.execute(
-            """
-            FOR tag IN tags
-                FILTER FIRST(FOR e IN song_has_tags FILTER e._to == tag._id LIMIT 1 RETURN 1) == null
-                REMOVE tag IN tags OPTIONS { ignoreErrors: true }
+            f"""
+            FOR tag IN {tg}
+                FILTER FIRST(FOR e IN {sht} FILTER e._to == tag._id LIMIT 1 RETURN 1) == null
+                REMOVE tag IN {tg} OPTIONS {{ ignoreErrors: true }}
             """
         )

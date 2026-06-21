@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from nomarr.components.navidrome.navidrome_graph_comp import get_top_navidrome_plays
 from nomarr.components.navidrome.playlist_builder_comp import (
     build_discovery_playlist,
     build_familiar_playlist,
@@ -42,8 +41,8 @@ def generate_playlists(
     db: Database,
     *,
     user_id: str,
+    top_plays: list[TrackPlayData],
     backbone_id: str,
-    library_key: str,
     enabled_types: list[str],
     half_life_days: float,
     top_n: int,
@@ -51,21 +50,25 @@ def generate_playlists(
     min_play_count: int,
     min_songs: int,
     max_genre_playlists: int = 5,
+    pp_max_clusters: int = 10,
 ) -> list[NavidromePersonalPlaylistEntry]:
-    """Generate personal playlists for *user_id*.
+    """Generate personal playlists for *user_id* from caller-provided play history.
 
     Pipeline:
-        1. Compute taste profile (centroid) from play history.
-        2. Fetch user's played tracks, filter by ``min_play_count``.
+        1. Compute taste profile (multi-cluster) from caller-provided play history.
+        2. Filter provided plays by ``min_play_count``.
         3. Build ``NavidromePersonalPlaylistContext``.
         4. Dispatch each enabled playlist type to its component builder.
         5. Filter out playlists below ``min_songs``.
 
+    Vector collections are per-backbone (no library_key needed).
+
     Args:
         db: Database instance.
         user_id: Navidrome user identifier.
+        top_plays: Play history provided by the caller (e.g. Navidrome plugin).
+            Each entry must include ``file_id``, ``playcount``, and ``last_played``.
         backbone_id: Vector backbone identifier.
-        library_key: ArangoDB ``_key`` of the library document.
         enabled_types: Which playlist types to generate.
         half_life_days: Recency half-life for taste profile.
         top_n: Max tracks to consider for taste profile.
@@ -73,19 +76,21 @@ def generate_playlists(
         min_play_count: Minimum plays for a track to count.
         min_songs: Minimum tracks for a playlist to be kept.
         max_genre_playlists: Maximum genre-specific playlists to generate (hard cap: 25).
+        pp_max_clusters: Maximum number of genre clusters for taste profile computation.
 
     Returns:
-        List of generated playlists with ``library_files/_id`` track lists.
+        List of generated playlists with ``song/_id`` track lists.
 
     """
-    # Step 1: Compute taste profile
+    # Step 1: Compute taste profile from caller-provided play data
     profile = compute_taste_profile(
         db=db,
         user_id=user_id,
+        top_plays=top_plays,
         backbone_id=backbone_id,
-        library_key=library_key,
         half_life_days=half_life_days,
         top_n=top_n,
+        pp_max_clusters=pp_max_clusters,
     )
     if profile is None:
         logger.warning(
@@ -93,13 +98,12 @@ def generate_playlists(
             extra={
                 "user_id": user_id,
                 "backbone_id": backbone_id,
-                "library_key": library_key,
             },
         )
         return []
 
-    # Step 2: Get user's played tracks and filter by min_play_count
-    plays = get_top_navidrome_plays(db, user_id, top_n)
+    # Step 2: Use caller-provided play data (sliced to top_n) and filter by min_play_count
+    plays = list(top_plays[:top_n])
     played_tracks: list[TrackPlayData] = [
         p for p in plays if p["file_id"] is not None and p["playcount"] >= min_play_count
     ]
@@ -108,8 +112,7 @@ def generate_playlists(
     # Step 3: Build context DTO
     ctx = NavidromePersonalPlaylistContext(
         backbone_id=backbone_id,
-        library_key=library_key,
-        centroid=profile["centroid"],
+        clusters=profile["clusters"],
         max_songs=max_songs,
         played_file_ids=played_file_ids,
         played_tracks=played_tracks,
@@ -129,7 +132,6 @@ def generate_playlists(
                 extra={
                     "user_id": user_id,
                     "backbone_id": backbone_id,
-                    "library_key": library_key,
                     "playlist_type": playlist_type,
                 },
             )
@@ -146,7 +148,6 @@ def generate_playlists(
             extra={
                 "user_id": user_id,
                 "backbone_id": backbone_id,
-                "library_key": library_key,
                 "playlists_before_filter": playlists_before_filter,
                 "min_songs": min_songs,
             },

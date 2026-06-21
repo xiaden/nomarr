@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+from nomarr.persistence.schema import CollectionNames
+
 _AQL_SAFETY_CONFTEST_PATH = Path(__file__).resolve().parents[2] / "aql_safety" / "conftest.py"
 _AQL_SAFETY_SPEC = spec_from_file_location(
     "tests.unit.aql_safety.conftest",
@@ -43,16 +45,19 @@ _DYNAMIC_COLLECTION = re.compile(r"^vectors_track_(hot|cold)__")
 VALID_COLLECTIONS = DOCUMENT_COLLECTIONS | EDGE_COLLECTIONS
 
 EDGE_DEFINITIONS: dict[str, dict[str, list[str]]] = {
-    "file_has_state": {"from": ["library_files"], "to": ["file_states"]},
-    "file_has_vectors": {"from": ["library_files"], "to": ["vectors_track_hot", "vectors_track_cold"]},
-    "file_has_segment_stats": {"from": ["library_files"], "to": ["segment_scores_stats"]},
-    "library_contains_file": {"from": ["libraries"], "to": ["library_files"]},
+    "file_has_state": {"from": [CollectionNames.LIBRARY_FILES.value], "to": ["file_states"]},
+    "file_has_vectors": {
+        "from": [CollectionNames.LIBRARY_FILES.value],
+        "to": ["vectors_track_hot", "vectors_track_cold"],
+    },
+    "file_has_segment_stats": {"from": [CollectionNames.LIBRARY_FILES.value], "to": ["segment_scores_stats"]},
+    "library_contains_file": {"from": ["libraries"], "to": [CollectionNames.LIBRARY_FILES.value]},
     "library_contains_folder": {"from": ["libraries"], "to": ["library_folders"]},
     "library_has_scan": {"from": ["libraries"], "to": ["library_scans"]},
     "library_has_pipeline_state": {"from": ["libraries"], "to": ["library_pipeline_states"]},
-    "has_nd_id": {"from": ["navidrome_tracks"], "to": ["library_files"]},
+    "has_nd_id": {"from": ["navidrome_tracks"], "to": [CollectionNames.LIBRARY_FILES.value]},
     "has_plays": {"from": ["navidrome_tracks"], "to": ["navidrome_playcounts"]},
-    "song_has_tags": {"from": ["library_files"], "to": ["tags"]},
+    "song_has_tags": {"from": [CollectionNames.LIBRARY_FILES.value], "to": ["tags"]},
     "model_has_output": {"from": ["ml_models"], "to": ["ml_model_outputs"]},
     "model_has_calibration": {"from": ["ml_models"], "to": ["calibration_state"]},
 }

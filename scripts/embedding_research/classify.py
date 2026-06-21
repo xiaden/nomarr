@@ -9,7 +9,7 @@ from time import perf_counter
 from typing import Any, cast
 
 import numpy as np
-from alive_progress import alive_bar, alive_it
+from alive_progress import alive_it
 
 from .cache import binned_ctp_heads as _binned_ctp_heads_cache
 from .cache import binned_ptc as _binned_ptc_cache
@@ -17,9 +17,8 @@ from .cache import binned_ptc_heads as _binned_ptc_heads_cache
 from .cache import flat_heads as _flat_heads_cache
 from .cache.flat_vecs import load_matrix as _load_flat_matrix
 from .config import BACKBONES, HEAD_VRAM_BYTES, HEADS, bootstrap_nomarr, discover_audio, patches_path, song_id
-from .helpers.binning import BIN_MODES, global_dist, temporal_segment
 from .helpers.binning import CTP_SCORE_THRESHOLDS as DEFAULT_CTP_THRESHOLDS
-from .helpers.binning import DIST_THRESHOLDS as DEFAULT_STD_THRESHOLDS
+from .helpers.binning import global_dist, temporal_segment
 from .helpers.cache_utils import build_done_set as _build_done_set
 from .pooling import STRATEGIES
 

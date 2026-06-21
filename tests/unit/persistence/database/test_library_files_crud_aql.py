@@ -16,6 +16,7 @@ from nomarr.components.library.library_file_mutation_comp import (
     upsert_batch,
     upsert_library_file,
 )
+from nomarr.persistence.schema import CollectionNames
 
 
 class TestUpdateFileModifiedTime:
@@ -29,7 +30,7 @@ class TestUpdateFileModifiedTime:
         update_file_modified_time(mock_db, "abc123", 123456789)
 
         mock_db.library.update_file.assert_called_once_with(
-            "library_files/abc123",
+            f"{CollectionNames.LIBRARY_FILES.value}/abc123",
             {"modified_time": 123456789},
         )
 
@@ -48,7 +49,7 @@ class TestUpdateFilePath:
 
             update_file_path(
                 mock_db,
-                "library_files/123",
+                f"{CollectionNames.LIBRARY_FILES.value}/123",
                 "D:/Music/new-song.flac",
                 4096,
                 123456789,
@@ -56,11 +57,11 @@ class TestUpdateFilePath:
             )
 
         mock_db.library.update_library_file_path.assert_called_once_with(
-            "library_files/123",
+            f"{CollectionNames.LIBRARY_FILES.value}/123",
             "D:/Music/new-song.flac",
         )
         mock_db.library.update_file.assert_called_once_with(
-            "library_files/123",
+            f"{CollectionNames.LIBRARY_FILES.value}/123",
             {
                 "file_size": 4096,
                 "modified_time": 123456789,
@@ -81,7 +82,7 @@ class TestUpdateFilePath:
 
             update_file_path(
                 mock_db,
-                "library_files/123",
+                f"{CollectionNames.LIBRARY_FILES.value}/123",
                 "D:/Music/new-song.flac",
                 4096,
                 123456789,
@@ -102,7 +103,7 @@ class TestUpdateFilePath:
 
             update_file_path(
                 mock_db,
-                "library_files/123",
+                f"{CollectionNames.LIBRARY_FILES.value}/123",
                 "D:/Music/new-song.flac",
                 4096,
                 123456789,
@@ -129,7 +130,7 @@ class TestUpsertBatch:
     def test_strips_library_id_before_path_upsert(self) -> None:
         """Removes ``library_id`` before delegating to the Tier 3 library surface."""
         mock_db = MagicMock()
-        mock_db.library.add_files_to_library.return_value = ["library_files/1"]
+        mock_db.library.add_files_to_library.return_value = [f"{CollectionNames.LIBRARY_FILES.value}/1"]
         file_docs = [
             {
                 "library_id": "libraries/1",
@@ -141,7 +142,7 @@ class TestUpsertBatch:
 
         result = upsert_batch(mock_db, file_docs)
 
-        assert result == ["library_files/1"]
+        assert result == [f"{CollectionNames.LIBRARY_FILES.value}/1"]
         mock_db.library.add_files_to_library.assert_called_once_with(
             "libraries/1",
             [
@@ -157,7 +158,7 @@ class TestUpsertBatch:
     def test_skips_state_initialization_for_existing_files(self) -> None:
         """Delegates state-bootstrap decisions to ``LibraryDb.add_files_to_library``."""
         mock_db = MagicMock()
-        mock_db.library.add_files_to_library.return_value = ["library_files/1"]
+        mock_db.library.add_files_to_library.return_value = [f"{CollectionNames.LIBRARY_FILES.value}/1"]
         file_docs = [
             {
                 "library_id": "libraries/1",
@@ -169,7 +170,7 @@ class TestUpsertBatch:
 
         result = upsert_batch(mock_db, file_docs)
 
-        assert result == ["library_files/1"]
+        assert result == [f"{CollectionNames.LIBRARY_FILES.value}/1"]
         mock_db.library.add_files_to_library.assert_called_once_with(
             "libraries/1",
             [
@@ -185,7 +186,10 @@ class TestUpsertBatch:
     def test_initializes_state_only_for_new_files_in_mixed_batch(self) -> None:
         """Batches are grouped by library and delegated with ``library_id`` stripped."""
         mock_db = MagicMock()
-        mock_db.library.add_files_to_library.return_value = ["library_files/1", "library_files/2"]
+        mock_db.library.add_files_to_library.return_value = [
+            f"{CollectionNames.LIBRARY_FILES.value}/1",
+            f"{CollectionNames.LIBRARY_FILES.value}/2",
+        ]
         file_docs = [
             {
                 "library_id": "libraries/1",
@@ -203,7 +207,7 @@ class TestUpsertBatch:
 
         result = upsert_batch(mock_db, file_docs)
 
-        assert result == ["library_files/1", "library_files/2"]
+        assert result == [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"]
         mock_db.library.add_files_to_library.assert_called_once_with(
             "libraries/1",
             [
@@ -251,8 +255,8 @@ class TestBulkDeleteFiles:
         """Deletes all matched paths via the canonical path-based remove API."""
         mock_db = MagicMock()
         mock_db.library.find_file_by_path_any_library.side_effect = [
-            {"_id": "library_files/1"},
-            {"_id": "library_files/2"},
+            {"_id": f"{CollectionNames.LIBRARY_FILES.value}/1"},
+            {"_id": f"{CollectionNames.LIBRARY_FILES.value}/2"},
         ]
 
         result = bulk_delete_files(
@@ -275,10 +279,10 @@ class TestSetChromaprint:
         """Uses the trailing document key when the file id includes a collection prefix."""
         mock_db = MagicMock()
 
-        set_chromaprint(mock_db, "library_files/abc", "fp123")
+        set_chromaprint(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc", "fp123")
 
         mock_db.library.update_file.assert_called_once_with(
-            "library_files/abc",
+            f"{CollectionNames.LIBRARY_FILES.value}/abc",
             {"chromaprint": "fp123"},
         )
 
@@ -290,7 +294,7 @@ class TestSetChromaprint:
         set_chromaprint(mock_db, "abc", "fp123")
 
         mock_db.library.update_file.assert_called_once_with(
-            "library_files/abc",
+            f"{CollectionNames.LIBRARY_FILES.value}/abc",
             {"chromaprint": "fp123"},
         )
 
@@ -306,7 +310,7 @@ class TestUpsertLibraryFile:
         path.is_valid.return_value = True
         path.relative = "artist/song.flac"
         path.absolute = "D:/Music/artist/song.flac"
-        mock_db.library.add_file_to_library.return_value = "library_files/1"
+        mock_db.library.add_file_to_library.return_value = f"{CollectionNames.LIBRARY_FILES.value}/1"
 
         with patch("nomarr.components.library.library_file_mutation_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value = MagicMock(value=111222333)
@@ -321,7 +325,7 @@ class TestUpsertLibraryFile:
                 last_tagged_at=987654321,
             )
 
-        assert result == "library_files/1"
+        assert result == f"{CollectionNames.LIBRARY_FILES.value}/1"
         mock_db.library.add_file_to_library.assert_called_once_with(
             "libraries/1",
             {
@@ -345,7 +349,7 @@ class TestUpsertLibraryFile:
         path.is_valid.return_value = True
         path.relative = "artist/song.flac"
         path.absolute = "D:/Music/artist/song.flac"
-        mock_db.library.add_file_to_library.return_value = "library_files/2"
+        mock_db.library.add_file_to_library.return_value = f"{CollectionNames.LIBRARY_FILES.value}/2"
 
         with patch("nomarr.components.library.library_file_mutation_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value = MagicMock(value=222333444)
@@ -358,7 +362,7 @@ class TestUpsertLibraryFile:
                 987654321,
             )
 
-        assert result == "library_files/2"
+        assert result == f"{CollectionNames.LIBRARY_FILES.value}/2"
         mock_db.library.add_file_to_library.assert_called_once_with(
             "libraries/2",
             {
@@ -383,9 +387,9 @@ class TestDeleteLibraryFile:
         """Deletes the file document through the Tier 3 library surface."""
         mock_db = MagicMock()
 
-        delete_library_file(mock_db, "library_files/123")
+        delete_library_file(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/123")
 
-        mock_db.library.remove_file.assert_called_once_with("library_files/123")
+        mock_db.library.remove_file.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/123")
         mock_db.library.remove_file_by_path.assert_not_called()
 
     @pytest.mark.unit
@@ -416,12 +420,16 @@ class TestGetFileLibraryKey:
     def test_returns_library_key_when_edge_exists(self) -> None:
         """Returns the library key extracted from the library_id in the edge map."""
         mock_db = MagicMock()
-        mock_db.library.get_library_ids_for_files.return_value = {"library_files/123": "libraries/main"}
+        mock_db.library.get_library_ids_for_files.return_value = {
+            f"{CollectionNames.LIBRARY_FILES.value}/123": "libraries/main"
+        }
 
-        result = get_file_library_key(mock_db, "library_files/123")
+        result = get_file_library_key(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/123")
 
         assert result == "main"
-        mock_db.library.get_library_ids_for_files.assert_called_once_with(["library_files/123"])
+        mock_db.library.get_library_ids_for_files.assert_called_once_with(
+            [f"{CollectionNames.LIBRARY_FILES.value}/123"]
+        )
 
     @pytest.mark.unit
     def test_returns_none_when_no_owning_library_found(self) -> None:
@@ -429,10 +437,12 @@ class TestGetFileLibraryKey:
         mock_db = MagicMock()
         mock_db.library.get_library_ids_for_files.return_value = {}
 
-        result = get_file_library_key(mock_db, "library_files/missing")
+        result = get_file_library_key(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/missing")
 
         assert result is None
-        mock_db.library.get_library_ids_for_files.assert_called_once_with(["library_files/missing"])
+        mock_db.library.get_library_ids_for_files.assert_called_once_with(
+            [f"{CollectionNames.LIBRARY_FILES.value}/missing"]
+        )
 
 
 class TestUpdateFilePathCurrentContract:
@@ -448,7 +458,7 @@ class TestUpdateFilePathCurrentContract:
 
             update_file_path(
                 mock_db,
-                "library_files/123",
+                f"{CollectionNames.LIBRARY_FILES.value}/123",
                 "D:/Music/new-song.flac",
                 4096,
                 123456789,
@@ -456,11 +466,11 @@ class TestUpdateFilePathCurrentContract:
             )
 
         mock_db.library.update_library_file_path.assert_called_once_with(
-            "library_files/123",
+            f"{CollectionNames.LIBRARY_FILES.value}/123",
             "D:/Music/new-song.flac",
         )
         mock_db.library.update_file.assert_called_once_with(
-            "library_files/123",
+            f"{CollectionNames.LIBRARY_FILES.value}/123",
             {
                 "file_size": 4096,
                 "modified_time": 123456789,
@@ -480,7 +490,7 @@ class TestUpdateFilePathCurrentContract:
 
             update_file_path(
                 mock_db,
-                "library_files/123",
+                f"{CollectionNames.LIBRARY_FILES.value}/123",
                 "D:/Music/new-song.flac",
                 4096,
                 123456789,
@@ -500,7 +510,7 @@ class TestUpdateFilePathCurrentContract:
 
             update_file_path(
                 mock_db,
-                "library_files/123",
+                f"{CollectionNames.LIBRARY_FILES.value}/123",
                 "D:/Music/new-song.flac",
                 4096,
                 123456789,
@@ -527,7 +537,7 @@ class TestUpsertBatchCurrentContract:
     def test_strips_library_id_before_path_upsert(self) -> None:
         """Removes ``library_id`` before delegating to the Tier 3 library surface."""
         mock_db = MagicMock()
-        mock_db.library.add_files_to_library.return_value = ["library_files/1"]
+        mock_db.library.add_files_to_library.return_value = [f"{CollectionNames.LIBRARY_FILES.value}/1"]
         file_docs = [
             {
                 "library_id": "libraries/1",
@@ -539,7 +549,7 @@ class TestUpsertBatchCurrentContract:
 
         result = upsert_batch(mock_db, file_docs)
 
-        assert result == ["library_files/1"]
+        assert result == [f"{CollectionNames.LIBRARY_FILES.value}/1"]
         mock_db.library.add_files_to_library.assert_called_once_with(
             "libraries/1",
             [
@@ -556,7 +566,7 @@ class TestUpsertBatchCurrentContract:
     def test_skips_state_initialization_for_existing_files(self) -> None:
         """Delegates state-bootstrap decisions to ``LibraryDb.add_files_to_library``."""
         mock_db = MagicMock()
-        mock_db.library.add_files_to_library.return_value = ["library_files/1"]
+        mock_db.library.add_files_to_library.return_value = [f"{CollectionNames.LIBRARY_FILES.value}/1"]
         file_docs = [
             {
                 "library_id": "libraries/1",
@@ -568,7 +578,7 @@ class TestUpsertBatchCurrentContract:
 
         result = upsert_batch(mock_db, file_docs)
 
-        assert result == ["library_files/1"]
+        assert result == [f"{CollectionNames.LIBRARY_FILES.value}/1"]
         mock_db.library.add_files_to_library.assert_called_once_with(
             "libraries/1",
             [
@@ -585,7 +595,10 @@ class TestUpsertBatchCurrentContract:
     def test_initializes_state_only_for_new_files_in_mixed_batch(self) -> None:
         """Batches are grouped by library and delegated with ``library_id`` stripped."""
         mock_db = MagicMock()
-        mock_db.library.add_files_to_library.return_value = ["library_files/1", "library_files/2"]
+        mock_db.library.add_files_to_library.return_value = [
+            f"{CollectionNames.LIBRARY_FILES.value}/1",
+            f"{CollectionNames.LIBRARY_FILES.value}/2",
+        ]
         file_docs = [
             {
                 "library_id": "libraries/1",
@@ -603,7 +616,7 @@ class TestUpsertBatchCurrentContract:
 
         result = upsert_batch(mock_db, file_docs)
 
-        assert result == ["library_files/1", "library_files/2"]
+        assert result == [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"]
         mock_db.library.add_files_to_library.assert_called_once_with(
             "libraries/1",
             [
@@ -632,7 +645,7 @@ class TestUpsertLibraryFileCurrentContract:
         path.is_valid.return_value = True
         path.relative = "artist/song.flac"
         path.absolute = "D:/Music/artist/song.flac"
-        mock_db.library.add_file_to_library.return_value = "library_files/1"
+        mock_db.library.add_file_to_library.return_value = f"{CollectionNames.LIBRARY_FILES.value}/1"
 
         with patch("nomarr.components.library.library_file_mutation_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value = MagicMock(value=111222333)
@@ -647,7 +660,7 @@ class TestUpsertLibraryFileCurrentContract:
                 last_tagged_at=987654321,
             )
 
-        assert result == "library_files/1"
+        assert result == f"{CollectionNames.LIBRARY_FILES.value}/1"
         mock_db.library.add_file_to_library.assert_called_once_with(
             "libraries/1",
             {
@@ -673,7 +686,7 @@ class TestUpsertLibraryFileCurrentContract:
         path.is_valid.return_value = True
         path.relative = "artist/song.flac"
         path.absolute = "D:/Music/artist/song.flac"
-        mock_db.library.add_file_to_library.return_value = "library_files/2"
+        mock_db.library.add_file_to_library.return_value = f"{CollectionNames.LIBRARY_FILES.value}/2"
 
         with patch("nomarr.components.library.library_file_mutation_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value = MagicMock(value=222333444)
@@ -686,7 +699,7 @@ class TestUpsertLibraryFileCurrentContract:
                 987654321,
             )
 
-        assert result == "library_files/2"
+        assert result == f"{CollectionNames.LIBRARY_FILES.value}/2"
         mock_db.library.add_file_to_library.assert_called_once_with(
             "libraries/2",
             {
@@ -713,9 +726,9 @@ class TestDeleteLibraryFileCurrentContract:
         """Deletes the file document through the Tier 3 library surface."""
         mock_db = MagicMock()
 
-        delete_library_file(mock_db, "library_files/123")
+        delete_library_file(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/123")
 
-        mock_db.library.remove_file.assert_called_once_with("library_files/123")
+        mock_db.library.remove_file.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/123")
         mock_db.library.remove_file_by_path.assert_not_called()
 
     @pytest.mark.unit
@@ -747,12 +760,16 @@ class TestGetFileLibraryKeyCurrentContract:
     def test_returns_library_key_when_edge_exists(self) -> None:
         """Returns the library key extracted from the library_id in the edge map."""
         mock_db = MagicMock()
-        mock_db.library.get_library_ids_for_files.return_value = {"library_files/123": "libraries/main"}
+        mock_db.library.get_library_ids_for_files.return_value = {
+            f"{CollectionNames.LIBRARY_FILES.value}/123": "libraries/main"
+        }
 
-        result = get_file_library_key(mock_db, "library_files/123")
+        result = get_file_library_key(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/123")
 
         assert result == "main"
-        mock_db.library.get_library_ids_for_files.assert_called_once_with(["library_files/123"])
+        mock_db.library.get_library_ids_for_files.assert_called_once_with(
+            [f"{CollectionNames.LIBRARY_FILES.value}/123"]
+        )
 
     @pytest.mark.unit
     def test_returns_none_when_no_owning_library_found(self) -> None:
@@ -760,7 +777,9 @@ class TestGetFileLibraryKeyCurrentContract:
         mock_db = MagicMock()
         mock_db.library.get_library_ids_for_files.return_value = {}
 
-        result = get_file_library_key(mock_db, "library_files/missing")
+        result = get_file_library_key(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/missing")
 
         assert result is None
-        mock_db.library.get_library_ids_for_files.assert_called_once_with(["library_files/missing"])
+        mock_db.library.get_library_ids_for_files.assert_called_once_with(
+            [f"{CollectionNames.LIBRARY_FILES.value}/missing"]
+        )

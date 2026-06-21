@@ -17,12 +17,12 @@ REPO_ROOT = Path(__file__).parent.parent
 CODE_INTEL_SRC = REPO_ROOT / "code-intel" / "src"
 sys.path.insert(0, str(CODE_INTEL_SRC))
 
-from mcp_code_intel.helpers.log_md import LOGS_DIR, parse_log  # noqa: E402
 from mcp_code_intel.helpers.log_jsonl import (  # noqa: E402
     LogEntry,
     append_entry,
     next_entry_id,
 )
+from mcp_code_intel.helpers.log_md import LOGS_DIR, parse_log  # noqa: E402
 
 LOGS_PATH = REPO_ROOT / LOGS_DIR
 

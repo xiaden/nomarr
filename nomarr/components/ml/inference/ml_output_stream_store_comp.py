@@ -7,15 +7,18 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.library.library_file_state_comp import transition_file_state
 from nomarr.components.ml.onnx.ml_model_registry_comp import build_model_output_index_map
+from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.helpers.dto.ml_dto import LoadedOutputStream
+from nomarr.persistence.schema import CollectionNames
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
 _STREAM_COLLECTION = "ml_output_streams"
-_FILE_COLLECTION = "library_files"
+_FILE_COLLECTION = CollectionNames.LIBRARY_FILES.value
 _OUTPUT_COLLECTION = "ml_model_outputs"
 
 logger = logging.getLogger(__name__)
@@ -188,9 +191,10 @@ def load_output_streams_for_file(
     stream_records = fetch_output_streams(db, file_id)
     if not stream_records:
         logger.warning(
-            "[output_stream_store] No canonical output streams found for %s, skipping (file needs reprocessing)",
+            "[output_stream_store] No canonical output streams found for %s, transitioning to not_processed for re-inference",
             file_path,
         )
+        transition_file_state(db, [file_id], STATE_PROCESSED, STATE_NOT_PROCESSED)
         return []
 
     lookup = resolve_output_stream_lookup(db, head_infos, cached_lookup=output_lookup)
@@ -217,11 +221,12 @@ def load_output_streams_for_file(
     if unmatched_output_ids:
         logger.warning(
             "[output_stream_store] %s canonical output streams for %s could not be matched to discovered heads, "
-            "skipping (file needs reprocessing): %s",
+            "transitioning to not_processed for re-inference: %s",
             len(unmatched_output_ids),
             file_path,
             unmatched_output_ids,
         )
+        transition_file_state(db, [file_id], STATE_PROCESSED, STATE_NOT_PROCESSED)
         return []
 
     logger.debug(

@@ -9,6 +9,7 @@ import pytest
 
 from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES
 from nomarr.persistence.api.library import LibraryDb, LibraryMaintenanceDb
+from nomarr.persistence.schema import CollectionNames
 
 _NEGATIVE_FILE_STATES = [state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_")]
 
@@ -63,13 +64,13 @@ def test_add_file_to_library_delegates_to_canonical_tier2_helper() -> None:
     db, _, files, _, _, file_states, _ = _make_library_db()
     payload = {"path": "C:/music/new.flac"}
     files.upsert_files_for_library_with_state_init.return_value = {
-        "file_ids": ["library_files/1"],
+        "file_ids": [f"{CollectionNames.LIBRARY_FILES.value}/1"],
         "added": 1,
     }
 
     result = db.add_file_to_library("libraries/1", payload)
 
-    assert result == "library_files/1"
+    assert result == f"{CollectionNames.LIBRARY_FILES.value}/1"
     files.upsert_files_for_library_with_state_init.assert_called_once_with(
         "libraries/1",
         [payload],
@@ -85,13 +86,13 @@ def test_add_files_to_library_delegates_to_canonical_tier2_helper() -> None:
         {"path": "C:/music/new.flac"},
     ]
     files.upsert_files_for_library_with_state_init.return_value = {
-        "file_ids": ["library_files/existing", "library_files/new"],
+        "file_ids": [f"{CollectionNames.LIBRARY_FILES.value}/existing", f"{CollectionNames.LIBRARY_FILES.value}/new"],
         "added": 1,
     }
 
     result = db.add_files_to_library("libraries/1", payloads)
 
-    assert result == ["library_files/existing", "library_files/new"]
+    assert result == [f"{CollectionNames.LIBRARY_FILES.value}/existing", f"{CollectionNames.LIBRARY_FILES.value}/new"]
     files.upsert_files_for_library_with_state_init.assert_called_once_with(
         "libraries/1",
         payloads,
@@ -126,9 +127,11 @@ def test_update_library_files_delegates_to_canonical_tier2_helper() -> None:
 def test_update_library_file_path_updates_only_path() -> None:
     db, _, files, _, _, _, _ = _make_library_db()
 
-    db.update_library_file_path("library_files/1", "D:/moved/track.flac")
+    db.update_library_file_path(f"{CollectionNames.LIBRARY_FILES.value}/1", "D:/moved/track.flac")
 
-    files._update_file.assert_called_once_with("library_files/1", {"path": "D:/moved/track.flac"})
+    files._update_file.assert_called_once_with(
+        f"{CollectionNames.LIBRARY_FILES.value}/1", {"path": "D:/moved/track.flac"}
+    )
 
 
 @pytest.mark.unit
@@ -136,10 +139,10 @@ def test_remove_file_cleans_output_streams_vectors_then_removes_file() -> None:
     db, _, files, _, _, _, vectors = _make_library_db()
     db._streams = MagicMock()
 
-    db.remove_file("library_files/1")
+    db.remove_file(f"{CollectionNames.LIBRARY_FILES.value}/1")
 
     files.remove_files_with_derived_cleanup.assert_called_once_with(
-        ["library_files/1"],
+        [f"{CollectionNames.LIBRARY_FILES.value}/1"],
         streams=db._streams,
         vectors=vectors,
     )
@@ -148,13 +151,13 @@ def test_remove_file_cleans_output_streams_vectors_then_removes_file() -> None:
 @pytest.mark.unit
 def test_remove_file_by_path_scoped_resolves_then_removes() -> None:
     db, _, files, _, _, _, _ = _make_library_db()
-    files.get_file_by_path.return_value = {"_id": "library_files/1"}
+    files.get_file_by_path.return_value = {"_id": f"{CollectionNames.LIBRARY_FILES.value}/1"}
 
     with patch.object(db, "remove_file") as remove_file:
         db.remove_file_by_path("C:/music/track.flac", "libraries/1")
 
     files.get_file_by_path.assert_called_once_with("C:/music/track.flac", "libraries/1")
-    remove_file.assert_called_once_with("library_files/1")
+    remove_file.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/1")
 
 
 @pytest.mark.unit
@@ -162,13 +165,15 @@ def test_remove_file_by_path_unscoped_uses_normalized_lookup() -> None:
     db, _, _, _, _, _, _ = _make_library_db()
 
     with (
-        patch.object(db, "find_file_by_path_any_library", return_value={"_id": "library_files/9"}) as finder,
+        patch.object(
+            db, "find_file_by_path_any_library", return_value={"_id": f"{CollectionNames.LIBRARY_FILES.value}/9"}
+        ) as finder,
         patch.object(db, "remove_file") as remove_file,
     ):
         db.remove_file_by_path("C:/music/track.flac")
 
     finder.assert_called_once_with("C:/music/track.flac")
-    remove_file.assert_called_once_with("library_files/9")
+    remove_file.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/9")
 
 
 @pytest.mark.unit
@@ -179,9 +184,9 @@ def test_replace_file_tags_delegates_to_canonical_tier2_helper() -> None:
         {"key": "mood", "value": "calm"},
     ]
 
-    db.replace_file_tags("library_files/1", payload)
+    db.replace_file_tags(f"{CollectionNames.LIBRARY_FILES.value}/1", payload)
 
-    tags.replace_file_tags.assert_called_once_with("library_files/1", payload)
+    tags.replace_file_tags.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/1", payload)
 
 
 @pytest.mark.unit
@@ -197,12 +202,16 @@ def test_replace_tag_references_delegates_to_canonical_tier2_helper() -> None:
 def test_replace_selected_tag_references_delegates_to_canonical_tier2_helper() -> None:
     db, _, _, tags, _, _, _ = _make_library_db()
 
-    db.replace_selected_tag_references(["library_files/1", "library_files/2"], "tags/source", "tags/target")
+    db.replace_selected_tag_references(
+        [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"],
+        "tags/source",
+        "tags/target",
+    )
 
     tags.replace_tag_references.assert_called_once_with(
         "tags/source",
         "tags/target",
-        file_ids=["library_files/1", "library_files/2"],
+        file_ids=[f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"],
     )
 
 
@@ -210,39 +219,41 @@ def test_replace_selected_tag_references_delegates_to_canonical_tier2_helper() -
 def test_remove_file_tags_all_names_delegates_to_canonical_tier2_helper() -> None:
     db, _, _, tags, _, _, _ = _make_library_db()
 
-    db.remove_file_tags("library_files/1")
+    db.remove_file_tags(f"{CollectionNames.LIBRARY_FILES.value}/1")
 
-    tags.remove_file_tags.assert_called_once_with("library_files/1", None)
+    tags.remove_file_tags.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/1", None)
 
 
 @pytest.mark.unit
 def test_remove_file_tags_selected_names_delegates_to_canonical_tier2_helper() -> None:
     db, _, _, tags, _, _, _ = _make_library_db()
 
-    db.remove_file_tags("library_files/1", ["genre"])
+    db.remove_file_tags(f"{CollectionNames.LIBRARY_FILES.value}/1", ["genre"])
 
-    tags.remove_file_tags.assert_called_once_with("library_files/1", ["genre"])
+    tags.remove_file_tags.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/1", ["genre"])
 
 
 @pytest.mark.unit
 def test_list_file_tags_for_files_groups_rows_by_file() -> None:
     db, _, _, tags, _, _, _ = _make_library_db()
     tags.get_tags_for_files_batch.return_value = [
-        {"start_id": "library_files/1", "v": {"name": "genre", "value": "rock"}},
-        {"start_id": "library_files/1", "v": {"name": "mood", "value": "calm"}},
+        {"start_id": f"{CollectionNames.LIBRARY_FILES.value}/1", "v": {"name": "genre", "value": "rock"}},
+        {"start_id": f"{CollectionNames.LIBRARY_FILES.value}/1", "v": {"name": "mood", "value": "calm"}},
     ]
 
-    result = db.list_file_tags_for_files(["library_files/1", "library_files/2"], name_starts_with="g")
+    result = db.list_file_tags_for_files(
+        [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"], name_starts_with="g"
+    )
 
     assert result == {
-        "library_files/1": [
+        f"{CollectionNames.LIBRARY_FILES.value}/1": [
             {"name": "genre", "value": "rock"},
             {"name": "mood", "value": "calm"},
         ],
-        "library_files/2": [],
+        f"{CollectionNames.LIBRARY_FILES.value}/2": [],
     }
     tags.get_tags_for_files_batch.assert_called_once_with(
-        ["library_files/1", "library_files/2"],
+        [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"],
         name_starts_with="g",
         include_edge=False,
     )
@@ -258,10 +269,10 @@ def test_normalized_read_names_delegate_to_underlying_queries() -> None:
     files.get_tracks_for_matching.return_value = sentinel.tracks
     tags.get_tag_value_frequencies.side_effect = [[("rock", 2)], [("1999", 1)]]
 
-    assert db.list_files_by_ids(["library_files/1"]) is sentinel.files
-    assert db.list_tags_for_file("library_files/1") is sentinel.tags_for_file
+    assert db.list_files_by_ids([f"{CollectionNames.LIBRARY_FILES.value}/1"]) is sentinel.files
+    assert db.list_tags_for_file(f"{CollectionNames.LIBRARY_FILES.value}/1") is sentinel.tags_for_file
     assert db.list_tags_by_name("genre", 25) is sentinel.tags_by_name
-    assert db.list_genre_tags_for_files(["library_files/1"]) is sentinel.genre_tags
+    assert db.list_genre_tags_for_files([f"{CollectionNames.LIBRARY_FILES.value}/1"]) is sentinel.genre_tags
     assert db.list_tracks_for_matching("libraries/1", limit=10) is sentinel.tracks
     assert db.list_tag_value_frequencies(["genre", "year"], 10) == {
         "genre": [("rock", 2)],
@@ -338,10 +349,10 @@ def test_remove_file_delegates_to_canonical_tier2_cleanup_helper() -> None:
     db, _, files, _, _, _, vectors = _make_library_db()
     db._streams = MagicMock()
 
-    db.remove_file("library_files/1")
+    db.remove_file(f"{CollectionNames.LIBRARY_FILES.value}/1")
 
     files.remove_files_with_derived_cleanup.assert_called_once_with(
-        ["library_files/1"],
+        [f"{CollectionNames.LIBRARY_FILES.value}/1"],
         streams=db._streams,
         vectors=vectors,
     )

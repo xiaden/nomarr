@@ -77,7 +77,7 @@ def _normalize_title(value: str) -> str:
 
 
 def build_track_descriptor(file_doc: dict[str, Any]) -> TrackDescriptor:
-    """Build a portable descriptor from hydrated ``library_files`` metadata."""
+    """Build a portable descriptor from hydrated song metadata."""
     return _descriptor_from_doc(file_doc)
 
 
@@ -100,7 +100,7 @@ def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
 
 
 def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tuple[str | None, str]:
-    """Resolve a portable seed descriptor to one Nomarr ``library_files/_id``."""
+    """Resolve a portable seed descriptor to one Nomarr track record."""
     candidate_ids = _candidate_file_ids(db, seed)
     if not candidate_ids:
         return None, "descriptor_unresolved"

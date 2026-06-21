@@ -23,6 +23,7 @@ from nomarr.helpers.dto.navidrome_dto import (
     PreviewTagStatsResult,
     StaticPlaylistResult,
     TemplateSummaryItem,
+    TrackPlayData,
 )
 from nomarr.helpers.exceptions import MisconfiguredError
 from nomarr.workflows.navidrome import (
@@ -356,35 +357,36 @@ class NavidromeService:
     def generate_playlists(
         self,
         user_id: str,
+        top_plays: list[TrackPlayData],
         *,
         enabled_types: list[str] | None = None,
         max_songs: int | None = None,
         min_songs: int | None = None,
         max_genre_playlists: int | None = None,
+        max_clusters: int | None = None,
     ) -> NavidromeGeneratePlaylistsResult:
         """Generate personal playlists for a Navidrome user.
 
-        Reads backbone, library, and ``pp_*`` playlist config from
+        Reads backbone and ``pp_*`` playlist config from
         ``ConfigService``, then delegates to the playlist generation workflow.
+        Vector collections are per-backbone (not per-library), so no
+        ``library_key`` config read is needed.
 
         Args:
             user_id: Navidrome user identifier.
+            top_plays: Play history provided by the caller (e.g. the Navidrome plugin).
+                Each entry must include ``file_id``, ``playcount``, and ``last_played``.
             enabled_types: Override for playlist types. Falls back to config.
             max_songs: Override for max songs per playlist. Falls back to config.
             min_songs: Override for min songs per playlist. Falls back to config.
             max_genre_playlists: Override for max genre playlists (1-25). Falls back to config.
+            max_clusters: Override for max clusters (1-25). Falls back to config.
 
         Returns:
             DTO containing playlist generation status and generated playlists.
 
-        Raises:
-            MisconfiguredError: If ``library_key`` is not configured.
-
         """
         backbone_id: str = self._config_service.get("pp_backbone_id", "effnet-discogs")
-        library_key: str = self._config_service.get("library_key", "")
-        if not library_key:
-            raise MisconfiguredError("library_key not configured")
 
         type_flag_keys = ["familiar", "discovery", "hidden_gems", "genre", "universal"]
         resolved_enabled_types = (
@@ -400,12 +402,15 @@ class NavidromeService:
             else self._config_service.get("pp_max_genre_playlists", 5),
             25,
         )
+        resolved_max_clusters: int = (
+            max_clusters if max_clusters is not None else self._config_service.get("pp_max_clusters", 10)
+        )
 
         playlists = generate_playlists(
             db=self._db,
             user_id=user_id,
+            top_plays=top_plays,
             backbone_id=backbone_id,
-            library_key=library_key,
             enabled_types=resolved_enabled_types,
             half_life_days=self._config_service.get("pp_half_life_days", 30.0),
             top_n=self._config_service.get("pp_top_n", 200),
@@ -413,6 +418,7 @@ class NavidromeService:
             min_play_count=self._config_service.get("pp_min_play_count", 3),
             min_songs=resolved_min_songs,
             max_genre_playlists=resolved_max_genre_playlists,
+            pp_max_clusters=resolved_max_clusters,
         )
 
         if playlists:
@@ -427,7 +433,7 @@ class NavidromeService:
         return result
 
     def resolve_files_to_descriptors(self, file_ids: list[str]) -> dict[str, TrackDescriptor]:
-        """Resolve ``library_files/_id`` values to portable track descriptors.
+        """Resolve track references to portable track descriptors.
 
         Used by plugin-backed playlist/recommendation API flows so Nomarr returns
         portable descriptors and the plugin resolves Navidrome mediafile IDs locally.
@@ -444,10 +450,18 @@ class NavidromeService:
             descriptors_by_file_id[file_id] = build_track_descriptor(file_doc)
         return descriptors_by_file_id
 
-    def generate_personal_playlists(self) -> NavidromeGeneratePlaylistsResult:
+    def generate_personal_playlists(
+        self,
+        top_plays: list[TrackPlayData],
+    ) -> NavidromeGeneratePlaylistsResult:
         """Generate personal playlists for the configured Navidrome API user.
 
-        Uses ``navidrome_api_user`` from config as the user ID for taste-profile lookup.
+        Uses ``navidrome_api_user`` from config as the user ID and accepts
+        play history from the caller (e.g. the Navidrome plugin).
+
+        Args:
+            top_plays: Play history provided by the caller.
+                Each entry must include ``file_id``, ``playcount``, and ``last_played``.
 
         Returns:
             NavidromeGeneratePlaylistsResult with status and playlist entries.
@@ -459,4 +473,4 @@ class NavidromeService:
         _, api_user, _ = self._get_api_credentials()
         if not api_user:
             raise MisconfiguredError("navidrome_api_user not configured")
-        return self.generate_playlists(user_id=api_user)
+        return self.generate_playlists(user_id=api_user, top_plays=top_plays)

@@ -7,26 +7,37 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.persistence.schema import CollectionNames
 from nomarr.workflows.navidrome.generate_playlists_wf import generate_playlists
 
 
-def _make_db(plays: list[dict[str, object]] | None = None) -> MagicMock:
-    """Create a mock Database with configurable play-history data."""
-    db = MagicMock()
-    db.app.get_top_nd_plays.return_value = plays or []
-    return db
+def _make_db() -> MagicMock:
+    """Create a mock Database."""
+    return MagicMock()
 
 
 def _profile() -> dict[str, object]:
     """Return a representative taste-profile payload."""
     return {
         "user_id": "user-1",
-        "centroid": [0.1, 0.2, 0.3],
+        "clusters": [{"label": "rock", "centroid": [0.1, 0.2, 0.3], "track_count": 3, "total_weight": 1.5}],
         "backbone_id": "effnet-discogs",
-        "library_key": "lib-main",
         "track_count": 3,
         "generated_at_ms": 1,
     }
+
+
+def _mock_plays(*file_ids: str) -> list[dict[str, object]]:
+    """Return mock play history entries for the given file IDs."""
+    return [
+        {
+            "nd_id": f"nd-{i}",
+            "file_id": f"{CollectionNames.LIBRARY_FILES.value}/{fid}",
+            "playcount": 5,
+            "last_played": 123,
+        }
+        for i, fid in enumerate(file_ids)
+    ]
 
 
 def _playlist_entry(*file_ids: str) -> dict[str, object]:
@@ -61,14 +72,16 @@ class TestGeneratePlaylistsWorkflow:
                 result = generate_playlists(
                     db,
                     user_id="user-1",
+                    top_plays=_mock_plays("track-1"),
                     backbone_id="effnet-discogs",
-                    library_key="lib-main",
+                    # library_key removed per ADR-036
                     enabled_types=["familiar"],
                     half_life_days=30.0,
                     top_n=200,
                     max_songs=50,
                     min_play_count=3,
                     min_songs=10,
+                    pp_max_clusters=10,
                 )
         finally:
             workflow_logger.propagate = original_propagate
@@ -83,17 +96,8 @@ class TestGeneratePlaylistsWorkflow:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Filtering every generated playlist should emit a warning."""
-        db = _make_db(
-            plays=[
-                {
-                    "nd_id": "nd-1",
-                    "file_id": "library_files/track-1",
-                    "playcount": 5,
-                    "last_played": 123,
-                },
-            ],
-        )
-        builder = MagicMock(return_value=[_playlist_entry("library_files/track-1")])
+        db = _make_db()
+        builder = MagicMock(return_value=[_playlist_entry(f"{CollectionNames.LIBRARY_FILES.value}/track-1")])
         workflow_logger = logging.getLogger("nomarr.workflows.navidrome.generate_playlists_wf")
         original_propagate = workflow_logger.propagate
         workflow_logger.propagate = True
@@ -117,14 +121,16 @@ class TestGeneratePlaylistsWorkflow:
                 result = generate_playlists(
                     db,
                     user_id="user-1",
+                    top_plays=_mock_plays("track-1"),
                     backbone_id="effnet-discogs",
-                    library_key="lib-main",
+                    # library_key removed per ADR-036
                     enabled_types=["familiar"],
                     half_life_days=30.0,
                     top_n=200,
                     max_songs=50,
                     min_play_count=3,
                     min_songs=2,
+                    pp_max_clusters=10,
                 )
         finally:
             workflow_logger.propagate = original_propagate
@@ -148,14 +154,16 @@ class TestGeneratePlaylistsWorkflow:
             result = generate_playlists(
                 db,
                 user_id="user-1",
+                top_plays=_mock_plays("track-1"),
                 backbone_id="effnet-discogs",
-                library_key="lib-main",
+                # library_key removed per ADR-036
                 enabled_types=["familiar"],
                 half_life_days=30.0,
                 top_n=200,
                 max_songs=50,
                 min_play_count=3,
                 min_songs=10,
+                pp_max_clusters=10,
             )
 
         assert result == []

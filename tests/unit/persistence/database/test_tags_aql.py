@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.persistence.database.tags_aql import TagsAqlOperations
+from nomarr.persistence.schema import CollectionNames
 
 
 @pytest.mark.unit
@@ -24,16 +25,16 @@ def test_replace_file_tags_rebuilds_edges_and_cleans_orphans() -> None:
         patch.object(ops, "_upsert_tag_edge") as upsert_edge,
         patch.object(ops, "_cleanup_orphaned_tags") as cleanup,
     ):
-        ops.replace_file_tags("library_files/1", tags)
+        ops.replace_file_tags(f"{CollectionNames.LIBRARY_FILES.value}/1", tags)
 
-    delete_edges.assert_called_once_with("library_files/1")
+    delete_edges.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/1")
     assert find_or_create.call_args_list == [
         (("genre", "rock"), {}),
         (("mood", "calm"), {}),
     ]
     assert upsert_edge.call_args_list == [
-        (("library_files/1", "tags/genre"), {}),
-        (("library_files/1", "tags/mood"), {}),
+        ((f"{CollectionNames.LIBRARY_FILES.value}/1", "tags/genre"), {}),
+        ((f"{CollectionNames.LIBRARY_FILES.value}/1", "tags/mood"), {}),
     ]
     cleanup.assert_called_once_with()
 
@@ -43,9 +44,9 @@ def test_replace_file_tags_rebuilds_edges_and_cleans_orphans() -> None:
 def test_replace_tag_references_moves_edges_and_cleans_orphans() -> None:
     ops = TagsAqlOperations(MagicMock())
     candidate_edges = [
-        {"_id": "song_has_tag/1", "_from": "library_files/1", "_to": "tags/source"},
-        {"_id": "song_has_tag/2", "_from": "library_files/2", "_to": "tags/source"},
-        {"_id": "song_has_tag/3", "_from": "library_files/2", "_to": "tags/target"},
+        {"_id": "song_has_tag/1", "_from": f"{CollectionNames.LIBRARY_FILES.value}/1", "_to": "tags/source"},
+        {"_id": "song_has_tag/2", "_from": f"{CollectionNames.LIBRARY_FILES.value}/2", "_to": "tags/source"},
+        {"_id": "song_has_tag/3", "_from": f"{CollectionNames.LIBRARY_FILES.value}/2", "_to": "tags/target"},
     ]
 
     with (
@@ -58,11 +59,11 @@ def test_replace_tag_references_moves_edges_and_cleans_orphans() -> None:
         ops.replace_tag_references(
             "tags/source",
             "tags/target",
-            file_ids=["library_files/1", "library_files/2"],
+            file_ids=[f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"],
         )
 
     get_edges.assert_called_once_with(["tags/source", "tags/target"])
-    insert_edges.assert_called_once_with([{"_from": "library_files/1", "_to": "tags/target"}])
+    insert_edges.assert_called_once_with([{"_from": f"{CollectionNames.LIBRARY_FILES.value}/1", "_to": "tags/target"}])
     assert delete_edge.call_args_list == [(("song_has_tag/1",), {}), (("song_has_tag/2",), {})]
     count_edges.assert_called_once_with("tags/source")
     cleanup.assert_called_once_with()
@@ -82,9 +83,9 @@ def test_remove_file_tags_deletes_selected_edges_then_cleans_orphans() -> None:
         patch.object(ops, "_delete_song_tag_edge_by_id") as delete_edge,
         patch.object(ops, "_cleanup_orphaned_tags") as cleanup,
     ):
-        ops.remove_file_tags("library_files/1", ["genre"])
+        ops.remove_file_tags(f"{CollectionNames.LIBRARY_FILES.value}/1", ["genre"])
 
-    get_rows.assert_called_once_with(["library_files/1"], include_edge=True)
+    get_rows.assert_called_once_with([f"{CollectionNames.LIBRARY_FILES.value}/1"], include_edge=True)
     delete_edge.assert_called_once_with("song_has_tag/genre")
     cleanup.assert_called_once_with()
 
@@ -119,7 +120,10 @@ def test_search_files_by_tag_contains_uses_in_operator() -> None:
     """CONTAINS query should use @value IN tag.value for array matching."""
     db = MagicMock()
     ops = TagsAqlOperations(db)
-    expected_files = [{"_id": "library_files/1"}, {"_id": "library_files/2"}]
+    expected_files = [
+        {"_id": f"{CollectionNames.LIBRARY_FILES.value}/1"},
+        {"_id": f"{CollectionNames.LIBRARY_FILES.value}/2"},
+    ]
 
     with patch(
         "nomarr.persistence.database.tags_aql.tag_search_ops.primitives.execute",
@@ -151,7 +155,7 @@ def test_search_files_by_tag_contains_respects_limit() -> None:
 
     with patch(
         "nomarr.persistence.database.tags_aql.tag_search_ops.primitives.execute",
-        return_value=[{"_id": "library_files/1"}],
+        return_value=[{"_id": f"{CollectionNames.LIBRARY_FILES.value}/1"}],
     ) as execute:
         ops.search_files_by_tag_contains("nom:mood-strict", "happy", limit=10)
 

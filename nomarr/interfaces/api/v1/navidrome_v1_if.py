@@ -13,6 +13,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from nomarr.helpers.dto.navidrome_dto import TrackPlayData
 from nomarr.helpers.exceptions import MisconfiguredError
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
@@ -127,10 +128,24 @@ async def navidrome_similar_tracks(
 # ------------------------------------------------------------------
 
 
+class TrackPlayInput(BaseModel):
+    """Play history entry provided by the Navidrome plugin.
+
+    ``file_id`` is the full ArangoDB document ID (e.g. ``library_files/<key>``)
+    that the plugin resolves from a ``nomarr_file_key`` received in prior
+    descriptor responses.
+    """
+
+    file_id: str
+    playcount: int = Field(ge=0)
+    last_played: int | None = None
+
+
 class GeneratePlaylistsRequest(BaseModel):
     """Request body for personal playlist generation."""
 
     user_id: str
+    top_plays: list[TrackPlayInput]
     max_songs: int | None = None
     enabled_types: list[str] | None = None
     min_songs: int | None = None
@@ -164,20 +179,33 @@ async def navidrome_generate_playlists(
     body: GeneratePlaylistsRequest,
     svc: Annotated[NavidromeService, Depends(get_navidrome_service)],
 ) -> GeneratePlaylistsResponse:
-    """Generate personal playlists for a Navidrome user."""
+    """Generate personal playlists for a Navidrome user.
+
+    Accepts play history from the plugin as ``top_plays`` and returns
+    portable track descriptors the plugin resolves to Navidrome mediafile IDs.
+    """
+    # Convert Pydantic models to TrackPlayData TypedDicts
+    top_plays: list[TrackPlayData] = [
+        TrackPlayData(
+            file_id=p.file_id,
+            playcount=p.playcount,
+            last_played=p.last_played,
+        )
+        for p in body.top_plays
+    ]
+
     logger.info(
-        "[navidrome] playlist/generate request: "
-        "user_id=%s enabled_types=%s max_songs=%s min_songs=%s max_genre_playlists=%s",
+        "[navidrome] playlist/generate request: user_id=%s top_plays=%d enabled_types=%s max_songs=%s",
         body.user_id,
+        len(top_plays),
         body.enabled_types,
         body.max_songs,
-        body.min_songs,
-        body.max_genre_playlists,
     )
     try:
         result = await asyncio.to_thread(
             svc.generate_playlists,
             user_id=body.user_id,
+            top_plays=top_plays,
             enabled_types=body.enabled_types,
             max_songs=body.max_songs,
             min_songs=body.min_songs,

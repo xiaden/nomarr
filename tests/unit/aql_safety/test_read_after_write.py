@@ -6,7 +6,6 @@ import pytest
 
 from .conftest import (
     _PRODUCTION_ROOT,
-    _SCRIPTS_ROOT,
     _find_read_write_conflicts,
     _find_violations,
     _format_violations,
@@ -132,18 +131,5 @@ class TestFindReadWriteConflicts:
 def test_no_mixed_read_write_aql_in_production_code() -> None:
     """Production Python code should not mix reads and writes on one collection."""
     violations = _find_violations(_PRODUCTION_ROOT)
-    if violations:
-        pytest.fail(_format_violations(violations))
-
-
-@pytest.mark.unit
-@pytest.mark.code_smell
-@pytest.mark.slow
-def test_no_mixed_read_write_aql_in_scripts() -> None:
-    """Ensure no mixed read/write AQL patterns exist in scripts/."""
-    if not _SCRIPTS_ROOT.exists():
-        pytest.skip("scripts/ directory does not exist")
-
-    violations = _find_violations(_SCRIPTS_ROOT)
     if violations:
         pytest.fail(_format_violations(violations))

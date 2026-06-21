@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from nomarr.persistence.aql import primitives
 from nomarr.persistence.arango_client import SafeDatabase
+from nomarr.persistence.schema import CollectionNames
 
 from ._helpers import Document, _as_document_id, _extract_key, _validate_field_name
 from .file_link_ops import FileLinkOpsMixin
@@ -23,12 +24,14 @@ class LibraryFileUpsertResult(TypedDict):
 class LibraryFilesAqlOperations(FolderOpsMixin, FileLinkOpsMixin):
     """Thin Tier 2 bindings for library file, folder, and edge operations."""
 
-    FILE_COLLECTION = "library_files"
-    FOLDER_COLLECTION = "library_folders"
-    LIBRARY_FILE_EDGE_COLLECTION = "library_contains_file"
-    LIBRARY_FOLDER_EDGE_COLLECTION = "library_contains_folder"
-    TAG_EDGE_COLLECTION = "song_has_tags"
-    TAG_COLLECTION = "tags"
+    FILE_COLLECTION = CollectionNames.LIBRARY_FILES.value
+    FOLDER_COLLECTION = CollectionNames.LIBRARY_FOLDERS.value
+    LIBRARY_FILE_EDGE_COLLECTION = CollectionNames.LIBRARY_CONTAINS_FILE.value
+    LIBRARY_FOLDER_EDGE_COLLECTION = CollectionNames.LIBRARY_CONTAINS_FOLDER.value
+    TAG_COLLECTION = CollectionNames.TAGS.value
+    TAG_EDGE_COLLECTION = CollectionNames.SONG_HAS_TAGS.value
+    FILE_STATE_EDGE_COLLECTION = CollectionNames.FILE_HAS_STATE.value
+    LIBRARY_COLLECTION = CollectionNames.LIBRARIES.value
 
     ALLOWED_FILE_FIELDS = frozenset(
         {
@@ -255,59 +258,69 @@ class LibraryFilesAqlOperations(FolderOpsMixin, FileLinkOpsMixin):
 
         normalized_ids = [_as_document_id(self.FILE_COLLECTION, fid) for fid in file_ids]
 
+        fhe = CollectionNames.FILE_HAS_OUTPUT_STREAM.value
+        ohs = CollectionNames.OUTPUT_HAS_STREAM.value
+        fhv = CollectionNames.FILE_HAS_VECTORS.value
+        sht = CollectionNames.SONG_HAS_TAGS.value
+        fhs = CollectionNames.FILE_HAS_STATE.value
+        lcf = CollectionNames.LIBRARY_CONTAINS_FILE.value
+        mos = CollectionNames.ML_OUTPUT_STREAMS.value
+        wc = CollectionNames.WORKER_CLAIMS.value
+        lf = self.FILE_COLLECTION
+        tg = CollectionNames.TAGS.value
         self._db.aql.execute(
-            """
+            f"""
             LET file_stream_data = (
-                FOR e IN file_has_output_stream
+                FOR e IN {fhe}
                     FILTER e._from IN @fids
-                    RETURN {id: e._to, edge: e}
+                    RETURN {{id: e._to, edge: e}}
             )
             LET stream_ids = file_stream_data[* RETURN CURRENT.id]
             LET file_stream_edges = file_stream_data[* RETURN CURRENT.edge]
             LET output_edges = (
-                FOR e IN output_has_stream
+                FOR e IN {ohs}
                     FILTER e._to IN stream_ids
                     RETURN e
             )
             LET vector_edges = (
-                FOR e IN file_has_vectors
+                FOR e IN {fhv}
                     FILTER e._from IN @fids
                     RETURN e
             )
             LET tag_edges = (
-                FOR e IN song_has_tags
+                FOR e IN {sht}
                     FILTER e._from IN @fids
                     RETURN e
             )
             LET state_edges = (
-                FOR e IN file_has_state
+                FOR e IN {fhs}
                     FILTER e._from IN @fids
                     RETURN e
             )
             LET lib_file_edges = (
-                FOR e IN library_contains_file
+                FOR e IN {lcf}
                     FILTER e._to IN @fids
                     RETURN e
             )
             FOR oe IN output_edges
-                REMOVE oe IN output_has_stream OPTIONS { ignoreErrors: true }
+                REMOVE oe IN {ohs} OPTIONS {{ ignoreErrors: true }}
             FOR sid IN stream_ids
-                REMOVE sid IN ml_output_streams OPTIONS { ignoreErrors: true }
+                REMOVE sid IN {mos} OPTIONS {{ ignoreErrors: true }}
             FOR fse IN file_stream_edges
-                REMOVE fse IN file_has_output_stream OPTIONS { ignoreErrors: true }
+                REMOVE fse IN {fhe} OPTIONS {{ ignoreErrors: true }}
             FOR ve IN vector_edges
-                REMOVE ve IN file_has_vectors OPTIONS { ignoreErrors: true }
+                REMOVE ve IN {fhv} OPTIONS {{ ignoreErrors: true }}
             FOR te IN tag_edges
-                REMOVE te IN song_has_tags OPTIONS { ignoreErrors: true }
-            FOR c IN worker_claims
+                REMOVE te IN {sht} OPTIONS {{ ignoreErrors: true }}
+            FOR c IN {wc}
                 FILTER c.file_id IN @fids
-                REMOVE c IN worker_claims OPTIONS { ignoreErrors: true }
+                REMOVE c IN {wc} OPTIONS {{ ignoreErrors: true }}
             FOR se IN state_edges
-                REMOVE se IN file_has_state OPTIONS { ignoreErrors: true }
+                REMOVE se IN {fhs} OPTIONS {{ ignoreErrors: true }}
             FOR lfe IN lib_file_edges
-                REMOVE lfe IN library_contains_file OPTIONS { ignoreErrors: true }
+                REMOVE lfe IN {lcf} OPTIONS {{ ignoreErrors: true }}
             FOR fid IN @fids
-                REMOVE fid IN library_files OPTIONS { ignoreErrors: true }
+                REMOVE fid IN {lf} OPTIONS {{ ignoreErrors: true }}
             """,
             bind_vars={"fids": normalized_ids},
         )
@@ -315,10 +328,10 @@ class LibraryFilesAqlOperations(FolderOpsMixin, FileLinkOpsMixin):
         # ── Orphaned tag documents ────────────────────────────────────────────
         # Tags that are no longer referenced by any song_has_tags edge.
         self._db.aql.execute(
-            """
-            FOR tag IN tags
-                FILTER FIRST(FOR e IN song_has_tags FILTER e._to == tag._id LIMIT 1 RETURN 1) == null
-                REMOVE tag IN tags OPTIONS { ignoreErrors: true }
+            f"""
+            FOR tag IN {tg}
+                FILTER FIRST(FOR e IN {sht} FILTER e._to == tag._id LIMIT 1 RETURN 1) == null
+                REMOVE tag IN {tg} OPTIONS {{ ignoreErrors: true }}
             """
         )
 
@@ -424,7 +437,7 @@ class LibraryFilesAqlOperations(FolderOpsMixin, FileLinkOpsMixin):
     def list_library_file_ids(self, library_id: str, *, limit: int | None = None) -> list[str]:
         bind_vars: dict[str, Any] = {
             "@collection": self.LIBRARY_FILE_EDGE_COLLECTION,
-            "library_id": _as_document_id("libraries", library_id),
+            "library_id": _as_document_id(self.LIBRARY_COLLECTION, library_id),
         }
         query_lines = [
             "FOR edge IN @@collection",
@@ -446,8 +459,8 @@ class LibraryFilesAqlOperations(FolderOpsMixin, FileLinkOpsMixin):
         """
         bind_vars: dict[str, Any] = {
             "@lib_edge": self.LIBRARY_FILE_EDGE_COLLECTION,
-            "@state_edge": "file_has_state",
-            "library_id": _as_document_id("libraries", library_id),
+            "@state_edge": self.FILE_STATE_EDGE_COLLECTION,
+            "library_id": _as_document_id(self.LIBRARY_COLLECTION, library_id),
             "is_root": folder_rel_path == "",
             "folder_prefix": f"{folder_rel_path}/",
             "tagged_state_id": "file_states/ml_tagged",
@@ -487,7 +500,7 @@ class LibraryFilesAqlOperations(FolderOpsMixin, FileLinkOpsMixin):
             """,
             {
                 "@edge_collection": self.LIBRARY_FILE_EDGE_COLLECTION,
-                "library_id": _as_document_id("libraries", library_id),
+                "library_id": _as_document_id(self.LIBRARY_COLLECTION, library_id),
                 "chromaprint": chromaprint,
             },
         )
@@ -496,7 +509,7 @@ class LibraryFilesAqlOperations(FolderOpsMixin, FileLinkOpsMixin):
     def list_library_files(self, library_id: str, *, limit: int | None = None) -> list[Document]:
         bind_vars: dict[str, Any] = {
             "@edge_collection": self.LIBRARY_FILE_EDGE_COLLECTION,
-            "library_id": _as_document_id("libraries", library_id),
+            "library_id": _as_document_id(self.LIBRARY_COLLECTION, library_id),
         }
         query_lines = [
             "FOR edge IN @@edge_collection",
@@ -517,7 +530,7 @@ class LibraryFilesAqlOperations(FolderOpsMixin, FileLinkOpsMixin):
             self._db,
             self.LIBRARY_FILE_EDGE_COLLECTION,
             "_from",
-            _as_document_id("libraries", library_id),
+            _as_document_id(self.LIBRARY_COLLECTION, library_id),
         )
 
     def list_orphaned_file_ids(self) -> list[str]:
@@ -552,7 +565,7 @@ class LibraryFilesAqlOperations(FolderOpsMixin, FileLinkOpsMixin):
     def get_tracks_for_matching(self, library_id: str, *, limit: int | None) -> list[Document]:
         bind_vars: dict[str, Any] = {
             "@edge_collection": self.LIBRARY_FILE_EDGE_COLLECTION,
-            "library_id": _as_document_id("libraries", library_id),
+            "library_id": _as_document_id(self.LIBRARY_COLLECTION, library_id),
         }
         query_lines = [
             "FOR edge IN @@edge_collection",

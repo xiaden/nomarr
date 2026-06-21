@@ -18,9 +18,10 @@ from nomarr.helpers.dto.library_dto import (
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_library_service, get_tagging_service
 from nomarr.interfaces.api.web.library_files_if import router as library_files_router
+from nomarr.persistence.schema import CollectionNames
 
 
-def make_library_file(file_id: str = "library_files/abc") -> LibraryFileWithTags:
+def make_library_file(file_id: str = f"{CollectionNames.LIBRARY_FILES.value}/abc") -> LibraryFileWithTags:
     """Build a minimal library file DTO for interface tests."""
     return LibraryFileWithTags(
         _id=file_id,
@@ -132,7 +133,7 @@ class TestLibraryFilesEndpoints:
         assert response.json() == {
             "files": [
                 {
-                    "file_id": "library_files:abc",
+                    "file_id": f"{CollectionNames.LIBRARY_FILES.value}:abc",
                     "path": "/music/song.flac",
                     "library_id": "libraries:test-lib",
                     "file_size": 1234,
@@ -183,7 +184,7 @@ class TestLibraryFilesEndpoints:
     ) -> None:
         """POST by-ids should decode every file ID before invoking the service."""
         mock_library_service.get_files_by_ids.return_value = SearchFilesResult(
-            files=[make_library_file(file_id="library_files/xyz")],
+            files=[make_library_file(file_id=f"{CollectionNames.LIBRARY_FILES.value}/xyz")],
             total=1,
             limit=1,
             offset=0,
@@ -191,13 +192,15 @@ class TestLibraryFilesEndpoints:
 
         response = client.post(
             "/api/web/library/file/by-ids",
-            json={"file_ids": ["library_files:abc", "library_files:def"]},
+            json={
+                "file_ids": [f"{CollectionNames.LIBRARY_FILES.value}:abc", f"{CollectionNames.LIBRARY_FILES.value}:def"]
+            },
         )
 
         assert response.status_code == 200
-        assert response.json()["files"][0]["file_id"] == "library_files:xyz"
+        assert response.json()["files"][0]["file_id"] == f"{CollectionNames.LIBRARY_FILES.value}:xyz"
         mock_library_service.get_files_by_ids.assert_called_once_with(
-            ["library_files/abc", "library_files/def"],
+            [f"{CollectionNames.LIBRARY_FILES.value}/abc", f"{CollectionNames.LIBRARY_FILES.value}/def"],
         )
 
     def test_search_files_by_tag_returns_response(
@@ -303,7 +306,7 @@ class TestLibraryFilesEndpoints:
     ) -> None:
         """GET file tags should decode the path ID and serialize the tag payload."""
         mock_tagging_service.get_file_tags.return_value = FileTagsResult(
-            file_id="library_files/abc",
+            file_id=f"{CollectionNames.LIBRARY_FILES.value}/abc",
             path="/music/song.flac",
             tags=[
                 FileTag(
@@ -315,11 +318,11 @@ class TestLibraryFilesEndpoints:
             ],
         )
 
-        response = client.get("/api/web/library/file/library_files:abc/tag")
+        response = client.get(f"/api/web/library/file/{CollectionNames.LIBRARY_FILES.value}:abc/tag")
 
         assert response.status_code == 200
         assert response.json() == {
-            "file_id": "library_files/abc",
+            "file_id": f"{CollectionNames.LIBRARY_FILES.value}/abc",
             "path": "/music/song.flac",
             "tags": [
                 {
@@ -331,7 +334,7 @@ class TestLibraryFilesEndpoints:
             ],
         }
         mock_tagging_service.get_file_tags.assert_called_once_with(
-            file_id="library_files/abc",
+            file_id=f"{CollectionNames.LIBRARY_FILES.value}/abc",
             nomarr_only=False,
         )
 
@@ -343,12 +346,12 @@ class TestLibraryFilesEndpoints:
         """Missing files should surface as HTTP 404."""
         mock_tagging_service.get_file_tags.side_effect = ValueError("missing")
 
-        response = client.get("/api/web/library/file/library_files:abc/tag")
+        response = client.get(f"/api/web/library/file/{CollectionNames.LIBRARY_FILES.value}:abc/tag")
 
         assert response.status_code == 404
         assert response.json() == {"detail": "File not found"}
         mock_tagging_service.get_file_tags.assert_called_once_with(
-            file_id="library_files/abc",
+            file_id=f"{CollectionNames.LIBRARY_FILES.value}/abc",
             nomarr_only=False,
         )
 

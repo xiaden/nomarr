@@ -9,8 +9,8 @@ import numpy as np
 from scripts.embedding_research.cache import binned_ctp
 from scripts.embedding_research.common.segment import SegmentFn
 from scripts.embedding_research.config import HEAD_LABELS, HEADS
-from scripts.embedding_research.helpers.binning import global_dist, temporal_segment
 from scripts.embedding_research.helpers.binning import DIST_THRESHOLDS as STD_THRESHOLDS
+from scripts.embedding_research.helpers.binning import global_dist, temporal_segment
 from scripts.embedding_research.strategy_binned._constants import _BIN_POOL_STRATEGIES, REP_TYPES
 
 _KNOWN_HEAD_NAMES: list[str] = sorted({head for head_map in HEADS.values() for head in head_map} or HEAD_LABELS.keys())
@@ -129,7 +129,7 @@ SKIP_CHECK_FN = _skip_check
 
 def _segment_score_stream(scores: np.ndarray, threshold: float) -> list[dict]:
     """Segment a 1-D score stream.
-    
+
     The scores are reshaped to (-1, 1) for temporal_segment, which requires
     2-D input.  For a 1-D signal the distance function choice (global vs
     per-dimension) is irrelevant — both reduce to absolute difference.

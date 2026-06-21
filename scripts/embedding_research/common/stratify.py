@@ -6,7 +6,6 @@ import hashlib
 import json
 import logging
 import math
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -43,7 +42,7 @@ def _budget_tolerance(limit_n: int, cfg: ResearchConfig) -> int:
         return small_over
     b = (large_over - small_over) / (l2 - l1)
     a = small_over - (b * l1)
-    return max(0, int(round(a + (b * lx))))
+    return max(0, round(a + (b * lx)))
 
 
 def _size_penalty(size_n: int, limit_n: int, tolerance_n: int, cfg: ResearchConfig) -> float:
@@ -174,7 +173,7 @@ def _select_budgeted_subset(
     tolerance = _budget_tolerance(limit_n, cfg)
     strat_cfg = cfg.get("stratify", {}) if isinstance(cfg.get("stratify"), dict) else {}
     hard_mult = float(strat_cfg.get("hard_overbudget_multiplier", 3.0))
-    hard_over = max(0, int(round(tolerance * hard_mult)))
+    hard_over = max(0, round(tolerance * hard_mult))
     hard_max = min(n, limit_n + hard_over)
 
     w_genre = float(strat_cfg.get("weight_genre", 1.0))

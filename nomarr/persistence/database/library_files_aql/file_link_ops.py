@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from nomarr.persistence.aql import primitives
+from nomarr.persistence.schema import CollectionNames
 
 from ._helpers import _as_document_id, _extract_key
 
@@ -19,8 +20,10 @@ class FileLinkOpsMixin:
     """
 
     _db: SafeDatabase
-    FILE_COLLECTION: str
-    LIBRARY_FILE_EDGE_COLLECTION: str
+    FILE_COLLECTION: str = CollectionNames.LIBRARY_FILES.value
+    LIBRARY_COLLECTION: str = CollectionNames.LIBRARIES.value
+    LIBRARY_FILE_EDGE_COLLECTION: str = CollectionNames.LIBRARY_CONTAINS_FILE.value
+    LIBRARY_FOLDER_EDGE_COLLECTION: str = CollectionNames.LIBRARY_CONTAINS_FOLDER.value
 
     def _truncate_collection(self, collection_name: str) -> None: ...
 
@@ -31,7 +34,7 @@ class FileLinkOpsMixin:
         primitives.upsert_edge(
             self._db,
             self.LIBRARY_FILE_EDGE_COLLECTION,
-            _as_document_id("libraries", library_id),
+            _as_document_id(self.LIBRARY_COLLECTION, library_id),
             _as_document_id(self.FILE_COLLECTION, file_id),
         )
 
@@ -60,7 +63,7 @@ class FileLinkOpsMixin:
         primitives.delete_edges(
             self._db,
             self.LIBRARY_FILE_EDGE_COLLECTION,
-            from_id=_as_document_id("libraries", library_id),
+            from_id=_as_document_id(self.LIBRARY_COLLECTION, library_id),
         )
 
     def truncate_file_links(self) -> None:

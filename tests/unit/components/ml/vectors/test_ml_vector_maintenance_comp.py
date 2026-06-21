@@ -10,6 +10,7 @@ from nomarr.components.ml.vectors.ml_vector_maintenance_comp import (
     backfill_genres,
     derive_embed_dim,
 )
+from nomarr.persistence.schema import CollectionNames
 from nomarr.persistence.schema_types import Field
 
 PATCH_BASE = "nomarr.components.ml.vectors.ml_vector_maintenance_comp"
@@ -27,11 +28,11 @@ class TestBackfillGenres:
 
         with (
             patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold,
-            pytest.raises(ValueError, match="Cold collection 'vectors_track_cold__ast__lib1' does not exist"),
+            pytest.raises(ValueError, match="Cold collection 'vectors_track_cold__ast' does not exist"),
         ):
-            backfill_genres(mock_db, "ast", "lib1")
+            backfill_genres(mock_db, "ast")
 
-        mock_get_cold.assert_called_once_with(mock_db, "ast", "lib1")
+        mock_get_cold.assert_called_once_with(mock_db, "ast")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -40,24 +41,32 @@ class TestBackfillGenres:
         cold_ops = MagicMock()
         cold_ops.count.return_value = 2
         cold_ops.aggregate.return_value = [
-            {"value": "vectors_track_cold__ast__lib1/k1"},
-            {"value": "vectors_track_cold__ast__lib1/k2"},
+            {"value": "vectors_track_cold__ast/k1"},
+            {"value": "vectors_track_cold__ast/k2"},
         ]
         cold_ops.get.in_.return_value = [
-            {"_id": "vectors_track_cold__ast__lib1/k1", "_key": "k1", "file_id": "library_files/f1"},
-            {"_id": "vectors_track_cold__ast__lib1/k2", "_key": "k2", "file_id": "library_files/f2"},
+            {
+                "_id": "vectors_track_cold__ast/k1",
+                "_key": "k1",
+                "file_id": f"{CollectionNames.LIBRARY_FILES.value}/f1",
+            },
+            {
+                "_id": "vectors_track_cold__ast/k2",
+                "_key": "k2",
+                "file_id": f"{CollectionNames.LIBRARY_FILES.value}/f2",
+            },
         ]
         mock_db.library.list_genre_tags_for_files.return_value = [
-            {"fid": "library_files/f1", "genre": "ambient", "tag_id": "tags/g1"},
-            {"fid": "library_files/f2", "genre": "jazz", "tag_id": "tags/g2"},
-            {"fid": "library_files/f2", "genre": "fusion", "tag_id": "tags/g3"},
+            {"fid": f"{CollectionNames.LIBRARY_FILES.value}/f1", "genre": "ambient", "tag_id": "tags/g1"},
+            {"fid": f"{CollectionNames.LIBRARY_FILES.value}/f2", "genre": "jazz", "tag_id": "tags/g2"},
+            {"fid": f"{CollectionNames.LIBRARY_FILES.value}/f2", "genre": "fusion", "tag_id": "tags/g3"},
         ]
 
         with patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold:
-            result = backfill_genres(mock_db, "ast", "lib1")
+            result = backfill_genres(mock_db, "ast")
 
         assert result == 2
-        mock_get_cold.assert_called_once_with(mock_db, "ast", "lib1")
+        mock_get_cold.assert_called_once_with(mock_db, "ast")
         cold_ops.update_many.assert_called_once_with(
             [
                 {"_key": "k1", "genres": ["ambient"]},
@@ -68,11 +77,13 @@ class TestBackfillGenres:
         assert isinstance(field_arg, Field)
         assert field_arg.name == "_id"
         assert field_arg.value == [
-            "vectors_track_cold__ast__lib1/k1",
-            "vectors_track_cold__ast__lib1/k2",
+            "vectors_track_cold__ast/k1",
+            "vectors_track_cold__ast/k2",
         ]
         cold_ops.get.in_.assert_called_once_with(field_arg, limit=None)
-        mock_db.library.list_genre_tags_for_files.assert_called_once_with(["library_files/f1", "library_files/f2"])
+        mock_db.library.list_genre_tags_for_files.assert_called_once_with(
+            [f"{CollectionNames.LIBRARY_FILES.value}/f1", f"{CollectionNames.LIBRARY_FILES.value}/f2"]
+        )
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -82,10 +93,10 @@ class TestBackfillGenres:
         cold_ops.count.return_value = 0
 
         with patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold:
-            result = backfill_genres(mock_db, "ast", "lib1")
+            result = backfill_genres(mock_db, "ast")
 
         assert result == 0
-        mock_get_cold.assert_called_once_with(mock_db, "ast", "lib1")
+        mock_get_cold.assert_called_once_with(mock_db, "ast")
         cold_ops.update_many.assert_not_called()
 
 

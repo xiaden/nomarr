@@ -44,6 +44,7 @@ from nomarr.helpers.constants.pipeline_states import (
     WRITE_STATE_FIELD,
 )
 from nomarr.helpers.time_helper import Milliseconds
+from nomarr.persistence.schema import CollectionNames
 
 
 class TestBootstrapFileStateEdges:
@@ -59,16 +60,18 @@ class TestBootstrapFileStateEdges:
     def test_ml_tagged_type_creates_edge_via_transition(self) -> None:
         mock_db = MagicMock()
         mock_db.app.list_file_docs_in_state.side_effect = lambda state: list(
-            [{"_id": "library_files/abc"}] if state == STATE_NOT_PROCESSED else []
+            [{"_id": f"{CollectionNames.LIBRARY_FILES.value}/abc"}] if state == STATE_NOT_PROCESSED else []
         )
         bootstraps = [
             {"normalized_path": "/music/song.mp3", "type": "ml_tagged"},
         ]
-        file_id_by_path = {"/music/song.mp3": "library_files/abc"}
+        file_id_by_path = {"/music/song.mp3": f"{CollectionNames.LIBRARY_FILES.value}/abc"}
         result = bootstrap_file_state_edges(mock_db, bootstraps, file_id_by_path)
         assert result == 1
-        mock_db.app.remove_file_states.assert_called_once_with(["library_files/abc"])
-        mock_db.app.add_file_states.assert_called_once_with(["library_files/abc"], STATE_PROCESSED)
+        mock_db.app.remove_file_states.assert_called_once_with([f"{CollectionNames.LIBRARY_FILES.value}/abc"])
+        mock_db.app.add_file_states.assert_called_once_with(
+            [f"{CollectionNames.LIBRARY_FILES.value}/abc"], STATE_PROCESSED
+        )
         mock_db.app.transition_file_states.assert_not_called()
 
     @pytest.mark.unit
@@ -77,7 +80,7 @@ class TestBootstrapFileStateEdges:
         bootstraps = [
             {"normalized_path": "/music/song.mp3", "type": "unknown_type"},
         ]
-        file_id_by_path = {"/music/song.mp3": "library_files/abc"}
+        file_id_by_path = {"/music/song.mp3": f"{CollectionNames.LIBRARY_FILES.value}/abc"}
         result = bootstrap_file_state_edges(mock_db, bootstraps, file_id_by_path)
         assert result == 0
         mock_db.app.remove_file_states.assert_not_called()
@@ -90,7 +93,7 @@ class TestBootstrapFileStateEdges:
         bootstraps = [
             {"normalized_path": "/music/missing.mp3", "type": "ml_tagged"},
         ]
-        file_id_by_path = {"/music/other.mp3": "library_files/xyz"}
+        file_id_by_path = {"/music/other.mp3": f"{CollectionNames.LIBRARY_FILES.value}/xyz"}
         result = bootstrap_file_state_edges(mock_db, bootstraps, file_id_by_path)
         assert result == 0
         mock_db.app.remove_file_states.assert_not_called()
@@ -433,16 +436,16 @@ class TestRemoveDeletedFiles:
         mock_db = MagicMock()
         paths = ["/music/a.mp3", "/music/b.mp3", "/music/c.mp3"]
         mock_db.library.find_file_by_path_any_library.side_effect = [
-            {"_id": "library_files/a"},
-            {"_id": "library_files/b"},
+            {"_id": f"{CollectionNames.LIBRARY_FILES.value}/a"},
+            {"_id": f"{CollectionNames.LIBRARY_FILES.value}/b"},
             None,
         ]
 
         result = remove_deleted_files(mock_db, paths)
 
         assert mock_db.library.remove_file.call_args_list == [
-            call("library_files/a"),
-            call("library_files/b"),
+            call(f"{CollectionNames.LIBRARY_FILES.value}/a"),
+            call(f"{CollectionNames.LIBRARY_FILES.value}/b"),
         ]
         assert result == 2
 
@@ -568,8 +571,8 @@ class TestSnapshotExistingFiles:
     def test_returns_existing_files_indexed_by_path_and_tagged_flag(self) -> None:
         mock_db = MagicMock()
         files = [
-            {"_id": "library_files/a", "path": "a.mp3"},
-            {"_id": "library_files/b", "path": "b.mp3"},
+            {"_id": f"{CollectionNames.LIBRARY_FILES.value}/a", "path": "a.mp3"},
+            {"_id": f"{CollectionNames.LIBRARY_FILES.value}/b", "path": "b.mp3"},
         ]
 
         with (
@@ -620,7 +623,7 @@ class TestUpsertScannedFiles:
         with (
             patch(
                 "nomarr.components.library.library_scan_file_ops_comp._upsert_batch",
-                return_value=["library_files/1"],
+                return_value=[f"{CollectionNames.LIBRARY_FILES.value}/1"],
             ) as mock_upsert_batch,
             patch(
                 "nomarr.components.library.library_scan_file_ops_comp.bootstrap_file_state_edges"
@@ -628,7 +631,7 @@ class TestUpsertScannedFiles:
         ):
             result = upsert_scanned_files(mock_db, file_entries)
 
-        assert result == ["library_files/1"]
+        assert result == [f"{CollectionNames.LIBRARY_FILES.value}/1"]
         mock_upsert_batch.assert_called_once_with(mock_db, file_entries)
         mock_bootstrap_file_state_edges.assert_not_called()
 
@@ -646,7 +649,7 @@ class TestUpsertScannedFiles:
         with (
             patch(
                 "nomarr.components.library.library_scan_file_ops_comp._upsert_batch",
-                return_value=["library_files/a", "library_files/b"],
+                return_value=[f"{CollectionNames.LIBRARY_FILES.value}/a", f"{CollectionNames.LIBRARY_FILES.value}/b"],
             ) as mock_upsert_batch,
             patch(
                 "nomarr.components.library.library_scan_file_ops_comp.bootstrap_file_state_edges"
@@ -654,13 +657,13 @@ class TestUpsertScannedFiles:
         ):
             result = upsert_scanned_files(mock_db, file_entries, edge_bootstraps=edge_bootstraps)
 
-        assert result == ["library_files/a", "library_files/b"]
+        assert result == [f"{CollectionNames.LIBRARY_FILES.value}/a", f"{CollectionNames.LIBRARY_FILES.value}/b"]
         mock_upsert_batch.assert_called_once_with(mock_db, file_entries)
         mock_bootstrap_file_state_edges.assert_called_once_with(
             mock_db,
             edge_bootstraps,
             {
-                "music/song-a.mp3": "library_files/a",
-                "music/song-b.mp3": "library_files/b",
+                "music/song-a.mp3": f"{CollectionNames.LIBRARY_FILES.value}/a",
+                "music/song-b.mp3": f"{CollectionNames.LIBRARY_FILES.value}/b",
             },
         )

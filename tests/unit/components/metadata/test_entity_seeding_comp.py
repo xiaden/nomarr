@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.components.metadata.entity_seeding_comp import seed_entities_for_scan_batch
+from nomarr.persistence.schema import CollectionNames
 
 MODULE = "nomarr.components.metadata.entity_seeding_comp"
 
@@ -40,15 +41,17 @@ class TestSeedEntitiesForScanBatch:
         with patch(f"{MODULE}.set_song_tags_batch") as mock_set_song_tags_batch:
             result = seed_entities_for_scan_batch(
                 mock_db,
-                ["library_files/1"],
-                {"library_files/1": metadata},
+                [f"{CollectionNames.LIBRARY_FILES.value}/1"],
+                {f"{CollectionNames.LIBRARY_FILES.value}/1": metadata},
             )
 
         assert result == 1
         mock_set_song_tags_batch.assert_called_once()
         persisted_entries = mock_set_song_tags_batch.call_args.args[1]
         persisted_map = {
-            entry["name"]: entry["values"] for entry in persisted_entries if entry["song_id"] == "library_files/1"
+            entry["name"]: entry["values"]
+            for entry in persisted_entries
+            if entry["song_id"] == f"{CollectionNames.LIBRARY_FILES.value}/1"
         }
 
         assert persisted_map["comment"] == ["late night listening"]

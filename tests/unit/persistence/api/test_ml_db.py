@@ -8,14 +8,16 @@ from unittest.mock import MagicMock, patch, sentinel
 import pytest
 
 from nomarr.persistence.api.ml import MlDb, MlMaintenanceDb
+from nomarr.persistence.schema import CollectionNames
 
 
-def _make_ml_db() -> tuple[MlDb, MagicMock, MagicMock, MagicMock]:
+def _make_ml_db() -> tuple[MlDb, MagicMock, MagicMock, MagicMock, MagicMock]:
     streams = MagicMock()
     vectors = MagicMock()
     models = MagicMock()
-    db = MlDb(streams=streams, vectors=vectors, models=models)
-    return db, streams, vectors, models
+    embedding_streams = MagicMock()
+    db = MlDb(streams=streams, vectors=vectors, models=models, embedding_streams=embedding_streams)
+    return db, streams, vectors, models, embedding_streams
 
 
 def _make_ml_maintenance_db() -> tuple[MlMaintenanceDb, MagicMock, MagicMock]:
@@ -27,7 +29,7 @@ def _make_ml_maintenance_db() -> tuple[MlMaintenanceDb, MagicMock, MagicMock]:
 
 @pytest.mark.unit
 def test_exposes_ml_maintenance_surface() -> None:
-    db, _, _, _ = _make_ml_db()
+    db, _, _, _, _ = _make_ml_db()
 
     assert isinstance(db.maintenance, MlMaintenanceDb)
     assert hasattr(db.maintenance, "truncate_vectors_in_collection")
@@ -42,7 +44,7 @@ def test_exposes_ml_maintenance_surface() -> None:
 
 @pytest.mark.unit
 def test_removed_unsanctioned_raw_helpers_are_not_exposed() -> None:
-    db, _, _, _ = _make_ml_db()
+    db, _, _, _, _ = _make_ml_db()
 
     assert not hasattr(db, "get_file_vectors")
     assert not hasattr(db, "upsert_vector")
@@ -56,7 +58,7 @@ def test_removed_unsanctioned_raw_helpers_are_not_exposed() -> None:
 
 @pytest.mark.unit
 def test_add_vector_collection_delegates_to_vectors() -> None:
-    db, _, vectors, _ = _make_ml_db()
+    db, _, vectors, _, _ = _make_ml_db()
     vectors.register_vector_collection.return_value = sentinel.result
 
     result = db.add_vector_collection("vectors_track_hot__model__lib", "vectors_track_hot")
@@ -70,7 +72,7 @@ def test_add_vector_collection_delegates_to_vectors() -> None:
 
 @pytest.mark.unit
 def test_list_vector_collection_names_delegates_to_vectors() -> None:
-    db, _, vectors, _ = _make_ml_db()
+    db, _, vectors, _, _ = _make_ml_db()
     vectors.list_registered_vector_collection_names.return_value = sentinel.result
 
     result = db.list_vector_collection_names()
@@ -81,7 +83,7 @@ def test_list_vector_collection_names_delegates_to_vectors() -> None:
 
 @pytest.mark.unit
 def test_list_vector_namespaces_delegates_to_vectors() -> None:
-    db, _, vectors, _ = _make_ml_db()
+    db, _, vectors, _, _ = _make_ml_db()
     vectors.list_registered_vector_namespaces.return_value = sentinel.result
 
     result = db.list_vector_namespaces()
@@ -92,29 +94,31 @@ def test_list_vector_namespaces_delegates_to_vectors() -> None:
 
 @pytest.mark.unit
 def test_list_output_streams_for_file_delegates_to_streams() -> None:
-    db, streams, _, _ = _make_ml_db()
+    db, streams, _, _, _ = _make_ml_db()
     streams.get_output_streams_for_file.return_value = sentinel.result
 
-    result = db.list_output_streams_for_file("library_files/1")
+    result = db.list_output_streams_for_file(f"{CollectionNames.LIBRARY_FILES.value}/1")
 
     assert result is sentinel.result
-    streams.get_output_streams_for_file.assert_called_once_with("library_files/1")
+    streams.get_output_streams_for_file.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/1")
 
 
 @pytest.mark.unit
 def test_list_file_vectors_delegates_to_vectors() -> None:
-    db, _, vectors, _ = _make_ml_db()
+    db, _, vectors, _, _ = _make_ml_db()
     vectors.get_file_vectors.return_value = sentinel.result
 
-    result = db.list_file_vectors("vectors_track_hot__model__lib", "library_files/1")
+    result = db.list_file_vectors("vectors_track_hot__model__lib", f"{CollectionNames.LIBRARY_FILES.value}/1")
 
     assert result is sentinel.result
-    vectors.get_file_vectors.assert_called_once_with("vectors_track_hot__model__lib", "library_files/1")
+    vectors.get_file_vectors.assert_called_once_with(
+        "vectors_track_hot__model__lib", f"{CollectionNames.LIBRARY_FILES.value}/1"
+    )
 
 
 @pytest.mark.unit
 def test_search_vectors_delegates_to_vectors() -> None:
-    db, _, vectors, _ = _make_ml_db()
+    db, _, vectors, _, _ = _make_ml_db()
     query_vector = [0.1, 0.2]
     vectors.vector_search.return_value = sentinel.result
 
@@ -126,7 +130,7 @@ def test_search_vectors_delegates_to_vectors() -> None:
 
 @pytest.mark.unit
 def test_get_model_delegates_to_models() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.get_model.return_value = sentinel.result
 
     result = db.get_model("ml_models/1")
@@ -137,7 +141,7 @@ def test_get_model_delegates_to_models() -> None:
 
 @pytest.mark.unit
 def test_get_model_by_path_delegates_to_models() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.get_model_by_path.return_value = sentinel.result
 
     result = db.get_model_by_path("models/foo.onnx")
@@ -148,7 +152,7 @@ def test_get_model_by_path_delegates_to_models() -> None:
 
 @pytest.mark.unit
 def test_add_model_upserts_and_reloads_by_path() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     payload = {"_key": "model1", "path": "models/foo.onnx"}
     models.get_model_by_path.return_value = sentinel.result
 
@@ -161,7 +165,7 @@ def test_add_model_upserts_and_reloads_by_path() -> None:
 
 @pytest.mark.unit
 def test_update_model_upserts_fields_by_model_key() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
 
     db.update_model("ml_models/abc123", {"fully_configured": True})
 
@@ -170,7 +174,7 @@ def test_update_model_upserts_fields_by_model_key() -> None:
 
 @pytest.mark.unit
 def test_remove_model_delegates_to_models() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.delete_model.return_value = sentinel.result
 
     result = db.remove_model("ml_models/1")
@@ -181,7 +185,7 @@ def test_remove_model_delegates_to_models() -> None:
 
 @pytest.mark.unit
 def test_list_models_delegates_to_models() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.list_models.return_value = sentinel.result
 
     result = db.list_models()
@@ -192,7 +196,7 @@ def test_list_models_delegates_to_models() -> None:
 
 @pytest.mark.unit
 def test_count_models_delegates_to_models() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.count_models.return_value = sentinel.result
 
     result = db.count_models()
@@ -203,7 +207,7 @@ def test_count_models_delegates_to_models() -> None:
 
 @pytest.mark.unit
 def test_list_models_by_ids_delegates_to_models() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     model_ids = ["ml_models/1", "ml_models/2"]
     models.get_models_by_ids.return_value = sentinel.result
 
@@ -215,7 +219,7 @@ def test_list_models_by_ids_delegates_to_models() -> None:
 
 @pytest.mark.unit
 def test_get_model_output_delegates_to_models() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.get_model_output.return_value = sentinel.result
 
     result = db.get_model_output("ml_model_outputs/1")
@@ -226,7 +230,7 @@ def test_get_model_output_delegates_to_models() -> None:
 
 @pytest.mark.unit
 def test_list_model_outputs_delegates_to_models() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.list_model_outputs.return_value = sentinel.result
 
     result = db.list_model_outputs("ml_models/1")
@@ -237,7 +241,7 @@ def test_list_model_outputs_delegates_to_models() -> None:
 
 @pytest.mark.unit
 def test_get_calibration_state_delegates_to_models() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.get_calibration_state.return_value = sentinel.result
 
     result = db.get_calibration_state("ml_models/1")
@@ -248,7 +252,7 @@ def test_get_calibration_state_delegates_to_models() -> None:
 
 @pytest.mark.unit
 def test_get_calibration_state_view_delegates_to_models() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.get_calibration_state_doc.return_value = sentinel.result
 
     result = db.get_calibration_state_view("mood_happy", "happy")
@@ -259,7 +263,7 @@ def test_get_calibration_state_view_delegates_to_models() -> None:
 
 @pytest.mark.unit
 def test_list_calibration_states_delegates_to_models() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.list_calibration_states.return_value = sentinel.result
 
     result = db.list_calibration_states()
@@ -270,7 +274,7 @@ def test_list_calibration_states_delegates_to_models() -> None:
 
 @pytest.mark.unit
 def test_list_calibration_history_snapshots_delegates_to_models() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.get_calibration_history_snapshots.return_value = sentinel.result
 
     result = db.list_calibration_history_snapshots("mood_happy:happy")
@@ -281,7 +285,7 @@ def test_list_calibration_history_snapshots_delegates_to_models() -> None:
 
 @pytest.mark.unit
 def test_add_calibration_history_delegates_to_models() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     payload = {"model_id": "ml_models/1"}
     models.add_calibration_history.return_value = sentinel.result
 
@@ -293,7 +297,7 @@ def test_add_calibration_history_delegates_to_models() -> None:
 
 @pytest.mark.unit
 def test_count_calibration_history_delegates_to_models() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.count_calibration_history.return_value = sentinel.result
 
     result = db.count_calibration_history("ml_models/1")
@@ -304,81 +308,91 @@ def test_count_calibration_history_delegates_to_models() -> None:
 
 @pytest.mark.unit
 def test_replace_output_streams_for_file_replaces_existing_streams() -> None:
-    db, streams, _, _ = _make_ml_db()
+    db, streams, _, _, _ = _make_ml_db()
     payloads = [{"output_id": "ml_model_outputs/1", "values": [0.1, 0.2]}]
 
-    db.replace_output_streams_for_file("library_files/1", payloads)
+    db.replace_output_streams_for_file(f"{CollectionNames.LIBRARY_FILES.value}/1", payloads)
 
-    streams.delete_output_streams_for_file.assert_called_once_with("library_files/1")
-    streams.upsert_output_streams_batch.assert_called_once_with("library_files/1", payloads)
+    streams.delete_output_streams_for_file.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/1")
+    streams.upsert_output_streams_batch.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/1", payloads)
 
 
 @pytest.mark.unit
 def test_replace_output_streams_for_file_skips_batch_write_when_empty() -> None:
-    db, streams, _, _ = _make_ml_db()
+    db, streams, _, _, _ = _make_ml_db()
 
-    db.replace_output_streams_for_file("library_files/1", [])
+    db.replace_output_streams_for_file(f"{CollectionNames.LIBRARY_FILES.value}/1", [])
 
-    streams.delete_output_streams_for_file.assert_called_once_with("library_files/1")
+    streams.delete_output_streams_for_file.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/1")
     streams.upsert_output_streams_batch.assert_not_called()
 
 
 @pytest.mark.unit
 def test_remove_output_streams_for_file_delegates_to_streams() -> None:
-    db, streams, _, _ = _make_ml_db()
+    db, streams, _, _, _ = _make_ml_db()
     streams.delete_output_streams_for_file.return_value = sentinel.result
 
-    result = db.remove_output_streams_for_file("library_files/1")
+    result = db.remove_output_streams_for_file(f"{CollectionNames.LIBRARY_FILES.value}/1")
 
     assert result is sentinel.result
-    streams.delete_output_streams_for_file.assert_called_once_with("library_files/1")
+    streams.delete_output_streams_for_file.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/1")
 
 
 @pytest.mark.unit
 def test_replace_file_vectors_removes_existing_and_upserts_new_payloads() -> None:
-    db, _, vectors, _ = _make_ml_db()
-    payloads = [{"_key": "vec1", "model_suite_hash": "suite1"}, {"_key": "vec2", "file_id": "library_files/1"}]
+    db, _, vectors, _, _ = _make_ml_db()
+    payloads = [
+        {"_key": "vec1", "model_suite_hash": "suite1"},
+        {"_key": "vec2", "file_id": f"{CollectionNames.LIBRARY_FILES.value}/1"},
+    ]
 
-    db.replace_file_vectors("vectors_track_hot__model__lib", "library_files/1", payloads)
+    db.replace_file_vectors("vectors_track_hot__model__lib", f"{CollectionNames.LIBRARY_FILES.value}/1", payloads)
 
-    vectors.delete_vectors_for_file.assert_called_once_with("vectors_track_hot__model__lib", "library_files/1")
+    vectors.delete_vectors_for_file.assert_called_once_with(
+        "vectors_track_hot__model__lib", f"{CollectionNames.LIBRARY_FILES.value}/1"
+    )
     assert vectors.upsert_vector.call_count == 2
     vectors.upsert_vector.assert_any_call(
         "vectors_track_hot__model__lib",
-        {"_key": "vec1", "model_suite_hash": "suite1", "file_id": "library_files/1"},
+        {"_key": "vec1", "model_suite_hash": "suite1", "file_id": f"{CollectionNames.LIBRARY_FILES.value}/1"},
     )
     vectors.upsert_vector.assert_any_call(
         "vectors_track_hot__model__lib",
-        {"_key": "vec2", "file_id": "library_files/1"},
+        {"_key": "vec2", "file_id": f"{CollectionNames.LIBRARY_FILES.value}/1"},
     )
 
 
 @pytest.mark.unit
 def test_remove_file_vectors_delegates_to_vectors() -> None:
-    db, _, vectors, _ = _make_ml_db()
+    db, _, vectors, _, _ = _make_ml_db()
     vectors.delete_vectors_for_file.return_value = sentinel.result
 
-    result = db.remove_file_vectors("vectors_track_hot__model__lib", "library_files/1")
+    result = db.remove_file_vectors("vectors_track_hot__model__lib", f"{CollectionNames.LIBRARY_FILES.value}/1")
 
     assert result is sentinel.result
-    vectors.delete_vectors_for_file.assert_called_once_with("vectors_track_hot__model__lib", "library_files/1")
+    vectors.delete_vectors_for_file.assert_called_once_with(
+        "vectors_track_hot__model__lib", f"{CollectionNames.LIBRARY_FILES.value}/1"
+    )
 
 
 @pytest.mark.unit
 def test_remove_vectors_for_files_loops_over_each_file() -> None:
-    db, _, _, _ = _make_ml_db()
+    db, _, _, _, _ = _make_ml_db()
 
     with patch.object(db, "remove_file_vectors") as remove_file_vectors:
-        db.remove_vectors_for_files("vectors_track_hot__model__lib", ["library_files/1", "library_files/2"])
+        db.remove_vectors_for_files(
+            "vectors_track_hot__model__lib",
+            [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"],
+        )
 
     assert remove_file_vectors.call_count == 2
-    remove_file_vectors.assert_any_call("vectors_track_hot__model__lib", "library_files/1")
-    remove_file_vectors.assert_any_call("vectors_track_hot__model__lib", "library_files/2")
+    remove_file_vectors.assert_any_call("vectors_track_hot__model__lib", f"{CollectionNames.LIBRARY_FILES.value}/1")
+    remove_file_vectors.assert_any_call("vectors_track_hot__model__lib", f"{CollectionNames.LIBRARY_FILES.value}/2")
 
 
 @pytest.mark.unit
 def test_replace_model_output_inserts_missing_doc_and_edge() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.get_model_output.return_value = None
     models.add_model_output.return_value = "ml_model_outputs/out1"
 
@@ -398,7 +412,7 @@ def test_replace_model_output_inserts_missing_doc_and_edge() -> None:
 
 @pytest.mark.unit
 def test_replace_model_output_updates_existing_doc_and_edge() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.get_model_output.return_value = {"_id": "ml_model_outputs/out1"}
 
     result = db.replace_model_output("ml_models/1", "out1", {"label": "Happy", "fully_labeled": True})
@@ -413,7 +427,7 @@ def test_replace_model_output_updates_existing_doc_and_edge() -> None:
 
 @pytest.mark.unit
 def test_remove_model_output_deletes_model_edge_and_doc() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
 
     with patch.object(db, "_delete_model_output_edge") as delete_edge:
         db.remove_model_output("out1")
@@ -424,7 +438,7 @@ def test_remove_model_output_deletes_model_edge_and_doc() -> None:
 
 @pytest.mark.unit
 def test_remove_model_outputs_for_model_collects_ids_and_bulk_deletes() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.list_model_outputs.return_value = [
         {"_id": "ml_model_outputs/out1"},
         {"_id": "ml_model_outputs/out2"},
@@ -439,7 +453,7 @@ def test_remove_model_outputs_for_model_collects_ids_and_bulk_deletes() -> None:
 
 @pytest.mark.unit
 def test_replace_calibration_state_delegates_to_models_with_key() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
 
     db.replace_calibration_state("ml_models/1", "mood_happy:happy", {"p5": 0.1, "p95": 0.9})
 
@@ -451,7 +465,7 @@ def test_replace_calibration_state_delegates_to_models_with_key() -> None:
 
 @pytest.mark.unit
 def test_remove_calibration_state_deletes_edge_and_doc() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
 
     db.remove_calibration_state("calibration_state/mood_happy:happy")
 
@@ -461,7 +475,7 @@ def test_remove_calibration_state_deletes_edge_and_doc() -> None:
 
 @pytest.mark.unit
 def test_remove_calibration_history_for_model_delegates_to_models() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.delete_calibration_history_for_model.return_value = sentinel.result
 
     result = db.remove_calibration_history_for_model("ml_models/1")
@@ -472,7 +486,7 @@ def test_remove_calibration_history_for_model_delegates_to_models() -> None:
 
 @pytest.mark.unit
 def test_remove_calibration_history_entries_delegates_to_models() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     entry_ids = ["calibration_history/1"]
     models.delete_calibration_history_entries.return_value = sentinel.result
 
@@ -539,7 +553,7 @@ def test_truncate_calibration_history_delegates_to_models() -> None:
 
 @pytest.mark.unit
 def test_list_all_calibration_states_with_models_delegates_to_canonical_tier2_helper() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.list_calibration_states_with_models.return_value = []
 
     result = db.list_all_calibration_states_with_models()
@@ -550,7 +564,7 @@ def test_list_all_calibration_states_with_models_delegates_to_canonical_tier2_he
 
 @pytest.mark.unit
 def test_list_all_calibration_states_with_models_returns_canonical_tier2_result() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
     models.list_calibration_states_with_models.return_value = [
         {
             "_key": "edge-a",
@@ -597,7 +611,7 @@ def test_list_all_calibration_states_with_models_returns_canonical_tier2_result(
 
 @pytest.mark.unit
 def test_delete_model_output_edge_helper_delegates_to_canonical_tier2_helper() -> None:
-    db, _, _, models = _make_ml_db()
+    db, _, _, models, _ = _make_ml_db()
 
     db._delete_model_output_edge("ml_model_outputs/out1")
 

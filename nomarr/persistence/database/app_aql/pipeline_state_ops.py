@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from nomarr.persistence.aql import primitives
+from nomarr.persistence.schema import CollectionNames
 
 from ._helpers import Document, _as_document_id, _extract_key
 
@@ -26,6 +27,9 @@ class PipelineStateOpsMixin:
     LIBRARY_SCAN_EDGE_COLLECTION: str
     PIPELINE_STATE_FIELDS: frozenset[str]
     SCAN_FIELDS: frozenset[str]
+    FILE_COLLECTION: str = CollectionNames.LIBRARY_FILES.value
+    LIBRARY_COLLECTION: str = CollectionNames.LIBRARIES.value
+    FILE_STATES_COLLECTION: str = CollectionNames.FILE_STATES.value
 
     def _truncate_collection(self, collection_name: str) -> None: ...
 
@@ -93,13 +97,13 @@ class PipelineStateOpsMixin:
         primitives.delete_edges(
             self._db,
             self.PIPELINE_STATE_EDGE_COLLECTION,
-            from_id=_as_document_id("libraries", library_id),
+            from_id=_as_document_id(self.LIBRARY_COLLECTION, library_id),
         )
 
     def list_file_docs_in_state(self, state: str, *, limit: int | None = None) -> list[Document]:
         bind_vars: dict[str, Any] = {
             "@edge_collection": self.FILE_STATE_EDGE_COLLECTION,
-            "state_id": _as_document_id("file_states", state),
+            "state_id": _as_document_id(self.FILE_STATES_COLLECTION, state),
         }
         query_lines = [
             "FOR edge IN @@edge_collection",
@@ -116,7 +120,7 @@ class PipelineStateOpsMixin:
         return primitives.execute(self._db, "\n".join(query_lines), bind_vars)
 
     def get_state_edges_for_files(self, file_ids: list[str]) -> list[Document]:
-        normalized_ids = [_as_document_id("library_files", file_id) for file_id in file_ids]
+        normalized_ids = [_as_document_id(self.FILE_COLLECTION, file_id) for file_id in file_ids]
         if not normalized_ids:
             return []
         return primitives.execute(
@@ -143,7 +147,7 @@ class PipelineStateOpsMixin:
         primitives.upsert_edge(
             self._db,
             self.LIBRARY_SCAN_EDGE_COLLECTION,
-            _as_document_id("libraries", library_id),
+            _as_document_id(self.LIBRARY_COLLECTION, library_id),
             _as_document_id(self.SCAN_COLLECTION, scan_id),
         )
 
@@ -151,7 +155,7 @@ class PipelineStateOpsMixin:
         primitives.delete_edges(
             self._db,
             self.LIBRARY_SCAN_EDGE_COLLECTION,
-            from_id=_as_document_id("libraries", library_id),
+            from_id=_as_document_id(self.LIBRARY_COLLECTION, library_id),
         )
 
     def truncate_file_state_edges(self) -> None:

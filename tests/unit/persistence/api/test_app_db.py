@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, call, patch, sentinel
 import pytest
 
 from nomarr.persistence.api.application import AppDb, AppMaintenanceDb
+from nomarr.persistence.schema import CollectionNames
 
 
 def _make_app_db() -> tuple[AppDb, MagicMock, MagicMock, MagicMock, MagicMock, MagicMock]:
@@ -33,10 +34,10 @@ def test_get_file_state_delegates_to_file_states() -> None:
     db, file_states, _, _, _, _ = _make_app_db()
     file_states.get_file_state.return_value = sentinel.result
 
-    result = db.get_file_state("library_files/1")
+    result = db.get_file_state(f"{CollectionNames.LIBRARY_FILES.value}/1")
 
     assert result is sentinel.result
-    file_states.get_file_state.assert_called_once_with("library_files/1")
+    file_states.get_file_state.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/1")
 
 
 @pytest.mark.unit
@@ -156,10 +157,10 @@ def test_legacy_navidrome_surface_delete_tracks_for_file_delegates_to_navidrome(
     db, _, _, _, navidrome, _ = _make_app_db()
     navidrome.delete_nd_tracks_for_file.return_value = sentinel.result
 
-    result = db.legacy_navidrome.delete_nd_tracks_for_file("library_files/1")
+    result = db.legacy_navidrome.delete_nd_tracks_for_file(f"{CollectionNames.LIBRARY_FILES.value}/1")
 
     assert result is sentinel.result
-    navidrome.delete_nd_tracks_for_file.assert_called_once_with("library_files/1")
+    navidrome.delete_nd_tracks_for_file.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/1")
 
 
 @pytest.mark.unit
@@ -290,21 +291,21 @@ def test_exposes_app_maintenance_surface() -> None:
 @pytest.mark.unit
 def test_add_file_states_delegates_each_file_to_file_states() -> None:
     db, file_states, _, _, _, _ = _make_app_db()
-    file_ids = ["library_files/1", "library_files/2"]
+    file_ids = [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"]
 
     result = db.add_file_states(file_ids, "queued")
 
     assert result is None
     assert file_states.add_file_state_edge.call_args_list == [
-        call("library_files/1", "queued"),
-        call("library_files/2", "queued"),
+        call(f"{CollectionNames.LIBRARY_FILES.value}/1", "queued"),
+        call(f"{CollectionNames.LIBRARY_FILES.value}/2", "queued"),
     ]
 
 
 @pytest.mark.unit
 def test_replace_file_states_routes_via_remove_then_add() -> None:
     db, _, _, _, _, _ = _make_app_db()
-    file_ids = ["library_files/1", "library_files/2"]
+    file_ids = [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"]
 
     with (
         patch.object(db, "remove_file_states", return_value=None) as remove_states,
@@ -424,7 +425,7 @@ def test_remove_lock_delegates_to_release_lock() -> None:
 @pytest.mark.unit
 def test_add_claim_delegates_to_insert_worker_claim() -> None:
     db, _, _, app, _, _ = _make_app_db()
-    payload = {"file_id": "library_files/1"}
+    payload = {"file_id": f"{CollectionNames.LIBRARY_FILES.value}/1"}
     app.insert_worker_claim.return_value = "worker_claims/claim_1"
 
     result = db.add_claim(payload)
@@ -439,11 +440,11 @@ def test_remove_claims_combines_worker_and_file_removals() -> None:
     app.delete_claims_for_workers.return_value = 2
     app.delete_claims_for_files.return_value = 3
 
-    result = db.remove_claims(worker_ids=["worker-1"], file_ids=["library_files/1"])
+    result = db.remove_claims(worker_ids=["worker-1"], file_ids=[f"{CollectionNames.LIBRARY_FILES.value}/1"])
 
     assert result == 5
     app.delete_claims_for_workers.assert_called_once_with(["worker-1"])
-    app.delete_claims_for_files.assert_called_once_with(["library_files/1"])
+    app.delete_claims_for_files.assert_called_once_with([f"{CollectionNames.LIBRARY_FILES.value}/1"])
 
 
 @pytest.mark.unit

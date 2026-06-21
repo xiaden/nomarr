@@ -5,6 +5,7 @@ from typing import Any, cast
 
 from nomarr.persistence.aql import primitives
 from nomarr.persistence.arango_client import SafeDatabase
+from nomarr.persistence.schema import CollectionNames
 
 Document = dict[str, Any]
 
@@ -24,10 +25,11 @@ def _edge_key(left_id: str, right_id: str) -> str:
 class NavidromeAqlOperations:
     """Thin Tier 2 bindings for Navidrome track mapping records."""
 
-    TRACK_COLLECTION = "navidrome_tracks"
-    ND_ID_EDGE_COLLECTION = "has_nd_id"
-    PLAY_EDGE_COLLECTION = "has_plays"
-    PLAYCOUNT_COLLECTION = "navidrome_playcounts"
+    TRACK_COLLECTION = CollectionNames.NAVIDROME_TRACKS.value
+    ND_ID_EDGE_COLLECTION = CollectionNames.HAS_ND_ID.value
+    PLAY_EDGE_COLLECTION = CollectionNames.HAS_PLAYS.value
+    PLAYCOUNT_COLLECTION = CollectionNames.NAVIDROME_PLAYCOUNTS.value
+    FILE_COLLECTION = CollectionNames.LIBRARY_FILES.value
 
     def __init__(self, db: SafeDatabase) -> None:
         self._db = db
@@ -141,7 +143,7 @@ class NavidromeAqlOperations:
                 "@play_edge_collection": self.PLAY_EDGE_COLLECTION,
                 "@playcount_collection": self.PLAYCOUNT_COLLECTION,
                 "@track_collection": self.TRACK_COLLECTION,
-                "file_id": _as_document_id("library_files", file_id),
+                "file_id": _as_document_id(self.FILE_COLLECTION, file_id),
             },
         )
 
@@ -207,7 +209,7 @@ class NavidromeAqlOperations:
 
     def ensure_nd_file_link(self, nd_id: str, file_id: str) -> None:
         track_id = _as_document_id(self.TRACK_COLLECTION, nd_id)
-        normalized_file_id = _as_document_id("library_files", file_id)
+        normalized_file_id = _as_document_id(self.FILE_COLLECTION, file_id)
         primitives.execute(
             self._db,
             """
@@ -229,10 +231,10 @@ class NavidromeAqlOperations:
             {
                 "_key": _edge_key(
                     _as_document_id(self.TRACK_COLLECTION, cast("str", mapping["nd_id"])),
-                    _as_document_id("library_files", cast("str", mapping["file_id"])),
+                    _as_document_id(self.FILE_COLLECTION, cast("str", mapping["file_id"])),
                 ),
                 "_from": _as_document_id(self.TRACK_COLLECTION, cast("str", mapping["nd_id"])),
-                "_to": _as_document_id("library_files", cast("str", mapping["file_id"])),
+                "_to": _as_document_id(self.FILE_COLLECTION, cast("str", mapping["file_id"])),
             }
             for mapping in mappings
             if isinstance(mapping.get("nd_id"), str) and isinstance(mapping.get("file_id"), str)
@@ -281,7 +283,7 @@ class NavidromeAqlOperations:
                 LIMIT 1
                 RETURN PARSE_IDENTIFIER(edge._from).key
             """,
-            {"@collection": self.ND_ID_EDGE_COLLECTION, "file_id": _as_document_id("library_files", file_id)},
+            {"@collection": self.ND_ID_EDGE_COLLECTION, "file_id": _as_document_id(self.FILE_COLLECTION, file_id)},
         )
         return cast("str", rows[0]) if rows else None
 
@@ -307,7 +309,7 @@ class NavidromeAqlOperations:
         return result
 
     def bulk_resolve_files_to_nd_ids(self, file_ids: list[str]) -> dict[str, str]:
-        normalized_file_ids = [_as_document_id("library_files", file_id) for file_id in file_ids]
+        normalized_file_ids = [_as_document_id(self.FILE_COLLECTION, file_id) for file_id in file_ids]
         if not normalized_file_ids:
             return {}
         rows = primitives.execute(

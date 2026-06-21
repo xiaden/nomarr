@@ -23,7 +23,8 @@ from arango.exceptions import CollectionCreateError, DocumentInsertError, IndexC
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones, discover_heads_no_db
 from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES
 from nomarr.persistence.arango_client import SafeDatabase
-from nomarr.persistence.database.libraries_aql import LibrariesAqlOperations
+from nomarr.persistence.schema import CollectionNames
+from nomarr.persistence.schema.ddl import DOCUMENT_COLLECTIONS, EDGE_COLLECTIONS
 from nomarr.persistence.schema_types import VectorsTrackCold, VectorsTrackHot
 
 if TYPE_CHECKING:
@@ -102,7 +103,7 @@ def ensure_schema(db: SafeDatabase, *, models_dir: str | None = None) -> None:
     Args:
         db: ArangoDB database handle
         models_dir: Path to ML models directory. When provided, creates
-            per-backbone ``vectors_track_hot__*`` collections.
+            per-backbone ``vectors_track_hot__{backbone}`` collections.
 
     """
     _create_collections(db)
@@ -114,59 +115,18 @@ def ensure_schema(db: SafeDatabase, *, models_dir: str | None = None) -> None:
 
 
 def _create_collections(db: SafeDatabase) -> None:
-    """Create document and edge collections."""
-    # Document collections
-    document_collections = [
-        "meta",
-        "libraries",
-        "library_files",
-        "library_folders",
-        "tags",  # Unified tag vertex collection (name, value)
-        "sessions",
-        "calibration_state",
-        "calibration_history",
-        "health",
-        "worker_claims",  # Discovery worker claims (Phase 2)
-        "locks",  # Unified lock system (capacity_probe, vector_promotion, etc.)
-        "worker_restart_policy",  # Worker restart state persistence
-        # Canonical raw ML output streams (one per file/output pair)
-        "ml_output_streams",
-        # Future: "segment_scores_blob" -- full segment x class matrix for re-pooling
-        # Migration tracking (database migration system)
-        "applied_migrations",
-        # VRAM promise registry (fleet-aware per-model GPU placement coordination)
-        "vram_promises",
-        # ML model registry and output activations
-        "ml_models",
-        "ml_model_outputs",
-        # File state vertices (edge targets for file_has_state)
-        "file_states",
-        # Navidrome graph model — track identity and user play counts
-        "navidrome_tracks",
-        "navidrome_playcounts",
-    ]
-
-    for collection_name in document_collections:
-        if not db.has_collection(collection_name):
+    """Create document and edge collections using DDL definitions."""
+    for coll_def in DOCUMENT_COLLECTIONS:
+        name = coll_def.name.value
+        if not db.has_collection(name):
             with contextlib.suppress(CollectionCreateError):
-                # Collection already exists (race condition)
-                db.create_collection(collection_name)
+                db.create_collection(name)
 
-    # Edge collections
-    edge_collections = [
-        "song_has_tags",  # song→tag relationships (unified)
-        "file_has_state",  # library_files→file_states state edges
-        "file_has_output_stream",  # library_files→ml_output_streams canonical stream links
-        "output_has_stream",  # ml_model_outputs→ml_output_streams canonical stream links
-        "has_nd_id",  # navidrome_tracks→library_files file resolution
-        "has_plays",  # navidrome_playcounts→navidrome_tracks play data
-    ]
-
-    for edge_collection_name in edge_collections:
-        if not db.has_collection(edge_collection_name):
+    for coll_def in EDGE_COLLECTIONS:
+        name = coll_def.name.value
+        if not db.has_collection(name):
             with contextlib.suppress(CollectionCreateError):
-                # Collection already exists (race condition)
-                db.create_collection(edge_collection_name, edge=True)
+                db.create_collection(name, edge=True)
 
     # Seed file_states vertex documents (fixed set of state targets)
     _seed_file_states(db)
@@ -177,7 +137,7 @@ def _seed_file_states(db: SafeDatabase) -> None:
 
     Idempotent — inserts only if the document is missing.
     """
-    coll = db.collection("file_states")  # type: ignore[union-attr]
+    coll = db.collection(CollectionNames.FILE_STATES.value)  # type: ignore[union-attr]
     for vertex in ALL_STATE_VERTICES:
         with contextlib.suppress(DocumentInsertError):
             coll.insert({"_key": vertex.split("/")[1]})  # type: ignore[union-attr]
@@ -203,168 +163,22 @@ def seed_state_documents(db: Database) -> None:
 
 
 def _create_indexes(db: SafeDatabase) -> None:
-    """Create indexes for performance.
+    """Create indexes from DDL definitions.
 
     Idempotent - skips existing indexes.
     """
-    # worker_claims indexes (discovery workers)
-    _ensure_index(db, "worker_claims", "persistent", ["file_key"])
-    _ensure_index(db, "worker_claims", "persistent", ["worker_id"])
-    _ensure_index(db, "worker_claims", "persistent", ["claimed_at"])
-
-    # library_files indexes
-    _ensure_index(db, "library_files", "persistent", ["library_id"])
-    _ensure_index(db, "library_files", "persistent", ["library_id", "path"], unique=True)
-    _ensure_index(db, "library_files", "persistent", ["library_id", "normalized_path"], unique=True)
-    _ensure_index(db, "library_files", "persistent", ["normalized_path"])  # Normalized path lookups
-    _ensure_index(
-        db,
-        "library_files",
-        "persistent",
-        ["chromaprint"],
-        sparse=True,  # Only index non-null values
-    )
-    # Worker queue queries (HIGH PRIORITY)
-    _ensure_index(
-        db,
-        "library_files",
-        "persistent",
-        ["needs_tagging", "is_valid"],  # Worker queue filtering
-    )
-    _ensure_index(
-        db,
-        "library_files",
-        "persistent",
-        ["library_id", "tagged"],  # Per-library stats
-    )
-    _ensure_index(db, "library_files", "persistent", ["path"])  # Path lookups
-    # Recalibration and tag writing (MEDIUM PRIORITY)
-    _ensure_index(db, "library_files", "persistent", ["calibration_hash"])
-    _ensure_index(
-        db,
-        "library_files",
-        "persistent",
-        ["write_claimed_by"],
-        sparse=True,  # Only index non-null claims
-    )
-
-    # library_folders indexes
-    _ensure_index(db, "library_folders", "persistent", ["library_id"])
-    _ensure_index(db, "library_folders", "persistent", ["library_id", "path"], unique=True)
-
-    # sessions TTL index (auto-expire based on expiry_timestamp)
-    _ensure_index(
-        db,
-        "sessions",
-        "ttl",
-        ["expiry_timestamp"],
-        expireAfter=0,  # Expire immediately when timestamp passes
-    )
-    # Session lookup indexes (HIGH PRIORITY)
-    _ensure_index(db, "sessions", "persistent", ["session_id"])
-
-    # health indexes (HIGH PRIORITY)
-    _ensure_index(db, "health", "persistent", ["component_id"])
-
-    # meta indexes (HIGH PRIORITY)
-    _ensure_index(db, "meta", "persistent", ["key"])
-
-    # libraries indexes (MEDIUM PRIORITY)
-    _ensure_index(db, "libraries", "persistent", ["is_enabled"])
-
-    # worker_restart_policy indexes (MEDIUM PRIORITY)
-    _ensure_index(db, "worker_restart_policy", "persistent", ["component_id"])
-
-    # calibration_state indexes (NEW - histogram-based calibration)
-    _ensure_index(db, "calibration_state", "persistent", ["calibration_def_hash"], unique=True, sparse=False)
-    _ensure_index(db, "calibration_state", "persistent", ["updated_at"], unique=False, sparse=False)
-
-    # calibration_history indexes (NEW - optional drift tracking)
-    _ensure_index(db, "calibration_history", "persistent", ["calibration_key"], unique=False, sparse=False)
-    _ensure_index(db, "calibration_history", "persistent", ["snapshot_at"], unique=False, sparse=False)
-
-    # file_has_state indexes (edge-based file state management)
-    _ensure_index(db, "file_has_state", "persistent", ["_from", "_to"], unique=True)
-    _ensure_index(db, "file_has_state", "persistent", ["_to"])
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Unified tag schema indexes (TAG_UNIFICATION_REFACTOR)
-    # ─────────────────────────────────────────────────────────────────────
-
-    # tags collection: filter by name (browse), unique on (name, value)
-    _ensure_index(
-        db,
-        "tags",
-        "persistent",
-        ["name"],  # Browse by type, Nomarr prefix filtering
-        unique=False,
-        sparse=False,
-    )
-    _ensure_index(
-        db,
-        "tags",
-        "persistent",
-        ["name", "value"],  # Upsert deduplication
-        unique=True,
-        sparse=False,
-    )
-
-    # song_has_tags: song→tag edges (minimal shape: _from, _to only)
-    _ensure_index(
-        db,
-        "song_has_tags",
-        "persistent",
-        ["_from"],  # Get all tags for a song
-        unique=False,
-        sparse=False,
-    )
-    _ensure_index(
-        db,
-        "song_has_tags",
-        "persistent",
-        ["_to"],  # Get all songs for a tag
-        unique=False,
-        sparse=False,
-    )
-    _ensure_index(
-        db,
-        "song_has_tags",
-        "persistent",
-        ["_from", "_to"],  # Prevent duplicate edges (idempotent inserts)
-        unique=True,
-        sparse=False,
-    )
-
-    # ML model graph indexes (introduced by V014)
-    _ensure_index(db, "ml_models", "persistent", ["path"], unique=True)
-    _ensure_index(db, "ml_model_outputs", "persistent", ["model_id", "output_index"], unique=True)
-
-    # canonical stream graph indexes
-    _ensure_index(db, "file_has_output_stream", "persistent", ["_from"])
-    _ensure_index(db, "file_has_output_stream", "persistent", ["_to"])
-    _ensure_index(db, "file_has_output_stream", "persistent", ["_from", "_to"], unique=True)
-    _ensure_index(db, "output_has_stream", "persistent", ["_from"])
-    _ensure_index(db, "output_has_stream", "persistent", ["_to"])
-    _ensure_index(db, "output_has_stream", "persistent", ["_from", "_to"], unique=True)
-
-    # Note: V010 added a TTL index on vram_promises.last_seen_ms, but V011 dropped it
-    # (the ms vs s unit mismatch made it non-functional, and explicit owner-driven
-    # cleanup via release_worker_promises() replaced it). No TTL index here.
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Navidrome graph model indexes
-    # ─────────────────────────────────────────────────────────────────────
-
-    # has_nd_id: unique edge (one file per track), reverse lookup by _to
-    _ensure_index(db, "has_nd_id", "persistent", ["_from", "_to"], unique=True)
-    _ensure_index(db, "has_nd_id", "persistent", ["_to"])
-
-    # navidrome_playcounts: compound index for fast sorted queries by user
-    _ensure_index(db, "navidrome_playcounts", "persistent", ["userid", "playcount"])
-
-    # has_plays: unique edge per (track, bucket), reverse lookup by _to for INBOUND traversal
-    _ensure_index(db, "has_plays", "persistent", ["_from", "_to"], unique=True)
-    _ensure_index(db, "has_plays", "persistent", ["_to"])
+    all_defs = DOCUMENT_COLLECTIONS + EDGE_COLLECTIONS
+    for coll_def in all_defs:
+        for idx_def in coll_def.indexes:
+            _ensure_index(
+                db,
+                coll_def.name.value,
+                idx_def.index_type,
+                idx_def.fields,
+                unique=idx_def.unique,
+                sparse=idx_def.sparse,
+                expireAfter=idx_def.expire_after,
+            )
 
 
 def _ensure_index(
@@ -425,7 +239,7 @@ def _validate_no_legacy_calibration(db: SafeDatabase) -> None:
     Legacy queue-based calibration was replaced by histogram-based approach.
     These collections are no longer used and can be dropped.
     """
-    legacy_collections = ["calibration_queue", "calibration_runs"]
+    legacy_collections = ["calibration_queue", "calibration_runs"]  # no CollectionNames — these are truly legacy
     found_legacy = [name for name in legacy_collections if db.has_collection(name)]
 
     if found_legacy:
@@ -461,18 +275,17 @@ def _discover_backbone_ids(models_dir: str) -> list[str]:
         return []
 
 
-def provision_vectors_track_for_library(db: SafeDatabase, models_dir: str, library_key: str) -> None:
-    """Provision vectors_track collections for a single library.
+def _create_vectors_track_collections(db: SafeDatabase, models_dir: str) -> None:
+    """Create per-backbone ``vectors_track_hot__{backbone}`` collections.
 
-    Creates ``vectors_track_hot__{backbone}__{library_key}`` for every
-    discovered backbone. Safe to call at runtime when a new library is created.
+    For each backbone discovered from the models directory, creates a hot
+    collection with persistent indexes on ``_key`` (unique) and ``file_id``.
+
+    Hot collections must never have vector indexes. Use
+    ``promote_and_rebuild_workflow`` to create cold indexes after ML
+    processing completes.
+
     Idempotent — skips existing collections.
-
-    Args:
-        db: Database handle
-        models_dir: Path to ML models directory
-        library_key: Key of the library to provision collections for (e.g. "music")
-
     """
     try:
         backbones = discover_backbones(models_dir)
@@ -489,7 +302,7 @@ def provision_vectors_track_for_library(db: SafeDatabase, models_dir: str, libra
         return
 
     for backbone in backbones:
-        collection_name = f"vectors_track_hot__{backbone}__{library_key}"
+        collection_name = f"vectors_track_hot__{backbone}"
         created_collection = False
 
         if not db.has_collection(collection_name):  # type: ignore[union-attr]
@@ -504,30 +317,3 @@ def provision_vectors_track_for_library(db: SafeDatabase, models_dir: str, libra
             logger.info("[bootstrap] Created collection %s", collection_name)
         else:
             logger.info("[bootstrap] Provisioned indexes for %s", collection_name)
-
-
-def _create_vectors_track_collections(db: SafeDatabase, models_dir: str) -> None:
-    """Create per-library ``vectors_track_hot__{backbone}__{library_key}`` collections.
-
-    For each (backbone, library_key) combination discovered from the models
-    directory and the ``libraries`` collection, creates a hot collection with
-    persistent indexes on ``_key`` (unique) and ``file_id``.
-
-    Hot collections must never have vector indexes. Use
-    ``promote_and_rebuild_workflow`` to create cold indexes after ML
-    processing completes.
-
-    Idempotent — skips existing collections.
-    """
-    # Guard: libraries collection may not exist on first-ever startup
-    if not db.has_collection("libraries"):  # type: ignore[union-attr]
-        logger.info("[bootstrap] No libraries collection — skipping per-library vector collections")
-        return
-
-    library_keys = LibrariesAqlOperations(db).list_library_keys()
-    if not library_keys:
-        logger.info("[bootstrap] No libraries found — skipping per-library vector collections")
-        return
-
-    for library_key in library_keys:
-        provision_vectors_track_for_library(db, models_dir, library_key)

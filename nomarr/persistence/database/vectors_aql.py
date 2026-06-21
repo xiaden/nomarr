@@ -4,6 +4,7 @@ from typing import Any, cast
 
 from nomarr.persistence.aql import primitives
 from nomarr.persistence.arango_client import SafeDatabase
+from nomarr.persistence.schema import CollectionNames
 from nomarr.persistence.schema_types import VectorCollection, VectorsTrackCold, VectorsTrackHot
 
 Document = dict[str, Any]
@@ -17,10 +18,10 @@ _VECTOR_ALLOWED_FIELDS = frozenset(
         "file_id",
         "model_suite_hash",
         "embed_dim",
-        "vector",
         "vector_n",
         "num_segments",
         "created_at",
+        "segmentation_hash",
     },
 )
 
@@ -37,7 +38,8 @@ def _matches_name_pattern(collection_name: str, pattern: str) -> bool:
 class VectorsAqlOperations:
     """Thin Tier 2 bindings for runtime vector collections."""
 
-    EDGE_COLLECTION = "file_has_vectors"
+    EDGE_COLLECTION = CollectionNames.FILE_HAS_VECTORS.value
+    FILE_COLLECTION = CollectionNames.LIBRARY_FILES.value
 
     def __init__(self, db: SafeDatabase) -> None:
         self._db = db
@@ -79,7 +81,7 @@ class VectorsAqlOperations:
             self._db,
             collection_name,
             "file_id",
-            _as_document_id("library_files", file_id),
+            _as_document_id(self.FILE_COLLECTION, file_id),
             limit=None,
             allowed_fields=_VECTOR_ALLOWED_FIELDS,
         )
@@ -89,8 +91,6 @@ class VectorsAqlOperations:
         vector_key = vector_payload.get("_key")
         file_id = vector_payload.get("file_id")
         model_suite_hash = vector_payload.get("model_suite_hash")
-        raw_vector = vector_payload.get("vector")
-
         if not isinstance(vector_key, str) or not vector_key:
             if isinstance(file_id, str) and isinstance(model_suite_hash, str):
                 vector_key = VectorCollection._make_vector_key(file_id, model_suite_hash)
@@ -98,9 +98,6 @@ class VectorsAqlOperations:
             else:
                 msg = "Vector payload must include '_key' or both 'file_id' and 'model_suite_hash'"
                 raise ValueError(msg)
-
-        if isinstance(raw_vector, list) and "vector_n" not in vector_payload:
-            vector_payload["vector_n"] = VectorCollection._normalize_vector(cast("list[float]", raw_vector))
 
         cursor = self._db.aql.execute(
             """
@@ -122,7 +119,7 @@ class VectorsAqlOperations:
         primitives.upsert_edge(
             self._db,
             self.EDGE_COLLECTION,
-            _as_document_id("library_files", file_id),
+            _as_document_id(self.FILE_COLLECTION, file_id),
             vector_id,
         )
 
@@ -155,7 +152,7 @@ class VectorsAqlOperations:
             bind_vars={
                 "@collection": collection_name,
                 "@edge_collection": self.EDGE_COLLECTION,
-                "file_id": _as_document_id("library_files", file_id),
+                "file_id": _as_document_id(self.FILE_COLLECTION, file_id),
             },
         )
 
@@ -163,11 +160,11 @@ class VectorsAqlOperations:
         return primitives.delete_edges(
             self._db,
             self.EDGE_COLLECTION,
-            from_id=_as_document_id("library_files", file_id),
+            from_id=_as_document_id(self.FILE_COLLECTION, file_id),
         )
 
     def delete_file_has_vector_edges_for_files(self, file_ids: list[str]) -> int:
-        normalized_file_ids = [_as_document_id("library_files", file_id) for file_id in file_ids]
+        normalized_file_ids = [_as_document_id(self.FILE_COLLECTION, file_id) for file_id in file_ids]
         return primitives.delete_edges_by_from_list(self._db, self.EDGE_COLLECTION, normalized_file_ids)
 
     def vector_search(self, collection_name: str, query_vector: list[float], *, limit: int) -> list[Document]:
@@ -208,11 +205,11 @@ class VectorsAqlOperations:
     # The hot/cold split is an implementation detail of this layer.        #
     # ------------------------------------------------------------------ #
 
-    def _hot_name(self, backbone_id: str, library_key: str) -> str:
-        return f"vectors_track_hot__{backbone_id}__{library_key}"
+    def _hot_name(self, backbone_id: str) -> str:
+        return f"vectors_track_hot__{backbone_id}"
 
-    def _cold_name(self, backbone_id: str, library_key: str) -> str:
-        return f"vectors_track_cold__{backbone_id}__{library_key}"
+    def _cold_name(self, backbone_id: str) -> str:
+        return f"vectors_track_cold__{backbone_id}"
 
     def _drop_cold_index(self, cold_name: str) -> None:
         if not self._db.has_collection(cold_name):
@@ -236,10 +233,10 @@ class VectorsAqlOperations:
             }
         )
 
-    def get_embedding_stats(self, backbone_id: str, library_key: str) -> dict[str, int | bool]:
+    def get_embedding_stats(self, backbone_id: str) -> dict[str, int | bool]:
         """Return hot count, cold count, and whether the cold index exists."""
-        hot_name = self._hot_name(backbone_id, library_key)
-        cold_name = self._cold_name(backbone_id, library_key)
+        hot_name = self._hot_name(backbone_id)
+        cold_name = self._cold_name(backbone_id)
 
         hot_count = 0
         if self._db.has_collection(hot_name):
@@ -254,11 +251,11 @@ class VectorsAqlOperations:
 
         return {"hot_count": hot_count, "cold_count": cold_count, "index_exists": index_exists}
 
-    def has_embedding_index(self, backbone_id: str, library_key: str) -> bool:
+    def has_embedding_index(self, backbone_id: str) -> bool:
         """Return True if the cold collection has an ANN vector index."""
-        return bool(self.get_embedding_stats(backbone_id, library_key)["index_exists"])
+        return bool(self.get_embedding_stats(backbone_id)["index_exists"])
 
-    def index_library_embeddings(self, backbone_id: str, library_key: str, embed_dim: int, nlists: int) -> int:
+    def index_backbone_embeddings(self, backbone_id: str, embed_dim: int, nlists: int) -> int:
         """Drain hot vectors to cold and build ANN index.
 
         Idempotent: if hot is already empty and the cold index exists, returns 0
@@ -266,7 +263,6 @@ class VectorsAqlOperations:
 
         Args:
             backbone_id: Backbone identifier (e.g. ``"discogs_effnet"``).
-            library_key: ArangoDB ``_key`` of the library document.
             embed_dim: Embedding dimension (from the ONNX model).
             nlists: Number of Voronoi cells for the HNSW index.
 
@@ -276,10 +272,10 @@ class VectorsAqlOperations:
         Raises:
             RuntimeError: If hot is not empty after drain.
         """
-        hot_name = self._hot_name(backbone_id, library_key)
-        cold_name = self._cold_name(backbone_id, library_key)
+        hot_name = self._hot_name(backbone_id)
+        cold_name = self._cold_name(backbone_id)
 
-        stats = self.get_embedding_stats(backbone_id, library_key)
+        stats = self.get_embedding_stats(backbone_id)
         hot_count = int(stats["hot_count"])
         index_exists = bool(stats["index_exists"])
 
@@ -310,7 +306,7 @@ class VectorsAqlOperations:
         self._build_cold_index(cold_name, embed_dim, nlists)
         return drained
 
-    def rebuild_library_embedding_index(self, backbone_id: str, library_key: str, embed_dim: int, nlists: int) -> None:
+    def rebuild_backbone_embedding_index(self, backbone_id: str, embed_dim: int, nlists: int) -> None:
         """Drop and rebuild the ANN index without draining hot.
 
         Use when cold data is already complete and only index parameters
@@ -318,10 +314,9 @@ class VectorsAqlOperations:
 
         Args:
             backbone_id: Backbone identifier.
-            library_key: ArangoDB ``_key`` of the library document.
             embed_dim: Embedding dimension.
             nlists: Number of Voronoi cells for the HNSW index.
         """
-        cold_name = self._cold_name(backbone_id, library_key)
+        cold_name = self._cold_name(backbone_id)
         self._drop_cold_index(cold_name)
         self._build_cold_index(cold_name, embed_dim, nlists)

@@ -266,105 +266,16 @@ class TestLibraryCrudEndpoints:
         assert response.json() == {"detail": "Library not found"}
         mock_library_service.delete_library.assert_called_once_with("libraries/test-lib")
 
-    def test_get_library_vector_config_returns_response(
-        self,
-        client: TestClient,
-        mock_library_service: MagicMock,
-    ) -> None:
-        """GET vector config should return the resolved configuration payload."""
-        mock_library_service.get_vector_config.return_value = {
-            "vector_group_size": 64,
-            "vector_search_thoroughness": 200,
-            "is_group_size_inherited": False,
-            "is_thoroughness_inherited": True,
-        }
-
-        response = client.get("/api/web/library/libraries:test-lib/vector-config")
-
-        assert response.status_code == 200
-        assert response.json() == {
-            "vector_group_size": 64,
-            "vector_search_thoroughness": 200,
-            "is_group_size_inherited": False,
-            "is_thoroughness_inherited": True,
-        }
-        mock_library_service.get_vector_config.assert_called_once()
-        assert mock_library_service.get_vector_config.call_args.args[0] == "libraries/test-lib"
-
-    def test_get_library_vector_config_returns_404_when_missing(
-        self,
-        client: TestClient,
-        mock_library_service: MagicMock,
-    ) -> None:
-        """Missing libraries should surface as HTTP 404 for vector config reads."""
-        mock_library_service.get_vector_config.side_effect = ValueError("missing")
-
-        response = client.get("/api/web/library/libraries:test-lib/vector-config")
-
-        assert response.status_code == 404
-        assert response.json() == {"detail": "Library not found"}
-
-    def test_update_library_vector_config_returns_updated_response(
-        self,
-        client: TestClient,
-        mock_library_service: MagicMock,
-    ) -> None:
-        """PUT vector config should persist the override and return the effective config."""
-        mock_library_service.get_vector_config.return_value = {
-            "vector_group_size": 128,
-            "vector_search_thoroughness": 400,
-            "is_group_size_inherited": False,
-            "is_thoroughness_inherited": False,
-        }
-
-        response = client.put(
-            "/api/web/library/libraries:test-lib/vector-config",
-            json={
-                "vector_group_size": 128,
-                "vector_search_thoroughness": 400,
-            },
-        )
-
-        assert response.status_code == 200
-        assert response.json() == {
-            "vector_group_size": 128,
-            "vector_search_thoroughness": 400,
-            "is_group_size_inherited": False,
-            "is_thoroughness_inherited": False,
-        }
-        mock_library_service.update_vector_config.assert_called_once_with(
-            "libraries/test-lib",
-            vector_group_size=128,
-            vector_search_thoroughness=400,
-        )
-        mock_library_service.get_vector_config.assert_called_once()
-        assert mock_library_service.get_vector_config.call_args.args[0] == "libraries/test-lib"
-
-    def test_update_library_vector_config_returns_400_for_invalid_values(
-        self,
-        client: TestClient,
-        mock_library_service: MagicMock,
-    ) -> None:
-        """Validation failures should preserve the service detail and map to HTTP 400."""
-        mock_library_service.update_vector_config.side_effect = ValueError(
-            "vector_group_size must be positive",
-        )
-
-        response = client.put(
-            "/api/web/library/libraries:test-lib/vector-config",
-            json={"vector_group_size": 0},
-        )
-
-        assert response.status_code == 400
-        assert response.json() == {"detail": "vector_group_size must be positive"}
+    # Per-library vector config endpoints removed per ADR-036/037
+    # vector_group_size is now global-only, managed via general config
 
     def test_get_library_vector_stats_returns_response(
         self,
         client: TestClient,
         mock_vector_maintenance_service: MagicMock,
     ) -> None:
-        """GET vector stats should map each raw stat row into the API response."""
-        mock_vector_maintenance_service.get_library_vector_stats.return_value = [
+        """GET vector stats should return per-backbone stats (global, no library_key)."""
+        mock_vector_maintenance_service.get_backbone_vector_stats.return_value = [
             {
                 "backbone_id": "discogs-effnet",
                 "hot_count": 10,
@@ -377,7 +288,6 @@ class TestLibraryCrudEndpoints:
 
         assert response.status_code == 200
         assert response.json() == {
-            "library_key": "test-lib",
             "stats": [
                 {
                     "backbone_id": "discogs-effnet",
@@ -387,17 +297,16 @@ class TestLibraryCrudEndpoints:
                 }
             ],
         }
-        mock_vector_maintenance_service.get_library_vector_stats.assert_called_once_with("libraries/test-lib")
+        mock_vector_maintenance_service.get_backbone_vector_stats.assert_called_once()
 
-    def test_get_library_vector_stats_returns_404_when_missing(
+    def test_get_library_vector_stats_handles_service_error(
         self,
         client: TestClient,
         mock_vector_maintenance_service: MagicMock,
     ) -> None:
-        """Missing libraries should surface as HTTP 404 for vector stats."""
-        mock_vector_maintenance_service.get_library_vector_stats.side_effect = ValueError("missing")
+        """Service errors should map to HTTP 500 with sanitized message."""
+        mock_vector_maintenance_service.get_backbone_vector_stats.side_effect = RuntimeError("internal error")
 
         response = client.get("/api/web/library/libraries:test-lib/vector-stats")
 
-        assert response.status_code == 404
-        assert response.json() == {"detail": "Library not found"}
+        assert response.status_code == 500

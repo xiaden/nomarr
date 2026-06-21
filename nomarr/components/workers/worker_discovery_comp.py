@@ -1,7 +1,7 @@
 """Worker discovery component.
 
 Core discovery and claiming logic for discovery-based workers.
-Workers query library_files directly instead of polling a queue.
+Workers query the songs collection directly instead of polling a queue.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ def _claim_key(file_id: str) -> str:
 
 
 def _get_all_claims(db: Database) -> list[dict[str, Any]]:
-    """Return all worker-claim documents via the application facade."""
+    """Return all worker claims via the application facade."""
     return cast("list[dict[str, Any]]", db.app.list_claims())
 
 
@@ -60,7 +60,7 @@ def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
 
     Args:
         db: Database instance
-        file_id: Full file document _id (e.g., "library_files/12345")
+        file_id: Full file document _id (e.g., ``song/12345``)
         worker_id: Worker identifier (e.g., "worker:tag:0")
 
     Returns:

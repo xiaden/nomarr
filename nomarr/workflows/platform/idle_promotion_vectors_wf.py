@@ -2,7 +2,8 @@
 
 Automatically promotes hot vectors to cold collections and rebuilds HNSW
 indexes when a discovery worker is idle.  Orchestrates component functions
-and the promote-and-rebuild workflow.
+and the promote-and-rebuild workflow.  Vector collections are per-backbone
+(no library_key iteration needed).
 
 Thread safety
 -------------
@@ -30,13 +31,13 @@ logger = logging.getLogger(__name__)
 
 
 def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: str) -> int:
-    """Run hot→cold vector promotion for all pending backbone+library pairs.
+    """Run hot→cold vector promotion for all pending backbones.
 
     Intended to be called from a background thread when the discovery worker
     is idle.  Coordinates with other workers via DB-level locks.
 
     Steps:
-    1. Find backbone+library pairs with pending hot vectors.
+    1. Find backbones with pending hot vectors.
     2. Reap stale locks (crashed workers, >10 min).
     3. For each target, attempt to acquire lock.
     4. If acquired, compute nlists, promote and rebuild (lock always released).
@@ -47,17 +48,17 @@ def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: st
         models_dir: Root directory containing model folders.
 
     Returns:
-        Number of backbone+library pairs successfully promoted.
+        Number of backbones successfully promoted.
 
     """
-    # Step 1: Find targets
+    # Step 1: Find targets (list[str] — backbone IDs only)
     targets = list_hot_vector_targets(db, models_dir)
     if not targets:
         logger.debug("[%s] No hot vectors pending promotion", worker_id)
         return 0
 
     logger.info(
-        "[%s] Found %d backbone+library pairs with hot vectors",
+        "[%s] Found %d backbones with hot vectors",
         worker_id,
         len(targets),
     )
@@ -68,8 +69,8 @@ def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: st
     # Step 3-4: Acquire lock, compute nlists, promote and rebuild
     promoted = 0
     ttl_seconds = 1800  # 30 minutes
-    for backbone_id, library_key in targets:
-        resource_id = f"{backbone_id}__{library_key}"
+    for backbone_id in targets:
+        resource_id = f"{backbone_id}"
         lock_reference = locks_comp.make_lock_reference("vector_promotion", resource_id)
         if not locks_comp.acquire_distributed_lock(db, "vector_promotion", resource_id, worker_id, ttl_seconds):
             logger.debug(
@@ -80,22 +81,20 @@ def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: st
             continue
 
         try:
-            nlists = compute_promotion_nlists(db, backbone_id, library_key)
+            nlists = compute_promotion_nlists(db, backbone_id)
             logger.info(
-                "[%s] Promoting %s__%s (nlists=%d)",
+                "[%s] Promoting %s (nlists=%d)",
                 worker_id,
                 backbone_id,
-                library_key,
                 nlists,
             )
-            promote_and_rebuild_workflow(db, backbone_id, library_key, nlists, models_dir)
+            promote_and_rebuild_workflow(db, backbone_id, nlists, models_dir)
             promoted += 1
         except Exception:
             logger.exception(
-                "[%s] Promotion failed for %s__%s",
+                "[%s] Promotion failed for %s",
                 worker_id,
                 backbone_id,
-                library_key,
             )
         finally:
             locks_comp.release_distributed_lock(db, "vector_promotion", resource_id, worker_id)

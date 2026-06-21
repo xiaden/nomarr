@@ -12,7 +12,6 @@ import pytest
 
 from scripts.embedding_research.cache import flat_heads
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 

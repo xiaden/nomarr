@@ -39,9 +39,8 @@ def upsert_hot_track_vector(
     embed_dim: int,
     vector: list[float],
     num_segments: int,
-    library_key: str,
 ) -> str:
-    """Upsert one pooled track vector into the hot collection.
+    """Upsert one pooled track vector into the active vector store.
 
     Builds the hot vector document for the given file and model suite,
     replaces that file's vectors in the selected hot namespace through the
@@ -55,7 +54,6 @@ def upsert_hot_track_vector(
         embed_dim: Embedding dimensionality of ``vector``.
         vector: Pooled track-level embedding vector.
         num_segments: Number of source segments pooled into ``vector``.
-        library_key: ArangoDB ``_key`` of the owning library.
 
     Returns:
         The stored vector document ``_id``.
@@ -76,7 +74,7 @@ def upsert_hot_track_vector(
         "created_at": internal_ms().value,
     }
 
-    collection_name = f"vectors_track_hot__{backbone}__{library_key}"
+    collection_name = f"vectors_track_hot__{backbone}"
     db.ml.replace_file_vectors(collection_name, file_id, [vector_doc])
 
     stored_vectors = db.ml.list_file_vectors(collection_name, file_id)
@@ -103,7 +101,6 @@ def persist_backbone_vector(
     embeddings_2d: np.ndarray,
     model_suite_hash: str,
     path: str,
-    library_key: str,
 ) -> float | None:
     """Persist a pooled track-level embedding vector for one backbone.
 
@@ -112,12 +109,11 @@ def persist_backbone_vector(
 
     Args:
         db: Database instance.
-        file_id: library_files document _id.
+        file_id: song document _id.
         backbone: Backbone model name (used to select the vector collection).
         embeddings_2d: Shape ``[num_segments, embed_dim]`` backbone output.
         model_suite_hash: Hash of the model suite used to produce the embeddings.
         path: File path — used only for warning log messages on failure.
-        library_key: ArangoDB ``_key`` of the library document.
 
     Returns:
         Elapsed milliseconds on success, ``None`` on failure (warning logged).
@@ -134,7 +130,6 @@ def persist_backbone_vector(
             embed_dim=embed_dim,
             vector=vector,
             num_segments=embeddings_2d.shape[0],
-            library_key=library_key,
         )
         elapsed = internal_ms().value - t.value
         logger.debug(

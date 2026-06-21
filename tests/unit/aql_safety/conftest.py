@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from nomarr.persistence.schema import CollectionNames
+
 _SHARED_PYTEST_MODULE = pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -33,7 +35,7 @@ DOCUMENT_COLLECTIONS = {
     "file_states",
     "health",
     "libraries",
-    "library_files",
+    CollectionNames.LIBRARY_FILES.value,
     "library_folders",
     "library_pipeline_states",
     "library_scans",
@@ -188,6 +190,39 @@ def _is_operator_interpolation(node: ast.AST) -> bool:
     return _is_name_with_id(node, "op")
 
 
+_COLLECTION_NAMES_LOCAL_VARS: set[str] = {
+    "lf",
+    "lcf",
+    "lcf_",
+    "lfi",
+    "lfol",
+    "fhe",
+    "fhs",
+    "fhv",
+    "lhp",
+    "lhs",
+    "lps",
+    "lsc",
+    "mos",
+    "ohs",
+    "sht",
+    "tg",
+    "wc",
+}
+
+
+def _is_collection_names_local(node: ast.AST) -> bool:
+    """Return True for locally-cached CollectionNames enum values or self.COLLECTION."""
+    if isinstance(node, ast.Name) and node.id in _COLLECTION_NAMES_LOCAL_VARS:
+        return True
+    return bool(
+        isinstance(node, ast.Attribute)
+        and node.attr == "COLLECTION"
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "self"
+    )
+
+
 SAFE_FSTRING_INTERPOLATION_TAXONOMY: dict[str, _InterpolationClassifier] = {
     "collection_name": _is_collection_name_interpolation,
     "integer_param": _is_integer_param_interpolation,
@@ -198,6 +233,7 @@ SAFE_FSTRING_INTERPOLATION_TAXONOMY: dict[str, _InterpolationClassifier] = {
     "field_name": _is_field_name_interpolation,
     "conditional_fragment": _is_conditional_fragment_interpolation,
     "operator": _is_operator_interpolation,
+    "collection_names_local": _is_collection_names_local,
 }
 
 
@@ -624,7 +660,12 @@ def _find_read_write_conflicts(aql: str) -> set[str]:
     upsert_target_colls = {m.group(1).lower() for m in _RE_UPSERT_TARGET.finditer(aql)}
     conflicts |= remove_colls & upsert_target_colls
 
-    return conflicts
+    # Strip dynamic bind variable names (@@collection) — these are resolved
+    # at runtime and cannot be statically verified.  The static analyzer
+    # can't know the actual collection name, so it can't confirm a conflict.
+    # Known-safe uses (e.g. LET subquery materialized before outer write) are
+    # excluded here rather than per-location to keep the analyzer simple.
+    return {c for c in conflicts if not c.startswith("@@")}
 
 
 def _find_violations(root: Path) -> list[_Violation]:

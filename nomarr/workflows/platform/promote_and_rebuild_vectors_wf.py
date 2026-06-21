@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 def promote_and_rebuild_workflow(
     db: Database,
     backbone_id: str,
-    library_key: str,
     nlists: int,
     models_dir: str,
 ) -> None:
@@ -31,11 +30,11 @@ def promote_and_rebuild_workflow(
 
     Convergent + idempotent: delegates all hot/cold mechanics to the persistence
     layer. Returns early if hot is already empty and cold has an index.
+    Vector collections are per-backbone (no library_key needed).
 
     Args:
         db: Database instance.
         backbone_id: Backbone identifier (e.g., "discogs_effnet").
-        library_key: ArangoDB ``_key`` of the library document.
         nlists: Number of HNSW graph lists for vector index.
         models_dir: Path to ML models directory.
 
@@ -45,28 +44,25 @@ def promote_and_rebuild_workflow(
 
     """
     logger.info(
-        "[promote & rebuild] Starting for backbone: %s, library: %s (nlists=%d)",
+        "[promote & rebuild] Starting for backbone: %s (nlists=%d)",
         backbone_id,
-        library_key,
         nlists,
     )
 
     embed_dim = derive_embed_dim(models_dir, backbone_id)
     logger.info("[promote & rebuild] Derived embed_dim=%d for %s", embed_dim, backbone_id)
 
-    drained = db.ml.index_library_embeddings(backbone_id, library_key, embed_dim, nlists)
+    drained = db.ml.index_backbone_embeddings(backbone_id, embed_dim, nlists)
     if drained == 0:
         logger.info("[promote & rebuild] Hot empty and cold indexed — nothing to do")
     else:
         logger.info(
-            "[promote & rebuild] Drained %d documents and rebuilt index for %s/%s",
+            "[promote & rebuild] Drained %d documents and rebuilt index for %s",
             drained,
             backbone_id,
-            library_key,
         )
 
     logger.info(
-        "[promote & rebuild] Completed successfully for %s (library=%s)",
+        "[promote & rebuild] Completed successfully for %s",
         backbone_id,
-        library_key,
     )

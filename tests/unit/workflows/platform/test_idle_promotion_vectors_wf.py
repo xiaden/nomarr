@@ -41,7 +41,7 @@ class TestIdlePromotionVectorsWorkflow:
             idle_promotion_vectors_workflow,
         )
 
-        mock_targets.return_value = [("effnet", "lib1"), ("musicnn", "lib2")]
+        mock_targets.return_value = ["effnet", "musicnn"]
         mock_nlists.return_value = 100
 
         db = MagicMock()
@@ -57,16 +57,16 @@ class TestIdlePromotionVectorsWorkflow:
 
         assert result == 2
         assert mock_workflow.call_count == 2
-        mock_workflow.assert_any_call(db, "effnet", "lib1", 100, "/models")
-        mock_workflow.assert_any_call(db, "musicnn", "lib2", 100, "/models")
+        mock_workflow.assert_any_call(db, "effnet", 100, "/models")
+        mock_workflow.assert_any_call(db, "musicnn", 100, "/models")
         mock_reap.assert_called_once_with(db, "worker:tag:0", stale_after_ms=600_000)
         assert mock_acquire.call_args_list == [
-            call(db, "vector_promotion", "effnet__lib1", "worker:tag:0", 1800),
-            call(db, "vector_promotion", "musicnn__lib2", "worker:tag:0", 1800),
+            call(db, "vector_promotion", "effnet", "worker:tag:0", 1800),
+            call(db, "vector_promotion", "musicnn", "worker:tag:0", 1800),
         ]
         assert mock_release.call_args_list == [
-            call(db, "vector_promotion", "effnet__lib1", "worker:tag:0"),
-            call(db, "vector_promotion", "musicnn__lib2", "worker:tag:0"),
+            call(db, "vector_promotion", "effnet", "worker:tag:0"),
+            call(db, "vector_promotion", "musicnn", "worker:tag:0"),
         ]
 
     @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow")
@@ -83,7 +83,7 @@ class TestIdlePromotionVectorsWorkflow:
             idle_promotion_vectors_workflow,
         )
 
-        mock_targets.return_value = [("effnet", "lib1")]
+        mock_targets.return_value = ["effnet"]
         mock_nlists.return_value = 100
 
         db = MagicMock()
@@ -101,7 +101,7 @@ class TestIdlePromotionVectorsWorkflow:
         assert result == 0
         mock_workflow.assert_not_called()
         mock_reap.assert_called_once_with(db, "worker:tag:0", stale_after_ms=600_000)
-        mock_acquire.assert_called_once_with(db, "vector_promotion", "effnet__lib1", "worker:tag:0", 1800)
+        mock_acquire.assert_called_once_with(db, "vector_promotion", "effnet", "worker:tag:0", 1800)
         mock_release.assert_not_called()
 
     @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow")
@@ -118,7 +118,7 @@ class TestIdlePromotionVectorsWorkflow:
             idle_promotion_vectors_workflow,
         )
 
-        mock_targets.return_value = [("effnet", "lib1")]
+        mock_targets.return_value = ["effnet"]
         mock_nlists.return_value = 100
         mock_workflow.side_effect = RuntimeError("drain failed")
 
@@ -136,8 +136,8 @@ class TestIdlePromotionVectorsWorkflow:
 
         assert result == 0
         mock_reap.assert_called_once_with(db, "worker:tag:0", stale_after_ms=600_000)
-        mock_acquire.assert_called_once_with(db, "vector_promotion", "effnet__lib1", "worker:tag:0", 1800)
-        mock_release.assert_called_once_with(db, "vector_promotion", "effnet__lib1", "worker:tag:0")
+        mock_acquire.assert_called_once_with(db, "vector_promotion", "effnet", "worker:tag:0", 1800)
+        mock_release.assert_called_once_with(db, "vector_promotion", "effnet", "worker:tag:0")
 
     @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow")
     @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
@@ -153,7 +153,7 @@ class TestIdlePromotionVectorsWorkflow:
             idle_promotion_vectors_workflow,
         )
 
-        mock_targets.return_value = [("effnet", "lib1")]
+        mock_targets.return_value = ["effnet"]
         mock_nlists.return_value = 100
 
         db = MagicMock()
@@ -170,6 +170,6 @@ class TestIdlePromotionVectorsWorkflow:
 
         assert result == 1
         mock_reap.assert_called_once_with(db, "worker:tag:0", stale_after_ms=600_000)
-        mock_acquire.assert_called_once_with(db, "vector_promotion", "effnet__lib1", "worker:tag:0", 1800)
-        mock_release.assert_called_once_with(db, "vector_promotion", "effnet__lib1", "worker:tag:0")
-        mock_workflow.assert_called_once_with(db, "effnet", "lib1", 100, "/models")
+        mock_acquire.assert_called_once_with(db, "vector_promotion", "effnet", "worker:tag:0", 1800)
+        mock_release.assert_called_once_with(db, "vector_promotion", "effnet", "worker:tag:0")
+        mock_workflow.assert_called_once_with(db, "effnet", 100, "/models")

@@ -13,12 +13,14 @@ from nomarr.persistence.database.app_aql import AppAqlOperations
 from nomarr.persistence.database.file_states_aql import FileStatesAqlOperations
 from nomarr.persistence.database.libraries_aql import LibrariesAqlOperations
 from nomarr.persistence.database.library_files_aql import LibraryFilesAqlOperations
+from nomarr.persistence.database.ml_embedding_streams_aql import MlEmbeddingStreamsAqlOperations
 from nomarr.persistence.database.ml_models_aql import MlModelsAqlOperations
 from nomarr.persistence.database.ml_streams_aql import MlStreamsAqlOperations
 from nomarr.persistence.database.navidrome_aql import NavidromeAqlOperations
 from nomarr.persistence.database.scan_aql import ScanAqlOperations
 from nomarr.persistence.database.tags_aql import TagsAqlOperations
 from nomarr.persistence.database.vectors_aql import VectorsAqlOperations
+from nomarr.persistence.schema import CollectionNames
 
 __all__ = ["Database"]
 
@@ -115,6 +117,7 @@ class Database:
         self.ml_streams_aql = MlStreamsAqlOperations(self.db)
         self.vectors_aql = VectorsAqlOperations(self.db)
         self.ml_models_aql = MlModelsAqlOperations(self.db)
+        self.ml_embedding_streams_aql = MlEmbeddingStreamsAqlOperations(self.db)
         self.app_aql = AppAqlOperations(self.db)
         self.navidrome_aql = NavidromeAqlOperations(self.db)
 
@@ -141,6 +144,7 @@ class Database:
             streams=self.ml_streams_aql,
             vectors=self.vectors_aql,
             models=self.ml_models_aql,
+            embedding_streams=self.ml_embedding_streams_aql,
         )
         self.app: AppDb = AppDb(
             db=self.db,
@@ -153,7 +157,7 @@ class Database:
 
     def get_version(self) -> str | None:
         """Read the current schema version from the meta store."""
-        meta_coll = self.db.collection("meta")
+        meta_coll = self.db.collection(CollectionNames.META.value)
         version_doc = meta_coll.get({"_key": "version"})
         if not isinstance(version_doc, dict):
             return None
@@ -162,7 +166,7 @@ class Database:
 
     def set_version(self, version: str) -> None:
         """Persist the schema version to the meta store."""
-        meta_coll = self.db.collection("meta")
+        meta_coll = self.db.collection(CollectionNames.META.value)
         meta_coll.insert({"_key": "version", "value": version}, overwrite=True)
 
     def close(self) -> None:

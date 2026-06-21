@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from nomarr.persistence.database.ml_embedding_streams_aql import MlEmbeddingStreamsAqlOperations
 from nomarr.persistence.database.ml_models_aql import MlModelsAqlOperations
 from nomarr.persistence.database.ml_streams_aql import MlStreamsAqlOperations
 from nomarr.persistence.database.vectors_aql import VectorsAqlOperations
@@ -79,10 +80,12 @@ class MlDb:
         streams: MlStreamsAqlOperations,
         vectors: VectorsAqlOperations,
         models: MlModelsAqlOperations,
+        embedding_streams: MlEmbeddingStreamsAqlOperations,
     ) -> None:
         self._streams = streams
         self._vectors = vectors
         self._models = models
+        self._embedding_streams = embedding_streams
         self.maintenance: MlMaintenanceDb = MlMaintenanceDb(
             vectors=vectors,
             models=models,
@@ -226,6 +229,44 @@ class MlDb:
         """Return the number of calibration history entries for one model."""
         return self._models.count_calibration_history(model_id)
 
+    def replace_embedding_stream_for_file(
+        self,
+        file_id: str,
+        backbone: str,
+        stream_payload: dict[str, Any],
+    ) -> str:
+        """Upsert an embedding stream document for a file and backbone.
+
+        Returns the ``_id`` of the persisted document.
+        """
+        return self._embedding_streams.upsert_embedding_stream(file_id, stream_payload)
+
+    def get_embedding_stream_for_file(
+        self,
+        file_id: str,
+        backbone: str,
+    ) -> dict[str, Any] | None:
+        """Return the embedding stream document for ``(file_id, backbone)``, or ``None``."""
+        return self._embedding_streams.get_embedding_stream_for_file(file_id, backbone)
+
+    def list_embedding_streams_by_backbone(
+        self,
+        backbone: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List all embedding streams for a backbone with pagination."""
+        return self._embedding_streams.list_embedding_streams_by_backbone(
+            backbone,
+            limit=limit,
+            offset=offset,
+        )
+
+    def remove_embedding_streams_for_file(self, file_id: str) -> None:
+        """Delete all embedding streams linked to one file."""
+        return self._embedding_streams.delete_embedding_streams_for_file(file_id)
+
     # ------------------------------------------------------------------
     # Promoted intent-complete write methods
     # ------------------------------------------------------------------
@@ -325,18 +366,17 @@ class MlDb:
         """Delete calibration history documents by _id list."""
         return self._models.delete_calibration_history_entries(entry_ids)
 
-    def get_embedding_stats(self, backbone_id: str, library_key: str) -> dict[str, int | bool]:
-        """Return hot_count, cold_count, and index_exists for a backbone+library."""
-        return self._vectors.get_embedding_stats(backbone_id, library_key)
+    def get_embedding_stats(self, backbone_id: str) -> dict[str, int | bool]:
+        """Return hot_count, cold_count, and index_exists for a backbone."""
+        return self._vectors.get_embedding_stats(backbone_id)
 
-    def has_embedding_index(self, backbone_id: str, library_key: str) -> bool:
+    def has_embedding_index(self, backbone_id: str) -> bool:
         """Return True if the cold collection has an ANN vector index."""
-        return self._vectors.has_embedding_index(backbone_id, library_key)
+        return self._vectors.has_embedding_index(backbone_id)
 
-    def index_library_embeddings(
+    def index_backbone_embeddings(
         self,
         backbone_id: str,
-        library_key: str,
         embed_dim: int,
         nlists: int,
     ) -> int:
@@ -345,24 +385,21 @@ class MlDb:
         Idempotent: no-op if hot is already empty and index exists.
         Returns number of documents drained.
         """
-        return self._vectors.index_library_embeddings(
+        return self._vectors.index_backbone_embeddings(
             backbone_id,
-            library_key,
             embed_dim,
             nlists,
         )
 
-    def rebuild_library_embedding_index(
+    def rebuild_backbone_embedding_index(
         self,
         backbone_id: str,
-        library_key: str,
         embed_dim: int,
         nlists: int,
     ) -> None:
         """Drop and rebuild the ANN index without draining hot."""
-        return self._vectors.rebuild_library_embedding_index(
+        return self._vectors.rebuild_backbone_embedding_index(
             backbone_id,
-            library_key,
             embed_dim,
             nlists,
         )

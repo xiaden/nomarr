@@ -12,6 +12,7 @@ import pytest
 from nomarr.components.ml.inference.ml_backbone_embed_comp import BackboneEmbedding, BackboneEmbeddingResult
 from nomarr.helpers.dto.ml_dto import LoadAudioMonoResult, ProcessHeadPredictionsResult, RawOutputStream
 from nomarr.helpers.dto.processing_dto import DeferredOutputStreamWrite, ProcessorConfig
+from nomarr.persistence.schema import CollectionNames
 from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
 
@@ -86,7 +87,7 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
             config=config,
             cache=cache,
             db=mock_db,
-            file_id="library_files/file-1",
+            file_id=f"{CollectionNames.LIBRARY_FILES.value}/file-1",
         )
 
     build_output_index_map_mock.assert_called_once_with(mock_db)

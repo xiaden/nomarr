@@ -18,21 +18,8 @@ def _make_service(db: MagicMock | None = None, models_dir: str = "/models") -> V
     )
 
 
-class TestGetLibraryVectorStats:
-    """Tests for ``VectorMaintenanceService.get_library_vector_stats``."""
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_raises_when_library_not_found(self) -> None:
-        """Unknown libraries should raise ValueError before scanning backbones."""
-        mock_db = MagicMock()
-        service = _make_service(mock_db)
-
-        with (
-            patch("nomarr.services.domain.vector_maintenance_svc.get_library_record", return_value=None),
-            pytest.raises(ValueError, match="Library not found: libraries/1"),
-        ):
-            service.get_library_vector_stats("libraries/1")
+class TestGetBackboneVectorStats:
+    """Tests for ``VectorMaintenanceService.get_backbone_vector_stats``."""
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -41,14 +28,11 @@ class TestGetLibraryVectorStats:
         mock_db = MagicMock()
         service = _make_service(mock_db)
 
-        with (
-            patch("nomarr.services.domain.vector_maintenance_svc.get_library_record", return_value={"_key": "1"}),
-            patch(
-                "nomarr.services.domain.vector_maintenance_svc.discover_backbones",
-                return_value=[],
-            ) as mock_discover_backbones,
-        ):
-            result = service.get_library_vector_stats("libraries/1")
+        with patch(
+            "nomarr.services.domain.vector_maintenance_svc.discover_backbones",
+            return_value=[],
+        ) as mock_discover_backbones:
+            result = service.get_backbone_vector_stats()
 
         assert result == []
         mock_discover_backbones.assert_called_once_with("/models")
@@ -61,7 +45,6 @@ class TestGetLibraryVectorStats:
         service = _make_service(mock_db)
 
         with (
-            patch("nomarr.services.domain.vector_maintenance_svc.get_library_record", return_value={"_key": "1"}),
             patch(
                 "nomarr.services.domain.vector_maintenance_svc.discover_backbones",
                 return_value=["effnet"],
@@ -72,7 +55,7 @@ class TestGetLibraryVectorStats:
                 return_value={"hot_count": 5, "cold_count": 100, "index_exists": True},
             ) as mock_get_hot_cold_stats,
         ):
-            result = service.get_library_vector_stats("libraries/1")
+            result = service.get_backbone_vector_stats()
 
         assert result == [
             {
@@ -82,7 +65,7 @@ class TestGetLibraryVectorStats:
                 "index_exists": True,
             }
         ]
-        mock_get_hot_cold_stats.assert_called_once_with("effnet", "1")
+        mock_get_hot_cold_stats.assert_called_once_with("effnet")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -92,7 +75,6 @@ class TestGetLibraryVectorStats:
         service = _make_service(mock_db)
 
         with (
-            patch("nomarr.services.domain.vector_maintenance_svc.get_library_record", return_value={"_key": "abc"}),
             patch(
                 "nomarr.services.domain.vector_maintenance_svc.discover_backbones",
                 return_value=["broken", "effnet"],
@@ -103,7 +85,7 @@ class TestGetLibraryVectorStats:
                 side_effect=[RuntimeError("boom"), {"hot_count": 1, "cold_count": 2, "index_exists": False}],
             ) as mock_get_hot_cold_stats,
         ):
-            result = service.get_library_vector_stats("libraries/1")
+            result = service.get_backbone_vector_stats()
 
         assert result == [
             {

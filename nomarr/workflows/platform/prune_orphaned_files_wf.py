@@ -1,6 +1,6 @@
-"""Startup-time pruning of orphaned library_files documents.
+"""Startup-time pruning of orphaned tracks.
 
-A library_files document is orphaned when it has no inbound library_contains_file
+A song document is orphaned when it has no inbound library_contains_file
 edge — this happens when a library was deleted while the deletion code was broken,
 or when a scan was interrupted after writing file docs but before writing the
 ownership edges.
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def prune_orphaned_files_workflow(db: Database) -> dict[str, int]:
-    """Delete all library_files documents that have no ownership edge.
+    """Delete all tracks that have no owning library.
 
     Cleans all derived data for each orphan in the same order used by
     remove_library: output streams → vectors → tag edges → claim →

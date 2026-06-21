@@ -13,6 +13,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_WRITTEN,
 )
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.schema import CollectionNames
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -39,7 +40,7 @@ def claim_files_for_reconciliation(
             60000.
 
     Returns:
-        The raw ``library_files`` documents that were successfully claimed for the
+        The raw song documents that were successfully claimed for the
         worker.
     """
     stale_ids = get_stale_file_ids(db, library_id=library_id)
@@ -76,11 +77,11 @@ def claim_files_for_reconciliation(
 
 
 def set_file_written(db: Database, file_key: str) -> None:
-    """Advance projection-state edges after a successful tag write."""
-    if file_key.startswith("library_files/"):
+    """Advance processing state transitions after a successful tag write."""
+    if file_key.startswith(f"{CollectionNames.LIBRARY_FILES.value}/"):
         file_id = file_key
     else:
-        file_id = f"library_files/{file_key}"
+        file_id = f"{CollectionNames.LIBRARY_FILES.value}/{file_key}"
 
     transition_file_state(db, [file_id], STATE_NOT_WRITTEN, STATE_WRITTEN)
     transition_file_state(db, [file_id], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
@@ -89,10 +90,10 @@ def set_file_written(db: Database, file_key: str) -> None:
 
 def release_claim(db: Database, file_key: str) -> None:
     """Release a reconciliation claim without changing projection state."""
-    if file_key.startswith("library_files/"):
+    if file_key.startswith(f"{CollectionNames.LIBRARY_FILES.value}/"):
         file_id = file_key
     else:
-        file_id = f"library_files/{file_key}"
+        file_id = f"{CollectionNames.LIBRARY_FILES.value}/{file_key}"
     db.app.release_claim(file_id)
 
 

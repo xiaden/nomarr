@@ -267,6 +267,27 @@ class SyncSongsResponse(BaseModel):
     duration_ms: int = Field(..., description="Sync duration in milliseconds")
 
 
+class TrackPlayRequestItem(BaseModel):
+    """Play history entry provided by the Navidrome plugin for playlist generation.
+
+    ``file_id`` is the full ArangoDB document ID (e.g. ``library_files/<key>``)
+    that the plugin resolves from a ``nomarr_file_key`` received in prior
+    descriptor responses.
+    """
+
+    file_id: str
+    playcount: int = Field(ge=0)
+    last_played: int | None = None
+
+
+class PersonalPlaylistsRequest(BaseModel):
+    """Request body for triggering personal playlist generation."""
+
+    top_plays: list[TrackPlayRequestItem] = Field(
+        ..., min_length=1, description="Play history entries provided by the Navidrome plugin"
+    )
+
+
 class TriggerPersonalPlaylistsResponse(BaseModel):
     """Response after triggering personal playlist generation."""
 

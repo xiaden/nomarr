@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.persistence.aql import primitives
+from nomarr.persistence.schema import CollectionNames
 
 from ._helpers import _NO_LIMIT_COUNT, Document, _as_document_id, _extract_key
 
@@ -22,6 +23,9 @@ class TagEdgeOpsMixin:
     COLLECTION: str
     EDGE_COLLECTION: str
     FILE_STATE_EDGE_COLLECTION: str
+    FILE_COLLECTION: str = CollectionNames.LIBRARY_FILES.value
+    LIBRARY_COLLECTION: str = CollectionNames.LIBRARIES.value
+    FILE_STATES_COLLECTION: str = CollectionNames.FILE_STATES.value
 
     def replace_file_tags(self, file_id: str, tags: list[dict[str, Any]]) -> None:
         """Replace all tag edges for a file and prune any orphaned tag documents.
@@ -78,7 +82,7 @@ class TagEdgeOpsMixin:
             return
         all_candidate_edges = self._get_song_tag_edges_for_tags([source_tag_id, target_tag_id])
         allowed_file_ids = (
-            {_as_document_id("library_files", file_id) for file_id in file_ids} if file_ids is not None else None
+            {_as_document_id(self.FILE_COLLECTION, file_id) for file_id in file_ids} if file_ids is not None else None
         )
         source_edges = [
             edge
@@ -148,6 +152,9 @@ class TagEdgeOpsMixin:
         return tag_id
 
     def _find_or_create_tag(self, tag_key: str, value: Any) -> str:
+        if isinstance(value, list | tuple | dict | set):
+            msg = f"Tag value must be a scalar (str|int|float|bool), got {type(value).__name__}: {value!r}"
+            raise ValueError(msg)
         cursor = self._db.aql.execute(
             """
             UPSERT { name: @tag_key, value: @value }
@@ -185,8 +192,8 @@ class TagEdgeOpsMixin:
             """,
             bind_vars={
                 "@edge_collection": self.FILE_STATE_EDGE_COLLECTION,
-                "file_id": _as_document_id("library_files", file_id),
-                "state_id": _as_document_id("file_states", state_tag_id),
+                "file_id": _as_document_id(self.FILE_COLLECTION, file_id),
+                "state_id": _as_document_id(self.FILE_STATES_COLLECTION, state_tag_id),
             },
         )
         results = list(cursor)
@@ -223,7 +230,7 @@ class TagEdgeOpsMixin:
     ) -> list[Document]:
         if not file_ids:
             return []
-        normalized_file_ids = [_as_document_id("library_files", f) for f in file_ids]
+        normalized_file_ids = [_as_document_id(self.FILE_COLLECTION, f) for f in file_ids]
         return_clause = "RETURN { start_id: start_file._id, v: tag }"
         if include_edge:
             return_clause = "RETURN { start_id: start_file._id, v: tag, e: edge }"
@@ -231,7 +238,7 @@ class TagEdgeOpsMixin:
         if name_starts_with:
             filter_clause = "FILTER LIKE(tag.name, @name_starts_with || '%', true)"
         query = f"""
-            FOR start_file IN library_files
+            FOR start_file IN @@file_collection
                 FILTER start_file._id IN @file_ids
                 FOR edge IN @@edge_collection
                     FILTER edge._from == start_file._id
@@ -241,6 +248,7 @@ class TagEdgeOpsMixin:
                     {return_clause}
         """
         bind_vars: dict[str, Any] = {
+            "@file_collection": self.FILE_COLLECTION,
             "@edge_collection": self.EDGE_COLLECTION,
             "file_ids": normalized_file_ids,
         }
@@ -251,7 +259,7 @@ class TagEdgeOpsMixin:
     def get_genre_tags_for_files(self, file_ids: list[str]) -> list[Document]:
         if not file_ids:
             return []
-        normalized_file_ids = [_as_document_id("library_files", f) for f in file_ids]
+        normalized_file_ids = [_as_document_id(self.FILE_COLLECTION, f) for f in file_ids]
         return cast(
             "list[Document]",
             primitives.execute(
@@ -282,7 +290,7 @@ class TagEdgeOpsMixin:
         primitives.upsert_edge(
             self._db,
             self.EDGE_COLLECTION,
-            _as_document_id("library_files", file_id),
+            _as_document_id(self.FILE_COLLECTION, file_id),
             _as_document_id(self.COLLECTION, tag_id),
         )
 
@@ -290,7 +298,7 @@ class TagEdgeOpsMixin:
         primitives.delete_edges(
             self._db,
             self.EDGE_COLLECTION,
-            from_id=_as_document_id("library_files", file_id),
+            from_id=_as_document_id(self.FILE_COLLECTION, file_id),
         )
 
     def _get_song_tag_edges_for_tags(self, tag_ids: list[str], *, limit: int | None = None) -> list[Document]:

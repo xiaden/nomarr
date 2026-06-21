@@ -4,6 +4,7 @@ from typing import Any
 
 from nomarr.persistence.aql import primitives
 from nomarr.persistence.arango_client import SafeDatabase
+from nomarr.persistence.schema import CollectionNames
 
 Document = dict[str, Any]
 
@@ -15,7 +16,7 @@ def _extract_key(document_id_or_key: str) -> str:
 class ScanAqlOperations:
     """Thin Tier 2 bindings for ``library_scans``."""
 
-    COLLECTION = "library_scans"
+    COLLECTION = CollectionNames.LIBRARY_SCANS.value
     ALLOWED_FIELDS = frozenset(
         {
             "library_key",

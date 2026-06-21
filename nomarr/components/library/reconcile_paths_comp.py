@@ -1,6 +1,6 @@
 """Component for reconciling library paths after configuration changes.
 
-This component re-validates all paths in the library_files table against
+This component re-validates all paths in the songs collection against
 the current library configuration. It detects paths that have become invalid
 due to config changes (library root moves, library deletions, etc.).
 """
@@ -30,7 +30,7 @@ def reconcile_library_paths(
 ) -> ReconcileResult:
     """Re-validate all library paths against current configuration.
 
-    This component scans the library_files table and re-validates each path
+    This component scans the songs collection and re-validates each path
     using build_library_path_from_db() to check against current config.
     Useful after library root changes or library deletions.
 

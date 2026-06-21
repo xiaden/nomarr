@@ -20,31 +20,27 @@ logger = logging.getLogger(__name__)
 def backfill_vector_genres_workflow(
     db: Database,
     backbone_id: str,
-    library_key: str,
 ) -> int:
     """Backfill missing ``genres`` arrays on a cold vector collection.
 
     Args:
         db: Database instance.
         backbone_id: Backbone identifier (e.g., ``"discogs_effnet"``).
-        library_key: ArangoDB ``_key`` of the library document.
 
     Returns:
         Number of cold-vector documents updated.
 
     """
     logger.info(
-        "[backfill vector genres wf] Starting for backbone=%s library=%s",
+        "[backfill vector genres wf] Starting for backbone=%s",
         backbone_id,
-        library_key,
     )
 
-    updated = backfill_genres(db, backbone_id, library_key)
+    updated = backfill_genres(db, backbone_id)
 
     logger.info(
-        "[backfill vector genres wf] Completed for backbone=%s library=%s updated=%d",
+        "[backfill vector genres wf] Completed for backbone=%s updated=%d",
         backbone_id,
-        library_key,
         updated,
     )
     return updated

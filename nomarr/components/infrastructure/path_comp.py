@@ -111,7 +111,7 @@ def build_library_path_from_db(
 ) -> LibraryPath:
     """Build LibraryPath from database-stored path.
 
-    This is used when reading paths from queue tables, library_files, etc.
+    This is used when reading paths from queue tables, the file collection, etc.
     The stored path may be absolute or relative depending on storage format.
 
     This function re-validates stored paths against the CURRENT configuration,

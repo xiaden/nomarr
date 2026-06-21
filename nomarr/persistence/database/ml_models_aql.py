@@ -4,6 +4,7 @@ from typing import Any, cast
 
 from nomarr.persistence.aql import primitives
 from nomarr.persistence.arango_client import SafeDatabase
+from nomarr.persistence.schema import CollectionNames
 
 Document = dict[str, Any]
 
@@ -19,12 +20,12 @@ def _as_document_id(collection: str, document_id_or_key: str) -> str:
 class MlModelsAqlOperations:
     """Thin Tier 2 bindings for models, outputs, and calibration state."""
 
-    MODEL_COLLECTION = "ml_models"
-    MODEL_OUTPUT_COLLECTION = "ml_model_outputs"
-    MODEL_OUTPUT_EDGE_COLLECTION = "model_has_output"
-    CALIBRATION_COLLECTION = "calibration_state"
-    CALIBRATION_EDGE_COLLECTION = "model_has_calibration"
-    CALIBRATION_HISTORY_COLLECTION = "calibration_history"
+    MODEL_COLLECTION = CollectionNames.ML_MODELS.value
+    MODEL_OUTPUT_COLLECTION = CollectionNames.ML_MODEL_OUTPUTS.value
+    MODEL_OUTPUT_EDGE_COLLECTION = CollectionNames.MODEL_HAS_OUTPUT.value
+    CALIBRATION_COLLECTION = CollectionNames.CALIBRATION_STATE.value
+    CALIBRATION_EDGE_COLLECTION = CollectionNames.MODEL_HAS_CALIBRATION.value
+    CALIBRATION_HISTORY_COLLECTION = CollectionNames.CALIBRATION_HISTORY.value
 
     MODEL_FIELDS = frozenset(
         {

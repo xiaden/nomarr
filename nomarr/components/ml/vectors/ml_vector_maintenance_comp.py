@@ -101,7 +101,7 @@ def derive_embed_dim(models_dir: str, backbone_id: str) -> int:
     )
 
 
-def backfill_genres(db: Database, backbone_id: str, library_key: str) -> int:
+def backfill_genres(db: Database, backbone_id: str) -> int:
     """Backfill genres on cold vector documents that predate genre enrichment.
 
     This is a one-time maintenance operation for cold collection documents that
@@ -113,7 +113,6 @@ def backfill_genres(db: Database, backbone_id: str, library_key: str) -> int:
     Args:
         db: Database façade.
         backbone_id: Backbone identifier (e.g., ``"discogs_effnet"``).
-        library_key: ArangoDB ``_key`` of the library document.
 
     Returns:
         Number of cold documents updated with genre data.
@@ -122,8 +121,8 @@ def backfill_genres(db: Database, backbone_id: str, library_key: str) -> int:
         ValueError: If the cold collection does not exist.
 
     """
-    cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    cold_ops = get_cold_namespace(db, backbone_id, library_key)
+    cold_name = f"vectors_track_cold__{backbone_id}"
+    cold_ops = get_cold_namespace(db, backbone_id)
 
     try:
         cold_docs = _load_vector_docs(cast("Any", cold_ops))

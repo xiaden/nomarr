@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.persistence.database.app_aql import AppAqlOperations
+from nomarr.persistence.schema import CollectionNames
 
 pytestmark = [pytest.mark.unit, pytest.mark.mocked]
 
@@ -48,7 +49,7 @@ def ops(mock_db: MagicMock) -> AppAqlOperations:
             ("file-123",),
             AppAqlOperations.WORKER_CLAIM_COLLECTION,
             "file_id",
-            "library_files/file-123",
+            f"{CollectionNames.LIBRARY_FILES.value}/file-123",
             AppAqlOperations.WORKER_CLAIM_FIELDS,
             None,
             "nomarr.persistence.database.app_aql.worker_claim_ops",

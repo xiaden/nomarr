@@ -8,6 +8,7 @@ import pytest
 
 from nomarr.helpers.dto.info_dto import WorkStatusResult
 from nomarr.helpers.dto.library_dto import LibraryStatsResult
+from nomarr.persistence.schema import CollectionNames
 from nomarr.services.domain.library_svc.query import LibraryQueryMixin
 
 
@@ -108,7 +109,7 @@ class TestGetPathsNeedingCalibration:
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.get_uncalibrated_tagged_file_ids",
-                return_value=["library_files/a", "library_files/b"],
+                return_value=[f"{CollectionNames.LIBRARY_FILES.value}/a", f"{CollectionNames.LIBRARY_FILES.value}/b"],
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.get_files_by_ids_with_tags",
@@ -118,7 +119,9 @@ class TestGetPathsNeedingCalibration:
             result = mixin.get_paths_needing_calibration()
 
         assert result == ["/music/song1.mp3", "/music/song2.mp3"]
-        mock_files.assert_called_once_with(mock_db, ["library_files/a", "library_files/b"])
+        mock_files.assert_called_once_with(
+            mock_db, [f"{CollectionNames.LIBRARY_FILES.value}/a", f"{CollectionNames.LIBRARY_FILES.value}/b"]
+        )
 
 
 class TestGetErroredFiles:
@@ -141,20 +144,20 @@ class TestGetErroredFiles:
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.get_errored_file_ids",
-                return_value=["library_files/1", "library_files/2"],
+                return_value=[f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"],
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.get_files_by_ids_with_tags",
                 return_value=[
                     {
-                        "_id": "library_files/1",
+                        "_id": f"{CollectionNames.LIBRARY_FILES.value}/1",
                         "path": "/music/song1.mp3",
                         "duration_seconds": 180,
                         "artist": "Artist A",
                         "title": "Song 1",
                     },
                     {
-                        "_id": "library_files/2",
+                        "_id": f"{CollectionNames.LIBRARY_FILES.value}/2",
                         "path": "/music/song2.mp3",
                         "duration_seconds": 200,
                         "artist": "Artist B",
@@ -167,7 +170,7 @@ class TestGetErroredFiles:
 
         assert result["total"] == 2
         assert len(result["files"]) == 2
-        assert result["files"][0]["_id"] == "library_files/1"
+        assert result["files"][0]["_id"] == f"{CollectionNames.LIBRARY_FILES.value}/1"
         assert result["files"][1]["path"] == "/music/song2.mp3"
 
     @pytest.mark.unit

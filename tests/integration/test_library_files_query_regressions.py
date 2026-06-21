@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from nomarr.components.library.library_file_query_comp import get_recently_processed, search_library_files_with_tags
+from nomarr.persistence.schema import CollectionNames
 
 
 class TestLibraryFilesQueryRegressions:
@@ -17,7 +18,7 @@ class TestLibraryFilesQueryRegressions:
     def test_search_results_include_edge_derived_library_id_after_constructor_migration(self) -> None:
         """Search results should still hydrate ``library_id`` via ownership edges."""
         file_doc = {
-            "_id": "library_files/1",
+            "_id": f"{CollectionNames.LIBRARY_FILES.value}/1",
             "path": "D:/Music/Test Song.flac",
             "normalized_path": "Test Song.flac",
             "artist": "Test Artist",
@@ -30,14 +31,16 @@ class TestLibraryFilesQueryRegressions:
         mock_db.library.search_files_by_tag_pattern.side_effect = [[], [file_doc], []]
         # hydration: fetch by ids, then tags + library ownership
         mock_db.library.list_files_by_ids.return_value = [file_doc]
-        mock_db.library.list_file_tags_for_files.return_value = {"library_files/1": []}
-        mock_db.library.get_library_ids_for_files.return_value = {"library_files/1": "libraries/1"}
+        mock_db.library.list_file_tags_for_files.return_value = {f"{CollectionNames.LIBRARY_FILES.value}/1": []}
+        mock_db.library.get_library_ids_for_files.return_value = {
+            f"{CollectionNames.LIBRARY_FILES.value}/1": "libraries/1"
+        }
 
         files, total = search_library_files_with_tags(mock_db, query_text="Test Song")
 
         assert total == 1
         assert files[0]["library_id"] == "libraries/1"
-        mock_db.library.list_file_tags_for_files.assert_any_call(["library_files/1"])
+        mock_db.library.list_file_tags_for_files.assert_any_call([f"{CollectionNames.LIBRARY_FILES.value}/1"])
 
 
 class TestGetRecentlyProcessed:
@@ -50,7 +53,7 @@ class TestGetRecentlyProcessed:
         mock_db = MagicMock()
         mock_db.app.list_file_docs_in_state.return_value = [
             {
-                "_id": "library_files/1",
+                "_id": f"{CollectionNames.LIBRARY_FILES.value}/1",
                 "normalized_path": "Artist/Album/Test Song.flac",
                 "title": "Test Song",
                 "artist": "Test Artist",
@@ -69,15 +72,15 @@ class TestGetRecentlyProcessed:
         """Library-scoped query should intersect tagged files with ownership edges."""
         mock_db = MagicMock()
         mock_db.app.list_file_docs_in_state.return_value = [
-            {"_id": "library_files/1", "normalized_path": "one.flac", "scanned_at": 10},
-            {"_id": "library_files/2", "normalized_path": "two.flac", "scanned_at": 20},
+            {"_id": f"{CollectionNames.LIBRARY_FILES.value}/1", "normalized_path": "one.flac", "scanned_at": 10},
+            {"_id": f"{CollectionNames.LIBRARY_FILES.value}/2", "normalized_path": "two.flac", "scanned_at": 20},
         ]
         # Only library_files/2 belongs to the library
-        mock_db.library.list_library_file_ids.return_value = ["library_files/2"]
+        mock_db.library.list_library_file_ids.return_value = [f"{CollectionNames.LIBRARY_FILES.value}/2"]
 
         rows = get_recently_processed(mock_db, library_id="libraries/123")
 
-        assert [row["file_id"] for row in rows] == ["library_files/2"]
+        assert [row["file_id"] for row in rows] == [f"{CollectionNames.LIBRARY_FILES.value}/2"]
         mock_db.library.list_library_file_ids.assert_called_once()
 
     @pytest.mark.integration

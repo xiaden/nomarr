@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from nomarr.persistence.aql import primitives
+from nomarr.persistence.schema import CollectionNames
 
 from ._helpers import Document, _as_document_id
 
@@ -20,13 +21,14 @@ class WorkerClaimOpsMixin:
     _db: SafeDatabase
     WORKER_CLAIM_COLLECTION: str
     WORKER_CLAIM_FIELDS: frozenset[str]
+    FILE_COLLECTION: str = CollectionNames.LIBRARY_FILES.value
 
     def insert_worker_claim(self, payload: dict[str, Any]) -> str:
         return primitives.insert_document(self._db, self.WORKER_CLAIM_COLLECTION, payload)
 
     def claim_file(self, file_id: str, worker_id: str, payload: dict[str, Any]) -> None:
         merged_payload = dict(payload)
-        merged_payload.setdefault("file_id", _as_document_id("library_files", file_id))
+        merged_payload.setdefault("file_id", _as_document_id(self.FILE_COLLECTION, file_id))
         merged_payload.setdefault("worker_id", worker_id)
         primitives.insert_document(self._db, self.WORKER_CLAIM_COLLECTION, merged_payload)
 
@@ -35,7 +37,7 @@ class WorkerClaimOpsMixin:
             self._db,
             self.WORKER_CLAIM_COLLECTION,
             "file_id",
-            _as_document_id("library_files", file_id),
+            _as_document_id(self.FILE_COLLECTION, file_id),
             allowed_fields=self.WORKER_CLAIM_FIELDS,
         )
 
@@ -55,7 +57,7 @@ class WorkerClaimOpsMixin:
         return len(rows)
 
     def delete_claims_for_files(self, file_ids: list[str]) -> int:
-        normalized_ids = [_as_document_id("library_files", file_id) for file_id in file_ids]
+        normalized_ids = [_as_document_id(self.FILE_COLLECTION, file_id) for file_id in file_ids]
         if not normalized_ids:
             return 0
         rows = primitives.execute(
@@ -75,7 +77,7 @@ class WorkerClaimOpsMixin:
         if not isinstance(file_id, str) or not file_id:
             msg = "Claim payload must include a non-empty file_id"
             raise ValueError(msg)
-        normalized_file_id = _as_document_id("library_files", file_id)
+        normalized_file_id = _as_document_id(self.FILE_COLLECTION, file_id)
         merged_payload = dict(payload)
         merged_payload["file_id"] = normalized_file_id
         rows = primitives.execute(

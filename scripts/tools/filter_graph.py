@@ -172,7 +172,7 @@ def emit_gv(
 
     for node_id in keep:
         layer = module_layer.get(nodes[node_id]["module"])
-        bucket = layer if layer else "(other)"
+        bucket = layer or "(other)"
         bucketed[bucket].append(node_id)
 
     lines = [

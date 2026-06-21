@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nomarr.persistence.schema import CollectionNames
 from nomarr.workflows.platform.prepare_database_wf import _discover_template_collections, _is_fresh_database
 
 
@@ -60,7 +61,7 @@ class TestDiscoverTemplateCollections:
         db = MagicMock()
         db.app.list_collections.return_value = [
             "libraries",
-            "library_files",
+            CollectionNames.LIBRARY_FILES.value,
             "tags",
             "applied_migrations",
         ]

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, cast
 from nomarr.components.library.library_id_comp import library_key_from_ref
 from nomarr.helpers.dto import LibraryPath
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.schema import CollectionNames
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -14,7 +15,11 @@ if TYPE_CHECKING:
 
 def _normalize_file_id(file_ref: str) -> str:
     """Normalize a library-file reference to full document-id form."""
-    return file_ref if file_ref.startswith("library_files/") else f"library_files/{file_ref}"
+    return (
+        file_ref
+        if file_ref.startswith(f"{CollectionNames.LIBRARY_FILES.value}/")
+        else f"{CollectionNames.LIBRARY_FILES.value}/{file_ref}"
+    )
 
 
 def upsert_library_file(
@@ -72,11 +77,11 @@ def delete_library_file(db: Database, file_id: str) -> None:
 
     Args:
         db: Database handle.
-        file_id: ArangoDB document ID (``library_files/<key>``) or a raw file
+        file_id: ArangoDB document ID (``{CollectionNames.LIBRARY_FILES.value}/<key>``) or a raw file
             path. When a path is supplied it is resolved to the document ID
             first; returns early without error if no matching file is found.
     """
-    if not file_id.startswith("library_files/"):
+    if not file_id.startswith(f"{CollectionNames.LIBRARY_FILES.value}/"):
         db.library.remove_file_by_path(file_id)
         return
 

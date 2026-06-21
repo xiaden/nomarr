@@ -148,6 +148,8 @@ Report the status of ALL THREE checks in your verdict.
  | `status: ISSUES_FOUND` | `PLANNING_GAP` | Spawn **Exec-Planner** (use `dispatching-exec-planner` skill, AMEND variant), then re-execute affected phases, then **full QA review again** |
  | `status: ISSUES_FOUND` | `CRITICAL` | Escalate to Director |
 
+ **GENERATION_FAILED sub-reports are MINOR, not PLANNING_GAP.** When `testAnalyzerReport.status` or `docsAnalyzerReport.status` is `GENERATION_FAILED`, treat the scopeClassification as MINOR (even if the reviewer mistakenly flagged it higher). Test/documentation gaps are never planning gaps — route to Exec-Fixer, never Exec-Planner.
+
 **Max 2 fix cycles per plan.** Round 3+ without passing → auto-escalate.
 
 **After any fix, re-dispatch QA-Reviewer for a fresh FULL review. Never review only the fixed items.**

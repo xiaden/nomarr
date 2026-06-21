@@ -32,8 +32,8 @@ class TestUpsertSegmentStatsBatch:
     def test_bulk_upserts_docs_and_only_inserts_missing_edges(self) -> None:
         mock_db = MagicMock()
         timestamp = 123456789
-        file1 = "library_files/file-1"
-        file2 = "library_files/file-2"
+        file1 = f"{CollectionNames.LIBRARY_FILES.value}/file-1"
+        file2 = f"{CollectionNames.LIBRARY_FILES.value}/file-2"
         mood_id = f"segment_scores_stats/{_stats_key(file1, 'mood', 'v1')}"
         energy_id = f"segment_scores_stats/{_stats_key(file1, 'energy', 'v1')}"
         genre_id = f"segment_scores_stats/{_stats_key(file2, 'genre', 'v2')}"
@@ -134,9 +134,9 @@ class TestGetSegmentStatsForFilesBulk:
 
     def test_groups_rows_by_file_id_in_input_order(self) -> None:
         mock_db = MagicMock()
-        file1 = "library_files/file-1"
-        file2 = "library_files/file-2"
-        file3 = "library_files/file-3"
+        file1 = f"{CollectionNames.LIBRARY_FILES.value}/file-1"
+        file2 = f"{CollectionNames.LIBRARY_FILES.value}/file-2"
+        file3 = f"{CollectionNames.LIBRARY_FILES.value}/file-3"
         stats1 = {"_id": "segment_scores_stats/1", "head_name": "mood"}
         stats2a = {"_id": "segment_scores_stats/2a", "head_name": "genre"}
         stats2b = {"_id": "segment_scores_stats/2b", "head_name": "energy"}
@@ -161,7 +161,7 @@ class TestGetSegmentStatsForFile:
 
     def test_returns_single_file_stats_from_bulk_reader(self) -> None:
         mock_db = MagicMock()
-        file_id = "library_files/file-7"
+        file_id = f"{CollectionNames.LIBRARY_FILES.value}/file-7"
         stats_docs = [
             {"_id": "segment_scores_stats/7a", "head_name": "mood"},
             {"_id": "segment_scores_stats/7b", "head_name": "genre"},
@@ -193,7 +193,7 @@ class TestDeleteSegmentStatsForFiles:
 
     def test_returns_zero_when_grouped_stats_have_no_ids(self) -> None:
         mock_db = MagicMock()
-        file_id = "library_files/file-2"
+        file_id = f"{CollectionNames.LIBRARY_FILES.value}/file-2"
         mock_db.library_files.file_has_segment_stats.by_ids.return_value = [
             {"start_id": file_id, "v": {"head_name": "mood"}},
             {"start_id": file_id, "v": {"label_stats": []}},
@@ -207,8 +207,8 @@ class TestDeleteSegmentStatsForFiles:
 
     def test_cascades_grouped_stats_ids_once(self) -> None:
         mock_db = MagicMock()
-        file1 = "library_files/file-1"
-        file2 = "library_files/file-2"
+        file1 = f"{CollectionNames.LIBRARY_FILES.value}/file-1"
+        file2 = f"{CollectionNames.LIBRARY_FILES.value}/file-2"
         mock_db.library_files.file_has_segment_stats.by_ids.return_value = [
             {"start_id": file2, "v": {"_id": "segment_scores_stats/stats-2", "head_name": "genre"}},
             {"start_id": file1, "v": {"_id": "segment_scores_stats/stats-1", "head_name": "mood"}},
@@ -236,7 +236,7 @@ class TestDeleteSegmentStatsForFile:
 
     def test_delegates_to_grouped_delete_path(self) -> None:
         mock_db = MagicMock()
-        file_id = "library_files/file-9"
+        file_id = f"{CollectionNames.LIBRARY_FILES.value}/file-9"
         mock_db.library_files.file_has_segment_stats.by_ids.return_value = [
             {"start_id": file_id, "v": {"_id": "segment_scores_stats/stats-9a", "head_name": "mood"}},
             {"start_id": file_id, "v": {"_id": "segment_scores_stats/stats-9b", "head_name": "genre"}},

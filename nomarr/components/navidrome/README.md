@@ -27,7 +27,7 @@ Navidrome/Subsonic integration — API communication, play data crawling, playli
 ## Patterns
 
 - **Subsonic token auth:** `SubsonicClient` generates per-request `md5(password + salt)` tokens — no session state.
-- **ANN-based playlists:** Playlist builders use the taste centroid for approximate nearest neighbor search, then apply exclusion filters (played/unplayed, known artists).
+- **ANN-based playlists:** Playlist builders use per-cluster taste centroids for approximate nearest neighbor search, then apply exclusion filters (played/unplayed, known artists) and interleave results proportionally to cluster weight.
 - **Versioned tag keys:** `tag_query_comp` maps user-friendly short names to versioned storage keys, supporting future multi-version calibrations.
 
 ## Dependencies

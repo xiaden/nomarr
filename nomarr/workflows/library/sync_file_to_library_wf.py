@@ -38,7 +38,7 @@ def _sync_tags_and_entities(
 
     Args:
         db: Database instance
-        file_id: Document _id (e.g., "library_files/12345")
+        file_id: Song document _id (e.g., "song/12345")
         file_path: Absolute path (for logging only)
         metadata: Pre-extracted metadata dict
         namespace: Tag namespace
@@ -105,7 +105,7 @@ def sync_file_to_library(
     used by both the library scanner and the processor after tagging.
 
     Orchestrates:
-    1. Library domain: Update library_files record (by _id when available)
+    1. Library domain: Update song record (by _id when available)
     2. Tagging domain: Parse and upsert file_tags (external + nomarr tags)
     3. Metadata domain: Seed entity graph
 
@@ -116,7 +116,7 @@ def sync_file_to_library(
         namespace: Tag namespace (e.g., "nom")
         tagged_version: Tagger version if file was tagged, None otherwise
         library_id: Optional library ID (will auto-detect if None)
-        file_id: Document _id from library_files. When provided, skips
+        file_id: Song document _id. When provided, skips
             path-based upsert and uses direct _id lookup instead.
 
     Returns:
@@ -128,12 +128,12 @@ def sync_file_to_library(
     """
     try:
         if file_id is not None:
-            # Fast path: we already know the document _id (from worker flow)
-            # Skip path-based upsert — the scanner already created this document
+            # Fast path: we already have the track identifier (from worker flow)
+            # Skip path-based upsert — the scanner already processed this track
             _sync_tags_and_entities(db, file_id, file_path, metadata, namespace, tagged_version)
             return
 
-        # Slow path: no file_id provided, need path-based lookup
+        # Slow path: no track identifier provided, need path-based lookup
         # This path is used by the scanner's initial sync
         if library_id is None:
             library = find_library_containing_path(db, file_path)

@@ -3,14 +3,12 @@
 import logging
 from typing import Any
 
-from nomarr.components.library.library_file_mutation_comp import get_file_library_key
-from nomarr.components.library.library_records_comp import list_library_records
-from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
-from nomarr.components.ml.vectors.ml_vector_retrieve_comp import get_cold_track_vector
-from nomarr.helpers.vector_params_helper import compute_nlists, compute_nprobe
+from nomarr.components.ml.vectors.ml_vector_retrieve_comp import (
+    get_cold_track_vector,
+    search_similar_cold_track_vectors,
+)
 from nomarr.persistence.db import Database
 from nomarr.services.infrastructure.config_svc import ConfigService
-from nomarr.workflows.vectors.get_track_vector_wf import get_track_vector as get_track_vector_wf
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +37,12 @@ class VectorSearchService:
         limit: int,
         min_score: float = 0.0,
         nprobe: int | None = None,
-        library_scope: str | None = None,
     ) -> list[dict[str, Any]]:
         """Search for similar tracks using vector similarity.
 
-        Resolves the source track's library and vector internally from
-        ``file_id``, then searches cold collection(s).
+        Resolves the source track's vector from ``file_id``, then performs a
+        single ANN query against the per-backbone cold collection. Cross-library
+        search is the default (collections are per-backbone, not per-library).
 
         Args:
             file_id: Library file document ID to find similar tracks for.
@@ -56,10 +54,6 @@ class VectorSearchService:
                 auto-calculated from ``vector_group_size`` and
                 ``vector_search_thoroughness`` in dynamic config.
                 Pass an explicit int to override.
-            library_scope: Controls which libraries to search.
-                ``None`` or ``"own"`` — search source track's library only.
-                ``"all"`` — fan-out across every library's cold collection.
-                Any other string — treated as a specific library ``_key``.
 
         Returns:
             List of matching results with keys:
@@ -73,14 +67,8 @@ class VectorSearchService:
                 has no vector index.
             RuntimeError: If search query fails
         """
-        # Step 1: Resolve library_key from file_id
-        library_key = get_file_library_key(self.db, file_id)
-        if library_key is None:
-            msg = f"File '{file_id}' not found or has no library association"
-            raise ValueError(msg)
-
-        # Step 2: Get the source track's vector
-        vector_doc = get_cold_track_vector(self.db, file_id, backbone_id, library_key)
+        # Step 1: Get the source track's vector from the per-backbone cold collection
+        vector_doc = get_cold_track_vector(self.db, file_id, backbone_id)
         if vector_doc is None:
             msg = (
                 f"No vector found for file '{file_id}' with backbone "
@@ -89,140 +77,34 @@ class VectorSearchService:
             raise ValueError(msg)
         vector: list[float] = vector_doc["vector_n"]
 
-        # Step 3: Search
-        if library_scope == "all":
-            return self._search_fan_out(
-                backbone_id=backbone_id,
-                vector=vector,
-                limit=limit,
-                min_score=min_score,
-                nprobe=nprobe,
-            )
+        # Step 2: Single ANN search on per-backbone cold collection
+        group_size: int = self._config_svc.get("vector_group_size", 15)
+        thoroughness: int = self._config_svc.get("vector_search_thoroughness", 10)
 
-        target_library = library_key if library_scope is None or library_scope == "own" else library_scope
-
-        # Validate vector index exists
-        if not self.db.ml.has_embedding_index(backbone_id, target_library):
-            msg = (
-                f"Vector search not available for backbone '{backbone_id}' "
-                f"library '{target_library}': cold collection has no vector index. "
-                f"Run promote & rebuild workflow to create index."
-            )
-            raise ValueError(msg)
-
-        # Get cold operations and search
-        cold_ops = get_cold_namespace(self.db, backbone_id, target_library)
-
-        # Auto-calculate nprobe from config when not explicitly provided
-        if nprobe is None:
-            doc_count = cold_ops.count()
-            group_size: int = self._config_svc.get("vector_group_size", 15)
-            thoroughness: int = self._config_svc.get("vector_search_thoroughness", 10)
-            nlists = compute_nlists(doc_count, group_size)
-            nprobe = compute_nprobe(nlists, thoroughness)
-
-        try:
-            raw_results = cold_ops.ann_search(vector, limit, nprobe=nprobe)
-        except Exception as e:
-            logger.error(
-                f"Vector search failed for backbone={backbone_id}, library={target_library}, limit={limit}: {e}",
-                exc_info=True,
-            )
-            raise RuntimeError(f"Vector search failed: {e}") from e
+        raw_results = search_similar_cold_track_vectors(
+            db=self.db,
+            backbone_id=backbone_id,
+            seed_vector=vector,
+            result_limit=limit,
+            vector_group_size=group_size,
+            vector_search_thoroughness=thoroughness,
+        )
 
         # Apply min_score filtering
         filtered_results = [result for result in raw_results if result.get("score", 0.0) >= min_score]
 
         logger.debug(
-            f"Vector search: backbone={backbone_id}, library={target_library}, limit={limit}, nprobe={nprobe}, "
+            f"Vector search: backbone={backbone_id}, limit={limit}, nprobe={nprobe}, "
             f"raw_results={len(raw_results)}, filtered={len(filtered_results)}"
         )
 
         return filtered_results
 
-    def _search_fan_out(
-        self,
-        backbone_id: str,
-        vector: list[float],
-        limit: int,
-        min_score: float = 0.0,
-        nprobe: int | None = None,
-    ) -> list[dict[str, Any]]:
-        """Search across ALL library cold collections, merge by score.
-
-        Iterates over every registered library, searches each cold collection
-        that exists, and returns the top *limit* results by descending score
-        after deduplication by ``file_id``.
-
-        Args:
-            backbone_id: Backbone identifier.
-            vector: Query embedding vector.
-            limit: Maximum number of results to return.
-            min_score: Minimum similarity score threshold.
-            nprobe: Explicit centroids to probe (auto-calculated per library
-                when ``None``).
-
-        Returns:
-            Merged, deduplicated, score-sorted list of results capped at *limit*.
-        """
-        all_results: list[dict[str, Any]] = []
-        libraries = list_library_records(self.db, include_scan=False)
-
-        for lib in libraries:
-            lib_key: str = lib["_key"]
-            cold_coll_name = f"vectors_track_cold__{backbone_id}__{lib_key}"
-            if not self.db.db.has_collection(cold_coll_name):
-                continue
-
-            try:
-                cold_ops = get_cold_namespace(self.db, backbone_id, lib_key)
-                doc_count = cold_ops.count()
-                if doc_count == 0:
-                    continue
-
-                effective_nprobe = nprobe
-                if effective_nprobe is None:
-                    group_size: int = self._config_svc.get("vector_group_size", 15)
-                    thoroughness: int = self._config_svc.get("vector_search_thoroughness", 10)
-                    nlists = compute_nlists(doc_count, group_size)
-                    effective_nprobe = compute_nprobe(nlists, thoroughness)
-
-                results = cold_ops.ann_search(vector, limit, nprobe=effective_nprobe)
-                all_results.extend(results)
-            except Exception:
-                logger.warning(
-                    "Fan-out search failed for library %s, skipping",
-                    lib_key,
-                    exc_info=True,
-                )
-                continue
-
-        # Sort by score descending and deduplicate by file_id (keep highest score)
-        all_results.sort(key=lambda r: r.get("score", 0.0), reverse=True)
-        seen: set[str] = set()
-        unique: list[dict[str, Any]] = []
-        for r in all_results:
-            fid: str = r.get("file_id", "")
-            if fid not in seen:
-                seen.add(fid)
-                if r.get("score", 0.0) >= min_score:
-                    unique.append(r)
-
-        logger.debug(
-            "Fan-out search: backbone=%s, libraries=%d, total_raw=%d, unique=%d, returning=%d",
-            backbone_id,
-            len(libraries),
-            len(all_results),
-            len(unique),
-            min(limit, len(unique)),
-        )
-        return unique[:limit]
-
     def get_track_vector(self, backbone_id: str, file_id: str) -> dict[str, Any] | None:
         """Get vector for a specific track.
 
-        Delegates to the get_track_vector workflow, which resolves the
-        owning library and fetches from cold collection only.
+        Delegates to the get_track_vector workflow, which fetches from the
+        per-backbone cold collection directly (no library resolution needed).
 
         Args:
             backbone_id: Backbone identifier
@@ -231,4 +113,6 @@ class VectorSearchService:
         Returns:
             Vector document or None if not found
         """
+        from nomarr.workflows.vectors.get_track_vector_wf import get_track_vector as get_track_vector_wf
+
         return get_track_vector_wf(self.db, file_id, backbone_id)

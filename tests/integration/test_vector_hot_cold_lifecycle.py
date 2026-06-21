@@ -18,6 +18,7 @@ from nomarr.components.platform.arango_bootstrap_comp import (
     _create_vectors_track_collections,
 )
 from nomarr.persistence.db import Database
+from nomarr.persistence.schema import CollectionNames
 from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
 from nomarr.services.domain.vector_search_svc import VectorSearchService
 
@@ -146,10 +147,10 @@ class FakeArangoCollection:
 
     @staticmethod
     def _extract_backbone(name: str) -> str:
-        """Extract backbone id from a per-library collection name.
+        """Extract backbone id from a per-backbone collection name.
 
         Collection names follow the pattern
-        ``vectors_track_{tier}__{backbone}__{library_key}``.
+        ``vectors_track_{tier}__{backbone}``.
         We split on ``"__"`` and take the second segment.
         """
         parts = name.split("__")
@@ -215,7 +216,7 @@ class FakeArangoHandle:
         """Handle the minimal AQL surface exercised by the vector tests."""
         del query
         file_id = None if bind_vars is None else bind_vars.get("file_id")
-        if isinstance(file_id, str) and file_id.startswith("library_files/"):
+        if isinstance(file_id, str) and file_id.startswith(f"{CollectionNames.LIBRARY_FILES.value}/"):
             return iter(["libraries/test_lib"])
         return iter([])
 
@@ -316,10 +317,10 @@ class _FakeMlDb:
     def list_registered_vector_namespaces(self) -> dict[str, Any]:
         return self.adapter._registered
 
-    def has_embedding_index(self, backbone_id: str, library_key: str) -> bool:
+    def has_embedding_index(self, backbone_id: str) -> bool:
         return self.adapter.harness.has_vector_index(backbone_id)
 
-    def get_embedding_stats(self, backbone_id: str, library_key: str) -> dict[str, int | bool]:
+    def get_embedding_stats(self, backbone_id: str) -> dict[str, int | bool]:
         return {
             "hot_count": self.adapter.harness.hot_count(backbone_id),
             "cold_count": self.adapter.harness.cold_count(backbone_id),
@@ -368,8 +369,7 @@ class FakeDatabaseAdapter:
     def register(self, collection_name: str, template_name: str) -> Any:
         parts = collection_name.split("__")
         backbone_id = parts[1]
-        library_key = parts[2]
-        del library_key
+        # library_key removed per ADR-036 — collection names are now vectors_track_{tier}__{backbone} only
 
         if template_name == "vectors_track_hot":
             self.harness.register_backbone(backbone_id)
@@ -400,12 +400,7 @@ def test_bootstrap_creates_hot_collections_only(monkeypatch: pytest.MonkeyPatch)
     """Bootstrap should only create hot collections with indexes."""
 
     db_mock = MagicMock()
-
-    def _has_collection(name: str) -> bool:
-        # The "libraries" collection exists; new per-library vector collections do not
-        return name == "libraries"
-
-    db_mock.has_collection.side_effect = _has_collection
+    db_mock.has_collection.return_value = False
     created_collections: list[str] = []
     db_mock.create_collection.side_effect = created_collections.append
 
@@ -427,13 +422,12 @@ def test_bootstrap_creates_hot_collections_only(monkeypatch: pytest.MonkeyPatch)
         "nomarr.components.platform.arango_bootstrap_comp._ensure_index",
         record_index,
     )
-    db_mock.aql.execute.return_value = iter(["lib1"])
 
     _create_vectors_track_collections(db_mock, models_dir="/tmp/models")
 
     assert created_collections == [
-        "vectors_track_hot__effnet__lib1",
-        "vectors_track_hot__yamnet__lib1",
+        "vectors_track_hot__effnet",
+        "vectors_track_hot__yamnet",
     ]
     assert all(name.startswith("vectors_track_hot__") for name in indexed_collections)
     assert all("cold" not in name for name in created_collections)
@@ -444,11 +438,11 @@ def test_upsert_vector_resides_in_hot_until_promotion(
 ) -> None:
     """Vectors stay in hot storage until maintenance promotes them."""
 
-    hot_ops = get_hot_namespace(cast("Database", fake_database), "effnet", "test_lib")
-    cold_ops = get_cold_namespace(cast("Database", fake_database), "effnet", "test_lib")
+    hot_ops = get_hot_namespace(cast("Database", fake_database), "effnet")
+    cold_ops = get_cold_namespace(cast("Database", fake_database), "effnet")
 
     hot_ops.upsert_vector(
-        file_id="library_files/1",
+        file_id=f"{CollectionNames.LIBRARY_FILES.value}/1",
         model_suite_hash="suite",
         embed_dim=3,
         vector=[0.1, 0.2, 0.3],
@@ -456,7 +450,7 @@ def test_upsert_vector_resides_in_hot_until_promotion(
     )
 
     assert fake_database.harness.hot_count("effnet") == 1
-    assert cold_ops.get_vector("library_files/1") is None
+    assert cold_ops.get_vector(f"{CollectionNames.LIBRARY_FILES.value}/1") is None
 
 
 def test_promote_and_rebuild_moves_hot_vectors_to_cold(
@@ -467,9 +461,9 @@ def test_promote_and_rebuild_moves_hot_vectors_to_cold(
     """Maintenance workflow drains hot vectors, builds index, and leaves cold ready."""
 
     service = VectorMaintenanceService(cast("Database", fake_database), models_dir="/ml-models", config_svc=MagicMock())
-    hot_ops = get_hot_namespace(cast("Database", fake_database), "effnet", "test_lib")
+    hot_ops = get_hot_namespace(cast("Database", fake_database), "effnet")
     hot_ops.upsert_vector(
-        file_id="library_files/42",
+        file_id=f"{CollectionNames.LIBRARY_FILES.value}/42",
         model_suite_hash="suite",
         embed_dim=3,
         vector=[0.4, 0.5, 0.6],
@@ -487,7 +481,7 @@ def test_promote_and_rebuild_moves_hot_vectors_to_cold(
         fake_workflow,
     )
 
-    service.promote_and_rebuild("effnet", library_key="test_lib", nlists=48)
+    service.promote_and_rebuild("effnet", nlists=48)
 
     assert vector_harness.hot_count("effnet") == 0
     assert vector_harness.cold_count("effnet") == 1
@@ -500,13 +494,15 @@ def test_search_similar_uses_cold_only(
 ) -> None:
     """Similarity search must ignore hot data and honor cold-only semantics."""
 
-    service = VectorSearchService(cast("Database", fake_database), config_svc=MagicMock())
+    config_svc = MagicMock()
+    config_svc.get.return_value = 15
+    service = VectorSearchService(cast("Database", fake_database), config_svc=config_svc)
     backbone = "effnet"
-    hot_ops = get_hot_namespace(cast("Database", fake_database), backbone, "test_lib")
-    get_cold_namespace(cast("Database", fake_database), backbone, "test_lib")
+    hot_ops = get_hot_namespace(cast("Database", fake_database), backbone)
+    get_cold_namespace(cast("Database", fake_database), backbone)
 
     hot_ops.upsert_vector(
-        file_id="library_files/hot_only",
+        file_id=f"{CollectionNames.LIBRARY_FILES.value}/hot_only",
         model_suite_hash="suite",
         embed_dim=3,
         vector=[0.9, 0.1, 0.0],
@@ -517,7 +513,7 @@ def test_search_similar_uses_cold_only(
     vector_harness.seed_cold(
         backbone,
         {
-            "file_id": "library_files/cold_doc",
+            "file_id": f"{CollectionNames.LIBRARY_FILES.value}/cold_doc",
             "model_suite_hash": "suite",
             "vector": query_vector,
             "vector_n": query_vector,
@@ -528,14 +524,13 @@ def test_search_similar_uses_cold_only(
     vector_harness.install_vector_index(backbone)
 
     results = service.search_similar_tracks(
-        file_id="library_files/cold_doc",
+        file_id=f"{CollectionNames.LIBRARY_FILES.value}/cold_doc",
         backbone_id=backbone,
         limit=5,
         min_score=0.0,
-        nprobe=20,  # explicit nprobe to avoid config lookup in test
     )
 
-    assert [item["file_id"] for item in results] == ["library_files/cold_doc"]
+    assert [item["file_id"] for item in results] == [f"{CollectionNames.LIBRARY_FILES.value}/cold_doc"]
 
 
 def test_get_track_vector_cold_only(
@@ -546,11 +541,11 @@ def test_get_track_vector_cold_only(
 
     service = VectorSearchService(cast("Database", fake_database), config_svc=MagicMock())
     backbone = "effnet"
-    hot_ops = get_hot_namespace(cast("Database", fake_database), backbone, "test_lib")
-    get_cold_namespace(cast("Database", fake_database), backbone, "test_lib")
+    hot_ops = get_hot_namespace(cast("Database", fake_database), backbone)
+    get_cold_namespace(cast("Database", fake_database), backbone)
 
     hot_ops.upsert_vector(
-        file_id="library_files/hot_only",
+        file_id=f"{CollectionNames.LIBRARY_FILES.value}/hot_only",
         model_suite_hash="suite",
         embed_dim=3,
         vector=[0.2, 0.3, 0.4],
@@ -559,14 +554,14 @@ def test_get_track_vector_cold_only(
 
     # No cold data — should return None
     assert vector_harness.cold_count(backbone) == 0
-    result = service.get_track_vector(backbone, "library_files/hot_only")
+    result = service.get_track_vector(backbone, f"{CollectionNames.LIBRARY_FILES.value}/hot_only")
     assert result is None
 
     # After seeding cold, should return the vector
     vector_harness.seed_cold(
         backbone,
         {
-            "file_id": "library_files/hot_only",
+            "file_id": f"{CollectionNames.LIBRARY_FILES.value}/hot_only",
             "model_suite_hash": "suite",
             "vector": [0.2, 0.3, 0.4],
             "vector_n": [0.2, 0.3, 0.4],
@@ -574,9 +569,9 @@ def test_get_track_vector_cold_only(
             "num_segments": 1,
         },
     )
-    result = service.get_track_vector(backbone, "library_files/hot_only")
+    result = service.get_track_vector(backbone, f"{CollectionNames.LIBRARY_FILES.value}/hot_only")
     assert result is not None
-    assert result["file_id"] == "library_files/hot_only"
+    assert result["file_id"] == f"{CollectionNames.LIBRARY_FILES.value}/hot_only"
 
 
 def test_cascade_delete_calls_hot_and_cold_ops() -> None:
@@ -597,14 +592,22 @@ def test_cascade_delete_calls_hot_and_cold_ops() -> None:
     )
     database.ml.remove_file_vectors = MagicMock()
 
-    deleted = delete_vectors_by_file_id(database, "library_files/7")
+    deleted = delete_vectors_by_file_id(database, f"{CollectionNames.LIBRARY_FILES.value}/7")
 
     assert deleted == 3
     database.ml.list_vector_namespaces.assert_called_once_with()
-    database.ml.list_file_vectors.assert_any_call("vectors_track_hot__effnet__lib", "library_files/7")
-    database.ml.list_file_vectors.assert_any_call("vectors_track_cold__effnet__lib", "library_files/7")
-    database.ml.remove_file_vectors.assert_any_call("vectors_track_hot__effnet__lib", "library_files/7")
-    database.ml.remove_file_vectors.assert_any_call("vectors_track_cold__effnet__lib", "library_files/7")
+    database.ml.list_file_vectors.assert_any_call(
+        "vectors_track_hot__effnet__lib", f"{CollectionNames.LIBRARY_FILES.value}/7"
+    )
+    database.ml.list_file_vectors.assert_any_call(
+        "vectors_track_cold__effnet__lib", f"{CollectionNames.LIBRARY_FILES.value}/7"
+    )
+    database.ml.remove_file_vectors.assert_any_call(
+        "vectors_track_hot__effnet__lib", f"{CollectionNames.LIBRARY_FILES.value}/7"
+    )
+    database.ml.remove_file_vectors.assert_any_call(
+        "vectors_track_cold__effnet__lib", f"{CollectionNames.LIBRARY_FILES.value}/7"
+    )
 
 
 def test_promote_is_safe_no_op_when_hot_empty(
@@ -629,7 +632,7 @@ def test_promote_is_safe_no_op_when_hot_empty(
         fake_workflow,
     )
 
-    service.promote_and_rebuild("effnet", library_key="test_lib", nlists=24)
+    service.promote_and_rebuild("effnet", nlists=24)
 
     assert call_counter["count"] == 1
     assert vector_harness.hot_count("effnet") == 0
@@ -656,27 +659,27 @@ def test_promote_twice_keeps_cold_collection_convergent(
         fake_workflow,
     )
 
-    hot_ops = get_hot_namespace(cast("Database", fake_database), "effnet", "test_lib")
+    hot_ops = get_hot_namespace(cast("Database", fake_database), "effnet")
     hot_ops.upsert_vector(
-        file_id="library_files/99",
+        file_id=f"{CollectionNames.LIBRARY_FILES.value}/99",
         model_suite_hash="suite",
         embed_dim=3,
         vector=[0.3, 0.4, 0.5],
         num_segments=3,
     )
-    service.promote_and_rebuild("effnet", library_key="test_lib", nlists=16)
+    service.promote_and_rebuild("effnet", nlists=16)
 
     hot_ops.upsert_vector(
-        file_id="library_files/99",
+        file_id=f"{CollectionNames.LIBRARY_FILES.value}/99",
         model_suite_hash="suite",
         embed_dim=3,
         vector=[0.6, 0.7, 0.8],
         num_segments=3,
     )
-    service.promote_and_rebuild("effnet", library_key="test_lib", nlists=16)
+    service.promote_and_rebuild("effnet", nlists=16)
 
     assert vector_harness.cold_count("effnet") == 1
-    stored = vector_harness.get_cold_vector("effnet", "library_files/99")
+    stored = vector_harness.get_cold_vector("effnet", f"{CollectionNames.LIBRARY_FILES.value}/99")
     assert stored is not None
     assert stored["vector"] == [0.6, 0.7, 0.8]
     assert stored["vector"] == [0.6, 0.7, 0.8]

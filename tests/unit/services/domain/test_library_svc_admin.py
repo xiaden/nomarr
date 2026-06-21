@@ -70,9 +70,6 @@ class TestCreateLibrary:
                 "nomarr.services.domain.library_svc.admin.create_library",
                 return_value="libraries/1",
             ) as mock_create_library,
-            patch(
-                "nomarr.services.domain.library_svc.admin.provision_vectors_track_for_library",
-            ) as mock_provision_vectors_track,
         ):
             result = mixin.create_library(
                 name="Rock Library",
@@ -90,7 +87,6 @@ class TestCreateLibrary:
             file_write_mode="minimal",
             library_auto_write=False,
         )
-        mock_provision_vectors_track.assert_called_once_with(mock_db.db, "/models", "1")
         assert result == _library_dto(file_write_mode="minimal")
 
     @pytest.mark.unit
@@ -109,9 +105,6 @@ class TestCreateLibrary:
                 "nomarr.services.domain.library_svc.admin.create_library",
                 return_value="libraries/1",
             ) as mock_create_library,
-            patch(
-                "nomarr.services.domain.library_svc.admin.provision_vectors_track_for_library",
-            ) as mock_provision_vectors_track,
         ):
             result = mixin.create_library(
                 name="Rock Library",
@@ -128,13 +121,12 @@ class TestCreateLibrary:
             file_write_mode="full",
             library_auto_write=False,
         )
-        mock_provision_vectors_track.assert_called_once_with(mock_db.db, "/models", "1")
         assert result == _library_dto()
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_create_library_calls_provision_vectors_track(self) -> None:
-        """Library creation should provision vectors for the new library key."""
+    def test_create_library_does_not_provision_vectors(self) -> None:
+        """Library creation no longer provisions vector collections (per-backbone is done at schema setup)."""
         mock_db = MagicMock()
         mock_cfg = MagicMock()
         mock_cfg.library_root = "/music"
@@ -147,13 +139,9 @@ class TestCreateLibrary:
                 "nomarr.services.domain.library_svc.admin.create_library",
                 return_value="libraries/1",
             ),
-            patch(
-                "nomarr.services.domain.library_svc.admin.provision_vectors_track_for_library",
-            ) as mock_provision_vectors_track,
         ):
             result = mixin.create_library(name="Rock Library", root_path="rock")
 
-        mock_provision_vectors_track.assert_called_once_with(mock_db.db, "/models", "1")
         assert result == _library_dto()
 
 

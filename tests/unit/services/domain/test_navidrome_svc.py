@@ -7,7 +7,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.helpers.dto import NavidromeGeneratePlaylistsResult
-from nomarr.helpers.exceptions import MisconfiguredError
+
+# MisconfiguredError import removed per ADR-036 (library_key no longer checked)
+from nomarr.persistence.schema import CollectionNames
 from nomarr.services.domain.navidrome_svc import NavidromeConfig, NavidromeService
 
 
@@ -30,7 +32,10 @@ def _playlist_entry() -> dict[str, object]:
     return {
         "playlist_type": "familiar",
         "playlist_name": "Familiar Favorites",
-        "file_ids": ["library_files/track-1", "library_files/track-2"],
+        "file_ids": [
+            f"{CollectionNames.LIBRARY_FILES.value}/track-1",
+            f"{CollectionNames.LIBRARY_FILES.value}/track-2",
+        ],
     }
 
 
@@ -39,17 +44,10 @@ def _playlist_entry() -> dict[str, object]:
 class TestNavidromeServiceGeneratePlaylists:
     """Tests for ``NavidromeService.generate_playlists``."""
 
-    def test_generate_playlists_raises_when_library_key_empty(self) -> None:
-        """Empty ``library_key`` should raise ``MisconfiguredError``."""
-        service, _ = _make_service({"library_key": ""})
-
-        with pytest.raises(MisconfiguredError, match="library_key not configured"):
-            service.generate_playlists("user-1")
-
     def test_generate_playlists_reads_pp_keys_not_playlist_keys(self) -> None:
         """Service should read the current ``pp_*`` config keys only."""
         config_values = {
-            "library_key": "lib-main",
+            # library_key removed per ADR-036
             "pp_backbone_id": "effnet-discogs",
             "pp_half_life_days": 45.0,
             "pp_top_n": 123,
@@ -57,6 +55,7 @@ class TestNavidromeServiceGeneratePlaylists:
             "pp_min_songs": 11,
             "pp_min_play_count": 4,
             "pp_max_genre_playlists": 6,
+            "pp_max_clusters": 10,
             "pp_type_familiar": True,
             "pp_type_discovery": True,
             "pp_type_hidden_gems": True,
@@ -69,12 +68,12 @@ class TestNavidromeServiceGeneratePlaylists:
             "nomarr.services.domain.navidrome_svc.generate_playlists",
             return_value=[_playlist_entry()],
         ):
-            service.generate_playlists("user-1")
+            service.generate_playlists("user-1", top_plays=[])
 
         called_keys = [call.args[0] for call in config_service.get.call_args_list]
         assert called_keys == [
             "pp_backbone_id",
-            "library_key",
+            # "library_key" removed per ADR-036
             "pp_type_familiar",
             "pp_type_discovery",
             "pp_type_hidden_gems",
@@ -83,6 +82,7 @@ class TestNavidromeServiceGeneratePlaylists:
             "pp_max_songs",
             "pp_min_songs",
             "pp_max_genre_playlists",
+            "pp_max_clusters",
             "pp_half_life_days",
             "pp_top_n",
             "pp_min_play_count",
@@ -94,7 +94,7 @@ class TestNavidromeServiceGeneratePlaylists:
         """Boolean ``pp_type_*`` flags should drive the workflow enabled-types list."""
         service, _ = _make_service(
             {
-                "library_key": "lib-main",
+                # library_key removed per ADR-036
                 "pp_type_familiar": True,
                 "pp_type_discovery": False,
                 "pp_type_hidden_gems": True,
@@ -107,7 +107,7 @@ class TestNavidromeServiceGeneratePlaylists:
             "nomarr.services.domain.navidrome_svc.generate_playlists",
             return_value=[_playlist_entry()],
         ) as mock_generate:
-            service.generate_playlists("user-1")
+            service.generate_playlists("user-1", top_plays=[])
 
         assert mock_generate.call_args.kwargs["enabled_types"] == [
             "familiar",
@@ -123,7 +123,7 @@ class TestNavidromeServiceGeneratePlaylists:
             "nomarr.services.domain.navidrome_svc.generate_playlists",
             return_value=[_playlist_entry()],
         ):
-            result = service.generate_playlists("user-1")
+            result = service.generate_playlists("user-1", top_plays=[])
 
         assert isinstance(result, NavidromeGeneratePlaylistsResult)
         assert result.status == "ok"
@@ -138,7 +138,7 @@ class TestNavidromeServiceGeneratePlaylists:
             "nomarr.services.domain.navidrome_svc.generate_playlists",
             return_value=[],
         ):
-            result = service.generate_playlists("user-1")
+            result = service.generate_playlists("user-1", top_plays=[])
 
         assert isinstance(result, NavidromeGeneratePlaylistsResult)
         assert result.status == "no_data"
@@ -153,7 +153,7 @@ class TestNavidromeServiceGeneratePlaylists:
             "nomarr.services.domain.navidrome_svc.generate_playlists",
             return_value=[_playlist_entry()],
         ) as mock_generate:
-            service.generate_playlists("user-1", max_genre_playlists=30)
+            service.generate_playlists("user-1", top_plays=[], max_genre_playlists=30)
 
         assert mock_generate.call_args.kwargs["max_genre_playlists"] == 25
 
@@ -169,7 +169,7 @@ class TestNavidromeServiceDescriptorResolution:
         with (
             patch(
                 "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
-                return_value=[{"_id": "library_files/track-1", "_key": "track-1"}],
+                return_value=[{"_id": f"{CollectionNames.LIBRARY_FILES.value}/track-1", "_key": "track-1"}],
             ) as mock_get_files,
             patch(
                 "nomarr.services.domain.navidrome_svc.build_track_descriptor",
@@ -186,10 +186,10 @@ class TestNavidromeServiceDescriptorResolution:
                 },
             ) as mock_build,
         ):
-            descriptors = service.resolve_files_to_descriptors(["library_files/track-1"])
+            descriptors = service.resolve_files_to_descriptors([f"{CollectionNames.LIBRARY_FILES.value}/track-1"])
 
         assert descriptors == {
-            "library_files/track-1": {
+            f"{CollectionNames.LIBRARY_FILES.value}/track-1": {
                 "title": "Song A",
                 "artist": "Artist A",
                 "album": "Album A",
@@ -201,7 +201,7 @@ class TestNavidromeServiceDescriptorResolution:
                 "nomarr_file_key": "track-1",
             },
         }
-        mock_get_files.assert_called_once_with(service._db, ["library_files/track-1"])
+        mock_get_files.assert_called_once_with(service._db, [f"{CollectionNames.LIBRARY_FILES.value}/track-1"])
         mock_build.assert_called_once()
 
     def test_resolve_files_to_descriptors_ignores_docs_without_id(self) -> None:
@@ -211,7 +211,7 @@ class TestNavidromeServiceDescriptorResolution:
             "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
             return_value=[{"_key": "missing-id"}],
         ):
-            descriptors = service.resolve_files_to_descriptors(["library_files/track-1"])
+            descriptors = service.resolve_files_to_descriptors([f"{CollectionNames.LIBRARY_FILES.value}/track-1"])
 
         assert descriptors == {}
 
@@ -225,7 +225,7 @@ class TestNavidromeServiceDescriptorResolution:
             ),
             pytest.raises(RuntimeError, match="query failed"),
         ):
-            service.resolve_files_to_descriptors(["library_files/track-1"])
+            service.resolve_files_to_descriptors([f"{CollectionNames.LIBRARY_FILES.value}/track-1"])
 
     def test_resolve_files_to_descriptors_propagates_build_errors(self) -> None:
         service, _ = _make_service()
@@ -233,7 +233,7 @@ class TestNavidromeServiceDescriptorResolution:
         with (
             patch(
                 "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
-                return_value=[{"_id": "library_files/track-1"}],
+                return_value=[{"_id": f"{CollectionNames.LIBRARY_FILES.value}/track-1"}],
             ),
             patch(
                 "nomarr.services.domain.navidrome_svc.build_track_descriptor",
@@ -241,7 +241,7 @@ class TestNavidromeServiceDescriptorResolution:
             ),
             pytest.raises(ValueError, match="bad descriptor"),
         ):
-            service.resolve_files_to_descriptors(["library_files/track-1"])
+            service.resolve_files_to_descriptors([f"{CollectionNames.LIBRARY_FILES.value}/track-1"])
 
 
 @pytest.mark.unit

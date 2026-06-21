@@ -25,7 +25,6 @@ import numpy as np
 from scripts.embedding_research.config import OUTPUT_ROOT as _OUTPUT_ROOT
 from scripts.embedding_research.helpers.binning import cache_semantics_tag as _cache_semantics_tag
 from scripts.embedding_research.helpers.binning import threshold_key as _threshold_key
-from scripts.embedding_research.helpers.cache_utils import build_done_set as _build_done_set
 
 _log = logging.getLogger(__name__)
 

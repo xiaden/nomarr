@@ -17,7 +17,6 @@ from nomarr.interfaces.api.types.library_types import (
     UpdateLibraryRequest,
 )
 from nomarr.interfaces.api.web.dependencies import (
-    get_config_service,
     get_library_service,
     get_pipeline_service,
     get_vector_maintenance_service,
@@ -28,29 +27,12 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.services.domain.library_svc import LibraryService
     from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
-    from nomarr.services.infrastructure.config_svc import ConfigService
 
 router = APIRouter(prefix="/library", tags=["Library"])
 
 
-class VectorConfigResponse(BaseModel):
-    """Per-library vector configuration with inheritance info."""
-
-    vector_group_size: int
-    vector_search_thoroughness: int
-    is_group_size_inherited: bool
-    is_thoroughness_inherited: bool
-
-
-class VectorConfigUpdate(BaseModel):
-    """Update per-library vector config. Null values clear override (inherit global)."""
-
-    vector_group_size: int | None = None
-    vector_search_thoroughness: int | None = None
-
-
 class VectorStatsItem(BaseModel):
-    """Per-backbone vector statistics for a library."""
+    """Per-backbone vector statistics."""
 
     backbone_id: str
     hot_count: int
@@ -58,10 +40,13 @@ class VectorStatsItem(BaseModel):
     index_exists: bool
 
 
-class LibraryVectorStatsResponse(BaseModel):
-    """Per-library vector statistics across all backbones."""
+class BackboneVectorStatsResponse(BaseModel):
+    """Vector statistics across all backbones.
 
-    library_key: str
+    ``library_key`` is removed because vector collections are per-backbone,
+    not per-library. Use ``/api/web/vector/stats`` for global stats.
+    """
+
     stats: list[VectorStatsItem]
 
 
@@ -241,107 +226,34 @@ async def clear_library_data(
         ) from e
 
 
-@router.get("/{library_id}/vector-config", dependencies=[Depends(verify_session)])
-async def get_library_vector_config(
-    library_id: str,
-    library_service: Annotated["LibraryService", Depends(get_library_service)],
-    config_service: Annotated["ConfigService", Depends(get_config_service)],
-) -> VectorConfigResponse:
-    """Get effective vector configuration for a library.
-
-    Returns the resolved vector_group_size and vector_search_thoroughness,
-    along with flags indicating whether each value is inherited from the
-    global default or overridden at the library level.
-
-    Args:
-        library_id: Library ID to query
-        library_service: LibraryService instance (injected)
-        config_service: ConfigService instance (injected)
-
-    Returns:
-        VectorConfigResponse with effective values and inheritance flags
-
-    """
-    library_id = decode_path_id(library_id)
-    try:
-        result = library_service.get_vector_config(library_id, config_service)
-        return VectorConfigResponse(**result)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Library not found") from None
-    except Exception as e:
-        logger.exception(f"[Web API] Error getting vector config for library {library_id}")
-        raise HTTPException(
-            status_code=500,
-            detail=sanitize_exception_message(e, "Failed to get vector config"),
-        ) from e
-
-
-@router.put("/{library_id}/vector-config", dependencies=[Depends(verify_session)])
-async def update_library_vector_config(
-    library_id: str,
-    request: VectorConfigUpdate,
-    library_service: Annotated["LibraryService", Depends(get_library_service)],
-    config_service: Annotated["ConfigService", Depends(get_config_service)],
-) -> VectorConfigResponse:
-    """Update per-library vector configuration.
-
-    Non-null values are validated and stored on the library document.
-    Null values clear the per-library override so the global default is used.
-
-    Args:
-        library_id: Library ID to update
-        request: VectorConfigUpdate with optional overrides
-        library_service: LibraryService instance (injected)
-        config_service: ConfigService instance (injected)
-
-    Returns:
-        VectorConfigResponse with updated effective values
-
-    """
-    library_id = decode_path_id(library_id)
-    try:
-        library_service.update_vector_config(
-            library_id,
-            vector_group_size=request.vector_group_size,
-            vector_search_thoroughness=request.vector_search_thoroughness,
-        )
-        result = library_service.get_vector_config(library_id, config_service)
-        return VectorConfigResponse(**result)
-    except ValueError as e:
-        detail = str(e)
-        status = 404 if "not found" in detail.lower() else 400
-        raise HTTPException(status_code=status, detail=detail) from None
-    except Exception as e:
-        logger.exception(f"[Web API] Error updating vector config for library {library_id}")
-        raise HTTPException(
-            status_code=500,
-            detail=sanitize_exception_message(e, "Failed to update vector config"),
-        ) from e
+# Per-library vector config endpoints removed — vector configuration is
+# global-only (per-library overrides eliminated). Use the global vector
+# config from the config service or /api/web/config endpoint.
 
 
 @router.get("/{library_id}/vector-stats", dependencies=[Depends(verify_session)])
 async def get_library_vector_stats(
     library_id: str,
     vector_maintenance_service: Annotated["VectorMaintenanceService", Depends(get_vector_maintenance_service)],
-) -> LibraryVectorStatsResponse:
-    """Get per-library vector statistics across all backbones.
+) -> BackboneVectorStatsResponse:
+    """Get vector statistics across all backbones.
 
     Returns hot/cold vector counts and index status for every discovered
-    backbone in the given library.
+    backbone. Vector collections are per-backbone (not per-library), so
+    stats are global. The ``library_id`` parameter is accepted for backward
+    compatibility but the returned stats are backbone-scoped.
 
     Args:
-        library_id: Library ID to query
+        library_id: Library ID (accepted for backward compatibility)
         vector_maintenance_service: VectorMaintenanceService instance (injected)
 
     Returns:
-        LibraryVectorStatsResponse with per-backbone stats
+        BackboneVectorStatsResponse with per-backbone stats
 
     """
     library_id = decode_path_id(library_id)
     try:
-        stats = vector_maintenance_service.get_library_vector_stats(library_id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Library not found") from None
+        stats = vector_maintenance_service.get_backbone_vector_stats()
     except Exception as e:
         logger.exception(f"[Web API] Error getting vector stats for library {library_id}")
         raise HTTPException(
@@ -349,15 +261,14 @@ async def get_library_vector_stats(
             detail=sanitize_exception_message(e, "Failed to get vector stats"),
         ) from e
 
-    return LibraryVectorStatsResponse(
-        library_key=library_id.rsplit("/", 1)[-1],
+    return BackboneVectorStatsResponse(
         stats=[
             VectorStatsItem(
-                backbone_id=str(stat["backbone_id"]),
-                hot_count=int(stat["hot_count"]),
-                cold_count=int(stat["cold_count"]),
-                index_exists=bool(stat["index_exists"]),
+                backbone_id=str(row["backbone_id"]),
+                hot_count=int(row["hot_count"]),
+                cold_count=int(row["cold_count"]),
+                index_exists=bool(row["index_exists"]),
             )
-            for stat in stats
+            for row in stats
         ],
     )

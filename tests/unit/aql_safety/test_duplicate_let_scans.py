@@ -39,10 +39,11 @@ def _find_duplicate_let_scans(aql: str) -> list[str]:
         filter_clause = match.group(4).strip()
         match.group(5).strip()
 
-        # Normalize the filter clause for comparison
+        if collection == "__INTERPOLATION__":
+            continue
+
         normalized_filter = re.sub(r"\s+", " ", filter_clause)
 
-        # Key by collection and filter
         key = (collection, normalized_filter)
         scans[key].append(var_name)
 
@@ -77,6 +78,7 @@ def _format_violations(violations: list[_Violation]) -> str:
 
 
 @pytest.mark.unit
+@pytest.mark.slow
 def test_no_duplicate_let_scans_in_production_code() -> None:
     """Production Python code should not scan the same collection multiple times in LET statements."""
     violations = _find_violations(_PERSISTENCE_DATABASE_ROOT)

@@ -11,12 +11,13 @@ from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.arango_client import SafeDatabase
+from nomarr.persistence.schema import CollectionNames
 
 if TYPE_CHECKING:
     from arango.collection import StandardCollection
 
 _FIELD_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_VECTOR_EDGE_COLLECTION = "file_has_vectors"
+_VECTOR_EDGE_COLLECTION = CollectionNames.FILE_HAS_VECTORS.value
 _VECTOR_ALLOWED_FIELDS = frozenset(
     {
         "_id",
@@ -24,11 +25,11 @@ _VECTOR_ALLOWED_FIELDS = frozenset(
         "file_id",
         "model_suite_hash",
         "embed_dim",
-        "vector",
         "vector_n",
         "num_segments",
         "created_at",
         "genres",
+        "segmentation_hash",
     }
 )
 
@@ -237,14 +238,14 @@ class VectorCollection:
             bind_vars={
                 "@edge_collection": self.EDGE_COLLECTION,
                 "collection": self._name,
-                "file_id": _as_document_id("library_files", file_id),
+                "file_id": _as_document_id(CollectionNames.LIBRARY_FILES, file_id),
             },
         )
         results = list(cursor)
         return cast("dict[str, Any]", results[0]) if results else None
 
     def get_vectors_by_file_ids(self, file_ids: list[str]) -> list[dict[str, Any]]:
-        normalized_file_ids = [_as_document_id("library_files", file_id) for file_id in file_ids]
+        normalized_file_ids = [_as_document_id(CollectionNames.LIBRARY_FILES, file_id) for file_id in file_ids]
         if not normalized_file_ids:
             return []
         cursor = self._db.aql.execute(
@@ -293,7 +294,9 @@ class VectorCollection:
     def _delete_by_field_in(self, field_name: str, values: list[Any]) -> int:
         _validate_field_name(field_name)
         normalized_values = [
-            _as_document_id("library_files", value) if field_name == "file_id" and isinstance(value, str) else value
+            _as_document_id(CollectionNames.LIBRARY_FILES, value)
+            if field_name == "file_id" and isinstance(value, str)
+            else value
             for value in values
         ]
         if not normalized_values:
@@ -315,27 +318,28 @@ class VectorCollection:
 
 
 class VectorsTrackHot(VectorCollection):
-    """Runtime namespace template for hot per-library vector collections."""
+    """Runtime namespace template for hot per-backbone vector collections."""
 
-    NAME_PATTERN = "vectors_track_hot__{backbone_id}__{library_key}"
+    NAME_PATTERN = "vectors_track_hot__{backbone_id}"
 
     def upsert_vector(
         self,
         file_id: str,
         model_suite_hash: str,
         embed_dim: int,
-        vector: list[float],
+        vector_n: list[int],
         num_segments: int,
+        segmentation_hash: str,
     ) -> None:
-        file_doc_id = _as_document_id("library_files", file_id)
+        file_doc_id = _as_document_id(CollectionNames.LIBRARY_FILES, file_id)
         vector_key = self._make_vector_key(file_doc_id, model_suite_hash)
         payload = {
             "file_id": file_doc_id,
             "model_suite_hash": model_suite_hash,
             "embed_dim": embed_dim,
-            "vector": list(vector),
-            "vector_n": self._normalize_vector(vector),
+            "vector_n": vector_n,
             "num_segments": num_segments,
+            "segmentation_hash": segmentation_hash,
             "created_at": now_ms().value,
         }
         vector_ids = self.upsert(_key=vector_key, fields=payload)
@@ -358,9 +362,9 @@ class VectorsTrackHot(VectorCollection):
 
 
 class VectorsTrackCold(VectorCollection):
-    """Runtime namespace template for cold per-library vector collections."""
+    """Runtime namespace template for cold per-backbone vector collections."""
 
-    NAME_PATTERN = "vectors_track_cold__{backbone_id}__{library_key}"
+    NAME_PATTERN = "vectors_track_cold__{backbone_id}"
 
     def ann_search(
         self,

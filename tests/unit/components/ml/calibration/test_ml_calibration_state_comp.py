@@ -27,6 +27,7 @@ from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     update_file_calibration_hashes_batch,
 )
 from nomarr.helpers.constants.file_states import STATE_CALIBRATED, STATE_NOT_CALIBRATED
+from nomarr.persistence.schema import CollectionNames
 
 
 class TestUpdateFileCalibrationHash:
@@ -38,11 +39,11 @@ class TestUpdateFileCalibrationHash:
         with patch(
             "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_file_state"
         ) as mock_transition:
-            update_file_calibration_hash(mock_db, "library_files/abc123")
+            update_file_calibration_hash(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc123")
 
         mock_transition.assert_called_once_with(
             mock_db,
-            ["library_files/abc123"],
+            [f"{CollectionNames.LIBRARY_FILES.value}/abc123"],
             STATE_NOT_CALIBRATED,
             STATE_CALIBRATED,
         )
@@ -54,7 +55,11 @@ class TestUpdateFileCalibrationHashesBatch:
     @pytest.mark.unit
     def test_calls_transition_for_each_file_id(self) -> None:
         mock_db = MagicMock()
-        file_ids = ["library_files/a", "library_files/b", "library_files/c"]
+        file_ids = [
+            f"{CollectionNames.LIBRARY_FILES.value}/a",
+            f"{CollectionNames.LIBRARY_FILES.value}/b",
+            f"{CollectionNames.LIBRARY_FILES.value}/c",
+        ]
         with patch(
             "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_file_state"
         ) as mock_transition:

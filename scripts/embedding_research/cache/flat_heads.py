@@ -91,10 +91,7 @@ def is_done(
     """
     if done_set_ptc is not None and done_set_ctp is not None:
         return song_id in done_set_ptc and song_id in done_set_ctp
-    for pathway in ("ptc", "ctp"):
-        if not _path(backbone, head_name, strategy, pathway, song_id).exists():
-            return False
-    return True
+    return all(_path(backbone, head_name, strategy, pathway, song_id).exists() for pathway in ("ptc", "ctp"))
 
 
 def missing_for_head(song_ids: list[str], backbone: str, head_name: str, strategy: str) -> list[str]:

@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
+from nomarr.persistence.schema import CollectionNames
 from nomarr.workflows.library.sync_file_to_library_wf import sync_file_to_library
 
 
@@ -81,7 +82,7 @@ def mock_db_with_file():
 
     # Mock file lookup - returns file with absolute path
     mock_db.library.get_library_file.return_value = {
-        "_id": "library_files/file1",
+        "_id": f"{CollectionNames.LIBRARY_FILES.value}/file1",
         "_key": "file1",
         "path": TEST_ABSOLUTE_PATH,  # Absolute path available to domains
         "normalized_path": TEST_NORMALIZED_PATH,  # POSIX relative for identity
@@ -125,7 +126,7 @@ class TestLibraryUpdateDomain:
         mock_db, test_absolute_path, _ = mock_db_with_file
 
         # Mock file operations
-        mock_db.library.upsert_library_file.return_value = "library_files/file1"
+        mock_db.library.upsert_library_file.return_value = f"{CollectionNames.LIBRARY_FILES.value}/file1"
         test_metadata = {
             "duration": 180.5,
             "artist": "Test Artist",
@@ -198,7 +199,7 @@ class TestSearchDomain:
         mock_db.library.search_library_files_with_tags.return_value = (
             [
                 {
-                    "_id": "library_files/file1",
+                    "_id": f"{CollectionNames.LIBRARY_FILES.value}/file1",
                     "path": test_absolute_path,  # Absolute path in results
                     "normalized_path": test_normalized_path,  # Also has normalized
                     "tags": [],
