@@ -72,13 +72,6 @@ export async function list(enabledOnly = false): Promise<Library[]> {
 }
 
 /**
- * Alias for list() to match older import naming.
- */
-export async function getLibraries(enabledOnly = false): Promise<Library[]> {
-  return list(enabledOnly);
-}
-
-/**
  * Get a specific library by ID.
  */
 export async function getLibrary(id: string): Promise<Library> {
@@ -353,18 +346,3 @@ export async function getErroredFiles(libraryId: string): Promise<ErroredFilesRe
   return get(`/api/web/library/${libraryId}/errored-file`);
 }
 
-export interface RetryErroredResult {
-  retried: number;
-}
-
-/**
- * Retry errored files for a library.
- * If fileIds is provided, only those files are retried; otherwise all errored files are retried.
- */
-export async function retryErroredFiles(
-  libraryId: string,
-  fileIds?: string[]
-): Promise<RetryErroredResult> {
-  const body = fileIds ? { file_ids: fileIds } : {};
-  return post(`/api/web/library/${libraryId}/retry-errored`, body);
-}

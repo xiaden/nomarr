@@ -52,7 +52,7 @@ export function ApiSettingsPanel() {
   const [apiKeyFocused, setApiKeyFocused] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
 
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     try {
       setLoading(true);
       const config = await getConfig();
@@ -68,7 +68,7 @@ export function ApiSettingsPanel() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showError]);
 
   const loadApiKey = useCallback(async () => {
     try {
@@ -154,7 +154,7 @@ export function ApiSettingsPanel() {
       void loadSettings();
       void loadApiKey();
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loaded, loading, loadSettings, loadApiKey]);
 
   if (loading) {
     return (

@@ -7,3 +7,6 @@ pytest.skip(
     "Current codebase uses multi-axis pipeline state model. Test needs complete rewrite.",
     allow_module_level=True,
 )
+
+
+pytestmark = pytest.mark.integration

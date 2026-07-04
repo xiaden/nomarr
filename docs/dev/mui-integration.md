@@ -58,7 +58,7 @@ Demonstrates all major MUI features:
 
 ### 2. Browse Files Page Updates
 
-**Location**: `src/pages/BrowseFilesPage.tsx`
+**Location**: `src/features/browse/BrowsePage.tsx`
 
 Applied MUI components to existing page:
 
@@ -235,7 +235,6 @@ Candidate pages for MUI migration:
 
 - **AnalyticsPage**: Replace chart visualizations with MUI X Charts
 - **QueuePage**: Replace table with DataGrid
-- **BrowseFilesPage**: Full migration to MUI layout and components
 - **Forms**: Use MUI TextField, Select, etc. throughout
 
 ## TypeScript Integration

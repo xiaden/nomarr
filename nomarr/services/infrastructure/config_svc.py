@@ -15,7 +15,7 @@ import logging
 import os
 import threading
 from collections.abc import Callable, Coroutine
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 
@@ -30,6 +30,9 @@ from nomarr.helpers.config_schema import (
 from nomarr.helpers.dto.config_dto import ConfigResult, GetInternalInfoResult, WebConfigResult
 from nomarr.helpers.dto.processing_dto import ProcessorConfig
 from nomarr.persistence.db import Database
+
+if TYPE_CHECKING:
+    from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
 # ======================================================================
 # Internal Constants (Not User-Configurable)
@@ -207,7 +210,7 @@ class ConfigService:
             worker_enabled=INTERNAL_WORKER_ENABLED,
         )
 
-    def get_config_for_web(self, worker_service: Any | None = None) -> WebConfigResult:
+    def get_config_for_web(self, worker_service: WorkerSystemService | None = None) -> WebConfigResult:
         """Get configuration for the web UI endpoint.
 
         Returns only WEB_EDITABLE_KEYS subset, plus internal constants

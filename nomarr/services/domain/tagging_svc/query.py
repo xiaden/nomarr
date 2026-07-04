@@ -117,7 +117,12 @@ class TaggingQueryMixin:
         return {"songs": songs, "total": total}
 
     def get_pending_commit_count(self) -> int:
-        """Count files with pending tag writes (tags_not_written state)."""
+        """Count files with pending tag writes (tags_not_written state).
+
+        Returns:
+            Number of files that have been tagged in the database but
+            have not yet had their tags written to the audio file.
+        """
         return count_pending_tag_writes(self.db)
 
     def commit_pending_tags(self: _TaggingQueryService, library_id: str | None = None) -> CommitResult:
@@ -145,17 +150,40 @@ class TaggingQueryMixin:
         return CommitResult(started=True, pending_files=pending)
 
     def get_unique_tag_keys(self, nomarr_only: bool = False) -> UniqueTagKeysResult:
-        """Get all unique tag keys across the library."""
+        """Get all unique tag keys across the library.
+
+        Args:
+            nomarr_only: If True, only return Nomarr-generated tag keys.
+
+        Returns:
+            UniqueTagKeysResult DTO with tag_keys list and total count.
+        """
         keys = get_unique_names(self.db, nomarr_only)
         return UniqueTagKeysResult(tag_keys=keys, count=len(keys), calibration=None, library_id=None)
 
     def get_unique_tag_values(self, tag_key: str, nomarr_only: bool = False) -> UniqueTagKeysResult:
-        """Get all unique values for a specific tag key."""
+        """Get all unique values for a specific tag key.
+
+        Args:
+            tag_key: Tag key to query (e.g., "genre", "nom:mood-strict").
+            nomarr_only: If True, only return Nomarr-generated tag values.
+
+        Returns:
+            UniqueTagKeysResult DTO with tag_keys list and total count.
+        """
         values = get_unique_tag_values(self.db, tag_key, nomarr_only)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
 
     def get_unique_mood_values(self, mood_tier: str = "mood-strict", limit: int = 100) -> UniqueTagKeysResult:
-        """Get unique individual mood values extracted from tuple string tags."""
+        """Get unique individual mood values extracted from tuple string tags.
+
+        Args:
+            mood_tier: Mood tier to filter by (e.g., "mood-strict", "mood-broad").
+            limit: Maximum number of results to return.
+
+        Returns:
+            UniqueTagKeysResult DTO with tag_keys list and total count.
+        """
         values = get_unique_mood_values(self.db, mood_tier=mood_tier, limit=limit)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
 

@@ -86,7 +86,12 @@ class NavidromeService:
         self._client_creds: tuple[str, str, str] | None = None
 
     def preview_tag_stats(self) -> PreviewTagStatsResult:
-        """Get preview of tags for Navidrome config generation."""
+        """Get a preview of available tags for Navidrome config generation.
+
+        Returns:
+            PreviewTagStatsResult DTO with a summary of tag names and
+            counts available for smart playlist construction.
+        """
         stats = preview_tag_stats_workflow(self._db, namespace=self.cfg.namespace)
         return PreviewTagStatsResult(stats=stats)
 
@@ -104,7 +109,14 @@ class NavidromeService:
         return sorted(str(v) for v in value_counts)
 
     def generate_navidrome_config(self) -> str:
-        """Generate Navidrome config file content."""
+        """Generate Navidrome config file content.
+
+        Produces a Navidrome-compatible configuration snippet that exposes
+        Nomarr-generated tags as custom fields for smart playlist use.
+
+        Returns:
+            String containing Navidrome configuration (TOML format).
+        """
         return generate_navidrome_config_workflow(self._db, namespace=self.cfg.namespace)
 
     def preview_playlist(
@@ -162,7 +174,12 @@ class NavidromeService:
         return GeneratePlaylistResult(playlist_structure=playlist_structure)
 
     def get_template_summary(self) -> GetTemplateSummaryResult:
-        """Get list of available Navidrome templates."""
+        """Get a list of available Navidrome playlist templates.
+
+        Returns:
+            GetTemplateSummaryResult DTO containing a list of template
+            identifiers and metadata for playlist generation.
+        """
         templates_list = get_template_summary()
         # Convert list of dicts to list of TemplateSummaryItem DTOs
         templates = [TemplateSummaryItem(**t) for t in templates_list]
@@ -173,7 +190,15 @@ class NavidromeService:
         template_id: str,
         output_dir: str,
     ) -> GenerateTemplateFilesResult:
-        """Generate files from a template."""
+        """Generate playlist files from a Navidrome template.
+
+        Args:
+            template_id: Identifier of the template to generate from.
+            output_dir: Directory where generated playlist files are written.
+
+        Returns:
+            GenerateTemplateFilesResult DTO with count of generated files.
+        """
         files_generated = generate_template_files()
         return GenerateTemplateFilesResult(files_generated=files_generated)
 

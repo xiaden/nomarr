@@ -125,12 +125,14 @@ class AnalyticsService:
     def get_tag_frequencies_with_result(self, limit: int = 50) -> TagFrequenciesResult:
         """Get frequency counts for all tags with wrapper DTO.
 
+        Same data as ``get_tag_frequencies`` but wrapped in a
+        ``TagFrequenciesResult`` DTO suitable for API responses.
+
         Args:
-            limit: Max results per category
+            limit: Maximum results per category.
 
         Returns:
-            TagFrequenciesResult DTO with tag_frequencies list
-
+            TagFrequenciesResult DTO with tag_frequencies list.
         """
         tag_frequencies = self.get_tag_frequencies(limit=limit)
         return TagFrequenciesResult(tag_frequencies=tag_frequencies)
@@ -190,12 +192,14 @@ class AnalyticsService:
     def get_mood_distribution_with_result(self, library_id: str | None = None) -> MoodDistributionResult:
         """Get mood distribution with wrapper DTO.
 
+        Same data as ``get_mood_distribution`` but wrapped in a
+        ``MoodDistributionResult`` DTO suitable for API responses.
+
         Args:
-            library_id: Optional library _id to filter by.
+            library_id: Optional library ``_id`` to filter by.
 
         Returns:
-            MoodDistributionResult DTO with mood_distribution list
-
+            MoodDistributionResult DTO with mood_distribution list.
         """
         mood_distribution = self.get_mood_distribution(library_id=library_id)
         return MoodDistributionResult(mood_distribution=mood_distribution)

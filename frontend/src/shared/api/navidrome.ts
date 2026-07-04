@@ -213,30 +213,6 @@ export async function getTagValues(name: string): Promise<string[]> {
 }
 
 
-// ── Static Playlist (Vector Search → M3U) ──
-
-export interface StaticPlaylistResponse {
-  playlist_name: string;
-  m3u_content: string;
-  track_count: number;
-  missing_ids: string[];
-  saved_path: string | null;
-}
-
-/**
- * Generate a static M3U playlist from a list of file IDs.
- */
-export async function generateStaticPlaylist(
-  fileIds: string[],
-  playlistName = "Vector Search Playlist",
-): Promise<StaticPlaylistResponse> {
-  return post("/api/web/navidrome/playlist/static", {
-    file_ids: fileIds,
-    playlist_name: playlistName,
-  });
-}
-
-
 export interface PingResponse {
   ok: boolean;
   error: string | null;

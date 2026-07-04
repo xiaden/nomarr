@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from multiprocessing.connection import Connection
 
 from nomarr.helpers.dto.health_dto import (
     ComponentLifecycleHandler,
@@ -26,7 +26,7 @@ class _ComponentState:
     """Internal state tracking for a monitored component."""
 
     handler: ComponentLifecycleHandler
-    pipe_conn: Any
+    pipe_conn: Connection
     policy: ComponentPolicy
     status: ComponentStatus = "pending"
     last_frame_time: InternalSeconds = field(default_factory=internal_s)

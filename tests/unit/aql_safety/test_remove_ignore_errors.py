@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 
@@ -47,7 +48,7 @@ def _find_remove_without_ignore_errors(aql: str) -> list[str]:
     return violations
 
 
-def _find_violations(root: type) -> list[_Violation]:
+def _find_violations(root: Path) -> list[_Violation]:
     """Find all REMOVE operations without OPTIONS { ignoreErrors: true }."""
 
     violations: list[_Violation] = []

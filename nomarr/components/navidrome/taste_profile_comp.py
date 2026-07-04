@@ -62,9 +62,13 @@ def compute_taste_profile(
         return None
 
     # Batch-fetch cold vectors for resolved file IDs
-    file_ids = [p["file_id"] for p in resolved_plays]  # all non-None after filter above
+    file_ids: list[str] = []
+    for p in resolved_plays:
+        file_id = p["file_id"]
+        if file_id is not None:  # guaranteed by filter above
+            file_ids.append(file_id)
     cold_ops = get_cold_namespace(db, backbone_id)
-    vector_docs = cold_ops.get_vectors_by_file_ids(file_ids)  # type: ignore[arg-type]
+    vector_docs = cold_ops.get_vectors_by_file_ids(file_ids)
 
     # Build file_id → vector mapping
     vector_map: dict[str, list[float]] = {doc["file_id"]: doc["vector"] for doc in vector_docs if "vector" in doc}
@@ -72,7 +76,10 @@ def compute_taste_profile(
     # Pair plays with their vectors, dropping those without embeddings
     paired: list[tuple[TrackPlayData, list[float]]] = []
     for play in resolved_plays:
-        vec = vector_map.get(play["file_id"])  # type: ignore[arg-type]
+        file_id = play["file_id"]
+        if file_id is None:
+            continue
+        vec = vector_map.get(file_id)
         if vec is not None:
             paired.append((play, vec))
 
@@ -85,9 +92,14 @@ def compute_taste_profile(
         return None
 
     # Batch-fetch genre tags
+    paired_file_ids: list[str] = []
+    for p, _ in paired:
+        file_id = p["file_id"]
+        if file_id is not None:
+            paired_file_ids.append(file_id)
     genre_map = get_tag_values_grouped_by_file(
         db,
-        [p["file_id"] for p, _ in paired if p["file_id"] is not None],
+        paired_file_ids,
         "genre",
     )
 
@@ -95,7 +107,10 @@ def compute_taste_profile(
     genre_groups: dict[str, list[tuple[TrackPlayData, list[float]]]] = OrderedDict()
     untagged: list[tuple[TrackPlayData, list[float]]] = []
     for play, vec in paired:
-        genres = genre_map.get(play["file_id"])  # type: ignore[arg-type]
+        file_id = play["file_id"]
+        if file_id is None:
+            continue
+        genres = genre_map.get(file_id)
         if genres:
             primary = sorted(genres)[0]  # deterministic: first sorted tag
             genre_groups.setdefault(primary, []).append((play, vec))

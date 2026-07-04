@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from pathlib import Path
 
 import pytest
 
@@ -59,7 +60,7 @@ def _find_duplicate_let_scans(aql: str) -> list[str]:
     return violations
 
 
-def _find_violations(root: type) -> list[_Violation]:
+def _find_violations(root: Path) -> list[_Violation]:
     """Find all duplicate LET scans."""
     violations: list[_Violation] = []
 

@@ -42,7 +42,12 @@ services/domain/
 ├── metadata_svc.py             # Metadata entity operations
 ├── navidrome_svc.py            # Navidrome integration
 ├── playlist_import_svc.py      # External playlist import
-├── tagging_svc.py              # Tag writing operations
+├── tagging_svc/                # Tag writing, calibration, curation (multi-file)
+│   ├── apply.py                # Calibration application
+│   ├── config.py               # Tagging configuration
+│   ├── curation.py             # Tag curation (rename/merge/split)
+│   ├── query.py                # Tag queries and search
+│   └── write.py                # Tag write operations
 ├── vector_maintenance_svc.py   # Vector index maintenance
 ├── vector_search_svc.py        # Vector similarity search
 ├── _library_mapping.py         # Internal library ID mapping

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 
@@ -83,7 +84,7 @@ def _find_top_level_variable_duplicates(aql: str) -> list[str]:
 
 
 def _find_duplicate_variable_violations(
-    root: type[_PERSISTENCE_DATABASE_ROOT],
+    root: Path,
 ) -> list[_Violation]:
     """Return all duplicate variable name violations under a directory tree."""
     violations: list[_Violation] = []

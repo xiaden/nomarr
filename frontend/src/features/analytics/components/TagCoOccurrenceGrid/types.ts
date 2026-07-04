@@ -181,11 +181,4 @@ export interface MatrixData {
   matrix: number[][];
 }
 
-/** Cell tooltip data */
-export interface CellTooltipData {
-  xTag: TagSpec;
-  yTag: TagSpec;
-  count: number;
-  maxCount: number;
-  percentage: number;
-}
+

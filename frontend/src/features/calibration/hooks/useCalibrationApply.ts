@@ -202,8 +202,7 @@ export function useCalibrationApply(): UseCalibrationApplyReturn {
       }
     };
     checkInitialStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [startPolling]);
 
   return { state, startApply, reset };
 }

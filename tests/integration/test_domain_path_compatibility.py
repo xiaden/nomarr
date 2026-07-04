@@ -23,6 +23,8 @@ from nomarr.components.infrastructure.path_comp import build_library_path_from_i
 from nomarr.persistence.schema import CollectionNames
 from nomarr.workflows.library.sync_file_to_library_wf import sync_file_to_library
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture(autouse=True)
 def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -276,6 +278,7 @@ class TestBackwardCompatibility:
             [{"path": test_absolute_path}],
             1,
         )
+
         files, _ = mock_db.library.search_library_files_with_tags(q="test")
         assert files[0]["path"] == test_absolute_path
 

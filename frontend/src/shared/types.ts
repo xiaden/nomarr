@@ -6,19 +6,6 @@
  */
 
 // ──────────────────────────────────────────────────────────────────────
-// Authentication Types
-// ──────────────────────────────────────────────────────────────────────
-
-export interface AuthResult {
-  session_token: string;
-  expires_in: number; // seconds
-}
-
-export interface LogoutResult {
-  status: string;
-}
-
-// ──────────────────────────────────────────────────────────────────────
 // Queue Types
 // ──────────────────────────────────────────────────────────────────────
 
@@ -39,34 +26,6 @@ export interface QueueSummary {
   running: number;
   completed: number;
   errors: number;
-}
-
-export interface QueueResponse {
-  jobs: QueueJob[];
-  summary: QueueSummary;
-}
-
-// ──────────────────────────────────────────────────────────────────────
-// SSE Message Types
-// ──────────────────────────────────────────────────────────────────────
-
-export interface SSEMessage {
-  type: string;
-  data: QueueStatusData | WorkerStatusData | unknown;
-}
-
-export interface QueueStatusData {
-  pending: number;
-  running: number;
-  completed: number;
-  errors: number;
-}
-
-export interface WorkerStatusData {
-  worker_id: string;
-  status: string;
-  current_file?: string;
-  progress?: number;
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -92,13 +51,6 @@ export interface Library {
   // Statistics
   fileCount: number;
   folderCount: number;
-}
-
-export interface LibraryStats {
-  total_files: number;
-  unique_artists: number;
-  unique_albums: number;
-  total_duration_seconds: number;
 }
 
 export interface ScanResult {

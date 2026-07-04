@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 
@@ -41,7 +42,7 @@ def _find_inefficient_existence_checks(aql: str) -> list[str]:
     return violations
 
 
-def _find_violations(root: type) -> list[_Violation]:
+def _find_violations(root: Path) -> list[_Violation]:
     """Find all inefficient existence check patterns."""
     violations: list[_Violation] = []
 

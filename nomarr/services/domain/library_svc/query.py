@@ -131,7 +131,16 @@ class LibraryQueryMixin:
         return [f["path"] for f in files if f.get("path")]
 
     def search_files(self, query: SearchFilesQuery) -> SearchFilesResult:
-        """Search library files with optional filters."""
+        """Search library files with optional filters.
+
+        Args:
+            query: Search parameters including query_text, limit, offset,
+                sort_by, sort_dir, and domain-specific filters.
+
+        Returns:
+            SearchFilesResult DTO with files (including tags), total count,
+            limit, and offset.
+        """
         files, total = search_library_files(self.db, query)
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
         return SearchFilesResult(files=files_with_tags, total=total, limit=query.limit, offset=query.offset)
@@ -180,17 +189,40 @@ class LibraryQueryMixin:
         return SearchFilesResult(files=files_with_tags, total=total, limit=limit, offset=offset)
 
     def get_unique_tag_keys(self, nomarr_only: bool = False) -> UniqueTagKeysResult:
-        """Get all unique tag keys across the library."""
+        """Get all unique tag keys across the library.
+
+        Args:
+            nomarr_only: If True, only return Nomarr-generated tag keys.
+
+        Returns:
+            UniqueTagKeysResult DTO with tag_keys list and total count.
+        """
         keys = get_unique_names(self.db, nomarr_only)
         return UniqueTagKeysResult(tag_keys=keys, count=len(keys), calibration=None, library_id=None)
 
     def get_unique_tag_values(self, tag_key: str, nomarr_only: bool = False) -> UniqueTagKeysResult:
-        """Get all unique values for a specific tag key."""
+        """Get all unique values for a specific tag key.
+
+        Args:
+            tag_key: Tag key to query (e.g., "genre", "nom:mood-strict").
+            nomarr_only: If True, only return Nomarr-generated tag values.
+
+        Returns:
+            UniqueTagKeysResult DTO with tag_keys list and total count.
+        """
         values = get_unique_tag_values(self.db, tag_key, nomarr_only)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
 
     def get_unique_mood_values(self, mood_tier: str = "mood-strict", limit: int = 100) -> UniqueTagKeysResult:
-        """Get unique individual mood values extracted from tuple string tags."""
+        """Get unique individual mood values extracted from tuple string tags.
+
+        Args:
+            mood_tier: Mood tier to filter by (e.g., "mood-strict", "mood-broad").
+            limit: Maximum number of results to return.
+
+        Returns:
+            UniqueTagKeysResult DTO with tag_keys list and total count.
+        """
         values = get_unique_mood_values(self.db, mood_tier=mood_tier, limit=limit)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
 

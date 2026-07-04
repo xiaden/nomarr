@@ -3,7 +3,7 @@
  * Handles loading status, generating, and applying calibration.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { useNotification } from "../../../hooks/useNotification";
@@ -27,20 +27,6 @@ export function useCalibrationStatus() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Background calibration generation hook
-  const {
-    state: generationState,
-    startGeneration,
-    reset: resetGeneration,
-  } = useHistogramCalibrationGeneration();
-
-  // Background calibration apply hook
-  const {
-    state: applyState,
-    startApply,
-    reset: resetApply,
-  } = useCalibrationApply();
-
   const loadStatus = async () => {
     try {
       setLoading(true);
@@ -55,6 +41,28 @@ export function useCalibrationStatus() {
     }
   };
 
+  // Stable refs for callbacks used inside effects that watch narrow deps
+  const showErrorRef = useRef(showError);
+  showErrorRef.current = showError;
+  const showSuccessRef = useRef(showSuccess);
+  showSuccessRef.current = showSuccess;
+  const loadStatusRef = useRef(loadStatus);
+  loadStatusRef.current = loadStatus;
+
+  // Background calibration generation hook
+  const {
+    state: generationState,
+    startGeneration,
+    reset: resetGeneration,
+  } = useHistogramCalibrationGeneration();
+
+  // Background calibration apply hook
+  const {
+    state: applyState,
+    startApply,
+    reset: resetApply,
+  } = useCalibrationApply();
+
   useEffect(() => {
     loadStatus();
   }, []);
@@ -64,7 +72,7 @@ export function useCalibrationStatus() {
     if (!generationState.completed) return;
 
     if (generationState.error) {
-      showError(`Calibration failed: ${generationState.error}`);
+      showErrorRef.current(`Calibration failed: ${generationState.error}`);
       resetGeneration();
       return;
     }
@@ -76,19 +84,18 @@ export function useCalibrationStatus() {
       if (heads_failed > 0) {
         message += ` (${heads_success} success, ${heads_failed} failed)`;
       }
-      showSuccess(message);
+      showSuccessRef.current(message);
       resetGeneration();
-      loadStatus(); // Refresh status after generation completes
+      loadStatusRef.current(); // Refresh status after generation completes
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generationState.completed]);
+  }, [generationState.completed, generationState.error, generationState.result, resetGeneration]);
 
   // Watch for apply completion and show notifications
   useEffect(() => {
     if (!applyState.completed) return;
 
     if (applyState.error) {
-      showError(`Calibration apply failed: ${applyState.error}`);
+      showErrorRef.current(`Calibration apply failed: ${applyState.error}`);
       resetApply();
       return;
     }
@@ -99,12 +106,11 @@ export function useCalibrationStatus() {
       if (failed > 0) {
         msg += ` (${failed} failed)`;
       }
-      showSuccess(msg);
+      showSuccessRef.current(msg);
       resetApply();
-      loadStatus(); // Refresh status after apply completes
+      loadStatusRef.current(); // Refresh status after apply completes
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applyState.completed]);
+  }, [applyState.completed, applyState.error, applyState.result, resetApply]);
 
   const handleGenerate = async () => {
     const confirmed = await confirm({

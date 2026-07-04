@@ -13,13 +13,13 @@ import json
 import logging
 import multiprocessing
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nomarr.components.platform.gpu_monitor_comp import (
     GPU_PROBE_INTERVAL_SECONDS,
     GPUHealthMonitor,
 )
-from nomarr.helpers.dto.health_dto import ComponentLifecycleHandler, ComponentPolicy
+from nomarr.helpers.dto.health_dto import ComponentLifecycleHandler, ComponentPolicy, StatusChangeContext
 from nomarr.helpers.dto.info_dto import (
     ConfigInfo,
     GPUHealthResult,
@@ -32,8 +32,10 @@ from nomarr.helpers.dto.info_dto import (
 )
 
 if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorService
     from nomarr.services.infrastructure.ml_svc import MLService
+    from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
 
 logger = logging.getLogger(__name__)
@@ -46,7 +48,7 @@ class InfoConfig:
     version: str
     namespace: str
     models_dir: str
-    db: Any  # Database instance for reading GPU resources
+    db: Database  # Database instance for reading GPU resources
     health_monitor: HealthMonitorService | None = None  # For GPU monitor liveness
     # Additional fields for public info endpoint
     db_path: str | None = None
@@ -72,7 +74,7 @@ class _GPUMonitorLifecycleHandler(ComponentLifecycleHandler):
         component_id: str,
         old_status: str,
         new_status: str,
-        context: Any,
+        context: StatusChangeContext,
     ) -> None:
         """Handle GPU monitor status changes from HealthMonitorService."""
         logger.debug(f"[InfoService] GPU monitor status: {old_status} -> {new_status}")
@@ -96,7 +98,7 @@ class InfoService:
     def __init__(
         self,
         cfg: InfoConfig,
-        workers_coordinator: Any = None,
+        workers_coordinator: WorkerSystemService | None = None,
         ml_service: MLService | None = None,
     ) -> None:
         """Initialize info service.
@@ -113,7 +115,9 @@ class InfoService:
 
         # GPU monitor state (owned by InfoService)
         self._gpu_monitor: GPUHealthMonitor | None = None
-        self._gpu_pipe_parent: Any = None  # Parent end of pipe for HealthMonitor
+        self._gpu_pipe_parent: multiprocessing.connection.Connection | None = (
+            None  # Parent end of pipe for HealthMonitor
+        )
         self._gpu_lifecycle_handler: _GPUMonitorLifecycleHandler | None = None
 
     # ----------------------------- Lifecycle ---------------------------------

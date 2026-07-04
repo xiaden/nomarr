@@ -117,15 +117,4 @@ export function buildQueryString(group: RuleGroup): string {
   return parts.join(operator);
 }
 
-/**
- * Assemble query string from flat rules (backward compatibility).
- *
- * @deprecated Use buildQueryString(RuleGroup) instead
- * @param rules - Flat array of rules
- * @param logic - Logic mode
- * @returns Query string
- */
-export function buildQueryStringFlat(rules: Rule[], logic: LogicMode): string {
-  const group = flatRulesToRootGroup(rules, logic);
-  return buildQueryString(group);
-}
+

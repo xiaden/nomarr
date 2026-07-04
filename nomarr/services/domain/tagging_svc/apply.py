@@ -175,7 +175,11 @@ class TaggingApplyMixin:
             self._apply_progress = {}
 
     def is_apply_running(self) -> bool:
-        """Check if calibration apply is currently running."""
+        """Check if calibration apply is currently running.
+
+        Returns:
+            True if a background calibration apply task is currently active.
+        """
         status = self._bts.get_task_status(CALIBRATION_APPLY_TASK_ID)
         return status is not None and status.get("status") == "running"
 
@@ -247,7 +251,13 @@ class TaggingApplyMixin:
         }
 
     def get_apply_combined_status(self) -> ApplyCalibrationCombinedStatusDict:
-        """Get combined lifecycle status and per-file progress for apply."""
+        """Get combined lifecycle status and per-file progress for calibration apply.
+
+        Returns:
+            Dict with keys: ``status`` (lifecycle phase), ``result`` (outcome),
+            ``error`` (error string if any), ``total_files``, ``completed_files``,
+            ``current_file``, and ``is_running``.
+        """
         status = self._get_apply_status()
         progress = self._get_apply_progress()
 

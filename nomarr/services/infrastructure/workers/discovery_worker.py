@@ -6,6 +6,7 @@ import contextlib
 import json
 import logging
 import multiprocessing
+import multiprocessing.connection
 import os
 import threading
 import time
@@ -40,7 +41,7 @@ IDLE_POLLS_BEFORE_PROMOTION: int = 3  # Trigger hot→cold promotion after this 
 HEALTH_FRAME_PREFIX = "HEALTH|"
 
 
-def _check_idle_pipeline_completion(db: Database, health_pipe: Any) -> int:
+def _check_idle_pipeline_completion(db: Database, health_pipe: multiprocessing.connection.Connection | None) -> int:
     """Transition idle ML-complete libraries and signal calibration health updates."""
     from nomarr.components.library.library_records_comp import find_ml_complete_libraries
     from nomarr.components.library.library_scan_state_comp import transition_pipeline_axis
@@ -134,7 +135,7 @@ class DiscoveryWorker(multiprocessing.Process):
         db_password: str,
         processor_config_dict: dict[str, Any],
         stop_event: EventType | None = None,
-        health_pipe: Any = None,
+        health_pipe: multiprocessing.connection.Connection | None = None,
         execution_tier: int = 0,
         prefer_gpu: bool = True,
     ) -> None:
@@ -551,7 +552,7 @@ def create_discovery_worker(
     db_password: str,
     processor_config: ProcessorConfig,
     stop_event: EventType | None = None,
-    health_pipe: Any = None,
+    health_pipe: multiprocessing.connection.Connection | None = None,
     execution_tier: int = 0,
     prefer_gpu: bool = True,
 ) -> DiscoveryWorker:

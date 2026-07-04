@@ -821,7 +821,6 @@ function LibraryManagement() {
 - [ ] Migrate AdminPage to useConfirm
 - [ ] Migrate CalibrationPage to useConfirm
 - [ ] Migrate LibraryManagement to useConfirm
-- [ ] Migrate InspectTagsPage to useConfirm
 - [ ] Migrate TaggerStatusPage to useConfirm
 - [ ] Delete old useConfirmDialog hook (after all migrated)
 

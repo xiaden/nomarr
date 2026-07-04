@@ -238,7 +238,27 @@ class LibraryAdminMixin:
         file_write_mode: str | None = None,
         library_auto_write: bool | None = None,
     ) -> LibraryDict:
-        """Update library metadata (name, enabled, watch_mode, file_write_mode)."""
+        """Update library metadata fields.
+
+        Only the provided keyword arguments are updated; omitted fields are
+        left unchanged. Delegates to the ``UpdateLibraryMetadataComp``
+        component for persistence.
+
+        Args:
+            library_id: Library document ``_id`` to update.
+            name: Optional new display name for the library.
+            is_enabled: Optionally enable or disable the library.
+            watch_mode: Optional watch mode (e.g. ``"polling"``, ``"inotify"``).
+            file_write_mode: Optional file write mode (``"none"``, ``"minimal"``, ``"full"``).
+            library_auto_write: When True, tags are written automatically after
+                ML processing completes.
+
+        Returns:
+            Updated LibraryDict with the current library state.
+
+        Raises:
+            ValueError: If the library does not exist.
+        """
         self._get_library_or_error(library_id)
         UpdateLibraryMetadataComp(self.db).update(
             library_id,
@@ -253,5 +273,13 @@ class LibraryAdminMixin:
         return LibraryDict(**updated)
 
     def clear_library_data(self) -> None:
-        """Clear all library data (files, tags, scan queue)."""
+        """Clear all library data (files, tags, scan queue).
+
+        Wipes all library files, tags, edges, vectors, scan records, and
+        pipeline states from the database. Requires no scans to be running.
+        Intended for use when a full re-import is needed.
+
+        Raises:
+            RuntimeError: If a library scan is currently running.
+        """
         clear_library_data(db=self.db, library_root=self.cfg.library_root)

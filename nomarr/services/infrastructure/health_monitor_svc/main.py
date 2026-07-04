@@ -8,7 +8,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from multiprocessing.connection import wait
+from multiprocessing.connection import Connection, wait
 from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dto.health_dto import (
@@ -74,7 +74,7 @@ class HealthMonitorService(StateTransitionOpsMixin, DeadlineOpsMixin):
         self,
         component_id: str,
         handler: ComponentLifecycleHandler,
-        pipe_conn: Any,
+        pipe_conn: Connection,
         policy: ComponentPolicy | None = None,
     ) -> None:
         """Register a component to monitor.
@@ -275,6 +275,8 @@ class HealthMonitorService(StateTransitionOpsMixin, DeadlineOpsMixin):
 
             # Process ready pipes
             for conn in ready:
+                if not isinstance(conn, Connection):
+                    continue
                 component_id = pipe_map.get(conn)
                 if not component_id:
                     continue
@@ -286,7 +288,7 @@ class HealthMonitorService(StateTransitionOpsMixin, DeadlineOpsMixin):
                 self._check_all_deadlines(now)
                 last_staleness_check = now
 
-    def _read_pipe(self, component_id: str, conn: Any) -> None:
+    def _read_pipe(self, component_id: str, conn: Connection) -> None:
         """Read and process data from a pipe."""
         try:
             data = conn.recv()

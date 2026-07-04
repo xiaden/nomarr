@@ -1,7 +1,7 @@
 import MusicNote from "@mui/icons-material/MusicNote";
 import { Alert, Box, List, ListItem, ListItemIcon, ListItemText, Stack, Typography } from "@mui/material";
 import { PieChart } from "@mui/x-charts/PieChart";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
     ErrorMessage,
@@ -50,8 +50,16 @@ export function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<ProgressTracking | null>(null);
 
+  const updateProgressTracking = useCallback((status: WorkStatus) => {
+    setProgress({
+      totalFiles: status.total_files,
+      processedCount: status.processed_files,
+      filesPerMinute: status.files_per_minute,
+      estimatedMinutesRemaining: status.estimated_minutes_remaining,
+    });
+  }, []);
 
-  const loadDashboard = async () => {
+  const loadDashboard = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -76,21 +84,11 @@ export function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const updateProgressTracking = (status: WorkStatus) => {
-    setProgress({
-      totalFiles: status.total_files,
-      processedCount: status.processed_files,
-      filesPerMinute: status.files_per_minute,
-      estimatedMinutesRemaining: status.estimated_minutes_remaining,
-    });
-  };
+  }, [updateProgressTracking]);
 
   useEffect(() => {
     loadDashboard();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadDashboard]);
 
   // Adaptive polling: 1s when busy (scanning or processing), 30s when idle
   useEffect(() => {
@@ -112,7 +110,7 @@ export function DashboardPage() {
     }, pollInterval);
 
     return () => clearInterval(interval);
-  }, [workStatus]);
+  }, [workStatus, updateProgressTracking]);
 
   const formatETA = (minutes: number | null): string => {
     if (minutes === null || minutes <= 0) return "—";

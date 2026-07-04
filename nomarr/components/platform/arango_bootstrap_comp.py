@@ -177,7 +177,7 @@ def _create_indexes(db: SafeDatabase) -> None:
                 idx_def.fields,
                 unique=idx_def.unique,
                 sparse=idx_def.sparse,
-                expireAfter=idx_def.expire_after,
+                expire_after=idx_def.expire_after,
             )
 
 
@@ -188,7 +188,7 @@ def _ensure_index(
     fields: list[str],
     unique: bool = False,
     sparse: bool = False,
-    expireAfter: int | None = None,  # noqa: N803
+    expire_after: int | None = None,
 ) -> None:
     """Create index if it doesn't exist.
 
@@ -199,7 +199,7 @@ def _ensure_index(
         fields: Fields to index
         unique: Whether index is unique
         sparse: Whether to only index non-null values
-        expireAfter: TTL expiration seconds (for ttl indexes)
+        expire_after: TTL expiration seconds (for ttl indexes)
 
     """
     try:
@@ -207,7 +207,7 @@ def _ensure_index(
 
         if index_type == "ttl":
             # TTL indexes use a different method
-            expiry_time = expireAfter if expireAfter is not None else 0
+            expiry_time = expire_after if expire_after is not None else 0
             coll.add_ttl_index(fields=fields, expiry_time=expiry_time)
         else:
             # Persistent, hash, etc.

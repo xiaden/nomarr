@@ -22,6 +22,8 @@ from nomarr.persistence.schema import CollectionNames
 from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
 from nomarr.services.domain.vector_search_svc import VectorSearchService
 
+pytestmark = pytest.mark.integration
+
 
 def _make_vector_key(file_id: str, model_suite_hash: str) -> str:
     """Match the deterministic key strategy from vectors_track operations."""
@@ -676,6 +678,7 @@ def test_promote_twice_keeps_cold_collection_convergent(
         vector=[0.6, 0.7, 0.8],
         num_segments=3,
     )
+
     service.promote_and_rebuild("effnet", nlists=16)
 
     assert vector_harness.cold_count("effnet") == 1
