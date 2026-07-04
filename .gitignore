@@ -114,6 +114,11 @@ build/
 frontend/dist/
 frontend/build/
 
+# Empty working directories (mount points, local state)
+docker/media/
+nomarr/components/library/libraries/
+scripts/embedding_research/scripts/
+
 # Environment variables
 .env
 .env.local
@@ -162,3 +167,6 @@ build_resources/models-prepatch/
 .continue/
 
 .devcontainer/
+
+# v2 prototype (local only)
+v2/

@@ -3,7 +3,6 @@
 
 # But keep directory structure via .gitkeep
 !.gitignore
-!*/
 !**/.gitkeep
 
 # ADRs are stable architectural decisions — always committed

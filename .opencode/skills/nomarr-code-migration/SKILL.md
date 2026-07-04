@@ -1,6 +1,6 @@
 ---
-name: code-migration
-description: Use when moving logic between layers, deprecating patterns, refactoring responsibilities, or enforcing canonical owners. Ensures migrations are complete with no legacy coexistence.
+name: nomarr-code-migration
+description: Use when moving logic between layers, deprecating patterns, refactoring responsibilities, or enforcing canonical owners in nomarr. Ensures migrations are complete with no legacy coexistence.
 ---
 
 # Code Migration
