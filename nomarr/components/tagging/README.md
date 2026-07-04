@@ -22,6 +22,10 @@ Tag reading, writing, normalization, aggregation, and mood tier computation for 
  | `tagging_remove_comp` | Remove all namespaced tags from a file (MP3 TXXX, MP4 freeform, Vorbis) |
  | `tag_normalization_comp` | Normalize format-specific tags (ID3, MP4, Vorbis) to canonical names |
  | `tag_parsing_comp` | Parse tag value strings into typed lists (JSON, semicolons, floats, ints) |
+ | `tag_query_comp` | Query and match files by tag, resolve short-to-versioned tag keys |
+ | `tag_stats_comp` | Tag frequency and value count statistics |
+ | `tag_write_comp` | Find-or-create tags by name+value, tag upsert operations |
+ | `tag_cleanup_comp` | Remove orphaned tags not referenced by any song |
  | `tagging_aggregation_comp` | Aggregate HeadOutputs into mood-strict/regular/loose with conflict suppression |
  | `tagging_reconstruction_comp` | Reconstruct HeadOutputs from DB statistics for re-aggregation after calibration |
  | `mood_labels_comp` | Normalize model labels (non_*→ not_*) |

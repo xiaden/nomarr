@@ -14,6 +14,7 @@ from nomarr.components.library.file_tags_comp import get_file_tags_with_path
 from nomarr.components.library.library_file_state_comp import get_errored_file_ids, transition_file_state
 from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.components.library.library_root_comp import resolve_path_within_library
+from nomarr.components.library.reconcile_paths_comp import ReconcilePolicy
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
     STATE_NOT_ERRORED,
@@ -103,7 +104,7 @@ class LibraryFilesMixin:
     def reconcile_library_paths(
         self,
         library_id: str,
-        policy: str = "mark_invalid",
+        policy: ReconcilePolicy = "mark_invalid",
         batch_size: int = 1000,
     ) -> ReconcileResult:
         """Re-validate all library paths against current configuration.
@@ -147,7 +148,7 @@ class LibraryFilesMixin:
             db=self.db,
             library_id=library_id,
             library_root=self.cfg.library_root,
-            policy=policy,  # type: ignore[arg-type]
+            policy=policy,
             batch_size=batch_size,
         )
 

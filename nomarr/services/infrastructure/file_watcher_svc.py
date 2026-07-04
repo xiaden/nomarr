@@ -88,8 +88,11 @@ class LibraryEventHandler(FileSystemEventHandler):
         if event.is_directory:
             return
 
-        # Get path
-        path = Path(str(event.src_path))  # type: ignore[arg-type]
+        # Get path — watchdog types src_path as bytes | str
+        src_path = event.src_path
+        if isinstance(src_path, bytes):
+            src_path = src_path.decode()
+        path = Path(src_path)
 
         # Filter: only relevant file types
         if not self._is_relevant_file(path):

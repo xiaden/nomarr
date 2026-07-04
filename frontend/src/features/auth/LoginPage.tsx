@@ -1,3 +1,12 @@
+import {
+  Alert,
+  Box,
+  Button,
+  CircularProgress,
+  Paper,
+  TextField,
+  Typography,
+} from "@mui/material";
 import React from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -42,86 +51,64 @@ export function LoginPage() {
   };
 
   return (
-    <div
-      style={{
+    <Box
+      sx={{
         display: "flex",
         justifyContent: "center",
         alignItems: "center",
         minHeight: "100vh",
-        backgroundColor: "#1a1a1a",
+        bgcolor: "background.default",
       }}
     >
-      <div
-        style={{
-          backgroundColor: "#2a2a2a",
-          padding: "2rem",
-          borderRadius: "8px",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+      <Paper
+        elevation={3}
+        sx={{
+          p: 4,
           width: "100%",
-          maxWidth: "400px",
+          maxWidth: 400,
         }}
       >
-        <h1 style={{ marginBottom: "1.5rem", textAlign: "center", color: "#fff" }}>
+        <Typography
+          variant="h4"
+          component="h1"
+          sx={{ mb: 3, textAlign: "center" }}
+        >
           Nomarr Login
-        </h1>
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: "1rem" }}>
-            <label
-              htmlFor="password"
-              style={{ display: "block", marginBottom: "0.5rem", color: "#ccc" }}
-            >
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={loading}
-              required
-              style={{
-                width: "100%",
-                padding: "0.5rem",
-                border: "1px solid #444",
-                borderRadius: "4px",
-                fontSize: "1rem",
-                backgroundColor: "#333",
-                color: "#fff",
-              }}
-            />
-          </div>
-          {error && (
-            <div
-              style={{
-                marginBottom: "1rem",
-                padding: "0.75rem",
-                backgroundColor: "#fee",
-                border: "1px solid #fcc",
-                borderRadius: "4px",
-                color: "#c33",
-              }}
-            >
-              {error}
-            </div>
-          )}
-          <button
-            type="submit"
+        </Typography>
+
+        <Box component="form" onSubmit={handleSubmit}>
+          <TextField
+            id="password"
+            type="password"
+            label="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             disabled={loading}
-            style={{
-              width: "100%",
-              padding: "0.75rem",
-              backgroundColor: loading ? "#ccc" : "#007bff",
-              color: "white",
-              border: "none",
-              borderRadius: "4px",
-              fontSize: "1rem",
-              cursor: loading ? "not-allowed" : "pointer",
-            }}
+            required
+            fullWidth
+            size="medium"
+            sx={{ mb: 2 }}
+          />
+
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={loading}
+            fullWidth
+            size="large"
+            sx={{ py: 1.5 }}
+            startIcon={loading ? <CircularProgress size={20} color="inherit" /> : undefined}
           >
             {loading ? "Logging in..." : "Login"}
-          </button>
-        </form>
-      </div>
-    </div>
+          </Button>
+        </Box>
+      </Paper>
+    </Box>
   );
 }

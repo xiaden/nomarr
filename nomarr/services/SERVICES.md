@@ -50,7 +50,6 @@ services/domain/
 │   └── write.py                # Tag write operations
 ├── vector_maintenance_svc.py   # Vector index maintenance
 ├── vector_search_svc.py        # Vector similarity search
-├── _library_mapping.py         # Internal library ID mapping
 └── library_svc/                # Library management (multi-file)
     ├── admin.py                # Add/remove libraries
     ├── config.py               # Library configuration
@@ -80,6 +79,7 @@ services/infrastructure/
 ├── info_svc.py                 # System information
 ├── keys_svc.py                 # API key management
 ├── ml_svc.py                   # ML backend management
+├── pipeline_svc.py             # Library pipeline orchestration
 ├── worker_system_svc/          # Worker lifecycle management (subpackage with mixins)
 │   ├── __init__.py             # Re-exports WorkerSystemService
 │   ├── _helpers.py             # Shared constants
@@ -87,7 +87,8 @@ services/infrastructure/
 │   ├── gpu_admission_ops.py    # GPU admission mixin
 │   └── worker_death_ops.py     # Worker death handling mixin
 └── workers/                    # Worker implementations
-    └── discovery_worker.py     # File discovery worker
+    ├── discovery_worker.py     # File discovery worker
+    └── tag_extraction_worker.py # Tag extraction from audio files
 ```
 
 **Naming rules:**

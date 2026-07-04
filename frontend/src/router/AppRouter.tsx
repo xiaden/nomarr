@@ -1,3 +1,4 @@
+import { Box, CircularProgress, Typography } from "@mui/material";
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
@@ -46,7 +47,7 @@ export function AppRouter() {
   return (
     <BrowserRouter>
       <AuthManager />
-      <Suspense fallback={<div style={{ padding: "20px" }}>Loading...</div>}>
+      <Suspense fallback={<Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "200px" }}><CircularProgress size={24} /><Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>Loading...</Typography></Box>}>
         <Routes>
           {/* Public Routes */}
           <Route

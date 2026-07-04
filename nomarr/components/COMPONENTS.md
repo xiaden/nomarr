@@ -37,34 +37,36 @@ components/
 │   ├── health_comp.py                # Health monitoring
 │   └── path_comp.py                  # Path resolution utilities
 │
-├── library/
+  ├── library/
 │   ├── file_batch_scanner_comp.py     # Batch file scanning
-│   ├── file_library_comp.py           # File–library associations
 │   ├── file_sync_comp.py              # File synchronization
 │   ├── file_tags_comp.py              # File tag operations
 │   ├── folder_analysis_comp.py        # Folder structure analysis
 │   ├── library_admin_comp.py          # Library CRUD
-│   ├── library_file_query_comp.py     # File query operations (split into 2 modules)
+│   ├── library_file_mutation_comp.py  # File insert/update/delete, batch ops
+│   ├── library_file_query_comp.py     # File query operations
+│   ├── library_file_state_comp.py     # File state transitions and membership
 │   ├── library_file_tag_queries_comp.py # Tag enrichment queries
+│   ├── library_id_comp.py             # Library ID normalization
+│   ├── library_records_comp.py        # Library record CRUD and queries
 │   ├── library_root_comp.py           # Root path operations
+│   ├── library_scan_file_ops_comp.py  # File/folder scan operations
+│   ├── library_scan_state_comp.py     # Pipeline state management
+│   ├── library_watch_config_comp.py   # Watchable library config resolution
 │   ├── list_libraries_comp.py         # Library listing
 │   ├── metadata_extraction_comp.py    # Audio metadata extraction
 │   ├── missing_file_detection_comp.py # Detect removed files
 │   ├── move_detection_comp.py         # Detect moved files
 │   ├── reconcile_paths_comp.py        # Path reconciliation
-│   ├── scan_lifecycle_comp.py         # Scan orchestration (split into 3 modules)
-│   ├── library_scan_state_comp.py     # Pipeline state management
-│   ├── library_scan_file_ops_comp.py  # File/folder scan operations
+│   ├── reconciliation_comp.py         # File claim/release for reconciliation
+│   ├── scan_lifecycle_comp.py         # Scan orchestration
 │   ├── search_files_comp.py           # File search
-│   ├── tag_cleanup_comp.py            # Orphan tag cleanup
+│   ├── tag_hydration_comp.py          # Hydrate songs with metadata from tags
 │   ├── update_library_metadata_comp.py # Library metadata updates
-│   ├── validate_scan_state_comp.py    # Scan state validation
 │   └── work_status_comp.py            # Work queue status
 │
-├── metadata/
-│   ├── entity_cleanup_comp.py         # Entity cleanup
-│   ├── entity_seeding_comp.py         # Entity seeding
-│   └── metadata_cache_comp.py         # Metadata caching
+  ├── metadata/
+│   └── entity_seeding_comp.py         # Entity seeding
 │
 ├── ml/
 │   ├── audio/
@@ -83,7 +85,7 @@ components/
 │   │   ├── ml_heads_comp.py           # Head management
 │   │   └── ml_output_stream_store_comp.py # Canonical raw output stream persistence
 │   │
-│   ├── onnx/
+  │   ├── onnx/
 │   │   ├── ml_backbone.py             # ONNX backbone model wrapper
 │   │   ├── ml_base.py                 # ONNX base model class
 │   │   ├── ml_cache.py                # Model/session caching
@@ -91,6 +93,7 @@ components/
 │   │   ├── ml_discovery_comp.py       # Model file discovery
 │   │   ├── ml_head.py                 # ONNX head model wrapper
 │   │   ├── ml_known_models_comp.py    # Known model registry
+│   │   ├── ml_model_registry_comp.py  # Model registration and output labeling
 │   │   └── ml_session_comp.py         # ONNX session management
 │   │
 │   ├── resources/
@@ -101,15 +104,18 @@ components/
 │   │   ├── ml_vram_probe_comp.py      # VRAM probing
 │   │   └── ml_worker_context_comp.py  # Worker context management
 │   │
-│   └── vectors/
+  │   └── vectors/
 │       ├── ml_vector_idle_promotion_comp.py  # Idle vector promotion
 │       ├── ml_vector_maintenance_comp.py     # Vector maintenance
 │       ├── ml_vector_persist_comp.py         # Vector persistence
 │       ├── ml_vector_pool_comp.py            # Vector pool management
+│       ├── ml_vector_registry_comp.py        # Hot/cold namespace and bulk delete
 │       └── ml_vector_retrieve_comp.py        # Vector retrieval
 │
-├── navidrome/
+  ├── navidrome/
+│   ├── descriptor_match_comp.py       # Track descriptor build and resolve
 │   ├── m3u_comp.py                    # M3U playlist generation
+│   ├── navidrome_graph_comp.py        # Navidrome track/file edge management
 │   ├── playlist_builder_comp.py        # Smart playlist building
 │   ├── subsonic_client_comp.py         # Subsonic API client
 │   ├── subsonic_crawl_comp.py          # Subsonic library crawling
@@ -117,11 +123,12 @@ components/
 │   ├── taste_profile_comp.py          # User taste profiling
 │   └── templates_comp.py              # Playlist template handling
 │
-├── platform/
+  ├── platform/
 │   ├── arango_bootstrap_comp.py       # ArangoDB initialization
 │   ├── arango_first_run_comp.py       # First-run provisioning
 │   ├── gpu_monitor_comp.py            # GPU monitoring
 │   ├── gpu_probe_comp.py              # GPU detection
+│   ├── locks_comp.py                  # Distributed locking
 │   ├── migration_runner_comp.py        # Database migration runner
 │   └── resource_monitor_comp.py        # System resource monitoring
 │
@@ -135,11 +142,15 @@ components/
 ├── processing/
 │   └── file_write_comp.py             # File write operations
 │
-├── tagging/
+  ├── tagging/
 │   ├── mood_labels_comp.py            # Mood label definitions
 │   ├── safe_write_comp.py             # Safe tag writing
+│   ├── tag_cleanup_comp.py            # Orphan tag cleanup
 │   ├── tag_normalization_comp.py      # Tag normalization
 │   ├── tag_parsing_comp.py            # Tag parsing
+│   ├── tag_query_comp.py              # Tag query and file matching
+│   ├── tag_stats_comp.py              # Tag frequency/value count stats
+│   ├── tag_write_comp.py              # Tag find-or-create helpers
 │   ├── tagging_aggregation_comp.py    # Tag aggregation
 │   ├── tagging_reader_comp.py         # Tag reading
 │   ├── tagging_reconstruction_comp.py # Tag reconstruction

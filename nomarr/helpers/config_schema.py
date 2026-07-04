@@ -13,7 +13,7 @@ Architecture:
 
 import dataclasses
 from dataclasses import dataclass
-from typing import Literal, TypedDict
+from typing import Literal, TypedDict, cast
 
 # ---------------------------------------------------------------------------
 # Static config — set once via file / ENV, never changed at runtime
@@ -310,7 +310,7 @@ def validate_library_config(data: dict[str, object]) -> LibraryConfigFields:
         if mode not in _VALID_WRITE_MODES:
             msg = f"Invalid file_write_mode: {mode!r} (must be one of {sorted(_VALID_WRITE_MODES)})"
             raise ValueError(msg)
-        result["file_write_mode"] = mode  # type: ignore[typeddict-item]
+        result["file_write_mode"] = cast("Literal['none', 'minimal', 'full']", mode)
 
     if "vector_group_size" in data:
         gs = data["vector_group_size"]

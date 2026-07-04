@@ -18,21 +18,29 @@ File and library management — scanning, syncing, metadata extraction, move det
  | -------- | ---------- |
  | `library_admin_comp` | Library create/update/delete with name generation and validation |
  | `library_root_comp` | Root path normalization, security boundary checks, overlap prevention |
+ | `library_id_comp` | Library key/ID normalization utilities |
+ | `library_records_comp` | Library record CRUD, listing, path-based lookup, config field updates |
+ | `library_watch_config_comp` | Resolve watchable library configuration |
  | `list_libraries_comp` | List libraries with optional enabled-only filtering |
  | `update_library_metadata_comp` | Update library metadata fields (name, enabled, watch mode, write mode) |
  | `folder_analysis_comp` | Discover folders with audio files, plan incremental vs full scans |
  | `file_batch_scanner_comp` | Scan a single folder: enumerate files, extract metadata, build upsert entries |
- | `scan_lifecycle_comp` | Scan start/complete marks, progress updates, file upserts, folder cache, interrupt detection |
- | `validate_scan_state_comp` | Heal edge state for unchanged files (e.g., short files without ml_tagged edge) |
- | `file_sync_comp` | Single-file operations: upsert, get, mark tagged, save tags, set chromaprint |
- | `file_library_comp` | Look up which library owns a given file |
+ | `scan_lifecycle_comp` | Scan start/complete marks, progress updates, interrupt detection |
+ | `library_scan_file_ops_comp` | Persist scanned files/folders, bootstrap file states, remove deleted files |
+ | `library_scan_state_comp` | Pipeline axis transitions, scan state persistence |
+ | `library_file_mutation_comp` | Single-file insert/update/delete, batch upserts, path/time updates |
+ | `library_file_query_comp` | File queries (paginated listing, search, tag hydration, stats) |
+ | `library_file_tag_queries_comp` | Tag-enriched file queries, search and count by tag |
+ | `library_file_state_comp` | File state transitions, discovery of next file to process, bulk state ops |
+ | `file_sync_comp` | Single-file operations: mark tagged, save tags, set chromaprint |
  | `file_tags_comp` | Retrieve all tags for a file with optional Nomarr-only filtering |
+ | `tag_hydration_comp` | Hydrate songs with canonical metadata from tags |
  | `metadata_extraction_comp` | Extract metadata from audio files (mutagen-based: MP3/MP4/FLAC), resolve artists, compute chromaprints |
  | `missing_file_detection_comp` | Folder-aware detection of files removed from disk (respects skipped folders) |
  | `move_detection_comp` | Chromaprint-based move detection with duration pre-filter and early termination |
  | `reconcile_paths_comp` | Re-validate all library paths after config changes (dry-run, mark-invalid, or delete) |
+ | `reconciliation_comp` | Claim/release files for reconciliation, count files needing reconciliation |
  | `search_files_comp` | Search library files with filtering; list unique tag keys/values |
- | `tag_cleanup_comp` | Remove orphaned tags not referenced by any song |
  | `work_status_comp` | Compute unified work status (scanning progress, tagging velocity) |
 
 ## Patterns

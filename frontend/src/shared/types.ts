@@ -39,26 +39,6 @@ export interface ScanResult {
   };
 }
 
-export interface LibraryFile {
-  file_id: string; // HTTP-encoded Arango _id (e.g., "library_files:123")
-  library_id: string; // HTTP-encoded Arango _id (e.g., "libraries:123")
-  path: string;
-  file_size?: number;
-  modified_time?: number;
-  duration_seconds?: number;
-  artist?: string;
-  album?: string;
-  title?: string;
-  calibration?: string;
-  scanned_at?: number;
-  tagged: boolean; // Arango boolean
-  tagged_version?: string;
-  skip_auto_tag: boolean; // Arango boolean
-  created_at?: string | number;
-  updated_at?: string | number;
-  tags?: FileTag[]; // Tags included in some responses
-}
-
 // ──────────────────────────────────────────────────────────────────────
 // Tags Types
 // ──────────────────────────────────────────────────────────────────────

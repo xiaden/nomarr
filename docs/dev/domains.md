@@ -62,22 +62,19 @@ Direct persistence access is **private** to the domain. Other domains CANNOT cal
 
 ```python
 # ✅ GOOD — Component imports persistence
-# components/library/file_library_comp.py
+# components/library/library_file_mutation_comp.py
 from nomarr.persistence.db import Database
 
-def add_file(db: Database, library_id: str, file_path: str) -> dict:
-    library = db.libraries.get(library_id)
-    if not is_under_root(file_path, library["root_path"]):
-        raise ValueError("Path not under library root")
-    return db.library_files.insert({"path": file_path, ...})
+def upsert_library_file(db: Database, library_id: str, file_path: str) -> dict:
+    return db.library_files.upsert({"path": file_path, ...})
 
 # ✅ GOOD — Workflow calls component
 # workflows/library/scan_library_full_wf.py
-from nomarr.components.library.file_library_comp import add_file
+from nomarr.components.library import upsert_library_file
 
 def scan_library(db, library_id):
     for path in discovered:
-        add_file(db, library_id, path)
+        upsert_library_file(db, library_id, path)
 
 # ❌ BAD — Workflow imports persistence
 db.library_files.insert(...)  # BYPASSES INVARIANTS!
@@ -125,7 +122,7 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 
 **Key components:**
 
-- `file_library_comp.py` — Add/update files with path validation
+- `library_file_mutation_comp.py` — Add/update files with path validation
 - `file_batch_scanner_comp.py` — Batch file discovery
 - `scan_lifecycle_comp.py` — Scan state management
 - `move_detection_comp.py` — Match chromaprints for moved files
@@ -150,7 +147,6 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 **Key components:**
 
 - `entity_seeding_comp.py` — Create entity vertices and edges from tags
-- `entity_cleanup_comp.py` — Remove orphaned entities
 - `metadata_cache_comp.py` — Metadata cache management
 
 ---
