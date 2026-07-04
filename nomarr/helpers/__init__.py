@@ -1,4 +1,28 @@
-"""Helpers package."""
+"""Helpers layer — pure utility code and cross-cutting data structures.
+
+Helpers are leaf utilities with no layer-level dependencies. They provide:
+
+- **DTOs** (``dto/``) — Domain-specific data-transfer objects used as contracts
+  between all layers (interfaces → services → workflows → components).
+- **Time utilities** (``time_helper.py``) — Type-safe wall-clock and monotonic
+  time with distinct ``Milliseconds``/``Seconds`` newtypes.
+- **File utilities** (``files_helper.py``, ``file_validation_helper.py``) —
+  Library path resolution with security validation and audio file collection.
+- **Exceptions** (``exceptions.py``) — Shared exception hierarchy across layers.
+- **Logging** (``logging_helper.py``) — Structured context logging with
+  sanitized exception messages.
+- **Vector params** (``vector_params_helper.py``) — ArangoDB ANN index
+  parameter computation (nLists, nProbe).
+- **Configuration** (``config_schema.py``) — Static/dynamic config models and
+  validation.
+- **Constants** (``constants/``) — Domain constants for file states and pipeline
+  axes shared across layers.
+
+Rules:
+- No I/O beyond what stdlib provides (no DB, no network).
+- No imports from services, workflows, or components.
+- Pure functions and dataclasses only.
+"""
 
 from .dto.processing_dto import ProcessorConfig, TagWriteProfile
 from .exceptions import MisconfiguredError

@@ -137,10 +137,10 @@ def _seed_file_states(db: SafeDatabase) -> None:
 
     Idempotent — inserts only if the document is missing.
     """
-    coll = db.collection(CollectionNames.FILE_STATES.value)  # type: ignore[union-attr]
+    coll = db.collection(CollectionNames.FILE_STATES.value)
     for vertex in ALL_STATE_VERTICES:
         with contextlib.suppress(DocumentInsertError):
-            coll.insert({"_key": vertex.split("/")[1]})  # type: ignore[union-attr]
+            coll.insert({"_key": vertex.split("/")[1]})
 
 
 def _seed_pipeline_states(db: SafeDatabase) -> None:
@@ -305,9 +305,9 @@ def _create_vectors_track_collections(db: SafeDatabase, models_dir: str) -> None
         collection_name = f"vectors_track_hot__{backbone}"
         created_collection = False
 
-        if not db.has_collection(collection_name):  # type: ignore[union-attr]
+        if not db.has_collection(collection_name):
             with contextlib.suppress(CollectionCreateError):
-                db.create_collection(collection_name)  # type: ignore[union-attr]
+                db.create_collection(collection_name)
                 created_collection = True
 
         _ensure_index(db, collection_name, "persistent", ["_key"], unique=True)

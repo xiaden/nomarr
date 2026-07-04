@@ -99,10 +99,10 @@ The backend sends updates for:
 All backend response types are defined in TypeScript:
 
 - `AuthResult` - Login response with session token
-- `QueueJob` - Individual queue job with status/timestamps
-- `QueueSummary` - Queue counts by status
 - `SSEMessage` - Server-Sent Event message shape
 - `LibraryStats` - Library statistics
+- `FileTag` - Tag key/value/type with nomarr flag
+- `LibraryFile` - Library file metadata
 - And more...
 
 ## Building Blocks

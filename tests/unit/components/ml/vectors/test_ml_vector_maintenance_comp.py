@@ -101,9 +101,76 @@ class TestBackfillGenres:
 
 
 class TestDeriveEmbedDim:
-    """Tests for ``derive_embed_dim``."""
+    """Tests for ``derive_embed_dim``.
+
+    Because ``onnxruntime`` may not be installed in every test environment,
+    the happy-path is exercised with mocks, not a real ONNX session.
+    """
+
+    PATCH_BASE = f"{PATCH_BASE}"
 
     @pytest.mark.unit
-    @pytest.mark.skip(reason="requires onnxruntime")
-    def test_requires_onnxruntime(self) -> None:
-        derive_embed_dim("/models", "ast")
+    @pytest.mark.mocked
+    def test_raises_value_error_when_embedding_graph_not_found(self) -> None:
+        """When _resolve_embedding_graph returns None, raises ValueError."""
+        with (
+            patch(f"{self.PATCH_BASE}._resolve_embedding_graph", return_value=None),
+            pytest.raises(ValueError, match="No embedding graph found"),
+        ):
+            derive_embed_dim("/fake/models", "nonexistent")
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_dim_when_onnx_session_has_embeddings_output(self) -> None:
+        """Valid ONNX session with 'embeddings' output returns its last dimension."""
+        mock_session = MagicMock()
+        mock_output = MagicMock()
+        mock_output.name = "embeddings"
+        mock_output.shape = [1, 1280]
+        mock_session.get_outputs.return_value = [mock_output]
+
+        mock_ort = MagicMock()
+        mock_ort.InferenceSession.return_value = mock_session
+
+        with (
+            patch(f"{self.PATCH_BASE}._resolve_embedding_graph", return_value="/fake/backbone.onnx"),
+            patch.dict("sys.modules", {"onnxruntime": mock_ort}),
+        ):
+            result = derive_embed_dim("/fake/models", "ast")
+
+        assert result == 1280
+        mock_ort.InferenceSession.assert_called_once_with("/fake/backbone.onnx", providers=["CPUExecutionProvider"])
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_raises_value_error_when_onnx_session_fails(self) -> None:
+        """When InferenceSession raises, it's wrapped in a ValueError."""
+        mock_ort = MagicMock()
+        mock_ort.InferenceSession.side_effect = RuntimeError("ONNX load failed")
+
+        with (
+            patch(f"{self.PATCH_BASE}._resolve_embedding_graph", return_value="/fake/backbone.onnx"),
+            patch.dict("sys.modules", {"onnxruntime": mock_ort}),
+            pytest.raises(ValueError, match="Failed to probe embedding graph"),
+        ):
+            derive_embed_dim("/fake/models", "ast")
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_raises_value_error_when_no_embeddings_output_found(self) -> None:
+        """When ONNX session has no output named 'embeddings', raises ValueError."""
+        mock_session = MagicMock()
+        mock_output = MagicMock()
+        mock_output.name = "logits"
+        mock_output.shape = [1, 50]
+        mock_session.get_outputs.return_value = [mock_output]
+
+        mock_ort = MagicMock()
+        mock_ort.InferenceSession.return_value = mock_session
+
+        with (
+            patch(f"{self.PATCH_BASE}._resolve_embedding_graph", return_value="/fake/backbone.onnx"),
+            patch.dict("sys.modules", {"onnxruntime": mock_ort}),
+            pytest.raises(ValueError, match="Cannot determine embed_dim"),
+        ):
+            derive_embed_dim("/fake/models", "ast")

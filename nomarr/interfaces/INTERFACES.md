@@ -32,9 +32,11 @@ Interfaces sit at the **top** of the dependency chain:
 
 ```text
 interfaces/
-├── INTERFACE_STATUS.md              # Migration/refactor tracking
+├── INTERFACES.md                    # This document
 │
 ├── api/
+│   ├── README.md                    # API application layer overview
+│   ├── INTERFACE_STATUS.md          # Migration/refactor tracking
 │   ├── api_app.py                   # FastAPI app configuration
 │   ├── auth.py                      # Authentication utilities
 │   ├── id_codec.py                  # URL-safe ID encoding/decoding
@@ -49,17 +51,17 @@ interfaces/
 │   │   ├── ml_types.py              # ML types
 │   │   ├── navidrome_types.py       # Navidrome types
 │   │   ├── playlist_import_types.py # Playlist import types
-│   │   ├── processing_types.py      # Processing types
 │   │   └── vector_types.py          # Vector types
 │   │
 │   ├── v1/                          # API v1 route handlers
-│   │   ├── admin_if.py              # Admin endpoints
+│   │   ├── admin_if.py              # Admin endpoints (shell router)
 │   │   ├── navidrome_v1_if.py       # Navidrome v1 endpoints
 │   │   └── public_if.py             # Public endpoints
 │   │
 │   └── web/                         # Web UI route handlers
 │       ├── router.py                # Web router aggregation
 │       ├── dependencies.py          # FastAPI dependency providers
+│       ├── admin_if.py              # Restart endpoint
 │       ├── analytics_if.py          # Analytics routes
 │       ├── api_key_if.py            # API key management
 │       ├── auth_if.py               # Authentication routes
@@ -68,16 +70,18 @@ interfaces/
 │       ├── fs_if.py                 # File system routes
 │       ├── info_if.py               # System info routes
 │       ├── library_if.py            # Library routes
+│       ├── library_files_if.py      # Library file/tag search routes
+│       ├── library_scan_if.py       # Library scan, repair, reconcile routes
 │       ├── metadata_if.py           # Metadata routes
 │       ├── ml_if.py                 # ML routes
 │       ├── navidrome_if.py          # Navidrome routes
 │       ├── playlist_import_if.py    # Playlist import routes
-│       ├── processing_if.py         # Processing routes
+│       ├── tag_curation_if.py       # Tag curation (rename/merge/split) routes
 │       ├── tags_if.py               # Tag routes
-│       ├── vectors_if.py            # Vector routes
-│       └── worker_if.py             # Worker routes
+│       └── vectors_if.py            # Vector routes
 │
 └── cli/
+    ├── README.md                    # CLI interface overview
     ├── cli_main.py                  # CLI entry point
     ├── cli_ui.py                    # CLI UI utilities
     └── commands/                    # CLI command implementations
@@ -90,7 +94,7 @@ interfaces/
 - Route handlers: `<domain>_if.py` (e.g., `library_if.py`, `ml_if.py`)
 - Type files: `<domain>_types.py` (e.g., `library_types.py`, `ml_types.py`)
 - CLI commands: `<domain>_cli.py` (e.g., `cleanup_cli.py`)
-- Refer to `INTERFACE_STATUS.md` for migration/refactor status of individual interfaces
+- Refer to `api/INTERFACE_STATUS.md` for migration/refactor status of individual interfaces
 
 ---
 

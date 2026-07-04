@@ -13,6 +13,7 @@ import json
 import logging
 import multiprocessing
 from dataclasses import dataclass
+from multiprocessing.connection import Connection
 from typing import TYPE_CHECKING
 
 from nomarr.components.platform.gpu_monitor_comp import (
@@ -115,9 +116,7 @@ class InfoService:
 
         # GPU monitor state (owned by InfoService)
         self._gpu_monitor: GPUHealthMonitor | None = None
-        self._gpu_pipe_parent: multiprocessing.connection.Connection | None = (
-            None  # Parent end of pipe for HealthMonitor
-        )
+        self._gpu_pipe_parent: Connection | None = None  # Parent end of pipe for HealthMonitor
         self._gpu_lifecycle_handler: _GPUMonitorLifecycleHandler | None = None
 
     # ----------------------------- Lifecycle ---------------------------------
@@ -146,13 +145,14 @@ class InfoService:
         # Create and start GPU monitor
         self._gpu_monitor = GPUHealthMonitor(
             probe_interval=GPU_PROBE_INTERVAL_SECONDS,
-            health_pipe=child_conn,  # type: ignore[arg-type]
+            health_pipe=child_conn,
         )
         self._gpu_monitor.start()
         logger.debug("[InfoService] Started GPUHealthMonitor subprocess")
 
         # Register with HealthMonitorService if available
         if self.cfg.health_monitor:
+            assert self._gpu_pipe_parent is not None, "pipe must be created before registration"
             self._gpu_lifecycle_handler = _GPUMonitorLifecycleHandler(self)
             policy = ComponentPolicy(
                 startup_timeout_s=30.0,  # GPU probe may take time on cold start

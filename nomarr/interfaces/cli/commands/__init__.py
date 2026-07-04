@@ -1,13 +1,14 @@
-"""Commands package."""
+"""CLI commands subpackage.
 
-from .admin_reset_cli import cmd_admin_reset
+Provides CLI subcommand implementations for the ``nom`` entry-point:
+- ``cleanup`` — Remove orphaned entities (artists, albums, genres, etc.)
+- ``manage-password`` — Show, verify, or reset the admin web UI password
+"""
+
 from .cleanup_cli import cmd_cleanup
 from .manage_password_cli import cmd_manage_password
-from .remove_cli import cmd_remove
 
 __all__ = [
-    "cmd_admin_reset",
     "cmd_cleanup",
     "cmd_manage_password",
-    "cmd_remove",
 ]

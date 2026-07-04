@@ -115,9 +115,9 @@ export default defineConfig([
     },
   },
 
-  // Allow fetch in shared/api.ts specifically
+  // Allow fetch in shared/api/ (the centralized API client)
   {
-    files: ["src/shared/api.ts"],
+    files: ["src/shared/api/**"],
     rules: {
       "no-restricted-globals": "off",
     },

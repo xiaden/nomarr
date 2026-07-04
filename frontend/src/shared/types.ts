@@ -6,29 +6,6 @@
  */
 
 // ──────────────────────────────────────────────────────────────────────
-// Queue Types
-// ──────────────────────────────────────────────────────────────────────
-
-export interface QueueJob {
-  id: string; // HTTP-encoded Arango _id (e.g., "queue:123")
-  path: string;
-  status: "pending" | "running" | "done" | "error";
-  created_at: number; // Unix timestamp
-  started_at?: number | null; // Unix timestamp
-  finished_at?: number | null; // Unix timestamp
-  error_message?: string | null;
-  results_json?: string | null;
-  force: boolean; // Arango boolean
-}
-
-export interface QueueSummary {
-  pending: number;
-  running: number;
-  completed: number;
-  errors: number;
-}
-
-// ──────────────────────────────────────────────────────────────────────
 // Library Types
 // ──────────────────────────────────────────────────────────────────────
 
@@ -83,21 +60,6 @@ export interface LibraryFile {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Admin Types
-// ──────────────────────────────────────────────────────────────────────
-
-export interface RemoveJobsResult {
-  removed: number;
-  status: string;
-}
-
-export interface ResetJobsResult {
-  status: string;
-  message: string;
-  reset: number;
-}
-
-// ──────────────────────────────────────────────────────────────────────
 // Tags Types
 // ──────────────────────────────────────────────────────────────────────
 
@@ -108,17 +70,6 @@ export interface FileTag {
   is_nomarr: boolean;
 }
 
-export interface TagCleanupResult {
-  orphaned_count: number;
-  deleted_count: number;
-}
-
-export interface FileTagsResult {
-  file_id: string; // Arango _id
-  path: string;
-  tags: FileTag[];
-}
-
 // ──────────────────────────────────────────────────────────────────────
 // Filesystem Types
 // ──────────────────────────────────────────────────────────────────────
@@ -126,11 +77,6 @@ export interface FileTagsResult {
 export interface FsEntry {
   name: string;
   is_dir: boolean;
-}
-
-export interface FsListResponse {
-  path: string; // Relative path from library root
-  entries: FsEntry[];
 }
 
 // ──────────────────────────────────────────────────────────────────────

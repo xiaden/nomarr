@@ -6,14 +6,14 @@ Thread-safe within a single process. Each process creates its own pool.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from arango.client import ArangoClient
+from arango.collection import StandardCollection
 from arango.database import StandardDatabase
 
 if TYPE_CHECKING:
     from arango.aql import AQL
-    from arango.collection import StandardCollection
 
 # =============================================================================
 # JSON Serialization Boundary
@@ -132,7 +132,15 @@ class SafeDatabase:
 
     def collection(self, name: str) -> StandardCollection:
         """Get a collection by name. Explicitly typed for mypy compatibility."""
-        return self._db.collection(name)  # type: ignore[return-value]
+        return self._db.collection(name)
+
+    def has_collection(self, name: str) -> bool:
+        """Check if a collection exists. Sync path — returns bool."""
+        return cast("bool", self._db.has_collection(name))
+
+    def create_collection(self, name: str, **kwargs: Any) -> StandardCollection:
+        """Create a collection. Sync path — returns StandardCollection."""
+        return cast("StandardCollection", self._db.create_collection(name, **kwargs))
 
     def __getattr__(self, name: str) -> Any:
         """Proxy all other attributes to the underlying database."""
