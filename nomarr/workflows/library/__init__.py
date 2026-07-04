@@ -1,4 +1,9 @@
-"""Library package."""
+"""Library workflows — scan, reconcile, sync, and file I/O orchestration.
+
+Workflows that compose library components into full pipelines:
+library scanning (quick/full), path reconciliation, file tag I/O,
+orphan cleanup, and file-to-library sync.
+"""
 
 from .cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
 from .file_tags_io_wf import read_file_tags_workflow, remove_file_tags_workflow

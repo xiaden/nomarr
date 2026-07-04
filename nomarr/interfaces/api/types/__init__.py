@@ -1,4 +1,9 @@
-"""Types package."""
+"""API type definitions — Pydantic response/request models for the FastAPI layer.
+
+Organized by domain: analytics_types, config_types, info_types,
+library_types, metadata_types, and navidrome_types. These models
+define the wire format for all REST API endpoints.
+"""
 
 from .analytics_types import (
     MoodDistributionItemResponse,

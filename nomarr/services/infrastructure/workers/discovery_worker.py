@@ -194,7 +194,7 @@ class DiscoveryWorker(multiprocessing.Process):
         """Run worker startup, connect to the database, and return initialized runtime state."""
         import faulthandler
 
-        import setproctitle  # type: ignore[import-untyped]
+        import setproctitle
 
         from nomarr.components.ml.audio.ml_audio_comp import set_stop_event
         from nomarr.components.ml.onnx.ml_session_comp import is_available as ml_is_available

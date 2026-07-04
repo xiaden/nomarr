@@ -1,4 +1,13 @@
-"""Domain package."""
+"""Domain services — business logic service classes with DI wiring.
+
+Provides the domain service layer for the application:
+- ``AnalyticsService`` — library-wide analytics computations
+- ``CalibrationService`` — calibration lifecycle management
+- ``LibraryService`` — library CRUD, scanning, queries, file operations
+- ``MetadataService`` — entity navigation and metadata operations
+- ``NavidromeService`` — playlist generation and Navidrome integration
+- ``TaggingService`` — calibrated tag writing and curation
+"""
 
 from .analytics_svc import AnalyticsConfig, AnalyticsService
 from .calibration_svc import CalibrationConfig, CalibrationService

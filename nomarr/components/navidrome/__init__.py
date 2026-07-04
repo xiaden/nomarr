@@ -1,4 +1,9 @@
-"""Navidrome package."""
+"""Navidrome components — playlist building, templates, and tag queries.
+
+Components for generating Navidrome playlists (familiar, discovery, hidden
+gems, genre-based, universal), playlist templates, tag-to-track queries,
+and taste-profile computation from play history.
+"""
 
 from .playlist_builder_comp import (
     build_discovery_playlist,

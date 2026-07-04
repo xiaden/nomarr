@@ -3,26 +3,10 @@
  */
 
 import { Alert, Snackbar } from "@mui/material";
-import { createContext, useState } from "react";
+import { useState } from "react";
 
-interface Notification {
-  message: string;
-  severity: "success" | "error" | "warning" | "info";
-  duration?: number;
-}
-
-interface NotificationContextType {
-  showNotification: (notification: Notification) => void;
-  showSuccess: (message: string) => void;
-  showError: (message: string) => void;
-  showWarning: (message: string) => void;
-  showInfo: (message: string) => void;
-}
-
-// eslint-disable-next-line react-refresh/only-export-components
-export const NotificationContext = createContext<NotificationContextType | undefined>(
-  undefined
-);
+import type { Notification } from "./NotificationContext";
+import { NotificationContext } from "./NotificationContext";
 
 export function NotificationProvider({
   children,

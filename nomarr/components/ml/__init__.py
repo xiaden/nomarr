@@ -1,4 +1,9 @@
-"""Ml package."""
+"""ML components — audio loading, ONNX inference, calibration, and vectors.
+
+Top-level ML package re-exports the most commonly-used symbols from sub-packages:
+audio loading, minmax calibration, capacity probing, tier selection, and
+VRAM coordination.
+"""
 
 from .audio.ml_audio_comp import (
     AudioLoadCrashError,

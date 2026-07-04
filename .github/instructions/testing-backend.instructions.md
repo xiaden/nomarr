@@ -214,11 +214,12 @@ Integration tests verify multiple components working together. They may use real
 ```python
 @pytest.mark.integration
 @pytest.mark.requires_database
-def test_library_scan_discovers_files(test_db, good_library_root) -> None:
-    """Library scan workflow should discover all audio files in fixture library."""
+def test_library_scan_discovers_files(test_db, tmp_path) -> None:
+    """Library scan workflow should discover all audio files in test directory."""
+    (tmp_path / "song.mp3").write_bytes(b"fake audio")
     result = scan_library_full_workflow(
         db=test_db,
-        library_root=str(good_library_root),
+        library_root=str(tmp_path),
     )
     assert result["files_scanned"] > 0
 ```
@@ -229,10 +230,12 @@ def test_library_scan_discovers_files(test_db, good_library_root) -> None:
 
 ### Root conftest.py
 
-Shared fixtures live in `tests/conftest.py`:
+Minimal shared fixtures live in `tests/conftest.py`. Only add fixtures here
+when they are genuinely shared by multiple test files. Prefer local fixtures
+or ``tmp_path`` when possible.
 
-- `good_library_root` — path to `tests/fixtures/library/good/`
-- `good_library_paths` — dict of known fixture file paths
+> **Note:** Legacy fixtures (``good_library_root``, ``bad_library_root``,
+> ``good_library_paths``) were removed as they were unused by any test.
 
 ### Layer-Specific conftest.py
 

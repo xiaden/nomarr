@@ -6,11 +6,11 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from mutagen.flac import FLAC  # type: ignore[import-untyped]
-from mutagen.id3 import ID3, ID3NoHeaderError  # type: ignore[import-untyped]
-from mutagen.mp4 import MP4  # type: ignore[import-untyped]
-from mutagen.oggopus import OggOpus  # type: ignore[import-untyped]
-from mutagen.oggvorbis import OggVorbis  # type: ignore[import-untyped]
+from mutagen.flac import FLAC
+from mutagen.id3 import ID3, ID3NoHeaderError
+from mutagen.mp4 import MP4
+from mutagen.oggopus import OggOpus
+from mutagen.oggvorbis import OggVorbis
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.path_dto import LibraryPath

@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-import mutagen  # type: ignore[import-untyped]
+import mutagen
 
 from nomarr.helpers.dto.tags_dto import Tag, Tags, TagValue
 

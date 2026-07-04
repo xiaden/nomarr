@@ -1,4 +1,9 @@
-"""Calibration package."""
+"""Calibration workflows — histogram generation, apply, export, and import.
+
+Full calibration lifecycle workflows: generating minmax calibration
+histograms from ML output streams, applying calibration to files,
+exporting/importing calibration bundles, and writing calibrated tags.
+"""
 
 from .apply_calibration_wf import ApplyProgressCallback, apply_calibration_wf
 from .calibration_loader_wf import load_calibrations_from_db_wf

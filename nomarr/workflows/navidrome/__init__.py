@@ -1,4 +1,9 @@
-"""Navidrome package."""
+"""Navidrome workflows — playlist generation, smart playlist parsing, and config.
+
+Orchestrates Navidrome integration: generating smart/static playlists,
+parsing smart playlist queries, previewing tag statistics, and creating
+Navidrome configuration files.
+"""
 
 from .filter_engine_wf import execute_smart_playlist_filter
 from .generate_navidrome_config_wf import generate_navidrome_config_workflow

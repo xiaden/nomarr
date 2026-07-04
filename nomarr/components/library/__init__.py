@@ -1,4 +1,9 @@
-"""Library package."""
+"""Library components — file management, scanning, metadata, and queries.
+
+Core library domain components covering file mutation/queries, folder
+discovery, scan lifecycle, path reconciliation, metadata extraction,
+chromaprint computation, file state transitions, and tag hydration.
+"""
 
 from .file_sync_comp import mark_file_processed, save_file_tags
 from .file_tags_comp import get_file_tags_with_path

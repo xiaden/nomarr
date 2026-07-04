@@ -44,8 +44,8 @@ async def web_analytics_tag_frequencies(
 
 @router.get("/mood-distribution", dependencies=[Depends(verify_session)])
 async def web_analytics_mood_distribution(
+    analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)],
     library_id: str | None = None,
-    analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)] = None,  # type: ignore[assignment]
 ) -> MoodDistributionResponse:
     """Get mood tag distribution.
 
@@ -85,8 +85,8 @@ async def web_analytics_tag_correlations(
 @router.post("/tag-co-occurrences", dependencies=[Depends(verify_session)])
 async def web_analytics_tag_co_occurrences(
     request: TagCoOccurrenceRequest,
+    analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)],
     library_id: str | None = None,
-    analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)] = None,  # type: ignore[assignment]
 ) -> TagCoOccurrencesResponse:
     """Get tag co-occurrence matrix for arbitrary tag sets.
 
@@ -121,8 +121,8 @@ async def web_analytics_tag_co_occurrences(
 
 @router.get("/collection-overview", dependencies=[Depends(verify_session)])
 async def web_analytics_collection_overview(
+    analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)],
     library_id: str | None = None,
-    analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)] = None,  # type: ignore[assignment]
 ) -> CollectionOverviewResponse:
     """Get collection overview statistics.
 
@@ -146,8 +146,8 @@ async def web_analytics_collection_overview(
 
 @router.get("/mood-analysis", dependencies=[Depends(verify_session)])
 async def web_analytics_mood_analysis(
+    analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)],
     library_id: str | None = None,
-    analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)] = None,  # type: ignore[assignment]
 ) -> MoodAnalysisResponse:
     """Get mood analysis statistics.
 

@@ -1,4 +1,9 @@
-"""Tagging package."""
+"""Tagging components — tag normalization, reading, writing, and aggregation.
+
+Low-level tag I/O components: reading/writing/removing audio file tags,
+tag normalization across formats (MP4, ID3, Vorbis), mood label
+normalization, and tag aggregation/calibration.
+"""
 
 from .mood_labels_comp import normalize_tag_label
 from .tag_normalization_comp import (
