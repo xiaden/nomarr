@@ -236,7 +236,7 @@ export function ServerFilePicker({
 
       {!loading && !error && entries.length > 0 && (
         <ul className="entries-list">
-          {entries.map((entry, index) => {
+          {entries.map((entry) => {
             const selectable = isEntrySelectable(entry);
             const isSelected =
               value &&
@@ -244,7 +244,7 @@ export function ServerFilePicker({
                 (currentPath ? `${currentPath}/${entry.name}` : entry.name);
 
             return (
-              <li key={index} className="entry-item">
+              <li key={entry.name} className="entry-item">
                 <button
                   type="button"
                   className={`entry-button ${

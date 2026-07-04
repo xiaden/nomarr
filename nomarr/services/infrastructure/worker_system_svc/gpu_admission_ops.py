@@ -5,7 +5,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from nomarr.components.ml.resources.ml_capacity_probe_comp import get_or_run_capacity_probe
+from nomarr.components.ml.resources.ml_capacity_probe_comp import (
+    CapacityEstimate,
+    get_or_run_capacity_probe,
+)
 from nomarr.components.ml.resources.ml_tier_selection_comp import (
     TIER_CONFIGS,
     ExecutionTier,
@@ -37,7 +40,7 @@ class GpuAdmissionOpsMixin:
     processor_config: ProcessorConfig
     worker_count: int
     _gpu_capable: bool | None
-    _capacity_estimate: object | None
+    _capacity_estimate: CapacityEstimate | None
     _tier_selection: TierSelection | None
 
     def _check_gpu_capability(self) -> bool:

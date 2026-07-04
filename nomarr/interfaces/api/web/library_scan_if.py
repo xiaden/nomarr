@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from nomarr.components.library.reconcile_paths_comp import ReconcilePolicy
 from nomarr.helpers.exceptions import LibraryAlreadyScanningError, LibraryNotFoundError
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
@@ -112,7 +113,7 @@ async def repair_library_tags(
 async def reconcile_library_paths(
     library_id: str,
     policy: Annotated[
-        str,
+        ReconcilePolicy,
         Query(description="Policy for invalid paths: dry_run, mark_invalid, delete_invalid"),
     ] = "mark_invalid",
     batch_size: Annotated[int, Query(description="Number of files to process per batch", ge=1, le=10000)] = 1000,

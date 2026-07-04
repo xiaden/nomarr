@@ -291,13 +291,13 @@ export function VectorSearchPage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {results.map((result, idx) => {
+                  {results.map((result) => {
                     const meta = trackMeta[result.file_id];
                     const title = meta?.title ?? meta?.path?.split("/").pop() ?? result.file_id;
                     const artist = meta?.artist ?? "—";
                     const album = meta?.album ?? "—";
                     return (
-                      <TableRow key={idx}>
+                      <TableRow key={result.file_id}>
                         <TableCell>
                           <Typography
                             component={Link}

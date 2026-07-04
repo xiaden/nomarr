@@ -262,12 +262,19 @@ class TagWriter:
     """Format-aware tag writer.
 
     respects:
-    - overwrite: if True, clears only existing '<namespace>:' tags before writing
+    - overwrite: if True, clears only existing ``<namespace>:`` tags before writing
     - full precision: numeric values are written as unrounded strings
-    - namespace: every key is written as '<namespace>:<key>' exactly once.
+    - namespace: every key is written as ``<namespace>:<key>`` exactly once.
     """
 
     def __init__(self, overwrite: bool = True, namespace: str = "nom") -> None:
+        """Initialize the format-aware tag writer.
+
+        Args:
+            overwrite: If True, clears existing ``<namespace>:`` tags before
+                writing new ones.  If False, merges with existing tags.
+            namespace: Namespace prefix for tags (typically ``"nom"``).
+        """
         self.overwrite = overwrite
         self.namespace = namespace
         self._mp3 = _MP3Writer(overwrite=overwrite, ns_prefix=namespace)

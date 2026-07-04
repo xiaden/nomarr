@@ -109,7 +109,7 @@ export function ComboBox({
         >
           {filteredOptions.map((option, index) => (
             <Box
-              key={index}
+              key={option}
               onClick={() => handleOptionClick(option)}
               sx={{
                 p: 1.5,

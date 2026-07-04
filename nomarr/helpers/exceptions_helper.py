@@ -1,9 +1,7 @@
-"""Custom exceptions used across multiple layers.
+"""Deprecated — use ``nomarr.helpers.exceptions`` instead.
 
-Rules:
-- Only put exceptions here if they need to be raised in one layer and caught in another.
-- Keep exceptions simple and focused.
-- No I/O, no config loading, no complex logic.
+This module was a duplicate of ``exceptions.py`` and has no importers.
+All canonical exception definitions live in ``nomarr.helpers.exceptions``.
 """
 
 from __future__ import annotations

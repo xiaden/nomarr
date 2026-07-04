@@ -136,6 +136,9 @@ def safe_write_tags(
         library_path: The original file to modify
         library_root: Root path of the library (for temp folder location)
         write_fn: Function that writes tags to a Path (called on temp copy)
+        expected_mtime_ms: Modification time of the original file in milliseconds
+            when the caller last read it.  If the actual mtime has changed the
+            write is aborted to avoid overwriting external modifications.
 
     Returns:
         SafeWriteResult with success status

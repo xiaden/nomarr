@@ -46,7 +46,6 @@ components/
 │   ├── library_file_mutation_comp.py  # File insert/update/delete, batch ops
 │   ├── library_file_query_comp.py     # File query operations
 │   ├── library_file_state_comp.py     # File state transitions and membership
-│   ├── library_file_tag_queries_comp.py # Tag enrichment queries
 │   ├── library_id_comp.py             # Library ID normalization
 │   ├── library_records_comp.py        # Library record CRUD and queries
 │   ├── library_root_comp.py           # Root path operations

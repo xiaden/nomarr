@@ -30,8 +30,7 @@ File and library management — scanning, syncing, metadata extraction, move det
  | `library_scan_state_comp` | Pipeline axis transitions, scan state persistence |
  | `library_file_mutation_comp` | Single-file insert/update/delete, batch upserts, path/time updates |
  | `library_file_query_comp` | File queries (paginated listing, search, tag hydration, stats) |
- | `library_file_tag_queries_comp` | Tag-enriched file queries, search and count by tag |
- | `library_file_state_comp` | File state transitions, discovery of next file to process, bulk state ops |
+  | `library_file_state_comp` | File state transitions, discovery of next file to process, bulk state ops |
  | `file_sync_comp` | Single-file operations: mark tagged, save tags, set chromaprint |
  | `file_tags_comp` | Retrieve all tags for a file with optional Nomarr-only filtering |
  | `tag_hydration_comp` | Hydrate songs with canonical metadata from tags |

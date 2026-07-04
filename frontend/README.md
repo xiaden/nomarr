@@ -94,15 +94,14 @@ The backend sends updates for:
 - Active job state
 - Worker state
 
-## Type Definitions (`shared/types.ts`)
+## Type Definitions
 
-All backend response types are defined in TypeScript:
+Backend response types are defined across `shared/types.ts` and `shared/api/*.ts` modules:
 
-- `AuthResult` - Login response with session token
-- `SSEMessage` - Server-Sent Event message shape
-- `LibraryStats` - Library statistics
-- `FileTag` - Tag key/value/type with nomarr flag
-- `LibraryFile` - Library file metadata
+- `Library` - Library metadata and scan status (`shared/types.ts`)
+- `LibraryStats` - Library statistics (`shared/api/library.ts`)
+- `LibraryFile`, `FileTag` - File metadata and tag types (`shared/api/files.ts`)
+- `Entity`, `EntityListResult` - Metadata entity types (`shared/types.ts`)
 - And more...
 
 ## Building Blocks

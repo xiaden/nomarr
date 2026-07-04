@@ -65,6 +65,15 @@ class LibraryPipelineService:
         tagging_svc: TaggingService,
         navidrome_svc: NavidromeService,
     ) -> None:
+        """Initialize the pipeline service with required dependencies.
+
+        Args:
+            db: ArangoDB database instance for state queries.
+            bts: Background task service for scheduled work dispatch.
+            calibration_svc: Calibration service for histogram generation dispatch.
+            tagging_svc: Tagging service for write-background dispatch.
+            navidrome_svc: Navidrome service for post-write rescan triggers.
+        """
         self.db = db
         self.bts = bts
         self.calibration_svc = calibration_svc
@@ -78,6 +87,10 @@ class LibraryPipelineService:
         - scan: scanning with no task → not_scanned
         - calibration: calibrating with no task → not_calibrated
         - tag_write: writing with no task → not_written
+
+        Returns:
+            Dict with counts per axis: ``{"scanning": int, "calibrating": int,
+            "writing": int}``.
         """
         recovery_counts: dict[str, int] = {
             "scanning": 0,
@@ -153,7 +166,12 @@ class LibraryPipelineService:
         return recovered
 
     def trigger_calibration(self) -> None:
-        """Start calibration for libraries in not_calibrated state."""
+        """Start calibration for libraries in not_calibrated state.
+
+        If calibration data already exists in the database the axis is advanced
+        directly to ``calibrating`` and apply is dispatched.  Otherwise histogram
+        calibration generation is started via ``CalibrationService``.
+        """
         calibration_exists = len(self.db.ml.list_calibration_states()) > 0
         calibrating_count = bulk_transition_pipeline_axis(
             self.db,
@@ -180,7 +198,14 @@ class LibraryPipelineService:
         self.calibration_svc.start_histogram_calibration_background()
 
     def on_calibration_complete(self) -> None:
-        """Mark calibration axis as complete and dispatch apply."""
+        """Mark calibration axis as complete and dispatch apply.
+
+        Transitions all libraries in ``calibrating`` state to ``calibrated``
+        and kicks off the calibration-apply pipeline step.
+
+        This callback is wired to ``CalibrationService.set_post_generation_hook``
+        during startup.
+        """
         count = bulk_transition_pipeline_axis(
             self.db,
             CAL_STATE_FIELD,
@@ -247,7 +272,19 @@ class LibraryPipelineService:
                 )
 
     def get_pipeline_status(self, library_id: str) -> LibraryPipelineStatusDTO | None:
-        """Return state-aware pipeline status details for a library."""
+        """Return state-aware pipeline status details for a library.
+
+        Queries all four pipeline axes (scan, ML, calibration, tag-write) and
+        enriches with domain-specific counts (untagged files, uncalibrated tags,
+        pending writes).
+
+        Args:
+            library_id: Library document ``_id`` (e.g. ``"libraries/lib1"``).
+
+        Returns:
+            ``LibraryPipelineStatusDTO`` with per-axis state and optional
+            domain counts, or ``None`` if the library does not exist.
+        """
         library = get_library_record(self.db, library_id, include_scan=False)
         if library is None:
             return None
