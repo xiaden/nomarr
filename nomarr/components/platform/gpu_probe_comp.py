@@ -1,14 +1,4 @@
-"""GPU availability probe component.
-
-Platform-level component that checks GPU accessibility via nvidia-smi subprocess
-with hard timeouts to prevent blocking when driver is wedged.
-
-Architecture:
-- Leaf component (no upward imports, no DB access)
-- Returns simple dict results for consumption by services/workflows
-- Subprocess calls with timeouts to avoid hanging
-- No TensorFlow/CUDA library imports (driver-level check only)
-"""
+"""GPU availability probe via nvidia-smi with hard timeouts to prevent driver-wedge blocking."""
 
 from __future__ import annotations
 
@@ -21,7 +11,7 @@ from nomarr.helpers.time_helper import internal_ms
 logger = logging.getLogger(__name__)
 
 # Probe constants
-NVIDIA_SMI_TIMEOUT_SECONDS = 5.0  # Hard timeout for nvidia-smi subprocess
+NVIDIA_SMI_TIMEOUT_SECONDS = 5.0
 
 # State tracking for logging (only log on state changes)
 _last_gpu_state: dict[str, bool | str | None] = {
@@ -62,8 +52,6 @@ def probe_gpu_availability(timeout: float = NVIDIA_SMI_TIMEOUT_SECONDS) -> dict[
     probe_start = internal_ms()
 
     try:
-        # Run nvidia-smi with minimal output and hard timeout
-        # --query-gpu=name just checks that driver can enumerate GPUs
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
             capture_output=True,
@@ -74,7 +62,6 @@ def probe_gpu_availability(timeout: float = NVIDIA_SMI_TIMEOUT_SECONDS) -> dict[
 
         duration_ms = internal_ms().value - probe_start.value
 
-        # Success - GPU responded
         if result.stdout.strip():
             # Only log on state change
             if _last_gpu_state["available"] is not True:
@@ -87,7 +74,6 @@ def probe_gpu_availability(timeout: float = NVIDIA_SMI_TIMEOUT_SECONDS) -> dict[
                 "duration_ms": duration_ms,
             }
 
-        # nvidia-smi ran but returned no GPUs
         error_message = "No GPUs detected by nvidia-smi"
         if _last_gpu_state["available"] is not False or _last_gpu_state["last_error"] != error_message:
             logger.warning(f"[gpu_probe] {error_message}")

@@ -1,17 +1,4 @@
-"""Resource monitoring component for GPU/CPU adaptive resource management.
-
-Provides GPU capability gating and resource telemetry with TTL caching.
-This is a leaf component (no upward imports, no DB access).
-
-Architecture:
-- GPU Capability: Checked once at startup via nvidia-smi, cached forever
-- GPU Telemetry: VRAM usage via nvidia-smi with TTL cache (not called until capability confirmed)
-- RAM Telemetry: Process RSS via psutil with TTL cache
-
-Per GPU_REFACTOR_PLAN.md Section 5:
-- A container is GPU-capable iff nvidia-smi succeeds inside the container
-- This check is performed once at startup and cached
-"""
+"""GPU/CPU resource monitoring with TTL-cached VRAM/RAM telemetry and capability gating."""
 
 from __future__ import annotations
 
@@ -29,8 +16,8 @@ from nomarr.helpers.time_helper import internal_ms
 logger = logging.getLogger(__name__)
 
 # Probe configuration
-NVIDIA_SMI_TIMEOUT_S = 5.0  # Hard timeout for nvidia-smi subprocess
-TELEMETRY_CACHE_TTL_MS = 1000  # TTL for VRAM/RAM readings in milliseconds
+NVIDIA_SMI_TIMEOUT_S = 5.0
+TELEMETRY_CACHE_TTL_MS = 1000
 
 # Cached telemetry state
 _vram_cache: dict[str, Any] | None = None
@@ -63,21 +50,7 @@ class ResourceStatus:
 
 
 def check_nvidia_gpu_capability(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> bool:
-    """Check if NVIDIA GPU is available in-container (capability signal, not telemetry).
-
-    Per GPU_REFACTOR_PLAN.md Section 5:
-    - A container is GPU-capable iff nvidia-smi succeeds inside the container
-    - This check is performed once at startup and cached
-
-    This function is idempotent - repeated calls return cached result.
-
-    Args:
-        timeout: Maximum seconds to wait for nvidia-smi
-
-    Returns:
-        True if GPU is available (nvidia-smi succeeded), False otherwise
-
-    """
+    """Check if NVIDIA GPU is available in-container. Idempotent — repeated calls return cached result."""
     global _gpu_capable_cache
 
     # Return cached result if already checked
@@ -87,7 +60,6 @@ def check_nvidia_gpu_capability(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> bool:
     probe_start = internal_ms()
 
     try:
-        # Run nvidia-smi with minimal output and hard timeout
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
             capture_output=True,
@@ -98,7 +70,6 @@ def check_nvidia_gpu_capability(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> bool:
 
         duration_ms = internal_ms().value - probe_start.value
 
-        # Success if nvidia-smi ran and returned GPU name(s)
         if result.stdout.strip():
             logger.debug(
                 "[resource_monitor] NVIDIA GPU detected (%s) - GPU tiers enabled (%dms)",
@@ -147,20 +118,7 @@ def check_nvidia_gpu_capability(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> bool:
 
 
 def get_vram_usage_mb(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> dict[str, Any]:
-    """Query VRAM usage via nvidia-smi (GPU telemetry, cached with TTL).
-
-    Only call this after confirming GPU capability via check_nvidia_gpu_capability().
-
-    Args:
-        timeout: Maximum seconds to wait for nvidia-smi
-
-    Returns:
-        Dict with:
-            - used_mb: int - VRAM used in MB
-            - total_mb: int - Total VRAM in MB
-            - error: str | None - Error message if query failed
-
-    """
+    """Query VRAM usage via nvidia-smi. Only call after confirming GPU capability."""
     global _vram_cache, _vram_cache_ts
 
     now = internal_ms().value
@@ -183,7 +141,6 @@ def get_vram_usage_mb(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> dict[str, Any]:
             check=True,
         )
 
-        # Parse output: "1234, 8192" per line (used, total in MiB)
         lines = result.stdout.strip().split("\n")
         total_used_mb = 0
         total_capacity_mb = 0
@@ -221,16 +178,7 @@ def get_vram_usage_mb(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> dict[str, Any]:
 
 
 def get_vram_usage_for_pid_mb(pid: int, timeout: float = NVIDIA_SMI_TIMEOUT_S) -> int:
-    """Query VRAM usage for a specific process via nvidia-smi.
-
-    Args:
-        pid: Process ID to query
-        timeout: Maximum seconds to wait for nvidia-smi
-
-    Returns:
-        VRAM used by the process in MB, or 0 if not found/error
-
-    """
+    """Query VRAM usage for a specific process via nvidia-smi."""
     try:
         result = subprocess.run(
             [
@@ -244,7 +192,6 @@ def get_vram_usage_for_pid_mb(pid: int, timeout: float = NVIDIA_SMI_TIMEOUT_S) -
             check=True,
         )
 
-        # Parse output: "1234, 8192" per line (pid, used_memory in MiB)
         for line in result.stdout.strip().split("\n"):
             if "," in line:
                 parts = line.split(",")
@@ -264,21 +211,7 @@ def get_vram_usage_for_pid_mb(pid: int, timeout: float = NVIDIA_SMI_TIMEOUT_S) -
 
 
 def get_ram_usage_mb(detection_mode: str = "auto") -> dict[str, Any]:
-    """Query RAM usage (process RSS) via psutil with TTL caching.
-
-    Args:
-        detection_mode: How to detect RAM usage:
-            - "auto": Try cgroup first (Docker), fall back to host
-            - "cgroup": Use cgroup memory stats only (Docker)
-            - "host": Use host memory stats only
-
-    Returns:
-        Dict with:
-            - used_mb: int - RAM used by this process in MB
-            - available_mb: int - Available system RAM in MB
-            - error: str | None - Error message if query failed
-
-    """
+    """Query RAM usage (process RSS) via psutil with TTL caching."""
     global _ram_cache, _ram_cache_ts
 
     now = internal_ms().value
@@ -300,7 +233,6 @@ def get_ram_usage_mb(detection_mode: str = "auto") -> dict[str, Any]:
             mem = psutil.virtual_memory()
             available_mb = mem.available // (1024 * 1024)
         else:  # auto
-            # Try cgroup first (Docker), fall back to host
             cgroup_mb = _get_cgroup_available_mb()
             if cgroup_mb > 0:
                 available_mb = cgroup_mb
@@ -330,12 +262,7 @@ def get_ram_usage_mb(detection_mode: str = "auto") -> dict[str, Any]:
 
 
 def _get_cgroup_available_mb() -> int:
-    """Read available memory from cgroup (Docker containers).
-
-    Returns:
-        Available memory in MB, or 0 if not in a cgroup
-
-    """
+    """Read available memory from cgroup (Docker containers)."""
     # Try cgroup v2 first
     cgroup_v2_path = "/sys/fs/cgroup/memory.max"
     cgroup_v2_current = "/sys/fs/cgroup/memory.current"
@@ -381,23 +308,7 @@ def check_resource_headroom(
     ram_estimate_mb: int,
     ram_detection_mode: str = "auto",
 ) -> ResourceStatus:
-    """Check if there's headroom for ML work within configured budgets.
-
-    Per GPU_REFACTOR_PLAN.md Section 6:
-    - Budgets are absolute caps, expressed in MB
-    - Budget semantics: used_mb + estimated_mb <= budget_mb
-
-    Args:
-        vram_budget_mb: Maximum VRAM ML may consume (0 = no GPU budget)
-        ram_budget_mb: Maximum RAM ML may consume
-        vram_estimate_mb: Estimated VRAM for next operation
-        ram_estimate_mb: Estimated RAM for next operation
-        ram_detection_mode: RAM detection mode (auto/cgroup/host)
-
-    Returns:
-        ResourceStatus with headroom assessment
-
-    """
+    """Check if there's headroom for ML work within configured budgets."""
     gpu_capable = check_nvidia_gpu_capability()
 
     # Get current VRAM usage (only if GPU capable and budget > 0)

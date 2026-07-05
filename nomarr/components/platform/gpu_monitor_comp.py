@@ -32,28 +32,15 @@ HEALTH_FRAME_PREFIX = "HEALTH|"
 class GPUHealthMonitor(multiprocessing.Process):
     """Independent GPU health monitoring process.
 
-    Continuously probes GPU availability using nvidia-smi and writes results
-    to DB gpu_resources collection. Sends heartbeat frames to HealthMonitorService
-    for liveness tracking.
-
-    If nvidia-smi hangs (even unkillably), this process may become stuck,
-    but HealthMonitorService will detect missed heartbeats and trigger restart
-    via InfoService callback.
-
-    Process boundary ensures kernel-level driver deadlocks cannot propagate
-    to the main application.
+    Continuously probes GPU availability and writes to DB.
+    Sends heartbeat frames for liveness tracking.
+    Process boundary ensures kernel-level driver deadlocks cannot propagate.
     """
 
     def __init__(
         self, probe_interval: float = GPU_PROBE_INTERVAL_SECONDS, health_pipe: Connection | None = None
     ) -> None:
-        """Initialize GPU health monitor.
-
-        Args:
-            probe_interval: Seconds between GPU probes (default: 15.0)
-            health_pipe: Child end of pipe to send heartbeats to HealthMonitorService
-
-        """
+        """Initialize GPU health monitor."""
         super().__init__(daemon=True, name="GPUHealthMonitor")
         self.probe_interval = probe_interval
         self._health_pipe = health_pipe
@@ -73,11 +60,7 @@ class GPUHealthMonitor(multiprocessing.Process):
             logger.warning(f"[GPUHealthMonitor] Failed to send heartbeat: {e}", exc_info=True)
 
     def run(self) -> None:
-        """Main monitoring loop (runs in separate process).
-
-        Continuously probes GPU, writes resource snapshot to DB, and sends
-        heartbeat frames to HealthMonitorService.
-        """
+        """Main monitoring loop (runs in separate process)."""
 
         logger.info("[GPUHealthMonitor] Starting GPU health monitoring process")
         try:

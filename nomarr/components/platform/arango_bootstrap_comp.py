@@ -53,22 +53,7 @@ def register_template_collection(db: Database, collection_name: str, template_na
 
 
 def wait_for_arango(hosts: str, max_attempts: int = 30, delay_s: float = 2.0) -> bool:
-    """Wait until ArangoDB is reachable.
-
-    The single, canonical place to block startup until the database is up.
-    Uses root credentials from ARANGO_ROOT_PASSWORD; if that env var is not
-    set, the function returns True immediately (dev/test environments that
-    already have the app user configured).
-
-    Args:
-        hosts: ArangoDB server URL(s)
-        max_attempts: Maximum connection attempts (default 30 = 60 seconds)
-        delay_s: Delay between attempts in seconds
-
-    Returns:
-        True if connected, False if timeout
-
-    """
+    """Wait until ArangoDB is reachable using root credentials."""
     root_password = os.getenv("ARANGO_ROOT_PASSWORD")
     if not root_password:
         logger.debug("ARANGO_ROOT_PASSWORD not set, skipping connection wait")
@@ -91,21 +76,7 @@ def wait_for_arango(hosts: str, max_attempts: int = 30, delay_s: float = 2.0) ->
 
 
 def ensure_schema(db: SafeDatabase, *, models_dir: str | None = None) -> None:
-    """Ensure all collections, indexes, and graphs exist (frozen baseline).
-
-    This is a **frozen baseline** representing the schema at the last
-    consolidation point.  It is idempotent and safe to call on every startup,
-    but it must NOT be edited when writing new migrations.
-
-    New schema changes go in a migration file only.  This function is updated
-    only during consolidation (see ``scripts/consolidate_migrations.py``).
-
-    Args:
-        db: ArangoDB database handle
-        models_dir: Path to ML models directory. When provided, creates
-            per-backbone ``vectors_track_hot__{backbone}`` collections.
-
-    """
+    """Ensure all collections, indexes, and graphs exist (frozen baseline, idempotent)."""
     _create_collections(db)
     _create_indexes(db)
     _create_graphs(db)
@@ -190,18 +161,7 @@ def _ensure_index(
     sparse: bool = False,
     expire_after: int | None = None,
 ) -> None:
-    """Create index if it doesn't exist.
-
-    Args:
-        db: Database handle
-        collection: Collection name
-        index_type: Index type ("persistent", "ttl", "hash", etc.)
-        fields: Fields to index
-        unique: Whether index is unique
-        sparse: Whether to only index non-null values
-        expire_after: TTL expiration seconds (for ttl indexes)
-
-    """
+    """Create index if it doesn't exist. Handles 409 and 1210 error codes for idempotency."""
     try:
         coll = db.collection(collection)
 
@@ -257,12 +217,7 @@ def _validate_no_legacy_calibration(db: SafeDatabase) -> None:
 
 
 def _discover_backbone_ids(models_dir: str) -> list[str]:
-    """Discover unique backbone identifiers from the models directory.
-
-    Returns:
-        Sorted list of backbone IDs (e.g., ["effnet", "musicnn", "yamnet"]).
-
-    """
+    """Discover unique backbone identifiers from the models directory."""
     try:
         heads = discover_heads_no_db(models_dir)
         backbones = sorted({h.backbone for h in heads})
@@ -276,17 +231,7 @@ def _discover_backbone_ids(models_dir: str) -> list[str]:
 
 
 def _create_vectors_track_collections(db: SafeDatabase, models_dir: str) -> None:
-    """Create per-backbone ``vectors_track_hot__{backbone}`` collections.
-
-    For each backbone discovered from the models directory, creates a hot
-    collection with persistent indexes on ``_key`` (unique) and ``file_id``.
-
-    Hot collections must never have vector indexes. Use
-    ``promote_and_rebuild_workflow`` to create cold indexes after ML
-    processing completes.
-
-    Idempotent — skips existing collections.
-    """
+    """Create per-backbone vectors_track_hot collections with persistent indexes. Idempotent."""
     try:
         backbones = discover_backbones(models_dir)
     except Exception:

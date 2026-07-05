@@ -16,22 +16,9 @@ class HealthComp:
         self.app: AppDb = db.app
 
     def get_all_workers(self) -> list[dict[str, Any]]:
-        """Get all registered workers from health monitoring.
-
-        Returns:
-            List of worker health records
-
-        """
+        """Get all registered workers from health monitoring."""
         return self.app.list_worker_health()
 
     def get_component(self, component: str) -> dict[str, Any] | None:
-        """Get health status for a specific component.
-
-        Args:
-            component: Component name (e.g., "worker:library:scan")
-
-        Returns:
-            Health record or None if not found
-
-        """
+        """Get health status for a specific component."""
         return self.app.get_health(component)
