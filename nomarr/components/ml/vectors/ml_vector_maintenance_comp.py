@@ -120,7 +120,7 @@ def drain_hot_to_cold(db: DatabaseLike, backbone_id: str, library_key: str) -> i
         RETURN n
         """
     )
-    results: list[int] = [row for row in cursor]
+    results: list[int] = list(cursor)
     drained: int = results[0] if results else 0
 
     # Migrate file_has_vectors edges from hot → cold
@@ -206,7 +206,7 @@ def drop_cold_vector_index(db: DatabaseLike, backbone_id: str, library_key: str)
             idx_id = idx.get("id")
             if idx_id:
                 logger.info("[vectors] Dropping vector index %s from %s", idx_id, cold_name)
-                cast(Any, cold_coll).delete_index(idx_id)
+                cast("Any", cold_coll).delete_index(idx_id)
                 return
 
 
@@ -229,10 +229,7 @@ def has_vector_index(db: DatabaseLike, backbone_id: str, library_key: str) -> bo
     cold_coll = db.collection(cold_name)
     existing_indexes: list[dict[str, Any]] = list(cold_coll.indexes())
 
-    return any(
-        idx.get("type") == "vector"
-        for idx in existing_indexes
-    )
+    return any(idx.get("type") == "vector" for idx in existing_indexes)
 
 
 def build_cold_vector_index(
@@ -273,7 +270,7 @@ def build_cold_vector_index(
     )
 
     try:
-        cast(Any, cold_coll).add_index(
+        cast("Any", cold_coll).add_index(
             {
                 "type": "vector",
                 "fields": ["vector_n"],
@@ -396,7 +393,7 @@ def backfill_genres(db: DatabaseLike, backbone_id: str, library_key: str) -> int
         bind_vars={"@cold_coll": cold_name},
     )
 
-    results: list[int] = [row for row in cursor]
+    results: list[int] = list(cursor)
     count: int = results[0] if results else 0
 
     logger.info(

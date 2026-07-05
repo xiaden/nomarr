@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 _ort: ort | None = None
 try:
     import onnxruntime as _ort_imported
+
     _ort = _ort_imported
 except ImportError:
     pass

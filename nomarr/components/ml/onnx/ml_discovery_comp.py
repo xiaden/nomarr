@@ -20,6 +20,8 @@ from typing import TYPE_CHECKING
 from nomarr.persistence.exceptions import PersistenceError
 
 if TYPE_CHECKING:
+    from nomarr.components.ml.onnx.ml_backbone import ONNXBackboneModel
+    from nomarr.components.ml.onnx.ml_head import ONNXHeadModel
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)

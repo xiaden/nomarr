@@ -86,8 +86,6 @@ def update_library_root(db: Database, base_library_root: str | None, library_id:
     logger.info(f"[LibraryAdmin] Updated library {library_id} root path to {abs_path}")
 
 
-
-
 def delete_library(db: Database, library_id: str) -> bool:
     """Delete a library and all associated data.
 
