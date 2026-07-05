@@ -108,10 +108,7 @@ def discover_backbones(models_dir: str) -> list[str]:
     return sorted(backbones)
 
 
-# ---------------------------------------------------------------------------
 # discover_heads — DB-first with filesystem fallback
-# ---------------------------------------------------------------------------
-
 
 def _discover_heads_from_db(models_dir: str, db: Database) -> list[HeadInfo]:
     """Build :class:`HeadInfo` objects from ``ml_models`` / ``ml_model_outputs``.

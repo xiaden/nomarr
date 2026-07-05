@@ -54,9 +54,7 @@ def load_calibration_state(
     return cast("dict[str, Any] | None", db.ml.get_calibration_state_view(head_name, label))
 
 
-# ---------------------------------------------------------------------------
 # Calibration state CRUD
-# ---------------------------------------------------------------------------
 
 
 def save_calibration_state(
@@ -231,9 +229,7 @@ def delete_old_calibration_history_snapshots(
     return len(stale_ids)
 
 
-# ---------------------------------------------------------------------------
 # Meta: calibration version / last-run
-# ---------------------------------------------------------------------------
 
 
 def get_calibration_version(db: Database) -> str | None:
@@ -259,9 +255,7 @@ def set_calibration_last_run(db: Database, timestamp: str) -> None:
     db.app.update_config_option(key="calibration_last_run", payload={"value": timestamp})
 
 
-# ---------------------------------------------------------------------------
 # Library-file queries related to calibration
-# ---------------------------------------------------------------------------
 
 
 def update_file_calibration_hash(

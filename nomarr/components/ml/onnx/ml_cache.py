@@ -109,20 +109,14 @@ class ONNXModelCache:
             device,
         )
 
-    # ------------------------------------------------------------------
     # Internal helpers
-    # ------------------------------------------------------------------
-
     def _all_models(self) -> Generator[BaseONNXModel, None, None]:
         """Yield all backbone and head models in a consistent order."""
         yield from self.backbones.values()
         for head_list in self.heads.values():
             yield from head_list
 
-    # ------------------------------------------------------------------
     # warm
-    # ------------------------------------------------------------------
-
     @property
     def warm(self) -> bool:
         """``True`` when every model in the cache has a loaded ONNX session.
@@ -158,10 +152,7 @@ class ONNXModelCache:
                 m.unload()
             logger.info("[cache] Unloaded all %d models", self.model_count)
 
-    # ------------------------------------------------------------------
     # device
-    # ------------------------------------------------------------------
-
     @property
     def device(self) -> DevicePlacement:
         """Execution device for all sessions (``"cpu"`` or ``"gpu"``).
@@ -191,10 +182,7 @@ class ONNXModelCache:
             for m in self._all_models():
                 m.device = value
 
-    # ------------------------------------------------------------------
     # Informational
-    # ------------------------------------------------------------------
-
     @property
     def model_count(self) -> int:
         """Total number of backbone + head models in this cache."""
