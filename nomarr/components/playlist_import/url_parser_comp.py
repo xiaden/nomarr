@@ -43,28 +43,13 @@ _DEEZER_SHORT_PATTERN = re.compile(r"(?:https?://)?link\.deezer\.com/")
 def parse_playlist_url(url: str) -> ParsedPlaylistUrl:
     """Extract platform and playlist ID from a streaming service URL.
 
-    Args:
-        url: A Spotify or Deezer playlist URL in any supported format
+    Supports Spotify (open.spotify.com/playlist/{id}, spotify:playlist:{id})
+    and Deezer (deezer.com/playlist/{id}, link.deezer.com short links).
 
-    Returns:
-        ParsedPlaylistUrl with platform, playlist_id, and metadata
-
-    Raises:
-        PlaylistUrlError: If the URL doesn't match any known pattern
-
-    Examples:
-        >>> parse_playlist_url("https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M")
-        ParsedPlaylistUrl(platform='spotify', playlist_id='37i9dQZF1DXcBWIGoYBM5M', ...)
-
-        >>> parse_playlist_url("https://www.deezer.com/playlist/1234567890")
-        ParsedPlaylistUrl(platform='deezer', playlist_id='1234567890', ...)
-
-        >>> parse_playlist_url("https://link.deezer.com/s/32pxbZMVkKIxZyRZwEBEN")
-        ParsedPlaylistUrl(platform='deezer', playlist_id='', is_short_link=True, ...)
+    Raises PlaylistUrlError if the URL doesn't match any known pattern.
     """
     url = url.strip()
 
-    # Try Spotify web URL
     match = _SPOTIFY_WEB_PATTERN.search(url)
     if match:
         return ParsedPlaylistUrl(
@@ -73,7 +58,6 @@ def parse_playlist_url(url: str) -> ParsedPlaylistUrl:
             original_url=url,
         )
 
-    # Try Spotify URI
     match = _SPOTIFY_URI_PATTERN.search(url)
     if match:
         return ParsedPlaylistUrl(
@@ -82,7 +66,6 @@ def parse_playlist_url(url: str) -> ParsedPlaylistUrl:
             original_url=url,
         )
 
-    # Try Deezer web URL
     match = _DEEZER_WEB_PATTERN.search(url)
     if match:
         return ParsedPlaylistUrl(
@@ -91,11 +74,10 @@ def parse_playlist_url(url: str) -> ParsedPlaylistUrl:
             original_url=url,
         )
 
-    # Try Deezer short link (requires later resolution)
     if _DEEZER_SHORT_PATTERN.search(url):
         return ParsedPlaylistUrl(
             platform="deezer",
-            playlist_id="",  # Will be resolved by fetcher
+            playlist_id="",
             original_url=url,
             is_short_link=True,
         )

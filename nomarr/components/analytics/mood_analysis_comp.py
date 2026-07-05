@@ -107,19 +107,7 @@ def _count_moods(mood_values: list[str]) -> list[dict[str, Any]]:
 
 
 def get_mood_and_tier_tags_for_correlation(db: Database) -> dict[str, Any]:
-    """Get raw mood and tier tag rows for correlation analysis.
-
-    Args:
-        db: Database instance used to query mood and tier tag edges.
-
-    Returns:
-        A dictionary with three keys: ``mood_tag_rows`` containing ``(song_id,
-        tag_value)`` tuples for all mood-tag names across the strict,
-        regular, and loose mood tiers; ``tier_tag_keys`` containing the tier
-        tag names discovered in ``tags``; and ``tier_tag_rows`` containing
-        a mapping from each tier tag name to its own list of ``(song_id,
-        tag_value)`` tuples.
-    """
+    """Return raw mood and tier tag rows for correlation analysis."""
     mood_tag_rows: list[tuple[str, str]] = []
     for name in _MOOD_TAG_NAMES:
         mood_tag_rows.extend(_get_tag_edge_rows(db, name))
@@ -133,19 +121,7 @@ def get_mood_and_tier_tags_for_correlation(db: Database) -> dict[str, Any]:
 
 
 def get_mood_distribution_data(db: Database, library_id: str | None = None) -> list[tuple[str, str]]:
-    """Get raw mood rows for distribution analytics.
-
-    Args:
-        db: Database instance used to query mood tags.
-        library_id: Optional library document ``_id``. When provided, only mood
-            tags attached to files contained in that library are included.
-
-    Returns:
-        A list of ``(mood_name, tag_value)`` tuples. ``mood_name`` is one of
-        ``\"nom:mood-strict\"``, ``\"nom:mood-regular\"``, or
-        ``\"nom:mood-loose\"``, and ``tag_value`` is the stored mood tag value for
-        one matching song-tag edge.
-    """
+    """Return ``(mood_name, tag_value)`` tuples for distribution analytics, optionally scoped to a library."""
     mood_rows: list[tuple[str, str]] = []
     for mood_type in _MOOD_TAG_NAMES:
         mood_rows.extend((mood_type, tag_value) for _, tag_value in _get_tag_edge_rows(db, mood_type, library_id))
@@ -153,19 +129,7 @@ def get_mood_distribution_data(db: Database, library_id: str | None = None) -> l
 
 
 def get_mood_coverage(db: Database, library_id: str | None = None) -> dict[str, Any]:
-    """Get percentage of files tagged per mood tier.
-
-    Args:
-        db: Database instance used to query library and tag statistics.
-        library_id: Optional library document ``_id``. When provided, coverage is
-            calculated only for files contained in that library.
-
-    Returns:
-        A dictionary with ``total_files`` and ``tiers`` keys. ``total_files`` is
-        the number of files considered, and ``tiers`` maps ``strict``,
-        ``regular``, and ``loose`` to dictionaries containing ``tagged`` and
-        ``percentage`` values for that tier.
-    """
+    """Return percentage of files tagged per mood tier (strict, regular, loose)."""
     stats = get_library_stats(db, library_id)
     total_files = int(stats["file_count"])
     if total_files == 0:
@@ -190,19 +154,7 @@ def get_mood_coverage(db: Database, library_id: str | None = None) -> dict[str, 
 
 
 def get_mood_balance(db: Database, library_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
-    """Get mood-value distribution across tiers.
-
-    Args:
-        db: Database instance used to query mood tags.
-        library_id: Optional library document ``_id``. When provided, only mood
-            tags attached to files contained in that library are counted.
-
-    Returns:
-        A dictionary keyed by the tier names ``strict``, ``regular``, and
-        ``loose``. Each value is a list of dictionaries sorted by descending
-        count, where every dictionary contains ``mood`` and ``count`` keys for a
-        single parsed mood value.
-    """
+    """Return mood-value distribution across strict, regular, and loose tiers."""
     result: dict[str, list[dict[str, Any]]] = {}
     for tier_name, name in _MOOD_TIER_MAP.items():
         mood_values = [mood_value for _, mood_value in _get_tag_edge_rows(db, name, library_id)]
@@ -216,23 +168,7 @@ def get_top_mood_pairs(
     limit: int = 10,
     mood_tier: str = "strict",
 ) -> list[dict[str, Any]]:
-    """Get the most common co-occurring mood pairs for one tier.
-
-    Args:
-        db: Database instance used to query co-occurring mood tags.
-        library_id: Optional library document ``_id``. When provided, only files
-            contained in that library are considered.
-        limit: Maximum number of mood-pair rows to return.
-        mood_tier: Mood tier selector. ``\"strict\"`` uses only strict mood tags,
-            ``\"regular\"`` uses both strict and regular mood tags, and
-            ``\"loose\"`` uses strict, regular, and loose mood tags. Any other
-            value falls back to the strict tier only.
-
-    Returns:
-        A list of dictionaries describing the most common co-occurring mood
-        pairs. Each dictionary contains ``mood1``, ``mood2``, and ``count``
-        keys.
-    """
+    """Return the most common co-occurring mood pairs for one tier."""
     tier_hierarchy: dict[str, list[str]] = {
         "strict": ["nom:mood-strict"],
         "regular": ["nom:mood-strict", "nom:mood-regular"],
@@ -268,27 +204,14 @@ def compute_mood_analysis(
     db: Database,
     library_id: str | None = None,
 ) -> dict[str, Any]:
-    """Get mood analysis: coverage, balance, top pairs, dominant vibes.
-
-    Args:
-        db: Database instance.
-        library_id: Optional library _id to filter by.
-
-    Returns:
-        Dict with: coverage, balance, top_pairs_by_tier, dominant_vibes
-    """
-    # Mood coverage (% tagged per tier)
+    """Return mood analysis: coverage, balance, top pairs, dominant vibes."""
     coverage = get_mood_coverage(db, library_id)
-
-    # Mood balance (value distribution per tier)
     balance = get_mood_balance(db, library_id)
 
-    # Top mood pairs for all three tiers
     top_pairs_by_tier = {
         tier: get_top_mood_pairs(db, library_id, mood_tier=tier, limit=50) for tier in ("strict", "regular", "loose")
     }
 
-    # Dominant vibes from balance data
     dominant_vibes = compute_dominant_vibes(balance)
 
     return {

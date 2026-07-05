@@ -18,15 +18,7 @@ def compute_collection_overview(
     db: Database,
     library_id: str | None = None,
 ) -> dict[str, Any]:
-    """Get collection overview: library stats, year/genre distributions.
-
-    Args:
-        db: Database instance.
-        library_id: Optional library _id to filter by.
-
-    Returns:
-        Dict with: stats, year_distribution, genre_distribution
-    """
+    """Return collection overview: library stats, year and genre distributions."""
     return {
         "stats": get_library_stats(db, library_id),
         "year_distribution": get_year_distribution(db, library_id),
