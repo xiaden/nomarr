@@ -4,6 +4,8 @@ Thin wrapper around KeyManagementService for FastAPI dependency injection.
 
 from __future__ import annotations
 
+from typing import cast
+
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -19,11 +21,7 @@ def get_key_service() -> KeyManagementService:
     if "keys" not in application.services:
         msg = "KeyManagementService not initialized"
         raise RuntimeError(msg)
-    service = application.services["keys"]
-    if not isinstance(service, KeyManagementService):
-        msg = "Invalid KeyManagementService instance"
-        raise RuntimeError(msg)
-    return service
+    return cast("KeyManagementService", application.services["keys"])
 
 
 async def verify_key(creds: HTTPAuthorizationCredentials = Depends(auth_scheme)) -> None:
@@ -58,15 +56,7 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def get_admin_password_hash() -> str:
-    """Get admin password hash using the singleton KeyManagementService instance.
-
-    Returns:
-        Password hash string
-
-    Raises:
-        RuntimeError: If password not found or service not initialized
-
-    """
+    """Get admin password hash from KeyManagementService."""
     return get_key_service().get_admin_password_hash()
 
 
@@ -76,10 +66,7 @@ def create_session() -> str:
 
 
 def validate_session(session_token: str) -> bool:
-    """Validate a session token using the singleton KeyManagementService instance.
-
-    Note: Use the singleton service instance to maintain proper architecture.
-    """
+    """Validate a session token via KeyManagementService."""
     return get_key_service().validate_session(session_token)
 
 

@@ -1,7 +1,7 @@
 """System info and health endpoints for web UI."""
 
 import logging
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
@@ -12,27 +12,28 @@ from nomarr.interfaces.api.types.info_types import (
     SystemInfoResponse,
 )
 from nomarr.interfaces.api.web.dependencies import get_info_service
+from nomarr.services.infrastructure.info_svc import InfoService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="", tags=["Info"])
 
 
 @router.get("/info", dependencies=[Depends(verify_session)])
-async def web_info(info_service: Annotated[Any, Depends(get_info_service)]) -> SystemInfoResponse:
+async def web_info(info_service: Annotated[InfoService, Depends(get_info_service)]) -> SystemInfoResponse:
     """Get system info (web UI proxy)."""
     result = info_service.get_system_info()
     return SystemInfoResponse.from_dto(result)
 
 
 @router.get("/health", dependencies=[Depends(verify_session)])
-async def web_health(info_service: Annotated[Any, Depends(get_info_service)]) -> HealthStatusResponse:
+async def web_health(info_service: Annotated[InfoService, Depends(get_info_service)]) -> HealthStatusResponse:
     """Health check endpoint (web UI proxy)."""
     result = info_service.get_health_status()
     return HealthStatusResponse.from_dto(result)
 
 
 @router.get("/health/gpu", dependencies=[Depends(verify_session)])
-async def web_gpu_health(info_service: Annotated[Any, Depends(get_info_service)]) -> GPUHealthResponse:
+async def web_gpu_health(info_service: Annotated[InfoService, Depends(get_info_service)]) -> GPUHealthResponse:
     """GPU resource snapshot endpoint.
 
     Returns cached GPU probe results from GPUHealthMonitor.

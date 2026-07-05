@@ -1,13 +1,4 @@
-"""FastAPI dependency injection helpers for web endpoints.
-
-These functions provide clean dependency injection for services,
-replacing the old get_state() service locator pattern.
-
-ARCHITECTURE:
-- Endpoints should ONLY inject services, never Database or raw infrastructure
-- Services encapsulate all business logic and data access
-- Endpoints are thin presentation layers that call services and format responses
-"""
+"""FastAPI dependency injection helpers for web endpoints."""
 
 from __future__ import annotations
 
