@@ -1,13 +1,6 @@
 """Vector search and maintenance API endpoints.
 
-Routes:
-- /vector/search (POST) - Vector similarity search
-- /vector/track (GET) - Get track vector
-- /vector/stats (GET) - Get hot/cold stats
-- /vector/promote (POST) - Promote hot→cold + rebuild index
-- /vector/rebuild-index (POST) - Rebuild index only (no hot→cold drain)
-
-These routes will be mounted under /api/web via the web router.
+Auth: session token (verify_session). Admin-only for maintenance endpoints.
 """
 
 from __future__ import annotations
@@ -50,18 +43,7 @@ router = APIRouter(tags=["Vector"], prefix="/vector")
 async def list_backbones(
     ml_service: MLService = Depends(get_ml_service),
 ) -> dict[str, list[str]]:
-    """List available vector backbones.
-
-    Returns backbone IDs discovered from models directory structure.
-    Use these IDs when calling other vector endpoints.
-
-    Requires:
-    - Authentication (admin or library owner)
-
-    Returns:
-        Dict with 'backbones' key containing list of available backbone IDs
-
-    """
+    """List available vector backbones."""
     return {"backbones": ml_service.list_backbones()}
 
 
@@ -70,29 +52,8 @@ async def search_vectors(
     request: VectorSearchRequest,
     vector_search_service: VectorSearchService = Depends(get_vector_search_service),
 ) -> VectorSearchResponse:
-    """Search for similar vectors using ANN.
-
-    Resolves the source track's vector internally from file_id, then
-    searches the per-backbone cold collection. Cross-library search is
-    the default (collections are per-backbone, not per-library).
-
-    Requires:
-    - Authentication (admin or library owner)
-    - Cold collection must have vector index
-
-    Args:
-        request: Search parameters (file_id, backbone_id, limit, min_score)
-
-    Returns:
-        VectorSearchResponse with matching vectors and scores
-
-    Raises:
-        400: If file not found or no vector exists
-        503: If cold collection has no vector index (search not available)
-
-    """
+    """Search for similar vectors using ANN similarity."""
     try:
-        # Call service layer (library_scope removed — collections are per-backbone)
         results = vector_search_service.search_similar_tracks(
             file_id=decode_id(request.file_id),
             backbone_id=request.backbone_id,
@@ -100,7 +61,6 @@ async def search_vectors(
             min_score=request.min_score,
         )
 
-        # Convert to response model
         result_items = [
             VectorSearchResultItem(
                 file_id=encode_id(result["file_id"]),
@@ -113,12 +73,10 @@ async def search_vectors(
         return VectorSearchResponse(results=result_items)
 
     except ValueError as e:
-        # Service raises ValueError for validation errors (e.g., no vector index)
         logger.warning(f"Vector search validation error: {e}")
         raise HTTPException(status_code=503, detail=str(e)) from e
 
     except RuntimeError as e:
-        # Service raises RuntimeError for query failures
         logger.error(f"Vector search failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Vector search failed") from e
 
@@ -133,25 +91,7 @@ async def get_track_vector(
     file_id: str,
     vector_search_service: VectorSearchService = Depends(get_vector_search_service),
 ) -> VectorGetResponse:
-    """Get embedding vector for a specific track.
-
-    Resolves the owning library internally from the file ID.
-    Searches cold (promoted) collection only.
-
-    Requires:
-    - Authentication (admin or library owner)
-
-    Args:
-        backbone_id: Backbone identifier (e.g., "effnet", "yamnet")
-        file_id: Library file document ID (HTTP-encoded, e.g. "<collection_name>:<id>")
-
-    Returns:
-        VectorGetResponse with the track's embedding vector
-
-    Raises:
-        404: If vector not found in cold collection
-
-    """
+    """Get embedding vector for a specific track."""
     file_id = decode_path_id(file_id)
     result = vector_search_service.get_track_vector(backbone_id, file_id)
 
@@ -168,28 +108,15 @@ async def get_track_vector(
     )
 
 
-# Admin endpoints for vector maintenance
-# Merge admin endpoints into main router (all web endpoints use same auth)
-# No separate admin_router needed
+# Admin endpoints for vector maintenance — merged into main router
+# (all web endpoints use same auth, no separate admin_router needed)
 
 
 @router.get("/stats", dependencies=[Depends(verify_session)])
 async def get_vector_stats(
     vector_maintenance_service: VectorMaintenanceService = Depends(get_vector_maintenance_service),
 ) -> VectorStatsResponse:
-    """Get hot/cold statistics for all backbones.
-
-    Returns per-backbone stats (library enumeration removed — collections
-    are per-backbone, not per-library). Use this endpoint to monitor hot
-    collection sizes and decide when to rebuild.
-
-    Requires:
-    - Authentication (admin only)
-
-    Returns:
-        VectorStatsResponse with stats for all backbones
-
-    """
+    """Get hot/cold statistics for all backbones."""
 
     def _get_stats_sync() -> list[VectorHotColdStats]:
         """Run blocking DB queries in thread pool."""
@@ -204,7 +131,6 @@ async def get_vector_stats(
             for row in stats_rows
         ]
 
-    # Run blocking DB operations in thread pool to avoid blocking event loop
     loop = asyncio.get_running_loop()
     with ThreadPoolExecutor(max_workers=1) as executor:
         stats_list = await loop.run_in_executor(executor, _get_stats_sync)
@@ -217,29 +143,8 @@ async def promote_vectors(
     request: VectorPromoteRequest,
     vector_maintenance_service: VectorMaintenanceService = Depends(get_vector_maintenance_service),
 ) -> VectorPromoteResponse:
-    """Promote vectors from hot to cold and rebuild vector index.
-
-    Synchronous operation - blocks until complete (may take several minutes).
-    Auto-calculates nlists if not provided based on collection size.
-
-    Requires:
-    - Authentication (admin only)
-
-    Args:
-        request: Promote parameters (backbone_id, optional nlists)
-
-    Returns:
-        VectorPromoteResponse with operation status
-
-    Raises:
-        400: If backbone not found or invalid parameters
-        500: If promote & rebuild fails
-        504: If operation times out (>10 minutes)
-
-    """
+    """Promote vectors from hot to cold and rebuild index."""
     try:
-        # Call service layer (synchronous - blocks until complete)
-        # library_key removed — collections are per-backbone, not per-library
         vector_maintenance_service.promote_and_rebuild(
             backbone_id=request.backbone_id,
             nlists=request.nlists,
@@ -252,12 +157,10 @@ async def promote_vectors(
         )
 
     except ValueError as e:
-        # Service raises ValueError for validation errors
         logger.warning(f"Vector promote validation error: {e}")
         raise HTTPException(status_code=400, detail=str(e)) from e
 
     except RuntimeError as e:
-        # Service raises RuntimeError for operation failures
         logger.error(f"Vector promote failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Promote & rebuild failed") from e
 
@@ -271,30 +174,8 @@ async def rebuild_vector_index(
     request: VectorRebuildIndexRequest,
     vector_maintenance_service: VectorMaintenanceService = Depends(get_vector_maintenance_service),
 ) -> VectorRebuildIndexResponse:
-    """Rebuild vector index without promoting hot vectors.
-
-    Drops the existing index on the cold collection and trains a new one
-    using the current cold data. Does not drain hot→cold.
-
-    Use this to apply updated index parameters (e.g. nLists) when the
-    cold collection is already fully populated and has no pending hot data.
-
-    Requires:
-    - Authentication (admin only)
-
-    Args:
-        request: backbone_id and optional nlists override
-
-    Returns:
-        VectorRebuildIndexResponse with operation status
-
-    Raises:
-        400: If backbone not found or cold collection missing
-        500: If index creation fails
-        504: If operation times out (>10 minutes)
-    """
+    """Rebuild vector index without promoting hot vectors."""
     try:
-        # library_key removed — collections are per-backbone, not per-library
         vector_maintenance_service.rebuild_index(
             backbone_id=request.backbone_id,
             nlists=request.nlists,
