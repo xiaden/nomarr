@@ -198,15 +198,15 @@ def _build_tier_map(
 ) -> dict[str, tuple[str, float, str]]:
     """Build a model_key -> (tier, value, label) map from pre-calibrated HeadOutputs."""
     mood_outputs = [ho for ho in head_outputs if ho.tier is not None]
-    logger.debug("[aggregation] %s mood outputs with tiers", len(mood_outputs))
+    logger.debug("[tagging] %s mood outputs with tiers", len(mood_outputs))
     if not mood_outputs:
-        logger.debug("[aggregation] No mood outputs with tiers, returning empty mood tags")
+        logger.debug("[tagging] No mood outputs with tiers, returning empty mood tags")
         return {}
     tier_map: dict[str, tuple[str, float, str]] = {}
     for ho in mood_outputs:
         assert ho.tier is not None
         tier_map[ho.model_key] = (ho.tier, ho.value, ho.label)
-    logger.debug("[aggregation] Tier map has %s entries", len(tier_map))
+    logger.debug("[tagging] Tier map has %s entries", len(tier_map))
     return tier_map
 
 
@@ -239,7 +239,7 @@ def _compute_suppressed_keys(
             if ho is not best:
                 suppressed.add(ho.model_key)
                 logger.debug(
-                    "[aggregation] Intra-head suppress: %s (%s) loses to %s (%s)",
+                    "[tagging] Intra-head suppress: %s (%s) loses to %s (%s)",
                     ho.model_key,
                     ho.tier,
                     best.model_key,
@@ -259,7 +259,7 @@ def _compute_suppressed_keys(
                 suppressed.add(ho_a.model_key)
                 suppressed.add(ho_b.model_key)
                 logger.debug(
-                    "[aggregation] Cross-head suppress: %s (%s) vs %s (%s)",
+                    "[tagging] Cross-head suppress: %s (%s) vs %s (%s)",
                     ho_a.model_key,
                     ho_a.label,
                     ho_b.model_key,
@@ -280,7 +280,7 @@ def _build_tier_term_sets(
     for model_key, (tier, value, label) in tier_map.items():
         if model_key in suppressed_keys:
             continue
-        logger.debug("[aggregation] Adding %s=%.3f (%s) to tier '%s'", model_key, value, label, tier)
+        logger.debug("[tagging] Adding %s=%.3f (%s) to tier '%s'", model_key, value, label, tier)
         if tier in ("high", "strict"):
             strict_terms.add(label)
         elif tier in ("medium", "norm", "normal"):
@@ -288,7 +288,7 @@ def _build_tier_term_sets(
         else:
             loose_terms.add(label)
     logger.debug(
-        "[aggregation] Mood aggregation: strict=%s, regular=%s, loose=%s",
+        "[tagging] Mood aggregation: strict=%s, regular=%s, loose=%s",
         len(strict_terms),
         len(regular_terms),
         len(loose_terms),
@@ -324,7 +324,7 @@ def aggregate_mood_tiers(
     aggressive/relaxed) have tiers, neither is emitted to avoid contradictory tags.
     """
     logger.debug(
-        "[aggregation] aggregate_mood_tiers called with %s HeadOutput objects",
+        "[tagging] aggregate_mood_tiers called with %s HeadOutput objects",
         len(head_outputs),
     )
     tier_map = _build_tier_map(head_outputs)
@@ -339,9 +339,9 @@ def aggregate_mood_tags(head_outputs: list[HeadOutput]) -> Tags:
     """Aggregate HeadOutput objects into a ``Tags`` DTO of mood-tier tags."""
     mood_tags_dict = aggregate_mood_tiers(head_outputs)
     if not mood_tags_dict:
-        logger.debug("[aggregation] No mood tags generated")
+        logger.debug("[tagging] No mood tags generated")
         return Tags(items=())
-    logger.debug("[aggregation] Generated %d mood tags", len(mood_tags_dict))
+    logger.debug("[tagging] Generated %d mood tags", len(mood_tags_dict))
     return Tags.from_dict(mood_tags_dict)
 
 
@@ -352,5 +352,5 @@ def collect_mood_outputs(
     """Collect and aggregate all mood outputs from classification and regression heads."""
     regression_outputs = add_regression_mood_tiers(regression_heads)
     all_head_outputs.extend(regression_outputs)
-    logger.debug("[aggregation] Total HeadOutput objects: %d", len(all_head_outputs))
+    logger.debug("[tagging] Total HeadOutput objects: %d", len(all_head_outputs))
     return aggregate_mood_tiers(all_head_outputs)

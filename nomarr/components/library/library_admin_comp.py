@@ -1,11 +1,4 @@
-"""Library administration operations.
-
-This component handles library CRUD operations with validation:
-- Create library with path validation and name generation
-- Update library root with path validation
-- Delete library with policy checks
-- Clear library data with precondition checks
-"""
+"""Library administration: create, update, delete, and clear libraries."""
 
 from __future__ import annotations
 
@@ -25,9 +18,12 @@ from nomarr.components.library.library_root_comp import (
     get_base_library_root,
     normalize_library_root,
 )
-from nomarr.components.library.library_scan_state_comp import ensure_scan_state
-from nomarr.components.library.scan_lifecycle_comp import get_scanning_library_ids
-from nomarr.helpers.constants.pipeline_states import PIPELINE_DEFAULTS
+from nomarr.components.library.library_scan_state_comp import (
+    ensure_scan_state,
+    get_libraries_in_axis_state,
+)
+from nomarr.helpers.constants.pipeline_states import PIPELINE_DEFAULTS, SCAN_IN_PROGRESS, SCAN_STATE_FIELD
+from nomarr.persistence.exceptions import PersistenceError
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -44,24 +40,9 @@ def create_library(
     file_write_mode: str = "full",
     library_auto_write: bool = False,
 ) -> str:
-    """Create a new library with validation and name generation.
+    """Create a new library.
 
-    Args:
-        db: Database instance
-        base_library_root: Base library root from config (security boundary)
-        name: Library name (optional: auto-generated from path basename)
-        root_path: Path to library root (must be within base_library_root)
-        is_enabled: Whether library is enabled for scanning
-        watch_mode: File watching mode ('off', 'event', or 'poll')
-        file_write_mode: Tag write mode ('none', 'minimal', or 'full')
-        library_auto_write: Whether to enable automatic tag writing for the library.
-
-    Returns:
-        Created library ID
-
-    Raises:
-        ValueError: If name already exists or path is invalid
-
+    Raises ValueError if the name already exists or the path is invalid.
     """
     base_root = get_base_library_root(base_library_root)
     abs_path = normalize_library_root(base_root, root_path)
@@ -82,7 +63,7 @@ def create_library(
             ),
         )
         ensure_scan_state(db, library_id)
-    except Exception as e:
+    except (ValueError, PersistenceError, OSError) as e:
         msg = f"Failed to create library: {e}"
         raise ValueError(msg) from e
     logger.info(f"[LibraryAdmin] Created library: {resolved_name} at {abs_path}")
@@ -90,17 +71,9 @@ def create_library(
 
 
 def update_library_root(db: Database, base_library_root: str | None, library_id: str, root_path: str) -> None:
-    """Update a library's root path with validation.
+    """Update a library's root path.
 
-    Args:
-        db: Database instance
-        base_library_root: Base library root from config (security boundary)
-        library_id: Library ID to update
-        root_path: New path to library root
-
-    Raises:
-        ValueError: If library not found or path is invalid
-
+    Raises ValueError if the library is not found or the path is invalid.
     """
     library = get_library_record(db, library_id)
     if not library:
@@ -113,19 +86,12 @@ def update_library_root(db: Database, base_library_root: str | None, library_id:
     logger.info(f"[LibraryAdmin] Updated library {library_id} root path to {abs_path}")
 
 
-_BATCH_SIZE = 500
 
 
 def delete_library(db: Database, library_id: str) -> bool:
     """Delete a library and all associated data.
 
-    Args:
-        db: Database instance
-        library_id: Library ID to delete
-
-    Returns:
-        True if deleted, False if not found
-
+    Returns True if deleted, False if not found.
     """
     library = get_library_record(db, library_id)
     if not library:
@@ -137,20 +103,10 @@ def delete_library(db: Database, library_id: str) -> bool:
 
 
 def clear_library_data(db: Database, library_root: str | None) -> None:
-    """Clear all library data with precondition checks.
+    """Clear all library data.
 
-    Preconditions:
-    - library_root must be configured
-    - No scan jobs can be running
-
-    Args:
-        db: Database instance
-        library_root: Library root from config
-
-    Raises:
-        ValueError: If library_root not configured
-        RuntimeError: If scan jobs are running
-
+    Raises ValueError if library_root is not configured,
+    RuntimeError if scan jobs are running.
     """
     if not library_root:
         msg = "Library root not configured"
@@ -180,6 +136,6 @@ def _resolve_library_name(db: Database, name: str | None, abs_path: str) -> str:
 
 
 def _is_scan_running(db: Database) -> bool:
-    """Check if any library pipeline is currently in the scanning state."""
-    scanning_libraries = get_scanning_library_ids(db)
+    """Return True if any library pipeline is currently scanning."""
+    scanning_libraries = get_libraries_in_axis_state(db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
     return len(scanning_libraries) > 0

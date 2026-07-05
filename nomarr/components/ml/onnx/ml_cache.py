@@ -53,14 +53,6 @@ class ONNXModelCache:
         backbones: Backbone models keyed by backbone name (e.g. ``"effnet"``).
         heads: Head models keyed by backbone name; each value is a list of all
             head types for that backbone.
-
-    Example usage::
-
-        cache = ONNXModelCache("/models", device="gpu", db=my_db)
-        cache.warm = True  # load all sessions via coordinator
-        emb = cache.backbones["effnet"].run(waveform)
-        # ... run heads ...
-        cache.warm = False  # unload all sessions (idle eviction)
     """
 
     backbones: dict[str, ONNXBackboneModel]

@@ -149,8 +149,8 @@ def scan_folder_files(
             else:
                 stats["files_updated"] += 1
 
-        except Exception as e:
-            logger.exception(f"Failed to process {file_path}: {e}")
+        except OSError as e:
+            logger.exception("Failed to process %s: %s", file_path, e)
             stats["files_failed"] += 1
             warnings.append(f"Scan failed: {file_path} - {str(e)[:100]}")
             continue

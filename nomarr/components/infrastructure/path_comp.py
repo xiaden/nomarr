@@ -22,15 +22,6 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
     Returns:
         LibraryPath with status and diagnostic info
 
-    Example:
-        path = build_library_path_from_input("/music/song.mp3", db)
-        if path.is_valid():
-            # Safe to perform filesystem operations
-            process_file(path)
-        else:
-            # Handle error based on status
-            log.error(f"Invalid path: {path.reason}")
-
     """
     # Resolve to absolute path
     try:
@@ -125,15 +116,6 @@ def build_library_path_from_db(
 
     Returns:
         LibraryPath with status reflecting current config validity
-
-    Example:
-        # When processing a file from discovery
-        raise NotImplementedError("db.files is not implemented; this path is unreachable")
-        path = build_library_path_from_db(file_record["path"], db)
-        if not path.is_valid():
-            # Config changed, path no longer valid
-            raise NotImplementedError("db.files is not implemented; this path is unreachable")
-            return
 
     """
     # If we have a library_id, fetch that library's configuration

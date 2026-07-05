@@ -31,22 +31,9 @@ def upsert_library_file(
     duration_seconds: float | None = None,
     last_tagged_at: int | None = None,
 ) -> str:
-    """Insert or update one library-file document plus its ownership/state edges.
+    """Insert or update a library-file document and its ownership/state edges.
 
-    Args:
-        db: Database handle used for the document and edge upserts.
-        path: Validated library path for the file being inserted or updated.
-        library_id: Full ``_id`` of the owning library document.
-        file_size: File size in bytes to persist on the library-file document.
-        modified_time: File modified timestamp in milliseconds.
-        duration_seconds: Optional audio duration in seconds.
-        last_tagged_at: Optional marker indicating the file was already tagged.
-
-    Returns:
-        The ``_id`` string of the upserted file document.
-
-    Raises:
-        ValueError: If ``path.is_valid()`` returns ``False``.
+    Raises ValueError if the path is not valid.
     """
     if not path.is_valid():
         msg = f"Cannot upsert invalid path ({path.status}): {path.reason}"
@@ -73,13 +60,10 @@ def upsert_library_file(
 
 
 def delete_library_file(db: Database, file_id: str) -> None:
-    """Delete one library-file document and its library/app-managed edges.
+    """Delete a library-file document and its edges.
 
-    Args:
-        db: Database handle.
-        file_id: ArangoDB document ID (``{CollectionNames.LIBRARY_FILES.value}/<key>``) or a raw file
-            path. When a path is supplied it is resolved to the document ID
-            first; returns early without error if no matching file is found.
+    Accepts an ArangoDB document ID or a raw file path (resolved via path lookup).
+    No-op if the file is not found.
     """
     if not file_id.startswith(f"{CollectionNames.LIBRARY_FILES.value}/"):
         db.library.remove_file_by_path(file_id)
@@ -89,16 +73,10 @@ def delete_library_file(db: Database, file_id: str) -> None:
 
 
 def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[str]:
-    """Batch-upsert library files, ownership edges, and initial state edges.
+    """Batch-upsert library files with ownership edges.
 
-    Args:
-        db: Database handle used for the batch document and edge upserts.
-        file_docs: Library-file payloads where each dict must include a ``library_id``
-            key plus the fields accepted by the single-file upsert schema, such as
-            ``path``, ``file_size``, ``modified_time``, and optional metadata.
-
-    Returns:
-        List of ``_id`` strings for the upserted files, in the same order as the input.
+    Each file_doc must include a ``library_id`` key. Returns _id strings in
+    input order.
     """
     if not file_docs:
         return []
@@ -154,18 +132,9 @@ def update_file_modified_time(db: Database, file_key: str, modified_time_ms: int
 
 
 def bulk_delete_files(db: Database, paths: list[str]) -> int:
-    """Delete multiple library-file documents and their library/app-managed edges.
+    """Delete multiple library-file documents by path.
 
-    Resolves each supplied path to a file document, silently skips paths with
-    no matching document, and returns early with ``0`` when ``paths`` is empty.
-
-    Args:
-        db: Database handle.
-        paths: File paths to resolve and delete. Paths with no matching file
-            document are ignored.
-
-    Returns:
-        The number of files that were found and deleted.
+    Silently skips paths with no matching document. Returns the number deleted.
     """
     if not paths:
         return 0
@@ -203,11 +172,5 @@ def set_chromaprint(db: Database, file_id: str, chromaprint: str) -> None:
 
 
 def update_last_tagged_at(db: Database, file_id: str) -> None:
-    """Record the wall-clock time at which a file was tagged.
-
-    Args:
-        db: Database handle.
-        file_id: Document ``_id`` of the library-file to update.
-
-    """
+    """Record the wall-clock time at which a file was tagged."""
     db.library.update_file(file_id, {"last_tagged_at": now_ms().value})

@@ -155,9 +155,7 @@ def pool_scores(
 
 
 def _trimmed_mean(scores: np.ndarray, trim_perc: float, axis: int = 0) -> np.ndarray:
-    """Compute a symmetric trimmed mean along axis, ignoring NaNs.
-    Example: trim_perc=0.1 drops lowest 10% and highest 10% per dimension.
-    """
+    """Compute a symmetric trimmed mean along axis, ignoring NaNs."""
     if not (0.0 <= trim_perc < 0.5):
         msg = "trim_perc must be in [0, 0.5)"
         raise ValueError(msg)

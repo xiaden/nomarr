@@ -182,17 +182,7 @@ def discover_next_untagged_file(
     library_id: str | None = None,
     exclude_claimed: bool = True,
 ) -> dict[str, Any] | None:
-    """Find the next file eligible for ML discovery work.
-
-    Args:
-        db: Database handle used to query file state and ownership edges.
-        library_id: Optional library ``_id``; when provided, the scan is scoped to that library's files.
-        exclude_claimed: When ``True``, skips files that already have a ``worker_claims`` entry; defaults to ``True``.
-
-    Returns:
-        A single library-file document dict, or ``None`` if no eligible file exists;
-            files in ``errored`` states are always excluded.
-    """
+    """Find the next file eligible for ML discovery, excluding errored files."""
     untagged_files = _state_file_docs(db, STATE_NOT_PROCESSED)
     candidate_ids = {doc["_id"] for doc in untagged_files}
     candidate_ids -= _state_file_ids(db, STATE_ERRORED)
@@ -225,16 +215,7 @@ def discover_next_file_needing_tags(
     library_id: str | None = None,
     exclude_claimed: bool = True,
 ) -> dict[str, Any] | None:
-    """Find the next file needing audio tag extraction.
-
-    Args:
-        db: Database handle used to query file state and ownership edges.
-        library_id: Optional library ``_id`` to scope the search.
-        exclude_claimed: When ``True``, skips files that already have a ``worker_claims`` entry.
-
-    Returns:
-        A single library-file document dict, or ``None`` if no eligible file exists.
-    """
+    """Find the next file needing audio tag extraction, excluding errored files."""
     pending_files = _state_file_docs(db, STATE_NOT_HYDRATED)
     candidate_ids = {doc["_id"] for doc in pending_files}
     candidate_ids -= _state_file_ids(db, STATE_ERRORED)
@@ -276,17 +257,7 @@ def count_errored_files(db: Database, library_id: str) -> int:
 
 
 def mark_file_errored(db: Database, file_id: str) -> None:
-    """Transition a file to the errored state from its current state.
-
-    This helper queries the file's current state and transitions it to errored,
-    avoiding the need for callers to know the current state. Logs the transition
-    for observability.
-
-    Args:
-        db: Database instance
-        file_id: File document ``_id`` to mark as errored
-
-    """
+    """Transition a file from its current positive state to errored."""
     membership = _state_membership_for_files(db, [file_id])
     current_states = membership.get(file_id, set())
     positive_states = [s for s in current_states if not s.startswith("file_states/not_")]
@@ -428,19 +399,9 @@ def bulk_set_not_vectors_extracted(db: Database) -> int:
 
 
 def bulk_set_not_hydrated(db: Database, library_id: str | None = None) -> int:
-    """Transition ``hydrated`` files to ``not_hydrated`` for re-hydration.
+    """Transition hydrated files to not_hydrated, forcing re-hydration.
 
-    This forces the tag extraction worker to re-read audio metadata and
-    re-create tag edges (artist, album, genre, etc.) for the affected files.
-
-    Args:
-        db: Database instance
-        library_id: Optional library ``_id`` to scope the transition; when
-            ``None``, all ``hydrated`` files are transitioned.
-
-    Returns:
-        Number of files transitioned.
-
+    Returns the number of files transitioned.
     """
     file_ids = [file_doc["_id"] for file_doc in _state_file_docs(db, STATE_HYDRATED)]
     if library_id is not None:

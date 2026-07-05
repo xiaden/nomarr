@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import mutagen
+from mutagen import MutagenError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -168,7 +169,7 @@ def safe_write_tags(
     # Probe original before any writes
     try:
         original_props = _probe_audio_properties(original_path)
-    except Exception as e:
+    except (RuntimeError, OSError, MutagenError) as e:
         return SafeWriteResult(success=False, error=f"Failed to probe original file: {e}")
 
     # Try hardlink approach first
@@ -194,11 +195,11 @@ def _safe_write_hardlink(
     try:
         # Step 1: Copy original to temp
         shutil.copy2(original_path, temp_path)
-        logger.debug(f"[safe_write] Copied to temp: {temp_path}")
+        logger.debug(f"[tagging] Copied to temp: {temp_path}")
 
         # Step 2: Write tags to temp copy
         write_fn(temp_path)
-        logger.debug("[safe_write] Wrote tags to temp copy")
+        logger.debug("[tagging] Wrote tags to temp copy")
 
         # Step 3: Verify audio properties unchanged
         after_props = _probe_audio_properties(temp_path)
@@ -206,7 +207,7 @@ def _safe_write_hardlink(
         if error:
             temp_path.unlink()
             return SafeWriteResult(success=False, error=f"Audio sanity check failed: {error}")
-        logger.debug("[safe_write] Audio properties verified")
+        logger.debug("[tagging] Audio properties verified")
 
         # Step 4: Atomic hardlink replacement
         backup_path = original_path.with_suffix(original_path.suffix + ".bak")
@@ -214,7 +215,7 @@ def _safe_write_hardlink(
             os.rename(original_path, backup_path)  # Atomic on same filesystem
             os.link(temp_path, original_path)
             backup_path.unlink()
-            logger.debug("[safe_write] Hardlink replacement complete")
+            logger.debug("[tagging] Hardlink replacement complete")
         except OSError as e:
             # Restore backup if hardlink failed
             if backup_path.exists() and not original_path.exists():
@@ -226,7 +227,7 @@ def _safe_write_hardlink(
         return SafeWriteResult(success=True, new_mtime_ms=new_mtime_ms)
 
     except Exception as e:
-        logger.exception(f"[safe_write] Hardlink write failed: {e}")
+        logger.exception(f"[tagging] Hardlink write failed: {e}")
         return SafeWriteResult(success=False, error=str(e))
 
     finally:
@@ -247,11 +248,11 @@ def _safe_write_fallback(
     try:
         # Step 1: Copy original to .tmp
         shutil.copy2(original_path, temp_path)
-        logger.debug(f"[safe_write] Copied to .tmp: {temp_path}")
+        logger.debug(f"[tagging] Copied to .tmp: {temp_path}")
 
         # Step 2: Write tags to .tmp copy
         write_fn(temp_path)
-        logger.debug("[safe_write] Wrote tags to .tmp copy")
+        logger.debug("[tagging] Wrote tags to .tmp copy")
 
         # Step 3: Verify audio properties unchanged
         after_props = _probe_audio_properties(temp_path)
@@ -259,18 +260,18 @@ def _safe_write_fallback(
         if error:
             temp_path.unlink()
             return SafeWriteResult(success=False, error=f"Audio sanity check failed: {error}")
-        logger.debug("[safe_write] Audio properties verified")
+        logger.debug("[tagging] Audio properties verified")
 
         # Step 4: Delete original, rename .tmp to original
         original_path.unlink()
         os.rename(temp_path, original_path)
-        logger.debug("[safe_write] Fallback replacement complete")
+        logger.debug("[tagging] Fallback replacement complete")
 
         new_mtime_ms = int(os.stat(original_path).st_mtime * 1000)
         return SafeWriteResult(success=True, new_mtime_ms=new_mtime_ms)
 
     except Exception as e:
-        logger.exception(f"[safe_write] Fallback write failed: {e}")
+        logger.exception(f"[tagging] Fallback write failed: {e}")
         if temp_path.exists():
             with contextlib.suppress(OSError):
                 temp_path.unlink()

@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 NVIDIA_SMI_TIMEOUT_S = 5.0  # Hard timeout for nvidia-smi subprocess
 TELEMETRY_CACHE_TTL_MS = 1000  # TTL for VRAM/RAM readings in milliseconds
 
+
 class VramTelemetry(TypedDict):
     """VRAM usage snapshot from nvidia-smi."""
 
@@ -81,18 +82,10 @@ class ResourceStatus:
 def check_nvidia_gpu_capability(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> bool:
     """Check if NVIDIA GPU is available in-container (capability signal, not telemetry).
 
-    Per GPU_REFACTOR_PLAN.md Section 5:
-    - A container is GPU-capable iff nvidia-smi succeeds inside the container
-    - This check is performed once at startup and cached
+    A container is GPU-capable iff nvidia-smi succeeds inside the container.
+    This check is performed once at startup and cached.
 
-    This function is idempotent - repeated calls return cached result.
-
-    Args:
-        timeout: Maximum seconds to wait for nvidia-smi
-
-    Returns:
-        True if GPU is available (nvidia-smi succeeded), False otherwise
-
+    Idempotent — repeated calls return the cached result.
     """
     global _gpu_capable_cache
 
@@ -152,7 +145,7 @@ def check_nvidia_gpu_capability(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> bool:
         _gpu_capable_cache = False
         return False
 
-    except Exception as e:
+    except (OSError, ValueError) as e:
         logger.warning(
             "[resource_monitor] Unexpected error checking GPU capability (%s) - forcing CPU-only",
             type(e).__name__,
@@ -218,7 +211,7 @@ def get_vram_usage_mb(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> VramTelemetry:
         _vram_cache_ts = now
         return _vram_cache
 
-    except (subprocess.CalledProcessError, FileNotFoundError, Exception) as e:
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError) as e:
         logger.warning("[resource_monitor] VRAM query failed: %s", e)
         _vram_cache = {"used_mb": 0, "total_mb": 0, "error": str(e)}
         _vram_cache_ts = now
@@ -263,7 +256,7 @@ def get_vram_usage_for_pid_mb(pid: int, timeout: float = NVIDIA_SMI_TIMEOUT_S) -
 
         return 0  # Process not found in GPU compute apps
 
-    except Exception:
+    except subprocess.SubprocessError:
         return 0
 
 
@@ -315,7 +308,7 @@ def get_ram_usage_mb(detection_mode: str = "auto") -> RamTelemetry:
         _ram_cache_ts = now
         return _ram_cache
 
-    except Exception as e:
+    except OSError as e:
         logger.warning("[resource_monitor] RAM query failed: %s", e)
         _ram_cache = {"used_mb": 0, "available_mb": 0, "error": str(e)}
         _ram_cache_ts = now
@@ -376,20 +369,8 @@ def check_resource_headroom(
 ) -> ResourceStatus:
     """Check if there's headroom for ML work within configured budgets.
 
-    Per GPU_REFACTOR_PLAN.md Section 6:
-    - Budgets are absolute caps, expressed in MB
-    - Budget semantics: used_mb + estimated_mb <= budget_mb
-
-    Args:
-        vram_budget_mb: Maximum VRAM ML may consume (0 = no GPU budget)
-        ram_budget_mb: Maximum RAM ML may consume
-        vram_estimate_mb: Estimated VRAM for next operation
-        ram_estimate_mb: Estimated RAM for next operation
-        ram_detection_mode: RAM detection mode (auto/cgroup/host)
-
-    Returns:
-        ResourceStatus with headroom assessment
-
+    Budget semantics: ``used_mb + estimated_mb <= budget_mb``.
+    Budgets are absolute caps expressed in MB.
     """
     gpu_capable = check_nvidia_gpu_capability()
 

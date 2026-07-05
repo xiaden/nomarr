@@ -6,7 +6,7 @@ import contextlib
 import json
 from collections.abc import Mapping
 from pathlib import Path as PathLib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import mutagen
 from mutagen import MutagenError
@@ -136,7 +136,7 @@ class _MP4Writer:
 
             if not isinstance(mp4.tags, dict):
                 return
-            mp4_tags: dict[str, list[MP4FreeForm]] = mp4.tags  # type: ignore[assignment]
+            mp4_tags = cast("dict[str, list[MP4FreeForm]]", mp4.tags)
             for tag_key, tag_value in (tags or {}).items():
                 ns_key = _ns_key(tag_key, self.ns_prefix)
                 atom_key = self._ff_key(ns_key)
@@ -202,7 +202,7 @@ class _VorbisWriter:
 
             if not isinstance(vorbis_file.tags, dict):
                 return
-            vorbis_tags: dict[str, list[str]] = vorbis_file.tags  # type: ignore[assignment]
+            vorbis_tags = cast("dict[str, list[str]]", vorbis_file.tags)
             for tag_key, tag_value in (tags or {}).items():
                 ns_key = _ns_key(tag_key, self.ns_prefix)
                 vorbis_key = self._vorbis_key(ns_key)

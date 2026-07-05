@@ -88,7 +88,7 @@ def _init_cuda_context() -> None:
         sess.run(None, {"X": dummy})
         del sess
         logger.debug("[vram_probe] CUDA context warmed")
-    except Exception:
+    except (ort.RuntimeException, ort.Fail, OSError):
         logger.warning("[vram_probe] CUDA context warming failed", exc_info=True)
 
 
@@ -137,7 +137,7 @@ def _probe_single_model(
     try:
         try:
             model.load("gpu")
-        except Exception:
+        except (RuntimeError, OSError):
             logger.warning("[vram_probe] Failed to load %s on GPU", model._path, exc_info=True)
             return None
 
@@ -168,7 +168,7 @@ def _probe_single_model(
                         "[vram_probe] Head %s has no input_dim after load — skipping run",
                         model._path,
                     )
-        except Exception:
+        except (RuntimeError, ValueError):
             logger.warning("[vram_probe] Inference failed for %s", model._path, exc_info=True)
             # Still capture the load-time VRAM even if run failed
 

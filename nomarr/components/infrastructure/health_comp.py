@@ -47,8 +47,6 @@ class HealthComp:
         return self.db.health.get_component(component)
 
 
-
-
 def get_all_workers(db: Database) -> list[dict[str, Any]]:
     """Get all registered workers from health monitoring.
 

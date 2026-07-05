@@ -248,8 +248,8 @@ def extract_metadata(file_path: LibraryPath, namespace: str = "nom") -> dict[str
             _extract_flac_metadata(audio, metadata, namespace)
         elif file_ext in (".mp3", ".mp2", ".aac"):
             _extract_mp3_metadata(file_path, metadata, namespace)
-    except Exception as e:
-        logger.warning(f"[metadata_extraction] Failed to extract metadata from {file_path}: {e}", exc_info=True)
+    except OSError as e:
+        logger.warning("[metadata_extraction] Failed to extract metadata from %s: %s", file_path, e, exc_info=True)
     return metadata
 
 
@@ -318,7 +318,7 @@ def _extract_mp3_metadata(file_path: LibraryPath, metadata: dict[str, Any], name
         id3 = ID3(str(file_path.absolute))
         metadata["all_tags"] = normalize_id3_tags(dict(id3))
         _apply_common_tag_fields(metadata, namespace)
-    except Exception as e:
+    except OSError as e:
         logger.warning("[metadata_extraction] Failed to extract MP3 tags from %s: %s", file_path, e, exc_info=True)
 
 

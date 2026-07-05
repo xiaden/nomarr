@@ -17,6 +17,8 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
+from nomarr.persistence.exceptions import PersistenceError
+
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
@@ -81,10 +83,6 @@ class HeadInfo:
         Format:
         - model_key: ``{label}_{backbone}_{model_stem}``
         - calibration_id: ``{calib_method}_{calib_version}``
-
-        Example:
-        - model_key: ``"happy_yamnet_mood_happy"``
-        - calibration_id: ``"platt_1"``
 
         Args:
             label: Friendly label (e.g., ``"happy"``, ``"approachable"``)
@@ -385,7 +383,7 @@ def compute_model_suite_hash(
         sig_str = "|".join(f"{p}:{s}" for p, s in entries)
         return hashlib.md5(sig_str.encode("utf-8")).hexdigest()[:12]
 
-    except Exception:
+    except OSError:
         return "unknown"
 
 
@@ -499,7 +497,7 @@ def discover_head_models(
         heads = discover_heads(models_dir, db)
         for hi in heads:
             head_info_map[hi.model_stem] = hi
-    except Exception:
+    except PersistenceError:
         logger.warning("[discovery] Failed to load HeadInfo from DB; labels will be empty")
 
     models: list[ONNXHeadModel] = []

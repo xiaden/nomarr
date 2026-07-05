@@ -59,13 +59,6 @@ class ONNXBackboneModel(BaseONNXModel):
 
     Preprocessing (mel-spectrogram + patch extraction) is performed inside
     :meth:`run` using parameters resolved from *path* at construction time.
-
-    Example usage::
-
-        model = ONNXBackboneModel("/models/effnet/embeddings/effnet.onnx")
-        model.load("gpu")
-        embeddings = model.run(waveform)  # shape: (n_patches, 512)
-        model.unload()
     """
 
     backbone_name: str

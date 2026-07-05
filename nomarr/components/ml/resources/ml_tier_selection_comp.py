@@ -1,6 +1,6 @@
 """Execution Tier Selection for GPU/CPU adaptive resource management.
 
-Implements the tier ladder per GPU_REFACTOR_PLAN.md Section 8-9:
+Implements the tier ladder:
 - Tier 0: Fast Path (cached, multi-worker, 2-3s/file)
 - Tier 1: Reduced Cache (smaller caches, fewer workers, 3-5s/file)
 - Tier 2: Sequential GPU (no cache, single worker, 5-10s/file)
@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 class ExecutionTier(IntEnum):
     """ML execution tiers (higher = faster, more resource-intensive).
 
-    Per GPU_REFACTOR_PLAN.md Section 8:
     - Tier 0: Fast Path - cached, multi-worker
     - Tier 1: Reduced Cache - smaller caches, fewer workers
     - Tier 2: Sequential GPU - no cache, single worker
@@ -64,7 +63,6 @@ class TierConfig:
 
 
 # Tier configuration constants
-# Per GPU_REFACTOR_PLAN.md Section 8
 
 TIER_CONFIGS: dict[ExecutionTier, TierConfig] = {
     ExecutionTier.FAST_PATH: TierConfig(
@@ -140,12 +138,9 @@ def select_execution_tier(
 ) -> TierSelection:
     """Select the highest-performance tier that fits within resource budgets.
 
-    Per GPU_REFACTOR_PLAN.md Section 9:
-    - Tier selection is deterministic
-    - Owned by WorkerSystemService (infrastructure layer)
-    - If GPU not capable → skip Tiers 0-2
-    - Select the highest tier whose requirements fit within budgets
-    - Tier 4 means refusal, not retry
+    Tier selection is deterministic. If GPU not capable, skips Tiers 0-2.
+    Selects the highest tier whose requirements fit within budgets.
+    Tier 4 means refusal, not retry.
 
     Args:
         capacity_estimate: Resource measurements from ML capacity probe

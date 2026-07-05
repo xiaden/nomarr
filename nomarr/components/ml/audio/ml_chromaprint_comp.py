@@ -91,7 +91,7 @@ def compute_chromaprint(waveform: np.ndarray, sample_rate: int) -> str:
         # MD5 hash of spectral fingerprint
         return hashlib.md5(fingerprint_data).hexdigest()
 
-    except Exception as e:
+    except (ValueError, RuntimeError):
         logger.exception("[chromaprint] Failed to compute chromaprint")
         # Fallback: hash the raw waveform (less robust but still works)
         return hashlib.md5(waveform.tobytes()).hexdigest()

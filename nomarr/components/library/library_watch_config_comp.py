@@ -13,31 +13,16 @@ if TYPE_CHECKING:
 def list_watchable_libraries(db: Database) -> list[dict[str, Any]]:
     """Return libraries eligible for file watching.
 
-    Projects persistence results to the bounded watcher contract:
-    ``{"_id", "root_path", "watch_mode"}``.
-
-    Args:
-        db: Database connection.
-
-    Returns:
-        Watchable library documents with only watcher-relevant fields.
-
+    Projects to ``{"_id", "root_path", "watch_mode"}``.
     """
     libraries = list_watchable_library_records(db)
     return [_project_watchable_library(library) for library in libraries]
 
 
 def get_library_watch_config(db: Database, library_id: str) -> dict[str, Any] | None:
-    """Return watch configuration for a single library.
+    """Return watch config for a library, or None if not found.
 
-    Args:
-        db: Database connection.
-        library_id: Library document ``_id``.
-
-    Returns:
-        Projected watch configuration with ``root_path``, ``watch_mode``, and
-        ``is_enabled``, or ``None`` when the library does not exist.
-
+    Returns ``{"root_path", "watch_mode", "is_enabled"}``.
     """
     library = get_library_record(db, library_id, include_scan=False)
     if library is None:

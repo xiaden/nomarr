@@ -267,14 +267,3 @@ def run_pending_migrations(db: Database) -> None:
             f"Upgrade the application to match the database, or restore the database from backup."
         )
         raise SchemaVersionMismatchError(msg)
-
-
-# NOTE: The following functions have been removed as part of the migration-versioning refactor
-# (Part A, Phase 2). prepare_database_wf.py currently imports some of them and will have
-# broken imports until Part B updates that workflow.
-#
-# Deleted:
-#   - get_current_schema_version
-#   - get_code_schema_version_from_files
-#   - validate_version_chain
-#   - check_schema_version_mismatch

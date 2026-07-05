@@ -44,7 +44,7 @@ def parse_tag_values(tags: dict[str, str | TagValue | list[TagValue]]) -> dict[s
                     parsed[key] = parsed_value
                     continue
             except json.JSONDecodeError:
-                pass  # Not valid JSON; fall through to next format attempt
+                pass
 
         # Try to parse Python tuple strings (legacy format from str(tuple))
         # e.g., "('aggressive', 'party-like', 'peppy')"
@@ -56,7 +56,7 @@ def parse_tag_values(tags: dict[str, str | TagValue | list[TagValue]]) -> dict[s
                     parsed[key] = list(parsed_value)
                     continue
             except (ValueError, SyntaxError):
-                pass  # Not a valid Python tuple literal; fall through to next format attempt
+                pass
 
         # Handle semicolon-delimited multi-value tags
         # Some formats (MP3) don't support native multi-value
@@ -75,7 +75,7 @@ def parse_tag_values(tags: dict[str, str | TagValue | list[TagValue]]) -> dict[s
             parsed[key] = [int(value)]
             continue
         except ValueError:
-            pass  # Not an integer; fall through to treat as plain string
+            pass
 
         # Keep as string, wrapped in list
         parsed[key] = [value]

@@ -28,10 +28,12 @@ if TYPE_CHECKING:
 
     import onnxruntime as ort
 
+_ort: ort | None = None
 try:
-    import onnxruntime as _ort
+    import onnxruntime as _ort_imported
+    _ort = _ort_imported
 except ImportError:
-    _ort = None  # type: ignore[assignment]
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -40,13 +42,7 @@ except ImportError:
 
 
 def is_available() -> bool:
-    """Return True if onnxruntime is installed and importable.
-
-    Example:
-        if not is_available():
-            print("ONNX Runtime not available - skipping ML operations")
-            return
-    """
+    """Return True if onnxruntime is installed and importable."""
     return _ort is not None
 
 
@@ -55,10 +51,6 @@ def require() -> None:
 
     Raises:
         RuntimeError: If onnxruntime is not installed.
-
-    Example:
-        require()  # fails fast if ONNX Runtime missing
-        # proceed with ML operations
     """
     if _ort is None:
         msg = "onnxruntime is not installed. Install onnxruntime-gpu for GPU support or onnxruntime for CPU-only."
@@ -66,12 +58,7 @@ def require() -> None:
 
 
 def get_version() -> str:
-    """Return the onnxruntime version string, or 'unknown' if not installed.
-
-    Example:
-        version = get_version()
-        print(f"Using ONNX Runtime {version}")
-    """
+    """Return the onnxruntime version string, or 'unknown' if not installed."""
     if _ort is None:
         return "unknown"
     return str(_ort.__version__)
@@ -107,6 +94,7 @@ def create_session(
         FileNotFoundError: If *model_path* does not exist.
     """
     require()
+    assert _ort is not None  # guaranteed by require()
 
     if not os.path.exists(model_path):
         msg = f"ONNX model file not found: {model_path}"
@@ -115,7 +103,7 @@ def create_session(
     providers: list[str | tuple[str, dict[str, object]]] = []
 
     if device == "gpu":
-        available = _ort.get_available_providers()  # type: ignore[union-attr]
+        available = _ort.get_available_providers()
         if "CUDAExecutionProvider" in available:
             cuda_opts = _build_cuda_provider_options(vram_limit_bytes)
             providers.append(("CUDAExecutionProvider", cuda_opts))
@@ -134,7 +122,7 @@ def create_session(
 
     providers.append("CPUExecutionProvider")
 
-    sess_options = _ort.SessionOptions()  # type: ignore[union-attr]
+    sess_options = _ort.SessionOptions()
     sess_options.log_severity_level = 2  # WARNING — lets ORT report EP fallbacks
     # Cap thread pools per session.  Head models are tiny (< 1MB) and gain
     # nothing from parallelism; backbone runs on GPU so CPU threads are idle.
@@ -143,7 +131,7 @@ def create_session(
     sess_options.intra_op_num_threads = 2
     sess_options.inter_op_num_threads = 1
 
-    session: ort.InferenceSession = _ort.InferenceSession(  # type: ignore[union-attr]
+    session: ort.InferenceSession = _ort.InferenceSession(
         model_path,
         sess_options=sess_options,
         providers=providers,

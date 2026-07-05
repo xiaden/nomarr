@@ -97,7 +97,7 @@ def run_single_head(
         seg_std: np.ndarray | None = None
         if segment_scores.ndim == 2 and segment_scores.shape[0] > 1:
             seg_std = np.std(segment_scores, axis=0).astype(np.float32, copy=False)
-    except Exception as e:
+    except (RuntimeError, ValueError) as e:
         logger.error(f"[processor] Processing error for {head_name}: {e}", exc_info=True)
         return SingleHeadResult(
             head_name=head_name,
@@ -160,7 +160,7 @@ def run_single_head(
             elapsed_ms=elapsed_ms,
             decisions_count=len(decision.details),
         )
-    except Exception as e:
+    except (RuntimeError, ValueError) as e:
         logger.error(f"[processor] Aggregation error for {head_name}: {e}", exc_info=True)
         return SingleHeadResult(
             head_name=head_name,

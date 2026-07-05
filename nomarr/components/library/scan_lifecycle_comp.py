@@ -308,5 +308,5 @@ def cleanup_stale_folders(
     """
     try:
         db.library_folders.delete_missing_folders(library_id, existing_folder_rel_paths)
-    except Exception as e:
+    except RuntimeError as e:
         logger.warning("Failed to clean up folder records: %s", e)

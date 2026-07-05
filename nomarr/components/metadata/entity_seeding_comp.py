@@ -218,14 +218,14 @@ def seed_entities_for_scan_batch(
             entity_tags = _extract_entity_tags(metadata)
             all_tag_entries.extend(_build_song_tag_entries(file_id, entity_tags))
             cache_updates.append({"song_id": file_id, **compute_metadata_cache_fields(metadata)})
-        except Exception as e:
+        except (ValueError, TypeError, KeyError) as e:
             logger.warning("[entity_seeding] Failed to build entities for file_id %s: %s", file_id, e)
 
     # 3) Batch seed entities (3 AQL total instead of 3 x N x 6)
     if all_tag_entries:
         try:
             db.tags.set_song_tags_batch(all_tag_entries)
-        except Exception as e:
+        except (ValueError, RuntimeError) as e:
             logger.warning("[entity_seeding] Batch tag seeding failed: %s", e)
             return 0
 
@@ -233,7 +233,7 @@ def seed_entities_for_scan_batch(
     if cache_updates:
         try:
             update_metadata_cache_batch(db, cache_updates)
-        except Exception as e:
+        except (ValueError, RuntimeError) as e:
             logger.warning("[entity_seeding] Batch cache update failed: %s", e)
 
     return len(cache_updates)

@@ -46,18 +46,6 @@ def reconcile_library_paths(
     Returns:
         ReconcileResult with counts of valid/invalid files
 
-    Example:
-        # After changing library root in config
-        from nomarr.components.library.reconcile_paths_comp import reconcile_library_paths
-
-        result = reconcile_library_paths(
-            db=db,
-            library_id="libraries/12345",
-            policy="delete_invalid",
-            batch_size=500
-        )
-        print(f"Cleaned up {result['deleted_files']} invalid files")
-
     """
     logger.info(f"[reconcile_library_paths] Starting reconciliation with policy={policy}")
     result: ReconcileResult = {
@@ -97,9 +85,9 @@ def reconcile_library_paths(
                 elif library_path.status == "unknown":
                     result["unknown_status"] += 1
                     logger.warning(f"[reconcile_library_paths] Unknown status for {file_path}: {library_path.reason}")
-            except Exception as e:
+            except (OSError, RuntimeError) as e:
                 result["errors"] += 1
-                logger.exception(f"[reconcile_library_paths] Error validating {file_path}: {e}")
+                logger.exception("[reconcile_library_paths] Error validating %s: %s", file_path, e)
         offset += len(files)
         if offset % (batch_size * 5) == 0:
             logger.info(
@@ -146,6 +134,6 @@ def _handle_invalid_path(
             delete_library_file(db, file_path)
             result["deleted_files"] += 1
             logger.info(f"[reconcile_library_paths] Deleted invalid path ({status}): {file_path} - {reason}")
-        except Exception as e:
-            logger.exception(f"[reconcile_library_paths] Failed to delete {file_path}: {e}")
+        except RuntimeError as e:
+            logger.exception("[reconcile_library_paths] Failed to delete %s: %s", file_path, e)
             result["errors"] += 1

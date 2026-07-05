@@ -1,7 +1,6 @@
-"""Library-file query helpers extracted from legacy persistence mixins.
+"""Library-file query helpers.
 
-These helpers own the complex multi-hop reads that now route through the
-intent-level `db.library`, `db.app`, and `db.ml` persistence sub-facades.
+Multi-hop reads routed through the intent-level persistence facades.
 """
 
 from __future__ import annotations
@@ -26,33 +25,13 @@ def get_file_by_id(db: Database, file_id: str) -> dict[str, Any] | None:
 
 
 def count_recently_tagged(db: Database, window_seconds: int = 300) -> int:
-    """Count files whose ``last_tagged_at`` timestamp falls within the recent window.
-
-    Args:
-        db: Database instance.
-        window_seconds: How far back to look (default 5 minutes).
-
-    Returns:
-        Number of files tagged within the window.
-
-    """
+    """Count files tagged within the recent window (default 5 minutes)."""
     cutoff_ms = now_ms().value - window_seconds * 1000
     return db.library.count_recently_tagged(cutoff_ms)
 
 
 def get_existing_file_paths(db: Database, paths: list[str]) -> set[str]:
-    """Return the subset of *paths* that already have a record in the library-files collection.
-
-    Used before batch-upsert operations to identify genuinely new files so that
-    state initialisation is only applied once per file — on first insertion.
-
-    Args:
-        db: Database instance.
-        paths: Absolute file paths to check.
-
-    Returns:
-        Set of paths (subset of *paths*) that exist in the database.
-    """
+    """Return the subset of *paths* that already exist in the library-files collection."""
     if not paths:
         return set()
     return set(db.library.list_existing_file_paths(paths))
@@ -353,13 +332,7 @@ def list_library_files(
     album: str | None = None,
     library_id: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
-    """List library files with optional filters and total count.
-
-    TODO(migrate): library_id path fetches all files for the library with
-    limit=None then filters/sorts/paginates in Python. Persistence needs an
-    AQL query that accepts (library_id, artist, album, limit, offset) and
-    returns (rows, total) so this entire function body collapses to one call.
-    """
+    """List library files with optional filters; returns (rows, total_count)."""
     if library_id is not None:
         file_docs = _library_file_docs_for_library(db, library_id)
     else:
@@ -397,27 +370,9 @@ def search_library_files_with_tags(
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
-    """Search files with optional tag/text filters and hydrate tags in one query.
+    """Search files with tag/text filters; returns (files, total_count).
 
-    All filtering and pagination is pushed to ArangoDB. Python only hydrates
-    the small result page with tags and library_id.
-
-    Args:
-        db: Database handle used to search files and hydrate related tags.
-        query_text: Free-text substring matched against artist, album, and title with case-insensitive ``LIKE`` filters.
-        artist: Case-insensitive exact artist match filter.
-        album: Case-insensitive exact album match filter.
-        tag_key: When provided alone, filters to files that have any tag with this
-            name; when combined with ``tag_value``, filters to files with an exact
-            ``(tag_key, tag_value)`` match.
-        tag_value: Exact tag value to match; only meaningful when ``tag_key`` is also set.
-        tagged_only: When ``True``, restricts results to files in the ``tagged`` state.
-        limit: Maximum number of files to return.
-        offset: Number of matching files to skip before returning results.
-
-    Returns:
-        A tuple of ``(files, total_count)`` where each file dict is a library-file
-            document merged with ``tags`` and ``library_id``.
+    All filtering is pushed to ArangoDB via set-intersection of candidate ids.
     """
     # candidate_ids: None = universe (no constraint yet); set = narrowed result.
     # Each active filter fetches only matching docs from Arango via the namespace
@@ -490,12 +445,7 @@ def get_recently_processed(
     limit: int = 20,
     library_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Get recently tagged files ordered by most recent activity (``scanned_at`` or ``last_tagged_at``) descending.
-
-    TODO(migrate): loads all tagged files into Python then sorts and slices.
-    Should be replaced by an AQL query with ORDER BY MAX(scanned_at,
-    last_tagged_at) DESC LIMIT n, optionally filtered by library_id.
-    """
+    """Return recently tagged files ordered by activity descending."""
     tagged_file_docs = db.app.list_file_docs_in_state(STATE_PROCESSED, limit=DEFAULT_LIMIT)
     if library_id is not None:
         library_file_ids = set(db.library.list_library_file_ids(normalize_library_id(library_id), limit=DEFAULT_LIMIT))
@@ -514,12 +464,7 @@ def get_recently_processed(
 
 
 def get_file_modified_times(db: Database) -> dict[str, int]:
-    """Return absolute path to modified-time mapping for all files.
-
-    TODO(migrate): fetches all file docs to project two fields. Persistence
-    should expose db.library.list_file_paths_with_modified_times() returning
-    list[tuple[str, int]] to avoid loading full documents.
-    """
+    """Return absolute path to modified-time mapping for all files."""
     file_docs = _get_all_library_file_docs(db, DEFAULT_LIMIT)
     return {
         str(file_doc["path"]): int(file_doc["modified_time"])
@@ -616,12 +561,7 @@ def find_move_candidate_by_chromaprint(
 
 
 def get_library_stats(db: Database, library_id: str | None = None) -> dict[str, Any]:
-    """Get aggregate library-file statistics.
-
-    TODO(migrate): loads all files (and all tags when library_id is set) into
-    Python to compute duration/size sums and distinct artist/album counts.
-    Should be replaced by an AQL aggregation query.
-    """
+    """Get aggregate library-file statistics (files, artists, albums, duration, size)."""
     if library_id is not None:
         file_docs = _library_file_docs_for_library(db, library_id)
         total_files = db.library.count_library_file_links(normalize_library_id(library_id))
@@ -662,13 +602,7 @@ def get_library_stats(db: Database, library_id: str | None = None) -> dict[str, 
 
 
 def get_library_counts(db: Database) -> dict[str, dict[str, int]]:
-    """Get file and folder counts for all libraries.
-
-    TODO(migrate): loads all files per library to derive folder_count by
-    computing unique path parents in Python. Persistence should expose
-    db.library.get_library_file_and_folder_counts() returning
-    dict[library_id, {file_count, folder_count}] via a single AQL query.
-    """
+    """Return file and folder counts for all libraries."""
     result: dict[str, dict[str, int]] = {}
     for library_key in db.library.list_library_keys():
         library_id = normalize_library_id(library_key)
@@ -691,15 +625,7 @@ def get_artist_album_frequencies(db: Database, limit: int) -> dict[str, list[tup
 
 
 def clear_library_data(db: Database) -> None:
-    """Nuke all library-file data by truncating every affected collection.
-
-    This is a destructive full-reset.  Rather than paying per-document cascade
-    cost, we truncate every collection that holds library-file-derived data in
-    one pass.  Exception: ``ml_output_streams`` documents are deleted per-file
-    rather than truncated, so their linked ``file_has_output_stream`` and
-    ``output_has_stream`` edges are also removed. Order: deepest derived data
-    first, then edges, then documents.
-    """
+    """Truncate all library-file collections in dependency order (destructive full-reset)."""
     # Derived data
     from nomarr.components.ml.inference.ml_output_stream_store_comp import delete_output_streams
 
@@ -808,13 +734,7 @@ def search_files_by_tag(
 
 
 def count_files_by_tag(db: Database, tag_key: str, target_value: float | str) -> int:
-    """Count files that match a tag-value filter.
-
-    TODO(migrate): loads all tags for tag_key then traverses song-tag edges in
-    Python. db.library.count_files_by_tag(tag_key, target_value) already exists
-    for the string case but doesn't handle numeric proximity. Extend that method
-    to accept an optional numeric mode so this can be removed.
-    """
+    """Count files matching a tag-value filter."""
     total = db.library.count_tags()
     tag_docs = cast("list[dict[str, Any]]", db.library.list_tags_by_name(tag_key, limit=total))
 
@@ -839,12 +759,7 @@ def get_files_by_chromaprint(
     chromaprint: str,
     library_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Get files whose stored chromaprint matches the supplied value.
-
-    TODO(migrate): library_id branch fetches all library files then filters by
-    chromaprint in Python. Use db.library.find_library_file_by_chromaprint()
-    (which already exists) and wrap in a list for the scoped path.
-    """
+    """Return files matching a chromaprint fingerprint."""
     if library_id is not None:
         return [
             file_doc

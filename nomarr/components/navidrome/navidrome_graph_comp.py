@@ -12,17 +12,12 @@ if TYPE_CHECKING:
 
 
 def _edge_key(left_id: str, right_id: str) -> str:
-    """Return a stable edge-document key for one source/target pair."""
+    """Return a stable edge-document key."""
     return hashlib.sha256(f"{left_id}:{right_id}".encode()).hexdigest()[:16]
 
 
 def _build_edge_namespace(db: Database, name: str) -> Any:
-    """Return the runtime-wired edge namespace for an edge collection.
-
-    Runtime callers should use ``db.app.*``. This helper remains only as a
-    compatibility path for legacy unit tests that still patch edge namespaces
-    directly and have not yet been migrated to the sub-facade surface.
-    """
+    """Return the runtime-wired edge namespace for an edge collection."""
     return cast("Any", getattr(db, name))
 
 

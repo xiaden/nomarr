@@ -26,17 +26,7 @@ class UpdateLibraryMetadataComp:
         file_write_mode: str | None = None,
         library_auto_write: bool | None = None,
     ) -> None:
-        """Update library metadata fields.
-
-        Args:
-            library_id: Library _id
-            name: New name (optional)
-            is_enabled: New enabled status (optional)
-            watch_mode: New watch mode (optional)
-            file_write_mode: New file write mode (optional)
-            library_auto_write: New auto-write setting (optional).
-
-        """
+        """Update library metadata fields via library_records_comp."""
         update_library_record(
             self.db,
             library_id,

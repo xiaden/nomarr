@@ -88,4 +88,4 @@ def reap_stale_locks(db: Database, worker_id: str, stale_after_ms: int) -> None:
 
         resource_id = reference.split(":", maxsplit=1)[1]
         db.app.remove_lock(reference)
-        logger.warning("[%s] Reaped stale promotion lock for %s", worker_id, resource_id)
+        logger.warning("[locks] %s reaped stale promotion lock for %s", worker_id, resource_id)

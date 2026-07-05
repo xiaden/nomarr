@@ -86,7 +86,7 @@ def decide_regression(values: np.ndarray, labels: list[str]) -> dict[str, float]
     for i, lab in enumerate(labels):
         try:
             out[lab] = float(values[i])
-        except Exception:
+        except (ValueError, TypeError):
             continue
     return out
 

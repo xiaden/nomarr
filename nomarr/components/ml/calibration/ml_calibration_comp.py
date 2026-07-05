@@ -132,7 +132,7 @@ def save_calibration_sidecars(
                 "label_count": len(calib_data["labels"]),
             }
             logger.info(f"[calibration] Saved {calibration_path} ({len(calib_data['labels'])} labels)")
-        except Exception as e:
+        except (OSError, TypeError) as e:
             logger.exception(f"[calibration] Failed to save {calibration_path}: {e}")
     logger.info(f"[calibration] Saved {len(saved_files)} calibration sidecars")
     total_labels = 0
@@ -452,7 +452,7 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
             logger.warning(f"[calibration] Skipping invalid calibration entry (missing {e})")
             skipped_count += 1
             continue
-        except Exception as e:
+        except (OSError, RuntimeError) as e:
             logger.exception(f"[calibration] Failed to import calibration: {e}")
             skipped_count += 1
             continue

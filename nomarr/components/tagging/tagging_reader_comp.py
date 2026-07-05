@@ -26,7 +26,7 @@ def read_nomarr_namespace(path: LibraryPath, namespace: str = DEFAULT_NAMESPACE)
             return set()
         tags = read_tags_from_file(path, namespace)
         return {tag.key for tag in tags}
-    except Exception:
+    except (OSError, ValueError, RuntimeError):
         return set()
 
 
@@ -86,8 +86,8 @@ def read_tags_from_file(path: LibraryPath, namespace: str) -> Tags:
         items = tuple(Tag(key=k, value=tuple(v if isinstance(v, list) else [v])) for k, v in tag_dict.items())
         return Tags(items=items)
 
-    except Exception as e:
-        logger.exception(f"[TagReader] Failed to read tags from {path_str}")
+    except (OSError, ValueError, mutagen.MutagenError) as e:
+        logger.exception("[tagging] Failed to read tags from %s", path_str)
         msg = f"Failed to read tags: {e}"
         raise RuntimeError(msg) from e
 
@@ -143,8 +143,8 @@ def _extract_mp4_tags(audio: mutagen.FileType, namespace: str) -> dict[str, list
             else:
                 decoded_val = value.decode("utf-8") if isinstance(value, bytes) else str(value)
                 tags[clean_name] = [decoded_val]
-        except Exception as e:
-            logger.warning("[TagReader] Failed to decode tag %s: %s", key, e)
+        except (OSError, UnicodeDecodeError) as e:
+            logger.warning("[tagging] Failed to decode tag %s: %s", key, e)
             continue
 
     return tags

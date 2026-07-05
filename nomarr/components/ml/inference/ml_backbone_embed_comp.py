@@ -89,7 +89,7 @@ def compute_backbone_embeddings(
                 bb = future_to_backbone[future]
                 try:
                     result.embeddings.append(future.result())
-                except Exception as e:
+                except (RuntimeError, ValueError, KeyError) as e:
                     logger.warning("[embeddings] Skipping backbone %s: %s", bb, e)
                     result.errors[bb] = str(e)
         wall_ms = internal_ms().value - t_wall.value
@@ -105,7 +105,7 @@ def compute_backbone_embeddings(
         for backbone, backbone_heads in backbone_items:
             try:
                 result.embeddings.append(_run_one(backbone, backbone_heads))
-            except Exception as e:
+            except (RuntimeError, ValueError, KeyError) as e:
                 logger.warning("[embeddings] Skipping backbone %s: %s", backbone, e)
                 result.errors[backbone] = str(e)
 

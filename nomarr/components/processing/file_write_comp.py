@@ -177,7 +177,7 @@ def release_file_claim(
     """
     try:
         release_claim(db, file_key)
-    except Exception as exc:
+    except (ValueError, RuntimeError) as exc:
         logger.warning(
             "[file_write_comp] Failed to release claim for %s: %s",
             file_key,

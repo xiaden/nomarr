@@ -46,6 +46,14 @@ class MoveDetectionResult:
     collisions_detected: int  # Same chromaprint, different duration
 
 
+_EMPTY_MOVE_RESULT = MoveDetectionResult(
+    moves=[],
+    files_moved_count=0,
+    chromaprints_computed=0,
+    collisions_detected=0,
+)
+
+
 def detect_file_moves(
     files_to_remove: list[dict[str, Any]],
     new_file_entries: list[dict[str, Any]],
@@ -74,23 +82,13 @@ def detect_file_moves(
     """
     # Fast path: No files to analyze
     if not files_to_remove or not new_file_entries:
-        return MoveDetectionResult(
-            moves=[],
-            files_moved_count=0,
-            chromaprints_computed=0,
-            collisions_detected=0,
-        )
+        return _EMPTY_MOVE_RESULT
 
     # Fast path: No chromaprints in DB yet, can't do move detection
     has_chromaprints = any(f.get("chromaprint") for f in files_to_remove)
     if not has_chromaprints:
         logger.info(f"No chromaprints found in library - skipping move detection for {len(files_to_remove)} files")
-        return MoveDetectionResult(
-            moves=[],
-            files_moved_count=0,
-            chromaprints_computed=0,
-            collisions_detected=0,
-        )
+        return _EMPTY_MOVE_RESULT
 
     # Full move detection
     logger.info(f"Checking {len(new_file_entries)} new files for moves against {len(files_to_remove)} removed files...")
@@ -187,8 +185,8 @@ def detect_file_moves(
                         f"(duration: {removed_duration}s vs {new_duration}s)",
                     )
 
-        except Exception as e:
-            logger.warning(f"Failed to compute chromaprint for {new_path}: {e}")
+        except (OSError, RuntimeError) as e:
+            logger.warning("Failed to compute chromaprint for %s: %s", new_path, e)
             continue
 
     logger.info(
@@ -254,7 +252,7 @@ def apply_detected_moves(
             try:
                 entity_tags = _extract_entity_tags(new_metadata)
                 seed_song_entities_from_tags(db, move.file_id, entity_tags)
-            except Exception as e:
+            except RuntimeError as e:
                 logger.warning(
                     "Failed to update entities for moved file %s: %s",
                     move.new_path,
@@ -287,7 +285,7 @@ def detect_file_move_via_db(
         if not library_path.is_valid():
             return None
         chromaprint = compute_chromaprint_for_file(library_path)
-    except Exception as e:
+    except (OSError, RuntimeError) as e:
         logger.warning("Failed to compute chromaprint for %s: %s", new_path, e)
         return None
 

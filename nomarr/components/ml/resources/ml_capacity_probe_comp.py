@@ -3,11 +3,9 @@
 Performs one-time measurement of per-worker resource consumption for admission control.
 Runs once per model_set_hash (not per-worker, not on every startup).
 
-Per GPU_REFACTOR_PLAN.md Section 7:
-- Runs once per model_set_hash
-- Protected by DB lock to prevent concurrent probes
-- Measures VRAM (per-PID via nvidia-smi) and RAM (RSS via psutil)
-- Results stored as measured_backbone_vram_mb and estimated_worker_ram_mb
+Protected by DB lock to prevent concurrent probes.
+Measures VRAM (per-PID via nvidia-smi) and RAM (RSS via psutil).
+Results stored as measured_backbone_vram_mb and estimated_worker_ram_mb.
 """
 
 from __future__ import annotations
@@ -83,7 +81,7 @@ def compute_model_set_hash(models_dir: str) -> str:
                     rel_path = os.path.relpath(filepath, models_dir)
                     file_size = os.path.getsize(filepath)
                     hasher.update(f"{rel_path}:{file_size}".encode())
-    except Exception as e:
+    except OSError as e:
         logger.warning("[ml_capacity_probe] Error computing model hash: %s", e)
         # Use timestamp-based hash as fallback
         hasher.update(f"fallback:{now_ms()}".encode())
@@ -99,10 +97,8 @@ def get_or_run_capacity_probe(
 ) -> CapacityEstimate:
     """Get existing capacity estimate or run a new probe.
 
-    Per GPU_REFACTOR_PLAN.md Section 7:
-    - Runs once per model_set_hash
-    - Protected by DB lock (only one worker probes at a time)
-    - Other workers poll for completion (5s interval, 120s timeout)
+    Runs once per model_set_hash. Protected by DB lock so only one worker
+    probes at a time. Other workers poll for completion (5s interval, 120s timeout).
 
     Args:
         db: Database instance
@@ -277,7 +273,7 @@ def _run_capacity_probe(
             is_conservative=False,
         )
 
-    except Exception as e:
+    except (OSError, ImportError, RuntimeError) as e:
         logger.exception("[ml_capacity_probe] Probe failed: %s", e)
         # Release lock on failure so another worker can try
         db.ml_capacity.release_probe_lock(model_set_hash)

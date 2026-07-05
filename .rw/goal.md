@@ -1,5 +1,7 @@
 # Goal
-perform code maintenance passes over the backend services, moving to have a better composition, DRY patterns, typing closer to the examples in V2, and clear, Meaningful logging/error tracing @nomarr/components/  . Additionally, remove all AI generated slop introduced in backend code files.
+Perform code maintenance passes over the backend components, moving to have a better composition, DRY patterns, typing closer to the examples in V2, and clear, Meaningful logging/error tracing @nomarr/components/ 
+
+Additionally, remove all AI generated slop introduced in backend code files.
 
 This includes:
 

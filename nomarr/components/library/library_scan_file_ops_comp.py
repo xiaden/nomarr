@@ -1,8 +1,7 @@
 """File and folder scan operations for library scans.
 
-Extracted from ``scan_lifecycle_comp`` — owns file-batch upsert, folder
-cache management, deleted-file cleanup, and state bootstrap for newly
-scanned files.
+Extracted from scan_lifecycle_comp — owns file-batch upsert, folder
+cache management, deleted-file cleanup, and state bootstrap.
 """
 
 from __future__ import annotations
@@ -23,6 +22,7 @@ from nomarr.components.library.library_file_state_comp import (
 from nomarr.components.library.library_id_comp import library_key_from_ref
 from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.exceptions import PersistenceError
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -116,17 +116,7 @@ def snapshot_existing_files(
 ) -> tuple[dict[str, dict[str, Any]], bool]:
     """Load all existing library files and check for tagged files.
 
-    Returns a snapshot of what the DB knows before scanning, used for
-    comparison during the scan loop.
-
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-
-    Returns:
-        Tuple of (existing_files_dict, has_tagged_files) where
-        *existing_files_dict* maps file path to file document.
-
+    Returns (existing_files_dict, has_tagged_files).
     """
     files_tuple = list_library_files(db, limit=1_000_000, offset=0)
     existing_files_dict: dict[str, dict[str, Any]] = {f["path"]: f for f in files_tuple[0]}
@@ -144,18 +134,7 @@ def upsert_scanned_files(
     file_entries: list[dict[str, Any]],
     edge_bootstraps: list[dict[str, Any]] | None = None,
 ) -> list[str]:
-    """Batch-upsert scanned file documents and optionally bootstrap state edges.
-
-    Args:
-        db: Database instance
-        file_entries: File documents to upsert
-        edge_bootstraps: Optional edge bootstrap metadata from FileBatchResult.
-            If provided, creates ml_tagged state edges for matching files.
-
-    Returns:
-        List of document _ids (inserted or updated)
-
-    """
+    """Batch-upsert scanned files and optionally bootstrap state edges."""
     file_ids = _upsert_batch(db, file_entries)
 
     if edge_bootstraps:
@@ -176,19 +155,9 @@ def bootstrap_file_state_edges(
     edge_bootstraps: list[dict[str, Any]],
     file_id_by_path: dict[str, str],
 ) -> int:
-    """Create state edges for files based on scan-time metadata.
+    """Create ml_tagged state edges for files that should skip ML tagging.
 
-    Called after upsert_scanned_files to create ml_tagged state edges
-    for files that should skip ML tagging.
-
-    Args:
-        db: Database instance
-        edge_bootstraps: List of edge bootstrap dicts from FileBatchResult
-        file_id_by_path: Map of normalized_path to file _id from upsert results
-
-    Returns:
-        Number of edges created
-
+    Returns the number of edges created.
     """
     count = 0
     for bootstrap in edge_bootstraps:
@@ -206,13 +175,7 @@ def bootstrap_file_state_edges(
 def remove_deleted_files(db: Database, paths: list[str]) -> int:
     """Bulk-delete files that are no longer on disk.
 
-    Args:
-        db: Database instance
-        paths: Absolute file paths to remove
-
-    Returns:
-        Number of files deleted
-
+    Returns the number of files deleted.
     """
     file_ids = [
         str(file_doc["_id"])
@@ -234,16 +197,7 @@ def get_cached_folders(
     db: Database,
     library_id: str,
 ) -> dict[str, dict[str, Any]]:
-    """Load all cached folder records for a library.
-
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-
-    Returns:
-        Dict mapping relative folder path to folder record
-
-    """
+    """Load all cached folder records for a library."""
     folders = cast("list[dict[str, Any]]", db.library.list_folders_for_library(library_id))
     return {str(folder["path"]): folder for folder in folders}
 
@@ -256,23 +210,7 @@ def save_folder_record(
     file_count: int,
     existing_folder_id: str | None = None,
 ) -> None:
-    """Upsert a single folder cache record.
-
-    The folder document is keyed deterministically from
-    ``(library_id, rel_path)``, so a simple upsert (via
-    :func:`add_library_folder`) replaces the old record without needing a
-    separate delete-first step.  The owning edge is also upserted atomically.
-
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-        rel_path: Folder path relative to library root (POSIX-style)
-        mtime: Folder modification time
-        file_count: Number of audio files in the folder
-        existing_folder_id: Deprecated and unused — kept for signature
-            compatibility.  The upsert handles replacement automatically.
-
-    """
+    """Upsert a folder cache record (keyed deterministically by library/path)."""
     db.library.add_library_folder(library_id, _folder_doc(library_id, rel_path, mtime, file_count))
 
 
@@ -281,16 +219,7 @@ def cleanup_stale_folders(
     library_id: str,
     existing_folder_rel_paths: set[str],
 ) -> None:
-    """Delete folder records that no longer exist on disk.
-
-    Logs a warning on failure instead of propagating.
-
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-        existing_folder_rel_paths: Set of folder relative paths still on disk
-
-    """
+    """Delete folder cache records that no longer exist on disk."""
     try:
         cached_folders = get_cached_folders(db, library_id)
         stale_ids = [
@@ -301,5 +230,5 @@ def cleanup_stale_folders(
         if stale_ids:
             for stale_id in stale_ids:
                 db.library.remove_library_folder(library_id, stale_id)
-    except Exception as e:
-        logger.warning("Failed to clean up folder records: %s", e)
+    except PersistenceError as e:
+        logger.warning("[scan] Failed to clean up folder records: %s", e)

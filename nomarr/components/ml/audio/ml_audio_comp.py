@@ -92,5 +92,5 @@ def load_audio_mono(path: LibraryPath | str, target_sr: int = 16000) -> LoadAudi
 
     except (AudioLoadShutdownError, ValueError):
         raise
-    except Exception as exc:
+    except (RuntimeError, OSError) as exc:
         raise AudioLoadCrashError(f"Failed to decode audio: {path_str}") from exc

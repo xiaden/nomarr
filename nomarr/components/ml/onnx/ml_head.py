@@ -68,13 +68,6 @@ class ONNXHeadModel(BaseONNXModel):
 
     Node names and tensor dimensions are resolved at
     :meth:`load` time; the attributes are ``None`` until the model is loaded.
-
-    Example usage::
-
-        model = ONNXHeadModel("/models/effnet/heads/sigmoid/happy.onnx", meta=head_info)
-        model.load("cpu")
-        scores = model.run(embeddings)  # shape: (n_patches, num_classes)
-        model.unload()
     """
 
     meta: HeadInfo

@@ -94,7 +94,7 @@ def _has_db_config(config_path: Path) -> bool:
         with open(config_path) as f:
             config = yaml.safe_load(f)
         return bool(config.get("arango_password"))
-    except Exception:
+    except (yaml.YAMLError, OSError):
         return False
 
 
@@ -120,7 +120,7 @@ def _database_exists(hosts: str | None = None) -> bool:
         client = ArangoClient(hosts=actual_hosts)
         sys_db = client.db("_system", username="root", password=root_password)
         return bool(sys_db.has_database(DB_NAME))
-    except Exception as e:
+    except OSError as e:
         logger.warning("[first_run] Database existence check failed: %s", e)
         return False
 

@@ -95,7 +95,7 @@ def _resolve_stream_label(head_info: HeadInfo, stream: LoadedOutputStream) -> st
         resolved_label = str(head_info.labels[stream.output_index])
         if stream.label != resolved_label:
             logger.debug(
-                "[reconstruction] Stream label mismatch for %s[%s]: joined=%s head_info=%s; using head metadata",
+                "[tagging] Stream label mismatch for %s[%s]: joined=%s head_info=%s; using head metadata",
                 head_info.name,
                 stream.output_index,
                 stream.label,
@@ -107,7 +107,7 @@ def _resolve_stream_label(head_info: HeadInfo, stream: LoadedOutputStream) -> st
         return stream.label
 
     logger.debug(
-        "[reconstruction] Stream %s for %s has output_index=%s outside discovered labels; skipping",
+        "[tagging] Stream %s for %s has output_index=%s outside discovered labels; skipping",
         stream.output_id,
         head_info.name,
         stream.output_index,
@@ -160,7 +160,7 @@ def reconstruct_head_outputs_from_streams(
     for head_info in head_infos:
         head_name = head_info.name
         if head_name not in grouped_streams:
-            logger.debug("[reconstruction] No output streams for %s, skipping", head_name)
+            logger.debug("[tagging] No output streams for %s, skipping", head_name)
             continue
 
         stream_stats = _recompute_head_stream_stats(head_info, grouped_streams[head_name])
@@ -171,7 +171,7 @@ def reconstruct_head_outputs_from_streams(
             stat = stream_stats[0]
             if len(stream_stats) > 1:
                 logger.debug(
-                    "[reconstruction] Regression head %s had %s streams; using first ordered stream only",
+                    "[tagging] Regression head %s had %s streams; using first ordered stream only",
                     head_name,
                     len(stream_stats),
                 )
@@ -215,7 +215,7 @@ def reconstruct_head_outputs_from_streams(
         for stat in stream_stats:
             if not 0 <= stat.output_index < len(spec.labels):
                 logger.debug(
-                    "[reconstruction] Output index %s out of range for %s; skipping stream %s",
+                    "[tagging] Output index %s out of range for %s; skipping stream %s",
                     stat.output_index,
                     head_name,
                     stat.output_id,
@@ -272,7 +272,7 @@ def reconstruct_head_outputs_from_streams(
                 ),
             )
 
-    logger.debug("[reconstruction] Reconstructed %s HeadOutput objects from streams", len(all_outputs))
+    logger.debug("[tagging] Reconstructed %s HeadOutput objects from streams", len(all_outputs))
     return all_outputs
 
 

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import mutagen
+from mutagen import MutagenError
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3, ID3NoHeaderError
 from mutagen.mp4 import MP4
@@ -38,8 +39,8 @@ def remove_tags_from_file(path: LibraryPath, namespace: str) -> int:
         msg = f"Unsupported audio format: {ext}"
         raise ValueError(msg)
 
-    except Exception as e:
-        logger.exception("[TagRemover] Failed to remove tags from %s", path_str)
+    except (OSError, ValueError, MutagenError, RuntimeError) as e:
+        logger.exception("[tagging] Failed to remove tags from %s", path_str)
         msg = f"Failed to remove tags: {e}"
         raise RuntimeError(msg) from e
 
@@ -59,7 +60,7 @@ def _remove_id3_tags(path: str, namespace: str) -> int:
 
     if keys_to_remove:
         audio.save()
-        logger.info("[TagRemover] Removed %s ID3 tags from %s", len(keys_to_remove), path)
+        logger.info("[tagging] Removed %s ID3 tags from %s", len(keys_to_remove), path)
 
     return len(keys_to_remove)
 
@@ -79,11 +80,11 @@ def _remove_mp4_tags(path: str, namespace: str) -> int:
 
         if keys_to_remove:
             audio.save()
-            logger.info("[TagRemover] Removed %s MP4 tags from %s", len(keys_to_remove), path)
+            logger.info("[tagging] Removed %s MP4 tags from %s", len(keys_to_remove), path)
 
         return len(keys_to_remove)
 
-    except Exception as e:
+    except (OSError, MutagenError) as e:
         msg = f"MP4 tag removal failed: {e}"
         raise RuntimeError(msg) from e
 
@@ -108,7 +109,7 @@ def _remove_vorbis_tags(path: str, namespace: str) -> int:
         vorbis_prefix = f"{namespace.upper()}_"
         if not isinstance(audio.tags, dict):
             return 0
-        audio_tags: dict[str, list[str]] = audio.tags  # type: ignore[assignment]
+        audio_tags = cast("dict[str, list[str]]", audio.tags)
         keys_to_remove = [
             key for key, _ in audio_tags.items() if isinstance(key, str) and key.startswith(vorbis_prefix)
         ]
@@ -118,10 +119,10 @@ def _remove_vorbis_tags(path: str, namespace: str) -> int:
 
         if keys_to_remove:
             audio.save()
-            logger.info("[TagRemover] Removed %s Vorbis tags from %s", len(keys_to_remove), path)
+            logger.info("[tagging] Removed %s Vorbis tags from %s", len(keys_to_remove), path)
 
         return len(keys_to_remove)
 
-    except Exception as e:
+    except (OSError, MutagenError) as e:
         msg = f"Vorbis tag removal failed: {e}"
         raise RuntimeError(msg) from e

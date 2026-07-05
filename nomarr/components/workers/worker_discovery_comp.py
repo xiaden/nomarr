@@ -221,14 +221,14 @@ def discover_and_claim_file(
     """
     file_id = discover_next_file(db)
     if not file_id:
-        logger.debug("[Discovery] No files found needing processing (worker=%s)", worker_id)
+        logger.debug("[discovery] No files found needing processing (worker=%s)", worker_id)
         return None
 
     if claim_file(db, file_id, worker_id):
-        logger.debug("[Discovery] Claimed %s for %s", file_id, worker_id)
+        logger.debug("[discovery] Claimed %s for %s", file_id, worker_id)
         return file_id
     # Another worker claimed this file - caller should retry
-    logger.debug("[Discovery] File %s already claimed, retrying discovery", file_id)
+    logger.debug("[discovery] File %s already claimed, retrying discovery", file_id)
     return None
 
 

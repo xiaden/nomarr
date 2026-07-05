@@ -1,8 +1,4 @@
-"""Crawl Navidrome song inventory via Subsonic API.
-
-Walks Navidrome's album list and collects song metadata (ID, path, play
-counts) for use by the sync workflow.
-"""
+"""Crawl Navidrome song inventory via Subsonic API."""
 
 from __future__ import annotations
 
@@ -31,16 +27,9 @@ class CrawledSong(TypedDict):
 def crawl_navidrome_songs(client: SubsonicClient) -> list[CrawledSong]:
     """Walk all Navidrome albums and collect song data.
 
-    Paginates through ``getAlbumList2`` (alphabetical), fetches each album's
-    songs via ``getAlbum``, and collects ``(nd_id, path, playCount, played)``
-    from each ``Child`` element.
-
-    Args:
-        client: Authenticated Subsonic API client.
-
-    Returns:
-        List of crawled songs with Navidrome IDs, paths, and play data.
-
+    Paginates through ``getAlbumList2`` (alphabetical), fetches each
+    album's songs via ``getAlbum``, and collects ``(nd_id, path,
+    playCount, played)`` from each ``Child`` element.
     """
     all_songs: list[CrawledSong] = []
     offset = 0
@@ -75,22 +64,19 @@ def crawl_navidrome_songs(client: SubsonicClient) -> list[CrawledSong]:
             album_count += 1
             if album_count % _PROGRESS_LOG_INTERVAL == 0:
                 logger.info(
-                    "[navidrome_crawl] Processed %d albums (%d songs so far)",
+                    "[navidrome] Processed %d albums (%d songs so far)",
                     album_count,
                     len(all_songs),
                 )
 
         offset += len(albums)
 
-    logger.info("[navidrome_crawl] Collected %d songs from %d albums", len(all_songs), album_count)
+    logger.info("[navidrome] Collected %d songs from %d albums", len(all_songs), album_count)
     return all_songs
 
 
 def _parse_played_to_ms(played: str) -> int:
-    """Convert Subsonic ``played`` datetime string to epoch milliseconds.
-
-    Returns 0 if the string is empty or unparseable.
-    """
+    """Convert Subsonic ``played`` datetime string to epoch milliseconds, or 0."""
     if not played:
         return 0
     try:
