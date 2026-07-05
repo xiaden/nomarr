@@ -1,14 +1,4 @@
-"""Worker crash handling component - restart decision logic.
-
-Pure decision functions for determining when to restart vs mark failed.
-Contains no state, only logic based on inputs (restart counts, timestamps, config).
-
-Architecture:
-- No imports from services layer
-- Uses only stdlib, typing, and helpers
-- All functions are pure (no side effects except logging)
-- WorkerSystemService delegates restart decisions to this component
-"""
+"""Worker crash handling — pure restart-decision logic with no side effects except logging."""
 
 from __future__ import annotations
 
@@ -58,38 +48,8 @@ def should_restart_worker(
 ) -> RestartDecision:
     """Decide whether to restart a worker or mark it as permanently failed.
 
-    Implements two-tier restart limiting:
-    1. Short window: Prevent restart loops (e.g., 5 restarts in 5 minutes)
-    2. Long window: Catch slow thrashing (e.g., 20 lifetime restarts)
-
-    This catches both rapid crashes (OOM, invalid config) and slow resource
-    pressure (worker killed every 10 minutes due to memory/GPU saturation).
-
-    Args:
-        restart_count: Current restart counter for this worker
-        last_restart_ms: Timestamp (ms) of most recent restart, or None if never restarted
-        max_short_window: Max restarts allowed in short window (default: 5)
-        short_window_ms: Short window duration in milliseconds (default: 5 minutes)
-        max_lifetime: Max total restarts before marking failed (default: 20)
-        max_backoff: Maximum backoff delay in seconds (default: 60)
-
-    Returns:
-        RestartDecision with action, reason, and backoff/failure details
-
-    Examples:
-        # First crash - restart immediately
-        >>> should_restart_worker(restart_count=0, last_restart_ms=None)
-        RestartDecision(action='restart', reason='...', backoff_seconds=1)
-
-        # 5 rapid restarts in 2 minutes - mark failed
-        >>> now = int(time.time() * 1000)
-        >>> should_restart_worker(restart_count=5, last_restart_ms=now - 120_000)
-        RestartDecision(action='mark_failed', reason='...', failure_reason='...')
-
-        # 20 total restarts over 2 hours - mark failed (slow thrashing)
-        >>> should_restart_worker(restart_count=20, last_restart_ms=now - 7200_000)
-        RestartDecision(action='mark_failed', reason='...', failure_reason='...')
-
+    Two-tier limiting: short window for rapid restart loops, long window for slow thrashing.
+    Uses exponential backoff on restarts.
     """
     now_ms = int(time.time() * 1000)
 
@@ -146,25 +106,6 @@ def should_restart_worker(
 
 
 def calculate_backoff(restart_count: int, max_backoff: int = MAX_BACKOFF_SECONDS) -> int:
-    """Calculate exponential backoff delay for worker restart.
-
-    Backoff sequence: 1s, 2s, 4s, 8s, 16s, 32s, 60s (max), 60s, ...
-
-    Args:
-        restart_count: Number of times worker has restarted
-        max_backoff: Maximum backoff delay in seconds (default: 60)
-
-    Returns:
-        Backoff delay in seconds (always >= 1, capped at max_backoff)
-
-    Examples:
-        >>> calculate_backoff(0)
-        1
-        >>> calculate_backoff(3)
-        8
-        >>> calculate_backoff(10)
-        60
-
-    """
+    """Calculate exponential backoff delay: 1s, 2s, 4s, 8s, 16s, 32s, 60s (max), 60s..."""
     # Ensure minimum 1 second backoff, then exponential up to max
     return int(max(1, min(2**restart_count, max_backoff)))

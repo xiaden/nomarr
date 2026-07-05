@@ -23,16 +23,7 @@ __all__ = [
 
 
 def discover_and_claim_file_for_tags(db: Database, worker_id: str) -> str | None:
-    """Discover and atomically claim the next file needing tag extraction.
-
-    Args:
-        db: Database instance
-        worker_id: Worker identifier for claim ownership
-
-    Returns:
-        File ``_id`` string if a file was claimed, ``None`` if no work available
-
-    """
+    """Discover and atomically claim the next file needing tag extraction."""
     file_doc = discover_next_file_needing_tags(db, exclude_claimed=True)
     if file_doc is None:
         return None

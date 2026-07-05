@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.exceptions import DuplicateKeyError
@@ -31,7 +31,7 @@ def acquire_distributed_lock(
     now = float(now_ms().value)
     expires_at = now + float(ttl_seconds * 1000)
 
-    existing = cast("dict[str, Any] | None", db.app.get_lock(reference))
+    existing = cast("dict | None", db.app.get_lock(reference))
     if existing is not None:
         existing_expires_at = float(existing.get("expires_at", 0.0))
         if existing_expires_at >= now and existing.get("holder") != holder:
@@ -56,12 +56,12 @@ def acquire_distributed_lock(
 def release_distributed_lock(db: Database, lock_type: str, resource_id: str, holder: str) -> bool:
     """Release a distributed lock only when it is still owned by the holder."""
     reference = make_lock_reference(lock_type, resource_id)
-    existing = cast("dict[str, Any] | None", db.app.get_lock(reference))
+    existing = cast("dict | None", db.app.get_lock(reference))
     if existing is None or existing.get("holder") != holder:
         return False
 
     db.app.remove_lock(reference)
-    remaining = cast("dict[str, Any] | None", db.app.get_lock(reference))
+    remaining = cast("dict | None", db.app.get_lock(reference))
     return remaining is None or remaining.get("holder") != holder
 
 
@@ -77,7 +77,7 @@ def reap_stale_locks(db: Database, worker_id: str, stale_after_ms: int) -> None:
             continue
 
         reference = str(lock["document_reference"])
-        current = cast("dict[str, Any] | None", db.app.get_lock(reference))
+        current = cast("dict | None", db.app.get_lock(reference))
         if current is None:
             continue
         if current.get("lock_type") != "vector_promotion":
