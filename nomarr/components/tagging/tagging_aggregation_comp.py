@@ -79,7 +79,7 @@ def assign_regression_outputs(
         effective_calib_id_high = applied_calibration_id if applied_calibration_id is not None else _key_calib_id_high
         effective_calib_id_low = applied_calibration_id if applied_calibration_id is not None else _key_calib_id_low
         logger.debug(
-            "[%s] Regression neutral: %s \u2192 both %s/%s (mean=%.3f, std=%.3f)",
+            "[%s] Regression neutral: %s → both %s/%s (mean=%.3f, std=%.3f)",
             log_prefix,
             head_name,
             high_term,
@@ -117,7 +117,7 @@ def assign_regression_outputs(
     tier: str | None = None
     if std_val >= stability_thresholds.acceptable:
         logger.debug(
-            "[%s] Regression no tier: %s \u2192 %s (mean=%.3f, std=%.3f - high variance)",
+            "[%s] Regression no tier: %s → %s (mean=%.3f, std=%.3f - high variance)",
             log_prefix,
             head_name,
             mood_term,
@@ -133,7 +133,7 @@ def assign_regression_outputs(
         else:
             tier = "low"
         logger.debug(
-            "[%s] Regression mood: %s \u2192 %s (mean=%.3f, std=%.3f, intensity=%.2f, tier=%s)",
+            "[%s] Regression mood: %s → %s (mean=%.3f, std=%.3f, intensity=%.2f, tier=%s)",
             log_prefix,
             head_name,
             mood_term,

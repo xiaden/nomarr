@@ -111,7 +111,7 @@ def run_single_head(
         elapsed_ms = internal_ms().value - t_head.value
         logger.debug(
             f"[processor] Head {head_name} complete: "
-            f"{len(segment_scores)} patches \u2192 {len(head_outputs)} outputs "
+            f"{len(segment_scores)} patches → {len(head_outputs)} outputs "
             f"in {elapsed_ms / 1000:.1f}s",
         )
         # Regression data
