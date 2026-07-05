@@ -205,7 +205,7 @@ def get_vram_usage_for_pid_mb(pid: int, timeout: float = NVIDIA_SMI_TIMEOUT_S) -
 
         return 0  # Process not found in GPU compute apps
 
-    except Exception:
+    except (subprocess.SubprocessError, ValueError, OSError):
         logger.debug("Failed to query VRAM usage via nvidia-smi", exc_info=True)
         return 0
 

@@ -223,7 +223,7 @@ def _discover_backbone_ids(models_dir: str) -> list[str]:
         backbones = sorted({h.backbone for h in heads})
         logger.debug("[bootstrap] Discovered backbones for vectors_track: %s", backbones)
         return backbones
-    except Exception:
+    except (OSError, RuntimeError):
         logger.warning(
             "[bootstrap] Could not discover backbones from %s — skipping vectors_track", models_dir, exc_info=True
         )
@@ -234,7 +234,7 @@ def _create_vectors_track_collections(db: SafeDatabase, models_dir: str) -> None
     """Create per-backbone vectors_track_hot collections with persistent indexes. Idempotent."""
     try:
         backbones = discover_backbones(models_dir)
-    except Exception:
+    except (OSError, RuntimeError):
         logger.warning(
             "[bootstrap] Could not discover backbones from %s — skipping vectors_track provisioning",
             models_dir,
