@@ -11,7 +11,7 @@ Architecture:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -189,6 +189,15 @@ class CollectionOverviewResponse(BaseModel):
         description="Genre distribution",
     )
 
+    @classmethod
+    def from_dto(cls, data: dict[str, Any]) -> CollectionOverviewResponse:
+        """Convert collection overview result dict to Pydantic response model."""
+        return cls(
+            stats=LibraryStatsResponse(**data["stats"]),
+            year_distribution=[YearDistributionItemResponse(**item) for item in data["year_distribution"]],
+            genre_distribution=[GenreDistributionItemResponse(**item) for item in data["genre_distribution"]],
+        )
+
 
 class MoodCoverageTierResponse(BaseModel):
     """Coverage for a single mood tier."""
@@ -245,3 +254,24 @@ class MoodAnalysisResponse(BaseModel):
         default_factory=list,
         description="Dominant mood vibes",
     )
+
+    @classmethod
+    def from_dto(cls, data: dict[str, Any]) -> MoodAnalysisResponse:
+        """Convert mood analysis result dict to Pydantic response model."""
+        coverage_data = data["coverage"]
+        return cls(
+            coverage=MoodCoverageResponse(
+                total_files=coverage_data["total_files"],
+                tiers={
+                    tier: MoodCoverageTierResponse(**tier_data) for tier, tier_data in coverage_data["tiers"].items()
+                },
+            ),
+            balance={
+                tier: [MoodBalanceItemResponse(**item) for item in items] for tier, items in data["balance"].items()
+            },
+            top_pairs_by_tier={
+                tier: [MoodPairItemResponse(**item) for item in pairs]
+                for tier, pairs in data["top_pairs_by_tier"].items()
+            },
+            dominant_vibes=[DominantVibeItemResponse(**item) for item in data["dominant_vibes"]],
+        )

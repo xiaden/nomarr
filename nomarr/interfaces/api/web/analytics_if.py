@@ -131,11 +131,7 @@ async def web_analytics_collection_overview(
     """
     try:
         result = await asyncio.to_thread(analytics_service.get_collection_overview, library_id=library_id)
-        return CollectionOverviewResponse(
-            stats=result["stats"],
-            year_distribution=result["year_distribution"],
-            genre_distribution=result["genre_distribution"],
-        )
+        return CollectionOverviewResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error getting collection overview")
         raise HTTPException(
@@ -156,12 +152,7 @@ async def web_analytics_mood_analysis(
     """
     try:
         result = await asyncio.to_thread(analytics_service.get_mood_analysis, library_id=library_id)
-        return MoodAnalysisResponse(
-            coverage=result["coverage"],
-            balance=result["balance"],
-            top_pairs_by_tier=result["top_pairs_by_tier"],
-            dominant_vibes=result["dominant_vibes"],
-        )
+        return MoodAnalysisResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error getting mood analysis")
         raise HTTPException(
