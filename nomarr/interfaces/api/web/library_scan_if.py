@@ -3,11 +3,10 @@
 import asyncio
 import logging
 import threading
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from nomarr.components.library.reconcile_paths_comp import ReconcilePolicy
 from nomarr.helpers.exceptions import LibraryAlreadyScanningError, LibraryNotFoundError
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
@@ -40,7 +39,7 @@ router = APIRouter(prefix="/library", tags=["Library"])
 @router.post("/{library_id}/scan/quick", dependencies=[Depends(verify_session)])
 async def scan_library_quick(
     library_id: str,
-    library_service: "LibraryService" = Depends(get_library_service),
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> StartScanWithStatusResponse:
     """Start a quick scan for a specific library."""
     library_id = decode_path_id(library_id)
@@ -62,7 +61,7 @@ async def scan_library_quick(
 @router.post("/{library_id}/scan/full", dependencies=[Depends(verify_session)])
 async def scan_library_full(
     library_id: str,
-    library_service: "LibraryService" = Depends(get_library_service),
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> StartScanWithStatusResponse:
     """Start a full scan for a specific library."""
     library_id = decode_path_id(library_id)
@@ -84,15 +83,9 @@ async def scan_library_full(
 @router.post("/{library_id}/repair-tags", dependencies=[Depends(verify_session)])
 async def repair_library_tags(
     library_id: str,
-    library_service: "LibraryService" = Depends(get_library_service),
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> StartScanWithStatusResponse:
-    """Mark all files for tag re-hydration and start a full scan.
-
-    Transitions every file in the library to the ``not_hydrated``
-    state so the tag extraction worker re-reads audio metadata and
-    re-creates tag edges (artist, album, genre, etc.), then starts a
-    normal full scan.
-    """
+    """Mark all files for tag re-hydration and start a full scan."""
     library_id = decode_path_id(library_id)
     try:
         stats = library_service.repair_library_tags(library_id=library_id)
@@ -112,12 +105,12 @@ async def repair_library_tags(
 @router.post("/{library_id}/reconcile", dependencies=[Depends(verify_session)])
 async def reconcile_library_paths(
     library_id: str,
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
     policy: Annotated[
-        ReconcilePolicy,
+        Literal["mark_invalid", "delete_invalid", "dry_run"],
         Query(description="Policy for invalid paths: dry_run, mark_invalid, delete_invalid"),
     ] = "mark_invalid",
     batch_size: Annotated[int, Query(description="Number of files to process per batch", ge=1, le=10000)] = 1000,
-    library_service: "LibraryService" = Depends(get_library_service),
 ) -> ReconcilePathsResponse:
     """Reconcile library paths after configuration changes."""
     library_id = decode_path_id(library_id)
@@ -145,8 +138,8 @@ async def reconcile_library_paths(
 @router.post("/{library_id}/write-tag", dependencies=[Depends(verify_session)], status_code=202)
 async def write_library_tags(
     library_id: str,
-    tagging_service: "TaggingService" = Depends(get_tagging_service),
-    navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
+    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
+    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> StartTagWriteResponse:
     """Write pending file tags for a library."""
     library_id = decode_path_id(library_id)
@@ -221,21 +214,14 @@ async def update_write_mode(
 @router.post("/{library_id}/validate-tag", dependencies=[Depends(verify_session)])
 async def validate_library_tags(
     library_id: str,
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
     auto_repair: Annotated[bool, Query(description="Auto-repair incomplete files by marking for re-tagging")] = True,
-    library_service: "LibraryService" = Depends(get_library_service),
 ) -> ValidateLibraryTagsResponse:
     """Validate tag completeness for a library's files."""
     library_id = decode_path_id(library_id)
     try:
         result = library_service.validate_library_tags(library_id=library_id, auto_repair=auto_repair)
-        return ValidateLibraryTagsResponse(
-            files_checked=result["files_checked"],
-            complete_files=result["complete_files"],
-            incomplete_files=result["incomplete_files"],
-            files_repaired=result["files_repaired"],
-            expected_heads=result["expected_heads"],
-            missing_names_summary=result.get("missing_names_summary", {}),
-        )
+        return ValidateLibraryTagsResponse(**result)
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:
