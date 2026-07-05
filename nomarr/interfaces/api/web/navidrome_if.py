@@ -289,7 +289,7 @@ async def web_generate_personal_playlists(
 
 @router.post("/ping", response_model=PingResponse)
 async def navidrome_ping(
-    navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
+    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> PingResponse:
     """Test connectivity to the Navidrome server."""
     ok, error = await asyncio.to_thread(navidrome_service.ping)
@@ -298,7 +298,7 @@ async def navidrome_ping(
 
 @router.get("/status", response_model=NavidromeStatusResponse)
 async def navidrome_status(
-    navidrome_service: "NavidromeService" = Depends(get_navidrome_service),
+    navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> NavidromeStatusResponse:
     """Check whether Navidrome integration is configured (no connection attempt)."""
     configured = navidrome_service.is_navidrome_configured()
