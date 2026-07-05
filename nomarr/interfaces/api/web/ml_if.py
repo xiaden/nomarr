@@ -76,13 +76,19 @@ async def ml_get_model_outputs(
         ) from e
 
 
+class UpdateOutputLabelResponse(BaseModel):
+    """Response for updating a model output label."""
+
+    status: str
+
+
 @router.patch("/model/{model_id}/output/{output_id}", dependencies=[Depends(verify_session)])
 async def ml_update_output_label(
     model_id: str,
     output_id: str,
     body: UpdateOutputLabelRequest,
     ml_service: Annotated[MLService, Depends(get_ml_service)],
-) -> dict[str, str]:
+) -> UpdateOutputLabelResponse:
     """Assign a human-readable label to a model output activation."""
     decoded_model_id = decode_path_id(model_id)
     decoded_output_id = decode_path_id(output_id)
@@ -92,7 +98,7 @@ async def ml_update_output_label(
             output_id=decoded_output_id,
             label=body.label,
         )
-        return {"status": "updated"}
+        return UpdateOutputLabelResponse(status="updated")
     except Exception as e:
         logger.exception("[ml_if] Failed to update output label for %s", output_id)
         raise HTTPException(
@@ -101,17 +107,24 @@ async def ml_update_output_label(
         ) from e
 
 
+class MarkConfiguredResponse(BaseModel):
+    """Response for marking a model as configured."""
+
+    status: str
+    fully_configured: str
+
+
 @router.post("/model/{model_id}/mark-configured", dependencies=[Depends(verify_session)])
 async def ml_mark_model_configured(
     model_id: str,
     body: MarkConfiguredRequest,
     ml_service: Annotated[MLService, Depends(get_ml_service)],
-) -> dict[str, str]:
+) -> MarkConfiguredResponse:
     """Set the fully_configured flag on a model, enabling or disabling it for inference."""
     decoded_model_id = decode_path_id(model_id)
     try:
         ml_service.mark_model_configured(model_id=decoded_model_id, value=body.value)
-        return {"status": "updated", "fully_configured": str(body.value).lower()}
+        return MarkConfiguredResponse(status="updated", fully_configured=str(body.value).lower())
     except Exception as e:
         logger.exception("[ml_if] Failed to mark model configured for %s", model_id)
         raise HTTPException(
@@ -120,10 +133,16 @@ async def ml_mark_model_configured(
         ) from e
 
 
+class VramProbeResponse(BaseModel):
+    """Response for scheduling a VRAM probe."""
+
+    status: str
+
+
 @router.post("/vram-probe", dependencies=[Depends(verify_session)])
 async def ml_trigger_vram_probe(
     ml_service: Annotated[MLService, Depends(get_ml_service)],
-) -> dict[str, str]:
+) -> VramProbeResponse:
     """Clear per-model VRAM measurements so the next worker startup re-probes.
 
     The probe runs automatically on the next discovery worker GPU warmup cycle.
@@ -131,7 +150,7 @@ async def ml_trigger_vram_probe(
     """
     try:
         ml_service.clear_vram_measurements()
-        return {"status": "probe_scheduled"}
+        return VramProbeResponse(status="probe_scheduled")
     except Exception as e:
         logger.exception("[ml_if] Failed to clear VRAM measurements")
         raise HTTPException(

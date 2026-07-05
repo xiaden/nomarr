@@ -27,33 +27,7 @@ async def list_directory(
     config: dict = Depends(get_config),
     _session: dict = Depends(verify_session),
 ) -> dict[str, Any]:
-    """List contents of a directory within the music library.
-
-    Security features:
-    - All paths are resolved and validated against library_root root
-    - Directory traversal attempts (.., symlinks) are rejected
-    - Only returns relative paths, never absolute container paths
-    - Read-only: no write/delete/move operations
-
-    Args:
-        path: Relative path from library root (empty string = root)
-
-    Returns:
-        {
-            "path": "relative/path",
-            "entries": [
-                {"name": "Artist", "is_dir": true},
-                {"name": "track.flac", "is_dir": false},
-                ...
-            ]
-        }
-
-    Raises:
-        503: Library path not configured
-        400: Invalid path or directory traversal attempt
-        404: Path does not exist
-
-    """
+    """List contents of a directory within the music library."""
     library_root = config.get("library_root")
     if not library_root:
         raise HTTPException(status_code=503, detail="Library path not configured. Set library_root in config.yaml")
