@@ -197,15 +197,9 @@ def _probe_single_model(
 
 
 def probe_all_models(db: Database, models_dir: str) -> None:
-    """Probe every backbone and head model and store VRAM measurements in meta.
+    """Probe every backbone and head model, storing VRAM measurements in meta.
 
-    Runs sequentially: only one model is live on the GPU at a time.  Warms the
-    CUDA context before the first real measurement.  Any model that fails to
-    load or produces a negative delta is recorded as ``sys.maxsize``.
-
-    Args:
-        db: Database instance (used to write ``meta`` keys).
-        models_dir: Root directory containing backbone sub-directories.
+    Runs sequentially; only one model lives on the GPU at a time.
     """
     backbones = discover_backbone_models(models_dir)
     heads = discover_head_models_no_db(models_dir)
@@ -248,24 +242,13 @@ def probe_all_models(db: Database, models_dir: str) -> None:
 
 
 def has_model_vram_measurements(db: Database) -> bool:
-    """Return True if any per-model VRAM measurements exist in meta.
-
-    Args:
-        db: Database instance.
-
-    Returns:
-        True if at least one ``ml_model_vram:*`` key is present.
-    """
+    """Return True if any per-model VRAM measurements exist."""
     docs = cast("list[dict[str, Any]]", db.app.list_config_options(prefix=_META_PREFIX))
     return bool(docs)
 
 
 def clear_model_vram_measurements(db: Database) -> None:
-    """Delete all per-model VRAM measurements from meta.
-
-    Args:
-        db: Database instance.
-    """
+    """Delete all per-model VRAM measurements."""
     existing_docs = cast("list[dict[str, Any]]", db.app.list_config_options(prefix=_META_PREFIX))
     removed = 0
     for doc in existing_docs:

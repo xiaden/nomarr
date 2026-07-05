@@ -18,19 +18,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _load_vector_docs(vector_ops: Any) -> list[dict[str, Any]]:
+def _load_vector_docs(vector_ops: object) -> list[dict[str, Any]]:
     """Load all vector documents from a hot or cold namespace."""
-    doc_count = cast("int", vector_ops.count())
+    ops = cast("Any", vector_ops)
+    doc_count = cast("int", ops.count())
     if doc_count <= 0:
         return []
 
-    doc_ids = [str(row["value"]) for row in vector_ops.aggregate("_id", limit=doc_count) if "value" in row]
+    doc_ids = [str(row["value"]) for row in ops.aggregate("_id", limit=doc_count) if "value" in row]
     if not doc_ids:
         return []
 
     docs_by_id = {
         str(doc_id): doc
-        for doc in cast("list[dict[str, Any]]", vector_ops.get.in_(Field("_id", doc_ids), limit=None))
+        for doc in cast("list[dict[str, Any]]", ops.get.in_(Field("_id", doc_ids), limit=None))
         if isinstance((doc_id := doc.get("_id")), str)
     }
     return [docs_by_id[doc_id] for doc_id in doc_ids if doc_id in docs_by_id]

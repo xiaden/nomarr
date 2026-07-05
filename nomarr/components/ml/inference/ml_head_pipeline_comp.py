@@ -40,12 +40,6 @@ def shutdown_head_pool(*, timeout: float = 5.0) -> None:
     """Shut down the module-level head prediction thread pool.
 
     Safe to call multiple times or when the pool has already exited.
-    Called by the worker during cleanup to ensure a bounded exit time.
-
-    Args:
-        timeout: Max seconds to wait for in-flight predictions before
-                 forcing cancellation. Defaults to 5s — enough for any
-                 single head prediction to finish.
     """
     _HEAD_POOL.shutdown(wait=True, cancel_futures=True)
 
@@ -81,12 +75,6 @@ def run_single_head(
 
     Thread-safe: all inputs are read-only, all outputs returned via SingleHeadResult.
     ONNX inference releases the GIL so multiple heads get real parallelism.
-
-    Args:
-        head_model: ONNX head model wrapper with required HeadInfo metadata.
-        predict_fn: Pre-resolved cached predictor closure that calls head_model.run().
-            Hoisting resolution to the caller avoids per-thread cache lookup + lock contention.
-
     """
     head_name = head_model.meta.name
     t_head = internal_ms()
@@ -182,16 +170,7 @@ def run_heads(
 
     Runs heads in parallel via a reusable module-level ThreadPoolExecutor (_HEAD_POOL).
     Predictor resolution is hoisted to the main thread to avoid per-thread cache
-    lookup + lock contention. The dispatched threads only call predict_fn() which
-    releases the GIL for real CPU parallelism.
-
-    Args:
-        backbone_heads: List of heads for this backbone.
-        embeddings_2d: Pre-computed embeddings.
-
-    Returns:
-        ProcessHeadPredictionsResult with per-head outcomes.
-
+    lookup + lock contention.
     """
     # Pre-resolve cached predictors on the main thread (no lock contention).
     # Each predict_fn is a lightweight closure binding the ONNX session + embeddings.
