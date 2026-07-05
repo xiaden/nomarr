@@ -153,7 +153,7 @@ def compute_log_mel(
 ) -> np.ndarray:
     """Compute a log-mel spectrogram from a mono float32 waveform.
 
-    Uses essentia standard algorithms (Windowing \u2192 Spectrum \u2192 MelBands \u2192
+    Uses essentia standard algorithms (Windowing → Spectrum → MelBands →
     UnaryOperator) with exact parameters verified from
     TensorflowInputMusiCNN.cpp and TensorflowInputVGGish.cpp upstream source.
 
@@ -252,7 +252,7 @@ def preprocess_for_backbone(
     waveform: np.ndarray,
     backbone: str,
 ) -> np.ndarray:
-    """End-to-end preprocessing: waveform \u2192 patches ready for ONNX inference.
+    """End-to-end preprocessing: waveform → patches ready for ONNX inference.
 
     Combines :func:`compute_log_mel` and :func:`extract_patches` using the
     validated parameters for *backbone*.
@@ -271,7 +271,7 @@ def preprocess_for_backbone(
     log_mel = compute_log_mel(waveform, params)
     patches = extract_patches(log_mel, params.patch_frames, params.patch_hop)
     logger.debug(
-        "[preprocess] %s: waveform=%d samples \u2192 mel=%s \u2192 patches=%s",
+        "[preprocess] %s: waveform=%d samples → mel=%s → patches=%s",
         backbone,
         len(waveform),
         log_mel.shape,

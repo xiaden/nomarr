@@ -85,13 +85,13 @@ def _check_audio_properties(original: _AudioProperties, after: _AudioProperties)
     """Return an error string if properties differ beyond tolerance, else None."""
     if abs(after.duration - original.duration) > DURATION_TOLERANCE_S:
         return (
-            f"Duration changed: {original.duration:.2f}s \u2192 {after.duration:.2f}s "
-            f"(tolerance \u00b1{DURATION_TOLERANCE_S}s)"
+            f"Duration changed: {original.duration:.2f}s → {after.duration:.2f}s "
+            f"(tolerance ±{DURATION_TOLERANCE_S}s)"
         )
     if after.sample_rate != original.sample_rate:
-        return f"Sample rate changed: {original.sample_rate}Hz \u2192 {after.sample_rate}Hz"
+        return f"Sample rate changed: {original.sample_rate}Hz → {after.sample_rate}Hz"
     if after.channels != original.channels:
-        return f"Channel count changed: {original.channels} \u2192 {after.channels}"
+        return f"Channel count changed: {original.channels} → {after.channels}"
     return None
 
 

@@ -163,7 +163,7 @@ def validate_library_root(library_root: Path) -> None:
     I/O-level pre-flight check: surfaces mount/permission problems early.
     """
     if not library_root.exists():
-        msg = f"Library root does not exist: {library_root} \u2014 the volume may not be mounted"
+        msg = f"Library root does not exist: {library_root} — the volume may not be mounted"
         raise OSError(msg)
     if not library_root.is_dir():
         msg = f"Library root is not a directory: {library_root}"
@@ -175,9 +175,9 @@ def validate_library_root(library_root: Path) -> None:
         msg = f"Library root is not accessible (permission denied): {library_root}"
         raise OSError(msg) from None
     except OSError as e:
-        msg = f"Library root is not accessible (mount/IO error): {library_root} \u2014 {e}"
+        msg = f"Library root is not accessible (mount/IO error): {library_root} — {e}"
         raise OSError(msg) from e
 
     if not entries:
-        msg = f"Library root is empty: {library_root} \u2014 the volume may not be mounted correctly"
+        msg = f"Library root is empty: {library_root} — the volume may not be mounted correctly"
         raise OSError(msg)
