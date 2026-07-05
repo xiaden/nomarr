@@ -25,18 +25,7 @@ if TYPE_CHECKING:
 
 
 def compute_tag_frequencies(params: ComputeTagFrequenciesParams) -> ComputeTagFrequenciesResult:
-    """Compute frequency counts from raw tag data.
-
-    Input tag rows are already in "key:value" format (e.g., "mood-strict:happy").
-    This function just passes them through with minimal processing.
-
-    Args:
-        params: Input parameters with namespace prefix, file count, and tag rows
-
-    Returns:
-        ComputeTagFrequenciesResult with nom_tags (as key:value), standard_tags, total_files
-
-    """
+    """Return frequency counts from raw tag data — passes through ``key:value`` rows with minimal processing."""
     logger.info("[analytics] Computing tag frequencies")
     nom_tag_counts = list(params.nom_tag_rows)
     return ComputeTagFrequenciesResult(
@@ -51,15 +40,7 @@ def compute_tag_frequencies(params: ComputeTagFrequenciesParams) -> ComputeTagFr
 
 
 def compute_tag_correlation_matrix(params: ComputeTagCorrelationMatrixParams) -> TagCorrelationData:
-    """Compute VALUE-based correlation matrix from raw tag data.
-
-    Args:
-        params: Parameters containing namespace, top_n, and tag data
-
-    Returns:
-        TagCorrelationData with mood-to-mood and mood-to-tier correlations
-
-    """
+    """Return a VALUE-based correlation matrix from raw mood and tier tag data."""
     logger.info(f"[analytics] Computing VALUE-based correlation matrix (top {params.top_n} moods)")
     mood_counter: Counter = Counter()
     for _file_id, tag_value in params.mood_tag_rows:
@@ -120,17 +101,7 @@ def compute_tag_correlation_matrix(params: ComputeTagCorrelationMatrixParams) ->
 
 
 def compute_mood_distribution(mood_rows: Sequence[tuple[str, str]]) -> MoodDistributionData:
-    """Compute mood distribution from raw mood tag data.
-
-    All tag values are now stored as JSON arrays.
-
-    Args:
-        mood_rows: List of (mood_type, tag_value) tuples where tag_value is JSON array string
-
-    Returns:
-        MoodDistributionData with mood tier distributions and top moods
-
-    """
+    """Return mood distribution from raw ``(mood_type, tag_value)`` tuples (JSON array values)."""
     logger.info("[analytics] Computing mood distribution")
     mood_strict_counts: Counter = Counter()
     mood_regular_counts: Counter = Counter()
@@ -164,15 +135,7 @@ def compute_mood_distribution(mood_rows: Sequence[tuple[str, str]]) -> MoodDistr
 
 
 def compute_artist_tag_profile(params: ComputeArtistTagProfileParams) -> ArtistTagProfile:
-    """Compute tag profile for an artist from raw tag data.
-
-    Args:
-        params: Parameters containing artist info, namespace, and tag data
-
-    Returns:
-        ArtistTagProfile with artist info, top tags, and mood statistics
-
-    """
+    """Return an artist's tag profile: top tags, moods, and average tags per file."""
     logger.info(f"[analytics] Computing tag profile for artist: {params.artist}")
     if params.file_count == 0:
         return ArtistTagProfile(artist=params.artist, file_count=0, top_tags=[], moods=[], avg_tags_per_file=0.0)
@@ -218,17 +181,7 @@ def compute_artist_tag_profile(params: ComputeArtistTagProfileParams) -> ArtistT
 
 
 def compute_tag_co_occurrence(params: ComputeTagCoOccurrenceParams) -> TagCoOccurrenceData:
-    """Compute tag co-occurrence matrix from tag file sets.
-
-    Builds a matrix where matrix[j][i] = count of files having both x_tags[i] and y_tags[j].
-
-    Args:
-        params: Parameters containing X/Y tag specs and file ID mappings
-
-    Returns:
-        TagCoOccurrenceData with X/Y tags and co-occurrence matrix
-
-    """
+    """Return a tag co-occurrence matrix: ``matrix[j][i]`` = count of files sharing ``x_tags[i]`` and ``y_tags[j]``."""
     logger.info(f"[analytics] Computing tag co-occurrence matrix: {len(params.x_tags)}x{len(params.y_tags)}")
     matrix: list[list[int]] = []
     for y_tag in params.y_tags:
@@ -245,19 +198,7 @@ def compute_tag_co_occurrence(params: ComputeTagCoOccurrenceParams) -> TagCoOccu
 
 
 def compute_dominant_vibes(balance: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
-    """Compute dominant mood vibes from balance data.
-
-    Aggregates mood counts across all tiers, sorts by frequency,
-    and returns the top 5 moods with percentages.
-
-    Args:
-        balance: Mood balance data mapping tier_name -> list of {mood, count}.
-
-    Returns:
-        List of {mood, percentage} for the top 5 moods across all tiers.
-
-    """
-    # Aggregate counts across all tiers
+    """Return the top 5 dominant mood vibes with percentages from balance data."""
     mood_totals: dict[str, int] = {}
     for tier_moods in balance.values():
         for item in tier_moods:
@@ -269,7 +210,6 @@ def compute_dominant_vibes(balance: dict[str, list[dict[str, Any]]]) -> list[dic
         return []
 
     total = sum(mood_totals.values())
-    # Sort by count and get top 5
     sorted_moods = sorted(mood_totals.items(), key=lambda x: x[1], reverse=True)[:5]
 
     return [

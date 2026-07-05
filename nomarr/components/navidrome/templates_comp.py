@@ -230,12 +230,7 @@ def get_mixed_templates() -> dict[str, dict[str, Any]]:
 
 
 def get_all_templates() -> dict[str, dict[str, Any]]:
-    """Get all predefined playlist templates.
-
-    Returns:
-        Dictionary mapping filename to .nsp content dict
-
-    """
+    """Return all predefined smart playlist templates."""
     templates = {}
     templates.update(get_mood_templates())
     templates.update(get_style_templates())
@@ -245,23 +240,13 @@ def get_all_templates() -> dict[str, dict[str, Any]]:
 
 
 def generate_template_files() -> dict[str, str]:
-    """Generate all template files as JSON strings.
-
-    Returns:
-        Dictionary mapping filename to .nsp JSON content
-
-    """
+    """Generate all template files as JSON strings."""
     templates = get_all_templates()
     return {filename: json.dumps(content, indent=2) for filename, content in templates.items()}
 
 
 def get_template_summary() -> list[dict[str, str]]:
-    """Get summary of all available templates.
-
-    Returns:
-        List of dicts with filename, name, comment
-
-    """
+    """Return summary of all available templates (filename, name, comment)."""
     templates = get_all_templates()
     return [
         {

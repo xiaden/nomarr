@@ -24,25 +24,10 @@ def build_m3u(
 ) -> str:
     """Build M3U playlist content preserving the order of requested IDs.
 
-    Paths are emitted **relative to *library_root*** so the resulting file
-    is portable — media players resolve them from the playlist file's
-    directory (which should be inside the library root).
-
-    Args:
-        playlist_name: Playlist name for header.
-        files: File dicts from database with metadata.
-        ordered_ids: Original file ID order to preserve.
-        library_root: Absolute path to library root; paths are made
-            relative to this prefix.
-
-    Returns:
-        M3U file content as string.
-
+    Paths are emitted relative to *library_root* for portability.
     """
-    # Normalise library root to forward-slash with trailing separator.
     root = library_root.replace("\\", "/").rstrip("/") + "/"
 
-    # Index files by _id for ordered output
     files_by_id: dict[str, dict[str, object]] = {str(f["_id"]): f for f in files}
 
     lines = [
@@ -57,11 +42,9 @@ def build_m3u(
             continue
 
         abs_path = str(file_doc.get("path", "")).replace("\\", "/")
-        # Strip the library root prefix to produce a relative path.
         if abs_path.startswith(root):
             rel_path = abs_path[len(root) :]
         else:
-            # Fallback: use the raw path if the root prefix doesn't match.
             rel_path = abs_path
 
         artist = str(file_doc.get("artist", "Unknown"))
@@ -83,20 +66,9 @@ def save_m3u(
 ) -> str:
     """Write M3U content to a file inside the library.
 
-    The file is saved as ``{library_root}/{m3u_output_path}/{safe_name}.m3u``
-    where *safe_name* is *playlist_name* with filesystem-unsafe characters
-    replaced by underscores.  The output directory is created if it does not
-    exist.  An existing file with the same name is silently overwritten.
-
-    Args:
-        library_root: Absolute path to the library root directory.
-        m3u_output_path: Sub-directory (relative to root) for output.
-        playlist_name: Display name (sanitised for filename).
-        m3u_content: Full M3U file content.
-
-    Returns:
-        The absolute path of the saved file.
-
+    The file is saved as ``{library_root}/{m3u_output_path}/{safe_name}.m3u``.
+    Unsafe filename characters are replaced with underscores.
+    Returns the absolute path of the saved file.
     """
     safe_name = _UNSAFE_FILENAME_RE.sub("_", playlist_name).strip(". ")
     if not safe_name:

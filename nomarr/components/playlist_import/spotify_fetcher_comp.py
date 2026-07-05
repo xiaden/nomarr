@@ -27,19 +27,9 @@ class SpotifyCredentialsError(SpotifyFetchError):
 
 
 def create_spotify_client(client_id: str, client_secret: str) -> spotipy.Spotify:
-    """Create an authenticated Spotify client.
+    """Create an authenticated Spotify client via Client Credentials flow.
 
-    Uses Client Credentials flow (app-level auth) which works for public playlists.
-
-    Args:
-        client_id: Spotify Developer App client ID
-        client_secret: Spotify Developer App client secret
-
-    Returns:
-        Authenticated spotipy.Spotify client
-
-    Raises:
-        SpotifyCredentialsError: If credentials are missing or invalid
+    Raises SpotifyCredentialsError if credentials are missing or invalid.
     """
     if not client_id or not client_secret:
         raise SpotifyCredentialsError(
@@ -63,18 +53,10 @@ def fetch_spotify_playlist(
 ) -> tuple[PlaylistMetadata, list[PlaylistTrackInput]]:
     """Fetch a Spotify playlist by ID.
 
-    Args:
-        client: Authenticated spotipy.Spotify client
-        playlist_id: Spotify playlist ID (from URL or URI)
-
-    Returns:
-        Tuple of (playlist metadata, list of tracks)
-
-    Raises:
-        SpotifyFetchError: If the API request fails or playlist not found
+    Requires an authenticated spotipy client. Raises SpotifyFetchError
+    on API failure or if the playlist is not accessible.
     """
     try:
-        # Fetch playlist metadata (market required for Client Credentials flow)
         playlist_data = client.playlist(
             playlist_id,
             fields="name,description,external_urls,tracks.total",
@@ -91,7 +73,6 @@ def fetch_spotify_playlist(
             ),
         )
 
-        # Fetch all tracks with pagination
         tracks = _fetch_all_tracks(client, playlist_id)
 
         return metadata, tracks
@@ -100,7 +81,6 @@ def fetch_spotify_playlist(
         if e.http_status == 404:
             raise SpotifyFetchError(f"Playlist not found: {playlist_id}. Make sure the playlist is public.") from e
         if e.http_status == 400:
-            # 400 errors often mean private/personalized playlists
             raise SpotifyFetchError(
                 f"Cannot access playlist: {playlist_id}. "
                 "Spotify 'Made For You' and personalized playlists (IDs starting with 37i9dQZF1) "
@@ -110,17 +90,7 @@ def fetch_spotify_playlist(
 
 
 def _fetch_all_tracks(client: spotipy.Spotify, playlist_id: str) -> list[PlaylistTrackInput]:
-    """Fetch all tracks from a playlist, handling pagination.
-
-    Spotify API returns max 100 tracks per request.
-
-    Args:
-        client: Authenticated spotipy client
-        playlist_id: Spotify playlist ID
-
-    Returns:
-        List of all PlaylistTrackInput objects
-    """
+    """Fetch all tracks from a playlist, handling pagination (max 100 per request)."""
     tracks: list[PlaylistTrackInput] = []
     offset = 0
     limit = 100
@@ -143,7 +113,6 @@ def _fetch_all_tracks(client: spotipy.Spotify, playlist_id: str) -> list[Playlis
             if track_input:
                 tracks.append(track_input)
 
-        # Check if there are more pages
         if not results.get("next"):
             break
 
@@ -155,24 +124,16 @@ def _fetch_all_tracks(client: spotipy.Spotify, playlist_id: str) -> list[Playlis
 def _extract_track(item: dict[str, Any], position: int) -> PlaylistTrackInput | None:
     """Extract a PlaylistTrackInput from a Spotify track item.
 
-    Args:
-        item: Track item from playlist_tracks response
-        position: Position in playlist (0-indexed)
-
-    Returns:
-        PlaylistTrackInput or None if track is unavailable
+    Returns None for local files and unavailable tracks.
     """
     track = item.get("track")
 
-    # Skip local files and unavailable tracks
     if not track or track.get("is_local"):
         return None
 
-    # Extract artist names (join multiple artists)
     artists = track.get("artists", [])
     artist_name = ", ".join(a.get("name", "") for a in artists) if artists else ""
 
-    # Extract ISRC from external_ids
     external_ids = track.get("external_ids", {})
     isrc = external_ids.get("isrc")
 

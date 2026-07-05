@@ -38,10 +38,6 @@ class SubsonicClient:
         """Close the underlying HTTP client to release resources."""
         self._http.close()
 
-    # ------------------------------------------------------------------
-    # Auth helpers
-    # ------------------------------------------------------------------
-
     def _make_auth_params(self) -> dict[str, str]:
         """Generate per-request auth parameters using the Subsonic token scheme."""
         salt = secrets.token_hex(_SALT_LENGTH // 2)  # 12 hex chars
@@ -55,10 +51,6 @@ class SubsonicClient:
             "f": "json",
         }
 
-    # ------------------------------------------------------------------
-    # Request infrastructure
-    # ------------------------------------------------------------------
-
     def _request(
         self,
         endpoint: str,
@@ -67,18 +59,7 @@ class SubsonicClient:
     ) -> dict[str, Any]:
         """Send a GET request and return the parsed Subsonic response body.
 
-        Args:
-            endpoint: Subsonic REST endpoint (e.g. ``ping.view``).
-            params: Additional query parameters as a dict.
-            raw_params: Raw (key, value) pairs for repeated-parameter encoding
-                        (e.g. multiple ``songId`` values for createPlaylist).
-
-        Returns:
-            The inner response dict from ``subsonic-response``.
-
-        Raises:
-            SubsonicApiError: If the Subsonic response status is not ``ok``.
-            requests.HTTPError: If the HTTP status code indicates failure.
+        Raises SubsonicApiError on non-ok status.
         """
         url = f"{self._base_url}/rest/{endpoint}"
         query_params: list[tuple[str, str | int | float | bool | None]] = list(self._make_auth_params().items())
@@ -103,10 +84,6 @@ class SubsonicClient:
 
         return subsonic_response
 
-    # ------------------------------------------------------------------
-    # API methods
-    # ------------------------------------------------------------------
-
     def ping(self) -> bool:
         """Test the connection to the Subsonic server.
 
@@ -120,16 +97,7 @@ class SubsonicClient:
         return True
 
     def get_album_list2(self, type: str, size: int, offset: int) -> list[dict[str, Any]]:
-        """Get a list of albums using ID3 tags (``getAlbumList2``).
-
-        Args:
-            type: Sort order (e.g. ``alphabeticalByName``, ``newest``).
-            size: Max number of albums to return (max 500).
-            offset: Pagination offset.
-
-        Returns:
-            List of album dicts.
-        """
+        """Return a paginated list of albums using ``getAlbumList2``."""
         resp = self._request("getAlbumList2.view", {"type": type, "size": size, "offset": offset})
         album_list = resp.get("albumList2", {})
         albums: list[dict[str, Any]] = album_list.get("album", [])
@@ -167,18 +135,8 @@ class SubsonicClient:
     ) -> dict[str, Any]:
         """Create a new playlist or replace an existing one.
 
-        Uses the Subsonic ``createPlaylist`` endpoint. When ``playlist_id`` is
-        provided, the existing playlist is replaced (all songs are overwritten).
-        Song IDs use Subsonic's repeated-parameter convention
-        (``songId=1&songId=2&songId=3``).
-
-        Args:
-            name: Playlist name.
-            song_ids: List of Navidrome song IDs to include.
-            playlist_id: If set, replaces the existing playlist with this ID.
-
-        Returns:
-            The Subsonic response dict.
+        When ``playlist_id`` is provided, the existing playlist is replaced.
+        Song IDs use Subsonic's repeated-parameter convention.
         """
         params: dict[str, str] = {"name": name}
         if playlist_id:
@@ -191,14 +149,7 @@ class SubsonicClient:
     def start_scan(self, full_scan: bool = False) -> dict[str, Any]:
         """Trigger a Navidrome library scan.
 
-        The ``fullScan`` parameter is a Navidrome extension to the Subsonic API
-        spec (the standard ``startScan`` takes no parameters).
-
-        Args:
-            full_scan: If ``True``, performs a full rescan instead of incremental.
-
-        Returns:
-            The Subsonic response dict with scan status.
+        The ``fullScan`` parameter is a Navidrome extension to the Subsonic API.
         """
         params: dict[str, Any] = {}
         if full_scan:
