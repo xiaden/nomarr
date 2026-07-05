@@ -133,7 +133,7 @@ def probe_gpu_availability(timeout: float = NVIDIA_SMI_TIMEOUT_SECONDS) -> _GpuP
             "duration_ms": duration_ms,
         }
 
-    except Exception as e:
+    except (OSError, RuntimeError) as e:
         # Broad catch: subprocess may raise unexpected OS-level errors
         # (e.g. EAGAIN under heavy system load). Treat as GPU unavailable.
         duration_ms = internal_ms().value - probe_start.value

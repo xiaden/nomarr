@@ -192,7 +192,7 @@ def detect_file_moves(
                         new_duration,
                     )
 
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.warning("Failed to compute chromaprint for %s: %s", new_path, e)
             continue
 
@@ -261,7 +261,7 @@ def apply_detected_moves(
             try:
                 entity_tags = _extract_entity_tags(new_metadata)
                 seed_song_entities_from_tags(db, move.file_id, entity_tags)
-            except Exception as e:
+            except (OSError, ValueError) as e:
                 logger.warning(
                     "Failed to update entities for moved file %s: %s",
                     move.new_path,
@@ -294,7 +294,7 @@ def detect_file_move_via_db(
         if not library_path.is_valid():
             return None
         chromaprint = compute_chromaprint_for_file(library_path)
-    except Exception as e:
+    except (OSError, ValueError) as e:
         logger.warning("Failed to compute chromaprint for %s: %s", new_path, e)
         return None
 

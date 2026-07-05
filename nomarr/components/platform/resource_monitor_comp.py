@@ -122,7 +122,7 @@ def check_nvidia_gpu_capability(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> bool:
         _gpu_capable_cache = False
         return False
 
-    except Exception as e:
+    except (OSError, RuntimeError) as e:
         logger.warning(
             "[resource_monitor] Unexpected error checking GPU capability (%s) - forcing CPU-only",
             type(e).__name__,
@@ -265,7 +265,7 @@ def get_ram_usage_mb(detection_mode: str = "auto") -> _RamTelemetry:
         _ram_cache_ts = now
         return _ram_cache
 
-    except Exception as e:
+    except (OSError, RuntimeError) as e:
         logger.warning("[resource_monitor] RAM query failed: %s", e, exc_info=True)
         _ram_cache = {"used_mb": 0, "available_mb": 0, "error": str(e)}
         _ram_cache_ts = now

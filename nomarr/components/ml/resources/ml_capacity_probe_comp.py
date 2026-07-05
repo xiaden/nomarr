@@ -17,7 +17,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.ml.onnx.ml_cache import ONNXModelCache
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
@@ -94,9 +94,9 @@ def _try_acquire_probe_lock(db: Database, model_set_hash: str, worker_id: str) -
     return True
 
 
-def _get_probe_lock_status(db: Database, model_set_hash: str) -> dict[str, Any] | None:
+def _get_probe_lock_status(db: Database, model_set_hash: str) -> dict | None:
     """Return the lock document for a capacity probe, if present."""
-    return cast("dict[str, Any] | None", db.app.get_lock(_probe_lock_reference(model_set_hash)))
+    return db.app.get_lock(_probe_lock_reference(model_set_hash))
 
 
 def _complete_probe_lock(db: Database, model_set_hash: str) -> None:
@@ -122,9 +122,9 @@ def _release_probe_lock(db: Database, model_set_hash: str) -> None:
     db.app.remove_lock(_probe_lock_reference(model_set_hash))
 
 
-def _get_capacity_estimate(db: Database, model_set_hash: str) -> dict[str, Any] | None:
+def _get_capacity_estimate(db: Database, model_set_hash: str) -> dict | None:
     """Read the persisted capacity estimate document for one model set."""
-    return cast("dict[str, Any] | None", db.app.get_config_option(f"{_CAPACITY_META_PREFIX}{model_set_hash}"))
+    return db.app.get_config_option(f"{_CAPACITY_META_PREFIX}{model_set_hash}")
 
 
 def _save_capacity_estimate(
@@ -172,7 +172,7 @@ def compute_model_set_hash(models_dir: str) -> str:
                     rel_path = os.path.relpath(filepath, models_dir)
                     file_size = os.path.getsize(filepath)
                     hasher.update(f"{rel_path}:{file_size}".encode())
-    except Exception as e:
+    except OSError as e:
         logger.warning("[ml_capacity_probe] Error computing model hash: %s", e)
         # Use timestamp-based hash as fallback
         hasher.update(f"fallback:{now_ms()}".encode())
@@ -320,7 +320,7 @@ def _run_capacity_probe(
             is_conservative=False,
         )
 
-    except Exception as e:
+    except (OSError, RuntimeError, ValueError) as e:
         logger.exception("[ml_capacity_probe] Probe failed: %s", e)
         _release_probe_lock(db, model_set_hash)
 

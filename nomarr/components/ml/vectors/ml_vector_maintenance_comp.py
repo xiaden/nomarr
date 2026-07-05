@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.ml.onnx.ml_discovery_comp import _resolve_embedding_graph
 from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
-from nomarr.persistence.schema_types import Field
+from nomarr.persistence.schema_types import Field, VectorCollection
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -18,20 +18,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _load_vector_docs(vector_ops: object) -> list[dict[str, Any]]:
+def _load_vector_docs(vector_ops: VectorCollection) -> list[dict[str, Any]]:
     """Load all vector documents from a hot or cold namespace."""
-    ops = cast("Any", vector_ops)
-    doc_count = cast("int", ops.count())
+    doc_count = vector_ops.count()
     if doc_count <= 0:
         return []
 
-    doc_ids = [str(row["value"]) for row in ops.aggregate("_id", limit=doc_count) if "value" in row]
+    doc_ids = [str(row["value"]) for row in vector_ops.aggregate("_id", limit=doc_count) if "value" in row]
     if not doc_ids:
         return []
 
     docs_by_id = {
         str(doc_id): doc
-        for doc in cast("list[dict[str, Any]]", ops.get.in_(Field("_id", doc_ids), limit=None))
+        for doc in vector_ops.get.in_(Field("_id", doc_ids), limit=None)
         if isinstance((doc_id := doc.get("_id")), str)
     }
     return [docs_by_id[doc_id] for doc_id in doc_ids if doc_id in docs_by_id]
@@ -93,7 +92,7 @@ def derive_embed_dim(models_dir: str, backbone_id: str) -> int:
                     dim = shape[-1]
                     if isinstance(dim, int) and dim > 0:
                         return dim
-    except Exception as exc:
+    except (OSError, RuntimeError) as exc:
         raise ValueError(f"Failed to probe embedding graph '{embedding_graph}'") from exc
 
     raise ValueError(
@@ -123,11 +122,11 @@ def backfill_genres(db: Database, backbone_id: str) -> int:
 
     """
     cold_name = f"vectors_track_cold__{backbone_id}"
-    cold_ops = get_cold_namespace(db, backbone_id)
+    cold_ops = cast("VectorCollection", get_cold_namespace(db, backbone_id))
 
     try:
-        cold_docs = _load_vector_docs(cast("Any", cold_ops))
-    except Exception as exc:
+        cold_docs = _load_vector_docs(cold_ops)
+    except (KeyError, ValueError, RuntimeError) as exc:
         raise ValueError(
             f"Cold collection '{cold_name}' does not exist. "
             "Run drain_hot_to_cold first to create and populate the cold collection."
@@ -146,7 +145,7 @@ def backfill_genres(db: Database, backbone_id: str) -> int:
         update_docs.append({"_key": doc_key, "genres": genres})
 
     if update_docs:
-        cast("Any", cold_ops).update_many(update_docs)
+        cold_ops.update_many(update_docs)
 
     count = len(cold_docs)
 

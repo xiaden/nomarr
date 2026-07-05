@@ -99,7 +99,7 @@ def reconcile_library_paths(
                     logger.warning(
                         "[reconcile_library_paths] Unknown status for %s: %s", file_path, library_path.reason
                     )
-            except Exception as e:
+            except (OSError, ValueError) as e:
                 result["errors"] += 1
                 logger.exception("[reconcile_library_paths] Error validating %s: %s", file_path, e)
         offset += len(files)
@@ -155,6 +155,6 @@ def _handle_invalid_path(
             delete_library_file(db, file_path)
             result["deleted_files"] += 1
             logger.info("[reconcile_library_paths] Deleted invalid path (%s): %s - %s", status, file_path, reason)
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.exception("[reconcile_library_paths] Failed to delete %s: %s", file_path, e)
             result["errors"] += 1

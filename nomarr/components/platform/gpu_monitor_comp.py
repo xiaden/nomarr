@@ -16,6 +16,7 @@ import contextlib
 import json
 import logging
 import multiprocessing
+import subprocess
 from typing import TYPE_CHECKING
 
 from nomarr.components.platform.gpu_probe_comp import probe_gpu_availability
@@ -56,7 +57,7 @@ class GPUHealthMonitor(multiprocessing.Process):
         try:
             frame = HEALTH_FRAME_PREFIX + json.dumps({"component_id": "gpu_monitor", "status": status})
             self._health_pipe.send(frame)
-        except Exception as e:
+        except (subprocess.CalledProcessError, OSError, ValueError) as e:
             logger.warning("[GPUHealthMonitor] Failed to send heartbeat: %s", e, exc_info=True)
 
     def run(self) -> None:
@@ -65,7 +66,7 @@ class GPUHealthMonitor(multiprocessing.Process):
         logger.info("[GPUHealthMonitor] Starting GPU health monitoring process")
         try:
             db = Database()
-        except Exception as e:
+        except (subprocess.CalledProcessError, OSError, ValueError) as e:
             logger.exception("[GPUHealthMonitor] Failed to create DB connection: %s", e)
             self._send_heartbeat("unhealthy")
             return
@@ -82,14 +83,14 @@ class GPUHealthMonitor(multiprocessing.Process):
                     db.app.update_config_option("gpu_resources", {"value": json.dumps(resource_snapshot)})
                     consecutive_errors = 0
                     self._send_heartbeat("healthy")
-                except Exception as db_error:
+                except (subprocess.CalledProcessError, OSError, ValueError) as db_error:
                     logger.exception("[GPUHealthMonitor] Failed to write GPU state to DB: %s", db_error)
                     consecutive_errors += 1
                     self._send_heartbeat("unhealthy")
                 if consecutive_errors >= max_consecutive_errors:
                     logger.error("[GPUHealthMonitor] %d consecutive DB write failures", consecutive_errors)
                     self._send_heartbeat("unhealthy")
-            except Exception as e:
+            except (subprocess.CalledProcessError, OSError, ValueError) as e:
                 logger.exception("[GPUHealthMonitor] Unexpected error during probe loop: %s", e)
                 consecutive_errors += 1
                 self._send_heartbeat("unhealthy")

@@ -199,7 +199,7 @@ def seed_entities_for_scan_batch(
     if all_tag_entries:
         try:
             set_song_tags_batch(db, all_tag_entries)
-        except Exception as e:
+        except (RuntimeError, ValueError, KeyError) as e:
             # Broad catch: set_song_tags_batch delegates to the DB layer which
             # may raise any persistence-related exception type. We log and
             # return zero to let the caller decide retry/error handling.

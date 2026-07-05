@@ -65,7 +65,7 @@ def wait_for_arango(hosts: str, max_attempts: int = 30, delay_s: float = 2.0) ->
             sys_db.properties()
             logger.debug("ArangoDB connection established (attempt %d/%d)", attempt, max_attempts)
             return True
-        except Exception as e:
+        except (RuntimeError, ValueError) as e:
             # Broad catch: ArangoClient may raise unpredictable connection-level
             # errors (DNS, TLS, timeouts) that don't all share a common base.
             if attempt < max_attempts:
