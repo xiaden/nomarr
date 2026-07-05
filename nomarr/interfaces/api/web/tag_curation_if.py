@@ -1,8 +1,10 @@
 """Tag curation endpoints for web UI."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -18,11 +20,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tag-curation", tags=["Tag Curation"])
-
-
-# ---------------------------------------------------------------------------
-# Request models
-# ---------------------------------------------------------------------------
 
 
 class RenameTagRequest(BaseModel):
@@ -50,16 +47,66 @@ class UpdateFileTagsRequest(BaseModel):
     values: list[str]
 
 
-# ---------------------------------------------------------------------------
-# Curation endpoints
-# ---------------------------------------------------------------------------
+class RenameTagResponse(BaseModel):
+    moved: int
+    merged_into_existing: bool
 
 
-@router.post("/rename", dependencies=[Depends(verify_session)])
+class MergeTagsResponse(BaseModel):
+    total_moved: int
+    sources_removed: int
+
+
+class SplitTagResponse(BaseModel):
+    moved: int
+    new_tag_created: bool
+
+
+class TagValueItemResponse(BaseModel):
+    id: str
+    name: str
+    value: str
+    song_count: int
+
+
+class TagListResponse(BaseModel):
+    tags: list[TagValueItemResponse]
+    total: int
+
+
+class TagSongItemResponse(BaseModel):
+    file_id: str
+    title: str
+    artist: str
+    album: str
+    path: str
+
+
+class TagSongsResponse(BaseModel):
+    songs: list[TagSongItemResponse]
+    total: int
+
+
+class CommitResponse(BaseModel):
+    started: bool
+    pending_files: int
+
+
+class PendingCountResponse(BaseModel):
+    count: int
+
+
+class UpdateFileTagsResponse(BaseModel):
+    file_id: str
+    name: str
+    tags: dict
+
+
+@router.post("/rename", dependencies=[Depends(verify_session)], response_model=RenameTagResponse)
 async def rename_tag(
     request: RenameTagRequest,
-    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
-) -> dict[str, Any]:
+    tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],
+) -> RenameTagResponse:
     """Rename a tag to a new value."""
     try:
         result = await asyncio.to_thread(
@@ -67,7 +114,7 @@ async def rename_tag(
             tag_id=request.tag_id,
             new_value=request.new_value,
         )
-        return dict(result)
+        return RenameTagResponse.model_validate(result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
@@ -78,11 +125,11 @@ async def rename_tag(
         ) from e
 
 
-@router.post("/merge", dependencies=[Depends(verify_session)])
+@router.post("/merge", dependencies=[Depends(verify_session)], response_model=MergeTagsResponse)
 async def merge_tags(
     request: MergeTagsRequest,
-    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
-) -> dict[str, Any]:
+    tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],
+) -> MergeTagsResponse:
     """Merge multiple tags into a canonical tag."""
     try:
         result = await asyncio.to_thread(
@@ -90,7 +137,7 @@ async def merge_tags(
             source_tag_ids=request.source_tag_ids,
             canonical_tag_id=request.canonical_tag_id,
         )
-        return dict(result)
+        return MergeTagsResponse.model_validate(result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
@@ -101,11 +148,11 @@ async def merge_tags(
         ) from e
 
 
-@router.post("/split", dependencies=[Depends(verify_session)])
+@router.post("/split", dependencies=[Depends(verify_session)], response_model=SplitTagResponse)
 async def split_tag(
     request: SplitTagRequest,
-    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
-) -> dict[str, Any]:
+    tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],
+) -> SplitTagResponse:
     """Split selected songs from a tag into a new tag value."""
     try:
         result = await asyncio.to_thread(
@@ -114,7 +161,7 @@ async def split_tag(
             song_ids=request.song_ids,
             new_value=request.new_value,
         )
-        return dict(result)
+        return SplitTagResponse.model_validate(result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
@@ -125,19 +172,14 @@ async def split_tag(
         ) from e
 
 
-# ---------------------------------------------------------------------------
-# Query endpoints
-# ---------------------------------------------------------------------------
-
-
-@router.get("/value", dependencies=[Depends(verify_session)])
+@router.get("/value", dependencies=[Depends(verify_session)], response_model=TagListResponse)
 async def list_tag_values(
-    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
+    tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],
     name: Annotated[str | None, Query(description="Filter by tag name (e.g. genre)")] = None,
     prefix: Annotated[str | None, Query(description="Substring search on tag value")] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
-) -> dict[str, Any]:
+) -> TagListResponse:
     """List tag values with optional filtering and pagination."""
     try:
         result = await asyncio.to_thread(
@@ -147,7 +189,7 @@ async def list_tag_values(
             limit=limit,
             offset=offset,
         )
-        return dict(result)
+        return TagListResponse.model_validate(result)
     except Exception as e:
         logger.exception("[Web API] Error listing tag values")
         raise HTTPException(
@@ -156,22 +198,23 @@ async def list_tag_values(
         ) from e
 
 
-@router.get("/{tag_id}/song", dependencies=[Depends(verify_session)])
+@router.get("/{tag_id}/song", dependencies=[Depends(verify_session)], response_model=TagSongsResponse)
 async def get_tag_songs(
     tag_id: str,
-    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
+    tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
-) -> dict[str, Any]:
+) -> TagSongsResponse:
     """Get songs linked to a tag with metadata."""
     tag_id = decode_path_id(tag_id)
     try:
-        return await asyncio.to_thread(
+        result = await asyncio.to_thread(
             tagging_service.get_tag_songs,
             tag_id=tag_id,
             limit=limit,
             offset=offset,
         )
+        return TagSongsResponse.model_validate(result)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
     except Exception as e:
@@ -182,23 +225,18 @@ async def get_tag_songs(
         ) from e
 
 
-# ---------------------------------------------------------------------------
-# Commit endpoints
-# ---------------------------------------------------------------------------
-
-
-@router.post("/commit", dependencies=[Depends(verify_session)])
+@router.post("/commit", dependencies=[Depends(verify_session)], response_model=CommitResponse)
 async def commit_pending_tags(
     request: CommitRequest,
-    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
-) -> dict[str, Any]:
+    tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],
+) -> CommitResponse:
     """Commit pending tag writes to files."""
     try:
         result = await asyncio.to_thread(
             tagging_service.commit_pending_tags,
             library_id=request.library_id,
         )
-        return dict(result)
+        return CommitResponse.model_validate(result)
     except Exception as e:
         logger.exception("[Web API] Error committing pending tags")
         raise HTTPException(
@@ -207,14 +245,14 @@ async def commit_pending_tags(
         ) from e
 
 
-@router.get("/pending-count", dependencies=[Depends(verify_session)])
+@router.get("/pending-count", dependencies=[Depends(verify_session)], response_model=PendingCountResponse)
 async def get_pending_commit_count(
-    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
-) -> dict[str, int]:
+    tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],
+) -> PendingCountResponse:
     """Get count of files with pending tag writes."""
     try:
         count = await asyncio.to_thread(tagging_service.get_pending_commit_count)
-        return {"count": count}
+        return PendingCountResponse(count=count)
     except Exception as e:
         logger.exception("[Web API] Error getting pending commit count")
         raise HTTPException(
@@ -223,26 +261,22 @@ async def get_pending_commit_count(
         ) from e
 
 
-# ---------------------------------------------------------------------------
-# Single-file tag edit
-# ---------------------------------------------------------------------------
-
-
-@router.patch("/file/{file_id}/tag", dependencies=[Depends(verify_session)])
+@router.patch("/file/{file_id}/tag", dependencies=[Depends(verify_session)], response_model=UpdateFileTagsResponse)
 async def update_file_tags(
     file_id: str,
     request: UpdateFileTagsRequest,
-    tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
-) -> dict[str, Any]:
+    tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],
+) -> UpdateFileTagsResponse:
     """Replace all tags for a file+name with new values."""
     file_id = decode_path_id(file_id)
     try:
-        return await asyncio.to_thread(
+        result = await asyncio.to_thread(
             tagging_service.update_file_tags,
             file_id=file_id,
             name=request.name,
             values=request.values,
         )
+        return UpdateFileTagsResponse.model_validate(result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
