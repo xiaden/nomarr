@@ -51,45 +51,8 @@ def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, A
 
     Supports artist, artists (multi), album, label, genre, and year.
     """
-    # artist
-    primary_artist, all_artists = _derive_artists(tags)
-    set_song_tags(db, song_id, "artist", [primary_artist] if primary_artist else [])
-
-    # artists
-    set_song_tags(db, song_id, "artists", list(all_artists))
-
-    # album
-    album_raw = tags.get("album")
-    if album_raw:
-        album_str = album_raw[0] if isinstance(album_raw, list) else album_raw
-        set_song_tags(db, song_id, "album", [album_str])
-    else:
-        set_song_tags(db, song_id, "album", [])
-
-    # label
-    label_raw = tags.get("label")
-    labels: list[str] = []
-    if label_raw:
-        if isinstance(label_raw, list):
-            labels = [str(label_item) for label_item in label_raw if label_item]
-        else:
-            labels = [str(label_raw)]
-    set_song_tags(db, song_id, "label", list(labels))
-
-    # genre
-    genre_raw = tags.get("genre")
-    genres: list[str] = []
-    if genre_raw:
-        genres = [str(g) for g in genre_raw if g] if isinstance(genre_raw, list) else [str(genre_raw)]
-    set_song_tags(db, song_id, "genre", list(genres))
-
-    # year
-    year_raw = tags.get("year")
-    if year_raw:
-        year_int = year_raw if isinstance(year_raw, int) else int(year_raw)
-        set_song_tags(db, song_id, "year", [year_int])
-    else:
-        set_song_tags(db, song_id, "year", [])
+    for entry in _build_song_tag_entries(song_id=song_id, tags=tags):
+        set_song_tags(db, song_id, entry["name"], list(entry["values"]))
 
 
 _ENTITY_TAG_KEYS = ("artist", "artists", "album", "label", "genre", "year")

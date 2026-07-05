@@ -53,7 +53,6 @@ def check_nvidia_gpu_capability(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> bool:
     """Check if NVIDIA GPU is available in-container. Idempotent — repeated calls return cached result."""
     global _gpu_capable_cache
 
-    # Return cached result if already checked
     if _gpu_capable_cache is not None:
         return _gpu_capable_cache
 
@@ -123,12 +122,10 @@ def get_vram_usage_mb(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> dict[str, Any]:
 
     now = internal_ms().value
 
-    # Return cached result if within TTL
     if _vram_cache is not None and (now - _vram_cache_ts) < TELEMETRY_CACHE_TTL_MS:
         return _vram_cache
 
     try:
-        # Query VRAM usage for all GPUs
         result = subprocess.run(
             [
                 "nvidia-smi",
@@ -216,12 +213,10 @@ def get_ram_usage_mb(detection_mode: str = "auto") -> dict[str, Any]:
 
     now = internal_ms().value
 
-    # Return cached result if within TTL
     if _ram_cache is not None and (now - _ram_cache_ts) < TELEMETRY_CACHE_TTL_MS:
         return _ram_cache
 
     try:
-        # Get current process RSS
         process = psutil.Process(os.getpid())
         rss_bytes = process.memory_info().rss
         rss_mb = rss_bytes // (1024 * 1024)
@@ -263,7 +258,6 @@ def get_ram_usage_mb(detection_mode: str = "auto") -> dict[str, Any]:
 
 def _get_cgroup_available_mb() -> int:
     """Read available memory from cgroup (Docker containers)."""
-    # Try cgroup v2 first
     cgroup_v2_path = "/sys/fs/cgroup/memory.max"
     cgroup_v2_current = "/sys/fs/cgroup/memory.current"
 
@@ -280,7 +274,6 @@ def _get_cgroup_available_mb() -> int:
             available_bytes = max_bytes - current_bytes
             return max(0, available_bytes // (1024 * 1024))
 
-    # Try cgroup v1
     cgroup_v1_limit = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
     cgroup_v1_usage = "/sys/fs/cgroup/memory/memory.usage_in_bytes"
 
@@ -311,23 +304,19 @@ def check_resource_headroom(
     """Check if there's headroom for ML work within configured budgets."""
     gpu_capable = check_nvidia_gpu_capability()
 
-    # Get current VRAM usage (only if GPU capable and budget > 0)
     vram_used_mb = 0
     vram_ok = False
 
     if gpu_capable and vram_budget_mb > 0:
         vram_info = get_vram_usage_mb()
         vram_used_mb = vram_info["used_mb"]
-        # Check if we have headroom: used + estimate <= budget
         vram_ok = (vram_used_mb + vram_estimate_mb) <= vram_budget_mb
     elif vram_budget_mb == 0:
         # No VRAM budget = CPU-only mode, VRAM check passes trivially
         vram_ok = True
 
-    # Get current RAM usage
     ram_info = get_ram_usage_mb(ram_detection_mode)
     ram_used_mb = ram_info["used_mb"]
-    # Check if we have headroom: used + estimate <= budget
     ram_ok = (ram_used_mb + ram_estimate_mb) <= ram_budget_mb
 
     return ResourceStatus(

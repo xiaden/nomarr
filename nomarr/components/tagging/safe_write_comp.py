@@ -85,8 +85,7 @@ def _check_audio_properties(original: _AudioProperties, after: _AudioProperties)
     """Return an error string if properties differ beyond tolerance, else None."""
     if abs(after.duration - original.duration) > DURATION_TOLERANCE_S:
         return (
-            f"Duration changed: {original.duration:.2f}s → {after.duration:.2f}s "
-            f"(tolerance ±{DURATION_TOLERANCE_S}s)"
+            f"Duration changed: {original.duration:.2f}s → {after.duration:.2f}s (tolerance ±{DURATION_TOLERANCE_S}s)"
         )
     if after.sample_rate != original.sample_rate:
         return f"Sample rate changed: {original.sample_rate}Hz → {after.sample_rate}Hz"
@@ -192,15 +191,12 @@ def _safe_write_hardlink(
     temp_path = temp_folder / f"{uuid.uuid4().hex}_{filename}"
 
     try:
-        # Step 1: Copy original to temp
         shutil.copy2(original_path, temp_path)
         logger.debug(f"[safe_write] Copied to temp: {temp_path}")
 
-        # Step 2: Write tags to temp copy
         write_fn(temp_path)
         logger.debug("[safe_write] Wrote tags to temp copy")
 
-        # Step 3: Verify audio properties unchanged
         after_props = _probe_audio_properties(temp_path)
         error = _check_audio_properties(original_props, after_props)
         if error:
@@ -208,7 +204,6 @@ def _safe_write_hardlink(
             return SafeWriteResult(success=False, error=f"Audio sanity check failed: {error}")
         logger.debug("[safe_write] Audio properties verified")
 
-        # Step 4: Atomic hardlink replacement
         backup_path = original_path.with_suffix(original_path.suffix + ".bak")
         try:
             os.rename(original_path, backup_path)  # Atomic on same filesystem
@@ -245,15 +240,12 @@ def _safe_write_fallback(
     temp_path = original_path.with_suffix(original_path.suffix + ".tmp")
 
     try:
-        # Step 1: Copy original to .tmp
         shutil.copy2(original_path, temp_path)
         logger.debug(f"[safe_write] Copied to .tmp: {temp_path}")
 
-        # Step 2: Write tags to .tmp copy
         write_fn(temp_path)
         logger.debug("[safe_write] Wrote tags to .tmp copy")
 
-        # Step 3: Verify audio properties unchanged
         after_props = _probe_audio_properties(temp_path)
         error = _check_audio_properties(original_props, after_props)
         if error:
@@ -261,7 +253,6 @@ def _safe_write_fallback(
             return SafeWriteResult(success=False, error=f"Audio sanity check failed: {error}")
         logger.debug("[safe_write] Audio properties verified")
 
-        # Step 4: Delete original, rename .tmp to original
         original_path.unlink()
         os.rename(temp_path, original_path)
         logger.debug("[safe_write] Fallback replacement complete")

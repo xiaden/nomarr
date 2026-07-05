@@ -78,7 +78,6 @@ def run_single_head(
     """
     head_name = head_model.meta.name
     t_head = internal_ms()
-    # Phase 1: ONNX inference (GPU/CPU, releases GIL)
     try:
         segment_scores = predict_fn()
         pooled_vec = pool_scores(segment_scores, mode="trimmed_mean", trim_perc=0.1, nan_policy="omit")
@@ -93,7 +92,6 @@ def run_single_head(
             error=str(e),
             elapsed_ms=internal_ms().value - t_head.value,
         )
-    # Phase 2: Decision + tag generation (pure Python/numpy)
     try:
         spec = HeadSpec(
             name=head_model.meta.name,
