@@ -170,3 +170,4 @@ build_resources/models-prepatch/
 
 # v2 prototype (local only)
 v2/
+.rw/
