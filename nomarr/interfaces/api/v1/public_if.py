@@ -1,11 +1,4 @@
-"""Public API endpoints for system information.
-Routes: /api/v1/info.
-
-ARCHITECTURE:
-- These endpoints are thin HTTP boundaries
-- All business logic is delegated to services
-- Services handle configuration, namespace, and data access
-"""
+"""Public API endpoints for system information.  Routes: /api/v1/info."""
 
 from __future__ import annotations
 
@@ -21,9 +14,6 @@ from nomarr.services.infrastructure.info_svc import InfoService
 router = APIRouter(prefix="/v1", tags=["public"])
 
 
-# ----------------------------------------------------------------------
-#  GET /info
-# ----------------------------------------------------------------------
 @router.get("/info")
 async def get_info(
     info_service: Annotated[InfoService, Depends(get_info_service)],

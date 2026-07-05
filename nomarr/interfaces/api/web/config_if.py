@@ -37,11 +37,7 @@ async def update_config(
     _session: Annotated[dict, Depends(verify_session)],
     config_service: Annotated["ConfigService", Depends(get_config_service)],
 ) -> ConfigUpdateResponse:
-    """Update a configuration value.
-
-    Only web-editable settings can be updated. Changes take effect immediately.
-    Infrastructure paths (models_dir, db_path, library_root) must be set via config file.
-    """
+    """Update a web-editable configuration value (non-infrastructure keys only)."""
     try:
         key = request.key
         value = request.value
