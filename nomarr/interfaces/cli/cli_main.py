@@ -27,24 +27,19 @@ def build_parser() -> argparse.ArgumentParser:
         description="Available commands (use 'nom <command> --help' for command-specific help)",
     )
 
-    # cleanup: Remove orphaned entities
     subparser = sub.add_parser("cleanup", help="Remove orphaned entities (artists, albums, etc.) with no songs")
     subparser.add_argument("--dry-run", action="store_true", help="show what would be deleted without deleting")
     subparser.set_defaults(func=cmd_cleanup)
 
-    # manage-password: Admin password management
     subparser = sub.add_parser("manage-password", help="Manage admin password for web UI")
     password_sub = subparser.add_subparsers(dest="password_cmd", title="password commands", required=True)
 
-    # manage-password show: Display password hash
     ps = password_sub.add_parser("show", help="Display current password hash")
     ps.set_defaults(func=cmd_manage_password)
 
-    # manage-password verify: Test password
     ps = password_sub.add_parser("verify", help="Verify if a password is correct")
     ps.set_defaults(func=cmd_manage_password)
 
-    # manage-password reset: Change password
     ps = password_sub.add_parser("reset", help="Change admin password")
     ps.set_defaults(func=cmd_manage_password)
 
@@ -56,7 +51,6 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    # If no command provided, show help
     if args.cmd is None:
         parser.print_help()
         return 0

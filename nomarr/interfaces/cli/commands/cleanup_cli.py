@@ -1,11 +1,4 @@
-"""Cleanup command: Remove orphaned entities from the metadata graph.
-
-Architecture:
-- Uses CLI bootstrap service to get MetadataService instance
-- Does NOT depend on running Application (separate process)
-- Does NOT access Database or workflows directly
-- Calls service methods for all cleanup operations
-"""
+"""Remove orphaned entities from the metadata graph."""
 
 from __future__ import annotations
 
