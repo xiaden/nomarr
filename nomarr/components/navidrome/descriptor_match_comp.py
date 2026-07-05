@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from nomarr.components.library.library_file_query_comp import get_files_by_ids_with_tags
 from nomarr.components.playlist_import.metadata_normalizer_comp import normalize_artist, normalize_title
@@ -27,7 +27,12 @@ class TrackDescriptor(TypedDict):
 
 def _tag_value(file_doc: dict[str, Any], *keys: str) -> str | None:
     key_set = {key.casefold() for key in keys}
-    for tag in cast("list[dict[str, Any]]", file_doc.get("tags", [])):
+    tags = file_doc.get("tags", [])
+    if not isinstance(tags, list):
+        return None
+    for tag in tags:
+        if not isinstance(tag, dict):
+            continue
         key = tag.get("key")
         value = tag.get("value")
         if isinstance(key, str) and isinstance(value, str) and key.casefold() in key_set:
@@ -82,7 +87,10 @@ def build_track_descriptor(file_doc: dict[str, Any]) -> TrackDescriptor:
 
 
 def _search_candidate_docs(db: Database, field_name: str, value: str) -> list[dict[str, Any]]:
-    return cast("list[dict[str, Any]]", db.library.search_files_by_tag_pattern(field_name, value, limit=None))
+    results = db.library.search_files_by_tag_pattern(field_name, value, limit=None)
+    if not isinstance(results, list):
+        return []
+    return [r for r in results if isinstance(r, dict)]
 
 
 def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
@@ -93,7 +101,10 @@ def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
 
     artist = seed.get("artist", "")
     if artist:
-        artist_docs = cast("list[dict[str, Any]]", db.library.search_files_by_tag("artist", artist, limit=None))
+        artist_raw = db.library.search_files_by_tag("artist", artist, limit=None)
+        if not isinstance(artist_raw, list):
+            return set()
+        artist_docs = [r for r in artist_raw if isinstance(r, dict)]
         return {file_id for doc in artist_docs if isinstance((file_id := doc.get("_id")), str)}
 
     return set()

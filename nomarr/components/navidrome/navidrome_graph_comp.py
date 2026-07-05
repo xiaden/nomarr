@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dto.navidrome_dto import TrackPlayData
 
@@ -22,7 +22,7 @@ def _build_edge_namespace(db: Database, name: str) -> Any:
     Remains as a compatibility path for legacy unit tests that still patch
     edge namespaces directly.
     """
-    return cast("Any", getattr(db, name))
+    return getattr(db, name)
 
 
 def _is_dict_list(value: object) -> bool:

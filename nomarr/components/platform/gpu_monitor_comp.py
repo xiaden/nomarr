@@ -57,7 +57,7 @@ class GPUHealthMonitor(multiprocessing.Process):
             frame = HEALTH_FRAME_PREFIX + json.dumps({"component_id": "gpu_monitor", "status": status})
             self._health_pipe.send(frame)
         except Exception as e:
-            logger.warning(f"[GPUHealthMonitor] Failed to send heartbeat: {e}", exc_info=True)
+            logger.warning("[GPUHealthMonitor] Failed to send heartbeat: %s", e, exc_info=True)
 
     def run(self) -> None:
         """Main monitoring loop (runs in separate process)."""
@@ -66,7 +66,7 @@ class GPUHealthMonitor(multiprocessing.Process):
         try:
             db = Database()
         except Exception as e:
-            logger.exception(f"[GPUHealthMonitor] Failed to create DB connection: {e}")
+            logger.exception("[GPUHealthMonitor] Failed to create DB connection: %s", e)
             self._send_heartbeat("unhealthy")
             return
         consecutive_errors = 0
@@ -83,14 +83,14 @@ class GPUHealthMonitor(multiprocessing.Process):
                     consecutive_errors = 0
                     self._send_heartbeat("healthy")
                 except Exception as db_error:
-                    logger.exception(f"[GPUHealthMonitor] Failed to write GPU state to DB: {db_error}")
+                    logger.exception("[GPUHealthMonitor] Failed to write GPU state to DB: %s", db_error)
                     consecutive_errors += 1
                     self._send_heartbeat("unhealthy")
                 if consecutive_errors >= max_consecutive_errors:
-                    logger.error(f"[GPUHealthMonitor] {consecutive_errors} consecutive DB write failures")
+                    logger.error("[GPUHealthMonitor] %d consecutive DB write failures", consecutive_errors)
                     self._send_heartbeat("unhealthy")
             except Exception as e:
-                logger.exception(f"[GPUHealthMonitor] Unexpected error during probe loop: {e}")
+                logger.exception("[GPUHealthMonitor] Unexpected error during probe loop: %s", e)
                 consecutive_errors += 1
                 self._send_heartbeat("unhealthy")
             self._shutdown.wait(timeout=self.probe_interval)

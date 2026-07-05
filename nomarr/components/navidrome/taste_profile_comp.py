@@ -40,13 +40,11 @@ def compute_taste_profile(
     and caps clusters to ``pp_max_clusters`` by total weight.
     Returns ``None`` if no tracks have embeddings.
     """
-    # Slice to top_n
     plays: list[TrackPlayData] = list(top_plays[:top_n])
     if not plays:
         logger.info("No play data for user %s — cannot build taste profile", user_id)
         return None
 
-    # Filter to tracks with resolved file_ids
     resolved_plays = [p for p in plays if p["file_id"] is not None]
     if not resolved_plays:
         logger.info(
@@ -56,7 +54,6 @@ def compute_taste_profile(
         )
         return None
 
-    # Batch-fetch cold vectors for resolved file IDs
     file_ids: list[str] = []
     for p in resolved_plays:
         file_id = p["file_id"]
@@ -65,10 +62,8 @@ def compute_taste_profile(
     cold_ops = get_cold_namespace(db, backbone_id)
     vector_docs = cold_ops.get_vectors_by_file_ids(file_ids)
 
-    # Build file_id → vector mapping
     vector_map: dict[str, list[float]] = {doc["file_id"]: doc["vector"] for doc in vector_docs if "vector" in doc}
 
-    # Pair plays with their vectors, dropping those without embeddings
     paired: list[tuple[TrackPlayData, list[float]]] = []
     for play in resolved_plays:
         file_id = play["file_id"]
@@ -86,7 +81,6 @@ def compute_taste_profile(
         )
         return None
 
-    # Batch-fetch genre tags
     paired_file_ids: list[str] = []
     for p, _ in paired:
         file_id = p["file_id"]
@@ -98,7 +92,6 @@ def compute_taste_profile(
         "genre",
     )
 
-    # Group paired plays by genre
     genre_groups: dict[str, list[tuple[TrackPlayData, list[float]]]] = OrderedDict()
     untagged: list[tuple[TrackPlayData, list[float]]] = []
     for play, vec in paired:
@@ -120,7 +113,6 @@ def compute_taste_profile(
         len(paired),
     )
 
-    # Compute per-cluster centroids
     now_val = now_ms().value
     clusters: list[TasteCluster] = []
     for genre, tracks_in_group in genre_groups.items():
@@ -147,7 +139,6 @@ def compute_taste_profile(
             }
         )
 
-    # Handle untagged tracks
     if untagged:
         if len(untagged) < 3:
             logger.debug(
@@ -178,7 +169,6 @@ def compute_taste_profile(
                     untagged_fraction * 100,
                 )
 
-    # Cap clusters to pp_max_clusters
     if len(clusters) > pp_max_clusters:
         clusters.sort(key=lambda c: c["total_weight"], reverse=True)
         dropped = clusters[pp_max_clusters:]
@@ -190,7 +180,6 @@ def compute_taste_profile(
             [c["label"] for c in dropped],
         )
 
-    # If no clusters formed, return None
     if not clusters:
         logger.info("No clusters formed for user %s — returning None", user_id)
         return None

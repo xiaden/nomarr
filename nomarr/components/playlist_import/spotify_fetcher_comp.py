@@ -10,6 +10,7 @@ Uses spotipy library for API access and pagination handling.
 import logging
 from typing import Any
 
+import requests
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 
@@ -43,7 +44,7 @@ def create_spotify_client(client_id: str, client_secret: str) -> spotipy.Spotify
         )
         return spotipy.Spotify(auth_manager=auth_manager)
 
-    except Exception as e:
+    except (spotipy.SpotifyException, requests.RequestException, ValueError) as e:
         raise SpotifyCredentialsError(f"Failed to authenticate with Spotify: {e}") from e
 
 

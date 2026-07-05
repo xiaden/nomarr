@@ -22,11 +22,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Directory containing migration files
 MIGRATIONS_PACKAGE = "nomarr.migrations"
 MIGRATIONS_DIR = Path(__file__).resolve().parent.parent.parent / "migrations"
 
-# Required attributes in each migration module
 _REQUIRED_ATTRS = ("MIGRATION_VERSION", "DESCRIPTION", "upgrade")
 
 
@@ -86,7 +84,6 @@ def discover_migrations() -> list[tuple[str, ModuleType]]:
         _validate_migration_module(module, path.name)
         migrations.append((name, module))
 
-    # Sort by semver order (not lexical filename order)
     migrations.sort(key=lambda item: Version(item[1].MIGRATION_VERSION))
 
     logger.info("Discovered %d migration(s)", len(migrations))
@@ -156,6 +153,8 @@ def apply_migration(name: str, module: ModuleType, db: Database) -> None:
     try:
         module.upgrade(db.db)
     except Exception as exc:
+        # Broad catch: migrations may raise any exception from user code —
+        # wrap all failures uniformly as MigrationError for the caller.
         msg = f"Migration {name} (version {module.MIGRATION_VERSION}) failed: {exc}"
         raise MigrationError(msg) from exc
 

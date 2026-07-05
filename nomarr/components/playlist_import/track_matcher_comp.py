@@ -20,9 +20,8 @@ from nomarr.helpers.dto.playlist_import_dto import MatchedFileInfo, MatchResult,
 
 logger = logging.getLogger(__name__)
 
-# Match confidence thresholds
-FUZZY_HIGH_THRESHOLD = 85  # High confidence fuzzy match
-FUZZY_LOW_THRESHOLD = 70  # Ambiguous match (needs review)
+FUZZY_HIGH_THRESHOLD = 85
+FUZZY_LOW_THRESHOLD = 70
 
 
 @dataclass
@@ -90,7 +89,6 @@ def match_track(
     input_title_norm = normalize_title(input_track.title)
     input_artist_norm = normalize_artist(input_track.artist)
 
-    # ISRC exact match
     if input_track.isrc:
         for lib_track in library_tracks:
             if lib_track.isrc and lib_track.isrc.upper() == input_track.isrc.upper():
@@ -101,7 +99,6 @@ def match_track(
                     matched_file=_to_file_info(lib_track),
                 )
 
-    # Exact normalized title + artist match
     for lib_track in library_tracks:
         if lib_track.normalized_title == input_title_norm and lib_track.normalized_artist == input_artist_norm:
             return MatchResult(
@@ -111,7 +108,6 @@ def match_track(
                 matched_file=_to_file_info(lib_track),
             )
 
-    # Fuzzy matching
     return _fuzzy_match(input_track, input_title_norm, input_artist_norm, library_tracks)
 
 

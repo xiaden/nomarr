@@ -78,7 +78,7 @@ def _database_exists(hosts: str | None = None) -> bool:
         sys_db = client.db("_system", username="root", password=root_password)
         return bool(sys_db.has_database(DB_NAME))
     except Exception as e:  # Broad catch: ArangoClient may raise unpredictable connection-level errors
-        logger.warning(f"Database existence check failed: {e}", exc_info=True)
+        logger.warning("Database existence check failed: %s", e, exc_info=True)
         return False
 
 

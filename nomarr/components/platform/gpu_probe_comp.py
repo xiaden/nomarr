@@ -63,9 +63,8 @@ def probe_gpu_availability(timeout: float = NVIDIA_SMI_TIMEOUT_SECONDS) -> dict[
         duration_ms = internal_ms().value - probe_start.value
 
         if result.stdout.strip():
-            # Only log on state change
             if _last_gpu_state["available"] is not True:
-                logger.info(f"[gpu_probe] GPU now available ({duration_ms:.1f}ms)")
+                logger.info("[gpu_probe] GPU now available (%.1fms)", duration_ms)
                 _last_gpu_state["available"] = True
                 _last_gpu_state["last_error"] = None
             return {
@@ -76,7 +75,7 @@ def probe_gpu_availability(timeout: float = NVIDIA_SMI_TIMEOUT_SECONDS) -> dict[
 
         error_message = "No GPUs detected by nvidia-smi"
         if _last_gpu_state["available"] is not False or _last_gpu_state["last_error"] != error_message:
-            logger.warning(f"[gpu_probe] {error_message}")
+            logger.warning("[gpu_probe] %s", error_message)
             _last_gpu_state["available"] = False
             _last_gpu_state["last_error"] = error_message
         return {
@@ -89,7 +88,7 @@ def probe_gpu_availability(timeout: float = NVIDIA_SMI_TIMEOUT_SECONDS) -> dict[
         duration_ms = internal_ms().value - probe_start.value
         error_message = f"nvidia-smi timeout ({timeout}s) - driver wedged"
         if _last_gpu_state["available"] is not False or _last_gpu_state["last_error"] != error_message:
-            logger.exception(f"[gpu_probe] nvidia-smi timeout after {timeout}s - driver may be wedged")
+            logger.exception("[gpu_probe] nvidia-smi timeout after %.1fs - driver may be wedged", timeout)
             _last_gpu_state["available"] = False
             _last_gpu_state["last_error"] = error_message
         return {
@@ -115,9 +114,9 @@ def probe_gpu_availability(timeout: float = NVIDIA_SMI_TIMEOUT_SECONDS) -> dict[
     except subprocess.CalledProcessError as e:
         duration_ms = internal_ms().value - probe_start.value
         error_message = e.stderr.strip() if e.stderr else f"exit code {e.returncode}"
-        full_error_summary = f"nvidia-smi error: {error_message}"[:100]  # Truncate long errors
+        full_error_summary = f"nvidia-smi error: {error_message}"[:100]
         if _last_gpu_state["available"] is not False or _last_gpu_state["last_error"] != full_error_summary:
-            logger.exception(f"[gpu_probe] nvidia-smi failed: {error_message}")
+            logger.exception("[gpu_probe] nvidia-smi failed: %s", error_message)
             _last_gpu_state["available"] = False
             _last_gpu_state["last_error"] = full_error_summary
         return {
@@ -127,10 +126,12 @@ def probe_gpu_availability(timeout: float = NVIDIA_SMI_TIMEOUT_SECONDS) -> dict[
         }
 
     except Exception as e:
+        # Broad catch: subprocess may raise unexpected OS-level errors
+        # (e.g. EAGAIN under heavy system load). Treat as GPU unavailable.
         duration_ms = internal_ms().value - probe_start.value
         error_summary = f"Unexpected error: {type(e).__name__}"
         if _last_gpu_state["available"] is not False or _last_gpu_state["last_error"] != error_summary:
-            logger.exception(f"[gpu_probe] Unexpected error during GPU probe: {e}")
+            logger.exception("[gpu_probe] Unexpected error during GPU probe: %s", e)
             _last_gpu_state["available"] = False
             _last_gpu_state["last_error"] = error_summary
         return {
