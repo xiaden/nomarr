@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_file_query_comp import (
     get_existing_file_paths,
@@ -113,7 +113,6 @@ def upsert_scanned_files(
     file_ids = _upsert_batch(db, file_entries)
 
     if edge_bootstraps:
-        # Build path to id map from results
         file_id_by_path: dict[str, str] = {}
         for fid, entry in zip(file_ids, file_entries, strict=True):
             normalized = entry.get("normalized_path")
@@ -150,11 +149,11 @@ def bootstrap_file_state_edges(
 
 def remove_deleted_files(db: Database, paths: list[str]) -> int:
     """Bulk-delete files that are no longer on disk."""
-    file_ids = [
-        str(file_doc["_id"])
-        for path in paths
-        if (file_doc := cast("dict[str, Any] | None", db.library.find_file_by_path_any_library(path))) is not None
-    ]
+    file_ids: list[str] = []
+    for path in paths:
+        file_doc = db.library.find_file_by_path_any_library(path)
+        if isinstance(file_doc, dict) and isinstance(file_doc.get("_id"), str):
+            file_ids.append(file_doc["_id"])
     for file_id in file_ids:
         db.library.remove_file(file_id)
 
@@ -166,7 +165,9 @@ def get_cached_folders(
     library_id: str,
 ) -> dict[str, dict[str, Any]]:
     """Load all cached folder records for a library."""
-    folders = cast("list[dict[str, Any]]", db.library.list_folders_for_library(library_id))
+    folders = db.library.list_folders_for_library(library_id)
+    if not isinstance(folders, list):
+        return {}
     return {str(folder["path"]): folder for folder in folders}
 
 
@@ -196,7 +197,7 @@ def cleanup_stale_folders(
     try:
         cached_folders = get_cached_folders(db, library_id)
         stale_ids = [
-            cast("str", folder_doc.get("_id", _folder_doc_id(library_id, rel_path)))
+            str(folder_doc.get("_id") or _folder_doc_id(library_id, rel_path))
             for rel_path, folder_doc in cached_folders.items()
             if rel_path not in existing_folder_rel_paths
         ]

@@ -60,7 +60,7 @@ def create_library(
     except (ValueError, RuntimeError, OSError) as e:
         msg = f"Failed to create library: {e}"
         raise ValueError(msg) from e
-    logger.info(f"[LibraryAdmin] Created library: {resolved_name} at {abs_path}")
+    logger.info("[LibraryAdmin] Created library: %s at %s", resolved_name, abs_path)
     return library_id
 
 
@@ -74,7 +74,7 @@ def update_library_root(db: Database, base_library_root: str | None, library_id:
     abs_path = normalize_library_root(base_root, root_path)
     ensure_no_overlapping_library_root(db, abs_path, ignore_id=library_id)
     update_library_record(db, library_id, root_path=abs_path)
-    logger.info(f"[LibraryAdmin] Updated library {library_id} root path to {abs_path}")
+    logger.info("[LibraryAdmin] Updated library %s root path to %s", library_id, abs_path)
 
 
 _BATCH_SIZE = 500
@@ -87,7 +87,7 @@ def delete_library(db: Database, library_id: str) -> bool:
         return False
 
     db.library.remove_library(library_id)
-    logger.info(f"[LibraryAdmin] Deleted library {library_id}: {library.get('name')}")
+    logger.info("[LibraryAdmin] Deleted library %s: %s", library_id, library.get("name"))
     return True
 
 

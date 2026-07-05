@@ -87,7 +87,7 @@ def read_tags_from_file(path: LibraryPath, namespace: str) -> Tags:
         return Tags(items=items)
 
     except (ValueError, mutagen.MutagenError) as e:
-        logger.exception(f"[TagReader] Failed to read tags from {path_str}")
+        logger.exception("[TagReader] Failed to read tags from %s", path_str)
         msg = f"Failed to read tags: {e}"
         raise RuntimeError(msg) from e
 

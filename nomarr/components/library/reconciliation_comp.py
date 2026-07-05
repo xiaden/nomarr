@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_file_state_comp import get_stale_file_ids, transition_file_state
 from nomarr.components.workers.worker_discovery_comp import try_insert_or_steal_claim
@@ -47,11 +47,11 @@ def claim_files_for_reconciliation(
     if not stale_ids:
         return []
 
-    candidates = [
-        candidate
-        for file_id in stale_ids
-        if (candidate := cast("dict[str, Any] | None", db.library.get_file(file_id))) is not None
-    ]
+    candidates: list[dict[str, Any]] = []
+    for file_id in stale_ids:
+        candidate = db.library.get_file(file_id)
+        if isinstance(candidate, dict):
+            candidates.append(candidate)
 
     claimed: list[dict[str, Any]] = []
     now = now_ms().value

@@ -3,13 +3,35 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from nomarr.components.analytics.analytics_comp import compute_dominant_vibes
 from nomarr.components.tagging.tag_stats_comp import get_library_stats
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
+
+
+class _MoodPairEntry(TypedDict):
+    """A co-occurring mood pair with count."""
+
+    mood1: str
+    mood2: str
+    count: int
+
+
+class _MoodCoverageTier(TypedDict):
+    """Coverage for a single mood tier."""
+
+    tagged: int
+    percentage: float
+
+
+class _MoodCoverage(TypedDict):
+    """Mood coverage result."""
+
+    total_files: int
+    tiers: dict[str, _MoodCoverageTier]
 
 
 _PAGE_SIZE = 1000
@@ -56,10 +78,10 @@ def _get_tag_edge_rows(db: Database, name: str, library_id: str | None = None) -
         tag_value = tag_doc.get("value")
         if tag_value is None:
             continue
-        for file_doc in cast(
-            "list[dict[str, Any]]",
-            db.library.search_files_by_tag(name, str(tag_value), limit=None),
-        ):
+        file_docs = db.library.search_files_by_tag(name, str(tag_value), limit=None)
+        if not isinstance(file_docs, list):
+            continue
+        for file_doc in file_docs:
             file_id = file_doc.get("_id")
             if not isinstance(file_id, str):
                 continue
@@ -128,7 +150,7 @@ def get_mood_distribution_data(db: Database, library_id: str | None = None) -> l
     return mood_rows
 
 
-def get_mood_coverage(db: Database, library_id: str | None = None) -> dict[str, Any]:
+def get_mood_coverage(db: Database, library_id: str | None = None) -> _MoodCoverage:
     """Return percentage of files tagged per mood tier (strict, regular, loose)."""
     stats = get_library_stats(db, library_id)
     total_files = int(stats["file_count"])
@@ -142,7 +164,7 @@ def get_mood_coverage(db: Database, library_id: str | None = None) -> dict[str, 
             },
         }
 
-    tiers: dict[str, dict[str, Any]] = {}
+    tiers: dict[str, _MoodCoverageTier] = {}
     for tier_name, name in _MOOD_TIER_MAP.items():
         tagged_count = len({file_id for file_id, _ in _get_tag_edge_rows(db, name, library_id)})
         tiers[tier_name] = {
@@ -167,7 +189,7 @@ def get_top_mood_pairs(
     library_id: str | None = None,
     limit: int = 10,
     mood_tier: str = "strict",
-) -> list[dict[str, Any]]:
+) -> list[_MoodPairEntry]:
     """Return the most common co-occurring mood pairs for one tier."""
     tier_hierarchy: dict[str, list[str]] = {
         "strict": ["nom:mood-strict"],
@@ -192,7 +214,7 @@ def get_top_mood_pairs(
                 pair_counts[(mood1, mood2)] += 1
 
     return [
-        {"mood1": mood1, "mood2": mood2, "count": count}
+        _MoodPairEntry(mood1=mood1, mood2=mood2, count=count)
         for (mood1, mood2), count in sorted(
             pair_counts.items(),
             key=lambda item: (-item[1], item[0][0], item[0][1]),

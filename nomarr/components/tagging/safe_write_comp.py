@@ -192,7 +192,7 @@ def _safe_write_hardlink(
 
     try:
         shutil.copy2(original_path, temp_path)
-        logger.debug(f"[safe_write] Copied to temp: {temp_path}")
+        logger.debug("[safe_write] Copied to temp: %s", temp_path)
 
         write_fn(temp_path)
         logger.debug("[safe_write] Wrote tags to temp copy")
@@ -221,7 +221,7 @@ def _safe_write_hardlink(
         return SafeWriteResult(success=True, new_mtime_ms=new_mtime_ms)
 
     except Exception as e:
-        logger.exception(f"[safe_write] Hardlink write failed: {e}")
+        logger.exception("[safe_write] Hardlink write failed: %s", e)
         return SafeWriteResult(success=False, error=str(e))
 
     finally:
@@ -241,7 +241,7 @@ def _safe_write_fallback(
 
     try:
         shutil.copy2(original_path, temp_path)
-        logger.debug(f"[safe_write] Copied to .tmp: {temp_path}")
+        logger.debug("[safe_write] Copied to .tmp: %s", temp_path)
 
         write_fn(temp_path)
         logger.debug("[safe_write] Wrote tags to .tmp copy")
@@ -261,7 +261,7 @@ def _safe_write_fallback(
         return SafeWriteResult(success=True, new_mtime_ms=new_mtime_ms)
 
     except Exception as e:
-        logger.exception(f"[safe_write] Fallback write failed: {e}")
+        logger.exception("[safe_write] Fallback write failed: %s", e)
         if temp_path.exists():
             with contextlib.suppress(OSError):
                 temp_path.unlink()

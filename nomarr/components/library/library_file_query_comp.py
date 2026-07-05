@@ -186,7 +186,10 @@ def _tags_by_name(db: Database, name: str) -> list[dict[str, Any]]:
     total_tags = db.library.count_tags()
     if total_tags <= 0:
         return []
-    return cast("list[dict[str, Any]]", db.library.list_tags_by_name(name, limit=total_tags))
+    result = db.library.list_tags_by_name(name, limit=total_tags)
+    if not isinstance(result, list):
+        return []
+    return result
 
 
 def _tags_by_name_value(db: Database, name: str, value: str) -> list[dict[str, Any]]:
@@ -240,7 +243,9 @@ def _paginate_rows(rows: list[dict[str, Any]], limit: int, offset: int) -> list[
 
 def _collect_file_ids_for_tag_ids(db: Database, tag_ids: set[str]) -> set[str]:
     """Return file ids matched by the supplied tag ids via song-tag edges."""
-    edges = cast("list[dict[str, Any]]", db.library.get_song_tag_edges_for_tags(list(tag_ids)))
+    edges = db.library.get_song_tag_edges_for_tags(list(tag_ids))
+    if not isinstance(edges, list):
+        return set()
     return {edge["_from"] for edge in edges if isinstance(edge.get("_from"), str)}
 
 
@@ -674,7 +679,7 @@ def clear_library_data(db: Database) -> None:
 
     for collection_name in db.ml.list_vector_collection_names():
         db.ml.clear_vector_collection(collection_name)
-    for file_doc in cast("list[dict[str, Any]]", db.library.list_files(limit=None)):
+    for file_doc in _get_all_library_file_docs(db, None):
         file_id = file_doc.get("_id")
         if isinstance(file_id, str):
             delete_output_streams(db, file_id)

@@ -41,7 +41,7 @@ def compute_tag_frequencies(params: ComputeTagFrequenciesParams) -> ComputeTagFr
 
 def compute_tag_correlation_matrix(params: ComputeTagCorrelationMatrixParams) -> TagCorrelationData:
     """Return a VALUE-based correlation matrix from raw mood and tier tag data."""
-    logger.info(f"[analytics] Computing VALUE-based correlation matrix (top {params.top_n} moods)")
+    logger.info("[analytics] Computing VALUE-based correlation matrix (top %d moods)", params.top_n)
     mood_counter: Counter = Counter()
     for _file_id, tag_value in params.mood_tag_rows:
         try:
@@ -136,7 +136,7 @@ def compute_mood_distribution(mood_rows: Sequence[tuple[str, str]]) -> MoodDistr
 
 def compute_artist_tag_profile(params: ComputeArtistTagProfileParams) -> ArtistTagProfile:
     """Return an artist's tag profile: top tags, moods, and average tags per file."""
-    logger.info(f"[analytics] Computing tag profile for artist: {params.artist}")
+    logger.info("[analytics] Computing tag profile for artist: %s", params.artist)
     if params.file_count == 0:
         return ArtistTagProfile(artist=params.artist, file_count=0, top_tags=[], moods=[], avg_tags_per_file=0.0)
     tag_counts: Counter = Counter()
@@ -182,7 +182,7 @@ def compute_artist_tag_profile(params: ComputeArtistTagProfileParams) -> ArtistT
 
 def compute_tag_co_occurrence(params: ComputeTagCoOccurrenceParams) -> TagCoOccurrenceData:
     """Return a tag co-occurrence matrix: ``matrix[j][i]`` = count of files sharing ``x_tags[i]`` and ``y_tags[j]``."""
-    logger.info(f"[analytics] Computing tag co-occurrence matrix: {len(params.x_tags)}x{len(params.y_tags)}")
+    logger.info("[analytics] Computing tag co-occurrence matrix: %dx%d", len(params.x_tags), len(params.y_tags))
     matrix: list[list[int]] = []
     for y_tag in params.y_tags:
         row: list[int] = []

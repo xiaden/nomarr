@@ -8,7 +8,6 @@ from nomarr.persistence.db import Database
 
 def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
     """Build LibraryPath from user input, validating against current library config."""
-    # Resolve to absolute path
     try:
         absolute = Path(raw_path).resolve()
     except (ValueError, OSError) as e:
@@ -20,7 +19,6 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
             reason=f"Cannot resolve path: {e}",
         )
 
-    # Find which library contains this path
     library = find_library_containing_path(db, str(absolute))
     if not library:
         return LibraryPath(
@@ -31,11 +29,10 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
             reason="Path is outside all configured library roots",
         )
 
-    # Calculate relative path
     library_root = Path(library["root_path"]).resolve()
     try:
         relative_path = absolute.relative_to(library_root)
-        relative_str = str(relative_path).replace("\\", "/")  # Normalize to forward slashes
+        relative_str = str(relative_path).replace("\\", "/")
     except ValueError:
         return LibraryPath(
             relative="",
@@ -45,7 +42,6 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
             reason=f"Path not relative to library root: {library_root}",
         )
 
-    # Check if file exists
     if not absolute.exists():
         return LibraryPath(
             relative=relative_str,
@@ -55,7 +51,6 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
             reason="File does not exist on disk",
         )
 
-    # Check if it's a file (not directory)
     if not absolute.is_file():
         return LibraryPath(
             relative=relative_str,
@@ -65,7 +60,6 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
             reason="Path is a directory, not a file",
         )
 
-    # Check if it's a supported audio file
     if not is_audio_file(str(absolute)):
         return LibraryPath(
             relative=relative_str,
@@ -75,7 +69,6 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
             reason="Not a supported audio file format",
         )
 
-    # All checks passed
     return LibraryPath(relative=relative_str, absolute=absolute, library_id=library["_id"], status="valid", reason=None)
 
 
@@ -86,11 +79,9 @@ def build_library_path_from_db(
     check_disk: bool = True,
 ) -> LibraryPath:
     """Build LibraryPath from a database-stored path, re-validating against current config."""
-    # If we have a library_id, fetch that library's configuration
     if library_id:
         library = get_library_record(db, library_id, include_scan=False)
         if not library or not library["is_enabled"]:
-            # Library was disabled or deleted
             return LibraryPath(
                 relative=stored_path,
                 absolute=Path(stored_path),
@@ -101,14 +92,11 @@ def build_library_path_from_db(
 
         library_root = Path(library["root_path"]).resolve()
 
-        # Try to construct absolute path
-        # stored_path might be relative or absolute
         if Path(stored_path).is_absolute():
             absolute = Path(stored_path).resolve()
         else:
             absolute = (library_root / stored_path).resolve()
 
-        # Verify it's still within the library root
         try:
             relative_path = absolute.relative_to(library_root)
             relative_str = str(relative_path).replace("\\", "/")
@@ -122,7 +110,6 @@ def build_library_path_from_db(
             )
 
     else:
-        # No library_id provided, need to find which library contains this path
         try:
             absolute = Path(stored_path).resolve()
         except (ValueError, OSError) as e:
@@ -159,7 +146,6 @@ def build_library_path_from_db(
 
         library_id = library["_id"]
 
-    # Optionally check disk
     if check_disk:
         if not absolute.exists():
             return LibraryPath(
@@ -188,7 +174,6 @@ def build_library_path_from_db(
                 reason="Stored path is no longer a supported audio file",
             )
 
-    # Valid (or unknown if we didn't check disk)
     return LibraryPath(
         relative=relative_str,
         absolute=absolute,

@@ -33,8 +33,14 @@ class TestNumericValue:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    @pytest.mark.parametrize("value", [True, False, "abc", "", None])
-    def test_returns_none_for_bool_and_non_numeric_inputs(self, value: object) -> None:
+    @pytest.mark.parametrize(("value", "expected"), [(True, 1.0), (False, 0.0)])
+    def test_returns_float_for_bool_inputs(self, value: object, expected: float) -> None:
+        assert _numeric_value(value) == expected
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    @pytest.mark.parametrize("value", ["abc", "", None])
+    def test_returns_none_for_non_numeric_inputs(self, value: object) -> None:
         assert _numeric_value(value) is None
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import logging
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_id_comp import normalize_library_id
 from nomarr.helpers.constants.file_states import (
@@ -81,7 +81,10 @@ def _insert_file_state_edges_ignoring_duplicates(db: Database, edge_docs: list[d
 
 
 def _state_file_docs(db: Database, state_id: str) -> list[dict[str, Any]]:
-    return cast("list[dict[str, Any]]", db.app.list_file_docs_in_state(state_id))
+    result = db.app.list_file_docs_in_state(state_id)
+    if not isinstance(result, list):
+        return []
+    return result
 
 
 def _state_file_ids(db: Database, state_id: str) -> set[str]:
@@ -89,7 +92,10 @@ def _state_file_ids(db: Database, state_id: str) -> set[str]:
 
 
 def _library_file_edges(db: Database, library_id: str) -> list[dict[str, Any]]:
-    return cast("list[dict[str, Any]]", db.library.list_library_files(library_id))
+    result = db.library.list_library_files(library_id)
+    if not isinstance(result, list):
+        return []
+    return result
 
 
 def _library_file_ids(db: Database, library_id: str) -> set[str]:
@@ -199,12 +205,11 @@ def discover_next_untagged_file(
     if library_id is not None:
         candidate_ids &= _library_file_ids(db, library_id)
     if exclude_claimed:
-        claimed_ids = {
-            cast("str", file_id)
-            for claim in db.app.list_claims()
-            for file_id in [claim.get("file_id")]
-            if isinstance(file_id, str)
-        }
+        claimed_ids: set[str] = set()
+        for claim in db.app.list_claims():
+            file_id = claim.get("file_id")
+            if isinstance(file_id, str):
+                claimed_ids.add(file_id)
         candidate_ids -= claimed_ids
     candidate_docs = [doc for doc in untagged_files if doc["_id"] in candidate_ids]
     if not candidate_docs:
@@ -241,12 +246,11 @@ def discover_next_file_needing_tags(
     if library_id is not None:
         candidate_ids &= _library_file_ids(db, library_id)
     if exclude_claimed:
-        claimed_ids = {
-            cast("str", file_id)
-            for claim in db.app.list_claims()
-            for file_id in [claim.get("file_id")]
-            if isinstance(file_id, str)
-        }
+        claimed_ids: set[str] = set()
+        for claim in db.app.list_claims():
+            file_id = claim.get("file_id")
+            if isinstance(file_id, str):
+                claimed_ids.add(file_id)
         candidate_ids -= claimed_ids
     candidate_docs = [doc for doc in pending_files if doc["_id"] in candidate_ids]
     if not candidate_docs:
@@ -263,9 +267,7 @@ def get_errored_file_ids(db: Database, library_id: str, limit: int | None = 500)
     """Return errored file ids for one library."""
     library_file_ids = _library_file_ids(db, library_id)
     errored_file_ids = [
-        file_doc["_id"]
-        for file_doc in cast("list[dict[str, Any]]", db.app.list_file_docs_in_state(STATE_ERRORED))
-        if file_doc["_id"] in library_file_ids
+        file_doc["_id"] for file_doc in _state_file_docs(db, STATE_ERRORED) if file_doc["_id"] in library_file_ids
     ]
     return errored_file_ids if limit is None else errored_file_ids[:limit]
 
@@ -321,7 +323,9 @@ def get_calibration_status_by_library(db: Database) -> list[dict[str, Any]]:
     calibrated_ids = _state_file_ids(db, STATE_CALIBRATED)
     not_calibrated_ids = _state_file_ids(db, STATE_NOT_CALIBRATED)
     results: list[dict[str, Any]] = []
-    libraries = cast("list[dict[str, Any]]", db.library.list_libraries())
+    libraries = db.library.list_libraries()
+    if not isinstance(libraries, list):
+        return []
     for library in libraries:
         library_id = library["_id"]
         library_file_ids = _library_file_ids(db, library_id)

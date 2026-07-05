@@ -66,7 +66,6 @@ def scan_folder_files(
     warnings: list[str] = []
     edge_bootstraps: list[dict[str, Any]] = []
 
-    # Get audio files in this folder (non-recursive)
     try:
         filenames = os.listdir(str(folder_path))
         files = [
@@ -75,7 +74,7 @@ def scan_folder_files(
             if is_audio_file(f) and os.path.isfile(os.path.join(str(folder_path), f))
         ]
     except OSError as e:
-        logger.exception(f"Cannot read folder {folder_path}: {e}")
+        logger.exception("Cannot read folder %s: %s", folder_path, e)
         return FileBatchResult(
             file_entries=file_entries,
             discovered_paths=discovered_paths,
@@ -85,10 +84,8 @@ def scan_folder_files(
             edge_bootstraps=edge_bootstraps,
         )
 
-    # Process each file
     for file_path in files:
         try:
-            # Validate path
             library_path = build_library_path_from_input(file_path, db)
             if not library_path.is_valid():
                 warnings.append(f"Invalid path: {file_path} - {library_path.reason}")
@@ -97,7 +94,6 @@ def scan_folder_files(
 
             file_path_str = str(library_path.absolute)
 
-            # Compute normalized_path: POSIX-style relative to library root
             try:
                 normalized_path = _compute_normalized_path(Path(file_path_str), library_root)
             except ValueError:
@@ -109,18 +105,15 @@ def scan_folder_files(
 
             discovered_paths.add(file_path_str)
 
-            # Check if file exists in DB and get disk mtime
             existing_file = existing_files.get(file_path_str)
             file_stat = os.stat(file_path_str)
             modified_time = int(file_stat.st_mtime * 1000)
             file_size = file_stat.st_size
 
-            # Skip unchanged files: if file exists in DB and mtime matches, nothing to do
             if existing_file is not None and existing_file.get("modified_time") == modified_time:
                 stats["files_skipped"] += 1
                 continue
 
-            # Check if already tagged with current model suite (skip ML re-tagging)
             if existing_file is not None and existing_file.get("has_tagged_state"):
                 file_version = existing_file.get("tagger_version")
                 if file_version == tagger_version:
@@ -132,7 +125,6 @@ def scan_folder_files(
                         }
                     )
 
-            # Prepare batch entry — pure file data, no state fields, no metadata
             file_entry = {
                 "path": file_path_str,
                 "normalized_path": normalized_path,
@@ -143,14 +135,13 @@ def scan_folder_files(
             }
             file_entries.append(file_entry)
 
-            # Track new files and updated files
             if existing_file is None:
                 new_file_paths.add(file_path_str)
             else:
                 stats["files_updated"] += 1
 
         except Exception as e:
-            logger.exception(f"Failed to process {file_path}: {e}")
+            logger.exception("Failed to process %s: %s", file_path, e)
             stats["files_failed"] += 1
             warnings.append(f"Scan failed: {file_path} - {str(e)[:100]}")
             continue

@@ -88,10 +88,9 @@ def list_library_records(
     include_scan: bool = True,
 ) -> list[dict[str, Any]]:
     """List libraries through constructor verbs, preserving legacy sort order."""
-    docs = cast(
-        "list[dict[str, Any]]",
-        db.library.list_libraries(enabled_only=enabled_only),
-    )
+    docs = db.library.list_libraries(enabled_only=enabled_only)
+    if not isinstance(docs, list):
+        return []
     if not include_scan:
         return docs
     return [_merge_scan_state(db, doc) for doc in docs]
@@ -122,10 +121,12 @@ def update_library_record(
         **{key: value for key, value in fields.items() if value is not None},
     }
 
-    if "watch_mode" in fields and fields["watch_mode"] is not None:
-        _validate_watch_mode(cast("str", fields["watch_mode"]))
-    if "file_write_mode" in fields and fields["file_write_mode"] is not None:
-        _validate_file_write_mode(cast("str", fields["file_write_mode"]))
+    watch_mode = fields.get("watch_mode")
+    if isinstance(watch_mode, str):
+        _validate_watch_mode(watch_mode)
+    file_write_mode = fields.get("file_write_mode")
+    if isinstance(file_write_mode, str):
+        _validate_file_write_mode(file_write_mode)
 
     db.library.update_library(normalize_library_id(library_id), update_fields)
 
@@ -184,7 +185,9 @@ def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, A
     Returns a list of dicts with library_id and tagged_count.
     """
     del min_files
-    library_docs = cast("list[dict[str, Any]]", db.library.list_libraries())
+    library_docs = db.library.list_libraries()
+    if not isinstance(library_docs, list):
+        return []
     counts = get_library_counts(db)
     completed: list[dict[str, Any]] = []
 

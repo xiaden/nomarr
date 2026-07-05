@@ -55,7 +55,7 @@ def compute_chromaprint(waveform: np.ndarray, sample_rate: int) -> str:
 
         return fingerprint_bytes.decode("ascii")
 
-    except Exception as e:
-        logger.exception(f"Failed to compute chromaprint: {e}")
+    except (ValueError, TypeError, RuntimeError, UnicodeDecodeError, OSError) as e:
+        logger.exception("Failed to compute chromaprint: %s", e)
         # Fallback: return empty string instead of raising
         return ""

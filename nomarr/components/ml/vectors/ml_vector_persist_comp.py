@@ -139,6 +139,6 @@ def persist_backbone_vector(
             embeddings_2d.shape[0],
         )
         return elapsed
-    except Exception:
-        logger.warning("[processor] Failed to persist %s vector for %s", backbone, path, exc_info=True)
+    except Exception as e:
+        logger.warning("[processor] Failed to persist %s vector for %s: %s", backbone, path, e, exc_info=True)
         return None

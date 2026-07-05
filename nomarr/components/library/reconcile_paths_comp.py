@@ -59,7 +59,7 @@ def reconcile_library_paths(
         print(f"Cleaned up {result['deleted_files']} invalid files")
 
     """
-    logger.info(f"[reconcile_library_paths] Starting reconciliation with policy={policy}")
+    logger.info("[reconcile_library_paths] Starting reconciliation with policy=%s", policy)
     result: ReconcileResult = {
         "total_files": 0,
         "valid_files": 0,
@@ -71,13 +71,13 @@ def reconcile_library_paths(
     }
     stats = get_library_stats(db)
     total_count = stats.get("total_files", 0)
-    logger.info(f"[reconcile_library_paths] Found {total_count} files to validate")
+    logger.info("[reconcile_library_paths] Found %d files to validate", total_count)
     offset = 0
     while True:
         files, _ = list_library_files(db, library_id=library_id, limit=batch_size, offset=offset)
         if not files:
             break
-        logger.debug(f"[reconcile_library_paths] Processing batch at offset {offset} ({len(files)} files)")
+        logger.debug("[reconcile_library_paths] Processing batch at offset %d (%d files)", offset, len(files))
         for file_record in files:
             result["total_files"] += 1
             file_path = file_record["path"]
@@ -96,28 +96,37 @@ def reconcile_library_paths(
                     _handle_invalid_path(db, file_path, library_path, policy, result)
                 elif library_path.status == "unknown":
                     result["unknown_status"] += 1
-                    logger.warning(f"[reconcile_library_paths] Unknown status for {file_path}: {library_path.reason}")
+                    logger.warning(
+                        "[reconcile_library_paths] Unknown status for %s: %s", file_path, library_path.reason
+                    )
             except Exception as e:
                 result["errors"] += 1
-                logger.exception(f"[reconcile_library_paths] Error validating {file_path}: {e}")
+                logger.exception("[reconcile_library_paths] Error validating %s: %s", file_path, e)
         offset += len(files)
         if offset % (batch_size * 5) == 0:
             logger.info(
-                f"[reconcile_library_paths] Progress: {offset}/{total_count} "
-                f"(valid={result['valid_files']}, "
-                f"invalid={result['invalid_config'] + result['not_found']})"
+                "[reconcile_library_paths] Progress: %d/%d (valid=%d, invalid=%d)",
+                offset,
+                total_count,
+                result["valid_files"],
+                result["invalid_config"] + result["not_found"],
             )
     total_invalid = result["invalid_config"] + result["not_found"]
     logger.info(
-        f"[reconcile_library_paths] Reconciliation complete: "
-        f"total={result['total_files']}, valid={result['valid_files']}, "
-        f"invalid_config={result['invalid_config']}, not_found={result['not_found']}, "
-        f"deleted={result['deleted_files']}, errors={result['errors']}"
+        "[reconcile_library_paths] Reconciliation complete: "
+        "total=%d, valid=%d, invalid_config=%d, not_found=%d, deleted=%d, errors=%d",
+        result["total_files"],
+        result["valid_files"],
+        result["invalid_config"],
+        result["not_found"],
+        result["deleted_files"],
+        result["errors"],
     )
     if policy == "dry_run":
         logger.info(
-            f"[reconcile_library_paths] DRY RUN: Would have affected "
-            f"{total_invalid} files (use policy='delete_invalid' to actually remove them)"
+            "[reconcile_library_paths] DRY RUN: Would have affected %d files "
+            "(use policy='delete_invalid' to actually remove them)",
+            total_invalid,
         )
     return result
 
@@ -138,14 +147,14 @@ def _handle_invalid_path(
     reason = library_path.reason or "unknown"
     status = library_path.status
     if policy == "dry_run":
-        logger.info(f"[reconcile_library_paths] DRY RUN: Would handle {status} path: {file_path} ({reason})")
+        logger.info("[reconcile_library_paths] DRY RUN: Would handle %s path: %s (%s)", status, file_path, reason)
     elif policy == "mark_invalid":
-        logger.warning(f"[reconcile_library_paths] Invalid path ({status}): {file_path} - {reason}")
+        logger.warning("[reconcile_library_paths] Invalid path (%s): %s - %s", status, file_path, reason)
     elif policy == "delete_invalid":
         try:
             delete_library_file(db, file_path)
             result["deleted_files"] += 1
-            logger.info(f"[reconcile_library_paths] Deleted invalid path ({status}): {file_path} - {reason}")
+            logger.info("[reconcile_library_paths] Deleted invalid path (%s): %s - %s", status, file_path, reason)
         except Exception as e:
-            logger.exception(f"[reconcile_library_paths] Failed to delete {file_path}: {e}")
+            logger.exception("[reconcile_library_paths] Failed to delete %s: %s", file_path, e)
             result["errors"] += 1

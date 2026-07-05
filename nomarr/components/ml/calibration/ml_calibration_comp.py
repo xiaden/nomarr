@@ -126,11 +126,11 @@ def _parse_tag_key_components(tag_key: str) -> tuple[str, str, str] | None:
     """
     parts = tag_key.split("_")
     if len(parts) < 4:
-        logger.warning(f"[calibration] Cannot parse tag key: {tag_key}")
+        logger.warning("[calibration] Cannot parse tag key: %s", tag_key)
         return None
     head_part = parts[-1]
     if len(head_part) < 8 or not head_part[-8:].isdigit():
-        logger.warning(f"[calibration] Cannot find head date in tag key: {tag_key}")
+        logger.warning("[calibration] Cannot find head date in tag key: %s", tag_key)
         return None
     head_date = head_part[-8:]
     label = head_part[:-8] if len(head_part) > 8 else parts[0]
@@ -141,7 +141,7 @@ def _parse_tag_key_components(tag_key: str) -> tuple[str, str, str] | None:
             backbone = embedder_part[:i]
             break
     if not backbone:
-        logger.warning(f"[calibration] Cannot extract backbone from: {embedder_part}")
+        logger.warning("[calibration] Cannot extract backbone from: %s", embedder_part)
         return None
     return (backbone, head_date, label)
 
@@ -186,7 +186,11 @@ def save_calibration_sidecars(
         head_info_maybe = head_lookup.get(lookup_key)
         if head_info_maybe is None:
             logger.debug(
-                f"[calibration] No head found for {tag_key} (backbone={backbone}, date={head_date}, label={label})"
+                "[calibration] No head found for %s (backbone=%s, date=%s, label=%s)",
+                tag_key,
+                backbone,
+                head_date,
+                label,
             )
             continue
         head_info = head_info_maybe
@@ -226,14 +230,15 @@ def save_calibration_sidecars(
                 "labels": list(calib_data["labels"].keys()),
                 "label_count": len(calib_data["labels"]),
             }
-            logger.info(f"[calibration] Saved {calibration_path} ({len(calib_data['labels'])} labels)")
+            logger.info("[calibration] Saved %s (%d labels)", calibration_path, len(calib_data["labels"]))
         except (OSError, TypeError, ValueError) as e:
-            logger.exception(f"[calibration] Failed to save {calibration_path}: {e}")
-    logger.info(f"[calibration] Saved {len(saved_files)} calibration sidecars")
+            logger.exception("[calibration] Failed to save %s: %s", calibration_path, e)
+    logger.info("[calibration] Saved %d calibration sidecars", len(saved_files))
     total_labels = 0
     for file_data in saved_files.values():
         label_count = file_data.get("label_count", 0)
-        total_labels += int(cast("int", label_count))
+        if isinstance(label_count, int):
+            total_labels += label_count
     return SaveCalibrationSidecarsResult(
         saved_files=saved_files, total_files=len(saved_files), total_labels=total_labels
     )
@@ -391,20 +396,25 @@ def generate_calibration_from_histogram(
     bin_width = (hi - lo) / bins
     sparse_bins = get_sparse_histogram(db, model_id=model_id, label=label, lo=lo, hi=hi, bins=bins)
     if not sparse_bins:
-        logger.warning(f"[calibration] No data for {model_id}:{head_name}:{label}")
+        logger.warning("[calibration] No data for %s:%s:%s", model_id, head_name, label)
         return {"p5": lo, "p95": hi, "n": 0, "underflow_count": 0, "overflow_count": 0, "histogram_bins": []}
 
     result = derive_percentiles_from_sparse_histogram(
         sparse_bins=sparse_bins, lo=lo, hi=hi, bin_width=bin_width, p5_target=0.05, p95_target=0.95
     )
 
-    # Transform sparse_bins to storage format: [{val: float, count: int}]
     histogram_bins = [{"val": b["min_val"], "count": b["count"]} for b in sparse_bins]
     result["histogram_bins"] = histogram_bins
 
     logger.info(
-        f"[calibration] {model_id}:{head_name}:{label} -> p5={result['p5']:.4f}, p95={result['p95']:.4f}, "
-        f"n={result['n']}, bins={len(histogram_bins)}"
+        "[calibration] %s:%s:%s -> p5=%.4f, p95=%.4f, n=%d, bins=%d",
+        model_id,
+        head_name,
+        label,
+        result["p5"],
+        result["p95"],
+        result["n"],
+        len(histogram_bins),
     )
     return result
 
@@ -512,7 +522,11 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
             model_id = model_lookup.get((backbone, embedder_release_date))
             if not model_id:
                 logger.warning(
-                    f"[calibration] No model found for {backbone}/{embedder_release_date}, skipping {head_name}:{label}"
+                    "[calibration] No model found for %s/%s, skipping %s:%s",
+                    backbone,
+                    embedder_release_date,
+                    head_name,
+                    label,
                 )
                 no_model_count += 1
                 continue
@@ -521,7 +535,7 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
             existing = load_calibration_state(db, head_name, label)
             calibration_def_hash = calib["calibration_def_hash"]
             if existing and (not overwrite) and (existing.get("calibration_def_hash") == calibration_def_hash):
-                logger.debug(f"[calibration] Skipping {head_name}:{label} (already exists)")
+                logger.debug("[calibration] Skipping %s:%s (already exists)", head_name, label)
                 skipped_count += 1
                 continue
 
@@ -539,7 +553,7 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
                 overflow_count=calib.get("overflow_count", 0),
                 histogram_bins=calib.get("histogram_bins"),
             )
-            logger.info(f"[calibration] Imported {head_name}:{label}")
+            logger.info("[calibration] Imported %s:%s", head_name, label)
             imported_count += 1
 
         except KeyError as e:

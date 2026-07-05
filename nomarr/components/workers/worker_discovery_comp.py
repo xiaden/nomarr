@@ -179,9 +179,7 @@ def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
     claims_raw = db.app.list_claims()
     claims: list[dict[str, Any]] = []
     if isinstance(claims_raw, list):
-        claims = [
-            c for c in claims_raw if isinstance(c, dict) and str(c.get("worker_id")) == worker_id
-        ]
+        claims = [c for c in claims_raw if isinstance(c, dict) and str(c.get("worker_id")) == worker_id]
     if not claims:
         return []
 

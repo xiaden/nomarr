@@ -84,7 +84,7 @@ def detect_file_moves(
     # Fast path: No chromaprints in DB yet, can't do move detection
     has_chromaprints = any(f.get("chromaprint") for f in files_to_remove)
     if not has_chromaprints:
-        logger.info(f"No chromaprints found in library - skipping move detection for {len(files_to_remove)} files")
+        logger.info("No chromaprints found in library - skipping move detection for %d files", len(files_to_remove))
         return MoveDetectionResult(
             moves=[],
             files_moved_count=0,
@@ -93,7 +93,9 @@ def detect_file_moves(
         )
 
     # Full move detection
-    logger.info(f"Checking {len(new_file_entries)} new files for moves against {len(files_to_remove)} removed files...")
+    logger.info(
+        "Checking %d new files for moves against %d removed files...", len(new_file_entries), len(files_to_remove)
+    )
 
     # Sort removed files by ID for deterministic matching when duplicates exist
     files_to_remove.sort(key=lambda f: f["_id"])
@@ -164,7 +166,7 @@ def detect_file_moves(
 
                     if duration_matches:
                         # Match confirmed
-                        logger.info(f"File moved: {removed_file['path']} → {new_path}")
+                        logger.info("File moved: %s → %s", removed_file["path"], new_path)
 
                         move = FileMove(
                             old_path=removed_file["path"],
@@ -182,20 +184,24 @@ def detect_file_moves(
                     # Chromaprint collision - different songs with same fingerprint
                     collisions_detected += 1
                     logger.warning(
-                        f"Chromaprint collision detected: "
-                        f"{removed_file['path']} vs {new_path} "
-                        f"(duration: {removed_duration}s vs {new_duration}s)",
+                        "Chromaprint collision detected: %s vs %s (duration: %ss vs %ss)",
+                        removed_file["path"],
+                        new_path,
+                        removed_duration,
+                        new_duration,
                     )
 
         except Exception as e:
-            logger.warning(f"Failed to compute chromaprint for {new_path}: {e}")
+            logger.warning("Failed to compute chromaprint for %s: %s", new_path, e)
             continue
 
     logger.info(
-        f"Move detection complete: {len(moves)} moves found, "
-        f"{chromaprints_computed} chromaprints computed, "
-        f"{skipped_by_duration} skipped by duration pre-filter, "
-        f"{collisions_detected} collisions detected",
+        "Move detection complete: %d moves found, %d chromaprints computed, "
+        "%d skipped by duration pre-filter, %d collisions detected",
+        len(moves),
+        chromaprints_computed,
+        skipped_by_duration,
+        collisions_detected,
     )
 
     return MoveDetectionResult(

@@ -69,7 +69,7 @@ def segment_waveform(params: SegmentWaveformParams) -> Segments:
         waves.append(np.asarray(seg, dtype=np.float32))
         bounds.append((t0, t1))
 
-        # Advance
+        # Move to next hop position
         if start + hop_len >= num_samples:
             break
         start += hop_len

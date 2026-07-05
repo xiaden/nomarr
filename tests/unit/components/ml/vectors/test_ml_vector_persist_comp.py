@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import numpy as np
 import pytest
@@ -152,9 +152,10 @@ class TestPersistBackboneVector:
             num_segments=embeddings.shape[0],
         )
         mock_logger_warning.assert_called_once_with(
-            "[processor] Failed to persist %s vector for %s",
+            "[processor] Failed to persist %s vector for %s: %s",
             "effnet",
             "/music/f1.mp3",
+            ANY,
             exc_info=True,
         )
 

@@ -85,7 +85,7 @@ def run_single_head(
         if segment_scores.ndim == 2 and segment_scores.shape[0] > 1:
             seg_std = np.std(segment_scores, axis=0).astype(np.float32, copy=False)
     except Exception as e:
-        logger.error(f"[processor] Processing error for {head_name}: {e}", exc_info=True)
+        logger.error("[processor] Processing error for %s: %s", head_name, e, exc_info=True)
         return SingleHeadResult(
             head_name=head_name,
             status="error_processing",
@@ -108,9 +108,11 @@ def run_single_head(
         )
         elapsed_ms = internal_ms().value - t_head.value
         logger.debug(
-            f"[processor] Head {head_name} complete: "
-            f"{len(segment_scores)} patches → {len(head_outputs)} outputs "
-            f"in {elapsed_ms / 1000:.1f}s",
+            "[processor] Head %s complete: %d patches → %d outputs in %.1fs",
+            head_name,
+            len(segment_scores),
+            len(head_outputs),
+            elapsed_ms / 1000,
         )
         # Regression data
         regression_data: tuple[Any, list[float]] | None = None
@@ -121,8 +123,11 @@ def run_single_head(
                 raw_values = [float(x) for x in segment_scores]
             regression_data = (head_model.meta, raw_values)
             logger.debug(
-                f"[processor] Captured {len(raw_values)} segment predictions for "
-                f"{head_name} (mean={np.mean(raw_values):.3f}, std={np.std(raw_values):.3f})",
+                "[processor] Captured %d segment predictions for %s (mean=%.3f, std=%.3f)",
+                len(raw_values),
+                head_name,
+                np.mean(raw_values),
+                np.std(raw_values),
             )
         raw_output_streams: list[RawOutputStream] = []
         if segment_scores.ndim == 1:
@@ -151,7 +156,7 @@ def run_single_head(
             decisions_count=len(decision.details),
         )
     except Exception as e:
-        logger.error(f"[processor] Aggregation error for {head_name}: {e}", exc_info=True)
+        logger.error("[processor] Aggregation error for %s: %s", head_name, e, exc_info=True)
         return SingleHeadResult(
             head_name=head_name,
             status="error_aggregation",

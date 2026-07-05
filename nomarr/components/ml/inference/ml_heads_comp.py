@@ -212,9 +212,15 @@ def decide_multilabel(
         if tier is None and prob >= 0.1:
             std_info = f", std={lab_std:.3f}" if lab_std is not None else ""
             logger.debug(
-                f"[heads] Label '{lab}' rejected: p={prob:.3f} (need >={spec.cascade.low:.2f}), "
-                f"ratio={ratio:.2f} (need >={spec.cascade.ratio_low:.2f}), "
-                f"gap={gap:.3f} (need >={spec.cascade.gap_low:.2f}){std_info}",
+                "[heads] Label '%s' rejected: p=%.3f (need >=%.2f), ratio=%.2f (need >=%.2f), gap=%.3f (need >=%.2f)%s",
+                lab,
+                prob,
+                spec.cascade.low,
+                ratio,
+                spec.cascade.ratio_low,
+                gap,
+                spec.cascade.gap_low,
+                std_info,
             )
         if tier is not None:
             out[lab] = {"p": prob, "tier": tier}
@@ -271,9 +277,15 @@ def decide_binary_multiclass(
         if tier is None and prob >= 0.1:
             std_info = f", std={lab_std:.3f}" if lab_std is not None else ""
             logger.debug(
-                f"[heads] Label '{lab}' rejected: p={prob:.3f} (need >={spec.cascade.low:.2f}), "
-                f"ratio={ratio:.2f} (need >={spec.cascade.ratio_low:.2f}), "
-                f"gap={gap:.3f} (need >={spec.cascade.gap_low:.2f}){std_info}",
+                "[heads] Label '%s' rejected: p=%.3f (need >=%.2f), ratio=%.2f (need >=%.2f), gap=%.3f (need >=%.2f)%s",
+                lab,
+                prob,
+                spec.cascade.low,
+                ratio,
+                spec.cascade.ratio_low,
+                gap,
+                spec.cascade.gap_low,
+                std_info,
             )
         if tier is not None:
             out[lab] = {"p": prob, "tier": tier}

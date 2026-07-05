@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from nomarr.components.tagging.tag_stats_comp import (
     get_genre_distribution,
@@ -12,6 +12,14 @@ from nomarr.components.tagging.tag_stats_comp import (
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
+
+
+class _CollectionOverview(TypedDict):
+    """Result shape for collection overview."""
+
+    stats: dict[str, Any]
+    year_distribution: list[dict[str, Any]]
+    genre_distribution: list[dict[str, Any]]
 
 
 def compute_collection_overview(

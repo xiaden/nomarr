@@ -6,39 +6,32 @@ from collections import defaultdict
 from math import floor
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.components.tagging.tag_query_comp import get_tag
+from nomarr.components.tagging.tag_query_comp import _numeric_value, get_tag
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def _library_ns(db: Database) -> Any:
-    """Return the intent-level library persistence facade."""
-    return cast("Any", db.library)
-
-
 def _tags_for_name(db: Database, name: str) -> list[dict[str, Any]]:
     """Return all tags for one tag name."""
-    library = _library_ns(db)
-    total = int(library.count_tags())
+    total = db.library.count_tags()
     if total <= 0:
         return []
-    return cast("list[dict[str, Any]]", library.list_tags(name=name, limit=total))
+    return cast("list[dict[str, Any]]", db.library.list_tags(name=name, limit=total))
 
 
 def _all_library_files(db: Database) -> list[dict[str, Any]]:
     """Return all library file documents with explicit pagination."""
-    library = _library_ns(db)
-    total = int(library.count_files())
+    total = db.library.count_files()
     if total <= 0:
         return []
-    return cast("list[dict[str, Any]]", library.list_files(limit=total))
+    return cast("list[dict[str, Any]]", db.library.list_files(limit=total))
 
 
 def _library_files(db: Database, library_id: str | None) -> list[dict[str, Any]]:
     """Return file documents scoped to one library or the whole collection."""
     if library_id is not None:
-        return cast("list[dict[str, Any]]", _library_ns(db).list_library_files(library_id))
+        return cast("list[dict[str, Any]]", db.library.list_library_files(library_id))
     return _all_library_files(db)
 
 
@@ -46,10 +39,9 @@ def _library_file_ids(db: Database, library_id: str | None) -> set[str] | None:
     """Return the scoped library file-id set when needed."""
     if library_id is None:
         return None
-    library = _library_ns(db)
     return {
         file_id
-        for file_doc in cast("list[dict[str, Any]]", library.list_library_files(library_id))
+        for file_doc in cast("list[dict[str, Any]]", db.library.list_library_files(library_id))
         if isinstance(file_id := file_doc.get("_id"), str)
     }
 
@@ -87,7 +79,7 @@ def _song_count_rows_for_tag_ids(db: Database, tag_ids: list[str]) -> dict[str, 
     count_by_tag_id = dict.fromkeys(valid_tag_ids, 0)
     for edge in cast(
         "list[dict[str, Any]]",
-        _library_ns(db).get_song_tag_edges_for_tags(valid_tag_ids),
+        db.library.get_song_tag_edges_for_tags(valid_tag_ids),
     ):
         if isinstance(tag_id := edge.get("_to"), str) and tag_id in count_by_tag_id:
             count_by_tag_id[tag_id] += 1
@@ -107,23 +99,6 @@ def _scoped_song_count_for_tag(
     return sum(1 for file_id in _tag_file_ids(db, tag_id) if file_id in library_file_ids)
 
 
-def _numeric_value(value: object) -> float | None:
-    """Convert loosely numeric values into float form when possible."""
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int | float):
-        return float(value)
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return None
-        try:
-            return float(stripped)
-        except ValueError:
-            return None
-    return None
-
-
 def _coerce_sum_value(value: object) -> float:
     """Return numeric values for aggregate sums, treating missing values as zero."""
     if isinstance(value, bool):
@@ -135,9 +110,8 @@ def _coerce_sum_value(value: object) -> float:
 
 def get_unique_names(db: Database, nomarr_only: bool = False) -> list[str]:
     """Return all unique tag name values."""
-    library = _library_ns(db)
-    total_tags = int(library.count_tags())
-    names = [str(value) for value in cast("list[str]", library.list_all_tag_names(limit=total_tags))]
+    total_tags = db.library.count_tags()
+    names = [str(value) for value in cast("list[str]", db.library.list_all_tag_names(limit=total_tags))]
     if nomarr_only:
         names = [name for name in names if name.startswith("nom:")]
     return names
@@ -159,14 +133,13 @@ def get_tag_value_counts(db: Database, name: str) -> dict[Any, int]:
 
 def get_all_tag_stats_batched(db: Database) -> dict[str, dict[str, Any]]:
     """Return summary stats for all tag names in one query."""
-    library = _library_ns(db)
     result: dict[str, dict[str, Any]] = {}
-    total_tags = int(library.count_tags())
+    total_tags = db.library.count_tags()
     if total_tags <= 0:
         return result
 
-    tag_names = [str(name_value) for name_value in cast("list[str]", library.list_all_tag_names(limit=total_tags))]
-    all_tag_docs = cast("list[dict[str, Any]]", library.list_tags(limit=total_tags)) if tag_names else []
+    tag_names = [str(name_value) for name_value in cast("list[str]", db.library.list_all_tag_names(limit=total_tags))]
+    all_tag_docs = cast("list[dict[str, Any]]", db.library.list_tags(limit=total_tags)) if tag_names else []
     count_by_tag_id = _song_count_rows_for_tag_ids(
         db,
         [tag_id for tag in all_tag_docs if isinstance(tag_id := tag.get("_id"), str)],
@@ -213,18 +186,19 @@ def get_all_tag_stats_batched(db: Database) -> dict[str, dict[str, Any]]:
 
 def get_tag_frequencies(db: Database, limit: int, namespace_prefix: str) -> dict[str, Any]:
     """Return frequency inputs for analytics service."""
-    library = _library_ns(db)
-    total_tags = int(library.count_tags())
+    total_tags = db.library.count_tags()
     nom_counts: defaultdict[str, int] = defaultdict(int)
     genre_counts: defaultdict[str, int] = defaultdict(int)
 
     if total_tags > 0:
-        tag_names = [str(name_value) for name_value in cast("list[str]", library.list_all_tag_names(limit=total_tags))]
+        tag_names = [
+            str(name_value) for name_value in cast("list[str]", db.library.list_all_tag_names(limit=total_tags))
+        ]
         relevant_names = [name for name in tag_names if name.startswith("nom:") or name == "genre"]
         all_tag_docs = (
             [
                 tag
-                for tag in cast("list[dict[str, Any]]", library.list_tags(limit=total_tags))
+                for tag in cast("list[dict[str, Any]]", db.library.list_tags(limit=total_tags))
                 if tag.get("name") in relevant_names
             ]
             if relevant_names
@@ -279,7 +253,7 @@ def get_library_stats(db: Database, library_id: str | None = None) -> dict[str, 
 
 def get_year_distribution(db: Database, library_id: str | None = None) -> list[dict[str, Any]]:
     """Return year distribution rows for collection overview."""
-    total_tags = int(_library_ns(db).count_tags())
+    total_tags = db.library.count_tags()
     if total_tags <= 0:
         return []
 
@@ -323,7 +297,7 @@ def get_genre_distribution(
     limit: int | None = 20,
 ) -> list[dict[str, Any]]:
     """Return genre distribution rows for collection overview."""
-    total_tags = int(_library_ns(db).count_tags())
+    total_tags = db.library.count_tags()
     if total_tags <= 0:
         return []
 

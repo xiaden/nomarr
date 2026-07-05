@@ -45,28 +45,19 @@ def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str
     Ensures the path exists, is a directory, and is strictly within the
     configured base library root.
     """
-    # Convert raw_root to string for processing
     raw_root_str = str(raw_root)
-
-    # Determine if input is absolute or relative
     raw_path = Path(raw_root_str)
 
     if raw_path.is_absolute():
-        # Convert absolute path to relative path from base root
         try:
-            # Resolve to handle any symlinks/.. in the path
             abs_path = raw_path.resolve()
-            # Get relative path from base root
             user_path = os.path.relpath(abs_path, base_library_root)
         except (ValueError, OSError) as e:
-            # relpath can fail if paths are on different drives on Windows
             msg = f"Cannot compute relative path from base root: {e}"
             raise ValueError(msg) from e
     else:
-        # Already relative, use as-is
         user_path = raw_root_str
 
-    # Validate using resolve_library_path
     try:
         resolved = resolve_library_path(
             library_root=base_library_root,
@@ -75,7 +66,6 @@ def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str
             must_be_file=False,
         )
     except ValueError as e:
-        # Re-raise with more context
         msg = f"Library root validation failed: {e}"
         raise ValueError(msg) from e
 
@@ -87,24 +77,17 @@ def ensure_no_overlapping_library_root(db: Database, candidate_root: str, *, ign
 
     Library roots must be disjoint — no nesting allowed.
     """
-    # Resolve candidate to canonical absolute path
     candidate_path = Path(candidate_root).resolve()
-
-    # Fetch all existing libraries
     existing_libraries = list_library_records(db, enabled_only=False, include_scan=False)
 
     for library in existing_libraries:
-        # Skip if this is the library being updated
         if ignore_id is not None and library["_id"] == ignore_id:
             continue
 
-        # Resolve existing library root
         existing_path = Path(library["root_path"]).resolve()
 
-        # Check if candidate is inside existing library
         try:
             candidate_path.relative_to(existing_path)
-            # If no ValueError raised, candidate is inside existing
             msg = (
                 f"Library root '{candidate_root}' is nested inside "
                 f"existing library '{library['name']}' at '{library['root_path']}'. "
@@ -112,16 +95,11 @@ def ensure_no_overlapping_library_root(db: Database, candidate_root: str, *, ign
             )
             raise ValueError(msg)
         except ValueError as e:
-            # relative_to raises ValueError if not a subpath - this is expected for disjoint paths
             if "is nested inside" in str(e):
-                # Re-raise our custom error
                 raise
-            # Otherwise, paths are not related - continue checking
 
-        # Check if existing library is inside candidate
         try:
             existing_path.relative_to(candidate_path)
-            # If no ValueError raised, existing is inside candidate
             msg = (
                 f"Existing library '{library['name']}' at '{library['root_path']}' "
                 f"is nested inside new library root '{candidate_root}'. "
@@ -129,11 +107,8 @@ def ensure_no_overlapping_library_root(db: Database, candidate_root: str, *, ign
             )
             raise ValueError(msg)
         except ValueError as e:
-            # relative_to raises ValueError if not a subpath - this is expected for disjoint paths
             if "is nested inside" in str(e):
-                # Re-raise our custom error
                 raise
-            # Otherwise, paths are not related - continue checking
 
 
 def resolve_path_within_library(
