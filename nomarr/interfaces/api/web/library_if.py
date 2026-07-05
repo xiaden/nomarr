@@ -50,6 +50,20 @@ class BackboneVectorStatsResponse(BaseModel):
     stats: list[VectorStatsItem]
 
 
+class DeleteLibraryResponse(BaseModel):
+    """Confirmation response for library deletion."""
+
+    status: str
+    message: str
+
+
+class ClearLibraryDataResponse(BaseModel):
+    """Confirmation response for clearing all library data."""
+
+    status: str
+    message: str
+
+
 @router.get("/stats", dependencies=[Depends(verify_session)])
 async def web_library_stats(
     library_service: Annotated["LibraryService", Depends(get_library_service)],
@@ -65,8 +79,8 @@ async def web_library_stats(
 
 @router.get("", dependencies=[Depends(verify_session)])
 async def list_libraries(
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
     enabled_only: bool = False,
-    library_service: "LibraryService" = Depends(get_library_service),
 ) -> ListLibrariesResponse:
     """List all configured libraries."""
     try:
@@ -181,7 +195,7 @@ async def update_library(
 async def delete_library(
     library_id: str,
     library_service: Annotated["LibraryService", Depends(get_library_service)],
-) -> dict[str, str]:
+) -> DeleteLibraryResponse:
     """Delete a library.
 
     Removes the library entry but does NOT delete files on disk.
@@ -191,7 +205,7 @@ async def delete_library(
         deleted = library_service.delete_library(library_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Library not found")
-        return {"status": "success", "message": f"Library {library_id} deleted"}
+        return DeleteLibraryResponse(status="success", message=f"Library {library_id} deleted")
     except ValueError:
         raise HTTPException(status_code=400, detail="Cannot delete library") from None
     except HTTPException:
@@ -204,7 +218,7 @@ async def delete_library(
 @router.post("/clear-data", dependencies=[Depends(verify_session)])
 async def clear_library_data(
     library_service: Annotated["LibraryService", Depends(get_library_service)],
-) -> dict[str, str]:
+) -> ClearLibraryDataResponse:
     """Clear all library data (files, tags, vectors, pipeline states).
 
     Wipes the entire library database — all files, tags, edges, vectors, scan
@@ -214,7 +228,7 @@ async def clear_library_data(
     """
     try:
         library_service.clear_library_data()
-        return {"status": "success", "message": "Library data cleared"}
+        return ClearLibraryDataResponse(status="success", message="Library data cleared")
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
     except ValueError as e:
@@ -236,21 +250,7 @@ async def get_library_vector_stats(
     library_id: str,
     vector_maintenance_service: Annotated["VectorMaintenanceService", Depends(get_vector_maintenance_service)],
 ) -> BackboneVectorStatsResponse:
-    """Get vector statistics across all backbones.
-
-    Returns hot/cold vector counts and index status for every discovered
-    backbone. Vector collections are per-backbone (not per-library), so
-    stats are global. The ``library_id`` parameter is accepted for backward
-    compatibility but the returned stats are backbone-scoped.
-
-    Args:
-        library_id: Library ID (accepted for backward compatibility)
-        vector_maintenance_service: VectorMaintenanceService instance (injected)
-
-    Returns:
-        BackboneVectorStatsResponse with per-backbone stats
-
-    """
+    """Get vector statistics across all backbones."""
     library_id = decode_path_id(library_id)
     try:
         stats = vector_maintenance_service.get_backbone_vector_stats()
