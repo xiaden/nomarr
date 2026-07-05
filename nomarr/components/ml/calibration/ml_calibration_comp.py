@@ -7,116 +7,16 @@ all models use comparable score ranges without forcing specific tag prevalence.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
-import math
 import os
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.ml.calibration.ml_calibration_state_comp import (
-    load_all_calibration_states,
-    load_calibration_state,
-    save_calibration_state,
-)
-from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
-from nomarr.components.ml.onnx.ml_model_registry_comp import list_registered_models
-from nomarr.components.tagging.mood_labels_comp import normalize_tag_label
 from nomarr.helpers.dto.ml_dto import SaveCalibrationSidecarsResult
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
-
-
-def _extract_label_from_nom_name(name: str, model_key_for_tag: str) -> str | None:
-    """Extract the label portion from a Nomarr ML tag name."""
-    if not name.startswith("nom:"):
-        return None
-
-    name_without_prefix = name[4:]
-    if model_key_for_tag not in name_without_prefix:
-        return None
-
-    embedder_marker = f"_{model_key_for_tag}"
-    embedder_pos = name_without_prefix.find(embedder_marker)
-    if embedder_pos > 0:
-        label_and_framework = name_without_prefix[:embedder_pos]
-    else:
-        label_and_framework = name_without_prefix
-
-    framework_sep = label_and_framework.rfind("_")
-    if framework_sep > 0:
-        return label_and_framework[:framework_sep]
-    return label_and_framework
-
-
-def get_sparse_histogram(
-    db: Database,
-    *,
-    model_id: str,
-    label: str,
-    lo: float = 0.0,
-    hi: float = 1.0,
-    bins: int = 10000,
-) -> list[dict[str, Any]]:
-    """Query sparse histogram bins for one model label.
-
-    The constructor owns calibration_state CRUD now; this query remains in the
-    calibration component because it is a cross-collection analytics read over
-    `song_has_tags` and `tags`, not a calibration_state collection verb.
-    """
-    _model_doc = db.ml.get_model(model_id)
-    if not isinstance(_model_doc, dict):
-        return []
-
-    backbone = _model_doc.get("backbone")
-    release_date = _model_doc.get("embedder_release_date")
-    if not isinstance(backbone, str) or not isinstance(release_date, str):
-        return []
-
-    model_key_for_tag = f"{backbone}{release_date.replace('-', '')}"
-    bin_width = (hi - lo) / bins
-    max_bin = bins - 1
-    matching_names: list[str] = []
-    all_names = db.library.list_all_tag_names(limit=10000)
-    for name in all_names:
-        if not isinstance(name, str) or not name.startswith("nom:"):
-            continue
-        extracted_label = _extract_label_from_nom_name(name, model_key_for_tag)
-        if extracted_label == label:
-            matching_names.append(name)
-
-    histogram_by_bin: dict[int, dict[str, Any]] = {}
-    for matched_name in matching_names:
-        _tag_docs_raw = db.library.list_tags_by_name(name=matched_name, limit=50000)
-        if not isinstance(_tag_docs_raw, list):
-            continue
-        for tag_doc in _tag_docs_raw:
-            if not isinstance(tag_doc, dict):
-                continue
-            value = tag_doc.get("value")
-            if not isinstance(value, (int, float)) or isinstance(value, bool):
-                continue
-
-            bin_idx_raw = math.floor((value - lo) / bin_width)
-            bin_idx = min(max(bin_idx_raw, 0), max_bin)
-            bin_row = histogram_by_bin.setdefault(
-                bin_idx,
-                {
-                    "min_val": lo + (bin_idx * bin_width),
-                    "count": 0,
-                    "underflow_count": 0,
-                    "overflow_count": 0,
-                },
-            )
-            bin_row["count"] += 1
-            if value < lo:
-                bin_row["underflow_count"] += 1
-            if value > hi:
-                bin_row["overflow_count"] += 1
-
-    return sorted(histogram_by_bin.values(), key=lambda row: row["min_val"])
 
 
 def _parse_tag_key_components(tag_key: str) -> tuple[str, str, str] | None:
@@ -127,11 +27,11 @@ def _parse_tag_key_components(tag_key: str) -> tuple[str, str, str] | None:
     """
     parts = tag_key.split("_")
     if len(parts) < 4:
-        logger.warning("[calibration] Cannot parse tag key: %s", tag_key)
+        logger.warning(f"[calibration] Cannot parse tag key: {tag_key}")
         return None
     head_part = parts[-1]
     if len(head_part) < 8 or not head_part[-8:].isdigit():
-        logger.warning("[calibration] Cannot find head date in tag key: %s", tag_key)
+        logger.warning(f"[calibration] Cannot find head date in tag key: {tag_key}")
         return None
     head_date = head_part[-8:]
     label = head_part[:-8] if len(head_part) > 8 else parts[0]
@@ -142,7 +42,7 @@ def _parse_tag_key_components(tag_key: str) -> tuple[str, str, str] | None:
             backbone = embedder_part[:i]
             break
     if not backbone:
-        logger.warning("[calibration] Cannot extract backbone from: %s", embedder_part)
+        logger.warning(f"[calibration] Cannot extract backbone from: {embedder_part}")
         return None
     return (backbone, head_date, label)
 
@@ -164,6 +64,8 @@ def save_calibration_sidecars(
         Summary of saved files with paths and tag counts
 
     """
+    from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
+
     logger.info("[calibration] Saving calibration sidecars")
     heads = discover_heads_no_db(models_dir)
     if not heads:
@@ -173,6 +75,8 @@ def save_calibration_sidecars(
     for head_info in heads:
         head_date = ""
         for label in head_info.labels:
+            from nomarr.components.tagging.mood_labels_comp import normalize_tag_label
+
             norm_label = normalize_tag_label(label)
             key = (head_info.backbone, head_date, norm_label)
             head_lookup[key] = head_info
@@ -187,11 +91,7 @@ def save_calibration_sidecars(
         head_info_maybe = head_lookup.get(lookup_key)
         if head_info_maybe is None:
             logger.debug(
-                "[calibration] No head found for %s (backbone=%s, date=%s, label=%s)",
-                tag_key,
-                backbone,
-                head_date,
-                label,
+                f"[calibration] No head found for {tag_key} (backbone={backbone}, date={head_date}, label={label})"
             )
             continue
         head_info = head_info_maybe
@@ -231,15 +131,14 @@ def save_calibration_sidecars(
                 "labels": list(calib_data["labels"].keys()),
                 "label_count": len(calib_data["labels"]),
             }
-            logger.info("[calibration] Saved %s (%d labels)", calibration_path, len(calib_data["labels"]))
-        except (OSError, TypeError, ValueError) as e:
-            logger.exception("[calibration] Failed to save %s: %s", calibration_path, e)
-    logger.info("[calibration] Saved %d calibration sidecars", len(saved_files))
+            logger.info(f"[calibration] Saved {calibration_path} ({len(calib_data['labels'])} labels)")
+        except Exception as e:
+            logger.exception(f"[calibration] Failed to save {calibration_path}: {e}")
+    logger.info(f"[calibration] Saved {len(saved_files)} calibration sidecars")
     total_labels = 0
     for file_data in saved_files.values():
         label_count = file_data.get("label_count", 0)
-        if isinstance(label_count, int):
-            total_labels += label_count
+        total_labels += label_count
     return SaveCalibrationSidecarsResult(
         saved_files=saved_files, total_files=len(saved_files), total_labels=total_labels
     )
@@ -287,6 +186,8 @@ def compute_calibration_def_hash(model_id: str, head_name: str, label: str) -> s
         MD5 hash of calibration definition
 
     """
+    import hashlib
+
     calib_def_str = f"{model_id}:{head_name}:{label}"
     return hashlib.md5(calib_def_str.encode()).hexdigest()
 
@@ -307,10 +208,10 @@ def get_default_histogram_spec(head_name: str) -> dict[str, Any]:
         head_name: Head name (e.g., "mood_happy", "genre_rock")
 
     Returns:
-        {"lo": float, "hi": float, "bins": int, "bin_width": float}
+        {"lo": float, "hi": float, "bins": int}
 
     """
-    return {"lo": 0.0, "hi": 1.0, "bins": 10000, "bin_width": 0.0001}
+    return {"lo": 0.0, "hi": 1.0, "bins": 10000}
 
 
 def derive_percentiles_from_sparse_histogram(
@@ -395,27 +296,22 @@ def generate_calibration_from_histogram(
 
     """
     bin_width = (hi - lo) / bins
-    sparse_bins = get_sparse_histogram(db, model_id=model_id, label=label, lo=lo, hi=hi, bins=bins)
+    sparse_bins = db.calibration_state.get_sparse_histogram(model_id=model_id, label=label, lo=lo, hi=hi, bins=bins)
     if not sparse_bins:
-        logger.warning("[calibration] No data for %s:%s:%s", model_id, head_name, label)
+        logger.warning(f"[calibration] No data for {model_id}:{head_name}:{label}")
         return {"p5": lo, "p95": hi, "n": 0, "underflow_count": 0, "overflow_count": 0, "histogram_bins": []}
 
     result = derive_percentiles_from_sparse_histogram(
         sparse_bins=sparse_bins, lo=lo, hi=hi, bin_width=bin_width, p5_target=0.05, p95_target=0.95
     )
 
+    # Transform sparse_bins to storage format: [{val: float, count: int}]
     histogram_bins = [{"val": b["min_val"], "count": b["count"]} for b in sparse_bins]
     result["histogram_bins"] = histogram_bins
 
     logger.info(
-        "[calibration] %s:%s:%s -> p5=%.4f, p95=%.4f, n=%d, bins=%d",
-        model_id,
-        head_name,
-        label,
-        result["p5"],
-        result["p95"],
-        result["n"],
-        len(histogram_bins),
+        f"[calibration] {model_id}:{head_name}:{label} -> p5={result['p5']:.4f}, p95={result['p95']:.4f}, "
+        f"n={result['n']}, bins={len(histogram_bins)}"
     )
     return result
 
@@ -441,7 +337,7 @@ def export_calibration_state_to_json(db: Database, output_path: str) -> dict[str
 
     """
     logger.info(f"[calibration] Exporting calibration_state to {output_path}")
-    calibrations = load_all_calibration_states(db)
+    calibrations = db.calibration_state.get_all_calibration_states()
     export_data = []
     for calib in calibrations:
         model_info = calib.get("model") or {}
@@ -502,7 +398,7 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
         raise ValueError(msg)
 
     # Build model lookup cache: (backbone, embedder_release_date) -> model_id
-    all_models = list_registered_models(db)
+    all_models = db.ml_models.list_models()
     model_lookup: dict[tuple[str, str], str] = {}
     for model in all_models:
         key = (model.get("backbone", ""), model.get("embedder_release_date", ""))
@@ -523,25 +419,20 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
             model_id = model_lookup.get((backbone, embedder_release_date))
             if not model_id:
                 logger.warning(
-                    "[calibration] No model found for %s/%s, skipping %s:%s",
-                    backbone,
-                    embedder_release_date,
-                    head_name,
-                    label,
+                    f"[calibration] No model found for {backbone}/{embedder_release_date}, skipping {head_name}:{label}"
                 )
                 no_model_count += 1
                 continue
 
             # Check if calibration already exists
-            existing = load_calibration_state(db, head_name, label)
+            existing = db.calibration_state.get_calibration_state(head_name, label)
             calibration_def_hash = calib["calibration_def_hash"]
             if existing and (not overwrite) and (existing.get("calibration_def_hash") == calibration_def_hash):
-                logger.debug("[calibration] Skipping %s:%s (already exists)", head_name, label)
+                logger.debug(f"[calibration] Skipping {head_name}:{label} (already exists)")
                 skipped_count += 1
                 continue
 
-            save_calibration_state(
-                db,
+            db.calibration_state.upsert_calibration_state(
                 model_id=model_id,
                 head_name=head_name,
                 label=label,
@@ -554,14 +445,14 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
                 overflow_count=calib.get("overflow_count", 0),
                 histogram_bins=calib.get("histogram_bins"),
             )
-            logger.info("[calibration] Imported %s:%s", head_name, label)
+            logger.info(f"[calibration] Imported {head_name}:{label}")
             imported_count += 1
 
         except KeyError as e:
             logger.warning(f"[calibration] Skipping invalid calibration entry (missing {e})")
             skipped_count += 1
             continue
-        except (ValueError, TypeError, OSError) as e:
+        except Exception as e:
             logger.exception(f"[calibration] Failed to import calibration: {e}")
             skipped_count += 1
             continue
@@ -585,6 +476,8 @@ def compute_global_calibration_hash(calibration_states: list[dict[str, Any]]) ->
         MD5 hash representing the combined calibration version
 
     """
+    import hashlib
+
     sorted_states = sorted(calibration_states, key=lambda x: x.get("_key", ""))
     hash_parts = []
     for state in sorted_states:

@@ -1,50 +1,67 @@
 """Taste-profile computation from Navidrome play history.
 
-Stateless component that builds multi-cluster recency-weighted centroid
-embeddings (one per genre group) representing a user's listening
-preferences.  Called by the playlist generation workflow (Part E).
+Stateless component that builds a recency-weighted centroid embedding
+representing a user's listening preferences.
 """
 
 from __future__ import annotations
 
 import logging
 import math
-from collections import OrderedDict
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
-from nomarr.components.tagging.tag_query_comp import get_tag_values_grouped_by_file
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
-    from nomarr.helpers.dto.navidrome_dto import TasteCluster, TasteProfile, TrackPlayData
+    from nomarr.helpers.dto.navidrome_dto import TasteProfile, TrackPlayData
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
 def compute_taste_profile(
     db: Database,
     user_id: str,
-    top_plays: list[TrackPlayData],
     backbone_id: str,
+    library_key: str,
     half_life_days: float = 30.0,
     top_n: int = 200,
-    pp_max_clusters: int = 10,
 ) -> TasteProfile | None:
-    """Compute a multi-cluster taste profile from caller-provided play data.
+    """Compute a taste profile for *user_id* from play-count data.
 
-    Groups tracks by genre, computes recency-weighted centroids per group,
-    and caps clusters to ``pp_max_clusters`` by total weight.
-    Returns ``None`` if no tracks have embeddings.
+    Steps:
+    1. Fetch top-N most-played tracks via graph traversal.
+    2. Filter to tracks that have both a ``file_id`` and a cold-vector embedding.
+    3. Compute recency-weighted centroid: :math:`w_i = \\log(1+c_i) \\cdot e^{-\\lambda d_i}`.
+    4. L2-normalise the centroid.
+
+    Args:
+        db: Database instance.
+        user_id: Navidrome user identifier.
+        backbone_id: Backbone used for embeddings (e.g. ``"discogs_effnet"``).
+        library_key: ArangoDB ``_key`` of the library document.
+        half_life_days: Recency half-life in days (default 30).
+        top_n: Maximum number of top tracks to consider.
+
+    Returns:
+        A :class:`TasteProfile` dict, or ``None`` if no valid tracks with
+        embeddings could be found.
+
     """
-    plays: list[TrackPlayData] = list(top_plays[:top_n])
+    # Step 1: Fetch top plays via graph traversal
+    plays: list[TrackPlayData] = db.navidrome_playcounts.get_top_plays(user_id, top_n)
     if not plays:
         logger.info("No play data for user %s — cannot build taste profile", user_id)
         return None
 
+    # Step 2: Filter to resolved tracks (file_id is not None)
     resolved_plays = [p for p in plays if p["file_id"] is not None]
     if not resolved_plays:
         logger.info(
@@ -54,22 +71,18 @@ def compute_taste_profile(
         )
         return None
 
-    file_ids: list[str] = []
-    for p in resolved_plays:
-        file_id = p["file_id"]
-        if file_id is not None:  # guaranteed by filter above
-            file_ids.append(file_id)
-    cold_ops = get_cold_namespace(db, backbone_id)
-    vector_docs = cold_ops.get_vectors_by_file_ids(file_ids)
+    # Step 3: Batch-fetch cold vectors for resolved file IDs
+    file_ids = [p["file_id"] for p in resolved_plays]  # all non-None after filter
+    cold_ops = db.get_vectors_track_cold(backbone_id, library_key)
+    vector_docs = cold_ops.get_vectors_by_file_ids(file_ids)  # type: ignore[arg-type]
 
+    # Build file_id → vector mapping
     vector_map: dict[str, list[float]] = {doc["file_id"]: doc["vector"] for doc in vector_docs if "vector" in doc}
 
+    # Step 4: Pair plays with their vectors, dropping those without embeddings
     paired: list[tuple[TrackPlayData, list[float]]] = []
     for play in resolved_plays:
-        file_id = play["file_id"]
-        if file_id is None:
-            continue
-        vec = vector_map.get(file_id)
+        vec = vector_map.get(play["file_id"])  # type: ignore[arg-type]
         if vec is not None:
             paired.append((play, vec))
 
@@ -81,125 +94,38 @@ def compute_taste_profile(
         )
         return None
 
-    paired_file_ids: list[str] = []
-    for p, _ in paired:
-        file_id = p["file_id"]
-        if file_id is not None:
-            paired_file_ids.append(file_id)
-    genre_map = get_tag_values_grouped_by_file(
-        db,
-        paired_file_ids,
-        "genre",
-    )
-
-    genre_groups: dict[str, list[tuple[TrackPlayData, list[float]]]] = OrderedDict()
-    untagged: list[tuple[TrackPlayData, list[float]]] = []
-    for play, vec in paired:
-        file_id = play["file_id"]
-        if file_id is None:
-            continue
-        genres = genre_map.get(file_id)
-        if genres:
-            primary = sorted(genres)[0]  # deterministic: first sorted tag
-            genre_groups.setdefault(primary, []).append((play, vec))
-        else:
-            untagged.append((play, vec))
-
-    logger.info(
-        "Genre grouping for user %s: %d genres, %d untagged tracks, %d total paired",
-        user_id,
-        len(genre_groups),
-        len(untagged),
-        len(paired),
-    )
-
+    # Step 5: Compute recency weights and weighted centroid
     now_val = now_ms().value
-    clusters: list[TasteCluster] = []
-    for genre, tracks_in_group in genre_groups.items():
-        if len(tracks_in_group) < 3:
-            logger.debug(
-                "Skipping genre '%s': only %d tracks (minimum 3)",
-                genre,
-                len(tracks_in_group),
-            )
-            continue
-
-        group_plays = [p for p, _ in tracks_in_group]
-        group_vectors = [v for _, v in tracks_in_group]
-        group_weights = _compute_recency_weights(group_plays, now_val, half_life_days)
-        group_centroid = _compute_weighted_centroid(group_vectors, group_weights)
-        total_weight = sum(group_weights)
-
-        clusters.append(
-            {
-                "label": genre,
-                "centroid": group_centroid,
-                "track_count": len(tracks_in_group),
-                "total_weight": total_weight,
-            }
-        )
-
-    if untagged:
-        if len(untagged) < 3:
-            logger.debug(
-                "Skipping untagged cluster for user %s: only %d untagged tracks (minimum 3)",
-                user_id,
-                len(untagged),
-            )
-        else:
-            untagged_fraction = len(untagged) / len(paired)
-            if untagged_fraction > 0.05:
-                untagged_plays = [p for p, _ in untagged]
-                untagged_vectors = [v for _, v in untagged]
-                untagged_weights = _compute_recency_weights(untagged_plays, now_val, half_life_days)
-                untagged_centroid = _compute_weighted_centroid(untagged_vectors, untagged_weights)
-                untagged_total_weight = sum(untagged_weights)
-                clusters.append(
-                    {
-                        "label": "untagged",
-                        "centroid": untagged_centroid,
-                        "track_count": len(untagged),
-                        "total_weight": untagged_total_weight,
-                    }
-                )
-            else:
-                logger.info(
-                    "Untagged tracks for user %s below 5%% threshold (%.1f%%) — dropping",
-                    user_id,
-                    untagged_fraction * 100,
-                )
-
-    if len(clusters) > pp_max_clusters:
-        clusters.sort(key=lambda c: c["total_weight"], reverse=True)
-        dropped = clusters[pp_max_clusters:]
-        clusters = clusters[:pp_max_clusters]
-        logger.info(
-            "Capped clusters to %d; dropped %d clusters: %s",
-            pp_max_clusters,
-            len(dropped),
-            [c["label"] for c in dropped],
-        )
-
-    if not clusters:
-        logger.info("No clusters formed for user %s — returning None", user_id)
-        return None
+    weights = _compute_recency_weights(
+        [p for p, _ in paired],
+        now_val,
+        half_life_days,
+    )
+    centroid = _compute_weighted_centroid(
+        [v for _, v in paired],
+        weights,
+    )
 
     logger.info(
-        "Taste profile for user %s: %d clusters, %d total tracks",
+        "Taste profile for user %s: %d tracks, dim=%d",
         user_id,
-        len(clusters),
         len(paired),
+        len(centroid),
     )
+
     return {
         "user_id": user_id,
-        "clusters": clusters,
+        "centroid": centroid,
         "backbone_id": backbone_id,
+        "library_key": library_key,
         "track_count": len(paired),
         "generated_at_ms": now_val,
     }
 
 
+# ---------------------------------------------------------------------------
 # Private helpers
+# ---------------------------------------------------------------------------
 
 _MS_PER_DAY = 86_400_000
 
@@ -209,7 +135,25 @@ def _compute_recency_weights(
     now_ms_val: int,
     half_life_days: float,
 ) -> list[float]:
-    """Compute recency-weighted scores: w_i = log(1 + playcount) * exp(-lambda * days_since)."""
+    """Compute recency-weighted scores for *plays*.
+
+    Formula per track:
+        :math:`\\lambda = \\ln 2 / \\text{half\\_life\\_days}`
+
+        :math:`d_i` = days since last play (fallback: ``half_life_days * 2``
+        when ``last_played`` is ``None``)
+
+        :math:`w_i = \\log(1 + playcount_i) \\cdot e^{-\\lambda \\cdot d_i}`
+
+    Args:
+        plays: Track play data dicts.
+        now_ms_val: Current epoch-millis timestamp.
+        half_life_days: Decay half-life in days.
+
+    Returns:
+        One positive weight per play in the same order.
+
+    """
     decay_lambda = math.log(2) / half_life_days
     fallback_days = half_life_days * 2
 
@@ -231,7 +175,16 @@ def _compute_weighted_centroid(
     vectors: list[list[float]],
     weights: list[float],
 ) -> list[float]:
-    """Compute L2-normalised weighted centroid of vectors."""
+    """Compute L2-normalised weighted centroid of *vectors*.
+
+    Args:
+        vectors: Embedding vectors (one per track).
+        weights: Corresponding positive weights.
+
+    Returns:
+        L2-normalised centroid as a plain list of floats.
+
+    """
     arr = np.asarray(vectors, dtype=np.float64)
     w = np.asarray(weights, dtype=np.float64)
 

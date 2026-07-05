@@ -1,4 +1,7 @@
-"""Embedding and segmentation utilities: segment waveform, score, pool."""
+"""Embedding and segmentation utilities for ML inference.
+
+Inference-agnostic helpers: load audio, segment, score, pool.
+"""
 
 from __future__ import annotations
 
@@ -69,7 +72,7 @@ def segment_waveform(params: SegmentWaveformParams) -> Segments:
         waves.append(np.asarray(seg, dtype=np.float32))
         bounds.append((t0, t1))
 
-        # Move to next hop position
+        # Advance
         if start + hop_len >= num_samples:
             break
         start += hop_len
@@ -79,7 +82,10 @@ def segment_waveform(params: SegmentWaveformParams) -> Segments:
 
 # Scoring over segments
 def score_segments(segments: Segments, predict_fn: Callable[[np.ndarray, int], np.ndarray]) -> np.ndarray:
-    """Apply predict_fn to each segment waveform; returns (num_segments, dim) array."""
+    """Apply predict_fn to each segment waveform.
+    predict_fn signature: (wave_mono_float32, sr) -> 1D np.ndarray (scores/logits/probs)
+    Returns a 2D array: (num_segments, dim).
+    """
     outputs: list[np.ndarray] = []
     for seg in segments.waves:
         out = predict_fn(seg, segments.sr)

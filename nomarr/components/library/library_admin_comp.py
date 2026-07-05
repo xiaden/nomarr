@@ -1,10 +1,17 @@
-"""Library administration: create, update, delete, and clear library data with validation."""
+"""Library administration operations.
+
+This component handles library CRUD operations with validation:
+- Create library with path validation and name generation
+- Update library root with path validation
+- Delete library with policy checks
+- Clear library data with precondition checks
+"""
 
 from __future__ import annotations
 
 import logging
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from nomarr.components.library.library_file_query_comp import clear_library_data as clear_library_file_data
 from nomarr.components.library.library_records_comp import (
@@ -37,32 +44,64 @@ def create_library(
     file_write_mode: str = "full",
     library_auto_write: bool = False,
 ) -> str:
-    """Create a new library with validation and name generation."""
+    """Create a new library with validation and name generation.
+
+    Args:
+        db: Database instance
+        base_library_root: Base library root from config (security boundary)
+        name: Library name (optional: auto-generated from path basename)
+        root_path: Path to library root (must be within base_library_root)
+        is_enabled: Whether library is enabled for scanning
+        watch_mode: File watching mode ('off', 'event', or 'poll')
+        file_write_mode: Tag write mode ('none', 'minimal', or 'full')
+        library_auto_write: Whether to enable automatic tag writing for the library.
+
+    Returns:
+        Created library ID
+
+    Raises:
+        ValueError: If name already exists or path is invalid
+
+    """
     base_root = get_base_library_root(base_library_root)
     abs_path = normalize_library_root(base_root, root_path)
     ensure_no_overlapping_library_root(db, abs_path, ignore_id=None)
     resolved_name = _resolve_library_name(db, name, abs_path)
     try:
-        library_id = create_library_record(
-            db,
-            name=resolved_name,
-            root_path=abs_path,
-            is_enabled=is_enabled,
-            watch_mode=watch_mode,
-            file_write_mode=file_write_mode,
-            library_auto_write=library_auto_write,
-            **PIPELINE_DEFAULTS,
+        library_id = cast(
+            "str",
+            create_library_record(
+                db,
+                name=resolved_name,
+                root_path=abs_path,
+                is_enabled=is_enabled,
+                watch_mode=watch_mode,
+                file_write_mode=file_write_mode,
+                library_auto_write=library_auto_write,
+                **PIPELINE_DEFAULTS,
+            ),
         )
         ensure_scan_state(db, library_id)
-    except (ValueError, RuntimeError, OSError) as e:
+    except Exception as e:
         msg = f"Failed to create library: {e}"
         raise ValueError(msg) from e
-    logger.info("[LibraryAdmin] Created library: %s at %s", resolved_name, abs_path)
+    logger.info(f"[LibraryAdmin] Created library: {resolved_name} at {abs_path}")
     return library_id
 
 
 def update_library_root(db: Database, base_library_root: str | None, library_id: str, root_path: str) -> None:
-    """Update a library's root path with validation."""
+    """Update a library's root path with validation.
+
+    Args:
+        db: Database instance
+        base_library_root: Base library root from config (security boundary)
+        library_id: Library ID to update
+        root_path: New path to library root
+
+    Raises:
+        ValueError: If library not found or path is invalid
+
+    """
     library = get_library_record(db, library_id)
     if not library:
         msg = f"Library not found: {library_id}"
@@ -71,27 +110,47 @@ def update_library_root(db: Database, base_library_root: str | None, library_id:
     abs_path = normalize_library_root(base_root, root_path)
     ensure_no_overlapping_library_root(db, abs_path, ignore_id=library_id)
     update_library_record(db, library_id, root_path=abs_path)
-    logger.info("[LibraryAdmin] Updated library %s root path to %s", library_id, abs_path)
+    logger.info(f"[LibraryAdmin] Updated library {library_id} root path to {abs_path}")
 
 
 _BATCH_SIZE = 500
 
 
 def delete_library(db: Database, library_id: str) -> bool:
-    """Delete a library and all associated data. Returns True if deleted, False if not found."""
+    """Delete a library and all associated data.
+
+    Args:
+        db: Database instance
+        library_id: Library ID to delete
+
+    Returns:
+        True if deleted, False if not found
+
+    """
     library = get_library_record(db, library_id)
     if not library:
         return False
 
     db.library.remove_library(library_id)
-    logger.info("[LibraryAdmin] Deleted library %s: %s", library_id, library.get("name"))
+    logger.info(f"[LibraryAdmin] Deleted library {library_id}: {library.get('name')}")
     return True
 
 
 def clear_library_data(db: Database, library_root: str | None) -> None:
-    """Clear all library data. Requires configured library_root and no running scan jobs.
+    """Clear all library data with precondition checks.
 
-    Raises ValueError if library_root not configured, RuntimeError if scan jobs are running.
+    Preconditions:
+    - library_root must be configured
+    - No scan jobs can be running
+
+    Args:
+        db: Database instance
+        library_root: Library root from config
+
+    Raises:
+        ValueError: If library_root not configured
+        RuntimeError: If scan jobs are running
+
     """
     if not library_root:
         msg = "Library root not configured"

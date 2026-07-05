@@ -1,4 +1,8 @@
-"""Worker crash handling — pure restart-decision logic with no side effects except logging."""
+"""Worker crash handling component - restart decision logic.
+
+Pure decision functions for determining when to restart vs mark failed.
+All functions are stateless — no side effects except logging.
+"""
 
 from __future__ import annotations
 
@@ -9,25 +13,19 @@ from typing import Literal
 
 logger = logging.getLogger(__name__)
 
-MAX_RESTARTS_IN_WINDOW = 5
-RESTART_WINDOW_MS = 5 * 60 * 1000
-MAX_LIFETIME_RESTARTS = 20
-MAX_BACKOFF_SECONDS = 60
+# Restart policy constants
+MAX_RESTARTS_IN_WINDOW = 5  # Rapid restart limit (short window)
+RESTART_WINDOW_MS = 5 * 60 * 1000  # 5 minutes in milliseconds
+MAX_LIFETIME_RESTARTS = 20  # Total restart limit (long window, catches slow thrashing)
+MAX_BACKOFF_SECONDS = 60  # Maximum exponential backoff delay
 
+# Restart decision result type
 RestartAction = Literal["restart", "mark_failed"]
 
 
 @dataclass(frozen=True)
 class RestartDecision:
-    """Result of restart decision logic.
-
-    Attributes:
-        action: What to do - "restart" or "mark_failed"
-        reason: Human-readable explanation of decision
-        backoff_seconds: If action=restart, how long to wait before restarting
-        failure_reason: If action=mark_failed, detailed failure explanation for metadata
-
-    """
+    """Result of restart decision logic."""
 
     action: RestartAction
     reason: str
@@ -46,8 +44,7 @@ def should_restart_worker(
 ) -> RestartDecision:
     """Decide whether to restart a worker or mark it as permanently failed.
 
-    Two-tier limiting: short window for rapid restart loops, long window for slow thrashing.
-    Uses exponential backoff on restarts.
+    Two-tier limiting: short-window (rapid loops) and long-window (slow thrashing).
     """
     now_ms = int(time.time() * 1000)
 
@@ -59,7 +56,7 @@ def should_restart_worker(
             f"Check logs for OOM kills, GPU memory issues, or repeated crashes."
         )
         logger.warning(
-            "Worker restart limit reached: %d >= %d lifetime restarts. Marking as failed.",
+            "[worker_crash] Worker restart limit reached: %d >= %d lifetime restarts — marking as failed.",
             restart_count,
             max_lifetime,
         )
@@ -81,7 +78,7 @@ def should_restart_worker(
                 f"This indicates a crash loop. Check worker logs for errors."
             )
             logger.warning(
-                "Worker rapid restart limit reached: %d restarts in %.1fs. Marking as failed.",
+                "[worker_crash] Worker rapid restart limit: %d restarts in %.1fs — marking as failed.",
                 restart_count,
                 time_since_last_restart_ms / 1000,
             )
@@ -95,7 +92,7 @@ def should_restart_worker(
     backoff = calculate_backoff(restart_count, max_backoff=max_backoff)
 
     logger.info(
-        "Worker restart allowed (count=%d, backoff=%ds, lifetime_limit=%d, short_window_limit=%d)",
+        "[worker_crash] Worker restart allowed (count=%d, backoff=%ds, lifetime_limit=%d, short_window_limit=%d)",
         restart_count,
         backoff,
         max_lifetime,
@@ -110,5 +107,9 @@ def should_restart_worker(
 
 
 def calculate_backoff(restart_count: int, max_backoff: int = MAX_BACKOFF_SECONDS) -> int:
-    """Calculate exponential backoff delay: 1s, 2s, 4s, 8s, 16s, 32s, 60s (max)."""
+    """Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 60s (max), 60s...
+
+    Always >= 1, capped at max_backoff.
+    """
+    # Ensure minimum 1 second backoff, then exponential up to max
     return int(max(1, min(2**restart_count, max_backoff)))

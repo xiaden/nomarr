@@ -34,6 +34,13 @@ def crawl_navidrome_songs(client: SubsonicClient) -> list[CrawledSong]:
     Paginates through ``getAlbumList2`` (alphabetical), fetches each album's
     songs via ``getAlbum``, and collects ``(nd_id, path, playCount, played)``
     from each ``Child`` element.
+
+    Args:
+        client: Authenticated Subsonic API client.
+
+    Returns:
+        List of crawled songs with Navidrome IDs, paths, and play data.
+
     """
     all_songs: list[CrawledSong] = []
     offset = 0
@@ -68,14 +75,14 @@ def crawl_navidrome_songs(client: SubsonicClient) -> list[CrawledSong]:
             album_count += 1
             if album_count % _PROGRESS_LOG_INTERVAL == 0:
                 logger.info(
-                    "crawl_navidrome_songs: Processed %d albums (%d songs so far)",
+                    "[navidrome_crawl] Processed %d albums (%d songs so far)",
                     album_count,
                     len(all_songs),
                 )
 
         offset += len(albums)
 
-    logger.info("crawl_navidrome_songs: Collected %d songs from %d albums", len(all_songs), album_count)
+    logger.info("[navidrome_crawl] Collected %d songs from %d albums", len(all_songs), album_count)
     return all_songs
 
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import numpy as np
 
@@ -16,13 +16,14 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from nomarr.helpers.dto.ml_head_dto import HeadInfo
+    from nomarr.components.ml.onnx.ml_discovery_comp import HeadInfo
+    from nomarr.components.ml.onnx.ml_head import ONNXHeadModel
 
 
-def _as_float_list(element: float | int | list[float] | np.ndarray | None) -> list[float]:
+def _as_float_list(element: Any) -> list[float]:
     if element is None:
         return []
-    if isinstance(element, list | np.ndarray):
+    if isinstance(element, list | tuple | np.ndarray):
         return [float(vec_element) for vec_element in element]
     return [float(element)]
 
@@ -59,8 +60,6 @@ class Cascade:
 
 @dataclass
 class HeadSpec:
-    """Specification for a single head model used by decision and pipeline functions."""
-
     name: str
     kind: str
     labels: list[str] = field(default_factory=list)
@@ -87,8 +86,7 @@ def decide_regression(values: np.ndarray, labels: list[str]) -> dict[str, float]
     for i, lab in enumerate(labels):
         try:
             out[lab] = float(values[i])
-        except Exception as e:
-            logger.warning("[ml_heads] Failed to cast regression output for label %r at index %d: %s", lab, i, e)
+        except Exception:
             continue
     return out
 
@@ -142,10 +140,23 @@ def _determine_tier(
 ) -> str | None:
     """Determine tier (high/medium/low) based on cascade thresholds.
 
-    If label_std is provided, unstable predictions are downgraded:
-    - std >= acceptable: no tier
-    - std >= stable: cap at "low"
-    - std >= very_stable: cap at "medium"
+    If label_std is provided (segment-level standard deviation), unstable predictions
+    are downgraded based on stability_thresholds:
+    - std >= acceptable: no tier (too unreliable to trust)
+    - std >= stable: cap at "low" tier maximum
+    - std >= very_stable: cap at "medium" tier maximum
+
+    Args:
+        prob: Probability score for the label
+        ratio: Ratio of label probability to counter-label probability
+        gap: Gap between label and counter-label probabilities
+        cascade: Cascade thresholds from model sidecar
+        label_std: Optional segment-level standard deviation for stability gating
+        stability_thresholds: Thresholds for stability gating (default: DEFAULT_STABILITY_THRESHOLDS)
+
+    Returns:
+        Tier string ("high", "medium", "low") or None if no tier requirements are met.
+
     """
     if stability_thresholds is None:
         stability_thresholds = DEFAULT_STABILITY_THRESHOLDS
@@ -169,12 +180,19 @@ def _determine_tier(
     return None
 
 
+class MultiLabelResult(TypedDict):
+    """Return type for decide_multilabel and decide_binary_multiclass."""
+
+    selected: dict[str, Any]  # label -> {"p": prob, "tier": tier}
+    all_probs: dict[str, float]
+
+
 def decide_multilabel(
     scores: np.ndarray,
     spec: HeadSpec,
     *,
     segment_std: np.ndarray | None = None,
-) -> dict[str, Any]:
+) -> MultiLabelResult:
     """Multilabel: select all labels with score >= (per-label threshold or cascade.low).
 
     Also provide tier mapping (high/medium/low) per selected label.
@@ -188,7 +206,7 @@ def decide_multilabel(
     used for regression heads.
     """
     probs = _to_prob(scores, already_prob=spec.prob_input)
-    out: dict[str, Any] = {}
+    selected: dict[str, Any] = {}
     all_probs: dict[str, float] = {}
     label_to_idx = {lab: idx for idx, lab in enumerate(spec.labels)}
     eps = 1e-09
@@ -212,19 +230,13 @@ def decide_multilabel(
         if tier is None and prob >= 0.1:
             std_info = f", std={lab_std:.3f}" if lab_std is not None else ""
             logger.debug(
-                "[heads] Label '%s' rejected: p=%.3f (need >=%.2f), ratio=%.2f (need >=%.2f), gap=%.3f (need >=%.2f)%s",
-                lab,
-                prob,
-                spec.cascade.low,
-                ratio,
-                spec.cascade.ratio_low,
-                gap,
-                spec.cascade.gap_low,
-                std_info,
+                f"[heads] Label '{lab}' rejected: p={prob:.3f} (need >={spec.cascade.low:.2f}), "
+                f"ratio={ratio:.2f} (need >={spec.cascade.ratio_low:.2f}), "
+                f"gap={gap:.3f} (need >={spec.cascade.gap_low:.2f}){std_info}",
             )
         if tier is not None:
-            out[lab] = {"p": prob, "tier": tier}
-    return {"selected": out, "all_probs": all_probs}
+            selected[lab] = {"p": prob, "tier": tier}
+    return MultiLabelResult(selected=selected, all_probs=all_probs)
 
 
 def decide_binary_multiclass(
@@ -232,7 +244,7 @@ def decide_binary_multiclass(
     spec: HeadSpec,
     *,
     segment_std: np.ndarray | None = None,
-) -> dict[str, Any]:
+) -> MultiLabelResult:
     """Binary multiclass (2-class softmax): uses the model's native counter-confidence.
 
     For 2-class softmax heads (e.g., happy/non_happy), each label's counter-confidence
@@ -244,7 +256,7 @@ def decide_binary_multiclass(
     that meet the cascade thresholds (confidence, ratio, gap).
     """
     probs = _to_prob(scores, already_prob=spec.prob_input)
-    out: dict[str, Any] = {}
+    selected: dict[str, Any] = {}
     all_probs: dict[str, float] = {}
     n_labels = len(spec.labels)
     eps = 1e-09
@@ -277,19 +289,13 @@ def decide_binary_multiclass(
         if tier is None and prob >= 0.1:
             std_info = f", std={lab_std:.3f}" if lab_std is not None else ""
             logger.debug(
-                "[heads] Label '%s' rejected: p=%.3f (need >=%.2f), ratio=%.2f (need >=%.2f), gap=%.3f (need >=%.2f)%s",
-                lab,
-                prob,
-                spec.cascade.low,
-                ratio,
-                spec.cascade.ratio_low,
-                gap,
-                spec.cascade.gap_low,
-                std_info,
+                f"[heads] Label '{lab}' rejected: p={prob:.3f} (need >={spec.cascade.low:.2f}), "
+                f"ratio={ratio:.2f} (need >={spec.cascade.ratio_low:.2f}), "
+                f"gap={gap:.3f} (need >={spec.cascade.gap_low:.2f}){std_info}",
             )
         if tier is not None:
-            out[lab] = {"p": prob, "tier": tier}
-    return {"selected": out, "all_probs": all_probs}
+            selected[lab] = {"p": prob, "tier": tier}
+    return MultiLabelResult(selected=selected, all_probs=all_probs)
 
 
 class HeadDecision:
@@ -300,9 +306,35 @@ class HeadDecision:
         self.details = details
         self.all_probs = all_probs or {}
 
+    def as_tags(self, prefix: str = "", key_builder: Callable[[str], str] | None = None) -> dict[str, Any]:
+        """Produce a flat tag dict with numeric values only.
+
+        Tier information is preserved in self.details but not emitted as *_tier tags.
+        Use HeadOutput objects to access tier information for aggregation.
+
+        Args:
+            prefix: Legacy simple prefix (e.g., "yamnet_")
+            key_builder: Optional function(label) -> versioned_key for modern tag naming
+
+        """
+        tags: dict[str, Any] = {}
+        if head_is_regression(self.head):
+            for key, value in self.details.items():
+                tag_key = key_builder(key) if key_builder else f"{prefix}{key}"
+                tags[tag_key] = value
+            return tags
+        for key, value in self.details.items():
+            tag_key = key_builder(key) if key_builder else f"{prefix}{key}"
+            tags[tag_key] = float(value.get("p", 0.0))
+        for lab, prob in (self.all_probs or {}).items():
+            tag_key = key_builder(lab) if key_builder else f"{prefix}{lab}"
+            if tag_key not in tags:
+                tags[tag_key] = float(prob)
+        return tags
+
     def to_head_outputs(
         self,
-        head_info: HeadInfo,
+        head_info: ONNXHeadModel,
         prefix: str = "",
         key_builder: Callable[[str], str] | None = None,
     ) -> list[HeadOutput]:
@@ -314,7 +346,7 @@ class HeadDecision:
         For regression heads, this should not be called (regression uses add_regression_mood_tiers).
 
         Args:
-            head_info: HeadInfo providing label and tag key metadata
+            head_info: HeadInfo object from discovery
             prefix: Legacy simple prefix (fallback)
             key_builder: Optional function(label) -> versioned_key
 
@@ -328,7 +360,7 @@ class HeadDecision:
         for label, value in self.details.items():
             if key_builder:
                 tag_key = key_builder(label)
-                _, calibration_id = head_info.build_versioned_tag_key(label)
+                calibration_id = getattr(head_info, "calibration_id", None)
             else:
                 tag_key = f"{prefix}{label}"
                 calibration_id = None
@@ -353,7 +385,7 @@ class HeadDecision:
                 continue
             if key_builder:
                 tag_key = key_builder(label)
-                _, calibration_id = head_info.build_versioned_tag_key(label)
+                calibration_id = getattr(head_info, "calibration_id", None)
             else:
                 tag_key = f"{prefix}{label}"
                 calibration_id = None
@@ -371,12 +403,10 @@ class HeadDecision:
 
 
 def head_is_regression(spec: HeadSpec) -> bool:
-    """Return True if the head spec represents a regression head."""
     return "regression" in spec.kind.lower()
 
 
 def head_is_multiclass(spec: HeadSpec) -> bool:
-    """Return True if the head spec represents a multiclass head."""
     return "multiclass" in spec.kind.lower() or "multi-class" in spec.kind.lower()
 
 
@@ -388,7 +418,16 @@ def run_head_decision(
     emit_all_scores: bool = True,
     segment_std: np.ndarray | None = None,
 ) -> HeadDecision:
-    """Turn the raw output vector for a head into a :class:`HeadDecision`."""
+    """Turn the raw output vector for a head into a :class:`HeadDecision`.
+
+    Args:
+        spec: Head specification describing labels, thresholds, and cascade.
+        scores: Head outputs (logits or probabilities).
+        prefix: Optional string to prepend to tag keys.
+        emit_all_scores: (unused, kept for signature compat).
+        segment_std: Optional per-label segment standard deviation
+            for stability gating.
+    """
     kind = spec.kind.lower()
     vec = np.asarray(scores).reshape(-1)
     if "regression" in kind:
@@ -396,10 +435,10 @@ def run_head_decision(
         return HeadDecision(spec, details)
     if "multiclass" in kind or "multi-class" in kind:
         result = decide_binary_multiclass(vec, spec, segment_std=segment_std)
-        details = result.get("selected", {})
-        all_probs = result.get("all_probs", {})
+        details = result["selected"]
+        all_probs = result["all_probs"]
         return HeadDecision(spec, details, all_probs)
     result = decide_multilabel(vec, spec, segment_std=segment_std)
-    details = result.get("selected", {})
-    all_probs = result.get("all_probs", {})
+    details = result["selected"]
+    all_probs = result["all_probs"]
     return HeadDecision(spec, details, all_probs)

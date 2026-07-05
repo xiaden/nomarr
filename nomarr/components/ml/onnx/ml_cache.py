@@ -19,7 +19,6 @@ eviction is implemented by the worker setting ``cache.warm = False``.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from collections.abc import Generator
 from typing import TYPE_CHECKING
@@ -92,14 +91,16 @@ class ONNXModelCache:
 
         backbone_list: list[ONNXBackboneModel] = discover_backbone_models(models_dir)
         head_list: list[ONNXHeadModel] = (
-            discover_head_models(models_dir, db) if db is not None else discover_head_models_no_db(models_dir)
+            discover_head_models(models_dir, db)
+            if db is not None
+            else discover_head_models_no_db(models_dir)
         )
 
         self.backbones = {m.backbone_name: m for m in backbone_list}
 
         self.heads = {}
         for head in head_list:
-            self.heads.setdefault(head.meta.backbone, []).append(head)
+            self.heads.setdefault(head.backbone_name, []).append(head)
 
         logger.debug(
             "[cache] Discovered %d backbone(s), %d head(s) in %s (device=%s)",
@@ -109,14 +110,20 @@ class ONNXModelCache:
             device,
         )
 
+    # ------------------------------------------------------------------
     # Internal helpers
+    # ------------------------------------------------------------------
+
     def _all_models(self) -> Generator[BaseONNXModel, None, None]:
         """Yield all backbone and head models in a consistent order."""
         yield from self.backbones.values()
         for head_list in self.heads.values():
             yield from head_list
 
+    # ------------------------------------------------------------------
     # warm
+    # ------------------------------------------------------------------
+
     @property
     def warm(self) -> bool:
         """``True`` when every model in the cache has a loaded ONNX session.
@@ -139,8 +146,13 @@ class ONNXModelCache:
             for m in self._all_models():
                 if m._session is not None:
                     continue
-                with contextlib.suppress(VramFitError):
+                try:
                     m.device = self._device
+                except VramFitError:
+                    logger.info(
+                        "[cache] VRAM coordinator rejected GPU for %s — loaded on CPU instead",
+                        m._path,
+                    )
                 loaded += 1
             logger.debug(
                 "[cache] Warmed %d model(s) (preferred device=%s)",
@@ -152,7 +164,10 @@ class ONNXModelCache:
                 m.unload()
             logger.info("[cache] Unloaded all %d models", self.model_count)
 
+    # ------------------------------------------------------------------
     # device
+    # ------------------------------------------------------------------
+
     @property
     def device(self) -> DevicePlacement:
         """Execution device for all sessions (``"cpu"`` or ``"gpu"``).
@@ -182,7 +197,10 @@ class ONNXModelCache:
             for m in self._all_models():
                 m.device = value
 
+    # ------------------------------------------------------------------
     # Informational
+    # ------------------------------------------------------------------
+
     @property
     def model_count(self) -> int:
         """Total number of backbone + head models in this cache."""

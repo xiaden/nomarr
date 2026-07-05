@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.exceptions import DuplicateKeyError
@@ -31,10 +31,10 @@ def acquire_distributed_lock(
     now = float(now_ms().value)
     expires_at = now + float(ttl_seconds * 1000)
 
-    existing_raw = db.app.get_lock(reference)
-    if isinstance(existing_raw, dict):
-        existing_expires_at = float(existing_raw.get("expires_at", 0.0))
-        if existing_expires_at >= now and existing_raw.get("holder") != holder:
+    existing = cast("dict[str, Any] | None", db.app.get_lock(reference))
+    if existing is not None:
+        existing_expires_at = float(existing.get("expires_at", 0.0))
+        if existing_expires_at >= now and existing.get("holder") != holder:
             return False
         db.app.remove_lock(reference)
 
@@ -56,13 +56,13 @@ def acquire_distributed_lock(
 def release_distributed_lock(db: Database, lock_type: str, resource_id: str, holder: str) -> bool:
     """Release a distributed lock only when it is still owned by the holder."""
     reference = make_lock_reference(lock_type, resource_id)
-    existing_raw = db.app.get_lock(reference)
-    if not isinstance(existing_raw, dict) or existing_raw.get("holder") != holder:
+    existing = cast("dict[str, Any] | None", db.app.get_lock(reference))
+    if existing is None or existing.get("holder") != holder:
         return False
 
     db.app.remove_lock(reference)
-    remaining_raw = db.app.get_lock(reference)
-    return not isinstance(remaining_raw, dict) or remaining_raw.get("holder") != holder
+    remaining = cast("dict[str, Any] | None", db.app.get_lock(reference))
+    return remaining is None or remaining.get("holder") != holder
 
 
 def reap_stale_locks(db: Database, worker_id: str, stale_after_ms: int) -> None:
@@ -77,12 +77,12 @@ def reap_stale_locks(db: Database, worker_id: str, stale_after_ms: int) -> None:
             continue
 
         reference = str(lock["document_reference"])
-        current_raw = db.app.get_lock(reference)
-        if not isinstance(current_raw, dict):
+        current = cast("dict[str, Any] | None", db.app.get_lock(reference))
+        if current is None:
             continue
-        if current_raw.get("lock_type") != "vector_promotion":
+        if current.get("lock_type") != "vector_promotion":
             continue
-        current_acquired_at = float(current_raw.get("acquired_at", 0.0))
+        current_acquired_at = float(current.get("acquired_at", 0.0))
         if current_acquired_at >= stale_threshold:
             continue
 

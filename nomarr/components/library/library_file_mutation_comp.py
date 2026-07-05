@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_id_comp import library_key_from_ref
 from nomarr.helpers.dto import LibraryPath
@@ -170,15 +170,13 @@ def bulk_delete_files(db: Database, paths: list[str]) -> int:
     if not paths:
         return 0
 
-    matched_paths: list[str] = []
-    seen: set[str] = set()
-    for path in paths:
-        if path in seen:
-            continue
-        file_doc = db.library.find_file_by_path_any_library(path)
-        if isinstance(file_doc, dict):
-            matched_paths.append(path)
-            seen.add(path)
+    matched_paths = list(
+        dict.fromkeys(
+            path
+            for path in paths
+            if cast("dict[str, Any] | None", db.library.find_file_by_path_any_library(path)) is not None
+        )
+    )
     if not matched_paths:
         return 0
 

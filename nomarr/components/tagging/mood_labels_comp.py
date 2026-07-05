@@ -8,18 +8,7 @@ from __future__ import annotations
 
 
 def normalize_tag_label(label: str) -> str:
-    """Normalize model label for tag key consistency.
-
-    Converts 'non_*' to 'not_*' for consistent naming.
-    Example: 'non_happy' -> 'not_happy'
-
-    Args:
-        label: Raw label from model (e.g., 'happy', 'non_happy')
-
-    Returns:
-        Normalized label for use in tag keys
-
-    """
+    """Normalize model label for tag key consistency: 'non_*' → 'not_*'."""
     if label.startswith("non_"):
         return f"not_{label[4:]}"
     return label

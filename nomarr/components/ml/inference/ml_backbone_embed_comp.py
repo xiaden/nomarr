@@ -56,6 +56,15 @@ def compute_backbone_embeddings(
 
     Audio array is read-only numpy — safe to share across threads without copying.
     ONNX C++ kernels release the GIL, so ThreadPoolExecutor gives real parallelism.
+
+    Args:
+        cache: Warmed ONNXModelCache with loaded backbone sessions.
+        heads_by_backbone: Mapping of backbone name to its head models.
+        waveform: Mono float32 waveform array shared across all backbones.
+
+    Returns:
+        BackboneEmbeddingResult with embeddings, per-backbone errors, and timings.
+
     """
     wave_f32 = waveform.astype(np.float32)
     backbone_items = list(heads_by_backbone.items())

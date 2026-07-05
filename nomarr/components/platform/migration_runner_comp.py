@@ -22,9 +22,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Directory containing migration files
 MIGRATIONS_PACKAGE = "nomarr.migrations"
 MIGRATIONS_DIR = Path(__file__).resolve().parent.parent.parent / "migrations"
 
+# Required attributes in each migration module
 _REQUIRED_ATTRS = ("MIGRATION_VERSION", "DESCRIPTION", "upgrade")
 
 
@@ -37,7 +39,16 @@ class SchemaVersionMismatchError(Exception):
 
 
 def _validate_migration_module(module: ModuleType, filename: str) -> None:
-    """Validate that a migration module has all required attributes."""
+    """Validate that a migration module has all required attributes.
+
+    Args:
+        module: Imported migration module.
+        filename: Filename for error messages.
+
+    Raises:
+        MigrationError: If required attributes are missing or wrong type.
+
+    """
     for attr in _REQUIRED_ATTRS:
         if not hasattr(module, attr):
             msg = f"Migration {filename} is missing required attribute: {attr}"
@@ -65,7 +76,16 @@ def _validate_migration_module(module: ModuleType, filename: str) -> None:
 
 
 def discover_migrations() -> list[tuple[str, ModuleType]]:
-    """Discover and load all migration files from nomarr/migrations/."""
+    """Discover and load all migration files from nomarr/migrations/.
+
+    Returns:
+        List of (name, module) tuples sorted by MIGRATION_VERSION semver order.
+        Name is the filename stem (e.g., "V0.14.0_example").
+
+    Raises:
+        MigrationError: If any migration module is invalid.
+
+    """
     if not MIGRATIONS_DIR.exists():
         logger.debug("No migrations directory found at %s", MIGRATIONS_DIR)
         return []
@@ -84,6 +104,7 @@ def discover_migrations() -> list[tuple[str, ModuleType]]:
         _validate_migration_module(module, path.name)
         migrations.append((name, module))
 
+    # Sort by semver order (not lexical filename order)
     migrations.sort(key=lambda item: Version(item[1].MIGRATION_VERSION))
 
     logger.info("Discovered %d migration(s)", len(migrations))
@@ -91,7 +112,16 @@ def discover_migrations() -> list[tuple[str, ModuleType]]:
 
 
 def check_duplicate_versions(migrations: list[tuple[str, ModuleType]]) -> None:
-    """Check for duplicate MIGRATION_VERSION values across discovered migrations."""
+    """Check for duplicate MIGRATION_VERSION values across discovered migrations.
+
+    Args:
+        migrations: All discovered migrations (name, module) pairs.
+
+    Raises:
+        MigrationError: If any MIGRATION_VERSION appears more than once,
+            naming the colliding version and conflicting file names.
+
+    """
     version_to_names: dict[str, list[str]] = defaultdict(list)
     for name, module in migrations:
         version_to_names[module.MIGRATION_VERSION].append(name)
@@ -107,7 +137,17 @@ def get_pending_migrations(
     all_migrations: list[tuple[str, ModuleType]],
     current_db_version: str | None,
 ) -> list[tuple[str, ModuleType]]:
-    """Filter to only migrations that have not yet been applied."""
+    """Filter to only migrations that have not yet been applied.
+
+    Args:
+        all_migrations: All discovered migrations (name, module) pairs.
+        current_db_version: Current schema version stored in the database,
+            or None if no version has been recorded (fresh database).
+
+    Returns:
+        List of (name, module) pairs for pending migrations, in semver order.
+
+    """
     if current_db_version is None:
         # Fresh database — all migrations are pending
         pending = list(all_migrations)
@@ -129,8 +169,22 @@ def get_pending_migrations(
 def apply_migration(name: str, module: ModuleType, db: Database) -> None:
     """Apply a single migration with two-phase recording.
 
-    Records 'in_progress' before upgrade(), then 'applied' after success.
-    Crashes mid-migration are visible and automatically retried on next startup.
+    Records the migration as 'in_progress' BEFORE running upgrade(), then
+    updates to 'applied' after success. This ensures a record exists even
+    if the process crashes mid-migration, making the interrupted state visible
+    on the next startup.  Because get_applied_migration_names() only returns
+    'applied' records, an in_progress migration is automatically retried on
+    the next startup — safe for idempotent migrations that filter already-
+    processed data.
+
+    Args:
+        name: Migration identifier (filename stem).
+        module: Migration module with upgrade() function.
+        db: Database wrapper (provides .migrations and .set_version).
+
+    Raises:
+        MigrationError: If the migration's upgrade() function fails.
+
     """
     logger.info(
         "Applying migration %s: %s (version %s)",
@@ -140,34 +194,26 @@ def apply_migration(name: str, module: ModuleType, db: Database) -> None:
     )
 
     started_at = format_wall_timestamp(now_ms(), fmt="%Y-%m-%dT%H:%M:%SZ")
-    db.app.upsert_migration(
-        name,
-        {
-            "status": "in_progress",
-            "started_at": started_at,
-            "migration_version": module.MIGRATION_VERSION,
-        },
+    db.migrations.record_migration_started(
+        name=name,
+        migration_version=module.MIGRATION_VERSION,
+        started_at=started_at,
     )
 
     start_time = internal_ms()
     try:
         module.upgrade(db.db)
     except Exception as exc:
-        # Broad catch: migrations may raise any exception from user code —
-        # wrap all failures uniformly as MigrationError for the caller.
         msg = f"Migration {name} (version {module.MIGRATION_VERSION}) failed: {exc}"
         raise MigrationError(msg) from exc
 
     duration_ms = internal_ms().value - start_time.value
     applied_at = format_wall_timestamp(now_ms(), fmt="%Y-%m-%dT%H:%M:%SZ")
 
-    db.app.upsert_migration(
-        name,
-        {
-            "status": "applied",
-            "applied_at": applied_at,
-            "duration_ms": duration_ms,
-        },
+    db.migrations.mark_migration_applied(
+        name=name,
+        duration_ms=duration_ms,
+        applied_at=applied_at,
     )
 
     # Write the new version only after the migration is fully recorded
@@ -182,7 +228,26 @@ def apply_migration(name: str, module: ModuleType, db: Database) -> None:
 
 
 def run_pending_migrations(db: Database) -> None:
-    """Discover and apply all pending migrations, then verify version compatibility."""
+    """Discover and apply all pending migrations, then verify version compatibility.
+
+    This is the unified public entry point for the migration subsystem.
+    Steps:
+        1. Read current DB version.
+        2. Discover all migration modules.
+        3. Check for duplicate MIGRATION_VERSION values.
+        4. Determine which migrations are pending.
+        5. Apply each pending migration in semver order.
+        6. After all applied, verify DB version is not ahead of the running code.
+
+    Args:
+        db: Database wrapper used for version reads/writes and migration recording.
+
+    Raises:
+        MigrationError: If discovery, validation, or a migration upgrade fails.
+        SchemaVersionMismatchError: If the database version after migrations
+            exceeds the running application version.
+
+    """
     current = db.get_version()
     logger.debug("Current database version: %s", current or "<none>")
 
@@ -202,3 +267,14 @@ def run_pending_migrations(db: Database) -> None:
             f"Upgrade the application to match the database, or restore the database from backup."
         )
         raise SchemaVersionMismatchError(msg)
+
+
+# NOTE: The following functions have been removed as part of the migration-versioning refactor
+# (Part A, Phase 2). prepare_database_wf.py currently imports some of them and will have
+# broken imports until Part B updates that workflow.
+#
+# Deleted:
+#   - get_current_schema_version
+#   - get_code_schema_version_from_files
+#   - validate_version_chain
+#   - check_schema_version_mismatch

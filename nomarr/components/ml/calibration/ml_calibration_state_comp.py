@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_file_state_comp import (
     bulk_set_not_calibrated,
@@ -51,11 +51,12 @@ def load_calibration_state(
     label: str,
 ) -> dict[str, Any] | None:
     """Load one calibration state record by its logical identity."""
-    result = db.ml.get_calibration_state_view(head_name, label)
-    return result if isinstance(result, dict) else None
+    return cast("dict[str, Any] | None", db.ml.get_calibration_state_view(head_name, label))
 
 
+# ---------------------------------------------------------------------------
 # Calibration state CRUD
+# ---------------------------------------------------------------------------
 
 
 def save_calibration_state(
@@ -154,8 +155,7 @@ def delete_calibration_state(
         return
 
     _key = _make_calibration_state_key(head_name, label)
-    _cal_id_raw = calibration_doc.get("_id", f"calibration_state/{_key}")
-    calibration_id = _cal_id_raw if isinstance(_cal_id_raw, str) else f"calibration_state/{_key}"
+    calibration_id = cast("str", calibration_doc.get("_id", f"calibration_state/{_key}"))
     db.ml.remove_calibration_state(calibration_id=calibration_id)
 
 
@@ -184,8 +184,7 @@ def create_calibration_history_snapshot(
         "p95_delta": p95_delta,
         "n_delta": n_delta,
     }
-    result = db.ml.add_calibration_history(payload=doc)
-    return result if isinstance(result, str) else str(result)
+    return cast("str", db.ml.add_calibration_history(payload=doc))
 
 
 def get_latest_calibration_history_snapshot(
@@ -193,14 +192,16 @@ def get_latest_calibration_history_snapshot(
     calibration_key: str,
 ) -> dict[str, Any] | None:
     """Return the newest history snapshot for one calibration key."""
-    _snapshots_raw = db.ml.list_calibration_history_snapshots(calibration_key=calibration_key)
-    snapshots = _snapshots_raw if isinstance(_snapshots_raw, list) else []
+    snapshots = cast(
+        "list[dict[str, Any]]",
+        db.ml.list_calibration_history_snapshots(calibration_key=calibration_key),
+    )
     if not snapshots:
         return None
 
     return max(
         snapshots,
-        key=lambda snapshot: int(snapshot.get("snapshot_at", 0)),
+        key=lambda snapshot: cast("int", snapshot.get("snapshot_at", 0)),
     )
 
 
@@ -210,21 +211,19 @@ def delete_old_calibration_history_snapshots(
     keep_count: int = 100,
 ) -> int:
     """Delete old history snapshots, keeping the newest ``keep_count`` rows."""
-    _snapshots_raw = db.ml.list_calibration_history_snapshots(calibration_key=calibration_key)
-    snapshots = _snapshots_raw if isinstance(_snapshots_raw, list) else []
+    snapshots = cast(
+        "list[dict[str, Any]]",
+        db.ml.list_calibration_history_snapshots(calibration_key=calibration_key),
+    )
     if len(snapshots) <= keep_count:
         return 0
 
     ordered_snapshots = sorted(
         snapshots,
-        key=lambda snapshot: int(snapshot.get("snapshot_at", 0)),
+        key=lambda snapshot: cast("int", snapshot.get("snapshot_at", 0)),
         reverse=True,
     )
-    stale_ids: list[str] = []
-    for snapshot in ordered_snapshots[keep_count:]:
-        _id = snapshot.get("_id")
-        if isinstance(_id, str):
-            stale_ids.append(_id)
+    stale_ids = [cast("str", snapshot["_id"]) for snapshot in ordered_snapshots[keep_count:] if "_id" in snapshot]
     if not stale_ids:
         return 0
 
@@ -232,15 +231,15 @@ def delete_old_calibration_history_snapshots(
     return len(stale_ids)
 
 
+# ---------------------------------------------------------------------------
 # Meta: calibration version / last-run
+# ---------------------------------------------------------------------------
 
 
 def get_calibration_version(db: Database) -> str | None:
     """Return the current global calibration version hash, or ``None``."""
-    calibration_doc = db.app.get_config_option(key="calibration_version")
-    if not isinstance(calibration_doc, dict):
-        return None
-    return calibration_doc.get("value")
+    calibration_doc = cast("dict[str, Any] | None", db.app.get_config_option(key="calibration_version"))
+    return None if calibration_doc is None else calibration_doc.get("value")
 
 
 def set_calibration_version(db: Database, version_hash: str) -> None:
@@ -250,10 +249,8 @@ def set_calibration_version(db: Database, version_hash: str) -> None:
 
 def get_calibration_last_run(db: Database) -> int | None:
     """Return the timestamp (ms) of the last calibration run, or ``None``."""
-    last_run_doc = db.app.get_config_option(key="calibration_last_run")
-    if not isinstance(last_run_doc, dict):
-        return None
-    last_run_str = last_run_doc.get("value")
+    last_run_doc = cast("dict[str, Any] | None", db.app.get_config_option(key="calibration_last_run"))
+    last_run_str = None if last_run_doc is None else last_run_doc.get("value")
     return int(last_run_str) if last_run_str else None
 
 
@@ -262,7 +259,9 @@ def set_calibration_last_run(db: Database, timestamp: str) -> None:
     db.app.update_config_option(key="calibration_last_run", payload={"value": timestamp})
 
 
+# ---------------------------------------------------------------------------
 # Library-file queries related to calibration
+# ---------------------------------------------------------------------------
 
 
 def update_file_calibration_hash(

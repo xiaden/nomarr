@@ -79,7 +79,7 @@ def assign_regression_outputs(
         effective_calib_id_high = applied_calibration_id if applied_calibration_id is not None else _key_calib_id_high
         effective_calib_id_low = applied_calibration_id if applied_calibration_id is not None else _key_calib_id_low
         logger.debug(
-            "[%s] Regression neutral: %s → both %s/%s (mean=%.3f, std=%.3f)",
+            "[%s] Regression neutral: %s \u2192 both %s/%s (mean=%.3f, std=%.3f)",
             log_prefix,
             head_name,
             high_term,
@@ -117,7 +117,7 @@ def assign_regression_outputs(
     tier: str | None = None
     if std_val >= stability_thresholds.acceptable:
         logger.debug(
-            "[%s] Regression no tier: %s → %s (mean=%.3f, std=%.3f - high variance)",
+            "[%s] Regression no tier: %s \u2192 %s (mean=%.3f, std=%.3f - high variance)",
             log_prefix,
             head_name,
             mood_term,
@@ -133,7 +133,7 @@ def assign_regression_outputs(
         else:
             tier = "low"
         logger.debug(
-            "[%s] Regression mood: %s → %s (mean=%.3f, std=%.3f, intensity=%.2f, tier=%s)",
+            "[%s] Regression mood: %s \u2192 %s (mean=%.3f, std=%.3f, intensity=%.2f, tier=%s)",
             log_prefix,
             head_name,
             mood_term,
@@ -214,19 +214,7 @@ def _compute_suppressed_keys(
     head_outputs: list[HeadOutput],
     opponent_map: dict[str, set[str]],
 ) -> set[str]:
-    """Identify conflicting mood outputs and return model keys to suppress.
-
-    Two suppression cases are handled:
-
-    1. **Intra-head**: multiple tiered outputs sharing the *same* head instance
-       (structurally rare for binary classifiers but handled defensively).
-       Keep the strongest; suppress the rest.
-
-    2. **Cross-head**: tiered outputs from *different* head instances whose
-       labels are semantic opponents per the derived opponent map (e.g.
-       ``"aggressive"`` from ``mood_aggressive`` vs ``"relaxed"`` from
-       ``mood_relaxed``).  Suppress both sides to avoid contradictory tags.
-    """
+    """Suppress conflicting mood outputs: intra-head keeps strongest, cross-head suppresses opponent pairs."""
     _tier_rank: dict[str, int] = {
         "high": 3,
         "strict": 3,

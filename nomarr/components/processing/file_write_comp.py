@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_file_query_comp import get_file_by_id
 from nomarr.components.library.library_records_comp import get_library_record
@@ -25,10 +25,15 @@ from nomarr.helpers.dto.tags_dto import Tags
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# File retrieval
+# ---------------------------------------------------------------------------
+
+
 def get_file_for_writing(
     db: Database,
     file_key: str,
-) -> tuple[str, str, dict[str, object] | None]:
+) -> tuple[str, str, dict[str, Any] | None]:
     """Normalise *file_key* and fetch the library-file document.
 
     Returns:
@@ -45,6 +50,11 @@ def get_file_for_writing(
     return file_id, file_key, file_doc
 
 
+# ---------------------------------------------------------------------------
+# Library root resolution
+# ---------------------------------------------------------------------------
+
+
 def resolve_library_root(
     db: Database,
     library_id: str,
@@ -54,6 +64,11 @@ def resolve_library_root(
     if not library_doc:
         return None
     return Path(library_doc["root_path"])
+
+
+# ---------------------------------------------------------------------------
+# Tag retrieval / mutation
+# ---------------------------------------------------------------------------
 
 
 def get_nomarr_tags(
@@ -79,11 +94,23 @@ def save_mood_tags(
     file_id: str,
     mood_tags: Tags,
 ) -> int:
-    """Write mood-* tags to the database, clearing tiers absent from *mood_tags*.
+    """Write mood-* tags to the database for a file.
 
-    Always writes all three mood tier keys (mood-strict, mood-regular, mood-loose).
-    Returns the count of tiers written with non-empty values.
+    Always writes all three mood tier keys (mood-strict, mood-regular,
+    mood-loose). Tiers absent from *mood_tags* are explicitly cleared with an
+    empty value list so that previously-written tiers do not persist when the
+    tier count drops after recalibration.
+
+    Args:
+        db: Database instance
+        file_id: File document ID (e.g. '{CollectionNames.LIBRARY_FILES.value}/abc123')
+        mood_tags: Tags DTO containing mood tags to write
+
+    Returns:
+        Number of tiers written with non-empty values
+
     """
+    # Build lookup: normalised name -> values
     written: dict[str, list] = {}
     for tag in mood_tags:
         nomarr_name = f"nom:{tag.key}" if not tag.key.startswith("nom:") else tag.key
@@ -102,23 +129,42 @@ def save_mood_tags_batch(
     db: Database,
     items: list[tuple[str, Tags]],
 ) -> int:
-    """Write mood tags for multiple files via ``set_song_tags_batch``.
+    """Write mood tags for multiple files via constructor-backed verbs.
 
-    Returns the number of ``(file_id, name)`` pairs with non-empty values.
+    Delegates to ``set_song_tags_batch`` which performs component-layer
+    coordination: edge discovery per ``(song_id, name)`` pair, targeted edge
+    deletion, tag upsert per unique ``(name, value)`` pair, and bulk edge
+    insert.  Query count scales with the number of files and distinct tag
+    values.
+
+    Args:
+        db: Database instance
+        items: List of (file_id, mood_tags) tuples
+
+    Returns:
+        Number of (file_id, name) pairs written
+
     """
     if not items:
         return 0
 
     entries: list[dict] = []
     for file_id, mood_tags in items:
+        # Build a lookup for this file's non-empty tiers
         written: dict[str, list] = {}
         for tag in mood_tags:
             nomarr_name = f"nom:{tag.key}" if not tag.key.startswith("nom:") else tag.key
             written[nomarr_name] = tag.value
+        # Always emit all three tiers; absent ones get an empty list (→ delete)
         entries.extend({"song_id": file_id, "name": name, "values": written.get(name, [])} for name in _MOOD_TIER_NAMES)
 
     set_song_tags_batch(db, entries)
     return sum(1 for e in entries if e["values"])
+
+
+# ---------------------------------------------------------------------------
+# Claim / state mutation
+# ---------------------------------------------------------------------------
 
 
 def release_file_claim(
@@ -131,7 +177,7 @@ def release_file_claim(
     """
     try:
         release_claim(db, file_key)
-    except (OSError, RuntimeError) as exc:
+    except Exception as exc:
         logger.warning(
             "[file_write_comp] Failed to release claim for %s: %s",
             file_key,

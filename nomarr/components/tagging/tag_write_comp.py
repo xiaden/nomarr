@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
-from nomarr.components.tagging.tag_query_comp import _narrow_db_list
+from nomarr.components.tagging.tag_query_comp import _narrow_tag_list
 from nomarr.helpers.dto.tag_curation_dto import RelinkResult
 from nomarr.helpers.dto.tags_dto import TagValue
 
@@ -17,21 +17,21 @@ def find_or_create_tag(db: Database, name: str, value: TagValue) -> str:
     return db.library.find_or_create_tag(name, value)
 
 
-def _tag_name(tag_doc: dict[str, object]) -> str | None:
+def _tag_name(tag_doc: dict[str, Any]) -> str | None:
     tag_name = tag_doc.get("name", tag_doc.get("key"))
     return str(tag_name) if isinstance(tag_name, str) else None
 
 
-def _tag_id(tag_doc: dict[str, object]) -> str | None:
+def _tag_id(tag_doc: dict[str, Any]) -> str | None:
     tag_id = tag_doc.get("_id")
     return str(tag_id) if isinstance(tag_id, str) else None
 
 
 def _merge_replaced_tags(
-    existing_tags: list[dict[str, object]],
+    existing_tags: list[dict[str, Any]],
     *,
     replacements_by_name: dict[str, list[TagValue]],
-) -> list[dict[str, object]]:
+) -> list[dict[str, Any]]:
     replaced_names = set(replacements_by_name)
     merged_tags = [dict(tag_doc) for tag_doc in existing_tags if _tag_name(tag_doc) not in replaced_names]
     for name, values in replacements_by_name.items():
@@ -48,6 +48,13 @@ def set_song_tags(db: Database, song_id: str, name: str, values: list[TagValue])
     )
 
 
+def _validate_tag_value(value: object) -> TagValue:
+    """Runtime validation that a value is an acceptable tag value type."""
+    if isinstance(value, str | int | float | bool):
+        return value
+    raise TypeError(f"Invalid tag value type: {type(value).__name__}")
+
+
 def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
     """Replace tags for many ``(song_id, name)`` pairs using intent-level file-tag writes."""
     if not entries:
@@ -57,10 +64,7 @@ def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
     for entry in entries:
         song_id = str(entry["song_id"])
         name = str(entry["name"])
-        values_raw = entry["values"]
-        if not isinstance(values_raw, list):
-            continue
-        values = [cast("TagValue", value) for value in values_raw]
+        values = [_validate_tag_value(value) for value in entry["values"]]
         song_replacements = replacements_by_song.setdefault(song_id, {})
         song_replacements.setdefault(name, []).extend(values)
 
@@ -99,7 +103,7 @@ def relink_tag_edges(
     if source_tag_id == target_tag_id:
         return {"moved": 0, "skipped": 0, "source_orphaned": False}
 
-    all_file_docs = _narrow_db_list(db.library.list_files(limit=None))
+    all_file_docs = _narrow_tag_list(db.library.list_files(limit=None))
     all_file_ids = [file_id for file_doc in all_file_docs if isinstance((file_id := file_doc.get("_id")), str)]
     if not all_file_ids:
         return {"moved": 0, "skipped": 0, "source_orphaned": False}

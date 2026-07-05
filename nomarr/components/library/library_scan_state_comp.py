@@ -6,7 +6,7 @@ pipeline-axis transition logic.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_id_comp import library_key_from_ref
 from nomarr.helpers.constants.pipeline_states import (
@@ -83,15 +83,12 @@ def _default_scan_doc(library_id: str) -> dict[str, Any]:
 def ensure_scan_state(db: Database, library_id: str) -> dict[str, Any]:
     """Return the scan document for a library, creating or repairing it when needed."""
     library_key = library_key_from_ref(library_id)
-    scan_doc = db.app.get_scan(library_id)
-    if not isinstance(scan_doc, dict):
-        scan_doc = None
+    scan_doc = cast("dict[str, Any] | None", db.app.get_scan(library_id))
 
     if scan_doc is None:
         default_doc = _default_scan_doc(library_id)
         db.app.add_scan(library_id, default_doc)
-        refreshed = db.app.get_scan(library_id)
-        scan_doc = refreshed if isinstance(refreshed, dict) else default_doc
+        scan_doc = cast("dict[str, Any] | None", db.app.get_scan(library_id)) or default_doc
     elif scan_doc.get("library_key") != library_key:
         repaired_doc = {
             **_DEFAULT_SCAN_FIELDS,
@@ -101,31 +98,30 @@ def ensure_scan_state(db: Database, library_id: str) -> dict[str, Any]:
         }
         db.app.remove_scan(library_id)
         db.app.add_scan(library_id, repaired_doc)
-        refreshed = db.app.get_scan(library_id)
-        scan_doc = refreshed if isinstance(refreshed, dict) else repaired_doc
+        scan_doc = cast("dict[str, Any] | None", db.app.get_scan(library_id)) or repaired_doc
 
     return scan_doc
 
 
 def get_scan_state(db: Database, library_id: str) -> dict[str, Any] | None:
     """Return the scan document for a library, repairing legacy rows when found."""
-    scan_doc = db.app.get_scan(library_id)
-    if not isinstance(scan_doc, dict):
+    scan_doc = cast("dict[str, Any] | None", db.app.get_scan(library_id))
+    if scan_doc is None:
         return None
     if scan_doc.get("library_key") != library_key_from_ref(library_id):
         return ensure_scan_state(db, library_id)
     return scan_doc
 
 
-def update_scan_state(db: Database, library_id: str, **fields: str | int | float | None) -> dict[str, Any]:
+def update_scan_state(db: Database, library_id: str, **fields: Any) -> dict[str, Any]:
     """Persist scan-state changes through the constructor-backed namespace."""
     scan_doc = ensure_scan_state(db, library_id)
     if not fields:
         return scan_doc
 
     db.app.update_scan(library_id, fields)
-    refreshed = db.app.get_scan(library_id)
-    if isinstance(refreshed, dict):
+    refreshed = cast("dict[str, Any] | None", db.app.get_scan(library_id))
+    if refreshed is not None:
         return refreshed
     return {**scan_doc, **fields}
 

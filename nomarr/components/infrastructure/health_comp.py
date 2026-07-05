@@ -2,23 +2,64 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from nomarr.persistence.api.application import AppDb
     from nomarr.persistence.db import Database
 
 
 class HealthComp:
-    """Component for health monitoring operations."""
+    """Component for health monitoring operations.
+
+    Thin wrapper around db.health for backward compatibility with
+    services that import HealthComp directly. Preferred API for new
+    callers are the module-level functions get_all_workers() and
+    get_component(), following the COMPONENTS.md convention of
+    stateless function-oriented components.
+
+    This class exists because db.health was originally accessed
+    through a component class pattern. It is retained only for
+    compatibility; the functions below are the canonical entry points.
+    """
 
     def __init__(self, db: Database) -> None:
-        self.app: AppDb = db.app
+        self.db = db
 
-    def get_all_workers(self) -> list[dict[str, object]]:
-        """Get all registered workers from health monitoring."""
-        return self.app.list_worker_health()
+    def get_all_workers(self) -> list[dict[str, Any]]:
+        """Get all registered workers from health monitoring.
 
-    def get_component(self, component: str) -> dict[str, object] | None:
-        """Get health status for a specific component."""
-        return self.app.get_health(component)
+        Returns:
+            List of worker health records
+
+        """
+        return self.db.health.get_all_workers()
+
+    def get_component(self, component: str) -> dict[str, Any] | None:
+        """Get health status for a specific component.
+
+        Args:
+            component: Component name (e.g., "worker:library:scan")
+
+        Returns:
+            Health record or None if not found
+
+        """
+        return self.db.health.get_component(component)
+
+
+
+
+def get_all_workers(db: Database) -> list[dict[str, Any]]:
+    """Get all registered workers from health monitoring.
+
+    Canonical function entry point per COMPONENTS.md conventions.
+    """
+    return db.health.get_all_workers()
+
+
+def get_component(db: Database, component: str) -> dict[str, Any] | None:
+    """Get health status for a specific component.
+
+    Canonical function entry point per COMPONENTS.md conventions.
+    """
+    return db.health.get_component(component)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.dto.navidrome_dto import TrackPlayData
 
@@ -19,10 +19,11 @@ def _edge_key(left_id: str, right_id: str) -> str:
 def _build_edge_namespace(db: Database, name: str) -> Any:
     """Return the runtime-wired edge namespace for an edge collection.
 
-    Remains as a compatibility path for legacy unit tests that still patch
-    edge namespaces directly.
+    Runtime callers should use ``db.app.*``. This helper remains only as a
+    compatibility path for legacy unit tests that still patch edge namespaces
+    directly and have not yet been migrated to the sub-facade surface.
     """
-    return getattr(db, name)
+    return cast("Any", getattr(db, name))
 
 
 def _is_dict_list(value: object) -> bool:
@@ -63,8 +64,13 @@ def list_navidrome_track_keys(db: Database) -> list[str]:
 def delete_navidrome_tracks_cascade(db: Database, nd_ids: list[str]) -> int:
     """Cascade-delete track vertices and their connected edges.
 
-    *nd_ids* are bare keys (not ``_id`` paths); the full
-    ``navidrome_tracks/<id>`` path is constructed internally.
+    Args:
+        db: Database instance.
+        nd_ids: Navidrome track id strings (bare keys, not ``_id`` paths).
+            The function constructs the full ``navidrome_tracks/<id>`` paths internally.
+
+    Returns:
+        Number of track vertex documents deleted, or 0 if ``nd_ids`` is empty.
     """
     if not nd_ids:
         return 0

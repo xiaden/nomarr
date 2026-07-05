@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from pathlib import Path
 
 from nomarr.components.library.library_records_comp import find_library_containing_path, get_library_record
@@ -8,49 +6,33 @@ from nomarr.helpers.files_helper import is_audio_file
 from nomarr.persistence.db import Database
 
 
-def _validate_path_on_disk(
-    absolute: Path,
-    relative_str: str,
-    library_id: str | None,
-    *,
-    not_found_reason: str,
-    is_dir_reason: str,
-    not_audio_reason: str,
-) -> LibraryPath | None:
-    """Validate a path exists, is a file, and is a supported audio format.
-
-    Returns a ``LibraryPath`` with error status on the first failing check,
-    or ``None`` if all checks pass.
-    """
-    if not absolute.exists():
-        return LibraryPath(
-            relative=relative_str,
-            absolute=absolute,
-            library_id=library_id,
-            status="not_found",
-            reason=not_found_reason,
-        )
-    if not absolute.is_file():
-        return LibraryPath(
-            relative=relative_str,
-            absolute=absolute,
-            library_id=library_id,
-            status="invalid_config",
-            reason=is_dir_reason,
-        )
-    if not is_audio_file(str(absolute)):
-        return LibraryPath(
-            relative=relative_str,
-            absolute=absolute,
-            library_id=library_id,
-            status="invalid_config",
-            reason=not_audio_reason,
-        )
-    return None
-
-
 def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
-    """Build LibraryPath from user input, validating against current library config."""
+    """Build LibraryPath from user input (API, CLI, etc.).
+
+    This is the primary entry point for external path inputs.
+    It validates the path against current library configuration and sets status:
+    - "valid": Path is within a library root, exists, and is accessible
+    - "invalid_config": Path is outside all configured library roots
+    - "not_found": Path is within a library root but file doesn't exist
+
+    Args:
+        raw_path: Raw file path from user input (absolute or relative)
+        db: Database instance to look up library configuration
+
+    Returns:
+        LibraryPath with status and diagnostic info
+
+    Example:
+        path = build_library_path_from_input("/music/song.mp3", db)
+        if path.is_valid():
+            # Safe to perform filesystem operations
+            process_file(path)
+        else:
+            # Handle error based on status
+            log.error(f"Invalid path: {path.reason}")
+
+    """
+    # Resolve to absolute path
     try:
         absolute = Path(raw_path).resolve()
     except (ValueError, OSError) as e:
@@ -62,6 +44,7 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
             reason=f"Cannot resolve path: {e}",
         )
 
+    # Find which library contains this path
     library = find_library_containing_path(db, str(absolute))
     if not library:
         return LibraryPath(
@@ -72,10 +55,11 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
             reason="Path is outside all configured library roots",
         )
 
+    # Calculate relative path
     library_root = Path(library["root_path"]).resolve()
     try:
         relative_path = absolute.relative_to(library_root)
-        relative_str = str(relative_path).replace("\\", "/")
+        relative_str = str(relative_path).replace("\\", "/")  # Normalize to forward slashes
     except ValueError:
         return LibraryPath(
             relative="",
@@ -85,17 +69,37 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
             reason=f"Path not relative to library root: {library_root}",
         )
 
-    disk_error = _validate_path_on_disk(
-        absolute,
-        relative_str,
-        library["_id"],
-        not_found_reason="File does not exist on disk",
-        is_dir_reason="Path is a directory, not a file",
-        not_audio_reason="Not a supported audio file format",
-    )
-    if disk_error is not None:
-        return disk_error
+    # Check if file exists
+    if not absolute.exists():
+        return LibraryPath(
+            relative=relative_str,
+            absolute=absolute,
+            library_id=library["_id"],
+            status="not_found",
+            reason="File does not exist on disk",
+        )
 
+    # Check if it's a file (not directory)
+    if not absolute.is_file():
+        return LibraryPath(
+            relative=relative_str,
+            absolute=absolute,
+            library_id=library["_id"],
+            status="invalid_config",
+            reason="Path is a directory, not a file",
+        )
+
+    # Check if it's a supported audio file
+    if not is_audio_file(str(absolute)):
+        return LibraryPath(
+            relative=relative_str,
+            absolute=absolute,
+            library_id=library["_id"],
+            status="invalid_config",
+            reason="Not a supported audio file format",
+        )
+
+    # All checks passed
     return LibraryPath(relative=relative_str, absolute=absolute, library_id=library["_id"], status="valid", reason=None)
 
 
@@ -105,10 +109,38 @@ def build_library_path_from_db(
     library_id: str | None = None,
     check_disk: bool = True,
 ) -> LibraryPath:
-    """Build LibraryPath from a database-stored path, re-validating against current config."""
+    """Build LibraryPath from database-stored path.
+
+    This is used when reading paths from queue tables, the file collection, etc.
+    The stored path may be absolute or relative depending on storage format.
+
+    This function re-validates stored paths against the CURRENT configuration,
+    detecting cases where config has changed (library root moved/changed).
+
+    Args:
+        stored_path: Path as stored in database (may be relative or absolute)
+        db: Database instance to look up current library configuration
+        library_id: Optional library ID if known from DB join
+        check_disk: Whether to check if file exists (default: True)
+
+    Returns:
+        LibraryPath with status reflecting current config validity
+
+    Example:
+        # When processing a file from discovery
+        raise NotImplementedError("db.files is not implemented; this path is unreachable")
+        path = build_library_path_from_db(file_record["path"], db)
+        if not path.is_valid():
+            # Config changed, path no longer valid
+            raise NotImplementedError("db.files is not implemented; this path is unreachable")
+            return
+
+    """
+    # If we have a library_id, fetch that library's configuration
     if library_id:
         library = get_library_record(db, library_id, include_scan=False)
         if not library or not library["is_enabled"]:
+            # Library was disabled or deleted
             return LibraryPath(
                 relative=stored_path,
                 absolute=Path(stored_path),
@@ -119,11 +151,14 @@ def build_library_path_from_db(
 
         library_root = Path(library["root_path"]).resolve()
 
+        # Try to construct absolute path
+        # stored_path might be relative or absolute
         if Path(stored_path).is_absolute():
             absolute = Path(stored_path).resolve()
         else:
             absolute = (library_root / stored_path).resolve()
 
+        # Verify it's still within the library root
         try:
             relative_path = absolute.relative_to(library_root)
             relative_str = str(relative_path).replace("\\", "/")
@@ -137,6 +172,7 @@ def build_library_path_from_db(
             )
 
     else:
+        # No library_id provided, need to find which library contains this path
         try:
             absolute = Path(stored_path).resolve()
         except (ValueError, OSError) as e:
@@ -173,18 +209,36 @@ def build_library_path_from_db(
 
         library_id = library["_id"]
 
+    # Optionally check disk
     if check_disk:
-        disk_error = _validate_path_on_disk(
-            absolute,
-            relative_str,
-            library_id,
-            not_found_reason="File no longer exists on disk",
-            is_dir_reason="Stored path is now a directory, not a file",
-            not_audio_reason="Stored path is no longer a supported audio file",
-        )
-        if disk_error is not None:
-            return disk_error
+        if not absolute.exists():
+            return LibraryPath(
+                relative=relative_str,
+                absolute=absolute,
+                library_id=library_id,
+                status="not_found",
+                reason="File no longer exists on disk",
+            )
 
+        if not absolute.is_file():
+            return LibraryPath(
+                relative=relative_str,
+                absolute=absolute,
+                library_id=library_id,
+                status="invalid_config",
+                reason="Stored path is now a directory, not a file",
+            )
+
+        if not is_audio_file(str(absolute)):
+            return LibraryPath(
+                relative=relative_str,
+                absolute=absolute,
+                library_id=library_id,
+                status="invalid_config",
+                reason="Stored path is no longer a supported audio file",
+            )
+
+    # Valid (or unknown if we didn't check disk)
     return LibraryPath(
         relative=relative_str,
         absolute=absolute,
@@ -195,7 +249,16 @@ def build_library_path_from_db(
 
 
 def get_library_root(library_path: LibraryPath, db: Database) -> Path | None:
-    """Get the library root path for a given LibraryPath."""
+    """Get the library root path for a given LibraryPath.
+
+    Args:
+        library_path: A validated LibraryPath
+        db: Database instance
+
+    Returns:
+        Path to library root, or None if library_id is unknown or library not found
+
+    """
     if not library_path.library_id:
         return None
 

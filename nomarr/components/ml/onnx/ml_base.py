@@ -69,7 +69,10 @@ class BaseONNXModel(ABC):
         self._session: ort.InferenceSession | None = None
         self._device: DevicePlacement | None = None
 
+    # ------------------------------------------------------------------
     # Session lifecycle
+    # ------------------------------------------------------------------
+
     def load(self, device: DevicePlacement) -> None:
         """Create and store an ONNX session for *device*.
 
@@ -146,7 +149,10 @@ class BaseONNXModel(ABC):
         self._session = None
         self._device = None
 
+    # ------------------------------------------------------------------
     # Device property (getter + setter)
+    # ------------------------------------------------------------------
+
     @property
     def device(self) -> DevicePlacement | None:
         """Current device, or ``None`` if not loaded."""
@@ -176,7 +182,10 @@ class BaseONNXModel(ABC):
             self.load("cpu")
             raise
 
+    # ------------------------------------------------------------------
     # Inference (subclass responsibility)
+    # ------------------------------------------------------------------
+
     @abstractmethod
     def _run(self, inputs: np.ndarray) -> np.ndarray:
         """Execute one forward pass on *inputs*.

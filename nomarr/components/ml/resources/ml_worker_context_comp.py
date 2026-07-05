@@ -20,17 +20,14 @@ Do not use this pattern in other layers.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any
 
-if TYPE_CHECKING:
-    from nomarr.persistence.db import Database
-
-# Set once at worker startup, never in parent process.
-_worker_db: Database | None = None
+# Process-local context: set once at worker startup, never in parent process.
+_worker_db: Any = None
 _worker_id: str | None = None
 
 
-def register_worker_context(db: Database, worker_id: str) -> None:
+def register_worker_context(db: Any, worker_id: str) -> None:
     """Register the database handle and worker identity for this process.
 
     Must be called once at worker startup before any model ``load()`` calls.
@@ -45,7 +42,7 @@ def register_worker_context(db: Database, worker_id: str) -> None:
     _worker_id = worker_id
 
 
-def get_worker_context() -> tuple[Database, str] | None:
+def get_worker_context() -> tuple[Any, str] | None:
     """Return ``(db, worker_id)`` if registered, or ``None``.
 
     Returns ``None`` in any process where :func:`register_worker_context`

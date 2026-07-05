@@ -1,9 +1,4 @@
-"""Analytics components — tag frequencies, correlations, and mood distributions.
-
-Provides computation components for library-wide analytics: tag frequency
-counts, correlation matrices, mood distribution data, and co-occurrence
-statistics. All computations operate on AQL query results from persistence.
-"""
+"""Analytics package."""
 
 # Re-export DTOs from helpers/dto for backward compatibility
 from nomarr.helpers.dto.analytics_dto import (
@@ -14,6 +9,7 @@ from nomarr.helpers.dto.analytics_dto import (
 )
 
 from .analytics_comp import (
+    DominantVibeResult,
     compute_artist_tag_profile,
     compute_dominant_vibes,
     compute_mood_distribution,
@@ -24,6 +20,7 @@ from .analytics_comp import (
 
 __all__ = [
     "ArtistTagProfile",
+    "DominantVibeResult",
     "MoodDistributionData",
     "TagCoOccurrenceData",
     "TagCorrelationData",

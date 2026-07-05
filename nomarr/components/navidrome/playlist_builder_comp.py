@@ -1,44 +1,25 @@
-"""Build personal playlist track lists from taste profiles and play history.
+"""Personal playlist builders from taste profiles and play history.
 
-Each public function encapsulates the domain logic for one playlist type:
-per-cluster ANN search, exclusion filtering, proportional interleaving
-(except genre playlists, which create one playlist per cluster),
-and result assembly.  ANN search uses ``get_cold_namespace(db, backbone_id)``
-for vector similarity queries against each cluster's pre-computed
-centroid; tag access delegates to ``tag_query_comp`` helpers.
-
-Four builders (familiar, discovery, hidden_gems, universal) iterate
-``ctx["clusters"]`` and call the module-private ``_interleave_per_cluster()``
-helper to merge per-cluster results proportionally to each cluster's
-``total_weight`` (largest-remainder slot allocation + round-robin
-interleaving).  The genre builder instead emits one playlist entry per
-qualifying cluster, so no interleaving is performed.
-
-Every builder has the uniform signature::
-
-    (db: Database, ctx: NavidromePersonalPlaylistContext)
-        -> list[NavidromePersonalPlaylistEntry]
-
-Builders return only ``song/_id`` values.  Navidrome nd_id
+Each public function builds one playlist type (Familiar, Discovery,
+Hidden Gems, Universal, or per-genre) via ANN search against the cold
+vector collection. Builders return ``library_files/_id`` values; nd_id
 resolution is the interface layer's responsibility.
 """
 
 from __future__ import annotations
 
 import logging
+import math
 import random
-from collections import deque
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
-from nomarr.components.tagging.tag_query_comp import (
-    get_distinct_tag_values_for_files,
-    get_tag_values_grouped_by_file,
-)
+import numpy as np
+
 from nomarr.helpers.dto.navidrome_dto import (
     NavidromePersonalPlaylistContext,
     NavidromePersonalPlaylistEntry,
 )
+from nomarr.helpers.time_helper import now_ms
 from nomarr.helpers.vector_params_helper import compute_nlists, compute_nprobe
 
 if TYPE_CHECKING:
@@ -52,81 +33,13 @@ _GENRE_MIN_SONGS: int = 100
 #: Hard server-side cap on the number of genre playlists generated per user.
 _MAX_GENRE_PLAYLISTS_CAP: int = 25
 
-
-def _interleave_per_cluster(
-    results_by_cluster: dict[str, list[dict[str, Any]]],
-    weights: dict[str, float],
-    target_size: int,
-) -> list[str]:
-    """Interleave results from multiple clusters proportional to weight.
-
-    Allocates slots using the largest-remainder method, then round-robins
-    across clusters in descending weight order.
-    """
-    if target_size == 0 or not results_by_cluster:
-        return []
-
-    non_empty: dict[str, list[dict[str, Any]]] = {label: res for label, res in results_by_cluster.items() if res}
-    if not non_empty:
-        return []
-
-    if len(non_empty) == 1:
-        label = next(iter(non_empty))
-        return [r["file_id"] for r in non_empty[label]][:target_size]
-
-    total_weight = sum(weights.get(label, 0.0) for label in non_empty)
-
-    if total_weight <= 0:
-        base = target_size // len(non_empty)
-        rem = target_size % len(non_empty)
-        sorted_labels = sorted(non_empty)
-        slots: dict[str, int] = {}
-        for i, label in enumerate(sorted_labels):
-            slots[label] = base + (1 if i < rem else 0)
-    else:
-        exact: dict[str, float] = {}
-        for label in non_empty:
-            exact[label] = weights[label] / total_weight * target_size
-
-        slots = {label: int(exact[label]) for label in non_empty}
-        allocated = sum(slots.values())
-        remainder = target_size - allocated
-
-        if remainder > 0:
-            for label in sorted(
-                non_empty,
-                key=lambda cl: (exact[cl] - int(exact[cl]), weights.get(cl, 0.0)),
-                reverse=True,
-            ):
-                if remainder <= 0:
-                    break
-                slots[label] += 1
-                remainder -= 1
-
-    order = sorted(non_empty, key=lambda cl: weights.get(cl, 0.0), reverse=True)
-
-    pools: dict[str, deque[dict[str, Any]]] = {label: deque(non_empty[label]) for label in order}
-    remaining = dict(slots)
-
-    result: list[str] = []
-    while len(result) < target_size:
-        advanced = False
-        for label in order:
-            if remaining.get(label, 0) <= 0:
-                continue
-            if not pools[label]:
-                continue
-            result.append(pools[label].popleft()["file_id"])
-            remaining[label] -= 1
-            advanced = True
-
-        if not advanced:
-            break
-
-    return result
+#: Milliseconds per day — used for recency weight computation.
+_MS_PER_DAY: float = 86_400_000.0
 
 
+# ------------------------------------------------------------------
 # Public builder functions
+# ------------------------------------------------------------------
 
 
 def build_familiar_playlist(
@@ -135,30 +48,37 @@ def build_familiar_playlist(
 ) -> list[NavidromePersonalPlaylistEntry]:
     """Build a Familiar playlist: ANN search biased toward played tracks.
 
-    Uses per-cluster taste centroids, including only played tracks in results.
+    Uses the taste centroid for ANN search on the global cold collection,
+    then *includes only* played tracks that appear in the results.  This
+    keeps the playlist sonically coherent (centroid-near) while limiting
+    it to music the user already knows.
+
+    Args:
+        db: Database instance.
+        ctx: Personal playlist context.
+
+    Returns:
+        Single-element list with the Familiar playlist, or empty list
+        if no played tracks appear in ANN results.
+
     """
     played = set(ctx["played_file_ids"])
     if not played:
         return []
 
-    cold_ops = get_cold_namespace(db, ctx["backbone_id"])
+    cold_ops = db.get_vectors_track_cold(ctx["backbone_id"], ctx["library_key"])
     doc_count = cold_ops.count()
     if doc_count == 0:
         return []
 
     nlists = compute_nlists(doc_count)
     nprobe = compute_nprobe(nlists)
+    # Over-fetch: most results won't be in the played set
     fetch_limit = ctx["max_songs"] * 5
+    raw_results = cold_ops.search_similar(ctx["centroid"], fetch_limit, nprobe=nprobe)
 
-    results_by_cluster: dict[str, list[dict[str, Any]]] = {}
-    for cluster in ctx["clusters"]:
-        raw = cold_ops.ann_search(cluster["centroid"], fetch_limit, nprobe=nprobe)
-        filtered = [r for r in raw if r["file_id"] in played]
-        if filtered:
-            results_by_cluster[cluster["label"]] = filtered
-
-    weights = {c["label"]: c["total_weight"] for c in ctx["clusters"]}
-    file_ids = _interleave_per_cluster(results_by_cluster, weights, ctx["max_songs"])
+    # Keep only tracks the user has played, preserving ANN ranking
+    file_ids = [r["file_id"] for r in raw_results if r["file_id"] in played][: ctx["max_songs"]]
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -175,11 +95,18 @@ def build_discovery_playlist(
 ) -> list[NavidromePersonalPlaylistEntry]:
     """Build a Discovery playlist: ANN search excluding played tracks.
 
-    Uses per-cluster taste centroids with played-track exclusion.
+    Args:
+        db: Database instance.
+        ctx: Personal playlist context.
+
+    Returns:
+        Single-element list with the Discovery playlist, or empty list
+        if the cold collection is empty.
+
     """
     played = set(ctx["played_file_ids"])
 
-    cold_ops = get_cold_namespace(db, ctx["backbone_id"])
+    cold_ops = db.get_vectors_track_cold(ctx["backbone_id"], ctx["library_key"])
     doc_count = cold_ops.count()
     if doc_count == 0:
         return []
@@ -187,16 +114,10 @@ def build_discovery_playlist(
     nlists = compute_nlists(doc_count)
     nprobe = compute_nprobe(nlists)
     fetch_limit = ctx["max_songs"] * 2
+    raw_results = cold_ops.search_similar(ctx["centroid"], fetch_limit, nprobe=nprobe)
 
-    results_by_cluster: dict[str, list[dict[str, Any]]] = {}
-    for cluster in ctx["clusters"]:
-        raw = cold_ops.ann_search(cluster["centroid"], fetch_limit, nprobe=nprobe)
-        filtered = [r for r in raw if r["file_id"] not in played]
-        if filtered:
-            results_by_cluster[cluster["label"]] = filtered
-
-    weights = {c["label"]: c["total_weight"] for c in ctx["clusters"]}
-    file_ids = _interleave_per_cluster(results_by_cluster, weights, ctx["max_songs"])
+    # Exclude played tracks
+    file_ids = [r["file_id"] for r in raw_results if r["file_id"] not in played][: ctx["max_songs"]]
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -211,38 +132,48 @@ def build_hidden_gems_playlist(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
-    """Build a Hidden Gems playlist: ANN search excluding played and known-artist tracks."""
+    """Build a Hidden Gems playlist: ANN search excluding known-artist tracks.
+
+    Filters out tracks by artists the user has already listened to,
+    surfacing music from unfamiliar artists near the taste centroid.
+
+    Args:
+        db: Database instance.
+        ctx: Personal playlist context.
+
+    Returns:
+        Single-element list with the Hidden Gems playlist, or empty list
+        if the cold collection is empty.
+
+    """
     played = set(ctx["played_file_ids"])
-    known_artists: set[str] = set(get_distinct_tag_values_for_files(db, ctx["played_file_ids"], "artist"))
+
+    # Collect known artist tag values via persistence
+    known_artists: set[str] = set(db.tags.get_distinct_tag_values_for_files(ctx["played_file_ids"], "artist"))
     if not known_artists:
         logger.debug("No known artists for hidden gems, falling back to discovery-style")
 
-    cold_ops = get_cold_namespace(db, ctx["backbone_id"])
+    cold_ops = db.get_vectors_track_cold(ctx["backbone_id"], ctx["library_key"])
     doc_count = cold_ops.count()
     if doc_count == 0:
         return []
 
     nlists = compute_nlists(doc_count)
     nprobe = compute_nprobe(nlists)
-    fetch_limit = ctx["max_songs"] * 3
+    fetch_limit = ctx["max_songs"] * 3  # Over-fetch to compensate for artist filtering
+    raw_results = cold_ops.search_similar(ctx["centroid"], fetch_limit, nprobe=nprobe)
 
-    results_by_cluster: dict[str, list[dict[str, Any]]] = {}
-    for cluster in ctx["clusters"]:
-        raw = cold_ops.ann_search(cluster["centroid"], fetch_limit, nprobe=nprobe)
-        candidates = [r for r in raw if r["file_id"] not in played]
-        if not candidates:
-            continue
+    # Exclude played tracks
+    candidates: list[dict[str, Any]] = [r for r in raw_results if r["file_id"] not in played]
 
-        if known_artists:
-            candidate_file_ids = [r["file_id"] for r in candidates]
-            candidate_artists = get_tag_values_grouped_by_file(db, candidate_file_ids, "artist")
-            candidates = [r for r in candidates if not (candidate_artists.get(r["file_id"], set()) & known_artists)]
+    if known_artists:
+        # Batch-query artist tags for candidates, then exclude known-artist tracks
+        candidate_file_ids = [r["file_id"] for r in candidates]
+        candidate_artists = db.tags.get_tag_values_grouped_by_file(candidate_file_ids, "artist")
 
-        if candidates:
-            results_by_cluster[cluster["label"]] = candidates
+        candidates = [r for r in candidates if not (candidate_artists.get(r["file_id"], set()) & known_artists)]
 
-    weights = {c["label"]: c["total_weight"] for c in ctx["clusters"]}
-    file_ids = _interleave_per_cluster(results_by_cluster, weights, ctx["max_songs"])
+    file_ids = [r["file_id"] for r in candidates][: ctx["max_songs"]]
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -257,8 +188,21 @@ def build_universal_playlist(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
-    """Build a diversified Universal playlist via ANN search with stride sampling."""
-    cold_ops = get_cold_namespace(db, ctx["backbone_id"])
+    """Build a diversified playlist via ANN search with stride sampling.
+
+    Unlike other playlists, this one does not exclude played tracks \u2014 it
+    spreads selections across the result set for variety.
+
+    Args:
+        db: Database instance.
+        ctx: Personal playlist context.
+
+    Returns:
+        Single-element list with the Universal playlist, or empty list
+        if the cold collection is empty.
+
+    """
+    cold_ops = db.get_vectors_track_cold(ctx["backbone_id"], ctx["library_key"])
     doc_count = cold_ops.count()
     if doc_count == 0:
         return []
@@ -266,21 +210,15 @@ def build_universal_playlist(
     nlists = compute_nlists(doc_count)
     nprobe = compute_nprobe(nlists)
     fetch_limit = ctx["max_songs"] * 3
+    raw_results = cold_ops.search_similar(ctx["centroid"], fetch_limit, nprobe=nprobe)
 
-    results_by_cluster: dict[str, list[dict[str, Any]]] = {}
-    for cluster in ctx["clusters"]:
-        raw = cold_ops.ann_search(cluster["centroid"], fetch_limit, nprobe=nprobe)
-        if raw:
-            step = max(1, len(raw) // ctx["max_songs"])
-            sampled = raw[::step]
-            if sampled:
-                results_by_cluster[cluster["label"]] = sampled
-
-    weights = {c["label"]: c["total_weight"] for c in ctx["clusters"]}
-    file_ids = _interleave_per_cluster(results_by_cluster, weights, ctx["max_songs"])
-
-    if file_ids:
-        random.shuffle(file_ids)
+    # Diversified sampling: spread across the result set instead of taking top-N
+    file_ids: list[str] = []
+    if raw_results:
+        step = max(1, len(raw_results) // ctx["max_songs"])
+        sampled = raw_results[::step][: ctx["max_songs"]]
+        random.shuffle(sampled)
+        file_ids = [r["file_id"] for r in sampled]
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -295,49 +233,110 @@ def build_genre_playlists(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
-    """Build per-genre playlists from pre-computed taste profile clusters.
+    """Build per-genre playlists using per-genre recency-weighted centroids.
 
-    Skips clusters with fewer than ``_GENRE_MIN_SONGS`` results.
+    For each genre represented in the user's play history, this builder:
+
+    1. Computes a **genre-specific centroid** from only the played tracks
+       tagged with that genre, using the same recency weighting formula as
+       :func:`~nomarr.components.navidrome.taste_profile_comp.compute_taste_profile`.
+    2. Ranks genres by their total recency-weighted affinity score.
+    3. Takes the top ``ctx["max_genre_playlists"]`` genres (hard-capped at
+       :data:`_MAX_GENRE_PLAYLISTS_CAP`).
+    4. For each top genre, performs a genre-filtered ANN search with the
+       genre-specific centroid.  Genres that return fewer than
+       :data:`_GENRE_MIN_SONGS` candidates are skipped.
+
+    Args:
+        db: Database instance.
+        ctx: Personal playlist context.
+
+    Returns:
+        One ``NavidromePersonalPlaylistEntry`` per qualifying genre,
+        or an empty list if there is no play history with genre data.
+
     """
-    clusters = ctx["clusters"]
-    if not clusters:
+    played_tracks = ctx["played_tracks"]
+    if not played_tracks:
         return []
 
-    cold_ops = get_cold_namespace(db, ctx["backbone_id"])
+    played_file_ids = ctx["played_file_ids"]
+
+    cold_ops = db.get_vectors_track_cold(ctx["backbone_id"], ctx["library_key"])
     doc_count = cold_ops.count()
     if doc_count == 0:
         return []
 
+    # Fetch cold vectors for all played tracks in one batch
+    vector_docs = cold_ops.get_vectors_by_file_ids(played_file_ids)
+    vector_map: dict[str, list[float]] = {doc["file_id"]: doc["vector"] for doc in vector_docs if "vector" in doc}
+    if not vector_map:
+        return []
+
+    # Fetch genre tags for played tracks in one batch
+    file_genres = db.tags.get_tag_values_grouped_by_file(played_file_ids, "genre")
+
+    # Pre-compute recency decay constants
+    now_ms_val = now_ms().value
+    half_life = ctx["half_life_days"]
+    decay_lambda = math.log(2) / half_life
+    fallback_days = half_life * 2
+
+    # Build genre → [(recency_weight, vector)] map
+    genre_data: dict[str, list[tuple[float, list[float]]]] = {}
+    for play in played_tracks:
+        fid = play["file_id"]
+        if fid is None or fid not in vector_map:
+            continue
+        vec = vector_map[fid]
+
+        last_ms = play["last_played"]
+        days_since = (now_ms_val - last_ms) / _MS_PER_DAY if last_ms is not None else fallback_days
+        weight = math.log(1 + play["playcount"]) * math.exp(-decay_lambda * days_since)
+
+        for genre in file_genres.get(fid, set()):
+            genre_data.setdefault(genre, []).append((weight, vec))
+
+    if not genre_data:
+        logger.debug("No genre affinities found for user; skipping genre playlists")
+        return []
+
+    # Sort genres by total affinity weight, take top N
+    effective_max = min(ctx["max_genre_playlists"], _MAX_GENRE_PLAYLISTS_CAP)
+    genre_affinity = {g: sum(w for w, _ in wv) for g, wv in genre_data.items()}
+    top_genres = sorted(genre_affinity, key=lambda g: genre_affinity[g], reverse=True)[:effective_max]
+
+    # Compute L2-normalized per-genre centroid for each top genre
+    genre_centroids: dict[str, list[float]] = {}
+    for genre in top_genres:
+        wv_pairs = genre_data[genre]
+        arr = np.asarray([v for _, v in wv_pairs], dtype=np.float64)
+        w_arr = np.asarray([w for w, _ in wv_pairs], dtype=np.float64)
+        centroid = np.average(arr, axis=0, weights=w_arr)
+        norm = np.linalg.norm(centroid)
+        if norm > 0:
+            centroid = centroid / norm
+        genre_centroids[genre] = centroid.tolist()
+
+    # ANN search per genre using its specific centroid
     nlists = compute_nlists(doc_count)
     nprobe = compute_nprobe(nlists)
-    fetch_limit = ctx["max_songs"] * 3
-
-    effective_max = min(ctx["max_genre_playlists"], _MAX_GENRE_PLAYLISTS_CAP)
-    sorted_clusters = sorted(clusters, key=lambda c: c["total_weight"], reverse=True)[:effective_max]
+    fetch_limit = ctx["max_songs"] * 3  # Over-fetch to compensate for in-traversal genre filter
 
     playlists: list[NavidromePersonalPlaylistEntry] = []
-    for cluster in sorted_clusters:
-        raw_results = cold_ops.ann_search(
-            cluster["centroid"],
-            fetch_limit,
-            nprobe,
-            filter={"genres": cluster["label"]},
-        )
+    for genre in top_genres:
+        genre_centroid = genre_centroids[genre]
+        raw_results = cold_ops.search_similar_by_genre(genre_centroid, genre, fetch_limit, nprobe)
 
         if len(raw_results) < _GENRE_MIN_SONGS:
-            logger.debug(
-                "Genre %r returned only %d results (<%d); skipping",
-                cluster["label"],
-                len(raw_results),
-                _GENRE_MIN_SONGS,
-            )
+            logger.debug("Genre %r returned only %d results (<%d); skipping", genre, len(raw_results), _GENRE_MIN_SONGS)
             continue
 
         file_ids = [r["file_id"] for r in raw_results][: ctx["max_songs"]]
         playlists.append(
             NavidromePersonalPlaylistEntry(
-                playlist_type=f"genre_{cluster['label'].lower()}",
-                playlist_name=f"Your {cluster['label'].title()} Mix",
+                playlist_type=f"genre_{genre.lower()}",
+                playlist_name=f"Your {genre.title()} Mix",
                 file_ids=file_ids,
             )
         )

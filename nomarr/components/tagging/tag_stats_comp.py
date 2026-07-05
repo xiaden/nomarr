@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 from math import floor
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.tagging.tag_query_comp import (
-    _narrow_db_list,
-    _narrow_db_list_of_str,
-    _numeric_value,
-    _to_int,
+    _library_file_ids,
+    _narrow_tag_list,
+    _tags_for_name,
     get_tag,
 )
 
@@ -18,38 +17,19 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def _tags_for_name(db: Database, name: str) -> list[dict[str, object]]:
-    """Return all tags for one tag name."""
-    total = db.library.count_tags()
-    if total <= 0:
-        return []
-    return _narrow_db_list(db.library.list_tags(name=name, limit=total))
-
-
-def _all_library_files(db: Database) -> list[dict[str, object]]:
+def _all_library_files(db: Database) -> list[dict[str, Any]]:
     """Return all library file documents with explicit pagination."""
-    total = db.library.count_files()
+    total = int(db.library.count_files())
     if total <= 0:
         return []
-    return _narrow_db_list(db.library.list_files(limit=total))
+    return _narrow_tag_list(db.library.list_files(limit=total))
 
 
-def _library_files(db: Database, library_id: str | None) -> list[dict[str, object]]:
+def _library_files(db: Database, library_id: str | None) -> list[dict[str, Any]]:
     """Return file documents scoped to one library or the whole collection."""
     if library_id is not None:
-        return _narrow_db_list(db.library.list_library_files(library_id))
+        return _narrow_tag_list(db.library.list_library_files(library_id))
     return _all_library_files(db)
-
-
-def _library_file_ids(db: Database, library_id: str | None) -> set[str] | None:
-    """Return the scoped library file-id set when needed."""
-    if library_id is None:
-        return None
-    return {
-        file_id
-        for file_doc in _narrow_db_list(db.library.list_library_files(library_id))
-        if isinstance(file_id := file_doc.get("_id"), str)
-    }
 
 
 def _tag_file_ids(db: Database, tag_id: str) -> set[str]:
@@ -63,7 +43,7 @@ def _tag_file_ids(db: Database, tag_id: str) -> set[str]:
         return set()
     return {
         file_id
-        for file_doc in _narrow_db_list(
+        for file_doc in _narrow_tag_list(
             db.library.search_files_by_tag(tag_name, str(tag_value), limit=None),
         )
         if isinstance((file_id := file_doc.get("_id")), str)
@@ -82,7 +62,7 @@ def _song_count_rows_for_tag_ids(db: Database, tag_ids: list[str]) -> dict[str, 
         return {}
 
     count_by_tag_id = dict.fromkeys(valid_tag_ids, 0)
-    for edge in _narrow_db_list(
+    for edge in _narrow_tag_list(
         db.library.get_song_tag_edges_for_tags(valid_tag_ids),
     ):
         if isinstance(tag_id := edge.get("_to"), str) and tag_id in count_by_tag_id:
@@ -103,6 +83,23 @@ def _scoped_song_count_for_tag(
     return sum(1 for file_id in _tag_file_ids(db, tag_id) if file_id in library_file_ids)
 
 
+def _numeric_value(value: object) -> float | None:
+    """Convert loosely numeric values into float form when possible."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return float(stripped)
+        except ValueError:
+            return None
+    return None
+
+
 def _coerce_sum_value(value: object) -> float:
     """Return numeric values for aggregate sums, treating missing values as zero."""
     if isinstance(value, bool):
@@ -114,14 +111,15 @@ def _coerce_sum_value(value: object) -> float:
 
 def get_unique_names(db: Database, nomarr_only: bool = False) -> list[str]:
     """Return all unique tag name values."""
-    total_tags = db.library.count_tags()
-    names = [str(value) for value in _narrow_db_list_of_str(db.library.list_all_tag_names(limit=total_tags))]
+    total_tags = int(db.library.count_tags())
+    raw_names = db.library.list_all_tag_names(limit=total_tags)
+    names = [str(value) for value in raw_names] if isinstance(raw_names, list) else []
     if nomarr_only:
         names = [name for name in names if name.startswith("nom:")]
     return names
 
 
-def get_tag_value_counts(db: Database, name: str) -> dict[object, int]:
+def get_tag_value_counts(db: Database, name: str) -> dict[Any, int]:
     """Return value → song-count mapping for one tag name."""
     tag_docs = _tags_for_name(db, name)
     count_by_tag_id = _song_count_rows_for_tag_ids(
@@ -135,27 +133,28 @@ def get_tag_value_counts(db: Database, name: str) -> dict[object, int]:
     }
 
 
-def get_all_tag_stats_batched(db: Database) -> dict[str, dict[str, object]]:
+def get_all_tag_stats_batched(db: Database) -> dict[str, dict[str, Any]]:
     """Return summary stats for all tag names in one query."""
-    result: dict[str, dict[str, object]] = {}
-    total_tags = db.library.count_tags()
+    result: dict[str, dict[str, Any]] = {}
+    total_tags = int(db.library.count_tags())
     if total_tags <= 0:
         return result
 
-    tag_names = [str(name_value) for name_value in _narrow_db_list_of_str(db.library.list_all_tag_names(limit=total_tags))]
-    all_tag_docs = _narrow_db_list(db.library.list_tags(limit=total_tags)) if tag_names else []
+    raw_names = db.library.list_all_tag_names(limit=total_tags)
+    tag_names = [str(name_value) for name_value in raw_names] if isinstance(raw_names, list) else []
+    all_tag_docs = _narrow_tag_list(db.library.list_tags(limit=total_tags)) if tag_names else []
     count_by_tag_id = _song_count_rows_for_tag_ids(
         db,
         [tag_id for tag in all_tag_docs if isinstance(tag_id := tag.get("_id"), str)],
     )
-    tags_by_name: defaultdict[str, list[dict[str, object]]] = defaultdict(list)
+    tags_by_name: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
     for tag in all_tag_docs:
         tag_name = tag.get("name")
         if isinstance(tag_name, str):
             tags_by_name[tag_name].append(tag)
 
     for name in tag_names:
-        values: dict[object, int] = {
+        values: dict[Any, int] = {
             tag["value"]: count_by_tag_id.get(tag_id, 0)
             for tag in tags_by_name.get(name, [])
             if isinstance(tag_id := tag.get("_id"), str) and "value" in tag
@@ -188,21 +187,20 @@ def get_all_tag_stats_batched(db: Database) -> dict[str, dict[str, object]]:
     return result
 
 
-def get_tag_frequencies(db: Database, limit: int, namespace_prefix: str) -> dict[str, object]:
+def get_tag_frequencies(db: Database, limit: int, namespace_prefix: str) -> dict[str, Any]:
     """Return frequency inputs for analytics service."""
-    total_tags = db.library.count_tags()
+    total_tags = int(db.library.count_tags())
     nom_counts: defaultdict[str, int] = defaultdict(int)
     genre_counts: defaultdict[str, int] = defaultdict(int)
 
     if total_tags > 0:
-        tag_names = [
-            str(name_value) for name_value in _narrow_db_list_of_str(db.library.list_all_tag_names(limit=total_tags))
-        ]
+        raw_names = db.library.list_all_tag_names(limit=total_tags)
+        tag_names = [str(name_value) for name_value in raw_names] if isinstance(raw_names, list) else []
         relevant_names = [name for name in tag_names if name.startswith("nom:") or name == "genre"]
         all_tag_docs = (
             [
                 tag
-                for tag in _narrow_db_list(db.library.list_tags(limit=total_tags))
+                for tag in _narrow_tag_list(db.library.list_tags(limit=total_tags))
                 if tag.get("name") in relevant_names
             ]
             if relevant_names
@@ -233,7 +231,7 @@ def get_tag_frequencies(db: Database, limit: int, namespace_prefix: str) -> dict
     return {"nom_tag_rows": nom_tag_rows, "genre_rows": genre_rows}
 
 
-def get_library_stats(db: Database, library_id: str | None = None) -> dict[str, object]:
+def get_library_stats(db: Database, library_id: str | None = None) -> dict[str, Any]:
     """Return aggregate collection stats for the whole library or one library."""
     files = _library_files(db, library_id)
     if not files:
@@ -255,9 +253,9 @@ def get_library_stats(db: Database, library_id: str | None = None) -> dict[str, 
     }
 
 
-def get_year_distribution(db: Database, library_id: str | None = None) -> list[dict[str, object]]:
+def get_year_distribution(db: Database, library_id: str | None = None) -> list[dict[str, Any]]:
     """Return year distribution rows for collection overview."""
-    total_tags = db.library.count_tags()
+    total_tags = int(db.library.count_tags())
     if total_tags <= 0:
         return []
 
@@ -271,7 +269,7 @@ def get_year_distribution(db: Database, library_id: str | None = None) -> list[d
         if library_file_ids is None
         else {}
     )
-    rows: list[dict[str, object]] = []
+    rows: list[dict[str, Any]] = []
     for tag in year_tags:
         tag_id = tag.get("_id")
         if not isinstance(tag_id, str) or "value" not in tag:
@@ -299,9 +297,9 @@ def get_genre_distribution(
     db: Database,
     library_id: str | None = None,
     limit: int | None = 20,
-) -> list[dict[str, object]]:
+) -> list[dict[str, Any]]:
     """Return genre distribution rows for collection overview."""
-    total_tags = db.library.count_tags()
+    total_tags = int(db.library.count_tags())
     if total_tags <= 0:
         return []
 
@@ -319,7 +317,7 @@ def get_genre_distribution(
         if library_file_ids is None
         else {}
     )
-    rows: list[dict[str, object]] = []
+    rows: list[dict[str, Any]] = []
     for tag in genre_tags:
         tag_id = tag.get("_id")
         genre_value = tag.get("value")
@@ -334,7 +332,7 @@ def get_genre_distribution(
             continue
         rows.append({"genre": genre_value, "count": song_count})
 
-    rows.sort(key=lambda row: (-_to_int(row.get("count", 0)), str(row.get("genre", "")).lower()))
+    rows.sort(key=lambda row: (-int(row["count"]), str(row["genre"]).lower()))
     if limit is not None:
         return rows[:limit]
     return rows

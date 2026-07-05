@@ -12,7 +12,22 @@ def build_timing_summary(
     elapsed_ms: float,
     heads_by_backbone: dict[str, list],
 ) -> str:
-    """Build a compact timing summary string for one processed file."""
+    """Build a compact timing summary string for one processed file.
+
+    Args:
+        timings: Per-operation durations in milliseconds, keyed by operation name.
+            Expected keys: ``audio_load``, ``emb_wall`` (parallel) or
+            ``emb_<backbone>`` (sequential), ``heads_<backbone>``,
+            ``mood_aggregation``.
+        elapsed_ms: Total wall-clock time for the file in milliseconds.
+        heads_by_backbone: Mapping of backbone name → list of head models,
+            used only to count heads per backbone for the summary string.
+
+    Returns:
+        A compact one-line summary string, e.g.:
+        ``"audio=120(12%) emb=450(45%|effnet=450) heads=300(30%|4x300) mood=10(1%)"``
+
+    """
 
     def _pct(ms: float) -> str:
         return f"{ms / elapsed_ms * 100:.0f}%" if elapsed_ms > 0 else "0%"

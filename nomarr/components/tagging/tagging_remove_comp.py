@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import mutagen
 from mutagen.flac import FLAC
@@ -106,7 +106,9 @@ def _remove_vorbis_tags(path: str, namespace: str) -> int:
             return 0
 
         vorbis_prefix = f"{namespace.upper()}_"
-        audio_tags = cast("dict[str, list[str]]", audio.tags)
+        if not isinstance(audio.tags, dict):
+            return 0
+        audio_tags: dict[str, list[str]] = audio.tags  # type: ignore[assignment]
         keys_to_remove = [
             key for key, _ in audio_tags.items() if isinstance(key, str) and key.startswith(vorbis_prefix)
         ]

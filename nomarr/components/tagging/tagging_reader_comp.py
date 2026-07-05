@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import mutagen
 
-from nomarr.helpers.dto.tags_dto import Tag, Tags, TagValue
+from nomarr.helpers.dto.tags_dto import Tag, Tags
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.path_dto import LibraryPath
@@ -26,7 +26,7 @@ def read_nomarr_namespace(path: LibraryPath, namespace: str = DEFAULT_NAMESPACE)
             return set()
         tags = read_tags_from_file(path, namespace)
         return {tag.key for tag in tags}
-    except (ValueError, RuntimeError):
+    except Exception:
         return set()
 
 
@@ -59,21 +59,21 @@ def read_tags_from_file(path: LibraryPath, namespace: str) -> Tags:
         ext = Path(path_str).suffix.lower()
 
         if ext == ".mp3":
-            audio = cast("mutagen.FileType", mutagen.File(path_str))
+            audio = mutagen.File(path_str)
             if audio is None:
                 msg = f"Failed to load MP3 file: {path_str}"
                 raise ValueError(msg)
             tag_dict = _extract_id3_tags(audio, namespace)
 
         elif ext in (".m4a", ".mp4", ".m4b", ".m4p"):
-            audio = cast("mutagen.FileType", mutagen.File(path_str))
+            audio = mutagen.File(path_str)
             if audio is None:
                 msg = f"Failed to load MP4 file: {path_str}"
                 raise ValueError(msg)
             tag_dict = _extract_mp4_tags(audio, namespace)
 
         elif ext in (".flac", ".ogg", ".opus"):
-            audio = cast("mutagen.FileType", mutagen.File(path_str))
+            audio = mutagen.File(path_str)
             if audio is None:
                 msg = f"Failed to load Vorbis file: {path_str}"
                 raise ValueError(msg)
@@ -83,11 +83,11 @@ def read_tags_from_file(path: LibraryPath, namespace: str) -> Tags:
             msg = f"Unsupported audio format: {ext}"
             raise ValueError(msg)
 
-        items = tuple(Tag(key=k, value=tuple(cast("list[TagValue]", v))) for k, v in tag_dict.items())
+        items = tuple(Tag(key=k, value=tuple(v if isinstance(v, list) else [v])) for k, v in tag_dict.items())
         return Tags(items=items)
 
-    except (ValueError, mutagen.MutagenError) as e:
-        logger.exception("[TagReader] Failed to read tags from %s", path_str)
+    except Exception as e:
+        logger.exception(f"[TagReader] Failed to read tags from {path_str}")
         msg = f"Failed to read tags: {e}"
         raise RuntimeError(msg) from e
 
@@ -143,7 +143,7 @@ def _extract_mp4_tags(audio: mutagen.FileType, namespace: str) -> dict[str, list
             else:
                 decoded_val = value.decode("utf-8") if isinstance(value, bytes) else str(value)
                 tags[clean_name] = [decoded_val]
-        except (UnicodeDecodeError, AttributeError, TypeError) as e:
+        except Exception as e:
             logger.warning("[TagReader] Failed to decode tag %s: %s", key, e)
             continue
 

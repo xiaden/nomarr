@@ -8,7 +8,7 @@ key enumeration, and ML-complete library discovery.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_file_query_comp import get_library_counts
 from nomarr.components.library.library_file_state_comp import count_untagged_files
@@ -35,7 +35,24 @@ def create_library_record(
     file_write_mode: str = "full",
     library_auto_write: bool = False,
 ) -> str:
-    """Insert a library document through the constructor namespace."""
+    """Insert a library document through the constructor namespace.
+
+    Args:
+        db: Database handle used to insert the library document.
+        name: Human-readable library name.
+        root_path: Absolute root path scanned for this library.
+        is_enabled: Whether the library is enabled for processing; defaults to ``True``.
+        watch_mode: File watching mode; defaults to ``"off"`` and must be one of ``"off"``, ``"event"``, or ``"poll"``.
+        file_write_mode: Tag writeback mode; defaults to ``"full"`` and must be one
+            of ``"none"``, ``"minimal"``, or ``"full"``.
+        library_auto_write: Whether library-level automatic tag writing is enabled; defaults to ``False``.
+
+    Returns:
+        The ``_id`` string of the created library document.
+
+    Raises:
+        ValueError: If ``watch_mode`` or ``file_write_mode`` is not a valid value.
+    """
     _validate_watch_mode(watch_mode)
     _validate_file_write_mode(file_write_mode)
 
@@ -50,7 +67,7 @@ def create_library_record(
         "created_at": timestamp,
         "updated_at": timestamp,
     }
-    return db.library.add_library(payload)
+    return cast("str", db.library.add_library(payload))
 
 
 def get_library_record(
@@ -61,7 +78,7 @@ def get_library_record(
 ) -> dict[str, Any] | None:
     """Get one library by ``_id`` or ``_key`` and optionally merge scan state."""
     normalized_library_id = normalize_library_id(library_id)
-    doc = db.library.get_library(normalized_library_id)
+    doc = cast("dict[str, Any] | None", db.library.get_library(normalized_library_id))
 
     if doc is None or not include_scan:
         return doc
@@ -75,7 +92,7 @@ def get_library_by_name(
     include_scan: bool = False,
 ) -> dict[str, Any] | None:
     """Get one library by unique name."""
-    doc = db.library.get_library_by_name(name)
+    doc = cast("dict[str, Any] | None", db.library.get_library_by_name(name))
     if doc is None or not include_scan:
         return doc
     return _merge_scan_state(db, doc)
@@ -88,9 +105,10 @@ def list_library_records(
     include_scan: bool = True,
 ) -> list[dict[str, Any]]:
     """List libraries through constructor verbs, preserving legacy sort order."""
-    docs = db.library.list_libraries(enabled_only=enabled_only)
-    if not isinstance(docs, list):
-        return []
+    docs = cast(
+        "list[dict[str, Any]]",
+        db.library.list_libraries(enabled_only=enabled_only),
+    )
     if not include_scan:
         return docs
     return [_merge_scan_state(db, doc) for doc in docs]
@@ -113,20 +131,18 @@ def list_watchable_library_records(db: Database) -> list[dict[str, Any]]:
 def update_library_record(
     db: Database,
     library_id: str,
-    **fields: str | int | float | bool | None,
+    **fields: Any,
 ) -> None:
-    """Update a library document by _id through the constructor namespace."""
+    """Update a library document by ``_id`` through the constructor namespace."""
     update_fields = {
         "updated_at": now_ms().value,
         **{key: value for key, value in fields.items() if value is not None},
     }
 
-    watch_mode = fields.get("watch_mode")
-    if isinstance(watch_mode, str):
-        _validate_watch_mode(watch_mode)
-    file_write_mode = fields.get("file_write_mode")
-    if isinstance(file_write_mode, str):
-        _validate_file_write_mode(file_write_mode)
+    if "watch_mode" in fields and fields["watch_mode"] is not None:
+        _validate_watch_mode(cast("str", fields["watch_mode"]))
+    if "file_write_mode" in fields and fields["file_write_mode"] is not None:
+        _validate_file_write_mode(cast("str", fields["file_write_mode"]))
 
     db.library.update_library(normalize_library_id(library_id), update_fields)
 
@@ -137,7 +153,12 @@ def update_library_config_fields(
     set_fields: dict[str, Any] | None = None,
     unset_fields: list[str] | None = None,
 ) -> None:
-    """Update optional library config fields. None values are treated as missing for inheritance."""
+    """Update optional library config fields.
+
+    Constructor ``update`` does not expose Arango's ``keepNull: false`` toggle,
+    so clearing an override persists ``null``. Callers should treat missing and
+    ``None`` values equivalently for inheritance.
+    """
     update_fields: dict[str, Any] = {}
     if set_fields:
         update_fields.update(set_fields)
@@ -181,13 +202,17 @@ def find_library_containing_path(db: Database, file_path: str) -> dict[str, Any]
 def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, Any]]:
     """Find ML-running libraries whose file set is fully tagged.
 
-    The min_files parameter is unused (interface compatibility).
-    Returns a list of dicts with library_id and tagged_count.
+    Args:
+        db: Database handle used to read pipeline state and tagged file counts.
+        min_files: Unused minimum file-count threshold accepted for interface
+            compatibility; it currently has no effect on the returned results.
+
+    Returns:
+        A list of dictionaries for ML-running libraries with no untagged files,
+        where each dictionary contains ``library_id`` and ``tagged_count``.
     """
     del min_files
-    library_docs = db.library.list_libraries()
-    if not isinstance(library_docs, list):
-        return []
+    library_docs = cast("list[dict[str, Any]]", db.library.list_libraries())
     counts = get_library_counts(db)
     completed: list[dict[str, Any]] = []
 

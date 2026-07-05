@@ -3,8 +3,6 @@
 Detects file moves by comparing chromaprints between removed and new files.
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +21,7 @@ from nomarr.persistence import Database
 logger = logging.getLogger(__name__)
 
 
+# Component-local DTOs (not promoted to helpers/dto)
 @dataclass
 class FileMove:
     """Represents a detected file move."""
@@ -85,7 +84,7 @@ def detect_file_moves(
     # Fast path: No chromaprints in DB yet, can't do move detection
     has_chromaprints = any(f.get("chromaprint") for f in files_to_remove)
     if not has_chromaprints:
-        logger.info("No chromaprints found in library - skipping move detection for %d files", len(files_to_remove))
+        logger.info(f"No chromaprints found in library - skipping move detection for {len(files_to_remove)} files")
         return MoveDetectionResult(
             moves=[],
             files_moved_count=0,
@@ -94,9 +93,7 @@ def detect_file_moves(
         )
 
     # Full move detection
-    logger.info(
-        "Checking %d new files for moves against %d removed files...", len(new_file_entries), len(files_to_remove)
-    )
+    logger.info(f"Checking {len(new_file_entries)} new files for moves against {len(files_to_remove)} removed files...")
 
     # Sort removed files by ID for deterministic matching when duplicates exist
     files_to_remove.sort(key=lambda f: f["_id"])
@@ -167,7 +164,7 @@ def detect_file_moves(
 
                     if duration_matches:
                         # Match confirmed
-                        logger.info("File moved: %s → %s", removed_file["path"], new_path)
+                        logger.info(f"File moved: {removed_file['path']} → {new_path}")
 
                         move = FileMove(
                             old_path=removed_file["path"],
@@ -185,24 +182,20 @@ def detect_file_moves(
                     # Chromaprint collision - different songs with same fingerprint
                     collisions_detected += 1
                     logger.warning(
-                        "Chromaprint collision detected: %s vs %s (duration: %ss vs %ss)",
-                        removed_file["path"],
-                        new_path,
-                        removed_duration,
-                        new_duration,
+                        f"Chromaprint collision detected: "
+                        f"{removed_file['path']} vs {new_path} "
+                        f"(duration: {removed_duration}s vs {new_duration}s)",
                     )
 
-        except (OSError, ValueError) as e:
-            logger.warning("Failed to compute chromaprint for %s: %s", new_path, e)
+        except Exception as e:
+            logger.warning(f"Failed to compute chromaprint for {new_path}: {e}")
             continue
 
     logger.info(
-        "Move detection complete: %d moves found, %d chromaprints computed, "
-        "%d skipped by duration pre-filter, %d collisions detected",
-        len(moves),
-        chromaprints_computed,
-        skipped_by_duration,
-        collisions_detected,
+        f"Move detection complete: {len(moves)} moves found, "
+        f"{chromaprints_computed} chromaprints computed, "
+        f"{skipped_by_duration} skipped by duration pre-filter, "
+        f"{collisions_detected} collisions detected",
     )
 
     return MoveDetectionResult(
@@ -261,7 +254,7 @@ def apply_detected_moves(
             try:
                 entity_tags = _extract_entity_tags(new_metadata)
                 seed_song_entities_from_tags(db, move.file_id, entity_tags)
-            except (OSError, ValueError) as e:
+            except Exception as e:
                 logger.warning(
                     "Failed to update entities for moved file %s: %s",
                     move.new_path,
@@ -294,7 +287,7 @@ def detect_file_move_via_db(
         if not library_path.is_valid():
             return None
         chromaprint = compute_chromaprint_for_file(library_path)
-    except (OSError, ValueError) as e:
+    except Exception as e:
         logger.warning("Failed to compute chromaprint for %s: %s", new_path, e)
         return None
 

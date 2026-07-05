@@ -4,26 +4,20 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_records_comp import list_library_records
-
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.library_dto import LibraryDict
     from nomarr.persistence.db import Database
 
 
-class ListLibrariesComp:
-    """Component for listing libraries."""
+def list_libraries(db: Database, enabled_only: bool = False) -> list[dict[str, Any]]:
+    """List all libraries.
 
-    def __init__(self, db: Database) -> None:
-        self.db = db
+    Args:
+        db: Database instance
+        enabled_only: If True, only return enabled libraries
 
-    def list(self, enabled_only: bool = False) -> list[dict[str, Any]]:
-        """List all libraries.
+    Returns:
+        List of library dicts (see ``LibraryDict`` for shape)
 
-        Args:
-            enabled_only: If True, only return enabled libraries
-
-        Returns:
-            List of library dicts
-
-        """
-        return list_library_records(self.db, enabled_only=enabled_only)
+    """
+    return db.libraries.list_libraries(enabled_only=enabled_only)

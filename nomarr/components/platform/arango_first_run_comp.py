@@ -15,8 +15,6 @@ CRITICAL INVARIANTS:
 This is not "lazy provisioning" - it's explicit onboarding.
 """
 
-from __future__ import annotations
-
 import logging
 import os
 import secrets
@@ -31,7 +29,31 @@ DB_NAME = "nomarr"
 
 
 def provision_database_and_user(hosts: str, root_password: str) -> str:
-    """Provision database and user (first-run only). Creates database, generates random app password, grants permissions."""
+    """Provision database and user (first-run only).
+
+    Creates database, generates random password for app user, grants permissions.
+
+    SECURITY:
+    - root_password is read from environment (ARANGO_ROOT_PASSWORD)
+    - root_password is NEVER stored in app config
+    - App password is randomly generated (64-char hex)
+    - This function should only be called once during first boot
+
+    Note: Username and db_name are hardcoded as 'nomarr' (not configurable).
+
+    Args:
+        hosts: ArangoDB server URL(s)
+        root_password: Root password from environment variable
+
+    Returns:
+        Generated app password (caller must store in config)
+
+    Raises:
+        ServerConnectionError: Cannot connect to ArangoDB
+        DatabaseCreateError: Database creation failed
+        UserCreateError: User creation failed
+
+    """
     client = ArangoClient(hosts=hosts)
     sys_db = client.db("_system", username="root", password=root_password)
     if not sys_db.has_database(DB_NAME):
@@ -46,7 +68,16 @@ def provision_database_and_user(hosts: str, root_password: str) -> str:
 
 
 def is_first_run(config_path: Path, hosts: str | None = None) -> bool:
-    """Check if this is first run (no config exists, no DB credentials, or DB missing)."""
+    """Check if this is first run (no config exists, no DB credentials, or DB missing).
+
+    Args:
+        config_path: Path to config file (e.g., /app/config/nomarr.yaml)
+        hosts: ArangoDB server URL(s). Read from ARANGO_HOST env var if not provided.
+
+    Returns:
+        True if first run needed, False if already configured AND database exists
+
+    """
     if not config_path.exists():
         return True
     if not _has_db_config(config_path):
@@ -63,13 +94,23 @@ def _has_db_config(config_path: Path) -> bool:
         with open(config_path) as f:
             config = yaml.safe_load(f)
         return bool(config.get("arango_password"))
-    except (OSError, yaml.YAMLError):
-        logger.debug("Failed to read DB config from %s — treating as unconfigured", config_path, exc_info=True)
+    except Exception:
         return False
 
 
 def _database_exists(hosts: str | None = None) -> bool:
-    """Check if the 'nomarr' database exists in ArangoDB."""
+    """Check if the 'nomarr' database exists in ArangoDB.
+
+    Caller is responsible for ensuring ArangoDB is already reachable before
+    calling this (e.g. via arango_bootstrap_comp.wait_for_arango).
+
+    Args:
+        hosts: ArangoDB server URL(s). Read from ARANGO_HOST env var if not provided.
+
+    Returns:
+        True if database exists, False otherwise (including connection errors)
+
+    """
     actual_hosts: str = hosts or os.getenv("ARANGO_HOST") or "http://nomarr-arangodb:8529"
     try:
         root_password = os.getenv("ARANGO_ROOT_PASSWORD")
@@ -79,13 +120,27 @@ def _database_exists(hosts: str | None = None) -> bool:
         client = ArangoClient(hosts=actual_hosts)
         sys_db = client.db("_system", username="root", password=root_password)
         return bool(sys_db.has_database(DB_NAME))
-    except Exception as e:  # Broad catch: ArangoClient may raise unpredictable connection-level errors
-        logger.warning("Database existence check failed: %s", e, exc_info=True)
+    except Exception as e:
+        logger.warning("[first_run] Database existence check failed: %s", e)
         return False
 
 
 def write_db_config(config_path: Path, password: str) -> None:
-    """Write auto-generated ArangoDB app password to config file. NEVER writes root password."""
+    """Write auto-generated ArangoDB password to config file.
+
+    Creates/updates config with generated app password.
+    NEVER writes root password.
+
+    Note:
+        - Only the password is written here (auto-generated secret)
+        - Host comes from ARANGO_HOST environment variable (set in nomarr.env)
+        - Username and db_name are hardcoded as 'nomarr' (not configurable)
+
+    Args:
+        config_path: Path to config file (e.g., /app/config/nomarr.yaml)
+        password: Generated app password (from provision_database_and_user)
+
+    """
     if config_path.exists():
         with open(config_path) as f:
             config = yaml.safe_load(f) or {}
@@ -98,12 +153,17 @@ def write_db_config(config_path: Path, password: str) -> None:
 
 
 def get_root_password_from_env() -> str:
-    """Get root password from ARANGO_ROOT_PASSWORD environment variable."""
+    """Get root password from environment variable.
+
+    Returns:
+        Root password from ARANGO_ROOT_PASSWORD env var
+
+    Raises:
+        RuntimeError: If ARANGO_ROOT_PASSWORD not set
+
+    """
     root_password = os.getenv("ARANGO_ROOT_PASSWORD")
     if not root_password:
-        msg = (
-            "ARANGO_ROOT_PASSWORD environment variable not set. "
-            "First-run provisioning requires root access to create database and user."
-        )
+        msg = "ARANGO_ROOT_PASSWORD environment variable not set. First-run provisioning requires root access to create database and user."
         raise RuntimeError(msg)
     return root_password

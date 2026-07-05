@@ -17,17 +17,14 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from nomarr.components.ml.onnx.ml_cache import ONNXModelCache
-from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
 from nomarr.components.platform.resource_monitor_comp import (
     check_nvidia_gpu_capability,
     get_ram_usage_mb,
     get_vram_usage_for_pid_mb,
 )
 from nomarr.helpers.time_helper import internal_ms, now_ms
-from nomarr.persistence.exceptions import DuplicateKeyError
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -35,12 +32,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Probe configuration
-PROBE_POLL_INTERVAL_S = 5000  # Interval to poll for completed probe
-PROBE_TIMEOUT_S = 120000  # Timeout waiting for another worker's probe
+PROBE_POLL_INTERVAL_MS = 5000  # Interval to poll for completed probe (milliseconds)
+PROBE_TIMEOUT_MS = 120000  # Timeout waiting for another worker's probe (milliseconds)
 CONSERVATIVE_BACKBONE_VRAM_MB = 8192  # Default if probe fails (EffNet worst case)
 CONSERVATIVE_WORKER_RAM_MB = 4096  # Default if probe fails
-PROBE_LOCK_TTL_MS = 1800 * 1000
-_CAPACITY_META_PREFIX = "capacity_estimate:"
 
 
 @dataclass
@@ -63,104 +58,20 @@ class CapacityEstimate:
     is_conservative: bool = False
 
 
-def _probe_lock_reference(model_set_hash: str) -> str:
-    """Build the unique document_reference used for capacity probe locks."""
-    return f"capacity_probe:{model_set_hash}"
-
-
-def _try_acquire_probe_lock(db: Database, model_set_hash: str, worker_id: str) -> bool:
-    """Acquire the constructor-backed probe lock for one model set."""
-    reference = _probe_lock_reference(model_set_hash)
-    now_value = float(now_ms().value)
-    existing = db.app.get_lock(reference)
-    if isinstance(existing, dict):
-        existing_expires_at = float(existing.get("expires_at", 0.0))
-        if existing_expires_at >= now_value and existing.get("holder") != worker_id:
-            return False
-        db.app.remove_lock(reference)
-
-    payload = {
-        "document_reference": reference,
-        "lock_type": "capacity_probe",
-        "holder": worker_id,
-        "expires_at": now_value + float(PROBE_LOCK_TTL_MS),
-        "acquired_at": now_value,
-        "status": "active",
-    }
-    try:
-        db.app.add_lock(payload)
-    except DuplicateKeyError:
-        return False
-    return True
-
-
-def _get_probe_lock_status(db: Database, model_set_hash: str) -> dict | None:
-    """Return the lock document for a capacity probe, if present."""
-    return db.app.get_lock(_probe_lock_reference(model_set_hash))
-
-
-def _complete_probe_lock(db: Database, model_set_hash: str) -> None:
-    """Mark a capacity probe lock complete without changing its reference."""
-    reference = _probe_lock_reference(model_set_hash)
-    existing = db.app.get_lock(reference)
-    if not isinstance(existing, dict):
-        return
-
-    updated = dict(existing)
-    updated.pop("_id", None)
-    updated["document_reference"] = reference
-    updated["status"] = "complete"
-    db.app.remove_lock(reference)
-    try:
-        db.app.add_lock({key: value for key, value in updated.items() if key != "_key"})
-    except DuplicateKeyError:
-        logger.debug("[capacity_probe] Probe lock changed before completion write: %s", reference)
-
-
-def _release_probe_lock(db: Database, model_set_hash: str) -> None:
-    """Delete the lock document for a capacity probe."""
-    db.app.remove_lock(_probe_lock_reference(model_set_hash))
-
-
-def _get_capacity_estimate(db: Database, model_set_hash: str) -> dict | None:
-    """Read the persisted capacity estimate document for one model set."""
-    return db.app.get_config_option(f"{_CAPACITY_META_PREFIX}{model_set_hash}")
-
-
-def _save_capacity_estimate(
-    db: Database,
-    model_set_hash: str,
-    measured_backbone_vram_mb: int,
-    estimated_worker_ram_mb: int,
-    probe_duration_s: float,
-    probed_by_worker: str,
-) -> None:
-    """Persist or refresh the capacity estimate for one model set."""
-    existing = _get_capacity_estimate(db, model_set_hash)
-    timestamp = now_ms().value
-    payload: dict[str, Any] = {
-        "model_set_hash": model_set_hash,
-        "measured_backbone_vram_mb": measured_backbone_vram_mb,
-        "estimated_worker_ram_mb": estimated_worker_ram_mb,
-        "probe_duration_s": probe_duration_s,
-        "probed_by": probed_by_worker,
-        "created_at": timestamp if existing is None else existing.get("created_at"),
-        "updated_at": None if existing is None else timestamp,
-    }
-    db.app.update_config_option(
-        f"{_CAPACITY_META_PREFIX}{model_set_hash}",
-        {k: v for k, v in payload.items() if k != "model_set_hash"},
-    )
-
-
-def _delete_capacity_estimate(db: Database, model_set_hash: str) -> None:
-    """Delete the stored capacity estimate and any related probe lock."""
-    db.app.remove_config_option(f"{_CAPACITY_META_PREFIX}{model_set_hash}")
-    _release_probe_lock(db, model_set_hash)
-
-
 def compute_model_set_hash(models_dir: str) -> str:
-    """Compute a hash of the model set for capacity probe invalidation."""
+    """Compute a hash of the model set for capacity probe invalidation.
+
+    The hash changes when:
+    - Model files are added/removed
+    - Model file sizes change (indicates different model version)
+
+    Args:
+        models_dir: Path to the models directory
+
+    Returns:
+        Hex digest hash of the model set
+
+    """
     hasher = hashlib.sha256()
 
     # Walk the models directory and hash file paths + sizes
@@ -172,7 +83,7 @@ def compute_model_set_hash(models_dir: str) -> str:
                     rel_path = os.path.relpath(filepath, models_dir)
                     file_size = os.path.getsize(filepath)
                     hasher.update(f"{rel_path}:{file_size}".encode())
-    except OSError as e:
+    except Exception as e:
         logger.warning("[ml_capacity_probe] Error computing model hash: %s", e)
         # Use timestamp-based hash as fallback
         hasher.update(f"fallback:{now_ms()}".encode())
@@ -188,13 +99,26 @@ def get_or_run_capacity_probe(
 ) -> CapacityEstimate:
     """Get existing capacity estimate or run a new probe.
 
-    Runs once per model_set_hash, protected by DB lock so only one worker
-    probes at a time. Other workers poll for completion.
+    Per GPU_REFACTOR_PLAN.md Section 7:
+    - Runs once per model_set_hash
+    - Protected by DB lock (only one worker probes at a time)
+    - Other workers poll for completion (5s interval, 120s timeout)
+
+    Args:
+        db: Database instance
+        models_dir: Path to models directory
+        worker_id: ID of the calling worker
+        ram_detection_mode: RAM detection mode (auto/cgroup/host)
+
+    Returns:
+        CapacityEstimate with probe results
+
     """
     model_set_hash = compute_model_set_hash(models_dir)
     gpu_capable = check_nvidia_gpu_capability()
 
-    existing = _get_capacity_estimate(db, model_set_hash)
+    # Check for existing estimate
+    existing = db.ml_capacity.get_capacity_estimate(model_set_hash)
     if existing is not None:
         logger.debug(
             "[ml_capacity_probe] Using cached estimate for hash=%s (vram=%dMB, ram=%dMB)",
@@ -210,9 +134,11 @@ def get_or_run_capacity_probe(
             is_conservative=False,
         )
 
-    lock_acquired = _try_acquire_probe_lock(db, model_set_hash, worker_id)
+    # Try to acquire probe lock
+    lock_acquired = db.ml_capacity.try_acquire_probe_lock(model_set_hash, worker_id)
 
     if lock_acquired:
+        # This worker will perform the probe
         logger.info(
             "[ml_capacity_probe] Acquired probe lock for hash=%s, starting probe...",
             model_set_hash,
@@ -226,6 +152,7 @@ def get_or_run_capacity_probe(
             ram_detection_mode=ram_detection_mode,
         )
 
+    # Another worker owns the lock - poll for completion
     logger.info("[ml_capacity_probe] Probe lock owned by another worker, polling for result...")
     return _wait_for_probe_completion(
         db=db,
@@ -242,24 +169,46 @@ def _run_capacity_probe(
     gpu_capable: bool,
     ram_detection_mode: str,
 ) -> CapacityEstimate:
-    """Execute the actual capacity probe."""
+    """Execute the actual capacity probe.
+
+    Measures resource usage by processing one file with a backbone model.
+
+    Args:
+        db: Database instance
+        model_set_hash: Hash of the model set
+        models_dir: Path to models directory
+        worker_id: Worker performing the probe
+        gpu_capable: Whether GPU is available
+        ram_detection_mode: RAM detection mode
+
+    Returns:
+        CapacityEstimate with measured values
+
+    """
     probe_start = internal_ms()
 
     try:
+        # Measure current RAM before loading models
         ram_before = get_ram_usage_mb(ram_detection_mode)
         ram_before_mb = ram_before["used_mb"]
 
+        # Measure VRAM before loading models (if GPU capable)
         vram_before_mb = 0
         if gpu_capable:
             vram_before_mb = get_vram_usage_for_pid_mb(os.getpid())
 
+        # Import ML components to trigger model loading
+        # This simulates the actual resource usage during processing
+        from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
+
+        # Discover heads to understand model requirements
         heads = discover_heads_no_db(models_dir)
         if not heads:
             logger.warning(
                 "[ml_capacity_probe] No heads found in %s, using conservative estimates",
                 models_dir,
             )
-            _release_probe_lock(db, model_set_hash)
+            db.ml_capacity.release_probe_lock(model_set_hash)
             return CapacityEstimate(
                 model_set_hash=model_set_hash,
                 measured_backbone_vram_mb=CONSERVATIVE_BACKBONE_VRAM_MB if gpu_capable else 0,
@@ -268,6 +217,7 @@ def _run_capacity_probe(
                 is_conservative=True,
             )
 
+        # Get unique backbones
         backbones = {h.backbone for h in heads}
         logger.info(
             "[ml_capacity_probe] Found %d heads across backbones: %s",
@@ -275,16 +225,22 @@ def _run_capacity_probe(
             backbones,
         )
 
-        _probe_cache = ONNXModelCache(models_dir, "gpu" if gpu_capable else "cpu")
+        # Warm up ONNX model cache to measure actual memory usage
+        from nomarr.components.ml.onnx.ml_cache import ONNXModelCache as _ONNXModelCache
+
+        _probe_cache = _ONNXModelCache(models_dir, "gpu" if gpu_capable else "cpu")
         _probe_cache.warm = True
 
+        # Measure RAM after loading
         ram_after = get_ram_usage_mb(ram_detection_mode)
         ram_after_mb = ram_after["used_mb"]
 
+        # Measure VRAM after loading (if GPU capable)
         vram_after_mb = 0
         if gpu_capable:
             vram_after_mb = get_vram_usage_for_pid_mb(os.getpid())
 
+        # Calculate resource usage
         backbone_vram_mb = max(0, vram_after_mb - vram_before_mb)
         worker_ram_mb = max(0, ram_after_mb - ram_before_mb)
 
@@ -301,16 +257,17 @@ def _run_capacity_probe(
             probe_duration,
         )
 
-        _save_capacity_estimate(
+        # Persist results
+        db.ml_capacity.save_capacity_estimate(
             model_set_hash=model_set_hash,
             measured_backbone_vram_mb=backbone_vram_mb,
             estimated_worker_ram_mb=worker_ram_mb,
             probe_duration_s=probe_duration,
             probed_by_worker=worker_id,
-            db=db,
         )
 
-        _complete_probe_lock(db, model_set_hash)
+        # Mark lock as complete
+        db.ml_capacity.complete_probe_lock(model_set_hash)
 
         return CapacityEstimate(
             model_set_hash=model_set_hash,
@@ -320,10 +277,12 @@ def _run_capacity_probe(
             is_conservative=False,
         )
 
-    except (OSError, RuntimeError, ValueError) as e:
+    except Exception as e:
         logger.exception("[ml_capacity_probe] Probe failed: %s", e)
-        _release_probe_lock(db, model_set_hash)
+        # Release lock on failure so another worker can try
+        db.ml_capacity.release_probe_lock(model_set_hash)
 
+        # Return conservative estimates
         return CapacityEstimate(
             model_set_hash=model_set_hash,
             measured_backbone_vram_mb=CONSERVATIVE_BACKBONE_VRAM_MB if gpu_capable else 0,
@@ -340,13 +299,23 @@ def _wait_for_probe_completion(
 ) -> CapacityEstimate:
     """Wait for another worker's probe to complete.
 
-    Polls the database until completion or timeout.
+    Polls the database at PROBE_POLL_INTERVAL_MS interval until completion or timeout.
+
+    Args:
+        db: Database instance
+        model_set_hash: Hash of the model set
+        gpu_capable: Whether GPU is available
+
+    Returns:
+        CapacityEstimate with results or conservative fallback
+
     """
     start_time = internal_ms().value
-    deadline = start_time + PROBE_TIMEOUT_S
+    deadline = start_time + PROBE_TIMEOUT_MS
 
     while internal_ms().value < deadline:
-        estimate = _get_capacity_estimate(db, model_set_hash)
+        # Check for completed estimate
+        estimate = db.ml_capacity.get_capacity_estimate(model_set_hash)
         if estimate is not None:
             logger.info(
                 "[ml_capacity_probe] Got probe result from another worker (vram=%dMB, ram=%dMB)",
@@ -361,10 +330,11 @@ def _wait_for_probe_completion(
                 is_conservative=False,
             )
 
-        lock = _get_probe_lock_status(db, model_set_hash)
+        # Check if lock is still held
+        lock = db.ml_capacity.get_probe_lock_status(model_set_hash)
         if lock is None:
             # Lock was released (probe failed), check for estimate one more time
-            estimate = _get_capacity_estimate(db, model_set_hash)
+            estimate = db.ml_capacity.get_capacity_estimate(model_set_hash)
             if estimate is not None:
                 return CapacityEstimate(
                     model_set_hash=model_set_hash,
@@ -373,14 +343,16 @@ def _wait_for_probe_completion(
                     gpu_capable=gpu_capable,
                     is_conservative=False,
                 )
+            # Lock released but no estimate - use conservative
             break
 
         if lock.get("status") == "complete":
             # Probe completed but we missed the estimate query - retry
             continue
 
-        time.sleep(PROBE_POLL_INTERVAL_S)
+        time.sleep(PROBE_POLL_INTERVAL_MS / 1000)
 
+    # Timeout or lock released without estimate - use conservative fallback
     logger.warning("[ml_capacity_probe] Probe timeout/failure, using conservative estimates (max_workers=1)")
     return CapacityEstimate(
         model_set_hash=model_set_hash,
@@ -392,7 +364,13 @@ def _wait_for_probe_completion(
 
 
 def invalidate_capacity_estimate(db: Database, models_dir: str) -> None:
-    """Invalidate cached capacity estimate (e.g., when model set changes)."""
+    """Invalidate cached capacity estimate (e.g., when model set changes).
+
+    Args:
+        db: Database instance
+        models_dir: Path to models directory
+
+    """
     model_set_hash = compute_model_set_hash(models_dir)
-    _delete_capacity_estimate(db, model_set_hash)
+    db.ml_capacity.delete_capacity_estimate(model_set_hash)
     logger.info("[ml_capacity_probe] Invalidated capacity estimate for hash=%s", model_set_hash)

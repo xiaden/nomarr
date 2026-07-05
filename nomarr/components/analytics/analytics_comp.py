@@ -1,11 +1,25 @@
-"""Analytics computation functions - pure in-memory aggregation for tag statistics."""
+"""Analytics computation functions - pure data processing for tag statistics.
+
+PURE LEAF-DOMAIN - These functions operate on in-memory data only:
+- Take raw data (rows, dicts, lists) as input
+- Perform ONLY aggregation and transformation logic
+- Return structured results for presentation layers
+- Do NOT import nomarr.persistence, nomarr.services, nomarr.workflows, or nomarr.interfaces
+- Do NOT access databases or execute SQL
+
+ARCHITECTURE:
+- Analytics is a pure computation layer
+- Data is provided by persistence layer (nomarr.persistence.analytics_queries)
+- Services/workflows orchestrate: fetch data from persistence, pass to analytics
+- Interfaces call services, not analytics directly
+"""
 
 from __future__ import annotations
 
 import json
 import logging
 from collections import Counter, defaultdict
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from nomarr.helpers.dto.analytics_dto import (
     ArtistTagProfile,
@@ -25,7 +39,18 @@ if TYPE_CHECKING:
 
 
 def compute_tag_frequencies(params: ComputeTagFrequenciesParams) -> ComputeTagFrequenciesResult:
-    """Return frequency counts from raw tag data — passes through ``key:value`` rows with minimal processing."""
+    """Compute frequency counts from raw tag data.
+
+    Input tag rows are already in "key:value" format (e.g., "mood-strict:happy").
+    This function just passes them through with minimal processing.
+
+    Args:
+        params: Input parameters with namespace prefix, file count, and tag rows
+
+    Returns:
+        ComputeTagFrequenciesResult with nom_tags (as key:value), standard_tags, total_files
+
+    """
     logger.info("[analytics] Computing tag frequencies")
     nom_tag_counts = list(params.nom_tag_rows)
     return ComputeTagFrequenciesResult(
@@ -40,7 +65,15 @@ def compute_tag_frequencies(params: ComputeTagFrequenciesParams) -> ComputeTagFr
 
 
 def compute_tag_correlation_matrix(params: ComputeTagCorrelationMatrixParams) -> TagCorrelationData:
-    """Return a VALUE-based correlation matrix from raw mood and tier tag data."""
+    """Compute VALUE-based correlation matrix from raw tag data.
+
+    Args:
+        params: Parameters containing namespace, top_n, and tag data
+
+    Returns:
+        TagCorrelationData with mood-to-mood and mood-to-tier correlations
+
+    """
     logger.info("[analytics] Computing VALUE-based correlation matrix (top %d moods)", params.top_n)
     mood_counter: Counter = Counter()
     for _file_id, tag_value in params.mood_tag_rows:
@@ -49,8 +82,8 @@ def compute_tag_correlation_matrix(params: ComputeTagCorrelationMatrixParams) ->
             if isinstance(moods, list):
                 for mood in moods:
                     mood_counter[str(mood).strip()] += 1
-        except json.JSONDecodeError as e:
-            logger.debug("[analytics] Skipping malformed mood tag JSON: %s (value=%r)", e, tag_value[:80])
+        except json.JSONDecodeError:
+            pass
     top_moods = [mood for mood, _ in mood_counter.most_common(params.top_n)]
     if not top_moods:
         return TagCorrelationData(mood_correlations={}, mood_tier_correlations={})
@@ -63,8 +96,8 @@ def compute_tag_correlation_matrix(params: ComputeTagCorrelationMatrixParams) ->
                     mood_str = str(mood).strip()
                     if mood_str in mood_file_sets:
                         mood_file_sets[mood_str].add(file_id)
-        except json.JSONDecodeError as e:
-            logger.debug("[analytics] Skipping malformed mood tag JSON in file sets: %s (value=%r)", e, tag_value[:80])
+        except json.JSONDecodeError:
+            pass
     mood_correlations: dict[str, dict[str, float]] = {}
     for mood_a in top_moods:
         files_a = mood_file_sets[mood_a]
@@ -101,7 +134,17 @@ def compute_tag_correlation_matrix(params: ComputeTagCorrelationMatrixParams) ->
 
 
 def compute_mood_distribution(mood_rows: Sequence[tuple[str, str]]) -> MoodDistributionData:
-    """Return mood distribution from raw ``(mood_type, tag_value)`` tuples (JSON array values)."""
+    """Compute mood distribution from raw mood tag data.
+
+    All tag values are now stored as JSON arrays.
+
+    Args:
+        mood_rows: List of (mood_type, tag_value) tuples where tag_value is JSON array string
+
+    Returns:
+        MoodDistributionData with mood tier distributions and top moods
+
+    """
     logger.info("[analytics] Computing mood distribution")
     mood_strict_counts: Counter = Counter()
     mood_regular_counts: Counter = Counter()
@@ -113,15 +156,15 @@ def compute_mood_distribution(mood_rows: Sequence[tuple[str, str]]) -> MoodDistr
     }
     for mood_type, tag_value in mood_rows:
         counter = counter_map.get(mood_type)
-        if counter is None:
+        if not counter:
             continue
         try:
             moods = json.loads(tag_value)
             if isinstance(moods, list):
                 for mood in moods:
                     counter[str(mood).strip()] += 1
-        except json.JSONDecodeError as e:
-            logger.debug("[analytics] Skipping malformed mood distribution JSON: %s (value=%r)", e, tag_value[:80])
+        except json.JSONDecodeError:
+            pass
     all_moods: Counter = Counter()
     all_moods.update(mood_strict_counts)
     all_moods.update(mood_regular_counts)
@@ -135,7 +178,15 @@ def compute_mood_distribution(mood_rows: Sequence[tuple[str, str]]) -> MoodDistr
 
 
 def compute_artist_tag_profile(params: ComputeArtistTagProfileParams) -> ArtistTagProfile:
-    """Return an artist's tag profile: top tags, moods, and average tags per file."""
+    """Compute tag profile for an artist from raw tag data.
+
+    Args:
+        params: Parameters containing artist info, namespace, and tag data
+
+    Returns:
+        ArtistTagProfile with artist info, top tags, and mood statistics
+
+    """
     logger.info("[analytics] Computing tag profile for artist: %s", params.artist)
     if params.file_count == 0:
         return ArtistTagProfile(artist=params.artist, file_count=0, top_tags=[], moods=[], avg_tags_per_file=0.0)
@@ -158,11 +209,9 @@ def compute_artist_tag_profile(params: ComputeArtistTagProfileParams) -> ArtistT
                         numeric_value = float(tag_value)
                         tag_values[tag_name].append(numeric_value)
                     except (ValueError, TypeError):
-                        pass  # Tag value is non-numeric (e.g. a string label); skip for numeric aggregation
-        except json.JSONDecodeError as e:
-            logger.debug(
-                "[analytics] Skipping malformed artist tag JSON for %r: %s (value=%r)", tag_name, e, tag_value[:80]
-            )
+                        pass
+        except json.JSONDecodeError:
+            pass
     top_tags = []
     for tag, count in tag_counts.most_common(params.limit):
         values = tag_values.get(tag)
@@ -181,7 +230,17 @@ def compute_artist_tag_profile(params: ComputeArtistTagProfileParams) -> ArtistT
 
 
 def compute_tag_co_occurrence(params: ComputeTagCoOccurrenceParams) -> TagCoOccurrenceData:
-    """Return a tag co-occurrence matrix: ``matrix[j][i]`` = count of files sharing ``x_tags[i]`` and ``y_tags[j]``."""
+    """Compute tag co-occurrence matrix from tag file sets.
+
+    Builds a matrix where matrix[j][i] = count of files having both x_tags[i] and y_tags[j].
+
+    Args:
+        params: Parameters containing X/Y tag specs and file ID mappings
+
+    Returns:
+        TagCoOccurrenceData with X/Y tags and co-occurrence matrix
+
+    """
     logger.info("[analytics] Computing tag co-occurrence matrix: %dx%d", len(params.x_tags), len(params.y_tags))
     matrix: list[list[int]] = []
     for y_tag in params.y_tags:
@@ -197,22 +256,19 @@ def compute_tag_co_occurrence(params: ComputeTagCoOccurrenceParams) -> TagCoOccu
     return TagCoOccurrenceData(x_tags=params.x_tags, y_tags=params.y_tags, matrix=matrix)
 
 
-class _MoodCountItem(TypedDict):
-    """A mood-count pair from mood distribution data."""
-
-    mood: str
-    count: int
-
-
-class _DominantVibeItem(TypedDict):
-    """A dominant-vibe entry with percentage."""
+class DominantVibeResult(TypedDict):
+    """Computed dominant vibe with percentage."""
 
     mood: str
     percentage: float
 
 
-def compute_dominant_vibes(balance: dict[str, list[_MoodCountItem]]) -> list[_DominantVibeItem]:
-    """Return the top 5 dominant mood vibes with percentages from balance data."""
+def compute_dominant_vibes(balance: dict[str, list[dict[str, Any]]]) -> list[DominantVibeResult]:
+    """Compute dominant mood vibes from balance data.
+
+    Aggregates mood counts across all tiers, sorts by frequency,
+    and returns the top 5 moods with percentages.
+    """
     mood_totals: dict[str, int] = {}
     for tier_moods in balance.values():
         for item in tier_moods:

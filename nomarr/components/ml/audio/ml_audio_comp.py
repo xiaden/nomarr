@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import logging
-import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -29,11 +28,15 @@ class AudioLoadShutdownError(Exception):
 
 # Module-level stop event for shutdown-aware audio loading.
 # Set by the worker at startup via set_stop_event().
-_stop_event: threading.Event | None = None
+_stop_event: Any = None
 
 
-def set_stop_event(event: threading.Event) -> None:
-    """Register a stop event for shutdown-aware audio loading."""
+def set_stop_event(event: Any) -> None:
+    """Register a stop event for shutdown-aware audio loading.
+
+    The event must support `.is_set() -> bool`. Typically a
+    multiprocessing.Event shared with the worker's parent process.
+    """
     global _stop_event
     _stop_event = event
 

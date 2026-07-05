@@ -7,7 +7,7 @@ Workers query the songs collection directly instead of polling a queue.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_file_state_comp import discover_next_untagged_file
 from nomarr.helpers.time_helper import now_ms
@@ -26,18 +26,26 @@ def _claim_key(file_id: str) -> str:
     return f"claim_{file_key}"
 
 
-def _get_all_claims(db: Database) -> list[dict[str, object]]:
+def _get_all_claims(db: Database) -> list[dict[str, Any]]:
     """Return all worker claims via the application facade."""
-    claims = db.app.list_claims()
-    if not isinstance(claims, list):
-        return []
-    return [c for c in claims if isinstance(c, dict)]
+    return cast("list[dict[str, Any]]", db.app.list_claims())
 
 
 def discover_next_file(
     db: Database,
 ) -> str | None:
-    """Discover next untagged file using file_states graph traversal, excluding too_short and claimed files."""
+    """Discover next untagged file.
+
+    Uses file_states graph traversal to find files in the not_tagged state,
+    excluding too_short and already-claimed files.
+
+    Args:
+        db: Database instance
+
+    Returns:
+        File _id or None if no work available
+
+    """
     file_doc = discover_next_untagged_file(db, exclude_claimed=True)
     if file_doc:
         return str(file_doc["_id"])
@@ -45,7 +53,20 @@ def discover_next_file(
 
 
 def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
-    """Attempt to claim file for processing. Uses deterministic _key to enforce uniqueness."""
+    """Attempt to claim file for processing.
+
+    Uses deterministic _key based on file._key to enforce uniqueness.
+    ArangoDB document key uniqueness prevents duplicate claims.
+
+    Args:
+        db: Database instance
+        file_id: Full file document _id (e.g., ``song/12345``)
+        worker_id: Worker identifier (e.g., "worker:tag:0")
+
+    Returns:
+        True if claim successful, False if already claimed
+
+    """
     payload = {
         "_key": _claim_key(file_id),
         "file_id": file_id,
@@ -60,17 +81,37 @@ def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
 
 
 def release_claim(db: Database, file_id: str) -> None:
-    """Release claim on file after processing or error."""
+    """Release claim on file (after processing or error).
+
+    Args:
+        db: Database instance
+        file_id: Full file document _id
+
+    """
     db.app.remove_claim(file_id)
 
 
 def try_insert_or_steal_claim(
     db: Database,
-    payload: dict[str, object],
+    payload: dict[str, Any],
     now: int,
     lease_ms: int,
 ) -> bool:
-    """Try to insert a claim, stealing it if the existing one is expired."""
+    """Try to insert a claim, stealing it if the existing one is expired.
+
+    Args:
+        db: Database handle.
+        payload: Full claim document payload including ``_key``, ``file_id``,
+            ``worker_id``, and ``claimed_at``.
+        now: Current timestamp in milliseconds.
+        lease_ms: Claim lease duration in ms; existing claims older than this
+            threshold are considered expired and may be stolen.
+
+    Returns:
+        True if the claim was successfully inserted (new or stolen);
+        False if an active un-expired claim already exists.
+
+    """
     try:
         db.app.add_claim(payload)
     except DuplicateKeyError:
@@ -86,11 +127,7 @@ def try_insert_or_steal_claim(
                 return False
             return True
 
-        claimed_at_raw = existing_claim.get("claimed_at", 0)
-        if isinstance(claimed_at_raw, (int, float)):
-            claimed_at = int(claimed_at_raw)
-        else:
-            claimed_at = int(str(claimed_at_raw))
+        claimed_at = int(existing_claim.get("claimed_at", 0))
         if claimed_at > now - lease_ms:
             return False
 
@@ -104,16 +141,27 @@ def try_insert_or_steal_claim(
 
 
 def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
-    """Remove claims from inactive workers and completed/ineligible files."""
+    """Remove claims from inactive workers and completed/ineligible files.
+
+    Cleanup runs all three cleanup operations:
+    1. Claims from workers with stale heartbeats
+    2. Claims for files that are already tagged
+    3. Claims for files that no longer need processing
+
+    Args:
+        db: Database instance
+        heartbeat_timeout_ms: How long before a worker heartbeat is stale
+
+    Returns:
+        Number of claims removed
+
+    """
     all_claims = _get_all_claims(db)
     if not all_claims:
         return 0
 
     heartbeat_cutoff = now_ms().value - heartbeat_timeout_ms
-    health_raw = db.app.list_worker_health()
-    if not isinstance(health_raw, list):
-        return 0
-    health_docs = [h for h in health_raw if isinstance(h, dict)]
+    health_docs = cast("list[dict[str, Any]]", db.app.list_worker_health())
     active_workers = {
         str(doc.get("component_id")) for doc in health_docs if int(doc.get("last_heartbeat", 0)) > heartbeat_cutoff
     }
@@ -130,20 +178,14 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
     stale_file_ids: set[str] = set()
     candidate_file_ids = sorted({str(claim["file_id"]) for claim in active_ml_claims})
     if candidate_file_ids:
-        file_raw = db.library.list_files_by_ids(candidate_file_ids)
-        if not isinstance(file_raw, list):
-            return 0
-        file_docs = [f for f in file_raw if isinstance(f, dict)]
+        file_docs = cast("list[dict[str, Any]]", db.library.list_files_by_ids(candidate_file_ids))
         existing_file_ids = {str(doc["_id"]) for doc in file_docs if "_id" in doc}
 
-        tagged_raw = db.app.list_file_docs_in_state(_TAGGED_STATE_ID)
-        tagged_file_ids: set[str] = set()
-        if isinstance(tagged_raw, list):
-            tagged_file_ids = {
-                str(f["_id"])
-                for f in tagged_raw
-                if isinstance(f, dict) and "_id" in f and str(f["_id"]) in candidate_file_ids
-            }
+        tagged_file_ids = {
+            str(file_doc["_id"])
+            for file_doc in cast("list[dict[str, Any]]", db.app.list_file_docs_in_state(_TAGGED_STATE_ID))
+            if "_id" in file_doc and str(file_doc["_id"]) in candidate_file_ids
+        }
         stale_file_ids = {
             file_id for file_id in candidate_file_ids if file_id not in existing_file_ids or file_id in tagged_file_ids
         }
@@ -160,7 +202,23 @@ def discover_and_claim_file(
     db: Database,
     worker_id: str,
 ) -> str | None:
-    """Discover and atomically claim the next available file for processing."""
+    """Discover and claim the next available file for processing.
+
+    Combined operation that:
+    1. Discovers next untagged file (excludes too_short and claimed)
+    2. Attempts to claim it
+    3. Returns file_id if successful, None otherwise
+
+    On claim conflict, returns None - caller should retry immediately.
+
+    Args:
+        db: Database instance
+        worker_id: Worker identifier (e.g., "worker:tag:0")
+
+    Returns:
+        Claimed file _id or None if no work available or claim failed
+
+    """
     file_id = discover_next_file(db)
     if not file_id:
         logger.debug("[Discovery] No files found needing processing (worker=%s)", worker_id)
@@ -169,21 +227,42 @@ def discover_and_claim_file(
     if claim_file(db, file_id, worker_id):
         logger.debug("[Discovery] Claimed %s for %s", file_id, worker_id)
         return file_id
+    # Another worker claimed this file - caller should retry
     logger.debug("[Discovery] File %s already claimed, retrying discovery", file_id)
     return None
 
 
 def get_active_claim_count(db: Database) -> int:
-    """Get count of active claims."""
+    """Get count of active claims.
+
+    Args:
+        db: Database instance
+
+    Returns:
+        Number of active claim documents
+
+    """
     return db.app.count_claims()
 
 
 def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
-    """Release all claims held by a specific worker (used on worker death/crash)."""
-    claims_raw = db.app.list_claims()
-    claims: list[dict[str, object]] = []
-    if isinstance(claims_raw, list):
-        claims = [c for c in claims_raw if isinstance(c, dict) and str(c.get("worker_id")) == worker_id]
+    """Release all claims held by a specific worker.
+
+    Used when a worker dies/crashes to free its claimed files for rediscovery.
+
+    Args:
+        db: Database instance
+        worker_id: Worker identifier (e.g., "worker:tag:0")
+
+    Returns:
+        List of file_ids that were released
+
+    """
+    claims = [
+        claim
+        for claim in cast("list[dict[str, Any]]", db.app.list_claims())
+        if str(claim.get("worker_id")) == worker_id
+    ]
     if not claims:
         return []
 

@@ -17,34 +17,24 @@ Typical call sequence (executed in ml_onnx_cache or ml_onnx_base):
 
 from __future__ import annotations
 
-import hashlib
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any, TypedDict
 
 from nomarr.components.platform import resource_monitor_comp as _resource_monitor
-from nomarr.helpers.time_helper import now_ms
-
-if TYPE_CHECKING:
-    from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
-_RESERVE_MB = 256.0
 
+class FleetVramState(TypedDict):
+    """Snapshot of fleet VRAM promises and GPU telemetry."""
 
-def _promise_key(worker_id: str, model_path: str) -> str:
-    """Compute a stable key for a worker+model VRAM promise."""
-    raw = f"{worker_id}:{model_path}"
-    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+    promises: list[dict[str, Any]]
+    vram: dict[str, Any]
 
-
-def _get_all_promises(db: Database) -> list[dict[str, Any]]:
-    """Return all VRAM promise documents via app-level accessors."""
-    return db.app.list_vram_promises()
 
 
 def register_vram_promise(
-    db: Database,
+    db: Any,
     worker_id: str,
     pid: int,
     model_path: str,
@@ -58,7 +48,7 @@ def register_vram_promise(
     headroom — the caller should fall back to CPU.
 
     Args:
-        db:          Application database.
+        db:          Application database (must have ``vram_promises`` attribute).
         worker_id:   Worker identifier (e.g., ``“nomarr-tag:0”``).
         pid:         Worker OS PID.
         model_path:  Absolute path to the ONNX model file.
@@ -84,38 +74,14 @@ def register_vram_promise(
     total_mb: float = float(vram["total_mb"])
     used_mb: float = float(vram["used_mb"])
 
-    promises = _get_all_promises(db)
-    sum_promised = sum(float(promise.get("promised_mb", 0.0)) for promise in promises)
-    free_mb = total_mb - used_mb
-    headroom = free_mb - sum_promised - _RESERVE_MB
-    if headroom < promised_mb:
-        logger.debug(
-            "[vram_coordinator] Rejected promise: worker=%s model=%s promised=%.0f MB "
-            "(total=%.0f used=%.0f) — insufficient headroom",
-            worker_id,
-            model_path,
-            promised_mb,
-            total_mb,
-            used_mb,
-        )
-        return False
-
-    promise_id = f"vram_promises/{_promise_key(worker_id, model_path)}"
-    db.app.remove_vram_promise(promise_id)
-
-    db.app.add_vram_promise(
-        {
-            "_key": _promise_key(worker_id, model_path),
-            "worker_id": worker_id,
-            "pid": pid,
-            "model_path": model_path,
-            "promised_mb": promised_mb,
-            "total_mb": total_mb,
-            "used_mb": used_mb,
-            "last_seen_ms": now_ms().value,
-        }
+    registered: bool = db.vram_promises.try_register(  # type: ignore[union-attr]
+        worker_id=worker_id,
+        pid=pid,
+        model_path=model_path,
+        promised_mb=promised_mb,
+        total_mb=total_mb,
+        used_mb=used_mb,
     )
-    registered = True
 
     if registered:
         logger.debug(
@@ -141,15 +107,22 @@ def register_vram_promise(
 
 
 def release_vram_promise(
-    db: Database,
+    db: Any,
     worker_id: str,
     model_path: str,
 ) -> None:
-    """Release the VRAM promise for a worker+model pair.
+    """Release the VRAM promise for a specific worker+model pair.
 
-    Called from ``BaseONNXModel.unload()`` when a GPU model is evicted.
+    Should be called from ``BaseONNXModel.unload()`` when a GPU-resident
+    model is evicted. Safe to call even if the promise no longer exists.
+
+    Args:
+        db:          Application database.
+        worker_id:   Worker identifier.
+        model_path:  Absolute path to the ONNX model file.
+
     """
-    db.app.remove_vram_promise(f"vram_promises/{_promise_key(worker_id, model_path)}")
+    db.vram_promises.release(worker_id=worker_id, model_path=model_path)  # type: ignore[union-attr]
     logger.debug(
         "[vram_coordinator] Released promise: worker=%s model=%s",
         worker_id,
@@ -158,35 +131,46 @@ def release_vram_promise(
 
 
 def get_fleet_vram_state(
-    db: Database,
-) -> dict[str, Any]:
-    """Return a snapshot of current fleet VRAM promises and live GPU telemetry."""
-    promises = _get_all_promises(db)
+    db: Any,
+) -> FleetVramState:
+    """Return a snapshot of current fleet VRAM promises and live GPU telemetry.
+
+    Intended for cache-ready log messages and health/diagnostic endpoints.
+
+    Args:
+        db: Application database.
+
+    Returns:
+        FleetVramState with ``promises`` list and ``vram`` telemetry snapshot.
+
+    """
+    promises: list[dict[str, Any]] = db.vram_promises.get_all()  # type: ignore[union-attr]
     vram = _resource_monitor.get_vram_usage_mb()
-    return {"promises": promises, "vram": vram}
+    return FleetVramState(promises=promises, vram=vram)
 
 
 def release_worker_promises(
-    db: Database,
+    db: Any,
     worker_id: str,
 ) -> int:
     """Release all VRAM promises held by a specific worker.
 
-    Called when a worker is declared dead or at graceful shutdown.
+    Called by the worker owner (``WorkerSystemService``) when a worker is
+    declared dead or permanently failed, and at graceful shutdown.  Also
+    called by the worker itself at startup to clear stale promises from a
+    previous crash of the same ``worker_id``.
+
+    Safe to call even if no promises exist for the worker (no-op).
+
+    Args:
+        db:        Application database.
+        worker_id: Worker identifier (e.g., ``"nomarr-tag:0"``).
+
+    Returns:
+        Number of promise documents removed.
+
     """
-    removed = 0
-    for promise in _get_all_promises(db):
-        if promise.get("worker_id") != worker_id:
-            continue
-        promise_id = promise.get("_id")
-        promise_key = promise.get("_key")
-        if isinstance(promise_id, str) and promise_id:
-            db.app.remove_vram_promise(promise_id)
-            removed += 1
-            continue
-        if isinstance(promise_key, str) and promise_key:
-            db.app.remove_vram_promise(f"vram_promises/{promise_key}")
-            removed += 1
+    removed: int = db.vram_promises.release_all_for_worker(worker_id=worker_id)  # type: ignore[union-attr]
     if removed:
         logger.info(
             "[vram_coordinator] Released %d promise(s) for worker %s",

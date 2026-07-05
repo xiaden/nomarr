@@ -1,4 +1,17 @@
-"""GPU/CPU resource monitoring with TTL-cached VRAM/RAM telemetry and capability gating."""
+"""Resource monitoring component for GPU/CPU adaptive resource management.
+
+Provides GPU capability gating and resource telemetry with TTL caching.
+This is a leaf component (no upward imports, no DB access).
+
+Architecture:
+- GPU Capability: Checked once at startup via nvidia-smi, cached forever
+- GPU Telemetry: VRAM usage via nvidia-smi with TTL cache (not called until capability confirmed)
+- RAM Telemetry: Process RSS via psutil with TTL cache
+
+Per GPU_REFACTOR_PLAN.md Section 5:
+- A container is GPU-capable iff nvidia-smi succeeds inside the container
+- This check is performed once at startup and cached
+"""
 
 from __future__ import annotations
 
@@ -16,19 +29,19 @@ from nomarr.helpers.time_helper import internal_ms
 logger = logging.getLogger(__name__)
 
 # Probe configuration
-NVIDIA_SMI_TIMEOUT_S = 5.0
-TELEMETRY_CACHE_TTL_MS = 1000
+NVIDIA_SMI_TIMEOUT_S = 5.0  # Hard timeout for nvidia-smi subprocess
+TELEMETRY_CACHE_TTL_MS = 1000  # TTL for VRAM/RAM readings in milliseconds
 
-class _VramTelemetry(TypedDict):
-    """VRAM telemetry snapshot from nvidia-smi."""
+class VramTelemetry(TypedDict):
+    """VRAM usage snapshot from nvidia-smi."""
 
     used_mb: int
     total_mb: int
     error: str | None
 
 
-class _RamTelemetry(TypedDict):
-    """RAM telemetry snapshot from psutil."""
+class RamTelemetry(TypedDict):
+    """RAM usage snapshot from psutil/cgroup."""
 
     used_mb: int
     available_mb: int
@@ -36,9 +49,9 @@ class _RamTelemetry(TypedDict):
 
 
 # Cached telemetry state
-_vram_cache: _VramTelemetry | None = None
+_vram_cache: VramTelemetry | None = None
 _vram_cache_ts: int = 0
-_ram_cache: _RamTelemetry | None = None
+_ram_cache: RamTelemetry | None = None
 _ram_cache_ts: int = 0
 
 # GPU capability cache (checked once at startup, cached forever)
@@ -66,15 +79,31 @@ class ResourceStatus:
 
 
 def check_nvidia_gpu_capability(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> bool:
-    """Check if NVIDIA GPU is available in-container. Idempotent — repeated calls return cached result."""
+    """Check if NVIDIA GPU is available in-container (capability signal, not telemetry).
+
+    Per GPU_REFACTOR_PLAN.md Section 5:
+    - A container is GPU-capable iff nvidia-smi succeeds inside the container
+    - This check is performed once at startup and cached
+
+    This function is idempotent - repeated calls return cached result.
+
+    Args:
+        timeout: Maximum seconds to wait for nvidia-smi
+
+    Returns:
+        True if GPU is available (nvidia-smi succeeded), False otherwise
+
+    """
     global _gpu_capable_cache
 
+    # Return cached result if already checked
     if _gpu_capable_cache is not None:
         return _gpu_capable_cache
 
     probe_start = internal_ms()
 
     try:
+        # Run nvidia-smi with minimal output and hard timeout
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
             capture_output=True,
@@ -85,6 +114,7 @@ def check_nvidia_gpu_capability(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> bool:
 
         duration_ms = internal_ms().value - probe_start.value
 
+        # Success if nvidia-smi ran and returned GPU name(s)
         if result.stdout.strip():
             logger.debug(
                 "[resource_monitor] NVIDIA GPU detected (%s) - GPU tiers enabled (%dms)",
@@ -122,26 +152,30 @@ def check_nvidia_gpu_capability(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> bool:
         _gpu_capable_cache = False
         return False
 
-    except (OSError, RuntimeError) as e:
+    except Exception as e:
         logger.warning(
             "[resource_monitor] Unexpected error checking GPU capability (%s) - forcing CPU-only",
             type(e).__name__,
-            exc_info=True,
         )
         _gpu_capable_cache = False
         return False
 
 
-def get_vram_usage_mb(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> _VramTelemetry:
-    """Query VRAM usage via nvidia-smi. Only call after confirming GPU capability."""
+def get_vram_usage_mb(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> VramTelemetry:
+    """Query VRAM usage via nvidia-smi (GPU telemetry, cached with TTL).
+
+    Only call this after confirming GPU capability via check_nvidia_gpu_capability().
+    """
     global _vram_cache, _vram_cache_ts
 
     now = internal_ms().value
 
+    # Return cached result if within TTL
     if _vram_cache is not None and (now - _vram_cache_ts) < TELEMETRY_CACHE_TTL_MS:
         return _vram_cache
 
     try:
+        # Query VRAM usage for all GPUs
         result = subprocess.run(
             [
                 "nvidia-smi",
@@ -154,6 +188,7 @@ def get_vram_usage_mb(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> _VramTelemetry:
             check=True,
         )
 
+        # Parse output: "1234, 8192" per line (used, total in MiB)
         lines = result.stdout.strip().split("\n")
         total_used_mb = 0
         total_capacity_mb = 0
@@ -191,7 +226,16 @@ def get_vram_usage_mb(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> _VramTelemetry:
 
 
 def get_vram_usage_for_pid_mb(pid: int, timeout: float = NVIDIA_SMI_TIMEOUT_S) -> int:
-    """Query VRAM usage for a specific process via nvidia-smi."""
+    """Query VRAM usage for a specific process via nvidia-smi.
+
+    Args:
+        pid: Process ID to query
+        timeout: Maximum seconds to wait for nvidia-smi
+
+    Returns:
+        VRAM used by the process in MB, or 0 if not found/error
+
+    """
     try:
         result = subprocess.run(
             [
@@ -205,6 +249,7 @@ def get_vram_usage_for_pid_mb(pid: int, timeout: float = NVIDIA_SMI_TIMEOUT_S) -
             check=True,
         )
 
+        # Parse output: "1234, 8192" per line (pid, used_memory in MiB)
         for line in result.stdout.strip().split("\n"):
             if "," in line:
                 parts = line.split(",")
@@ -218,21 +263,25 @@ def get_vram_usage_for_pid_mb(pid: int, timeout: float = NVIDIA_SMI_TIMEOUT_S) -
 
         return 0  # Process not found in GPU compute apps
 
-    except (subprocess.SubprocessError, ValueError, OSError):
-        logger.debug("Failed to query VRAM usage via nvidia-smi", exc_info=True)
+    except Exception:
         return 0
 
 
-def get_ram_usage_mb(detection_mode: str = "auto") -> _RamTelemetry:
-    """Query RAM usage (process RSS) via psutil with TTL caching."""
+def get_ram_usage_mb(detection_mode: str = "auto") -> RamTelemetry:
+    """Query RAM usage (process RSS) via psutil with TTL caching.
+
+    detection_mode: "auto" (cgroup then host), "cgroup", or "host".
+    """
     global _ram_cache, _ram_cache_ts
 
     now = internal_ms().value
 
+    # Return cached result if within TTL
     if _ram_cache is not None and (now - _ram_cache_ts) < TELEMETRY_CACHE_TTL_MS:
         return _ram_cache
 
     try:
+        # Get current process RSS
         process = psutil.Process(os.getpid())
         rss_bytes = process.memory_info().rss
         rss_mb = rss_bytes // (1024 * 1024)
@@ -244,6 +293,7 @@ def get_ram_usage_mb(detection_mode: str = "auto") -> _RamTelemetry:
             mem = psutil.virtual_memory()
             available_mb = mem.available // (1024 * 1024)
         else:  # auto
+            # Try cgroup first (Docker), fall back to host
             cgroup_mb = _get_cgroup_available_mb()
             if cgroup_mb > 0:
                 available_mb = cgroup_mb
@@ -265,15 +315,21 @@ def get_ram_usage_mb(detection_mode: str = "auto") -> _RamTelemetry:
         _ram_cache_ts = now
         return _ram_cache
 
-    except (OSError, RuntimeError) as e:
-        logger.warning("[resource_monitor] RAM query failed: %s", e, exc_info=True)
+    except Exception as e:
+        logger.warning("[resource_monitor] RAM query failed: %s", e)
         _ram_cache = {"used_mb": 0, "available_mb": 0, "error": str(e)}
         _ram_cache_ts = now
         return _ram_cache
 
 
 def _get_cgroup_available_mb() -> int:
-    """Read available memory from cgroup (Docker containers)."""
+    """Read available memory from cgroup (Docker containers).
+
+    Returns:
+        Available memory in MB, or 0 if not in a cgroup
+
+    """
+    # Try cgroup v2 first
     cgroup_v2_path = "/sys/fs/cgroup/memory.max"
     cgroup_v2_current = "/sys/fs/cgroup/memory.current"
 
@@ -290,6 +346,7 @@ def _get_cgroup_available_mb() -> int:
             available_bytes = max_bytes - current_bytes
             return max(0, available_bytes // (1024 * 1024))
 
+    # Try cgroup v1
     cgroup_v1_limit = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
     cgroup_v1_usage = "/sys/fs/cgroup/memory/memory.usage_in_bytes"
 
@@ -317,22 +374,42 @@ def check_resource_headroom(
     ram_estimate_mb: int,
     ram_detection_mode: str = "auto",
 ) -> ResourceStatus:
-    """Check if there's headroom for ML work within configured budgets."""
+    """Check if there's headroom for ML work within configured budgets.
+
+    Per GPU_REFACTOR_PLAN.md Section 6:
+    - Budgets are absolute caps, expressed in MB
+    - Budget semantics: used_mb + estimated_mb <= budget_mb
+
+    Args:
+        vram_budget_mb: Maximum VRAM ML may consume (0 = no GPU budget)
+        ram_budget_mb: Maximum RAM ML may consume
+        vram_estimate_mb: Estimated VRAM for next operation
+        ram_estimate_mb: Estimated RAM for next operation
+        ram_detection_mode: RAM detection mode (auto/cgroup/host)
+
+    Returns:
+        ResourceStatus with headroom assessment
+
+    """
     gpu_capable = check_nvidia_gpu_capability()
 
+    # Get current VRAM usage (only if GPU capable and budget > 0)
     vram_used_mb = 0
     vram_ok = False
 
     if gpu_capable and vram_budget_mb > 0:
         vram_info = get_vram_usage_mb()
         vram_used_mb = vram_info["used_mb"]
+        # Check if we have headroom: used + estimate <= budget
         vram_ok = (vram_used_mb + vram_estimate_mb) <= vram_budget_mb
     elif vram_budget_mb == 0:
         # No VRAM budget = CPU-only mode, VRAM check passes trivially
         vram_ok = True
 
+    # Get current RAM usage
     ram_info = get_ram_usage_mb(ram_detection_mode)
     ram_used_mb = ram_info["used_mb"]
+    # Check if we have headroom: used + estimate <= budget
     ram_ok = (ram_used_mb + ram_estimate_mb) <= ram_budget_mb
 
     return ResourceStatus(

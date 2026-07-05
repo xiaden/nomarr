@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import logging
 from collections.abc import Mapping
 from pathlib import Path as PathLib
 from typing import TYPE_CHECKING
@@ -59,8 +58,10 @@ class _MP3Writer:
         for key, frame in id3.items():
             if not isinstance(frame, TXXX):
                 continue
-            desc_val = getattr(frame, "desc", "")
-            if isinstance(desc_val, str) and desc_val.startswith(f"{self.ns_prefix}:"):
+            desc = getattr(frame, "desc", "")
+            if not isinstance(desc, str):
+                continue
+            if desc.startswith(f"{self.ns_prefix}:"):
                 to_delete.append(key)
         for key_to_delete in to_delete:
             with contextlib.suppress(Exception):
@@ -134,17 +135,16 @@ class _MP4Writer:
             self._clear_ns(mp4)
 
             if not isinstance(mp4.tags, dict):
-                logging.getLogger(__name__).warning("MP4 tags is not a dict for %s", path_str)
                 return
-
+            mp4_tags: dict[str, list[MP4FreeForm]] = mp4.tags  # type: ignore[assignment]
             for tag_key, tag_value in (tags or {}).items():
                 ns_key = _ns_key(tag_key, self.ns_prefix)
                 atom_key = self._ff_key(ns_key)
                 if isinstance(tag_value, list) and all(isinstance(x, str) for x in tag_value):
-                    mp4.tags[atom_key] = [MP4FreeForm(x.encode("utf-8")) for x in tag_value]
+                    mp4_tags[atom_key] = [MP4FreeForm(str(x).encode("utf-8")) for x in tag_value]
                 else:
                     payload = _to_text_value(tag_value).encode("utf-8")
-                    mp4.tags[atom_key] = [MP4FreeForm(payload)]
+                    mp4_tags[atom_key] = [MP4FreeForm(payload)]
 
             mp4.save()
         except MutagenError as e:
@@ -201,17 +201,16 @@ class _VorbisWriter:
             self._clear_ns(vorbis_file)
 
             if not isinstance(vorbis_file.tags, dict):
-                logging.getLogger(__name__).warning("Vorbis tags is not a dict for %s", path_str)
                 return
-
+            vorbis_tags: dict[str, list[str]] = vorbis_file.tags  # type: ignore[assignment]
             for tag_key, tag_value in (tags or {}).items():
                 ns_key = _ns_key(tag_key, self.ns_prefix)
                 vorbis_key = self._vorbis_key(ns_key)
 
                 if isinstance(tag_value, list) and all(isinstance(x, str) for x in tag_value):
-                    vorbis_file.tags[vorbis_key] = tag_value
+                    vorbis_tags[vorbis_key] = [str(x) for x in tag_value]
                 else:
-                    vorbis_file.tags[vorbis_key] = [_to_text_value(tag_value)]
+                    vorbis_tags[vorbis_key] = [_to_text_value(tag_value)]
 
             vorbis_file.save()
         except MutagenError as e:

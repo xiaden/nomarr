@@ -88,7 +88,7 @@ def _init_cuda_context() -> None:
         sess.run(None, {"X": dummy})
         del sess
         logger.debug("[vram_probe] CUDA context warmed")
-    except Exception:  # Broad catch: ONNX Runtime may raise unpredictable low-level CUDA driver errors
+    except Exception:
         logger.warning("[vram_probe] CUDA context warming failed", exc_info=True)
 
 
@@ -137,7 +137,7 @@ def _probe_single_model(
     try:
         try:
             model.load("gpu")
-        except Exception:  # Broad catch: ONNX Runtime may raise unpredictable low-level CUDA driver errors
+        except Exception:
             logger.warning("[vram_probe] Failed to load %s on GPU", model._path, exc_info=True)
             return None
 
@@ -168,7 +168,7 @@ def _probe_single_model(
                         "[vram_probe] Head %s has no input_dim after load — skipping run",
                         model._path,
                     )
-        except Exception:  # Broad catch: ONNX Runtime may raise unpredictable low-level CUDA driver errors
+        except Exception:
             logger.warning("[vram_probe] Inference failed for %s", model._path, exc_info=True)
             # Still capture the load-time VRAM even if run failed
 
@@ -197,9 +197,15 @@ def _probe_single_model(
 
 
 def probe_all_models(db: Database, models_dir: str) -> None:
-    """Probe every backbone and head model, storing VRAM measurements in meta.
+    """Probe every backbone and head model and store VRAM measurements in meta.
 
-    Runs sequentially; only one model lives on the GPU at a time.
+    Runs sequentially: only one model is live on the GPU at a time.  Warms the
+    CUDA context before the first real measurement.  Any model that fails to
+    load or produces a negative delta is recorded as ``sys.maxsize``.
+
+    Args:
+        db: Database instance (used to write ``meta`` keys).
+        models_dir: Root directory containing backbone sub-directories.
     """
     backbones = discover_backbone_models(models_dir)
     heads = discover_head_models_no_db(models_dir)
@@ -242,13 +248,24 @@ def probe_all_models(db: Database, models_dir: str) -> None:
 
 
 def has_model_vram_measurements(db: Database) -> bool:
-    """Return True if any per-model VRAM measurements exist."""
+    """Return True if any per-model VRAM measurements exist in meta.
+
+    Args:
+        db: Database instance.
+
+    Returns:
+        True if at least one ``ml_model_vram:*`` key is present.
+    """
     docs = cast("list[dict[str, Any]]", db.app.list_config_options(prefix=_META_PREFIX))
     return bool(docs)
 
 
 def clear_model_vram_measurements(db: Database) -> None:
-    """Delete all per-model VRAM measurements."""
+    """Delete all per-model VRAM measurements from meta.
+
+    Args:
+        db: Database instance.
+    """
     existing_docs = cast("list[dict[str, Any]]", db.app.list_config_options(prefix=_META_PREFIX))
     removed = 0
     for doc in existing_docs:
