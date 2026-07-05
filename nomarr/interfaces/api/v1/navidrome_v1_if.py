@@ -24,11 +24,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["navidrome"], prefix="/v1/navidrome")
 
 
-# ------------------------------------------------------------------
-# Request / Response models
-# ------------------------------------------------------------------
-
-
 class SimilarTracksRequest(BaseModel):
     """Request body for similar tracks endpoint."""
 
@@ -61,11 +56,6 @@ class SimilarTracksResponse(BaseModel):
     """Response for similar tracks endpoint."""
 
     songs: list[SongDescriptor]
-
-
-# ------------------------------------------------------------------
-# Endpoints
-# ------------------------------------------------------------------
 
 
 @router.post("/similar-track", dependencies=[Depends(verify_key)])
@@ -123,11 +113,6 @@ async def navidrome_similar_tracks(
     )
 
 
-# ------------------------------------------------------------------
-# Playlist generation models
-# ------------------------------------------------------------------
-
-
 class TrackPlayInput(BaseModel):
     """Play history entry provided by the Navidrome plugin.
 
@@ -167,11 +152,6 @@ class GeneratePlaylistsResponse(BaseModel):
     status: str = "ok"
     message: str = ""
     playlists: list[PlaylistResultResponse]
-
-
-# ------------------------------------------------------------------
-# Playlist generation endpoint
-# ------------------------------------------------------------------
 
 
 @router.post("/playlist/generate", dependencies=[Depends(verify_key)])

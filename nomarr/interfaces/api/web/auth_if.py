@@ -35,9 +35,7 @@ class LogoutResponse(BaseModel):
 
 @router.post("/login", response_model=LoginResponse)
 async def login(request: LoginRequest):
-    """Authenticate with admin password and receive a session token.
-    The session token should be used for all subsequent /api/web/* requests.
-    """
+    """Authenticate with admin password and receive a session token."""
     try:
         password_hash = get_admin_password_hash()
     except RuntimeError as e:
