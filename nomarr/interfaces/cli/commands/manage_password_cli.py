@@ -1,11 +1,4 @@
-"""Command: manage_password — Manage admin password.
-
-Architecture:
-- Uses CLI bootstrap service to get KeyManagementService instance
-- Does NOT depend on running Application (separate process)
-- Does NOT access Database or persistence internals directly
-- Calls service methods for all password operations
-"""
+"""Manage admin password for web UI authentication."""
 
 from __future__ import annotations
 
@@ -22,24 +15,7 @@ if TYPE_CHECKING:
 
 
 def cmd_manage_password(args: argparse.Namespace) -> int:
-    """Manage admin password for web UI authentication.
-
-    Subcommands:
-    - show: Display current password hash
-    - verify: Test if a password is correct
-    - reset: Change the password
-
-    Args:
-        args: Parsed arguments
-
-    Returns:
-        Exit code (0 = success)
-
-    Note:
-        This command runs in a separate process from the server and uses
-        CLI bootstrap to get a standalone KeyManagementService instance.
-
-    """
+    """Manage admin password for web UI authentication (show, verify, reset)."""
     # Get standalone service instance (no running Application required)
     service = get_keys_service()
 
