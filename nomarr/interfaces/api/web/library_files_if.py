@@ -258,7 +258,7 @@ async def retry_errored_files(
     file_ids = [decode_path_id(fid) for fid in request.file_ids] if request and request.file_ids else None
     try:
         result = library_service.retry_errored_files(library_id=library_id, file_ids=file_ids)
-        return RetryErroredResponse(retried=result["retried"])
+        return RetryErroredResponse(**result)
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:

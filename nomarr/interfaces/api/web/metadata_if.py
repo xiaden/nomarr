@@ -27,9 +27,6 @@ router = APIRouter(tags=["metadata"], prefix="/metadata")
 EntityCollection = Literal["artist", "album", "label", "genre", "year"]
 
 
-# ----------------------------------------------------------------------
-#  GET /metadata/count
-# ----------------------------------------------------------------------
 @router.get("/count", dependencies=[Depends(verify_session)])
 async def get_entity_counts(
     metadata_service: Annotated[MetadataService, Depends(get_metadata_service)],
@@ -39,9 +36,6 @@ async def get_entity_counts(
     return EntityCountsResponse(**counts)
 
 
-# ----------------------------------------------------------------------
-#  GET /metadata/{collection}
-# ----------------------------------------------------------------------
 @router.get("/{collection}", dependencies=[Depends(verify_session)])
 async def list_entities(
     collection: EntityCollection,
@@ -55,9 +49,6 @@ async def list_entities(
     return EntityListResponse.from_dto(result)
 
 
-# ----------------------------------------------------------------------
-#  GET /metadata/{collection}/{entity_id}
-# ----------------------------------------------------------------------
 @router.get("/{collection}/{entity_id}", dependencies=[Depends(verify_session)])
 async def get_entity(
     collection: EntityCollection,
@@ -76,9 +67,6 @@ async def get_entity(
     return EntityResponse.from_dto(entity)
 
 
-# ----------------------------------------------------------------------
-#  GET /metadata/{collection}/{entity_id}/song
-# ----------------------------------------------------------------------
 @router.get("/{collection}/{entity_id}/song", dependencies=[Depends(verify_session)])
 async def list_songs_for_entity(
     collection: EntityCollection,
@@ -98,9 +86,6 @@ async def list_songs_for_entity(
     return SongListResponse.from_dto(result)
 
 
-# ----------------------------------------------------------------------
-#  GET /metadata/album/{album_id}/artist
-# ----------------------------------------------------------------------
 @router.get("/album/{album_id}/artist", dependencies=[Depends(verify_session)])
 async def list_artists_for_album(
     album_id: str,
@@ -116,9 +101,6 @@ async def list_artists_for_album(
     return [EntityResponse.from_dto(a) for a in artists]
 
 
-# ----------------------------------------------------------------------
-#  GET /metadata/artist/{artist_id}/album
-# ----------------------------------------------------------------------
 @router.get("/artist/{artist_id}/album", dependencies=[Depends(verify_session)])
 async def list_albums_for_artist(
     artist_id: str,
