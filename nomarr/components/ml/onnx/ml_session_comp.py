@@ -33,9 +33,7 @@ with contextlib.suppress(ImportError):
     import onnxruntime as _ort
 
 
-# ---------------------------------------------------------------------------
 # Public API
-# ---------------------------------------------------------------------------
 
 
 def is_available() -> bool:
@@ -133,9 +131,7 @@ def create_session(
     return session
 
 
-# ---------------------------------------------------------------------------
 # Internal helpers
-# ---------------------------------------------------------------------------
 
 
 def _build_cuda_provider_options(vram_limit_bytes: int | None) -> dict[str, object]:
@@ -158,10 +154,7 @@ def _build_cuda_provider_options(vram_limit_bytes: int | None) -> dict[str, obje
     }
 
 
-# ---------------------------------------------------------------------------
 # Batch inference helpers
-# (consolidated from ml_inference_comp — consumed by ml_backbone.py / ml_head.py)
-# ---------------------------------------------------------------------------
 
 _BACKBONE_BATCH_SIZE = 32
 """Number of mel patches per ONNX forward pass for backbone embedding models.

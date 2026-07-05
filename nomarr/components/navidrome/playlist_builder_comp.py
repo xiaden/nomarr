@@ -126,9 +126,7 @@ def _interleave_per_cluster(
     return result
 
 
-# ------------------------------------------------------------------
 # Public builder functions
-# ------------------------------------------------------------------
 
 
 def build_familiar_playlist(

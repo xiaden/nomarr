@@ -13,9 +13,7 @@ if TYPE_CHECKING:
     from nomarr.helpers.dto.ml_dto import SegmentWaveformParams
 
 
-# ----------------------------------------------------------------------
 # Segmentation
-# ----------------------------------------------------------------------
 @dataclass
 class Segments:
     """Holds segmented waveform and boundaries in seconds (start, end)."""
@@ -79,9 +77,7 @@ def segment_waveform(params: SegmentWaveformParams) -> Segments:
     return Segments(waves=waves, bounds=bounds, sr=sr)
 
 
-# ----------------------------------------------------------------------
 # Scoring over segments
-# ----------------------------------------------------------------------
 def score_segments(segments: Segments, predict_fn: Callable[[np.ndarray, int], np.ndarray]) -> np.ndarray:
     """Apply predict_fn to each segment waveform; returns (num_segments, dim) array."""
     outputs: list[np.ndarray] = []
@@ -105,9 +101,7 @@ def score_segments(segments: Segments, predict_fn: Callable[[np.ndarray, int], n
     return np.vstack(padded)
 
 
-# ----------------------------------------------------------------------
 # Pooling
-# ----------------------------------------------------------------------
 def pool_scores(
     scores: np.ndarray,
     mode: str = "mean",
