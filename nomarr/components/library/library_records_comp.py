@@ -35,24 +35,7 @@ def create_library_record(
     file_write_mode: str = "full",
     library_auto_write: bool = False,
 ) -> str:
-    """Insert a library document through the constructor namespace.
-
-    Args:
-        db: Database handle used to insert the library document.
-        name: Human-readable library name.
-        root_path: Absolute root path scanned for this library.
-        is_enabled: Whether the library is enabled for processing; defaults to ``True``.
-        watch_mode: File watching mode; defaults to ``"off"`` and must be one of ``"off"``, ``"event"``, or ``"poll"``.
-        file_write_mode: Tag writeback mode; defaults to ``"full"`` and must be one
-            of ``"none"``, ``"minimal"``, or ``"full"``.
-        library_auto_write: Whether library-level automatic tag writing is enabled; defaults to ``False``.
-
-    Returns:
-        The ``_id`` string of the created library document.
-
-    Raises:
-        ValueError: If ``watch_mode`` or ``file_write_mode`` is not a valid value.
-    """
+    """Insert a library document through the constructor namespace."""
     _validate_watch_mode(watch_mode)
     _validate_file_write_mode(file_write_mode)
 
@@ -131,9 +114,9 @@ def list_watchable_library_records(db: Database) -> list[dict[str, Any]]:
 def update_library_record(
     db: Database,
     library_id: str,
-    **fields: Any,
+    **fields: str | int | float | bool | None,
 ) -> None:
-    """Update a library document by ``_id`` through the constructor namespace."""
+    """Update a library document by _id through the constructor namespace."""
     update_fields = {
         "updated_at": now_ms().value,
         **{key: value for key, value in fields.items() if value is not None},
@@ -153,12 +136,7 @@ def update_library_config_fields(
     set_fields: dict[str, Any] | None = None,
     unset_fields: list[str] | None = None,
 ) -> None:
-    """Update optional library config fields.
-
-    Constructor ``update`` does not expose Arango's ``keepNull: false`` toggle,
-    so clearing an override persists ``null``. Callers should treat missing and
-    ``None`` values equivalently for inheritance.
-    """
+    """Update optional library config fields. None values are treated as missing for inheritance."""
     update_fields: dict[str, Any] = {}
     if set_fields:
         update_fields.update(set_fields)
@@ -202,14 +180,8 @@ def find_library_containing_path(db: Database, file_path: str) -> dict[str, Any]
 def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, Any]]:
     """Find ML-running libraries whose file set is fully tagged.
 
-    Args:
-        db: Database handle used to read pipeline state and tagged file counts.
-        min_files: Unused minimum file-count threshold accepted for interface
-            compatibility; it currently has no effect on the returned results.
-
-    Returns:
-        A list of dictionaries for ML-running libraries with no untagged files,
-        where each dictionary contains ``library_id`` and ``tagged_count``.
+    The min_files parameter is unused (interface compatibility).
+    Returns a list of dicts with library_id and tagged_count.
     """
     del min_files
     library_docs = cast("list[dict[str, Any]]", db.library.list_libraries())

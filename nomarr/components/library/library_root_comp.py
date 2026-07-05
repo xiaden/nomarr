@@ -1,13 +1,4 @@
-"""Library root path validation and security boundary enforcement.
-
-This component handles all path security, normalization, and validation
-for library root paths. It enforces the security boundary (base library_root)
-and ensures library roots do not overlap.
-
-Architecture:
-- Components may import helpers + persistence
-- This component primarily uses helpers (Path, resolve_library_path)
-"""
+"""Library root path validation and security boundary enforcement."""
 
 from __future__ import annotations
 
@@ -23,20 +14,9 @@ if TYPE_CHECKING:
 
 
 def get_base_library_root(library_root_config: str | None) -> Path:
-    """Get the configured base library_root (security boundary).
+    """Return the configured base library root (security boundary).
 
-    This is the top-level directory that all library roots must be nested under.
-    It defines the security boundary for file access.
-
-    Args:
-        library_root_config: Raw library_root value from config
-
-    Returns:
-        Absolute Path to library_root directory
-
-    Raises:
-        ValueError: If library_root not configured or invalid
-
+    This is the top-level directory all library roots must be nested under.
     """
     if not library_root_config:
         msg = "Library root not configured"
@@ -54,7 +34,7 @@ def get_base_library_root(library_root_config: str | None) -> Path:
 
         return base
 
-    except Exception as e:
+    except (OSError, ValueError) as e:
         msg = f"Invalid base library root: {e}"
         raise ValueError(msg) from e
 
@@ -62,21 +42,8 @@ def get_base_library_root(library_root_config: str | None) -> Path:
 def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str:
     """Normalize and validate a user-provided library root path.
 
-    This ensures the library root:
-    - Exists and is a directory
-    - Is strictly within the configured base library_path
-    - Is canonicalized to an absolute path
-
-    Args:
-        base_library_root: Base library root from config (security boundary)
-        raw_root: User-provided library root (absolute or relative)
-
-    Returns:
-        Canonical absolute path string for storage in database
-
-    Raises:
-        ValueError: If path is invalid or outside base library root
-
+    Ensures the path exists, is a directory, and is strictly within the
+    configured base library root.
     """
     # Convert raw_root to string for processing
     raw_root_str = str(raw_root)
@@ -118,18 +85,7 @@ def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str
 def ensure_no_overlapping_library_root(db: Database, candidate_root: str, *, ignore_id: str | None = None) -> None:
     """Ensure a candidate library root does not overlap with existing libraries.
 
-    This enforces the business rule that all library roots must be disjoint -
-    no library may be nested inside another, and no two libraries may share
-    overlapping directory trees.
-
-    Args:
-        db: Database instance for querying existing libraries
-        candidate_root: Absolute path to validate
-        ignore_id: Optional library ID to ignore (for updates)
-
-    Raises:
-        ValueError: If candidate_root overlaps with any existing library root
-
+    Library roots must be disjoint — no nesting allowed.
     """
     # Resolve candidate to canonical absolute path
     candidate_path = Path(candidate_root).resolve()
@@ -189,24 +145,9 @@ def resolve_path_within_library(
 ) -> Path:
     """Resolve a user-provided path within a library root.
 
-    This is a wrapper around helpers.files.resolve_library_path
-    for validating paths within a library (e.g., scanning subdirectories, loading specific files).
-
-    DO NOT use this for validating library roots themselves - use normalize_library_root
-    for that, since library roots need validation against the base library root.
-
-    Args:
-        library_root: Absolute path to library root directory
-        user_path: User-provided path (relative or absolute) to resolve
-        must_exist: If True, require path to exist (default: True)
-        must_be_file: If True, require file; if False, require directory; if None, allow either
-
-    Returns:
-        Resolved absolute Path within library root
-
-    Raises:
-        ValueError: If path validation fails
-
+    Wraps helpers.files.resolve_library_path for validating paths within
+    a library (e.g. scanning subdirectories, loading specific files).
+    Not for validating library roots themselves — use normalize_library_root.
     """
     return resolve_library_path(
         library_root=library_root,
@@ -219,17 +160,7 @@ def resolve_path_within_library(
 def validate_library_root(library_root: Path) -> None:
     """Validate that a library root directory is accessible and non-empty.
 
-    Checks existence, directory status, permissions, and emptiness.
-    This is an I/O-level pre-flight check intended to be called before
-    scanning begins, so mount / permission problems surface early.
-
-    Args:
-        library_root: Absolute resolved path to library root
-
-    Raises:
-        OSError: If root doesn't exist, isn't a directory, isn't readable,
-            or is empty (possible unmounted volume).
-
+    I/O-level pre-flight check: surfaces mount/permission problems early.
     """
     if not library_root.exists():
         msg = f"Library root does not exist: {library_root} \u2014 the volume may not be mounted"
