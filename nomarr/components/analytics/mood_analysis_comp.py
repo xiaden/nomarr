@@ -34,6 +34,13 @@ class _MoodCoverage(TypedDict):
     tiers: dict[str, _MoodCoverageTier]
 
 
+class _MoodCountItem(TypedDict):
+    """A mood-count pair from distribution data."""
+
+    mood: str
+    count: int
+
+
 _PAGE_SIZE = 1000
 _MOOD_TAG_NAMES = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
 _MOOD_TIER_MAP = {"strict": "nom:mood-strict", "regular": "nom:mood-regular", "loose": "nom:mood-loose"}
@@ -108,7 +115,7 @@ def _get_tier_tag_keys(db: Database) -> list[str]:
     return tier_tag_keys
 
 
-def _count_moods(mood_values: list[str]) -> list[dict[str, Any]]:
+def _count_moods(mood_values: list[str]) -> list[_MoodCountItem]:
     """Return descending mood counts, splitting parenthetical tuples."""
     mood_counts: dict[str, int] = {}
     for mood_value in mood_values:
@@ -153,7 +160,8 @@ def get_mood_distribution_data(db: Database, library_id: str | None = None) -> l
 def get_mood_coverage(db: Database, library_id: str | None = None) -> _MoodCoverage:
     """Return percentage of files tagged per mood tier (strict, regular, loose)."""
     stats = get_library_stats(db, library_id)
-    total_files = int(stats["file_count"])
+    file_count_raw = stats.get("file_count", 0)
+    total_files = int(file_count_raw) if isinstance(file_count_raw, (int, float)) else 0
     if total_files == 0:
         return {
             "total_files": 0,
@@ -175,9 +183,9 @@ def get_mood_coverage(db: Database, library_id: str | None = None) -> _MoodCover
     return {"total_files": total_files, "tiers": tiers}
 
 
-def get_mood_balance(db: Database, library_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
+def get_mood_balance(db: Database, library_id: str | None = None) -> dict[str, list[_MoodCountItem]]:
     """Return mood-value distribution across strict, regular, and loose tiers."""
-    result: dict[str, list[dict[str, Any]]] = {}
+    result: dict[str, list[_MoodCountItem]] = {}
     for tier_name, name in _MOOD_TIER_MAP.items():
         mood_values = [mood_value for _, mood_value in _get_tag_edge_rows(db, name, library_id)]
         result[tier_name] = _count_moods(mood_values)

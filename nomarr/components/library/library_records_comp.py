@@ -8,7 +8,7 @@ key enumeration, and ML-complete library discovery.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_file_query_comp import get_library_counts
 from nomarr.components.library.library_file_state_comp import count_untagged_files
@@ -50,7 +50,7 @@ def create_library_record(
         "created_at": timestamp,
         "updated_at": timestamp,
     }
-    return cast("str", db.library.add_library(payload))
+    return db.library.add_library(payload)
 
 
 def get_library_record(
@@ -61,7 +61,7 @@ def get_library_record(
 ) -> dict[str, Any] | None:
     """Get one library by ``_id`` or ``_key`` and optionally merge scan state."""
     normalized_library_id = normalize_library_id(library_id)
-    doc = cast("dict[str, Any] | None", db.library.get_library(normalized_library_id))
+    doc = db.library.get_library(normalized_library_id)
 
     if doc is None or not include_scan:
         return doc
@@ -75,7 +75,7 @@ def get_library_by_name(
     include_scan: bool = False,
 ) -> dict[str, Any] | None:
     """Get one library by unique name."""
-    doc = cast("dict[str, Any] | None", db.library.get_library_by_name(name))
+    doc = db.library.get_library_by_name(name)
     if doc is None or not include_scan:
         return doc
     return _merge_scan_state(db, doc)

@@ -7,7 +7,7 @@ import logging
 import os
 import subprocess
 from dataclasses import dataclass
-from typing import Any
+from typing import TypedDict
 
 import psutil
 
@@ -19,10 +19,26 @@ logger = logging.getLogger(__name__)
 NVIDIA_SMI_TIMEOUT_S = 5.0
 TELEMETRY_CACHE_TTL_MS = 1000
 
+class _VramTelemetry(TypedDict):
+    """VRAM telemetry snapshot from nvidia-smi."""
+
+    used_mb: int
+    total_mb: int
+    error: str | None
+
+
+class _RamTelemetry(TypedDict):
+    """RAM telemetry snapshot from psutil."""
+
+    used_mb: int
+    available_mb: int
+    error: str | None
+
+
 # Cached telemetry state
-_vram_cache: dict[str, Any] | None = None
+_vram_cache: _VramTelemetry | None = None
 _vram_cache_ts: int = 0
-_ram_cache: dict[str, Any] | None = None
+_ram_cache: _RamTelemetry | None = None
 _ram_cache_ts: int = 0
 
 # GPU capability cache (checked once at startup, cached forever)
@@ -116,7 +132,7 @@ def check_nvidia_gpu_capability(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> bool:
         return False
 
 
-def get_vram_usage_mb(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> dict[str, Any]:
+def get_vram_usage_mb(timeout: float = NVIDIA_SMI_TIMEOUT_S) -> _VramTelemetry:
     """Query VRAM usage via nvidia-smi. Only call after confirming GPU capability."""
     global _vram_cache, _vram_cache_ts
 
@@ -207,7 +223,7 @@ def get_vram_usage_for_pid_mb(pid: int, timeout: float = NVIDIA_SMI_TIMEOUT_S) -
         return 0
 
 
-def get_ram_usage_mb(detection_mode: str = "auto") -> dict[str, Any]:
+def get_ram_usage_mb(detection_mode: str = "auto") -> _RamTelemetry:
     """Query RAM usage (process RSS) via psutil with TTL caching."""
     global _ram_cache, _ram_cache_ts
 

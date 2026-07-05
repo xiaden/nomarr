@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import Counter, defaultdict
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, TypedDict
 
 from nomarr.helpers.dto.analytics_dto import (
     ArtistTagProfile,
@@ -197,7 +197,21 @@ def compute_tag_co_occurrence(params: ComputeTagCoOccurrenceParams) -> TagCoOccu
     return TagCoOccurrenceData(x_tags=params.x_tags, y_tags=params.y_tags, matrix=matrix)
 
 
-def compute_dominant_vibes(balance: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+class _MoodCountItem(TypedDict):
+    """A mood-count pair from mood distribution data."""
+
+    mood: str
+    count: int
+
+
+class _DominantVibeItem(TypedDict):
+    """A dominant-vibe entry with percentage."""
+
+    mood: str
+    percentage: float
+
+
+def compute_dominant_vibes(balance: dict[str, list[_MoodCountItem]]) -> list[_DominantVibeItem]:
     """Return the top 5 dominant mood vibes with percentages from balance data."""
     mood_totals: dict[str, int] = {}
     for tier_moods in balance.values():

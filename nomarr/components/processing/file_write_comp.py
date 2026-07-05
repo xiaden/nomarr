@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nomarr.components.library.library_file_query_comp import get_file_by_id
 from nomarr.components.library.library_records_comp import get_library_record
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 def get_file_for_writing(
     db: Database,
     file_key: str,
-) -> tuple[str, str, dict[str, Any] | None]:
+) -> tuple[str, str, dict[str, object] | None]:
     """Normalise *file_key* and fetch the library-file document.
 
     Returns:

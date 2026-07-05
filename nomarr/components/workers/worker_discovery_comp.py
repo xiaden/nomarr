@@ -7,7 +7,7 @@ Workers query the songs collection directly instead of polling a queue.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nomarr.components.library.library_file_state_comp import discover_next_untagged_file
 from nomarr.helpers.time_helper import now_ms
@@ -26,7 +26,7 @@ def _claim_key(file_id: str) -> str:
     return f"claim_{file_key}"
 
 
-def _get_all_claims(db: Database) -> list[dict[str, Any]]:
+def _get_all_claims(db: Database) -> list[dict[str, object]]:
     """Return all worker claims via the application facade."""
     claims = db.app.list_claims()
     if not isinstance(claims, list):
@@ -66,7 +66,7 @@ def release_claim(db: Database, file_id: str) -> None:
 
 def try_insert_or_steal_claim(
     db: Database,
-    payload: dict[str, Any],
+    payload: dict[str, object],
     now: int,
     lease_ms: int,
 ) -> bool:
@@ -86,7 +86,11 @@ def try_insert_or_steal_claim(
                 return False
             return True
 
-        claimed_at = int(existing_claim.get("claimed_at", 0))
+        claimed_at_raw = existing_claim.get("claimed_at", 0)
+        if isinstance(claimed_at_raw, (int, float)):
+            claimed_at = int(claimed_at_raw)
+        else:
+            claimed_at = int(str(claimed_at_raw))
         if claimed_at > now - lease_ms:
             return False
 
@@ -177,7 +181,7 @@ def get_active_claim_count(db: Database) -> int:
 def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
     """Release all claims held by a specific worker (used on worker death/crash)."""
     claims_raw = db.app.list_claims()
-    claims: list[dict[str, Any]] = []
+    claims: list[dict[str, object]] = []
     if isinstance(claims_raw, list):
         claims = [c for c in claims_raw if isinstance(c, dict) and str(c.get("worker_id")) == worker_id]
     if not claims:

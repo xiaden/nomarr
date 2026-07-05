@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
-from typing import Any
+from typing import TypedDict
 
 from nomarr.helpers.time_helper import internal_ms
 
@@ -13,6 +13,14 @@ logger = logging.getLogger(__name__)
 # Probe constants
 NVIDIA_SMI_TIMEOUT_SECONDS = 5.0
 
+
+class _GpuProbeResult(TypedDict):
+    """GPU probe result from nvidia-smi check."""
+
+    gpu_available: bool
+    error_summary: str | None
+    duration_ms: float
+
 # State tracking for logging (only log on state changes)
 _last_gpu_state: dict[str, bool | str | None] = {
     "available": None,  # None = unknown, True = available, False = unavailable
@@ -20,7 +28,7 @@ _last_gpu_state: dict[str, bool | str | None] = {
 }
 
 
-def probe_gpu_availability(timeout: float = NVIDIA_SMI_TIMEOUT_SECONDS) -> dict[str, Any]:
+def probe_gpu_availability(timeout: float = NVIDIA_SMI_TIMEOUT_SECONDS) -> _GpuProbeResult:
     """Check GPU availability using nvidia-smi subprocess with timeout.
 
     This is a non-blocking, fail-fast check that detects:

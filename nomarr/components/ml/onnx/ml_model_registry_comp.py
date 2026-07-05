@@ -8,7 +8,7 @@ while the schema constructor owns the public persistence facade.
 from __future__ import annotations
 
 import hashlib
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.time_helper import now_ms
 
@@ -28,12 +28,14 @@ def _output_key(model_id: str, output_index: int) -> str:
 
 def list_registered_models(db: Database) -> list[dict[str, Any]]:
     """Return every registered ML model document."""
-    return cast("list[dict[str, Any]]", db.ml.list_models())
+    result = db.ml.list_models()
+    return result if isinstance(result, list) else []
 
 
 def get_registered_model_by_path(db: Database, path: str) -> dict[str, Any] | None:
     """Return the registered model document for ``path`` if present."""
-    return cast("dict[str, Any] | None", db.ml.get_model_by_path(path))
+    result = db.ml.get_model_by_path(path)
+    return result if isinstance(result, dict) else None
 
 
 def upsert_registered_model(
@@ -98,7 +100,10 @@ def upsert_registered_model(
         )
 
     try:
-        return cast("dict[str, Any]", db.ml.add_model(payload))
+        result = db.ml.add_model(payload)
+        if not isinstance(result, dict):
+            raise RuntimeError(f"Failed to load persisted ml_models document for path={path}")
+        return result
     except RuntimeError as exc:
         msg = f"Failed to load persisted ml_models document for path={path}"
         raise RuntimeError(msg) from exc
@@ -106,8 +111,8 @@ def upsert_registered_model(
 
 def mark_model_fully_configured(db: Database, model_id: str, value: bool) -> None:
     """Set the ``fully_configured`` flag on one registered model."""
-    model_doc = cast("dict[str, Any] | None", db.ml.get_model(model_id))
-    if model_doc is None:
+    model_doc = db.ml.get_model(model_id)
+    if not isinstance(model_doc, dict):
         return
 
     db.ml.update_model(
@@ -121,8 +126,8 @@ def mark_model_fully_configured(db: Database, model_id: str, value: bool) -> Non
 
 def mark_model_known(db: Database, model_id: str, value: bool) -> None:
     """Set the ``is_known`` flag on one registered model."""
-    model_doc = cast("dict[str, Any] | None", db.ml.get_model(model_id))
-    if model_doc is None:
+    model_doc = db.ml.get_model(model_id)
+    if not isinstance(model_doc, dict):
         return
 
     db.ml.update_model(
@@ -141,7 +146,8 @@ def delete_registered_model(db: Database, model_id: str) -> None:
 
 def list_model_outputs_for_model(db: Database, model_id: str) -> list[dict[str, Any]]:
     """Return all output vertices attached to one model, ordered by index."""
-    return cast("list[dict[str, Any]]", db.ml.list_model_outputs(model_id))
+    result = db.ml.list_model_outputs(model_id)
+    return result if isinstance(result, list) else []
 
 
 def list_fully_labeled_model_outputs(db: Database, model_id: str) -> list[dict[str, Any]]:
@@ -154,16 +160,16 @@ def ensure_model_outputs(db: Database, model_id: str, output_count: int) -> list
     for output_index in range(output_count):
         output_key = _output_key(model_id, output_index)
         output_id = f"ml_model_outputs/{output_key}"
-        existing_output = cast("dict[str, Any] | None", db.ml.get_model_output(output_id))
+        _existing = db.ml.get_model_output(output_id)
         payload = {
             "_key": output_key,
             "output_index": output_index,
             "label": None,
             "fully_labeled": False,
         }
-        if existing_output is not None:
-            payload["label"] = existing_output.get("label")
-            payload["fully_labeled"] = existing_output.get("fully_labeled", False)
+        if isinstance(_existing, dict):
+            payload["label"] = _existing.get("label")
+            payload["fully_labeled"] = _existing.get("fully_labeled", False)
 
         db.ml.replace_model_output(model_id, output_key, payload)
 
@@ -172,8 +178,8 @@ def ensure_model_outputs(db: Database, model_id: str, output_count: int) -> list
 
 def update_model_output_label(db: Database, model_id: str, output_id: str, label: str) -> None:
     """Write label metadata for one output vertex."""
-    existing_output = cast("dict[str, Any] | None", db.ml.get_model_output(output_id))
-    if existing_output is None:
+    existing_output = db.ml.get_model_output(output_id)
+    if not isinstance(existing_output, dict):
         return
 
     db.ml.replace_model_output(
@@ -206,7 +212,10 @@ def build_model_output_index_map(db: Database) -> dict[str, dict[int, str]]:
 
 def delete_model_outputs_for_model(db: Database, model_id: str) -> list[str]:
     """Delete all output vertices and model-output edges for one model."""
-    return cast("list[str]", db.ml.remove_model_outputs_for_model(model_id))
+    result = db.ml.remove_model_outputs_for_model(model_id)
+    if isinstance(result, list):
+        return [str(r) for r in result]
+    return []
 
 
 def prune_registered_model(db: Database, model_id: str) -> dict[str, list[str]]:

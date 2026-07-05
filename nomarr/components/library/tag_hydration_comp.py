@@ -128,15 +128,7 @@ def hydrate_song_with_metadata(db: Database, song: dict[str, Any]) -> dict[str, 
 
 
 def _group_tags_by_name(song_tags: list[dict[str, Any]]) -> dict[str, list[Any]]:
-    """Group tag entries by name, collecting all values per name.
-
-    Args:
-        song_tags: Tag entries, each with "name" and "value" fields.
-
-    Returns:
-        Dict mapping tag name to list of all values for that name.
-
-    """
+    """Group tag entries by name, collecting all values per name."""
     grouped: dict[str, list[Any]] = {}
     for tag in song_tags:
         name = tag.get("name", tag.get("key"))

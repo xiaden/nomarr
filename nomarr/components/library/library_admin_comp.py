@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from nomarr.components.library.library_file_query_comp import clear_library_data as clear_library_file_data
 from nomarr.components.library.library_records_comp import (
@@ -43,18 +43,15 @@ def create_library(
     ensure_no_overlapping_library_root(db, abs_path, ignore_id=None)
     resolved_name = _resolve_library_name(db, name, abs_path)
     try:
-        library_id = cast(
-            "str",
-            create_library_record(
-                db,
-                name=resolved_name,
-                root_path=abs_path,
-                is_enabled=is_enabled,
-                watch_mode=watch_mode,
-                file_write_mode=file_write_mode,
-                library_auto_write=library_auto_write,
-                **PIPELINE_DEFAULTS,
-            ),
+        library_id = create_library_record(
+            db,
+            name=resolved_name,
+            root_path=abs_path,
+            is_enabled=is_enabled,
+            watch_mode=watch_mode,
+            file_write_mode=file_write_mode,
+            library_auto_write=library_auto_write,
+            **PIPELINE_DEFAULTS,
         )
         ensure_scan_state(db, library_id)
     except (ValueError, RuntimeError, OSError) as e:

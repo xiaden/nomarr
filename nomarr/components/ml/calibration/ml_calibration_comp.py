@@ -12,7 +12,7 @@ import json
 import logging
 import math
 import os
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     load_all_calibration_states,
@@ -66,12 +66,12 @@ def get_sparse_histogram(
     calibration component because it is a cross-collection analytics read over
     `song_has_tags` and `tags`, not a calibration_state collection verb.
     """
-    model_doc = cast("dict[str, Any] | None", db.ml.get_model(model_id))
-    if model_doc is None:
+    _model_doc = db.ml.get_model(model_id)
+    if not isinstance(_model_doc, dict):
         return []
 
-    backbone = model_doc.get("backbone")
-    release_date = model_doc.get("embedder_release_date")
+    backbone = _model_doc.get("backbone")
+    release_date = _model_doc.get("embedder_release_date")
     if not isinstance(backbone, str) or not isinstance(release_date, str):
         return []
 
@@ -89,11 +89,12 @@ def get_sparse_histogram(
 
     histogram_by_bin: dict[int, dict[str, Any]] = {}
     for matched_name in matching_names:
-        tag_docs = cast(
-            "list[dict[str, Any]]",
-            db.library.list_tags_by_name(name=matched_name, limit=50000),
-        )
-        for tag_doc in tag_docs:
+        _tag_docs_raw = db.library.list_tags_by_name(name=matched_name, limit=50000)
+        if not isinstance(_tag_docs_raw, list):
+            continue
+        for tag_doc in _tag_docs_raw:
+            if not isinstance(tag_doc, dict):
+                continue
             value = tag_doc.get("value")
             if not isinstance(value, (int, float)) or isinstance(value, bool):
                 continue
@@ -115,7 +116,7 @@ def get_sparse_histogram(
             if value > hi:
                 bin_row["overflow_count"] += 1
 
-    return sorted(histogram_by_bin.values(), key=lambda row: cast("float", row["min_val"]))
+    return sorted(histogram_by_bin.values(), key=lambda row: row["min_val"])
 
 
 def _parse_tag_key_components(tag_key: str) -> tuple[str, str, str] | None:

@@ -27,6 +27,16 @@ class _TagEntry(TypedDict):
     values: list[TagValue]
 
 
+class _ScanMetadata(TypedDict, total=False):
+    """Known keys in scan metadata dicts."""
+
+    all_tags: dict[str, Any]
+    nom_tags: dict[str, Any]
+    genre: Any
+    year: Any
+    track_number: Any
+
+
 def _derive_artists(tags: dict[str, Any]) -> tuple[str | None, list[str]]:
     """Derive singular artist and artist list from raw mutagen tag dict.
 
@@ -60,7 +70,7 @@ def seed_song_entities_from_tags(db: Database, song_id: str, tags: dict[str, Any
 _ENTITY_TAG_KEYS = ("artist", "artists", "album", "label", "genre", "year")
 
 
-def _extract_entity_tags(metadata: dict[str, Any]) -> dict[str, Any]:
+def _extract_entity_tags(metadata: _ScanMetadata) -> dict[str, Any]:
     """Extract entity-relevant tag keys from scan metadata."""
     return {k: metadata.get(k) for k in _ENTITY_TAG_KEYS}
 
@@ -123,7 +133,7 @@ def _build_entity_tag_map(tags: dict[str, Any]) -> dict[str, list[TagValue]]:
     return {str(entry["name"]): list(entry["values"]) for entry in _build_song_tag_entries(song_id="", tags=tags)}
 
 
-def _build_scan_tag_map(metadata: dict[str, Any]) -> dict[str, list[TagValue]]:
+def _build_scan_tag_map(metadata: _ScanMetadata) -> dict[str, list[TagValue]]:
     """Build the authoritative persisted tag map for one scanned file.
 
     Persists extracted source tags, adds structured genre/year/track_number,
@@ -156,7 +166,7 @@ def _build_scan_tag_map(metadata: dict[str, Any]) -> dict[str, list[TagValue]]:
 def seed_entities_for_scan_batch(
     db: Database,
     file_ids: list[str],
-    metadata_by_id: dict[str, dict[str, Any]],
+    metadata_by_id: dict[str, _ScanMetadata],
 ) -> int:
     """Persist scan-derived tags for scanned files.
 

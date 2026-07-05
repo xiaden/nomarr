@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nomarr.components.library.library_file_state_comp import get_stale_file_ids, transition_file_state
 from nomarr.components.workers.worker_discovery_comp import try_insert_or_steal_claim
@@ -25,7 +25,7 @@ def claim_files_for_reconciliation(
     worker_id: str,
     batch_size: int = 100,
     lease_ms: int = 60000,
-) -> list[dict[str, Any]]:
+) -> list[dict]:
     """Claim stale files for projection reconciliation.
 
     Args:
@@ -47,13 +47,13 @@ def claim_files_for_reconciliation(
     if not stale_ids:
         return []
 
-    candidates: list[dict[str, Any]] = []
+    candidates: list[dict] = []
     for file_id in stale_ids:
         candidate = db.library.get_file(file_id)
         if isinstance(candidate, dict):
             candidates.append(candidate)
 
-    claimed: list[dict[str, Any]] = []
+    claimed: list[dict] = []
     now = now_ms().value
     for candidate in candidates:
         if len(claimed) >= batch_size:
