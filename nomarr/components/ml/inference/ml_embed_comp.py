@@ -1,9 +1,4 @@
-#!/usr/bin/env python3
-# ======================================================================
-#  Nomarr - Embedding & Segmentation Utilities (fixed)
-#  Inference-agnostic helpers: load audio, segment, score, pool.
-#  (Essentia TF graph wiring happens in processor.py)
-# ======================================================================
+"""Embedding and segmentation utilities: segment waveform, score, pool."""
 
 from __future__ import annotations
 
@@ -11,8 +6,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
-
-# Local modules
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -33,17 +26,7 @@ class Segments:
 
 
 def segment_waveform(params: SegmentWaveformParams) -> Segments:
-    """Slice a mono waveform into overlapping fixed-length segments.
-
-    Args:
-        params: SegmentWaveformParams with:
-            - y: Waveform array
-            - sr: Sample rate
-            - segment_s: Window length in seconds
-            - hop_s: Hop length in seconds
-            - pad_final: If True, zero-pad the last short segment to full length
-
-    """
+    """Slice a mono waveform into overlapping fixed-length segments."""
     waveform = params.waveform
     sr = params.sr
     segment_s = params.segment_s
@@ -100,10 +83,7 @@ def segment_waveform(params: SegmentWaveformParams) -> Segments:
 # Scoring over segments
 # ----------------------------------------------------------------------
 def score_segments(segments: Segments, predict_fn: Callable[[np.ndarray, int], np.ndarray]) -> np.ndarray:
-    """Apply predict_fn to each segment waveform.
-    predict_fn signature: (wave_mono_float32, sr) -> 1D np.ndarray (scores/logits/probs)
-    Returns a 2D array: (num_segments, dim).
-    """
+    """Apply predict_fn to each segment waveform; returns (num_segments, dim) array."""
     outputs: list[np.ndarray] = []
     for seg in segments.waves:
         out = predict_fn(seg, segments.sr)

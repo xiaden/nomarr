@@ -140,22 +140,7 @@ def select_execution_tier(
 ) -> TierSelection:
     """Select the highest-performance tier that fits within resource budgets.
 
-    Per GPU_REFACTOR_PLAN.md Section 9:
-    - Tier selection is deterministic
-    - Owned by WorkerSystemService (infrastructure layer)
-    - If GPU not capable → skip Tiers 0-2
-    - Select the highest tier whose requirements fit within budgets
-    - Tier 4 means refusal, not retry
-
-    Args:
-        capacity_estimate: Resource measurements from ML capacity probe
-        vram_budget_mb: User-configured VRAM budget in MB
-        ram_budget_mb: User-configured RAM budget in MB
-        config_max_workers: User-configured maximum worker count
-
-    Returns:
-        TierSelection with tier, config, and calculated worker count
-
+    Tries GPU tiers (0→1→2) first, then CPU tier 3, then Refuse.
     """
     gpu_capable = capacity_estimate.gpu_capable
     backbone_vram = capacity_estimate.measured_backbone_vram_mb
@@ -218,16 +203,7 @@ def _evaluate_tier_0(
     ram_budget_mb: int,
     config_max_workers: int,
 ) -> TierSelection | None:
-    """Evaluate Tier 0 (Fast Path) eligibility.
-
-    Requirements:
-    - VRAM budget >= 2 * backbone_vram (cache 2 backbones)
-    - RAM budget >= worker_ram per worker
-
-    Returns:
-        TierSelection if eligible, None otherwise
-
-    """
+    """Evaluate Tier 0 (Fast Path) — cache 2 backbones."""
     tier_config = TIER_CONFIGS[ExecutionTier.FAST_PATH]
 
     # Calculate how many workers fit in VRAM (2 backbones cached)
@@ -260,12 +236,7 @@ def _evaluate_tier_1(
     ram_budget_mb: int,
     config_max_workers: int,
 ) -> TierSelection | None:
-    """Evaluate Tier 1 (Reduced Cache) eligibility.
-
-    Requirements:
-    - VRAM budget >= 1 * backbone_vram (cache 1 backbone)
-    - RAM budget >= worker_ram per worker
-    """
+    """Evaluate Tier 1 (Reduced Cache) — cache 1 backbone."""
     tier_config = TIER_CONFIGS[ExecutionTier.REDUCED_CACHE]
 
     min_vram_for_tier = backbone_vram  # Need room for 1 cached backbone
@@ -296,12 +267,7 @@ def _evaluate_tier_2(
     vram_budget_mb: int,
     ram_budget_mb: int,
 ) -> TierSelection | None:
-    """Evaluate Tier 2 (Sequential GPU) eligibility.
-
-    Requirements:
-    - VRAM budget >= backbone_vram (for one backbone at a time)
-    - RAM budget >= worker_ram (for one worker)
-    """
+    """Evaluate Tier 2 (Sequential GPU) — no cache, single worker."""
     tier_config = TIER_CONFIGS[ExecutionTier.SEQUENTIAL_GPU]
 
     # Need room for one backbone in VRAM

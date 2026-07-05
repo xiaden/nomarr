@@ -145,16 +145,9 @@ def release_vram_promise(
     worker_id: str,
     model_path: str,
 ) -> None:
-    """Release the VRAM promise for a specific worker+model pair.
+    """Release the VRAM promise for a worker+model pair.
 
-    Should be called from ``BaseONNXModel.unload()`` when a GPU-resident
-    model is evicted. Safe to call even if the promise no longer exists.
-
-    Args:
-        db:          Application database.
-        worker_id:   Worker identifier.
-        model_path:  Absolute path to the ONNX model file.
-
+    Called from ``BaseONNXModel.unload()`` when a GPU model is evicted.
     """
     db.app.remove_vram_promise(f"vram_promises/{_promise_key(worker_id, model_path)}")
     logger.debug(
@@ -167,20 +160,7 @@ def release_vram_promise(
 def get_fleet_vram_state(
     db: Database,
 ) -> dict[str, Any]:
-    """Return a snapshot of current fleet VRAM promises and live GPU telemetry.
-
-    Intended for cache-ready log messages and health/diagnostic endpoints.
-
-    Args:
-        db: Application database.
-
-    Returns:
-        Dict with:
-            ``promises``  - list of all current promise documents
-            ``vram``      - result of ``get_vram_usage_mb()``
-                            ({"used_mb": int, "total_mb": int, "error": str|None})
-
-    """
+    """Return a snapshot of current fleet VRAM promises and live GPU telemetry."""
     promises = _get_all_promises(db)
     vram = _resource_monitor.get_vram_usage_mb()
     return {"promises": promises, "vram": vram}
@@ -192,20 +172,7 @@ def release_worker_promises(
 ) -> int:
     """Release all VRAM promises held by a specific worker.
 
-    Called by the worker owner (``WorkerSystemService``) when a worker is
-    declared dead or permanently failed, and at graceful shutdown.  Also
-    called by the worker itself at startup to clear stale promises from a
-    previous crash of the same ``worker_id``.
-
-    Safe to call even if no promises exist for the worker (no-op).
-
-    Args:
-        db:        Application database.
-        worker_id: Worker identifier (e.g., ``"nomarr-tag:0"``).
-
-    Returns:
-        Number of promise documents removed.
-
+    Called when a worker is declared dead or at graceful shutdown.
     """
     removed = 0
     for promise in _get_all_promises(db):

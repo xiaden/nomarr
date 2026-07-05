@@ -19,10 +19,10 @@ if TYPE_CHECKING:
     from nomarr.helpers.dto.ml_head_dto import HeadInfo
 
 
-def _as_float_list(element: Any) -> list[float]:
+def _as_float_list(element: float | int | list[float] | np.ndarray | None) -> list[float]:
     if element is None:
         return []
-    if isinstance(element, list | tuple | np.ndarray):
+    if isinstance(element, list | np.ndarray):
         return [float(vec_element) for vec_element in element]
     return [float(element)]
 
@@ -142,23 +142,10 @@ def _determine_tier(
 ) -> str | None:
     """Determine tier (high/medium/low) based on cascade thresholds.
 
-    If label_std is provided (segment-level standard deviation), unstable predictions
-    are downgraded based on stability_thresholds:
-    - std >= acceptable: no tier (too unreliable to trust)
-    - std >= stable: cap at "low" tier maximum
-    - std >= very_stable: cap at "medium" tier maximum
-
-    Args:
-        prob: Probability score for the label
-        ratio: Ratio of label probability to counter-label probability
-        gap: Gap between label and counter-label probabilities
-        cascade: Cascade thresholds from model sidecar
-        label_std: Optional segment-level standard deviation for stability gating
-        stability_thresholds: Thresholds for stability gating (default: DEFAULT_STABILITY_THRESHOLDS)
-
-    Returns:
-        Tier string ("high", "medium", "low") or None if no tier requirements are met.
-
+    If label_std is provided, unstable predictions are downgraded:
+    - std >= acceptable: no tier
+    - std >= stable: cap at "low"
+    - std >= very_stable: cap at "medium"
     """
     if stability_thresholds is None:
         stability_thresholds = DEFAULT_STABILITY_THRESHOLDS
@@ -389,16 +376,7 @@ def run_head_decision(
     emit_all_scores: bool = True,
     segment_std: np.ndarray | None = None,
 ) -> HeadDecision:
-    """Turn the raw output vector for a head into a :class:`HeadDecision`.
-
-    Args:
-        spec: Head specification describing labels, thresholds, and cascade.
-        scores: Head outputs (logits or probabilities).
-        prefix: Optional string to prepend to tag keys.
-        emit_all_scores: (unused, kept for signature compat).
-        segment_std: Optional per-label segment standard deviation
-            for stability gating.
-    """
+    """Turn the raw output vector for a head into a :class:`HeadDecision`."""
     kind = spec.kind.lower()
     vec = np.asarray(scores).reshape(-1)
     if "regression" in kind:
