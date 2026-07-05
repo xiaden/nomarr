@@ -51,14 +51,14 @@ def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, A
 
     Supports artist, artists (multi), album, label, genre, and year.
     """
-    # --- artist (singular) ---
+    # artist
     primary_artist, all_artists = _derive_artists(tags)
     set_song_tags(db, song_id, "artist", [primary_artist] if primary_artist else [])
 
-    # --- artists (multi) ---
+    # artists
     set_song_tags(db, song_id, "artists", list(all_artists))
 
-    # --- album (singular) ---
+    # album
     album_raw = tags.get("album")
     if album_raw:
         album_str = album_raw[0] if isinstance(album_raw, list) else album_raw
@@ -66,7 +66,7 @@ def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, A
     else:
         set_song_tags(db, song_id, "album", [])
 
-    # --- label (multi) ---
+    # label
     label_raw = tags.get("label")
     labels: list[str] = []
     if label_raw:
@@ -76,14 +76,14 @@ def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, A
             labels = [str(label_raw)]
     set_song_tags(db, song_id, "label", list(labels))
 
-    # --- genre (multi) ---
+    # genre
     genre_raw = tags.get("genre")
     genres: list[str] = []
     if genre_raw:
         genres = [str(g) for g in genre_raw if g] if isinstance(genre_raw, list) else [str(genre_raw)]
     set_song_tags(db, song_id, "genre", list(genres))
 
-    # --- year (singular) ---
+    # year
     year_raw = tags.get("year")
     if year_raw:
         year_int = year_raw if isinstance(year_raw, int) else int(year_raw)
@@ -108,14 +108,14 @@ def _build_song_tag_entries(song_id: str, tags: dict[str, Any]) -> list[_TagEntr
     """
     entries: list[_TagEntry] = []
 
-    # --- artist (singular) ---
+    # artist
     primary_artist, all_artists = _derive_artists(tags)
     entries.append({"song_id": song_id, "name": "artist", "values": [primary_artist] if primary_artist else []})
 
-    # --- artists (multi) ---
+    # artists
     entries.append({"song_id": song_id, "name": "artists", "values": list(all_artists)})
 
-    # --- album (singular) ---
+    # album
     album_raw = tags.get("album")
     if album_raw:
         album_str = album_raw[0] if isinstance(album_raw, list) else album_raw
@@ -123,21 +123,21 @@ def _build_song_tag_entries(song_id: str, tags: dict[str, Any]) -> list[_TagEntr
     else:
         entries.append({"song_id": song_id, "name": "album", "values": []})
 
-    # --- label (multi) ---
+    # label
     label_raw = tags.get("label")
     labels: list[str] = []
     if label_raw:
         labels = [str(lbl) for lbl in label_raw if lbl] if isinstance(label_raw, list) else [str(label_raw)]
     entries.append({"song_id": song_id, "name": "label", "values": list(labels)})
 
-    # --- genre (multi) ---
+    # genre
     genre_raw = tags.get("genre")
     genres: list[str] = []
     if genre_raw:
         genres = [str(g) for g in genre_raw if g] if isinstance(genre_raw, list) else [str(genre_raw)]
     entries.append({"song_id": song_id, "name": "genre", "values": list(genres)})
 
-    # --- year (singular) ---
+    # year
     year_raw = tags.get("year")
     if year_raw:
         year_int = year_raw if isinstance(year_raw, int) else int(year_raw)
