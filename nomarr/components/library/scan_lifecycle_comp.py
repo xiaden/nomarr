@@ -1,14 +1,9 @@
-"""Scan lifecycle component — orchestration-only.
-
-Extracted pipeline-state management to ``library_scan_state_comp`` and
-file/folder scan operations to ``library_scan_file_ops_comp``.  This module
-retains orchestration glue: library resolution, scan lifecycle markers,
-progress tracking, heartbeat, and the ``on_scan_complete_pipeline_hook``.
-"""
+"""Scan lifecycle orchestration: library resolution, scan lifecycle markers,
+progress tracking, heartbeat, and the on_scan_complete pipeline hook."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_id_comp import normalize_library_id
 from nomarr.components.library.library_scan_state_comp import (
@@ -36,28 +31,30 @@ if TYPE_CHECKING:
 _UNSET: object = object()
 
 
-# ---------------------------------------------------------------------------
-# Library record helpers
-# ---------------------------------------------------------------------------
-
-
 def _get_library_record(db: Database, library_id: str) -> dict[str, Any] | None:
-    """Return one library document by ``_id`` or bare key without scan enrichment."""
+    """Return one library document by _id or bare key without scan enrichment."""
     normalized_id = normalize_library_id(library_id)
-    return cast("dict[str, Any] | None", db.library.get_library(normalized_id))
+    result = db.library.get_library(normalized_id)
+    if not isinstance(result, dict):
+        return None
+    return result
 
 
 def _list_library_records(db: Database) -> list[dict[str, Any]]:
     """Return library documents in legacy created-at order with scan fields merged."""
-    docs = cast("list[dict[str, Any]]", db.library.list_libraries())
+    docs = db.library.list_libraries()
+    if not isinstance(docs, list):
+        return []
 
     enriched_docs: list[dict[str, Any]] = []
     for doc in docs:
+        if not isinstance(doc, dict):
+            continue
         library_id = str(doc["_id"])
         scan_doc = get_scan_state(db, library_id)
         try:
             pipeline_state = get_pipeline_state(db, library_id)
-        except Exception:
+        except ValueError:
             pipeline_state = None
 
         enriched_docs.append(
@@ -76,25 +73,8 @@ def _list_library_records(db: Database) -> list[dict[str, Any]]:
     return enriched_docs
 
 
-# ---------------------------------------------------------------------------
-# Library resolution
-# ---------------------------------------------------------------------------
-
-
 def resolve_library_for_scan(db: Database, library_id: str) -> dict[str, Any]:
-    """Fetch a library document, raising if not found.
-
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-
-    Returns:
-        Library dict
-
-    Raises:
-        ValueError: If library not found
-
-    """
+    """Fetch a library document, raising if not found."""
     library = _get_library_record(db, library_id)
     if not library:
         msg = f"Library {library_id} not found"
@@ -105,42 +85,28 @@ def resolve_library_for_scan(db: Database, library_id: str) -> dict[str, Any]:
 def check_interrupted_scan(db: Database, library_id: str) -> tuple[bool, str | None]:
     """Check whether a previous scan was interrupted.
 
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-
-    Returns:
-        Tuple of (was_interrupted, scan_type).  *scan_type* is ``"quick"``
-        or ``"full"`` when interrupted, ``None`` otherwise.
-
+    Returns (was_interrupted, scan_type) — scan_type is "quick" or "full"
+    when interrupted, None otherwise.
     """
     state = get_scan_state(db, library_id)
     if not state:
         return False, None
 
     started_at = state.get("started_at")
-    if started_at is None:
+    if not isinstance(started_at, int):
         return False, None
 
     completed_at = state.get("completed_at")
-    scan_type = cast("str | None", state.get("scan_type"))
-    if completed_at is None:
+    scan_type_raw = state.get("scan_type")
+    scan_type: str | None = scan_type_raw if isinstance(scan_type_raw, str) else None
+    if not isinstance(completed_at, int):
         return True, scan_type
-    interrupted = cast("int", started_at) > cast("int", completed_at)
+    interrupted = started_at > completed_at
     return interrupted, scan_type if interrupted else None
 
 
 def is_library_scanning(db: Database, library_id: str) -> bool:
-    """Return whether the library scan axis is currently in the scanning state.
-
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-
-    Returns:
-        ``True`` when the library scan axis is ``scanning``; otherwise ``False``.
-
-    """
+    """Return True when the library scan axis is in the scanning state."""
     state = db.app.get_pipeline_state(library_id)
     if state is None:
         return False
@@ -148,7 +114,7 @@ def is_library_scanning(db: Database, library_id: str) -> bool:
 
 
 def get_scanning_library_ids(db: Database) -> set[str]:
-    """Return the set of library IDs currently in the scanning scan state."""
+    """Return the set of library IDs currently in the scanning state."""
     return set(get_libraries_in_axis_state(db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS))
 
 
@@ -156,13 +122,7 @@ def get_library_scan_histories(
     db: Database,
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Return scan history records for all libraries, including disabled ones.
-
-    Args:
-        db: Database connection.
-        limit: Maximum number of records to return. None for all.
-
-    """
+    """Return scan history records for all libraries, including disabled ones."""
     libraries = _list_library_records(db)
     if limit is not None:
         libraries = libraries[:limit]
@@ -173,7 +133,7 @@ def get_library_scan_histories(
         scan_doc = get_scan_state(db, library_id)
         try:
             pipeline_state: dict[str, str] | None = get_pipeline_state(db, library_id)
-        except Exception:
+        except ValueError:
             pipeline_state = None
 
         histories.append(
@@ -191,20 +151,8 @@ def get_library_scan_histories(
     return histories
 
 
-# ---------------------------------------------------------------------------
-# Scan status tracking
-# ---------------------------------------------------------------------------
-
-
 def mark_scan_started(db: Database, library_id: str, scan_type: str) -> None:
-    """Record that a scan has started.
-
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-        scan_type: ``"quick"`` or ``"full"``
-
-    """
+    """Record that a scan has started."""
     update_scan_state(
         db,
         library_id,
@@ -214,13 +162,7 @@ def mark_scan_started(db: Database, library_id: str, scan_type: str) -> None:
 
 
 def mark_scan_completed(db: Database, library_id: str) -> None:
-    """Record that a scan has completed successfully.
-
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-
-    """
+    """Record that a scan has completed successfully."""
     update_scan_state(
         db,
         library_id,
@@ -241,21 +183,10 @@ def update_scan_progress(
     started_at: int | None | object = _UNSET,
     heartbeat: bool = False,
 ) -> None:
-    """Update persisted scan progress fields on the scan document.
+    """Update persisted scan progress fields.
 
-    Only updates fields that are explicitly provided. Pass ``None`` for
-    ``scan_error``, ``completed_at``, or ``started_at`` to clear that field.
-
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-        progress: Files processed so far
-        total: Total files to scan
-        scan_error: Error message to persist on the scan document, or ``None`` to clear it
-        completed_at: Completion timestamp in milliseconds, or ``None`` to clear it
-        started_at: Start timestamp in milliseconds, or ``None`` to clear it
-        heartbeat: If True, updates the scan_heartbeat timestamp to now
-
+    Only updates fields explicitly provided. Pass None for scan_error,
+    completed_at, or started_at to clear that field.
     """
     update_fields: dict[str, Any] = {}
     if progress is not None:
@@ -276,16 +207,7 @@ def update_scan_progress(
 
 
 def get_scan_heartbeat(db: Database, library_id: str) -> int | None:
-    """Return the scan heartbeat timestamp for a library.
-
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-
-    Returns:
-        Heartbeat timestamp in milliseconds, or None if not set.
-
-    """
+    """Return the scan heartbeat timestamp for a library, or None if not set."""
     scan_doc = get_scan_state(db, library_id)
     if scan_doc is None:
         return None
@@ -295,15 +217,7 @@ def get_scan_heartbeat(db: Database, library_id: str) -> int | None:
 def is_scan_stale(db: Database, library_id: str, timeout_ms: int = 300000) -> bool:
     """Check whether a scanning library has a stale heartbeat.
 
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-        timeout_ms: Maximum age of heartbeat in milliseconds before considered stale.
-            Defaults to 300000 (5 minutes).
-
-    Returns:
-        True if the scan is stale (heartbeat older than timeout), False otherwise.
-
+    Default timeout is 300000ms (5 minutes).
     """
     state = db.app.get_pipeline_state(library_id)
     if state is None or state.get(SCAN_STATE_FIELD) != SCAN_IN_PROGRESS:
@@ -322,27 +236,15 @@ def is_scan_stale(db: Database, library_id: str, timeout_ms: int = 300000) -> bo
 
 
 def transition_to_scanning(db: Database, library_id: str) -> None:
-    """Transition a library scan axis into the scanning state.
-
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-
-    """
+    """Transition a library scan axis into the scanning state."""
     transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
 
 
 def on_scan_complete_pipeline_hook(db: Database, library_id: str) -> None:
     """Transition scan axis to scanned, then derive ml axis from file states.
 
-    After a scan completes:
-    - scan axis to scanned
-    - ml axis to ML_processing if untagged files exist, else stays where it is
-
-    Args:
-        db: Database instance
-        library_id: Library document ``_id``
-
+    After a scan completes the scan axis moves to scanned; if untagged files
+    exist the ml axis is set to ML_processing.
     """
     transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_COMPLETE)
     from nomarr.components.library.library_file_state_comp import count_untagged_files

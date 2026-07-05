@@ -26,32 +26,16 @@ def get_file_by_id(db: Database, file_id: str) -> dict[str, Any] | None:
 
 
 def count_recently_tagged(db: Database, window_seconds: int = 300) -> int:
-    """Count files whose ``last_tagged_at`` timestamp falls within the recent window.
-
-    Args:
-        db: Database instance.
-        window_seconds: How far back to look (default 5 minutes).
-
-    Returns:
-        Number of files tagged within the window.
-
-    """
+    """Count files whose last_tagged_at falls within the recent window (default 5 min)."""
     cutoff_ms = now_ms().value - window_seconds * 1000
     return db.library.count_recently_tagged(cutoff_ms)
 
 
 def get_existing_file_paths(db: Database, paths: list[str]) -> set[str]:
-    """Return the subset of *paths* that already have a record in the library-files collection.
+    """Return the subset of paths that already have a database record.
 
-    Used before batch-upsert operations to identify genuinely new files so that
-    state initialisation is only applied once per file — on first insertion.
-
-    Args:
-        db: Database instance.
-        paths: Absolute file paths to check.
-
-    Returns:
-        Set of paths (subset of *paths*) that exist in the database.
+    Used before batch-upsert to identify genuinely new files so state
+    initialisation is only applied once per file.
     """
     if not paths:
         return set()
@@ -69,8 +53,8 @@ def _matches_requested_path(file_doc: dict[str, Any], path: str) -> bool:
     return file_doc.get("normalized_path") == path or file_doc.get("path") == path
 
 
-def _matches_folder_rel_path(normalized_path: Any, folder_rel_path: str) -> bool:
-    if not isinstance(normalized_path, str):
+def _matches_folder_rel_path(normalized_path: str | None, folder_rel_path: str) -> bool:
+    if normalized_path is None:
         return False
     if folder_rel_path == "":
         return "/" not in normalized_path
@@ -100,7 +84,7 @@ def _project_recently_processed_row(file_doc: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _sort_key(value: Any) -> tuple[int, Any]:
+def _sort_key(value: str | int | float | None) -> tuple[int, str | int | float]:
     if value is None:
         return (1, "")
     if isinstance(value, str):
@@ -108,7 +92,9 @@ def _sort_key(value: Any) -> tuple[int, Any]:
     return (0, value)
 
 
-def _library_file_sort_key(file_doc: dict[str, Any]) -> tuple[tuple[int, Any], tuple[int, Any], tuple[int, Any]]:
+def _library_file_sort_key(
+    file_doc: dict[str, Any],
+) -> tuple[tuple[int, str | int | float], tuple[int, str | int | float], tuple[int, str | int | float]]:
     return (
         _sort_key(file_doc.get("artist")),
         _sort_key(file_doc.get("album")),
@@ -126,7 +112,7 @@ def _project_track_row(file_doc: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _numeric_value(value: Any) -> float:
+def _numeric_value(value: str | int | float | bool | None) -> float:
     if isinstance(value, bool):
         return 0.0
     if isinstance(value, (int, float)):
@@ -134,8 +120,8 @@ def _numeric_value(value: Any) -> float:
     return 0.0
 
 
-def _path_parent(path_value: Any) -> str | None:
-    if not isinstance(path_value, str):
+def _path_parent(path_value: str | None) -> str | None:
+    if path_value is None:
         return None
     return path_value.rsplit("/", 1)[0] if "/" in path_value else ""
 
@@ -170,7 +156,7 @@ def _matches_file_filters(file_doc: dict[str, Any], filter_dict: dict[str, Any])
     return all(file_doc.get(field_name) == expected_value for field_name, expected_value in filter_dict.items())
 
 
-def _is_numeric_tag_value(value: Any) -> bool:
+def _is_numeric_tag_value(value: str | int | float | bool | None) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
@@ -399,25 +385,8 @@ def search_library_files_with_tags(
 ) -> tuple[list[dict[str, Any]], int]:
     """Search files with optional tag/text filters and hydrate tags in one query.
 
-    All filtering and pagination is pushed to ArangoDB. Python only hydrates
-    the small result page with tags and library_id.
-
-    Args:
-        db: Database handle used to search files and hydrate related tags.
-        query_text: Free-text substring matched against artist, album, and title with case-insensitive ``LIKE`` filters.
-        artist: Case-insensitive exact artist match filter.
-        album: Case-insensitive exact album match filter.
-        tag_key: When provided alone, filters to files that have any tag with this
-            name; when combined with ``tag_value``, filters to files with an exact
-            ``(tag_key, tag_value)`` match.
-        tag_value: Exact tag value to match; only meaningful when ``tag_key`` is also set.
-        tagged_only: When ``True``, restricts results to files in the ``tagged`` state.
-        limit: Maximum number of files to return.
-        offset: Number of matching files to skip before returning results.
-
-    Returns:
-        A tuple of ``(files, total_count)`` where each file dict is a library-file
-            document merged with ``tags`` and ``library_id``.
+    All filtering and pagination is pushed to ArangoDB. Python hydrates
+    the small result page with tags and library_id. Returns (files, total_count).
     """
     # candidate_ids: None = universe (no constraint yet); set = narrowed result.
     # Each active filter fetches only matching docs from Arango via the namespace
