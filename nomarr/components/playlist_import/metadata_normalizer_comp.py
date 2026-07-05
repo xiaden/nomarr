@@ -8,6 +8,8 @@ Normalizes artist/title/album strings to improve matching accuracy:
 - Strip common suffixes (Remastered, Live, etc.)
 """
 
+from __future__ import annotations
+
 import re
 import unicodedata
 

@@ -4,6 +4,8 @@ Converts raw metadata strings into tag relationships via component-owned tag hel
 Part of hybrid model: seed edges from imports, then rebuild cache.
 """
 
+from __future__ import annotations
+
 import logging
 from typing import TYPE_CHECKING, Any, TypedDict
 
@@ -46,7 +48,7 @@ def _derive_artists(tags: dict[str, Any]) -> tuple[str | None, list[str]]:
     return primary_artist, all_artists
 
 
-def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, Any]) -> None:
+def seed_song_entities_from_tags(db: Database, song_id: str, tags: dict[str, Any]) -> None:
     """Derive tag relationships from raw imported metadata tags.
 
     Supports artist, artists (multi), album, label, genre, and year.
@@ -152,7 +154,7 @@ def _build_scan_tag_map(metadata: dict[str, Any]) -> dict[str, list[TagValue]]:
 
 
 def seed_entities_for_scan_batch(
-    db: "Database",
+    db: Database,
     file_ids: list[str],
     metadata_by_id: dict[str, dict[str, Any]],
 ) -> int:

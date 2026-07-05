@@ -1,9 +1,13 @@
+"""Song data classes for the library song representation."""
+
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 
 @dataclass
 class Tag:
-    "Base tag dataclass"
+    """Base tag dataclass."""
 
     name: str
     value: str
@@ -11,14 +15,14 @@ class Tag:
 
 @dataclass
 class Vector:
-    "Singular Vector dataclass"
+    """Singular vector dataclass."""
 
-    self: list[float]
+    values: list[float]
 
 
 @dataclass
 class Song:
-    "Base song dataclass"
+    """Base song dataclass."""
 
     name: str | None = None
     DBkey: str | None = None

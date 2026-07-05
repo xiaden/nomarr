@@ -15,6 +15,8 @@ CRITICAL INVARIANTS:
 This is not "lazy provisioning" - it's explicit onboarding.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import secrets

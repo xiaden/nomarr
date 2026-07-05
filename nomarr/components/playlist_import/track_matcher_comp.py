@@ -6,6 +6,8 @@ Implements tiered matching strategy:
 3. Fuzzy match with configurable threshold
 """
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -42,7 +44,7 @@ class LibraryTrack:
     normalized_artist: str
 
     @classmethod
-    def from_db_row(cls, row: dict[str, Any]) -> "LibraryTrack":
+    def from_db_row(cls, row: dict[str, Any]) -> LibraryTrack:
         """Create LibraryTrack from database row.
 
         Expected row keys: _id, path, title, artist, album, isrc

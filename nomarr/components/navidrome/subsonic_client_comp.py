@@ -4,6 +4,8 @@ Uses the Subsonic token authentication scheme and JSON responses.
 All methods raise SubsonicApiError on non-ok Subsonic responses.
 """
 
+from __future__ import annotations
+
 import hashlib
 import logging
 import secrets

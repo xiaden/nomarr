@@ -7,6 +7,8 @@ Requires Client Credentials authentication:
 Uses spotipy library for API access and pagination handling.
 """
 
+from __future__ import annotations
+
 import logging
 from typing import Any
 

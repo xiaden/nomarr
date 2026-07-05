@@ -6,6 +6,8 @@ GET https://api.deezer.com/playlist/{id}
 The Deezer API returns track data including ISRC codes when available.
 """
 
+from __future__ import annotations
+
 import logging
 from typing import Any
 

@@ -5,6 +5,8 @@ Pass 1 of the two-pass scan: fast disk walk only — no metadata extraction.
 Audio tag extraction is handled by the background tag extraction worker.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 from dataclasses import dataclass, field
@@ -19,7 +21,6 @@ from nomarr.persistence import Database
 logger = logging.getLogger(__name__)
 
 
-# Component-local DTOs (not promoted to helpers/dto)
 @dataclass
 class FileBatchResult:
     """Result of scanning a single folder."""

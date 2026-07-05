@@ -5,6 +5,8 @@ These templates provide common playlist configurations that users can
 generate in bulk and customize for their library.
 """
 
+from __future__ import annotations
+
 import json
 from typing import Any
 

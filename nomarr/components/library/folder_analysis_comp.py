@@ -7,6 +7,8 @@ Provides filesystem discovery and scan planning as separate concerns:
 - ``plan_full_scan`` — plan that scans every folder
 """
 
+from __future__ import annotations
+
 import logging
 import os
 from dataclasses import dataclass
@@ -17,7 +19,6 @@ from nomarr.helpers.files_helper import is_audio_file
 logger = logging.getLogger(__name__)
 
 
-# Component-local DTOs (not promoted to helpers/dto)
 @dataclass
 class FolderMetadata:
     """Metadata for a single folder in the library."""

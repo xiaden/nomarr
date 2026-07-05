@@ -3,6 +3,8 @@
 Detects file moves by comparing chromaprints between removed and new files.
 """
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,7 +23,6 @@ from nomarr.persistence import Database
 logger = logging.getLogger(__name__)
 
 
-# Component-local DTOs (not promoted to helpers/dto)
 @dataclass
 class FileMove:
     """Represents a detected file move."""

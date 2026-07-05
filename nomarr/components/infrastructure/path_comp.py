@@ -1,9 +1,52 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 from nomarr.components.library.library_records_comp import find_library_containing_path, get_library_record
 from nomarr.helpers.dto.path_dto import LibraryPath
 from nomarr.helpers.files_helper import is_audio_file
 from nomarr.persistence.db import Database
+
+
+def _validate_path_on_disk(
+    absolute: Path,
+    relative_str: str,
+    library_id: str | None,
+    *,
+    not_found_reason: str,
+    is_dir_reason: str,
+    not_audio_reason: str,
+) -> LibraryPath | None:
+    """Validate a path exists, is a file, and is a supported audio format.
+
+    Returns a ``LibraryPath`` with error status on the first failing check,
+    or ``None`` if all checks pass.
+    """
+    if not absolute.exists():
+        return LibraryPath(
+            relative=relative_str,
+            absolute=absolute,
+            library_id=library_id,
+            status="not_found",
+            reason=not_found_reason,
+        )
+    if not absolute.is_file():
+        return LibraryPath(
+            relative=relative_str,
+            absolute=absolute,
+            library_id=library_id,
+            status="invalid_config",
+            reason=is_dir_reason,
+        )
+    if not is_audio_file(str(absolute)):
+        return LibraryPath(
+            relative=relative_str,
+            absolute=absolute,
+            library_id=library_id,
+            status="invalid_config",
+            reason=not_audio_reason,
+        )
+    return None
 
 
 def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
@@ -42,32 +85,16 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
             reason=f"Path not relative to library root: {library_root}",
         )
 
-    if not absolute.exists():
-        return LibraryPath(
-            relative=relative_str,
-            absolute=absolute,
-            library_id=library["_id"],
-            status="not_found",
-            reason="File does not exist on disk",
-        )
-
-    if not absolute.is_file():
-        return LibraryPath(
-            relative=relative_str,
-            absolute=absolute,
-            library_id=library["_id"],
-            status="invalid_config",
-            reason="Path is a directory, not a file",
-        )
-
-    if not is_audio_file(str(absolute)):
-        return LibraryPath(
-            relative=relative_str,
-            absolute=absolute,
-            library_id=library["_id"],
-            status="invalid_config",
-            reason="Not a supported audio file format",
-        )
+    disk_error = _validate_path_on_disk(
+        absolute,
+        relative_str,
+        library["_id"],
+        not_found_reason="File does not exist on disk",
+        is_dir_reason="Path is a directory, not a file",
+        not_audio_reason="Not a supported audio file format",
+    )
+    if disk_error is not None:
+        return disk_error
 
     return LibraryPath(relative=relative_str, absolute=absolute, library_id=library["_id"], status="valid", reason=None)
 
@@ -147,32 +174,16 @@ def build_library_path_from_db(
         library_id = library["_id"]
 
     if check_disk:
-        if not absolute.exists():
-            return LibraryPath(
-                relative=relative_str,
-                absolute=absolute,
-                library_id=library_id,
-                status="not_found",
-                reason="File no longer exists on disk",
-            )
-
-        if not absolute.is_file():
-            return LibraryPath(
-                relative=relative_str,
-                absolute=absolute,
-                library_id=library_id,
-                status="invalid_config",
-                reason="Stored path is now a directory, not a file",
-            )
-
-        if not is_audio_file(str(absolute)):
-            return LibraryPath(
-                relative=relative_str,
-                absolute=absolute,
-                library_id=library_id,
-                status="invalid_config",
-                reason="Stored path is no longer a supported audio file",
-            )
+        disk_error = _validate_path_on_disk(
+            absolute,
+            relative_str,
+            library_id,
+            not_found_reason="File no longer exists on disk",
+            is_dir_reason="Stored path is now a directory, not a file",
+            not_audio_reason="Stored path is no longer a supported audio file",
+        )
+        if disk_error is not None:
+            return disk_error
 
     return LibraryPath(
         relative=relative_str,

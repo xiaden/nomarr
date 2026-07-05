@@ -5,6 +5,8 @@ Supports:
 - Deezer: deezer.com/playlist/{id}, link.deezer.com short links
 """
 
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass
 from typing import Literal
