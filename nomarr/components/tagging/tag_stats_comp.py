@@ -107,7 +107,7 @@ def _scoped_song_count_for_tag(
     return sum(1 for file_id in _tag_file_ids(db, tag_id) if file_id in library_file_ids)
 
 
-def _numeric_value(value: Any) -> float | None:
+def _numeric_value(value: object) -> float | None:
     """Convert loosely numeric values into float form when possible."""
     if isinstance(value, bool):
         return None
@@ -124,7 +124,7 @@ def _numeric_value(value: Any) -> float | None:
     return None
 
 
-def _coerce_sum_value(value: Any) -> float:
+def _coerce_sum_value(value: object) -> float:
     """Return numeric values for aggregate sums, treating missing values as zero."""
     if isinstance(value, bool):
         return 0.0

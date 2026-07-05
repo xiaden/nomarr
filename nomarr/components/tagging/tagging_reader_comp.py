@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 import mutagen
 
@@ -20,32 +20,13 @@ DEFAULT_NAMESPACE = "nom"
 
 
 def read_nomarr_namespace(path: LibraryPath, namespace: str = DEFAULT_NAMESPACE) -> set[str]:
-    """Check which nomarr tags exist in an audio file.
-
-    Returns the set of tag names found under the specified namespace.
-    Used to detect if files have been written to by nomarr, and to
-    infer the write mode used.
-
-    Args:
-        path: LibraryPath to audio file (must be valid)
-        namespace: Tag namespace to check (default: "nom")
-
-    Returns:
-        Set of tag names found (e.g., {"mood-strict", "mood-regular", "yamnet-class"})
-        Empty set if no nomarr tags found or file cannot be read.
-
-    Note:
-        Does not raise exceptions - returns empty set on any error.
-        This is intentional for scanning performance.
-
-    """
+    """Return the set of nomarr-prefixed tag names found in the file."""
     try:
         if not path.is_valid():
             return set()
         tags = read_tags_from_file(path, namespace)
         return {tag.key for tag in tags}
     except Exception:
-        # Silently return empty set - scanning shouldn't fail on read errors
         return set()
 
 
@@ -54,22 +35,10 @@ MOOD_TIER_TAGS = {"mood-strict", "mood-regular", "mood-loose"}
 
 
 def infer_write_mode_from_tags(tag_names: set[str]) -> str | None:
-    """Infer what write mode was used based on the tags present.
-
-    Args:
-        tag_names: Set of tag names found in the file
-
-    Returns:
-        "none" if no tags found
-        "minimal" if only mood tags found
-        "full" if any non-mood tags found
-        None if indeterminate
-
-    """
+    """Infer write mode from tag names: "none" | "minimal" | "full" | None."""
     if not tag_names:
         return "none"
 
-    # Check if we have any non-mood tags
     has_non_mood = any(name not in MOOD_TIER_TAGS for name in tag_names)
 
     if has_non_mood:
@@ -80,47 +49,31 @@ def infer_write_mode_from_tags(tag_names: set[str]) -> str | None:
 
 
 def read_tags_from_file(path: LibraryPath, namespace: str) -> Tags:
-    """Read namespaced tags from an audio file.
-
-    Args:
-        path: LibraryPath to audio file (must be valid)
-        namespace: Tag namespace to filter (e.g., "nom", "essentia")
-
-    Returns:
-        Tags collection with always-list values
-
-    Raises:
-        ValueError: If path is invalid or file format is unsupported
-        RuntimeError: If file cannot be read
-
-    """
-    # Enforce validation before file operations
+    """Read namespaced tags from an audio file."""
     if not path.is_valid():
         msg = f"Cannot read tags from invalid path ({path.status}): {path.absolute} - {path.reason}"
         raise ValueError(msg)
 
     try:
-        # Infer format from file extension - faster than loading file
         path_str = str(path.absolute)
         ext = Path(path_str).suffix.lower()
 
-        # Route to appropriate extractor based on extension
         if ext == ".mp3":
-            audio = mutagen.File(path_str)  # type: ignore[attr-defined]
+            audio = cast("mutagen.FileType", mutagen.File(path_str))
             if audio is None:
                 msg = f"Failed to load MP3 file: {path_str}"
                 raise ValueError(msg)
             tag_dict = _extract_id3_tags(audio, namespace)
 
         elif ext in (".m4a", ".mp4", ".m4b", ".m4p"):
-            audio = mutagen.File(path_str)  # type: ignore[attr-defined]
+            audio = cast("mutagen.FileType", mutagen.File(path_str))
             if audio is None:
                 msg = f"Failed to load MP4 file: {path_str}"
                 raise ValueError(msg)
             tag_dict = _extract_mp4_tags(audio, namespace)
 
         elif ext in (".flac", ".ogg", ".opus"):
-            audio = mutagen.File(path_str)  # type: ignore[attr-defined]
+            audio = cast("mutagen.FileType", mutagen.File(path_str))
             if audio is None:
                 msg = f"Failed to load Vorbis file: {path_str}"
                 raise ValueError(msg)
@@ -130,7 +83,6 @@ def read_tags_from_file(path: LibraryPath, namespace: str) -> Tags:
             msg = f"Unsupported audio format: {ext}"
             raise ValueError(msg)
 
-        # Convert dict to Tags DTO (already has list values from extractors)
         items = tuple(Tag(key=k, value=tuple(cast("list[TagValue]", v))) for k, v in tag_dict.items())
         return Tags(items=items)
 
@@ -140,12 +92,8 @@ def read_tags_from_file(path: LibraryPath, namespace: str) -> Tags:
         raise RuntimeError(msg) from e
 
 
-def _extract_id3_tags(audio: Any, namespace: str) -> dict[str, list[str]]:
-    """Extract tags from ID3v2 format (MP3).
-
-    Reads TXXX (user-defined text) frames with namespace prefix.
-    Returns always-list format per Tags invariant.
-    """
+def _extract_id3_tags(audio: mutagen.FileType, namespace: str) -> dict[str, list[str]]:
+    """Extract namespaced tags from ID3v2 TXXX frames."""
     tags: dict[str, list[str]] = {}
     if not hasattr(audio, "tags") or not audio.tags:
         return tags
@@ -161,20 +109,15 @@ def _extract_id3_tags(audio: Any, namespace: str) -> dict[str, list[str]]:
         clean_name = tag_name[len(namespace) + 1 :]  # Remove namespace prefix
         values = audio.tags[key].text
 
-        # Always store as list per Tags invariant
         tags[clean_name] = list(values)
 
     return tags
 
 
-def _extract_mp4_tags(audio: Any, namespace: str) -> dict[str, list[str]]:
-    """Extract tags from MP4/M4A format.
-
-    Reads iTunes freeform atoms (----:com.apple.iTunes:) with namespace prefix.
-    Returns always-list format per Tags invariant.
-    """
+def _extract_mp4_tags(audio: mutagen.FileType, namespace: str) -> dict[str, list[str]]:
+    """Extract namespaced tags from MP4 freeform atoms."""
     tags: dict[str, list[str]] = {}
-    if not hasattr(audio, "tags") or not hasattr(audio.tags, "items"):
+    if audio.tags is None or not hasattr(audio.tags, "items"):
         return tags
 
     for key, value in audio.tags.items():
@@ -196,27 +139,19 @@ def _extract_mp4_tags(audio: Any, namespace: str) -> dict[str, list[str]]:
                         decoded.append(item.decode("utf-8"))
                     else:
                         decoded.append(str(item))
-                # Always store as list per Tags invariant
                 tags[clean_name] = decoded
             else:
-                # Fallback for non-list values - wrap in list
                 decoded_val = value.decode("utf-8") if isinstance(value, bytes) else str(value)
                 tags[clean_name] = [decoded_val]
         except Exception as e:
-            # Log and skip malformed tags
-            logger.warning(f"[TagReader] Failed to decode tag {key}: {e}")
+            logger.warning("[TagReader] Failed to decode tag %s: %s", key, e)
             continue
 
     return tags
 
 
-def _extract_vorbis_tags(audio: Any, namespace: str) -> dict[str, list[str]]:
-    """Extract tags from Vorbis comments format (FLAC, OGG, Opus).
-
-    Vorbis tags use uppercase keys with underscores.
-    Example: "ESSENTIA_YAMNET_HAPPY" for namespace "essentia"
-    Returns always-list format per Tags invariant.
-    """
+def _extract_vorbis_tags(audio: mutagen.FileType, namespace: str) -> dict[str, list[str]]:
+    """Extract namespaced tags from Vorbis comments."""
     tags: dict[str, list[str]] = {}
     if not hasattr(audio, "tags") or not audio.tags:
         return tags
@@ -229,8 +164,6 @@ def _extract_vorbis_tags(audio: Any, namespace: str) -> dict[str, list[str]]:
             continue
 
         clean_name = key[len(vorbis_prefix) :].lower().replace("_", "-")
-
-        # Always store as list per Tags invariant
         tags[clean_name] = list(values)
 
     return tags

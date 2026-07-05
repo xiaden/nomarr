@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, cast
 
+import mutagen
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3, ID3NoHeaderError
 from mutagen.mp4 import MP4
@@ -19,27 +20,12 @@ logger = logging.getLogger(__name__)
 
 
 def remove_tags_from_file(path: LibraryPath, namespace: str) -> int:
-    """Remove all namespaced tags from an audio file.
-
-    Args:
-        path: LibraryPath to audio file (must be valid)
-        namespace: Tag namespace to remove (e.g., "nom", "essentia")
-
-    Returns:
-        Number of tags removed
-
-    Raises:
-        ValueError: If path is invalid or file format is unsupported
-        RuntimeError: If file cannot be modified
-
-    """
-    # Enforce validation before file operations
+    """Remove all namespaced tags from an audio file."""
     if not path.is_valid():
         msg = f"Cannot remove tags from invalid path ({path.status}): {path.absolute} - {path.reason}"
         raise ValueError(msg)
 
     try:
-        # Infer format from file extension
         path_str = str(path.absolute)
         ext = Path(path_str).suffix.lower()
 
@@ -53,20 +39,16 @@ def remove_tags_from_file(path: LibraryPath, namespace: str) -> int:
         raise ValueError(msg)
 
     except Exception as e:
-        logger.exception(f"[TagRemover] Failed to remove tags from {path_str}")
+        logger.exception("[TagRemover] Failed to remove tags from %s", path_str)
         msg = f"Failed to remove tags: {e}"
         raise RuntimeError(msg) from e
 
 
 def _remove_id3_tags(path: str, namespace: str) -> int:
-    """Remove namespaced tags from ID3v2 format (MP3).
-
-    Removes all TXXX frames that start with namespace prefix.
-    """
+    """Remove namespaced TXXX frames from ID3v2 (MP3)."""
     try:
         audio = ID3(path)
     except ID3NoHeaderError:
-        # No ID3 tags at all - nothing to remove
         return 0
 
     txxx_prefix = f"{namespace}:"
@@ -77,20 +59,16 @@ def _remove_id3_tags(path: str, namespace: str) -> int:
 
     if keys_to_remove:
         audio.save()
-        logger.info(f"[TagRemover] Removed {len(keys_to_remove)} ID3 tags from {path}")
+        logger.info("[TagRemover] Removed %s ID3 tags from %s", len(keys_to_remove), path)
 
     return len(keys_to_remove)
 
 
 def _remove_mp4_tags(path: str, namespace: str) -> int:
-    """Remove namespaced tags from MP4/M4A format.
-
-    Removes all iTunes freeform atoms that start with namespace prefix.
-    """
+    """Remove namespaced freeform atoms from MP4/M4A."""
     try:
         audio = MP4(path)
         if audio.tags is None:
-            # No tags at all - nothing to remove
             return 0
 
         atom_prefix = f"----:com.apple.iTunes:{namespace}:"
@@ -101,7 +79,7 @@ def _remove_mp4_tags(path: str, namespace: str) -> int:
 
         if keys_to_remove:
             audio.save()
-            logger.info(f"[TagRemover] Removed {len(keys_to_remove)} MP4 tags from {path}")
+            logger.info("[TagRemover] Removed %s MP4 tags from %s", len(keys_to_remove), path)
 
         return len(keys_to_remove)
 
@@ -111,14 +89,11 @@ def _remove_mp4_tags(path: str, namespace: str) -> int:
 
 
 def _remove_vorbis_tags(path: str, namespace: str) -> int:
-    """Remove namespaced tags from Vorbis comments format (FLAC, OGG, Opus).
-
-    Vorbis tags use uppercase keys with underscores.
-    """
+    """Remove namespaced tags from Vorbis comments (FLAC, OGG, Opus)."""
     try:
         ext = Path(path).suffix.lower()
         if ext == ".flac":
-            audio: Any = FLAC(path)
+            audio: mutagen.FileType = FLAC(path)
         elif ext == ".ogg":
             audio = OggVorbis(path)
         elif ext == ".opus":
@@ -130,18 +105,18 @@ def _remove_vorbis_tags(path: str, namespace: str) -> int:
         if audio.tags is None:
             return 0
 
-        # Vorbis tags are uppercase with underscores
         vorbis_prefix = f"{namespace.upper()}_"
+        audio_tags = cast("dict[str, list[str]]", audio.tags)
         keys_to_remove = [
-            key for key, _ in audio.tags.items() if isinstance(key, str) and key.startswith(vorbis_prefix)
-        ]  # type: ignore[attr-defined]
+            key for key, _ in audio_tags.items() if isinstance(key, str) and key.startswith(vorbis_prefix)
+        ]
 
         for key in keys_to_remove:
-            del audio.tags[key]  # type: ignore[attr-defined]
+            del audio_tags[key]
 
         if keys_to_remove:
             audio.save()
-            logger.info(f"[TagRemover] Removed {len(keys_to_remove)} Vorbis tags from {path}")
+            logger.info("[TagRemover] Removed %s Vorbis tags from %s", len(keys_to_remove), path)
 
         return len(keys_to_remove)
 
