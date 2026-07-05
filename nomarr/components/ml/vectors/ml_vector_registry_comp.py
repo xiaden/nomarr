@@ -97,10 +97,6 @@ def get_hot_namespace(db: Database, backbone_id: str) -> VectorsTrackHotNamespac
 
     Returns:
         Registered hot vectors namespace for the ``backbone_id``.
-
-    Raises:
-        Exception: Propagates errors raised by ``db.ml.add_vector_collection()``
-            while resolving the namespace.
     """
     col_name = f"vectors_track_hot__{backbone_id}"
     return cast("VectorsTrackHotNamespace", db.ml.add_vector_collection(col_name, "vectors_track_hot"))
@@ -122,10 +118,6 @@ def get_cold_namespace(
     Returns:
         Registered cold vectors namespace for the ``backbone_id``, with
         ``collection_suffix`` appended to the collection name when set.
-
-    Raises:
-        Exception: Propagates errors raised by ``db.ml.add_vector_collection()``
-            while resolving the namespace.
     """
     col_name = f"vectors_track_cold__{backbone_id}"
     if collection_suffix:
@@ -144,10 +136,6 @@ def delete_vectors_by_file_id(db: Database, file_id: str) -> int:
     Returns:
         Total number of vector documents deleted across all registered namespaces.
         Also removes matching edges from ``file_has_vectors``.
-
-    Raises:
-        Exception: Propagates database errors raised while deleting vectors or
-            removing ``file_has_vectors`` edges.
     """
     total_deleted = 0
     registered_collections = cast("dict[str, Any]", db.ml.list_vector_namespaces())
@@ -171,10 +159,6 @@ def delete_vectors_by_file_ids(db: Database, file_ids: list[str]) -> int:
         Total number of vector documents deleted across all registered namespaces.
         Returns ``0`` if ``file_ids`` is empty. Also removes matching edges from
         ``file_has_vectors``.
-
-    Raises:
-        Exception: Propagates database errors raised while deleting vectors or
-            removing ``file_has_vectors`` edges.
     """
     if not file_ids:
         return 0

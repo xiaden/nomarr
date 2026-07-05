@@ -1,9 +1,4 @@
-"""Idle vector promotion component.
-
-Provides domain logic for idle vector promotion: enumerating hot vector
-targets and computing optimal nlists parameters.  The orchestration logic
-lives in ``nomarr.workflows.platform.idle_promotion_vectors_wf``.
-"""
+"""Idle vector promotion: enumerate hot vector targets and compute nlists."""
 
 from __future__ import annotations
 

@@ -133,12 +133,12 @@ def persist_backbone_vector(
         )
         elapsed = internal_ms().value - t.value
         logger.debug(
-            "[processor] Persisted %s vector: dim=%d, segments=%d",
+            "[vectors] Persisted %s vector: dim=%d, segments=%d",
             backbone,
             embed_dim,
             embeddings_2d.shape[0],
         )
         return elapsed
-    except Exception:
-        logger.warning("[processor] Failed to persist %s vector for %s", backbone, path, exc_info=True)
+    except (ValueError, RuntimeError, TypeError, OSError):
+        logger.warning("[vectors] Failed to persist %s vector for %s", backbone, path, exc_info=True)
         return None

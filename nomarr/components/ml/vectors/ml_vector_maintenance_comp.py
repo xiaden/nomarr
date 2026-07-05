@@ -7,7 +7,7 @@ Never called during bootstrap (maintenance workflow only).
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from nomarr.persistence.arango_client import DatabaseLike
@@ -49,7 +49,7 @@ def derive_embed_dim(models_dir: str, backbone_id: str) -> int:
                     dim = shape[-1]
                     if isinstance(dim, int) and dim > 0:
                         return dim
-    except Exception as exc:
+    except (ImportError, RuntimeError) as exc:
         raise ValueError(f"Failed to probe embedding graph '{embedding_graph}'") from exc
 
     raise ValueError(
@@ -76,9 +76,6 @@ def drain_hot_to_cold(db: DatabaseLike, backbone_id: str, library_key: str) -> i
     Returns:
         Number of documents drained from hot.
 
-    Raises:
-        Exception: If AQL execution fails.
-
     """
     hot_name = f"vectors_track_hot__{backbone_id}__{library_key}"
     cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
@@ -93,9 +90,9 @@ def drain_hot_to_cold(db: DatabaseLike, backbone_id: str, library_key: str) -> i
 
     # Count hot docs before drain
     hot_coll = db.collection(hot_name)
-    hot_count = hot_coll.count()
+    hot_count: int = int(hot_coll.count())
 
-    if hot_count == 0:  # type: ignore[operator]  # count() returns int in sync context
+    if hot_count == 0:
         return 0
 
     # Convergent UPSERT with genre enrichment:
@@ -123,7 +120,7 @@ def drain_hot_to_cold(db: DatabaseLike, backbone_id: str, library_key: str) -> i
         RETURN n
         """
     )
-    results = list(cursor)  # type: ignore[arg-type]
+    results: list[int] = [row for row in cursor]
     drained: int = results[0] if results else 0
 
     # Migrate file_has_vectors edges from hot → cold
@@ -179,9 +176,9 @@ def verify_hot_empty(db: DatabaseLike, backbone_id: str, library_key: str) -> No
         return  # Hot doesn't exist = empty
 
     hot_coll = db.collection(hot_name)
-    hot_count = hot_coll.count()
+    hot_count: int = int(hot_coll.count())
 
-    if hot_count > 0:  # type: ignore[operator]  # count() returns int in sync context
+    if hot_count > 0:
         raise RuntimeError(
             f"Hot collection '{hot_name}' not empty after drain: {hot_count} documents remain. "
             "This indicates drain operation failed or concurrent writes occurred during promotion."
@@ -202,14 +199,14 @@ def drop_cold_vector_index(db: DatabaseLike, backbone_id: str, library_key: str)
         return  # Cold doesn't exist yet
 
     cold_coll = db.collection(cold_name)
-    existing_indexes = cold_coll.indexes()
+    existing_indexes: list[dict[str, Any]] = list(cold_coll.indexes())
 
-    for idx in existing_indexes:  # type: ignore[union-attr]
+    for idx in existing_indexes:
         if idx.get("type") == "vector":
             idx_id = idx.get("id")
             if idx_id:
                 logger.info("[vectors] Dropping vector index %s from %s", idx_id, cold_name)
-                cold_coll.delete_index(idx_id)  # type: ignore[attr-defined]
+                cast(Any, cold_coll).delete_index(idx_id)
                 return
 
 
@@ -230,11 +227,11 @@ def has_vector_index(db: DatabaseLike, backbone_id: str, library_key: str) -> bo
         return False
 
     cold_coll = db.collection(cold_name)
-    existing_indexes = cold_coll.indexes()
+    existing_indexes: list[dict[str, Any]] = list(cold_coll.indexes())
 
     return any(
         idx.get("type") == "vector"
-        for idx in existing_indexes  # type: ignore[union-attr]
+        for idx in existing_indexes
     )
 
 
@@ -256,7 +253,6 @@ def build_cold_vector_index(
 
     Raises:
         ValueError: If cold collection doesn't exist.
-        Exception: If index creation fails.
 
     """
     cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
@@ -266,7 +262,7 @@ def build_cold_vector_index(
         )
 
     cold_coll = db.collection(cold_name)
-    doc_count = cold_coll.count()  # type: ignore[assignment]  # count() returns int in sync context
+    doc_count: int = int(cold_coll.count())
 
     logger.info(
         "[vectors] Building vector index on %s (dim=%d, nlists=%d, docs=%d)",
@@ -277,7 +273,7 @@ def build_cold_vector_index(
     )
 
     try:
-        cold_coll.add_index(  # type: ignore[attr-defined]
+        cast(Any, cold_coll).add_index(
             {
                 "type": "vector",
                 "fields": ["vector_n"],
@@ -290,7 +286,7 @@ def build_cold_vector_index(
             },
         )
         logger.info("[vectors] Vector index created successfully on %s", cold_name)
-    except Exception as exc:
+    except (ValueError, RuntimeError, OSError) as exc:
         logger.error(
             "[vectors] Failed to create vector index on %s (dim=%d, nlists=%d)",
             cold_name,
@@ -333,7 +329,7 @@ def rebuild_cold_vector_index(
         )
 
     logger.info(
-        "[vectors rebuild] Starting for %s (dim=%d, nlists=%d)",
+        "[vectors] Starting rebuild for %s (dim=%d, nlists=%d)",
         cold_name,
         embed_dim,
         nlists,
@@ -345,7 +341,7 @@ def rebuild_cold_vector_index(
     # Build fresh index on the fully-populated cold collection
     build_cold_vector_index(db, backbone_id, library_key, embed_dim, nlists)
 
-    logger.info("[vectors rebuild] Completed for %s", cold_name)
+    logger.info("[vectors] Rebuild completed for %s", cold_name)
 
 
 def backfill_genres(db: DatabaseLike, backbone_id: str, library_key: str) -> int:
@@ -400,7 +396,7 @@ def backfill_genres(db: DatabaseLike, backbone_id: str, library_key: str) -> int
         bind_vars={"@cold_coll": cold_name},
     )
 
-    results = list(cursor)  # type: ignore[arg-type]
+    results: list[int] = [row for row in cursor]
     count: int = results[0] if results else 0
 
     logger.info(
