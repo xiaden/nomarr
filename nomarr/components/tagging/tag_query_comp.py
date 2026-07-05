@@ -60,7 +60,7 @@ def _enrich_tag(tag: dict[str, Any], song_count: int) -> dict[str, Any]:
     }
 
 
-def _numeric_value(value: Any) -> float | None:
+def _numeric_value(value: object) -> float | None:
     """Convert values to numeric form when possible for ordered comparisons."""
     if isinstance(value, bool):
         return float(value)
@@ -77,7 +77,7 @@ def _numeric_value(value: Any) -> float | None:
     return None
 
 
-def _matches_tag_operator(tag_value: Any, operator: str, value: TagValue) -> bool:
+def _matches_tag_operator(tag_value: object, operator: str, value: TagValue) -> bool:
     """Evaluate a supported tag comparison in Python."""
     if operator in {"==", "="}:
         return bool(tag_value == value)
@@ -325,21 +325,7 @@ def get_file_ids_for_mood_tags(
     mood_tier: str = "mood-strict",
     library_id: str | None = None,
 ) -> dict[str, set[str]]:
-    """Get file-id sets for many mood values within one mood tier.
-
-    Uses CONTAINS matching since mood tags are stored as arrays (e.g.,
-    nom:mood-strict = ["aggressive", "happy"]). This allows finding files
-    that have a specific mood value within their mood array.
-
-    Args:
-        db: Database instance
-        mood_values: List of mood values to search for (e.g., ["aggressive", "happy"])
-        mood_tier: Mood tier name (e.g., "mood-strict", "mood-regular", "mood-loose")
-        library_id: Optional library ID to scope the search
-
-    Returns:
-        Dict mapping each mood value to the set of file IDs that contain it
-    """
+    """Return file-id sets for mood values using CONTAINS array matching."""
     result: dict[str, set[str]] = {}
     name = f"nom:{mood_tier}" if not mood_tier.startswith("nom:") else mood_tier
     library_ids = _library_file_ids(db, library_id)

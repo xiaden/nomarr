@@ -1,15 +1,4 @@
-"""Reconstruct HeadOutput objects from canonical raw output streams.
-
-Re-creates the ML inference outputs without running models, using raw per-output
-segment score streams loaded from canonical persistence. Applies optional
-calibration before tier assignment so the reconstructed outputs match what live
-inference would produce.
-
-This is a COMPONENT — it contains heavy domain logic (calibration math,
-classification decision functions, regression tier assignment) even though
-the work *feels* like orchestration. The function coordinates multiple
-component-level operations but never touches IO, services, or workflows.
-"""
+"""Reconstruct HeadOutput objects from canonical raw output streams."""
 
 from __future__ import annotations
 
@@ -37,6 +26,7 @@ from nomarr.components.tagging.tagging_aggregation_comp import (
     assign_regression_outputs,
 )
 from nomarr.helpers.dto.ml_dto import HeadOutput, LoadedOutputStream
+from nomarr.helpers.dto.ml_head_dto import HeadInfo
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +67,8 @@ def _calibration_scale(calib_data: dict[str, Any] | None) -> float:
     return 1.0 / span
 
 
-def _build_model_key(head_info: Any, label: str) -> str:
-    """Build a versioned model key from authoritative HeadInfo metadata."""
+def _build_model_key(head_info: HeadInfo, label: str) -> str:
+    """Build a versioned model key from HeadInfo metadata."""
     norm_label = normalize_tag_label(label)
     model_key, _ = head_info.build_versioned_tag_key(
         norm_label,
@@ -99,7 +89,7 @@ def _group_streams_by_head(output_streams: list[LoadedOutputStream]) -> dict[str
     return grouped
 
 
-def _resolve_stream_label(head_info: Any, stream: LoadedOutputStream) -> str | None:
+def _resolve_stream_label(head_info: HeadInfo, stream: LoadedOutputStream) -> str | None:
     """Resolve the authoritative label for one stream from discovered head metadata."""
     if 0 <= stream.output_index < len(head_info.labels):
         resolved_label = str(head_info.labels[stream.output_index])
@@ -126,7 +116,7 @@ def _resolve_stream_label(head_info: Any, stream: LoadedOutputStream) -> str | N
 
 
 def _recompute_head_stream_stats(
-    head_info: Any,
+    head_info: HeadInfo,
     streams: list[LoadedOutputStream],
 ) -> list[_StreamStats]:
     """Recompute pooled values and stds for every stream in one head."""
@@ -153,31 +143,12 @@ def _recompute_head_stream_stats(
 
 def reconstruct_head_outputs_from_streams(
     output_streams: list[LoadedOutputStream],
-    head_infos: list[Any],
+    head_infos: list[HeadInfo],
     calibrations: dict[str, dict[str, Any]] | None = None,
     stability_thresholds: StabilityThresholds | None = None,
     regression_thresholds: RegressionThresholds | None = None,
-) -> list[Any]:
-    """Reconstruct HeadOutput objects from canonical raw output streams.
-
-    No legacy `segment_scores_stats` fallback is provided. Classification heads
-    pool per-output stream values into a probability vector and derive their
-    stability vector from the recomputed per-output standard deviation. Regression
-    heads use the single output stream's recomputed mean/std and reuse the live
-    tier logic through `assign_regression_outputs()`.
-
-    Args:
-        output_streams: Enriched canonical stream records already joined back to
-            output metadata (head, output index, label, values).
-        head_infos: List of discovered HeadInfo objects.
-        calibrations: Optional calibration data (`normalized_label -> calibration`).
-        stability_thresholds: Thresholds for stability gating.
-        regression_thresholds: Thresholds for regression mood determination.
-
-    Returns:
-        List of HeadOutput objects with tier information matching ML inference.
-
-    """
+) -> list[HeadOutput]:
+    """Reconstruct HeadOutputs from canonical raw output streams with optional calibration."""
     if stability_thresholds is None:
         stability_thresholds = DEFAULT_STABILITY_THRESHOLDS
     if regression_thresholds is None:
@@ -308,16 +279,12 @@ def reconstruct_head_outputs_from_streams(
 def reconstruct_head_outputs_from_stats(
     *,
     output_streams: list[LoadedOutputStream],
-    head_infos: list[Any],
+    head_infos: list[HeadInfo],
     calibrations: dict[str, dict[str, Any]] | None = None,
     stability_thresholds: StabilityThresholds | None = None,
     regression_thresholds: RegressionThresholds | None = None,
-) -> list[Any]:
-    """Compatibility alias for the stream-based reconstruction API.
-
-    Despite the historical name, this function reconstructs only from canonical
-    raw output streams. There is no segment-stats fallback.
-    """
+) -> list[HeadOutput]:
+    """Compatibility alias for stream-based reconstruction (delegates to reconstruct_head_outputs_from_streams)."""
     return reconstruct_head_outputs_from_streams(
         output_streams=output_streams,
         head_infos=head_infos,

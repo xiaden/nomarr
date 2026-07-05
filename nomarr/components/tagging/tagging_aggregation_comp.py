@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -14,53 +14,37 @@ from nomarr.helpers.dto.ml_dto import HeadOutput
 from nomarr.helpers.dto.tagging_dto import BuildTierTermSetsResult
 from nomarr.helpers.dto.tags_dto import Tags
 
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.ml_head_dto import HeadInfo
+
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class StabilityThresholds:
-    """Thresholds for stability-based tier gating.
-
-    These thresholds control how segment-level variance affects tier assignment:
-    - acceptable: Max std for any tier (above this = no tier)
-    - stable: Max std for medium tier (above this = cap at low)
-    - very_stable: Max std for high tier (above this = cap at medium)
-    """
+    """Thresholds for stability-based tier gating."""
 
     acceptable: float = 0.25
     stable: float = 0.15
     very_stable: float = 0.08
 
 
-# Default stability thresholds (used by ML inference and reconstruction)
 DEFAULT_STABILITY_THRESHOLDS = StabilityThresholds()
 
 
 @dataclass(frozen=True)
 class RegressionThresholds:
-    """Thresholds for regression head mood classification.
-
-    These thresholds determine when regression values (0-1 intensity) trigger mood terms:
-    - strong: Threshold for high-intensity label (>= this value)
-    - weak: Threshold for low-intensity label (<= this value)
-    - Values between weak and strong are neutral (both labels emitted with no tier)
-    """
+    """Thresholds for regression head mood classification."""
 
     strong: float = 0.7
     weak: float = 0.3
 
 
-# Default regression thresholds
 DEFAULT_REGRESSION_THRESHOLDS = RegressionThresholds()
 
 
-# ---------------------------------------------------------------------------
-# Regression mood tier assignment
-# ---------------------------------------------------------------------------
-
-
 def assign_regression_outputs(
-    head_info: Any,
+    head_info: HeadInfo,
     head_name: str,
     mean_val: float,
     std_val: float,
@@ -69,29 +53,10 @@ def assign_regression_outputs(
     log_prefix: str = "aggregation",
     applied_calibration_id: str | None = None,
 ) -> list[HeadOutput]:
-    """Shared regression-to-HeadOutput conversion used by both inference and reconstruction.
-
-    Given a clamped mean and std for a regression head, determines the mood term,
-    assigns a stability-based tier, and returns the corresponding HeadOutput(s).
+    """Convert regression head mean/std to HeadOutput objects with stability-based tiers.
 
     For the neutral case (mean between weak and strong thresholds), both the high
     and low terms are emitted with tier=None.
-
-    Args:
-        head_info: HeadInfo object for the regression head
-        head_name: The head name key into MOOD_MAPPING
-        mean_val: Clamped [0, 1] regression mean
-        std_val: Standard deviation (optionally calibration-scaled)
-        stability_thresholds: Thresholds for stability gating
-        regression_thresholds: Thresholds for mood determination
-        log_prefix: Logging prefix tag (e.g. "aggregation" or "reconstruction")
-        applied_calibration_id: Calibration ID string to record on each HeadOutput.
-            When provided (non-None), reflects that calibration was applied to the values.
-            When None, records that no calibration was applied.
-
-    Returns:
-        List of HeadOutput objects (1 for decisive, 2 for neutral)
-
     """
     if head_name not in MOOD_MAPPING:
         return []
@@ -100,7 +65,6 @@ def assign_regression_outputs(
     is_high = mean_val >= regression_thresholds.strong
     is_low = mean_val <= regression_thresholds.weak
 
-    # Neutral case: emit both terms with no tier
     if not is_high and not is_low:
         model_key_high, _key_calib_id_high = head_info.build_versioned_tag_key(
             high_term,
@@ -142,7 +106,6 @@ def assign_regression_outputs(
             ),
         ]
 
-    # Decisive case: pick one term and assign tier via stability gating
     mood_term = high_term if is_high else low_term
     model_key, _key_calib_id = head_info.build_versioned_tag_key(
         mood_term,
@@ -192,39 +155,12 @@ def assign_regression_outputs(
     ]
 
 
-# ---------------------------------------------------------------------------
-# Public API: regression inference entry point
-# ---------------------------------------------------------------------------
-
-
 def add_regression_mood_tiers(
-    regression_heads: list[tuple[Any, list[float]]],
+    regression_heads: list[tuple[HeadInfo, list[float]]],
     stability_thresholds: StabilityThresholds | None = None,
     regression_thresholds: RegressionThresholds | None = None,
-) -> list[Any]:
-    """Convert regression head predictions (approachability, engagement) into HeadOutput objects.
-
-    Uses versioned tag keys from HeadInfo.build_versioned_tag_key() instead of hardcoded prefixes.
-
-    Regression heads output INTENSITY values (0-1), not probabilities:
-    - High values (>= strong threshold) indicate STRONG presence of the attribute
-    - Low values (<= weak threshold) indicate STRONG presence of the opposite attribute
-    - Middle values are neutral/ambiguous
-
-    ALWAYS creates a HeadOutput with the mean value (clamped to [0, 1]).
-    Variance only affects TIER assignment:
-    - High variance \u2192 no tier (unreliable measurement)
-    - Low variance + extreme value \u2192 tier assigned based on confidence
-
-    Args:
-        regression_heads: List of (HeadInfo, segment_values) tuples for regression heads
-        stability_thresholds: Thresholds for stability gating (default: DEFAULT_STABILITY_THRESHOLDS)
-        regression_thresholds: Thresholds for regression mood determination (default: DEFAULT_REGRESSION_THRESHOLDS)
-
-    Returns:
-        List of HeadOutput objects with tier information
-
-    """
+) -> list[HeadOutput]:
+    """Convert regression head predictions into HeadOutput objects with tier information."""
     if not regression_heads:
         return []
 
@@ -257,27 +193,10 @@ def add_regression_mood_tiers(
     return outputs
 
 
-# ---------------------------------------------------------------------------
-# Mood aggregation pipeline
-# ---------------------------------------------------------------------------
-
-
 def _build_tier_map(
-    head_outputs: list[Any],
+    head_outputs: list[HeadOutput],
 ) -> dict[str, tuple[str, float, str]]:
-    """Build tier map from HeadOutput objects.
-
-    Note: Calibration should be applied BEFORE creating HeadOutput objects
-    (in reconstruct_head_outputs_from_stats). This function only builds
-    the tier map from pre-calibrated outputs.
-
-    Args:
-        head_outputs: List of HeadOutput objects (values should already be calibrated)
-
-    Returns:
-        Dictionary mapping model_key -> (tier, value, label)
-
-    """
+    """Build a model_key -> (tier, value, label) map from pre-calibrated HeadOutputs."""
     mood_outputs = [ho for ho in head_outputs if ho.tier is not None]
     logger.debug("[aggregation] %s mood outputs with tiers", len(mood_outputs))
     if not mood_outputs:
@@ -285,6 +204,7 @@ def _build_tier_map(
         return {}
     tier_map: dict[str, tuple[str, float, str]] = {}
     for ho in mood_outputs:
+        assert ho.tier is not None
         tier_map[ho.model_key] = (ho.tier, ho.value, ho.label)
     logger.debug("[aggregation] Tier map has %s entries", len(tier_map))
     return tier_map
@@ -306,15 +226,6 @@ def _compute_suppressed_keys(
        labels are semantic opponents per the derived opponent map (e.g.
        ``"aggressive"`` from ``mood_aggressive`` vs ``"relaxed"`` from
        ``mood_relaxed``).  Suppress both sides to avoid contradictory tags.
-
-    Args:
-        head_outputs: All HeadOutput objects (tiered and non-tiered).
-        opponent_map: Label -> set of opponent labels, derived from
-            ``KNOWN_MODELS`` via :data:`OPPONENT_MAP`.
-
-    Returns:
-        Set of ``model_key`` strings to suppress.
-
     """
     _tier_rank: dict[str, int] = {
         "high": 3,
@@ -327,7 +238,6 @@ def _compute_suppressed_keys(
     tiered = [ho for ho in head_outputs if ho.tier is not None]
     suppressed: set[str] = set()
 
-    # --- Intra-head pass -------------------------------------------------
     by_head: dict[int, list[HeadOutput]] = {}
     for ho in tiered:
         key = id(ho.head)
@@ -348,7 +258,6 @@ def _compute_suppressed_keys(
                     best.tier,
                 )
 
-    # --- Cross-head pass -------------------------------------------------
     active = [ho for ho in tiered if ho.model_key not in suppressed]
     for i, ho_a in enumerate(active):
         if ho_a.model_key in suppressed:
@@ -357,12 +266,12 @@ def _compute_suppressed_keys(
             if ho_b.model_key in suppressed:
                 continue
             if id(ho_a.head) == id(ho_b.head):
-                continue  # Same head — already handled above
+                continue
             if ho_b.label in opponent_map.get(ho_a.label, set()):
                 suppressed.add(ho_a.model_key)
                 suppressed.add(ho_b.model_key)
                 logger.debug(
-                    "[aggregation] Cross-head suppress: %s (%s) vs %s (%s) — semantic conflict",
+                    "[aggregation] Cross-head suppress: %s (%s) vs %s (%s)",
                     ho_a.model_key,
                     ho_a.label,
                     ho_b.model_key,
@@ -376,20 +285,7 @@ def _build_tier_term_sets(
     tier_map: dict[str, tuple[str, float, str]],
     suppressed_keys: set[str],
 ) -> BuildTierTermSetsResult:
-    """Build strict, regular, and loose term sets from tier map.
-
-    Labels in ``tier_map`` are already human-readable display terms (set at
-    inference time from ``KNOWN_MODELS``), so no additional label remapping
-    is needed.
-
-    Args:
-        tier_map: Dictionary mapping model_key -> (tier, value, label)
-        suppressed_keys: Set of keys to skip due to conflicts
-
-    Returns:
-        BuildTierTermSetsResult with strict_terms, regular_terms, loose_terms
-
-    """
+    """Partition tiered outputs into strict, regular, and loose term sets."""
     strict_terms: set[str] = set()
     regular_terms: set[str] = set()
     loose_terms: set[str] = set()
@@ -412,26 +308,16 @@ def _build_tier_term_sets(
     return BuildTierTermSetsResult(strict_terms=strict_terms, regular_terms=regular_terms, loose_terms=loose_terms)
 
 
-def _make_inclusive_mood_tags(strict_terms: set[str], regular_terms: set[str], loose_terms: set[str]) -> dict[str, Any]:
-    """Build final mood tag dictionary with inclusive tier expansion.
-
-    Implements: strict \u2282 regular \u2282 loose
-
-    Args:
-        strict_terms: Set of strict tier terms
-        regular_terms: Set of regular tier terms
-        loose_terms: Set of loose tier terms
-
-    Returns:
-        Dictionary containing mood-strict, mood-regular, mood-loose tags
-
-    """
+def _make_inclusive_mood_tags(
+    strict_terms: set[str], regular_terms: set[str], loose_terms: set[str]
+) -> dict[str, list[str]]:
+    """Build final mood tag dictionary with inclusive tier expansion (strict < regular < loose)."""
     if strict_terms:
         regular_terms |= strict_terms
         loose_terms |= strict_terms
     if regular_terms:
         loose_terms |= regular_terms
-    result: dict[str, Any] = {}
+    result: dict[str, list[str]] = {}
     if strict_terms:
         result["mood-strict"] = sorted(strict_terms)
     if regular_terms:
@@ -442,26 +328,12 @@ def _make_inclusive_mood_tags(strict_terms: set[str], regular_terms: set[str], l
 
 
 def aggregate_mood_tiers(
-    head_outputs: list[Any],
-) -> dict[str, Any]:
-    r"""Aggregate HeadOutput objects into mood-strict, mood-regular, mood-loose collections.
-
-    Uses HeadOutput.tier to determine confidence level instead of parsing \*_tier tags.
-
-    Calibration should be applied BEFORE calling this function, typically in
-    reconstruct_head_outputs_from_stats() or during live inference.
+    head_outputs: list[HeadOutput],
+) -> dict[str, list[str]]:
+    """Aggregate HeadOutput objects into mood-strict/regular/loose collections.
 
     Applies pair conflict suppression: if both sides of a pair (e.g., happy/sad,
     aggressive/relaxed) have tiers, neither is emitted to avoid contradictory tags.
-
-    Also applies label improvements for better human readability.
-
-    Args:
-        head_outputs: List of HeadOutput objects with tier information (pre-calibrated)
-
-    Returns:
-        Dictionary containing mood-strict, mood-regular, mood-loose tags
-
     """
     logger.debug(
         "[aggregation] aggregate_mood_tiers called with %s HeadOutput objects",
@@ -486,23 +358,10 @@ def aggregate_mood_tags(head_outputs: list[HeadOutput]) -> Tags:
 
 
 def collect_mood_outputs(
-    regression_heads: list[tuple[Any, list[float]]],
-    all_head_outputs: list[Any],
-) -> dict[str, Any]:
-    r"""Collect and aggregate all mood outputs from classification and regression heads.
-
-    Combines regression-based HeadOutput objects with classification head outputs,
-    then aggregates them into mood tier tag dictionaries.
-
-    Args:
-        regression_heads: List of (HeadInfo, segment_values) tuples for regression heads.
-        all_head_outputs: List of HeadOutput objects from classification heads
-            (mutated in place by appending regression outputs).
-
-    Returns:
-        Dict of mood-\* tag strings for the file.
-
-    """
+    regression_heads: list[tuple[HeadInfo, list[float]]],
+    all_head_outputs: list[HeadOutput],
+) -> dict[str, list[str]]:
+    """Collect and aggregate all mood outputs from classification and regression heads."""
     regression_outputs = add_regression_mood_tiers(regression_heads)
     all_head_outputs.extend(regression_outputs)
     logger.debug("[aggregation] Total HeadOutput objects: %d", len(all_head_outputs))

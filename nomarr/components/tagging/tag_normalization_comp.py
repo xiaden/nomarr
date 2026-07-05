@@ -1,23 +1,9 @@
-"""Tag normalization component for cross-format metadata standardization.
-
-Maps format-specific tag names (MP4 atoms, ID3 frames, Vorbis comments) to
-a small canonical set of normalized names.
-
-Canonical tag set:
-- title, artist, artists, album, album_artist
-- tracknumber, discnumber
-- date, year, genre
-- composer, lyricist, label, publisher
-- bpm
-- nom:* (namespaced Nomarr tags)
-
-Everything else is discarded.
-"""
+"""Cross-format tag normalization — MP4 atoms, ID3 frames, Vorbis comments."""
 
 from __future__ import annotations
 
 import json
-from typing import Any
+from collections.abc import Mapping
 
 # Canonical tag set - only these keys (plus nom:*) will be kept
 CANONICAL_TAGS = {
@@ -52,7 +38,7 @@ MP4_TAG_MAP: dict[str, str] = {
     "tmpo": "bpm",
 }
 
-# MP4 freeform iTunes tags (----:com.apple.iTunes:*) - canonical only
+# Freeform iTunes tags mapping (used when tag format includes ----:com.apple.iTunes:)
 MP4_FREEFORM_MAP: dict[str, str] = {
     "ARTISTS": "artists",
     "LABEL": "label",
@@ -77,32 +63,34 @@ MP4_FREEFORM_BLOCKLIST = {
     "initialkey",
 }
 
-# ID3 frames to canonical tag names (ONLY canonical mappings)
+# ID3 frame types to canonical tag names
 ID3_TAG_MAP: dict[str, str] = {
     "TIT2": "title",
     "TPE1": "artist",
     "TALB": "album",
     "TPE2": "album_artist",
     "TCON": "genre",
-    "TDRC": "date",  # Recording date
-    "TYER": "year",  # Year (legacy)
-    "TRCK": "tracknumber",  # Format: "5/12"
-    "TPOS": "discnumber",  # Format: "1/2"
+    "TDRC": "date",
+    "TYER": "year",
+    "TRCK": "tracknumber",
+    "TPOS": "discnumber",
     "TCOM": "composer",
     "TEXT": "lyricist",
     "TPUB": "publisher",
     "TBPM": "bpm",
 }
 
-# ID3 TXXX (user-defined) mappings - canonical only
+# TXXX-frame to canonical mappings (case-insensitive keys)
 ID3_TXXX_MAP: dict[str, str] = {
     "ARTISTS": "artists",
     "artists": "artists",
     "LABEL": "label",
     "label": "label",
+    "ORIGINALDATE": "date",
+    "LYRICIST": "lyricist",
 }
 
-# Vorbis comment keys to canonical tag names (case-insensitive, ONLY canonical mappings)
+# Vorbis comment to canonical tag names (uppercase keys)
 VORBIS_TAG_MAP: dict[str, str] = {
     "TITLE": "title",
     "ARTIST": "artist",
@@ -123,85 +111,52 @@ VORBIS_TAG_MAP: dict[str, str] = {
 }
 
 
-def normalize_mp4_tags(tags: Any) -> dict[str, str]:
-    """Normalize MP4 tags to canonical tag names only.
-
-    Only keeps canonical tags (title, artist, album, etc.) and nom:* namespaced tags.
-    Drops cover art, sort tags, iTunes metadata, Acoustid fingerprints, etc.
-
-    Args:
-        tags: MP4 tags dict-like object from mutagen
-
-    Returns:
-        Dict with canonical tag names and JSON-array values (+ nom:* tags)
-
-    """
+def normalize_mp4_tags(tags: Mapping[str, object]) -> dict[str, str]:
+    """Normalize MP4 tags to canonical names; drops non-canonical atoms."""
     normalized: dict[str, str] = {}
 
     for key, value in tags.items():
-        # Skip cover art (binary data, don't serialize)
         if key == "covr":
             continue
 
-        # Handle freeform iTunes tags (----:com.apple.iTunes:*)
         if isinstance(key, str) and key.startswith("----:com.apple.iTunes:"):
             tag_name = key.replace("----:com.apple.iTunes:", "")
 
-            # Keep nom:* namespaced tags
             if tag_name.startswith("nom:"):
                 normalized[tag_name] = json.dumps(_extract_tag_strings(value), ensure_ascii=False)
                 continue
 
-            # Drop blocklisted tags (Acoustid, iTunNORM, etc.)
             if tag_name in MP4_FREEFORM_BLOCKLIST:
                 continue
 
-            # Drop old auto-tagging noise (ab:*, z_*)
             if tag_name.startswith(("ab:", "z_")):
                 continue
 
-            # Map canonical freeform tags (ARTISTS, LABEL, originaldate, etc.)
             if tag_name in MP4_FREEFORM_MAP:
                 norm_key = MP4_FREEFORM_MAP[tag_name]
                 normalized[norm_key] = json.dumps(_extract_tag_strings(value), ensure_ascii=False)
 
             continue
 
-        # Map standard atoms to canonical names
         if key in MP4_TAG_MAP:
             norm_key = MP4_TAG_MAP[key]
             normalized[norm_key] = json.dumps(_extract_tag_strings(value), ensure_ascii=False)
 
-    # Filter to only canonical tags + nom:*
     return {k: v for k, v in normalized.items() if k.startswith("nom:") or k in CANONICAL_TAGS}
 
 
-def normalize_id3_tags(tags: Any) -> dict[str, str]:
-    """Normalize ID3 tags to canonical tag names only.
-
-    Only keeps canonical tags and nom:* namespaced tags.
-    Drops cover art (APIC), lyrics (USLT), and other non-canonical frames.
-
-    Args:
-        tags: ID3 tags dict-like object from mutagen
-
-    Returns:
-        Dict with canonical tag names and JSON-array values (+ nom:* tags)
-
-    """
+def normalize_id3_tags(tags: Mapping[str, object]) -> dict[str, str]:
+    """Normalize ID3 tags to canonical names; drops non-canonical frames."""
     normalized: dict[str, str] = {}
 
     for key, value in tags.items():
-        # Handle TXXX frames (user-defined text)
         if isinstance(key, str) and key.startswith("TXXX:"):
             tag_name = key[5:]  # Remove "TXXX:" prefix
 
-            # Keep nom:* namespaced tags
             if tag_name.startswith("nom:"):
                 normalized[tag_name] = json.dumps(_extract_tag_strings(value), ensure_ascii=False)
                 continue
 
-            # Map canonical TXXX tags (case-insensitive check)
             tag_name_upper = tag_name.upper()
             if tag_name_upper in ID3_TXXX_MAP:
                 norm_key = ID3_TXXX_MAP[tag_name_upper]
@@ -209,106 +164,63 @@ def normalize_id3_tags(tags: Any) -> dict[str, str]:
 
             continue
 
-        # Skip binary/picture frames (APIC, GEOB, etc.)
         frame_type = key[:4] if isinstance(key, str) and len(key) >= 4 else key
         if frame_type in ("APIC", "GEOB", "USLT", "SYLT"):
             continue
 
-        # Map standard frames to canonical names
         if frame_type in ID3_TAG_MAP:
             norm_key = ID3_TAG_MAP[frame_type]
             normalized[norm_key] = json.dumps(_extract_tag_strings(value), ensure_ascii=False)
 
-    # Filter to only canonical tags + nom:*
     return {k: v for k, v in normalized.items() if k.startswith("nom:") or k in CANONICAL_TAGS}
 
 
-def normalize_vorbis_tags(tags: Any) -> dict[str, str]:
-    """Normalize Vorbis comments to canonical tag names only.
-
-    Only keeps canonical tags and nom:* namespaced tags.
-    Drops cover art (METADATA_BLOCK_PICTURE), lyrics, and other non-canonical fields.
-
-    Vorbis tags written as "nom:mood-strict" are stored as "NOM_MOOD_STRICT"
-    (uppercase with underscores). This function converts them back to "nom:mood-strict".
-
-    Args:
-        tags: Vorbis comments dict-like object from mutagen (FLAC, Ogg, etc.)
-
-    Returns:
-        Dict with canonical tag names and JSON-array values (+ nom:* tags)
-
-    """
+def normalize_vorbis_tags(tags: Mapping[str, object]) -> dict[str, str]:
+    """Normalize Vorbis comments to canonical names; drops non-canonical fields."""
     normalized: dict[str, str] = {}
 
     for key, value in tags.items():
-        # Vorbis comments are case-insensitive
         key_upper = key.upper()
 
-        # Skip picture/cover art fields (binary data)
         if key_upper in ("METADATA_BLOCK_PICTURE", "COVERART", "COVERARTMIME"):
             continue
 
-        # Check if this is a namespaced tag (e.g., "NOM_MOOD_STRICT")
-        # Convert back to "nom:mood-strict" format
         if key_upper.startswith("NOM_"):
-            # Convert NOM_MOOD_STRICT -> nom:mood-strict
             normalized_key = "nom:" + key[4:].lower().replace("_", "-")
             normalized[normalized_key] = json.dumps(_extract_tag_strings(value), ensure_ascii=False)
             continue
 
-        # Keep nom:* namespaced tags if they're already in colon format (rare)
         if key.lower().startswith("nom:"):
             normalized[key] = json.dumps(_extract_tag_strings(value), ensure_ascii=False)
             continue
 
-        # Map standard Vorbis fields to canonical names
         if key_upper in VORBIS_TAG_MAP:
             norm_key = VORBIS_TAG_MAP[key_upper]
             normalized[norm_key] = json.dumps(_extract_tag_strings(value), ensure_ascii=False)
 
-    # Filter to only canonical tags + nom:*
     return {k: v for k, v in normalized.items() if k.startswith("nom:") or k in CANONICAL_TAGS}
 
 
-def _extract_tag_strings(value: Any) -> list[str]:
-    """Extract clean string values from a mutagen tag value.
+def _extract_tag_strings(value: object) -> list[str]:
+    """Extract string values from a mutagen tag value, always returning a list.
 
-    Handles various mutagen types:
-    - MP4FreeForm: Extract bytes and decode
-    - Lists: Decode all items to strings
-    - Tuples (MP4 track/disc): Format as "N/total"
-    - Bytes: Decode to UTF-8
-    - ID3 text frames: Extract .text attribute
-    - Everything else: str()
-
-    Args:
-        value: Tag value from mutagen
-
-    Returns:
-        List of decoded string values (always a list, even for single values)
-
+    Handles MP4FreeForm bytes, ID3 text frames, list values, and MP4 track/disc tuples.
     """
-    # Handle MP4 track/disc tuples: (track, total)
     if isinstance(value, tuple) and len(value) >= 2 and all(isinstance(x, int) for x in value[:2]):
         return [f"{value[0]}/{value[1]}" if value[1] > 0 else str(value[0])]
 
-    # Handle lists (common in mutagen)
     if isinstance(value, list):
         if len(value) == 0:
             return []
         return [item.decode("utf-8", errors="replace") if isinstance(item, bytes) else str(item) for item in value]
 
-    # Handle bytes directly
     if isinstance(value, bytes):
         return [value.decode("utf-8", errors="replace")]
 
-    # Handle ID3 text frames (have .text attribute) - exclude tuples
     if not isinstance(value, tuple) and hasattr(value, "text"):
         text_value = value.text
         if isinstance(text_value, list):
             return [str(t) for t in text_value] if text_value else []
         return [str(text_value)]
 
-    # Everything else
     return [str(value)] if value is not None else []
