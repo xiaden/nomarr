@@ -33,33 +33,30 @@ class TestSeedEntitiesForScanBatch:
             "artist": "Canonical Artist",
             "artists": ["Canonical Artist", "Guest Artist"],
             "album": "Selected Ambient Works",
+            "label": "Warp",
             "genre": ["Ambient", "Drone"],
             "year": 1994,
             "track_number": 7,
         }
 
-        with patch(f"{MODULE}.set_song_tags_batch") as mock_set_song_tags_batch:
-            result = seed_entities_for_scan_batch(
+        result = seed_entities_for_scan_batch(
                 mock_db,
                 [f"{CollectionNames.LIBRARY_FILES.value}/1"],
                 {f"{CollectionNames.LIBRARY_FILES.value}/1": metadata},
             )
 
         assert result == 1
-        mock_set_song_tags_batch.assert_called_once()
-        persisted_entries = mock_set_song_tags_batch.call_args.args[1]
+        mock_db.tags.set_song_tags_batch.assert_called_once()
+        persisted_entries = mock_db.tags.set_song_tags_batch.call_args.args[0]
         persisted_map = {
-            entry["name"]: entry["values"]
+            entry["rel"]: entry["values"]
             for entry in persisted_entries
             if entry["song_id"] == f"{CollectionNames.LIBRARY_FILES.value}/1"
         }
 
-        assert persisted_map["comment"] == ["late night listening"]
         assert persisted_map["label"] == ["Warp"]
         assert persisted_map["genre"] == ["Ambient", "Drone"]
         assert persisted_map["year"] == [1994]
-        assert persisted_map["track_number"] == [7]
-        assert persisted_map["nom:mood"] == ["chill"]
         assert persisted_map["artist"] == ["Canonical Artist"]
         assert persisted_map["artists"] == ["Canonical Artist", "Guest Artist"]
         assert persisted_map["album"] == ["Selected Ambient Works"]

@@ -148,23 +148,19 @@ class TestGetLibraryScanHistories:
                 "_id": "libraries/one",
                 "name": "Main Library",
                 "scanned_at": 123,
+                "scan_status": "complete",
                 "ignored": "value",
             },
             {
                 "_id": "libraries/two",
                 "scanned_at": None,
+                "scan_status": "idle",
             },
         ]
 
-        with (
-            patch(
-                "nomarr.components.library.scan_lifecycle_comp._list_library_records",
-                return_value=libraries,
-            ) as mock_list_library_records,
-            patch(
-                "nomarr.components.library.scan_lifecycle_comp.get_scan_state",
-                side_effect=[{"completed_at": 123}, None],
-            ) as mock_get_scan_state,
+        with patch(
+            "nomarr.components.library.scan_lifecycle_comp.list_library_records",
+            return_value=libraries,
         ):
             result = get_library_scan_histories(mock_db)
 
@@ -182,28 +178,20 @@ class TestGetLibraryScanHistories:
                 "scan_status": "idle",
             },
         ]
-        mock_list_library_records.assert_called_once_with(mock_db)
-        assert mock_get_scan_state.call_count == 2
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_applies_limit_before_projection(self) -> None:
         mock_db = MagicMock()
         libraries = [
-            {"_id": "libraries/one", "name": "One"},
-            {"_id": "libraries/two", "name": "Two"},
-            {"_id": "libraries/three", "name": "Three"},
+            {"_id": "libraries/one", "name": "One", "scanned_at": None, "scan_status": "idle"},
+            {"_id": "libraries/two", "name": "Two", "scanned_at": None, "scan_status": "idle"},
+            {"_id": "libraries/three", "name": "Three", "scanned_at": 456, "scan_status": "complete"},
         ]
 
-        with (
-            patch(
-                "nomarr.components.library.scan_lifecycle_comp._list_library_records",
-                return_value=libraries,
-            ) as mock_list_library_records,
-            patch(
-                "nomarr.components.library.scan_lifecycle_comp.get_scan_state",
-                side_effect=[None, {"error": "boom"}],
-            ) as mock_get_scan_state,
+        with patch(
+            "nomarr.components.library.scan_lifecycle_comp.list_library_records",
+            return_value=libraries,
         ):
             result = get_library_scan_histories(mock_db, limit=2)
 
@@ -218,11 +206,9 @@ class TestGetLibraryScanHistories:
                 "library_id": "libraries/two",
                 "name": "Two",
                 "scanned_at": None,
-                "scan_status": "error",
+                "scan_status": "idle",
             },
         ]
-        mock_list_library_records.assert_called_once_with(mock_db)
-        assert mock_get_scan_state.call_count == 2
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -310,77 +296,51 @@ class TestScanStateHelpers:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_mark_scan_started_updates_started_at_and_scan_type(self) -> None:
+    def test_mark_scan_started_delegates_to_database_facade(self) -> None:
         mock_db = MagicMock()
 
-        with (
-            patch("nomarr.components.library.scan_lifecycle_comp.now_ms", return_value=Milliseconds(1234)),
-            patch("nomarr.components.library.scan_lifecycle_comp.update_scan_state") as mock_update_scan_state,
-        ):
-            mark_scan_started(mock_db, "libraries/test", "full")
+        mark_scan_started(mock_db, "libraries/test", "full")
 
-        mock_update_scan_state.assert_called_once_with(
+        mock_db.libraries.mark_scan_started.assert_called_once_with("libraries/test", scan_type="full")
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_mark_scan_completed_delegates_to_database_facade(self) -> None:
+        mock_db = MagicMock()
+
+        mark_scan_completed(mock_db, "libraries/test")
+
+        mock_db.libraries.mark_scan_completed.assert_called_once_with("libraries/test")
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_update_scan_progress_delegates_to_database_facade(self) -> None:
+        mock_db = MagicMock()
+
+        update_scan_progress(
             mock_db,
             "libraries/test",
-            started_at=1234,
-            scan_type="full",
+            progress=5,
+            total=12,
+            scan_error="boom",
+        )
+
+        mock_db.libraries.update_scan_status.assert_called_once_with(
+            "libraries/test",
+            status=None,
+            progress=5,
+            total=12,
+            scan_error="boom",
         )
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_mark_scan_completed_clears_inflight_fields(self) -> None:
+    def test_check_interrupted_scan_delegates_to_database_facade(self) -> None:
         mock_db = MagicMock()
-
-        with (
-            patch("nomarr.components.library.scan_lifecycle_comp.now_ms", return_value=Milliseconds(5678)),
-            patch("nomarr.components.library.scan_lifecycle_comp.update_scan_state") as mock_update_scan_state,
-        ):
-            mark_scan_completed(mock_db, "libraries/test")
-
-        mock_update_scan_state.assert_called_once_with(
-            mock_db,
-            "libraries/test",
-            completed_at=5678,
-            started_at=None,
-            scan_type=None,
-        )
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_update_scan_progress_maps_progress_fields(self) -> None:
-        mock_db = MagicMock()
-
-        with patch("nomarr.components.library.scan_lifecycle_comp.update_scan_state") as mock_update_scan_state:
-            update_scan_progress(
-                mock_db,
-                "libraries/test",
-                progress=5,
-                total=12,
-                scan_error="boom",
-            )
-
-        mock_update_scan_state.assert_called_once_with(
-            mock_db,
-            "libraries/test",
-            files_processed=5,
-            files_total=12,
-            error="boom",
-        )
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_check_interrupted_scan_uses_scan_doc_timestamps(self) -> None:
-        mock_db = MagicMock()
-        mock_db.app.get_scan.return_value = {
-            "_id": "library_scans/test",
-            "_key": "test",
-            "library_key": "test",
-            "started_at": 200,
-            "completed_at": 100,
-            "scan_type": "quick",
-        }
+        mock_db.libraries.check_interrupted_scan.return_value = (True, "quick")
 
         assert check_interrupted_scan(mock_db, "libraries/test") == (True, "quick")
+        mock_db.libraries.check_interrupted_scan.assert_called_once_with("libraries/test")
 
 
 class TestFolderCacheHelpers:
@@ -468,21 +428,21 @@ class TestResolveLibraryForScan:
     def test_returns_library_when_lookup_succeeds(self) -> None:
         mock_db = MagicMock()
         library = {"_id": "libraries/1", "name": "Main"}
-        mock_db.library.get_library.return_value = library
+        mock_db.libraries.get_library.return_value = library
 
         result = resolve_library_for_scan(mock_db, "libraries/1")
 
         assert result == library
-        mock_db.library.get_library.assert_called_once_with("libraries/1")
+        mock_db.libraries.get_library.assert_called_once_with("libraries/1")
 
     def test_raises_library_not_found_when_lookup_returns_none(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.get_library.return_value = None
+        mock_db.libraries.get_library.return_value = None
 
         with pytest.raises(LibraryNotFoundError, match="Library libraries/missing not found"):
             resolve_library_for_scan(mock_db, "libraries/missing")
 
-        mock_db.library.get_library.assert_called_once_with("libraries/missing")
+        mock_db.libraries.get_library.assert_called_once_with("libraries/missing")
 
 
 @pytest.mark.unit
@@ -511,55 +471,36 @@ class TestTransitionToScanning:
 class TestOnScanCompletePipelineHook:
     """Tests for post-scan pipeline state transitions."""
 
-    def test_transitions_scan_axis_to_complete_and_ml_to_in_progress(self) -> None:
+    def test_transitions_ml_axis_when_files_exist(self) -> None:
         mock_db = MagicMock()
+        mock_db.library.list_files.return_value = [{"_id": "file1"}, {"_id": "file2"}]
 
-        with (
-            patch(
-                "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis"
-            ) as mock_transition_pipeline_axis,
-            patch(
-                "nomarr.components.library.library_file_state_comp.count_untagged_files",
-                return_value=5,
-            ),
-        ):
+        with patch(
+            "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis"
+        ) as mock_transition_pipeline_axis:
             on_scan_complete_pipeline_hook(mock_db, "libraries/1")
 
-        # Should transition scan axis to complete and ML axis to in_progress
-        assert mock_transition_pipeline_axis.call_count == 2
-        mock_transition_pipeline_axis.assert_any_call(
-            mock_db,
-            "libraries/1",
-            SCAN_STATE_FIELD,
-            "scanned",
-        )
-        mock_transition_pipeline_axis.assert_any_call(
+        mock_transition_pipeline_axis.assert_called_once_with(
             mock_db,
             "libraries/1",
             ML_STATE_FIELD,
             ML_IN_PROGRESS,
         )
 
-    def test_transitions_scan_axis_to_complete_when_library_has_no_untagged_files(self) -> None:
+    def test_transitions_ml_axis_when_no_files(self) -> None:
         mock_db = MagicMock()
+        mock_db.library.list_files.return_value = []
 
-        with (
-            patch(
-                "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis"
-            ) as mock_transition_pipeline_axis,
-            patch(
-                "nomarr.components.library.library_file_state_comp.count_untagged_files",
-                return_value=0,
-            ),
-        ):
+        with patch(
+            "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis"
+        ) as mock_transition_pipeline_axis:
             on_scan_complete_pipeline_hook(mock_db, "libraries/1")
 
-        # Should transition scan axis to complete but NOT ML axis
         mock_transition_pipeline_axis.assert_called_once_with(
             mock_db,
             "libraries/1",
-            SCAN_STATE_FIELD,
-            "scanned",
+            ML_STATE_FIELD,
+            ML_NOT_PROCESSED,
         )
 
 

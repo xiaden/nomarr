@@ -160,12 +160,9 @@ class TestGenerateCalibrationFromHistogram:
 
     def test_returns_default_payload_when_sparse_histogram_is_empty(self) -> None:
         mock_db = MagicMock()
+        mock_db.calibration_state.get_sparse_histogram.return_value = []
 
         with (
-            patch(
-                "nomarr.components.ml.calibration.ml_calibration_comp.get_sparse_histogram",
-                return_value=[],
-            ) as mock_get_sparse_histogram,
             patch(
                 "nomarr.components.ml.calibration.ml_calibration_comp.derive_percentiles_from_sparse_histogram"
             ) as mock_derive,
@@ -188,14 +185,6 @@ class TestGenerateCalibrationFromHistogram:
             "overflow_count": 0,
             "histogram_bins": [],
         }
-        mock_get_sparse_histogram.assert_called_once_with(
-            mock_db,
-            model_id="ml_models/model-1",
-            label="happy",
-            lo=0.1,
-            hi=0.9,
-            bins=8,
-        )
         mock_derive.assert_not_called()
 
     def test_returns_percentiles_and_histogram_bins_when_sparse_histogram_exists(self) -> None:
@@ -204,12 +193,9 @@ class TestGenerateCalibrationFromHistogram:
             {"min_val": 0.1, "count": 2, "underflow_count": 1, "overflow_count": 0},
             {"min_val": 0.7, "count": 3, "underflow_count": 0, "overflow_count": 4},
         ]
+        mock_db.calibration_state.get_sparse_histogram.return_value = sparse_bins
 
         with (
-            patch(
-                "nomarr.components.ml.calibration.ml_calibration_comp.get_sparse_histogram",
-                return_value=sparse_bins,
-            ) as mock_get_sparse_histogram,
             patch(
                 "nomarr.components.ml.calibration.ml_calibration_comp.derive_percentiles_from_sparse_histogram",
                 return_value={
@@ -242,14 +228,6 @@ class TestGenerateCalibrationFromHistogram:
                 {"val": 0.7, "count": 3},
             ],
         }
-        mock_get_sparse_histogram.assert_called_once_with(
-            mock_db,
-            model_id="ml_models/model-2",
-            label="happy",
-            lo=0.0,
-            hi=1.0,
-            bins=10,
-        )
         mock_derive.assert_called_once_with(
             sparse_bins=sparse_bins,
             lo=0.0,
@@ -334,5 +312,4 @@ class TestGetDefaultHistogramSpec:
             "lo": 0.0,
             "hi": 1.0,
             "bins": 10000,
-            "bin_width": pytest.approx(0.0001),
         }

@@ -152,10 +152,9 @@ class TestPersistBackboneVector:
             num_segments=embeddings.shape[0],
         )
         mock_logger_warning.assert_called_once_with(
-            "[processor] Failed to persist %s vector for %s: %s",
+            "[vectors] Failed to persist %s vector for %s",
             "effnet",
             "/music/f1.mp3",
-            ANY,
             exc_info=True,
         )
 

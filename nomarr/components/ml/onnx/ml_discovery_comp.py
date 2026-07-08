@@ -265,6 +265,7 @@ def discover_heads_no_db(models_dir: str) -> list[HeadInfo]:
 
             for onnx_path in sorted(glob.glob(os.path.join(head_type_dir, "*.onnx"))):
                 model_stem = os.path.splitext(os.path.basename(onnx_path))[0]
+                is_reg = "regression" in head_type.lower()
                 heads.append(
                     HeadInfo(
                         name=model_stem,
@@ -274,6 +275,7 @@ def discover_heads_no_db(models_dir: str) -> list[HeadInfo]:
                         model_stem=model_stem,
                         model_path=onnx_path,
                         embedding_graph=embedding_graph,
+                        is_regression_head=is_reg,
                     )
                 )
 
@@ -522,7 +524,7 @@ def discover_head_models(
                 if info is not None:
                     model = ONNXHeadModel(
                         onnx_path,
-                        labels=list(info.labels),
+                        meta=info,
                     )
                 else:
                     model = ONNXHeadModel(onnx_path)

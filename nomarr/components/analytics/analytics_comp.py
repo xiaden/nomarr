@@ -156,7 +156,7 @@ def compute_mood_distribution(mood_rows: Sequence[tuple[str, str]]) -> MoodDistr
     }
     for mood_type, tag_value in mood_rows:
         counter = counter_map.get(mood_type)
-        if not counter:
+        if counter is None:
             continue
         try:
             moods = json.loads(tag_value)

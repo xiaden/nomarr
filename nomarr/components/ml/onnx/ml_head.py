@@ -89,16 +89,34 @@ class ONNXHeadModel(BaseONNXModel):
         self,
         path: str,
         *,
-        meta: HeadInfo,
+        meta: HeadInfo | None = None,
+        labels: list[str] | None = None,
     ) -> None:
         """Initialise the head model wrapper.
 
         Args:
             path: Absolute path to the head ``.onnx`` file.
             meta: Head metadata describing labels, backbone, and model identity.
+            labels: Optional list of label names (backward-compat alias for meta.labels).
         """
         super().__init__(path)
-        self.meta = meta
+        self.backbone_name, self.head_type, self.model_name = head_parts_from_path(path)
+        if meta is not None:
+            self.meta = meta
+        else:
+            from nomarr.helpers.dto.ml_head_dto import HeadInfo
+
+            is_reg = "regression" in self.head_type.lower()
+            self.meta = HeadInfo(
+                name=self.model_name,
+                labels=list(labels) if labels is not None else [],
+                backbone=self.backbone_name,
+                head_type=self.head_type,
+                model_stem=self.model_name,
+                model_path=path,
+                embedding_graph="",
+                is_regression_head=is_reg,
+            )
         self.input_node = None
         self.output_node = None
         self.input_dim = None

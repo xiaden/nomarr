@@ -17,6 +17,7 @@ Typical call sequence (executed in ml_onnx_cache or ml_onnx_base):
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import TYPE_CHECKING, Any, TypedDict
 
@@ -33,6 +34,12 @@ class FleetVramState(TypedDict):
 
     promises: list[dict[str, Any]]
     vram: dict[str, Any]
+
+
+def _promise_key(worker_id: str, model_path: str) -> str:
+    """Compute a stable key for a worker+model VRAM promise."""
+    raw = f"{worker_id}:{model_path}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
 def register_vram_promise(

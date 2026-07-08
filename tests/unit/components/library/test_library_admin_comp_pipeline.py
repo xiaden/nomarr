@@ -149,8 +149,8 @@ class TestIsScanRunning:
         mock_db = MagicMock()
 
         with patch(
-            "nomarr.components.library.library_admin_comp.get_scanning_library_ids",
-            return_value={"libraries/abc123"},
+            "nomarr.components.library.library_admin_comp.get_libraries_in_axis_state",
+            return_value=["libraries/abc123"],
         ):
             result = _is_scan_running(mock_db)
 
@@ -163,8 +163,8 @@ class TestIsScanRunning:
         mock_db = MagicMock()
 
         with patch(
-            "nomarr.components.library.library_admin_comp.get_scanning_library_ids",
-            return_value=set(),
+            "nomarr.components.library.library_admin_comp.get_libraries_in_axis_state",
+            return_value=[],
         ):
             result = _is_scan_running(mock_db)
 
