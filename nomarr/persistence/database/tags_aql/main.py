@@ -7,11 +7,12 @@ from nomarr.persistence.arango_client import SafeDatabase
 from nomarr.persistence.schema import CollectionNames
 
 from ._helpers import Document, _as_document_id, _extract_key
+from .tag_analytics_ops import TagAnalyticsOpsMixin
 from .tag_edge_ops import TagEdgeOpsMixin
 from .tag_search_ops import TagSearchOpsMixin
 
 
-class TagsAqlOperations(TagSearchOpsMixin, TagEdgeOpsMixin):
+class TagsAqlOperations(TagSearchOpsMixin, TagEdgeOpsMixin, TagAnalyticsOpsMixin):
     """Thin Tier 2 bindings for tag documents and file↔tag traversals."""
 
     COLLECTION = CollectionNames.TAGS.value

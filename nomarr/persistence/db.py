@@ -48,6 +48,54 @@ __all__ = ["Database"]
 # ==================================================================
 
 
+class _MigrationsAdapter:
+    """Thin adapter preserving the legacy ``db.migrations.*`` contract.
+
+    Migrations were previously exposed as a first-class collection on the
+    Database facade.  This adapter delegates to the ``AppDb`` API while
+    keeping existing callers working.
+    """
+
+    def __init__(self, app: AppDb) -> None:
+        self._app = app
+
+    def record_migration_started(
+        self,
+        name: str,
+        migration_version: str,
+        started_at: str,
+    ) -> None:
+        """Record that a migration has started."""
+        self._app.upsert_migration(
+            name,
+            {
+                "status": "in_progress",
+                "started_at": started_at,
+                "migration_version": migration_version,
+            },
+        )
+
+    def mark_migration_applied(
+        self,
+        name: str,
+        duration_ms: int,
+        applied_at: str,
+    ) -> None:
+        """Mark a migration as successfully applied."""
+        self._app.upsert_migration(
+            name,
+            {
+                "status": "applied",
+                "applied_at": applied_at,
+                "duration_ms": duration_ms,
+            },
+        )
+
+    def list_migrations(self) -> list[dict]:
+        """Return all applied migration records."""
+        return self._app.list_migrations()
+
+
 class Database:
     """Application database (ArangoDB).
 
@@ -128,6 +176,7 @@ class Database:
         self.libraries = self.libraries_aql
         self.library_files = self.library_files_aql
         self.file_states = self.file_states_aql
+        self.tags = self.tags_aql
 
         # Canonical Tier 3 caller entrypoints. Shared maintenance scaffolding is
         # nested under these three domain facades; no top-level db.admin surface.
@@ -154,6 +203,9 @@ class Database:
             navidrome=self.navidrome_aql,
             libraries=self.libraries_aql,
         )
+
+        # Legacy migrations namespace — delegates to AppDb
+        self.migrations = _MigrationsAdapter(self.app)
 
     def get_version(self) -> str | None:
         """Read the current schema version from the meta store."""

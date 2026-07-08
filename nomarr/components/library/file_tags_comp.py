@@ -32,17 +32,18 @@ def get_file_tags_with_path(db: Database, file_id: str, nomarr_only: bool = Fals
     tags = db.tags.get_song_tags(file_id, nomarr_only=nomarr_only)
 
     # Transform Tags DTO to API-compatible dict format.
-    # Flatten single-value tuples for API consumers.
-    tags_data: list[_FileTagItem] = [
-        {
-            "key": tag.key,
-            "rel": tag.key,
-            "value": tag.value[0] if len(tag.value) == 1 else list(tag.value),
-            "type": "nomarr" if tag.key.startswith("nom:") else "user",
-            "is_nomarr_tag": tag.key.startswith("nom:"),
-        }
-        for tag in tags
-    ]
+    # Flatten single-value tuples, split multi-value tags into separate entries.
+    tags_data: list[_FileTagItem] = []
+    for tag in tags:
+        tags_data.extend(
+            {
+                "key": tag.name,
+                "name": tag.name,
+                "value": val,
+                "is_nomarr_tag": tag.name.startswith("nom:"),
+            }
+            for val in tag.values
+        )
 
     return {
         "path": file_record["path"],

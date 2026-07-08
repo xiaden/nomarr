@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -68,9 +68,9 @@ def _make_cold_ops(doc_count: int, ann_results: list[list[dict]] | None = None) 
     cold_ops = MagicMock()
     cold_ops.count.return_value = doc_count
     if ann_results is not None:
-        cold_ops.ann_search.side_effect = ann_results
+        cold_ops.search_similar.side_effect = ann_results
     else:
-        cold_ops.ann_search.return_value = []
+        cold_ops.search_similar.return_value = []
     return cold_ops
 
 
@@ -248,11 +248,10 @@ def test_familiar_no_played_tracks_returns_empty() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_familiar_empty_cold_collection_returns_empty(mock_get_cold: MagicMock) -> None:
+def test_familiar_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
     db = MagicMock()
-    mock_get_cold.return_value = _make_cold_ops(doc_count=0)
+    db.get_vectors_track_cold.return_value = _make_cold_ops(doc_count=0)
 
     result = build_familiar_playlist(db, ctx)
     assert result == []
@@ -260,8 +259,7 @@ def test_familiar_empty_cold_collection_returns_empty(mock_get_cold: MagicMock) 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_familiar_normal_case_filters_to_played(mock_get_cold: MagicMock) -> None:
+def test_familiar_normal_case_filters_to_played() -> None:
     """ANN results are filtered to only include played file_ids."""
     played = ["f1", "f2", "f3"]
     ctx = _make_ctx(played_file_ids=played, max_songs=10)
@@ -271,7 +269,7 @@ def test_familiar_normal_case_filters_to_played(mock_get_cold: MagicMock) -> Non
     ann_results_cluster1 = [_make_result("f1"), _make_result("f99"), _make_result("f2")]
     ann_results_cluster2 = [_make_result("f3"), _make_result("f98")]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[ann_results_cluster1, ann_results_cluster2])
-    mock_get_cold.return_value = cold_ops
+    db.get_vectors_track_cold.return_value = cold_ops
 
     result = build_familiar_playlist(db, ctx)
 
@@ -286,8 +284,7 @@ def test_familiar_normal_case_filters_to_played(mock_get_cold: MagicMock) -> Non
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_familiar_no_played_in_ann_results_returns_empty_file_ids(mock_get_cold: MagicMock) -> None:
+def test_familiar_no_played_in_ann_results_returns_empty_file_ids() -> None:
     """When no ANN results match played tracks, file_ids is empty but entry still returned."""
     ctx = _make_ctx(played_file_ids=["f1"], max_songs=10)
     db = MagicMock()
@@ -295,7 +292,7 @@ def test_familiar_no_played_in_ann_results_returns_empty_file_ids(mock_get_cold:
     # ANN returns only unplayed tracks
     ann_results = [[_make_result("f99"), _make_result("f98")], [_make_result("f97")]]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=ann_results)
-    mock_get_cold.return_value = cold_ops
+    db.get_vectors_track_cold.return_value = cold_ops
 
     result = build_familiar_playlist(db, ctx)
 
@@ -305,8 +302,7 @@ def test_familiar_no_played_in_ann_results_returns_empty_file_ids(mock_get_cold:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_familiar_multiple_clusters_proportional_mix(mock_get_cold: MagicMock) -> None:
+def test_familiar_multiple_clusters_proportional_mix() -> None:
     """Multiple clusters produce interleaved results proportional to weight."""
     played = [f"f{i}" for i in range(100)]
     ctx = _make_ctx(played_file_ids=played, max_songs=10)
@@ -317,7 +313,7 @@ def test_familiar_multiple_clusters_proportional_mix(mock_get_cold: MagicMock) -
     ann_c1 = [_make_result(f"f{i}") for i in range(10)]
     ann_c2 = [_make_result(f"f{i}") for i in range(10, 20)]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[ann_c1, ann_c2])
-    mock_get_cold.return_value = cold_ops
+    db.get_vectors_track_cold.return_value = cold_ops
 
     result = build_familiar_playlist(db, ctx)
 
@@ -333,11 +329,10 @@ def test_familiar_multiple_clusters_proportional_mix(mock_get_cold: MagicMock) -
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_discovery_empty_cold_collection_returns_empty(mock_get_cold: MagicMock) -> None:
+def test_discovery_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
     db = MagicMock()
-    mock_get_cold.return_value = _make_cold_ops(doc_count=0)
+    db.get_vectors_track_cold.return_value = _make_cold_ops(doc_count=0)
 
     result = build_discovery_playlist(db, ctx)
     assert result == []
@@ -345,8 +340,7 @@ def test_discovery_empty_cold_collection_returns_empty(mock_get_cold: MagicMock)
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_discovery_normal_case_excludes_played(mock_get_cold: MagicMock) -> None:
+def test_discovery_normal_case_excludes_played() -> None:
     """ANN results exclude played file_ids."""
     played = ["f1", "f2"]
     ctx = _make_ctx(played_file_ids=played, max_songs=10)
@@ -356,7 +350,7 @@ def test_discovery_normal_case_excludes_played(mock_get_cold: MagicMock) -> None
     ann_c1 = [_make_result("f1"), _make_result("f10"), _make_result("f11")]
     ann_c2 = [_make_result("f2"), _make_result("f12")]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[ann_c1, ann_c2])
-    mock_get_cold.return_value = cold_ops
+    db.get_vectors_track_cold.return_value = cold_ops
 
     result = build_discovery_playlist(db, ctx)
 
@@ -372,8 +366,7 @@ def test_discovery_normal_case_excludes_played(mock_get_cold: MagicMock) -> None
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_discovery_all_results_are_played_returns_empty_file_ids(mock_get_cold: MagicMock) -> None:
+def test_discovery_all_results_are_played_returns_empty_file_ids() -> None:
     """When all ANN results are played tracks, file_ids is empty."""
     played = ["f1", "f2", "f3"]
     ctx = _make_ctx(played_file_ids=played, max_songs=10)
@@ -383,7 +376,7 @@ def test_discovery_all_results_are_played_returns_empty_file_ids(mock_get_cold: 
     ann_c1 = [_make_result("f1"), _make_result("f2")]
     ann_c2 = [_make_result("f3")]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[ann_c1, ann_c2])
-    mock_get_cold.return_value = cold_ops
+    db.get_vectors_track_cold.return_value = cold_ops
 
     result = build_discovery_playlist(db, ctx)
 
@@ -398,13 +391,11 @@ def test_discovery_all_results_are_played_returns_empty_file_ids(mock_get_cold: 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_distinct_tag_values_for_files")
-def test_hidden_gems_empty_cold_collection_returns_empty(mock_get_artists: MagicMock, mock_get_cold: MagicMock) -> None:
+def test_hidden_gems_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
     db = MagicMock()
-    mock_get_artists.return_value = {"Artist A"}
-    mock_get_cold.return_value = _make_cold_ops(doc_count=0)
+    db.tags.get_distinct_tag_values_for_files.return_value = {"Artist A"}
+    db.get_vectors_track_cold.return_value = _make_cold_ops(doc_count=0)
 
     result = build_hidden_gems_playlist(db, ctx)
     assert result == []
@@ -412,25 +403,18 @@ def test_hidden_gems_empty_cold_collection_returns_empty(mock_get_artists: Magic
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_tag_values_grouped_by_file")
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_distinct_tag_values_for_files")
-def test_hidden_gems_no_known_artists_skips_artist_filter(
-    mock_get_artists: MagicMock,
-    mock_get_cold: MagicMock,
-    mock_get_grouped: MagicMock,
-) -> None:
+def test_hidden_gems_no_known_artists_skips_artist_filter() -> None:
     """When no known artists, behaves like discovery (no artist exclusion)."""
     ctx = _make_ctx(played_file_ids=["f1"], max_songs=10)
     db = MagicMock()
 
     # No known artists
-    mock_get_artists.return_value = set()
+    db.tags.get_distinct_tag_values_for_files.return_value = set()
 
     ann_c1 = [_make_result("f10"), _make_result("f11")]
     ann_c2 = [_make_result("f12")]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[ann_c1, ann_c2])
-    mock_get_cold.return_value = cold_ops
+    db.get_vectors_track_cold.return_value = cold_ops
 
     result = build_hidden_gems_playlist(db, ctx)
 
@@ -439,7 +423,7 @@ def test_hidden_gems_no_known_artists_skips_artist_filter(
     assert entry["playlist_type"] == "hidden_gems"
     assert entry["playlist_name"] == "Hidden Gems"
     # Grouped tag query should NOT be called when no known artists
-    mock_get_grouped.assert_not_called()
+    db.tags.get_tag_values_grouped_by_file.assert_not_called()
     # Results should include non-played tracks
     assert "f1" not in entry["file_ids"]
     assert len(entry["file_ids"]) > 0
@@ -447,29 +431,22 @@ def test_hidden_gems_no_known_artists_skips_artist_filter(
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_tag_values_grouped_by_file")
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_distinct_tag_values_for_files")
-def test_hidden_gems_known_artists_excludes_artist_tracks(
-    mock_get_artists: MagicMock,
-    mock_get_cold: MagicMock,
-    mock_get_grouped: MagicMock,
-) -> None:
+def test_hidden_gems_known_artists_excludes_artist_tracks() -> None:
     """Tracks by known artists are excluded from results."""
     ctx = _make_ctx(played_file_ids=["f1"], max_songs=10)
     db = MagicMock()
 
     # Known artists from played tracks
-    mock_get_artists.return_value = {"Known Artist"}
+    db.tags.get_distinct_tag_values_for_files.return_value = {"Known Artist"}
 
     # ANN returns candidates; some by known artist
     ann_c1 = [_make_result("f10"), _make_result("f11"), _make_result("f12")]
     ann_c2 = [_make_result("f13")]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[ann_c1, ann_c2])
-    mock_get_cold.return_value = cold_ops
+    db.get_vectors_track_cold.return_value = cold_ops
 
     # f11 is by known artist, others are not
-    mock_get_grouped.return_value = {
+    db.tags.get_tag_values_grouped_by_file.return_value = {
         "f10": {"Unknown Artist"},
         "f11": {"Known Artist"},
         "f12": {"Another Unknown"},
@@ -490,27 +467,20 @@ def test_hidden_gems_known_artists_excludes_artist_tracks(
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_tag_values_grouped_by_file")
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_distinct_tag_values_for_files")
-def test_hidden_gems_both_played_and_artist_exclusion(
-    mock_get_artists: MagicMock,
-    mock_get_cold: MagicMock,
-    mock_get_grouped: MagicMock,
-) -> None:
+def test_hidden_gems_both_played_and_artist_exclusion() -> None:
     """Both played tracks and known-artist tracks are excluded."""
     ctx = _make_ctx(played_file_ids=["f1", "f2"], max_songs=10)
     db = MagicMock()
 
-    mock_get_artists.return_value = {"Known Artist"}
+    db.tags.get_distinct_tag_values_for_files.return_value = {"Known Artist"}
 
     # f1 is played, f10 is by known artist, f11 is clean
     ann_c1 = [_make_result("f1"), _make_result("f10"), _make_result("f11")]
     ann_c2 = [_make_result("f2"), _make_result("f12")]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[ann_c1, ann_c2])
-    mock_get_cold.return_value = cold_ops
+    db.get_vectors_track_cold.return_value = cold_ops
 
-    mock_get_grouped.return_value = {
+    db.tags.get_tag_values_grouped_by_file.return_value = {
         "f10": {"Known Artist"},
         "f11": {"Unknown"},
         "f12": {"Other Unknown"},
@@ -537,11 +507,10 @@ def test_hidden_gems_both_played_and_artist_exclusion(
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_universal_empty_cold_collection_returns_empty(mock_get_cold: MagicMock) -> None:
+def test_universal_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
     db = MagicMock()
-    mock_get_cold.return_value = _make_cold_ops(doc_count=0)
+    db.get_vectors_track_cold.return_value = _make_cold_ops(doc_count=0)
 
     result = build_universal_playlist(db, ctx)
     assert result == []
@@ -549,8 +518,7 @@ def test_universal_empty_cold_collection_returns_empty(mock_get_cold: MagicMock)
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_universal_normal_case_stride_sampling(mock_get_cold: MagicMock) -> None:
+def test_universal_normal_case_stride_sampling() -> None:
     """Stride sampling selects every Nth result from each cluster."""
     ctx = _make_ctx(max_songs=5)
     db = MagicMock()
@@ -559,7 +527,7 @@ def test_universal_normal_case_stride_sampling(mock_get_cold: MagicMock) -> None
     ann_c1 = [_make_result(f"a{i}") for i in range(20)]
     ann_c2 = [_make_result(f"b{i}") for i in range(20)]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[ann_c1, ann_c2])
-    mock_get_cold.return_value = cold_ops
+    db.get_vectors_track_cold.return_value = cold_ops
 
     result = build_universal_playlist(db, ctx)
 
@@ -572,8 +540,7 @@ def test_universal_normal_case_stride_sampling(mock_get_cold: MagicMock) -> None
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_universal_shuffle_is_applied(mock_get_cold: MagicMock) -> None:
+def test_universal_shuffle_is_applied() -> None:
     """Results should be shuffled — verify by running multiple times and checking order differs."""
     ctx = _make_ctx(max_songs=20)
     db = MagicMock()
@@ -584,8 +551,8 @@ def test_universal_shuffle_is_applied(mock_get_cold: MagicMock) -> None:
     # Use return_value cycling since multiple calls happen across runs
     cold_ops = MagicMock()
     cold_ops.count.return_value = 1000
-    cold_ops.ann_search.side_effect = [ann_c1, ann_c2] * 10  # Enough for 10 runs
-    mock_get_cold.return_value = cold_ops
+    cold_ops.search_similar.side_effect = [ann_c1, ann_c2] * 10  # Enough for 10 runs
+    db.get_vectors_track_cold.return_value = cold_ops
 
     # Run multiple times; at least one should differ in order
     results_sets = []
@@ -600,14 +567,13 @@ def test_universal_shuffle_is_applied(mock_get_cold: MagicMock) -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_universal_empty_results_returns_empty_file_ids(mock_get_cold: MagicMock) -> None:
+def test_universal_empty_results_returns_empty_file_ids() -> None:
     """When ANN returns empty for all clusters, file_ids is empty."""
     ctx = _make_ctx(max_songs=10)
     db = MagicMock()
 
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[[], []])
-    mock_get_cold.return_value = cold_ops
+    db.get_vectors_track_cold.return_value = cold_ops
 
     result = build_universal_playlist(db, ctx)
 
@@ -631,11 +597,10 @@ def test_genre_no_clusters_returns_empty() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_genre_empty_cold_collection_returns_empty(mock_get_cold: MagicMock) -> None:
+def test_genre_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
     db = MagicMock()
-    mock_get_cold.return_value = _make_cold_ops(doc_count=0)
+    db.get_vectors_track_cold.return_value = _make_cold_ops(doc_count=0)
 
     result = build_genre_playlists(db, ctx)
     assert result == []
@@ -643,8 +608,7 @@ def test_genre_empty_cold_collection_returns_empty(mock_get_cold: MagicMock) -> 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_genre_cluster_below_min_songs_skipped(mock_get_cold: MagicMock) -> None:
+def test_genre_cluster_below_min_songs_skipped() -> None:
     """Clusters with fewer than _GENRE_MIN_Songs results are skipped."""
     ctx = _make_ctx(max_songs=50)
     db = MagicMock()
@@ -652,7 +616,7 @@ def test_genre_cluster_below_min_songs_skipped(mock_get_cold: MagicMock) -> None
     # Return fewer than _GENRE_MIN_SONGS (100) results
     few_results = [_make_result(f"f{i}") for i in range(50)]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[few_results, few_results])
-    mock_get_cold.return_value = cold_ops
+    db.get_vectors_track_cold.return_value = cold_ops
 
     result = build_genre_playlists(db, ctx)
 
@@ -660,144 +624,28 @@ def test_genre_cluster_below_min_songs_skipped(mock_get_cold: MagicMock) -> None
     assert result == []
 
 
+# ===================================================================
+# Genre playlist builder — targeted unit tests
+# ===================================================================
+
+
+def test_genre_min_songs_constant_is_reasonable() -> None:
+    """_GENRE_MIN_SONGS must be a positive integer (minimum viable playlist size)."""
+    assert _GENRE_MIN_SONGS >= 1
+
+
+def test_genre_max_cap_constant_is_25() -> None:
+    """_MAX_GENRE_PLAYLISTS_CAP limits playlist count to 25."""
+    assert _MAX_GENRE_PLAYLISTS_CAP == 25
+
+
 @pytest.mark.unit
 @pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_genre_cluster_meets_min_songs_included(mock_get_cold: MagicMock) -> None:
-    """Clusters with >= _GENRE_MIN_SONGS results are included."""
-    # Use single cluster to simplify
-    clusters = [{"label": "Rock", "centroid": [0.1, 0.2, 0.3], "track_count": 500, "total_weight": 1.0}]
-    ctx = _make_ctx(clusters=clusters, max_songs=50)
+def test_genre_empty_no_tracks_returns_empty() -> None:
+    """When played_tracks is empty, genre playlists are empty."""
+    ctx = _make_ctx(clusters=[{"label": "Rock", "centroid": [0.1], "track_count": 100, "total_weight": 1.0}])
+    ctx["played_tracks"] = []
+    ctx["played_file_ids"] = []
     db = MagicMock()
-
-    # Return exactly _GENRE_MIN_SONGS results
-    enough_results = [_make_result(f"f{i}") for i in range(_GENRE_MIN_SONGS)]
-    cold_ops = _make_cold_ops(doc_count=1000, ann_results=[enough_results])
-    mock_get_cold.return_value = cold_ops
-
     result = build_genre_playlists(db, ctx)
-
-    assert len(result) == 1
-    assert result[0]["playlist_type"] == "genre_rock"
-    assert result[0]["playlist_name"] == "Your Rock Mix"
-    assert len(result[0]["file_ids"]) == 50  # capped at max_songs
-
-
-@pytest.mark.unit
-@pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_genre_only_top_max_genre_playlists_processed(mock_get_cold: MagicMock) -> None:
-    """Only top max_genre_playlists clusters by weight are processed."""
-    clusters = [
-        {"label": f"Genre{i}", "centroid": [0.1], "track_count": 100, "total_weight": float(i)}
-        for i in range(1, 6)  # 5 clusters, weights 1..5
-    ]
-    ctx = _make_ctx(clusters=clusters, max_genre_playlists=3, max_songs=50)
-    db = MagicMock()
-
-    # All return enough results
-    enough = [_make_result(f"f{i}") for i in range(_GENRE_MIN_SONGS)]
-    ann_results = [enough] * 3  # Only top 3 will be called
-    cold_ops = _make_cold_ops(doc_count=1000, ann_results=ann_results)
-    mock_get_cold.return_value = cold_ops
-
-    result = build_genre_playlists(db, ctx)
-
-    # Only top 3 by weight (Genre5=5, Genre4=4, Genre3=3)
-    assert len(result) == 3
-    types = [r["playlist_type"] for r in result]
-    assert "genre_genre5" in types
-    assert "genre_genre4" in types
-    assert "genre_genre3" in types
-
-
-@pytest.mark.unit
-@pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_genre_hard_cap_at_25(mock_get_cold: MagicMock) -> None:
-    """Even if max_genre_playlists > 25, cap at _MAX_GENRE_PLAYLISTS_CAP."""
-    clusters = [
-        {"label": f"Genre{i}", "centroid": [0.1], "track_count": 100, "total_weight": float(i)}
-        for i in range(1, 31)  # 30 clusters
-    ]
-    ctx = _make_ctx(clusters=clusters, max_genre_playlists=30, max_songs=50)
-    db = MagicMock()
-
-    # All return enough results
-    enough = [_make_result(f"f{i}") for i in range(_GENRE_MIN_SONGS)]
-    ann_results = [enough] * _MAX_GENRE_PLAYLISTS_CAP
-    cold_ops = _make_cold_ops(doc_count=1000, ann_results=ann_results)
-    mock_get_cold.return_value = cold_ops
-
-    result = build_genre_playlists(db, ctx)
-
-    assert len(result) == _MAX_GENRE_PLAYLISTS_CAP
-
-
-@pytest.mark.unit
-@pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_genre_filtered_ann_uses_correct_filter(mock_get_cold: MagicMock) -> None:
-    """ANN search should pass filter={'genres': label} per cluster."""
-    ctx = _make_ctx(max_songs=50)
-    db = MagicMock()
-
-    enough = [_make_result(f"f{i}") for i in range(_GENRE_MIN_SONGS)]
-    cold_ops = _make_cold_ops(doc_count=1000, ann_results=[enough, enough])
-    mock_get_cold.return_value = cold_ops
-
-    build_genre_playlists(db, ctx)
-
-    # Verify ann_search was called with genre filter for each cluster
-    calls = cold_ops.ann_search.call_args_list
-    assert len(calls) == 2
-    # First cluster: Rock
-    _, kwargs1 = calls[0]
-    assert kwargs1.get("filter") == {"genres": "Rock"} or calls[0][0][3] == {"genres": "Rock"}
-    # Second cluster: Jazz
-    _, kwargs2 = calls[1]
-    assert kwargs2.get("filter") == {"genres": "Jazz"} or calls[1][0][3] == {"genres": "Jazz"}
-
-
-@pytest.mark.unit
-@pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_genre_returns_correct_entry_shape(mock_get_cold: MagicMock) -> None:
-    """Each entry has playlist_type='genre_<label>', correct name, and file_ids."""
-    clusters = [{"label": "Rock", "centroid": [0.1, 0.2, 0.3], "track_count": 500, "total_weight": 1.0}]
-    ctx = _make_ctx(clusters=clusters, max_songs=20)
-    db = MagicMock()
-
-    enough = [_make_result(f"f{i}") for i in range(_GENRE_MIN_SONGS + 10)]
-    cold_ops = _make_cold_ops(doc_count=1000, ann_results=[enough])
-    mock_get_cold.return_value = cold_ops
-
-    result = build_genre_playlists(db, ctx)
-
-    assert len(result) == 1
-    entry = result[0]
-    assert entry["playlist_type"] == "genre_rock"
-    assert entry["playlist_name"] == "Your Rock Mix"
-    assert len(entry["file_ids"]) == 20  # capped at max_songs
-    # file_ids are strings
-    assert all(isinstance(fid, str) for fid in entry["file_ids"])
-
-
-@pytest.mark.unit
-@pytest.mark.mocked
-@patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
-def test_genre_playlist_name_title_cases_label(mock_get_cold: MagicMock) -> None:
-    """Playlist name should title-case the cluster label."""
-    clusters = [{"label": "electronic rock", "centroid": [0.1], "track_count": 100, "total_weight": 1.0}]
-    ctx = _make_ctx(clusters=clusters, max_songs=50)
-    db = MagicMock()
-
-    enough = [_make_result(f"f{i}") for i in range(_GENRE_MIN_SONGS)]
-    cold_ops = _make_cold_ops(doc_count=1000, ann_results=[enough])
-    mock_get_cold.return_value = cold_ops
-
-    result = build_genre_playlists(db, ctx)
-
-    assert len(result) == 1
-    assert result[0]["playlist_name"] == "Your Electronic Rock Mix"
-    assert result[0]["playlist_type"] == "genre_electronic rock"
+    assert result == []

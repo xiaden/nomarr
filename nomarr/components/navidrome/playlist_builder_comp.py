@@ -56,6 +56,40 @@ def _ann_search_cold(
     return cast("list[dict[str, Any]]", cold_ops.search_similar(centroid, fetch_limit, nprobe=nprobe))
 
 
+def _search_all_clusters(
+    db: Database,
+    ctx: NavidromePersonalPlaylistContext,
+    fetch_multiplier: int,
+) -> list[dict[str, Any]] | None:
+    """Run ANN search across every taste cluster and combine results deduplicated.
+    Returns ``None`` only when every cluster search returned ``None`` (empty collection).
+    Returns ``[]`` when searches ran but produced zero results.
+    """
+    seen: set[str] = set()
+    all_results: list[dict[str, Any]] = []
+    any_searched = False
+    for cluster in ctx["clusters"]:
+        raw = _ann_search_cold(
+            db,
+            ctx["backbone_id"],
+            ctx["library_key"],
+            cluster["centroid"],
+            ctx["max_songs"],
+            fetch_multiplier=fetch_multiplier,
+        )
+        if raw is None:
+            continue
+        any_searched = True
+        for item in raw:
+            fid = item.get("file_id")
+            if fid is not None and fid not in seen:
+                seen.add(fid)
+                all_results.append(item)
+    if not any_searched:
+        return None
+    return all_results
+
+
 def build_familiar_playlist(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
@@ -69,14 +103,7 @@ def build_familiar_playlist(
     if not played:
         return []
 
-    raw_results = _ann_search_cold(
-        db,
-        ctx["backbone_id"],
-        ctx["library_key"],
-        ctx["centroid"],
-        ctx["max_songs"],
-        fetch_multiplier=5,
-    )
+    raw_results = _search_all_clusters(db, ctx, fetch_multiplier=5)
     if raw_results is None:
         return []
 
@@ -98,14 +125,7 @@ def build_discovery_playlist(
     """Build a Discovery playlist: ANN search excluding played tracks."""
     played = set(ctx["played_file_ids"])
 
-    raw_results = _ann_search_cold(
-        db,
-        ctx["backbone_id"],
-        ctx["library_key"],
-        ctx["centroid"],
-        ctx["max_songs"],
-        fetch_multiplier=2,
-    )
+    raw_results = _search_all_clusters(db, ctx, fetch_multiplier=2)
     if raw_results is None:
         return []
 
@@ -135,14 +155,7 @@ def build_hidden_gems_playlist(
     if not known_artists:
         logger.debug("[navidrome] No known artists for hidden gems, falling back to discovery-style")
 
-    raw_results = _ann_search_cold(
-        db,
-        ctx["backbone_id"],
-        ctx["library_key"],
-        ctx["centroid"],
-        ctx["max_songs"],
-        fetch_multiplier=3,
-    )
+    raw_results = _search_all_clusters(db, ctx, fetch_multiplier=3)
     if raw_results is None:
         return []
 
@@ -173,14 +186,7 @@ def build_universal_playlist(
     Spreads selections across the result set for variety instead of
     taking the top-N results.
     """
-    raw_results = _ann_search_cold(
-        db,
-        ctx["backbone_id"],
-        ctx["library_key"],
-        ctx["centroid"],
-        ctx["max_songs"],
-        fetch_multiplier=3,
-    )
+    raw_results = _search_all_clusters(db, ctx, fetch_multiplier=3)
     if raw_results is None:
         return []
 
@@ -298,3 +304,93 @@ def build_genre_playlists(
         )
 
     return playlists
+
+
+def _interleave_per_cluster(
+    results: dict[str, list[dict[str, Any]]],
+    weights: dict[str, float],
+    target_size: int,
+) -> list[str]:
+    """Interleave items from clusters proportionally by weight.
+
+    Uses largest-remainder (Hamilton) allocation for proportional quotas,
+    then round-robins in descending weight order up to each cluster's quota.
+
+    Args:
+        results: Mapping from cluster key to list of result dicts (each
+            containing a ``"file_id"`` or ``"_id"`` key).
+        weights: Mapping from cluster key to relative weight.
+        target_size: Maximum number of items to return.
+
+    Returns:
+        Flat list of ``file_id`` strings interleaved from each cluster.
+
+    """
+    if target_size <= 0:
+        return []
+    if not results or not weights:
+        return []
+
+    total_weight = sum(weights.values())
+    if total_weight <= 0:
+        # Even split across all keys (sorted alphabetically for determinism)
+        even_keys = sorted(results)
+        if not even_keys:
+            return []
+        base = target_size // len(even_keys)
+        remainder = target_size % len(even_keys)
+        quotas = {k: base + (1 if i < remainder else 0) for i, k in enumerate(even_keys)}
+    else:
+        # Largest remainder (Hamilton) proportional allocation
+        exact_quotas = {key: target_size * weights.get(key, 0) / total_weight for key in results}
+        quotas = {key: int(exact) for key, exact in exact_quotas.items()}
+        allocated = sum(quotas.values())
+        remaining = target_size - allocated
+        if remaining > 0:
+            # Sort by fractional part descending, give leftover slots
+            keys_by_frac = sorted(
+                quotas,
+                key=lambda k: exact_quotas[k] - int(exact_quotas[k]),
+                reverse=True,
+            )
+            for i in range(remaining):
+                quotas[keys_by_frac[i]] += 1
+
+    # Extract file IDs and build ready queues
+    clusters: dict[str, list[str]] = {}
+    for key, items in results.items():
+        if not items:
+            clusters[key] = []
+            continue
+        file_ids: list[str] = []
+        for item in items:
+            fid = item.get("file_id") or item.get("_id")
+            if isinstance(fid, str):
+                file_ids.append(fid)
+        clusters[key] = file_ids
+
+    if all(len(v) == 0 for v in clusters.values()):
+        return []
+
+    # Proportional round-robin — each cluster yields at most its quota
+    output: list[str] = []
+    taken: dict[str, int] = dict.fromkeys(clusters, 0)
+    indices: dict[str, int] = dict.fromkeys(clusters, 0)
+    while len(output) < target_size:
+        any_progress = False
+        for key in sorted(clusters, key=lambda k: -weights.get(k, 0)):
+            if len(output) >= target_size:
+                break
+            if taken[key] >= quotas.get(key, target_size):
+                continue
+            cluster = clusters[key]
+            idx = indices[key]
+            if idx >= len(cluster):
+                continue
+            output.append(cluster[idx])
+            indices[key] = idx + 1
+            taken[key] += 1
+            any_progress = True
+        if not any_progress:
+            break
+    return output

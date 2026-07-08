@@ -152,13 +152,10 @@ class TestApplyMigration:
 
         apply_migration("V001_test", module, db)
 
-        db.app.upsert_migration.assert_any_call(
-            "V001_test",
-            {
-                "status": "in_progress",
-                "started_at": ANY,
-                "migration_version": "1.0.0",
-            },
+        db.migrations.record_migration_started.assert_called_once_with(
+            name="V001_test",
+            migration_version="1.0.0",
+            started_at=ANY,
         )
 
     @pytest.mark.unit
@@ -169,13 +166,10 @@ class TestApplyMigration:
 
         apply_migration("V001_test", module, db)
 
-        db.app.upsert_migration.assert_any_call(
-            "V001_test",
-            {
-                "status": "applied",
-                "applied_at": ANY,
-                "duration_ms": ANY,
-            },
+        db.migrations.mark_migration_applied.assert_called_once_with(
+            name="V001_test",
+            duration_ms=ANY,
+            applied_at=ANY,
         )
 
     @pytest.mark.unit

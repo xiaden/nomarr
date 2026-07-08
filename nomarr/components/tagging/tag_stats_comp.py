@@ -86,7 +86,7 @@ def _scoped_song_count_for_tag(
 def _numeric_value(value: object) -> float | None:
     """Convert loosely numeric values into float form when possible."""
     if isinstance(value, bool):
-        return None
+        return float(value)
     if isinstance(value, int | float):
         return float(value)
     if isinstance(value, str):

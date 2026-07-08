@@ -177,7 +177,6 @@ def test_database_keeps_compatibility_aliases_pointing_at_tier2_bindings(
     for alias_name, implementation_name in expected_aliases.items():
         assert getattr(db, alias_name) is getattr(db, implementation_name)
 
-    assert not hasattr(db, "tags")
     assert not hasattr(db, "scan")
     assert not hasattr(db, "ml_streams")
     assert not hasattr(db, "ml_models")
