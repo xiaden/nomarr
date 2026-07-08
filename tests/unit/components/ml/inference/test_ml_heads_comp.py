@@ -90,7 +90,7 @@ class TestHeadDecisionToHeadOutputs:
 
         outputs = decision.to_head_outputs(
             hi,
-            key_builder=lambda label: f"versioned_{label}",
+            key_builder=lambda label: (f"versioned_{label}", "none_0"),
         )
 
         happy_out = next(o for o in outputs if o.label == "happy")
@@ -105,7 +105,7 @@ class TestHeadDecisionToHeadOutputs:
 
         outputs = decision.to_head_outputs(
             hi,
-            key_builder=lambda label: f"versioned_{label}",
+            key_builder=lambda label: (f"versioned_{label}", "none_0"),
         )
 
         happy_out = next(o for o in outputs if o.label == "happy")

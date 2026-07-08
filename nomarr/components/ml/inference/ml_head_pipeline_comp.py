@@ -22,7 +22,7 @@ import numpy as np
 from nomarr.components.ml.inference.ml_embed_comp import pool_scores
 from nomarr.components.ml.inference.ml_heads_comp import HeadSpec, run_head_decision
 from nomarr.components.tagging.mood_labels_comp import normalize_tag_label
-from nomarr.helpers.dto.ml_dto import ProcessHeadPredictionsResult, SingleHeadResult
+from nomarr.helpers.dto.ml_dto import ProcessHeadPredictionsResult, RawOutputStream, SingleHeadResult
 from nomarr.helpers.time_helper import internal_ms
 
 if TYPE_CHECKING:
@@ -50,14 +50,14 @@ def shutdown_head_pool(*, timeout: float = 5.0) -> None:
     _HEAD_POOL.shutdown(wait=True, cancel_futures=True)
 
 
-def _build_tag_key(label: str, *, head_model: ONNXHeadModel) -> str:
+def _build_tag_key(label: str, *, head_model: ONNXHeadModel) -> tuple[str, str]:
     """Build a versioned tag key for a label — module-level to avoid per-head closure creation."""
-    model_key, _ = head_model.build_versioned_tag_key(
+    model_key, calibration_id = head_model.meta.build_versioned_tag_key(
         normalize_tag_label(label),
         calib_method="none",
         calib_version=0,
     )
-    return model_key
+    return model_key, calibration_id
 
 
 def _make_predict(m: ONNXHeadModel, e: np.ndarray) -> Callable[[], np.ndarray]:
@@ -117,7 +117,7 @@ def run_single_head(
         key_builder = partial(_build_tag_key, head_model=head_model)
 
         head_outputs = decision.to_head_outputs(
-            head_info=head_model,
+            head_info=head_model.meta,
             key_builder=key_builder,
         )
         head_tags = decision.as_tags(key_builder=key_builder)
@@ -138,25 +138,29 @@ def run_single_head(
                 raw_values = [float(x) for x in segment_scores[:, 0]]
             else:
                 raw_values = [float(x) for x in segment_scores]
-            regression_data = (head_model, raw_values)
+            regression_data = (head_model.meta, raw_values)
             logger.debug(
                 f"[processor] Captured {len(raw_values)} segment predictions for {head_name} (mean={np.mean(raw_values):.3f}, std={np.std(raw_values):.3f})",
             )
         # Defer segment stats computation to async DB write thread.
-        # Keep raw scores alive (numpy ref, no copy needed — it's from vstack).
-        raw_segment_scores: np.ndarray | None = None
-        segment_labels: list[str] | None = None
-        if segment_scores.ndim == 2 and len(head_model.labels) > 0:
-            raw_segment_scores = segment_scores
-            segment_labels = head_model.labels
+        # Keep raw scores per output index as RawOutputStream objects.
+        raw_output_streams: list[RawOutputStream] | None = None
+        if segment_scores.ndim == 2 and len(head_model.meta.labels) > 0:
+            raw_output_streams = [
+                RawOutputStream(
+                    output_index=i,
+                    values=[float(x) for x in segment_scores[:, i]],
+                )
+                for i in range(segment_scores.shape[1])
+            ]
         return SingleHeadResult(
             head_name=head_name,
             status="success",
+            model_path=head_model.meta.model_path,
             head_tags=head_tags,
             head_outputs=head_outputs,
             regression_data=regression_data,
-            raw_segment_scores=raw_segment_scores,
-            segment_labels=segment_labels,
+            raw_output_streams=raw_output_streams,
             elapsed_ms=elapsed_ms,
             decisions_count=len(decision.details),
         )
@@ -173,7 +177,7 @@ def run_single_head(
 def run_heads(
     backbone_heads: list[ONNXHeadModel],
     embeddings_2d: np.ndarray,
-    tags_accum: dict[str, Any],
+    tags_accum: dict[str, Any] | None = None,
 ) -> ProcessHeadPredictionsResult:
     """Process all head predictions for a single backbone using cached embeddings.
 
@@ -211,20 +215,20 @@ def run_heads(
     head_results: dict[str, Any] = {}
     regression_heads: list[tuple[Any, list[float]]] = []
     all_head_outputs: list[Any] = []
-    raw_segments_per_head: dict[str, tuple[np.ndarray, list[str]]] = {}
+    raw_output_streams_by_model_path: dict[str, list[RawOutputStream]] = {}
     per_head_timings: dict[str, float] = {}
     for r in head_results_list:
         per_head_timings[r.head_name] = r.elapsed_ms
         if r.status == "success":
             heads_succeeded += 1
-            if r.head_tags:
+            if r.head_tags and tags_accum is not None:
                 tags_accum.update(r.head_tags)
             if r.head_outputs:
                 all_head_outputs.extend(r.head_outputs)
             if r.regression_data:
                 regression_heads.append(r.regression_data)
-            if r.raw_segment_scores is not None and r.segment_labels is not None:
-                raw_segments_per_head[r.head_name] = (r.raw_segment_scores, r.segment_labels)
+            if r.raw_output_streams is not None:
+                raw_output_streams_by_model_path[r.model_path or r.head_name] = r.raw_output_streams
             head_results[r.head_name] = {
                 "status": "success",
                 "tags_written": len(r.head_tags or {}),
@@ -239,6 +243,6 @@ def run_heads(
         head_results=head_results,
         regression_heads=regression_heads,
         all_head_outputs=all_head_outputs,
-        raw_segments_per_head=raw_segments_per_head,
+        raw_output_streams_by_model_path=raw_output_streams_by_model_path,
         per_head_timings=per_head_timings,
     )

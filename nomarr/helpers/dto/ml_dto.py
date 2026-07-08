@@ -151,6 +151,7 @@ class SingleHeadResult:
     model_path: str | None = None
     error: str | None = None
     head_outputs: list[Any] | None = None
+    head_tags: dict[str, Any] | None = None
     regression_data: tuple[Any, list[float]] | None = None
     raw_output_streams: list[RawOutputStream] | None = None
     elapsed_ms: float = 0.0

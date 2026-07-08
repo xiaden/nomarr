@@ -321,13 +321,19 @@ class HeadDecision:
         if head_is_regression(self.head):
             for key, value in self.details.items():
                 tag_key = key_builder(key) if key_builder else f"{prefix}{key}"
+                if isinstance(tag_key, tuple):
+                    tag_key = tag_key[0]
                 tags[tag_key] = value
             return tags
         for key, value in self.details.items():
             tag_key = key_builder(key) if key_builder else f"{prefix}{key}"
+            if isinstance(tag_key, tuple):
+                tag_key = tag_key[0]
             tags[tag_key] = float(value.get("p", 0.0))
         for lab, prob in (self.all_probs or {}).items():
             tag_key = key_builder(lab) if key_builder else f"{prefix}{lab}"
+            if isinstance(tag_key, tuple):
+                tag_key = tag_key[0]
             if tag_key not in tags:
                 tags[tag_key] = float(prob)
         return tags
@@ -359,8 +365,11 @@ class HeadDecision:
             return outputs
         for label, value in self.details.items():
             if key_builder:
-                tag_key = key_builder(label)
-                calibration_id = getattr(head_info, "calibration_id", None)
+                result = key_builder(label)
+                if isinstance(result, tuple):
+                    tag_key, calibration_id = result
+                else:
+                    tag_key, calibration_id = result, None
             else:
                 tag_key = f"{prefix}{label}"
                 calibration_id = None
@@ -384,8 +393,11 @@ class HeadDecision:
             if label in self.details:
                 continue
             if key_builder:
-                tag_key = key_builder(label)
-                calibration_id = getattr(head_info, "calibration_id", None)
+                result = key_builder(label)
+                if isinstance(result, tuple):
+                    tag_key, calibration_id = result
+                else:
+                    tag_key, calibration_id = result, None
             else:
                 tag_key = f"{prefix}{label}"
                 calibration_id = None

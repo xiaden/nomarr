@@ -30,8 +30,8 @@ class TestGetSparseHistogram:
             "embedder_release_date": "2026-01-01",
         }
         mock_db.library.list_all_tag_names.return_value = [
-            "nom:happy_sigmoid_ast20260101",
-            "nom:sad_sigmoid_ast20260101",
+            "nom:sigmoid_happy_ast_20260101",
+            "nom:sigmoid_sad_ast_20260101",
             "genre",
         ]
         mock_db.library.list_tags_by_name.return_value = [
@@ -53,12 +53,12 @@ class TestGetSparseHistogram:
         )
 
         assert result == [
-            {"min_val": 0.0, "count": 1, "underflow_count": 1, "overflow_count": 0},
-            {"min_val": 0.1, "count": 2, "underflow_count": 0, "overflow_count": 0},
-            {"min_val": 0.9, "count": 1, "underflow_count": 0, "overflow_count": 1},
+            {"min_val": 0.1, "count": 2, "underflow_count": 0, "overflow_count": 2},
+            {"min_val": 0.2, "count": 1, "underflow_count": 2, "overflow_count": 1},
+            {"min_val": 0.9, "count": 1, "underflow_count": 3, "overflow_count": 0},
         ]
         mock_db.library.list_all_tag_names.assert_called_once_with(limit=10000)
-        mock_db.library.list_tags_by_name.assert_called_once_with(name="nom:happy_sigmoid_ast20260101", limit=50000)
+        mock_db.library.list_tags_by_name.assert_called_once_with(name="nom:sigmoid_happy_ast_20260101", limit=50000)
 
     def test_returns_empty_when_model_metadata_is_missing(self) -> None:
         mock_db = MagicMock()

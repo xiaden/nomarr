@@ -122,6 +122,21 @@ class ONNXHeadModel(BaseONNXModel):
         self.input_dim = None
         self.num_classes = None
 
+    @property
+    def name(self) -> str:
+        """Delegates to meta.name for compatibility with inference pipeline."""
+        return self.meta.name
+
+    @property
+    def labels(self) -> list[str]:
+        """Delegates to meta.labels for compatibility with inference pipeline."""
+        return self.meta.labels
+
+    @property
+    def is_regression(self) -> bool:
+        """Delegates to meta.is_regression_head for compatibility with inference pipeline."""
+        return self.meta.is_regression_head
+
     def load(self, device: DevicePlacement) -> None:
         """Load the ONNX session and resolve tensor metadata.
 

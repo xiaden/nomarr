@@ -33,7 +33,7 @@ class TestBuildTagKey:
 
         result = _build_tag_key("happy", head_model=mock_model)
 
-        assert result == "happy_effnet_mood_happy"
+        assert result == ("happy_effnet_mood_happy", "none_0")
 
     def test_calls_build_versioned_tag_key_on_meta(self) -> None:
         mock_model = _mock_head_model()
