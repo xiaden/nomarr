@@ -306,7 +306,7 @@ class HeadDecision:
         self.details = details
         self.all_probs = all_probs or {}
 
-    def as_tags(self, prefix: str = "", key_builder: Callable[[str], str] | None = None) -> dict[str, Any]:
+    def as_tags(self, prefix: str = "", key_builder: Callable[[str], Any] | None = None) -> dict[str, Any]:
         """Produce a flat tag dict with numeric values only.
 
         Tier information is preserved in self.details but not emitted as *_tier tags.
@@ -342,7 +342,7 @@ class HeadDecision:
         self,
         head_info: ONNXHeadModel,
         prefix: str = "",
-        key_builder: Callable[[str], str] | None = None,
+        key_builder: Callable[[str], Any] | None = None,
     ) -> list[HeadOutput]:
         """Convert HeadDecision to list of HeadOutput objects.
 
@@ -381,7 +381,7 @@ class HeadDecision:
                 tier = None
             outputs.append(
                 HeadOutput(
-                    head=head_info,
+                    head=head_info,  # type: ignore[arg-type]  # ml_discovery_comp.HeadInfo vs ml_head_dto.HeadInfo
                     model_key=tag_key,
                     label=label,
                     value=prob,
@@ -403,7 +403,7 @@ class HeadDecision:
                 calibration_id = None
             outputs.append(
                 HeadOutput(
-                    head=head_info,
+                    head=head_info,  # type: ignore[arg-type]  # ml_discovery_comp.HeadInfo vs ml_head_dto.HeadInfo
                     model_key=tag_key,
                     label=label,
                     value=float(prob),

@@ -524,7 +524,7 @@ def discover_head_models(
                 if info is not None:
                     model = ONNXHeadModel(
                         onnx_path,
-                        meta=info,
+                        meta=info,  # type: ignore[arg-type]  # ml_discovery_comp.HeadInfo vs ml_head_dto.HeadInfo
                     )
                 else:
                     model = ONNXHeadModel(onnx_path)

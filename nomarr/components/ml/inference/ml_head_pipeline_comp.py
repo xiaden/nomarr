@@ -117,7 +117,7 @@ def run_single_head(
         key_builder = partial(_build_tag_key, head_model=head_model)
 
         head_outputs = decision.to_head_outputs(
-            head_info=head_model.meta,
+            head_info=head_model.meta,  # type: ignore[arg-type]  # ml_head_dto.HeadInfo vs ml_discovery_comp.HeadInfo
             key_builder=key_builder,
         )
         head_tags = decision.as_tags(key_builder=key_builder)
