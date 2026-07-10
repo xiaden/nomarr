@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.dto.ml_dto import SaveCalibrationSidecarsResult
 
@@ -135,9 +135,9 @@ def save_calibration_sidecars(
         except (OSError, TypeError) as e:
             logger.exception(f"[calibration] Failed to save {calibration_path}: {e}")
     logger.info(f"[calibration] Saved {len(saved_files)} calibration sidecars")
-    total_labels = 0
+    total_labels: int = 0
     for file_data in saved_files.values():
-        label_count = file_data.get("label_count", 0)
+        label_count: int = cast("int", file_data.get("label_count", 0))
         total_labels += label_count
     return SaveCalibrationSidecarsResult(
         saved_files=saved_files, total_files=len(saved_files), total_labels=total_labels
@@ -212,6 +212,96 @@ def get_default_histogram_spec(head_name: str) -> dict[str, Any]:
 
     """
     return {"lo": 0.0, "hi": 1.0, "bins": 10000}
+
+
+def get_sparse_histogram(
+    db: Database,
+    *,
+    model_id: str,
+    label: str,
+    lo: float = 0.0,
+    hi: float = 1.0,
+    bins: int = 10000,
+) -> list[dict[str, Any]]:
+    """Query sparse histogram bins for one model label.
+
+    Args:
+        db: Database instance.
+        model_id: Model document ID (e.g. ``"ml_models/model-1"``).
+        label: Calibration label (e.g. ``"happy"``).
+        lo: Lower bound of data range. Defaults to 0.0.
+        hi: Upper bound of data range. Defaults to 1.0.
+        bins: Number of histogram bins. Defaults to 10000.
+
+    Returns:
+        Sparse histogram bins as ``[{"min_val": float, "count": int,
+        "underflow_count": int, "overflow_count": int}, ...]``.
+        Returns an empty list when the model does not exist or its
+        metadata is incomplete.
+
+    """
+    model_doc = db.ml.get_model(model_id)
+    if model_doc is None:
+        return []
+
+    backbone = model_doc.get("backbone")
+    release_date = model_doc.get("embedder_release_date")
+    if not isinstance(backbone, str) or not isinstance(release_date, str):
+        return []
+
+    model_key_for_tag = f"{backbone}{release_date.replace('-', '')}"
+    bin_width = (hi - lo) / bins
+    max_bin = bins - 1
+
+    matching_names: list[str] = []
+    all_names = db.library.list_all_tag_names(limit=10000)
+    for name in all_names:
+        if not isinstance(name, str) or not name.startswith("nom:"):
+            continue
+        parts = name.replace("nom:", "").split("_")
+        if len(parts) >= 2 and parts[1] == label and len(parts) >= 4:
+            candidate_key = f"{parts[2]}{parts[3]}"
+            if candidate_key == model_key_for_tag:
+                matching_names.append(name)
+
+    if not matching_names:
+        return []
+
+    _raw_bins: dict[int, int] = {}
+    for tag_name in sorted(matching_names):
+        tag_docs = cast("list[dict[str, Any]]", db.library.list_tags_by_name(name=tag_name, limit=50000))
+        for tag_doc in tag_docs:
+            raw_value = tag_doc.get("value")
+            if raw_value is None:
+                continue
+            try:
+                value = float(raw_value)
+            except (ValueError, TypeError):
+                continue
+            if lo <= value <= hi:
+                bin_idx = min(int((value - lo) / bin_width), max_bin)
+                _raw_bins[bin_idx] = _raw_bins.get(bin_idx, 0) + 1
+
+    if not _raw_bins:
+        return []
+
+    sorted_indices = sorted(_raw_bins)
+    sparse_bins: list[dict[str, Any]] = []
+    for idx in sorted_indices:
+        min_val = round(lo + idx * bin_width, 4)
+        count = _raw_bins[idx]
+        underflow_count = sum(v for i, v in _raw_bins.items() if i < idx)
+        overflow_count = sum(v for i, v in _raw_bins.items() if i > idx)
+        sparse_bins.append(
+            {
+                "min_val": min_val,
+                "count": count,
+                "underflow_count": underflow_count,
+                "overflow_count": overflow_count,
+            }
+        )
+
+    return sparse_bins
 
 
 def derive_percentiles_from_sparse_histogram(
@@ -296,7 +386,7 @@ def generate_calibration_from_histogram(
 
     """
     bin_width = (hi - lo) / bins
-    sparse_bins = db.calibration_state.get_sparse_histogram(model_id=model_id, label=label, lo=lo, hi=hi, bins=bins)
+    sparse_bins = db.calibration_state.get_sparse_histogram(model_id=model_id, label=label, lo=lo, hi=hi, bins=bins)  # type: ignore[attr-defined]
     if not sparse_bins:
         logger.warning(f"[calibration] No data for {model_id}:{head_name}:{label}")
         return {"p5": lo, "p95": hi, "n": 0, "underflow_count": 0, "overflow_count": 0, "histogram_bins": []}
@@ -337,7 +427,7 @@ def export_calibration_state_to_json(db: Database, output_path: str) -> dict[str
 
     """
     logger.info(f"[calibration] Exporting calibration_state to {output_path}")
-    calibrations = db.calibration_state.get_all_calibration_states()
+    calibrations = db.calibration_state.get_all_calibration_states()  # type: ignore[attr-defined]
     export_data = []
     for calib in calibrations:
         model_info = calib.get("model") or {}
@@ -398,7 +488,7 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
         raise ValueError(msg)
 
     # Build model lookup cache: (backbone, embedder_release_date) -> model_id
-    all_models = db.ml_models.list_models()
+    all_models = db.ml_models.list_models()  # type: ignore[attr-defined]
     model_lookup: dict[tuple[str, str], str] = {}
     for model in all_models:
         key = (model.get("backbone", ""), model.get("embedder_release_date", ""))
@@ -425,14 +515,14 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
                 continue
 
             # Check if calibration already exists
-            existing = db.calibration_state.get_calibration_state(head_name, label)
+            existing = db.calibration_state.get_calibration_state(head_name, label)  # type: ignore[attr-defined]
             calibration_def_hash = calib["calibration_def_hash"]
             if existing and (not overwrite) and (existing.get("calibration_def_hash") == calibration_def_hash):
                 logger.debug(f"[calibration] Skipping {head_name}:{label} (already exists)")
                 skipped_count += 1
                 continue
 
-            db.calibration_state.upsert_calibration_state(
+            db.calibration_state.upsert_calibration_state(  # type: ignore[attr-defined]
                 model_id=model_id,
                 head_name=head_name,
                 label=label,

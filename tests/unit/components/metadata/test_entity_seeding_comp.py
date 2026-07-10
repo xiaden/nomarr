@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -40,10 +40,10 @@ class TestSeedEntitiesForScanBatch:
         }
 
         result = seed_entities_for_scan_batch(
-                mock_db,
-                [f"{CollectionNames.LIBRARY_FILES.value}/1"],
-                {f"{CollectionNames.LIBRARY_FILES.value}/1": metadata},
-            )
+            mock_db,
+            [f"{CollectionNames.LIBRARY_FILES.value}/1"],
+            {f"{CollectionNames.LIBRARY_FILES.value}/1": metadata},
+        )
 
         assert result == 1
         mock_db.tags.set_song_tags_batch.assert_called_once()

@@ -155,7 +155,7 @@ def get_fleet_vram_state(
     """
     promises: list[dict[str, Any]] = db.vram_promises.get_all()  # type: ignore[attr-defined]
     vram = _resource_monitor.get_vram_usage_mb()
-    return FleetVramState(promises=promises, vram=vram)
+    return FleetVramState(promises=promises, vram=vram)  # type: ignore[typeddict-item]
 
 
 def release_worker_promises(

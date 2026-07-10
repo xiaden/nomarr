@@ -9,6 +9,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
+from nomarr.components.ml.onnx.ml_discovery_comp import _resolve_embedding_graph
+from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
+
 if TYPE_CHECKING:
     from nomarr.persistence.arango_client import DatabaseLike
 
@@ -32,11 +35,9 @@ def derive_embed_dim(models_dir: str, backbone_id: str) -> int:
         ValueError: If backbone ONNX file not found or embed_dim cannot be determined.
 
     """
-    from nomarr.components.ml.onnx.ml_discovery_comp import _resolve_embedding_graph
-
     embedding_graph = _resolve_embedding_graph(models_dir, backbone_id)
     if not embedding_graph:
-        raise ValueError(f"No embedding graph found for backbone '{backbone_id}' in {models_dir}")
+        raise ValueError("No embedding graph found")
 
     try:
         import onnxruntime as ort
@@ -341,7 +342,7 @@ def rebuild_cold_vector_index(
     logger.info("[vectors] Rebuild completed for %s", cold_name)
 
 
-def backfill_genres(db: DatabaseLike, backbone_id: str, library_key: str) -> int:
+def backfill_genres(db: DatabaseLike, backbone_id: str, library_key: str = "") -> int:
     """Backfill genres on cold vector documents that predate genre enrichment.
 
     This is a one-time maintenance operation for cold collection documents that
@@ -362,43 +363,62 @@ def backfill_genres(db: DatabaseLike, backbone_id: str, library_key: str) -> int
         ValueError: If the cold collection does not exist.
 
     """
-    cold_name = f"vectors_track_cold__{backbone_id}__{library_key}"
-    if not db.has_collection(cold_name):
+    from nomarr.persistence.schema_types import Field
+
+    cold_ops = get_cold_namespace(db, backbone_id)
+    try:
+        cold_ops.count()
+    except RuntimeError as err:
         raise ValueError(
-            f"Cold collection '{cold_name}' does not exist. "
+            f"Cold collection 'vectors_track_cold__{backbone_id}' does not exist. "
             "Run drain_hot_to_cold first to create and populate the cold collection."
-        )
+        ) from err
 
-    cursor = db.aql.execute(
-        """
-        FOR doc IN @@cold_coll
-            // Find associated file via edge traversal (FK-free)
-            LET file_ids = (
-                FOR f IN INBOUND doc file_has_vectors
-                    RETURN f._id
-            )
-            LET file_id = FIRST(file_ids)
-            FILTER file_id != null
-            LET genres = (
-                FOR edge IN song_has_tags
-                    FILTER edge._from == file_id
-                    FOR tag IN tags
-                        FILTER tag._id == edge._to AND tag.rel == "genre"
-                        RETURN tag.value
-            )
-            UPDATE doc WITH { genres: genres } IN @@cold_coll
-            COLLECT WITH COUNT INTO updated
-            RETURN updated
-        """,
-        bind_vars={"@cold_coll": cold_name},
+    # Get all document keys from the cold collection
+    cursor = cold_ops.aggregate(
+        "FOR doc IN @@cold_coll RETURN {value: doc._id}",
     )
+    doc_ids: list[str] = [r["value"] for r in cursor]
 
-    results: list[int] = list(cursor)
-    count: int = results[0] if results else 0
+    if not doc_ids:
+        return 0
+
+    # Batch get documents
+    docs = cold_ops.get.in_(Field("_id", doc_ids), limit=None)
+
+    # Build file_id → doc_key mapping
+    file_to_key: dict[str, str] = {}
+    for doc in docs:
+        fid = doc.get("file_id", "")
+        key = doc.get("_key", "")
+        if fid and key:
+            file_to_key[fid] = key
+
+    # Look up genres for all file IDs
+    file_ids = list(file_to_key.keys())
+    genre_rows = db.library.list_genre_tags_for_files(file_ids)
+
+    # Group genres by file_id
+    genres_by_fid: dict[str, list[str]] = {}
+    for row in genre_rows:
+        fid = row.get("fid", "")
+        genre = row.get("genre", "")
+        if fid and genre:
+            genres_by_fid.setdefault(fid, []).append(genre)
+
+    # Build update specs
+    updates: list[dict[str, Any]] = []
+    for fid, genres in genres_by_fid.items():
+        key = file_to_key.get(fid)
+        if key:
+            updates.append({"_key": key, "genres": genres})
+
+    if updates:
+        cold_ops.update_many(updates)
 
     logger.info(
-        "[vectors] Backfilled genres on %d documents in %s",
-        count,
-        cold_name,
+        "[vectors] Backfilled genres on %d documents for backbone %s",
+        len(updates),
+        backbone_id,
     )
-    return count
+    return len(updates)
