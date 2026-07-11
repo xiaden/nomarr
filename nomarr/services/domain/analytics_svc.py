@@ -12,7 +12,7 @@ while properly separating persistence (SQL) from computation (analytics).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from nomarr.components.analytics.analytics_comp import (
     compute_mood_distribution,
@@ -20,8 +20,9 @@ from nomarr.components.analytics.analytics_comp import (
     compute_tag_correlation_matrix,
     compute_tag_frequencies,
 )
-from nomarr.components.analytics.collection_overview_comp import compute_collection_overview
+from nomarr.components.analytics.collection_overview_comp import CollectionOverviewResult, compute_collection_overview
 from nomarr.components.analytics.mood_analysis_comp import (
+    MoodAnalysisResult,
     compute_mood_analysis,
     get_mood_and_tier_tags_for_correlation,
     get_mood_distribution_data,
@@ -275,7 +276,7 @@ class AnalyticsService:
     def get_collection_overview(
         self,
         library_id: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> CollectionOverviewResult:
         """Get collection overview data for Insights tab.
 
         Simple persistence pass-through: library stats, year/genre distributions.
@@ -292,7 +293,7 @@ class AnalyticsService:
     def get_mood_analysis(
         self,
         library_id: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> MoodAnalysisResult:
         """Get mood analysis data for Insights tab.
 
         Delegates to compute_mood_analysis component.

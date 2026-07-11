@@ -12,9 +12,8 @@ class _FileTagItem(TypedDict):
     """Internal shape of each tag dict returned to service callers."""
 
     key: str
-    rel: str
+    name: str
     value: str | int | float | bool | list[str | int | float | bool]
-    type: str
     is_nomarr_tag: bool
 
 
@@ -24,7 +23,7 @@ def get_file_tags_with_path(db: Database, file_id: str, nomarr_only: bool = Fals
     Returns dict with 'path' and 'tags' keys, or None if file not found.
     'tags' is a list of ``_FileTagItem`` dicts.
     """
-    file_record = db.library_files.get_file_by_id(file_id)
+    file_record = db.library_files.get_file(file_id)
     if not file_record:
         return None
 

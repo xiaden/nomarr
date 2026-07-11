@@ -6,7 +6,7 @@ processing velocity, and ETA.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from nomarr.helpers.dto.info_dto import LibraryPipelineInfo, ScanningLibraryInfo, WorkStatusResult
 
@@ -25,12 +25,12 @@ class _LibrarySnapshot(TypedDict):
 
 
 def compute_work_status(
-    libraries: list[_LibrarySnapshot],
+    libraries: list[dict[str, Any]],
     stats: LibraryStatsResult,
     recently_tagged_count: int,
     pipeline_states: dict[str, dict[str, str]] | None = None,
     velocity_window_seconds: int = 300,
-    library_docs: list[_LibrarySnapshot] | None = None,
+    library_docs: list[dict[str, Any]] | None = None,
 ) -> WorkStatusResult:
     """Compute unified work status from raw data.
 

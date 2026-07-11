@@ -89,7 +89,7 @@ class GPUHealthMonitor(multiprocessing.Process):
                     "error_summary": result.get("error_summary"),
                 }
                 try:
-                    db.meta.write_gpu_resources(resource_snapshot)
+                    db.app.update_config_option("gpu_resources", resource_snapshot)
                     consecutive_errors = 0
                     self._send_heartbeat("healthy")
                 except OSError as db_error:

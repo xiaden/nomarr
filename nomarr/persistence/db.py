@@ -96,6 +96,74 @@ class _MigrationsAdapter:
         return self._app.list_migrations()
 
 
+class _MlCapacityAdapter:
+    """Adapter providing the legacy ``db.ml_capacity.*`` contract.
+
+    ML capacity estimates and probe locks are stored as app-level config
+    options and locks, delegating to ``AppDb`` under the hood.
+    """
+
+    def __init__(self, app: AppDb) -> None:
+        self._app = app
+
+    @staticmethod
+    def _estimate_key(model_set_hash: str) -> str:
+        return f"ml_capacity_estimate_{model_set_hash}"
+
+    @staticmethod
+    def _lock_id(model_set_hash: str) -> str:
+        return f"ml_capacity_probe_{model_set_hash}"
+
+    def get_capacity_estimate(self, model_set_hash: str) -> dict | None:
+        return self._app.get_config_option(self._estimate_key(model_set_hash))
+
+    def save_capacity_estimate(
+        self,
+        *,
+        model_set_hash: str,
+        measured_backbone_vram_mb: int,
+        estimated_worker_ram_mb: int,
+        probe_duration_s: float,
+        probed_by_worker: str,
+    ) -> None:
+        self._app.update_config_option(
+            self._estimate_key(model_set_hash),
+            {
+                "model_set_hash": model_set_hash,
+                "measured_backbone_vram_mb": measured_backbone_vram_mb,
+                "estimated_worker_ram_mb": estimated_worker_ram_mb,
+                "probe_duration_s": probe_duration_s,
+                "probed_by_worker": probed_by_worker,
+            },
+        )
+
+    def delete_capacity_estimate(self, model_set_hash: str) -> None:
+        self._app.remove_config_option(self._estimate_key(model_set_hash))
+
+    def try_acquire_probe_lock(self, model_set_hash: str, worker_id: str) -> bool:
+        lock_id = self._lock_id(model_set_hash)
+        existing = self._app.get_lock(lock_id)
+        if existing is not None:
+            return False
+        self._app.add_lock({"resource_id": lock_id, "worker_id": worker_id, "status": "probing"})
+        return True
+
+    def release_probe_lock(self, model_set_hash: str) -> None:
+        self._app.remove_lock(self._lock_id(model_set_hash))
+
+    def complete_probe_lock(self, model_set_hash: str) -> None:
+        lock_id = self._lock_id(model_set_hash)
+        lock = self._app.get_lock(lock_id)
+        if lock is not None:
+            lock["status"] = "complete"
+            # Re-insert with overwrite via upsert_meta pattern
+            self._app.remove_lock(lock_id)
+            self._app.add_lock({"resource_id": lock_id, "worker_id": lock.get("worker_id", ""), "status": "complete"})
+
+    def get_probe_lock_status(self, model_set_hash: str) -> dict | None:
+        return self._app.get_lock(self._lock_id(model_set_hash))
+
+
 class Database:
     """Application database (ArangoDB).
 
@@ -206,6 +274,8 @@ class Database:
 
         # Legacy migrations namespace — delegates to AppDb
         self.migrations = _MigrationsAdapter(self.app)
+        # Legacy ml_capacity namespace — delegates to AppDb
+        self.ml_capacity = _MlCapacityAdapter(self.app)
 
     def get_version(self) -> str | None:
         """Read the current schema version from the meta store."""

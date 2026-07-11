@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
@@ -41,7 +41,7 @@ def compute_taste_profile(
     # Accept plays from either kwarg (prefer top_plays then plays)
     resolved_plays_raw: list[TrackPlayData] | None = top_plays or plays
     if resolved_plays_raw is None:
-        resolved_plays_raw = db.navidrome_playcounts.get_top_plays(user_id, top_n)  # type: ignore[assignment]
+        resolved_plays_raw = db.app.legacy_navidrome.get_top_nd_plays(user_id, top_n)  # type: ignore[assignment]
 
     if not resolved_plays_raw:
         logger.info("[navidrome] No play data for user %s — cannot build taste profile", user_id)
@@ -168,13 +168,16 @@ def compute_taste_profile(
     clusters.sort(key=lambda c: c["total_weight"], reverse=True)
     clusters = clusters[:pp_max_clusters]
 
-    return {
-        "user_id": user_id,
-        "clusters": clusters,
-        "backbone_id": backbone_id or "",
-        "track_count": sum(c["track_count"] for c in clusters),
-        "generated_at_ms": now_val,
-    }
+    return cast(
+        "TasteProfile",
+        {
+            "user_id": user_id,
+            "clusters": clusters,
+            "backbone_id": backbone_id or "",
+            "track_count": sum(c["track_count"] for c in clusters),
+            "generated_at_ms": now_val,
+        },
+    )
 
 
 _MS_PER_DAY = 86_400_000

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -17,6 +17,17 @@ from nomarr.components.navidrome.playlist_builder_comp import (
     build_hidden_gems_playlist,
     build_universal_playlist,
 )
+
+# ---------------------------------------------------------------------------
+# Module-level patch so all tests automatically get a mocked get_cold_namespace.
+# ---------------------------------------------------------------------------
+_get_cold_patch = patch("nomarr.components.navidrome.playlist_builder_comp.get_cold_namespace")
+mock_get_cold = _get_cold_patch.start()
+
+
+def teardown_module() -> None:
+    _get_cold_patch.stop()
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -68,9 +79,9 @@ def _make_cold_ops(doc_count: int, ann_results: list[list[dict]] | None = None) 
     cold_ops = MagicMock()
     cold_ops.count.return_value = doc_count
     if ann_results is not None:
-        cold_ops.search_similar.side_effect = ann_results
+        cold_ops.ann_search.side_effect = ann_results
     else:
-        cold_ops.search_similar.return_value = []
+        cold_ops.ann_search.return_value = []
     return cold_ops
 
 
@@ -251,7 +262,7 @@ def test_familiar_no_played_tracks_returns_empty() -> None:
 def test_familiar_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
     db = MagicMock()
-    db.get_vectors_track_cold.return_value = _make_cold_ops(doc_count=0)
+    mock_get_cold.return_value = _make_cold_ops(doc_count=0)
 
     result = build_familiar_playlist(db, ctx)
     assert result == []
@@ -269,7 +280,7 @@ def test_familiar_normal_case_filters_to_played() -> None:
     ann_results_cluster1 = [_make_result("f1"), _make_result("f99"), _make_result("f2")]
     ann_results_cluster2 = [_make_result("f3"), _make_result("f98")]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[ann_results_cluster1, ann_results_cluster2])
-    db.get_vectors_track_cold.return_value = cold_ops
+    mock_get_cold.return_value = cold_ops
 
     result = build_familiar_playlist(db, ctx)
 
@@ -292,7 +303,7 @@ def test_familiar_no_played_in_ann_results_returns_empty_file_ids() -> None:
     # ANN returns only unplayed tracks
     ann_results = [[_make_result("f99"), _make_result("f98")], [_make_result("f97")]]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=ann_results)
-    db.get_vectors_track_cold.return_value = cold_ops
+    mock_get_cold.return_value = cold_ops
 
     result = build_familiar_playlist(db, ctx)
 
@@ -313,7 +324,7 @@ def test_familiar_multiple_clusters_proportional_mix() -> None:
     ann_c1 = [_make_result(f"f{i}") for i in range(10)]
     ann_c2 = [_make_result(f"f{i}") for i in range(10, 20)]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[ann_c1, ann_c2])
-    db.get_vectors_track_cold.return_value = cold_ops
+    mock_get_cold.return_value = cold_ops
 
     result = build_familiar_playlist(db, ctx)
 
@@ -332,7 +343,7 @@ def test_familiar_multiple_clusters_proportional_mix() -> None:
 def test_discovery_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
     db = MagicMock()
-    db.get_vectors_track_cold.return_value = _make_cold_ops(doc_count=0)
+    mock_get_cold.return_value = _make_cold_ops(doc_count=0)
 
     result = build_discovery_playlist(db, ctx)
     assert result == []
@@ -350,7 +361,7 @@ def test_discovery_normal_case_excludes_played() -> None:
     ann_c1 = [_make_result("f1"), _make_result("f10"), _make_result("f11")]
     ann_c2 = [_make_result("f2"), _make_result("f12")]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[ann_c1, ann_c2])
-    db.get_vectors_track_cold.return_value = cold_ops
+    mock_get_cold.return_value = cold_ops
 
     result = build_discovery_playlist(db, ctx)
 
@@ -376,7 +387,7 @@ def test_discovery_all_results_are_played_returns_empty_file_ids() -> None:
     ann_c1 = [_make_result("f1"), _make_result("f2")]
     ann_c2 = [_make_result("f3")]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[ann_c1, ann_c2])
-    db.get_vectors_track_cold.return_value = cold_ops
+    mock_get_cold.return_value = cold_ops
 
     result = build_discovery_playlist(db, ctx)
 
@@ -395,7 +406,7 @@ def test_hidden_gems_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
     db = MagicMock()
     db.tags.get_distinct_tag_values_for_files.return_value = {"Artist A"}
-    db.get_vectors_track_cold.return_value = _make_cold_ops(doc_count=0)
+    mock_get_cold.return_value = _make_cold_ops(doc_count=0)
 
     result = build_hidden_gems_playlist(db, ctx)
     assert result == []
@@ -414,7 +425,7 @@ def test_hidden_gems_no_known_artists_skips_artist_filter() -> None:
     ann_c1 = [_make_result("f10"), _make_result("f11")]
     ann_c2 = [_make_result("f12")]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[ann_c1, ann_c2])
-    db.get_vectors_track_cold.return_value = cold_ops
+    mock_get_cold.return_value = cold_ops
 
     result = build_hidden_gems_playlist(db, ctx)
 
@@ -443,7 +454,7 @@ def test_hidden_gems_known_artists_excludes_artist_tracks() -> None:
     ann_c1 = [_make_result("f10"), _make_result("f11"), _make_result("f12")]
     ann_c2 = [_make_result("f13")]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[ann_c1, ann_c2])
-    db.get_vectors_track_cold.return_value = cold_ops
+    mock_get_cold.return_value = cold_ops
 
     # f11 is by known artist, others are not
     db.tags.get_tag_values_grouped_by_file.return_value = {
@@ -478,7 +489,7 @@ def test_hidden_gems_both_played_and_artist_exclusion() -> None:
     ann_c1 = [_make_result("f1"), _make_result("f10"), _make_result("f11")]
     ann_c2 = [_make_result("f2"), _make_result("f12")]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[ann_c1, ann_c2])
-    db.get_vectors_track_cold.return_value = cold_ops
+    mock_get_cold.return_value = cold_ops
 
     db.tags.get_tag_values_grouped_by_file.return_value = {
         "f10": {"Known Artist"},
@@ -510,7 +521,7 @@ def test_hidden_gems_both_played_and_artist_exclusion() -> None:
 def test_universal_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
     db = MagicMock()
-    db.get_vectors_track_cold.return_value = _make_cold_ops(doc_count=0)
+    mock_get_cold.return_value = _make_cold_ops(doc_count=0)
 
     result = build_universal_playlist(db, ctx)
     assert result == []
@@ -527,7 +538,7 @@ def test_universal_normal_case_stride_sampling() -> None:
     ann_c1 = [_make_result(f"a{i}") for i in range(20)]
     ann_c2 = [_make_result(f"b{i}") for i in range(20)]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[ann_c1, ann_c2])
-    db.get_vectors_track_cold.return_value = cold_ops
+    mock_get_cold.return_value = cold_ops
 
     result = build_universal_playlist(db, ctx)
 
@@ -551,8 +562,8 @@ def test_universal_shuffle_is_applied() -> None:
     # Use return_value cycling since multiple calls happen across runs
     cold_ops = MagicMock()
     cold_ops.count.return_value = 1000
-    cold_ops.search_similar.side_effect = [ann_c1, ann_c2] * 10  # Enough for 10 runs
-    db.get_vectors_track_cold.return_value = cold_ops
+    cold_ops.ann_search.side_effect = [ann_c1, ann_c2] * 10  # Enough for 10 runs
+    mock_get_cold.return_value = cold_ops
 
     # Run multiple times; at least one should differ in order
     results_sets = []
@@ -573,7 +584,7 @@ def test_universal_empty_results_returns_empty_file_ids() -> None:
     db = MagicMock()
 
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[[], []])
-    db.get_vectors_track_cold.return_value = cold_ops
+    mock_get_cold.return_value = cold_ops
 
     result = build_universal_playlist(db, ctx)
 
@@ -600,7 +611,7 @@ def test_genre_no_clusters_returns_empty() -> None:
 def test_genre_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
     db = MagicMock()
-    db.get_vectors_track_cold.return_value = _make_cold_ops(doc_count=0)
+    mock_get_cold.return_value = _make_cold_ops(doc_count=0)
 
     result = build_genre_playlists(db, ctx)
     assert result == []
@@ -616,7 +627,7 @@ def test_genre_cluster_below_min_songs_skipped() -> None:
     # Return fewer than _GENRE_MIN_SONGS (100) results
     few_results = [_make_result(f"f{i}") for i in range(50)]
     cold_ops = _make_cold_ops(doc_count=1000, ann_results=[few_results, few_results])
-    db.get_vectors_track_cold.return_value = cold_ops
+    mock_get_cold.return_value = cold_ops
 
     result = build_genre_playlists(db, ctx)
 

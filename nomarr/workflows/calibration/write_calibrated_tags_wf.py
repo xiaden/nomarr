@@ -42,7 +42,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_file_query_comp import require_library_file_id
 from nomarr.components.ml.calibration.ml_calibration_state_comp import (
@@ -64,6 +64,7 @@ from nomarr.helpers.dto.tags_dto import Tags
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
+    from nomarr.helpers.dto.ml_head_dto import HeadInfo
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -181,7 +182,7 @@ def write_calibrated_tags_wf(
 
     head_outputs = reconstruct_head_outputs_from_streams(
         output_streams=output_streams,
-        head_infos=heads_list,
+        head_infos=cast("list[HeadInfo]", heads_list),
         calibrations=calibrations,
     )
     if not head_outputs:

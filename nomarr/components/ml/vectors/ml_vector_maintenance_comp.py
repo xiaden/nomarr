@@ -14,6 +14,7 @@ from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namesp
 
 if TYPE_CHECKING:
     from nomarr.persistence.arango_client import DatabaseLike
+    from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +92,7 @@ def drain_hot_to_cold(db: DatabaseLike, backbone_id: str, library_key: str) -> i
 
     # Count hot docs before drain
     hot_coll = db.collection(hot_name)
-    hot_count: int = int(hot_coll.count())
+    hot_count: int = int(hot_coll.count())  # type: ignore[arg-type]
 
     if hot_count == 0:
         return 0
@@ -121,7 +122,7 @@ def drain_hot_to_cold(db: DatabaseLike, backbone_id: str, library_key: str) -> i
         RETURN n
         """
     )
-    results: list[int] = list(cursor)
+    results: list[int] = list(cursor)  # type: ignore[arg-type]
     drained: int = results[0] if results else 0
 
     # Migrate file_has_vectors edges from hot → cold
@@ -177,7 +178,7 @@ def verify_hot_empty(db: DatabaseLike, backbone_id: str, library_key: str) -> No
         return  # Hot doesn't exist = empty
 
     hot_coll = db.collection(hot_name)
-    hot_count: int = int(hot_coll.count())
+    hot_count: int = int(hot_coll.count())  # type: ignore[arg-type]
 
     if hot_count > 0:
         raise RuntimeError(
@@ -200,7 +201,7 @@ def drop_cold_vector_index(db: DatabaseLike, backbone_id: str, library_key: str)
         return  # Cold doesn't exist yet
 
     cold_coll = db.collection(cold_name)
-    existing_indexes: list[dict[str, Any]] = list(cold_coll.indexes())
+    existing_indexes: list[dict[str, Any]] = list(cold_coll.indexes())  # type: ignore[arg-type]
 
     for idx in existing_indexes:
         if idx.get("type") == "vector":
@@ -228,7 +229,7 @@ def has_vector_index(db: DatabaseLike, backbone_id: str, library_key: str) -> bo
         return False
 
     cold_coll = db.collection(cold_name)
-    existing_indexes: list[dict[str, Any]] = list(cold_coll.indexes())
+    existing_indexes: list[dict[str, Any]] = list(cold_coll.indexes())  # type: ignore[arg-type]
 
     return any(idx.get("type") == "vector" for idx in existing_indexes)
 
@@ -260,7 +261,7 @@ def build_cold_vector_index(
         )
 
     cold_coll = db.collection(cold_name)
-    doc_count: int = int(cold_coll.count())
+    doc_count: int = int(cold_coll.count())  # type: ignore[arg-type]
 
     logger.info(
         "[vectors] Building vector index on %s (dim=%d, nlists=%d, docs=%d)",
@@ -342,7 +343,7 @@ def rebuild_cold_vector_index(
     logger.info("[vectors] Rebuild completed for %s", cold_name)
 
 
-def backfill_genres(db: DatabaseLike, backbone_id: str, library_key: str = "") -> int:
+def backfill_genres(db: Database, backbone_id: str, library_key: str = "") -> int:
     """Backfill genres on cold vector documents that predate genre enrichment.
 
     This is a one-time maintenance operation for cold collection documents that

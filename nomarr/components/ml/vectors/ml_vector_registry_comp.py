@@ -51,6 +51,9 @@ class VectorsTrackColdNamespace(Protocol):
     """Typed surface used by cold vector namespace callers."""
 
     file_id: _FieldDeleteAccessorProtocol
+    collection: Any
+    model_collection: Any
+    get: Any
 
     def get_vector(self, file_id: str) -> dict[str, Any] | None: ...
 
@@ -66,6 +69,40 @@ class VectorsTrackColdNamespace(Protocol):
         *,
         filter: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]: ...
+
+    def search_similar_by_genre(
+        self,
+        vector: list[float],
+        genre: str,
+        limit: int,
+        nprobe: int = 10,
+    ) -> list[dict[str, Any]]: ...
+
+    def operate(
+        self,
+        query: str,
+        bind_vars: dict[str, Any] | None = None,
+    ) -> Any: ...
+
+    def do_update(
+        self,
+        query: str,
+        bind_vars: dict[str, Any] | None = None,
+    ) -> None: ...
+
+    def do_upsert(
+        self,
+        query: str,
+        bind_vars: dict[str, Any] | None = None,
+    ) -> None: ...
+
+    def aggregate(
+        self,
+        query: str,
+        bind_vars: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]: ...
+
+    def update_many(self, docs: list[dict[str, Any]]) -> None: ...
 
 
 class VectorsTrackMaintenanceProtocol(Protocol):

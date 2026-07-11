@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
+from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
 from nomarr.helpers.dto.navidrome_dto import (
     NavidromePersonalPlaylistContext,
     NavidromePersonalPlaylistEntry,
@@ -45,7 +46,7 @@ def _ann_search_cold(
     fetch_multiplier: int,
 ) -> list[dict[str, Any]] | None:
     """Run ANN search on cold vectors; returns results or ``None`` if empty."""
-    cold_ops = db.get_vectors_track_cold(backbone_id, library_key)
+    cold_ops = get_cold_namespace(db, backbone_id, collection_suffix=library_key)
     doc_count = cold_ops.count()
     if doc_count == 0:
         return None
@@ -53,7 +54,7 @@ def _ann_search_cold(
     nlists = compute_nlists(doc_count)
     nprobe = compute_nprobe(nlists)
     fetch_limit = max_songs * fetch_multiplier
-    return cast("list[dict[str, Any]]", cold_ops.search_similar(centroid, fetch_limit, nprobe=nprobe))
+    return cast("list[dict[str, Any]]", cold_ops.ann_search(centroid, fetch_limit, nprobe=nprobe))
 
 
 def _search_all_clusters(
@@ -223,7 +224,7 @@ def build_genre_playlists(
 
     played_file_ids = ctx["played_file_ids"]
 
-    cold_ops = db.get_vectors_track_cold(ctx["backbone_id"], ctx["library_key"])
+    cold_ops = get_cold_namespace(db, ctx["backbone_id"], collection_suffix=ctx["library_key"])
     doc_count = cold_ops.count()
     if doc_count == 0:
         return []

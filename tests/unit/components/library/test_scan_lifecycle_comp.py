@@ -300,7 +300,7 @@ class TestScanStateHelpers:
 
         mark_scan_started(mock_db, "libraries/test", "full")
 
-        mock_db.libraries.mark_scan_started.assert_called_once_with("libraries/test", scan_type="full")
+        mock_db.app.add_scan.assert_called_once()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -309,7 +309,7 @@ class TestScanStateHelpers:
 
         mark_scan_completed(mock_db, "libraries/test")
 
-        mock_db.libraries.mark_scan_completed.assert_called_once_with("libraries/test")
+        mock_db.app.update_scan.assert_called_once()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -324,22 +324,19 @@ class TestScanStateHelpers:
             scan_error="boom",
         )
 
-        mock_db.libraries.update_scan_status.assert_called_once_with(
+        mock_db.app.update_scan.assert_called_once_with(
             "libraries/test",
-            status=None,
-            progress=5,
-            total=12,
-            scan_error="boom",
+            {"progress": 5, "total": 12, "scan_error": "boom"},
         )
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_check_interrupted_scan_delegates_to_database_facade(self) -> None:
         mock_db = MagicMock()
-        mock_db.libraries.check_interrupted_scan.return_value = (True, "quick")
+        mock_db.app.get_scan.return_value = {"status": "in_progress", "scan_type": "quick"}
 
         assert check_interrupted_scan(mock_db, "libraries/test") == (True, "quick")
-        mock_db.libraries.check_interrupted_scan.assert_called_once_with("libraries/test")
+        mock_db.app.get_scan.assert_called_once_with("libraries/test")
 
 
 class TestFolderCacheHelpers:

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from nomarr.components.ml.onnx.ml_discovery_comp import (
     discover_backbones,
@@ -22,10 +22,8 @@ from nomarr.components.ml.onnx.ml_model_registry_comp import (
     update_model_output_label,
 )
 from nomarr.components.ml.resources.ml_vram_probe_comp import clear_model_vram_measurements
+from nomarr.helpers.dto.ml_head_dto import HeadInfo
 from nomarr.persistence.db import Database
-
-if TYPE_CHECKING:
-    from nomarr.helpers.dto.ml_head_dto import HeadInfo
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +83,22 @@ class MLService:
 
         """
         try:
-            heads = discover_heads(self.cfg.models_dir, self.db)
-            logger.info("[MLService] Discovered %d model heads", len(heads))
-            return heads
+            raw_heads = discover_heads(self.cfg.models_dir, self.db)
+            logger.info("[MLService] Discovered %d model heads", len(raw_heads))
+            # Convert component-level HeadInfo to DTO HeadInfo
+            return [
+                HeadInfo(
+                    name=h.name,
+                    labels=h.labels,
+                    backbone=h.backbone,
+                    head_type=h.head_type,
+                    model_stem=h.model_stem,
+                    model_path=h.model_path,
+                    embedding_graph=h.embedding_graph,
+                    is_regression_head=h.is_regression_head,
+                )
+                for h in raw_heads
+            ]
         except Exception as e:
             logger.exception("[MLService] Model discovery failed")
             msg = f"Failed to discover model heads: {e}"

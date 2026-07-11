@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from nomarr.components.ml.onnx.ml_discovery_comp import HeadInfo
     from nomarr.components.ml.onnx.ml_head import ONNXHeadModel
+    from nomarr.helpers.dto.ml_head_dto import HeadInfo
 
 
 def _as_float_list(element: Any) -> list[float]:

@@ -269,7 +269,6 @@ class NavidromePersonalPlaylistContext(TypedDict):
     Constructed by the workflow from taste-profile and play-history data,
     then passed uniformly to every ``build_*`` component function.
     All fields are always present — every builder receives the same shape.
-    Vector collections are per-backbone (no library_key needed).
 
     ``clusters`` replaces the former single ``centroid``; each cluster's
     centroid is used for per-genre ANN search, and its ``total_weight``
@@ -289,6 +288,7 @@ class NavidromePersonalPlaylistContext(TypedDict):
     """
 
     backbone_id: str
+    library_key: str
     clusters: list[TasteCluster]
     max_songs: int
     played_file_ids: list[str]
