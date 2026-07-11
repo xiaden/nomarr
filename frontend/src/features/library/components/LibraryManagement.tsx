@@ -189,6 +189,17 @@ export function LibraryManagement() {
     loadConfig();
   }, [loadLibraries]);
 
+  // Refresh work status (reusable outside the polling effect for instant
+  // feedback after scan/repair operations).
+  const refreshWorkStatus = useCallback(async () => {
+    try {
+      const status = await getWorkStatus();
+      setPipelineLibraries(status.pipeline_libraries ?? []);
+    } catch (err) {
+      console.error("[LibraryManagement] Failed to refresh work status:", err);
+    }
+  }, []);
+
   // Poll for scan/work status updates using unified work-status endpoint
   useEffect(() => {
     // Check work status to determine if we should poll
@@ -367,6 +378,7 @@ export function LibraryManagement() {
         result.message || `Library scan started (${result.stats?.files_queued ?? 0} files)`
       );
       await loadLibraries();
+      await refreshWorkStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to scan library");
     } finally {
@@ -456,13 +468,17 @@ export function LibraryManagement() {
 
     try {
       setError(null);
+      setScanningId(libraryId);
       const result = await repairTags(libraryId);
       showSuccess(
         `Tag repair started (${result.stats?.files_queued ?? 0} files queued for re-hydration)`
       );
       await loadLibraries();
+      await refreshWorkStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to repair tags");
+    } finally {
+      setScanningId(null);
     }
   };
 

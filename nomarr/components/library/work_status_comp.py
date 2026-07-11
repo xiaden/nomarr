@@ -116,6 +116,11 @@ def _derive_pipeline_state(axis_state: dict[str, str]) -> str:
     if not axis_state:
         return "idle"
 
+    # "scanning" is distinct from "scan_ready": an active scan vs. needing one.
+    scan_val = axis_state.get("scan_state", "")
+    if scan_val == "scanning":
+        return "scanning"
+
     # Map axis field → pipeline label when axis needs work
     axis_map: list[tuple[str, str]] = [
         ("scan_state", "scan_ready"),

@@ -242,7 +242,7 @@ class TagAnalyticsOpsMixin:
                 RETURN {{
                     file_count: file_count,
                     total_file_size_bytes: total_size,
-                    total_duration_ms: total_duration * 1000,
+                    total_duration_ms: FLOOR(total_duration * 1000),
                     avg_track_length_ms: (total_duration > 0 AND file_count > 0)
                         ? (total_duration * 1000.0 / file_count) : 0.0
                 }}
