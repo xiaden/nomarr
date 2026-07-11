@@ -193,13 +193,15 @@ class TestHydrateFileDocsWithMetadata:
         result = hydrate_songs_with_metadata(mock_db, file_docs)
 
         assert len(result) == 1
-        assert result[0]["artist"] is None
-        assert result[0]["album"] is None
-        assert result[0]["title"] is None
-        assert result[0]["artists"] is None
-        assert result[0]["labels"] is None
-        assert result[0]["genres"] is None
-        assert result[0]["year"] is None
+        # None values are stripped before merging — fields are absent unless
+        # the underlying song doc carried them.
+        assert result[0].get("artist") is None
+        assert result[0].get("album") is None
+        assert result[0].get("title") is None
+        assert result[0].get("artists") is None
+        assert result[0].get("labels") is None
+        assert result[0].get("genres") is None
+        assert result[0].get("year") is None
         assert result[0]["path"] == "/music/song.flac"
 
     @pytest.mark.unit

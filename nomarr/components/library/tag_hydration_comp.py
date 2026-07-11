@@ -83,8 +83,8 @@ def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]]) -> li
 
     Returns:
         List of new dicts with metadata fields merged in. Songs without a
-        string _id are returned as shallow copies. Songs with no tags get
-        None for all metadata fields.
+        string _id are returned as shallow copies. Songs with no tags are
+        returned as-is (no ``None``-valued metadata keys are injected).
 
     """
     song_ids = [song_id for song in songs if isinstance(song_id := song.get("_id"), str)]
@@ -104,6 +104,9 @@ def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]]) -> li
 
         song_tags = tags_by_song.get(song_id, [])
         metadata = extract_canonical_metadata(song_tags)
+        # Strip None values so they don't override embedded cache fields
+        # (e.g., artist/album stored via update_metadata_cache_batch)
+        metadata = {k: v for k, v in metadata.items() if v is not None}
         result.append({**song, **metadata})
 
     return result

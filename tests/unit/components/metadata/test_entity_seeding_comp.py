@@ -18,7 +18,7 @@ class TestSeedEntitiesForScanBatch:
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_persists_full_source_tags_nom_tags_and_cache_updates(self) -> None:
-        """Scanner batch sync should retain raw source tags, not only Nomarr tags."""
+        """Scanner batch sync should persist entity tags as {name, value} payloads."""
         mock_db = MagicMock()
         metadata = {
             "all_tags": {
@@ -47,16 +47,22 @@ class TestSeedEntitiesForScanBatch:
 
         assert result == 1
         mock_db.tags.set_song_tags_batch.assert_called_once()
-        persisted_entries = mock_db.tags.set_song_tags_batch.call_args.args[0]
-        persisted_map = {
-            entry["rel"]: entry["values"]
-            for entry in persisted_entries
-            if entry["song_id"] == f"{CollectionNames.LIBRARY_FILES.value}/1"
-        }
+        persisted_entries: list[dict] = mock_db.tags.set_song_tags_batch.call_args.args[0]
 
-        assert persisted_map["label"] == ["Warp"]
-        assert persisted_map["genre"] == ["Ambient", "Drone"]
-        assert persisted_map["year"] == [1994]
-        assert persisted_map["artist"] == ["Canonical Artist"]
-        assert persisted_map["artists"] == ["Canonical Artist", "Guest Artist"]
-        assert persisted_map["album"] == ["Selected Ambient Works"]
+        # New format: one entry per file, with "tags" list of {name, value} dicts
+        assert len(persisted_entries) == 1
+        file_entry = persisted_entries[0]
+        assert file_entry["song_id"] == f"{CollectionNames.LIBRARY_FILES.value}/1"
+        assert "tags" in file_entry
+
+        tags_list: list[dict] = file_entry["tags"]
+        tag_map: dict[str, set[str]] = {}
+        for t in tags_list:
+            tag_map.setdefault(t["name"], set()).add(str(t["value"]))
+
+        assert tag_map["artist"] == {"Canonical Artist"}
+        assert tag_map["artists"] == {"Canonical Artist", "Guest Artist"}
+        assert tag_map["album"] == {"Selected Ambient Works"}
+        assert tag_map["label"] == {"Warp"}
+        assert tag_map["genre"] == {"Ambient", "Drone"}
+        assert tag_map["year"] == {"1994"}
