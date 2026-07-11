@@ -171,3 +171,7 @@ build_resources/models-prepatch/
 # v2 prototype (local only)
 v2/
 .rw/
+
+# Docker skill credentials (local only)
+.opencode/skills/docker/references/credentials.md
+.github/skills/docker/references/credentials.md

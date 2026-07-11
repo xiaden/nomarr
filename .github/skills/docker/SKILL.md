@@ -90,6 +90,8 @@ If NVIDIA Container Toolkit is not installed or no GPU is present, `docker compo
 
 ## Credentials & Ports
 
+### Dev (Local Docker)
+
 - **Nomarr admin password**: `.devcontainer/config/config.yaml` → `admin_password` (set on first run)
 - **ArangoDB password**: `.devcontainer/nomarr-arangodb.dev.env` → `ARANGO_ROOT_PASSWORD`
 - **Nomarr API**: `http://127.0.0.1:8356`
@@ -98,6 +100,13 @@ If NVIDIA Container Toolkit is not installed or no GPU is present, `docker compo
 **CRITICAL: Use `127.0.0.1` not `localhost`** — On Windows, `localhost` resolves to IPv6 (`::1`) first. Docker only binds IPv4, so `localhost` hangs ~21 seconds before falling back. Every API call in this skill uses `127.0.0.1`.
 
 Both ports are published directly by the compose file (`ports:` binding) **and** forwarded by VS Code via `devcontainer.json` `forwardPorts`. They are reachable from the host regardless of whether VS Code is connected.
+
+### Remote (Production)
+
+- **Nomarr App**: `http://nomarr.nyxcore.me` (port 80)
+- **ArangoDB**: `https://nomarr.arango.nyxcore.me` (HTTPS only — HTTP redirects to HTTPS)
+
+The `/info` endpoint (`http://nomarr.nyxcore.me/info`) is **unauthenticated** and serves as a healthcheck. Authentication is password-based (no OAuth required).
 
 ---
 
