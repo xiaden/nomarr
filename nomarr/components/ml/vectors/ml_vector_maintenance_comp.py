@@ -125,29 +125,53 @@ def drain_hot_to_cold(db: DatabaseLike, backbone_id: str, library_key: str) -> i
     results: list[int] = list(cursor)  # type: ignore[arg-type]
     drained: int = results[0] if results else 0
 
-    # Migrate file_has_vectors edges from hot → cold
-    # Resolve file_id via edge traversal (file_id field dropped in migration)
-    db.aql.execute(
-        f"""
-        FOR doc IN {cold_name}
-            LET file_id = FIRST(
-                FOR f IN INBOUND doc file_has_vectors
-                    RETURN f._id
-            )
-            FILTER file_id != null
-            LET hot_id = CONCAT("{hot_name}/", doc._key)
-            LET cold_id = doc._id
-            // Remove old edge pointing to hot (if exists)
+    # Migrate file_has_vectors edges from hot → cold.
+    # Resolve file_id via edge traversal (file_id field was dropped).
+    # Split into two queries to avoid ERR 1579
+    # ("access after data-modification by collection").
+    #
+    # Query 1: collect all (file_id, hot_id, cold_id) tuples — read-only.
+    edge_data = list(
+        db.aql.execute(  # type: ignore[arg-type, union-attr]
+            f"""
+            FOR doc IN {cold_name}
+                LET file_id = FIRST(
+                    FOR f IN INBOUND doc file_has_vectors
+                        RETURN f._id
+                )
+                FILTER file_id != null
+                RETURN {{
+                    file_id: file_id,
+                    hot_id: CONCAT("{hot_name}/", doc._key),
+                    cold_id: doc._id,
+                }}
+            """
+        )
+    )  # type: ignore[arg-type]
+
+    if edge_data:
+        # Query 2a: REMOVE edges pointing to hot (old location).
+        hot_ids = [e["hot_id"] for e in edge_data]
+        db.aql.execute(  # type: ignore[arg-type, union-attr]
+            """
             FOR e IN file_has_vectors
-                FILTER e._to == hot_id
+                FILTER e._to IN @hot_ids
                 REMOVE e IN file_has_vectors
-            // UPSERT edge pointing to cold
-            UPSERT {{ _from: file_id, _to: cold_id }}
-            INSERT {{ _from: file_id, _to: cold_id }}
-            UPDATE {{}}
-            IN file_has_vectors
-        """
-    )
+            """,
+            bind_vars={"hot_ids": hot_ids},
+        )
+
+        # Query 2b: UPSERT edges pointing to cold (new location).
+        db.aql.execute(  # type: ignore[arg-type, union-attr]
+            """
+            FOR edge IN @edges
+                UPSERT { _from: edge.file_id, _to: edge.cold_id }
+                INSERT { _from: edge.file_id, _to: edge.cold_id }
+                UPDATE {}
+                IN file_has_vectors
+            """,
+            bind_vars={"edges": edge_data},
+        )
 
     # Clear hot collection now that all docs are in cold
     hot_coll.truncate()

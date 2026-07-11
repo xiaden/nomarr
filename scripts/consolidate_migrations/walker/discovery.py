@@ -20,9 +20,26 @@ if TYPE_CHECKING:
 # Version range for migrations to replay
 # ---------------------------------------------------------------------------
 
-_MIN_VERSION = 4
-_MAX_VERSION = 19
 _VERSION_RE = re.compile(r"^V(\d+)_.*\.py$")
+
+
+def _scan_version_range(migrations_dir: Path) -> tuple[int, int] | None:
+    """Scan the migrations directory and return the (min, max) numeric version.
+
+    Returns ``None`` if no ``V{NNN}_*.py`` files are found.
+    """
+    versions: set[int] = set()
+    for child in migrations_dir.iterdir():
+        if not child.is_file():
+            continue
+        match = _VERSION_RE.match(child.name)
+        if match is None:
+            continue
+        versions.add(int(match.group(1)))
+
+    if not versions:
+        return None
+    return (min(versions), max(versions))
 
 
 # ---------------------------------------------------------------------------
@@ -30,14 +47,21 @@ _VERSION_RE = re.compile(r"^V(\d+)_.*\.py$")
 # ---------------------------------------------------------------------------
 
 
-def discover_migrations(migrations_dir: Path) -> list[Path]:
+def discover_migrations(
+    migrations_dir: Path,
+    *,
+    min_version: int | None = None,
+    max_version: int | None = None,
+) -> list[Path]:
     """Find all ``V{NNN}_*.py`` migration files and return them sorted by version.
 
-    Only returns migrations in the V004--V019 range (the delta migrations that
-    need to be replayed onto the ``ensure_schema()`` baseline).
+    By default discovers all migration files in the directory.  Pass
+    *min_version* / *max_version* to constrain the range.
 
     Args:
         migrations_dir: Path to the ``nomarr/migrations/`` directory.
+        min_version: Inclusive lower bound.  ``None`` means "discover from disk".
+        max_version: Inclusive upper bound.  ``None`` means "discover from disk".
 
     Returns:
         List of ``Path`` objects sorted by numeric version.
@@ -50,6 +74,17 @@ def discover_migrations(migrations_dir: Path) -> list[Path]:
         msg = f"Migrations directory not found: {migrations_dir}"
         raise FileNotFoundError(msg)
 
+    # Auto-discover the version range from disk when bounds are not given
+    if min_version is None or max_version is None:
+        discovered = _scan_version_range(migrations_dir)
+        if discovered is None:
+            return []
+        disk_min, disk_max = discovered
+        if min_version is None:
+            min_version = disk_min
+        if max_version is None:
+            max_version = disk_max
+
     versioned: list[tuple[int, Path]] = []
     for child in migrations_dir.iterdir():
         if not child.is_file():
@@ -58,7 +93,7 @@ def discover_migrations(migrations_dir: Path) -> list[Path]:
         if match is None:
             continue
         version = int(match.group(1))
-        if _MIN_VERSION <= version <= _MAX_VERSION:
+        if min_version <= version <= max_version:
             versioned.append((version, child))
 
     versioned.sort(key=lambda pair: pair[0])

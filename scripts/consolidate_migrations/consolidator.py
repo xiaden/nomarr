@@ -23,33 +23,20 @@ import textwrap
 from pathlib import Path
 
 from .blacklist import is_blacklisted
-from .migration_replayer import discover_migrations
 from .schema_model import Collection, Graph, Index, SchemaShape, SeedDocument
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Migration files targeted for deletion (V004-V019)
+# Migration file discovery (for deletion during consolidation)
 # ---------------------------------------------------------------------------
 
-MIGRATION_FILES_TO_DELETE: tuple[str, ...] = (
-    "V004_add_segment_scores_stats.py",
-    "V005_add_vectors_track_collections.py",
-    "V006_add_applied_migrations.py",
-    "V007_split_vectors_hot_cold.py",
-    "V008_normalize_cold_vectors.py",
-    "V009_rename_essentia_tag_keys.py",
-    "V010_add_vram_promises.py",
-    "V011_drop_vram_promises_ttl_index.py",
-    "V012_drop_gpu_warmup_claims.py",
-    "V013_rename_song_tag_edges_collection.py",
-    "V014_add_ml_model_graph.py",
-    "V015_add_navidrome_song_map.py",
-    "V016_add_file_state_edges.py",
-    "V017_remove_dead_state_fields.py",
-    "V018_split_vectors_per_library.py",
-    "V019_navidrome_graph_model.py",
-)
+
+def _discover_migration_names(migrations_dir: Path) -> list[str]:
+    """Return the sorted list of all ``V{NNN}_*.py`` filenames in *migrations_dir*."""
+    from .walker.discovery import discover_migrations
+
+    return sorted(p.name for p in discover_migrations(migrations_dir))
 
 # ---------------------------------------------------------------------------
 # Source code generation helpers
@@ -295,14 +282,10 @@ def generate_reset_aql() -> str:
 
 
 def delete_old_migrations(migrations_dir: Path, *, dry_run: bool = True) -> list[Path]:
-    """Delete (or list) migration files V004-V019 from *migrations_dir*.
+    """Delete (or list) all migration files in *migrations_dir*.
 
-    Cross-validates the delete list against what ``discover_migrations()``
-    finds on disk:
-
-    - Warns if any file in ``MIGRATION_FILES_TO_DELETE`` is missing from disk.
-    - Warns if ``discover_migrations()`` finds migration files *not* in the
-      delete list (i.e. unexpected files that would survive the cleanup).
+    Discovers all ``V{NNN}_*.py`` files from disk, then deletes them
+    (or, in ``dry_run`` mode, lists what *would* be deleted).
 
     Args:
         migrations_dir: Path to the ``nomarr/migrations/`` directory.
@@ -313,31 +296,26 @@ def delete_old_migrations(migrations_dir: Path, *, dry_run: bool = True) -> list
         List of paths that were deleted (or would be deleted in dry-run mode).
 
     """
-    delete_set = set(MIGRATION_FILES_TO_DELETE)
+    delete_names = _discover_migration_names(migrations_dir)
+    delete_set = set(delete_names)
 
-    # Discover all migration files currently on disk
-    discovered = discover_migrations(migrations_dir)
-    discovered_names = {p.name for p in discovered}
-
-    # Warn about files on disk but not in our delete list
-    unexpected = discovered_names - delete_set
-    for name in sorted(unexpected):
-        logger.warning(
-            "Migration file %s exists on disk but is NOT in MIGRATION_FILES_TO_DELETE — it will NOT be deleted.",
-            name,
-        )
+    # Cross-validate: warn about files on disk NOT matching the pattern
+    for child in sorted(migrations_dir.iterdir()):
+        if child.is_file() and child.name.endswith(".py") and child.name not in delete_set:
+            if child.name not in ("__init__.py",):
+                logger.warning(
+                    "File %s is not a recognised V{NNN}_ migration — it will NOT be deleted.",
+                    child.name,
+                )
 
     # Build the list of paths to act on
     targets: list[Path] = []
-    for filename in MIGRATION_FILES_TO_DELETE:
+    for filename in delete_names:
         target = migrations_dir / filename
-        if not target.exists():
-            logger.warning(
-                "Expected migration file %s not found on disk — skipping.",
-                filename,
-            )
-            continue
-        targets.append(target)
+        if target.exists():
+            targets.append(target)
+        else:
+            logger.warning("Expected migration file %s not found on disk — skipping.", filename)
 
     if dry_run:
         logger.info("DRY RUN — would delete %d migration file(s):", len(targets))
