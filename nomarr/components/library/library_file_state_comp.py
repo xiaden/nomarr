@@ -399,15 +399,35 @@ def bulk_set_not_vectors_extracted(db: Database) -> int:
 
 
 def bulk_set_not_hydrated(db: Database, library_id: str | None = None) -> int:
-    """Transition hydrated files to not_hydrated, forcing re-hydration.
+    """Transition all library files needing it to not_hydrated, forcing re-hydration.
 
-    Returns the number of files transitioned.
+    Files can exist without any hydration-state edge at all (hydration axis
+    was introduced after initial scan).  This function handles three cases:
+      - already hydrated  → transition to not_hydrated
+      - no hydration edge → add        not_hydrated edge
+      - already not_hydrated → no-op
+
+    Returns the number of files that were changed.
     """
-    file_ids = [file_doc["_id"] for file_doc in _state_file_docs(db, STATE_HYDRATED)]
     if library_id is not None:
-        library_file_ids = _library_file_ids(db, library_id)
-        file_ids = [file_id for file_id in file_ids if file_id in library_file_ids]
+        file_ids = [file_doc["_id"] for file_doc in _library_file_edges(db, library_id)]
+    else:
+        # All files globally
+        all_files = cast("list[dict[str, Any]]", db.library.list_files(limit=None))
+        file_ids = [file_doc["_id"] for file_doc in all_files if isinstance(file_doc, dict) and "_id" in file_doc]
+
     if not file_ids:
         return 0
-    transition_file_state(db, file_ids, STATE_HYDRATED, STATE_NOT_HYDRATED)
-    return len(file_ids)
+
+    hydrated_ids = _state_file_ids(db, STATE_HYDRATED)
+    not_hydrated_ids = _state_file_ids(db, STATE_NOT_HYDRATED)
+
+    to_transition = [fid for fid in file_ids if fid in hydrated_ids]
+    to_add = [fid for fid in file_ids if fid not in hydrated_ids and fid not in not_hydrated_ids]
+
+    if to_transition:
+        transition_file_state(db, to_transition, STATE_HYDRATED, STATE_NOT_HYDRATED)
+    if to_add:
+        db.app.add_file_states(to_add, STATE_NOT_HYDRATED)
+
+    return len(to_transition) + len(to_add)

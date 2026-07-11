@@ -70,6 +70,19 @@ def process_file_workflow(
     """
     library_path = build_library_path_from_db(stored_path=path, db=db, library_id=None, check_disk=True)
     if not library_path.is_valid():
+        if library_path.status == "not_found":
+            logger.warning(f"[process_file_workflow] File no longer exists on disk, cleaning up: {path}")
+            bulk_delete_files(db, [path])
+            return ProcessFileResult(
+                file_path=path,
+                elapsed=0,
+                duration=None,
+                heads_processed=0,
+                tags_written=0,
+                head_results={"_not_found": {"status": "not_found", "reason": library_path.reason}},
+                mood_aggregations=None,
+                tags=Tags.from_dict({}),
+            )
         error_message = f"Path validation failed ({library_path.status}): {library_path.reason}"
         logger.error(f"[process_file_workflow] {error_message} - {path}")
         raise ValueError(error_message)
