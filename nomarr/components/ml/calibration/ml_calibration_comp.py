@@ -488,7 +488,7 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
         raise ValueError(msg)
 
     # Build model lookup cache: (backbone, embedder_release_date) -> model_id
-    all_models = db.ml_models.list_models()  # type: ignore[attr-defined]
+    all_models = db.ml_models_aql.list_models()
     model_lookup: dict[tuple[str, str], str] = {}
     for model in all_models:
         key = (model.get("backbone", ""), model.get("embedder_release_date", ""))

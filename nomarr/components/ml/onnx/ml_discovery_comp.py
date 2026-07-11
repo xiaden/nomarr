@@ -188,7 +188,7 @@ def _discover_heads_from_db(models_dir: str, db: Database) -> list[HeadInfo]:
     objects are ready for inference.
     """
     heads: list[HeadInfo] = []
-    all_models = db.ml_models.list_models()  # type: ignore[attr-defined]
+    all_models = db.ml_models_aql.list_models()
 
     for doc in all_models:
         if not doc.get("fully_configured", False):
@@ -210,10 +210,7 @@ def _discover_heads_from_db(models_dir: str, db: Database) -> list[HeadInfo]:
 
         # Labels from fully-labeled output vertices
         model_id: str = doc["_id"]
-        output_docs = [
-            doc for doc in db.ml_models.list_model_outputs(model_id)
-            if doc.get("fully_labeled")
-        ]
+        output_docs = [doc for doc in db.ml_models_aql.list_model_outputs(model_id) if doc.get("fully_labeled")]
         labels = [od["label"] for od in output_docs]
 
         heads.append(
