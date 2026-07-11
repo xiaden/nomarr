@@ -275,7 +275,9 @@ class DiscoveryWorker(multiprocessing.Process):
         )
 
         def _promotion_wrapper() -> None:
-            if run_idle_promotion(db, self.worker_id, models_dir) == 0:
+            try:
+                run_idle_promotion(db, self.worker_id, models_dir)
+            finally:
                 promotion_state["suppressed"] = True
 
         promotion_running = threading.Thread(target=_promotion_wrapper, daemon=True, name=f"VecPromo-{self.worker_id}")
