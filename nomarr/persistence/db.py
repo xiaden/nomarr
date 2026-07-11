@@ -349,6 +349,8 @@ class Database:
         self.ml_capacity = _MlCapacityAdapter(self.app)
         # Legacy vram_promises namespace — delegates to AppDb
         self.vram_promises = _VramPromisesAdapter(self.app)
+        # Legacy ml_models namespace — direct alias to ml_models_aql
+        self.ml_models = self.ml_models_aql
 
     def get_version(self) -> str | None:
         """Read the current schema version from the meta store."""

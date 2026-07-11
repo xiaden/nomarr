@@ -210,7 +210,10 @@ def _discover_heads_from_db(models_dir: str, db: Database) -> list[HeadInfo]:
 
         # Labels from fully-labeled output vertices
         model_id: str = doc["_id"]
-        output_docs = db.ml_model_outputs.get_fully_labeled_outputs(model_id)  # type: ignore[attr-defined]
+        output_docs = [
+            doc for doc in db.ml_models.list_model_outputs(model_id)
+            if doc.get("fully_labeled")
+        ]
         labels = [od["label"] for od in output_docs]
 
         heads.append(

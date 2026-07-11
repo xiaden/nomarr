@@ -211,7 +211,27 @@ def save_folder_record(
     existing_folder_id: str | None = None,
 ) -> None:
     """Upsert a folder cache record (keyed deterministically by library/path)."""
-    db.library.add_library_folder(library_id, _folder_doc(library_id, rel_path, mtime, file_count))
+    folder_doc = _folder_doc(library_id, rel_path, mtime, file_count)
+    folder_key = folder_doc["_key"]
+
+    # Remove any existing folder with the same deterministic _key before
+    # inserting (add_library_folder is INSERT, not UPSERT).
+    if existing_folder_id:
+        db.library.remove_library_folder(library_id, existing_folder_id)
+    else:
+        # Try to find and remove a pre-existing folder with the same key
+        try:
+            existing = db.library.list_folders_for_library(library_id)
+            for folder in cast("list[dict[str, Any]]", existing):
+                if folder.get("_key") == folder_key:
+                    fid = folder.get("_id")
+                    if fid:
+                        db.library.remove_library_folder(library_id, fid)
+                    break
+        except Exception:
+            pass  # best-effort cleanup
+
+    db.library.add_library_folder(library_id, folder_doc)
 
 
 def cleanup_stale_folders(
