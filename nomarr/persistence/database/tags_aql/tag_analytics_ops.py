@@ -237,19 +237,26 @@ class TagAnalyticsOpsMixin:
                 {filters}
                 COLLECT AGGREGATE
                     file_count = COUNT(doc),
-                    total_size = SUM(doc.size OR 0),
-                    total_duration = SUM(doc.duration OR 0)
+                    total_size = SUM(doc.file_size OR 0),
+                    total_duration = SUM(doc.duration_seconds OR 0)
                 RETURN {{
                     file_count: file_count,
-                    total_size: total_size,
-                    total_duration: total_duration
+                    total_file_size_bytes: total_size,
+                    total_duration_ms: total_duration * 1000,
+                    avg_track_length_ms: (total_duration > 0 AND file_count > 0)
+                        ? (total_duration * 1000.0 / file_count) : 0.0
                 }}
             """,
             bind_vars,
         )
         if rows:
             return dict(rows[0])
-        return {"file_count": 0, "total_size": 0, "total_duration": 0}
+        return {
+            "file_count": 0,
+            "total_file_size_bytes": 0,
+            "total_duration_ms": 0,
+            "avg_track_length_ms": 0.0,
+        }
 
     # ------------------------------------------------------------------
     # Year distribution
