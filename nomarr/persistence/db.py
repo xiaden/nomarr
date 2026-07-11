@@ -164,6 +164,75 @@ class _MlCapacityAdapter:
         return self._app.get_lock(self._lock_id(model_set_hash))
 
 
+class _VramPromisesAdapter:
+    """Adapter providing the legacy ``db.vram_promises.*`` contract.
+
+    VRAM promise records are stored as per-persistence-layer convention
+    (via ``AppDb.add_vram_promise`` / ``list_vram_promises`` /
+    ``remove_vram_promise``), wrapped here to present the exact API the
+    ``ml_vram_coordinator_comp`` component expects.
+    """
+
+    _MAX_GPU_VRAM_MB = 24_576  # 24 GiB is a safe server-side default
+
+    def __init__(self, app: AppDb) -> None:
+        self._app = app
+
+    def try_register(
+        self,
+        *,
+        worker_id: str,
+        pid: int,
+        model_path: str,
+        promised_mb: float,
+        total_mb: float,
+        used_mb: float,
+    ) -> bool:
+        """Atomically register a VRAM promise if headroom permits.
+
+        Returns True when the promise was inserted, False when the GPU is
+        oversubscribed and the caller should fall back to CPU.
+        """
+        existing = self._app.list_vram_promises()
+        committed = sum(float(p.get("promised_mb", 0)) for p in existing)
+        if committed + promised_mb > total_mb * 0.90:
+            return False
+
+        self._app.add_vram_promise({
+            "worker_id": worker_id,
+            "pid": pid,
+            "model_path": model_path,
+            "promised_mb": promised_mb,
+            "total_mb": total_mb,
+            "used_mb": used_mb,
+        })
+        return True
+
+    def release(self, *, worker_id: str, model_path: str) -> None:
+        """Release a single VRAM promise by worker and model path."""
+        for p in self._app.list_vram_promises():
+            if p.get("worker_id") == worker_id and p.get("model_path") == model_path:
+                pid = p.get("_id") or p.get("_key")
+                if pid:
+                    self._app.remove_vram_promise(pid)
+                break
+
+    def get_all(self) -> list[dict]:
+        """Return all active VRAM promises."""
+        return self._app.list_vram_promises()
+
+    def release_all_for_worker(self, *, worker_id: str) -> int:
+        """Release every VRAM promise belonging to *worker_id*."""
+        removed = 0
+        for p in self._app.list_vram_promises():
+            if p.get("worker_id") == worker_id:
+                pid = p.get("_id") or p.get("_key")
+                if pid:
+                    self._app.remove_vram_promise(pid)
+                    removed += 1
+        return removed
+
+
 class Database:
     """Application database (ArangoDB).
 
@@ -276,6 +345,8 @@ class Database:
         self.migrations = _MigrationsAdapter(self.app)
         # Legacy ml_capacity namespace — delegates to AppDb
         self.ml_capacity = _MlCapacityAdapter(self.app)
+        # Legacy vram_promises namespace — delegates to AppDb
+        self.vram_promises = _VramPromisesAdapter(self.app)
 
     def get_version(self) -> str | None:
         """Read the current schema version from the meta store."""

@@ -198,28 +198,53 @@ class VectorCollection:
             bind_vars={"@source": self._name, "@dest": dest},
         )
 
-        # 2. Re-point edges that reference source docs → dest docs
-        # When re-promoting after a rescan, cold edges from a prior promotion may
-        # already exist. Use ignoreErrors to skip duplicates, then delete source edges.
-        self._db.aql.execute(
+        # 2. Re-point edges that reference source docs → dest docs.
+        # When re-promoting after a rescan, cold edges from a prior promotion
+        # may already exist.
+        #
+        # Split into three queries to avoid ERR 1579
+        # ("access after data-modification by collection").
+        #
+        # 2a: Read existing edges pointing to source.
+        edges_cursor = self._db.aql.execute(
             """
-            LET hot_edges = (
-                FOR edge IN @@edge_col
-                    FILTER STARTS_WITH(edge._to, @source_prefix)
-                    RETURN edge
-            )
-            FOR edge IN hot_edges
-                LET new_to = CONCAT(@dest_prefix, PARSE_IDENTIFIER(edge._to).key)
-                INSERT { _from: edge._from, _to: new_to } INTO @@edge_col OPTIONS { ignoreErrors: true }
-            FOR rem_edge IN hot_edges
-                REMOVE rem_edge IN @@edge_col OPTIONS { ignoreErrors: true }
+            FOR edge IN @@edge_col
+                FILTER STARTS_WITH(edge._to, @source_prefix)
+                RETURN edge
             """,
             bind_vars={
                 "@edge_col": _VECTOR_EDGE_COLLECTION,
                 "source_prefix": source_prefix,
-                "dest_prefix": dest_prefix,
             },
         )
+        edges: list[dict[str, Any]] = list(cast("Any", edges_cursor))
+
+        if edges:
+            # 2b: INSERT new edges pointing to dest.
+            self._db.aql.execute(
+                """
+                FOR edge IN @edges
+                    LET new_to = CONCAT(@dest_prefix, PARSE_IDENTIFIER(edge._to).key)
+                    INSERT { _from: edge._from, _to: new_to } INTO @@edge_col OPTIONS { ignoreErrors: true }
+                """,
+                bind_vars={
+                    "@edge_col": _VECTOR_EDGE_COLLECTION,
+                    "dest_prefix": dest_prefix,
+                    "edges": edges,
+                },
+            )
+
+            # 2c: REMOVE old edges pointing to source.
+            self._db.aql.execute(
+                """
+                FOR edge IN @edges
+                    REMOVE edge._key IN @@edge_col OPTIONS { ignoreErrors: true }
+                """,
+                bind_vars={
+                    "@edge_col": _VECTOR_EDGE_COLLECTION,
+                    "edges": edges,
+                },
+            )
 
         # 3. Truncate source
         source_col.truncate()
