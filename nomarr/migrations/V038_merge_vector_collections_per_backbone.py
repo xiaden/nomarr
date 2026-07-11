@@ -132,28 +132,53 @@ def _merge_source_into_target(
         bind_vars={"@source": source_name, "@dest": target_name},
     )
 
-    # Step 2: Re-point file_has_vectors edges from source → target
-    # Create new edges pointing to the dest collection, then remove
-    # the old edges.  ignoreErrors skips any duplicate _from+_to pairs.
-    db.aql.execute(  # type: ignore[union-attr]
+    # Step 2: Re-point file_has_vectors edges from source → target.
+    # Split into three queries to avoid ArangoDB ERR 1579
+    # ("access after data-modification by collection"):
+    #   2a. Capture existing edges into a cursor (read-only).
+    #   2b. INSERT new edges pointing to dest (modify).
+    #   2c. REMOVE old edges pointing to source (modify).
+
+    # 2a: Read existing edges pointing to source
+    edges_cursor = db.aql.execute(  # type: ignore[union-attr]
         """
-        LET src_edges = (
-            FOR edge IN @@edge_col
-                FILTER STARTS_WITH(edge._to, @source_prefix)
-                RETURN edge
-        )
-        FOR edge IN src_edges
-            LET new_to = CONCAT(@dest_prefix, PARSE_IDENTIFIER(edge._to).key)
-            INSERT { _from: edge._from, _to: new_to } INTO @@edge_col OPTIONS { ignoreErrors: true }
-        FOR rem_edge IN src_edges
-            REMOVE rem_edge IN @@edge_col OPTIONS { ignoreErrors: true }
+        FOR edge IN @@edge_col
+            FILTER STARTS_WITH(edge._to, @source_prefix)
+            RETURN edge
         """,
         bind_vars={
             "@edge_col": VECTOR_EDGE_COLLECTION,
             "source_prefix": source_prefix,
-            "dest_prefix": dest_prefix,
         },
     )
+    edges: list[dict[str, Any]] = list(edges_cursor)  # type: ignore[arg-type]
+
+    if edges:
+        # 2b: INSERT new edges pointing to dest
+        db.aql.execute(  # type: ignore[union-attr]
+            """
+            FOR edge IN @edges
+                LET new_to = CONCAT(@dest_prefix, PARSE_IDENTIFIER(edge._to).key)
+                INSERT { _from: edge._from, _to: new_to } INTO @@edge_col OPTIONS { ignoreErrors: true }
+            """,
+            bind_vars={
+                "@edge_col": VECTOR_EDGE_COLLECTION,
+                "dest_prefix": dest_prefix,
+                "edges": edges,
+            },
+        )
+
+        # 2c: REMOVE old edges pointing to source
+        db.aql.execute(  # type: ignore[union-attr]
+            """
+            FOR edge IN @edges
+                REMOVE edge._key IN @@edge_col OPTIONS { ignoreErrors: true }
+            """,
+            bind_vars={
+                "@edge_col": VECTOR_EDGE_COLLECTION,
+                "edges": edges,
+            },
+        )
 
     # Step 3: Truncate source (it's now empty or will be on next iteration)
     source_col.truncate()
