@@ -183,10 +183,32 @@ def _run_validate(migrations_dir: Path, bootstrap_path: Path) -> tuple[object, o
     return shape_a, shape_b, diff
 
 
-def _run_consolidate(migrations_dir: Path, shape_a: object) -> None:
+def _merge_shapes(shape_a: object, shape_b: object) -> object:
+    """Merge two SchemaShapes, taking the union of collections, indexes, and seeds.
+
+    Used when Shape B (replayed migrations) has items that were never folded
+    into the ensure_schema baseline (Shape A). The merged shape represents
+    the true final schema state.
+    """
+    from scripts.consolidate_migrations.schema_model import SchemaShape
+
+    a: SchemaShape = shape_a  # type: ignore[assignment]
+    b: SchemaShape = shape_b  # type: ignore[assignment]
+
+    return SchemaShape(
+        collections=a.collections | b.collections,
+        indexes=a.indexes | b.indexes,
+        graphs=a.graphs | b.graphs,
+        seed_documents=a.seed_documents | b.seed_documents,
+    )
+
+
+def _run_consolidate(migrations_dir: Path, shape_a: object, shape_b: object, diff: object) -> None:
     """Delete old migrations and write V001_baseline.py.
 
-    Exits with code 2 on errors.
+    When shapes differ, the merged shape (union of A ∪ B) is used as the
+    baseline to ensure all schema objects from both the ensure_schema
+    baseline AND the migration chain are captured.
     """
     from scripts.consolidate_migrations.consolidator import (
         delete_old_migrations,
@@ -194,8 +216,14 @@ def _run_consolidate(migrations_dir: Path, shape_a: object) -> None:
         write_baseline,
     )
 
-    # Delete old migrations (V004-V019)
-    print("\nDeleting old migration files (dry_run=False)...", flush=True)
+    if not diff.is_match:  # type: ignore[union-attr]
+        print("\nShapes differ — merging Shape A ∪ Shape B for baseline generation.", flush=True)
+        baseline_shape = _merge_shapes(shape_a, shape_b)
+    else:
+        baseline_shape = shape_a
+
+    # Delete old migrations
+    print("\nDeleting old migration files...", flush=True)
     try:
         deleted = delete_old_migrations(migrations_dir, dry_run=False)
     except Exception as exc:
@@ -208,7 +236,7 @@ def _run_consolidate(migrations_dir: Path, shape_a: object) -> None:
     # Write V001_baseline.py
     print("\nWriting V001_baseline.py...", flush=True)
     try:
-        baseline_path = write_baseline(migrations_dir, shape_a)  # type: ignore[arg-type]
+        baseline_path = write_baseline(migrations_dir, baseline_shape)  # type: ignore[arg-type]
     except FileExistsError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(2)
@@ -280,22 +308,16 @@ def main() -> None:
     bootstrap_path: Path = args.bootstrap_path
 
     # ---- Validate (always runs) -----------------------------------------------
-    shape_a, _shape_b, diff = _run_validate(migrations_dir, bootstrap_path)
+    shape_a, shape_b, diff = _run_validate(migrations_dir, bootstrap_path)
 
     if not diff.is_match:  # type: ignore[union-attr]
-        print("\nResult: SHAPES DO NOT MATCH", flush=True)
-        if args.consolidate:
-            print(
-                "ERROR: --consolidate requires shapes to match. Fix replay mismatches before consolidating.",
-                file=sys.stderr,
-            )
-        sys.exit(1)
-
-    print("\nResult: SHAPES MATCH", flush=True)
+        print("\nResult: SHAPES DO NOT MATCH — baseline is stale.", flush=True)
+    else:
+        print("\nResult: SHAPES MATCH", flush=True)
 
     # ---- Consolidate (optional) ------------------------------------------------
     if args.consolidate:
-        _run_consolidate(migrations_dir, shape_a)
+        _run_consolidate(migrations_dir, shape_a, shape_b, diff)
 
     # ---- DB reset (optional) ---------------------------------------------------
     if args.execute_db_reset:

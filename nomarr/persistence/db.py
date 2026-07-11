@@ -198,14 +198,16 @@ class _VramPromisesAdapter:
         if committed + promised_mb > total_mb * 0.90:
             return False
 
-        self._app.add_vram_promise({
-            "worker_id": worker_id,
-            "pid": pid,
-            "model_path": model_path,
-            "promised_mb": promised_mb,
-            "total_mb": total_mb,
-            "used_mb": used_mb,
-        })
+        self._app.add_vram_promise(
+            {
+                "worker_id": worker_id,
+                "pid": pid,
+                "model_path": model_path,
+                "promised_mb": promised_mb,
+                "total_mb": total_mb,
+                "used_mb": used_mb,
+            }
+        )
         return True
 
     def release(self, *, worker_id: str, model_path: str) -> None:
