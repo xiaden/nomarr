@@ -343,14 +343,14 @@ class TagAnalyticsOpsMixin:
         else:
             query_lines.extend(
                 [
-                    "    LET count = LENGTH(",
+                    "    LET _tag_count = LENGTH(",
                     "        FOR edge IN @@edge_collection",
                     "            FILTER edge._to == tag._id",
                     "            LIMIT 1",
                     "            RETURN 1",
                     "    )",
-                    "    FILTER count > 0",
-                    "    COLLECT genre = tag.value AGGREGATE count = SUM(count)",
+                    "    FILTER _tag_count > 0",
+                    "    COLLECT genre = tag.value AGGREGATE count = SUM(_tag_count)",
                 ]
             )
 
