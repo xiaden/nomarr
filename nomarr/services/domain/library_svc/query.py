@@ -39,6 +39,7 @@ from nomarr.helpers.constants.pipeline_states import (
     CAL_STATE_FIELD,
     ML_NOT_PROCESSED,
     ML_STATE_FIELD,
+    SCAN_IN_PROGRESS,
     SCAN_NOT_SCANNED,
     SCAN_STATE_FIELD,
     WRITE_NOT_WRITTEN,
@@ -245,18 +246,28 @@ class LibraryQueryMixin:
         recently_tagged = count_recently_tagged(self.db)
 
         # Build per-axis pipeline states for all libraries
+        scan_not_set = get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
+        scan_ing_set = get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
+        ml_set = get_libraries_in_axis_state(self.db, ML_STATE_FIELD, ML_NOT_PROCESSED)
+        cal_set = get_libraries_in_axis_state(self.db, CAL_STATE_FIELD, CAL_NOT_CALIBRATED)
+        tw_set = get_libraries_in_axis_state(self.db, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
+
         pipeline_states: dict[str, dict[str, str]] = {}
         for lib in libraries:
             lib_id = lib["_id"]
-            scan = get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
-            ml = get_libraries_in_axis_state(self.db, ML_STATE_FIELD, ML_NOT_PROCESSED)
-            cal = get_libraries_in_axis_state(self.db, CAL_STATE_FIELD, CAL_NOT_CALIBRATED)
-            tw = get_libraries_in_axis_state(self.db, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
+
+            if lib_id in scan_ing_set:
+                scan_state = SCAN_IN_PROGRESS
+            elif lib_id in scan_not_set:
+                scan_state = SCAN_NOT_SCANNED
+            else:
+                scan_state = "scanned"
+
             pipeline_states[lib_id] = {
-                SCAN_STATE_FIELD: "not_scanned" if lib_id in scan else "scanned",
-                ML_STATE_FIELD: "not_ML_processed" if lib_id in ml else "ML_processed",
-                CAL_STATE_FIELD: "not_calibrated" if lib_id in cal else "calibrated",
-                WRITE_STATE_FIELD: "not_written" if lib_id in tw else "written",
+                SCAN_STATE_FIELD: scan_state,
+                ML_STATE_FIELD: "not_ML_processed" if lib_id in ml_set else "ML_processed",
+                CAL_STATE_FIELD: "not_calibrated" if lib_id in cal_set else "calibrated",
+                WRITE_STATE_FIELD: "not_written" if lib_id in tw_set else "written",
             }
 
         return compute_work_status(
