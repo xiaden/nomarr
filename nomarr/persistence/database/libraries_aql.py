@@ -128,7 +128,7 @@ class LibrariesAqlOperations:
     def remove_library(self, library_id: str) -> None:
         """Delete a library and all its associated data.
 
-        File-level data is processed in batches of 1 000 so the AQL
+        File-level data is processed in batches of 250 so the AQL
         transaction size stays within ArangoDB limits for large libraries.
         Library-level data and orphaned tags are handled in single queries
         (their cardinality is independent of file count).
@@ -167,7 +167,7 @@ class LibrariesAqlOperations:
             bind_vars={"lib": normalized_id},
         )
         all_file_ids = list(file_cursor)
-        batch_size = 1000
+        batch_size = 250
         total_files = len(all_file_ids)
 
         _logger.info(
