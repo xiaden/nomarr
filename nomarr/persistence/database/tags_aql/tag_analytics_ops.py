@@ -317,64 +317,38 @@ class TagAnalyticsOpsMixin:
             descending.
         """
         from nomarr.persistence.aql import primitives
+        from nomarr.persistence.aql.primitives import normalize_limit
 
         bind_vars: dict[str, Any] = {
-            "@tag_collection": self.COLLECTION,
             "@edge_collection": self.EDGE_COLLECTION,
         }
-        filters = ""
-        if library_id is not None:
-            # Scope via file → library edges: only count edges where the
-            # file belongs to the requested library.
-            bind_vars["@file_collection"] = self.FILE_COLLECTION
-            bind_vars["library_id_filter"] = library_id
-            filters = """
-                FILTER file.library_id == @library_id_filter
-            """
 
         query_lines = [
-            "FOR tag IN @@tag_collection",
-            '    FILTER tag.name == "genre"',
+            "FOR edge IN @@edge_collection",
+            "    LET tag = DOCUMENT(edge._to)",
+            '    FILTER tag != null AND tag.name == "genre"',
         ]
-        if filters:
+
+        if library_id is not None:
+            bind_vars["library_id_filter"] = library_id
             query_lines.extend(
                 [
-                    "    FOR edge IN @@edge_collection",
-                    "        FILTER edge._to == tag._id",
-                    "        LET file = DOCUMENT(edge._from)",
-                    "        FILTER file != null",
-                ]
-            )
-            query_lines.append(filters.strip())
-            query_lines.append("        COLLECT genre = tag.value AGGREGATE count = COUNT(file)")
-        else:
-            query_lines.extend(
-                [
-                    "    LET _tag_count = LENGTH(",
-                    "        FOR edge IN @@edge_collection",
-                    "            FILTER edge._to == tag._id",
-                    "            LIMIT 1",
-                    "            RETURN 1",
-                    "    )",
-                    "    FILTER _tag_count > 0",
-                    "    COLLECT genre = tag.value AGGREGATE count = SUM(_tag_count)",
+                    "    LET file = DOCUMENT(edge._from)",
+                    "    FILTER file != null AND file.library_id == @library_id_filter",
                 ]
             )
 
-        query_lines.extend(
-            [
-                "    SORT count DESC",
-            ]
-        )
-
-        from nomarr.persistence.aql.primitives import normalize_limit
+        query_lines.append("    COLLECT genre = tag.value WITH COUNT INTO count")
 
         normalized_limit = normalize_limit(limit)
         if normalized_limit is not None:
+            query_lines.append("    SORT count DESC")
             query_lines.append("    LIMIT @limit_genre")
             bind_vars["limit_genre"] = normalized_limit
+        else:
+            query_lines.append("    SORT count DESC")
 
-        query_lines.append("    RETURN { genre: genre, count: count }")
+        query_lines.append("    RETURN { genre, count }")
 
         return primitives.execute(self._db, "\n".join(query_lines), bind_vars)
 
