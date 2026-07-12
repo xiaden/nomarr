@@ -133,20 +133,16 @@ class TagSearchOpsMixin:
         rows = primitives.execute(
             self._db,
             """
-            FOR tag IN @@tag_collection
-                FILTER tag.name == @tag_name
-                LET file_count = LENGTH(
-                    FOR edge IN @@edge_collection
-                        FILTER edge._to == tag._id
-                        RETURN 1
-                )
-                FILTER file_count > 0
-                SORT file_count DESC, tag.value
+            FOR edge IN @@edge_collection
+                LET tag = DOCUMENT(edge._to)
+                FILTER tag != null AND tag.name == @tag_name
+                COLLECT value = tag.value WITH COUNT INTO count
+                FILTER count > 0
+                SORT count DESC, value
                 LIMIT @limit
-                RETURN { value: tag.value, count: file_count }
+                RETURN { value, count }
             """,
             {
-                "@tag_collection": self.COLLECTION,
                 "@edge_collection": self.EDGE_COLLECTION,
                 "tag_name": tag_name,
                 "limit": limit,
@@ -242,29 +238,25 @@ class TagSearchOpsMixin:
         offset: int = 0,
     ) -> list[Document]:
         bind_vars: dict[str, Any] = {
-            "@tag_collection": self.COLLECTION,
             "@edge_collection": self.EDGE_COLLECTION,
             "limit": limit,
             "offset": offset,
         }
-        filters: list[str] = []
+        filter_lines: list[str] = ["    FILTER tag != null"]
         if name is not None:
-            filters.append("FILTER tag.name == @name")
+            filter_lines.append("    FILTER tag.name == @name")
             bind_vars["name"] = name
         if search is not None:
-            filters.append("FILTER LIKE(tag.name, @search, true)")
+            filter_lines.append("    FILTER LIKE(tag.name, @search, true)")
             bind_vars["search"] = search
-        filter_clause = "\n            ".join(filters)
+        filter_clause = "\n".join(filter_lines)
         query = f"""
-            FOR tag IN @@tag_collection
-                {filter_clause}
-                LET song_count = LENGTH(
-                    FOR edge IN @@edge_collection
-                        FILTER edge._to == tag._id
-                        LIMIT 1
-                        RETURN 1
-                )
+            FOR edge IN @@edge_collection
+                LET tag = DOCUMENT(edge._to)
+{filter_clause}
+                COLLECT tag_id = tag._id WITH COUNT INTO song_count
                 FILTER song_count > 0
+                LET tag = DOCUMENT(tag_id)
                 SORT song_count DESC, tag.name
                 LIMIT @offset, @limit
                 RETURN {{
