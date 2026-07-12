@@ -75,6 +75,16 @@ INTERNAL_CALIBRATION_IQR_THRESHOLD = 0.1  # Max IQR drift (10%)
 # ALL_CONFIG_KEYS and WEB_EDITABLE_KEYS are imported at the top of this file.
 _ALLOWED_CONFIG_KEYS = ALL_CONFIG_KEYS
 
+# Keys whose values must never be transmitted to the web UI in plaintext.
+# Returned as None from get_config_for_web so the frontend knows a value exists
+# but cannot read it. The frontend must treat None as "unchanged" on save.
+SENSITIVE_CONFIG_KEYS: frozenset[str] = frozenset(
+    {
+        "navidrome_api_password",
+        "spotify_client_secret",
+    }
+)
+
 
 class ConfigService:
     """Service for loading and caching application configuration.
@@ -214,7 +224,8 @@ class ConfigService:
         """Get configuration for the web UI endpoint.
 
         Returns only WEB_EDITABLE_KEYS subset, plus internal constants
-        and live worker status.
+        and live worker status. Sensitive values (passwords, secrets) are
+        redacted to None — the frontend must treat None as "unchanged".
 
         Args:
             worker_service: Optional WorkersCoordinator to check live worker status
@@ -225,6 +236,10 @@ class ConfigService:
         """
         with self._lock:
             filtered_config = {k: v for k, v in self._cache.items() if k in WEB_EDITABLE_KEYS}
+        # Redact sensitive values before sending to web UI
+        for key in SENSITIVE_CONFIG_KEYS:
+            if key in filtered_config:
+                filtered_config[key] = None
         internal_info = self.get_internal_info()
         worker_enabled = worker_service.is_worker_system_enabled() if worker_service else internal_info.worker_enabled
 

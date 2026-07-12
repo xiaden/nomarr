@@ -36,6 +36,7 @@ export function ApiSettingsPanel() {
   const [url, setUrl] = useState("");
   const [user, setUser] = useState("");
   const [password, setPassword] = useState("");
+  const [initialPassword, setInitialPassword] = useState<string | null>(null);
   const [prefixMap, setPrefixMap] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -58,7 +59,9 @@ export function ApiSettingsPanel() {
       const config = await getConfig();
       setUrl((config[CONFIG_KEYS.url] as string) ?? "");
       setUser((config[CONFIG_KEYS.user] as string) ?? "");
-      setPassword((config[CONFIG_KEYS.password] as string) ?? "");
+      const pw = (config[CONFIG_KEYS.password] as string) ?? "";
+      setPassword(pw);
+      setInitialPassword(pw);
       setPrefixMap((config[CONFIG_KEYS.prefixMap] as string) ?? "");
       setLoaded(true);
     } catch (err) {
@@ -111,12 +114,19 @@ export function ApiSettingsPanel() {
   const saveSettings = async () => {
     try {
       setSaving(true);
-      await Promise.all([
+      const promises: Promise<unknown>[] = [
         updateConfig(CONFIG_KEYS.url, url),
         updateConfig(CONFIG_KEYS.user, user),
-        updateConfig(CONFIG_KEYS.password, password),
         updateConfig(CONFIG_KEYS.prefixMap, prefixMap),
-      ]);
+      ];
+      // Only send password if the user explicitly changed it.
+      // The backend redacts sensitive values to None, so an empty
+      // initial value means "unchanged" — don't overwrite it.
+      if (password !== initialPassword) {
+        promises.push(updateConfig(CONFIG_KEYS.password, password));
+      }
+      await Promise.all(promises);
+      setInitialPassword(password);
       showSuccess("Navidrome API settings saved");
     } catch (err) {
       showError(

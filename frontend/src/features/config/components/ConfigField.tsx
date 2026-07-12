@@ -48,6 +48,31 @@ const CONFIG_METADATA: Record<string, {
     description: "From https://developer.spotify.com/dashboard - keep this private",
     type: "password",
   },
+  navidrome_api_url: {
+    label: "Navidrome API URL",
+    description: "Navidrome server URL (e.g. http://navidrome:4533)",
+    type: "text",
+  },
+  navidrome_api_user: {
+    label: "Navidrome Username",
+    description: "Navidrome admin username for API access",
+    type: "text",
+  },
+  navidrome_api_password: {
+    label: "Navidrome Password",
+    description: "Navidrome admin password for API access",
+    type: "password",
+  },
+  navidrome_path_prefix_map: {
+    label: "Path Prefix Map",
+    description: "Comma-separated from:to path prefix pairs when Navidrome and Nomarr mount the same files at different paths",
+    type: "text",
+  },
+  m3u_output_path: {
+    label: "M3U Output Path",
+    description: "Directory path (relative to library root) where M3U playlist files are saved",
+    type: "text",
+  },
   vector_group_size: {
     label: "Vector Group Size",
     description: "Songs per similarity neighborhood (5-100). Individual libraries can override this.",
@@ -59,6 +84,11 @@ const CONFIG_METADATA: Record<string, {
     type: "number",
   },
   // -- Personal playlists (algorithm tuning) --
+  pp_enabled: {
+    label: "Personal Playlists",
+    description: "Enable personal playlist generation",
+    type: "boolean",
+  },
   pp_backbone_id: {
     label: "Backbone",
     description: "Embedding backbone model used for similarity calculations",
@@ -79,9 +109,54 @@ const CONFIG_METADATA: Record<string, {
     description: "Minimum play count for a song to be included in taste profile calculation",
     type: "number",
   },
+  pp_max_songs: {
+    label: "Max Songs per Playlist",
+    description: "Maximum number of songs in each generated playlist",
+    type: "number",
+  },
+  pp_min_songs: {
+    label: "Min Songs per Playlist",
+    description: "Minimum number of songs required to create a playlist",
+    type: "number",
+  },
+  pp_max_genre_playlists: {
+    label: "Max Genre Playlists",
+    description: "Maximum number of genre-focused playlists to generate per run",
+    type: "number",
+  },
+  pp_max_clusters: {
+    label: "Max Taste Clusters",
+    description: "Maximum number of genre clusters per taste profile",
+    type: "number",
+  },
   pp_overwrite_playlists: {
     label: "Overwrite Playlists",
     description: "Replace existing playlists on each generation run instead of appending",
+    type: "boolean",
+  },
+  pp_type_familiar: {
+    label: "Generate Familiar",
+    description: "Generate 'Familiar Favorites' playlists from highly-played songs",
+    type: "boolean",
+  },
+  pp_type_discovery: {
+    label: "Generate Discovery",
+    description: "Generate 'Discovery' playlists with unheard songs similar to favorites",
+    type: "boolean",
+  },
+  pp_type_hidden_gems: {
+    label: "Generate Hidden Gems",
+    description: "Generate 'Hidden Gems' playlists with rarely-played songs that match your taste",
+    type: "boolean",
+  },
+  pp_type_genre: {
+    label: "Generate Genre",
+    description: "Generate genre-focused playlists based on top genre preferences",
+    type: "boolean",
+  },
+  pp_type_universal: {
+    label: "Generate Universal",
+    description: "Generate a universal mix playlist blending all taste dimensions",
     type: "boolean",
   },
 };
