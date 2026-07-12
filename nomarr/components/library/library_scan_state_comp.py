@@ -10,24 +10,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_id_comp import library_key_from_ref
 from nomarr.helpers.constants.pipeline_states import (
-    CAL_COMPLETE,
-    CAL_IN_PROGRESS,
-    CAL_NOT_CALIBRATED,
-    CAL_STATE_FIELD,
-    ML_COMPLETE,
-    ML_IN_PROGRESS,
-    ML_NOT_PROCESSED,
-    ML_STATE_FIELD,
     PIPELINE_DEFAULTS,
-    SCAN_COMPLETE,
-    SCAN_IN_PROGRESS,
-    SCAN_NOT_SCANNED,
-    SCAN_STATE_FIELD,
     VALID_PIPELINE_TRANSITIONS,
-    WRITE_COMPLETE,
-    WRITE_IN_PROGRESS,
-    WRITE_NOT_WRITTEN,
-    WRITE_STATE_FIELD,
 )
 
 if TYPE_CHECKING:
@@ -143,6 +127,9 @@ def transition_pipeline_axis(
     if current is not None:
         current_value = current.get(axis_field)
         if current_value is not None:
+            # No-op: current state is already the target — skip validation and update
+            if next_state == current_value:
+                return
             allowed = VALID_PIPELINE_TRANSITIONS.get(axis_field, {}).get(current_value, set())
             if next_state not in allowed:
                 msg = (
@@ -187,6 +174,9 @@ def bulk_transition_pipeline_axis(
     Raises:
         ValueError: If the transition is not valid from the source state.
     """
+    # No-op: source and target are the same — nothing to do
+    if from_state == to_state:
+        return 0
     allowed = VALID_PIPELINE_TRANSITIONS.get(axis_field, {}).get(from_state, set())
     if to_state not in allowed:
         msg = (
@@ -199,53 +189,3 @@ def bulk_transition_pipeline_axis(
     for library_id in library_ids:
         db.app.update_pipeline_axis(library_id, axis_field, to_state)
     return len(library_ids)
-
-
-# Legacy shims — these map old single-value API to new per-axis API.
-# They will be removed once all callers are updated.
-
-
-def transition_pipeline_state(db: Database, library_id: str, next_state: str) -> None:
-    """Legacy shim: map a single-value state to the appropriate axis transition."""
-    axis_map = {
-        SCAN_IN_PROGRESS: (SCAN_STATE_FIELD, SCAN_IN_PROGRESS),
-        SCAN_COMPLETE: (SCAN_STATE_FIELD, SCAN_COMPLETE),
-        SCAN_NOT_SCANNED: (SCAN_STATE_FIELD, SCAN_NOT_SCANNED),
-        ML_IN_PROGRESS: (ML_STATE_FIELD, ML_IN_PROGRESS),
-        ML_NOT_PROCESSED: (ML_STATE_FIELD, ML_NOT_PROCESSED),
-        ML_COMPLETE: (ML_STATE_FIELD, ML_COMPLETE),
-        CAL_IN_PROGRESS: (CAL_STATE_FIELD, CAL_IN_PROGRESS),
-        CAL_NOT_CALIBRATED: (CAL_STATE_FIELD, CAL_NOT_CALIBRATED),
-        CAL_COMPLETE: (CAL_STATE_FIELD, CAL_COMPLETE),
-        WRITE_IN_PROGRESS: (WRITE_STATE_FIELD, WRITE_IN_PROGRESS),
-        WRITE_NOT_WRITTEN: (WRITE_STATE_FIELD, WRITE_NOT_WRITTEN),
-        WRITE_COMPLETE: (WRITE_STATE_FIELD, WRITE_COMPLETE),
-    }
-    if next_state not in axis_map:
-        msg = f"Unknown pipeline state: {next_state!r}"
-        raise ValueError(msg)
-    axis_field, axis_value = axis_map[next_state]
-    transition_pipeline_axis(db, library_id, axis_field, axis_value)
-
-
-def bulk_transition_pipeline_state(db: Database, from_state: str, to_state: str) -> int:
-    """Legacy shim: map single-value states to per-axis bulk transition."""
-    axis_map = {
-        SCAN_IN_PROGRESS: SCAN_STATE_FIELD,
-        SCAN_COMPLETE: SCAN_STATE_FIELD,
-        SCAN_NOT_SCANNED: SCAN_STATE_FIELD,
-        ML_IN_PROGRESS: ML_STATE_FIELD,
-        ML_NOT_PROCESSED: ML_STATE_FIELD,
-        ML_COMPLETE: ML_STATE_FIELD,
-        CAL_IN_PROGRESS: CAL_STATE_FIELD,
-        CAL_NOT_CALIBRATED: CAL_STATE_FIELD,
-        CAL_COMPLETE: CAL_STATE_FIELD,
-        WRITE_IN_PROGRESS: WRITE_STATE_FIELD,
-        WRITE_NOT_WRITTEN: WRITE_STATE_FIELD,
-        WRITE_COMPLETE: WRITE_STATE_FIELD,
-    }
-    axis_field = axis_map.get(from_state)
-    if axis_field is None:
-        msg = f"Unknown pipeline state: {from_state!r}"
-        raise ValueError(msg)
-    return bulk_transition_pipeline_axis(db, axis_field, from_state, to_state)

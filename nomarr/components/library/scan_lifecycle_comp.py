@@ -283,4 +283,6 @@ def on_scan_complete_pipeline_hook(db: Database, library_id: str) -> None:
     """
     file_count = len(db.library.list_library_file_ids(library_id))
     next_state = ML_IN_PROGRESS if file_count > 0 else ML_NOT_PROCESSED
-    transition_pipeline_axis(db, library_id, ML_STATE_FIELD, next_state)
+    current = get_pipeline_state(db, library_id)
+    if current.get(ML_STATE_FIELD) != next_state:
+        transition_pipeline_axis(db, library_id, ML_STATE_FIELD, next_state)

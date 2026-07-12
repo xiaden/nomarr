@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import functools
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library import (
@@ -108,7 +109,13 @@ class LibraryScanMixin:
         """
         scan_setup_workflow(self.db, library_id, scan_type="full")
         task_id = f"scan_library_{library_id}"
-        on_complete = functools.partial(on_scan_complete_pipeline_hook, self.db, library_id)
+        # Repair scans must not change ML pipeline state — they exist to re-extract
+        # tags, not to trigger a new ML pass.  The skip_validation_autorepair flag
+        # already suppresses tag-validation repair; we also suppress the pipeline hook
+        # so the ML axis stays at whichever state it was already in.
+        on_complete: Callable[[], None] | None = None
+        if not skip_validation_autorepair:
+            on_complete = functools.partial(on_scan_complete_pipeline_hook, self.db, library_id)
         if self.background_tasks is None:
             msg = "Background task service is not available"
             raise RuntimeError(msg)
