@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
+from nomarr.helpers.dto.library_dto import LibraryDict
 from nomarr.persistence.schema import CollectionNames
 from nomarr.workflows.library.sync_file_to_library_wf import sync_file_to_library
 
@@ -74,13 +75,16 @@ def mock_db_with_file():
     mock_db.file_tags = MagicMock()
 
     # Mock library lookup (use platform-specific paths)
-    mock_db.library.find_library_containing_path.return_value = {
-        "_id": "libraries/lib1",
-        "_key": "lib1",
-        "name": "Test Library",
-        "root_path": TEST_LIBRARY_ROOT,
-        "is_enabled": True,
-    }
+    mock_db.library.find_library_containing_path.return_value = LibraryDict(
+        _id="libraries/lib1",
+        _key="lib1",
+        _rev="_",
+        name="Test Library",
+        root_path=TEST_LIBRARY_ROOT,
+        is_enabled=True,
+        created_at=0,
+        updated_at=0,
+    )
 
     # Mock file lookup - returns file with absolute path
     mock_db.library.get_library_file.return_value = {
