@@ -37,8 +37,8 @@ HEALTH_FRAME_INTERVAL_S = 3.0  # Send health frame every 3 seconds (faster than 
 IDLE_SLEEP_S = 1.0  # Sleep when no work available
 MAX_CONSECUTIVE_ERRORS = 10  # Shutdown after this many consecutive failures
 CACHE_IDLE_TIMEOUT_S = 40  # Evict cache after 40 seconds of no work (matches default)
-IDLE_POLLS_BEFORE_PROMOTION: int = 3  # Trigger hot→cold promotion after this many idle polls
 HEALTH_FRAME_PREFIX = "HEALTH|"
+IDLE_FRAME_PREFIX = "IDLE|"  # Frame prefix for idle/active state signals
 
 
 def _check_idle_pipeline_completion(db: Database, health_pipe: multiprocessing.connection.Connection | None) -> int:
@@ -255,35 +255,15 @@ class DiscoveryWorker(multiprocessing.Process):
         _malloc_trim()
         return None, False
 
-    def _maybe_spawn_idle_promotion(
-        self,
-        db: Database,
-        models_dir: str,
-        idle_consecutive_polls: int,
-        promotion_running: threading.Thread | None,
-        promotion_state: dict[str, bool],
-    ) -> tuple[threading.Thread | None, int]:
-        if (
-            idle_consecutive_polls < IDLE_POLLS_BEFORE_PROMOTION
-            or promotion_state["suppressed"]
-            or self._stop_event.is_set()
-            or (promotion_running is not None and promotion_running.is_alive())
-        ):
-            return promotion_running, idle_consecutive_polls
-        from nomarr.workflows.platform.idle_promotion_vectors_wf import (
-            idle_promotion_vectors_workflow as run_idle_promotion,
-        )
-
-        def _promotion_wrapper() -> None:
-            try:
-                run_idle_promotion(db, self.worker_id, models_dir)
-            finally:
-                promotion_state["suppressed"] = True
-
-        promotion_running = threading.Thread(target=_promotion_wrapper, daemon=True, name=f"VecPromo-{self.worker_id}")
-        promotion_running.start()
-        logger.info("[%s] Spawning idle vector promotion thread", self.worker_id)
-        return promotion_running, 0
+    def _send_idle_frame(self, idle: bool) -> None:
+        """Signal idle/active state to the main process."""
+        if self._health_pipe is None:
+            return
+        frame = IDLE_FRAME_PREFIX + json.dumps({"idle": idle, "worker_id": self.worker_id})
+        try:
+            self._health_pipe.send(frame)
+        except (OSError, BrokenPipeError) as exc:
+            logger.debug("[%s] Failed to send idle frame: %s", self.worker_id, exc)
 
     def _warm_onnx_cache(self, db: Database, config: ProcessorConfig) -> ONNXModelCache | None:
         """Warm the ONNX cache and probe GPU VRAM measurements when needed."""
@@ -444,8 +424,7 @@ class DiscoveryWorker(multiprocessing.Process):
         onnx_cache: ONNXModelCache | None = None
         recovering_until: float | None = None
         idle_consecutive_polls = 0
-        promotion_running: threading.Thread | None = None
-        promotion_state = {"suppressed": False}
+        idle_frame_sent: bool = False
         write_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="db-write")
         pending_write: Future[None] | None = None
 
@@ -463,11 +442,12 @@ class DiscoveryWorker(multiprocessing.Process):
                 file_id = discover_and_claim_file(db, self.worker_id)
                 if file_id is None:
                     idle_consecutive_polls += 1
+                    if idle_consecutive_polls >= 3 and not idle_frame_sent:
+                        self._send_idle_frame(True)
+                        idle_frame_sent = True
+                        logger.debug("[%s] Sent idle frame to main process", self.worker_id)
                     logger.debug("[%s] No work found, sleeping %.1fs", self.worker_id, IDLE_SLEEP_S)
                     onnx_cache, cache_warmed = self._evict_idle_cache(onnx_cache, last_work_time, cache_warmed)
-                    promotion_running, idle_consecutive_polls = self._maybe_spawn_idle_promotion(
-                        db, config.models_dir, idle_consecutive_polls, promotion_running, promotion_state
-                    )
                     try:
                         _check_idle_pipeline_completion(db, self._health_pipe)
                     except Exception:
@@ -476,8 +456,10 @@ class DiscoveryWorker(multiprocessing.Process):
                     continue
 
                 logger.debug("[%s] Work found: claimed file %s", self.worker_id, file_id)
+                if idle_frame_sent:
+                    self._send_idle_frame(False)
+                    idle_frame_sent = False
                 idle_consecutive_polls = 0
-                promotion_state["suppressed"] = False
                 last_work_time = internal_s().value
                 recovering_until = self._check_resource_headroom(db, file_id, rm_config)
                 if recovering_until is not None:
@@ -524,8 +506,6 @@ class DiscoveryWorker(multiprocessing.Process):
                 except Exception:
                     logger.exception("[%s] Pending write failed during shutdown", self.worker_id)
             write_executor.shutdown(wait=True)
-            if promotion_running is not None and promotion_running.is_alive():
-                promotion_running.join(timeout=8)
             logger.info("[%s] Discovery worker stopping (processed %d files)", self.worker_id, files_processed)
             db.app.update_health(self.worker_id, {"status": "stopping"})
             try:

@@ -59,6 +59,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
         self.default_enabled = default_enabled
         if self.health_monitor is not None:
             self.health_monitor.set_pipeline_callback(self.pipeline_svc.trigger_calibration)
+            self.health_monitor.set_idle_callback(self._on_worker_idle)
         if not db.hosts or not db.password:
             msg = "Database hosts and password required for worker system"
             raise ValueError(msg)
@@ -71,6 +72,8 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
         self._gpu_capable: bool | None = None
         self._capacity_estimate: CapacityEstimate | None = None
         self._tier_selection: TierSelection | None = None
+        self._idle_workers: set[str] = set()
+        self._promotion_suppressed: bool = False
 
     # ------------------- ComponentLifecycleHandler Protocol ------------------
 
@@ -97,6 +100,44 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
             )
         elif new_status == "healthy" and old_status == "pending":
             self._reset_restart_count(component_id)
+
+    def _on_worker_idle(self, worker_id: str, is_idle: bool) -> None:
+        """Handle idle/active state transitions from worker processes.
+
+        When all workers report idle and promotion hasn't been suppressed,
+        dispatches a single idle vector promotion task in a daemon thread.
+        """
+        if is_idle:
+            self._idle_workers.add(worker_id)
+        else:
+            self._idle_workers.discard(worker_id)
+            self._promotion_suppressed = False
+
+        total_workers = len(self._workers)
+        if total_workers == 0:
+            return
+
+        all_idle = len(self._idle_workers) >= total_workers
+        if all_idle and not self._promotion_suppressed:
+            self._promotion_suppressed = True
+            self._dispatch_idle_promotion()
+
+    def _dispatch_idle_promotion(self) -> None:
+        """Dispatch a single idle vector promotion task."""
+        from nomarr.workflows.platform.idle_promotion_vectors_wf import (
+            idle_promotion_vectors_workflow as run_idle_promotion,
+        )
+
+        def _promotion_wrapper() -> None:
+            try:
+                promoted = run_idle_promotion(self.db, "worker_system", str(self.processor_config.models_dir))
+                logger.info("[WorkerSystemService] Idle promotion complete: %d promoted", promoted)
+            except Exception:
+                logger.exception("[WorkerSystemService] Idle promotion failed")
+
+        thread = threading.Thread(target=_promotion_wrapper, daemon=True, name="VecPromo-System")
+        thread.start()
+        logger.info("[WorkerSystemService] All workers idle — dispatching vector promotion")
 
     # ---------------------------- Control Methods ----------------------------
 

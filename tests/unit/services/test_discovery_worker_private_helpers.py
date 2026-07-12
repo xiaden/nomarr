@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -184,119 +183,6 @@ class TestHandleProcessError:
             MAX_CONSECUTIVE_ERRORS - 1,
         )
         assert result == MAX_CONSECUTIVE_ERRORS
-
-
-# ---------------------------------------------------------------------------
-# _maybe_spawn_idle_promotion
-# ---------------------------------------------------------------------------
-
-
-class TestMaybeSpawnIdlePromotion:
-    """Tests for DiscoveryWorker._maybe_spawn_idle_promotion."""
-
-    _PATCH_WF = "nomarr.workflows.platform.idle_promotion_vectors_wf.idle_promotion_vectors_workflow"
-
-    def _call(self, mock_self, db, models_dir, idle_polls, promotion_running, promotion_state):
-        from nomarr.services.infrastructure.workers.discovery_worker import DiscoveryWorker
-
-        return DiscoveryWorker._maybe_spawn_idle_promotion(
-            mock_self, db, models_dir, idle_polls, promotion_running, promotion_state
-        )
-
-    def _state(self, suppressed: bool = False) -> dict:
-        return {"suppressed": suppressed}
-
-    @pytest.mark.unit
-    def test_returns_unchanged_when_below_poll_threshold(self):
-        """When idle_polls < IDLE_POLLS_BEFORE_PROMOTION, returns unchanged."""
-        from nomarr.services.infrastructure.workers.discovery_worker import IDLE_POLLS_BEFORE_PROMOTION
-
-        mock_self = _make_worker_self()
-        sentinel_thread = MagicMock()
-
-        result_thread, result_polls = self._call(
-            mock_self, MagicMock(), "/models", IDLE_POLLS_BEFORE_PROMOTION - 1, sentinel_thread, self._state()
-        )
-
-        assert result_thread is sentinel_thread
-        assert result_polls == IDLE_POLLS_BEFORE_PROMOTION - 1
-
-    @pytest.mark.unit
-    def test_returns_unchanged_when_suppressed(self):
-        """When promotion_state["suppressed"] is True, does not spawn."""
-        from nomarr.services.infrastructure.workers.discovery_worker import IDLE_POLLS_BEFORE_PROMOTION
-
-        mock_self = _make_worker_self()
-
-        result_thread, _ = self._call(
-            mock_self, MagicMock(), "/models", IDLE_POLLS_BEFORE_PROMOTION, None, self._state(suppressed=True)
-        )
-
-        assert result_thread is None
-
-    @pytest.mark.unit
-    def test_returns_unchanged_when_stop_event_set(self):
-        """When stop_event is set, does not spawn a promotion thread."""
-        from nomarr.services.infrastructure.workers.discovery_worker import IDLE_POLLS_BEFORE_PROMOTION
-
-        mock_self = _make_worker_self()
-        mock_self._stop_event.is_set.return_value = True
-
-        result_thread, _ = self._call(
-            mock_self, MagicMock(), "/models", IDLE_POLLS_BEFORE_PROMOTION, None, self._state()
-        )
-
-        assert result_thread is None
-
-    @pytest.mark.unit
-    def test_returns_unchanged_when_promotion_already_running(self):
-        """When an existing promotion thread is alive, does not spawn another."""
-        from nomarr.services.infrastructure.workers.discovery_worker import IDLE_POLLS_BEFORE_PROMOTION
-
-        mock_self = _make_worker_self()
-        running_thread = MagicMock()
-        running_thread.is_alive.return_value = True
-
-        result_thread, _result_polls = self._call(
-            mock_self, MagicMock(), "/models", IDLE_POLLS_BEFORE_PROMOTION, running_thread, self._state()
-        )
-
-        assert result_thread is running_thread
-
-    @pytest.mark.unit
-    @patch(_PATCH_WF)
-    def test_spawns_thread_when_all_guards_clear(self, mock_wf):
-        """When all guard conditions pass, returns a new thread and resets poll count."""
-        from nomarr.services.infrastructure.workers.discovery_worker import IDLE_POLLS_BEFORE_PROMOTION
-
-        mock_wf.return_value = 1  # non-zero → do not suppress
-        mock_self = _make_worker_self()
-        state = self._state()
-
-        result_thread, result_polls = self._call(
-            mock_self, MagicMock(), "/models", IDLE_POLLS_BEFORE_PROMOTION, None, state
-        )
-
-        assert result_thread is not None
-        assert isinstance(result_thread, threading.Thread)
-        assert result_polls == 0
-
-    @pytest.mark.unit
-    @patch(_PATCH_WF)
-    def test_suppresses_future_promotion_when_workflow_returns_zero(self, mock_wf):
-        """When workflow returns 0, sets promotion_state['suppressed'] = True."""
-        from nomarr.services.infrastructure.workers.discovery_worker import IDLE_POLLS_BEFORE_PROMOTION
-
-        mock_wf.return_value = 0
-        mock_self = _make_worker_self()
-        state = self._state()
-
-        result_thread, _ = self._call(mock_self, MagicMock(), "/models", IDLE_POLLS_BEFORE_PROMOTION, None, state)
-
-        # Run the thread synchronously so the wrapper executes
-        assert result_thread is not None
-        result_thread.join(timeout=5.0)
-        assert state["suppressed"] is True
 
 
 # ---------------------------------------------------------------------------

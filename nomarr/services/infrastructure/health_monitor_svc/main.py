@@ -19,6 +19,7 @@ from nomarr.helpers.dto.health_dto import (
     ComponentStatus,
 )
 from nomarr.helpers.time_helper import InternalSeconds, internal_s, internal_s_to_ms, to_wall_ms
+from nomarr.services.infrastructure.workers.discovery_worker import IDLE_FRAME_PREFIX
 
 from ._helpers import HealthMonitorConfig, _ComponentState
 from .deadline_ops import DeadlineOpsMixin
@@ -67,6 +68,7 @@ class HealthMonitorService(StateTransitionOpsMixin, DeadlineOpsMixin):
         self._monitor_thread: threading.Thread | None = None
         self._history_thread: threading.Thread | None = None
         self._pipeline_callback: Callable[[], None] | None = None
+        self._idle_callback: Callable[[str, bool], None] | None = None
 
     # ----------------------------- Registration ------------------------------
 
@@ -192,6 +194,13 @@ class HealthMonitorService(StateTransitionOpsMixin, DeadlineOpsMixin):
         """Register a callback for PIPELINE pipe frames."""
         self._pipeline_callback = callback
 
+    def set_idle_callback(self, callback: Callable[[str, bool], None] | None) -> None:
+        """Register a callback for IDLE pipe frames.
+
+        Callback receives (worker_id, is_idle).
+        """
+        self._idle_callback = callback
+
     # ---------------------------- Lifecycle ----------------------------------
 
     def start(self) -> None:
@@ -310,6 +319,19 @@ class HealthMonitorService(StateTransitionOpsMixin, DeadlineOpsMixin):
                 except Exception as exc:
                     logger.exception(
                         "[HealthMonitor] Pipeline callback error for %s: %s",
+                        component_id,
+                        exc,
+                    )
+            return
+
+        if data.startswith(IDLE_FRAME_PREFIX):
+            if self._idle_callback is not None:
+                try:
+                    payload = json.loads(data[len(IDLE_FRAME_PREFIX) :])
+                    self._idle_callback(payload.get("worker_id", component_id), payload.get("idle", False))
+                except Exception as exc:
+                    logger.exception(
+                        "[HealthMonitor] Idle callback error for %s: %s",
                         component_id,
                         exc,
                     )
