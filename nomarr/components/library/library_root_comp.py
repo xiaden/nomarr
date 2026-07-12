@@ -85,16 +85,16 @@ def ensure_no_overlapping_library_root(db: Database, candidate_root: str, *, ign
     existing_libraries = list_library_records(db, enabled_only=False, include_scan=False)
 
     for library in existing_libraries:
-        if ignore_id is not None and library["_id"] == ignore_id:
+        if ignore_id is not None and library._id == ignore_id:
             continue
 
-        existing_path = Path(library["root_path"]).resolve()
+        existing_path = Path(library.root_path).resolve()
 
         try:
             candidate_path.relative_to(existing_path)
             msg = (
                 f"Library root '{candidate_root}' is nested inside "
-                f"existing library '{library['name']}' at '{library['root_path']}'. "
+                f"existing library '{library.name}' at '{library.root_path}'. "
                 f"Library roots must be disjoint."
             )
             raise ValueError(msg)
@@ -106,7 +106,7 @@ def ensure_no_overlapping_library_root(db: Database, candidate_root: str, *, ign
         try:
             existing_path.relative_to(candidate_path)
             msg = (
-                f"Existing library '{library['name']}' at '{library['root_path']}' "
+                f"Existing library '{library.name}' at '{library.root_path}' "
                 f"is nested inside new library root '{candidate_root}'. "
                 f"Library roots must be disjoint."
             )

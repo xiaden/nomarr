@@ -27,6 +27,7 @@ from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     update_file_calibration_hashes_batch,
 )
 from nomarr.helpers.constants.file_states import STATE_CALIBRATED, STATE_NOT_CALIBRATED
+from nomarr.helpers.dto.library_dto import LibraryDict
 from nomarr.persistence.schema import CollectionNames
 
 
@@ -94,8 +95,8 @@ class TestComputeReconciliationInfo:
     def test_no_writable_libraries_returns_no_reconciliation(self) -> None:
         mock_db = MagicMock()
         libraries = [
-            {"_id": "libraries/1", "file_write_mode": "none"},
-            {"_id": "libraries/2", "file_write_mode": "disabled"},
+            LibraryDict(_id="libraries/1", _key="1", _rev="r1", name="L1", root_path="/p1", is_enabled=True, created_at=0, updated_at=0, file_write_mode="none"),
+            LibraryDict(_id="libraries/2", _key="2", _rev="r2", name="L2", root_path="/p2", is_enabled=True, created_at=0, updated_at=0, file_write_mode="disabled"),
         ]
         with patch(
             "nomarr.components.ml.calibration.ml_calibration_state_comp.list_library_records",
@@ -109,7 +110,7 @@ class TestComputeReconciliationInfo:
     def test_writable_library_with_outdated_files_returns_affected(self) -> None:
         mock_db = MagicMock()
         libraries = [
-            {"_id": "libraries/1", "name": "Music", "file_write_mode": "full"},
+            LibraryDict(_id="libraries/1", _key="1", _rev="r1", name="Music", root_path="/music", is_enabled=True, created_at=0, updated_at=0, file_write_mode="full"),
         ]
         calibration_status = [
             {"library_id": "libraries/1", "not_calibrated_count": 5},
@@ -137,9 +138,9 @@ class TestComputeReconciliationInfo:
     def test_mix_of_writable_and_nonwritable_filters_correctly(self) -> None:
         mock_db = MagicMock()
         libraries = [
-            {"_id": "libraries/1", "name": "Writable", "file_write_mode": "minimal"},
-            {"_id": "libraries/2", "name": "ReadOnly", "file_write_mode": "none"},
-            {"_id": "libraries/3", "name": "AlsoWritable", "file_write_mode": "full"},
+            LibraryDict(_id="libraries/1", _key="1", _rev="r1", name="Writable", root_path="/p1", is_enabled=True, created_at=0, updated_at=0, file_write_mode="minimal"),
+            LibraryDict(_id="libraries/2", _key="2", _rev="r2", name="ReadOnly", root_path="/p2", is_enabled=True, created_at=0, updated_at=0, file_write_mode="none"),
+            LibraryDict(_id="libraries/3", _key="3", _rev="r3", name="AlsoWritable", root_path="/p3", is_enabled=True, created_at=0, updated_at=0, file_write_mode="full"),
         ]
         calibration_status = [
             {"library_id": "libraries/1", "not_calibrated_count": 3},

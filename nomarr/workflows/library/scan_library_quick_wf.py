@@ -90,7 +90,7 @@ def scan_library_quick_workflow(
 
     # Step 1 — Resolve library and validate root
     library = resolve_library_for_scan(db, library_id)
-    library_root = Path(library["root_path"]).resolve()
+    library_root = Path(library.root_path).resolve()
     validate_library_root(library_root)
     mark_scan_started(db, library_id, scan_type="quick")
 

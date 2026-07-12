@@ -145,7 +145,7 @@ class TaggingQueryMixin:
         else:
             libraries = list_library_records(self.db, include_scan=False)
             for lib in libraries:
-                self.write_tags_to_files(lib["_id"])
+                self.write_tags_to_files(lib._id)
 
         return CommitResult(started=True, pending_files=pending)
 

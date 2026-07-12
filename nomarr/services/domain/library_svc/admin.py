@@ -88,12 +88,11 @@ class LibraryAdminMixin:
 
         result = []
         for lib in libraries:
-            lib_dto = LibraryDict(**lib)
             # Augment with counts (default to 0 if not in counts dict)
-            lib_counts = counts.get(lib_dto._id, {"file_count": 0, "folder_count": 0})
-            lib_dto.file_count = lib_counts["file_count"]
-            lib_dto.folder_count = lib_counts["folder_count"]
-            result.append(lib_dto)
+            lib_counts = counts.get(lib._id, {"file_count": 0, "folder_count": 0})
+            lib.file_count = lib_counts["file_count"]
+            lib.folder_count = lib_counts["folder_count"]
+            result.append(lib)
 
         return result
 

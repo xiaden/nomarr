@@ -6,12 +6,12 @@ processing velocity, and ETA.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 from nomarr.helpers.dto.info_dto import LibraryPipelineInfo, ScanningLibraryInfo, WorkStatusResult
 
 if TYPE_CHECKING:
-    from nomarr.helpers.dto.library_dto import LibraryStatsResult
+    from nomarr.helpers.dto.library_dto import LibraryDict, LibraryStatsResult
 
 
 class _LibrarySnapshot(TypedDict):
@@ -25,17 +25,17 @@ class _LibrarySnapshot(TypedDict):
 
 
 def compute_work_status(
-    libraries: list[dict[str, Any]],
+    libraries: list[LibraryDict],
     stats: LibraryStatsResult,
     recently_tagged_count: int,
     pipeline_states: dict[str, dict[str, str]] | None = None,
     velocity_window_seconds: int = 300,
-    library_docs: list[dict[str, Any]] | None = None,
+    library_docs: list[LibraryDict] | None = None,
 ) -> WorkStatusResult:
     """Compute unified work status from raw data.
 
     Args:
-        libraries: All library documents (with scan_status, scan_progress, etc.)
+        libraries: All library domain objects (with scan_status, scan_progress, etc.)
         stats: Aggregated library stats (total_files, needs_tagging_count, etc.)
         recently_tagged_count: Number of files tagged in the velocity window.
         pipeline_states: Per-library pipeline states (``{lib_id: {state_fields}}``).
@@ -48,18 +48,14 @@ def compute_work_status(
     """
     scanning_libraries = [
         ScanningLibraryInfo(
-            library_id=lib["_id"],
-            name=lib.get("name", "Unknown"),
-            progress=lib.get("scan_progress") or 0,
-            total=lib.get("scan_total") or 0,
+            library_id=lib._id,
+            name=lib.name or "Unknown",
+            progress=lib.scan_progress or 0,
+            total=lib.scan_total or 0,
         )
         for lib in libraries
-        if lib.get("scan_status") == "scanning"
-        or (
-            pipeline_states
-            and lib["_id"] in pipeline_states
-            and pipeline_states[lib["_id"]].get("scan_state") == "scanning"
-        )
+        if lib.scan_status == "scanning"
+        or (pipeline_states and lib._id in pipeline_states and pipeline_states[lib._id].get("scan_state") == "scanning")
     ]
     is_scanning = len(scanning_libraries) > 0
 
@@ -68,15 +64,15 @@ def compute_work_status(
     pipeline_source = library_docs if library_docs is not None else libraries
     pipeline_states = pipeline_states or {}
     for lib in pipeline_source:
-        lib_id = lib["_id"]
+        lib_id = lib._id
         lib_state = pipeline_states.get(lib_id, {})
         state = _derive_pipeline_state(lib_state)
         pipeline_libraries.append(
             LibraryPipelineInfo(
                 library_id=lib_id,
-                name=lib.get("name", "Unknown"),
+                name=lib.name or "Unknown",
                 state=state,
-                library_auto_write=bool(lib.get("library_auto_write", False)),
+                library_auto_write=bool(lib.library_auto_write),
             )
         )
 

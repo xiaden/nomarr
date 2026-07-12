@@ -14,6 +14,7 @@ from nomarr.components.library.library_scan_state_comp import (
     get_scan_state,
 )
 from nomarr.helpers.constants.pipeline_states import ML_IN_PROGRESS
+from nomarr.helpers.dto.library_dto import LibraryDict
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
@@ -84,29 +85,21 @@ def list_library_records(
     *,
     enabled_only: bool = False,
     include_scan: bool = True,
-) -> list[dict[str, Any]]:
+) -> list[LibraryDict]:
     """List libraries through constructor verbs, preserving legacy sort order."""
     docs = cast(
         "list[dict[str, Any]]",
         db.library.list_libraries(enabled_only=enabled_only),
     )
-    if not include_scan:
-        return docs
-    return [_merge_scan_state(db, doc) for doc in docs]
+    if include_scan:
+        docs = [_merge_scan_state(db, doc) for doc in docs]
+    return [LibraryDict(**doc) for doc in docs]
 
 
-def list_watchable_library_records(db: Database) -> list[dict[str, Any]]:
+def list_watchable_library_records(db: Database) -> list[LibraryDict]:
     """Return enabled libraries with file watching turned on."""
     libraries = list_library_records(db, enabled_only=True, include_scan=False)
-    return [
-        {
-            "_id": library.get("_id"),
-            "root_path": library.get("root_path"),
-            "watch_mode": library.get("watch_mode"),
-        }
-        for library in libraries
-        if library.get("watch_mode") not in (None, "off")
-    ]
+    return [lib for lib in libraries if lib.watch_mode not in (None, "off")]
 
 
 def update_library_record(
@@ -155,7 +148,7 @@ def list_all_library_keys(db: Database) -> list[str]:
     return db.library.list_library_keys()
 
 
-def find_library_containing_path(db: Database, file_path: str) -> dict[str, Any] | None:
+def find_library_containing_path(db: Database, file_path: str) -> LibraryDict | None:
     """Find the most specific library root containing ``file_path``."""
     try:
         normalized_path = Path(file_path).resolve()
@@ -163,10 +156,10 @@ def find_library_containing_path(db: Database, file_path: str) -> dict[str, Any]
         return None
 
     libraries = list_library_records(db, enabled_only=False, include_scan=False)
-    libraries.sort(key=lambda doc: len(str(doc.get("root_path", ""))), reverse=True)
+    libraries.sort(key=lambda lib: len(str(lib.root_path)), reverse=True)
 
     for library in libraries:
-        library_root = library.get("root_path")
+        library_root = library.root_path
         if not isinstance(library_root, str):
             continue
         try:

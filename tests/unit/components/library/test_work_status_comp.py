@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import pytest
 
+from typing import Any
+
 from nomarr.components.library.work_status_comp import compute_work_status
-from nomarr.helpers.dto.library_dto import LibraryStatsResult
+from nomarr.helpers.dto.library_dto import LibraryDict, LibraryStatsResult
 
 
 def _make_stats(total: int = 10, needs_tagging: int = 2) -> LibraryStatsResult:
@@ -33,6 +35,22 @@ def _make_pipeline_state(
     }
 
 
+def _make_library(**overrides: Any) -> LibraryDict:
+    """Create a LibraryDict with sensible defaults, overriding specific fields."""
+    defaults = {
+        "_id": "libraries/1",
+        "_key": "1",
+        "_rev": "1-0",
+        "name": "Test Library",
+        "root_path": "/music",
+        "is_enabled": True,
+        "created_at": 0,
+        "updated_at": 0,
+    }
+    defaults.update(overrides)
+    return LibraryDict(**defaults)
+
+
 class TestComputeWorkStatus:
     """Tests for compute_work_status."""
 
@@ -40,7 +58,7 @@ class TestComputeWorkStatus:
     def test_pipeline_libraries_populated_from_pipeline_states(self) -> None:
         """Library in pipeline_states gets its state reflected in result."""
         libraries = [
-            {"_id": "libraries/1", "name": "Rock Library", "library_auto_write": False},
+            _make_library(_id="libraries/1", name="Rock Library", library_auto_write=False),
         ]
         result = compute_work_status(
             libraries=libraries,
@@ -56,7 +74,7 @@ class TestComputeWorkStatus:
     def test_pipeline_state_defaults_to_idle(self) -> None:
         """Library absent from pipeline_states gets state='idle' in result."""
         libraries = [
-            {"_id": "libraries/1", "name": "Jazz Library", "library_auto_write": False},
+            _make_library(_id="libraries/1", name="Jazz Library", library_auto_write=False),
         ]
         result = compute_work_status(
             libraries=libraries,
@@ -70,10 +88,10 @@ class TestComputeWorkStatus:
     def test_library_docs_used_when_provided(self) -> None:
         """pipeline_libraries is built from library_docs, not libraries, when provided."""
         libraries = [
-            {"_id": "libraries/1", "name": "Rock Library", "library_auto_write": False},
+            _make_library(_id="libraries/1", name="Rock Library", library_auto_write=False),
         ]
         library_docs = [
-            {"_id": "libraries/2", "name": "Jazz Library", "library_auto_write": True},
+            _make_library(_id="libraries/2", name="Jazz Library", library_auto_write=True),
         ]
         result = compute_work_status(
             libraries=libraries,
@@ -90,7 +108,7 @@ class TestComputeWorkStatus:
     def test_library_auto_write_field_read(self) -> None:
         """Library with library_auto_write=True produces True in pipeline info."""
         libraries = [
-            {"_id": "libraries/1", "name": "Auto Library", "library_auto_write": True},
+            _make_library(_id="libraries/1", name="Auto Library", library_auto_write=True),
         ]
         result = compute_work_status(
             libraries=libraries,
@@ -115,13 +133,13 @@ class TestComputeWorkStatus:
     def test_scanning_library_identified(self) -> None:
         """Pipeline state drives scanning even when the scan doc says otherwise."""
         libraries = [
-            {
-                "_id": "libraries/1",
-                "name": "Rock Library",
-                "scan_progress": 50,
-                "scan_total": 200,
-                "library_auto_write": False,
-            },
+            _make_library(
+                _id="libraries/1",
+                name="Rock Library",
+                scan_progress=50,
+                scan_total=200,
+                library_auto_write=False,
+            ),
         ]
         result = compute_work_status(
             libraries=libraries,
@@ -138,13 +156,13 @@ class TestComputeWorkStatus:
     def test_scan_status_ignored_without_scanning_pipeline_state(self) -> None:
         """scan_status alone does not mark a library as scanning."""
         libraries = [
-            {
-                "_id": "libraries/1",
-                "name": "Rock Library",
-                "scan_progress": 50,
-                "scan_total": 200,
-                "library_auto_write": False,
-            },
+            _make_library(
+                _id="libraries/1",
+                name="Rock Library",
+                scan_progress=50,
+                scan_total=200,
+                library_auto_write=False,
+            ),
         ]
         result = compute_work_status(
             libraries=libraries,
@@ -159,13 +177,13 @@ class TestComputeWorkStatus:
     def test_scan_status_ignored_when_other_library_is_scanning(self) -> None:
         """Only the matching library pipeline state should mark it as scanning."""
         libraries = [
-            {
-                "_id": "libraries/1",
-                "name": "Rock Library",
-                "scan_progress": 50,
-                "scan_total": 200,
-                "library_auto_write": False,
-            },
+            _make_library(
+                _id="libraries/1",
+                name="Rock Library",
+                scan_progress=50,
+                scan_total=200,
+                library_auto_write=False,
+            ),
         ]
         result = compute_work_status(
             libraries=libraries,
@@ -205,7 +223,7 @@ class TestComputeWorkStatus:
     def test_is_busy_when_scanning_or_processing(self) -> None:
         """is_busy is True when scanning or processing."""
         libraries = [
-            {"_id": "libraries/1", "name": "Rock Library", "library_auto_write": False},
+            _make_library(_id="libraries/1", name="Rock Library", library_auto_write=False),
         ]
         result = compute_work_status(
             libraries=libraries,

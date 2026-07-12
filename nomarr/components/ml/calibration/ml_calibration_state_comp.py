@@ -305,7 +305,7 @@ def compute_reconciliation_info(
 
     # Get libraries with write modes that use mood tags
     all_libraries = list_library_records(db, include_scan=False)
-    writable_libraries = {lib["_id"]: lib for lib in all_libraries if lib.get("file_write_mode") in ("minimal", "full")}
+    writable_libraries = {lib._id: lib for lib in all_libraries if lib.file_write_mode in ("minimal", "full")}
 
     if not writable_libraries:
         return {"requires_reconciliation": False, "affected_libraries": []}
@@ -321,9 +321,9 @@ def compute_reconciliation_info(
             affected_libraries.append(
                 {
                     "library_id": library_id,
-                    "name": lib.get("name", "Unknown"),
+                    "name": lib.name or "Unknown",
                     "outdated_files": status["not_calibrated_count"],
-                    "file_write_mode": lib.get("file_write_mode"),
+                    "file_write_mode": lib.file_write_mode,
                 }
             )
 

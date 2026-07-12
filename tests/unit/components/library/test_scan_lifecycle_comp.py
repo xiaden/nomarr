@@ -6,6 +6,8 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from nomarr.helpers.dto.library_dto import LibraryDict
+
 from nomarr.components.library.library_scan_file_ops_comp import (
     bootstrap_file_state_edges,
     cleanup_stale_folders,
@@ -121,8 +123,22 @@ class TestGetScanningLibraryIds:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_calls_scanning_state_query_and_returns_set(self) -> None:
+    def test_returns_deduplicated_library_dicts(self) -> None:
         mock_db = MagicMock()
+
+        def _get_library(library_id: str) -> dict | None:
+            return {
+                "_id": library_id,
+                "_key": library_id.split("/", 1)[1],
+                "_rev": "rev",
+                "name": f"lib-{library_id}",
+                "root_path": "/tmp",
+                "is_enabled": True,
+                "created_at": 0,
+                "updated_at": 0,
+            }
+
+        mock_db.libraries.get_library.side_effect = _get_library
 
         with patch(
             "nomarr.components.library.scan_lifecycle_comp.get_libraries_in_axis_state",
@@ -130,8 +146,9 @@ class TestGetScanningLibraryIds:
         ) as mock_get_libraries:
             result = get_scanning_library_ids(mock_db)
 
-        assert result == {"libraries/one", "libraries/two"}
-        assert isinstance(result, set)
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert {lib._id for lib in result} == {"libraries/one", "libraries/two"}
         mock_get_libraries.assert_called_once_with(mock_db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
 
 
@@ -142,20 +159,17 @@ class TestGetLibraryScanHistories:
     @pytest.mark.mocked
     def test_returns_projected_scan_history_for_all_libraries(self) -> None:
         mock_db = MagicMock()
-        libraries = [
-            {
-                "_id": "libraries/one",
-                "name": "Main Library",
-                "scanned_at": 123,
-                "scan_status": "complete",
-                "ignored": "value",
-            },
-            {
-                "_id": "libraries/two",
-                "scanned_at": None,
-                "scan_status": "idle",
-            },
-        ]
+        lib_one = LibraryDict(
+            _id="libraries/one", _key="one", _rev="_", name="Main Library",
+            root_path="/tmp", is_enabled=True, created_at=0, updated_at=0,
+            scanned_at=123, scan_status="complete",
+        )
+        lib_two = LibraryDict(
+            _id="libraries/two", _key="two", _rev="_", name="Lib",
+            root_path="/tmp", is_enabled=True, created_at=0, updated_at=0,
+            scanned_at=None, scan_status="idle",
+        )
+        libraries = [lib_one, lib_two]
 
         with patch(
             "nomarr.components.library.scan_lifecycle_comp.list_library_records",
@@ -172,7 +186,7 @@ class TestGetLibraryScanHistories:
             },
             {
                 "library_id": "libraries/two",
-                "name": "Unknown",
+                "name": "Lib",
                 "scanned_at": None,
                 "scan_status": "idle",
             },
@@ -183,9 +197,15 @@ class TestGetLibraryScanHistories:
     def test_applies_limit_before_projection(self) -> None:
         mock_db = MagicMock()
         libraries = [
-            {"_id": "libraries/one", "name": "One", "scanned_at": None, "scan_status": "idle"},
-            {"_id": "libraries/two", "name": "Two", "scanned_at": None, "scan_status": "idle"},
-            {"_id": "libraries/three", "name": "Three", "scanned_at": 456, "scan_status": "complete"},
+            LibraryDict(_id="libraries/one", _key="one", _rev="_", name="One",
+                root_path="/tmp", is_enabled=True, created_at=0, updated_at=0,
+                scanned_at=None, scan_status="idle"),
+            LibraryDict(_id="libraries/two", _key="two", _rev="_", name="Two",
+                root_path="/tmp", is_enabled=True, created_at=0, updated_at=0,
+                scanned_at=None, scan_status="idle"),
+            LibraryDict(_id="libraries/three", _key="three", _rev="_", name="Three",
+                root_path="/tmp", is_enabled=True, created_at=0, updated_at=0,
+                scanned_at=456, scan_status="complete"),
         ]
 
         with patch(
@@ -423,12 +443,17 @@ class TestResolveLibraryForScan:
 
     def test_returns_library_when_lookup_succeeds(self) -> None:
         mock_db = MagicMock()
-        library = {"_id": "libraries/1", "name": "Main"}
+        library = {
+            "_id": "libraries/1", "_key": "1", "_rev": "_", "name": "Main",
+            "root_path": "/tmp", "is_enabled": True, "created_at": 0, "updated_at": 0,
+        }
         mock_db.libraries.get_library.return_value = library
 
         result = resolve_library_for_scan(mock_db, "libraries/1")
 
-        assert result == library
+        assert isinstance(result, LibraryDict)
+        assert result._id == "libraries/1"
+        assert result.name == "Main"
         mock_db.libraries.get_library.assert_called_once_with("libraries/1")
 
     def test_raises_library_not_found_when_lookup_returns_none(self) -> None:

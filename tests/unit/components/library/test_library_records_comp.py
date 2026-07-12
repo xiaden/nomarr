@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.components.library.library_id_comp import library_key_from_ref, normalize_library_id
+from nomarr.helpers.dto.library_dto import LibraryDict
 from nomarr.components.library.library_records_comp import (
     create_library_record,
     find_library_containing_path,
@@ -158,34 +159,51 @@ class TestGetLibraryByName:
 class TestListLibraryRecords:
     """Tests for ``list_library_records()``."""
 
+    @staticmethod
+    def _make_lib(**overrides: Any) -> dict[str, Any]:
+        return {
+            "_id": "libraries/test",
+            "_key": "test",
+            "_rev": "rev",
+            "name": "Test Library",
+            "root_path": "/tmp",
+            "is_enabled": True,
+            "created_at": 0,
+            "updated_at": 0,
+            **overrides,
+        }
+
     @pytest.mark.unit
     def test_returns_library_docs_from_sub_facade_without_manual_sorting(self) -> None:
         mock_db = MagicMock()
-        docs = [
-            {"_id": "libraries/2", "created_at": 20},
-            {"_id": "libraries/1", "created_at": 10},
-        ]
+        docs = [self._make_lib(_id="libraries/2"), self._make_lib(_id="libraries/1")]
         mock_db.library.list_libraries.return_value = docs
 
         result = list_library_records(mock_db, include_scan=False)
 
-        assert result == docs
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert result[0]._id == "libraries/2"
+        assert result[1]._id == "libraries/1"
         mock_db.library.list_libraries.assert_called_once_with(enabled_only=False)
 
     @pytest.mark.unit
     def test_merges_scan_state_for_enabled_only_records(self) -> None:
         mock_db = MagicMock()
-        enabled_docs = [{"_id": "libraries/1", "created_at": 10}]
-        merged_docs = [{"_id": "libraries/1", "created_at": 10, "scan_status": "idle"}]
+        enabled_docs = [self._make_lib(_id="libraries/1")]
+        merged_doc = {**self._make_lib(_id="libraries/1"), "scan_status": "idle"}
         mock_db.library.list_libraries.return_value = enabled_docs
 
         with patch(
             "nomarr.components.library.library_records_comp._merge_scan_state",
-            side_effect=merged_docs,
+            return_value=merged_doc,
         ) as merge_scan:
             result = list_library_records(mock_db, enabled_only=True)
 
-        assert result == merged_docs
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0]._id == "libraries/1"
+        assert result[0].scan_status == "idle"
         mock_db.library.list_libraries.assert_called_once_with(enabled_only=True)
         merge_scan.assert_called_once_with(mock_db, enabled_docs[0])
 
@@ -196,20 +214,35 @@ class TestListWatchableLibraryRecords:
     @pytest.mark.unit
     def test_filters_off_modes_and_projects_watch_fields(self) -> None:
         mock_db = MagicMock()
-        libraries = [
-            {"_id": "libraries/1", "root_path": "D:/Music", "watch_mode": "poll"},
-            {"_id": "libraries/2", "root_path": "D:/Audiobooks", "watch_mode": "off"},
-            {"_id": "libraries/3", "root_path": "D:/Podcasts", "watch_mode": None},
-        ]
+        lib1 = self._make_watchable_lib("libraries/1", "D:/Music", "poll")
+        lib2 = self._make_watchable_lib("libraries/2", "D:/Audiobooks", "off")
+        lib3 = self._make_watchable_lib("libraries/3", "D:/Podcasts", None)
 
         with patch(
             "nomarr.components.library.library_records_comp.list_library_records",
-            return_value=libraries,
+            return_value=[lib1, lib2, lib3],
         ) as list_records:
             result = list_watchable_library_records(mock_db)
 
-        assert result == [{"_id": "libraries/1", "root_path": "D:/Music", "watch_mode": "poll"}]
+        assert len(result) == 1
+        assert result[0]._id == "libraries/1"
+        assert result[0].root_path == "D:/Music"
+        assert result[0].watch_mode == "poll"
         list_records.assert_called_once_with(mock_db, enabled_only=True, include_scan=False)
+
+    @staticmethod
+    def _make_watchable_lib(_id: str, root_path: str, watch_mode: str | None) -> LibraryDict:
+        return LibraryDict(
+            _id=_id,
+            _key="_",
+            _rev="_",
+            name="x",
+            root_path=root_path,
+            is_enabled=True,
+            created_at=0,
+            updated_at=0,
+            watch_mode=watch_mode or "off",
+        )
 
 
 class TestUpdateLibraryRecord:
@@ -275,12 +308,25 @@ class TestUpdateLibraryConfigFields:
 class TestFindLibraryContainingPath:
     """Tests for ``find_library_containing_path()``."""
 
+    @staticmethod
+    def _make_lib_dto(_id: str, root_path: str) -> LibraryDict:
+        return LibraryDict(
+            _id=_id,
+            _key=_id.split("/", 1)[1],
+            _rev="_",
+            name=_id,
+            root_path=root_path,
+            is_enabled=True,
+            created_at=0,
+            updated_at=0,
+        )
+
     @pytest.mark.unit
     def test_returns_most_specific_matching_library(self) -> None:
         mock_db = MagicMock()
         libraries = [
-            {"_id": "libraries/root", "root_path": "D:/Music"},
-            {"_id": "libraries/nested", "root_path": "D:/Music/Rock"},
+            self._make_lib_dto("libraries/root", "D:/Music"),
+            self._make_lib_dto("libraries/nested", "D:/Music/Rock"),
         ]
 
         with patch(
@@ -289,7 +335,9 @@ class TestFindLibraryContainingPath:
         ) as list_records:
             result = find_library_containing_path(mock_db, "D:/Music/Rock/song.flac")
 
-        assert result == {"_id": "libraries/nested", "root_path": "D:/Music/Rock"}
+        assert result is not None
+        assert result._id == "libraries/nested"
+        assert result.root_path == "D:/Music/Rock"
         list_records.assert_called_once_with(mock_db, enabled_only=False, include_scan=False)
 
 

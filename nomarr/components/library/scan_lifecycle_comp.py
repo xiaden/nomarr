@@ -26,6 +26,7 @@ from nomarr.helpers.constants.pipeline_states import (
     SCAN_IN_PROGRESS,
     SCAN_STATE_FIELD,
 )
+from nomarr.helpers.dto.library_dto import LibraryDict
 from nomarr.helpers.exceptions import LibraryNotFoundError
 from nomarr.helpers.time_helper import now_ms
 
@@ -60,7 +61,7 @@ def is_library_scanning(db: Database, library_id: str) -> bool:
     return pipeline_state.get(SCAN_STATE_FIELD) == SCAN_IN_PROGRESS
 
 
-def resolve_library_for_scan(db: Database, library_id: str) -> dict[str, Any]:
+def resolve_library_for_scan(db: Database, library_id: str) -> LibraryDict:
     """Fetch a library document, raising if not found.
 
     Args:
@@ -68,17 +69,17 @@ def resolve_library_for_scan(db: Database, library_id: str) -> dict[str, Any]:
         library_id: Library document ``_id``
 
     Returns:
-        Library dict
+        ``LibraryDict`` domain object
 
     Raises:
-        ValueError: If library not found
+        LibraryNotFoundError: If library not found
 
     """
     library = db.libraries.get_library(library_id)
     if not library:
         msg = f"Library {library_id} not found"
         raise LibraryNotFoundError(msg)
-    return library
+    return LibraryDict(**library)
 
 
 def check_interrupted_scan(db: Database, library_id: str) -> tuple[bool, str | None]:
@@ -99,19 +100,23 @@ def check_interrupted_scan(db: Database, library_id: str) -> tuple[bool, str | N
     return (False, None)
 
 
-def get_scanning_library_ids(db: Database) -> set[str]:
-    """Return the set of library document IDs currently in scanning state.
+def get_scanning_library_ids(db: Database) -> list[LibraryDict]:
+    """Return the set of library domain objects currently in scanning state.
 
     Args:
         db: Database instance.
 
     Returns:
-        Set of library ``_id`` strings.  Duplicates from the persistence
-        layer are collapsed into a deduplicated set.
+        List of ``LibraryDict`` objects, deduplicated by ``_id``.
 
     """
-    raw = get_libraries_in_axis_state(db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
-    return set(raw)
+    raw_ids = get_libraries_in_axis_state(db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
+    seen: dict[str, LibraryDict] = {}
+    for library_id in raw_ids:
+        library = db.libraries.get_library(library_id)
+        if library and library_id not in seen:
+            seen[library_id] = LibraryDict(**library)
+    return list(seen.values())
 
 
 def transition_to_scanning(db: Database, library_id: str) -> None:
@@ -149,10 +154,10 @@ def get_library_scan_histories(
 
     return [
         {
-            "library_id": lib["_id"],
-            "name": lib.get("name", "Unknown"),
-            "scanned_at": lib.get("scanned_at"),
-            "scan_status": lib.get("scan_status"),
+            "library_id": lib._id,
+            "name": lib.name or "Unknown",
+            "scanned_at": lib.scanned_at,
+            "scan_status": lib.scan_status,
         }
         for lib in libraries
     ]
@@ -244,21 +249,21 @@ def is_scan_stale(db: Database, library_id: str, timeout_ms: int = 300_000) -> b
 
     Returns:
         ``True`` when the library's scan_state is ``"scanning"`` and the
-        ``started_at`` field is older than *timeout_ms* from now.
+        ``started_at`` field from the scan record is older than *timeout_ms*
+        from now.
 
     """
-    lib = db.libraries.get_library(library_id)
-    if not lib:
-        return False
-
     state = get_pipeline_state(db, library_id).get(SCAN_STATE_FIELD)
     if state != SCAN_IN_PROGRESS:
         return False
 
-    started_at_raw = lib.get("scan_started_at") or lib.get("started_at")
-    if not isinstance(started_at_raw, int):
+    scan = db.app.get_scan(library_id)
+    if not scan:
         return False
-    started_at: int = started_at_raw
+
+    started_at = scan.get("started_at")
+    if not isinstance(started_at, int):
+        return False
 
     now_val: int = now_ms().value
     elapsed = now_val - started_at

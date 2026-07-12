@@ -140,7 +140,7 @@ def sync_file_to_library(
             if not library:
                 logger.warning(f"[sync_file_to_library] File path not in any library: {file_path}")
                 return
-            library_id = library["_id"]
+            library_id = library._id
 
         assert library_id is not None
         file_stat = os.stat(file_path)

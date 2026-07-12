@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_records_comp import get_library_record, list_watchable_library_records
+from nomarr.helpers.dto.library_dto import LibraryDict
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -15,6 +16,7 @@ def list_watchable_libraries(db: Database) -> list[dict[str, Any]]:
 
     Projects to ``{"_id", "root_path", "watch_mode"}``.
     """
+
     libraries = list_watchable_library_records(db)
     return [_project_watchable_library(library) for library in libraries]
 
@@ -35,10 +37,10 @@ def get_library_watch_config(db: Database, library_id: str) -> dict[str, Any] | 
     }
 
 
-def _project_watchable_library(library: dict[str, Any]) -> dict[str, Any]:
-    """Project a library doc to the watcher list contract."""
+def _project_watchable_library(library: LibraryDict) -> dict[str, Any]:
+    """Project a LibraryDict to the watcher list contract."""
     return {
-        "_id": library.get("_id"),
-        "root_path": library.get("root_path"),
-        "watch_mode": library.get("watch_mode"),
+        "_id": library._id,
+        "root_path": library.root_path,
+        "watch_mode": library.watch_mode,
     }

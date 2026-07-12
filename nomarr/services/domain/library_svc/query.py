@@ -124,7 +124,7 @@ class LibraryQueryMixin:
         libraries = list_library_records(self.db, enabled_only=True)
         all_file_ids: list[str] = []
         for lib in libraries:
-            file_ids = get_uncalibrated_tagged_file_ids(self.db, lib["_id"])
+            file_ids = get_uncalibrated_tagged_file_ids(self.db, lib._id)
             all_file_ids.extend(file_ids)
         if not all_file_ids:
             return []
@@ -254,7 +254,7 @@ class LibraryQueryMixin:
 
         pipeline_states: dict[str, dict[str, str]] = {}
         for lib in libraries:
-            lib_id = lib["_id"]
+            lib_id = lib._id
 
             if lib_id in scan_ing_set:
                 scan_state = SCAN_IN_PROGRESS

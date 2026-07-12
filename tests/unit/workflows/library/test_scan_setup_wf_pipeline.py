@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.helpers.dto.library_dto import LibraryDict
 from nomarr.helpers.exceptions import LibraryAlreadyScanningError
 from nomarr.workflows.library.scan_setup_wf import scan_setup_workflow
 
@@ -18,7 +19,7 @@ class TestScanSetupWorkflowPipeline:
     def helper_scan_setup_transitions_library_to_scanning_pipeline_state(self) -> None:
         """Scan setup should move the library pipeline state to scanning."""
         mock_db = MagicMock()
-        library = {"_id": "libraries/abc123", "name": "Main Library", "scan_status": "idle"}
+        library = LibraryDict(_id="libraries/abc123", _key="abc123", _rev="r1", name="Main Library", root_path="/music", is_enabled=True, created_at=0, updated_at=0, scan_status="idle")
 
         with (
             patch(
@@ -50,7 +51,7 @@ class TestScanSetupWorkflowPipeline:
     def test_scan_setup_transitions_library_to_scanning_pipeline_state(self) -> None:
         """Scan setup should move the library pipeline state to scanning."""
         mock_db = MagicMock()
-        library = {"_id": "libraries/abc123", "name": "Main Library", "scan_status": "idle"}
+        library = LibraryDict(_id="libraries/abc123", _key="abc123", _rev="r1", name="Main Library", root_path="/music", is_enabled=True, created_at=0, updated_at=0, scan_status="idle")
 
         with (
             patch(
@@ -85,7 +86,7 @@ class TestScanSetupWorkflowPipeline:
     def test_scan_setup_rejects_library_already_in_scanning_pipeline_state(self) -> None:
         """Duplicate scans should be rejected when the pipeline state is already scanning."""
         mock_db = MagicMock()
-        library = {"_id": "libraries/abc123", "name": "Main Library", "scan_status": "idle"}
+        library = LibraryDict(_id="libraries/abc123", _key="abc123", _rev="r1", name="Main Library", root_path="/music", is_enabled=True, created_at=0, updated_at=0, scan_status="idle")
 
         with (
             patch(

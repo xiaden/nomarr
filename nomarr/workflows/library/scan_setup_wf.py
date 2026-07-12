@@ -9,7 +9,7 @@ layer can map them to the correct status codes.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nomarr.components.library.scan_lifecycle_comp import (
     check_interrupted_scan,
@@ -18,6 +18,7 @@ from nomarr.components.library.scan_lifecycle_comp import (
     transition_to_scanning,
     update_scan_progress,
 )
+from nomarr.helpers.dto.library_dto import LibraryDict
 from nomarr.helpers.exceptions import LibraryAlreadyScanningError
 
 if TYPE_CHECKING:
@@ -30,7 +31,7 @@ def scan_setup_workflow(
     db: Database,
     library_id: str,
     scan_type: str,
-) -> dict[str, Any]:
+) -> LibraryDict:
     """Validate a library and prepare it for scanning.
 
     This workflow runs synchronously in the service layer before a scan
@@ -61,7 +62,7 @@ def scan_setup_workflow(
         logger.warning(
             "Detected interrupted %s scan for library %s — continuing with new %s scan",
             prev_scan_type or "unknown",
-            library["name"],
+            library.name,
             scan_type,
         )
 
@@ -69,7 +70,7 @@ def scan_setup_workflow(
         "Starting %s scan for library %s (%s)",
         scan_type,
         library_id,
-        library["name"],
+        library.name,
     )
 
     update_scan_progress(db, library_id, progress=0, total=0)

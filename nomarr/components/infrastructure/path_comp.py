@@ -47,7 +47,7 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
         )
 
     # Calculate relative path
-    library_root = Path(library["root_path"]).resolve()
+    library_root = Path(library.root_path).resolve()
     try:
         relative_path = absolute.relative_to(library_root)
         relative_str = str(relative_path).replace("\\", "/")  # Normalize to forward slashes
@@ -55,7 +55,7 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
         return LibraryPath(
             relative="",
             absolute=absolute,
-            library_id=library["_id"],
+            library_id=library._id,
             status="invalid_config",
             reason=f"Path not relative to library root: {library_root}",
         )
@@ -65,7 +65,7 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
         return LibraryPath(
             relative=relative_str,
             absolute=absolute,
-            library_id=library["_id"],
+            library_id=library._id,
             status="not_found",
             reason="File does not exist on disk",
         )
@@ -75,7 +75,7 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
         return LibraryPath(
             relative=relative_str,
             absolute=absolute,
-            library_id=library["_id"],
+            library_id=library._id,
             status="invalid_config",
             reason="Path is a directory, not a file",
         )
@@ -85,13 +85,13 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
         return LibraryPath(
             relative=relative_str,
             absolute=absolute,
-            library_id=library["_id"],
+            library_id=library._id,
             status="invalid_config",
             reason="Not a supported audio file format",
         )
 
     # All checks passed
-    return LibraryPath(relative=relative_str, absolute=absolute, library_id=library["_id"], status="valid", reason=None)
+    return LibraryPath(relative=relative_str, absolute=absolute, library_id=library._id, status="valid", reason=None)
 
 
 def build_library_path_from_db(
@@ -166,8 +166,8 @@ def build_library_path_from_db(
                 reason=f"Cannot resolve stored path: {e}",
             )
 
-        library = find_library_containing_path(db, str(absolute))
-        if not library:
+        found = find_library_containing_path(db, str(absolute))
+        if not found:
             return LibraryPath(
                 relative=stored_path,
                 absolute=absolute,
@@ -176,7 +176,7 @@ def build_library_path_from_db(
                 reason="Stored path is outside all configured library roots",
             )
 
-        library_root = Path(library["root_path"]).resolve()
+        library_root = Path(found.root_path).resolve()
         try:
             relative_path = absolute.relative_to(library_root)
             relative_str = str(relative_path).replace("\\", "/")
@@ -184,12 +184,12 @@ def build_library_path_from_db(
             return LibraryPath(
                 relative=stored_path,
                 absolute=absolute,
-                library_id=library["_id"],
+                library_id=found._id,
                 status="invalid_config",
                 reason=f"Stored path not relative to library root: {library_root}",
             )
 
-        library_id = library["_id"]
+        library_id = found._id
 
     # Optionally check disk
     if check_disk:

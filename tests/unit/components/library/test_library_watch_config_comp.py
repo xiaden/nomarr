@@ -10,6 +10,7 @@ from nomarr.components.library.library_watch_config_comp import (
     get_library_watch_config,
     list_watchable_libraries,
 )
+from nomarr.helpers.dto.library_dto import LibraryDict
 
 
 class TestListWatchableLibraries:
@@ -20,19 +21,16 @@ class TestListWatchableLibraries:
     def test_returns_projected_fields_only(self) -> None:
         mock_db = MagicMock()
         libraries = [
-            {
-                "_id": "libraries/one",
-                "root_path": "C:/music/one",
-                "watch_mode": "poll",
-                "is_enabled": True,
-                "name": "Main Library",
-            },
-            {
-                "_id": "libraries/two",
-                "root_path": "C:/music/two",
-                "watch_mode": "event",
-                "extra": "ignored",
-            },
+            LibraryDict(
+                _id="libraries/one", _key="one", _rev="_", name="Main Library",
+                root_path="C:/music/one", is_enabled=True, created_at=0, updated_at=0,
+                watch_mode="poll",
+            ),
+            LibraryDict(
+                _id="libraries/two", _key="two", _rev="_", name="Lib",
+                root_path="C:/music/two", is_enabled=True, created_at=0, updated_at=0,
+                watch_mode="event",
+            ),
         ]
 
         with patch(
