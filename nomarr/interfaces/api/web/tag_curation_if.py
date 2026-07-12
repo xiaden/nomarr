@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -13,9 +13,7 @@ from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.id_codec import decode_path_id
 from nomarr.interfaces.api.web.dependencies import get_tagging_service
-
-if TYPE_CHECKING:
-    from nomarr.services.domain.tagging_svc import TaggingService
+from nomarr.services.domain.tagging_svc import TaggingService
 
 logger = logging.getLogger(__name__)
 

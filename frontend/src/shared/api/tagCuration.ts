@@ -112,16 +112,16 @@ export async function getFileTags(
 // ──────────────────────────────────────────────────────────────────────────────
 
 /**
- * Fetch paginated tag values, optionally filtered by rel and prefix.
+ * Fetch paginated tag values, optionally filtered by name and prefix.
  */
 export async function fetchTagValues(
-  rel?: string,
+  name?: string,
   prefix?: string,
   limit = 100,
   offset = 0
 ): Promise<TagListResult> {
   const params = new URLSearchParams();
-  if (rel) params.append("rel", rel);
+  if (name) params.append("name", name);
   if (prefix) params.append("prefix", prefix);
   params.append("limit", String(limit));
   params.append("offset", String(offset));

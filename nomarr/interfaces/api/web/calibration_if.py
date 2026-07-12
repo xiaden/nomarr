@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -20,11 +20,10 @@ from nomarr.interfaces.api.types.calibration_types import (
     LibraryCalibrationStatusResponse,
 )
 from nomarr.interfaces.api.web.dependencies import get_calibration_service, get_tagging_service
+from nomarr.services.domain.calibration_svc import CalibrationService
+from nomarr.services.domain.tagging_svc import TaggingService
 
 logger = logging.getLogger(__name__)
-if TYPE_CHECKING:
-    from nomarr.services.domain.calibration_svc import CalibrationService
-    from nomarr.services.domain.tagging_svc import TaggingService
 router = APIRouter(prefix="/calibration", tags=["Calibration"])
 
 
