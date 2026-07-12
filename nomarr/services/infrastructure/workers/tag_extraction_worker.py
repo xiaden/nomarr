@@ -5,9 +5,10 @@ Single background threading.Thread that reads audio tags for files in the
 into the graph.  This is Pass 2 of the two-pass scan pipeline:
 
   Pass 1 (scan): fast disk walk → upsert files → seed initial state edges
-  Pass 2 (this): claim file → read audio tags → write to DB → seed entities
+  Pass 2 (this): read audio tags → write to DB → seed entities
                  → transition not_hydrated → hydrated
 
+No locking needed — single thread, no other worker touches not_hydrated files.
 """
 
 from __future__ import annotations
@@ -16,9 +17,10 @@ import logging
 import threading
 from typing import TYPE_CHECKING
 
-from nomarr.components.library.library_file_state_comp import transition_file_state
-from nomarr.components.workers.worker_discovery_comp import release_claim
-from nomarr.components.workers.worker_tag_comp import discover_and_claim_file_for_tags
+from nomarr.components.library.library_file_state_comp import (
+    discover_next_file_needing_tags,
+    transition_file_state,
+)
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
     STATE_HYDRATED,
@@ -125,15 +127,16 @@ class TagExtractionWorker(threading.Thread):
         self._stop_event.set()
 
     def run(self) -> None:
-        """Worker main loop: claim → process → release, repeat."""
+        """Worker main loop: discover → process, repeat."""
         logger.info("[%s] Tag extraction worker started", self._worker_id)
         consecutive_errors = 0
 
         while not self._stop_event.is_set():
-            file_id = discover_and_claim_file_for_tags(self._db, self._worker_id)
-            if file_id is None:
+            file_doc = discover_next_file_needing_tags(self._db, exclude_claimed=False)
+            if file_doc is None:
                 self._stop_event.wait(IDLE_SLEEP_S)
                 continue
+            file_id = str(file_doc["_id"])
 
             try:
                 _process_file(self._db, file_id)
@@ -153,10 +156,5 @@ class TagExtractionWorker(threading.Thread):
                         consecutive_errors,
                     )
                     break
-            finally:
-                try:
-                    release_claim(self._db, file_id)
-                except Exception:
-                    logger.exception("[%s] Failed to release claim for %s", self._worker_id, file_id)
 
         logger.info("[%s] Tag extraction worker stopped", self._worker_id)
