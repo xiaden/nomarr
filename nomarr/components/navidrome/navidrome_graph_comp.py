@@ -105,25 +105,6 @@ def bulk_resolve_files_to_navidrome_ids(db: Database, file_ids: list[str]) -> di
     }
 
 
-def upsert_navidrome_play(
-    db: Database,
-    user_id: str,
-    nd_id: str,
-    playcount: int,
-    last_played: int,
-) -> None:
-    """Upsert one bucketed playcount vertex and its track edge."""
-    if playcount < 0:
-        return
-
-    db.app.legacy_navidrome.upsert_nd_playcount(user_id, nd_id, playcount, last_played)
-
-
-def increment_navidrome_play(db: Database, user_id: str, nd_id: str, timestamp_ms: int) -> None:
-    """Move one track to the next playcount bucket for the user."""
-    db.app.legacy_navidrome.increment_nd_play(user_id, nd_id, timestamp_ms)
-
-
 def bulk_upsert_navidrome_plays(db: Database, user_id: str, plays: list[dict[str, Any]]) -> int:
     """Replace the user's existing bucketed play graph with the provided payload."""
     return db.app.legacy_navidrome.bulk_upsert_nd_plays(user_id, plays)

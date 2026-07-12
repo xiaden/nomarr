@@ -17,25 +17,28 @@ def test_replace_file_tags_rebuilds_edges_and_cleans_orphans() -> None:
     tags = [
         {"name": "genre", "value": "rock"},
         {"key": "mood", "value": "calm"},
+        {"key": "genre", "value": "rock"},  # duplicate pair — should be deduplicated
     ]
+    pair_map = {("genre", "rock"): "tags/genre", ("mood", "calm"): "tags/mood"}
 
     with (
         patch.object(ops, "_delete_song_tag_edges_for_file") as delete_edges,
-        patch.object(ops, "_find_or_create_tag", side_effect=["tags/genre", "tags/mood"]) as find_or_create,
-        patch.object(ops, "_upsert_tag_edge") as upsert_edge,
+        patch.object(ops, "_find_or_create_tags_batch", return_value=pair_map) as find_batch,
+        patch("nomarr.persistence.database.tags_aql.tag_edge_ops.primitives.insert_edges_batch") as insert_edges,
         patch.object(ops, "_cleanup_orphaned_tags") as cleanup,
     ):
         ops.replace_file_tags(f"{CollectionNames.LIBRARY_FILES.value}/1", tags)
 
     delete_edges.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/1")
-    assert find_or_create.call_args_list == [
-        (("genre", "rock"), {}),
-        (("mood", "calm"), {}),
+    # Only unique pairs passed to batch, deduplication removed the third tag.
+    find_batch.assert_called_once_with([("genre", "rock"), ("mood", "calm")])
+    insert_edges.assert_called_once()
+    edge_docs = insert_edges.call_args[0][2]  # db, collection, edge_docs
+    expected = [
+        {"_from": f"{CollectionNames.LIBRARY_FILES.value}/1", "_to": "tags/genre"},
+        {"_from": f"{CollectionNames.LIBRARY_FILES.value}/1", "_to": "tags/mood"},
     ]
-    assert upsert_edge.call_args_list == [
-        ((f"{CollectionNames.LIBRARY_FILES.value}/1", "tags/genre"), {}),
-        ((f"{CollectionNames.LIBRARY_FILES.value}/1", "tags/mood"), {}),
-    ]
+    assert edge_docs == expected
     cleanup.assert_called_once_with()
 
 

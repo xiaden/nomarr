@@ -105,18 +105,6 @@ class AppLegacyNavidromeDb:
     def bulk_resolve_files_to_nd_ids(self, file_ids: list[str]) -> dict[str, str]:
         return self._navidrome.bulk_resolve_files_to_nd_ids(file_ids)
 
-    def upsert_nd_playcount(
-        self,
-        user_id: str,
-        nd_id: str,
-        playcount: int,
-        last_played: int,
-    ) -> None:
-        return self._navidrome.upsert_nd_playcount(user_id, nd_id, playcount, last_played)
-
-    def increment_nd_play(self, user_id: str, nd_id: str, timestamp_ms: int) -> None:
-        return self._navidrome.increment_nd_play(user_id, nd_id, timestamp_ms)
-
     def bulk_upsert_nd_plays(self, user_id: str, plays: list[dict]) -> int:
         return self._navidrome.bulk_upsert_nd_plays(user_id, plays)
 

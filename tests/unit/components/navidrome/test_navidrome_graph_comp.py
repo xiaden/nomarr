@@ -16,11 +16,9 @@ from nomarr.components.navidrome.navidrome_graph_comp import (
     delete_navidrome_tracks_cascade,
     ensure_navidrome_file_link,
     get_top_navidrome_plays,
-    increment_navidrome_play,
     list_navidrome_track_keys,
     resolve_file_to_navidrome_track,
     resolve_navidrome_track_to_file,
-    upsert_navidrome_play,
     upsert_navidrome_track,
 )
 from nomarr.persistence.schema import CollectionNames
@@ -244,35 +242,6 @@ class TestBulkResolveFilesToNavidromeIds:
         db.app.legacy_navidrome.bulk_resolve_files_to_nd_ids.assert_called_once_with(
             [f"{CollectionNames.LIBRARY_FILES.value}/f1", f"{CollectionNames.LIBRARY_FILES.value}/f2"]
         )
-
-
-@pytest.mark.unit
-class TestUpsertNavidromePlay:
-    def test_skips_when_playcount_is_negative(self) -> None:
-        db = MagicMock()
-
-        upsert_navidrome_play(db, "user1", "nd-1", -1, 0)
-
-        db.app.legacy_navidrome.upsert_nd_playcount.assert_not_called()
-
-    def test_delegates_to_app_upsert_playcount(self) -> None:
-        db = MagicMock()
-        db.app.legacy_navidrome.upsert_nd_playcount.return_value = None
-
-        upsert_navidrome_play(db, "user1", "nd-42", 5, 1700000000)
-
-        db.app.legacy_navidrome.upsert_nd_playcount.assert_called_once_with("user1", "nd-42", 5, 1700000000)
-
-
-@pytest.mark.unit
-class TestIncrementNavidromePlay:
-    def test_delegates_to_app_increment(self) -> None:
-        db = MagicMock()
-        db.app.legacy_navidrome.increment_nd_play.return_value = None
-
-        increment_navidrome_play(db, "user1", "nd-42", 1701000000)
-
-        db.app.legacy_navidrome.increment_nd_play.assert_called_once_with("user1", "nd-42", 1701000000)
 
 
 @pytest.mark.unit

@@ -44,7 +44,9 @@ class TagEdgeOpsMixin:
             self._cleanup_orphaned_tags()
             return
 
-        seen_edges: set[tuple[str, str]] = set()
+        # Validate all tags up front and collect unique (name, value) pairs.
+        tag_pairs: list[tuple[str, Any]] = []
+        seen_pairs: set[tuple[str, Any]] = set()
         for payload in tags:
             tag_name = payload.get("name", payload.get("key"))
             if not isinstance(tag_name, str) or not tag_name:
@@ -53,13 +55,22 @@ class TagEdgeOpsMixin:
             if "value" not in payload:
                 msg = f"Tag payload for {tag_name!r} must include 'value'"
                 raise ValueError(msg)
-            tag_id = self._find_or_create_tag(tag_name, payload["value"])
-            edge_key = (file_id, tag_id)
-            if edge_key in seen_edges:
-                continue
-            seen_edges.add(edge_key)
-            self._upsert_tag_edge(file_id, tag_id)
+            pair = (tag_name, payload["value"])
+            if pair not in seen_pairs:
+                seen_pairs.add(pair)
+                tag_pairs.append(pair)
 
+        # Batch find-or-create all unique tag documents in one query.
+        pair_to_id = self._find_or_create_tags_batch(tag_pairs)
+
+        # Batch insert edges (fresh after delete, so INSERT is safe).
+        normalized_file_id = _as_document_id(self.FILE_COLLECTION, file_id)
+        edge_docs = []
+        for pair in tag_pairs:
+            tag_id = pair_to_id[pair]
+            edge_docs.append({"_from": normalized_file_id, "_to": tag_id})
+
+        primitives.insert_edges_batch(self._db, self.EDGE_COLLECTION, edge_docs)
         self._cleanup_orphaned_tags()
 
     def replace_tag_references(
@@ -167,6 +178,40 @@ class TagEdgeOpsMixin:
         )
         results = list(cursor)
         return str(results[0])
+
+    def _find_or_create_tags_batch(
+        self,
+        pairs: list[tuple[str, Any]],
+    ) -> dict[tuple[str, Any], str]:
+        """Batch find-or-create tag documents for a set of (name, value) pairs.
+
+        Returns a mapping from (name, value) to the tag document ``_id``.
+        Short-circuits to an empty dict when ``pairs`` is empty.
+        """
+        if not pairs:
+            return {}
+
+        docs = [{"name": name, "value": value} for name, value in pairs]
+        rows = primitives.execute(
+            self._db,
+            """
+            FOR doc IN @docs
+                UPSERT { name: doc.name, value: doc.value }
+                    INSERT doc
+                    UPDATE {}
+                    IN @@collection
+                RETURN { name: doc.name, value: doc.value, _id: NEW._id }
+            """,
+            {"@collection": self.COLLECTION, "docs": docs},
+        )
+        result: dict[tuple[str, Any], str] = {}
+        for row in rows:
+            name = row.get("name")
+            value = row.get("value")
+            tag_id = row.get("_id")
+            if isinstance(name, str) and value is not None and isinstance(tag_id, str):
+                result[(name, value)] = tag_id
+        return result
 
     def _upsert_tag(self, file_id: str, tag_key: str, payload: dict[str, Any]) -> None:
         self.delete_tag(file_id, tag_key)

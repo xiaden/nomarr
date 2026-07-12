@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 from nomarr.persistence.aql import primitives
 from nomarr.persistence.arango_client import SafeDatabase
@@ -57,13 +57,48 @@ class MlStreamsAqlOperations:
         )
 
     def upsert_output_streams_batch(self, file_id: str, stream_payloads: list[dict[str, Any]]) -> None:
+        """Upsert streams and related edges for ``file_id`` in one query."""
+        if not stream_payloads:
+            return
         normalized_file_id = _as_document_id(self.FILE_COLLECTION, file_id)
+
+        # Ensure every payload has a _key so the batch UPSERT can match.
+        docs = []
         for payload in stream_payloads:
-            stream_id = self._upsert_stream_document(payload)
-            self._upsert_edge(self.FILE_EDGE_COLLECTION, normalized_file_id, stream_id)
-            output_id = payload.get("output_id")
-            if isinstance(output_id, str) and output_id:
-                self._upsert_edge(self.OUTPUT_EDGE_COLLECTION, output_id, stream_id)
+            doc = dict(payload)
+            if not isinstance(doc.get("_key"), str) or not doc["_key"]:
+                import uuid
+
+                doc["_key"] = uuid.uuid4().hex
+            docs.append(doc)
+
+        primitives.execute(
+            self._db,
+            """
+            FOR doc IN @docs
+                UPSERT { _key: doc._key }
+                    INSERT doc
+                    UPDATE doc
+                    IN @@stream_collection
+                LET stream_id = NEW._id
+                UPSERT { _from: @file_id, _to: stream_id }
+                    INSERT { _from: @file_id, _to: stream_id }
+                    UPDATE {}
+                    IN @@file_edge_collection
+                FILTER doc.output_id != null
+                UPSERT { _from: doc.output_id, _to: stream_id }
+                    INSERT { _from: doc.output_id, _to: stream_id }
+                    UPDATE {}
+                    IN @@output_edge_collection
+            """,
+            {
+                "@stream_collection": self.COLLECTION,
+                "@file_edge_collection": self.FILE_EDGE_COLLECTION,
+                "@output_edge_collection": self.OUTPUT_EDGE_COLLECTION,
+                "file_id": normalized_file_id,
+                "docs": docs,
+            },
+        )
 
     def delete_output_streams_for_file(self, file_id: str) -> None:
         self._db.aql.execute(
@@ -95,23 +130,3 @@ class MlStreamsAqlOperations:
                 "file_id": _as_document_id(self.FILE_COLLECTION, file_id),
             },
         )
-
-    def _upsert_stream_document(self, payload: dict[str, Any]) -> str:
-        stream_key = payload.get("_key")
-        if isinstance(stream_key, str) and stream_key:
-            cursor = self._db.aql.execute(
-                """
-                UPSERT { _key: @stream_key }
-                    INSERT MERGE(@payload, { _key: @stream_key })
-                    UPDATE @payload
-                    IN @@collection
-                    RETURN NEW._id
-                """,
-                bind_vars={"@collection": self.COLLECTION, "stream_key": stream_key, "payload": payload},
-            )
-            results = list(cursor)
-            return cast("str", results[0])
-        return primitives.insert_document(self._db, self.COLLECTION, payload)
-
-    def _upsert_edge(self, collection: str, from_id: str, to_id: str) -> None:
-        primitives.upsert_edge(self._db, collection, from_id, to_id)
