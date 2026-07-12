@@ -22,13 +22,25 @@ class TestListWatchableLibraries:
         mock_db = MagicMock()
         libraries = [
             LibraryDict(
-                _id="libraries/one", _key="one", _rev="_", name="Main Library",
-                root_path="C:/music/one", is_enabled=True, created_at=0, updated_at=0,
+                _id="libraries/one",
+                _key="one",
+                _rev="_",
+                name="Main Library",
+                root_path="C:/music/one",
+                is_enabled=True,
+                created_at=0,
+                updated_at=0,
                 watch_mode="poll",
             ),
             LibraryDict(
-                _id="libraries/two", _key="two", _rev="_", name="Lib",
-                root_path="C:/music/two", is_enabled=True, created_at=0, updated_at=0,
+                _id="libraries/two",
+                _key="two",
+                _rev="_",
+                name="Lib",
+                root_path="C:/music/two",
+                is_enabled=True,
+                created_at=0,
+                updated_at=0,
                 watch_mode="event",
             ),
         ]

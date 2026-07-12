@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
-
 from typing import Any
+
+import pytest
 
 from nomarr.components.library.work_status_comp import compute_work_status
 from nomarr.helpers.dto.library_dto import LibraryDict, LibraryStatsResult

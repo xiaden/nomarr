@@ -85,7 +85,18 @@ class TestGetPathsNeedingCalibration:
         with (
             patch(
                 "nomarr.services.domain.library_svc.query.list_library_records",
-                return_value=[LibraryDict(_id="libraries/1", _key="1", _rev="r1", name="L1", root_path="/p1", is_enabled=True, created_at=0, updated_at=0)],
+                return_value=[
+                    LibraryDict(
+                        _id="libraries/1",
+                        _key="1",
+                        _rev="r1",
+                        name="L1",
+                        root_path="/p1",
+                        is_enabled=True,
+                        created_at=0,
+                        updated_at=0,
+                    )
+                ],
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.get_uncalibrated_tagged_file_ids",
@@ -105,7 +116,18 @@ class TestGetPathsNeedingCalibration:
         with (
             patch(
                 "nomarr.services.domain.library_svc.query.list_library_records",
-                return_value=[LibraryDict(_id="libraries/1", _key="1", _rev="r1", name="L1", root_path="/p1", is_enabled=True, created_at=0, updated_at=0)],
+                return_value=[
+                    LibraryDict(
+                        _id="libraries/1",
+                        _key="1",
+                        _rev="r1",
+                        name="L1",
+                        root_path="/p1",
+                        is_enabled=True,
+                        created_at=0,
+                        updated_at=0,
+                    )
+                ],
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.get_uncalibrated_tagged_file_ids",
@@ -235,7 +257,19 @@ class TestGetWorkStatus:
         with (
             patch(
                 "nomarr.services.domain.library_svc.query.list_library_records",
-                return_value=[LibraryDict(_id="libraries/1", _key="1", _rev="r1", name="Rock Library", root_path="/music", is_enabled=True, created_at=0, updated_at=0, library_auto_write=False)],
+                return_value=[
+                    LibraryDict(
+                        _id="libraries/1",
+                        _key="1",
+                        _rev="r1",
+                        name="Rock Library",
+                        root_path="/music",
+                        is_enabled=True,
+                        created_at=0,
+                        updated_at=0,
+                        library_auto_write=False,
+                    )
+                ],
             ),
             patch.object(
                 LibraryQueryMixin,
@@ -265,7 +299,19 @@ class TestGetWorkStatus:
         with (
             patch(
                 "nomarr.services.domain.library_svc.query.list_library_records",
-                return_value=[LibraryDict(_id="libraries/1", _key="1", _rev="r1", name="Rock Library", root_path="/music", is_enabled=True, created_at=0, updated_at=0, library_auto_write=False)],
+                return_value=[
+                    LibraryDict(
+                        _id="libraries/1",
+                        _key="1",
+                        _rev="r1",
+                        name="Rock Library",
+                        root_path="/music",
+                        is_enabled=True,
+                        created_at=0,
+                        updated_at=0,
+                        library_auto_write=False,
+                    )
+                ],
             ),
             patch.object(
                 LibraryQueryMixin,

@@ -6,8 +6,6 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from nomarr.helpers.dto.library_dto import LibraryDict
-
 from nomarr.components.library.library_scan_file_ops_comp import (
     bootstrap_file_state_edges,
     cleanup_stale_folders,
@@ -45,6 +43,7 @@ from nomarr.helpers.constants.pipeline_states import (
     WRITE_NOT_WRITTEN,
     WRITE_STATE_FIELD,
 )
+from nomarr.helpers.dto.library_dto import LibraryDict
 from nomarr.persistence.schema import CollectionNames
 
 
@@ -160,14 +159,28 @@ class TestGetLibraryScanHistories:
     def test_returns_projected_scan_history_for_all_libraries(self) -> None:
         mock_db = MagicMock()
         lib_one = LibraryDict(
-            _id="libraries/one", _key="one", _rev="_", name="Main Library",
-            root_path="/tmp", is_enabled=True, created_at=0, updated_at=0,
-            scanned_at=123, scan_status="complete",
+            _id="libraries/one",
+            _key="one",
+            _rev="_",
+            name="Main Library",
+            root_path="/tmp",
+            is_enabled=True,
+            created_at=0,
+            updated_at=0,
+            scanned_at=123,
+            scan_status="complete",
         )
         lib_two = LibraryDict(
-            _id="libraries/two", _key="two", _rev="_", name="Lib",
-            root_path="/tmp", is_enabled=True, created_at=0, updated_at=0,
-            scanned_at=None, scan_status="idle",
+            _id="libraries/two",
+            _key="two",
+            _rev="_",
+            name="Lib",
+            root_path="/tmp",
+            is_enabled=True,
+            created_at=0,
+            updated_at=0,
+            scanned_at=None,
+            scan_status="idle",
         )
         libraries = [lib_one, lib_two]
 
@@ -197,15 +210,42 @@ class TestGetLibraryScanHistories:
     def test_applies_limit_before_projection(self) -> None:
         mock_db = MagicMock()
         libraries = [
-            LibraryDict(_id="libraries/one", _key="one", _rev="_", name="One",
-                root_path="/tmp", is_enabled=True, created_at=0, updated_at=0,
-                scanned_at=None, scan_status="idle"),
-            LibraryDict(_id="libraries/two", _key="two", _rev="_", name="Two",
-                root_path="/tmp", is_enabled=True, created_at=0, updated_at=0,
-                scanned_at=None, scan_status="idle"),
-            LibraryDict(_id="libraries/three", _key="three", _rev="_", name="Three",
-                root_path="/tmp", is_enabled=True, created_at=0, updated_at=0,
-                scanned_at=456, scan_status="complete"),
+            LibraryDict(
+                _id="libraries/one",
+                _key="one",
+                _rev="_",
+                name="One",
+                root_path="/tmp",
+                is_enabled=True,
+                created_at=0,
+                updated_at=0,
+                scanned_at=None,
+                scan_status="idle",
+            ),
+            LibraryDict(
+                _id="libraries/two",
+                _key="two",
+                _rev="_",
+                name="Two",
+                root_path="/tmp",
+                is_enabled=True,
+                created_at=0,
+                updated_at=0,
+                scanned_at=None,
+                scan_status="idle",
+            ),
+            LibraryDict(
+                _id="libraries/three",
+                _key="three",
+                _rev="_",
+                name="Three",
+                root_path="/tmp",
+                is_enabled=True,
+                created_at=0,
+                updated_at=0,
+                scanned_at=456,
+                scan_status="complete",
+            ),
         ]
 
         with patch(
@@ -444,8 +484,14 @@ class TestResolveLibraryForScan:
     def test_returns_library_when_lookup_succeeds(self) -> None:
         mock_db = MagicMock()
         library = {
-            "_id": "libraries/1", "_key": "1", "_rev": "_", "name": "Main",
-            "root_path": "/tmp", "is_enabled": True, "created_at": 0, "updated_at": 0,
+            "_id": "libraries/1",
+            "_key": "1",
+            "_rev": "_",
+            "name": "Main",
+            "root_path": "/tmp",
+            "is_enabled": True,
+            "created_at": 0,
+            "updated_at": 0,
         }
         mock_db.libraries.get_library.return_value = library
 

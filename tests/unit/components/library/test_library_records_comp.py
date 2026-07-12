@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from nomarr.components.library.library_id_comp import library_key_from_ref, normalize_library_id
-from nomarr.helpers.dto.library_dto import LibraryDict
 from nomarr.components.library.library_records_comp import (
     create_library_record,
     find_library_containing_path,
@@ -21,6 +21,7 @@ from nomarr.components.library.library_records_comp import (
     update_library_record,
 )
 from nomarr.helpers.constants.pipeline_states import ML_IN_PROGRESS
+from nomarr.helpers.dto.library_dto import LibraryDict
 
 
 class TestListAllLibraryKeys:
