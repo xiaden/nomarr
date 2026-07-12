@@ -27,7 +27,7 @@ class TestGetMoodCoverage:
 
         with patch(
             "nomarr.components.analytics.mood_analysis_comp.get_library_stats",
-                return_value={"total_files": 0},
+            return_value={"total_files": 0},
         ) as get_library_stats_mock:
             result = get_mood_coverage(mock_db)
 
