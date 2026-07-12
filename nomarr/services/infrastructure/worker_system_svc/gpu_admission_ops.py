@@ -57,12 +57,13 @@ class GpuAdmissionOpsMixin:
         rm_config = self.processor_config.resource_management
         if rm_config is None or not rm_config.enabled:
             logger.debug("[WorkerSystemService] Resource management disabled, using configured worker count")
-            return TierSelection(
+            self._tier_selection = TierSelection(
                 tier=ExecutionTier.FAST_PATH,
                 config=TIER_CONFIGS[ExecutionTier.FAST_PATH],
                 calculated_workers=self.worker_count,
                 reason="Resource management disabled",
             )
+            return self._tier_selection
         self._check_gpu_capability()
         logger.info("[WorkerSystemService] Running capacity probe...")
         capacity_estimate = get_or_run_capacity_probe(

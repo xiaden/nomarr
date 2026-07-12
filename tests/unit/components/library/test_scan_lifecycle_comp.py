@@ -469,7 +469,7 @@ class TestOnScanCompletePipelineHook:
 
     def test_transitions_ml_axis_when_files_exist(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_files.return_value = [{"_id": "file1"}, {"_id": "file2"}]
+        mock_db.library.list_library_file_ids.return_value = ["file1", "file2"]
 
         with patch(
             "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis"
@@ -485,7 +485,7 @@ class TestOnScanCompletePipelineHook:
 
     def test_transitions_ml_axis_when_no_files(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_files.return_value = []
+        mock_db.library.list_library_file_ids.return_value = []
 
         with patch(
             "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis"
