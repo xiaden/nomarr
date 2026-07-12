@@ -104,17 +104,14 @@ def _count_state_edges_for_files(db: Database, file_ids: list[str]) -> int:
 
 
 def _state_membership_for_files(db: Database, file_ids: list[str]) -> dict[str, set[str]]:
+    """Return the current state memberships for the given file IDs.
+
+    Uses a single targeted edge-traversal query — no full state scan,
+    no document fetch.
+    """
     if not file_ids:
         return {}
-
-    file_id_set = set(file_ids)
-    membership: dict[str, set[str]] = {file_id: set() for file_id in file_ids}
-    for state_id in ALL_STATE_VERTICES:
-        for file_doc in _state_file_docs(db, state_id):
-            file_id = str(file_doc["_id"])
-            if file_id in file_id_set:
-                membership[file_id].add(state_id)
-    return membership
+    return db.app.get_file_states_for_files(file_ids)
 
 
 def _extract_matching_head_keys(

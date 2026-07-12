@@ -41,6 +41,30 @@ class FileStatesAqlOperations:
         results = list(cursor)
         return str(results[0]) if results else None
 
+    def get_file_states_for_files(self, file_ids: list[str]) -> dict[str, set[str]]:
+        """Return a mapping of file_id → current state values for the given files.
+
+        Single edge-traversal query — no full scan, no document fetch.
+        """
+        if not file_ids:
+            return {}
+        normalized_ids = [_as_document_id(self.FILE_COLLECTION, fid) for fid in file_ids]
+        cursor = self._db.aql.execute(
+            """
+            FOR edge IN @@edge_collection
+                FILTER edge._from IN @file_ids
+                RETURN {file_id: edge._from, state: PARSE_IDENTIFIER(edge._to).key}
+            """,
+            bind_vars={
+                "@edge_collection": self.EDGE_COLLECTION,
+                "file_ids": normalized_ids,
+            },
+        )
+        result: dict[str, set[str]] = {}
+        for row in cursor:
+            result.setdefault(row["file_id"], set()).add(row["state"])
+        return result
+
     def list_files_in_state(self, state: str, *, limit: int | None = None) -> list[str]:
         bind_vars: dict[str, Any] = {
             "@edge_collection": self.EDGE_COLLECTION,

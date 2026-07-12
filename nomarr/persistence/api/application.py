@@ -167,6 +167,9 @@ class AppDb:
     def get_file_state(self, file_id: str) -> str | None:
         return self._file_states.get_file_state(file_id)
 
+    def get_file_states_for_files(self, file_ids: list[str]) -> dict[str, set[str]]:
+        return self._file_states.get_file_states_for_files(file_ids)
+
     def list_files_in_state(self, state: str, *, limit: int | None = None) -> list[str]:
         return self._file_states.list_files_in_state(state, limit=limit)
 
