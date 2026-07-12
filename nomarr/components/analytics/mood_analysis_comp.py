@@ -181,7 +181,7 @@ def get_mood_coverage(db: Database, library_id: str | None = None) -> dict[str, 
 
     """
     stats = get_library_stats(db, library_id)
-    total_files = stats.get("file_count", 0)
+    total_files = stats.get("total_files", 0)
     if total_files == 0:
         return {
             "total_files": 0,
