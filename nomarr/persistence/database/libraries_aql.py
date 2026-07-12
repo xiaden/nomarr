@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from nomarr.persistence.aql import primitives
@@ -7,6 +8,7 @@ from nomarr.persistence.arango_client import SafeDatabase
 from nomarr.persistence.schema import CollectionNames
 
 Document = dict[str, Any]
+_logger = logging.getLogger(__name__)
 
 
 def _extract_key(document_id_or_key: str) -> str:
@@ -126,12 +128,10 @@ class LibrariesAqlOperations:
     def remove_library(self, library_id: str) -> None:
         """Delete a library and all its associated data.
 
-        Executes two AQL queries (each covering multiple collections via LET
-        chaining) and a final orphaned tag sweep.
-
-        Collection names are hardcoded here; this method is the canonical,
-        curated definition of what "remove a library" means at the persistence
-        level.
+        File-level data is processed in batches of 1 000 so the AQL
+        transaction size stays within ArangoDB limits for large libraries.
+        Library-level data and orphaned tags are handled in single queries
+        (their cardinality is independent of file count).
         """
         lib_key = _extract_key(library_id)
         normalized_id = f"{self.COLLECTION}/{lib_key}"
@@ -153,66 +153,78 @@ class LibrariesAqlOperations:
         lfi = CollectionNames.LIBRARY_FILES.value  # library_files
         tg = CollectionNames.TAGS.value  # tags
 
-        # Part C keeps this flow in Tier 2 because it coordinates multi-collection
-        # graph/path cleanup and vector lifecycle semantics, not a storage-generic
-        # field delete shape.
         # ── Query 1: all file-level derived data ───────────────────────────
-        # Collects file and stream IDs via LET, then removes each dependent
-        # collection in order.  Each REMOVE targets a single collection.
-        self._db.aql.execute(
+        # Fetches file IDs for the library, then processes them in batches.
+        # Each batch handles all dependent collections for its subset of files
+        # in a single AQL transaction, keeping operation count within ArangoDB
+        # limits for libraries with tens of thousands of files.
+        file_cursor = self._db.aql.execute(
             f"""
-            LET file_ids = (
-                FOR e IN {lcf}
-                    FILTER e._from == @lib
-                    RETURN e._to
-            )
-            LET file_stream_data = (
-                FOR e IN {fhe}
-                    FILTER e._from IN file_ids
-                    RETURN {{id: e._to, edge: e}}
-            )
-            LET stream_ids = file_stream_data[* RETURN CURRENT.id]
-            LET file_stream_edges = file_stream_data[* RETURN CURRENT.edge]
-            LET output_edges = (
-                FOR e IN {ohs}
-                    FILTER e._to IN stream_ids
-                    RETURN e
-            )
-            LET vector_edges = (
-                FOR e IN {fhv}
-                    FILTER e._from IN file_ids
-                    RETURN e
-            )
-            LET tag_edges = (
-                FOR e IN {sht}
-                    FILTER e._from IN file_ids
-                    RETURN e
-            )
-            LET state_edges = (
-                FOR e IN {fhs}
-                    FILTER e._from IN file_ids
-                    RETURN e
-            )
-            FOR oe IN output_edges
-                REMOVE oe IN {ohs} OPTIONS {{ ignoreErrors: true }}
-            FOR sid IN stream_ids
-                REMOVE sid IN {mos} OPTIONS {{ ignoreErrors: true }}
-            FOR fse IN file_stream_edges
-                REMOVE fse IN {fhe} OPTIONS {{ ignoreErrors: true }}
-            FOR ve IN vector_edges
-                REMOVE ve IN {fhv} OPTIONS {{ ignoreErrors: true }}
-            FOR te IN tag_edges
-                REMOVE te IN {sht} OPTIONS {{ ignoreErrors: true }}
-            FOR c IN {wc}
-                FILTER c.file_id IN file_ids
-                REMOVE c IN {wc} OPTIONS {{ ignoreErrors: true }}
-            FOR se IN state_edges
-                REMOVE se IN {fhs} OPTIONS {{ ignoreErrors: true }}
-            FOR fid IN file_ids
-                REMOVE fid IN {lfi} OPTIONS {{ ignoreErrors: true }}
+            FOR e IN {lcf}
+                FILTER e._from == @lib
+                RETURN e._to
             """,
             bind_vars={"lib": normalized_id},
         )
+        all_file_ids = list(file_cursor)
+        batch_size = 1000
+        total_files = len(all_file_ids)
+
+        _logger.info(
+            "[remove_library] Deleting %d files in batches of %d from library %s",
+            total_files,
+            batch_size,
+            lib_key,
+        )
+
+        _remove_file_batch = f"""
+        LET stream_data = (
+            FOR e IN {fhe}
+                FILTER e._from IN @batch
+                RETURN {{id: e._to, edge: e}}
+        )
+        LET stream_ids = stream_data[* RETURN CURRENT.id]
+        LET stream_edges = stream_data[* RETURN CURRENT.edge]
+        LET output_edges = (
+            FOR e IN {ohs}
+                FILTER e._to IN stream_ids
+                RETURN e
+        )
+        FOR oe IN output_edges
+            REMOVE oe IN {ohs} OPTIONS {{ ignoreErrors: true }}
+        FOR sid IN stream_ids
+            REMOVE sid IN {mos} OPTIONS {{ ignoreErrors: true }}
+        FOR fse IN stream_edges
+            REMOVE fse IN {fhe} OPTIONS {{ ignoreErrors: true }}
+        FOR ve IN {fhv}
+            FILTER ve._from IN @batch
+            REMOVE ve IN {fhv} OPTIONS {{ ignoreErrors: true }}
+        FOR te IN {sht}
+            FILTER te._from IN @batch
+            REMOVE te IN {sht} OPTIONS {{ ignoreErrors: true }}
+        FOR c IN {wc}
+            FILTER c.file_id IN @batch
+            REMOVE c IN {wc} OPTIONS {{ ignoreErrors: true }}
+        FOR se IN {fhs}
+            FILTER se._from IN @batch
+            REMOVE se IN {fhs} OPTIONS {{ ignoreErrors: true }}
+        FOR fid IN @batch
+            REMOVE fid IN {lfi} OPTIONS {{ ignoreErrors: true }}
+        """
+
+        for i in range(0, total_files, batch_size):
+            batch = all_file_ids[i : i + batch_size]
+            if i > 0 and i % (batch_size * 5) == 0:
+                _logger.debug(
+                    "[remove_library] Batch %d/%d (%d files processed so far)",
+                    i // batch_size,
+                    (total_files + batch_size - 1) // batch_size,
+                    i,
+                )
+            self._db.aql.execute(
+                _remove_file_batch,
+                bind_vars={"batch": batch},
+            )
 
         # ── Query 2: library-level data ────────────────────────────────────
         self._db.aql.execute(
