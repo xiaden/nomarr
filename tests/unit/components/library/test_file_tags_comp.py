@@ -8,7 +8,6 @@ import pytest
 
 from nomarr.components.library.file_tags_comp import get_file_tags_with_path
 from nomarr.helpers.dataclasses.tags_dataclass import Tag
-from nomarr.persistence.schema import CollectionNames
 
 
 class TestGetFileTagsWithPath:
@@ -20,10 +19,10 @@ class TestGetFileTagsWithPath:
         mock_db = MagicMock()
         mock_db.library_files.get_file.return_value = None
 
-        result = get_file_tags_with_path(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/missing")
+        result = get_file_tags_with_path(mock_db, f"{'library_files'}/missing")
 
         assert result is None
-        mock_db.library_files.get_file.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/missing")
+        mock_db.library_files.get_file.assert_called_once_with(f"{'library_files'}/missing")
         mock_db.tags.get_song_tags.assert_not_called()
 
     @pytest.mark.unit
@@ -34,13 +33,11 @@ class TestGetFileTagsWithPath:
         mock_db.library_files.get_file.return_value = file_doc
         mock_db.tags.get_song_tags.return_value = []
 
-        result = get_file_tags_with_path(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/1")
+        result = get_file_tags_with_path(mock_db, f"{'library_files'}/1")
 
         assert result == {"path": "D:/Music/song.flac", "tags": []}
-        mock_db.library_files.get_file.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/1")
-        mock_db.tags.get_song_tags.assert_called_once_with(
-            f"{CollectionNames.LIBRARY_FILES.value}/1", nomarr_only=False
-        )
+        mock_db.library_files.get_file.assert_called_once_with(f"{'library_files'}/1")
+        mock_db.tags.get_song_tags.assert_called_once_with(f"{'library_files'}/1", nomarr_only=False)
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -51,7 +48,7 @@ class TestGetFileTagsWithPath:
         tag = Tag(name="nom:mood", values=("happy",))
         mock_db.tags.get_song_tags.return_value = [tag]
 
-        result = get_file_tags_with_path(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/1")
+        result = get_file_tags_with_path(mock_db, f"{'library_files'}/1")
 
         assert result == {
             "path": "D:/Music/song.flac",
@@ -74,7 +71,7 @@ class TestGetFileTagsWithPath:
         tag = Tag(name="genre", values=("a", "b"))
         mock_db.tags.get_song_tags.return_value = [tag]
 
-        result = get_file_tags_with_path(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/1")
+        result = get_file_tags_with_path(mock_db, f"{'library_files'}/1")
 
         assert result == {
             "path": "D:/Music/song.flac",
@@ -102,6 +99,6 @@ class TestGetFileTagsWithPath:
         mock_db.library_files.get_file.return_value = file_doc
         mock_db.tags.get_song_tags.return_value = []
 
-        get_file_tags_with_path(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/1", nomarr_only=True)
+        get_file_tags_with_path(mock_db, f"{'library_files'}/1", nomarr_only=True)
 
-        mock_db.tags.get_song_tags.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/1", nomarr_only=True)
+        mock_db.tags.get_song_tags.assert_called_once_with(f"{'library_files'}/1", nomarr_only=True)

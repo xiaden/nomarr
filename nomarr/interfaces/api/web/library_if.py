@@ -97,14 +97,14 @@ async def get_library(
     library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> LibraryResponse:
     """Get a library by ID."""
-    library_id = decode_path_id(library_id)
+    decoded_library_id: int = decode_path_id(library_id)
     try:
-        library = library_service.get_library(library_id)
+        library = library_service.get_library(decoded_library_id)
         return LibraryResponse.from_dto(library)
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:
-        logger.exception(f"[Web API] Error getting library {library_id}")
+        logger.exception(f"[Web API] Error getting library {decoded_library_id}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get library")) from e
 
 
@@ -149,14 +149,14 @@ async def update_library(
     - Disabling auto-write while the pipeline is ``writing`` → requests
       graceful write cancellation.
     """
-    library_id = decode_path_id(library_id)
+    decoded_library_id: int = decode_path_id(library_id)
     try:
         current_library = None
         if request.library_auto_write is not None:
-            current_library = library_service.get_library(library_id)
+            current_library = library_service.get_library(decoded_library_id)
 
         library = library_service.update_library(
-            library_id,
+            decoded_library_id,
             name=request.name,
             root_path=request.root_path,
             is_enabled=request.is_enabled,
@@ -166,20 +166,20 @@ async def update_library(
         )
 
         if current_library is not None and current_library.library_auto_write != library.library_auto_write:
-            pipeline_status = pipeline_service.get_pipeline_status(library_id)
+            pipeline_status = pipeline_service.get_pipeline_status(decoded_library_id)
             if pipeline_status is not None:
                 if (
                     not current_library.library_auto_write
                     and library.library_auto_write
                     and pipeline_status.tag_write_state == "not_written"
                 ):
-                    pipeline_service.handle_auto_write_enabled(library_id)
+                    pipeline_service.handle_auto_write_enabled(decoded_library_id)
                 elif (
                     current_library.library_auto_write
                     and not library.library_auto_write
                     and pipeline_status.tag_write_state == "writing"
                 ):
-                    pipeline_service.handle_auto_write_disabled(library_id)
+                    pipeline_service.handle_auto_write_disabled(decoded_library_id)
 
         return LibraryResponse.from_dto(library)
     except ValueError:
@@ -187,7 +187,7 @@ async def update_library(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"[Web API] Error updating library {library_id}")
+        logger.exception(f"[Web API] Error updating library {decoded_library_id}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to update library")) from e
 
 
@@ -200,18 +200,18 @@ async def delete_library(
 
     Removes the library entry but does NOT delete files on disk.
     """
-    library_id = decode_path_id(library_id)
+    decoded_library_id: int = decode_path_id(library_id)
     try:
-        deleted = library_service.delete_library(library_id)
+        deleted = library_service.delete_library(decoded_library_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Library not found")
-        return DeleteLibraryResponse(status="success", message=f"Library {library_id} deleted")
+        return DeleteLibraryResponse(status="success", message=f"Library {decoded_library_id} deleted")
     except ValueError:
         raise HTTPException(status_code=400, detail="Cannot delete library") from None
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"[Web API] Error deleting library {library_id}")
+        logger.exception(f"[Web API] Error deleting library {decoded_library_id}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to delete library")) from e
 
 
@@ -251,11 +251,11 @@ async def get_library_vector_stats(
     vector_maintenance_service: Annotated["VectorMaintenanceService", Depends(get_vector_maintenance_service)],
 ) -> BackboneVectorStatsResponse:
     """Get vector statistics across all backbones."""
-    library_id = decode_path_id(library_id)
+    decoded_library_id: int = decode_path_id(library_id)
     try:
-        stats = vector_maintenance_service.get_backbone_vector_stats()
+        stats = await vector_maintenance_service.get_backbone_vector_stats()
     except Exception as e:
-        logger.exception(f"[Web API] Error getting vector stats for library {library_id}")
+        logger.exception(f"[Web API] Error getting vector stats for library {decoded_library_id}")
         raise HTTPException(
             status_code=500,
             detail=sanitize_exception_message(e, "Failed to get vector stats"),

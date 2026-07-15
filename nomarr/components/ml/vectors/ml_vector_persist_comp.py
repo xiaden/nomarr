@@ -117,6 +117,7 @@ def persist_backbone_vector(
 
     Returns:
         Elapsed milliseconds on success, ``None`` on failure (warning logged).
+
     """
     t = internal_ms()
     try:

@@ -42,14 +42,14 @@ _Populated after each plan's models are created._
 | `FileStateAssignment` | `file_state_assignments` | A | `id` (PK), `file_id` (FK→library_files CASCADE), `state_id` (FK→file_states CASCADE), `created_at` |
 | `LibraryScan` | `library_scans` | A | `id` (PK), `library_id` (FK→libraries CASCADE), `scan_type`, `status`, `started_at`, `finished_at`, `files_found`, `files_processed`, `error` |
 | `PipelineState` | `pipeline_states` | A | `id` (PK), `library_id` (FK→libraries CASCADE), `state_key`, `state_data` (JSONB), `updated_at` |
-| `Meta` | `meta` | A | `id` (PK), `key` (unique), `value` (JSONB) |
-| `Lock` | `locks` | A | `id` (PK), `document_reference` (unique), `lock_type`, `expires_at`, `acquired_at`, `holder`, `status` |
-| `Health` | `worker_health` | A | `id` (PK), `component_id` (unique), `component_type`, `status`, `message`, `last_heartbeat`, `current_job`, `metadata` (JSONB), `pid`, `exit_code`, `restart_count`, `last_restart`, `error`, `created_at` |
-| `Session` | `sessions` | A | `id` (PK), `session_id`, `user_id`, `expiry_timestamp` |
-| `WorkerClaim` | `worker_claims` | A | `id` (PK), `file_id`, `worker_id`, `claimed_at`, `claim_type`, `status` |
-| `Migration` | `applied_migrations` | A | `id` (PK), `name` (unique), `status`, `applied_at`, `started_at`, `migration_version`, `duration_ms` |
-| `VramPromise` | `vram_promises` | A | `id` (PK), `worker_id`, `pid`, `model_path`, `promised_mb`, `total_mb`, `used_mb`, `last_seen_ms` |
-| `WorkerRestartPolicy` | `worker_restart_policy` | A | `id` (PK), `component_id` (unique), `restart_count`, `last_restart_wall_ms`, `failed_at_wall_ms`, `failure_reason`, `updated_at_wall_ms` |
+| `Meta` | `meta` | A | `key` (PK), `value` (JSONB) |
+| `Lock` | `locks` | A | `key` (PK, Text), `value` (JSONB) |
+| `Health` | `worker_health` | A | `id` (PK), `worker_id` (indexed), `status`, `last_seen` (BigInteger) |
+| `Session` | `sessions` | A | `id` (PK, String), `data` (JSONB), `expires_at` (BigInteger, indexed) |
+| `WorkerClaim` | `worker_claims` | A | `id` (PK), `worker_id` (indexed), `key`, `value` (JSONB), `claimed_at` (BigInteger, indexed) |
+| `AppliedMigration` | `applied_migrations` | A | `name` (PK), `status`, `migration_version`, `started_at`, `applied_at` (nullable), `duration_ms` (nullable) |
+| `VramPromise` | `vram_promises` | A | `id` (PK), `worker_id` (indexed), `pid`, `model_path`, `promised_mb`, `total_mb`, `used_mb` |
+| `WorkerRestartPolicy` | `worker_restart_policies` | A | `id` (PK), `component_id` (String(255), indexed), `policy_data` (JSONB) |
 
 ---
 
@@ -119,7 +119,7 @@ _Populated after Parts C and D. Downstream plans (E, F) reference these signatur
 | `TagRepository` | `__init__` | `(session: AsyncSession) -> None` | C |
 | `TagRepository` | `get_tag` | `(tag_id: int) -> TagRow \| None` | C |
 | `TagRepository` | `get_tag_by_name` | `(name: str, namespace: str) -> TagRow \| None` | C |
-| `TagRepository` | `get_or_create_tag` | `(name: str, value: Any, namespace: str) -> int` | C |
+| `TagRepository` | `get_or_create_tag` | `(name: str, value: str, namespace: str) -> int` | C |
 | `TagRepository` | `create_tag` | `(payload: dict) -> int` | C |
 | `TagRepository` | `delete_tag` | `(tag_id: int) -> None` | C |
 | `TagRepository` | `get_tags_for_file` | `(file_id: int) -> list[TagRow]` | C |
@@ -133,7 +133,7 @@ _Populated after Parts C and D. Downstream plans (E, F) reference these signatur
 | `TagRepository` | `list_tags` | `(*, name: str \| None = None, value: Any = None, limit: int \| None = None, offset: int = 0) -> list[TagRow]` | C |
 | `TagRepository` | `count_tags` | `() -> int` | C |
 | `TagRepository` | `get_tags_for_files_batch` | `(file_ids: list[int], *, name_starts_with: str \| None = None, include_edge: bool = False) -> list[dict]` | C |
-| `TagRepository` | `get_song_tags` | `(file_id: int, nomarr_only: bool = False) -> list[Tag]` | C |
+| `TagRepository` | `get_song_tags` | `(file_id: int, nomarr_only: bool = False) -> list[TagRow]` | C |
 | `TagRepository` | `search_files_by_tag` | `(tag_key: str, value: str, *, limit: int \| None = None) -> list[LibraryFileRow]` | C |
 | `TagRepository` | `search_files_by_tag_contains` | `(tag_key: str, value: str, *, limit: int \| None = None) -> list[LibraryFileRow]` | C, E |
 | `TagRepository` | `get_tag_value_frequencies` | `(tag_name: str, *, limit: int) -> list[tuple[str, int]]` | C |
@@ -152,7 +152,7 @@ _Populated after Parts C and D. Downstream plans (E, F) reference these signatur
 | `ScanRepository` | `delete_scan_record` | `(scan_id: int) -> None` | C |
 | `ScanRepository` | `truncate_scans` | `() -> None` | E |
 | `AppRepository` | `__init__` | `(session: AsyncSession) -> None` | C |
-| `AppRepository` | `insert_lock` | `(payload: dict) -> int` | C |
+| `AppRepository` | `insert_lock` | `(payload: dict) -> str` | C |
 | `AppRepository` | `upsert_lock` | `(resource_id: str, payload: dict) -> None` | C |
 | `AppRepository` | `release_lock` | `(resource_id: str) -> None` | C |
 | `AppRepository` | `get_lock` | `(resource_id: str) -> LockRow \| None` | C |
@@ -266,7 +266,7 @@ _To be populated after Part A._
 | --- | --- | --- |
 | `create_pg_engine(database_url: str) -> AsyncEngine` | pool_size=5, max_overflow=10, pool_pre_ping=True, statement_timeout=30000ms, command_timeout=30s | A |
 | `async_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]` | expire_on_commit=False | A |
-| `get_session(engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]` | async generator with asyncio.shield() on close to prevent connection leaks | A |
+| `get_session(session_factory: async_sessionmaker[AsyncSession]) -> AsyncGenerator[AsyncSession, None]` | async generator with asyncio.shield() on close to prevent connection leaks | A |
 | `Base` (declarative base) | SQLAlchemy 2.x declarative base in `nomarr.persistence.models.base` | A |
 
 ---
@@ -295,18 +295,20 @@ _Populated as DTOs are created or adapted._
 
 | DTO | Module | Fields | Plan |
 | --- | --- | --- | --- |
-| `LibraryRow` | `nomarr.persistence.database.repo_dto` | `id: int, name: str, path: str, library_type: str, auto_tag: bool, auto_curate: bool, created_at: datetime, updated_at: datetime` | C |
-| `LibraryFileRow` | `nomarr.persistence.database.repo_dto` | `id: int, library_id: int, folder_id: int \| None, path: str, normalized_path: str, file_size: int \| None, modified_time: int \| None, duration_seconds: float \| None, chromaprint: str \| None, needs_tagging: bool, is_valid: bool, tagged: bool, calibration_hash: str \| None, write_claimed_by: str \| None, last_tagged_at: datetime \| None, scanned_at: datetime \| None, created_at: datetime` | C |
-| `LibraryFolderRow` | `nomarr.persistence.database.repo_dto` | `id: int, library_id: int, parent_id: int \| None, path: str, name: str` | C |
-| `TagRow` | `nomarr.persistence.database.repo_dto` | `id: int, name: str, value: Any, namespace: str, parent_tag_id: int \| None, source: str \| None, confidence: float \| None, tier: str \| None, created_at: datetime` | C |
-| `FileTagRow` | `nomarr.persistence.database.repo_dto` | `id: int, file_id: int, tag_id: int, confidence: float, source: str \| None, created_at: datetime` | C |
-| `LibraryScanRow` | `nomarr.persistence.database.repo_dto` | `id: int, library_id: int, scan_type: str, status: str, started_at: datetime \| None, finished_at: datetime \| None, files_found: int \| None, files_processed: int \| None, error: str \| None` | C |
-| `LockRow` | `nomarr.persistence.database.repo_dto` | `id: int, document_reference: str, lock_type: str, expires_at: datetime \| None, acquired_at: datetime \| None, holder: str \| None, status: str` | C |
-| `HealthRow` | `nomarr.persistence.database.repo_dto` | `id: int, component_id: str, component_type: str, status: str, message: str \| None, last_heartbeat: datetime \| None, current_job: str \| None, metadata: dict \| None, pid: int \| None, exit_code: int \| None, restart_count: int, last_restart: datetime \| None, error: str \| None, created_at: datetime` | C |
-| `MetaRow` | `nomarr.persistence.database.repo_dto` | `id: int, key: str, value: Any` | C |
-| `SessionRow` | `nomarr.persistence.database.repo_dto` | `id: int, session_id: str, user_id: str, expiry_timestamp: datetime` | C |
-| `WorkerClaimRow` | `nomarr.persistence.database.repo_dto` | `id: int, file_id: int, worker_id: str, claimed_at: datetime, claim_type: str, status: str` | C |
-| `PipelineStateRow` | `nomarr.persistence.database.repo_dto` | `id: int, library_id: int, state_key: str, state_data: dict, updated_at: datetime` | C |
+| `LibraryRow` | `nomarr.helpers.dto.repo_dto` | `id: int, name: str, path: str, library_type: str, auto_tag: int, auto_curate: int, created_at: int, updated_at: int` | C |
+| `LibraryFileRow` | `nomarr.helpers.dto.repo_dto` | `id: int, library_id: int, folder_id: int \| None, path: str, normalized_path: str, file_size: int, modified_time: int, duration_seconds: float \| None, chromaprint: str \| None, needs_tagging: int, is_valid: int, tagged: int, calibration_hash: str \| None, write_claimed_by: str \| None, last_tagged_at: int \| None, scanned_at: int \| None, created_at: int` | C |
+| `LibraryFolderRow` | `nomarr.helpers.dto.repo_dto` | `id: int, library_id: int, parent_id: int \| None, path: str, name: str \| None` | C |
+| `TagRow` | `nomarr.helpers.dto.repo_dto` | `id: int, name: str, value: str, namespace: str, parent_tag_id: int \| None, source: str, confidence: float \| None, tier: int \| None, created_at: int` | C |
+| `FileTagRow` | `nomarr.helpers.dto.repo_dto` | `id: int, file_id: int, tag_id: int, confidence: float, source: str, created_at: int` | C |
+| `LibraryScanRow` | `nomarr.helpers.dto.repo_dto` | `id: int, library_id: int, scan_type: str, status: str, started_at: int, finished_at: int \| None, files_found: int, files_processed: int, error: str \| None` | C |
+| `FileStateRow` | `nomarr.helpers.dto.repo_dto` | `id: int, name: str, description: str \| None` | C |
+| `FileStateAssignmentRow` | `nomarr.helpers.dto.repo_dto` | `id: int, file_id: int, state_id: int, created_at: int` | C |
+| `LockRow` | `nomarr.helpers.dto.repo_dto` | `key: str, value: dict` | C |
+| `HealthRow` | `nomarr.helpers.dto.repo_dto` | `id: int, worker_id: str, status: str, last_seen: int` | C |
+| `MetaRow` | `nomarr.helpers.dto.repo_dto` | `key: str, value: dict` | C |
+| `SessionRow` | `nomarr.helpers.dto.repo_dto` | `id: str, data: dict, expires_at: int` | C |
+| `WorkerClaimRow` | `nomarr.helpers.dto.repo_dto` | `id: int, worker_id: str, key: str, value: dict, claimed_at: int` | C |
+| `PipelineStateRow` | `nomarr.helpers.dto.repo_dto` | `id: int, library_id: int, state_key: str, state_data: dict, updated_at: int` | C |
 | `EmbeddingRecord` | `nomarr.helpers.dto.vector_repo_dto` | `id: int, file_id: int, backbone_id: str, tier: str, embed_dim: int, model_suite_hash: str \| None, num_segments: int \| None, segmentation_hash: str \| None, genres: list[str] \| None, created_at: int, updated_at: int` | D |
 | `SimilarResult` | `nomarr.helpers.dto.vector_repo_dto` | `file_id: int, backbone_id: str, distance: float` | D |
 | `ModelRecord` | `nomarr.helpers.dto.model_repo_dto` | `id: str, model_type: str, backbone_id: str, enabled: int, created_at: int, updated_at: int` | D |

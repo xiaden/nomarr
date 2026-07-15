@@ -1,4 +1,4 @@
-"""Workflow: drop and rebuild vector index on a cold collection.
+"""Workflow: drop and rebuild vector index on a cold tier.
 
 No hot-to-cold promotion — data must already be fully in cold.
 Use this when you want to update index parameters (nLists) without
@@ -18,39 +18,36 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def rebuild_vector_index_workflow(
+async def rebuild_vector_index_workflow(
     db: Database,
     backbone_id: str,
-    nlists: int,
     models_dir: str,
 ) -> None:
-    """Drop and rebuild the vector index on an existing cold collection.
+    """Drop and rebuild the vector index on an existing cold tier.
 
-    Does not touch hot collection or perform any hot-to-cold drain.
-    Cold collection must already exist and be populated.
-    Vector collections are per-backbone (no library_key needed).
+    Does not touch hot tier or perform any hot-to-cold drain.
+    Cold tier must already exist and be populated.
+    Vector indexes are per-backbone (no library_key needed).
 
     Args:
         db: Database instance.
         backbone_id: Backbone identifier (e.g., "discogs_effnet").
-        nlists: Number of Voronoi cells for the new index.
         models_dir: Path to ML models directory (for embed_dim derivation).
 
     Raises:
         ValueError: If backbone not found, embed_dim cannot be determined,
-            or cold collection does not exist.
+            or cold tier does not exist.
         RuntimeError: If index creation fails.
 
     """
     logger.info(
-        "[rebuild index wf] Starting for backbone=%s nlists=%d",
+        "[rebuild index wf] Starting for backbone=%s",
         backbone_id,
-        nlists,
     )
 
     embed_dim = derive_embed_dim(models_dir, backbone_id)
     logger.info("[rebuild index wf] embed_dim=%d for %s", embed_dim, backbone_id)
 
-    db.ml.rebuild_backbone_embedding_index(backbone_id, embed_dim, nlists)
+    await db.ml.rebuild_vector_index(embed_dim)
 
     logger.info("[rebuild index wf] Completed for backbone=%s", backbone_id)

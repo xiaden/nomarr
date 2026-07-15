@@ -11,7 +11,6 @@ import pytest
 from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
 from nomarr.helpers.dto.ml_dto import HeadOutput, LoadedOutputStream
 from nomarr.helpers.dto.tags_dto import Tag, Tags
-from nomarr.persistence.schema import CollectionNames
 
 stream_store_module = importlib.import_module("nomarr.components.ml.inference.ml_output_stream_store_comp")
 wf_module = importlib.import_module("nomarr.workflows.calibration.write_calibrated_tags_wf")
@@ -49,7 +48,7 @@ class TestLoadOutputStreamsForFile:
 
         result = stream_store_module.load_output_streams_for_file(
             db,
-            f"{CollectionNames.LIBRARY_FILES.value}/1",
+            f"{'library_files'}/1",
             "/music/example.flac",
             head_infos,
             output_lookup={
@@ -74,7 +73,7 @@ class TestLoadOutputStreamsForFile:
                 values=[0.2, 0.3],
             ),
         ]
-        fetch_output_streams.assert_called_once_with(db, f"{CollectionNames.LIBRARY_FILES.value}/1")
+        fetch_output_streams.assert_called_once_with(db, f"{'library_files'}/1")
 
     def test_returns_empty_and_skips_lookup_when_streams_are_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         db = MagicMock()
@@ -84,7 +83,7 @@ class TestLoadOutputStreamsForFile:
 
         result = stream_store_module.load_output_streams_for_file(
             db,
-            f"{CollectionNames.LIBRARY_FILES.value}/1",
+            f"{'library_files'}/1",
             "/music/example.flac",
             head_infos,
             output_lookup={"ml_model_outputs/out-1": ("mood_multiclass", "happy")},
@@ -106,7 +105,7 @@ class TestLoadOutputStreamsForFile:
 
         result = stream_store_module.load_output_streams_for_file(
             db,
-            f"{CollectionNames.LIBRARY_FILES.value}/1",
+            f"{'library_files'}/1",
             "/music/example.flac",
             head_infos,
             output_lookup={"ml_model_outputs/out-1": ("mood_multiclass", "happy")},
@@ -153,7 +152,7 @@ class TestWriteCalibratedTagsWorkflow:
             )
         ]
         mood_tags = _make_tags(**{"nom:mood-happy": "high"})
-        require_library_file_id = MagicMock(return_value=f"{CollectionNames.LIBRARY_FILES.value}/1")
+        require_library_file_id = MagicMock(return_value=f"{'library_files'}/1")
         discover_heads = MagicMock(return_value=head_infos)
         build_output_stream_lookup = MagicMock(return_value={"ml_model_outputs/out-1": ("mood_multiclass", "happy")})
         load_output_streams_for_file = MagicMock(return_value=output_streams)
@@ -179,7 +178,7 @@ class TestWriteCalibratedTagsWorkflow:
         build_output_stream_lookup.assert_called_once_with(db, head_infos)
         load_output_streams_for_file.assert_called_once_with(
             db,
-            f"{CollectionNames.LIBRARY_FILES.value}/1",
+            f"{'library_files'}/1",
             "/music/example.flac",
             head_infos,
             output_lookup={"ml_model_outputs/out-1": ("mood_multiclass", "happy")},
@@ -190,8 +189,8 @@ class TestWriteCalibratedTagsWorkflow:
             calibrations={"happy": {"p5": 0.1}},
         )
         aggregate_mood_tags.assert_called_once_with(head_outputs)
-        save_mood_tags.assert_called_once_with(db, f"{CollectionNames.LIBRARY_FILES.value}/1", mood_tags)
-        update_file_calibration_hash.assert_called_once_with(db, f"{CollectionNames.LIBRARY_FILES.value}/1")
+        save_mood_tags.assert_called_once_with(db, f"{'library_files'}/1", mood_tags)
+        update_file_calibration_hash.assert_called_once_with(db, f"{'library_files'}/1")
         assert db.segment_scores_stats.mock_calls == []
 
     def test_batch_context_reuses_cached_output_lookup_and_defers_batch_writes(
@@ -260,9 +259,7 @@ class TestWriteCalibratedTagsWorkflow:
             calibrations={"happy": {"p5": 0.1}},
             calibration_version="cal-v1",
         )
-        require_library_file_id = MagicMock(
-            side_effect=[f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"]
-        )
+        require_library_file_id = MagicMock(side_effect=[f"{'library_files'}/1", f"{'library_files'}/2"])
         discover_heads = MagicMock()
         build_output_stream_lookup = MagicMock(return_value=lookup)
         load_output_streams_for_file = MagicMock(side_effect=[output_streams_1, output_streams_2])
@@ -289,12 +286,12 @@ class TestWriteCalibratedTagsWorkflow:
         assert load_output_streams_for_file.call_args_list[0].kwargs["output_lookup"] is lookup
         assert load_output_streams_for_file.call_args_list[1].kwargs["output_lookup"] is lookup
         assert batch_ctx.pending_mood_tags == [
-            (f"{CollectionNames.LIBRARY_FILES.value}/1", mood_tags_1),
-            (f"{CollectionNames.LIBRARY_FILES.value}/2", mood_tags_2),
+            (f"{'library_files'}/1", mood_tags_1),
+            (f"{'library_files'}/2", mood_tags_2),
         ]
         assert batch_ctx.pending_calibration_hashes == [
-            f"{CollectionNames.LIBRARY_FILES.value}/1",
-            f"{CollectionNames.LIBRARY_FILES.value}/2",
+            f"{'library_files'}/1",
+            f"{'library_files'}/2",
         ]
         save_mood_tags.assert_not_called()
         update_file_calibration_hash.assert_not_called()
@@ -312,7 +309,7 @@ class TestWriteCalibratedTagsWorkflow:
             calibrate_heads=False,
         )
         head_infos = [_FakeHeadInfo(name="mood_multiclass", labels=["happy", "sad"], model_path="/models/mood.onnx")]
-        require_library_file_id = MagicMock(return_value=f"{CollectionNames.LIBRARY_FILES.value}/1")
+        require_library_file_id = MagicMock(return_value=f"{'library_files'}/1")
         discover_heads = MagicMock(return_value=head_infos)
         build_output_stream_lookup = MagicMock(return_value={"ml_model_outputs/out-1": ("mood_multiclass", "happy")})
         load_output_streams_for_file = MagicMock(return_value=[])

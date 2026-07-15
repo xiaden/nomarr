@@ -46,6 +46,7 @@ def shutdown_head_pool(*, timeout: float = 5.0) -> None:
         timeout: Max seconds to wait for in-flight predictions before
                  forcing cancellation. Defaults to 5s — enough for any
                  single head prediction to finish.
+
     """
     _HEAD_POOL.shutdown(wait=True, cancel_futures=True)
 

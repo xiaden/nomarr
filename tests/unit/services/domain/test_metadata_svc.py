@@ -82,8 +82,7 @@ class TestListEntities:
         mock_db = MagicMock()
         listed_tags = [
             {
-                "_id": "tags/artist-1",
-                "_key": "artist-1",
+                "id": 1,
                 "value": "The Artist",
                 "song_count": 12,
             },
@@ -99,8 +98,7 @@ class TestListEntities:
         assert result == {
             "entities": [
                 {
-                    "_id": "tags/artist-1",
-                    "_key": "artist-1",
+                    "id": 1,
                     "display_name": "The Artist",
                     "song_count": 12,
                 },
@@ -142,8 +140,7 @@ class TestGetEntity:
         """Existing tags should be transformed into an entity dict."""
         mock_db = MagicMock()
         tag_doc = {
-            "_id": "tags/artist-1",
-            "_key": "artist-1",
+            "id": 1,
             "value": "The Artist",
         }
         mock_db.library.count_songs_for_tag.return_value = 7
@@ -153,8 +150,7 @@ class TestGetEntity:
             result = service.get_entity("tags/artist-1")
 
         assert result == {
-            "_id": "tags/artist-1",
-            "_key": "artist-1",
+            "id": 1,
             "display_name": "The Artist",
             "song_count": 7,
         }

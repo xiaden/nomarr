@@ -11,7 +11,6 @@ from nomarr.components.library.tag_hydration_comp import (
     hydrate_song_with_metadata,
     hydrate_songs_with_metadata,
 )
-from nomarr.persistence.schema import CollectionNames
 
 
 class TestExtractCanonicalMetadata:
@@ -140,11 +139,11 @@ class TestHydrateFileDocsWithMetadata:
     def test_batch_reading_populates_all_docs(self) -> None:
         mock_db = MagicMock()
         file_docs = [
-            {"_id": f"{CollectionNames.LIBRARY_FILES.value}/1", "path": "/music/song1.flac"},
-            {"_id": f"{CollectionNames.LIBRARY_FILES.value}/2", "path": "/music/song2.flac"},
+            {"_id": f"{'library_files'}/1", "path": "/music/song1.flac"},
+            {"_id": f"{'library_files'}/2", "path": "/music/song2.flac"},
         ]
         mock_db.library.list_file_tags_for_files.return_value = {
-            f"{CollectionNames.LIBRARY_FILES.value}/1": [
+            f"{'library_files'}/1": [
                 {"name": "artist", "value": ["Artist One"]},
                 {"name": "album", "value": ["Album One"]},
                 {"name": "title", "value": ["Title One"]},
@@ -153,7 +152,7 @@ class TestHydrateFileDocsWithMetadata:
                 {"name": "genre", "value": ["Rock"]},
                 {"name": "year", "value": ["2020"]},
             ],
-            f"{CollectionNames.LIBRARY_FILES.value}/2": [
+            f"{'library_files'}/2": [
                 {"name": "artist", "value": ["Artist Two"]},
                 {"name": "album", "value": ["Album Two"]},
                 {"name": "title", "value": ["Title Two"]},
@@ -167,7 +166,7 @@ class TestHydrateFileDocsWithMetadata:
         result = hydrate_songs_with_metadata(mock_db, file_docs)
 
         mock_db.library.list_file_tags_for_files.assert_called_once_with(
-            [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"]
+            [f"{'library_files'}/1", f"{'library_files'}/2"]
         )
         assert len(result) == 2
         assert result[0]["artist"] == "Artist One"
@@ -185,9 +184,9 @@ class TestHydrateFileDocsWithMetadata:
     @pytest.mark.mocked
     def test_file_with_no_tags_gets_none_fields(self) -> None:
         mock_db = MagicMock()
-        file_docs = [{"_id": f"{CollectionNames.LIBRARY_FILES.value}/1", "path": "/music/song.flac"}]
+        file_docs = [{"_id": f"{'library_files'}/1", "path": "/music/song.flac"}]
         mock_db.library.list_file_tags_for_files.return_value = {
-            f"{CollectionNames.LIBRARY_FILES.value}/1": [],
+            f"{'library_files'}/1": [],
         }
 
         result = hydrate_songs_with_metadata(mock_db, file_docs)
@@ -208,9 +207,9 @@ class TestHydrateFileDocsWithMetadata:
     @pytest.mark.mocked
     def test_original_docs_not_mutated(self) -> None:
         mock_db = MagicMock()
-        file_docs = [{"_id": f"{CollectionNames.LIBRARY_FILES.value}/1", "path": "/music/song.flac"}]
+        file_docs = [{"_id": f"{'library_files'}/1", "path": "/music/song.flac"}]
         mock_db.library.list_file_tags_for_files.return_value = {
-            f"{CollectionNames.LIBRARY_FILES.value}/1": [
+            f"{'library_files'}/1": [
                 {"name": "artist", "value": ["New Artist"]},
             ],
         }
@@ -250,9 +249,9 @@ class TestHydrateFileDocWithMetadata:
     @pytest.mark.mocked
     def test_single_file_hydration(self) -> None:
         mock_db = MagicMock()
-        file_doc = {"_id": f"{CollectionNames.LIBRARY_FILES.value}/1", "path": "/music/song.flac"}
+        file_doc = {"_id": f"{'library_files'}/1", "path": "/music/song.flac"}
         mock_db.library.list_file_tags_for_files.return_value = {
-            f"{CollectionNames.LIBRARY_FILES.value}/1": [
+            f"{'library_files'}/1": [
                 {"name": "artist", "value": ["Solo Artist"]},
                 {"name": "album", "value": ["Solo Album"]},
                 {"name": "title", "value": ["Solo Title"]},
@@ -273,4 +272,4 @@ class TestHydrateFileDocWithMetadata:
         assert result["genres"] == ["Jazz"]
         assert result["year"] == 2022
         assert result["path"] == "/music/song.flac"
-        mock_db.library.list_file_tags_for_files.assert_called_once_with([f"{CollectionNames.LIBRARY_FILES.value}/1"])
+        mock_db.library.list_file_tags_for_files.assert_called_once_with([f"{'library_files'}/1"])

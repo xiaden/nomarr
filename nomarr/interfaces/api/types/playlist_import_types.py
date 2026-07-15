@@ -39,14 +39,14 @@ class ConvertPlaylistRequest(BaseModel):
             "https://link.deezer.com/s/32pxbZMVkKIxZyRZwEBEN",
         ],
     )
-    library_id: str | None = Field(
+    library_id: int | None = Field(
         default=None,
         description="Optional library _id to restrict matching scope",
     )
 
     @field_validator("library_id", mode="before")
     @classmethod
-    def decode_library_id(cls, v: str | None) -> str | None:
+    def decode_library_id(cls, v: str | None) -> int | None:
         """Decode encoded library_id (libraries:123 -> libraries/123)."""
         if v is None or v == "":
             return None

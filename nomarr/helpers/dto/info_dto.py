@@ -108,7 +108,7 @@ class PublicInfoResult:
 class ScanningLibraryInfo:
     """Info about a library currently being scanned."""
 
-    library_id: str
+    library_id: int
     name: str
     progress: int
     total: int

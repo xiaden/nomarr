@@ -66,6 +66,7 @@ def load_audio_mono(path: LibraryPath | str, target_sr: int = 16000) -> LoadAudi
         ValueError: If LibraryPath is invalid.
         AudioLoadShutdownError: If shutdown was requested before loading.
         AudioLoadCrashError: If the file cannot be decoded.
+
     """
     if isinstance(path, str):
         path_str = path

@@ -66,6 +66,7 @@ def delete_navidrome_tracks_cascade(db: Database, nd_ids: list[str]) -> int:
 
     Returns:
         Number of track vertex documents deleted, or 0 if ``nd_ids`` is empty.
+
     """
     if not nd_ids:
         return 0

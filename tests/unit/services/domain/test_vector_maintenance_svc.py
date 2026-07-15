@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -21,25 +21,29 @@ def _make_service(db: MagicMock | None = None, models_dir: str = "/models") -> V
 class TestGetBackboneVectorStats:
     """Tests for ``VectorMaintenanceService.get_backbone_vector_stats``."""
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_empty_list_when_no_backbones_discovered(self) -> None:
+    async def test_returns_empty_list_when_no_backbones_discovered(self) -> None:
         """No discovered backbones should produce an empty stats list."""
         mock_db = MagicMock()
         service = _make_service(mock_db)
 
-        with patch(
-            "nomarr.services.domain.vector_maintenance_svc.discover_backbones",
-            return_value=[],
-        ) as mock_discover_backbones:
-            result = service.get_backbone_vector_stats()
+        with (
+            patch(
+                "nomarr.services.domain.vector_maintenance_svc.discover_backbones",
+                return_value=[],
+            ) as mock_discover_backbones,
+        ):
+            result = await service.get_backbone_vector_stats()
 
         assert result == []
         mock_discover_backbones.assert_called_once_with("/models")
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_stats_row_for_each_backbone(self) -> None:
+    async def test_returns_stats_row_for_each_backbone(self) -> None:
         """Successful backbone stats should be normalized into response rows."""
         mock_db = MagicMock()
         service = _make_service(mock_db)
@@ -52,10 +56,11 @@ class TestGetBackboneVectorStats:
             patch.object(
                 service,
                 "get_hot_cold_stats",
+                new_callable=AsyncMock,
                 return_value={"hot_count": 5, "cold_count": 100, "index_exists": True},
             ) as mock_get_hot_cold_stats,
         ):
-            result = service.get_backbone_vector_stats()
+            result = await service.get_backbone_vector_stats()
 
         assert result == [
             {
@@ -67,9 +72,10 @@ class TestGetBackboneVectorStats:
         ]
         mock_get_hot_cold_stats.assert_called_once_with("effnet")
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_skips_backbones_that_fail_stats_lookup(self) -> None:
+    async def test_skips_backbones_that_fail_stats_lookup(self) -> None:
         """Backbones with stats errors should be skipped instead of failing the whole request."""
         mock_db = MagicMock()
         service = _make_service(mock_db)
@@ -82,10 +88,11 @@ class TestGetBackboneVectorStats:
             patch.object(
                 service,
                 "get_hot_cold_stats",
+                new_callable=AsyncMock,
                 side_effect=[RuntimeError("boom"), {"hot_count": 1, "cold_count": 2, "index_exists": False}],
             ) as mock_get_hot_cold_stats,
         ):
-            result = service.get_backbone_vector_stats()
+            result = await service.get_backbone_vector_stats()
 
         assert result == [
             {

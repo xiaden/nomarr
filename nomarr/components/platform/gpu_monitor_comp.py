@@ -66,7 +66,6 @@ class GPUHealthMonitor(multiprocessing.Process):
         Continuously probes GPU, writes resource snapshot to DB, and sends
         heartbeat frames to HealthMonitorService.
         """
-
         from nomarr.components.platform import (
             probe_gpu_availability,
         )

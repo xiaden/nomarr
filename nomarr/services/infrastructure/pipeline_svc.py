@@ -68,11 +68,12 @@ class LibraryPipelineService:
         """Initialize the pipeline service with required dependencies.
 
         Args:
-            db: ArangoDB database instance for state queries.
+            db: PostgreSQL database instance for state queries.
             bts: Background task service for scheduled work dispatch.
             calibration_svc: Calibration service for histogram generation dispatch.
             tagging_svc: Tagging service for write-background dispatch.
             navidrome_svc: Navidrome service for post-write rescan triggers.
+
         """
         self.db = db
         self.bts = bts
@@ -91,6 +92,7 @@ class LibraryPipelineService:
         Returns:
             Dict with counts per axis: ``{"scanning": int, "calibrating": int,
             "writing": int}``.
+
         """
         recovery_counts: dict[str, int] = {
             "scanning": 0,
@@ -284,6 +286,7 @@ class LibraryPipelineService:
         Returns:
             ``LibraryPipelineStatusDTO`` with per-axis state and optional
             domain counts, or ``None`` if the library does not exist.
+
         """
         library = get_library_record(self.db, library_id, include_scan=False)
         if library is None:
@@ -303,7 +306,7 @@ class LibraryPipelineService:
             pending_write_count = int(self.tagging_svc.get_reconcile_status(library_id)["pending_count"])
 
         return LibraryPipelineStatusDTO(
-            library_id=library_id,
+            library_id=int(library_id),
             scan_state=state.get(SCAN_STATE_FIELD, "not_scanned"),
             ml_state=state.get(ML_STATE_FIELD, "not_ML_processed"),
             calibration_state=state.get(CAL_STATE_FIELD, "not_calibrated"),

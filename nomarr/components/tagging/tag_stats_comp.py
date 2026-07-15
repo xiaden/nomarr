@@ -7,9 +7,7 @@ from math import floor
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.tagging.tag_query_comp import (
-    _library_file_ids,
     _narrow_tag_list,
-    _tags_for_name,
     get_tag,
 )
 
@@ -32,7 +30,7 @@ def _library_files(db: Database, library_id: str | None) -> list[dict[str, Any]]
     return _all_library_files(db)
 
 
-def _tag_file_ids(db: Database, tag_id: str) -> set[str]:
+def _tag_file_ids(db: Database, tag_id: int) -> set[int]:
     """Return file ids linked to one tag via the intent-level library facade."""
     tag_doc = get_tag(db, tag_id)
     if tag_doc is None:
@@ -46,7 +44,7 @@ def _tag_file_ids(db: Database, tag_id: str) -> set[str]:
         for file_doc in _narrow_tag_list(
             db.library.search_files_by_tag(tag_name, str(tag_value), limit=None),
         )
-        if isinstance((file_id := file_doc.get("_id")), str)
+        if isinstance((file_id := file_doc.get("id")), int)
     }
 
 
@@ -55,25 +53,25 @@ def _song_count_for_tag(db: Database, tag_id: str) -> int:
     return len(_tag_file_ids(db, tag_id))
 
 
-def _song_count_rows_for_tag_ids(db: Database, tag_ids: list[str]) -> dict[str, int]:
+def _song_count_rows_for_tag_ids(db: Database, tag_ids: list[int]) -> dict[int, int]:
     """Return ``tag_id -> song_count`` using one batched edge lookup."""
-    valid_tag_ids = [tag_id for tag_id in tag_ids if isinstance(tag_id, str)]
+    valid_tag_ids = [tag_id for tag_id in tag_ids if isinstance(tag_id, int)]
     if not valid_tag_ids:
         return {}
 
     count_by_tag_id = dict.fromkeys(valid_tag_ids, 0)
     for edge in _narrow_tag_list(
-        db.library.get_song_tag_edges_for_tags(valid_tag_ids),
+        db.library.file_tag_repo.get_file_tag_edges_for_tags(valid_tag_ids),
     ):
-        if isinstance(tag_id := edge.get("_to"), str) and tag_id in count_by_tag_id:
+        if isinstance(tag_id := edge.get("tag_id"), int) and tag_id in count_by_tag_id:
             count_by_tag_id[tag_id] += 1
     return count_by_tag_id
 
 
 def _scoped_song_count_for_tag(
     db: Database,
-    tag_id: str,
-    library_file_ids: set[str] | None,
+    tag_id: int,
+    library_file_ids: set[int] | None,
 ) -> int:
     """Count songs for a tag, optionally intersected with a library file-id set."""
     if library_file_ids is None:
@@ -121,15 +119,16 @@ def get_unique_names(db: Database, nomarr_only: bool = False) -> list[str]:
 
 def get_tag_value_counts(db: Database, name: str) -> dict[Any, int]:
     """Return value → song-count mapping for one tag name."""
-    tag_docs = _tags_for_name(db, name)
+    total = int(db.library.count_tags())
+    tag_docs = _narrow_tag_list(db.library.list_tags(name=name, limit=total)) if total > 0 else []
     count_by_tag_id = _song_count_rows_for_tag_ids(
         db,
-        [tag_id for tag in tag_docs if isinstance(tag_id := tag.get("_id"), str)],
+        [tag_id for tag in tag_docs if isinstance(tag_id := tag.get("id"), int)],
     )
     return {
         tag["value"]: count_by_tag_id.get(tag_id, 0)
         for tag in tag_docs
-        if isinstance(tag_id := tag.get("_id"), str) and "value" in tag
+        if isinstance(tag_id := tag.get("id"), int) and "value" in tag
     }
 
 
@@ -145,7 +144,7 @@ def get_all_tag_stats_batched(db: Database) -> dict[str, dict[str, Any]]:
     all_tag_docs = _narrow_tag_list(db.library.list_tags(limit=total_tags)) if tag_names else []
     count_by_tag_id = _song_count_rows_for_tag_ids(
         db,
-        [tag_id for tag in all_tag_docs if isinstance(tag_id := tag.get("_id"), str)],
+        [tag_id for tag in all_tag_docs if isinstance(tag_id := tag.get("id"), int)],
     )
     tags_by_name: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
     for tag in all_tag_docs:
@@ -157,7 +156,7 @@ def get_all_tag_stats_batched(db: Database) -> dict[str, dict[str, Any]]:
         values: dict[Any, int] = {
             tag["value"]: count_by_tag_id.get(tag_id, 0)
             for tag in tags_by_name.get(name, [])
-            if isinstance(tag_id := tag.get("_id"), str) and "value" in tag
+            if isinstance(tag_id := tag.get("id"), int) and "value" in tag
         }
         total_count = sum(values.values())
         if values:
@@ -208,14 +207,14 @@ def get_tag_frequencies(db: Database, limit: int, namespace_prefix: str) -> dict
         )
         count_by_tag_id = _song_count_rows_for_tag_ids(
             db,
-            [tag_id for tag in all_tag_docs if isinstance(tag_id := tag.get("_id"), str)],
+            [tag_id for tag in all_tag_docs if isinstance(tag_id := tag.get("id"), int)],
         )
 
         for tag in all_tag_docs:
-            tag_id = tag.get("_id")
+            tag_id = tag.get("id")
             tag_name = tag.get("name")
             tag_value = tag.get("value")
-            if not isinstance(tag_id, str) or not isinstance(tag_name, str):
+            if not isinstance(tag_id, int) or not isinstance(tag_name, str):
                 continue
             song_count = count_by_tag_id.get(tag_id, 0)
             if song_count <= 0:
@@ -231,7 +230,7 @@ def get_tag_frequencies(db: Database, limit: int, namespace_prefix: str) -> dict
     return {"nom_tag_rows": nom_tag_rows, "genre_rows": genre_rows}
 
 
-def get_library_stats(db: Database, library_id: str | None = None) -> dict[str, Any]:
+def get_library_stats(db: Database, library_id: int | None = None) -> dict[str, Any]:
     """Return aggregate collection stats for the whole library or one library."""
     files = _library_files(db, library_id)
     if not files:
@@ -253,26 +252,33 @@ def get_library_stats(db: Database, library_id: str | None = None) -> dict[str, 
     }
 
 
-def get_year_distribution(db: Database, library_id: str | None = None) -> list[dict[str, Any]]:
+def get_year_distribution(db: Database, library_id: int | None = None) -> list[dict[str, Any]]:
     """Return year distribution rows for collection overview."""
     total_tags = int(db.library.count_tags())
     if total_tags <= 0:
         return []
 
-    library_file_ids = _library_file_ids(db, library_id)
-    year_tags = _tags_for_name(db, "year")
+    library_file_ids: set[int] | None = None
+    if library_id is not None:
+        library_file_ids = {
+            file_id
+            for file_doc in _narrow_tag_list(db.library.list_library_files(library_id))
+            if isinstance(file_id := file_doc.get("id"), int)
+        }
+    total_year = int(db.library.count_tags())
+    year_tags = _narrow_tag_list(db.library.list_tags(name="year", limit=total_year)) if total_year > 0 else []
     count_by_tag_id = (
         _song_count_rows_for_tag_ids(
             db,
-            [tag_id for tag in year_tags if isinstance(tag_id := tag.get("_id"), str)],
+            [tag_id for tag in year_tags if isinstance(tag_id := tag.get("id"), int)],
         )
         if library_file_ids is None
         else {}
     )
     rows: list[dict[str, Any]] = []
     for tag in year_tags:
-        tag_id = tag.get("_id")
-        if not isinstance(tag_id, str) or "value" not in tag:
+        tag_id = tag.get("id")
+        if not isinstance(tag_id, int) or "value" not in tag:
             continue
         song_count = (
             count_by_tag_id.get(tag_id, 0)
@@ -295,7 +301,7 @@ def get_year_distribution(db: Database, library_id: str | None = None) -> list[d
 
 def get_genre_distribution(
     db: Database,
-    library_id: str | None = None,
+    library_id: int | None = None,
     limit: int | None = 20,
 ) -> list[dict[str, Any]]:
     """Return genre distribution rows for collection overview."""
@@ -303,15 +309,22 @@ def get_genre_distribution(
     if total_tags <= 0:
         return []
 
-    library_file_ids = _library_file_ids(db, library_id)
-    genre_tags = _tags_for_name(db, "genre")
+    library_file_ids: set[int] | None = None
+    if library_id is not None:
+        library_file_ids = {
+            file_id
+            for file_doc in _narrow_tag_list(db.library.list_library_files(library_id))
+            if isinstance(file_id := file_doc.get("id"), int)
+        }
+    total_genre = int(db.library.count_tags())
+    genre_tags = _narrow_tag_list(db.library.list_tags(name="genre", limit=total_genre)) if total_genre > 0 else []
     count_by_tag_id = (
         _song_count_rows_for_tag_ids(
             db,
             [
                 tag_id
                 for tag in genre_tags
-                if isinstance(tag_id := tag.get("_id"), str) and isinstance(tag.get("value"), str)
+                if isinstance(tag_id := tag.get("id"), int) and isinstance(tag.get("value"), str)
             ],
         )
         if library_file_ids is None
@@ -319,9 +332,9 @@ def get_genre_distribution(
     )
     rows: list[dict[str, Any]] = []
     for tag in genre_tags:
-        tag_id = tag.get("_id")
+        tag_id = tag.get("id")
         genre_value = tag.get("value")
-        if not isinstance(tag_id, str) or not isinstance(genre_value, str):
+        if not isinstance(tag_id, int) or not isinstance(genre_value, str):
             continue
         song_count = (
             count_by_tag_id.get(tag_id, 0)

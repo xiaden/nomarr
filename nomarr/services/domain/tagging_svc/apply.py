@@ -179,6 +179,7 @@ class TaggingApplyMixin:
 
         Returns:
             True if a background calibration apply task is currently active.
+
         """
         status = self._bts.get_task_status(CALIBRATION_APPLY_TASK_ID)
         return status is not None and status.get("status") == "running"
@@ -257,6 +258,7 @@ class TaggingApplyMixin:
             Dict with keys: ``status`` (lifecycle phase), ``result`` (outcome),
             ``error`` (error string if any), ``total_files``, ``completed_files``,
             ``current_file``, and ``is_running``.
+
         """
         status = self._get_apply_status()
         progress = self._get_apply_progress()

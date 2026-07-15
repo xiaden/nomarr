@@ -41,7 +41,7 @@ class LibraryResponse(BaseModel):
     Maps directly to LibraryDict DTO from helpers/dto/library_dto.py
     """
 
-    library_id: str  # ArangoDB _id
+    library_id: int  # Primary key
     name: str
     root_path: str
     is_enabled: bool
@@ -89,7 +89,7 @@ class LibraryResponse(BaseModel):
             scanned_at = scanned_at_raw
 
         return cls(
-            library_id=encode_id(library._id),
+            library_id=encode_id(library.id),
             name=library.name,
             root_path=library.root_path,
             is_enabled=library.is_enabled,
@@ -256,9 +256,9 @@ class FileTagResponse(BaseModel):
 class LibraryFileWithTagsResponse(BaseModel):
     """Single library file with its tags."""
 
-    file_id: str  # ArangoDB _id
+    file_id: int  # Primary key
     path: str
-    library_id: str | None  # ArangoDB _id (None for orphaned files)
+    library_id: int | None  # Primary key (None for orphaned files)
     file_size: int | None
     modified_time: int | None
     duration_seconds: float | None
@@ -292,7 +292,7 @@ class SearchFilesResponse(BaseModel):
         return cls(
             files=[
                 LibraryFileWithTagsResponse(
-                    file_id=encode_id(f._id),
+                    file_id=encode_id(f.id),
                     path=f.path,
                     library_id=encode_id(f.library_id) if f.library_id else None,
                     file_size=f.file_size,
@@ -378,7 +378,7 @@ class ReconcilePathsResponse(BaseModel):
 class FileTagsResponse(BaseModel):
     """Response for file tags endpoint."""
 
-    file_id: str
+    file_id: int
     path: str
     tags: list[FileTagResponse]
 
@@ -419,7 +419,7 @@ class WriteTagsResponse(BaseModel):
 class PipelineStatusResponse(BaseModel):
     """Response for the per-library pipeline status endpoint."""
 
-    library_id: str
+    library_id: int
     scan_state: str
     ml_state: str
     calibration_state: str
@@ -477,7 +477,7 @@ class ValidateLibraryTagsResponse(BaseModel):
 class ErroredFileItemResponse(BaseModel):
     """Single errored file in the response."""
 
-    file_id: str
+    file_id: int
     path: str
     duration_seconds: float | None
     artist: str | None

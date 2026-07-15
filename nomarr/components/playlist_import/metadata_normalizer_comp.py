@@ -74,6 +74,7 @@ def normalize_for_matching(text: str) -> str:
 
         >>> normalize_for_matching("  Hello   World  ")
         "hello world"
+
     """
     if not text:
         return ""
@@ -121,6 +122,7 @@ def normalize_artist(artist: str) -> str:
 
     Returns:
         Normalized artist string
+
     """
     result = normalize_for_matching(artist)
 
@@ -138,6 +140,7 @@ def normalize_title(title: str) -> str:
 
     Returns:
         Normalized title string
+
     """
     return normalize_for_matching(title)
 
@@ -153,6 +156,7 @@ def normalize_album(album: str) -> str:
 
     Returns:
         Normalized album string
+
     """
     result = normalize_for_matching(album)
 

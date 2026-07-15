@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -97,7 +97,8 @@ class TestDiscoverHeadModelsNoDB:
 class TestDiscoverHeadModels:
     """Tests for discover_head_models()."""
 
-    def test_passes_head_info_from_db_to_model(self) -> None:
+    @pytest.mark.asyncio
+    async def test_passes_head_info_from_db_to_model(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             onnx_path = _create_head_onnx(tmpdir, "effnet", "sigmoid", "mood_happy")
             hi = HeadInfo(
@@ -112,14 +113,16 @@ class TestDiscoverHeadModels:
             mock_db = MagicMock()
             with patch(
                 "nomarr.components.ml.onnx.ml_discovery_comp.discover_heads",
+                new_callable=AsyncMock,
                 return_value=[hi],
             ):
-                result = discover_head_models(tmpdir, mock_db)
+                result = await discover_head_models(tmpdir, mock_db)
 
         assert len(result) == 1
         assert result[0].meta is hi
 
-    def test_head_info_labels_are_present_on_model_meta(self) -> None:
+    @pytest.mark.asyncio
+    async def test_head_info_labels_are_present_on_model_meta(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             onnx_path = _create_head_onnx(tmpdir, "effnet", "sigmoid", "mood_happy")
             mock_db = MagicMock()
@@ -134,22 +137,25 @@ class TestDiscoverHeadModels:
             )
             with patch(
                 "nomarr.components.ml.onnx.ml_discovery_comp.discover_heads",
+                new_callable=AsyncMock,
                 return_value=[hi],
             ):
-                result = discover_head_models(tmpdir, mock_db)
+                result = await discover_head_models(tmpdir, mock_db)
 
         assert result[0].meta.labels == ["happy", "not_happy"]
 
-    def test_db_exception_synthesizes_fallback_meta(self) -> None:
+    @pytest.mark.asyncio
+    async def test_db_exception_synthesizes_fallback_meta(self) -> None:
         """When discover_heads raises, models get synthesized HeadInfo with empty labels."""
         with tempfile.TemporaryDirectory() as tmpdir:
             _create_head_onnx(tmpdir, "effnet", "sigmoid", "mood_happy")
             mock_db = MagicMock()
             with patch(
                 "nomarr.components.ml.onnx.ml_discovery_comp.discover_heads",
+                new_callable=AsyncMock,
                 side_effect=PersistenceError("DB unavailable"),
             ):
-                result = discover_head_models(tmpdir, mock_db)
+                result = await discover_head_models(tmpdir, mock_db)
 
         assert len(result) == 1
         assert result[0].meta.labels == []

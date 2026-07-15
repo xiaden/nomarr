@@ -6,7 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones
-from nomarr.helpers.vector_params_helper import compute_nlists
+from nomarr.helpers.vector_params_helper import get_ef_construction
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -42,26 +42,23 @@ def list_hot_vector_targets(db: Database, models_dir: str) -> list[str]:
     return targets
 
 
-def compute_promotion_nlists(db: Database, backbone_id: str) -> int:
-    """Compute optimal nlists for a backbone.
+def compute_promotion_ef_construction(db: Database, backbone_id: str) -> int:
+    """Compute optimal HNSW ef_construction for a backbone.
 
-    Uses the global ``vector_group_size`` default of 15.  Sums hot and
-    cold counts to determine total document count.
+    Sums hot and cold counts to determine total document count, then
+    derives the build-time HNSW parameter.
 
     Args:
         db: Database instance.
         backbone_id: Backbone identifier.
 
     Returns:
-        Optimal nlists value (10-4000).
+        Optimal ef_construction value (100-500).
 
     """
-    # Use global group size (no per-library override)
-    group_size = 15
-
     # Sum hot + cold counts
     stats = db.ml.get_embedding_stats(backbone_id)
     hot_count = int(stats["hot_count"])
     cold_count = int(stats["cold_count"])
 
-    return compute_nlists(hot_count + cold_count, group_size)
+    return get_ef_construction(hot_count + cold_count)

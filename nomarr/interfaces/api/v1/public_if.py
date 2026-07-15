@@ -21,5 +21,5 @@ async def get_info(
     """Get comprehensive system info: config, models, queue status, workers.
     Unified schema matching CLI info command.
     """
-    result = info_service.get_public_info()
+    result = await info_service.get_public_info()
     return PublicInfoResponse.from_dto(result)

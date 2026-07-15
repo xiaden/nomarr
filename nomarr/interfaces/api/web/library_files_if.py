@@ -172,6 +172,7 @@ async def get_unique_mood_values(
 
     Returns:
         List of unique mood values (e.g., ["aggressive", "happy", "party-like"])
+
     """
     try:
         result = tagging_service.get_unique_mood_values(mood_tier=mood_tier, limit=limit)
@@ -207,14 +208,14 @@ async def get_file_tags(
     tagging_service: "TaggingService" = Depends(get_tagging_service),
 ) -> FileTagsResponse:
     """Get all tags for a specific file."""
-    file_id = decode_path_id(file_id)
+    decoded_file_id: int = decode_path_id(file_id)
     try:
-        result = tagging_service.get_file_tags(file_id=file_id, nomarr_only=nomarr_only)
+        result = tagging_service.get_file_tags(file_id=decoded_file_id, nomarr_only=nomarr_only)
         return FileTagsResponse.from_dto(result)
     except ValueError:
         raise HTTPException(status_code=404, detail="File not found") from None
     except Exception as e:
-        logger.exception(f"[Web API] Error getting tags for file {file_id}")
+        logger.exception(f"[Web API] Error getting tags for file {decoded_file_id}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get file tags")) from e
 
 
@@ -224,13 +225,13 @@ async def get_errored_files(
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> ErroredFilesResponse:
     """Get errored files for a library."""
-    library_id = decode_path_id(library_id)
+    decoded_library_id: int = decode_path_id(library_id)
     try:
-        result = library_service.get_errored_files(library_id=library_id)
+        result = library_service.get_errored_files(library_id=decoded_library_id)
         return ErroredFilesResponse(
             files=[
                 ErroredFileItemResponse(
-                    file_id=encode_id(f["_id"]),
+                    file_id=encode_id(f["id"]),
                     path=f["path"],
                     duration_seconds=f["duration_seconds"],
                     artist=f["artist"],
@@ -243,7 +244,7 @@ async def get_errored_files(
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:
-        logger.exception(f"[Web API] Error getting errored files for library {library_id}")
+        logger.exception(f"[Web API] Error getting errored files for library {decoded_library_id}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get errored files")) from e
 
 
@@ -254,15 +255,15 @@ async def retry_errored_files(
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> RetryErroredResponse:
     """Retry errored files by clearing their errored state and re-queuing for tagging."""
-    library_id = decode_path_id(library_id)
+    decoded_library_id: int = decode_path_id(library_id)
     file_ids = [decode_path_id(fid) for fid in request.file_ids] if request and request.file_ids else None
     try:
-        result = library_service.retry_errored_files(library_id=library_id, file_ids=file_ids)
+        result = library_service.retry_errored_files(library_id=decoded_library_id, file_ids=file_ids)
         return RetryErroredResponse(**result)
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:
-        logger.exception(f"[Web API] Error retrying errored files for library {library_id}")
+        logger.exception(f"[Web API] Error retrying errored files for library {decoded_library_id}")
         raise HTTPException(
             status_code=500,
             detail=sanitize_exception_message(e, "Failed to retry errored files"),

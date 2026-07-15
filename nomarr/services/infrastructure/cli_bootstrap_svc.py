@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 def get_database() -> Database:
     """Get Database instance for CLI operations.
 
-    Connects to ArangoDB using ARANGO_HOST environment variable.
+    Connects to PostgreSQL using PG_DATABASE_URL environment variable.
 
     Returns:
         Database instance

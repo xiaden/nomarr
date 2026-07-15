@@ -14,7 +14,6 @@ from nomarr.components.workers.worker_discovery_comp import (
     release_claims_for_worker,
 )
 from nomarr.persistence.exceptions import DuplicateKeyError
-from nomarr.persistence.schema import CollectionNames
 
 
 class TestDiscoverNextFile:
@@ -25,11 +24,11 @@ class TestDiscoverNextFile:
         mock_db = MagicMock()
         with patch(
             "nomarr.components.workers.worker_discovery_comp.discover_next_untagged_file",
-            return_value={"_id": f"{CollectionNames.LIBRARY_FILES.value}/abc123"},
+            return_value={"_id": f"{'library_files'}/abc123"},
         ) as mock_discover_next:
             result = discover_next_file(mock_db)
 
-        assert result == f"{CollectionNames.LIBRARY_FILES.value}/abc123"
+        assert result == f"{'library_files'}/abc123"
         mock_discover_next.assert_called_once_with(
             mock_db,
             exclude_claimed=True,
@@ -57,12 +56,12 @@ class TestClaimFile:
     @pytest.mark.unit
     def test_returns_true_on_success(self) -> None:
         mock_db = MagicMock()
-        result = claim_file(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc", "worker:tag:0")
+        result = claim_file(mock_db, f"{'library_files'}/abc", "worker:tag:0")
         assert result is True
         mock_db.app.add_claim.assert_called_once()
         inserted = mock_db.app.add_claim.call_args.args[0]
         assert inserted["_key"] == "claim_abc"
-        assert inserted["file_id"] == f"{CollectionNames.LIBRARY_FILES.value}/abc"
+        assert inserted["file_id"] == f"{'library_files'}/abc"
         assert inserted["worker_id"] == "worker:tag:0"
 
     @pytest.mark.unit
@@ -70,7 +69,7 @@ class TestClaimFile:
         mock_db = MagicMock()
         mock_db.app.add_claim.side_effect = self._duplicate_claim_error()
 
-        result = claim_file(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc", "worker:tag:0")
+        result = claim_file(mock_db, f"{'library_files'}/abc", "worker:tag:0")
 
         assert result is False
         mock_db.app.add_claim.assert_called_once()
@@ -79,7 +78,7 @@ class TestClaimFile:
     def test_returns_false_when_already_claimed(self) -> None:
         mock_db = MagicMock()
         mock_db.app.add_claim.side_effect = self._duplicate_claim_error()
-        result = claim_file(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc", "worker:tag:1")
+        result = claim_file(mock_db, f"{'library_files'}/abc", "worker:tag:1")
         assert result is False
         mock_db.app.add_claim.assert_called_once()
 
@@ -94,22 +93,22 @@ class TestCleanupStaleClaims:
             {
                 "_id": "worker_claims/claim1",
                 "worker_id": "worker:stale",
-                "file_id": f"{CollectionNames.LIBRARY_FILES.value}/file1",
+                "file_id": f"{'library_files'}/file1",
             },
             {
                 "_id": "worker_claims/claim2",
                 "worker_id": "worker:active",
-                "file_id": f"{CollectionNames.LIBRARY_FILES.value}/file2",
+                "file_id": f"{'library_files'}/file2",
             },
             {
                 "_id": "worker_claims/claim3",
                 "worker_id": "worker:active",
-                "file_id": f"{CollectionNames.LIBRARY_FILES.value}/file3",
+                "file_id": f"{'library_files'}/file3",
             },
             {
                 "_id": "worker_claims/claim4",
                 "worker_id": "worker:active",
-                "file_id": f"{CollectionNames.LIBRARY_FILES.value}/file4",
+                "file_id": f"{'library_files'}/file4",
                 "claim_type": "reconcile",
             },
         ]
@@ -117,11 +116,11 @@ class TestCleanupStaleClaims:
             {"component_id": "worker:active", "last_heartbeat": 9001},
         ]
         mock_db.library.list_files_by_ids.return_value = [
-            {"_id": f"{CollectionNames.LIBRARY_FILES.value}/file3"},
+            {"_id": f"{'library_files'}/file3"},
         ]
         mock_db.app.list_file_docs_in_state.return_value = [
-            {"_id": f"{CollectionNames.LIBRARY_FILES.value}/file3"},
-            {"_id": f"{CollectionNames.LIBRARY_FILES.value}/unrelated"},
+            {"_id": f"{'library_files'}/file3"},
+            {"_id": f"{'library_files'}/unrelated"},
         ]
         mock_db.app.remove_claims.side_effect = [1, 2]
 
@@ -135,15 +134,15 @@ class TestCleanupStaleClaims:
         mock_db.app.list_claims.assert_called_once_with()
         mock_db.app.list_worker_health.assert_called_once_with()
         mock_db.library.list_files_by_ids.assert_called_once_with(
-            [f"{CollectionNames.LIBRARY_FILES.value}/file2", f"{CollectionNames.LIBRARY_FILES.value}/file3"]
+            [f"{'library_files'}/file2", f"{'library_files'}/file3"]
         )
         mock_db.app.list_file_docs_in_state.assert_called_once_with("file_states/tagged")
         assert mock_db.app.remove_claims.call_args_list == [
             call(worker_ids=["worker:stale"]),
             call(
                 file_ids=[
-                    f"{CollectionNames.LIBRARY_FILES.value}/file2",
-                    f"{CollectionNames.LIBRARY_FILES.value}/file3",
+                    f"{'library_files'}/file2",
+                    f"{'library_files'}/file3",
                 ]
             ),
         ]
@@ -173,20 +172,20 @@ class TestReleaseClaimsForWorker:
             {
                 "_id": "worker_claims/claim1",
                 "worker_id": "worker:tag:0",
-                "file_id": f"{CollectionNames.LIBRARY_FILES.value}/file1",
+                "file_id": f"{'library_files'}/file1",
             },
             {
                 "_id": "worker_claims/claim2",
                 "worker_id": "worker:tag:0",
-                "file_id": f"{CollectionNames.LIBRARY_FILES.value}/file2",
+                "file_id": f"{'library_files'}/file2",
             },
         ]
 
         result = release_claims_for_worker(mock_db, "worker:tag:0")
 
         assert result == [
-            f"{CollectionNames.LIBRARY_FILES.value}/file1",
-            f"{CollectionNames.LIBRARY_FILES.value}/file2",
+            f"{'library_files'}/file1",
+            f"{'library_files'}/file2",
         ]
         mock_db.app.list_claims.assert_called_once_with()
         mock_db.app.remove_claims.assert_called_once_with(worker_ids=["worker:tag:0"])

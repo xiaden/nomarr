@@ -53,6 +53,7 @@ class ONNXModelCache:
         backbones: Backbone models keyed by backbone name (e.g. ``"effnet"``).
         heads: Head models keyed by backbone name; each value is a list of all
             head types for that backbone.
+
     """
 
     backbones: dict[str, ONNXBackboneModel]
@@ -77,6 +78,7 @@ class ONNXModelCache:
             device: Default execution device (``"cpu"`` or ``"gpu"``).
             db: Optional database handle; when provided, head labels and
                 release dates are sourced from the database.
+
         """
         self._models_dir = models_dir
         self._device: DevicePlacement = device

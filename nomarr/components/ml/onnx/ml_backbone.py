@@ -42,6 +42,7 @@ def _backbone_name_from_path(path: str) -> str:
 
     Raises:
         ValueError: If no ``embeddings``/``embedding`` segment is found.
+
     """
     parts = Path(path).parts
     for i, part in enumerate(parts):
@@ -78,6 +79,7 @@ class ONNXBackboneModel(BaseONNXModel):
 
         Args:
             path: Absolute path to the backbone ``.onnx`` file.
+
         """
         super().__init__(path)
         self.backbone_name = _backbone_name_from_path(path)
@@ -100,6 +102,7 @@ class ONNXBackboneModel(BaseONNXModel):
         Raises:
             RuntimeError: If the model has not been loaded or the waveform is
                 too short to produce any patches.
+
         """
         if self._session is None:
             msg = "ONNXBackboneModel is not loaded — call load() first"

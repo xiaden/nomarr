@@ -19,6 +19,7 @@ class ParsedPlaylistUrl:
         playlist_id: The extracted playlist ID
         original_url: The original URL that was parsed
         is_short_link: True if this is a short link requiring resolution
+
     """
 
     platform: Literal["spotify", "deezer"]
@@ -61,6 +62,7 @@ def parse_playlist_url(url: str) -> ParsedPlaylistUrl:
 
         >>> parse_playlist_url("https://link.deezer.com/s/32pxbZMVkKIxZyRZwEBEN")
         ParsedPlaylistUrl(platform='deezer', playlist_id='', is_short_link=True, ...)
+
     """
     url = url.strip()
 

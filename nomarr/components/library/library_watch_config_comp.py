@@ -16,7 +16,6 @@ def list_watchable_libraries(db: Database) -> list[dict[str, Any]]:
 
     Projects to ``{"_id", "root_path", "watch_mode"}``.
     """
-
     libraries = list_watchable_library_records(db)
     return [_project_watchable_library(library) for library in libraries]
 
@@ -40,7 +39,7 @@ def get_library_watch_config(db: Database, library_id: str) -> dict[str, Any] | 
 def _project_watchable_library(library: LibraryDict) -> dict[str, Any]:
     """Project a LibraryDict to the watcher list contract."""
     return {
-        "_id": library._id,
+        "id": library.id,
         "root_path": library.root_path,
         "watch_mode": library.watch_mode,
     }

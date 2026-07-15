@@ -62,9 +62,9 @@ def convert_playlist_workflow(
     5. Generate M3U content with matched paths
 
     Args:
-        db: ArangoDB database connection
+        db: PostgreSQL database connection
         playlist_url: Spotify or Deezer playlist URL
-        library_id: Optional library _id to restrict matching scope
+        library_id: Optional library ID to restrict matching scope
         spotify_client_id: Spotify API client ID (required for Spotify playlists)
         spotify_client_secret: Spotify API client secret (required for Spotify playlists)
 
@@ -73,6 +73,7 @@ def convert_playlist_workflow(
 
     Raises:
         PlaylistConversionError: If conversion fails at any stage
+
     """
     # Step 1: Parse URL
     try:
@@ -143,6 +144,7 @@ def _fetch_playlist(
 
     Raises:
         PlaylistConversionError: If fetching fails
+
     """
     if parsed_url.platform == "deezer":
         return _fetch_deezer(parsed_url)
@@ -202,6 +204,7 @@ def _generate_m3u(
 
     Returns:
         M3U file content as string
+
     """
     lines = [
         "#EXTM3U",

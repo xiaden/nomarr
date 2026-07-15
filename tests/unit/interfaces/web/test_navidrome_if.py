@@ -12,7 +12,6 @@ from nomarr.helpers.exceptions import MisconfiguredError
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
 from nomarr.interfaces.api.web.navidrome_if import router as navidrome_router
-from nomarr.persistence.schema import CollectionNames
 
 
 @pytest.mark.unit
@@ -35,7 +34,7 @@ class TestNavidromePushPlaylistEndpoint:
 
     def test_push_playlist_returns_descriptors(self, client: TestClient, mock_navidrome_service: MagicMock) -> None:
         mock_navidrome_service.resolve_files_to_descriptors.return_value = {
-            f"{CollectionNames.LIBRARY_FILES.value}/f1": {
+            f"{'library_files'}/f1": {
                 "title": "Song A",
                 "artist": "Artist A",
                 "album": "Album A",
@@ -46,7 +45,7 @@ class TestNavidromePushPlaylistEndpoint:
                 "year": 2020,
                 "nomarr_file_key": "f1",
             },
-            f"{CollectionNames.LIBRARY_FILES.value}/f2": {
+            f"{'library_files'}/f2": {
                 "title": "Song B",
                 "artist": "Artist B",
                 "album": "Album B",
@@ -62,7 +61,7 @@ class TestNavidromePushPlaylistEndpoint:
         response = client.post(
             "/api/web/navidrome/playlist/push",
             json={
-                "file_ids": [f"{CollectionNames.LIBRARY_FILES.value}:f1", f"{CollectionNames.LIBRARY_FILES.value}:f2"],
+                "file_ids": [f"{'library_files'}:f1", f"{'library_files'}:f2"],
                 "playlist_name": "Test Playlist",
             },
         )
@@ -82,7 +81,7 @@ class TestNavidromePushPlaylistEndpoint:
 
         response = client.post(
             "/api/web/navidrome/playlist/push",
-            json={"file_ids": [f"{CollectionNames.LIBRARY_FILES.value}:f1"], "playlist_name": "Test"},
+            json={"file_ids": [f"{'library_files'}:f1"], "playlist_name": "Test"},
         )
 
         assert response.status_code == 200
@@ -106,12 +105,12 @@ class TestNavidromeGeneratePersonalPlaylistsEndpoint:
                 NavidromePersonalPlaylistEntry(
                     playlist_type="top_tracks",
                     playlist_name="Your Top Tracks",
-                    file_ids=[f"{CollectionNames.LIBRARY_FILES.value}/f1"],
+                    file_ids=[f"{'library_files'}/f1"],
                 )
             ],
         )
         mock_navidrome_service.resolve_files_to_descriptors.return_value = {
-            f"{CollectionNames.LIBRARY_FILES.value}/f1": {
+            f"{'library_files'}/f1": {
                 "title": "Top Track",
                 "artist": "Some Artist",
                 "album": "Some Album",
@@ -126,7 +125,7 @@ class TestNavidromeGeneratePersonalPlaylistsEndpoint:
 
         response = client.post(
             "/api/web/navidrome/generate-personal-playlists",
-            json={"top_plays": [{"file_id": f"{CollectionNames.LIBRARY_FILES.value}/f1", "playcount": 5}]},
+            json={"top_plays": [{"file_id": f"{'library_files'}/f1", "playcount": 5}]},
         )
 
         assert response.status_code == 200
@@ -146,7 +145,7 @@ class TestNavidromeGeneratePersonalPlaylistsEndpoint:
 
         response = client.post(
             "/api/web/navidrome/generate-personal-playlists",
-            json={"top_plays": [{"file_id": f"{CollectionNames.LIBRARY_FILES.value}/f1", "playcount": 1}]},
+            json={"top_plays": [{"file_id": f"{'library_files'}/f1", "playcount": 1}]},
         )
 
         assert response.status_code == 422
@@ -160,7 +159,7 @@ class TestNavidromeGeneratePersonalPlaylistsEndpoint:
 
         response = client.post(
             "/api/web/navidrome/generate-personal-playlists",
-            json={"top_plays": [{"file_id": f"{CollectionNames.LIBRARY_FILES.value}/f1", "playcount": 1}]},
+            json={"top_plays": [{"file_id": f"{'library_files'}/f1", "playcount": 1}]},
         )
 
         assert response.status_code == 200

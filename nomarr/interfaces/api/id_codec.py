@@ -1,10 +1,7 @@
-"""HTTP-safe encoding/decoding for ArangoDB _id values.
+"""HTTP-safe encoding/decoding for database primary key IDs.
 
-ArangoDB _id format: "collection/key" (e.g., "libraries/12345")
-Encoded format: "collection:key" (e.g., "libraries:12345")
-
-This encoding exists ONLY to make IDs URL-safe for FastAPI path parameters.
-The colon is used because it's URL-safe and visually similar to a separator.
+PostgreSQL uses integer primary keys which are natively URL-safe, so
+encoding is a pass-through that ensures integer type.
 
 Usage:
 - Interfaces decode incoming IDs immediately after parsing.
@@ -14,8 +11,8 @@ Usage:
 Architecture:
 - EncodedId: Pydantic-compatible type for automatic decoding in request models
 - DecodedPathId: FastAPI Path parameter with automatic decoding
-- encode_id(): For encoding single IDs in responses
-- encode_ids(): For recursively encoding all _id/id fields in response data
+- encode_id(): For encoding single IDs in responses (pass-through for integers)
+- encode_ids(): For recursively encoding all id fields in response data (pass-through)
 """
 
 from typing import Annotated, Any
@@ -28,94 +25,91 @@ class InvalidIdFormatError(ValueError):
     """Raised when an ID has an invalid format for encoding/decoding."""
 
 
-def encode_id(arango_id: str) -> str:
-    """Encode an ArangoDB _id for HTTP transport.
+def encode_id(id_value: int | str) -> int:
+    """Encode a database primary key for HTTP transport.
 
-    Converts "collection/key" to "collection:key".
-
-    Args:
-        arango_id: Real ArangoDB _id (e.g., "libraries/12345")
-
-    Returns:
-        URL-safe encoded ID (e.g., "libraries:12345")
-
-    Raises:
-        InvalidIdFormatError: If ID contains ":" or doesn't contain "/"
-
-    """
-    if ":" in arango_id:
-        msg = f"Cannot encode ID containing ':': {arango_id}"
-        raise InvalidIdFormatError(msg)
-    if "/" not in arango_id:
-        msg = f"Invalid ArangoDB _id format (missing '/'): {arango_id}"
-        raise InvalidIdFormatError(msg)
-
-    return arango_id.replace("/", ":")
-
-
-def decode_id(encoded_id: str) -> str:
-    """Decode an HTTP-encoded ID back to ArangoDB _id format.
-
-    Converts "collection:key" to "collection/key".
+    PostgreSQL integer IDs are natively URL-safe, so this is a pass-through
+    that ensures the result is an integer.
 
     Args:
-        encoded_id: URL-safe encoded ID (e.g., "libraries:12345")
+        id_value: Primary key value (integer or string representation)
 
     Returns:
-        Real ArangoDB _id (e.g., "libraries/12345")
+        Integer primary key
 
     Raises:
-        InvalidIdFormatError: If ID contains "/" or doesn't contain ":"
+        InvalidIdFormatError: If value cannot be converted to int
 
     """
-    if "/" in encoded_id:
-        msg = f"Cannot decode ID containing '/': {encoded_id}"
-        raise InvalidIdFormatError(msg)
-    if ":" not in encoded_id:
-        msg = f"Invalid encoded ID format (missing ':'): {encoded_id}"
-        raise InvalidIdFormatError(msg)
+    if isinstance(id_value, int):
+        return id_value
+    try:
+        return int(id_value)
+    except (ValueError, TypeError):
+        msg = f"Invalid ID format (not an integer): {id_value}"
+        raise InvalidIdFormatError(msg) from None
 
-    return encoded_id.replace(":", "/")
+
+def decode_id(id_value: int | str) -> int:
+    """Decode an HTTP-provided ID to a database primary key.
+
+    PostgreSQL integer IDs are natively URL-safe, so this is a pass-through
+    that ensures the result is an integer.
+
+    Args:
+        id_value: ID from HTTP request (integer or string representation)
+
+    Returns:
+        Integer primary key
+
+    Raises:
+        InvalidIdFormatError: If value cannot be converted to int
+
+    """
+    if isinstance(id_value, int):
+        return id_value
+    try:
+        return int(id_value)
+    except (ValueError, TypeError):
+        msg = f"Invalid ID format (not an integer): {id_value}"
+        raise InvalidIdFormatError(msg) from None
 
 
-def _validate_and_decode_id(value: str) -> str:
-    """Pydantic validator that decodes an encoded ID.
+def _validate_and_decode_id(value: Any) -> int:
+    """Pydantic validator that decodes an ID to an integer.
 
     Used with Annotated to create the EncodedId type.
     """
-    if not isinstance(value, str):
-        msg = f"ID must be a string, got {type(value).__name__}"
-        raise ValueError(msg)
     return decode_id(value)
 
 
 # Pydantic-compatible type for request body models.
-# Automatically decodes "collection:key" to "collection/key" during validation.
-EncodedId = Annotated[str, BeforeValidator(_validate_and_decode_id)]
+# Automatically converts to integer during validation.
+EncodedId = Annotated[int, BeforeValidator(_validate_and_decode_id)]
 
 
-def decode_path_id(encoded_id: str) -> str:
+def decode_path_id(path_id: str | int) -> int:
     """Decode a path parameter ID, raising HTTPException on invalid format.
 
     Use this at the start of route handlers for path parameters:
 
         @router.get("/{library_id}")
-        async def get_library(library_id: str):
+        async def get_library(library_id: int):
             library_id = decode_path_id(library_id)
             ...
 
     Args:
-        encoded_id: Encoded ID from path parameter (e.g., "libraries:123")
+        path_id: ID from path parameter
 
     Returns:
-        Decoded ArangoDB _id (e.g., "libraries/123")
+        Integer primary key
 
     Raises:
         HTTPException: 400 if ID format is invalid
 
     """
     try:
-        return decode_id(encoded_id)
+        return decode_id(path_id)
     except InvalidIdFormatError:
         raise HTTPException(status_code=400, detail="Invalid ID format") from None
 
@@ -125,20 +119,20 @@ _ID_FIELD_NAMES = frozenset({"_id", "id", "library_id", "file_id", "job_id", "ta
 
 
 def encode_ids(data: Any) -> Any:
-    """Recursively encode all ID fields in response data.
+    """Recursively process all ID fields in response data.
 
-    Walks through dicts, lists, and Pydantic models to find and encode
-    fields that look like ArangoDB _ids.
+    Walks through dicts, lists, and Pydantic models.  Integer ID values
+    pass through unchanged (PostgreSQL IDs are natively URL-safe).
 
     Args:
         data: Response data (dict, list, Pydantic model, or primitive)
 
     Returns:
-        Data with all ID fields encoded for HTTP transport
+        Data with all ID fields as integers
 
     Note:
-        Only encodes string values containing "/" (valid ArangoDB _ids).
-        Silently skips values that don't match the expected format.
+        String values in ID fields are converted to int when possible.
+        Silently skips values that cannot be converted.
 
     """
     if data is None:
@@ -149,11 +143,13 @@ def encode_ids(data: Any) -> Any:
         data = data.model_dump()
 
     if isinstance(data, dict):
-        result = {}
+        result: dict[str, Any] = {}
         for key, value in data.items():
-            if key in _ID_FIELD_NAMES and isinstance(value, str) and "/" in value and ":" not in value:
-                # This looks like an ArangoDB _id, encode it
-                result[key] = encode_id(value)
+            if key in _ID_FIELD_NAMES and isinstance(value, str):
+                try:
+                    result[key] = int(value)
+                except (ValueError, TypeError):
+                    result[key] = value
             elif isinstance(value, list | dict):
                 # Recurse into nested structures
                 result[key] = encode_ids(value)

@@ -36,6 +36,7 @@ def register_worker_context(db: Any, worker_id: str) -> None:
     Args:
         db:        Application database handle for this worker process.
         worker_id: Stable worker identifier (e.g. ``"nomarr-tag:0"``).
+
     """
     global _worker_db, _worker_id
     _worker_db = db

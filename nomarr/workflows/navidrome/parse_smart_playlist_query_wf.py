@@ -85,6 +85,7 @@ def _tokenize_parentheses(query: str, max_depth: int = MAX_RULE_GROUP_DEPTH) -> 
 
         >>> _tokenize_parentheses("((a))")
         ("a", [(2, 3, 2)])
+
     """
     depth = 0
     max_seen_depth = 0

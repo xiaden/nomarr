@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from packaging.version import InvalidVersion, Version
 
 from nomarr.__version__ import __version__
-from nomarr.helpers.time_helper import format_wall_timestamp, internal_ms, now_ms
+from nomarr.helpers.time_helper import internal_ms
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -166,7 +166,7 @@ def get_pending_migrations(
     return pending
 
 
-def apply_migration(name: str, module: ModuleType, db: Database) -> None:
+async def apply_migration(name: str, module: ModuleType, db: Database) -> None:
     """Apply a single migration with two-phase recording.
 
     Records the migration as 'in_progress' BEFORE running upgrade(), then
@@ -177,9 +177,14 @@ def apply_migration(name: str, module: ModuleType, db: Database) -> None:
     the next startup — safe for idempotent migrations that filter already-
     processed data.
 
+    Note: Legacy migrations (V*.py files) have been phased out in
+    favor of Alembic-based PostgreSQL migrations. This function now serves
+    as a compatibility layer that tracks migration state without executing
+    the legacy upgrade() functions.
+
     Args:
         name: Migration identifier (filename stem).
-        module: Migration module with upgrade() function.
+        module: Migration module with upgrade() function (legacy, not executed).
         db: Database wrapper (provides .migrations and .set_version).
 
     Raises:
@@ -187,47 +192,41 @@ def apply_migration(name: str, module: ModuleType, db: Database) -> None:
 
     """
     logger.info(
-        "Applying migration %s: %s (version %s)",
+        "Tracking migration %s: %s (version %s)",
         name,
         module.DESCRIPTION,
         module.MIGRATION_VERSION,
     )
 
-    started_at = format_wall_timestamp(now_ms(), fmt="%Y-%m-%dT%H:%M:%SZ")
-    db.migrations.record_migration_started(
-        name=name,
-        migration_version=module.MIGRATION_VERSION,
-        started_at=started_at,
+    await db.migrations.record_migration_started(
+        migration_id=name,
+        filename=f"{name}.py",
     )
 
     start_time = internal_ms()
-    try:
-        module.upgrade(db.db)
-    except Exception as exc:
-        msg = f"Migration {name} (version {module.MIGRATION_VERSION}) failed: {exc}"
-        raise MigrationError(msg) from exc
-
-    duration_ms = internal_ms().value - start_time.value
-    applied_at = format_wall_timestamp(now_ms(), fmt="%Y-%m-%dT%H:%M:%SZ")
-
-    db.migrations.mark_migration_applied(
-        name=name,
-        duration_ms=duration_ms,
-        applied_at=applied_at,
+    # Legacy migrations are no longer executed.
+    # PostgreSQL schema migrations are handled by Alembic.
+    logger.debug(
+        "Migration %s: legacy upgrade() skipped (Alembic handles PG migrations)",
+        name,
     )
 
+    duration_ms = internal_ms().value - start_time.value
+
+    await db.migrations.mark_migration_applied(migration_id=name)
+
     # Write the new version only after the migration is fully recorded
-    db.set_version(module.MIGRATION_VERSION)
+    await db.set_version(module.MIGRATION_VERSION)
 
     logger.info(
-        "Migration %s (version %s) completed in %dms",
+        "Migration %s (version %s) tracked in %dms",
         name,
         module.MIGRATION_VERSION,
         duration_ms,
     )
 
 
-def run_pending_migrations(db: Database) -> None:
+async def run_pending_migrations(db: Database) -> None:
     """Discover and apply all pending migrations, then verify version compatibility.
 
     This is the unified public entry point for the migration subsystem.
@@ -239,6 +238,9 @@ def run_pending_migrations(db: Database) -> None:
         5. Apply each pending migration in semver order.
         6. After all applied, verify DB version is not ahead of the running code.
 
+    Note: Legacy migrations (V*.py files) have been phased out.
+    PostgreSQL schema migrations are now handled by Alembic.
+
     Args:
         db: Database wrapper used for version reads/writes and migration recording.
 
@@ -248,7 +250,7 @@ def run_pending_migrations(db: Database) -> None:
             exceeds the running application version.
 
     """
-    current = db.get_version()
+    current = await db.get_version()
     logger.debug("Current database version: %s", current or "<none>")
 
     migrations = discover_migrations()
@@ -256,10 +258,10 @@ def run_pending_migrations(db: Database) -> None:
 
     pending = get_pending_migrations(migrations, current)
     for name, module in pending:
-        apply_migration(name, module, db)
+        await apply_migration(name, module, db)
 
     # After applying all migrations, guard against DB being ahead of the code
-    final_version = db.get_version()
+    final_version = await db.get_version()
     if final_version is not None and Version(final_version) > Version(__version__):
         msg = (
             f"Database schema version ({final_version}) is newer than "

@@ -28,9 +28,7 @@ import pytest
 # Get project root
 PROJECT_ROOT = Path(__file__).parent.parent
 NOMARR_DIR = PROJECT_ROOT / "nomarr"
-PERSISTENCE_TIER_BOOTSTRAP_ALLOWLIST = {
-    NOMARR_DIR / "components" / "platform" / "arango_bootstrap_comp.py",
-}
+PERSISTENCE_TIER_BOOTSTRAP_ALLOWLIST: set[Path] = set()
 
 
 def find_python_files(directory: Path, exclude_dirs: set[str] | None = None) -> Generator[Path, None, None]:
@@ -398,20 +396,7 @@ def test_no_raw_aql_outside_persistence_and_migrations():
     Note: This is a code smell test, not a functional test.
     Marked with @pytest.mark.code_smell to skip in CI.
     """
-    allowed_component_aql_files = {
-        Path("nomarr/components/analytics/mood_analysis_comp.py"),
-        Path("nomarr/components/library/library_file_mutation_comp.py"),
-        Path("nomarr/components/library/library_file_query_comp.py"),
-        Path("nomarr/components/library/library_file_state_comp.py"),
-        Path("nomarr/components/library/library_records_comp.py"),
-        Path("nomarr/components/ml/calibration/ml_calibration_comp.py"),
-        Path("nomarr/components/tagging/tag_cleanup_comp.py"),
-        Path("nomarr/components/tagging/tag_query_comp.py"),
-        Path("nomarr/components/tagging/tag_stats_comp.py"),
-        Path("nomarr/components/tagging/tag_write_comp.py"),
-        Path("nomarr/components/ml/vectors/ml_vector_maintenance_comp.py"),
-        Path("nomarr/components/ml/vectors/ml_vector_registry_comp.py"),
-    }
+    allowed_component_aql_files: set[Path] = set()
     violations = []
 
     for py_file in find_python_files(NOMARR_DIR, exclude_dirs={"__pycache__", ".pytest_cache"}):
@@ -524,8 +509,6 @@ def test_higher_layers_do_not_import_persistence_tier1_or_tier2_internals():
 
 @pytest.mark.code_smell
 @pytest.mark.slow
-def test_persistence_tier_bootstrap_allowlist_stays_single_file() -> None:
-    """Keep the lower-tier bootstrap exception narrow and explicit."""
-    assert {
-        NOMARR_DIR / "components" / "platform" / "arango_bootstrap_comp.py",
-    } == PERSISTENCE_TIER_BOOTSTRAP_ALLOWLIST
+def test_persistence_tier_bootstrap_allowlist_stays_empty() -> None:
+    """Ensure no lower-tier bootstrap exceptions are reintroduced."""
+    assert set() == PERSISTENCE_TIER_BOOTSTRAP_ALLOWLIST

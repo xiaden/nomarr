@@ -16,6 +16,7 @@ Short name pattern:
 Examples:
     nom:happy_yamnet_mood_happy → nom-happy-raw
     nom:mood-strict → nom-mood-strict (already short, pass through)
+
 """
 
 from __future__ import annotations

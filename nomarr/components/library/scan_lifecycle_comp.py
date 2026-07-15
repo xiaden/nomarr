@@ -61,7 +61,7 @@ def is_library_scanning(db: Database, library_id: str) -> bool:
     return pipeline_state.get(SCAN_STATE_FIELD) == SCAN_IN_PROGRESS
 
 
-def resolve_library_for_scan(db: Database, library_id: str) -> LibraryDict:
+async def resolve_library_for_scan(db: Database, library_id: str) -> LibraryDict:
     """Fetch a library document, raising if not found.
 
     Args:
@@ -75,7 +75,7 @@ def resolve_library_for_scan(db: Database, library_id: str) -> LibraryDict:
         LibraryNotFoundError: If library not found
 
     """
-    library = db.libraries.get_library(library_id)
+    library = await db.library.get_library(library_id)
     if not library:
         msg = f"Library {library_id} not found"
         raise LibraryNotFoundError(msg)
@@ -94,13 +94,13 @@ def check_interrupted_scan(db: Database, library_id: str) -> tuple[bool, str | N
         or ``"full"`` when interrupted, ``None`` otherwise.
 
     """
-    scan = db.app.get_scan(library_id)
+    scan = db.library.get_scan(library_id)
     if scan and scan.get("status") == "in_progress":
         return (True, scan.get("scan_type"))
     return (False, None)
 
 
-def get_scanning_library_ids(db: Database) -> list[LibraryDict]:
+async def get_scanning_library_ids(db: Database) -> list[LibraryDict]:
     """Return the set of library domain objects currently in scanning state.
 
     Args:
@@ -113,7 +113,7 @@ def get_scanning_library_ids(db: Database) -> list[LibraryDict]:
     raw_ids = get_libraries_in_axis_state(db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
     seen: dict[str, LibraryDict] = {}
     for library_id in raw_ids:
-        library = db.libraries.get_library(library_id)
+        library = await db.library.get_library(library_id)
         if library and library_id not in seen:
             seen[library_id] = LibraryDict(**library)
     return list(seen.values())
@@ -154,7 +154,7 @@ def get_library_scan_histories(
 
     return [
         {
-            "library_id": lib._id,
+            "library_id": lib.id,
             "name": lib.name or "Unknown",
             "scanned_at": lib.scanned_at,
             "scan_status": lib.scan_status,
@@ -177,7 +177,7 @@ def mark_scan_started(db: Database, library_id: str, scan_type: str) -> None:
         scan_type: ``"quick"`` or ``"full"``
 
     """
-    db.app.add_scan(
+    db.library.add_scan(
         library_id,
         {
             "scan_type": scan_type,
@@ -195,7 +195,7 @@ def mark_scan_completed(db: Database, library_id: str) -> None:
         library_id: Library document ``_id``
 
     """
-    db.app.update_scan(
+    db.library.update_scan(
         library_id,
         {
             "status": "completed",
@@ -236,7 +236,7 @@ def update_scan_progress(
     if scan_error is not None:
         payload["scan_error"] = scan_error
     if payload:
-        db.app.update_scan(library_id, payload)
+        db.library.update_scan(library_id, payload)
 
 
 def is_scan_stale(db: Database, library_id: str, timeout_ms: int = 300_000) -> bool:
@@ -257,7 +257,7 @@ def is_scan_stale(db: Database, library_id: str, timeout_ms: int = 300_000) -> b
     if state != SCAN_IN_PROGRESS:
         return False
 
-    scan = db.app.get_scan(library_id)
+    scan = db.library.get_scan(library_id)
     if not scan:
         return False
 

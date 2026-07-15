@@ -42,16 +42,16 @@ async def scan_library_quick(
     library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> StartScanWithStatusResponse:
     """Start a quick scan for a specific library."""
-    library_id = decode_path_id(library_id)
+    decoded_library_id: int = decode_path_id(library_id)
     try:
-        stats = library_service.start_quick_scan(library_id=library_id)
-        return StartScanWithStatusResponse.from_dto(stats, library_id)
+        stats = library_service.start_quick_scan(library_id=decoded_library_id)
+        return StartScanWithStatusResponse.from_dto(stats, decoded_library_id)
     except LibraryNotFoundError:
         raise HTTPException(status_code=404, detail="Library not found") from None
     except LibraryAlreadyScanningError:
         raise HTTPException(status_code=409, detail="Library is already being scanned") from None
     except Exception as e:
-        logger.exception(f"[Web API] Error starting quick scan for library {library_id}")
+        logger.exception(f"[Web API] Error starting quick scan for library {decoded_library_id}")
         raise HTTPException(
             status_code=500,
             detail=sanitize_exception_message(e, "Failed to start library scan"),
@@ -64,16 +64,16 @@ async def scan_library_full(
     library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> StartScanWithStatusResponse:
     """Start a full scan for a specific library."""
-    library_id = decode_path_id(library_id)
+    decoded_library_id: int = decode_path_id(library_id)
     try:
-        stats = library_service.start_full_scan(library_id=library_id)
-        return StartScanWithStatusResponse.from_dto(stats, library_id)
+        stats = library_service.start_full_scan(library_id=decoded_library_id)
+        return StartScanWithStatusResponse.from_dto(stats, decoded_library_id)
     except LibraryNotFoundError:
         raise HTTPException(status_code=404, detail="Library not found") from None
     except LibraryAlreadyScanningError:
         raise HTTPException(status_code=409, detail="Library is already being scanned") from None
     except Exception as e:
-        logger.exception(f"[Web API] Error starting full scan for library {library_id}")
+        logger.exception(f"[Web API] Error starting full scan for library {decoded_library_id}")
         raise HTTPException(
             status_code=500,
             detail=sanitize_exception_message(e, "Failed to start library scan"),
@@ -86,16 +86,16 @@ async def repair_library_tags(
     library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> StartScanWithStatusResponse:
     """Mark all files for tag re-hydration and start a full scan."""
-    library_id = decode_path_id(library_id)
+    decoded_library_id: int = decode_path_id(library_id)
     try:
-        stats = library_service.repair_library_tags(library_id=library_id)
-        return StartScanWithStatusResponse.from_dto(stats, library_id)
+        stats = library_service.repair_library_tags(library_id=decoded_library_id)
+        return StartScanWithStatusResponse.from_dto(stats, decoded_library_id)
     except LibraryNotFoundError:
         raise HTTPException(status_code=404, detail="Library not found") from None
     except LibraryAlreadyScanningError:
         raise HTTPException(status_code=409, detail="Library is already being scanned") from None
     except Exception as e:
-        logger.exception(f"[Web API] Error repairing tags for library {library_id}")
+        logger.exception(f"[Web API] Error repairing tags for library {decoded_library_id}")
         raise HTTPException(
             status_code=500,
             detail=sanitize_exception_message(e, "Failed to repair library tags"),
@@ -113,11 +113,11 @@ async def reconcile_library_paths(
     batch_size: Annotated[int, Query(description="Number of files to process per batch", ge=1, le=10000)] = 1000,
 ) -> ReconcilePathsResponse:
     """Reconcile library paths after configuration changes."""
-    library_id = decode_path_id(library_id)
+    decoded_library_id: int = decode_path_id(library_id)
     try:
         stats = await asyncio.to_thread(
             library_service.reconcile_library_paths,
-            library_id,
+            decoded_library_id,
             policy=policy,
             batch_size=batch_size,
         )
@@ -128,7 +128,7 @@ async def reconcile_library_paths(
             raise HTTPException(status_code=400, detail="Invalid reconciliation policy") from None
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:
-        logger.exception(f"[Web API] Error reconciling paths for library {library_id}")
+        logger.exception(f"[Web API] Error reconciling paths for library {decoded_library_id}")
         raise HTTPException(
             status_code=500,
             detail=sanitize_exception_message(e, "Failed to reconcile library paths"),
@@ -142,7 +142,7 @@ async def write_library_tags(
     navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> StartTagWriteResponse:
     """Write pending file tags for a library."""
-    library_id = decode_path_id(library_id)
+    decoded_library_id: int = decode_path_id(library_id)
     try:
         stop_event = threading.Event()
 
@@ -150,7 +150,7 @@ async def write_library_tags(
             navidrome_service.trigger_rescan()
 
         task_id = tagging_service.start_write_tags_background(
-            library_id,
+            decoded_library_id,
             stop_event=stop_event,
             on_complete=trigger_navidrome_rescan,
         )
@@ -158,7 +158,7 @@ async def write_library_tags(
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:
-        logger.exception(f"[Web API] Error writing tags for library {library_id}")
+        logger.exception(f"[Web API] Error writing tags for library {decoded_library_id}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to write tags")) from e
 
 
@@ -168,16 +168,16 @@ async def get_library_pipeline_status(
     pipeline_service: Annotated[LibraryPipelineService, Depends(get_pipeline_service)],
 ) -> PipelineStatusResponse:
     """Get the current pipeline status for a single library."""
-    library_id = decode_path_id(library_id)
+    decoded_library_id: int = decode_path_id(library_id)
     try:
-        status = pipeline_service.get_pipeline_status(library_id)
+        status = pipeline_service.get_pipeline_status(decoded_library_id)
         if status is None:
             raise HTTPException(status_code=404, detail="Library not found")
         return PipelineStatusResponse.from_dto(status)
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"[Web API] Error getting pipeline status for library {library_id}")
+        logger.exception(f"[Web API] Error getting pipeline status for library {decoded_library_id}")
         raise HTTPException(
             status_code=500,
             detail=sanitize_exception_message(e, "Failed to get pipeline status"),
@@ -192,13 +192,13 @@ async def update_write_mode(
     tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
 ) -> UpdateWriteModeResponse:
     """Update the file write mode for a library."""
-    library_id = decode_path_id(library_id)
+    decoded_library_id: int = decode_path_id(library_id)
     if file_write_mode not in ("none", "minimal", "full"):
         raise HTTPException(status_code=400, detail="file_write_mode must be 'none', 'minimal', or 'full'")
     try:
-        library_service.update_library(library_id, file_write_mode=file_write_mode)
-        tagging_service.mark_tags_not_fresh(library_id)
-        status = tagging_service.get_reconcile_status(library_id=library_id)
+        library_service.update_library(decoded_library_id, file_write_mode=file_write_mode)
+        tagging_service.mark_tags_not_fresh(decoded_library_id)
+        status = tagging_service.get_reconcile_status(library_id=decoded_library_id)
         return UpdateWriteModeResponse(
             file_write_mode=file_write_mode,
             requires_reconciliation=status["pending_count"] > 0,
@@ -207,7 +207,7 @@ async def update_write_mode(
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:
-        logger.exception(f"[Web API] Error updating write mode for library {library_id}")
+        logger.exception(f"[Web API] Error updating write mode for library {decoded_library_id}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to update write mode")) from e
 
 
@@ -218,12 +218,12 @@ async def validate_library_tags(
     auto_repair: Annotated[bool, Query(description="Auto-repair incomplete files by marking for re-tagging")] = True,
 ) -> ValidateLibraryTagsResponse:
     """Validate tag completeness for a library's files."""
-    library_id = decode_path_id(library_id)
+    decoded_library_id: int = decode_path_id(library_id)
     try:
-        result = library_service.validate_library_tags(library_id=library_id, auto_repair=auto_repair)
+        result = library_service.validate_library_tags(library_id=decoded_library_id, auto_repair=auto_repair)
         return ValidateLibraryTagsResponse(**result)
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None
     except Exception as e:
-        logger.exception(f"[Web API] Error validating tags for library {library_id}")
+        logger.exception(f"[Web API] Error validating tags for library {decoded_library_id}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to validate tags")) from e

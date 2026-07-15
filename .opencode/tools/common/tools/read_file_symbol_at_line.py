@@ -136,15 +136,18 @@ def read_file_symbol_at_line(file_path: str, line_number: int, workspace_root: P
         symbol_source = read_raw_line_range(str(target_path), context_start, context_end)
 
         import json as _json
+
         return {
-            "output": _json.dumps({
-                "qualified_name": qualified_name,
-                "kind": kind,
-                "start_line": context_start,
-                "end_line": context_end,
-                "source": symbol_source,
-                "file": str(rel_path),
-            }),
+            "output": _json.dumps(
+                {
+                    "qualified_name": qualified_name,
+                    "kind": kind,
+                    "start_line": context_start,
+                    "end_line": context_end,
+                    "source": symbol_source,
+                    "file": str(rel_path),
+                }
+            ),
             "title": "Read File Symbol",
             "metadata": {"file": str(rel_path), "line": line_number},
         }

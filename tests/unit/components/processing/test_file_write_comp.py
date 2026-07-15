@@ -16,7 +16,6 @@ from nomarr.components.processing.file_write_comp import (
     save_mood_tags_batch,
 )
 from nomarr.helpers.dto.tags_dto import Tag, Tags
-from nomarr.persistence.schema import CollectionNames
 
 
 class TestGetFileForWriting:
@@ -26,7 +25,7 @@ class TestGetFileForWriting:
     @pytest.mark.mocked
     def test_normalizes_raw_key_to_prefixed_id(self) -> None:
         mock_db = MagicMock()
-        file_doc = {"_id": f"{CollectionNames.LIBRARY_FILES.value}/abc123"}
+        file_doc = {"_id": f"{'library_files'}/abc123"}
 
         with patch(
             "nomarr.components.processing.file_write_comp.get_file_by_id",
@@ -34,23 +33,23 @@ class TestGetFileForWriting:
         ) as mock_get_file_by_id:
             result = get_file_for_writing(mock_db, "abc123")
 
-        assert result == (f"{CollectionNames.LIBRARY_FILES.value}/abc123", "abc123", file_doc)
-        mock_get_file_by_id.assert_called_once_with(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc123")
+        assert result == (f"{'library_files'}/abc123", "abc123", file_doc)
+        mock_get_file_by_id.assert_called_once_with(mock_db, f"{'library_files'}/abc123")
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_strips_prefix_from_already_prefixed_key(self) -> None:
         mock_db = MagicMock()
-        file_doc = {"_id": f"{CollectionNames.LIBRARY_FILES.value}/abc123"}
+        file_doc = {"_id": f"{'library_files'}/abc123"}
 
         with patch(
             "nomarr.components.processing.file_write_comp.get_file_by_id",
             return_value=file_doc,
         ) as mock_get_file_by_id:
-            result = get_file_for_writing(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc123")
+            result = get_file_for_writing(mock_db, f"{'library_files'}/abc123")
 
-        assert result == (f"{CollectionNames.LIBRARY_FILES.value}/abc123", "abc123", file_doc)
-        mock_get_file_by_id.assert_called_once_with(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc123")
+        assert result == (f"{'library_files'}/abc123", "abc123", file_doc)
+        mock_get_file_by_id.assert_called_once_with(mock_db, f"{'library_files'}/abc123")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -63,8 +62,8 @@ class TestGetFileForWriting:
         ) as mock_get_file_by_id:
             result = get_file_for_writing(mock_db, "missing")
 
-        assert result == (f"{CollectionNames.LIBRARY_FILES.value}/missing", "missing", None)
-        mock_get_file_by_id.assert_called_once_with(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/missing")
+        assert result == (f"{'library_files'}/missing", "missing", None)
+        mock_get_file_by_id.assert_called_once_with(mock_db, f"{'library_files'}/missing")
 
 
 class TestResolveLibraryRoot:
@@ -112,12 +111,10 @@ class TestGetNomarrTags:
             "nomarr.components.processing.file_write_comp.get_song_tags",
             return_value=returned_tags,
         ) as mock_get_song_tags:
-            result = get_nomarr_tags(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc123")
+            result = get_nomarr_tags(mock_db, f"{'library_files'}/abc123")
 
         assert result is returned_tags
-        mock_get_song_tags.assert_called_once_with(
-            mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc123", nomarr_only=True
-        )
+        mock_get_song_tags.assert_called_once_with(mock_db, f"{'library_files'}/abc123", nomarr_only=True)
 
 
 class TestSaveMoodTags:
@@ -130,14 +127,14 @@ class TestSaveMoodTags:
         mood_tags = Tags(items=(Tag(key="mood-strict", value=("happy",)),))
 
         with patch("nomarr.components.processing.file_write_comp.set_song_tags") as mock_set_song_tags:
-            result = save_mood_tags(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc123", mood_tags)
+            result = save_mood_tags(mock_db, f"{'library_files'}/abc123", mood_tags)
 
         assert result == 1
         mock_set_song_tags.assert_has_calls(
             [
-                call(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc123", "nom:mood-strict", ["happy"]),
-                call(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc123", "nom:mood-regular", []),
-                call(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc123", "nom:mood-loose", []),
+                call(mock_db, f"{'library_files'}/abc123", "nom:mood-strict", ["happy"]),
+                call(mock_db, f"{'library_files'}/abc123", "nom:mood-regular", []),
+                call(mock_db, f"{'library_files'}/abc123", "nom:mood-loose", []),
             ]
         )
         assert mock_set_song_tags.call_count == 3
@@ -154,7 +151,7 @@ class TestSaveMoodTags:
         )
 
         with patch("nomarr.components.processing.file_write_comp.set_song_tags"):
-            result = save_mood_tags(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc123", mood_tags)
+            result = save_mood_tags(mock_db, f"{'library_files'}/abc123", mood_tags)
 
         assert result == 2
 
@@ -165,17 +162,11 @@ class TestSaveMoodTags:
         mood_tags = Tags(items=(Tag(key="nom:mood-loose", value=("chill",)),))
 
         with patch("nomarr.components.processing.file_write_comp.set_song_tags") as mock_set_song_tags:
-            save_mood_tags(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc123", mood_tags)
+            save_mood_tags(mock_db, f"{'library_files'}/abc123", mood_tags)
 
-        mock_set_song_tags.assert_any_call(
-            mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc123", "nom:mood-strict", []
-        )
-        mock_set_song_tags.assert_any_call(
-            mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc123", "nom:mood-regular", []
-        )
-        mock_set_song_tags.assert_any_call(
-            mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc123", "nom:mood-loose", ["chill"]
-        )
+        mock_set_song_tags.assert_any_call(mock_db, f"{'library_files'}/abc123", "nom:mood-strict", [])
+        mock_set_song_tags.assert_any_call(mock_db, f"{'library_files'}/abc123", "nom:mood-regular", [])
+        mock_set_song_tags.assert_any_call(mock_db, f"{'library_files'}/abc123", "nom:mood-loose", ["chill"])
 
 
 class TestSaveMoodTagsBatch:
@@ -197,7 +188,7 @@ class TestSaveMoodTagsBatch:
     def test_delegates_to_set_song_tags_batch(self) -> None:
         mock_db = MagicMock()
         mood_tags = Tags(items=(Tag(key="mood-strict", value=("happy",)),))
-        items: list[tuple[str, Tags]] = [(f"{CollectionNames.LIBRARY_FILES.value}/abc123", mood_tags)]
+        items: list[tuple[str, Tags]] = [(f"{'library_files'}/abc123", mood_tags)]
 
         with patch(
             "nomarr.components.processing.file_write_comp.set_song_tags_batch",
@@ -209,12 +200,12 @@ class TestSaveMoodTagsBatch:
             mock_db,
             [
                 {
-                    "song_id": f"{CollectionNames.LIBRARY_FILES.value}/abc123",
+                    "song_id": f"{'library_files'}/abc123",
                     "name": "nom:mood-strict",
                     "values": ("happy",),
                 },
-                {"song_id": f"{CollectionNames.LIBRARY_FILES.value}/abc123", "name": "nom:mood-regular", "values": []},
-                {"song_id": f"{CollectionNames.LIBRARY_FILES.value}/abc123", "name": "nom:mood-loose", "values": []},
+                {"song_id": f"{'library_files'}/abc123", "name": "nom:mood-regular", "values": []},
+                {"song_id": f"{'library_files'}/abc123", "name": "nom:mood-loose", "values": []},
             ],
         )
 

@@ -10,43 +10,23 @@ from importlib import import_module
 from typing import Any
 
 __all__ = [
-    "DB_NAME",
     "GPU_PROBE_INTERVAL_SECONDS",
     "GPU_PROBE_TIMEOUT_SECONDS",
     "NVIDIA_SMI_TIMEOUT_SECONDS",
     "TELEMETRY_CACHE_TTL_MS",
-    "USERNAME",
     "GPUHealthMonitor",
     "ResourceStatus",
     "check_nvidia_gpu_capability",
     "check_resource_headroom",
-    "ensure_schema",
     "get_ram_usage_mb",
-    "get_root_password_from_env",
     "get_vram_usage_for_pid_mb",
     "get_vram_usage_mb",
-    "is_first_run",
     "probe_gpu_availability",
-    "provision_database_and_user",
     "reset_capability_cache",
     "reset_telemetry_cache",
-    "write_db_config",
 ]
 
 _EXPORT_MAP: dict[str, tuple[str, str | None]] = {
-    "ensure_schema": ("nomarr.components.platform.arango_bootstrap_comp", "ensure_schema"),
-    "DB_NAME": ("nomarr.components.platform.arango_first_run_comp", "DB_NAME"),
-    "USERNAME": ("nomarr.components.platform.arango_first_run_comp", "USERNAME"),
-    "get_root_password_from_env": (
-        "nomarr.components.platform.arango_first_run_comp",
-        "get_root_password_from_env",
-    ),
-    "is_first_run": ("nomarr.components.platform.arango_first_run_comp", "is_first_run"),
-    "provision_database_and_user": (
-        "nomarr.components.platform.arango_first_run_comp",
-        "provision_database_and_user",
-    ),
-    "write_db_config": ("nomarr.components.platform.arango_first_run_comp", "write_db_config"),
     "GPU_PROBE_INTERVAL_SECONDS": ("nomarr.components.platform.gpu_monitor_comp", "GPU_PROBE_INTERVAL_SECONDS"),
     "GPU_PROBE_TIMEOUT_SECONDS": ("nomarr.components.platform.gpu_monitor_comp", "GPU_PROBE_TIMEOUT_SECONDS"),
     "GPUHealthMonitor": ("nomarr.components.platform.gpu_monitor_comp", "GPUHealthMonitor"),

@@ -115,6 +115,7 @@ def _probe_single_model(
 
     Returns:
         Peak VRAM delta in bytes, or ``None`` if the model failed to load or run.
+
     """
     _poll_interval_s = 0.05  # 50 ms — nvidia-smi updates ~100 ms, so this oversamples
 
@@ -206,6 +207,7 @@ def probe_all_models(db: Database, models_dir: str) -> None:
     Args:
         db: Database instance (used to write ``meta`` keys).
         models_dir: Root directory containing backbone sub-directories.
+
     """
     backbones = discover_backbone_models(models_dir)
     heads = discover_head_models_no_db(models_dir)
@@ -255,6 +257,7 @@ def has_model_vram_measurements(db: Database) -> bool:
 
     Returns:
         True if at least one ``ml_model_vram:*`` key is present.
+
     """
     docs = cast("list[dict[str, Any]]", db.app.list_config_options(prefix=_META_PREFIX))
     return bool(docs)
@@ -265,6 +268,7 @@ def clear_model_vram_measurements(db: Database) -> None:
 
     Args:
         db: Database instance.
+
     """
     existing_docs = cast("list[dict[str, Any]]", db.app.list_config_options(prefix=_META_PREFIX))
     removed = 0
@@ -290,6 +294,7 @@ def _make_probe_waveform() -> np.ndarray:
 
     Returns:
         Float32 array of shape ``(1_440_000,)`` normalised to [-1, 1].
+
     """
     rng = np.random.default_rng(seed=42)  # deterministic for reproducibility
     return rng.uniform(-1.0, 1.0, size=16000 * 90).astype(np.float32)

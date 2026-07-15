@@ -88,6 +88,7 @@ def match_track(
 
     Returns:
         MatchResult with status, confidence, and matched file info
+
     """
     if not library_tracks:
         return MatchResult(
@@ -144,6 +145,7 @@ def _fuzzy_match(
 
     Returns:
         MatchResult - may be fuzzy, ambiguous, or not_found
+
     """
     candidates: list[tuple[float, LibraryTrack]] = []
 
@@ -218,5 +220,6 @@ def match_tracks(
 
     Returns:
         List of MatchResult in same order as input_tracks
+
     """
     return [match_track(track, library_tracks) for track in input_tracks]

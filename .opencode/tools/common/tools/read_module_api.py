@@ -537,9 +537,10 @@ def read_module_api(
         result["constants"] = constants
 
     import json as _json
-    class_count = len(classes) if classes else 0
-    func_count = len(functions) if functions else 0
-    const_count = len(constants) if constants else 0
+
+    len(classes) if classes else 0
+    len(functions) if functions else 0
+    len(constants) if constants else 0
     return {
         "output": _json.dumps(result),
         "title": "Read Module API",

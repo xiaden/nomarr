@@ -12,7 +12,6 @@ from nomarr.helpers.exceptions import MisconfiguredError
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.v1.navidrome_v1_if import router as navidrome_router
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
-from nomarr.persistence.schema import CollectionNames
 
 
 @pytest.fixture
@@ -149,7 +148,7 @@ class TestGeneratePlaylistsEndpoint:
             "/api/v1/navidrome/playlist/generate",
             json={
                 "user_id": "user-1",
-                "top_plays": [{"file_id": f"{CollectionNames.LIBRARY_FILES.value}/t1", "playcount": 5}],
+                "top_plays": [{"file_id": f"{'library_files'}/t1", "playcount": 5}],
             },
         )
 
@@ -176,7 +175,7 @@ class TestGeneratePlaylistsEndpoint:
             "/api/v1/navidrome/playlist/generate",
             json={
                 "user_id": "user-1",
-                "top_plays": [{"file_id": f"{CollectionNames.LIBRARY_FILES.value}/t1", "playcount": 5}],
+                "top_plays": [{"file_id": f"{'library_files'}/t1", "playcount": 5}],
             },
         )
 
@@ -199,12 +198,12 @@ class TestGeneratePlaylistsEndpoint:
                 {
                     "playlist_type": "familiar",
                     "playlist_name": "Familiar Favorites",
-                    "file_ids": [f"{CollectionNames.LIBRARY_FILES.value}/track-1"],
+                    "file_ids": [f"{'library_files'}/track-1"],
                 },
             ],
         )
         mock_navidrome_service.resolve_files_to_descriptors.return_value = {
-            f"{CollectionNames.LIBRARY_FILES.value}/track-1": {
+            f"{'library_files'}/track-1": {
                 "title": "Song A",
                 "artist": "Artist A",
                 "album": "Album A",
@@ -221,7 +220,7 @@ class TestGeneratePlaylistsEndpoint:
             "/api/v1/navidrome/playlist/generate",
             json={
                 "user_id": "user-1",
-                "top_plays": [{"file_id": f"{CollectionNames.LIBRARY_FILES.value}/track-1", "playcount": 5}],
+                "top_plays": [{"file_id": f"{'library_files'}/track-1", "playcount": 5}],
             },
         )
 
@@ -251,7 +250,7 @@ class TestGeneratePlaylistsEndpoint:
             ],
         }
         mock_navidrome_service.resolve_files_to_descriptors.assert_called_once_with(
-            [f"{CollectionNames.LIBRARY_FILES.value}/track-1"],
+            [f"{'library_files'}/track-1"],
         )
         mock_navidrome_service.resolve_files_to_nd.assert_not_called()
 
@@ -270,7 +269,7 @@ class TestGeneratePlaylistsEndpoint:
             "/api/v1/navidrome/playlist/generate",
             json={
                 "user_id": "user-1",
-                "top_plays": [{"file_id": f"{CollectionNames.LIBRARY_FILES.value}/t1", "playcount": 5}],
+                "top_plays": [{"file_id": f"{'library_files'}/t1", "playcount": 5}],
             },
         )
 
@@ -295,14 +294,14 @@ class TestGeneratePlaylistsEndpoint:
                     "playlist_type": "familiar",
                     "playlist_name": "Familiar Favorites",
                     "file_ids": [
-                        f"{CollectionNames.LIBRARY_FILES.value}/track-1",
-                        f"{CollectionNames.LIBRARY_FILES.value}/missing",
+                        f"{'library_files'}/track-1",
+                        f"{'library_files'}/missing",
                     ],
                 },
             ],
         )
         mock_navidrome_service.resolve_files_to_descriptors.return_value = {
-            f"{CollectionNames.LIBRARY_FILES.value}/track-1": {
+            f"{'library_files'}/track-1": {
                 "title": "Song A",
                 "artist": "Artist A",
                 "album": "Album A",
@@ -319,7 +318,7 @@ class TestGeneratePlaylistsEndpoint:
             "/api/v1/navidrome/playlist/generate",
             json={
                 "user_id": "user-1",
-                "top_plays": [{"file_id": f"{CollectionNames.LIBRARY_FILES.value}/track-1", "playcount": 5}],
+                "top_plays": [{"file_id": f"{'library_files'}/track-1", "playcount": 5}],
             },
         )
 

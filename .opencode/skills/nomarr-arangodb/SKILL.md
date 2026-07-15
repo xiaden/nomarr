@@ -1,18 +1,27 @@
 ---
 name: nomarr-arangodb
-description: ArangoDB setup, client configuration, SafeDatabase wrapper, AQL safety measures, error workarounds (ERR 1579/1210/1203), collection types, truncation patterns, and bootstrap procedures. Use when working on persistence layer, AQL queries, database schema changes, debugging ArangoDB errors, or modifying truncation/collection creation logic.
+description: **⚠️ DEPRECATED LAYER.** The ArangoDB persistence layer has been migrated to PostgreSQL (ADR-031). This skill documents the LEGACY ArangoDB schema for reference during the final migration cleanup. The ACTIVE persistence uses `database/*_repo.py` files with SQLAlchemy async + pgvector. Use the PostgreSQL-based repository classes (`nomarr/persistence/database/*_repo.py`) for all new work.
 ---
 
-# Nomarr ArangoDB
+# Nomarr ArangoDB (Deprecated)
 
 ## Mental Model
 
-Nomarr uses ArangoDB 3.12 as its primary datastore. All database access goes through a `SafeDatabase` wrapper that sanitizes bind variables and proxies `aql.execute()`. Domain-specific AQL lives in `nomarr/persistence/database/*_aql.py` modules, each providing typed methods for their domain (library, ML models, tags, etc.). Collections are created idempotently at bootstrap via DDL definitions in `schema/ddl.py`. A static AQL test suite catches mixed read-write conflicts, duplicate variables, and f-string injection at test time.
+**This is the LEGACY ArangoDB layer, fully replaced by PostgreSQL (ADR-031).** All schema files (`schema/names.py`, `schema/ddl.py`, `aql/primitives.py`, `database/*_aql.*`) are deleted from the working tree. The information below is preserved from git history for reference during the final migration cleanup.
+
+The legacy system used ArangoDB 3.12 via a `SafeDatabase` wrapper. Domain-specific AQL lived in `nomarr/persistence/database/*_aql.py` modules. Collections were created idempotently via DDL definitions in `schema/ddl.py`. A static AQL test suite caught mixed read-write conflicts, duplicate variables, and f-string injection.
+
+## Migration Status
+- **Commit 97c090e7** — "PostgreSQL + pgvector migration — design doc and 7 implementation plans"
+- **Commit f37fdf60** — "refactor(persistence): ADR-031 three-tier facade migration complete"
+- **Commit 28903b44** — "cleanup tasks, splitting large files, partial docs updates" (deleted remaining AQL files)
+- **Active layer:** `nomarr/persistence/database/*_repo.py` with SQLAlchemy async engine + pgvector
+- **Git status (current):** All ArangoDB schema files and AQL modules are `deleted` from the working tree
 
 ## Coverage
-**Documented:** Docker version, client config, SafeDatabase wrapper, AQL safety tests, truncation patterns, collection types, known ArangoDB error workarounds, bootstrap procedures.
-**Not yet documented:** Connection pool behavior, performance characteristics of AQL truncate vs native truncate, migration patterns for schema changes.
-**Last extended:** 2026-07-12
+**Documented:** Legacy ArangoDB collection names, edge collections, DDL definitions, AQL primitives, bootstrap procedure (all from git history).
+**Not yet documented:** Final migration cleanup tasks, removal of ArangoDB dependencies.
+**Last extended:** 2026-07-15
 
 ## Key Findings
 
@@ -71,6 +80,130 @@ Nomarr uses ArangoDB 3.12 as its primary datastore. All database access goes thr
 - **All collection names must be in CollectionNames enum or tests will fail** — the conftest validates every collection reference.
 - **Bind variables must be used for all user data** — f-strings in AQL are detected and rejected by tests.
 - **Native collection.truncate() should be used for bulk truncation** — the AQL FOR+REMOVE pattern is O(n) and should not be used for large collections.
+
+## Legacy ArangoDB Collection Names (from `schema/names.py`, git history)
+
+```python
+class CollectionNames(StrEnum):
+    """All ArangoDB collection names in the legacy schema."""
+
+    # Document collections (22 total)
+    META = "meta"
+    LOCKS = "locks"
+    HEALTH = "health"
+    SESSIONS = "sessions"
+    WORKER_CLAIMS = "worker_claims"
+    WORKER_RESTART_POLICY = "worker_restart_policy"
+    VRAM_PROMISES = "vram_promises"
+    APPLIED_MIGRATIONS = "applied_migrations"
+    LIBRARIES = "libraries"
+    LIBRARY_FOLDERS = "library_folders"
+    LIBRARY_FILES = "library_files"
+    LIBRARY_SCANS = "library_scans"
+    LIBRARY_PIPELINE_STATES = "library_pipeline_states"
+    FILE_STATES = "file_states"
+    TAGS = "tags"
+    ML_MODELS = "ml_models"
+    ML_MODEL_OUTPUTS = "ml_model_outputs"
+    ML_OUTPUT_STREAMS = "ml_output_streams"
+    CALIBRATION_STATE = "calibration_state"
+    CALIBRATION_HISTORY = "calibration_history"
+    NAVIDROME_TRACKS = "navidrome_tracks"
+    NAVIDROME_PLAYCOUNTS = "navidrome_playcounts"
+
+    # Edge collections (14 total)
+    SONG_HAS_TAGS = "song_has_tags"
+    LIBRARY_CONTAINS_FILE = "library_contains_file"
+    LIBRARY_CONTAINS_FOLDER = "library_contains_folder"
+    FILE_HAS_VECTORS = "file_has_vectors"
+    FILE_HAS_STATE = "file_has_state"
+    FILE_HAS_OUTPUT_STREAM = "file_has_output_stream"
+    FILE_HAS_SEGMENT_STATS = "file_has_segment_stats"
+    HAS_ND_ID = "has_nd_id"
+    HAS_PLAYS = "has_plays"
+    LIBRARY_HAS_PIPELINE_STATE = "library_has_pipeline_state"
+    LIBRARY_HAS_SCAN = "library_has_scan"
+    MODEL_HAS_CALIBRATION = "model_has_calibration"
+    MODEL_HAS_OUTPUT = "model_has_output"
+    OUTPUT_HAS_STREAM = "output_has_stream"
+```
+
+## Legacy DDL Index Definitions (from `schema/ddl.py`, git history)
+
+### Index-heavy document collections:
+- **META** — `_key` index
+- **LIBRARY_FILES** — 9 indexes: unique(library_id, path), unique(library_id, normalized_path), (library_id, is_deleted), (library_id, added_at), (path), (file_extension), (duration_ms, library_id), (artist, album, title, library_id), (file_extension, library_id, is_deleted)
+- **TAGS** — unique(name, value) + (source), (name)
+- **LIBRARY_SCANS** — (library_id, started_at), (status)
+- **SESSIONS** — TTL expiry index on (expires_at)
+- **ML_MODELS** — (name, version)
+- **CALIBRATION_STATE** — unique(backbone)
+- **LIBRARY_FOLDERS** — (library_id), (parent_id)
+- **NAVIDROME_TRACKS** — unique(song_id)
+
+### Edge collections with unique indexes:
+- All edge collections except `file_has_vectors` have unique `(_from, _to)` indexes
+- `file_has_vectors` has a non-unique `(_from, _to)` index (since `_to` reference is a partitioned collection)
+
+## Legacy AQL Primitives (from `aql/primitives.py`, git history)
+
+### Document Operations
+| Function | Operation |
+|---|---|
+| `execute(query, bind_vars, count, stream, ...)` | Raw AQL execution proxy |
+| `get_many_by_keys(collection, keys)` | `FOR key IN @keys FILTER doc._key == key` |
+| `get_many_by_field(collection, field, values)` | `FOR val IN @values FILTER doc.field == val` |
+| `get_filtered_docs(collection, filters, ...)` | Multi-field filter with sorting/pagination |
+| `count_distinct_edge_sources_*(coll, edge_coll, ...)` | Edge traversal count |
+| `delete_many_by_keys(collection, keys)` | `FOR key IN @keys REMOVE key` |
+| `delete_many_by_field(collection, field, values)` | Filter-based bulk delete |
+| `upsert_by_field(collection, field, value, doc)` | `UPSERT {field: value} INSERT doc UPDATE doc` |
+| `insert_document(collection, doc)` | `INSERT doc INTO collection` |
+| `update_document_by_key(collection, key, doc)` | `UPDATE key WITH doc` |
+
+### Edge Operations
+| Function | Operation |
+|---|---|
+| `upsert_edge(edge_collection, from_id, to_id, doc)` | `UPSERT {_from: f, _to: t} INSERT ... UPDATE ...` |
+| `delete_edges(edge_collection, from_id, to_id_pattern)` | Bulk edge deletion |
+| `delete_edges_by_from_list(edge_collection, from_ids)` | Delete all edges from given vertices |
+| `delete_edge_by_key(edge_collection, key)` | Single edge removal |
+| `insert_edges_batch(edge_collection, edges)` | Batch edge insertion |
+| `count_edges(edge_collection)` | `FOR e IN @@ec COLLECT WITH COUNT INTO c RETURN c` |
+
+## Legacy Domain AQL Module Map (deleted, from git history)
+
+| Domain | Module | Key Operations |
+|---|---|---|
+| **App** | `database/app_aql/` (subpackage) | Meta (config options, schema version), Locks (acquire/release), Worker Claims, Pipeline States, Sessions, Migrations, VRAM Promises, Health |
+| **Libraries** | `database/libraries_aql.py` | CRUD, get_by_name, list |
+| **Library Files** | `database/library_files_aql/` (subpackage) | File CRUD, folder CRUD, file-link ops, folder tree queries |
+| **Tags** | `database/tags_aql/` (subpackage) | Tag CRUD, file-tag graph traversal, tag search, analytics/coverage, curation (rename/merge), mood ops |
+| **File States** | `database/file_states_aql.py` | State edge operations, transitions |
+| **Scans** | `database/scan_aql.py` | Scan CRUD, last scan query |
+| **ML Models** | `database/ml_models_aql.py` | Model CRUD, calibration persistence |
+| **ML Streams** | `database/ml_streams_aql.py` | Output stream insert+edge wire, batch ops |
+| **ML Embeddings** | `database/ml_embedding_streams_aql.py` | Embedding stream CRUD |
+| **Vectors** | `database/vectors_aql.py` | Vector INSERT/kNN/ANN search, ERR 1579 workaround |
+| **Navidrome** | `database/navidrome_aql.py` | Track mapping, playcount sync |
+| **Calibration** | `database/calibration_state_aql.py` | Calibration state CRUD |
+| **Calibration History** | `database/calibration_history_aql.py` | Calibration history CRUD |
+| **Calibration Queue** | `database/calibration_queue_aql.py` | Queue operations |
+| **Calibration Runs** | `database/calibration_runs_aql.py` | Run tracking |
+| **MRU/Entities** | `database/entities_aql.py` | MRU entity operations |
+| **GPU Claims** | `database/gpu_claims_aql.py` | GPU claim operations |
+| **ML Capacity** | `database/ml_capacity_aql.py` | ML capacity tracking |
+| **Pipeline States** | `database/library_pipeline_states_aql.py` | Pipeline state per library |
+| **Library Tags** | `database/library_tags_aql.py` | Tag-by-library queries |
+| **Segments** | `database/segment_scores_stats_aql.py` | Segment score statistics |
+| **Tag Queue** | `database/tag_queue_aql.py` | Tag queue operations |
+| **Tag Model Output** | `database/tag_model_output_aql.py` | Tag→model output mapping |
+| **Vector Promotion** | `database/vector_promotion_lock_aql.py` | Vector promotion lock |
+| **Vectors Track** | `database/vectors_track_aql/` (subpackage) | Hot/cold vector collection maintenance |
+| **Vectors Track Vel** | `database/vectors_track_aql.py` | Vector track operations |
+| **Navidrome Maps** | `database/navidrome_song_map_aql.py` | Song mapping |
+| **Navidrome Tracks** | `database/navidrome_tracks_aql.py` | Track operations (distinct from mapping) |
+| **Worker Restarts** | `database/worker_restart_policy_aql.py` | Restart policy operations |
 
 ## Sources
 - `docker/compose.yaml`, `.github/workflows/e2e.yml` — Docker/CI version pinning

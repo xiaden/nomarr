@@ -13,7 +13,6 @@ from nomarr.helpers.constants.file_states import (
     STATE_WRITTEN,
 )
 from nomarr.helpers.time_helper import now_ms
-from nomarr.persistence.schema import CollectionNames
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -42,6 +41,7 @@ def claim_files_for_reconciliation(
     Returns:
         The raw song documents that were successfully claimed for the
         worker.
+
     """
     stale_ids = get_stale_file_ids(db, library_id=library_id)
     if not stale_ids:
@@ -59,11 +59,11 @@ def claim_files_for_reconciliation(
         if len(claimed) >= batch_size:
             break
 
-        file_id = str(candidate["_id"])
-        file_key = str(candidate["_key"])
+        file_id = str(candidate["id"])
+        file_key = str(candidate["id"])
         claim_key = f"claim_reconcile_{file_key}"
         payload = {
-            "_key": claim_key,
+            "key": claim_key,
             "file_id": file_id,
             "worker_id": worker_id,
             "claimed_at": now,
@@ -76,25 +76,24 @@ def claim_files_for_reconciliation(
     return claimed
 
 
-def set_file_written(db: Database, file_key: str) -> None:
-    """Advance processing state transitions after a successful tag write."""
-    if file_key.startswith(f"{CollectionNames.LIBRARY_FILES.value}/"):
-        file_id = file_key
-    else:
-        file_id = f"{CollectionNames.LIBRARY_FILES.value}/{file_key}"
+async def set_file_written(db: Database, file_key: str) -> None:
+    """Advance processing state transitions after a successful tag write.
 
-    transition_file_state(db, [file_id], STATE_NOT_WRITTEN, STATE_WRITTEN)
-    transition_file_state(db, [file_id], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
-    db.app.release_claim(file_id)
+    PostgreSQL uses integer IDs; file_key is the string representation of the ID.
+    """
+    file_id = int(file_key)
+    await transition_file_state(db, [file_id], STATE_NOT_WRITTEN, STATE_WRITTEN)
+    await transition_file_state(db, [file_id], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
+    await db.application.release_claim(file_id)
 
 
-def release_claim(db: Database, file_key: str) -> None:
-    """Release a reconciliation claim without changing projection state."""
-    if file_key.startswith(f"{CollectionNames.LIBRARY_FILES.value}/"):
-        file_id = file_key
-    else:
-        file_id = f"{CollectionNames.LIBRARY_FILES.value}/{file_key}"
-    db.app.release_claim(file_id)
+async def release_claim(db: Database, file_key: str) -> None:
+    """Release a reconciliation claim without changing projection state.
+
+    PostgreSQL uses integer IDs; file_key is the string representation of the ID.
+    """
+    file_id = int(file_key)
+    await db.application.release_claim(file_id)
 
 
 def count_files_needing_reconciliation(db: Database, library_id: str) -> int:

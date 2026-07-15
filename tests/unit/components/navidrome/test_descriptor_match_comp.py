@@ -8,7 +8,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from nomarr.components.navidrome.descriptor_match_comp import TrackDescriptor, resolve_seed_descriptor_to_file
-from nomarr.persistence.schema import CollectionNames
 
 
 def _seed(**overrides: object) -> TrackDescriptor:
@@ -31,9 +30,9 @@ def _seed(**overrides: object) -> TrackDescriptor:
 @pytest.mark.mocked
 def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
     db = MagicMock()
-    db.library.search_files_by_tag_pattern.return_value = [{"_id": f"{CollectionNames.LIBRARY_FILES.value}/1"}]
+    db.library.search_files_by_tag_pattern.return_value = [{"_id": f"{'library_files'}/1"}]
     db.library.list_file_tags_for_files.return_value = {
-        f"{CollectionNames.LIBRARY_FILES.value}/1": [
+        f"{'library_files'}/1": [
             {"name": "title", "value": "Song A"},
             {"name": "artist", "value": "Artist A"},
             {"name": "album", "value": "Album A"},
@@ -45,7 +44,7 @@ def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
     }
     db.library.list_files_by_ids.return_value = [
         {
-            "_id": f"{CollectionNames.LIBRARY_FILES.value}/1",
+            "_id": f"{'library_files'}/1",
             "duration_seconds": 201.0,
         }
     ]
@@ -53,7 +52,7 @@ def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
     resolved, status = resolve_seed_descriptor_to_file(db, _seed())
 
     assert status == ""
-    assert resolved == f"{CollectionNames.LIBRARY_FILES.value}/1"
+    assert resolved == f"{'library_files'}/1"
     db.library.search_files_by_tag_pattern.assert_called_once_with("title", "Song A", limit=None)
     db.library_files.get.many.assert_not_called()
 

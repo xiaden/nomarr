@@ -12,9 +12,13 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def find_or_create_tag(db: Database, name: str, value: TagValue) -> str:
-    """Find or create one tag vertex and return its ``_id``."""
-    return db.library.find_or_create_tag(name, value)
+def find_or_create_tag(db: Database, name: str, value: TagValue) -> int:  # type: ignore[return-value]
+    """Find or create one tag vertex and return its id.
+
+    Note: This calls an async repo method from sync context. The original
+    shim had the same issue. Callers should be migrated to async.
+    """
+    return db.library.tag_repo.get_or_create_tag(name, str(value), "")
 
 
 def _tag_name(tag_doc: dict[str, Any]) -> str | None:

@@ -134,6 +134,7 @@ class AnalyticsService:
 
         Returns:
             TagFrequenciesResult DTO with tag_frequencies list.
+
         """
         tag_frequencies = self.get_tag_frequencies(limit=limit)
         return TagFrequenciesResult(tag_frequencies=tag_frequencies)
@@ -201,6 +202,7 @@ class AnalyticsService:
 
         Returns:
             MoodDistributionResult DTO with mood_distribution list.
+
         """
         mood_distribution = self.get_mood_distribution(library_id=library_id)
         return MoodDistributionResult(mood_distribution=mood_distribution)
@@ -242,17 +244,18 @@ class AnalyticsService:
                 regular_specs.append((key, value))
 
         # Fetch file IDs using appropriate query method
-        tag_data: dict[tuple[str, str], set[str]] = {}
+        tag_data: dict[tuple[str, str], set[int]] = {}
 
         # Regular tags: use exact match
         if regular_specs:
-            tag_data.update(
-                get_file_ids_for_tags(
-                    self._db,
-                    tag_specs=regular_specs,
-                    library_id=library_id,
-                ),
+            regular_tag_data = get_file_ids_for_tags(
+                self._db,
+                tag_specs=regular_specs,
+                library_id=library_id,
             )
+            # Convert string IDs to int
+            for tag_key, file_ids in regular_tag_data.items():
+                tag_data[tag_key] = {int(fid.split("/")[1]) if "/" in fid else int(fid) for fid in file_ids}
 
         # Mood tags: use CONTAINS matching for each tier
         for tier, values in mood_specs.items():
@@ -264,7 +267,10 @@ class AnalyticsService:
             )
             # Convert mood_value -> file_ids to (key, value) -> file_ids format
             for mood_value, file_ids in mood_data.items():
-                tag_data[(f"nom:{tier}", mood_value)] = file_ids
+                # Convert string IDs to int
+                tag_data[(f"nom:{tier}", mood_value)] = {
+                    int(fid.split("/")[1]) if "/" in fid else int(fid) for fid in file_ids
+                }
 
         params = ComputeTagCoOccurrenceParams(x_tags=x_tag_specs, y_tags=y_tag_specs, tag_data=tag_data)
         return cast("TagCoOccurrenceData", compute_tag_co_occurrence(params=params))

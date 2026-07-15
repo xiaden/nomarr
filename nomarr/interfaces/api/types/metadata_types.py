@@ -9,16 +9,14 @@ from nomarr.interfaces.api.id_codec import encode_id
 class EntityResponse(BaseModel):
     """Single entity response."""
 
-    entity_id: str = Field(description="Entity _id (e.g., 'artists:v1_abc123...')")
-    key: str = Field(description="Entity _key")
+    entity_id: int = Field(description="Entity primary key (integer)")
     display_name: str = Field(description="Exact raw string for display")
     song_count: int | None = Field(None, description="Optional: count of songs for this entity")
 
     @classmethod
     def from_dto(cls, dto: EntityDict) -> "EntityResponse":
         return cls(
-            entity_id=encode_id(dto["_id"]),
-            key=dto["_key"],
+            entity_id=dto["id"],
             display_name=dto["display_name"],
             song_count=dto.get("song_count"),
         )
@@ -45,7 +43,7 @@ class EntityListResponse(BaseModel):
 class SongListResponse(BaseModel):
     """List of songs for an entity."""
 
-    song_ids: list[str] = Field(description="Song _ids (encoded)")
+    song_ids: list[int] = Field(description="Song IDs (encoded)")
     total: int = Field(description="Total count (before pagination)")
     limit: int
     offset: int

@@ -52,12 +52,12 @@ def save_file_tags(
 ) -> None:
     """Write parsed tags for a file.
 
-    Builds a batch of (song_id, name, values) entries and writes them all
-    in 3 AQL round-trips instead of 3 per name.
+    Builds a batch of (file_id, name, values) entries and writes them all
+    in 3 SQL round-trips instead of 3 per name.
 
     Args:
         db: Database instance
-        file_id: Document ``_id``
+        file_id: File row ID (integer as string)
         parsed_tags: Mapping of tag name → list of tag values
 
     """

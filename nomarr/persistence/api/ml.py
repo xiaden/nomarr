@@ -1,24 +1,22 @@
 from __future__ import annotations
 
-from typing import Any, cast
+import logging
+from typing import Any
 
-from nomarr.persistence.database.ml_embedding_streams_aql import MlEmbeddingStreamsAqlOperations
-from nomarr.persistence.database.ml_models_aql import MlModelsAqlOperations
-from nomarr.persistence.database.ml_streams_aql import MlStreamsAqlOperations
-from nomarr.persistence.database.vectors_aql import VectorsAqlOperations
-from nomarr.persistence.schema_types import VectorCollection
+from sqlalchemy import text
 
+from nomarr.helpers.dto.calibration_repo_dto import CalibrationHistoryRecord, CalibrationStateRecord
+from nomarr.helpers.dto.embedding_stream_repo_dto import EmbeddingStreamRecord
+from nomarr.helpers.dto.model_repo_dto import ModelRecord
+from nomarr.helpers.dto.output_repo_dto import ModelOutputRecord
+from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
+from nomarr.persistence.database.calibration_repo import CalibrationRepo
+from nomarr.persistence.database.embedding_stream_repo import EmbeddingStreamRepository
+from nomarr.persistence.database.model_repo import ModelRepo
+from nomarr.persistence.database.output_repo import OutputRepo
+from nomarr.persistence.database.vector_repo import VectorRepo
 
-def _as_document_id(collection: str, doc_id_or_key: str) -> str:
-    if "/" in doc_id_or_key:
-        return doc_id_or_key
-    return f"{collection}/{doc_id_or_key}"
-
-
-def _document_key(doc_id_or_key: str) -> str:
-    if "/" in doc_id_or_key:
-        return doc_id_or_key.split("/", 1)[1]
-    return doc_id_or_key
+logger = logging.getLogger(__name__)
 
 
 class MlMaintenanceDb:
@@ -33,31 +31,39 @@ class MlMaintenanceDb:
     def __init__(
         self,
         *,
-        vectors: VectorsAqlOperations,
-        models: MlModelsAqlOperations,
+        vector_repo: VectorRepo,
+        model_repo: ModelRepo,
+        calibration_repo: CalibrationRepo,
     ) -> None:
-        self._vectors = vectors
-        self._models = models
+        """Initialise the maintenance facade.
 
-    def truncate_vectors_in_collection(self, collection_name: str) -> None:
-        """Truncate all vectors stored in the given registered vector collection."""
-        return self._vectors.truncate_vector_collection(collection_name)
+        All repository parameters are required and are provided by the parent
+        ``MlDb`` constructor — there is no direct caller for
+        ``MlMaintenanceDb`` outside of the ``MlDb.maintenance`` property.
+        """
+        self._vector_repo = vector_repo
+        self._model_repo = model_repo
+        self._calibration_repo = calibration_repo
 
-    def truncate_vector_collection(self, collection_name: str) -> None:
-        """Compatibility shim for `truncate_vectors_in_collection`; truncates all vectors in the collection."""
-        return self.truncate_vectors_in_collection(collection_name)
+    async def truncate_vectors_in_collection(self, collection_name: str) -> None:
+        """Truncate all embeddings.
 
-    def truncate_vector_edges(self) -> None:
-        """Truncate all file-to-vector edge documents."""
-        return self._vectors.truncate_vector_edges()
+        ``collection_name`` is accepted for backwards compatibility but ignored —
+        PostgreSQL uses a single ``embeddings`` table.
+        """
+        await self._vector_repo.truncate_embeddings()
 
-    def truncate_calibration_states(self) -> None:
-        """Truncate all calibration state documents."""
-        return self._models.truncate_calibration_states()
+    async def truncate_vector_collection(self, collection_name: str) -> None:
+        """Compatibility shim for `truncate_vectors_in_collection`."""
+        await self.truncate_vectors_in_collection(collection_name)
 
-    def truncate_calibration_history(self) -> None:
-        """Truncate all calibration history documents."""
-        return self._models.truncate_calibration_history()
+    async def truncate_calibration_states(self) -> None:
+        """Truncate all calibration state rows."""
+        await self._calibration_repo.truncate_states()
+
+    async def truncate_calibration_history(self) -> None:
+        """Truncate all calibration history rows."""
+        await self._calibration_repo.truncate_history()
 
 
 class MlDb:
@@ -68,341 +74,507 @@ class MlDb:
     instance) instead of the routine top-level API.
     """
 
-    _MODEL_COLLECTION = "ml_models"
-    _MODEL_OUTPUT_COLLECTION = "ml_model_outputs"
-    _MODEL_OUTPUT_EDGE_COLLECTION = "model_has_output"
-    _CALIBRATION_COLLECTION = "calibration_state"
-    _CALIBRATION_EDGE_COLLECTION = "model_has_calibration"
-
     def __init__(
         self,
         *,
-        streams: MlStreamsAqlOperations,
-        vectors: VectorsAqlOperations,
-        models: MlModelsAqlOperations,
-        embedding_streams: MlEmbeddingStreamsAqlOperations,
+        vector_repo: VectorRepo | None = None,
+        model_repo: ModelRepo | None = None,
+        output_repo: OutputRepo | None = None,
+        calibration_repo: CalibrationRepo | None = None,
+        embedding_stream_repo: EmbeddingStreamRepository | None = None,
     ) -> None:
-        self._streams = streams
-        self._vectors = vectors
-        self._models = models
-        self._embedding_streams = embedding_streams
+        """Initialise the ML persistence facade.
+
+        All repository parameters are ``Optional`` to support the phased
+        migration to PostgreSQL — ``db.py`` wires SQL repos
+        incrementally.  ``vector_repo``, ``model_repo``, and ``calibration_repo``
+        are asserted as non-None at the end of construction because they are
+        required by the routine top-level API.
+
+        A ``MlMaintenanceDb`` companion is attached as ``self.maintenance``
+        for destructive/reset/diagnostics operations.
+        """
+        self._vector_repo = vector_repo
+        self._model_repo = model_repo
+        self._output_repo = output_repo
+        self._calibration_repo = calibration_repo
+        self._embedding_stream_repo = embedding_stream_repo
+        assert vector_repo is not None, "VectorRepo is required"
+        assert model_repo is not None, "ModelRepo is required"
+        assert calibration_repo is not None, "CalibrationRepo is required"
         self.maintenance: MlMaintenanceDb = MlMaintenanceDb(
-            vectors=vectors,
-            models=models,
+            vector_repo=vector_repo,
+            model_repo=model_repo,
+            calibration_repo=calibration_repo,
         )
 
     # ------------------------------------------------------------------
     # Canonical routine top-level methods aligned with the DD contract
     # ------------------------------------------------------------------
 
-    def add_vector_collection(self, name: str, template: str) -> VectorCollection:
-        """Register a named vector collection from the given template."""
-        return self._vectors.register_vector_collection(name, template)
+    async def add_vector_collection(self, name: str, template: str) -> None:
+        """Register a named vector collection — not supported in PostgreSQL."""
+        raise NotImplementedError("PostgreSQL uses a single embeddings table — no dynamic collections")
 
     def list_vector_collection_names(self) -> list[str]:
         """Return all registered vector collection names."""
-        return self._vectors.list_registered_vector_collection_names()
+        return ["embeddings"]
 
-    def clear_vector_collection(self, collection_name: str) -> None:
-        """Remove all vectors stored in the given registered vector collection."""
-        return self.maintenance.truncate_vector_collection(collection_name)
+    async def clear_vector_collection(self, collection_name: str) -> None:
+        """Remove all vectors from the embeddings table.
 
-    def clear_vector_links(self) -> None:
-        """Remove all file-to-vector link records."""
-        return self.maintenance.truncate_vector_edges()
+        ``collection_name`` is accepted for backwards compatibility but ignored —
+        PostgreSQL uses a single ``embeddings`` table.
+        """
+        assert self._vector_repo is not None, "VectorRepo not wired"
+        await self._vector_repo.delete_all_embeddings()
 
-    def list_vector_namespaces(self) -> dict[str, Any]:
-        """Return all registered vector namespace mappings."""
-        return self._vectors.list_registered_vector_namespaces()
+    async def list_output_streams_for_file(self, file_id: int) -> list[ModelOutputRecord]:
+        """Return all canonical output stream records linked to one file."""
+        assert self._output_repo is not None, "OutputRepo not wired"
+        return await self._output_repo.get_outputs_for_file(file_id)
 
-    def list_output_streams_for_file(self, file_id: str) -> list[dict[str, Any]]:
-        """Return all canonical output stream documents linked to one file."""
-        return self._streams.get_output_streams_for_file(file_id)
+    async def list_file_vectors(self, collection_name: str, file_id: int) -> list[EmbeddingRecord]:
+        """Return all embedding records stored for one file.
 
-    def list_file_vectors(self, collection_name: str, file_id: str) -> list[dict[str, Any]]:
-        """Return all vector documents stored for one file in a collection."""
-        return self._vectors.get_file_vectors(collection_name, file_id)
+        ``collection_name`` is accepted for backwards compatibility but ignored —
+        PostgreSQL uses a single ``embeddings`` table with a ``backbone_id`` column.
+        """
+        assert self._vector_repo is not None, "VectorRepo not wired"
+        return await self._vector_repo.get_embeddings_for_file(file_id)
 
-    def search_vectors(
+    async def search_vectors(
         self,
         collection_name: str,
         query_vector: list[float],
         *,
         limit: int,
-    ) -> list[dict[str, Any]]:
+    ) -> list[SimilarResult]:
         """Return nearest-neighbour vectors for ``query_vector`` in ``collection_name``.
 
         Canonical caller entrypoint for vector similarity search; higher layers
         should use this method instead of the removed legacy ``vector_search``
         facade name.
+
+        ``collection_name`` is repurposed as ``backbone_id`` — PostgreSQL uses a
+        single ``embeddings`` table partitioned by backbone rather than dynamic
+        PostgreSQL tables.
         """
-        return self._vectors.vector_search(collection_name, query_vector, limit=limit)
+        assert self._vector_repo is not None, "VectorRepo not wired"
+        return await self._vector_repo.find_nearest(query_vector, backbone_id=collection_name, limit=limit)
 
-    def get_model(self, model_id: str) -> dict[str, Any] | None:
-        """Return the ml_models document for model_id, or None if absent."""
-        return self._models.get_model(model_id)
+    async def get_model(self, model_id: str) -> ModelRecord | None:
+        """Return the ml_models record for model_id, or None if absent."""
+        assert self._model_repo is not None, "ModelRepo not wired"
+        return await self._model_repo.get_model(model_id)
 
-    def get_model_by_path(self, path: str) -> dict[str, Any] | None:
-        """Return the ml_models document whose path matches, or None."""
-        return self._models.get_model_by_path(path)
+    async def get_model_by_type(self, type_str: str) -> ModelRecord | None:
+        """Return the ml_models record whose model_type matches, or None.
 
-    def add_model(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Upsert a model document and return the persisted ml_models document.
-
-        Raises:
-            RuntimeError: If the upsert succeeds but the persisted document cannot be reloaded.
+        Replaces the former ``get_model_by_path`` — the relational schema
+        uses ``model_type`` rather than a filesystem path.
         """
-        self._models.upsert_model(payload)
+        assert self._model_repo is not None, "ModelRepo not wired"
+        return await self._model_repo.get_model_by_type(type_str)
 
-        model_id = payload.get("_id")
-        if isinstance(model_id, str) and model_id:
-            model_doc = self._models.get_model(model_id)
-            if model_doc is not None:
-                return model_doc
+    async def add_model(self, payload: dict[str, Any]) -> ModelRecord:
+        """Upsert a model row and return the persisted ModelRecord."""
+        assert self._model_repo is not None, "ModelRepo not wired"
+        return await self._model_repo.upsert_model(payload)
 
-        model_path = payload.get("path")
-        if isinstance(model_path, str) and model_path:
-            model_doc = self._models.get_model_by_path(model_path)
-            if model_doc is not None:
-                return model_doc
+    async def update_model(self, model_id: str, fields: dict[str, Any]) -> None:
+        """Apply field updates to an existing ml_models row."""
+        assert self._model_repo is not None, "ModelRepo not wired"
+        await self._model_repo.update_model(model_id, fields)
 
-        model_key = payload.get("_key")
-        if isinstance(model_key, str) and model_key:
-            model_doc = self._models.get_model(_as_document_id(self._MODEL_COLLECTION, model_key))
-            if model_doc is not None:
-                return model_doc
+    async def remove_model(self, model_id: str) -> None:
+        """Delete one ml_models row by id."""
+        assert self._model_repo is not None, "ModelRepo not wired"
+        await self._model_repo.delete_model(model_id)
 
-        msg = "Model upsert succeeded but persisted model could not be reloaded"
-        raise RuntimeError(msg)
+    async def list_models(self) -> list[ModelRecord]:
+        """Return all ml_models records."""
+        assert self._model_repo is not None, "ModelRepo not wired"
+        return await self._model_repo.list_models()
 
-    def update_model(self, model_id: str, fields: dict[str, Any]) -> None:
-        """Apply field updates to an existing ml_models document."""
-        payload = dict(fields)
-        payload["_key"] = _document_key(model_id)
-        self._models.upsert_model(payload)
+    async def count_models(self) -> int:
+        """Return the total number of registered ml_models rows."""
+        assert self._model_repo is not None, "ModelRepo not wired"
+        return await self._model_repo.count_models()
 
-    def remove_model(self, model_id: str) -> None:
-        """Delete one ml_models document by _id."""
-        return self._models.delete_model(model_id)
+    async def list_models_by_ids(self, model_ids: list[str]) -> list[ModelRecord]:
+        """Return ml_models records whose ids are in model_ids."""
+        assert self._model_repo is not None, "ModelRepo not wired"
+        return await self._model_repo.get_models_by_ids(model_ids)
 
-    def list_models(self) -> list[dict[str, Any]]:
-        """Return all ml_models documents."""
-        return self._models.list_models()
+    async def get_model_output(self, output_id: int) -> ModelOutputRecord | None:
+        """Return one ml_model_outputs record by primary key, or None."""
+        assert self._output_repo is not None, "OutputRepo not wired"
+        return await self._output_repo.get_output(output_id)
 
-    def count_models(self) -> int:
-        """Return the total number of registered ml_models documents."""
-        return self._models.count_models()
+    async def list_model_outputs(self, model_id: str) -> list[ModelOutputRecord]:
+        """Return all ml_model_outputs records linked to one model, ordered by index."""
+        assert self._output_repo is not None, "OutputRepo not wired"
+        return await self._output_repo.list_model_outputs(model_id)
 
-    def list_models_by_ids(self, model_ids: list[str]) -> list[dict[str, Any]]:
-        """Return ml_models documents whose _ids are in model_ids."""
-        return self._models.get_models_by_ids(model_ids)
+    async def get_calibration_state(self, model_id: str) -> CalibrationStateRecord | None:
+        """Return the calibration state for model_id, or None if absent."""
+        assert self._calibration_repo is not None, "CalibrationRepo not wired"
+        return await self._calibration_repo.get_state(model_id)
 
-    def get_model_output(self, output_id: str) -> dict[str, Any] | None:
-        """Return one ml_model_outputs document by _id, or None."""
-        return self._models.get_model_output(output_id)
+    async def get_calibration_state_view(self, head_name: str, label: str) -> CalibrationStateRecord | None:
+        """Return a calibration state by logical (head_name, label) identity.
 
-    def list_model_outputs(self, model_id: str) -> list[dict[str, Any]]:
-        """Return all ml_model_outputs documents linked to one model, ordered by index."""
-        return self._models.list_model_outputs(model_id)
+        Scans all calibration states and filters by composite key in Python
+        since CalibrationRepo indexes by model_id only.
 
-    def get_calibration_state(self, model_id: str) -> dict[str, Any] | None:
-        """Return the calibration_state document for model_id, or None."""
-        return self._models.get_calibration_state(model_id)
+        .. note::
+           For production scaling, a dedicated DB query should be added to
+           CalibrationRepo (e.g. ``get_state_by_head_and_label``) to avoid
+           the full-table scan.
+        """
+        assert self._calibration_repo is not None, "CalibrationRepo not wired"
+        states = await self._calibration_repo.list_states()
+        for state in states:
+            sd = state["state_data"]
+            if sd.get("head_name") == head_name and sd.get("label") == label:
+                return state
+        return None
 
-    def get_calibration_state_view(self, head_name: str, label: str) -> dict[str, Any] | None:
-        """Return a calibration_state document by logical (head_name, label) identity."""
-        return self._models.get_calibration_state_doc(head_name, label)
+    async def list_calibration_states(self) -> list[CalibrationStateRecord]:
+        """Return all calibration state records."""
+        assert self._calibration_repo is not None, "CalibrationRepo not wired"
+        return await self._calibration_repo.list_states()
 
-    def list_calibration_states(self) -> list[dict[str, Any]]:
-        """Return all calibration_state documents."""
-        return self._models.list_calibration_states()
+    async def list_calibration_history_snapshots(self, calibration_key: str) -> list[CalibrationHistoryRecord]:
+        """Return all calibration history records for one model.
 
-    def list_calibration_history_snapshots(self, calibration_key: str) -> list[dict[str, Any]]:
-        """Return all calibration_history snapshot documents for one calibration key."""
-        return self._models.get_calibration_history_snapshots(calibration_key)
+        ``calibration_key`` maps to ``model_id`` in the relational schema.
+        """
+        assert self._calibration_repo is not None, "CalibrationRepo not wired"
+        return await self._calibration_repo.get_history(calibration_key)
 
-    def add_calibration_history(self, payload: dict[str, Any]) -> str:
-        """Insert a calibration_history snapshot and return its _id."""
-        return self._models.add_calibration_history(payload)
+    async def add_calibration_history(self, payload: dict[str, Any]) -> CalibrationHistoryRecord:
+        """Insert a calibration history event and return the persisted record."""
+        assert self._calibration_repo is not None, "CalibrationRepo not wired"
+        return await self._calibration_repo.record_history(
+            model_id=payload["model_id"],
+            event=payload["event"],
+            data=payload.get("data", {}),
+        )
 
-    def count_calibration_history(self, model_id: str) -> int:
-        """Return the number of calibration history entries for one model."""
-        return self._models.count_calibration_history(model_id)
+    async def count_calibration_history(self, model_id: str) -> int:
+        """Return the number of calibration history entries for one model.
 
-    def replace_embedding_stream_for_file(
+        .. note::
+           TODO: CalibrationRepo has no ``count_history`` method — this
+           fetches all rows and counts in Python.  Add a ``COUNT(*)`` query
+           to CalibrationRepo for production scaling.
+        """
+        assert self._calibration_repo is not None, "CalibrationRepo not wired"
+        history = await self._calibration_repo.get_history(model_id)
+        return len(history)
+
+    async def replace_embedding_stream_for_file(
         self,
-        file_id: str,
+        file_id: int,
         backbone: str,
         stream_payload: dict[str, Any],
-    ) -> str:
-        """Upsert an embedding stream document for a file and backbone.
+    ) -> EmbeddingStreamRecord:
+        """Upsert an embedding stream for a (file, backbone) pair.
 
-        Returns the ``_id`` of the persisted document.
+        Returns the persisted ``EmbeddingStreamRecord``.
         """
-        return self._embedding_streams.upsert_embedding_stream(file_id, stream_payload)
+        assert self._embedding_stream_repo is not None, "EmbeddingStreamRepository not wired"
+        return await self._embedding_stream_repo.upsert_stream(file_id, backbone, stream_payload)
 
-    def get_embedding_stream_for_file(
+    async def get_embedding_stream_for_file(
         self,
-        file_id: str,
+        file_id: int,
         backbone: str,
-    ) -> dict[str, Any] | None:
-        """Return the embedding stream document for ``(file_id, backbone)``, or ``None``."""
-        return self._embedding_streams.get_embedding_stream_for_file(file_id, backbone)
+    ) -> EmbeddingStreamRecord | None:
+        """Return the embedding stream for ``(file_id, backbone)``, or ``None``."""
+        assert self._embedding_stream_repo is not None, "EmbeddingStreamRepository not wired"
+        return await self._embedding_stream_repo.get_stream(file_id, backbone)
 
-    def list_embedding_streams_by_backbone(
+    async def list_embedding_streams_by_backbone(
         self,
         backbone: str,
         *,
         limit: int = 50,
         offset: int = 0,
-    ) -> list[dict[str, Any]]:
+    ) -> list[EmbeddingStreamRecord]:
         """List all embedding streams for a backbone with pagination."""
-        return self._embedding_streams.list_embedding_streams_by_backbone(
-            backbone,
-            limit=limit,
-            offset=offset,
-        )
+        assert self._embedding_stream_repo is not None, "EmbeddingStreamRepository not wired"
+        return await self._embedding_stream_repo.list_by_backbone(backbone, limit=limit, offset=offset)
 
-    def remove_embedding_streams_for_file(self, file_id: str) -> None:
+    async def remove_embedding_streams_for_file(self, file_id: int) -> None:
         """Delete all embedding streams linked to one file."""
-        return self._embedding_streams.delete_embedding_streams_for_file(file_id)
+        assert self._embedding_stream_repo is not None, "EmbeddingStreamRepository not wired"
+        await self._embedding_stream_repo.delete_for_file(file_id)
 
     # ------------------------------------------------------------------
     # Promoted intent-complete write methods
     # ------------------------------------------------------------------
 
-    def replace_output_streams_for_file(
+    async def replace_output_streams_for_file(
         self,
-        file_id: str,
+        file_id: int,
         stream_payloads: list[dict[str, Any]],
     ) -> None:
-        """Replace all canonical output streams for one file (delete-then-insert)."""
-        self._streams.delete_output_streams_for_file(file_id)
-        if stream_payloads:
-            self._streams.upsert_output_streams_batch(file_id, stream_payloads)
+        """Replace all canonical output streams for one file (delete-then-insert).
 
-    def remove_output_streams_for_file(self, file_id: str) -> None:
+        .. note::
+           The delete and each insert commit independently via their repos.
+           Worst case is partial completion if an insert fails after the
+           delete succeeded.  Part F should add proper transaction management
+           (e.g. a facade-level ``begin/commit`` wrapper) for atomicity.
+        """
+        assert self._output_repo is not None, "OutputRepo not wired"
+        await self._output_repo.delete_outputs_for_file(file_id)
+        for payload in stream_payloads:
+            await self._output_repo.store_output_stream(
+                file_id=file_id,
+                model_id=payload["model_id"],
+                status=payload["status"],
+            )
+
+    async def remove_output_streams_for_file(self, file_id: int) -> None:
         """Delete all canonical output streams linked to one file."""
-        return self._streams.delete_output_streams_for_file(file_id)
+        assert self._output_repo is not None, "OutputRepo not wired"
+        await self._output_repo.delete_outputs_for_file(file_id)
 
-    def replace_file_vectors(
+    async def replace_file_vectors(
         self,
         collection_name: str,
-        file_id: str,
+        file_id: int,
         vector_payloads: list[dict[str, Any]],
     ) -> None:
-        """Replace all vector documents for one file in a collection (delete-then-insert)."""
-        self._vectors.delete_vectors_for_file(collection_name, file_id)
-        for payload in vector_payloads:
-            vector_payload = dict(payload)
-            vector_payload.setdefault("file_id", file_id)
-            self._vectors.upsert_vector(collection_name, vector_payload)
+        """Replace all vector rows for one file (delete-then-insert).
 
-    def remove_file_vectors(self, collection_name: str, file_id: str) -> None:
-        """Delete all vector documents for one file in a collection."""
-        return self._vectors.delete_vectors_for_file(collection_name, file_id)
+        ``collection_name`` is accepted for backwards compatibility but ignored —
+        PostgreSQL uses a single ``embeddings`` table.
 
-    def remove_vectors_for_files(self, collection_name: str, file_ids: list[str]) -> None:
-        """Delete all vector documents for each file_id in file_ids."""
-        for file_id in file_ids:
-            self.remove_file_vectors(collection_name, file_id)
-
-    def replace_model_output(self, model_id: str, output_key: str, payload: dict[str, Any]) -> str:
-        """Upsert one output vertex and ensure the model→output edge exists; returns the output _id."""
-        output_id = _as_document_id(self._MODEL_OUTPUT_COLLECTION, output_key)
-        existing_output = self._models.get_model_output(output_id)
-        if existing_output is None:
-            insert_payload = dict(payload)
-            insert_payload.setdefault("_key", _document_key(output_key))
-            output_id = self._models.add_model_output(insert_payload)
-        else:
-            self._models.update_model_output(output_id, payload)
-            existing_output_id = existing_output.get("_id")
-            if isinstance(existing_output_id, str) and existing_output_id:
-                output_id = existing_output_id
-
-        self._models.upsert_model_output_edge(_document_key(output_key), model_id, output_id)
-        return output_id
-
-    def remove_model_output(self, output_id: str) -> None:
-        """Delete one output vertex and its associated edges."""
-        normalized_output_id = _as_document_id(self._MODEL_OUTPUT_COLLECTION, output_id)
-        self._delete_model_output_edge(normalized_output_id)
-        self._models.delete_model_output(normalized_output_id)
-
-    def remove_model_outputs_for_model(self, model_id: str) -> list[str]:
-        """Delete all output vertices for one model and return their _ids."""
-        output_ids = [
-            cast("str", output_doc["_id"])
-            for output_doc in self._models.list_model_outputs(model_id)
-            if isinstance(output_doc.get("_id"), str)
-        ]
-        self._models.delete_model_outputs_for_model(model_id)
-        return output_ids
-
-    def list_all_calibration_states_with_models(self) -> list[dict[str, Any]]:
-        """Return all calibration states enriched with their owning model metadata."""
-        return self._models.list_calibration_states_with_models()
-
-    def replace_calibration_state(self, model_id: str, key: str, payload: dict[str, Any]) -> None:
-        """Upsert a calibration_state document and ensure the model→calibration edge."""
-        calibration_payload = dict(payload)
-        calibration_payload.setdefault("_key", key)
-        self._models.upsert_calibration_state(model_id, calibration_payload)
-
-    def remove_calibration_state(self, calibration_id: str) -> None:
-        """Delete one calibration_state document and its model→calibration edge."""
-        calibration_key = _document_key(calibration_id)
-        self._models.delete_model_has_calibration_edge(
-            _as_document_id(self._CALIBRATION_EDGE_COLLECTION, calibration_key)
-        )
-        self._models.delete_calibration_state_doc(calibration_id)
-
-    def remove_calibration_history_for_model(self, model_id: str) -> None:
-        """Delete all calibration history entries for one model."""
-        return self._models.delete_calibration_history_for_model(model_id)
-
-    def remove_calibration_history_entries(self, entry_ids: list[str]) -> None:
-        """Delete calibration history documents by _id list."""
-        return self._models.delete_calibration_history_entries(entry_ids)
-
-    def get_embedding_stats(self, backbone_id: str) -> dict[str, int | bool]:
-        """Return hot_count, cold_count, and index_exists for a backbone."""
-        return self._vectors.get_embedding_stats(backbone_id)
-
-    def has_embedding_index(self, backbone_id: str) -> bool:
-        """Return True if the cold collection has an ANN vector index."""
-        return self._vectors.has_embedding_index(backbone_id)
-
-    def index_backbone_embeddings(
-        self,
-        backbone_id: str,
-        embed_dim: int,
-        nlists: int,
-    ) -> int:
-        """Drain hot vectors to cold and build the ANN index.
-
-        Idempotent: no-op if hot is already empty and index exists.
-        Returns number of documents drained.
+        .. note::
+           The delete and each insert commit independently via their repos.
+           Worst case is partial completion if an insert fails after the
+           delete succeeded.  Part F should add proper transaction management
+           for atomicity.
         """
-        return self._vectors.index_backbone_embeddings(
-            backbone_id,
-            embed_dim,
-            nlists,
+        assert self._vector_repo is not None, "VectorRepo not wired"
+        await self._vector_repo.delete_embeddings_for_file(file_id)
+        for payload in vector_payloads:
+            # Require embedding_vector (or fallback key 'embedding') — no silent
+            # empty-list default, which would cause a confusing DB dimension error.
+            embedding_vector = payload.get("embedding_vector")
+            if embedding_vector is None:
+                embedding_vector = payload["embedding"]
+            await self._vector_repo.insert_embedding(
+                file_id=file_id,
+                backbone_id=payload.get("backbone_id", collection_name),
+                model_id=payload["model_id"],
+                embedding_vector=embedding_vector,
+                genres=payload.get("genres"),
+            )
+
+    async def remove_file_vectors(self, collection_name: str, file_id: int) -> None:
+        """Delete all vector rows for one file.
+
+        ``collection_name`` is accepted for backwards compatibility but ignored.
+        """
+        assert self._vector_repo is not None, "VectorRepo not wired"
+        await self._vector_repo.delete_embeddings_for_file(file_id)
+
+    async def remove_vectors_for_files(self, collection_name: str, file_ids: list[int]) -> None:
+        """Delete all vector rows for each file_id in file_ids.
+
+        .. note::
+           TODO: N+1 — loops ``delete_embeddings_for_file`` per file_id.
+           VectorRepo has no batch-delete-by-file-ids method yet.  Add a
+           single ``DELETE … WHERE file_id = ANY(…)`` to VectorRepo for
+           production scaling.
+        """
+        assert self._vector_repo is not None, "VectorRepo not wired"
+        for fid in file_ids:
+            await self._vector_repo.delete_embeddings_for_file(fid)
+
+    async def replace_model_output(
+        self,
+        file_id: int,
+        model_id: str,
+        output_key: str,
+        payload: dict[str, Any],
+    ) -> ModelOutputRecord:
+        """Store one model output and return the persisted record.
+
+        ``output_key`` is accepted for backwards compatibility but ignored —
+        PostgreSQL uses auto-generated integer primary keys.
+        """
+        assert self._output_repo is not None, "OutputRepo not wired"
+        return await self._output_repo.store_model_output(
+            file_id=file_id,
+            model_id=model_id,
+            output_data=payload,
         )
 
-    def rebuild_backbone_embedding_index(
+    async def remove_model_output(self, output_id: int) -> None:
+        """Delete one model output by primary key."""
+        assert self._output_repo is not None, "OutputRepo not wired"
+        await self._output_repo.delete_output(output_id)
+
+    async def remove_model_outputs_for_model(self, model_id: str) -> int:
+        """Delete all model outputs for one model and return the count deleted."""
+        assert self._output_repo is not None, "OutputRepo not wired"
+        return await self._output_repo.delete_outputs_for_model(model_id)
+
+    async def list_all_calibration_states_with_models(self) -> list[dict[str, Any]]:
+        """Return all calibration states enriched with their owning model metadata."""
+        assert self._calibration_repo is not None, "CalibrationRepo not wired"
+        return await self._calibration_repo.list_states_with_models()
+
+    async def replace_calibration_state(
+        self,
+        model_id: str,
+        key: str,
+        payload: dict[str, Any],
+    ) -> CalibrationStateRecord:
+        """Upsert calibration state for a model.
+
+        ``key`` is accepted for backwards compatibility but ignored —
+        PostgreSQL uses auto-generated integer primary keys.
+        """
+        assert self._calibration_repo is not None, "CalibrationRepo not wired"
+        return await self._calibration_repo.set_state(model_id, state_data=payload)
+
+    async def remove_calibration_state(self, calibration_id: int) -> None:
+        """Delete one calibration state by primary key.
+
+        ``calibration_id`` is now an ``int`` (PostgreSQL PK).
+        Edge deletion (model_has_calibration) is no longer needed.
+        """
+        assert self._calibration_repo is not None, "CalibrationRepo not wired"
+        await self._calibration_repo.delete_state(calibration_id)
+
+    async def remove_calibration_history_for_model(self, model_id: str) -> None:
+        """Delete all calibration history entries for one model.
+
+        Not yet implemented — CalibrationRepo has no bulk-delete-by-model method.
+        Callers will be updated in Part F.
+        """
+        raise NotImplementedError("CalibrationRepo has no delete_history_for_model — callers must adapt in Part F")
+
+    async def remove_calibration_history_entries(self, entry_ids: list[str]) -> None:
+        """Delete calibration history entries by ID list.
+
+        Not yet implemented — CalibrationRepo has no batch-delete method.
+        Callers will be updated in Part F.
+        """
+        raise NotImplementedError("CalibrationRepo has no delete_history_entries — callers must adapt in Part F")
+
+    async def get_embedding_stats(self, backbone_id: str) -> dict[str, int]:
+        """Return hot_count and cold_count for a backbone."""
+        assert self._vector_repo is not None, "VectorRepo not wired"
+        return await self._vector_repo.get_embedding_stats(backbone_id)
+
+    async def has_embedding_index(self, backbone_id: str) -> bool:
+        """Return whether the backbone has an ANN index.
+
+        The partial HNSW index is created once by the schema migration and
+        maintained automatically by PostgreSQL — it covers all cold-tier
+        rows and is updated on VACUUM.  There is no per-backbone index
+        creation or teardown, so this always returns ``True``.
+        """
+        return True
+
+    async def index_backbone_embeddings(self, backbone_id: str, embed_dim: int = 0, nlists: int = 0) -> int:
+        """Drain hot embeddings to cold tier for a backbone.
+
+        ``embed_dim`` and ``nlists`` are accepted for backwards compatibility
+        but ignored — PostgreSQL manages the HNSW index automatically.
+        Returns the number of rows drained.
+        """
+        assert self._vector_repo is not None, "VectorRepo not wired"
+        return await self._vector_repo.drain_hot_to_cold(backbone_id)
+
+    async def rebuild_backbone_embedding_index(
         self,
         backbone_id: str,
-        embed_dim: int,
-        nlists: int,
+        embed_dim: int = 0,
+        nlists: int = 0,
     ) -> None:
-        """Drop and rebuild the ANN index without draining hot."""
-        return self._vectors.rebuild_backbone_embedding_index(
-            backbone_id,
-            embed_dim,
-            nlists,
+        """Rebuild the ANN index for a backbone.
+
+        Not applicable — PostgreSQL manages the partial HNSW index automatically.
+        """
+        raise NotImplementedError("PostgreSQL manages the HNSW index automatically — no manual rebuild needed")
+
+    # ------------------------------------------------------------------
+    # Vector index management methods (Phase 3 — consumer facade)
+    # ------------------------------------------------------------------
+
+    async def has_vector_index(self, backbone_id: str) -> bool:
+        """Check if the cold HNSW index exists in the PostgreSQL catalog.
+
+        The partial HNSW index (``ix_embeddings_cold_hnsw``) is created once
+        by the schema migration and shared across all backbones.  The
+        ``backbone_id`` parameter is accepted for API compatibility but is
+        not used — the index covers all cold-tier rows regardless of backbone.
+        """
+        assert self._vector_repo is not None, "VectorRepo not wired"
+        result = await self._vector_repo._session.execute(
+            text("SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'ix_embeddings_cold_hnsw')")
+        )
+        return bool(result.scalar())
+
+    async def build_vector_index(self, embed_dim: int) -> None:
+        """No-op — PG manages the cold HNSW index automatically via schema migration.
+
+        ``embed_dim`` is accepted for API compatibility but ignored.
+        """
+        logger.info("PG manages the cold HNSW index automatically via schema migration.")
+
+    async def drop_vector_index(self) -> None:
+        """No-op — the partial HNSW index is managed by the schema migration."""
+        logger.info(
+            "PG partial HNSW index (ix_embeddings_cold_hnsw) is managed by the schema migration — drop is a no-op."
         )
 
-    def _delete_model_output_edge(self, output_id: str) -> None:
-        self._models.delete_model_output_edge(output_id)
+    async def rebuild_vector_index(self, embed_dim: int) -> None:
+        """Rebuild the cold HNSW index via ``REINDEX INDEX CONCURRENTLY``.
+
+        ``embed_dim`` is accepted for API compatibility but ignored — the
+        index dimension is fixed at schema creation time.
+        """
+        assert self._vector_repo is not None, "VectorRepo not wired"
+        try:
+            await self._vector_repo._session.execute(text("REINDEX INDEX CONCURRENTLY ix_embeddings_cold_hnsw"))
+            logger.info("Successfully rebuilt cold HNSW index (ix_embeddings_cold_hnsw).")
+        except Exception:
+            logger.exception("Failed to rebuild cold HNSW index (ix_embeddings_cold_hnsw).")
+            raise
+
+    async def backfill_genres(self, backbone_id: str) -> int:
+        """Count embeddings that need genre backfilling.
+
+        Full genre backfill requires joining with the library_files tag data,
+        which is outside MlDb's scope.  This method counts the rows with
+        ``genres IS NULL`` for the given backbone and returns the count.
+
+        Returns:
+            Number of embedding rows with NULL genres for this backbone.
+
+        """
+        assert self._vector_repo is not None, "VectorRepo not wired"
+        result = await self._vector_repo._session.execute(
+            text("SELECT COUNT(*) FROM embeddings WHERE backbone_id = :backbone_id AND genres IS NULL"),
+            {"backbone_id": backbone_id},
+        )
+        count = int(result.scalar() or 0)
+        if count > 0:
+            logger.warning(
+                "backfill_genres: %d embeddings for backbone '%s' have NULL genres. "
+                "Full genre backfill requires the library facade (not available in MlDb scope).",
+                count,
+                backbone_id,
+            )
+        return count

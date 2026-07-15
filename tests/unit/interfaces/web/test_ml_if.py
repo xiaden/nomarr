@@ -11,7 +11,6 @@ from nomarr.helpers.dto.info_dto import WorkStatusResult
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_library_service, get_ml_service
 from nomarr.interfaces.api.web.ml_if import router as ml_router
-from nomarr.persistence.schema import CollectionNames
 
 
 @pytest.fixture
@@ -103,7 +102,7 @@ class TestMlIfRoutes:
         """The recent-activity endpoint should be reachable under /machine-learning."""
         mock_library_service.get_recently_processed.return_value = [
             {
-                "file_id": f"{CollectionNames.LIBRARY_FILES.value}/1",
+                "file_id": f"{'library_files'}/1",
                 "path": "Music/Test Song.flac",
                 "title": "Test Song",
                 "artist": "Test Artist",
@@ -119,7 +118,7 @@ class TestMlIfRoutes:
         assert response.json() == {
             "files": [
                 {
-                    "file_id": f"{CollectionNames.LIBRARY_FILES.value}/1",
+                    "file_id": f"{'library_files'}/1",
                     "path": "Music/Test Song.flac",
                     "title": "Test Song",
                     "artist": "Test Artist",

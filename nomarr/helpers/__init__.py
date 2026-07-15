@@ -11,8 +11,9 @@ Helpers are leaf utilities with no layer-level dependencies. They provide:
 - **Exceptions** (``exceptions.py``) — Shared exception hierarchy across layers.
 - **Logging** (``logging_helper.py``) — Structured context logging with
   sanitized exception messages.
-- **Vector params** (``vector_params_helper.py``) — ArangoDB ANN index
-  parameter computation (nLists, nProbe).
+- **Vector params** (``vector_params_helper.py``) — pgvector HNSW parameter
+  computation (ef_search, ef_construction, M) and legacy ArangoDB IVF
+  parameter derivation (nLists, nProbe).
 - **Configuration** (``config_schema.py``) — Static/dynamic config models and
   validation.
 - **Constants** (``constants/``) — Domain constants for file states and pipeline
@@ -73,6 +74,11 @@ from .time_helper import (
     to_wall_ms,
     to_wall_s,
 )
+from .vector_params_helper import (
+    get_ef_construction,
+    get_ef_search,
+    get_m,
+)
 
 __all__ = [
     "AUDIO_EXTENSIONS",
@@ -98,7 +104,10 @@ __all__ = [
     "format_internal_timestamp_local",
     "format_wall_timestamp",
     "format_wall_timestamp_local",
+    "get_ef_construction",
+    "get_ef_search",
     "get_log_context",
+    "get_m",
     "internal_ms",
     "internal_ms_to_s",
     "internal_s",

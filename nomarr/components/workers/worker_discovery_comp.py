@@ -17,13 +17,12 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
-_TAGGED_STATE_ID = "file_states/tagged"
+_TAGGED_STATE_ID = "tagged"
 
 
-def _claim_key(file_id: str) -> str:
+def _claim_key(file_id: str | int) -> str:
     """Build the deterministic worker-claim key for a file."""
-    file_key = file_id.split("/")[1] if "/" in file_id else file_id
-    return f"claim_{file_key}"
+    return f"claim_{file_id}"
 
 
 def _get_all_claims(db: Database) -> list[dict[str, Any]]:
@@ -43,24 +42,24 @@ def discover_next_file(
         db: Database instance
 
     Returns:
-        File _id or None if no work available
+        File id or None if no work available
 
     """
     file_doc = discover_next_untagged_file(db, exclude_claimed=True)
     if file_doc:
-        return str(file_doc["_id"])
+        return str(file_doc["id"])
     return None
 
 
 def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
     """Attempt to claim file for processing.
 
-    Uses deterministic _key based on file._key to enforce uniqueness.
-    ArangoDB document key uniqueness prevents duplicate claims.
+    Uses deterministic key based on file id to enforce uniqueness.
+    PostgreSQL unique constraint prevents duplicate claims.
 
     Args:
         db: Database instance
-        file_id: Full file document _id (e.g., ``song/12345``)
+        file_id: File document id (e.g., ``12345``)
         worker_id: Worker identifier (e.g., "worker:tag:0")
 
     Returns:
@@ -68,7 +67,7 @@ def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
 
     """
     payload = {
-        "_key": _claim_key(file_id),
+        "key": _claim_key(file_id),
         "file_id": file_id,
         "worker_id": worker_id,
         "claimed_at": now_ms().value,
@@ -85,7 +84,7 @@ def release_claim(db: Database, file_id: str) -> None:
 
     Args:
         db: Database instance
-        file_id: Full file document _id
+        file_id: File document id
 
     """
     db.app.remove_claim(file_id)
@@ -101,7 +100,7 @@ def try_insert_or_steal_claim(
 
     Args:
         db: Database handle.
-        payload: Full claim document payload including ``_key``, ``file_id``,
+        payload: Full claim document payload including ``key``, ``file_id``,
             ``worker_id``, and ``claimed_at``.
         now: Current timestamp in milliseconds.
         lease_ms: Claim lease duration in ms; existing claims older than this
@@ -179,12 +178,12 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
     candidate_file_ids = sorted({str(claim["file_id"]) for claim in active_ml_claims})
     if candidate_file_ids:
         file_docs = cast("list[dict[str, Any]]", db.library.list_files_by_ids(candidate_file_ids))
-        existing_file_ids = {str(doc["_id"]) for doc in file_docs if "_id" in doc}
+        existing_file_ids = {str(doc["id"]) for doc in file_docs if "id" in doc}
 
         tagged_file_ids = {
-            str(file_doc["_id"])
+            str(file_doc["id"])
             for file_doc in cast("list[dict[str, Any]]", db.app.list_file_docs_in_state(_TAGGED_STATE_ID))
-            if "_id" in file_doc and str(file_doc["_id"]) in candidate_file_ids
+            if "id" in file_doc and str(file_doc["id"]) in candidate_file_ids
         }
         stale_file_ids = {
             file_id for file_id in candidate_file_ids if file_id not in existing_file_ids or file_id in tagged_file_ids
@@ -216,7 +215,7 @@ def discover_and_claim_file(
         worker_id: Worker identifier (e.g., "worker:tag:0")
 
     Returns:
-        Claimed file _id or None if no work available or claim failed
+        Claimed file id or None if no work available or claim failed
 
     """
     file_id = discover_next_file(db)

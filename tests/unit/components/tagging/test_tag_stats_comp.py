@@ -16,7 +16,6 @@ from nomarr.components.tagging.tag_stats_comp import (
     get_unique_names,
     get_year_distribution,
 )
-from nomarr.persistence.schema import CollectionNames
 
 
 class TestNumericValue:
@@ -166,12 +165,12 @@ class TestGetTagValueCounts:
         ]
 
         mock_db.library.get_song_tag_edges_for_tags.return_value = [
-            {"_to": "tags/1", "_from": f"{CollectionNames.LIBRARY_FILES.value}/1"},
-            {"_to": "tags/1", "_from": f"{CollectionNames.LIBRARY_FILES.value}/2"},
-            {"_to": "tags/1", "_from": f"{CollectionNames.LIBRARY_FILES.value}/3"},
-            {"_to": "tags/1", "_from": f"{CollectionNames.LIBRARY_FILES.value}/4"},
-            {"_to": "tags/2", "_from": f"{CollectionNames.LIBRARY_FILES.value}/5"},
-            {"_to": "tags/2", "_from": f"{CollectionNames.LIBRARY_FILES.value}/6"},
+            {"_to": "tags/1", "_from": f"{'library_files'}/1"},
+            {"_to": "tags/1", "_from": f"{'library_files'}/2"},
+            {"_to": "tags/1", "_from": f"{'library_files'}/3"},
+            {"_to": "tags/1", "_from": f"{'library_files'}/4"},
+            {"_to": "tags/2", "_from": f"{'library_files'}/5"},
+            {"_to": "tags/2", "_from": f"{'library_files'}/6"},
         ]
 
         result = get_tag_value_counts(mock_db, "genre")
@@ -219,13 +218,13 @@ class TestGetAllTagStatsBatched:
             {"_id": "tags/3", "name": "year", "value": 1999},
         ]
         mock_db.library.get_song_tag_edges_for_tags.return_value = [
-            {"_to": "tags/1", "_from": f"{CollectionNames.LIBRARY_FILES.value}/1"},
-            {"_to": "tags/1", "_from": f"{CollectionNames.LIBRARY_FILES.value}/2"},
-            {"_to": "tags/1", "_from": f"{CollectionNames.LIBRARY_FILES.value}/3"},
-            {"_to": "tags/1", "_from": f"{CollectionNames.LIBRARY_FILES.value}/4"},
-            {"_to": "tags/2", "_from": f"{CollectionNames.LIBRARY_FILES.value}/5"},
-            {"_to": "tags/2", "_from": f"{CollectionNames.LIBRARY_FILES.value}/6"},
-            {"_to": "tags/3", "_from": f"{CollectionNames.LIBRARY_FILES.value}/7"},
+            {"_to": "tags/1", "_from": f"{'library_files'}/1"},
+            {"_to": "tags/1", "_from": f"{'library_files'}/2"},
+            {"_to": "tags/1", "_from": f"{'library_files'}/3"},
+            {"_to": "tags/1", "_from": f"{'library_files'}/4"},
+            {"_to": "tags/2", "_from": f"{'library_files'}/5"},
+            {"_to": "tags/2", "_from": f"{'library_files'}/6"},
+            {"_to": "tags/3", "_from": f"{'library_files'}/7"},
         ]
 
         result = get_all_tag_stats_batched(mock_db)
@@ -273,12 +272,12 @@ class TestGetYearDistribution:
             {"_id": "tags/zero", "value": 2022},
         ]
         mock_db.library.get_song_tag_edges_for_tags.return_value = [
-            {"_to": "tags/2019", "_from": f"{CollectionNames.LIBRARY_FILES.value}/1"},
-            {"_to": "tags/2019", "_from": f"{CollectionNames.LIBRARY_FILES.value}/2"},
-            {"_to": "tags/2021", "_from": f"{CollectionNames.LIBRARY_FILES.value}/3"},
-            {"_to": "tags/2020", "_from": f"{CollectionNames.LIBRARY_FILES.value}/4"},
-            {"_to": "tags/2020", "_from": f"{CollectionNames.LIBRARY_FILES.value}/5"},
-            {"_to": "tags/2020", "_from": f"{CollectionNames.LIBRARY_FILES.value}/6"},
+            {"_to": "tags/2019", "_from": f"{'library_files'}/1"},
+            {"_to": "tags/2019", "_from": f"{'library_files'}/2"},
+            {"_to": "tags/2021", "_from": f"{'library_files'}/3"},
+            {"_to": "tags/2020", "_from": f"{'library_files'}/4"},
+            {"_to": "tags/2020", "_from": f"{'library_files'}/5"},
+            {"_to": "tags/2020", "_from": f"{'library_files'}/6"},
         ]
 
         result = get_year_distribution(mock_db)
@@ -319,18 +318,18 @@ class TestGetGenreDistribution:
             {"_id": "tags/skip", "value": 123},
         ]
         mock_db.library.get_song_tag_edges_for_tags.return_value = [
-            {"_to": "tags/rock", "_from": f"{CollectionNames.LIBRARY_FILES.value}/1"},
-            {"_to": "tags/rock", "_from": f"{CollectionNames.LIBRARY_FILES.value}/2"},
-            {"_to": "tags/jazz", "_from": f"{CollectionNames.LIBRARY_FILES.value}/3"},
-            {"_to": "tags/jazz", "_from": f"{CollectionNames.LIBRARY_FILES.value}/4"},
-            {"_to": "tags/jazz", "_from": f"{CollectionNames.LIBRARY_FILES.value}/5"},
-            {"_to": "tags/jazz", "_from": f"{CollectionNames.LIBRARY_FILES.value}/6"},
-            {"_to": "tags/jazz", "_from": f"{CollectionNames.LIBRARY_FILES.value}/7"},
-            {"_to": "tags/blues", "_from": f"{CollectionNames.LIBRARY_FILES.value}/8"},
-            {"_to": "tags/blues", "_from": f"{CollectionNames.LIBRARY_FILES.value}/9"},
-            {"_to": "tags/blues", "_from": f"{CollectionNames.LIBRARY_FILES.value}/10"},
-            {"_to": "tags/blues", "_from": f"{CollectionNames.LIBRARY_FILES.value}/11"},
-            {"_to": "tags/blues", "_from": f"{CollectionNames.LIBRARY_FILES.value}/12"},
+            {"_to": "tags/rock", "_from": f"{'library_files'}/1"},
+            {"_to": "tags/rock", "_from": f"{'library_files'}/2"},
+            {"_to": "tags/jazz", "_from": f"{'library_files'}/3"},
+            {"_to": "tags/jazz", "_from": f"{'library_files'}/4"},
+            {"_to": "tags/jazz", "_from": f"{'library_files'}/5"},
+            {"_to": "tags/jazz", "_from": f"{'library_files'}/6"},
+            {"_to": "tags/jazz", "_from": f"{'library_files'}/7"},
+            {"_to": "tags/blues", "_from": f"{'library_files'}/8"},
+            {"_to": "tags/blues", "_from": f"{'library_files'}/9"},
+            {"_to": "tags/blues", "_from": f"{'library_files'}/10"},
+            {"_to": "tags/blues", "_from": f"{'library_files'}/11"},
+            {"_to": "tags/blues", "_from": f"{'library_files'}/12"},
         ]
 
         result = get_genre_distribution(mock_db, limit=2)

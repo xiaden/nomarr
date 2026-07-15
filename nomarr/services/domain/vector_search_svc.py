@@ -26,13 +26,14 @@ class VectorSearchService:
         Args:
             db: Database instance
             config_svc: Configuration service for dynamic settings
+
         """
         self.db = db
         self._config_svc = config_svc
 
     def search_similar_tracks(
         self,
-        file_id: str,
+        file_id: int,
         backbone_id: str,
         limit: int,
         min_score: float = 0.0,
@@ -66,6 +67,7 @@ class VectorSearchService:
             ValueError: If file not found, no vector exists, or cold collection
                 has no vector index.
             RuntimeError: If search query fails
+
         """
         # Step 1: Get the source track's vector from the per-backbone cold collection
         vector_doc = get_cold_track_vector(self.db, file_id, backbone_id)
@@ -100,7 +102,7 @@ class VectorSearchService:
 
         return filtered_results
 
-    def get_track_vector(self, backbone_id: str, file_id: str) -> dict[str, Any] | None:
+    def get_track_vector(self, backbone_id: str, file_id: int) -> dict[str, Any] | None:
         """Get vector for a specific track.
 
         Delegates to the get_track_vector workflow, which fetches from the
@@ -112,6 +114,7 @@ class VectorSearchService:
 
         Returns:
             Vector document or None if not found
+
         """
         from nomarr.workflows.vectors.get_track_vector_wf import get_track_vector as get_track_vector_wf
 

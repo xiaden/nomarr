@@ -1,13 +1,21 @@
 from __future__ import annotations
 
-from arango.exceptions import AQLQueryExecuteError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from nomarr.persistence.arango_client import SafeDatabase
-from nomarr.persistence.database.app_aql import AppAqlOperations
-from nomarr.persistence.database.file_states_aql import FileStatesAqlOperations
-from nomarr.persistence.database.libraries_aql import LibrariesAqlOperations
-from nomarr.persistence.database.navidrome_aql import NavidromeAqlOperations
-from nomarr.persistence.database.scan_aql import ScanAqlOperations
+from nomarr.helpers.dto.navidrome_repo_dto import NdPlayRecord, NdTrackRecord
+from nomarr.helpers.dto.repo_dto import (
+    HealthRow,
+    LibraryFileRow,
+    LockRow,
+    MetaRow,
+    SessionRow,
+    WorkerClaimRow,
+)
+from nomarr.persistence.database.app_repo import AppRepository
+from nomarr.persistence.database.file_state_repo import FileStateRepository
+from nomarr.persistence.database.library_repo import LibraryRepository
+from nomarr.persistence.database.navidrome_repo import NavidromeRepo
+from nomarr.persistence.database.pipeline_repo import PipelineRepository
 
 
 class AppMaintenanceDb:
@@ -22,39 +30,34 @@ class AppMaintenanceDb:
     def __init__(
         self,
         *,
-        db: SafeDatabase,
-        app: AppAqlOperations,
+        session: AsyncSession,
+        app_repo: AppRepository,
+        file_state_repo: FileStateRepository,
     ) -> None:
-        self._db = db
-        self._app = app
+        self._app_repo = app_repo
+        self._file_state_repo = file_state_repo
 
-    def truncate_file_state_edges(self) -> None:
-        return self._app.truncate_file_state_edges()
+    async def truncate_file_state_edges(self) -> None:
+        await self._file_state_repo.truncate_assignments()
 
-    def truncate_scan_records(self) -> None:
-        return self._app.truncate_scan_records()
-
-    def truncate_library_scan_edges(self) -> None:
-        return self._app.truncate_library_scan_edges()
-
-    def truncate_pipeline_states(self) -> None:
+    async def truncate_pipeline_states(self) -> None:
         """No-op — pipeline state is now stored as fields on library documents."""
 
-    def truncate_pipeline_state_edges(self) -> None:
+    async def truncate_pipeline_state_edges(self) -> None:
         """No-op — pipeline state edges no longer exist."""
 
-    def truncate_worker_claims(self) -> None:
-        return self._app.delete_all_worker_claims()
+    async def truncate_worker_claims(self) -> None:
+        await self._app_repo.truncate_worker_claims()
 
-    def delete_all_worker_claims(self) -> None:
+    async def delete_all_worker_claims(self) -> None:
         # Legacy name shim — canonical method is truncate_worker_claims. Do not add new callers.
-        return self.truncate_worker_claims()
+        await self.truncate_worker_claims()
 
-    def truncate_health(self) -> None:
-        return self._app.truncate_health()
+    async def truncate_health(self) -> None:
+        await self._app_repo.truncate_health()
 
-    def list_collections(self) -> list[str]:
-        return [c["name"] for c in self._db.collections()]
+    async def list_collections(self) -> list[str]:
+        return []
 
 
 class AppLegacyNavidromeDb:
@@ -66,53 +69,14 @@ class AppLegacyNavidromeDb:
     needed, stays confined to ``db.app.legacy_navidrome``.
     """
 
-    def __init__(self, *, navidrome: NavidromeAqlOperations) -> None:
-        self._navidrome = navidrome
+    def __init__(self, *, navidrome_repo: NavidromeRepo) -> None:
+        self._navidrome_repo = navidrome_repo
 
-    def get_nd_track(self, track_id: str) -> dict | None:
-        return self._navidrome.get_nd_track(track_id)
+    async def get_nd_track(self, track_id: str) -> NdTrackRecord | None:
+        return await self._navidrome_repo.get_track(track_id)
 
-    def upsert_nd_track(self, payload: dict) -> None:
-        return self._navidrome.upsert_nd_track(payload)
-
-    def delete_nd_tracks_for_file(self, file_id: str) -> None:
-        return self._navidrome.delete_nd_tracks_for_file(file_id)
-
-    def list_nd_track_keys(self) -> list[str]:
-        return self._navidrome.list_nd_track_keys()
-
-    def bulk_upsert_nd_tracks(self, nd_ids: list[str]) -> int:
-        return self._navidrome.bulk_upsert_nd_tracks(nd_ids)
-
-    def delete_nd_tracks_cascade(self, nd_ids: list[str]) -> int:
-        return self._navidrome.delete_nd_tracks_cascade(nd_ids)
-
-    def ensure_nd_file_link(self, nd_id: str, file_id: str) -> None:
-        return self._navidrome.ensure_nd_file_link(nd_id, file_id)
-
-    def bulk_ensure_nd_file_links(self, mappings: list[dict]) -> int:
-        return self._navidrome.bulk_ensure_nd_file_links(mappings)
-
-    def resolve_nd_track_to_file(self, nd_id: str) -> str | None:
-        return self._navidrome.resolve_nd_track_to_file(nd_id)
-
-    def resolve_file_to_nd_track(self, file_id: str) -> str | None:
-        return self._navidrome.resolve_file_to_nd_track(file_id)
-
-    def bulk_resolve_nd_tracks_to_files(self, nd_ids: list[str]) -> dict[str, str]:
-        return self._navidrome.bulk_resolve_nd_tracks_to_files(nd_ids)
-
-    def bulk_resolve_files_to_nd_ids(self, file_ids: list[str]) -> dict[str, str]:
-        return self._navidrome.bulk_resolve_files_to_nd_ids(file_ids)
-
-    def bulk_upsert_nd_plays(self, user_id: str, plays: list[dict]) -> int:
-        return self._navidrome.bulk_upsert_nd_plays(user_id, plays)
-
-    def get_top_nd_plays(self, user_id: str, top_n: int) -> list[dict]:
-        return self._navidrome.get_top_nd_plays(user_id, top_n)
-
-    def get_nd_id_edge(self, track_id: str) -> dict | None:
-        return self._navidrome.get_nd_id_edge(track_id)
+    async def list_nd_track_keys(self) -> list[str]:
+        return await self._navidrome_repo.list_nd_track_keys()
 
 
 class AppDb:
@@ -127,124 +91,105 @@ class AppDb:
     def __init__(
         self,
         *,
-        db: SafeDatabase,
-        file_states: FileStatesAqlOperations,
-        scan: ScanAqlOperations,
-        app: AppAqlOperations,
-        navidrome: NavidromeAqlOperations,
-        libraries: LibrariesAqlOperations,
+        session: AsyncSession,
+        app_repo: AppRepository,
+        library_repo: LibraryRepository,
+        navidrome_repo: NavidromeRepo,
+        file_state_repo: FileStateRepository,
+        pipeline_repo: PipelineRepository,
     ) -> None:
-        self._db = db
-        self._file_states = file_states
-        self._scan = scan
-        self._app = app
-        self._navidrome = navidrome
-        self._libraries = libraries
+        self._file_state_repo = file_state_repo
+        self._app_repo = app_repo
+        self._navidrome_repo = navidrome_repo
+        self._library_repo = library_repo
+        self._pipeline_repo = pipeline_repo
         self.maintenance: AppMaintenanceDb = AppMaintenanceDb(
-            db=db,
-            app=app,
+            session=session,
+            app_repo=app_repo,
+            file_state_repo=file_state_repo,
         )
         self.legacy_navidrome: AppLegacyNavidromeDb = AppLegacyNavidromeDb(
-            navidrome=navidrome,
+            navidrome_repo=navidrome_repo,
         )
 
     # ------------------------------------------------------------------
     # Routine top-level methods already aligned with the DD contract
     # ------------------------------------------------------------------
 
-    def get_file_state(self, file_id: str) -> str | None:
-        return self._file_states.get_file_state(file_id)
+    async def get_file_state(self, file_id: int) -> str | None:
+        return await self._file_state_repo.get_file_state(file_id)
 
-    def get_file_states_for_files(self, file_ids: list[str]) -> dict[str, set[str]]:
-        return self._file_states.get_file_states_for_files(file_ids)
+    async def get_file_states_for_files(self, file_ids: list[int]) -> dict[int, set[str]]:
+        return await self._file_state_repo.get_file_states_for_files(file_ids)
 
-    def list_files_in_state(self, state: str, *, limit: int | None = None) -> list[str]:
-        return self._file_states.list_files_in_state(state, limit=limit)
+    async def list_files_in_state(self, state: str, *, limit: int | None = None) -> list[int]:
+        return await self._file_state_repo.list_files_in_state(state, limit=limit)
 
-    def list_file_docs_in_state(
+    async def list_file_docs_in_state(
         self,
         state: str,
         *,
         limit: int | None = None,
-    ) -> list[dict]:
-        return self._app.list_file_docs_in_state(state, limit=limit)
+    ) -> list[LibraryFileRow]:
+        return await self._pipeline_repo.list_file_docs_in_state(state, limit=limit)
 
-    def count_files_in_state(self, state: str) -> int:
-        return self._file_states.count_files_in_state(state)
+    async def count_files_in_state(self, state: str) -> int:
+        return await self._file_state_repo.count_files_in_state(state)
 
-    def add_file_states(self, file_ids: list[str], state: str) -> None:
+    async def add_file_states(self, file_ids: list[int], state: str) -> None:
         for file_id in file_ids:
-            self._file_states.add_file_state_edge(file_id, state)
+            await self._file_state_repo.assign_state(file_id, state)
 
-    def replace_file_states(self, file_ids: list[str], state: str) -> None:
-        self.remove_file_states(file_ids)
-        self.add_file_states(file_ids, state)
+    async def replace_file_states(self, file_ids: list[int], state: str) -> None:
+        await self._file_state_repo.remove_states_for_files(file_ids)
+        await self.add_file_states(file_ids, state)
 
-    def remove_file_states(self, file_ids: list[str]) -> None:
+    async def remove_file_states(self, file_ids: list[int]) -> None:
         if not file_ids:
             return
-        self._file_states.delete_file_state_edges(file_ids)
+        await self._file_state_repo.remove_states_for_files(file_ids)
 
-    def get_scan(self, library_id: str) -> dict | None:
-        return self._scan.get_scan_record(library_id)
-
-    def add_scan(self, library_id: str, payload: dict) -> None:
-        scan_payload = dict(payload)
-        scan_payload.setdefault("library_id", library_id)
-        scan_id = self._scan.add_scan_record(scan_payload)
-        self._app.upsert_library_scan_edge(library_id, scan_id)
-
-    def update_scan(self, library_id: str, fields: dict) -> None:
-        existing_scan = self.get_scan(library_id)
-        scan_id = existing_scan.get("_id") if isinstance(existing_scan, dict) else None
-        if isinstance(scan_id, str) and scan_id:
-            self._scan.update_scan_record(scan_id, fields)
-            self._app.upsert_library_scan_edge(library_id, scan_id)
-            return
-        self.add_scan(library_id, fields)
-
-    def remove_scan(self, library_id: str) -> None:
-        existing_scan = self.get_scan(library_id)
-        scan_id = existing_scan.get("_id") if isinstance(existing_scan, dict) else None
-        if isinstance(scan_id, str) and scan_id:
-            self._scan._delete_scan_record(scan_id)
-        self._app.delete_library_scan_edge(library_id)
-
-    def get_pipeline_state(self, library_id: str) -> dict[str, str] | None:
+    async def get_pipeline_state(self, library_id: int) -> dict[str, str] | None:
         """Return the four pipeline axis values for a library."""
-        return self._libraries.get_pipeline_state(library_id)
+        return await self._library_repo.get_pipeline_state(library_id)
 
-    def update_pipeline_axis(self, library_id: str, axis_field: str, axis_value: str) -> None:
+    async def update_pipeline_axis(self, library_id: int, axis_field: str, axis_value: str) -> None:
         """Update a single pipeline axis field on a library document."""
-        self._libraries.update_pipeline_axis(library_id, axis_field, axis_value)
+        await self._library_repo.update_pipeline_axis(library_id, axis_field, axis_value)
 
-    def get_libraries_in_axis_state(self, axis_field: str, axis_value: str) -> list[str]:
-        """Return library document IDs where the given axis field matches the value."""
-        return self._libraries.get_libraries_in_axis_state(axis_field, axis_value)
+    async def get_libraries_in_axis_state(self, axis_field: str, axis_value: str) -> list[int]:
+        """Return library ids where the given axis field matches the value."""
+        return await self._library_repo.get_libraries_in_axis_state(axis_field, axis_value)
 
-    def get_lock(self, resource_id: str) -> dict | None:
-        return self._app.get_lock(resource_id)
+    async def get_lock(self, resource_id: str) -> LockRow | None:
+        return await self._app_repo.get_lock(resource_id)
 
-    def add_lock(self, payload: dict) -> str:
-        return self._app.insert_lock(payload)
+    async def add_lock(self, payload: dict) -> str:
+        return await self._app_repo.insert_lock(payload)
 
-    def list_locks(self) -> list[dict]:
-        return self._app.list_locks()
+    async def list_locks(self) -> list[LockRow]:
+        return await self._app_repo.list_locks()
 
-    def remove_lock(self, resource_id: str) -> None:
-        return self._app.release_lock(resource_id)
+    async def remove_lock(self, resource_id: str) -> None:
+        await self._app_repo.release_lock(resource_id)
 
-    def add_claim(self, payload: dict) -> str:
-        return self._app.insert_worker_claim(payload)
+    async def upsert_lock(self, resource_id: str, payload: dict) -> None:
+        await self._app_repo.upsert_lock(resource_id, payload)
 
-    def remove_claim(self, file_id: str) -> None:
-        return self._app.release_claim(file_id)
+    async def acquire_lock(self, resource_id: str, payload: dict) -> bool:
+        return await self._app_repo.acquire_lock(resource_id, payload)
 
-    def remove_claims(
+    async def add_claim(self, payload: dict) -> int:
+        return await self._app_repo.insert_worker_claim(payload)
+
+    async def remove_claim(self, file_id: int) -> None:
+        await self._app_repo.release_claim(file_id)
+
+    async def remove_claims(
         self,
         *,
         worker_ids: list[str] | None = None,
-        file_ids: list[str] | None = None,
+        file_ids: list[int] | None = None,
     ) -> int:
         """Delete claims matching the supplied worker ids and/or file ids.
 
@@ -254,145 +199,172 @@ class AppDb:
 
         Returns:
             Total number of claims removed across both filters.
+
         """
         removed = 0
         if worker_ids:
-            removed += self._app.delete_claims_for_workers(worker_ids)
+            removed += await self._app_repo.delete_claims_for_workers(worker_ids)
         if file_ids:
-            removed += self._app.delete_claims_for_files(file_ids)
+            removed += await self._app_repo.delete_claims_for_files(file_ids)
         return removed
 
-    def list_claims(self) -> list[dict]:
-        return self._app.list_claims()
+    async def list_claims(self) -> list[WorkerClaimRow]:
+        return await self._app_repo.list_claims()
 
-    def count_claims(self) -> int:
-        return self._app.count_claims()
+    async def get_health(self, component_id: str) -> HealthRow | None:
+        return await self._app_repo.get_health(component_id)
 
-    def get_health(self, component_id: str) -> dict | None:
-        return self._app.get_health(component_id)
+    async def count_healthy(self) -> int:
+        return await self._app_repo.count_healthy()
 
-    def count_healthy(self) -> int:
-        return self._app.count_healthy()
+    async def list_worker_health(self) -> list[HealthRow]:
+        return await self._app_repo.list_worker_health()
 
-    def list_worker_health(self) -> list[dict]:
-        return self._app.list_worker_health()
+    async def update_health(self, component_id: str, fields: dict) -> None:
+        await self._app_repo.update_health(component_id, fields)
 
-    def update_health(self, component_id: str, fields: dict) -> None:
-        return self._app.update_health(component_id, fields)
+    async def upsert_health(self, component_id: str, fields: dict) -> None:
+        await self._app_repo.upsert_health(component_id, fields)
 
-    def release_claim(self, file_id: str) -> None:
+    async def release_claim(self, file_id: int) -> None:
         """Release the worker claim for one file (alias for remove_claim)."""
-        return self.remove_claim(file_id)
+        await self.remove_claim(file_id)
 
-    def list_collections(self) -> list[str]:
-        """Return all ArangoDB collection names."""
-        return self.maintenance.list_collections()
+    async def upsert_migration(self, name: str, fields: dict) -> None:
+        await self._app_repo.upsert_migration(name, fields)
 
-    def clear_file_state_links(self) -> None:
-        """Remove all file-state assignment records."""
-        return self.maintenance.truncate_file_state_edges()
+    async def list_migrations(self) -> list[dict]:
+        return await self._app_repo.list_migrations()
 
-    def clear_library_scan_links(self) -> None:
-        """Remove all library-scan link records."""
-        return self.maintenance.truncate_library_scan_edges()
+    async def add_vram_promise(self, payload: dict) -> None:
+        await self._app_repo.upsert_vram_promise(payload)
 
-    def clear_pipeline_state_links(self) -> None:
-        """Remove all pipeline-state link records."""
-        return self.maintenance.truncate_pipeline_state_edges()
+    async def list_vram_promises(self) -> list[dict]:
+        return await self._app_repo.get_vram_promises()
 
-    def clear_scans(self) -> None:
-        """Remove all scan records."""
-        return self.maintenance.truncate_scan_records()
+    async def remove_vram_promise(self, promise_id: int) -> None:
+        await self._app_repo.delete_vram_promise(promise_id)
 
-    def get_config_option(self, key: str) -> dict | None:
-        try:
-            return self._app.get_meta(key)
-        except AQLQueryExecuteError as exc:
-            # ERR 1203: collection or view not found — database is not yet
-            # initialised. Semantically equivalent to "no value stored".
-            if exc.error_code == 1203:
-                return None
-            raise
+    async def count_vram_promises(self) -> int:
+        return len(await self._app_repo.get_vram_promises())
 
-    def get_schema_version(self) -> str | None:
-        """Get the schema version (stored as ``_key='version'`` in meta)."""
-        try:
-            return self._app.get_schema_version()
-        except AQLQueryExecuteError as exc:
-            if exc.error_code == 1203:
-                return None
-            raise
+    async def get_worker_restart_policy(self, component_id: str) -> dict | None:
+        return await self._app_repo.get_worker_restart_policy(component_id)
 
-    def list_config_options(self, prefix: str | None = None) -> list[dict]:
-        keys = self._app.list_meta_keys_by_prefix(prefix or "")
-        docs: list[dict] = []
+    async def update_worker_restart_policy(self, component_id: str, fields: dict) -> None:
+        await self._app_repo.upsert_worker_restart_policy(component_id, fields)
+
+    async def upsert_worker_restart_policy(self, component_id: str, fields: dict) -> None:
+        await self._app_repo.upsert_worker_restart_policy(component_id, fields)
+
+    async def insert_session(self, payloads: list[dict]) -> None:
+        await self._app_repo.insert_session(payloads)
+
+    async def delete_session(self, session_id: str) -> None:
+        await self._app_repo.delete_session(session_id)
+
+    async def get_sessions_expiring_before(self, timestamp_ms: int, limit: int) -> list[SessionRow]:
+        return await self._app_repo.get_sessions_expiring_before(timestamp_ms, limit)
+
+    async def count_sessions(self) -> int:
+        return await self._app_repo.count_sessions()
+
+    async def delete_sessions_by_ids(self, session_ids: list[str]) -> None:
+        await self._app_repo.delete_sessions_by_ids(session_ids)
+
+    async def get_active_sessions(self, not_before_ms: int, limit: int) -> list[SessionRow]:
+        return await self._app_repo.get_active_sessions(not_before_ms, limit)
+
+    async def get_config_option(self, key: str) -> MetaRow | None:
+        return await self._app_repo.get_meta(key)
+
+    async def get_schema_version(self) -> str | None:
+        """Get the schema version (stored as key='version' in meta)."""
+        row = await self._app_repo.get_meta("version")
+        if row is None:
+            return None
+        value = row["value"]
+        return str(value) if value is not None else None
+
+    async def list_config_options(self, prefix: str | None = None) -> list[MetaRow]:
+        keys = await self._app_repo.list_meta_keys_by_prefix(prefix or "")
+        results: list[MetaRow] = []
         for key in keys:
-            doc = self._app.get_meta(key)
-            if isinstance(doc, dict):
-                docs.append(doc)
-        return docs
+            row = await self._app_repo.get_meta(key)
+            if row is not None:
+                results.append(row)
+        return results
 
-    def update_config_option(self, key: str, payload: dict) -> None:
-        return self._app.upsert_meta(key, payload)
+    async def update_config_option(self, key: str, payload: dict) -> None:
+        await self._app_repo.upsert_meta(key, payload)
 
-    def remove_config_option(self, key: str) -> None:
-        return self._app.delete_meta(key)
+    async def remove_config_option(self, key: str) -> None:
+        await self._app_repo.delete_meta(key)
 
-    def list_migrations(self) -> list[dict]:
-        return self._app.list_migrations()
+    # ------------------------------------------------------------------
+    # Navidrome methods
+    # ------------------------------------------------------------------
 
-    def add_vram_promise(self, payload: dict) -> None:
-        return self._app.upsert_vram_promise(payload)
+    async def upsert_navidrome_track(
+        self,
+        nd_id: str,
+        title: str | None,
+        artist: str | None,
+        album: str | None,
+        file_path: str | None,
+    ) -> NdTrackRecord:
+        return await self._navidrome_repo.upsert_track(nd_id, title, artist, album, file_path)
 
-    def list_vram_promises(self) -> list[dict]:
-        return self._app.get_vram_promises()
+    async def map_navidrome_track_to_file(self, nd_id: str, file_id: int) -> None:
+        await self._navidrome_repo.map_track_to_file(nd_id, file_id)
 
-    def remove_vram_promise(self, promise_id: str) -> None:
-        return self._app.delete_vram_promise(promise_id)
+    async def get_mapped_file_for_navidrome_track(self, nd_id: str) -> int | None:
+        return await self._navidrome_repo.get_mapped_file(nd_id)
 
-    def count_vram_promises(self) -> int:
-        return self._app.count_vram_promises()
+    async def resolve_file_to_navidrome_track(self, file_id: int) -> str | None:
+        return await self._navidrome_repo.resolve_file_to_nd_track(file_id)
 
-    def update_pipeline_state(self, library_id: str, state: str) -> None:
+    async def bulk_upsert_navidrome_tracks(self, nd_ids: list[str]) -> int:
+        return await self._navidrome_repo.bulk_upsert_tracks(nd_ids)
+
+    async def bulk_map_navidrome_tracks(self, mappings: list[dict[str, str]]) -> int:
+        return await self._navidrome_repo.bulk_map_tracks(mappings)
+
+    async def record_navidrome_play(
+        self,
+        nd_id: str,
+        user_id: str | None,
+        played_at: int,
+        file_id: int | None = None,
+    ) -> int:
+        return await self._navidrome_repo.record_play(nd_id, user_id, played_at, file_id)
+
+    async def get_top_navidrome_plays(self, user_id: str, top_n: int) -> list[NdPlayRecord]:
+        return await self._navidrome_repo.get_top_plays(user_id, top_n)
+
+    async def delete_navidrome_tracks_for_file(self, file_id: int) -> int:
+        return await self._navidrome_repo.delete_tracks_for_file(file_id)
+
+    async def list_collections(self) -> list[str]:
+        """Return all collection/table names (empty list for PostgreSQL)."""
+        return await self.maintenance.list_collections()
+
+    async def clear_file_state_links(self) -> None:
+        """Remove all file-state assignment records."""
+        await self.maintenance.truncate_file_state_edges()
+
+    async def clear_pipeline_state_links(self) -> None:
+        """Remove all pipeline-state link records."""
+        await self.maintenance.truncate_pipeline_state_edges()
+
+    async def update_pipeline_state(self, library_id: int, state: str) -> None:
         """Legacy single-value pipeline state update. DEPRECATED — use update_pipeline_axis."""
-        # This method is kept for backwards compatibility during migration.
-        # It should not be called by new code.
         msg = "update_pipeline_state is deprecated — use update_pipeline_axis"
         raise NotImplementedError(msg)
 
-    def remove_pipeline_state(self, library_id: str) -> None:
+    async def remove_pipeline_state(self, library_id: int) -> None:
         """Reset all pipeline axes to their default not_started values."""
         from nomarr.helpers.constants.pipeline_states import PIPELINE_DEFAULTS
 
         for axis_field, default_value in PIPELINE_DEFAULTS.items():
-            self._libraries.update_pipeline_axis(library_id, axis_field, default_value)
-
-    def insert_session(self, payload: list[dict]) -> None:
-        return self._app.insert_session(payload)
-
-    def delete_session(self, session_id: str) -> None:
-        return self._app.delete_session(session_id)
-
-    def get_sessions_expiring_before(self, timestamp_ms: int, limit: int) -> list[dict]:
-        return self._app.get_sessions_expiring_before(timestamp_ms, limit)
-
-    def count_sessions(self) -> int:
-        return self._app.count_sessions()
-
-    def delete_sessions_by_ids(self, ids: list[str]) -> None:
-        return self._app.delete_sessions_by_ids(ids)
-
-    def get_active_sessions(self, not_before_ms: int, limit: int) -> list[dict]:
-        return self._app.get_active_sessions(not_before_ms, limit)
-
-    def get_worker_restart_policy(self, component_id: str) -> dict | None:
-        return self._app.get_worker_restart_policy(component_id)
-
-    def update_worker_restart_policy(self, component_id: str, fields: dict) -> None:
-        return self._app.update_worker_restart_policy(component_id, fields)
-
-    def upsert_worker_restart_policy(self, component_id: str, fields: dict) -> None:
-        return self._app.upsert_worker_restart_policy(component_id, fields)
-
-    def upsert_migration(self, name: str, fields: dict) -> None:
-        return self._app.upsert_migration(name, fields)
+            await self._library_repo.update_pipeline_axis(library_id, axis_field, default_value)

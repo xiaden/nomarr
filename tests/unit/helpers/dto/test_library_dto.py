@@ -180,21 +180,6 @@ class TestLibraryDict:
         assert lib.scan_progress == 250
 
     @pytest.mark.unit
-    def test_id_contains_collection_prefix(self) -> None:
-        """Library ID should contain ArangoDB collection prefix."""
-        lib = LibraryDict(
-            _id="libraries/abc123",
-            _key="abc123",
-            _rev="_xyz789",
-            name="Test",
-            root_path="/test",
-            is_enabled=True,
-            created_at=0,
-            updated_at=0,
-        )
-        assert lib._id.startswith("libraries/")
-
-    @pytest.mark.unit
     def test_can_create_library_with_joined_scan_state(self) -> None:
         """Should include scan fields joined from library_scans collection.
 

@@ -78,7 +78,7 @@ def save_calibration_state(
 
     Args:
         db: Database instance
-        model_id: ArangoDB ``_id`` of the parent model vertex
+        model_id: Integer ID of the parent model row
         head_name: Head name (e.g., "mood_happy")
         label: Label to calibrate (e.g., "happy")
         calibration_def_hash: MD5 hash of calibration definition
@@ -299,6 +299,7 @@ def compute_reconciliation_info(
     Returns:
         ``{"requires_reconciliation": bool,
           "affected_libraries": [{library_id, name, outdated_files, file_write_mode}]}``
+
     """
     if not global_version:
         return {"requires_reconciliation": False, "affected_libraries": []}

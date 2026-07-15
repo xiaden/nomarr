@@ -16,6 +16,7 @@ from nomarr.helpers.dto.ml_dto import SaveCalibrationSidecarsResult
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.model_repo_dto import ModelRecord
     from nomarr.persistence.db import Database
 
 
@@ -178,7 +179,7 @@ def compute_calibration_def_hash(model_id: str, head_name: str, label: str) -> s
     Stable identifier for a calibration configuration. Changes when model or label changes.
 
     Args:
-        model_id: ArangoDB ``_id`` of the model vertex
+        model_id: String primary key of the model row.
         head_name: Head name (e.g., "mood_happy")
         label: Label name (e.g., "happy", "male")
 
@@ -214,7 +215,7 @@ def get_default_histogram_spec(head_name: str) -> dict[str, Any]:
     return {"lo": 0.0, "hi": 1.0, "bins": 10000}
 
 
-def get_sparse_histogram(
+async def get_sparse_histogram(
     db: Database,
     *,
     model_id: str,
@@ -227,7 +228,7 @@ def get_sparse_histogram(
 
     Args:
         db: Database instance.
-        model_id: Model document ID (e.g. ``"ml_models/model-1"``).
+        model_id: Model row ID (e.g. ``"model-1"``).
         label: Calibration label (e.g. ``"happy"``).
         lo: Lower bound of data range. Defaults to 0.0.
         hi: Upper bound of data range. Defaults to 1.0.
@@ -240,13 +241,13 @@ def get_sparse_histogram(
         metadata is incomplete.
 
     """
-    model_doc = db.ml.get_model(model_id)
+    model_doc = await db.ml.get_model(model_id)
     if model_doc is None:
         return []
 
-    backbone = model_doc.get("backbone")
-    release_date = model_doc.get("embedder_release_date")
-    if not isinstance(backbone, str) or not isinstance(release_date, str):
+    backbone = model_doc.get("backbone", "")
+    release_date = model_doc.get("embedder_release_date", "")
+    if not backbone or not release_date:
         return []
 
     model_key_for_tag = f"{backbone}{release_date.replace('-', '')}"
@@ -254,7 +255,7 @@ def get_sparse_histogram(
     max_bin = bins - 1
 
     matching_names: list[str] = []
-    all_names = db.library.list_all_tag_names(limit=10000)
+    all_names = await db.library.list_all_tag_names(limit=10000)
     for name in all_names:
         if not isinstance(name, str) or not name.startswith("nom:"):
             continue
@@ -269,7 +270,7 @@ def get_sparse_histogram(
 
     _raw_bins: dict[int, int] = {}
     for tag_name in sorted(matching_names):
-        tag_docs = cast("list[dict[str, Any]]", db.library.list_tags_by_name(name=tag_name, limit=50000))
+        tag_docs = await db.library.list_tags_by_name(name=tag_name, limit=50000)
         for tag_doc in tag_docs:
             raw_value = tag_doc.get("value")
             if raw_value is None:
@@ -315,7 +316,7 @@ def derive_percentiles_from_sparse_histogram(
     """Derive p5/p95 from sparse histogram (only non-zero bins).
 
     Args:
-        sparse_bins: AQL query result - list of {min_val: float, count: int, underflow_count: int, overflow_count: int}
+        sparse_bins: Histogram bins - list of {min_val: float, count: int, underflow_count: int, overflow_count: int}
         lo: Histogram lower bound (0.0)
         hi: Histogram upper bound (1.0)
         bin_width: Uniform bin width (0.0001)
@@ -359,7 +360,7 @@ def derive_percentiles_from_sparse_histogram(
     }
 
 
-def generate_calibration_from_histogram(
+async def generate_calibration_from_histogram(
     db: Database,
     model_id: str,
     head_name: str,
@@ -374,7 +375,7 @@ def generate_calibration_from_histogram(
 
     Args:
         db: Database instance
-        model_id: ArangoDB ``_id`` of the model vertex
+        model_id: String primary key of the model row.
         head_name: Head name for logging (e.g., "mood_happy")
         label: Label to match (e.g., "happy", "male", "arousal")
         lo: Lower bound of calibrated range (default 0.0)
@@ -386,7 +387,7 @@ def generate_calibration_from_histogram(
 
     """
     bin_width = (hi - lo) / bins
-    sparse_bins = db.calibration_state.get_sparse_histogram(model_id=model_id, label=label, lo=lo, hi=hi, bins=bins)  # type: ignore[attr-defined]
+    sparse_bins = await get_sparse_histogram(db, model_id=model_id, label=label, lo=lo, hi=hi, bins=bins)
     if not sparse_bins:
         logger.warning(f"[calibration] No data for {model_id}:{head_name}:{label}")
         return {"p5": lo, "p95": hi, "n": 0, "underflow_count": 0, "overflow_count": 0, "histogram_bins": []}
@@ -406,10 +407,10 @@ def generate_calibration_from_histogram(
     return result
 
 
-def export_calibration_state_to_json(db: Database, output_path: str) -> dict[str, Any]:
-    """Export all calibration_state documents to a single JSON file.
+async def export_calibration_state_to_json(db: Database, output_path: str) -> dict[str, Any]:
+    """Export all calibration_state rows to a single JSON file.
 
-    Exports the full calibration state collection for backup or distribution.
+    Exports the full calibration state table for backup or distribution.
     The JSON file can be imported into another Nomarr instance.
 
     Format v2 uses backbone + embedder_release_date instead of model_key.
@@ -427,34 +428,38 @@ def export_calibration_state_to_json(db: Database, output_path: str) -> dict[str
 
     """
     logger.info(f"[calibration] Exporting calibration_state to {output_path}")
-    calibrations = db.calibration_state.get_all_calibration_states()  # type: ignore[attr-defined]
+    calibrations = await db.ml.list_calibration_states()
+    all_models = await db.ml.list_models()
+    model_lookup: dict[str, ModelRecord] = {m["id"]: m for m in all_models}
+
     export_data = []
     for calib in calibrations:
-        model_info = calib.get("model") or {}
+        sd = calib.get("state_data", {})
+        model_info: ModelRecord | dict[str, Any] = model_lookup.get(calib.get("model_id", ""), {})
         export_doc = {
-            "backbone": model_info.get("backbone"),
-            "embedder_release_date": model_info.get("embedder_release_date"),
-            "head_name": calib["head_name"],
-            "label": calib["label"],
-            "calibration_def_hash": calib["calibration_def_hash"],
-            "histogram": calib["histogram"],
-            "histogram_bins": calib.get("histogram_bins"),
-            "p5": calib["p5"],
-            "p95": calib["p95"],
-            "n": calib["n"],
-            "underflow_count": calib.get("underflow_count", 0),
-            "overflow_count": calib.get("overflow_count", 0),
+            "backbone": model_info.get("backbone", ""),
+            "embedder_release_date": model_info.get("embedder_release_date", ""),
+            "head_name": sd.get("head_name", ""),
+            "label": sd.get("label", ""),
+            "calibration_def_hash": sd.get("calibration_def_hash", ""),
+            "histogram": sd.get("histogram", []),
+            "histogram_bins": sd.get("histogram_bins"),
+            "p5": sd.get("p5", 0.0),
+            "p95": sd.get("p95", 1.0),
+            "n": sd.get("n", 0),
+            "underflow_count": sd.get("underflow_count", 0),
+            "overflow_count": sd.get("overflow_count", 0),
         }
         export_data.append(export_doc)
 
-    with open(output_path, "w", encoding="utf-8") as f:
+    with open(output_path, "w", encoding="utf-8") as f:  # noqa: ASYNC230
         json.dump({"version": 2, "format": "nomarr_calibration_state", "calibrations": export_data}, f, indent=2)
 
     logger.info(f"[calibration] Exported {len(export_data)} calibrations to {output_path}")
     return {"calibrations_exported": len(export_data), "path": output_path}
 
 
-def import_calibration_state_from_json(db: Database, input_path: str, overwrite: bool = False) -> dict[str, Any]:
+async def import_calibration_state_from_json(db: Database, input_path: str, overwrite: bool = False) -> dict[str, Any]:
     """Import calibration_state documents from a JSON file.
 
     Imports calibrations exported by export_calibration_state_to_json().
@@ -475,7 +480,7 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
 
     """
     logger.info(f"[calibration] Importing calibration_state from {input_path}")
-    with open(input_path, encoding="utf-8") as f:
+    with open(input_path, encoding="utf-8") as f:  # noqa: ASYNC230
         data = json.load(f)
 
     if not isinstance(data, dict) or data.get("format") != "nomarr_calibration_state":
@@ -488,11 +493,11 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
         raise ValueError(msg)
 
     # Build model lookup cache: (backbone, embedder_release_date) -> model_id
-    all_models = db.ml_models_aql.list_models()
+    all_models = await db.ml.list_models()
     model_lookup: dict[tuple[str, str], str] = {}
     for model in all_models:
         key = (model.get("backbone", ""), model.get("embedder_release_date", ""))
-        model_lookup[key] = model["_id"]
+        model_lookup[key] = model["id"]
 
     imported_count = 0
     skipped_count = 0
@@ -502,8 +507,8 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
         try:
             backbone = calib.get("backbone", "")
             embedder_release_date = calib.get("embedder_release_date", "")
-            head_name = calib["head_name"]
-            label = calib["label"]
+            head_name = calib.get("head_name", "")
+            label = calib.get("label", "")
 
             # Resolve model_id from backbone + embedder_release_date
             model_id = model_lookup.get((backbone, embedder_release_date))
@@ -515,26 +520,30 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
                 continue
 
             # Check if calibration already exists
-            existing = db.calibration_state.get_calibration_state(head_name, label)  # type: ignore[attr-defined]
-            calibration_def_hash = calib["calibration_def_hash"]
-            if existing and (not overwrite) and (existing.get("calibration_def_hash") == calibration_def_hash):
+            existing = await db.ml.get_calibration_state_view(head_name, label)
+            calibration_def_hash = calib.get("calibration_def_hash", "")
+            if (
+                existing
+                and (not overwrite)
+                and (existing.get("state_data", {}).get("calibration_def_hash") == calibration_def_hash)
+            ):
                 logger.debug(f"[calibration] Skipping {head_name}:{label} (already exists)")
                 skipped_count += 1
                 continue
 
-            db.calibration_state.upsert_calibration_state(  # type: ignore[attr-defined]
-                model_id=model_id,
-                head_name=head_name,
-                label=label,
-                calibration_def_hash=calibration_def_hash,
-                histogram_spec=calib["histogram"],
-                p5=calib["p5"],
-                p95=calib["p95"],
-                sample_count=calib["n"],
-                underflow_count=calib.get("underflow_count", 0),
-                overflow_count=calib.get("overflow_count", 0),
-                histogram_bins=calib.get("histogram_bins"),
-            )
+            state_data = {
+                "head_name": head_name,
+                "label": label,
+                "calibration_def_hash": calibration_def_hash,
+                "histogram": calib.get("histogram", []),
+                "p5": calib.get("p5", 0.0),
+                "p95": calib.get("p95", 1.0),
+                "n": calib.get("n", 0),
+                "underflow_count": calib.get("underflow_count", 0),
+                "overflow_count": calib.get("overflow_count", 0),
+                "histogram_bins": calib.get("histogram_bins"),
+            }
+            await db.ml.replace_calibration_state(model_id, key="", payload=state_data)
             logger.info(f"[calibration] Imported {head_name}:{label}")
             imported_count += 1
 
@@ -560,7 +569,7 @@ def compute_global_calibration_hash(calibration_states: list[dict[str, Any]]) ->
     p5/p95 update, etc). Used to detect if files need recalibration.
 
     Args:
-        calibration_states: List of calibration_state documents
+        calibration_states: List of calibration_state rows
 
     Returns:
         MD5 hash representing the combined calibration version
@@ -568,13 +577,14 @@ def compute_global_calibration_hash(calibration_states: list[dict[str, Any]]) ->
     """
     import hashlib
 
-    sorted_states = sorted(calibration_states, key=lambda x: x.get("_key", ""))
+    sorted_states = sorted(calibration_states, key=lambda x: x.get("id", 0))
     hash_parts = []
     for state in sorted_states:
-        _key = state.get("_key", "")
-        calib_hash = state.get("calibration_def_hash", "")
-        p5 = state.get("p5", "")
-        p95 = state.get("p95", "")
-        hash_parts.append(f"{_key}:{calib_hash}:{p5}:{p95}")
+        _id = state.get("id", 0)
+        sd = state.get("state_data", {})
+        calib_hash = sd.get("calibration_def_hash", "")
+        p5 = sd.get("p5", "")
+        p95 = sd.get("p95", "")
+        hash_parts.append(f"{_id}:{calib_hash}:{p5}:{p95}")
     combined = "|".join(hash_parts)
     return hashlib.md5(combined.encode()).hexdigest()

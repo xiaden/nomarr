@@ -169,11 +169,12 @@ class FileWatcherService:
         """Initialise the FileWatcherService.
 
         Args:
-            db: ArangoDB database handle.
+            db: PostgreSQL database handle.
             library_service: Domain service used to trigger scans.
             debounce_seconds: Quiet period before triggering a scan after file events.
             event_loop: Explicit event loop to use; if None, uses the running loop or creates a new one.
             polling_interval_seconds: Interval between polls when using poll watch mode.
+
         """
         self._db = db
         self.library_service = library_service

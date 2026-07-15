@@ -204,11 +204,11 @@ async def get_tag_songs(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> TagSongsResponse:
     """Get songs linked to a tag with metadata."""
-    tag_id = decode_path_id(tag_id)
+    decoded_tag_id: int = decode_path_id(tag_id)
     try:
         result = await asyncio.to_thread(
             tagging_service.get_tag_songs,
-            tag_id=tag_id,
+            tag_id=decoded_tag_id,
             limit=limit,
             offset=offset,
         )
@@ -266,11 +266,11 @@ async def update_file_tags(
     tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],
 ) -> UpdateFileTagsResponse:
     """Replace all tags for a file+name with new values."""
-    file_id = decode_path_id(file_id)
+    decoded_file_id: int = decode_path_id(file_id)
     try:
         result = await asyncio.to_thread(
             tagging_service.update_file_tags,
-            file_id=file_id,
+            file_id=decoded_file_id,
             name=request.name,
             values=request.values,
         )

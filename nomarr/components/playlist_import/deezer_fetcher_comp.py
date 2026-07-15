@@ -36,6 +36,7 @@ def resolve_short_link(short_url: str) -> str:
 
     Raises:
         DeezerFetchError: If the short link cannot be resolved
+
     """
     try:
         # Follow redirects but don't download full response
@@ -70,6 +71,7 @@ def fetch_deezer_playlist(
 
     Raises:
         DeezerFetchError: If the API request fails or playlist not found
+
     """
     url = f"{_DEEZER_API_BASE}/playlist/{playlist_id}"
 
@@ -124,6 +126,7 @@ def _extract_tracks(track_data: list[dict[str, Any]]) -> list[PlaylistTrackInput
 
     Returns:
         List of PlaylistTrackInput objects
+
     """
     tracks = []
 

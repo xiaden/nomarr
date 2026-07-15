@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -10,94 +10,49 @@ from nomarr.components.ml.vectors.ml_vector_maintenance_comp import (
     backfill_genres,
     derive_embed_dim,
 )
-from nomarr.persistence.schema import CollectionNames
-from nomarr.persistence.schema_types import Field
 
 PATCH_BASE = "nomarr.components.ml.vectors.ml_vector_maintenance_comp"
 
 
 class TestBackfillGenres:
-    """Tests for ``backfill_genres``."""
+    """Tests for ``backfill_genres`` — delegates to ``db.ml.backfill_genres``."""
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_raises_when_cold_collection_missing(self) -> None:
+    async def test_returns_count_from_facade(self) -> None:
+        """backfill_genres should return the count from db.ml.backfill_genres."""
         mock_db = MagicMock()
-        cold_ops = MagicMock()
-        cold_ops.count.side_effect = RuntimeError("missing")
+        mock_db.ml.backfill_genres = AsyncMock(return_value=42)
 
-        with (
-            patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold,
-            pytest.raises(ValueError, match="Cold collection 'vectors_track_cold__ast' does not exist"),
-        ):
-            backfill_genres(mock_db, "ast")
+        result = await backfill_genres(mock_db, "ast")
 
-        mock_get_cold.assert_called_once_with(mock_db, "ast")
+        assert result == 42
+        mock_db.ml.backfill_genres.assert_called_once_with("ast")
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_updated_count(self) -> None:
+    async def test_returns_zero_when_no_embeddings_need_backfill(self) -> None:
+        """Zero-count pass-through when no embeddings need genre backfill."""
         mock_db = MagicMock()
-        cold_ops = MagicMock()
-        cold_ops.count.return_value = 2
-        cold_ops.aggregate.return_value = [
-            {"value": "vectors_track_cold__ast/k1"},
-            {"value": "vectors_track_cold__ast/k2"},
-        ]
-        cold_ops.get.in_.return_value = [
-            {
-                "_id": "vectors_track_cold__ast/k1",
-                "_key": "k1",
-                "file_id": f"{CollectionNames.LIBRARY_FILES.value}/f1",
-            },
-            {
-                "_id": "vectors_track_cold__ast/k2",
-                "_key": "k2",
-                "file_id": f"{CollectionNames.LIBRARY_FILES.value}/f2",
-            },
-        ]
-        mock_db.library.list_genre_tags_for_files.return_value = [
-            {"fid": f"{CollectionNames.LIBRARY_FILES.value}/f1", "genre": "ambient", "tag_id": "tags/g1"},
-            {"fid": f"{CollectionNames.LIBRARY_FILES.value}/f2", "genre": "jazz", "tag_id": "tags/g2"},
-            {"fid": f"{CollectionNames.LIBRARY_FILES.value}/f2", "genre": "fusion", "tag_id": "tags/g3"},
-        ]
+        mock_db.ml.backfill_genres = AsyncMock(return_value=0)
 
-        with patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold:
-            result = backfill_genres(mock_db, "ast")
-
-        assert result == 2
-        mock_get_cold.assert_called_once_with(mock_db, "ast")
-        cold_ops.update_many.assert_called_once_with(
-            [
-                {"_key": "k1", "genres": ["ambient"]},
-                {"_key": "k2", "genres": ["jazz", "fusion"]},
-            ]
-        )
-        field_arg = cold_ops.get.in_.call_args.args[0]
-        assert isinstance(field_arg, Field)
-        assert field_arg.name == "_id"
-        assert field_arg.value == [
-            "vectors_track_cold__ast/k1",
-            "vectors_track_cold__ast/k2",
-        ]
-        cold_ops.get.in_.assert_called_once_with(field_arg, limit=None)
-        mock_db.library.list_genre_tags_for_files.assert_called_once_with(
-            [f"{CollectionNames.LIBRARY_FILES.value}/f1", f"{CollectionNames.LIBRARY_FILES.value}/f2"]
-        )
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_returns_zero_when_cursor_empty(self) -> None:
-        mock_db = MagicMock()
-        cold_ops = MagicMock()
-        cold_ops.count.return_value = 0
-
-        with patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold:
-            result = backfill_genres(mock_db, "ast")
+        result = await backfill_genres(mock_db, "ast")
 
         assert result == 0
-        mock_get_cold.assert_called_once_with(mock_db, "ast")
-        cold_ops.update_many.assert_not_called()
+        mock_db.ml.backfill_genres.assert_called_once_with("ast")
+
+    @pytest.mark.asyncio
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    async def test_propagates_exception_from_facade(self) -> None:
+        """Exceptions from the facade should propagate to the caller."""
+        mock_db = MagicMock()
+        mock_db.ml.backfill_genres = AsyncMock(side_effect=RuntimeError("DB connection lost"))
+
+        with pytest.raises(RuntimeError, match="DB connection lost"):
+            await backfill_genres(mock_db, "ast")
 
 
 class TestDeriveEmbedDim:

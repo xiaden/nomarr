@@ -212,7 +212,7 @@ class TestSubsonicRepeatedSongIdEncoding:
 
     @patch.object(requests.Session, "get")
     def test_song_ids_encoded_as_repeated_params(self, mock_get: MagicMock) -> None:
-        """createPlaylist sends songId=X&songId=Y&songId=Z."""
+        """CreatePlaylist sends songId=X&songId=Y&songId=Z."""
         mock_get.return_value = _mock_response(_ok_response())
         client = SubsonicClient("http://navidrome:4533", "admin", "secret")
 

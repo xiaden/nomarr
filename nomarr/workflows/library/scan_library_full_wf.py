@@ -106,7 +106,7 @@ def scan_library_full_workflow(
     try:
         # Step 2 — Pre-scan DB lookups
         db_folder_paths = get_folder_rel_paths(db, library_id)
-        file_count = db.library.count_library_file_links(normalize_library_id(library_id))
+        file_count = db.library.file_repo.count_library_files(normalize_library_id(library_id))
         cached_folders = get_cached_folders(db, library_id)
 
         # Step 3 — Discover folders on disk

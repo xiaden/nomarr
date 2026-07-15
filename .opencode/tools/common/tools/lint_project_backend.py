@@ -509,6 +509,7 @@ def lint_project_backend(path: str | None = None, check_all: bool = False) -> di
         raise ValueError(f"Failed to serialize lint results to JSON: {e}") from e
 
     import json as _json
+
     return {
         "output": _json.dumps(result_json),
         "title": "Lint Backend",

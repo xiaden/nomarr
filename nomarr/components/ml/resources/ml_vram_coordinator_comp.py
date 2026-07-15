@@ -2,7 +2,7 @@
 
 Provides fleet-aware VRAM coordination for multi-worker GPU model placement.
 Before any model is loaded to GPU, the worker registers a promise here via
-an atomic AQL fit-check. Stale promises (from crashed workers) are reaped
+an atomic SQL fit-check. Stale promises (from crashed workers) are reaped
 periodically so their reserved VRAM becomes available to other workers.
 
 All four functions are stateless: the ``db`` argument carries all state.
@@ -52,7 +52,7 @@ def register_vram_promise(
     """Atomically register a VRAM promise if the model fits in available headroom.
 
     Queries current VRAM usage (fresh reading, telemetry cache reset), then
-    calls the AQL fit-check transaction. Returns True only if the promise
+    calls the fit-check transaction. Returns True only if the promise
     was inserted (model fits). Returns False if the GPU has insufficient
     headroom — the caller should fall back to CPU.
 

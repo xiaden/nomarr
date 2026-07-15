@@ -49,7 +49,7 @@ def create_library_record(
         "created_at": timestamp,
         "updated_at": timestamp,
     }
-    return cast("str", db.library.add_library(payload))
+    return cast("int", db.library.add_library(payload))
 
 
 def get_library_record(
@@ -58,7 +58,7 @@ def get_library_record(
     *,
     include_scan: bool = True,
 ) -> dict[str, Any] | None:
-    """Get one library by ``_id`` or ``_key`` and optionally merge scan state."""
+    """Get one library by ``id`` and optionally merge scan state."""
     normalized_library_id = normalize_library_id(library_id)
     doc = cast("dict[str, Any] | None", db.library.get_library(normalized_library_id))
 
@@ -107,7 +107,7 @@ def update_library_record(
     library_id: str,
     **fields: Any,
 ) -> None:
-    """Update a library document by ``_id`` through the constructor namespace."""
+    """Update a library document by ``id`` through the constructor namespace."""
     update_fields = {
         "updated_at": now_ms().value,
         **{key: value for key, value in fields.items() if value is not None},
@@ -182,14 +182,14 @@ def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, A
     completed: list[dict[str, Any]] = []
 
     for library_doc in library_docs:
-        library_ref = library_doc.get("_id") or library_doc.get("_key")
-        if not isinstance(library_ref, str):
+        library_ref = library_doc.get("id")
+        if not isinstance(library_ref, int):
             continue
-        library_id = normalize_library_id(library_ref)
+        library_id = library_ref
         pipeline_state = db.library.get_pipeline_state(library_id)
         if not pipeline_state or pipeline_state.get("ml_state") != ML_IN_PROGRESS:
             continue
-        if count_untagged_files(db, library_id) != 0:
+        if count_untagged_files(db, str(library_id)) != 0:
             continue
 
         tagged_count = counts.get(library_id, {}).get("file_count", 0)
@@ -200,7 +200,7 @@ def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, A
 
 def _merge_scan_state(db: Database, library: dict[str, Any]) -> dict[str, Any]:
     """Merge library scan state into a library document for API compatibility."""
-    library_id = str(library["_id"])
+    library_id = library["id"]
     scan_doc = get_scan_state(db, library_id)
     try:
         pipeline_state = get_pipeline_state(db, library_id)

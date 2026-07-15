@@ -1,7 +1,7 @@
 """Vector pooling utilities for backbone embedding persistence.
 
 Pools segment-level embeddings [num_segments, embed_dim] into a single
-track-level vector [embed_dim] suitable for ArangoDB storage and vector search.
+track-level vector [embed_dim] suitable for database storage and vector search.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ def pool_embedding_for_storage(
 
     Uses the same pooling infrastructure as head score aggregation for
     consistency. Returns a plain Python list[float] for direct JSON
-    serialization into ArangoDB documents.
+    serialization into database documents.
 
     Args:
         embeddings_2d: Shape ``[num_segments, embed_dim]`` backbone output.

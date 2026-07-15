@@ -18,30 +18,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def seed_song_entities_from_tags(db: "Database", song_id: str, tags: dict[str, Any]) -> None:
-    """Derive song tag edges from raw imported metadata tags.
-
-    Uses the unified TagOperations API to set tags directly from raw values.
-
-    Supports:
-    - artist (singular): tag key "artist" or first from "artists"
-    - artists (multi): tag key "artists" or ["artist"] if missing
-    - album (singular): tag key "album"
-    - label (multi): tag key "label" (list) or single value wrapped
-    - genres (multi): tag key "genre" (list) or single value wrapped
-    - year (singular): tag key "year" (int)
-
-    Args:
-        db: Database handle
-        song_id: Song _id (e.g., "library_files/12345")
-        tags: Raw metadata tags dict (from mutagen/external source)
-
-    """
-    entries = _build_song_tag_entries(song_id, tags)
-    if entries:
-        db.tags.set_song_tags_batch(entries)
-
-
 _ENTITY_TAG_KEYS = ("artist", "artists", "album", "label", "genre", "year")
 
 
@@ -122,7 +98,7 @@ def _build_song_tag_entries(song_id: str, tags: dict[str, Any]) -> list[dict[str
     return [{"song_id": song_id, "tags": tag_payloads}]
 
 
-def seed_entities_for_scan_batch(
+async def seed_entities_for_scan_batch(
     db: "Database",
     file_ids: list[str],
     metadata_by_id: dict[str, dict[str, Any]],
@@ -130,8 +106,8 @@ def seed_entities_for_scan_batch(
     """Seed entity vertices/edges and update metadata caches for scanned files.
 
     Batch-optimised: collects per-file tag entries in-memory, then executes
-    ``set_song_tags_batch`` (3 AQL) and ``update_metadata_cache_batch`` (1 AQL)
-    — total 4 AQL per folder instead of ~20 x N per file.
+    ``replace_file_tags`` per entry and ``update_metadata_cache_batch``
+    — total N+1 calls per folder instead of ~20 x N per file.
 
     Args:
         db: Database instance
@@ -163,15 +139,16 @@ def seed_entities_for_scan_batch(
         except (ValueError, TypeError, KeyError) as e:
             logger.warning("[entity_seeding] Failed to build entities for file_id %s: %s", file_id, e)
 
-    # 3) Batch seed entities (3 AQL total instead of 3 x N x 6)
+    # 3) Seed entities via replace_file_tags (one call per entry)
     if all_tag_entries:
         try:
-            db.tags.set_song_tags_batch(all_tag_entries)
+            for entry in all_tag_entries:
+                await db.library.replace_file_tags(entry["song_id"], entry["tags"])
         except (ValueError, RuntimeError) as e:
             logger.warning("[entity_seeding] Batch tag seeding failed: %s", e)
             return 0
 
-    # 4) Batch update metadata cache (1 AQL instead of N)
+    # 4) Batch update metadata cache (single query instead of N)
     if cache_updates:
         try:
             update_metadata_cache_batch(db, cache_updates)

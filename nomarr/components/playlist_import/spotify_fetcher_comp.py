@@ -40,6 +40,7 @@ def create_spotify_client(client_id: str, client_secret: str) -> spotipy.Spotify
 
     Raises:
         SpotifyCredentialsError: If credentials are missing or invalid
+
     """
     if not client_id or not client_secret:
         raise SpotifyCredentialsError(
@@ -72,6 +73,7 @@ def fetch_spotify_playlist(
 
     Raises:
         SpotifyFetchError: If the API request fails or playlist not found
+
     """
     try:
         # Fetch playlist metadata (market required for Client Credentials flow)
@@ -120,6 +122,7 @@ def _fetch_all_tracks(client: spotipy.Spotify, playlist_id: str) -> list[Playlis
 
     Returns:
         List of all PlaylistTrackInput objects
+
     """
     tracks: list[PlaylistTrackInput] = []
     offset = 0
@@ -161,6 +164,7 @@ def _extract_track(item: dict[str, Any], position: int) -> PlaylistTrackInput | 
 
     Returns:
         PlaylistTrackInput or None if track is unavailable
+
     """
     track = item.get("track")
 

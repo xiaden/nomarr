@@ -274,6 +274,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
             - count <= 0: warning, no-op
             - No tier selection exists: warning, recommends start_all_workers()
             - Pool is empty: spawns workers without re-running admission control
+
         """
         if count <= 0:
             logger.warning("[WorkerSystemService] add_workers called with count=%d (must be > 0)", count)
@@ -307,6 +308,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
         Edge cases handled:
             - count <= 0: warning, no-op
             - count >= len(self._workers): stops all workers via stop_all_workers()
+
         """
         if count <= 0:
             logger.warning("[WorkerSystemService] remove_workers called with count=%d (must be > 0)", count)

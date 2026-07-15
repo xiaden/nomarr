@@ -13,7 +13,6 @@ from nomarr.components.analytics.mood_analysis_comp import (
     get_mood_coverage,
     get_mood_distribution_data,
 )
-from nomarr.persistence.schema import CollectionNames
 
 
 class TestGetMoodCoverage:
@@ -52,16 +51,16 @@ class TestGetMoodCoverage:
                 "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
                 side_effect=[
                     [
-                        (f"{CollectionNames.LIBRARY_FILES.value}/1", "happy"),
-                        (f"{CollectionNames.LIBRARY_FILES.value}/2", "calm"),
-                        (f"{CollectionNames.LIBRARY_FILES.value}/1", "happy"),
+                        (f"{'library_files'}/1", "happy"),
+                        (f"{'library_files'}/2", "calm"),
+                        (f"{'library_files'}/1", "happy"),
                     ],
                     [
-                        (f"{CollectionNames.LIBRARY_FILES.value}/3", "warm"),
-                        (f"{CollectionNames.LIBRARY_FILES.value}/4", "bright"),
-                        (f"{CollectionNames.LIBRARY_FILES.value}/3", "warm"),
+                        (f"{'library_files'}/3", "warm"),
+                        (f"{'library_files'}/4", "bright"),
+                        (f"{'library_files'}/3", "warm"),
                     ],
-                    [(f"{CollectionNames.LIBRARY_FILES.value}/5", "dreamy")],
+                    [(f"{'library_files'}/5", "dreamy")],
                 ],
             ) as get_tag_edge_rows_mock,
             patch(
@@ -109,8 +108,8 @@ class TestGetMoodBalance:
             "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
             side_effect=[
                 [
-                    (f"{CollectionNames.LIBRARY_FILES.value}/1", "happy"),
-                    (f"{CollectionNames.LIBRARY_FILES.value}/2", "happy"),
+                    (f"{'library_files'}/1", "happy"),
+                    (f"{'library_files'}/2", "happy"),
                 ],
                 [],
                 [],
@@ -131,7 +130,7 @@ class TestGetMoodBalance:
         mock_db = MagicMock()
         with patch(
             "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
-            side_effect=[[(f"{CollectionNames.LIBRARY_FILES.value}/1", "(happy,sad)")], [], []],
+            side_effect=[[(f"{'library_files'}/1", "(happy,sad)")], [], []],
         ):
             result = get_mood_balance(mock_db)
 
@@ -157,11 +156,11 @@ class TestGetMoodAndTierTagsForCorrelation:
             patch(
                 "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
                 side_effect=[
-                    [(f"{CollectionNames.LIBRARY_FILES.value}/1", "happy")],
-                    [(f"{CollectionNames.LIBRARY_FILES.value}/2", "calm")],
+                    [(f"{'library_files'}/1", "happy")],
+                    [(f"{'library_files'}/2", "calm")],
                     [],
-                    [(f"{CollectionNames.LIBRARY_FILES.value}/1", "high")],
-                    [(f"{CollectionNames.LIBRARY_FILES.value}/2", "fast")],
+                    [(f"{'library_files'}/1", "high")],
+                    [(f"{'library_files'}/2", "fast")],
                 ],
             ) as get_tag_edge_rows_mock,
             patch(
@@ -173,13 +172,13 @@ class TestGetMoodAndTierTagsForCorrelation:
 
         assert result == {
             "mood_tag_rows": [
-                (f"{CollectionNames.LIBRARY_FILES.value}/1", "happy"),
-                (f"{CollectionNames.LIBRARY_FILES.value}/2", "calm"),
+                (f"{'library_files'}/1", "happy"),
+                (f"{'library_files'}/2", "calm"),
             ],
             "tier_tag_keys": ["nom:energy_tier", "nom:tempo_tier"],
             "tier_tag_rows": {
-                "nom:energy_tier": [(f"{CollectionNames.LIBRARY_FILES.value}/1", "high")],
-                "nom:tempo_tier": [(f"{CollectionNames.LIBRARY_FILES.value}/2", "fast")],
+                "nom:energy_tier": [(f"{'library_files'}/1", "high")],
+                "nom:tempo_tier": [(f"{'library_files'}/2", "fast")],
             },
         }
         get_tier_tag_keys_mock.assert_called_once_with(mock_db)
@@ -196,9 +195,9 @@ class TestGetMoodDistributionData:
         with patch(
             "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
             side_effect=[
-                [(f"{CollectionNames.LIBRARY_FILES.value}/1", "happy")],
-                [(f"{CollectionNames.LIBRARY_FILES.value}/2", "calm")],
-                [(f"{CollectionNames.LIBRARY_FILES.value}/3", "dreamy")],
+                [(f"{'library_files'}/1", "happy")],
+                [(f"{'library_files'}/2", "calm")],
+                [(f"{'library_files'}/3", "dreamy")],
             ],
         ) as get_tag_edge_rows_mock:
             result = get_mood_distribution_data(mock_db)
@@ -216,7 +215,7 @@ class TestGetMoodDistributionData:
         mock_db = MagicMock()
         with patch(
             "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
-            side_effect=[[], [(f"{CollectionNames.LIBRARY_FILES.value}/2", "warm")], []],
+            side_effect=[[], [(f"{'library_files'}/2", "warm")], []],
         ) as get_tag_edge_rows_mock:
             result = get_mood_distribution_data(mock_db, library_id="libraries/1")
 
@@ -247,8 +246,8 @@ class TestGetTagEdgeRows:
         ) -> list[dict[str, str]]:
             assert kwargs == {"limit": None}
             return {
-                "happy": [{"_id": f"{CollectionNames.LIBRARY_FILES.value}/1"}],
-                "calm": [{"_id": f"{CollectionNames.LIBRARY_FILES.value}/2"}],
+                "happy": [{"_id": f"{'library_files'}/1"}],
+                "calm": [{"_id": f"{'library_files'}/2"}],
             }[tag_value]
 
         mock_db.library.search_files_by_tag.side_effect = search_files_by_tag_side_effect
@@ -256,8 +255,8 @@ class TestGetTagEdgeRows:
         result = _get_tag_edge_rows(mock_db, "nom:mood-strict")
 
         assert result == [
-            (f"{CollectionNames.LIBRARY_FILES.value}/1", "happy"),
-            (f"{CollectionNames.LIBRARY_FILES.value}/2", "calm"),
+            (f"{'library_files'}/1", "happy"),
+            (f"{'library_files'}/2", "calm"),
         ]
         mock_db.library.search_files_by_tag.assert_any_call("nom:mood-strict", "happy", limit=None)
         mock_db.library.search_files_by_tag.assert_any_call("nom:mood-strict", "calm", limit=None)

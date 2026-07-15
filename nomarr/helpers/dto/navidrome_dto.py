@@ -220,6 +220,7 @@ class NavidromeStaticPlaylistResult(TypedDict):
         playlist_id: Navidrome-assigned playlist ID.
         track_nd_ids: Navidrome song IDs that were successfully resolved.
         unresolved_file_ids: Nomarr file ``_id`` values with no ND mapping.
+
     """
 
     playlist_name: str
@@ -328,6 +329,7 @@ class NavidromeGeneratePlaylistsResult:
         playlists: Generated playlists, each with a ``playlist_type``,
             ``playlist_name``, and list of ``file_ids``.
             Empty when ``status`` is not ``"ok"``.
+
     """
 
     status: Literal["ok", "no_data", "misconfigured"]

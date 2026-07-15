@@ -9,7 +9,6 @@ import numpy as np
 import pytest
 
 from nomarr.components.ml.vectors.ml_vector_persist_comp import persist_backbone_vector, upsert_hot_track_vector
-from nomarr.persistence.schema import CollectionNames
 
 PATCH_BASE = "nomarr.components.ml.vectors.ml_vector_persist_comp"
 
@@ -24,14 +23,14 @@ class TestUpsertHotTrackVector:
         mock_db.ml.list_file_vectors.return_value = [
             {
                 "_id": "vectors_track_hot__effnet/vector-doc",
-                "_key": hashlib.sha1(f"{CollectionNames.LIBRARY_FILES.value}/f1|abc123".encode()).hexdigest(),
+                "_key": hashlib.sha1(f"{'library_files'}/f1|abc123".encode()).hexdigest(),
             }
         ]
 
         with patch(f"{PATCH_BASE}.internal_ms", return_value=MagicMock(value=1234)):
             vector_id = upsert_hot_track_vector(
                 db=mock_db,
-                file_id=f"{CollectionNames.LIBRARY_FILES.value}/f1",
+                file_id=f"{'library_files'}/f1",
                 backbone="effnet",
                 model_suite_hash="abc123",
                 embed_dim=2,
@@ -40,10 +39,10 @@ class TestUpsertHotTrackVector:
                 # library_key removed per ADR-036
             )
 
-        expected_key = hashlib.sha1(f"{CollectionNames.LIBRARY_FILES.value}/f1|abc123".encode()).hexdigest()
+        expected_key = hashlib.sha1(f"{'library_files'}/f1|abc123".encode()).hexdigest()
         expected_doc = {
             "_key": expected_key,
-            "file_id": f"{CollectionNames.LIBRARY_FILES.value}/f1",
+            "file_id": f"{'library_files'}/f1",
             "model_suite_hash": "abc123",
             "embed_dim": 2,
             "vector": [3.0, 4.0],
@@ -55,12 +54,12 @@ class TestUpsertHotTrackVector:
         assert vector_id == "vectors_track_hot__effnet/vector-doc"
         mock_db.ml.replace_file_vectors.assert_called_once_with(
             "vectors_track_hot__effnet",
-            f"{CollectionNames.LIBRARY_FILES.value}/f1",
+            f"{'library_files'}/f1",
             [expected_doc],
         )
         mock_db.ml.list_file_vectors.assert_called_once_with(
             "vectors_track_hot__effnet",
-            f"{CollectionNames.LIBRARY_FILES.value}/f1",
+            f"{'library_files'}/f1",
         )
 
 
@@ -91,7 +90,7 @@ class TestPersistBackboneVector:
         ):
             result = persist_backbone_vector(
                 db=mock_db,
-                file_id=f"{CollectionNames.LIBRARY_FILES.value}/f1",
+                file_id=f"{'library_files'}/f1",
                 backbone="effnet",
                 embeddings_2d=embeddings,
                 model_suite_hash="abc123",
@@ -105,7 +104,7 @@ class TestPersistBackboneVector:
         mock_get_embedding_dimension.assert_called_once()
         mock_upsert_hot_track_vector.assert_called_once_with(
             db=mock_db,
-            file_id=f"{CollectionNames.LIBRARY_FILES.value}/f1",
+            file_id=f"{'library_files'}/f1",
             backbone="effnet",
             model_suite_hash="abc123",
             embed_dim=128,
@@ -130,7 +129,7 @@ class TestPersistBackboneVector:
         ):
             result = persist_backbone_vector(
                 db=mock_db,
-                file_id=f"{CollectionNames.LIBRARY_FILES.value}/f1",
+                file_id=f"{'library_files'}/f1",
                 backbone="effnet",
                 embeddings_2d=embeddings,
                 model_suite_hash="abc123",
@@ -144,7 +143,7 @@ class TestPersistBackboneVector:
         mock_get_embedding_dimension.assert_called_once()
         mock_upsert_hot_track_vector.assert_called_once_with(
             db=mock_db,
-            file_id=f"{CollectionNames.LIBRARY_FILES.value}/f1",
+            file_id=f"{'library_files'}/f1",
             backbone="effnet",
             model_suite_hash="abc123",
             embed_dim=128,
@@ -181,7 +180,7 @@ class TestPersistBackboneVector:
         ):
             result = persist_backbone_vector(
                 db=mock_db,
-                file_id=f"{CollectionNames.LIBRARY_FILES.value}/f1",
+                file_id=f"{'library_files'}/f1",
                 backbone="effnet",
                 embeddings_2d=embeddings,
                 model_suite_hash="abc123",
@@ -195,7 +194,7 @@ class TestPersistBackboneVector:
         mock_get_embedding_dimension.assert_called_once_with(embeddings)
         mock_upsert_hot_track_vector.assert_called_once_with(
             db=mock_db,
-            file_id=f"{CollectionNames.LIBRARY_FILES.value}/f1",
+            file_id=f"{'library_files'}/f1",
             backbone="effnet",
             model_suite_hash="abc123",
             embed_dim=64,

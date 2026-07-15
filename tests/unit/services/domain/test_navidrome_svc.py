@@ -9,7 +9,6 @@ import pytest
 from nomarr.helpers.dto import NavidromeGeneratePlaylistsResult
 
 # MisconfiguredError import removed per ADR-036 (library_key no longer checked)
-from nomarr.persistence.schema import CollectionNames
 from nomarr.services.domain.navidrome_svc import NavidromeConfig, NavidromeService
 
 
@@ -33,8 +32,8 @@ def _playlist_entry() -> dict[str, object]:
         "playlist_type": "familiar",
         "playlist_name": "Familiar Favorites",
         "file_ids": [
-            f"{CollectionNames.LIBRARY_FILES.value}/track-1",
-            f"{CollectionNames.LIBRARY_FILES.value}/track-2",
+            f"{'library_files'}/track-1",
+            f"{'library_files'}/track-2",
         ],
     }
 
@@ -169,7 +168,7 @@ class TestNavidromeServiceDescriptorResolution:
         with (
             patch(
                 "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
-                return_value=[{"_id": f"{CollectionNames.LIBRARY_FILES.value}/track-1", "_key": "track-1"}],
+                return_value=[{"_id": f"{'library_files'}/track-1", "_key": "track-1"}],
             ) as mock_get_files,
             patch(
                 "nomarr.services.domain.navidrome_svc.build_track_descriptor",
@@ -186,10 +185,10 @@ class TestNavidromeServiceDescriptorResolution:
                 },
             ) as mock_build,
         ):
-            descriptors = service.resolve_files_to_descriptors([f"{CollectionNames.LIBRARY_FILES.value}/track-1"])
+            descriptors = service.resolve_files_to_descriptors([f"{'library_files'}/track-1"])
 
         assert descriptors == {
-            f"{CollectionNames.LIBRARY_FILES.value}/track-1": {
+            f"{'library_files'}/track-1": {
                 "title": "Song A",
                 "artist": "Artist A",
                 "album": "Album A",
@@ -201,7 +200,7 @@ class TestNavidromeServiceDescriptorResolution:
                 "nomarr_file_key": "track-1",
             },
         }
-        mock_get_files.assert_called_once_with(service._db, [f"{CollectionNames.LIBRARY_FILES.value}/track-1"])
+        mock_get_files.assert_called_once_with(service._db, [f"{'library_files'}/track-1"])
         mock_build.assert_called_once()
 
     def test_resolve_files_to_descriptors_ignores_docs_without_id(self) -> None:
@@ -211,7 +210,7 @@ class TestNavidromeServiceDescriptorResolution:
             "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
             return_value=[{"_key": "missing-id"}],
         ):
-            descriptors = service.resolve_files_to_descriptors([f"{CollectionNames.LIBRARY_FILES.value}/track-1"])
+            descriptors = service.resolve_files_to_descriptors([f"{'library_files'}/track-1"])
 
         assert descriptors == {}
 
@@ -225,7 +224,7 @@ class TestNavidromeServiceDescriptorResolution:
             ),
             pytest.raises(RuntimeError, match="query failed"),
         ):
-            service.resolve_files_to_descriptors([f"{CollectionNames.LIBRARY_FILES.value}/track-1"])
+            service.resolve_files_to_descriptors([f"{'library_files'}/track-1"])
 
     def test_resolve_files_to_descriptors_propagates_build_errors(self) -> None:
         service, _ = _make_service()
@@ -233,7 +232,7 @@ class TestNavidromeServiceDescriptorResolution:
         with (
             patch(
                 "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
-                return_value=[{"_id": f"{CollectionNames.LIBRARY_FILES.value}/track-1"}],
+                return_value=[{"_id": f"{'library_files'}/track-1"}],
             ),
             patch(
                 "nomarr.services.domain.navidrome_svc.build_track_descriptor",
@@ -241,7 +240,7 @@ class TestNavidromeServiceDescriptorResolution:
             ),
             pytest.raises(ValueError, match="bad descriptor"),
         ):
-            service.resolve_files_to_descriptors([f"{CollectionNames.LIBRARY_FILES.value}/track-1"])
+            service.resolve_files_to_descriptors([f"{'library_files'}/track-1"])
 
 
 @pytest.mark.unit

@@ -1,6 +1,19 @@
-"""Database AQL operations — private Tier 2 persistence helpers.
+"""Database repository classes — PostgreSQL persistence helpers.
 
-This package contains AQL operation classes organized by collection/domain.
-Import these only through the ``Database`` facade in ``nomarr.persistence.db``;
-direct imports from sub-packages are discouraged.
+This package contains repository classes organized by domain/table:
+
+- ``LibraryRepository`` — ``libraries`` table
+- ``FileRepository`` — ``library_files`` table
+- ``FolderRepository`` — ``library_folders`` table
+- ``TagRepository`` — ``tags`` table
+- ``FileTagRepository`` — ``file_tags`` junction table
+- ``ScanRepository`` — ``library_scans`` table
+- ``AppRepository`` — KV tables (locks, health, meta, sessions, worker claims, …)
+- ``PipelineRepository`` — ``pipeline_states`` table
+- ``FileStateRepository`` — ``file_states`` and ``file_state_assignments`` tables
+- ``ModelRepo`` — ``ml_models`` table
+- ``OutputRepo`` — ``ml_model_outputs`` and ``ml_output_streams`` tables
+- ``CalibrationRepo`` — ``calibration_states`` and ``calibration_history`` tables
+- ``NavidromeRepo`` — Navidrome track, play, and junction tables
+- ``EmbeddingStreamRepository`` — ``ml_embedding_streams`` table
 """

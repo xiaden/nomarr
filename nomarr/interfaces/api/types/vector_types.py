@@ -24,7 +24,7 @@ class VectorSearchRequest(BaseModel):
 class VectorSearchResultItem(BaseModel):
     """Single vector search result."""
 
-    file_id: str = Field(..., description="Library file document ID")
+    file_id: int = Field(..., description="Library file document ID")
     score: float = Field(..., description="Similarity score")
     vector: list[float] = Field(..., description="Stored embedding vector")
 
@@ -81,7 +81,7 @@ class VectorPromoteResponse(BaseModel):
 class VectorGetResponse(BaseModel):
     """Response model for get track vector endpoint."""
 
-    file_id: str = Field(..., description="Library file document ID")
+    file_id: int = Field(..., description="Library file document ID")
     backbone_id: str = Field(..., description="Backbone identifier")
     vector: list[float] = Field(..., description="Embedding vector")
 

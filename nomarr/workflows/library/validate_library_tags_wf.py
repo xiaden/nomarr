@@ -38,7 +38,7 @@ def validate_library_tags_workflow(
             {
                 "head_key": f"{model_key}:{head.name}",
                 "labels": head.labels,
-                # Tag name contains model_key without dashes (see calibration_state_aql)
+                # Tag name contains model_key without dashes (see calibration_repo)
                 "model_key_for_tag": model_key.replace("-", ""),
             }
         )

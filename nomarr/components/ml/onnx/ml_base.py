@@ -64,6 +64,7 @@ class BaseONNXModel(ABC):
 
         Args:
             path: Absolute path to the ``.onnx`` file.
+
         """
         self._path: str = path
         self._session: ort.InferenceSession | None = None
@@ -95,6 +96,7 @@ class BaseONNXModel(ABC):
         Raises:
             VramFitError: If ``device == "gpu"`` and the VRAM coordinator
                 rejects the GPU placement request.
+
         """
         vram_limit_bytes: int | None = None
         if device == "gpu":

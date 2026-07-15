@@ -21,7 +21,6 @@ import os
 import sys
 import threading
 import time
-from pathlib import Path
 from typing import Any
 
 from nomarr.helpers.time_helper import now_ms
@@ -44,15 +43,16 @@ logger = logging.getLogger(__name__)
 def validate_environment() -> None:
     """Validate required environment variables at startup.
 
-    Prevents workers from each spamming "missing ARANGO_HOST" errors.
+    Prevents workers from each spamming "missing PG_DATABASE_URL" errors.
     Fails fast with clear message if config is incomplete.
 
-    Note: ARANGO_ROOT_PASSWORD is only needed on first run (provisioning).
-    After first run, credentials are read from config file.
+    Note: PG_DATABASE_URL must be a full PostgreSQL connection string
+    (e.g., ``postgresql+asyncpg://user:pass@host:5432/db``).
     """
-    required_vars = ["ARANGO_HOST"]
+    required_vars = ["PG_DATABASE_URL"]
     missing = [var for var in required_vars if not os.getenv(var)]
     if missing:
+        logger.critical("Missing required environment variables: %s", missing)
         sys.exit(1)
 
 
@@ -119,7 +119,7 @@ class Application:
         self.tagger_version: str = compute_model_suite_hash(self.models_dir)
         logger.debug(f"[Application] Model suite hash (tagger_version): {self.tagger_version}")
         self._ensure_database_provisioned()
-        self.db = Database()
+        self.db = Database(url=os.environ["PG_DATABASE_URL"])
         from nomarr.workflows.platform.prepare_database_wf import prepare_database_workflow
 
         prepare_database_workflow(self.db, models_dir=self.models_dir)
@@ -161,39 +161,46 @@ class Application:
         return self.services[name]
 
     def _ensure_database_provisioned(self) -> None:
-        """Ensure database is provisioned before creating Database connection.
+        """Ensure PostgreSQL is reachable before creating the Database connection.
 
-        On first run:
-        1. Uses ARANGO_ROOT_PASSWORD to connect as root
-        2. Creates 'nomarr' database and user with random password
-        3. Writes generated password to config file
+        PostgreSQL databases are pre-provisioned (no first-run user/database
+        creation needed). This method only waits for the server to accept
+        connections, then stores the URL for Database construction.
 
-        After first run:
-        - Config file already has credentials, this is a no-op
+        Raises:
+            RuntimeError: If PostgreSQL is unreachable after 60 seconds.
+
         """
-        from nomarr.components.platform.arango_bootstrap_comp import wait_for_arango
-        from nomarr.components.platform.arango_first_run_comp import (
-            get_root_password_from_env,
-            is_first_run,
-            provision_database_and_user,
-            write_db_config,
-        )
+        pg_url = os.environ["PG_DATABASE_URL"]
+        max_attempts = 30
+        for attempt in range(1, max_attempts + 1):
+            try:
+                from sqlalchemy import text
 
-        config_path = Path("/app/config/nomarr.yaml")
-        if not config_path.exists():
-            config_path = Path.cwd() / "config" / "nomarr.yaml"
-        hosts = os.getenv("ARANGO_HOST", "http://nomarr-arangodb:8529")
-        if not wait_for_arango(hosts):
-            msg = f"Cannot connect to ArangoDB at {hosts} after 60 seconds"
-            raise RuntimeError(msg)
-        if not is_first_run(config_path, hosts=hosts):
-            logger.debug("Database already provisioned, skipping first-run setup")
-            return
-        logger.info("First run detected - provisioning database...")
-        root_password = get_root_password_from_env()
-        app_password = provision_database_and_user(hosts=hosts, root_password=root_password)
-        write_db_config(config_path=config_path, password=app_password)
-        logger.info("Database provisioned successfully")
+                from nomarr.persistence.pg_engine import create_pg_engine
+
+                engine = create_pg_engine(pg_url)
+                import asyncio
+
+                async def _check(eng: Any = engine) -> None:
+                    async with eng.connect() as conn:
+                        await conn.execute(text("SELECT 1"))
+                    await eng.dispose()
+
+                asyncio.get_event_loop().run_until_complete(_check())
+                logger.info("PostgreSQL reachable (attempt %d/%d)", attempt, max_attempts)
+                return
+            except Exception as exc:
+                if attempt == max_attempts:
+                    msg = f"Cannot connect to PostgreSQL after {max_attempts} attempts: {exc}"
+                    raise RuntimeError(msg) from exc
+                logger.debug(
+                    "PostgreSQL not ready yet (attempt %d/%d): %s",
+                    attempt,
+                    max_attempts,
+                    exc,
+                )
+                time.sleep(2)
 
     def _start_app_heartbeat(self) -> None:
         """Start background thread to write app heartbeat (Phase 3: DB-based IPC)."""

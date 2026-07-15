@@ -15,7 +15,7 @@ from nomarr.components.library.file_sync_comp import mark_file_processed, save_f
 from nomarr.components.library.library_file_mutation_comp import set_chromaprint, upsert_library_file
 from nomarr.components.library.library_file_query_comp import get_library_file
 from nomarr.components.library.library_records_comp import find_library_containing_path
-from nomarr.components.metadata.entity_seeding_comp import seed_song_entities_from_tags
+from nomarr.components.metadata.entity_seeding_comp import _build_song_tag_entries
 from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,10 @@ def _sync_tags_and_entities(
             "genre": metadata.get("genre"),
             "year": metadata.get("year"),
         }
-        seed_song_entities_from_tags(db, file_id, entity_tags)
+        entries = _build_song_tag_entries(file_id, entity_tags)
+        if entries:
+            for entry in entries:
+                db.library.replace_file_tags(entry["song_id"], entry["tags"])
         logger.debug(f"[sync_file_to_library] Seeded entities for {file_path}")
     except Exception as entity_error:
         logger.warning(f"[sync_file_to_library] Failed to seed entities: {entity_error}", exc_info=True)

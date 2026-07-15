@@ -68,7 +68,7 @@ class MLService:
         """
         return discover_backbones(self.cfg.models_dir)
 
-    def discover_heads(self) -> list[HeadInfo]:
+    async def discover_heads(self) -> list[HeadInfo]:
         """Discover all available model heads in models directory.
 
         Only returns heads whose corresponding ``ml_models`` entry is
@@ -83,7 +83,7 @@ class MLService:
 
         """
         try:
-            raw_heads = discover_heads(self.cfg.models_dir, self.db)
+            raw_heads = await discover_heads(self.cfg.models_dir, self.db)
             logger.info("[MLService] Discovered %d model heads", len(raw_heads))
             # Convert component-level HeadInfo to DTO HeadInfo
             return [
@@ -126,7 +126,7 @@ class MLService:
         """Return output vertices for a specific model.
 
         Args:
-            model_id: ArangoDB ``_id`` of the model vertex.
+            model_id: Primary key of the model row.
 
         Returns:
             List of ml_model_outputs documents ordered by output_index.
@@ -134,22 +134,22 @@ class MLService:
         """
         return list_model_outputs_for_model(self.db, model_id)
 
-    def update_output_label(self, model_id: str, output_id: str, label: str) -> None:
+    def update_output_label(self, model_id: int, output_id: int, label: str) -> None:
         """Write a human-readable label for a model output vertex.
 
         Args:
-            model_id: ArangoDB ``_id`` of the parent model vertex.
-            output_id: ArangoDB ``_id`` of the output vertex.
+            model_id: Primary key of the parent model row.
+            output_id: Primary key of the output row.
             label: Human-readable tag label for this activation.
 
         """
         update_model_output_label(self.db, model_id=model_id, output_id=output_id, label=label)
 
-    def mark_model_configured(self, model_id: str, value: bool) -> None:
+    def mark_model_configured(self, model_id: int, value: bool) -> None:
         """Set the fully_configured flag on a model vertex.
 
         Args:
-            model_id: ArangoDB ``_id`` of the model vertex.
+            model_id: Primary key of the model row.
             value: True to enable model for inference, False to disable.
 
         """

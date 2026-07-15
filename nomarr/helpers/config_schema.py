@@ -43,7 +43,7 @@ class StaticConfig:
 class DynamicConfig:
     """User-configurable settings editable via the web UI.
 
-    Stored in ArangoDB (stringified), cached in-memory by ConfigService.
+    Stored in PostgreSQL (JSONB), cached in-memory by ConfigService.
     Defaults here match the bootstrap defaults that seed the DB on first run.
     """
 
@@ -282,7 +282,7 @@ _VALID_WRITE_MODES = frozenset({"none", "minimal", "full"})
 
 
 class LibraryConfigFields(TypedDict, total=False):
-    """Per-library config fields stored on the library ArangoDB document.
+    """Per-library config fields stored on the library record.
 
     Not all fields are required --- missing keys inherit the application default.
     """
@@ -303,6 +303,7 @@ def validate_library_config(data: dict[str, object]) -> LibraryConfigFields:
 
     Raises:
         ValueError: If any field value is invalid.
+
     """
     result: LibraryConfigFields = {}
     if "file_write_mode" in data:

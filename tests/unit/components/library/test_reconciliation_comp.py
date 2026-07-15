@@ -19,7 +19,6 @@ from nomarr.helpers.constants.file_states import (
     STATE_WRITTEN,
 )
 from nomarr.helpers.time_helper import Milliseconds
-from nomarr.persistence.schema import CollectionNames
 
 
 class TestClaimFilesForReconciliation:
@@ -43,13 +42,13 @@ class TestClaimFilesForReconciliation:
     @pytest.mark.mocked
     def test_claims_available_file_successfully(self) -> None:
         mock_db = MagicMock()
-        candidate = {"_id": f"{CollectionNames.LIBRARY_FILES.value}/abc", "_key": "abc"}
+        candidate = {"_id": f"{'library_files'}/abc", "_key": "abc"}
         mock_db.library.get_file.return_value = candidate
 
         with (
             patch(
                 "nomarr.components.library.reconciliation_comp.get_stale_file_ids",
-                return_value=[f"{CollectionNames.LIBRARY_FILES.value}/abc"],
+                return_value=[f"{'library_files'}/abc"],
             ),
             patch(
                 "nomarr.components.library.reconciliation_comp.now_ms",
@@ -63,10 +62,10 @@ class TestClaimFilesForReconciliation:
             result = claim_files_for_reconciliation(mock_db, "libraries/test", "workers/test")
 
         assert result == [candidate]
-        mock_db.library.get_file.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/abc")
+        mock_db.library.get_file.assert_called_once_with(f"{'library_files'}/abc")
         claim_payload, claim_now, claim_lease_ms = mock_try_claim.call_args.args[1:]
         assert claim_payload["_key"] == "claim_reconcile_abc"
-        assert claim_payload["file_id"] == f"{CollectionNames.LIBRARY_FILES.value}/abc"
+        assert claim_payload["file_id"] == f"{'library_files'}/abc"
         assert claim_payload["worker_id"] == "workers/test"
         assert claim_payload["claimed_at"] == 10_000
         assert claim_payload["claim_type"] == "reconcile"
@@ -77,7 +76,7 @@ class TestClaimFilesForReconciliation:
     @pytest.mark.mocked
     def test_respects_batch_size_limit(self) -> None:
         mock_db = MagicMock()
-        stale_ids = [f"{CollectionNames.LIBRARY_FILES.value}/{index}" for index in range(5)]
+        stale_ids = [f"{'library_files'}/{index}" for index in range(5)]
         candidates = [{"_id": stale_id, "_key": str(index)} for index, stale_id in enumerate(stale_ids)]
         mock_db.library.get_file.side_effect = candidates
 
@@ -116,13 +115,13 @@ class TestClaimFilesForReconciliation:
     @pytest.mark.mocked
     def test_skips_already_claimed_active_file(self) -> None:
         mock_db = MagicMock()
-        candidate = {"_id": f"{CollectionNames.LIBRARY_FILES.value}/abc", "_key": "abc"}
+        candidate = {"_id": f"{'library_files'}/abc", "_key": "abc"}
         mock_db.library.get_file.return_value = candidate
 
         with (
             patch(
                 "nomarr.components.library.reconciliation_comp.get_stale_file_ids",
-                return_value=[f"{CollectionNames.LIBRARY_FILES.value}/abc"],
+                return_value=[f"{'library_files'}/abc"],
             ),
             patch(
                 "nomarr.components.library.reconciliation_comp.now_ms",
@@ -141,12 +140,12 @@ class TestClaimFilesForReconciliation:
             )
 
         assert result == []
-        mock_db.library.get_file.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/abc")
+        mock_db.library.get_file.assert_called_once_with(f"{'library_files'}/abc")
         mock_try_claim.assert_called_once_with(
             mock_db,
             {
                 "_key": "claim_reconcile_abc",
-                "file_id": f"{CollectionNames.LIBRARY_FILES.value}/abc",
+                "file_id": f"{'library_files'}/abc",
                 "worker_id": "workers/test",
                 "claimed_at": 60_000,
                 "claim_type": "reconcile",
@@ -159,13 +158,13 @@ class TestClaimFilesForReconciliation:
     @pytest.mark.mocked
     def test_reclaims_expired_lease(self) -> None:
         mock_db = MagicMock()
-        candidate = {"_id": f"{CollectionNames.LIBRARY_FILES.value}/abc", "_key": "abc"}
+        candidate = {"_id": f"{'library_files'}/abc", "_key": "abc"}
         mock_db.library.get_file.return_value = candidate
 
         with (
             patch(
                 "nomarr.components.library.reconciliation_comp.get_stale_file_ids",
-                return_value=[f"{CollectionNames.LIBRARY_FILES.value}/abc"],
+                return_value=[f"{'library_files'}/abc"],
             ),
             patch(
                 "nomarr.components.library.reconciliation_comp.now_ms",
@@ -184,12 +183,12 @@ class TestClaimFilesForReconciliation:
             )
 
         assert result == [candidate]
-        mock_db.library.get_file.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/abc")
+        mock_db.library.get_file.assert_called_once_with(f"{'library_files'}/abc")
         mock_try_claim.assert_called_once_with(
             mock_db,
             {
                 "_key": "claim_reconcile_abc",
-                "file_id": f"{CollectionNames.LIBRARY_FILES.value}/abc",
+                "file_id": f"{'library_files'}/abc",
                 "worker_id": "workers/test",
                 "claimed_at": 120_000,
                 "claim_type": "reconcile",
@@ -213,11 +212,11 @@ class TestSetFileWritten:
         first_transition = mock_transition.call_args_list[0].args
         assert first_transition == (
             mock_db,
-            [f"{CollectionNames.LIBRARY_FILES.value}/abc123"],
+            [f"{'library_files'}/abc123"],
             STATE_NOT_WRITTEN,
             STATE_WRITTEN,
         )
-        mock_db.app.release_claim.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/abc123")
+        mock_db.app.release_claim.assert_called_once_with(f"{'library_files'}/abc123")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -225,11 +224,11 @@ class TestSetFileWritten:
         mock_db = MagicMock()
 
         with patch("nomarr.components.library.reconciliation_comp.transition_file_state") as mock_transition:
-            set_file_written(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/abc123")
+            set_file_written(mock_db, f"{'library_files'}/abc123")
 
         for transition_call in mock_transition.call_args_list:
-            assert transition_call.args[1] == [f"{CollectionNames.LIBRARY_FILES.value}/abc123"]
-        mock_db.app.release_claim.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/abc123")
+            assert transition_call.args[1] == [f"{'library_files'}/abc123"]
+        mock_db.app.release_claim.assert_called_once_with(f"{'library_files'}/abc123")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -244,13 +243,13 @@ class TestSetFileWritten:
         second_transition = mock_transition.call_args_list[1].args
         assert first_transition == (
             mock_db,
-            [f"{CollectionNames.LIBRARY_FILES.value}/abc"],
+            [f"{'library_files'}/abc"],
             STATE_NOT_WRITTEN,
             STATE_WRITTEN,
         )
         assert second_transition == (
             mock_db,
-            [f"{CollectionNames.LIBRARY_FILES.value}/abc"],
+            [f"{'library_files'}/abc"],
             STATE_TAGS_NOT_FRESH,
             STATE_TAGS_CURRENT,
         )
@@ -263,7 +262,7 @@ class TestSetFileWritten:
         with patch("nomarr.components.library.reconciliation_comp.transition_file_state"):
             set_file_written(mock_db, "abc")
 
-        mock_db.app.release_claim.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/abc")
+        mock_db.app.release_claim.assert_called_once_with(f"{'library_files'}/abc")
 
 
 class TestReleaseClaim:
@@ -276,7 +275,7 @@ class TestReleaseClaim:
 
         release_claim(mock_db, "abc")
 
-        mock_db.app.release_claim.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/abc")
+        mock_db.app.release_claim.assert_called_once_with(f"{'library_files'}/abc")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -299,9 +298,9 @@ class TestCountFilesNeedingReconciliation:
         with patch(
             "nomarr.components.library.reconciliation_comp.get_stale_file_ids",
             return_value=[
-                f"{CollectionNames.LIBRARY_FILES.value}/a",
-                f"{CollectionNames.LIBRARY_FILES.value}/b",
-                f"{CollectionNames.LIBRARY_FILES.value}/c",
+                f"{'library_files'}/a",
+                f"{'library_files'}/b",
+                f"{'library_files'}/c",
             ],
         ):
             result = count_files_needing_reconciliation(mock_db, "libraries/test")

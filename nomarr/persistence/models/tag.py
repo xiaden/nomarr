@@ -1,24 +1,33 @@
-"""Pydantic models for tag-related ArangoDB documents and edges."""
+"""Tag ORM model."""
 
-from pydantic import Field
+from sqlalchemy import (
+    BigInteger,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import Mapped, mapped_column
 
-from nomarr.persistence.models.base import ArangoDocument, ArangoEdge
-
-
-class Tag(ArangoDocument):
-    """Tag vertex document.
-
-    Represents a tag in the unified tag schema (name, value pairs).
-    Examples: genre/rock, year/2023, mood/energetic
-    """
-
-    name: str = Field(..., description="Tag relation type (e.g., 'genre', 'year', 'mood')")
-    value: str | int | float | bool = Field(..., description="Tag value")
+from nomarr.persistence.models.base import Base
 
 
-class SongHasTagsEdge(ArangoEdge):
-    """Edge from library_files to tags.
+class Tag(Base):
+    """Represents a tag in the unified tag schema (name, value, namespace)."""
 
-    Bare edge with no additional properties — only _from/_to.
-    Used for song→tag relationships.
-    """
+    __tablename__ = "tags"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    value: Mapped[str] = mapped_column(String(255), nullable=False)
+    namespace: Mapped[str] = mapped_column(String(50), nullable=False)
+    parent_tag_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tags.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    source: Mapped[str] = mapped_column(String(100), nullable=False)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tier: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[int] = mapped_column(BigInteger)
+
+    __table_args__ = (UniqueConstraint("name", "value", "namespace", name="uq_tags_name_value_ns"),)

@@ -75,6 +75,7 @@ def _make_cold_ops(doc_count: int, ann_results: list[list[dict]] | None = None) 
         doc_count: Value returned by ``cold_ops.count()``.
         ann_results: If provided, each call to ``ann_search`` returns the
             next list from this sequence.  If exhausted, returns [].
+
     """
     cold_ops = MagicMock()
     cold_ops.count.return_value = doc_count

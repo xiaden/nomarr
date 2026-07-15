@@ -10,7 +10,6 @@ from nomarr.components.ml.vectors.ml_vector_retrieve_comp import (
     get_cold_track_vector,
     search_similar_cold_track_vectors,
 )
-from nomarr.persistence.schema import CollectionNames
 
 PATCH_BASE = "nomarr.components.ml.vectors.ml_vector_retrieve_comp"
 
@@ -29,7 +28,7 @@ class TestGetColdTrackVector:
         }
 
         with patch(f"{PATCH_BASE}.get_cold_namespace") as mock_get_cold:
-            result = get_cold_track_vector(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/f1", "effnet")
+            result = get_cold_track_vector(mock_db, f"{'library_files'}/f1", "effnet")
 
         assert result is None
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
@@ -45,7 +44,7 @@ class TestGetColdTrackVector:
         }
 
         with patch(f"{PATCH_BASE}.get_cold_namespace") as mock_get_cold:
-            result = get_cold_track_vector(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/f1", "effnet")
+            result = get_cold_track_vector(mock_db, f"{'library_files'}/f1", "effnet")
 
         assert result is None
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
@@ -57,7 +56,7 @@ class TestGetColdTrackVector:
         expected_doc = {
             "_id": "vectors_track_cold__effnet/k1",
             "_key": "k1",
-            "file_id": f"{CollectionNames.LIBRARY_FILES.value}/f1",
+            "file_id": f"{'library_files'}/f1",
             "vector_n": [0.1, 0.2, 0.3],
             "score": 0.95,
         }
@@ -70,12 +69,12 @@ class TestGetColdTrackVector:
         cold_ops.get_vector.return_value = expected_doc
 
         with patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold:
-            result = get_cold_track_vector(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/f1", "effnet")
+            result = get_cold_track_vector(mock_db, f"{'library_files'}/f1", "effnet")
 
         assert result == expected_doc
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
         mock_get_cold.assert_called_once_with(mock_db, "effnet")
-        cold_ops.get_vector.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/f1")
+        cold_ops.get_vector.assert_called_once_with(f"{'library_files'}/f1")
 
     def test_returns_none_when_vector_not_found_in_cold(self) -> None:
         """Returns None when cold collection exists but track has no vector."""
@@ -89,12 +88,12 @@ class TestGetColdTrackVector:
         cold_ops.get_vector.return_value = None
 
         with patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold:
-            result = get_cold_track_vector(mock_db, f"{CollectionNames.LIBRARY_FILES.value}/missing", "effnet")
+            result = get_cold_track_vector(mock_db, f"{'library_files'}/missing", "effnet")
 
         assert result is None
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
         mock_get_cold.assert_called_once_with(mock_db, "effnet")
-        cold_ops.get_vector.assert_called_once_with(f"{CollectionNames.LIBRARY_FILES.value}/missing")
+        cold_ops.get_vector.assert_called_once_with(f"{'library_files'}/missing")
 
 
 @pytest.mark.unit
@@ -133,7 +132,7 @@ class TestSearchSimilarColdTrackVectors:
         mock_db = MagicMock()
         cold_ops = MagicMock()
         cold_ops.count.return_value = 300
-        cold_ops.ann_search.return_value = [{"file_id": f"{CollectionNames.LIBRARY_FILES.value}/2", "score": 0.91}]
+        cold_ops.ann_search.return_value = [{"file_id": f"{'library_files'}/2", "score": 0.91}]
 
         with (
             patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold,
@@ -149,7 +148,7 @@ class TestSearchSimilarColdTrackVectors:
                 vector_search_thoroughness=25,
             )
 
-        assert result == [{"file_id": f"{CollectionNames.LIBRARY_FILES.value}/2", "score": 0.91}]
+        assert result == [{"file_id": f"{'library_files'}/2", "score": 0.91}]
         mock_get_cold.assert_called_once_with(mock_db, "effnet")
         mock_compute_nlists.assert_called_once_with(300, 15)
         mock_compute_nprobe.assert_called_once_with(20, 25)

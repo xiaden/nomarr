@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def promote_and_rebuild_workflow(
+async def promote_and_rebuild_workflow(
     db: Database,
     backbone_id: str,
     nlists: int,
@@ -30,7 +30,7 @@ def promote_and_rebuild_workflow(
 
     Convergent + idempotent: delegates all hot/cold mechanics to the persistence
     layer. Returns early if hot is already empty and cold has an index.
-    Vector collections are per-backbone (no library_key needed).
+    Vector indexes are per-backbone (no library_key needed).
 
     Args:
         db: Database instance.
@@ -52,7 +52,7 @@ def promote_and_rebuild_workflow(
     embed_dim = derive_embed_dim(models_dir, backbone_id)
     logger.info("[promote & rebuild] Derived embed_dim=%d for %s", embed_dim, backbone_id)
 
-    drained = db.ml.index_backbone_embeddings(backbone_id, embed_dim, nlists)
+    drained = await db.ml.index_backbone_embeddings(backbone_id, embed_dim, nlists)
     if drained == 0:
         logger.info("[promote & rebuild] Hot empty and cold indexed — nothing to do")
     else:

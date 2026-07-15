@@ -116,7 +116,7 @@ async def navidrome_similar_tracks(
 class TrackPlayInput(BaseModel):
     """Play history entry provided by the Navidrome plugin.
 
-    ``file_id`` is the full ArangoDB document ID (e.g. ``library_files/<key>``)
+    ``file_id`` is the integer primary key of the library file
     that the plugin resolves from a ``nomarr_file_key`` received in prior
     descriptor responses.
     """

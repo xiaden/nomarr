@@ -1,6 +1,6 @@
-"""ArangoDB schema migrations — versioned, repeatable database schema updates.
+"""Legacy schema migrations placeholder.
 
-Migrations are discovered and applied at startup by the platform migration
-runner. Each migration module defines an ``up()`` function that applies its
-changes and declares a ``version`` and ``description``.
+All versioned migration scripts (V001-V038) have been removed as part of
+the PostgreSQL migration. This package is retained only to preserve the
+directory structure; see README.md for historical context.
 """

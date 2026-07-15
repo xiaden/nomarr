@@ -91,6 +91,7 @@ class NavidromeService:
         Returns:
             PreviewTagStatsResult DTO with a summary of tag names and
             counts available for smart playlist construction.
+
         """
         stats = preview_tag_stats_workflow(self._db, namespace=self.cfg.namespace)
         return PreviewTagStatsResult(stats=stats)
@@ -116,6 +117,7 @@ class NavidromeService:
 
         Returns:
             String containing Navidrome configuration (TOML format).
+
         """
         return generate_navidrome_config_workflow(self._db, namespace=self.cfg.namespace)
 
@@ -179,6 +181,7 @@ class NavidromeService:
         Returns:
             GetTemplateSummaryResult DTO containing a list of template
             identifiers and metadata for playlist generation.
+
         """
         templates_list = get_template_summary()
         # Convert list of dicts to list of TemplateSummaryItem DTOs
@@ -198,6 +201,7 @@ class NavidromeService:
 
         Returns:
             GenerateTemplateFilesResult DTO with count of generated files.
+
         """
         files_generated = generate_template_files()
         return GenerateTemplateFilesResult(files_generated=files_generated)
@@ -253,6 +257,7 @@ class NavidromeService:
 
         Returns:
             Tuple of (api_url, api_user, api_password) — any may be None.
+
         """
         api_url = self._config_service.get("navidrome_api_url")
         api_user = self._config_service.get("navidrome_api_user")
@@ -272,6 +277,7 @@ class NavidromeService:
 
         Raises:
             ValueError: If Navidrome API credentials are not configured.
+
         """
         api_url, api_user, api_password = self._get_api_credentials()
 

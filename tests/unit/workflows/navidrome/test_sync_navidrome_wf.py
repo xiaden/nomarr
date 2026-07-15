@@ -8,14 +8,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.components.navidrome.subsonic_crawl_comp import CrawledSong
-from nomarr.persistence.schema import CollectionNames
 from nomarr.workflows.navidrome.sync_navidrome_wf import sync_navidrome
 
 
 @pytest.fixture(autouse=True)
 def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
     """Bridge helper-based workflow imports to the historical db mock surface."""
-
     monkeypatch.setattr(
         "nomarr.workflows.navidrome.sync_navidrome_wf.bulk_upsert_navidrome_tracks",
         lambda db, nd_ids: db.app.bulk_upsert_nd_tracks(nd_ids),
@@ -89,8 +87,8 @@ class TestSyncNavidrome:
         ]
         db = _make_db(
             path_map={
-                "/music/t1.mp3": {"_id": f"{CollectionNames.LIBRARY_FILES.value}/f1"},
-                "/music/t2.mp3": {"_id": f"{CollectionNames.LIBRARY_FILES.value}/f2"},
+                "/music/t1.mp3": {"_id": f"{'library_files'}/f1"},
+                "/music/t2.mp3": {"_id": f"{'library_files'}/f2"},
             },
             existing_track_keys=["nd-1", "nd-2"],
         )
@@ -123,7 +121,7 @@ class TestSyncNavidrome:
             _song("nd-2", "/music/unknown.mp3"),
         ]
         db = _make_db(
-            path_map={"/music/t1.mp3": {"_id": f"{CollectionNames.LIBRARY_FILES.value}/f1"}},
+            path_map={"/music/t1.mp3": {"_id": f"{'library_files'}/f1"}},
             existing_track_keys=[],
         )
         db.app.bulk_upsert_nd_tracks.return_value = 2
@@ -143,7 +141,7 @@ class TestSyncNavidrome:
         """Relative Navidrome paths should resolve directly when they already match Nomarr."""
         songs = [_song("nd-1", "Artist/Album/t1.mp3")]
         db = _make_db(
-            path_map={"Artist/Album/t1.mp3": {"_id": f"{CollectionNames.LIBRARY_FILES.value}/f1"}},
+            path_map={"Artist/Album/t1.mp3": {"_id": f"{'library_files'}/f1"}},
             existing_track_keys=["nd-1"],
         )
         db.app.bulk_upsert_nd_tracks.return_value = 1
@@ -175,7 +173,7 @@ class TestSyncNavidrome:
         """Configured path-prefix mappings should rewrite paths before lookup."""
         songs = [_song("nd-1", "/music/Artist/Album/t1.mp3")]
         db = _make_db(
-            path_map={"D:/Media/Artist/Album/t1.mp3": {"_id": f"{CollectionNames.LIBRARY_FILES.value}/f1"}},
+            path_map={"D:/Media/Artist/Album/t1.mp3": {"_id": f"{'library_files'}/f1"}},
             existing_track_keys=["nd-1"],
         )
         db.app.bulk_upsert_nd_tracks.return_value = 1
@@ -207,8 +205,8 @@ class TestSyncNavidrome:
         def lookup(_db: MagicMock, paths: list[str]) -> dict[str, dict[str, str]]:
             if paths == ["Artist/Album/t1.mp3", "Artist/Album/t2.mp3"]:
                 return {
-                    "Artist/Album/t1.mp3": {"_id": f"{CollectionNames.LIBRARY_FILES.value}/f1"},
-                    "Artist/Album/t2.mp3": {"_id": f"{CollectionNames.LIBRARY_FILES.value}/f2"},
+                    "Artist/Album/t1.mp3": {"_id": f"{'library_files'}/f1"},
+                    "Artist/Album/t2.mp3": {"_id": f"{'library_files'}/f2"},
                 }
             return {}
 
@@ -227,8 +225,8 @@ class TestSyncNavidrome:
         assert result["unresolved"] == 0
         db.app.bulk_ensure_nd_file_links.assert_called_once_with(
             [
-                {"nd_id": "nd-1", "file_id": f"{CollectionNames.LIBRARY_FILES.value}/f1"},
-                {"nd_id": "nd-2", "file_id": f"{CollectionNames.LIBRARY_FILES.value}/f2"},
+                {"nd_id": "nd-1", "file_id": f"{'library_files'}/f1"},
+                {"nd_id": "nd-2", "file_id": f"{'library_files'}/f2"},
             ]
         )
 
@@ -240,7 +238,7 @@ class TestSyncNavidrome:
         client = MagicMock()
 
         def lookup(_db: MagicMock, paths: list[str]) -> dict[str, dict[str, str]]:
-            return {path: {"_id": f"{CollectionNames.LIBRARY_FILES.value}/{path}"} for path in paths}
+            return {path: {"_id": f"{'library_files'}/{path}"} for path in paths}
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
@@ -273,7 +271,7 @@ class TestSyncNavidrome:
         """Tracks in DB but not in Navidrome are removed."""
         songs = [_song("nd-1", "/music/t1.mp3")]
         db = _make_db(
-            path_map={"/music/t1.mp3": {"_id": f"{CollectionNames.LIBRARY_FILES.value}/f1"}},
+            path_map={"/music/t1.mp3": {"_id": f"{'library_files'}/f1"}},
             existing_track_keys=["nd-1", "nd-orphan-1", "nd-orphan-2"],
         )
         db.app.bulk_upsert_nd_tracks.return_value = 1
@@ -295,7 +293,7 @@ class TestSyncNavidrome:
         """delete_tracks_cascade is not called when there are no orphans."""
         songs = [_song("nd-1", "/music/t1.mp3")]
         db = _make_db(
-            path_map={"/music/t1.mp3": {"_id": f"{CollectionNames.LIBRARY_FILES.value}/f1"}},
+            path_map={"/music/t1.mp3": {"_id": f"{'library_files'}/f1"}},
             existing_track_keys=["nd-1"],
         )
         db.app.bulk_upsert_nd_tracks.return_value = 1
@@ -319,9 +317,9 @@ class TestSyncNavidrome:
         ]
         db = _make_db(
             path_map={
-                "/music/t1.mp3": {"_id": f"{CollectionNames.LIBRARY_FILES.value}/f1"},
-                "/music/t2.mp3": {"_id": f"{CollectionNames.LIBRARY_FILES.value}/f2"},
-                "/music/t3.mp3": {"_id": f"{CollectionNames.LIBRARY_FILES.value}/f3"},
+                "/music/t1.mp3": {"_id": f"{'library_files'}/f1"},
+                "/music/t2.mp3": {"_id": f"{'library_files'}/f2"},
+                "/music/t3.mp3": {"_id": f"{'library_files'}/f3"},
             },
             existing_track_keys=[],
         )

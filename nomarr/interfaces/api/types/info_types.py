@@ -173,7 +173,7 @@ class PublicInfoResponse(BaseModel):
 class ScanningLibraryResponse(BaseModel):
     """Info about a library currently being scanned."""
 
-    library_id: str = Field(..., description="Library document _id")
+    library_id: int = Field(..., description="Library document _id")
     name: str = Field(..., description="Library name")
     progress: int = Field(..., description="Files processed so far")
     total: int = Field(..., description="Total files to process")
@@ -192,7 +192,7 @@ class ScanningLibraryResponse(BaseModel):
 class LibraryPipelineInfoResponse(BaseModel):
     """Per-library pipeline state info for dashboard work-status polling."""
 
-    library_id: str = Field(..., description="Library document _id")
+    library_id: int = Field(..., description="Library document _id")
     name: str = Field(..., description="Library name")
     state: str = Field(..., description="Current pipeline state key")
     library_auto_write: bool = Field(..., description="Whether the library auto-writes tags")

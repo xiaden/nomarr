@@ -89,7 +89,7 @@ class LibraryAdminMixin:
         result = []
         for lib in libraries:
             # Augment with counts (default to 0 if not in counts dict)
-            lib_counts = counts.get(lib._id, {"file_count": 0, "folder_count": 0})
+            lib_counts = counts.get(lib.id, {"file_count": 0, "folder_count": 0})
             lib.file_count = lib_counts["file_count"]
             lib.folder_count = lib_counts["folder_count"]
             result.append(lib)
@@ -222,6 +222,7 @@ class LibraryAdminMixin:
 
         Returns:
             True if the library was deleted, False if it was not found.
+
         """
         if self.file_watcher_service is not None and library_id in self.file_watcher_service.observers:
             self.file_watcher_service.stop_watching_library(library_id)
@@ -257,6 +258,7 @@ class LibraryAdminMixin:
 
         Raises:
             ValueError: If the library does not exist.
+
         """
         self._get_library_or_error(library_id)
         UpdateLibraryMetadataComp(self.db).update(
@@ -280,5 +282,6 @@ class LibraryAdminMixin:
 
         Raises:
             RuntimeError: If a library scan is currently running.
+
         """
         clear_library_data(db=self.db, library_root=self.cfg.library_root)

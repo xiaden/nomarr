@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.helpers.dto.library_dto import LibraryFileWithTags, SearchFilesResult
-from nomarr.persistence.schema import CollectionNames
 from nomarr.services.domain.tagging_svc import TaggingService, TaggingServiceConfig
 
 
@@ -34,12 +33,12 @@ class TestSearchFilesByTag:
         """Search should use the dedicated count query rather than page size for total."""
         mock_db = MagicMock()
         raw_files = [
-            {"_id": f"{CollectionNames.LIBRARY_FILES.value}/1"},
-            {"_id": f"{CollectionNames.LIBRARY_FILES.value}/2"},
+            {"_id": f"{'library_files'}/1"},
+            {"_id": f"{'library_files'}/2"},
         ]
         mapped_files = [
             LibraryFileWithTags(
-                _id=f"{CollectionNames.LIBRARY_FILES.value}/1",
+                _id=f"{'library_files'}/1",
                 path="/music/one.flac",
                 library_id="libraries/1",
                 file_size=None,
@@ -59,7 +58,7 @@ class TestSearchFilesByTag:
                 tags=[],
             ),
             LibraryFileWithTags(
-                _id=f"{CollectionNames.LIBRARY_FILES.value}/2",
+                _id=f"{'library_files'}/2",
                 path="/music/two.flac",
                 library_id="libraries/1",
                 file_size=None,

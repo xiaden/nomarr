@@ -49,7 +49,7 @@ class KeyManagementService:
         """
         self._db = db
 
-    def get_api_key(self) -> str | None:
+    async def get_api_key(self) -> str | None:
         """Get the public API key (returns None if not found).
 
         Returns:
@@ -59,10 +59,10 @@ class KeyManagementService:
             Use this for validation. Use get_or_create_api_key() during initialization.
 
         """
-        api_key_doc = cast("dict[str, Any] | None", self._db.app.get_config_option("api_key"))
+        api_key_doc = cast("dict[str, Any] | None", await self._db.app.get_config_option("api_key"))
         return None if api_key_doc is None else cast("str | None", api_key_doc.get("value"))
 
-    def get_or_create_api_key(self) -> str:
+    async def get_or_create_api_key(self) -> str:
         """Get or create the public API key for external endpoints.
         This key is used by external integrations.
 
@@ -70,16 +70,16 @@ class KeyManagementService:
             API key string (existing or newly generated)
 
         """
-        key_doc = cast("dict[str, Any] | None", self._db.app.get_config_option("api_key"))
+        key_doc = cast("dict[str, Any] | None", await self._db.app.get_config_option("api_key"))
         key = None if key_doc is None else cast("str | None", key_doc.get("value"))
         if key:
             return key
         new_key = secrets.token_urlsafe(32)
-        self._db.app.update_config_option("api_key", {"value": new_key})
+        await self._db.app.update_config_option("api_key", {"value": new_key})
         logger.info("[KeyManagement] Generated new API key on first run.")
         return new_key
 
-    def regenerate_api_key(self) -> str:
+    async def regenerate_api_key(self) -> str:
         """Generate a new API key, replacing the existing one.
 
         Returns:
@@ -87,7 +87,7 @@ class KeyManagementService:
 
         """
         new_key = secrets.token_urlsafe(32)
-        self._db.app.update_config_option("api_key", {"value": new_key})
+        await self._db.app.update_config_option("api_key", {"value": new_key})
         logger.info("[KeyManagement] API key regenerated.")
         return new_key
 
@@ -126,7 +126,7 @@ class KeyManagementService:
         except (ValueError, AttributeError, ImportError):
             return False
 
-    def get_admin_password_hash(self) -> str:
+    async def get_admin_password_hash(self) -> str:
         """Get admin password hash from DB (raises if not found).
 
         Returns:
@@ -136,14 +136,14 @@ class KeyManagementService:
             RuntimeError: If password not found in database
 
         """
-        password_hash_doc = cast("dict[str, Any] | None", self._db.app.get_config_option("admin_password_hash"))
+        password_hash_doc = cast("dict[str, Any] | None", await self._db.app.get_config_option("admin_password_hash"))
         password_hash = None if password_hash_doc is None else cast("str | None", password_hash_doc.get("value"))
         if not password_hash:
             msg = "Admin password not found in DB. Password should be generated during initialization."
             raise RuntimeError(msg)
         return password_hash
 
-    def get_or_create_admin_password(self, config_password: str | None = None) -> str:
+    async def get_or_create_admin_password(self, config_password: str | None = None) -> str:
         """Get or create the admin password hash for web UI authentication.
 
         On first run:
@@ -160,18 +160,18 @@ class KeyManagementService:
             Plaintext password if auto-generated (for logging), empty string otherwise
 
         """
-        existing_hash_doc = cast("dict[str, Any] | None", self._db.app.get_config_option("admin_password_hash"))
+        existing_hash_doc = cast("dict[str, Any] | None", await self._db.app.get_config_option("admin_password_hash"))
         existing_hash = None if existing_hash_doc is None else cast("str | None", existing_hash_doc.get("value"))
         if existing_hash:
             return ""
         if config_password:
             password_hash = self.hash_password(config_password)
-            self._db.app.update_config_option("admin_password_hash", {"value": password_hash})
+            await self._db.app.update_config_option("admin_password_hash", {"value": password_hash})
             logger.info("[KeyManagement] Admin password set from config file.")
             return ""
         random_password = secrets.token_urlsafe(16)
         password_hash = self.hash_password(random_password)
-        self._db.app.update_config_option("admin_password_hash", {"value": password_hash})
+        await self._db.app.update_config_option("admin_password_hash", {"value": password_hash})
         logger.warning("[KeyManagement] ========================================")
         logger.warning("[KeyManagement] AUTO-GENERATED ADMIN PASSWORD:")
         logger.warning(f"[KeyManagement]   {random_password}")
@@ -179,21 +179,21 @@ class KeyManagementService:
         logger.warning("[KeyManagement] Save this password - it won't be shown again!")
         return random_password
 
-    def reset_admin_password(self, new_password: str) -> None:
+    async def reset_admin_password(self, new_password: str) -> None:
         """Reset the admin password to a new value.
 
         Args:
             new_password: New plaintext password
 
         Warning:
-            This invalidates all existing web UI sessions.
+            This invalidates all web UI sessions.
 
         """
         password_hash = self.hash_password(new_password)
-        self._db.app.update_config_option("admin_password_hash", {"value": password_hash})
+        await self._db.app.update_config_option("admin_password_hash", {"value": password_hash})
         logger.warning("[KeyManagement] Admin password reset - all sessions invalidated")
 
-    def create_session(self) -> str:
+    async def create_session(self) -> str:
         """Create a new session token with expiry.
         Write-through cache: stores in both memory (fast reads) and DB (persistence).
 
@@ -204,7 +204,7 @@ class KeyManagementService:
         session_token = secrets.token_urlsafe(32)
         expiry = now_s().value + SESSION_TIMEOUT_SECONDS
         _session_cache[session_token] = expiry
-        self._db.app.insert_session(
+        await self._db.app.insert_session(
             [
                 {
                     "session_id": session_token,
@@ -239,7 +239,7 @@ class KeyManagementService:
             return False
         return True
 
-    def invalidate_session(self, session_token: str) -> None:
+    async def invalidate_session(self, session_token: str) -> None:
         """Invalidate a session (logout).
         Removes from both memory cache and DB.
 
@@ -248,10 +248,10 @@ class KeyManagementService:
 
         """
         _session_cache.pop(session_token, None)
-        self._db.app.delete_session(session_token)
+        await self._db.app.delete_session(session_token)
         logger.info("[KeyManagement] Session invalidated (logout)")
 
-    def cleanup_expired_sessions(self) -> int:
+    async def cleanup_expired_sessions(self) -> int:
         """Remove all expired sessions from both memory cache and DB.
 
         Returns:
@@ -262,27 +262,27 @@ class KeyManagementService:
         expired = [token for token, expiry in _session_cache.items() if expiry < now]
         for token in expired:
             _session_cache.pop(token, None)
-        session_count = self._db.app.count_sessions()
-        expired_docs = self._db.app.get_sessions_expiring_before(
+        session_count = await self._db.app.count_sessions()
+        expired_docs = await self._db.app.get_sessions_expiring_before(
             int(now * 1000),
             session_count,
         )
         if expired_docs:
-            self._db.app.delete_sessions_by_ids([doc["_id"] for doc in expired_docs])
+            await self._db.app.delete_sessions_by_ids([doc["id"] for doc in expired_docs])
         db_count = len(expired_docs)
         if expired or db_count:
             logger.info(f"[KeyManagement] Cleaned up {len(expired)} expired session(s) from cache, {db_count} from DB")
         return len(expired)
 
-    def load_sessions_from_db(self) -> int:
+    async def load_sessions_from_db(self) -> int:
         """Load all non-expired sessions from DB into memory cache on startup.
 
         Returns:
             Number of sessions loaded
 
         """
-        session_count = self._db.app.count_sessions()
-        sessions = self._db.app.get_active_sessions(
+        session_count = await self._db.app.count_sessions()
+        sessions = await self._db.app.get_active_sessions(
             int(now_s().value * 1000),
             session_count,
         )

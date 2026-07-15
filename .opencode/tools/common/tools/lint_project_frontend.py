@@ -270,16 +270,20 @@ def lint_project_frontend() -> dict[str, Any]:
             by_tool[tool] = by_tool.get(tool, 0) + 1
 
         import json as _json
+
         return {
-            "output": _json.dumps({
-                "status": "errors",
-                "summary": {"total_errors": len(all_errors), "by_tool": by_tool},
-                "errors": all_errors,
-            }),
+            "output": _json.dumps(
+                {
+                    "status": "errors",
+                    "summary": {"total_errors": len(all_errors), "by_tool": by_tool},
+                    "errors": all_errors,
+                }
+            ),
             "title": "Lint Frontend",
             "metadata": {"frontend": True, "errors": len(all_errors)},
         }
     import json as _json
+
     return {
         "output": _json.dumps({"status": "clean", "summary": {"tools_run": tools_run}}),
         "title": "Lint Frontend",

@@ -54,6 +54,7 @@ class SubsonicClient:
         Raises:
             SubsonicApiError: If the Subsonic response status is not ``ok``.
             requests.HTTPError: If the HTTP status code indicates failure.
+
         """
         url = f"{self._base_url}/rest/{endpoint}"
         query_params: list[tuple[str, str | int | float | bool | None]] = list(self._make_auth_params().items())

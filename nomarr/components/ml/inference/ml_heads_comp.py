@@ -439,6 +439,7 @@ def run_head_decision(
         emit_all_scores: (unused, kept for signature compat).
         segment_std: Optional per-label segment standard deviation
             for stability gating.
+
     """
     kind = spec.kind.lower()
     vec = np.asarray(scores).reshape(-1)

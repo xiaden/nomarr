@@ -5,6 +5,7 @@ Loads and validates configuration from various sources with smart defaults.
 
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -164,12 +165,55 @@ def _validate_config(config: dict) -> list[str]:
     return warnings
 
 
+# Directories that are never Python source — skipped during recursive walks
+# so the original "**/*.py" glob doesn't waste time in .venv/ (5K+ files),
+# node_modules/, build_resources/, etc.
+_EXCLUDED_DIRS: frozenset[str] = frozenset(
+    {
+        ".venv",
+        ".venv-linux",
+        "venv",
+        ".tox",
+        "node_modules",
+        "__pycache__",
+        ".git",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".pytest_cache",
+        "dist",
+        "build",
+        "build_resources",
+        ".eggs",
+    }
+)
+
+
+def _has_python_files(path: Path) -> bool:
+    """Return True if *path* contains any ``.py`` files.
+
+    Uses ``os.walk`` with *topdown=True* so excluded directories are pruned
+    before descent.  This replaces the original ``list(path.glob("**/*.py"))``
+    which had no exclusions and would scan the entire project tree including
+    ``.venv-linux/`` (5K+ files) and ``build_resources/``.
+
+    All dot-directories are automatically skipped — Python source never lives
+    in ``.git/``, ``.github/``, ``.devcontainer/``, ``.mypy_cache/``, etc.
+    """
+    if not path.is_dir():
+        return False
+    for _root, dirs, files in os.walk(str(path), topdown=True):
+        dirs[:] = [d for d in dirs if d not in _EXCLUDED_DIRS and not d.startswith(".")]
+        if any(f.endswith(".py") for f in files):
+            return True
+    return False
+
+
 def _detect_backend_path(workspace_root: Path) -> str | None:
     """Detect backend path by looking for Python files."""
     candidates: list[str | Path] = ["src", "app", "backend", workspace_root]
     for candidate in candidates:
-        path: Path = workspace_root / candidate if isinstance(candidate, str) else candidate
-        if (path / "__init__.py").exists() or list(path.glob("**/*.py")):
+        path = workspace_root / candidate if isinstance(candidate, str) else candidate
+        if (path / "__init__.py").exists() or _has_python_files(path):
             return str(path.relative_to(workspace_root))
     return None
 

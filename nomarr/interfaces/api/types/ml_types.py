@@ -16,7 +16,7 @@ from nomarr.interfaces.api.id_codec import encode_id
 class MlModelResponse(BaseModel):
     """Response model for a registered ML model vertex."""
 
-    id: str
+    id: int
     backbone: str
     head_type: str
     model_stem: str
@@ -27,9 +27,9 @@ class MlModelResponse(BaseModel):
 
     @classmethod
     def from_doc(cls, doc: dict[str, Any]) -> MlModelResponse:
-        """Build response from an ml_models ArangoDB document."""
+        """Build response from an ml_models row."""
         return cls(
-            id=encode_id(doc["_id"]),
+            id=encode_id(doc["id"]),
             backbone=doc["backbone"],
             head_type=doc["head_type"],
             model_stem=doc["model_stem"],
@@ -43,16 +43,16 @@ class MlModelResponse(BaseModel):
 class MlModelOutputResponse(BaseModel):
     """Response model for a single model output activation."""
 
-    id: str
+    id: int
     output_index: int
     label: str | None
     fully_labeled: bool
 
     @classmethod
     def from_doc(cls, doc: dict[str, Any]) -> MlModelOutputResponse:
-        """Build response from an ml_model_outputs ArangoDB document."""
+        """Build response from an ml_model_outputs row."""
         return cls(
-            id=encode_id(doc["_id"]),
+            id=encode_id(doc["id"]),
             output_index=doc["output_index"],
             label=doc.get("label"),
             fully_labeled=doc.get("fully_labeled", False),

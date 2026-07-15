@@ -13,7 +13,6 @@ from nomarr.helpers.constants.file_states import (
     STATE_PROCESSED,
 )
 from nomarr.helpers.dto.library_dto import RetryErroredResult
-from nomarr.persistence.schema import CollectionNames
 from nomarr.services.domain.library_svc.files import LibraryFilesMixin
 
 
@@ -32,7 +31,7 @@ class TestRetryErroredFiles:
     @patch("nomarr.services.domain.library_svc.files.transition_file_state")
     @patch(
         "nomarr.services.domain.library_svc.files.get_errored_file_ids",
-        return_value=[f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"],
+        return_value=[f"{'library_files'}/1", f"{'library_files'}/2"],
     )
     def test_retries_all_errored_when_no_file_ids(
         self,
@@ -50,13 +49,13 @@ class TestRetryErroredFiles:
         assert mock_transition_file_state.call_args_list == [
             call(
                 mock_db,
-                [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"],
+                [f"{'library_files'}/1", f"{'library_files'}/2"],
                 STATE_ERRORED,
                 STATE_NOT_ERRORED,
             ),
             call(
                 mock_db,
-                [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"],
+                [f"{'library_files'}/1", f"{'library_files'}/2"],
                 STATE_PROCESSED,
                 STATE_NOT_PROCESSED,
             ),
@@ -67,9 +66,9 @@ class TestRetryErroredFiles:
     @patch(
         "nomarr.services.domain.library_svc.files.get_errored_file_ids",
         return_value=[
-            f"{CollectionNames.LIBRARY_FILES.value}/1",
-            f"{CollectionNames.LIBRARY_FILES.value}/2",
-            f"{CollectionNames.LIBRARY_FILES.value}/3",
+            f"{'library_files'}/1",
+            f"{'library_files'}/2",
+            f"{'library_files'}/3",
         ],
     )
     def test_filters_to_specified_file_ids(
@@ -83,20 +82,20 @@ class TestRetryErroredFiles:
 
         mixin.retry_errored_files(
             "abc123",
-            file_ids=[f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/3"],
+            file_ids=[f"{'library_files'}/1", f"{'library_files'}/3"],
         )
 
         mock_get_errored_file_ids.assert_called_once_with(mock_db, "abc123")
         assert mock_transition_file_state.call_args_list == [
             call(
                 mock_db,
-                [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/3"],
+                [f"{'library_files'}/1", f"{'library_files'}/3"],
                 STATE_ERRORED,
                 STATE_NOT_ERRORED,
             ),
             call(
                 mock_db,
-                [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/3"],
+                [f"{'library_files'}/1", f"{'library_files'}/3"],
                 STATE_PROCESSED,
                 STATE_NOT_PROCESSED,
             ),
@@ -106,7 +105,7 @@ class TestRetryErroredFiles:
     @patch("nomarr.services.domain.library_svc.files.transition_file_state")
     @patch(
         "nomarr.services.domain.library_svc.files.get_errored_file_ids",
-        return_value=[f"{CollectionNames.LIBRARY_FILES.value}/1"],
+        return_value=[f"{'library_files'}/1"],
     )
     def test_calls_transition_helper_twice_for_errored_files(
         self,

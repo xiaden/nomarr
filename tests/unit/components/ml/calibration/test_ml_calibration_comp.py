@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -22,28 +22,35 @@ from nomarr.components.ml.calibration.ml_calibration_comp import (
 class TestGetSparseHistogram:
     """Tests for constructor-backed sparse histogram generation."""
 
-    def test_aggregates_matching_numeric_values_into_sorted_sparse_bins(self) -> None:
+    @pytest.mark.asyncio
+    async def test_aggregates_matching_numeric_values_into_sorted_sparse_bins(self) -> None:
         mock_db = MagicMock()
-        mock_db.ml.get_model.return_value = {
-            "_id": "ml_models/model-1",
-            "backbone": "ast",
-            "embedder_release_date": "2026-01-01",
-        }
-        mock_db.library.list_all_tag_names.return_value = [
-            "nom:sigmoid_happy_ast_20260101",
-            "nom:sigmoid_sad_ast_20260101",
-            "genre",
-        ]
-        mock_db.library.list_tags_by_name.return_value = [
-            {"value": -0.2},
-            {"value": 0.1},
-            {"value": 0.11},
-            {"value": 1.2},
-            {"value": "0.3"},
-            {"value": True},
-        ]
+        mock_db.ml.get_model = AsyncMock(
+            return_value={
+                "id": 1,
+                "backbone": "ast",
+                "embedder_release_date": "2026-01-01",
+            }
+        )
+        mock_db.library.list_all_tag_names = AsyncMock(
+            return_value=[
+                "nom:sigmoid_happy_ast_20260101",
+                "nom:sigmoid_sad_ast_20260101",
+                "genre",
+            ]
+        )
+        mock_db.library.list_tags_by_name = AsyncMock(
+            return_value=[
+                {"value": -0.2},
+                {"value": 0.1},
+                {"value": 0.11},
+                {"value": 1.2},
+                {"value": "0.3"},
+                {"value": True},
+            ]
+        )
 
-        result = get_sparse_histogram(
+        result = await get_sparse_histogram(
             mock_db,
             model_id="ml_models/model-1",
             label="happy",
@@ -60,11 +67,12 @@ class TestGetSparseHistogram:
         mock_db.library.list_all_tag_names.assert_called_once_with(limit=10000)
         mock_db.library.list_tags_by_name.assert_called_once_with(name="nom:sigmoid_happy_ast_20260101", limit=50000)
 
-    def test_returns_empty_when_model_metadata_is_missing(self) -> None:
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_model_metadata_is_missing(self) -> None:
         mock_db = MagicMock()
-        mock_db.ml.get_model.return_value = None
+        mock_db.ml.get_model = AsyncMock(return_value=None)
 
-        result = get_sparse_histogram(mock_db, model_id="ml_models/missing", label="happy")
+        result = await get_sparse_histogram(mock_db, model_id="ml_models/missing", label="happy")
 
         assert result == []
         mock_db.library.list_all_tag_names.assert_not_called()
@@ -158,16 +166,21 @@ class TestDerivePercentilesFromSparseHistogram:
 class TestGenerateCalibrationFromHistogram:
     """Tests for ``generate_calibration_from_histogram``."""
 
-    def test_returns_default_payload_when_sparse_histogram_is_empty(self) -> None:
+    @pytest.mark.asyncio
+    async def test_returns_default_payload_when_sparse_histogram_is_empty(self) -> None:
         mock_db = MagicMock()
-        mock_db.calibration_state.get_sparse_histogram.return_value = []
 
         with (
+            patch(
+                "nomarr.components.ml.calibration.ml_calibration_comp.get_sparse_histogram",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
             patch(
                 "nomarr.components.ml.calibration.ml_calibration_comp.derive_percentiles_from_sparse_histogram"
             ) as mock_derive,
         ):
-            result = generate_calibration_from_histogram(
+            result = await generate_calibration_from_histogram(
                 mock_db,
                 model_id="ml_models/model-1",
                 head_name="mood_happy",
@@ -187,15 +200,20 @@ class TestGenerateCalibrationFromHistogram:
         }
         mock_derive.assert_not_called()
 
-    def test_returns_percentiles_and_histogram_bins_when_sparse_histogram_exists(self) -> None:
+    @pytest.mark.asyncio
+    async def test_returns_percentiles_and_histogram_bins_when_sparse_histogram_exists(self) -> None:
         mock_db = MagicMock()
         sparse_bins = [
             {"min_val": 0.1, "count": 2, "underflow_count": 1, "overflow_count": 0},
             {"min_val": 0.7, "count": 3, "underflow_count": 0, "overflow_count": 4},
         ]
-        mock_db.calibration_state.get_sparse_histogram.return_value = sparse_bins
 
         with (
+            patch(
+                "nomarr.components.ml.calibration.ml_calibration_comp.get_sparse_histogram",
+                new_callable=AsyncMock,
+                return_value=sparse_bins,
+            ),
             patch(
                 "nomarr.components.ml.calibration.ml_calibration_comp.derive_percentiles_from_sparse_histogram",
                 return_value={
@@ -207,7 +225,7 @@ class TestGenerateCalibrationFromHistogram:
                 },
             ) as mock_derive,
         ):
-            result = generate_calibration_from_histogram(
+            result = await generate_calibration_from_histogram(
                 mock_db,
                 model_id="ml_models/model-2",
                 head_name="mood_happy",
@@ -277,10 +295,12 @@ class TestComputeGlobalCalibrationHash:
         result = compute_global_calibration_hash(
             [
                 {
-                    "_key": "state-1",
-                    "calibration_def_hash": "hash-1",
-                    "p5": 0.1,
-                    "p95": 0.9,
+                    "id": 1,
+                    "state_data": {
+                        "calibration_def_hash": "hash-1",
+                        "p5": 0.1,
+                        "p95": 0.9,
+                    },
                 }
             ]
         )
@@ -290,8 +310,8 @@ class TestComputeGlobalCalibrationHash:
 
     def test_returns_same_hash_for_same_logical_list_ordering(self) -> None:
         states = [
-            {"_key": "state-b", "calibration_def_hash": "hash-b", "p5": 0.2, "p95": 0.8},
-            {"_key": "state-a", "calibration_def_hash": "hash-a", "p5": 0.1, "p95": 0.9},
+            {"id": 2, "state_data": {"calibration_def_hash": "hash-b", "p5": 0.2, "p95": 0.8}},
+            {"id": 1, "state_data": {"calibration_def_hash": "hash-a", "p5": 0.1, "p95": 0.9}},
         ]
 
         result_1 = compute_global_calibration_hash(states)

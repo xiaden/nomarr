@@ -122,6 +122,7 @@ class TaggingQueryMixin:
         Returns:
             Number of files that have been tagged in the database but
             have not yet had their tags written to the audio file.
+
         """
         return count_pending_tag_writes(self.db)
 
@@ -145,7 +146,7 @@ class TaggingQueryMixin:
         else:
             libraries = list_library_records(self.db, include_scan=False)
             for lib in libraries:
-                self.write_tags_to_files(lib._id)
+                self.write_tags_to_files(str(lib.id))
 
         return CommitResult(started=True, pending_files=pending)
 
@@ -157,6 +158,7 @@ class TaggingQueryMixin:
 
         Returns:
             UniqueTagKeysResult DTO with tag_keys list and total count.
+
         """
         keys = get_unique_names(self.db, nomarr_only)
         return UniqueTagKeysResult(tag_keys=keys, count=len(keys), calibration=None, library_id=None)
@@ -170,6 +172,7 @@ class TaggingQueryMixin:
 
         Returns:
             UniqueTagKeysResult DTO with tag_keys list and total count.
+
         """
         values = get_unique_tag_values(self.db, tag_key, nomarr_only)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
@@ -183,6 +186,7 @@ class TaggingQueryMixin:
 
         Returns:
             UniqueTagKeysResult DTO with tag_keys list and total count.
+
         """
         values = get_unique_mood_values(self.db, mood_tier=mood_tier, limit=limit)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)

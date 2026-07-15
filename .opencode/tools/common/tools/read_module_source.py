@@ -263,6 +263,7 @@ def read_module_source(
     result["symbol_end_line"] = end_line
 
     import json as _json
+
     target = result.get("qualified_name") or result.get("file", "")
     return {
         "output": _json.dumps(result),

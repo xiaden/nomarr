@@ -13,8 +13,8 @@ from nomarr.components.library.library_file_mutation_comp import update_file_pat
 from nomarr.components.library.library_file_query_comp import find_move_candidate_by_chromaprint
 from nomarr.components.library.metadata_extraction_comp import compute_chromaprint_for_file
 from nomarr.components.metadata.entity_seeding_comp import (
+    _build_song_tag_entries,
     _extract_entity_tags,
-    seed_song_entities_from_tags,
 )
 from nomarr.persistence import Database
 
@@ -251,7 +251,10 @@ def apply_detected_moves(
         if new_metadata:
             try:
                 entity_tags = _extract_entity_tags(new_metadata)
-                seed_song_entities_from_tags(db, move.file_id, entity_tags)
+                entries = _build_song_tag_entries(move.file_id, entity_tags)
+                if entries:
+                    for entry in entries:
+                        db.library.replace_file_tags(entry["song_id"], entry["tags"])
             except RuntimeError as e:
                 logger.warning(
                     "Failed to update entities for moved file %s: %s",

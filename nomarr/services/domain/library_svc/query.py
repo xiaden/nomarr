@@ -124,7 +124,7 @@ class LibraryQueryMixin:
         libraries = list_library_records(self.db, enabled_only=True)
         all_file_ids: list[str] = []
         for lib in libraries:
-            file_ids = get_uncalibrated_tagged_file_ids(self.db, lib._id)
+            file_ids = get_uncalibrated_tagged_file_ids(self.db, lib.id)
             all_file_ids.extend(file_ids)
         if not all_file_ids:
             return []
@@ -141,6 +141,7 @@ class LibraryQueryMixin:
         Returns:
             SearchFilesResult DTO with files (including tags), total count,
             limit, and offset.
+
         """
         files, total = search_library_files(self.db, query)
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
@@ -197,6 +198,7 @@ class LibraryQueryMixin:
 
         Returns:
             UniqueTagKeysResult DTO with tag_keys list and total count.
+
         """
         keys = get_unique_names(self.db, nomarr_only)
         return UniqueTagKeysResult(tag_keys=keys, count=len(keys), calibration=None, library_id=None)
@@ -210,6 +212,7 @@ class LibraryQueryMixin:
 
         Returns:
             UniqueTagKeysResult DTO with tag_keys list and total count.
+
         """
         values = get_unique_tag_values(self.db, tag_key, nomarr_only)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
@@ -223,6 +226,7 @@ class LibraryQueryMixin:
 
         Returns:
             UniqueTagKeysResult DTO with tag_keys list and total count.
+
         """
         values = get_unique_mood_values(self.db, mood_tier=mood_tier, limit=limit)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
@@ -254,7 +258,7 @@ class LibraryQueryMixin:
 
         pipeline_states: dict[str, dict[str, str]] = {}
         for lib in libraries:
-            lib_id = lib._id
+            lib_id = str(lib.id)
 
             if lib_id in scan_ing_set:
                 scan_state = SCAN_IN_PROGRESS
@@ -292,6 +296,7 @@ class LibraryQueryMixin:
         Returns:
             List of {file_id, path, title, artist, album, scanned_at}
             sorted by scanned_at DESC.
+
         """
         return get_recently_processed(self.db, limit=limit, library_id=library_id)
 
@@ -314,7 +319,7 @@ class LibraryQueryMixin:
         files_raw = get_files_by_ids_with_tags(self.db, errored_ids)
         files: list[ErroredFileItem] = [
             ErroredFileItem(
-                _id=f["_id"],
+                id=f["id"],
                 path=f["path"],
                 duration_seconds=f.get("duration_seconds"),
                 artist=f.get("artist"),

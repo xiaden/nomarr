@@ -139,6 +139,7 @@ def get_params(backbone: str) -> BackbonePreprocessParams:
 
     Raises:
         ValueError: If *backbone* is not recognised.
+
     """
     try:
         return _PARAMS[backbone]
@@ -163,6 +164,7 @@ def compute_log_mel(
 
     Returns:
         Float32 array of shape ``[n_frames, n_mels]``.
+
     """
     fft_size = params.n_fft + params.zero_padding
 
@@ -228,6 +230,7 @@ def extract_patches(
         Float32 array of shape ``[n_patches, patch_frames, n_mels]``.
         Returns an empty array with shape ``[0, patch_frames, n_mels]`` if
         the spectrogram is shorter than one patch.
+
     """
     n_frames, n_mels = log_mel.shape
 
@@ -266,6 +269,7 @@ def preprocess_for_backbone(
 
     Raises:
         ValueError: If *backbone* is not recognised.
+
     """
     params = get_params(backbone)
     log_mel = compute_log_mel(waveform, params)

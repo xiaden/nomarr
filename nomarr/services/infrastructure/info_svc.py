@@ -250,7 +250,7 @@ class InfoService:
             warnings=warnings,
         )
 
-    def get_public_info(self) -> PublicInfoResult:
+    async def get_public_info(self) -> PublicInfoResult:
         """Get comprehensive public info for API endpoint.
 
         Orchestrates calls to multiple services and computes:
@@ -282,7 +282,7 @@ class InfoService:
 
         # Models info
         if self.ml_service:
-            heads = self.ml_service.discover_heads()
+            heads = await self.ml_service.discover_heads()
             embeddings = sorted({h.backbone for h in heads})
             models_info = ModelsInfo(total_heads=len(heads), embeddings=embeddings)
         else:

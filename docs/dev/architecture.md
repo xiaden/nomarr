@@ -86,12 +86,12 @@ Rules:
 
 ### Persistence (`persistence/`)
 
-**Purpose:** ArangoDB access layer.
+**Purpose:** Database access layer (PostgreSQL for library/app/file/tag/scan and ML domains; ArangoDB for app-state, migrations, and legacy AQL operations during the migration period).
 
 **Contains:**
 
-- `db.py` — `Database` facade that creates the shared Arango connection, wires the thin AQL operation objects, and exposes intent-level sub-facades
-- `database/` — thin AQL operation classes grouped by collection/domain concern (`LibrariesAqlOperations`, `LibraryFilesAqlOperations`, `TagsAqlOperations`, `ScanAqlOperations`, `FileStatesAqlOperations`, `MlStreamsAqlOperations`, `MlModelsAqlOperations`, `VectorsAqlOperations`, `AppAqlOperations`, `NavidromeAqlOperations`)
+- `db.py` — `Database` facade that creates the shared database connections, wires the thin operation objects and repository classes, and exposes intent-level sub-facades
+- `database/` — repository classes and thin operation classes grouped by domain concern: PostgreSQL repository classes for library-domain (`LibraryRepository`, `FileRepository`, `FolderRepository`, `TagRepository`, `ScanRepository`, `FileStateRepository`) and ML-domain (`VectorRepo`, `ModelRepo`, `OutputRepo`, `CalibrationRepo`, `EmbeddingStreamRepository`); AQL operation classes for ArangoDB-backed domains (`LibrariesAqlOperations`, `LibraryFilesAqlOperations`, `TagsAqlOperations`, `ScanAqlOperations`, `FileStatesAqlOperations`, `AppAqlOperations`, `NavidromeAqlOperations`)
 - `api/` — intent-level sub-facades for higher layers: `db.library` (`LibraryDb`), `db.app` (`AppDb`), and `db.ml` (`MlDb`)
 
 **Access pattern:** Go through the injected `Database` facade and use the intent-level namespaces (`db.library`, `db.app`, `db.ml`). Lower persistence tiers (`nomarr.persistence.database/*_aql.py` and `nomarr.persistence.aql/primitives.py`) are persistence-internal implementation layers, not higher-layer APIs.
@@ -103,11 +103,9 @@ tags_by_file = db.library.list_file_tags_for_files(file_ids)
 db.library.replace_file_tags(file_id, tags)
 
 tagged_file_ids = db.app.list_files_in_state(STATE_TAGGED)
-vector_namespaces = db.ml.list_vector_namespaces()
-vectors = db.ml.add_vector_collection(
-    "vectors_track_hot__discogs_effnet__main",
-    "vectors_track_hot",
-)
+model = await db.ml.get_model(model_id)
+outputs = await db.ml.list_model_outputs(model_id)
+similar = await db.ml.search_vectors("discogs_effnet", query_vector, limit=10)
 
 # ❌ Do not import `nomarr.persistence.database` or `nomarr.persistence.aql` internals from higher layers
 # ❌ Do not treat `db.libraries`, `db.tags`, `db.file_states`, etc. as new caller APIs

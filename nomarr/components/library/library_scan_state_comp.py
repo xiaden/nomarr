@@ -67,12 +67,12 @@ def _default_scan_doc(library_id: str) -> dict[str, Any]:
 def ensure_scan_state(db: Database, library_id: str) -> dict[str, Any]:
     """Return the scan document for a library, creating or repairing it when needed."""
     library_key = library_key_from_ref(library_id)
-    scan_doc = cast("dict[str, Any] | None", db.app.get_scan(library_id))
+    scan_doc = cast("dict[str, Any] | None", db.library.get_scan(library_id))
 
     if scan_doc is None:
         default_doc = _default_scan_doc(library_id)
-        db.app.add_scan(library_id, default_doc)
-        scan_doc = cast("dict[str, Any] | None", db.app.get_scan(library_id)) or default_doc
+        db.library.add_scan(library_id, default_doc)
+        scan_doc = cast("dict[str, Any] | None", db.library.get_scan(library_id)) or default_doc
     elif scan_doc.get("library_key") != library_key:
         repaired_doc = {
             **_DEFAULT_SCAN_FIELDS,
@@ -80,16 +80,16 @@ def ensure_scan_state(db: Database, library_id: str) -> dict[str, Any]:
             "_key": library_key,
             "library_key": library_key,
         }
-        db.app.remove_scan(library_id)
-        db.app.add_scan(library_id, repaired_doc)
-        scan_doc = cast("dict[str, Any] | None", db.app.get_scan(library_id)) or repaired_doc
+        db.library.remove_scan(library_id)
+        db.library.add_scan(library_id, repaired_doc)
+        scan_doc = cast("dict[str, Any] | None", db.library.get_scan(library_id)) or repaired_doc
 
     return scan_doc
 
 
 def get_scan_state(db: Database, library_id: str) -> dict[str, Any] | None:
     """Return the scan document for a library, repairing legacy rows when found."""
-    scan_doc = cast("dict[str, Any] | None", db.app.get_scan(library_id))
+    scan_doc = cast("dict[str, Any] | None", db.library.get_scan(library_id))
     if scan_doc is None:
         return None
     if scan_doc.get("library_key") != library_key_from_ref(library_id):
@@ -103,8 +103,8 @@ def update_scan_state(db: Database, library_id: str, **fields: Any) -> dict[str,
     if not fields:
         return scan_doc
 
-    db.app.update_scan(library_id, fields)
-    refreshed = cast("dict[str, Any] | None", db.app.get_scan(library_id))
+    db.library.update_scan(library_id, fields)
+    refreshed = cast("dict[str, Any] | None", db.library.get_scan(library_id))
     if refreshed is not None:
         return refreshed
     return {**scan_doc, **fields}
@@ -122,6 +122,7 @@ def transition_pipeline_axis(
 
     Raises:
         ValueError: If the transition is not valid from the current axis state.
+
     """
     current = db.app.get_pipeline_state(library_id)
     if current is not None:
@@ -173,6 +174,7 @@ def bulk_transition_pipeline_axis(
 
     Raises:
         ValueError: If the transition is not valid from the source state.
+
     """
     # No-op: source and target are the same — nothing to do
     if from_state == to_state:

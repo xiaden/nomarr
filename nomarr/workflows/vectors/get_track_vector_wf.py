@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def get_track_vector(
     db: Database,
-    file_id: str,
+    file_id: int,
     backbone_id: str,
 ) -> dict[str, Any] | None:
     """Get a track's promoted vector by file ID and backbone.

@@ -6,7 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
-from nomarr.helpers.vector_params_helper import compute_nlists, compute_nprobe
+from nomarr.helpers.vector_params_helper import get_ef_search
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def get_cold_track_vector(
     db: Database,
-    file_id: str,
+    file_id: int,
     backbone_id: str,
 ) -> dict[str, Any] | None:
     """Fetch a track's vector document from the cold collection.
@@ -88,6 +88,18 @@ def search_similar_cold_track_vectors(
         )
         return []
 
-    nlists = compute_nlists(doc_count, vector_group_size)
-    nprobe = compute_nprobe(nlists, vector_search_thoroughness)
-    return cast("list[dict[str, Any]]", cold_ops.ann_search(seed_vector, result_limit, nprobe=nprobe))
+    ef_search = get_ef_search(doc_count)
+    try:
+        return cast(
+            "list[dict[str, Any]]",
+            cold_ops.ann_search(seed_vector, result_limit, nprobe=ef_search),
+        )
+    except NotImplementedError:
+        # TODO: cold_ops.ann_search is a dead ArangoDB code path — replace with
+        # VectorRepo.find_nearest() once the cold namespace is fully migrated.
+        logger.warning(
+            "ann_search raised NotImplementedError for backbone=%s; "
+            "this code path is dead ArangoDB logic and needs migration to pgvector",
+            backbone_id,
+        )
+        return []

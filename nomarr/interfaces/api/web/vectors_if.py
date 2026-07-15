@@ -92,13 +92,13 @@ async def get_track_vector(
     vector_search_service: VectorSearchService = Depends(get_vector_search_service),
 ) -> VectorGetResponse:
     """Get embedding vector for a specific track."""
-    file_id = decode_path_id(file_id)
-    result = vector_search_service.get_track_vector(backbone_id, file_id)
+    decoded_file_id: int = decode_path_id(file_id)
+    result = vector_search_service.get_track_vector(backbone_id, decoded_file_id)
 
     if result is None:
         raise HTTPException(
             status_code=404,
-            detail=f"No vector found for file '{file_id}' with backbone '{backbone_id}'",
+            detail=f"No vector found for file '{decoded_file_id}' with backbone '{backbone_id}'",
         )
 
     return VectorGetResponse(

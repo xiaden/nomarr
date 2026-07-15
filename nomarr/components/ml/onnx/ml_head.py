@@ -47,6 +47,7 @@ def head_parts_from_path(path: str) -> tuple[str, str, str]:
 
     Raises:
         ValueError: If no ``heads`` segment is found in the path.
+
     """
     parts = Path(path).parts
     for i, part in enumerate(parts):
@@ -98,6 +99,7 @@ class ONNXHeadModel(BaseONNXModel):
             path: Absolute path to the head ``.onnx`` file.
             meta: Head metadata describing labels, backbone, and model identity.
             labels: Optional list of label names (backward-compat alias for meta.labels).
+
         """
         super().__init__(path)
         self.backbone_name, self.head_type, self.model_name = head_parts_from_path(path)
@@ -149,6 +151,7 @@ class ONNXHeadModel(BaseONNXModel):
         Raises:
             VramFitError: If ``device == "gpu"`` and the VRAM
                 coordinator rejects the GPU placement request.
+
         """
         super().load(device)
         assert self._session is not None  # guaranteed by super().load()
@@ -194,6 +197,7 @@ class ONNXHeadModel(BaseONNXModel):
 
         Raises:
             RuntimeError: If the model has not been loaded.
+
         """
         if self._session is None:
             msg = "ONNXHeadModel is not loaded — call load() first"

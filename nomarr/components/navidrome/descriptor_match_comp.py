@@ -82,7 +82,9 @@ def build_track_descriptor(file_doc: dict[str, Any]) -> TrackDescriptor:
 
 
 def _search_candidate_docs(db: Database, field_name: str, value: str) -> list[dict[str, Any]]:
-    return cast("list[dict[str, Any]]", db.library.search_files_by_tag_pattern(field_name, value, limit=None))
+    return cast(
+        "list[dict[str, Any]]", db.library.file_tag_repo.search_files_by_tag_pattern(field_name, value, limit=None)
+    )
 
 
 def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:

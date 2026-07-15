@@ -5,7 +5,7 @@ Structure: ``models/<backbone>/embeddings/*.onnx`` and
 
 When a :class:`~nomarr.persistence.db.Database` is available,
 :func:`discover_heads` resolves labels and release dates from
-``ml_models`` / ``ml_model_outputs`` vertices.  JSON sidecar files are
+``ml_models`` / ``ml_model_outputs`` tables.  JSON sidecar files are
 **not** read at runtime — they are irrelevant for ONNX-only deployments.
 """
 
@@ -31,7 +31,7 @@ class HeadInfo:
     """Container for a head model with its associated embedding model info.
 
     All metadata is sourced from the ``ml_models`` / ``ml_model_outputs``
-    DB vertices (or from JSON sidecars as a fallback when no DB handle is
+    DB rows (or from JSON sidecars as a fallback when no DB handle is
     available).  Structured metadata eliminates fragile substring matching
     in tag keys.
     """
@@ -180,24 +180,24 @@ def discover_backbones(models_dir: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _discover_heads_from_db(models_dir: str, db: Database) -> list[HeadInfo]:
+async def _discover_heads_from_db(models_dir: str, db: Database) -> list[HeadInfo]:
     """Build :class:`HeadInfo` objects from ``ml_models`` / ``ml_model_outputs``.
 
-    Only models with ``fully_configured=True`` are returned.  Embedding
-    graph paths are resolved from the filesystem so that the returned
-    objects are ready for inference.
+    Only models with ``fully_configured`` truthy (non-zero) are returned.
+    Embedding graph paths are resolved from the filesystem so that the
+    returned objects are ready for inference.
     """
     heads: list[HeadInfo] = []
-    all_models = db.ml_models_aql.list_models()
+    all_models = await db.ml.list_models()
 
     for doc in all_models:
-        if not doc.get("fully_configured", False):
+        if not doc.get("fully_configured", 0):
             continue
 
-        backbone: str = doc["backbone"]
-        head_type: str = doc["head_type"]
-        model_stem: str = doc["model_stem"]
-        model_path: str = doc["path"]
+        backbone: str = doc.get("backbone", "")
+        head_type: str = doc.get("head_type", "")
+        model_stem: str = doc.get("model_stem", "")
+        model_path: str = doc.get("path", "")
 
         embedding_graph = _resolve_embedding_graph(models_dir, backbone)
         if not embedding_graph:
@@ -209,9 +209,11 @@ def _discover_heads_from_db(models_dir: str, db: Database) -> list[HeadInfo]:
             continue
 
         # Labels from fully-labeled output vertices
-        model_id: str = doc["_id"]
-        output_docs = [doc for doc in db.ml_models_aql.list_model_outputs(model_id) if doc.get("fully_labeled")]
-        labels = [od["label"] for od in output_docs]
+        model_id: str = doc["id"]
+        output_records = await db.ml.list_model_outputs(model_id)
+        labels = [
+            lbl for od in output_records if od.get("fully_labeled", False) and (lbl := od.get("label")) is not None
+        ]
 
         heads.append(
             HeadInfo(
@@ -283,13 +285,13 @@ def discover_heads_no_db(models_dir: str) -> list[HeadInfo]:
     return heads
 
 
-def discover_heads(
+async def discover_heads(
     models_dir: str,
     db: Database,
 ) -> list[HeadInfo]:
     """Discover all classification/regression heads from the database.
 
-    Queries ``ml_models`` (filtered to ``fully_configured=True``) and
+    Queries ``ml_models`` (filtered to ``fully_configured`` truthy) and
     ``ml_model_outputs`` for labels and release dates, producing a list of
     :class:`HeadInfo` objects ready for inference.
 
@@ -304,12 +306,12 @@ def discover_heads(
         Sorted list of :class:`HeadInfo` objects.
 
     """
-    return _discover_heads_from_db(models_dir, db)
+    return await _discover_heads_from_db(models_dir, db)
 
 
 def filter_configured_heads(
     heads: list[HeadInfo],
-    model_config: dict[str, tuple[bool, int]],
+    model_config: dict[str, tuple[int, int]],
 ) -> list[HeadInfo]:
     """Filter heads to only those with fully-configured model registrations.
 
@@ -327,7 +329,7 @@ def filter_configured_heads(
         heads: Discovered heads from :func:`discover_heads`.
         model_config: Mapping of ``model_stem`` to
             ``(fully_configured, output_count)`` built from
-            ``db.ml_models.list_models()``.
+            ``db.ml.list_models()``.
 
     Returns:
         Filtered list containing only heads with fully-configured models.
@@ -404,6 +406,7 @@ def discover_backbone_models(models_dir: str) -> list[ONNXBackboneModel]:
 
     Returns:
         List of :class:`ONNXBackboneModel` instances sorted by backbone name.
+
     """
     from nomarr.components.ml.onnx.ml_backbone import ONNXBackboneModel
 
@@ -445,6 +448,7 @@ def discover_head_models_no_db(models_dir: str) -> list[ONNXHeadModel]:
     Returns:
         List of :class:`ONNXHeadModel` instances sorted by
         ``(backbone_name, head_type, model_name)``.
+
     """
     from nomarr.components.ml.onnx.ml_head import ONNXHeadModel
 
@@ -470,7 +474,7 @@ def discover_head_models_no_db(models_dir: str) -> list[ONNXHeadModel]:
     return models
 
 
-def discover_head_models(
+async def discover_head_models(
     models_dir: str,
     db: Database,
 ) -> list[ONNXHeadModel]:
@@ -490,6 +494,7 @@ def discover_head_models(
     Returns:
         List of :class:`ONNXHeadModel` instances sorted by
         ``(backbone_name, head_type, model_name)``.
+
     """
     from pathlib import Path as _Path
 
@@ -498,7 +503,7 @@ def discover_head_models(
     # Build metadata lookup from HeadInfo (DB-backed).
     head_info_map: dict[str, HeadInfo] = {}
     try:
-        heads = discover_heads(models_dir, db)
+        heads = await discover_heads(models_dir, db)
         for hi in heads:
             head_info_map[hi.model_stem] = hi
     except PersistenceError:
@@ -507,15 +512,15 @@ def discover_head_models(
     models: list[ONNXHeadModel] = []
 
     for backbone_dir in glob.glob(os.path.join(models_dir, "*")):
-        if not os.path.isdir(backbone_dir):
+        if not os.path.isdir(backbone_dir):  # noqa: ASYNC240
             continue
 
         heads_dir = os.path.join(backbone_dir, "heads")
-        if not os.path.isdir(heads_dir):
+        if not os.path.isdir(heads_dir):  # noqa: ASYNC240
             continue
 
         for head_type_dir in sorted(glob.glob(os.path.join(heads_dir, "*"))):
-            if not os.path.isdir(head_type_dir):
+            if not os.path.isdir(head_type_dir):  # noqa: ASYNC240
                 continue
 
             for onnx_path in sorted(glob.glob(os.path.join(head_type_dir, "*.onnx"))):

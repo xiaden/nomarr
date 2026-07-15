@@ -15,12 +15,16 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 
 from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
+from nomarr.components.tagging.tag_query_comp import (
+    get_distinct_tag_values_for_files,
+    get_tag_values_grouped_by_file,
+)
 from nomarr.helpers.dto.navidrome_dto import (
     NavidromePersonalPlaylistContext,
     NavidromePersonalPlaylistEntry,
 )
 from nomarr.helpers.time_helper import now_ms
-from nomarr.helpers.vector_params_helper import compute_nlists, compute_nprobe
+from nomarr.helpers.vector_params_helper import get_ef_search
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -51,10 +55,22 @@ def _ann_search_cold(
     if doc_count == 0:
         return None
 
-    nlists = compute_nlists(doc_count)
-    nprobe = compute_nprobe(nlists)
+    ef_search = get_ef_search(doc_count)
     fetch_limit = max_songs * fetch_multiplier
-    return cast("list[dict[str, Any]]", cold_ops.ann_search(centroid, fetch_limit, nprobe=nprobe))
+    try:
+        return cast(
+            "list[dict[str, Any]]",
+            cold_ops.ann_search(centroid, fetch_limit, nprobe=ef_search),
+        )
+    except NotImplementedError:
+        # TODO: cold_ops.ann_search is a dead ArangoDB code path — replace with
+        # VectorRepo.find_nearest() once the cold namespace is fully migrated.
+        logger.warning(
+            "ann_search raised NotImplementedError for backbone=%s; "
+            "this code path is dead ArangoDB logic and needs migration to pgvector",
+            backbone_id,
+        )
+        return None
 
 
 def _search_all_clusters(
@@ -152,7 +168,7 @@ def build_hidden_gems_playlist(
     """
     played = set(ctx["played_file_ids"])
 
-    known_artists: set[str] = set(db.tags.get_distinct_tag_values_for_files(ctx["played_file_ids"], "artist"))
+    known_artists: set[str] = set(get_distinct_tag_values_for_files(db, ctx["played_file_ids"], "artist"))
     if not known_artists:
         logger.debug("[navidrome] No known artists for hidden gems, falling back to discovery-style")
 
@@ -164,7 +180,7 @@ def build_hidden_gems_playlist(
 
     if known_artists:
         candidate_file_ids = [r["file_id"] for r in candidates]
-        candidate_artists = db.tags.get_tag_values_grouped_by_file(candidate_file_ids, "artist")
+        candidate_artists = get_tag_values_grouped_by_file(db, candidate_file_ids, "artist")
         candidates = [r for r in candidates if not (candidate_artists.get(r["file_id"], set()) & known_artists)]
 
     file_ids = [r["file_id"] for r in candidates][: ctx["max_songs"]]
@@ -235,7 +251,7 @@ def build_genre_playlists(
         return []
 
     # Fetch genre tags for played tracks in one batch
-    file_genres = db.tags.get_tag_values_grouped_by_file(played_file_ids, "genre")
+    file_genres = get_tag_values_grouped_by_file(db, played_file_ids, "genre")
 
     now_ms_val = now_ms().value
     half_life = ctx["half_life_days"]
@@ -277,14 +293,23 @@ def build_genre_playlists(
             centroid = centroid / norm
         genre_centroids[genre] = centroid.tolist()
 
-    nlists = compute_nlists(doc_count)
-    nprobe = compute_nprobe(nlists)
+    ef_search = get_ef_search(doc_count)
     fetch_limit = ctx["max_songs"] * 3
 
     playlists: list[NavidromePersonalPlaylistEntry] = []
     for genre in top_genres:
         genre_centroid = genre_centroids[genre]
-        raw_results = cold_ops.search_similar_by_genre(genre_centroid, genre, fetch_limit, nprobe)
+        try:
+            raw_results = cold_ops.search_similar_by_genre(genre_centroid, genre, fetch_limit, ef_search)
+        except NotImplementedError:
+            # TODO: search_similar_by_genre is a dead ArangoDB code path — replace
+            # with VectorRepo.find_nearest() once the cold namespace is fully migrated.
+            logger.warning(
+                "search_similar_by_genre raised NotImplementedError for genre=%r; "
+                "this code path is dead ArangoDB logic and needs migration to pgvector",
+                genre,
+            )
+            continue
 
         if len(raw_results) < _GENRE_MIN_SONGS:
             logger.debug(

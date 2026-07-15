@@ -96,7 +96,7 @@ class LibraryFilesMixin:
         ]
 
         return FileTagsResult(
-            file_id=file_id,
+            file_id=int(file_id),
             path=result["path"],
             tags=tags,
         )

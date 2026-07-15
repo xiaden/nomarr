@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    mem_limit: 6g
+    environment:
+      POSTGRES_USER: nomarr
+      POSTGRES_PASSWORD: nomarr
+      POSTGRES_DB: nomarr_test
+    command: >
+      -c maintenance_work_mem=2GB
+      -c shared_buffers=1GB
+      -c effective_cache_size=3GB
+      -c work_mem=64MB
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nomarr -d nomarr_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped

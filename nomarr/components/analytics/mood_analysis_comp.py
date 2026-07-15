@@ -37,7 +37,7 @@ def _get_library_file_ids(db: Database, library_id: str | None) -> set[str] | No
     file_ids: set[str] = set()
     file_docs = db.library.list_files(filters={"library_id": library_id}, limit=None)
     for file_doc in file_docs:
-        f_id = file_doc.get("_id")
+        f_id = file_doc.get("id")
         if isinstance(f_id, str):
             file_ids.add(f_id)
 
@@ -71,7 +71,7 @@ def _get_tag_edge_rows(
     tag_docs = _get_tag_docs_for_name(db, name)
     tag_id_to_value: dict[str, str] = {}
     for tag_doc in tag_docs:
-        tag_id = tag_doc.get("_id")
+        tag_id = tag_doc.get("id")
         tag_value = tag_doc.get("value")
         if isinstance(tag_id, str) and tag_value is not None:
             tag_id_to_value[tag_id] = str(tag_value)
@@ -87,7 +87,7 @@ def _get_tag_edge_rows(
             db.library.search_files_by_tag(name, tag_value, limit=None),
         )
         for file_doc in file_docs:
-            file_id = file_doc.get("_id")
+            file_id = file_doc.get("id")
             if not isinstance(file_id, str):
                 continue
             if library_file_ids is not None and file_id not in library_file_ids:
@@ -154,7 +154,7 @@ def get_mood_distribution_data(db: Database, library_id: str | None = None) -> l
 
     Args:
         db: Database instance used to query mood tags.
-        library_id: Optional library _id to filter by.
+        library_id: Optional library id to filter by.
 
     Returns:
         List of ``(tag_name, tag_value)`` tuples for all mood tiers.
@@ -173,7 +173,7 @@ def get_mood_coverage(db: Database, library_id: str | None = None) -> dict[str, 
 
     Args:
         db: Database instance.
-        library_id: Optional library _id to filter by.
+        library_id: Optional library id to filter by.
 
     Returns:
         A dict with ``total_files`` and ``tiers`` containing ``tagged``
@@ -206,7 +206,7 @@ def get_mood_balance(db: Database, library_id: str | None = None) -> dict[str, A
 
     Args:
         db: Database instance.
-        library_id: Optional library _id to filter by.
+        library_id: Optional library id to filter by.
 
     Returns:
         A dict with keys ``strict``, ``regular``, ``loose``, each
@@ -239,6 +239,57 @@ def get_mood_balance(db: Database, library_id: str | None = None) -> dict[str, A
     return result
 
 
+def _get_top_mood_pairs(
+    db: Database,
+    library_id: str | None,
+    mood_tier: str,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    """Return the most common co-occurring mood pairs for one tier.
+
+    Reimplementation of the former db.tags.get_top_mood_pairs using the
+    PostgreSQL-backed library facade via _get_tag_edge_rows.
+    """
+    from collections import Counter
+
+    tier_hierarchy: dict[str, list[str]] = {
+        "strict": ["nom:mood-strict"],
+        "regular": ["nom:mood-strict", "nom:mood-regular"],
+        "loose": ["nom:mood-strict", "nom:mood-regular", "nom:mood-loose"],
+    }
+    names = tier_hierarchy.get(mood_tier, ["nom:mood-strict"])
+
+    # Fetch (file_id, tag_value) pairs for all requested mood names
+    tag_value_rows: list[tuple[str, str]] = []
+    for name in names:
+        tag_value_rows.extend(_get_tag_edge_rows(db, name, library_id))
+
+    # Build mood-per-song map
+    moods_by_song: dict[str, set[str]] = {}
+    for fid, mood_value in tag_value_rows:
+        if not mood_value:
+            continue
+        moods_by_song.setdefault(fid, set()).add(mood_value)
+
+    # Compute pair co-occurrences
+    pair_counts: Counter[tuple[str, str]] = Counter()
+    for moods in moods_by_song.values():
+        ordered = sorted(moods)
+        if len(ordered) < 2:
+            continue
+        for i, m1 in enumerate(ordered[:-1]):
+            for m2 in ordered[i + 1 :]:
+                pair_counts[(m1, m2)] += 1
+
+    return [
+        {"mood1": m1, "mood2": m2, "count": count}
+        for (m1, m2), count in sorted(
+            pair_counts.items(),
+            key=lambda item: (-item[1], item[0][0], item[0][1]),
+        )[:limit]
+    ]
+
+
 def compute_mood_analysis(
     db: Database,
     library_id: str | None = None,
@@ -247,13 +298,13 @@ def compute_mood_analysis(
 
     Args:
         db: Database instance.
-        library_id: Optional library _id to filter by.
+        library_id: Optional library id to filter by.
+
     """
     coverage = get_mood_coverage(db, library_id)
     balance = get_mood_balance(db, library_id)
     top_pairs_by_tier = {
-        tier: db.tags.get_top_mood_pairs(library_id, mood_tier=tier, limit=50)
-        for tier in ("strict", "regular", "loose")
+        tier: _get_top_mood_pairs(db, library_id, mood_tier=tier, limit=50) for tier in ("strict", "regular", "loose")
     }
     dominant_vibes = compute_dominant_vibes(balance)
 

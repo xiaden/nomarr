@@ -48,6 +48,7 @@ def transition_file_state(db: Database, file_ids: list[str], from_state: str, to
 
     Raises:
         ValueError: If the from/to pair is not a valid axis transition.
+
     """
     if (from_state, to_state) not in _VALID_TRANSITIONS:
         msg = (
@@ -311,7 +312,7 @@ def library_has_tagged_files(db: Database, library_id: str) -> bool:
 
 def file_has_tagged_state(db: Database, file_id: str) -> bool:
     """Return whether one file currently has the tagged-state edge."""
-    return db.library.count_file_states(file_id, STATE_PROCESSED) > 0
+    return db.library.file_state_repo.count_for_file_and_state(file_id, STATE_PROCESSED) > 0
 
 
 def get_files_with_incomplete_tags(
@@ -333,6 +334,7 @@ def get_files_with_incomplete_tags(
         List of dicts with ``file_id``, ``file_key``, ``library_id``,
             ``matched_count``, ``missing_count``, and ``missing_heads`` for each
             written file missing one or more expected heads.
+
     """
     written_files = _state_file_docs(db, STATE_WRITTEN)
     normalized_library_id = normalize_library_id(library_id) if library_id is not None else None

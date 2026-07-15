@@ -64,8 +64,8 @@ def upsert_registered_model(
         embedder_release_date: Release date recorded for the embedder artifact.
 
     Returns:
-        Persisted ``ml_models`` document, including ArangoDB fields such as
-        ``_id`` and ``_key`` plus the registered model metadata.
+        Persisted ``ml_models`` document, including database fields such as
+        primary key plus the registered model metadata.
 
     """
     existing = get_registered_model_by_path(db, path)
@@ -109,7 +109,7 @@ def upsert_registered_model(
         raise RuntimeError(msg) from exc
 
 
-def mark_model_fully_configured(db: Database, model_id: str, value: bool) -> None:
+def mark_model_fully_configured(db: Database, model_id: int, value: bool) -> None:
     """Set the ``fully_configured`` flag on one registered model."""
     model_doc = db.ml.get_model(model_id)
     if not isinstance(model_doc, dict):
@@ -124,7 +124,7 @@ def mark_model_fully_configured(db: Database, model_id: str, value: bool) -> Non
     )
 
 
-def mark_model_known(db: Database, model_id: str, value: bool) -> None:
+def mark_model_known(db: Database, model_id: int, value: bool) -> None:
     """Set the ``is_known`` flag on one registered model."""
     model_doc = db.ml.get_model(model_id)
     if not isinstance(model_doc, dict):
@@ -139,23 +139,23 @@ def mark_model_known(db: Database, model_id: str, value: bool) -> None:
     )
 
 
-def delete_registered_model(db: Database, model_id: str) -> None:
-    """Delete one registered model vertex by ``_id``."""
+def delete_registered_model(db: Database, model_id: int) -> None:
+    """Delete one registered model vertex by ID."""
     db.ml.remove_model(model_id)
 
 
-def list_model_outputs_for_model(db: Database, model_id: str) -> list[dict[str, Any]]:
+def list_model_outputs_for_model(db: Database, model_id: int) -> list[dict[str, Any]]:
     """Return all output vertices attached to one model, ordered by index."""
     result = db.ml.list_model_outputs(model_id)
     return result if isinstance(result, list) else []
 
 
-def list_fully_labeled_model_outputs(db: Database, model_id: str) -> list[dict[str, Any]]:
+def list_fully_labeled_model_outputs(db: Database, model_id: int) -> list[dict[str, Any]]:
     """Return only labeled output vertices for one model."""
     return [doc for doc in list_model_outputs_for_model(db, model_id) if bool(doc.get("fully_labeled"))]
 
 
-def ensure_model_outputs(db: Database, model_id: str, output_count: int) -> list[dict[str, Any]]:
+def ensure_model_outputs(db: Database, model_id: int, output_count: int) -> list[dict[str, Any]]:
     """Ensure all expected output vertices and edges exist for a model."""
     for output_index in range(output_count):
         output_key = _output_key(model_id, output_index)
@@ -176,17 +176,18 @@ def ensure_model_outputs(db: Database, model_id: str, output_count: int) -> list
     return list_model_outputs_for_model(db, model_id)
 
 
-def update_model_output_label(db: Database, model_id: str, output_id: str, label: str) -> None:
+def update_model_output_label(db: Database, model_id: int, output_id: int, label: str) -> None:
     """Write label metadata for one output vertex."""
     existing_output = db.ml.get_model_output(output_id)
     if not isinstance(existing_output, dict):
         return
 
+    output_key = str(output_id)
     db.ml.replace_model_output(
         model_id,
-        output_id.split("/", 1)[-1],
+        output_key,
         {
-            "_key": output_id.split("/", 1)[-1],
+            "_key": output_key,
             "output_index": existing_output.get("output_index"),
             "label": label,
             "fully_labeled": True,
@@ -223,7 +224,7 @@ def prune_registered_model(db: Database, model_id: str) -> dict[str, list[str]]:
 
     Args:
         db: Database instance
-        model_id: ArangoDB ``_id`` of the model to delete.
+        model_id: Integer ID of the model to delete.
 
     Returns:
         Summary containing ``output_ids`` for deleted output vertices.

@@ -82,8 +82,7 @@ class MetadataService:
 
         entity_dicts: list[EntityDict] = [
             {
-                "_id": t["_id"],
-                "_key": t["_key"],
+                "id": t["id"],
                 "display_name": str(t["value"]),  # value is the display name
                 "song_count": t.get("song_count"),
             }
@@ -97,32 +96,31 @@ class MetadataService:
             offset=offset,
         )
 
-    def get_entity(self, entity_id: str) -> EntityDict | None:
-        """Get entity (tag) details by _id.
+    async def get_entity(self, entity_id: int) -> EntityDict | None:
+        """Get entity (tag) details by ID.
 
         Args:
-            entity_id: Tag _id (e.g., "tags/12345")
+            entity_id: Tag primary key (integer)
 
         Returns:
             EntityDict or None if not found
 
         """
-        tag = get_tag(self.db, entity_id)
+        tag = get_tag(self.db, str(entity_id))
         if not tag:
             return None
 
-        song_count = self.db.library.count_songs_for_tag(entity_id)
+        song_count = await self.db.library.tag_repo.count_files_for_tag(entity_id)
 
         return EntityDict(
-            _id=tag["_id"],
-            _key=tag["_key"],
+            id=tag["id"],
             display_name=str(tag["value"]),
             song_count=song_count,
         )
 
-    def list_songs_for_entity(
+    async def list_songs_for_entity(
         self,
-        entity_id: str,
+        entity_id: int,
         name: str,
         limit: int = 100,
         offset: int = 0,
@@ -130,7 +128,7 @@ class MetadataService:
         """List songs connected to an entity (tag).
 
         Args:
-            entity_id: Tag _id
+            entity_id: Tag primary key (integer)
             name: Ignored (kept for API compatibility, tag knows its name)
             limit: Maximum results
             offset: Skip first N results
@@ -139,8 +137,8 @@ class MetadataService:
             SongListForEntityResult with song_ids, total, limit, offset
 
         """
-        song_ids = list_songs_for_tag(self.db, entity_id, limit=limit, offset=offset)
-        total = self.db.library.count_songs_for_tag(entity_id)
+        song_ids = list_songs_for_tag(self.db, str(entity_id), limit=limit, offset=offset)
+        total = await self.db.library.tag_repo.count_files_for_tag(entity_id)
 
         return SongListForEntityResult(
             song_ids=song_ids,
@@ -149,14 +147,14 @@ class MetadataService:
             offset=offset,
         )
 
-    def list_artists_for_album(self, album_id: str, limit: int = 100) -> list[EntityDict]:
+    async def list_artists_for_album(self, album_id: int, limit: int = 100) -> list[EntityDict]:
         """List artists for an album via traversal (album→songs→artists).
 
         Traverses: album tag → songs → artist tags
         Deduplicates and sorts by value.
 
         Args:
-            album_id: Album tag _id
+            album_id: Album tag primary key (integer)
             limit: Maximum artists to return
 
         Returns:
@@ -164,10 +162,10 @@ class MetadataService:
 
         """
         # Get all songs for this album
-        song_ids = list_songs_for_tag(self.db, album_id, limit=10000)
+        song_ids = list_songs_for_tag(self.db, str(album_id), limit=10000)
 
         # For each song, get primary artist tags
-        artist_ids_seen: set[str] = set()
+        artist_ids_seen: set[int] = set()
         artists: list[EntityDict] = []
 
         for song_id in song_ids:
@@ -177,13 +175,12 @@ class MetadataService:
                 for value in artist_tag.value:
                     tag_id = find_or_create_tag(self.db, "artist", value)
                     if tag_id not in artist_ids_seen:
-                        artist_ids_seen.add(tag_id)
+                        artist_ids_seen.add(int(tag_id))
                         tag = get_tag(self.db, tag_id)
                         if tag:
                             artists.append(
                                 EntityDict(
-                                    _id=tag["_id"],
-                                    _key=tag["_key"],
+                                    id=tag["id"],
                                     display_name=str(tag["value"]),
                                     song_count=None,
                                 ),
@@ -193,14 +190,14 @@ class MetadataService:
         artists.sort(key=lambda a: a["display_name"])
         return artists[:limit]
 
-    def list_albums_for_artist(self, artist_id: str, limit: int = 100) -> list[EntityDict]:
+    async def list_albums_for_artist(self, artist_id: int, limit: int = 100) -> list[EntityDict]:
         """List albums for an artist via traversal (artist→songs→albums).
 
         Traverses: artist tag → songs → album tags
         Deduplicates and sorts by value.
 
         Args:
-            artist_id: Artist tag _id
+            artist_id: Artist tag primary key (integer)
             limit: Maximum albums to return
 
         Returns:
@@ -208,10 +205,10 @@ class MetadataService:
 
         """
         # Get all songs for this artist
-        song_ids = list_songs_for_tag(self.db, artist_id, limit=10000)
+        song_ids = list_songs_for_tag(self.db, str(artist_id), limit=10000)
 
         # For each song, get album tags
-        album_ids_seen: set[str] = set()
+        album_ids_seen: set[int] = set()
         albums: list[EntityDict] = []
 
         for song_id in song_ids:
@@ -221,21 +218,14 @@ class MetadataService:
                 for value in album_tag.value:
                     tag_id = find_or_create_tag(self.db, "album", value)
                     if tag_id not in album_ids_seen:
-                        album_ids_seen.add(tag_id)
+                        album_ids_seen.add(int(tag_id))
                         tag = get_tag(self.db, tag_id)
                         if tag:
-                            # Count songs in this album that are also by this artist
-                            album_song_count = sum(
-                                1
-                                for s in song_ids
-                                if any(value in t.value for t in get_song_tags(self.db, s, name="album"))
-                            )
                             albums.append(
                                 EntityDict(
-                                    _id=tag["_id"],
-                                    _key=tag["_key"],
+                                    id=tag["id"],
                                     display_name=str(tag["value"]),
-                                    song_count=album_song_count,
+                                    song_count=None,
                                 ),
                             )
 

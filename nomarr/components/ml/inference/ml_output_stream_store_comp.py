@@ -1,4 +1,4 @@
-"""Component-owned persistence helpers for canonical ML output streams."""
+"""ML output stream persistence using PostgreSQL-backed facades."""
 
 from __future__ import annotations
 
@@ -11,15 +11,14 @@ from nomarr.components.library.library_file_state_comp import transition_file_st
 from nomarr.components.ml.onnx.ml_model_registry_comp import build_model_output_index_map
 from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.helpers.dto.ml_dto import LoadedOutputStream
-from nomarr.persistence.schema import CollectionNames
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-_STREAM_COLLECTION = "ml_output_streams"
-_FILE_COLLECTION = CollectionNames.LIBRARY_FILES.value
-_OUTPUT_COLLECTION = "ml_model_outputs"
+_STREAM_TABLE = "ml_output_streams"
+_FILE_TABLE = "library_files"
+_OUTPUT_TABLE = "ml_model_outputs"
 
 logger = logging.getLogger(__name__)
 
@@ -41,42 +40,21 @@ class StreamRecord:
     values: list[float]
 
 
-def _as_document_id(collection: str, doc_id_or_key: str) -> str:
-    """Normalize an Arango `_id` or `_key` into a full document `_id`."""
-    if "/" in doc_id_or_key:
-        return doc_id_or_key
-    return f"{collection}/{doc_id_or_key}"
+def _as_id(doc_id_or_key: str | int) -> str:
+    """Normalize an ID to a string (pass-through for integer IDs)."""
+    return str(doc_id_or_key)
 
 
-def _document_key(doc_id_or_key: str) -> str:
-    """Extract the document `_key` from an Arango `_id` or `_key`."""
-    if "/" in doc_id_or_key:
-        return doc_id_or_key.split("/", 1)[1]
-    return doc_id_or_key
-
-
-def _stream_key(file_id: str, output_id: str) -> str:
-    """Build the stable document key for one canonical output stream."""
-    file_key = _document_key(file_id)
-    output_key = _document_key(output_id)
-    return hashlib.sha1(f"{file_key}|{output_key}".encode()).hexdigest()
-
-
-def _file_stream_edge_key(file_id: str, stream_id: str) -> str:
-    """Build the stable edge key linking a file to one stream document."""
-    return hashlib.sha256(f"{file_id}:{stream_id}".encode()).hexdigest()[:16]
-
-
-def _output_stream_edge_key(output_id: str, stream_id: str) -> str:
-    """Build the stable edge key linking a model output to one stream document."""
-    return hashlib.sha256(f"{output_id}:{stream_id}".encode()).hexdigest()[:16]
+def _stream_key(file_id: str | int, output_id: str | int) -> str:
+    """Build the stable key for one canonical output stream."""
+    return hashlib.sha1(f"{file_id}|{output_id}".encode()).hexdigest()
 
 
 def _normalize_streams(streams: list[StreamWrite]) -> list[StreamWrite]:
     """Deduplicate writes by output id so the last stream wins within one batch."""
     deduped: dict[str, StreamWrite] = {}
     for stream in streams:
-        output_id = _as_document_id(_OUTPUT_COLLECTION, stream.output_id)
+        output_id = _as_id(stream.output_id)
         deduped[output_id] = StreamWrite(
             output_id=output_id,
             values=[float(value) for value in stream.values],
@@ -84,12 +62,12 @@ def _normalize_streams(streams: list[StreamWrite]) -> list[StreamWrite]:
     return list(deduped.values())
 
 
-def upsert_output_streams(db: Database, *, file_id: str, streams: list[StreamWrite]) -> None:
-    """Upsert canonical raw output streams and ensure their file/output edges exist."""
+def upsert_output_streams(db: Database, *, file_id: str | int, streams: list[StreamWrite]) -> None:
+    """Upsert canonical raw output streams for a file."""
     if not streams:
         return
 
-    normalized_file_id = _as_document_id(_FILE_COLLECTION, file_id)
+    normalized_file_id = _as_id(file_id)
     normalized_streams = _normalize_streams(streams)
     db.ml.replace_output_streams_for_file(
         file_id=normalized_file_id,
@@ -103,9 +81,9 @@ def upsert_output_streams(db: Database, *, file_id: str, streams: list[StreamWri
     )
 
 
-def fetch_output_streams(db: Database, file_id: str) -> list[StreamRecord]:
+def fetch_output_streams(db: Database, file_id: str | int) -> list[StreamRecord]:
     """Fetch all canonical output streams linked to one file."""
-    normalized_file_id = _as_document_id(_FILE_COLLECTION, file_id)
+    normalized_file_id = _as_id(file_id)
     stream_docs = db.ml.list_output_streams_for_file(normalized_file_id)
     if not stream_docs:
         return []
@@ -181,7 +159,7 @@ def resolve_output_stream_lookup(
 
 def load_output_streams_for_file(
     db: Database,
-    file_id: str,
+    file_id: str | int,
     file_path: str,
     head_infos: list[Any],
     *,
@@ -237,12 +215,12 @@ def load_output_streams_for_file(
     return output_streams
 
 
-def delete_output_streams(db: Database, file_id: str) -> int:
-    """Delete all canonical output streams and both edge types for one file."""
-    normalized_file_id = _as_document_id(_FILE_COLLECTION, file_id)
+def delete_output_streams(db: Database, file_id: str | int) -> int:
+    """Delete all canonical output streams for one file."""
+    normalized_file_id = _as_id(file_id)
     stream_docs = db.ml.list_output_streams_for_file(normalized_file_id)
     stream_ids = sorted(
-        {stream_id for stream_doc in stream_docs if isinstance((stream_id := stream_doc.get("_id")), str)}
+        {stream_id for stream_doc in stream_docs if isinstance((stream_id := stream_doc.get("id")), (str, int))}
     )
     if not stream_ids:
         return 0

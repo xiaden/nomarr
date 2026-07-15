@@ -28,14 +28,16 @@ class PlaylistImportService:
         >>> service = PlaylistImportService(db, config_service)
         >>> result = service.convert_playlist("https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M")
         >>> print(result.match_rate)  # 0.92 = 92% matched
+
     """
 
     def __init__(self, db: Database, config_service: ConfigService) -> None:
         """Initialize PlaylistImportService.
 
         Args:
-            db: ArangoDB database instance
+            db: PostgreSQL database instance
             config_service: Live configuration provider (for Spotify credentials)
+
         """
         self._db = db
         self._config_service = config_service
@@ -64,6 +66,7 @@ class PlaylistImportService:
 
         Raises:
             PlaylistConversionError: If URL is invalid, API fails, or no library exists
+
         """
         return convert_playlist_workflow(
             self._db,
@@ -78,6 +81,7 @@ class PlaylistImportService:
 
         Returns:
             True if both client_id and client_secret are set
+
         """
         return bool(self._config_service.get("spotify_client_id") and self._config_service.get("spotify_client_secret"))
 

@@ -20,7 +20,7 @@ services:
     env_file:
       - nomarr.env
     depends_on:
-      nomarr-arangodb:
+      nomarr-postgres:
         condition: service_healthy
     deploy:
       resources:
@@ -37,21 +37,23 @@ services:
       start_period: 60s
     restart: unless-stopped
 
-  # ArangoDB database service
-  nomarr-arangodb:
-    image: arangodb:3.12
-    container_name: nomarr-arangodb
+  # PostgreSQL database service with pgvector
+  nomarr-postgres:
+    image: pgvector/pgvector:pg17
+    container_name: nomarr-postgres
     env_file:
-      - nomarr-arangodb.env
-    command: ["--vector-index", "--query.memory-limit=1073741824"]
+      - nomarr-postgres.env
     volumes:
-      - ./config/arangodb:/var/lib/arangodb3
+      - pg_data:/var/lib/postgresql/data
     ports:
-      - "8529:8529"  # ArangoDB Web UI
+      - "5432:5432"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "arangosh --server.endpoint tcp://127.0.0.1:8529 --server.username root --server.password \"$$ARANGO_ROOT_PASSWORD\" --javascript.execute-string 'db._version()' >/dev/null 2>&1"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U nomarr"]
+      interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 5
       start_period: 30s
+
+volumes:
+  pg_data:

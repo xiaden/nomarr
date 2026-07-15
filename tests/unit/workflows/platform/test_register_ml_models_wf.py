@@ -34,7 +34,6 @@ class TestRegisterMlModelsWorkflow:
         tmp_path: Path,
     ) -> None:
         """Known-model reseeding must not overwrite already labeled outputs on restart."""
-
         onnx_path = tmp_path / "effnet" / "heads" / "sigmoid" / "mood_happy.onnx"
         onnx_path.parent.mkdir(parents=True)
         onnx_path.write_bytes(b"fake")
@@ -109,7 +108,6 @@ class TestRegisterMlModelsWorkflow:
         tmp_path: Path,
     ) -> None:
         """New known models should still receive all default labels."""
-
         onnx_path = tmp_path / "effnet" / "heads" / "sigmoid" / "mood_happy.onnx"
         onnx_path.parent.mkdir(parents=True)
         onnx_path.write_bytes(b"fake")

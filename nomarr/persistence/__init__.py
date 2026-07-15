@@ -1,8 +1,8 @@
-"""Persistence layer — ArangoDB database access and schema definitions.
+"""Persistence layer — PostgreSQL database access and schema definitions.
 
-Provides type-safe access to the ArangoDB graph database using AQL queries.
+Provides type-safe access to the PostgreSQL database using SQLAlchemy async.
 All database operations flow through this layer; layers above (interfaces,
-services, workflows) must never access ArangoDB directly.
+services, workflows) must never access the database directly.
 
 Key exports (lazy-imported via ``__getattr__`` for boot-time performance):
 
@@ -12,11 +12,9 @@ Key exports (lazy-imported via ``__getattr__`` for boot-time performance):
 Internal structure:
 
 - ``api/`` — Domain-oriented persistence surfaces (LibraryDb, AppDb, MlDb)
-- ``aql/`` — Reusable AQL query primitives (execute, upsert, delete, etc.)
-- ``database/`` — AQL operation classes organized by collection/domain
-- ``models/`` — ArangoDB document and edge base classes
-- ``schema/`` — Collection and index DDL definitions
-- ``arango_client.py`` — ArangoDB client factory with safe DB wrapper
+- ``database/`` — Repository classes organized by domain/table
+- ``models/`` — SQLAlchemy ORM models
+- ``schema/`` — Table and index DDL definitions
 - ``db.py`` — Database class (connect, version, lifecycle)
 """
 

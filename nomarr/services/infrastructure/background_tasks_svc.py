@@ -65,7 +65,6 @@ class BackgroundTaskService:
             Exception: Re-raises task exceptions to crash container (loud failure).
 
         """
-
         task_id = task.task_id
 
         def wrapper() -> None:

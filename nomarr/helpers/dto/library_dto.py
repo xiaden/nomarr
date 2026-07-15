@@ -51,9 +51,7 @@ class LibraryStatsResult:
 class LibraryDict:
     """Single library record from library_service.list_libraries or get_library."""
 
-    _id: str  # ArangoDB _id (e.g., "libraries/12345")
-    _key: str  # ArangoDB _key (e.g., "12345")
-    _rev: str  # ArangoDB _rev (revision)
+    id: int  # PostgreSQL primary key
     name: str
     root_path: str
     is_enabled: bool
@@ -120,9 +118,9 @@ class FileTag:
 class LibraryFileWithTags:
     """Library file with its tags."""
 
-    _id: str  # ArangoDB _id
+    id: int  # PostgreSQL primary key
     path: str
-    library_id: str | None  # ArangoDB _id (None for orphaned files)
+    library_id: int | None  # PostgreSQL foreign key (None for orphaned files)
     file_size: int | None
     modified_time: int | None
     duration_seconds: float | None
@@ -170,7 +168,7 @@ class SearchFilesResult:
 def map_file_with_tags_to_dto(file_dict: dict[str, Any]) -> LibraryFileWithTags:
     """Convert a raw file dictionary (with tags) to LibraryFileWithTags DTO."""
     return LibraryFileWithTags(
-        _id=file_dict["_id"],
+        id=file_dict["id"],
         path=file_dict["path"],
         library_id=file_dict["library_id"],
         file_size=file_dict.get("file_size"),
@@ -221,7 +219,7 @@ class TagCleanupResult:
 class FileTagsResult:
     """Result from library_service.get_file_tags."""
 
-    file_id: str  # ArangoDB _id
+    file_id: int  # PostgreSQL primary key
     path: str
     tags: list[FileTag]
 
@@ -239,7 +237,7 @@ class WriteTagsResult:
 class LibraryPipelineStatusDTO:
     """Pipeline status payload for a single library."""
 
-    library_id: str
+    library_id: int  # PostgreSQL primary key
     scan_state: str
     ml_state: str
     calibration_state: str
@@ -254,7 +252,7 @@ class LibraryPipelineStatusDTO:
 class ErroredFileItem(TypedDict):
     """Single errored file with basic metadata."""
 
-    _id: str
+    id: int  # PostgreSQL primary key
     path: str
     duration_seconds: float | None
     artist: str | None

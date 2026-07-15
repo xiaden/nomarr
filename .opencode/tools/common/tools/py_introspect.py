@@ -468,6 +468,7 @@ def py_introspect(
         }
 
     import json as _json
+
     return {
         "output": _json.dumps(response_data),
         "title": "Py Introspect",

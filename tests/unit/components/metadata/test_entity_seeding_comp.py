@@ -7,7 +7,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from nomarr.components.metadata.entity_seeding_comp import seed_entities_for_scan_batch
-from nomarr.persistence.schema import CollectionNames
 
 MODULE = "nomarr.components.metadata.entity_seeding_comp"
 
@@ -41,8 +40,8 @@ class TestSeedEntitiesForScanBatch:
 
         result = seed_entities_for_scan_batch(
             mock_db,
-            [f"{CollectionNames.LIBRARY_FILES.value}/1"],
-            {f"{CollectionNames.LIBRARY_FILES.value}/1": metadata},
+            [f"{'library_files'}/1"],
+            {f"{'library_files'}/1": metadata},
         )
 
         assert result == 1
@@ -52,7 +51,7 @@ class TestSeedEntitiesForScanBatch:
         # New format: one entry per file, with "tags" list of {name, value} dicts
         assert len(persisted_entries) == 1
         file_entry = persisted_entries[0]
-        assert file_entry["song_id"] == f"{CollectionNames.LIBRARY_FILES.value}/1"
+        assert file_entry["song_id"] == f"{'library_files'}/1"
         assert "tags" in file_entry
 
         tags_list: list[dict] = file_entry["tags"]

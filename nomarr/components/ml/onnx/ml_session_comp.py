@@ -52,6 +52,7 @@ def require() -> None:
 
     Raises:
         RuntimeError: If onnxruntime is not installed.
+
     """
     if _ort is None:
         msg = "onnxruntime is not installed. Install onnxruntime-gpu for GPU support or onnxruntime for CPU-only."
@@ -93,6 +94,7 @@ def create_session(
     Raises:
         RuntimeError: If onnxruntime is not installed.
         FileNotFoundError: If *model_path* does not exist.
+
     """
     require()
     assert _ort is not None  # guaranteed by require()
@@ -176,6 +178,7 @@ def _build_cuda_provider_options(vram_limit_bytes: int | None) -> dict[str, obje
 
     Returns:
         Dict suitable for ``("CUDAExecutionProvider", opts)``.
+
     """
     if vram_limit_bytes is None:
         # Probe mode: let ORT use default kNextPowerOfTwo so peak is retained
@@ -215,6 +218,7 @@ def _run_in_batches(
 
     Returns:
         Concatenated outputs, shape [n, dim].
+
     """
     all_results: list[np.ndarray] = []
     for i in range(0, inputs.shape[0], batch_size):

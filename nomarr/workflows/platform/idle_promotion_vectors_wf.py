@@ -8,8 +8,8 @@ and the promote-and-rebuild workflow.  Vector collections are per-backbone
 Thread safety
 -------------
 The ``Database`` instance passed here is the same object used by the worker's
-main loop.  This is safe because python-arango uses HTTP connection pooling
-that is thread-safe within a single process.
+main loop.  This is safe because SQLAlchemy connection pooling is thread-safe
+within a single process.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: st
     4. If acquired, compute nlists, promote and rebuild (lock always released).
 
     Args:
-        db: Database instance (thread-safe via python-arango pooling).
+        db: Database instance (thread-safe via SQLAlchemy connection pooling).
         worker_id: Worker identifier for lock ownership.
         models_dir: Root directory containing model folders.
 

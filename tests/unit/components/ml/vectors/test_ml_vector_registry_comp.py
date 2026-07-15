@@ -12,7 +12,6 @@ from nomarr.components.ml.vectors.ml_vector_registry_comp import (
     get_cold_namespace,
     get_hot_namespace,
 )
-from nomarr.persistence.schema import CollectionNames
 
 
 class TestGetHotNamespace:
@@ -79,20 +78,14 @@ class TestDeleteVectorsByFileId:
             ],
         ]
 
-        deleted = delete_vectors_by_file_id(db, f"{CollectionNames.LIBRARY_FILES.value}/7")
+        deleted = delete_vectors_by_file_id(db, f"{'library_files'}/7")
 
         assert deleted == 3
         db.ml.list_vector_namespaces.assert_called_once_with()
-        db.ml.list_file_vectors.assert_any_call("vectors_track_hot__effnet", f"{CollectionNames.LIBRARY_FILES.value}/7")
-        db.ml.list_file_vectors.assert_any_call(
-            "vectors_track_cold__effnet", f"{CollectionNames.LIBRARY_FILES.value}/7"
-        )
-        db.ml.remove_file_vectors.assert_any_call(
-            "vectors_track_hot__effnet", f"{CollectionNames.LIBRARY_FILES.value}/7"
-        )
-        db.ml.remove_file_vectors.assert_any_call(
-            "vectors_track_cold__effnet", f"{CollectionNames.LIBRARY_FILES.value}/7"
-        )
+        db.ml.list_file_vectors.assert_any_call("vectors_track_hot__effnet", f"{'library_files'}/7")
+        db.ml.list_file_vectors.assert_any_call("vectors_track_cold__effnet", f"{'library_files'}/7")
+        db.ml.remove_file_vectors.assert_any_call("vectors_track_hot__effnet", f"{'library_files'}/7")
+        db.ml.remove_file_vectors.assert_any_call("vectors_track_cold__effnet", f"{'library_files'}/7")
 
 
 class TestDeleteVectorsByFileIds:
@@ -129,18 +122,16 @@ class TestDeleteVectorsByFileIds:
             ],
         ]
 
-        deleted = delete_vectors_by_file_ids(
-            db, [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"]
-        )
+        deleted = delete_vectors_by_file_ids(db, [f"{'library_files'}/1", f"{'library_files'}/2"])
 
         assert deleted == 6
         db.ml.list_vector_namespaces.assert_called_once_with()
         assert db.ml.list_file_vectors.call_count == 4
         db.ml.remove_vectors_for_files.assert_any_call(
             "vectors_track_hot__effnet",
-            [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"],
+            [f"{'library_files'}/1", f"{'library_files'}/2"],
         )
         db.ml.remove_vectors_for_files.assert_any_call(
             "vectors_track_cold__effnet",
-            [f"{CollectionNames.LIBRARY_FILES.value}/1", f"{CollectionNames.LIBRARY_FILES.value}/2"],
+            [f"{'library_files'}/1", f"{'library_files'}/2"],
         )

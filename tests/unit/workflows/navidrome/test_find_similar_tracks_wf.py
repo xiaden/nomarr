@@ -7,7 +7,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from nomarr.components.navidrome.descriptor_match_comp import TrackDescriptor
-from nomarr.persistence.schema import CollectionNames
 from nomarr.workflows.navidrome.find_similar_tracks_wf import find_similar_tracks
 
 SEED: TrackDescriptor = {
@@ -26,7 +25,6 @@ SEED: TrackDescriptor = {
 @pytest.fixture(autouse=True)
 def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
     """Bridge workflow component calls to the mock DB surface."""
-
     monkeypatch.setattr(
         "nomarr.workflows.navidrome.find_similar_tracks_wf.resolve_seed_descriptor_to_file",
         lambda db, seed_descriptor: db._resolve_seed_descriptor_to_file(seed_descriptor),
@@ -55,7 +53,7 @@ def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _make_db(
     *,
-    seed_file_id: str | None = f"{CollectionNames.LIBRARY_FILES.value}/seed-file",
+    seed_file_id: str | None = f"{'library_files'}/seed-file",
     seed_resolution_status: str = "",
     seed_vector: list[float] | None = None,
     ann_results: list[dict] | None = None,
@@ -86,12 +84,12 @@ class TestFindSimilarTracksHappyPath:
     def test_returns_portable_descriptors(self) -> None:
         db = _make_db(
             ann_results=[
-                {"file_id": f"{CollectionNames.LIBRARY_FILES.value}/seed-file", "score": 1.0},
-                {"file_id": f"{CollectionNames.LIBRARY_FILES.value}/match-1", "score": 0.95},
+                {"file_id": f"{'library_files'}/seed-file", "score": 1.0},
+                {"file_id": f"{'library_files'}/match-1", "score": 0.95},
             ],
             file_docs=[
                 {
-                    "_id": f"{CollectionNames.LIBRARY_FILES.value}/match-1",
+                    "_id": f"{'library_files'}/match-1",
                     "_key": "match-1",
                     "duration_seconds": 201.2,
                     "tags": [
@@ -124,10 +122,10 @@ class TestFindSimilarTracksHappyPath:
 
     @pytest.mark.unit
     def test_respects_count_limit(self) -> None:
-        ann = [{"file_id": f"{CollectionNames.LIBRARY_FILES.value}/f{i}", "score": 0.9 - i * 0.01} for i in range(10)]
+        ann = [{"file_id": f"{'library_files'}/f{i}", "score": 0.9 - i * 0.01} for i in range(10)]
         docs = [
             {
-                "_id": f"{CollectionNames.LIBRARY_FILES.value}/f{i}",
+                "_id": f"{'library_files'}/f{i}",
                 "title": f"S{i}",
                 "artist": "A",
                 "album": "B",
@@ -153,10 +151,10 @@ class TestFindSimilarTracksHappyPath:
     @pytest.mark.unit
     def test_does_not_use_navidrome_song_map_table(self) -> None:
         db = _make_db(
-            ann_results=[{"file_id": f"{CollectionNames.LIBRARY_FILES.value}/match-1", "score": 0.95}],
+            ann_results=[{"file_id": f"{'library_files'}/match-1", "score": 0.95}],
             file_docs=[
                 {
-                    "_id": f"{CollectionNames.LIBRARY_FILES.value}/match-1",
+                    "_id": f"{'library_files'}/match-1",
                     "title": "Song A",
                     "artist": "Artist A",
                     "album": "Album A",
@@ -188,7 +186,7 @@ class TestFindSimilarTracksErrors:
 
     @pytest.mark.unit
     def test_raises_when_no_vector_exists(self) -> None:
-        db = _make_db(seed_file_id=f"{CollectionNames.LIBRARY_FILES.value}/seed-file")
+        db = _make_db(seed_file_id=f"{'library_files'}/seed-file")
         db._get_cold_track_vector.return_value = None
 
         with pytest.raises(ValueError, match="No vector embedding found"):
@@ -209,8 +207,8 @@ class TestFindSimilarTracksEdgeCases:
     @pytest.mark.unit
     def test_missing_metadata_defaults(self) -> None:
         db = _make_db(
-            ann_results=[{"file_id": f"{CollectionNames.LIBRARY_FILES.value}/sparse", "score": 0.9}],
-            file_docs=[{"_id": f"{CollectionNames.LIBRARY_FILES.value}/sparse", "tags": []}],
+            ann_results=[{"file_id": f"{'library_files'}/sparse", "score": 0.9}],
+            file_docs=[{"_id": f"{'library_files'}/sparse", "tags": []}],
         )
 
         results = find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
