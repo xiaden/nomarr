@@ -662,7 +662,3 @@ class LibraryDb:
         scan = await self._scan_repo.get_scan_record(library_id)
         if scan:
             await self._scan_repo.delete_scan_record(scan["id"])
-
-    async def clear_scans(self) -> None:
-        """Remove all scan records."""
-        await self.maintenance.truncate_scan_records()

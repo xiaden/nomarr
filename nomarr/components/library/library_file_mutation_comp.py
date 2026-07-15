@@ -129,7 +129,7 @@ def update_file_path(
 
 def update_file_modified_time(db: Database, file_key: int, modified_time_ms: int) -> None:
     """Update the stored modified-time after a successful file write."""
-    db.library.file_repo.update_file(file_key, {"modified_time": modified_time_ms})
+    db.library.update_library_file_modified_time(file_key, modified_time_ms)
 
 
 def bulk_delete_files(db: Database, paths: list[str]) -> int:
@@ -166,9 +166,9 @@ def get_file_library_key(db: Database, file_id: int) -> int | None:
 
 def set_chromaprint(db: Database, file_id: int, chromaprint: str) -> None:
     """Persist a chromaprint fingerprint for one file."""
-    db.library.file_repo.update_file(file_id, {"chromaprint": chromaprint})
+    db.library.set_library_file_chromaprint(file_id, chromaprint)
 
 
 def update_last_tagged_at(db: Database, file_id: int) -> None:
     """Record the wall-clock time at which a file was tagged."""
-    db.library.file_repo.update_file(file_id, {"last_tagged_at": now_ms().value})
+    db.library.update_library_file_last_tagged_at(file_id, now_ms().value)

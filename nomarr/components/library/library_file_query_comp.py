@@ -394,23 +394,54 @@ def search_library_files_with_tags(
 
     if artist:
         # a: prefix → substring match in artist tag
-        _intersect(_ids(db.library.file_tag_repo.search_files_by_tag_pattern("artist", f"%{artist}%", limit=None)))
+        _intersect(
+            _ids(
+                cast(
+                    "list[dict[str, Any]]",
+                    db.library.file_tag_repo.search_files_by_tag_pattern("artist", f"%{artist}%", limit=None),
+                )
+            )
+        )
 
     if album:
         # al: prefix → substring match in album tag
-        _intersect(_ids(db.library.file_tag_repo.search_files_by_tag_pattern("album", f"%{album}%", limit=None)))
+        _intersect(
+            _ids(
+                cast(
+                    "list[dict[str, Any]]",
+                    db.library.file_tag_repo.search_files_by_tag_pattern("album", f"%{album}%", limit=None),
+                )
+            )
+        )
 
     if query_text:
         q_pattern = f"%{query_text}%"
         if artist or album:
             # t: prefix (query_text alongside a:/al:) → narrow to title only
-            _intersect(_ids(db.library.file_tag_repo.search_files_by_tag_pattern("title", q_pattern, limit=None)))
+            _intersect(
+                _ids(
+                    cast(
+                        "list[dict[str, Any]]",
+                        db.library.file_tag_repo.search_files_by_tag_pattern("title", q_pattern, limit=None),
+                    )
+                )
+            )
         else:
             # Unprefixed → OR across title (tag) and artist/album (tags)
-            matched: set[str] = set()
-            matched |= _ids(db.library.file_tag_repo.search_files_by_tag_pattern("title", q_pattern, limit=None))
+            matched: set[int] = set()
+            matched |= _ids(
+                cast(
+                    "list[dict[str, Any]]",
+                    db.library.file_tag_repo.search_files_by_tag_pattern("title", q_pattern, limit=None),
+                )
+            )
             for tag_name in ("artist", "album"):
-                matched |= _ids(db.library.file_tag_repo.search_files_by_tag_pattern(tag_name, q_pattern, limit=None))
+                matched |= _ids(
+                    cast(
+                        "list[dict[str, Any]]",
+                        db.library.file_tag_repo.search_files_by_tag_pattern(tag_name, q_pattern, limit=None),
+                    )
+                )
             _intersect(matched)
 
     if tag_key:
@@ -652,7 +683,7 @@ def clear_library_data(db: Database) -> None:
     db.library.maintenance.truncate_tags()
     db.library.maintenance.truncate_files()
     db.library.maintenance.truncate_folders()
-    db.library.clear_scans()
+    db.library.maintenance.truncate_scan_records()
     # Pipeline states are now fields on library documents (scan_state, ml_state, etc.)
     # They are reset to defaults when libraries are recreated or via migration.
 
@@ -762,7 +793,7 @@ def count_files_by_tag(db: Database, tag_key: str, target_value: float | str) ->
 def get_files_by_chromaprint(
     db: Database,
     chromaprint: str,
-    library_id: str | None = None,
+    library_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """Return files matching a chromaprint fingerprint."""
     if library_id is not None:
@@ -770,7 +801,7 @@ def get_files_by_chromaprint(
             file_doc
             for file_doc in cast(
                 "list[dict[str, Any]]",
-                db.library.list_library_files(normalize_library_id(library_id), limit=None),
+                db.library.list_library_files(library_id, limit=None),
             )
             if file_doc.get("chromaprint") == chromaprint
         ]
@@ -783,7 +814,7 @@ def get_files_by_chromaprint(
 
 def get_tracks_by_file_ids(
     db: Database,
-    file_ids: set[str],
+    file_ids: set[int],
     order_by: list[tuple[str, Literal["asc", "desc"]]] | None = None,
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
@@ -803,7 +834,7 @@ def get_tracks_by_file_ids(
     return [_project_track_row(file_doc) for file_doc in file_docs]
 
 
-def get_tracks_for_matching(db: Database, library_id: str | None = None) -> list[dict[str, Any]]:
+def get_tracks_for_matching(db: Database, library_id: int | None = None) -> list[dict[str, Any]]:
     """Get track rows for fuzzy playlist matching, optionally scoped to a library."""
     if library_id:
         file_docs = cast(
@@ -815,19 +846,19 @@ def get_tracks_for_matching(db: Database, library_id: str | None = None) -> list
 
     file_docs = hydrate_songs_with_metadata(db, file_docs)
 
-    file_ids = [file_id for file_doc in file_docs if isinstance(file_id := file_doc.get("id"), (int, str))]
+    file_ids = [file_id for file_doc in file_docs if isinstance(file_id := file_doc.get("id"), int)]
     isrc_by_file = {
         file_id: next(
-            (tag_doc.get("value") for tag_doc in tag_docs if tag_doc.get("name") == "isrc"),
+            (tag_doc.get("value") for tag_doc in tag_rows if tag_doc.get("name") == "isrc"),
             None,
         )
-        for file_id, tag_docs in db.library.list_file_tags_for_files(file_ids).items()
+        for file_id, tag_rows in db.library.list_file_tags_for_files(file_ids).items()
     }
 
     results: list[dict[str, Any]] = []
     for file_doc in file_docs:
         file_id = file_doc.get("id")
-        if not isinstance(file_id, (int, str)):
+        if not isinstance(file_id, int):
             continue
         results.append(
             {
