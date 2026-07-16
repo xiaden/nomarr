@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import ModuleType
-from unittest.mock import ANY, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -135,22 +135,22 @@ class TestApplyMigration:
     """Tests for apply_migration()."""
 
     @pytest.mark.unit
-    def test_calls_module_upgrade_with_raw_db(self) -> None:
+    async def test_calls_module_upgrade_with_raw_db(self) -> None:
         """apply_migration calls module.upgrade passing db.db."""
         module = _make_migration_module("1.0.0")
-        db = MagicMock()
+        db = AsyncMock()
 
-        apply_migration("V001_test", module, db)
+        await apply_migration("V001_test", module, db)
 
         module.upgrade.assert_called_once_with(db.db)
 
     @pytest.mark.unit
-    def test_calls_record_migration_started_with_name_and_version(self) -> None:
+    async def test_calls_record_migration_started_with_name_and_version(self) -> None:
         """record_migration_started is called with the migration name and version."""
         module = _make_migration_module("1.0.0")
-        db = MagicMock()
+        db = AsyncMock()
 
-        apply_migration("V001_test", module, db)
+        await apply_migration("V001_test", module, db)
 
         db.migrations.record_migration_started.assert_called_once_with(
             name="V001_test",
@@ -159,12 +159,12 @@ class TestApplyMigration:
         )
 
     @pytest.mark.unit
-    def test_calls_mark_migration_applied_after_upgrade(self) -> None:
+    async def test_calls_mark_migration_applied_after_upgrade(self) -> None:
         """mark_migration_applied is called once after upgrade() succeeds."""
         module = _make_migration_module("1.0.0")
-        db = MagicMock()
+        db = AsyncMock()
 
-        apply_migration("V001_test", module, db)
+        await apply_migration("V001_test", module, db)
 
         db.migrations.mark_migration_applied.assert_called_once_with(
             name="V001_test",
@@ -173,12 +173,12 @@ class TestApplyMigration:
         )
 
     @pytest.mark.unit
-    def test_calls_set_version_with_migration_version(self) -> None:
+    async def test_calls_set_version_with_migration_version(self) -> None:
         """db.set_version is called with the migration's MIGRATION_VERSION."""
         module = _make_migration_module("1.0.0")
-        db = MagicMock()
+        db = AsyncMock()
 
-        apply_migration("V001_test", module, db)
+        await apply_migration("V001_test", module, db)
 
         db.set_version.assert_called_once_with("1.0.0")
 
@@ -187,9 +187,9 @@ class TestRunPendingMigrations:
     """Tests for run_pending_migrations()."""
 
     @pytest.mark.unit
-    def test_calls_get_version_on_db(self) -> None:
+    async def test_calls_get_version_on_db(self) -> None:
         """run_pending_migrations reads the current DB version before discovering migrations."""
-        db = MagicMock()
+        db = AsyncMock()
         db.get_version.return_value = None
 
         with (
@@ -203,15 +203,15 @@ class TestRunPendingMigrations:
                 return_value=[],
             ),
         ):
-            run_pending_migrations(db)
+            await run_pending_migrations(db)
 
         db.get_version.assert_called()
 
     @pytest.mark.unit
-    def test_calls_apply_migration_for_each_pending(self) -> None:
+    async def test_calls_apply_migration_for_each_pending(self) -> None:
         """run_pending_migrations dispatches apply_migration for every pending migration."""
         mod = _make_migration_module("0.1.0")
-        db = MagicMock()
+        db = AsyncMock()
         db.get_version.return_value = None
 
         with (
@@ -228,15 +228,15 @@ class TestRunPendingMigrations:
                 "nomarr.components.platform.migration_runner_comp.apply_migration",
             ) as mock_apply,
         ):
-            run_pending_migrations(db)
+            await run_pending_migrations(db)
 
         mock_apply.assert_called_once_with("V001", mod, db)
 
     @pytest.mark.unit
-    def test_calls_set_version_via_apply_migration(self) -> None:
+    async def test_calls_set_version_via_apply_migration(self) -> None:
         """db.set_version is called (via apply_migration) after each migration is applied."""
         mod = _make_migration_module("0.1.0")
-        db = MagicMock()
+        db = AsyncMock()
         db.get_version.return_value = None
 
         with (
@@ -250,6 +250,6 @@ class TestRunPendingMigrations:
                 return_value=[("V001", mod)],
             ),
         ):
-            run_pending_migrations(db)
+            await run_pending_migrations(db)
 
         db.set_version.assert_called_once_with("0.1.0")

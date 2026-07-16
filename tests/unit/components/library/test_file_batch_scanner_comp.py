@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -67,13 +67,13 @@ class TestScanFolderFiles:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_empty_result_when_folder_cannot_be_read(self, tmp_path: Path) -> None:
-        mock_db = MagicMock()
+    async def test_returns_empty_result_when_folder_cannot_be_read(self, tmp_path: Path) -> None:
+        mock_db = AsyncMock()
         folder_path = tmp_path / "missing"
         library_root = tmp_path / "music"
 
         with patch(f"{MODULE}.os.listdir", side_effect=OSError("denied")):
-            result = scan_folder_files(
+            result = await scan_folder_files(
                 folder_path=folder_path,
                 folder_rel_path="missing",
                 library_root=library_root,
@@ -92,8 +92,8 @@ class TestScanFolderFiles:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_skips_unchanged_existing_file_without_extracting_metadata(self, tmp_path: Path) -> None:
-        mock_db = MagicMock()
+    async def test_skips_unchanged_existing_file_without_extracting_metadata(self, tmp_path: Path) -> None:
+        mock_db = AsyncMock()
         library_root = tmp_path / "music"
         folder_path = library_root / "Rock"
         track_path = _make_audio_file(folder_path / "song.mp3")
@@ -103,7 +103,7 @@ class TestScanFolderFiles:
             f"{MODULE}.build_library_path_from_input",
             return_value=_make_valid_library_path(track_path),
         ):
-            result = scan_folder_files(
+            result = await scan_folder_files(
                 folder_path=folder_path,
                 folder_rel_path="Rock",
                 library_root=library_root,
@@ -121,8 +121,8 @@ class TestScanFolderFiles:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_marks_invalid_path_as_failed(self, tmp_path: Path) -> None:
-        mock_db = MagicMock()
+    async def test_marks_invalid_path_as_failed(self, tmp_path: Path) -> None:
+        mock_db = AsyncMock()
         library_root = tmp_path / "music"
         folder_path = library_root / "Rock"
         track_path = _make_audio_file(folder_path / "song.mp3")
@@ -131,7 +131,7 @@ class TestScanFolderFiles:
             f"{MODULE}.build_library_path_from_input",
             return_value=_make_invalid_library_path("path not allowed"),
         ):
-            result = scan_folder_files(
+            result = await scan_folder_files(
                 folder_path=folder_path,
                 folder_rel_path="Rock",
                 library_root=library_root,
@@ -149,8 +149,8 @@ class TestScanFolderFiles:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_marks_file_outside_library_root_as_failed(self, tmp_path: Path) -> None:
-        mock_db = MagicMock()
+    async def test_marks_file_outside_library_root_as_failed(self, tmp_path: Path) -> None:
+        mock_db = AsyncMock()
         library_root = tmp_path / "music"
         folder_path = library_root / "Rock"
         _make_audio_file(folder_path / "song.mp3")
@@ -160,7 +160,7 @@ class TestScanFolderFiles:
             f"{MODULE}.build_library_path_from_input",
             return_value=_make_valid_library_path(outside_path),
         ):
-            result = scan_folder_files(
+            result = await scan_folder_files(
                 folder_path=folder_path,
                 folder_rel_path="Rock",
                 library_root=library_root,
@@ -179,8 +179,8 @@ class TestScanFolderFiles:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_adds_new_file_entry_with_file_stats(self, tmp_path: Path) -> None:
-        mock_db = MagicMock()
+    async def test_adds_new_file_entry_with_file_stats(self, tmp_path: Path) -> None:
+        mock_db = AsyncMock()
         library_root = tmp_path / "music"
         folder_path = library_root / "Rock"
         track_path = _make_audio_file(folder_path / "song.mp3")
@@ -192,7 +192,7 @@ class TestScanFolderFiles:
             ),
             patch(f"{MODULE}.now_ms", return_value=Milliseconds(1234567890)),
         ):
-            result = scan_folder_files(
+            result = await scan_folder_files(
                 folder_path=folder_path,
                 folder_rel_path="Rock",
                 library_root=library_root,
@@ -218,8 +218,8 @@ class TestScanFolderFiles:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_marks_changed_currently_tagged_file_as_updated_with_version_edge(self, tmp_path: Path) -> None:
-        mock_db = MagicMock()
+    async def test_marks_changed_currently_tagged_file_as_updated_with_version_edge(self, tmp_path: Path) -> None:
+        mock_db = AsyncMock()
         library_root = tmp_path / "music"
         folder_path = library_root / "Rock"
         track_path = _make_audio_file(folder_path / "song.mp3")
@@ -231,7 +231,7 @@ class TestScanFolderFiles:
             ),
             patch(f"{MODULE}.now_ms", return_value=Milliseconds(987654321)),
         ):
-            result = scan_folder_files(
+            result = await scan_folder_files(
                 folder_path=folder_path,
                 folder_rel_path="Rock",
                 library_root=library_root,

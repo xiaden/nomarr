@@ -320,8 +320,8 @@ async def get_genre_distribution(
     genre_tags = (
         _narrow_tag_list(await db.library.list_tags(name="genre", limit=total_genre)) if total_genre > 0 else []
     )
-    count_by_tag_id = (
-        _song_count_rows_for_tag_ids(
+    count_by_tag_id: dict[int, int] = (
+        await _song_count_rows_for_tag_ids(
             db,
             [
                 tag_id

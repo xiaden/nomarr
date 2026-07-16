@@ -391,7 +391,7 @@ class FileWatcherService:
                 logger.debug(f"Polling library {library_id}: triggering quick scan")
 
                 try:
-                    await self.library_service.start_quick_scan(library_id)
+                    await self.library_service.start_quick_scan(int(library_id))
                 except LibraryNotFoundError:
                     logger.warning(f"Library {library_id} no longer exists, stopping watcher")
                     self._schedule_cleanup(library_id)
@@ -550,6 +550,6 @@ class FileWatcherService:
         # folders are actually re-scanned.
         for library_id in affected_libraries:
             try:
-                await self.library_service.start_quick_scan(library_id)
+                await self.library_service.start_quick_scan(int(library_id))
             except Exception as e:
                 logger.error(f"Failed to trigger scan for library {library_id}: {e}", exc_info=True)

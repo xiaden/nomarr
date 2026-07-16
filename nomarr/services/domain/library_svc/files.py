@@ -40,7 +40,7 @@ class LibraryFilesMixin:
     db: Database
     cfg: LibraryServiceConfig
 
-    async def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
+    async def _get_library_or_error(self, library_id: int) -> dict[str, Any]:
         """Get a library by ID or raise an error."""
         result = await get_library_record(self.db, int(library_id))
         if result is None:
@@ -64,7 +64,7 @@ class LibraryFilesMixin:
             deleted_count=result["deleted_count"],
         )
 
-    async def get_file_tags(self, file_id: str, nomarr_only: bool = False) -> FileTagsResult:
+    async def get_file_tags(self, file_id: int, nomarr_only: bool = False) -> FileTagsResult:
         """Get all tags for a specific file.
 
         Args:
@@ -103,7 +103,7 @@ class LibraryFilesMixin:
 
     async def reconcile_library_paths(
         self,
-        library_id: str,
+        library_id: int,
         policy: ReconcilePolicy = "mark_invalid",
         batch_size: int = 1000,
     ) -> ReconcileResult:
@@ -179,8 +179,8 @@ class LibraryFilesMixin:
 
     async def retry_errored_files(
         self,
-        library_id: str,
-        file_ids: list[str] | None = None,
+        library_id: int,
+        file_ids: list[int] | None = None,
     ) -> RetryErroredResult:
         """Clear errored state for files and re-queue them for discovery.
 

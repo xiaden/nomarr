@@ -70,7 +70,7 @@ class TaggingWriteMixin:
 
     async def write_tags_to_files(
         self,
-        library_id: str,
+        library_id: int,
         batch_size: int = 100,
         namespace: str = "nom",
     ) -> WriteTagsResult:
@@ -153,7 +153,7 @@ class TaggingWriteMixin:
 
     def start_write_tags_background(
         self,
-        library_id: str,
+        library_id: int,
         stop_event: threading.Event,
         on_complete: Callable[[], None] | None = None,
     ) -> str:
@@ -195,7 +195,7 @@ class TaggingWriteMixin:
             ),
         )
 
-    async def mark_tags_not_fresh(self, library_id: str) -> int:
+    async def mark_tags_not_fresh(self, library_id: int) -> int:
         """Mark all file tags in a library as not fresh.
 
         Args:
@@ -207,7 +207,7 @@ class TaggingWriteMixin:
         """
         return await bulk_set_tags_not_fresh(self.db, int(library_id))
 
-    async def get_reconcile_status(self, library_id: str) -> dict[str, Any]:
+    async def get_reconcile_status(self, library_id: int) -> dict[str, Any]:
         """Get reconciliation status for a library.
 
         Args:

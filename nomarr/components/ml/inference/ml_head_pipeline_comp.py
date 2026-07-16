@@ -11,6 +11,7 @@ dispatch logic can be tested and reasoned about independently of orchestration.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -69,7 +70,7 @@ def _make_predict(m: ONNXHeadModel, e: np.ndarray) -> Callable[[], np.ndarray]:
     """
 
     def _fn() -> np.ndarray:
-        return m.run(e)
+        return asyncio.run(m.run(e))
 
     return _fn
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -19,22 +19,22 @@ class TestOnScanCompletePipelineHook:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_transitions_ml_axis_when_files_exist(self) -> None:
+    async def test_transitions_ml_axis_when_files_exist(self) -> None:
         """Libraries with files should move ML axis to in_progress."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
         mock_db.library.list_library_file_ids.return_value = ["f1", "f2"]
         with patch("nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis") as mock_transition:
-            on_scan_complete_pipeline_hook(mock_db, "libraries/abc123")
+            await on_scan_complete_pipeline_hook(mock_db, "libraries/abc123")
 
         mock_transition.assert_called_once_with(mock_db, "libraries/abc123", ML_STATE_FIELD, ML_IN_PROGRESS)
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_transitions_ml_axis_when_no_files(self) -> None:
+    async def test_transitions_ml_axis_when_no_files(self) -> None:
         """Libraries with no files should move ML axis to not_processed."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
         mock_db.library.list_library_file_ids.return_value = []
         with patch("nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis") as mock_transition:
-            on_scan_complete_pipeline_hook(mock_db, "libraries/abc123")
+            await on_scan_complete_pipeline_hook(mock_db, "libraries/abc123")
 
         mock_transition.assert_called_once_with(mock_db, "libraries/abc123", ML_STATE_FIELD, ML_NOT_PROCESSED)

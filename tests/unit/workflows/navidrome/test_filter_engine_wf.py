@@ -17,7 +17,7 @@ class TestFilterExecutionWithNestedGroups:
     """P1-S5: Test filter execution with nested groups."""
 
     @pytest.mark.unit
-    def test_and_logic_intersection(self) -> None:
+    async def test_and_logic_intersection(self) -> None:
         """AND logic should produce set intersection."""
         # Condition A matches files 1, 2, 3
         # Condition B matches files 2, 3, 4
@@ -38,12 +38,12 @@ class TestFilterExecutionWithNestedGroups:
             "nomarr.workflows.navidrome.filter_engine_wf._execute_single_condition",
             side_effect=mock_condition,
         ):
-            result = _execute_rule_group(None, group)  # type: ignore[arg-type]
+            result = await _execute_rule_group(None, group)  # type: ignore[arg-type]
 
         assert result == {"file2", "file3"}
 
     @pytest.mark.unit
-    def test_or_logic_union(self) -> None:
+    async def test_or_logic_union(self) -> None:
         """OR logic should produce set union."""
         # Condition A matches {1, 2}
         # Condition B matches {3, 4}
@@ -63,12 +63,12 @@ class TestFilterExecutionWithNestedGroups:
             "nomarr.workflows.navidrome.filter_engine_wf._execute_single_condition",
             side_effect=mock_condition,
         ):
-            result = _execute_rule_group(None, group)  # type: ignore[arg-type]
+            result = await _execute_rule_group(None, group)  # type: ignore[arg-type]
 
         assert result == {"file1", "file2", "file3", "file4"}
 
     @pytest.mark.unit
-    def test_nested_groups_and_or(self) -> None:
+    async def test_nested_groups_and_or(self) -> None:
         """Nested (A AND B) OR C should compute correctly."""
         # (mood > 0.5 AND energy > 0.5) OR calm > 0.5
         # mood matches {1, 2, 3}, energy matches {2, 3, 4}
@@ -103,13 +103,13 @@ class TestFilterExecutionWithNestedGroups:
             "nomarr.workflows.navidrome.filter_engine_wf._execute_single_condition",
             side_effect=mock_condition,
         ):
-            result = _execute_rule_group(None, outer_group)  # type: ignore[arg-type]
+            result = await _execute_rule_group(None, outer_group)  # type: ignore[arg-type]
 
         # (mood intersect energy) union calm = {2,3} union {5,6} = {2,3,5,6}
         assert result == {"file2", "file3", "file5", "file6"}
 
     @pytest.mark.unit
-    def test_nested_groups_or_and(self) -> None:
+    async def test_nested_groups_or_and(self) -> None:
         """Nested (A OR B) AND C should compute correctly."""
         # (mood > 0.5 OR energy > 0.5) AND calm > 0.5
         # mood matches {1, 2}, energy matches {3, 4}
@@ -144,13 +144,13 @@ class TestFilterExecutionWithNestedGroups:
             "nomarr.workflows.navidrome.filter_engine_wf._execute_single_condition",
             side_effect=mock_condition,
         ):
-            result = _execute_rule_group(None, outer_group)  # type: ignore[arg-type]
+            result = await _execute_rule_group(None, outer_group)  # type: ignore[arg-type]
 
         # (mood union energy) intersect calm = {1,2,3,4} intersect {2,4,6} = {2, 4}
         assert result == {"file2", "file4"}
 
     @pytest.mark.unit
-    def test_deeply_nested_three_levels(self) -> None:
+    async def test_deeply_nested_three_levels(self) -> None:
         """Three levels of nesting should compute correctly."""
         # ((A AND B) OR C) AND D
         # A={1,2,3}, B={2,3,4} -> A AND B = {2,3}
@@ -191,20 +191,20 @@ class TestFilterExecutionWithNestedGroups:
             "nomarr.workflows.navidrome.filter_engine_wf._execute_single_condition",
             side_effect=mock_condition,
         ):
-            result = _execute_rule_group(None, outer)  # type: ignore[arg-type]
+            result = await _execute_rule_group(None, outer)  # type: ignore[arg-type]
 
         # ((A intersect B) union C) intersect D = ({2,3} union {5,6}) intersect {2,5,7} = {2,3,5,6} intersect {2,5,7} = {2,5}
         assert result == {"file2", "file5"}
 
     @pytest.mark.unit
-    def test_empty_group_returns_empty_set(self) -> None:
+    async def test_empty_group_returns_empty_set(self) -> None:
         """Empty group (no conditions or subgroups) should return empty set."""
         group = RuleGroup(logic="AND", conditions=[], groups=[])
-        result = _execute_rule_group(None, group)  # type: ignore[arg-type]
+        result = await _execute_rule_group(None, group)  # type: ignore[arg-type]
         assert result == set()
 
     @pytest.mark.unit
-    def test_multiple_sibling_groups(self) -> None:
+    async def test_multiple_sibling_groups(self) -> None:
         """Multiple sibling groups at same level should combine correctly."""
         # (A AND B) OR (C AND D)
         # A={1,2}, B={2,3} -> AND={2}
@@ -244,6 +244,6 @@ class TestFilterExecutionWithNestedGroups:
             "nomarr.workflows.navidrome.filter_engine_wf._execute_single_condition",
             side_effect=mock_condition,
         ):
-            result = _execute_rule_group(None, outer)  # type: ignore[arg-type]
+            result = await _execute_rule_group(None, outer)  # type: ignore[arg-type]
 
         assert result == {"file2", "file5"}

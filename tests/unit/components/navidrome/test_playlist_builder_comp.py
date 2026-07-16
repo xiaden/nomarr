@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -57,7 +57,7 @@ def _make_result(file_id: str) -> dict:
     return {"file_id": file_id}
 
 
-def _make_db(cold_count: int = 1000, search_results: list[list[dict]] | None = None) -> MagicMock:
+def _make_db(cold_count: int = 1000, search_results: list[list[dict]] | None = None) -> AsyncMock:
     """Build a mock Database with pre-configured ml namespace.
 
     Args:
@@ -66,7 +66,7 @@ def _make_db(cold_count: int = 1000, search_results: list[list[dict]] | None = N
             next list from this sequence. If exhausted, returns [].
 
     """
-    db = MagicMock()
+    db = AsyncMock()
     db.ml.get_embedding_stats = AsyncMock(return_value={"cold_count": cold_count})
     db.ml.search_vectors = AsyncMock()
     if search_results is not None:

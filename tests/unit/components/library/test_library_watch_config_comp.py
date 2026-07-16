@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -18,8 +18,8 @@ class TestListWatchableLibraries:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_projected_fields_only(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_projected_fields_only(self) -> None:
+        mock_db = AsyncMock()
         libraries = [
             LibraryDict(
                 _id="libraries/one",
@@ -49,7 +49,7 @@ class TestListWatchableLibraries:
             "nomarr.components.library.library_watch_config_comp.list_watchable_library_records",
             return_value=libraries,
         ) as list_records:
-            result = list_watchable_libraries(mock_db)
+            result = await list_watchable_libraries(mock_db)
 
         assert result == [
             {
@@ -67,13 +67,13 @@ class TestListWatchableLibraries:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_uses_watchable_query_for_filtering_behavior(self) -> None:
-        mock_db = MagicMock()
+    async def test_uses_watchable_query_for_filtering_behavior(self) -> None:
+        mock_db = AsyncMock()
         with patch(
             "nomarr.components.library.library_watch_config_comp.list_watchable_library_records",
             return_value=[],
         ) as list_records:
-            result = list_watchable_libraries(mock_db)
+            result = await list_watchable_libraries(mock_db)
 
         assert result == []
         list_records.assert_called_once_with(mock_db)
@@ -85,21 +85,21 @@ class TestGetLibraryWatchConfig:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_none_when_library_is_missing(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_none_when_library_is_missing(self) -> None:
+        mock_db = AsyncMock()
         with patch(
             "nomarr.components.library.library_watch_config_comp.get_library_record",
             return_value=None,
         ) as get_record:
-            result = get_library_watch_config(mock_db, "libraries/missing")
+            result = await get_library_watch_config(mock_db, "libraries/missing")
 
         assert result is None
         get_record.assert_called_once_with(mock_db, "libraries/missing", include_scan=False)
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_projected_watch_config_fields_only(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_projected_watch_config_fields_only(self) -> None:
+        mock_db = AsyncMock()
         library_doc = {
             "_id": "libraries/one",
             "root_path": "C:/music/one",
@@ -113,7 +113,7 @@ class TestGetLibraryWatchConfig:
             "nomarr.components.library.library_watch_config_comp.get_library_record",
             return_value=library_doc,
         ) as get_record:
-            result = get_library_watch_config(mock_db, "libraries/one")
+            result = await get_library_watch_config(mock_db, "libraries/one")
 
         assert result == {
             "root_path": "C:/music/one",

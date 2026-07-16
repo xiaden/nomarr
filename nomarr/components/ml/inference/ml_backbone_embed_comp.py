@@ -6,6 +6,7 @@ backbones are present (ONNX C++ kernels release the GIL).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -73,7 +74,7 @@ def compute_backbone_embeddings(
     def _run_one(backbone: str, backbone_heads: list[ONNXHeadModel]) -> BackboneEmbedding:
         t0 = internal_ms()
         model = cache.backbones[backbone]
-        embeddings_2d = model.run(wave_f32)
+        embeddings_2d = asyncio.run(model.run(wave_f32))
         result.timings[f"emb_{backbone}"] = internal_ms().value - t0.value
         return BackboneEmbedding(backbone=backbone, heads=backbone_heads, embeddings=embeddings_2d)
 

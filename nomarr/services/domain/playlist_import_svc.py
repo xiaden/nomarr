@@ -71,7 +71,7 @@ class PlaylistImportService:
         return await convert_playlist_workflow(
             self._db,
             playlist_url,
-            library_id=library_id,
+            library_id=int(library_id) if library_id is not None else None,
             spotify_client_id=self._config_service.get("spotify_client_id"),
             spotify_client_secret=self._config_service.get("spotify_client_secret"),
         )

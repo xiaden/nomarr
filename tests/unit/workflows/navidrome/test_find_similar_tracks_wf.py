@@ -81,7 +81,7 @@ class TestFindSimilarTracksHappyPath:
     """Tests for successful descriptor-based similarity flow."""
 
     @pytest.mark.unit
-    def test_returns_portable_descriptors(self) -> None:
+    async def test_returns_portable_descriptors(self) -> None:
         db = _make_db(
             ann_results=[
                 {"file_id": f"{'library_files'}/seed-file", "score": 1.0},
@@ -105,7 +105,7 @@ class TestFindSimilarTracksHappyPath:
             ],
         )
 
-        results = find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
+        results = await find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
 
         assert len(results) == 1
         result = results[0]
@@ -121,7 +121,7 @@ class TestFindSimilarTracksHappyPath:
         assert result["score"] == 0.95
 
     @pytest.mark.unit
-    def test_respects_count_limit(self) -> None:
+    async def test_respects_count_limit(self) -> None:
         ann = [{"file_id": f"{'library_files'}/f{i}", "score": 0.9 - i * 0.01} for i in range(10)]
         docs = [
             {
@@ -135,21 +135,21 @@ class TestFindSimilarTracksHappyPath:
         ]
         db = _make_db(ann_results=ann, file_docs=docs)
 
-        results = find_similar_tracks(SEED, count=3, backbone_id="effnet", db=db)
+        results = await find_similar_tracks(SEED, count=3, backbone_id="effnet", db=db)
 
         assert len(results) == 3
 
     @pytest.mark.unit
-    def test_fetches_count_plus_self(self) -> None:
+    async def test_fetches_count_plus_self(self) -> None:
         db = _make_db(ann_results=[])
 
-        find_similar_tracks(SEED, count=25, backbone_id="effnet", db=db)
+        await find_similar_tracks(SEED, count=25, backbone_id="effnet", db=db)
 
         call_limit = db._search_similar_cold_track_vectors.call_args.kwargs["result_limit"]
         assert call_limit == 26
 
     @pytest.mark.unit
-    def test_does_not_use_navidrome_song_map_table(self) -> None:
+    async def test_does_not_use_navidrome_song_map_table(self) -> None:
         db = _make_db(
             ann_results=[{"file_id": f"{'library_files'}/match-1", "score": 0.95}],
             file_docs=[
@@ -162,7 +162,7 @@ class TestFindSimilarTracksHappyPath:
                 }
             ],
         )
-        find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
+        await find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
 
         assert db.app.mock_calls == []
 
@@ -171,47 +171,47 @@ class TestFindSimilarTracksErrors:
     """Tests for error conditions in descriptor flow."""
 
     @pytest.mark.unit
-    def test_raises_when_seed_descriptor_not_resolved(self) -> None:
+    async def test_raises_when_seed_descriptor_not_resolved(self) -> None:
         db = _make_db(seed_file_id=None, seed_resolution_status="descriptor_unresolved")
 
         with pytest.raises(ValueError, match="Seed descriptor could not be resolved"):
-            find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
+            await find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
 
     @pytest.mark.unit
-    def test_raises_when_seed_descriptor_ambiguous(self) -> None:
+    async def test_raises_when_seed_descriptor_ambiguous(self) -> None:
         db = _make_db(seed_file_id=None, seed_resolution_status="descriptor_ambiguous")
 
         with pytest.raises(ValueError, match="is ambiguous"):
-            find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
+            await find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
 
     @pytest.mark.unit
-    def test_raises_when_no_vector_exists(self) -> None:
+    async def test_raises_when_no_vector_exists(self) -> None:
         db = _make_db(seed_file_id=f"{'library_files'}/seed-file")
         db._get_cold_track_vector.return_value = None
 
         with pytest.raises(ValueError, match="No vector embedding found"):
-            find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
+            await find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
 
 
 class TestFindSimilarTracksEdgeCases:
     """Tests for edge conditions."""
 
     @pytest.mark.unit
-    def test_empty_ann_results(self) -> None:
+    async def test_empty_ann_results(self) -> None:
         db = _make_db(ann_results=[])
 
-        results = find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
+        results = await find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
 
         assert results == []
 
     @pytest.mark.unit
-    def test_missing_metadata_defaults(self) -> None:
+    async def test_missing_metadata_defaults(self) -> None:
         db = _make_db(
             ann_results=[{"file_id": f"{'library_files'}/sparse", "score": 0.9}],
             file_docs=[{"_id": f"{'library_files'}/sparse", "tags": []}],
         )
 
-        results = find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
+        results = await find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)
 
         assert len(results) == 1
         assert results[0]["title"] == ""

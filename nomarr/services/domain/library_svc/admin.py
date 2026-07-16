@@ -40,7 +40,7 @@ class LibraryAdminMixin:
     db: Database
     file_watcher_service: FileWatcherService | None
 
-    async def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
+    async def _get_library_or_error(self, library_id: int) -> dict[str, Any]:
         """Get a library by ID or raise an error.
 
         Libraries are used only to determine scan roots. This method retrieves
@@ -97,7 +97,7 @@ class LibraryAdminMixin:
 
         return result
 
-    def get_library(self, library_id: str) -> LibraryDict:
+    def get_library(self, library_id: int) -> LibraryDict:
         """Get a library by ID.
 
         Args:
@@ -154,7 +154,7 @@ class LibraryAdminMixin:
         library = await self._get_library_or_error(library_id)
         return LibraryDict(**library)
 
-    async def update_library_root(self, library_id: str, root_path: str) -> LibraryDict:
+    async def update_library_root(self, library_id: int, root_path: str) -> LibraryDict:
         """Update a library's root path."""
         await update_library_root(
             db=self.db,
@@ -167,7 +167,7 @@ class LibraryAdminMixin:
 
     def update_library(
         self,
-        library_id: str,
+        library_id: int,
         *,
         name: str | None = None,
         root_path: str | None = None,
@@ -215,7 +215,7 @@ class LibraryAdminMixin:
 
         return self.get_library(library_id)
 
-    async def delete_library(self, library_id: str) -> bool:
+    async def delete_library(self, library_id: int) -> bool:
         """Stop file watching for a library and delete it.
 
         Args:
@@ -225,13 +225,13 @@ class LibraryAdminMixin:
             True if the library was deleted, False if it was not found.
 
         """
-        if self.file_watcher_service is not None and library_id in self.file_watcher_service.observers:
-            self.file_watcher_service.stop_watching_library(library_id)
+        if self.file_watcher_service is not None and str(library_id) in self.file_watcher_service.observers:
+            self.file_watcher_service.stop_watching_library(str(library_id))
         return await delete_library(db=self.db, library_id=int(library_id))
 
     def update_library_metadata(
         self,
-        library_id: str,
+        library_id: int,
         *,
         name: str | None = None,
         is_enabled: bool | None = None,
@@ -287,4 +287,4 @@ class LibraryAdminMixin:
             RuntimeError: If a library scan is currently running.
 
         """
-        clear_library_data(db=self.db, library_root=self.cfg.library_root)
+        await clear_library_data(db=self.db, library_root=self.cfg.library_root)

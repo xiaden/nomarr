@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import AsyncMock, call, patch
 
 import pytest
 
@@ -20,13 +20,13 @@ class TestDiscoverNextFile:
     """Tests for discover_next_file."""
 
     @pytest.mark.unit
-    def test_returns_file_id_when_file_found(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_file_id_when_file_found(self) -> None:
+        mock_db = AsyncMock()
         with patch(
             "nomarr.components.workers.worker_discovery_comp.discover_next_untagged_file",
             return_value={"_id": f"{'library_files'}/abc123"},
         ) as mock_discover_next:
-            result = discover_next_file(mock_db)
+            result = await discover_next_file(mock_db)
 
         assert result == f"{'library_files'}/abc123"
         mock_discover_next.assert_called_once_with(
@@ -35,13 +35,13 @@ class TestDiscoverNextFile:
         )
 
     @pytest.mark.unit
-    def test_returns_none_when_no_file(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_none_when_no_file(self) -> None:
+        mock_db = AsyncMock()
         with patch(
             "nomarr.components.workers.worker_discovery_comp.discover_next_untagged_file",
             return_value=None,
         ):
-            result = discover_next_file(mock_db)
+            result = await discover_next_file(mock_db)
         assert result is None
 
 
@@ -54,9 +54,9 @@ class TestClaimFile:
         return DuplicateKeyError()
 
     @pytest.mark.unit
-    def test_returns_true_on_success(self) -> None:
-        mock_db = MagicMock()
-        result = claim_file(mock_db, f"{'library_files'}/abc", "worker:tag:0")
+    async def test_returns_true_on_success(self) -> None:
+        mock_db = AsyncMock()
+        result = await claim_file(mock_db, f"{'library_files'}/abc", "worker:tag:0")
         assert result is True
         mock_db.app.add_claim.assert_called_once()
         inserted = mock_db.app.add_claim.call_args.args[0]
@@ -65,20 +65,20 @@ class TestClaimFile:
         assert inserted["worker_id"] == "worker:tag:0"
 
     @pytest.mark.unit
-    def test_returns_false_when_duplicate_insert_raises(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_false_when_duplicate_insert_raises(self) -> None:
+        mock_db = AsyncMock()
         mock_db.app.add_claim.side_effect = self._duplicate_claim_error()
 
-        result = claim_file(mock_db, f"{'library_files'}/abc", "worker:tag:0")
+        result = await claim_file(mock_db, f"{'library_files'}/abc", "worker:tag:0")
 
         assert result is False
         mock_db.app.add_claim.assert_called_once()
 
     @pytest.mark.unit
-    def test_returns_false_when_already_claimed(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_false_when_already_claimed(self) -> None:
+        mock_db = AsyncMock()
         mock_db.app.add_claim.side_effect = self._duplicate_claim_error()
-        result = claim_file(mock_db, f"{'library_files'}/abc", "worker:tag:1")
+        result = await claim_file(mock_db, f"{'library_files'}/abc", "worker:tag:1")
         assert result is False
         mock_db.app.add_claim.assert_called_once()
 
@@ -87,8 +87,8 @@ class TestCleanupStaleClaims:
     """Tests for cleanup_stale_claims."""
 
     @pytest.mark.unit
-    def test_bulk_fetches_claims_and_groups_deletes(self) -> None:
-        mock_db = MagicMock()
+    async def test_bulk_fetches_claims_and_groups_deletes(self) -> None:
+        mock_db = AsyncMock()
         mock_db.app.list_claims.return_value = [
             {
                 "_id": "worker_claims/claim1",
@@ -128,7 +128,7 @@ class TestCleanupStaleClaims:
             "nomarr.components.workers.worker_discovery_comp.now_ms",
             return_value=SimpleNamespace(value=10000),
         ):
-            result = cleanup_stale_claims(mock_db, heartbeat_timeout_ms=1000)
+            result = await cleanup_stale_claims(mock_db, heartbeat_timeout_ms=1000)
 
         assert result == 3
         mock_db.app.list_claims.assert_called_once_with()
@@ -148,11 +148,11 @@ class TestCleanupStaleClaims:
         ]
 
     @pytest.mark.unit
-    def test_returns_zero_without_claims(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_zero_without_claims(self) -> None:
+        mock_db = AsyncMock()
         mock_db.app.list_claims.return_value = []
 
-        result = cleanup_stale_claims(mock_db, heartbeat_timeout_ms=1000)
+        result = await cleanup_stale_claims(mock_db, heartbeat_timeout_ms=1000)
 
         assert result == 0
         mock_db.app.list_claims.assert_called_once_with()
@@ -166,8 +166,8 @@ class TestReleaseClaimsForWorker:
     """Tests for release_claims_for_worker."""
 
     @pytest.mark.unit
-    def test_returns_file_ids_with_single_bulk_read_and_delete(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_file_ids_with_single_bulk_read_and_delete(self) -> None:
+        mock_db = AsyncMock()
         mock_db.app.list_claims.return_value = [
             {
                 "_id": "worker_claims/claim1",
@@ -181,7 +181,7 @@ class TestReleaseClaimsForWorker:
             },
         ]
 
-        result = release_claims_for_worker(mock_db, "worker:tag:0")
+        result = await release_claims_for_worker(mock_db, "worker:tag:0")
 
         assert result == [
             f"{'library_files'}/file1",
@@ -191,11 +191,11 @@ class TestReleaseClaimsForWorker:
         mock_db.app.remove_claims.assert_called_once_with(worker_ids=["worker:tag:0"])
 
     @pytest.mark.unit
-    def test_returns_empty_list_without_claims(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_empty_list_without_claims(self) -> None:
+        mock_db = AsyncMock()
         mock_db.app.list_claims.return_value = []
 
-        result = release_claims_for_worker(mock_db, "worker:tag:0")
+        result = await release_claims_for_worker(mock_db, "worker:tag:0")
 
         assert result == []
         mock_db.app.list_claims.assert_called_once_with()

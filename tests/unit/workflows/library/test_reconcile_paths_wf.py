@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -15,22 +15,22 @@ class TestReconcileLibraryPathsWorkflow:
     @pytest.mark.unit
     @pytest.mark.mocked
     @pytest.mark.parametrize("library_root", [None, ""])
-    def test_raises_when_library_root_missing(self, library_root: str | None) -> None:
+    async def test_raises_when_library_root_missing(self, library_root: str | None) -> None:
         """Missing library root should raise ValueError before delegation."""
         with pytest.raises(ValueError, match="Library root not configured"):
-            reconcile_library_paths_workflow(
-                db=MagicMock(),
+            await reconcile_library_paths_workflow(
+                db=AsyncMock(),
                 library_id="libraries/1",
                 library_root=library_root,
             )
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_raises_when_policy_invalid(self) -> None:
+    async def test_raises_when_policy_invalid(self) -> None:
         """Unknown reconciliation policy should raise ValueError."""
         with pytest.raises(ValueError, match="Invalid policy 'bad_policy'"):
-            reconcile_library_paths_workflow(
-                db=MagicMock(),
+            await reconcile_library_paths_workflow(
+                db=AsyncMock(),
                 library_id="libraries/1",
                 library_root="/music",
                 policy="bad_policy",  # type: ignore[arg-type]
@@ -38,9 +38,9 @@ class TestReconcileLibraryPathsWorkflow:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_delegates_to_component_with_expected_arguments(self) -> None:
+    async def test_delegates_to_component_with_expected_arguments(self) -> None:
         """Valid calls should forward library_id, policy, and batch_size unchanged."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
         expected_result = {
             "total_files": 10,
             "valid_files": 8,
@@ -55,7 +55,7 @@ class TestReconcileLibraryPathsWorkflow:
             "nomarr.workflows.library.reconcile_paths_wf.reconcile_library_paths",
             return_value=expected_result,
         ) as mock_reconcile_library_paths:
-            result = reconcile_library_paths_workflow(
+            result = await reconcile_library_paths_workflow(
                 db=mock_db,
                 library_id="libraries/1",
                 library_root="/music",

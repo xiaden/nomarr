@@ -291,7 +291,9 @@ class AnalyticsService:
             Dict with: stats, year_distribution, genre_distribution
 
         """
-        return await compute_collection_overview(self._db, library_id=library_id)
+        return await compute_collection_overview(
+            self._db, library_id=int(library_id) if library_id is not None else None
+        )
 
     async def get_mood_analysis(
         self,

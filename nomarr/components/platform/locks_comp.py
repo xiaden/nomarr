@@ -70,13 +70,13 @@ async def reap_stale_locks(db: Database, worker_id: str, stale_after_ms: int) ->
     stale_threshold = float(now_ms().value - stale_after_ms)
     stale_locks = await db.app.list_locks()
     for lock in stale_locks:
-        if lock.get("lock_type") != "vector_promotion":
+        if lock["value"].get("lock_type") != "vector_promotion":
             continue
-        acquired_at = float(lock.get("acquired_at", 0.0))
+        acquired_at = float(lock["value"].get("acquired_at", 0.0))
         if acquired_at >= stale_threshold:
             continue
 
-        reference = str(lock["document_reference"])
+        reference = str(lock["value"]["document_reference"])
         current = cast("dict[str, Any] | None", await db.app.get_lock(reference))
         if current is None:
             continue

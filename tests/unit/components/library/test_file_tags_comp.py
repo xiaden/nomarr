@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -15,11 +15,11 @@ class TestGetFileTagsWithPath:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_none_when_file_not_found(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_none_when_file_not_found(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library_files.get_file.return_value = None
 
-        result = get_file_tags_with_path(mock_db, f"{'library_files'}/missing")
+        result = await get_file_tags_with_path(mock_db, f"{'library_files'}/missing")
 
         assert result is None
         mock_db.library_files.get_file.assert_called_once_with(f"{'library_files'}/missing")
@@ -27,13 +27,13 @@ class TestGetFileTagsWithPath:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_path_and_empty_tags_when_no_tags(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_path_and_empty_tags_when_no_tags(self) -> None:
+        mock_db = AsyncMock()
         file_doc = {"path": "D:/Music/song.flac"}
         mock_db.library_files.get_file.return_value = file_doc
         mock_db.tags.get_song_tags.return_value = []
 
-        result = get_file_tags_with_path(mock_db, f"{'library_files'}/1")
+        result = await get_file_tags_with_path(mock_db, f"{'library_files'}/1")
 
         assert result == {"path": "D:/Music/song.flac", "tags": []}
         mock_db.library_files.get_file.assert_called_once_with(f"{'library_files'}/1")
@@ -41,14 +41,14 @@ class TestGetFileTagsWithPath:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_transforms_single_value_tags(self) -> None:
-        mock_db = MagicMock()
+    async def test_transforms_single_value_tags(self) -> None:
+        mock_db = AsyncMock()
         file_doc = {"path": "D:/Music/song.flac"}
         mock_db.library_files.get_file.return_value = file_doc
         tag = Tag(name="nom:mood", values=("happy",))
         mock_db.tags.get_song_tags.return_value = [tag]
 
-        result = get_file_tags_with_path(mock_db, f"{'library_files'}/1")
+        result = await get_file_tags_with_path(mock_db, f"{'library_files'}/1")
 
         assert result == {
             "path": "D:/Music/song.flac",
@@ -64,14 +64,14 @@ class TestGetFileTagsWithPath:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_transforms_multi_value_tags_to_individual_entries(self) -> None:
-        mock_db = MagicMock()
+    async def test_transforms_multi_value_tags_to_individual_entries(self) -> None:
+        mock_db = AsyncMock()
         file_doc = {"path": "D:/Music/song.flac"}
         mock_db.library_files.get_file.return_value = file_doc
         tag = Tag(name="genre", values=("a", "b"))
         mock_db.tags.get_song_tags.return_value = [tag]
 
-        result = get_file_tags_with_path(mock_db, f"{'library_files'}/1")
+        result = await get_file_tags_with_path(mock_db, f"{'library_files'}/1")
 
         assert result == {
             "path": "D:/Music/song.flac",
@@ -93,12 +93,12 @@ class TestGetFileTagsWithPath:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_passes_nomarr_only_flag(self) -> None:
-        mock_db = MagicMock()
+    async def test_passes_nomarr_only_flag(self) -> None:
+        mock_db = AsyncMock()
         file_doc = {"path": "D:/Music/song.flac"}
         mock_db.library_files.get_file.return_value = file_doc
         mock_db.tags.get_song_tags.return_value = []
 
-        get_file_tags_with_path(mock_db, f"{'library_files'}/1", nomarr_only=True)
+        await get_file_tags_with_path(mock_db, f"{'library_files'}/1", nomarr_only=True)
 
         mock_db.tags.get_song_tags.assert_called_once_with(f"{'library_files'}/1", nomarr_only=True)

@@ -92,7 +92,7 @@ async def register_ml_models_workflow(
         model_id: str = model_doc["id"]
 
         # Step 4: Ensure output vertices exist
-        outputs = await ensure_model_outputs(db, model_id, output_count)
+        outputs = await ensure_model_outputs(db, file_id=0, model_id=model_id, output_count=output_count)
 
         # Step 5: Seed missing labels for known shipped models
         if known_outputs is not None:
@@ -102,6 +102,7 @@ async def register_ml_models_workflow(
                     continue
                 await update_model_output_label(
                     db,
+                    file_id=0,
                     model_id=model_id,
                     output_id=output_doc["id"],
                     label=label,

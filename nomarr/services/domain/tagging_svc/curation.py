@@ -60,12 +60,12 @@ class TaggingCurationMixin:
         source_tag = await self._get_tag_or_error(tag_id)
         self._reject_nom_prefix(tag_doc=source_tag)
 
-        target_tag_id = find_or_create_tag(self.db, source_tag["name"], new_value)
-        merged_into_existing = target_tag_id != tag_id
+        target_tag_id = await find_or_create_tag(self.db, source_tag["name"], new_value)
+        merged_into_existing = target_tag_id != int(tag_id)
 
-        relink = await relink_tag_edges(self.db, tag_id, str(target_tag_id))
+        relink = await relink_tag_edges(self.db, int(tag_id), target_tag_id)
 
-        song_ids = await list_songs_for_tag(self.db, int(target_tag_id))
+        song_ids = await list_songs_for_tag(self.db, target_tag_id)
         for song_id in song_ids:
             await transition_file_state(self.db, [int(song_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
 
@@ -100,7 +100,7 @@ class TaggingCurationMixin:
             source_tag = await self._get_tag_or_error(source_id)
             self._reject_nom_prefix(tag_doc=source_tag)
 
-            relink = await relink_tag_edges(self.db, source_id, canonical_tag_id)
+            relink = await relink_tag_edges(self.db, int(source_id), int(canonical_tag_id))
             total_moved += relink["moved"]
             if relink["source_orphaned"]:
                 sources_removed += 1
@@ -132,10 +132,12 @@ class TaggingCurationMixin:
         source_tag = await self._get_tag_or_error(source_tag_id)
         self._reject_nom_prefix(tag_doc=source_tag)
 
-        target_tag_id = find_or_create_tag(self.db, source_tag["name"], new_value)
-        new_tag_created = target_tag_id != source_tag_id
+        target_tag_id = await find_or_create_tag(self.db, source_tag["name"], new_value)
+        new_tag_created = target_tag_id != int(source_tag_id)
 
-        relink = await relink_tag_edges(self.db, source_tag_id, str(target_tag_id), song_ids=song_ids)
+        relink = await relink_tag_edges(
+            self.db, int(source_tag_id), target_tag_id, song_ids=[int(sid) for sid in song_ids]
+        )
 
         for song_id in song_ids:
             await transition_file_state(self.db, [int(song_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)

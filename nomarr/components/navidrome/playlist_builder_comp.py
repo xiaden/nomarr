@@ -68,7 +68,7 @@ async def _search_all_clusters(
     Returns ``None`` only when every cluster search returned ``None`` (empty collection).
     Returns ``[]`` when searches ran but produced zero results.
     """
-    seen: set[str] = set()
+    seen: set[int] = set()
     all_results: list[dict[str, Any]] = []
     any_searched = False
     for cluster in ctx["clusters"]:
@@ -101,7 +101,7 @@ async def build_familiar_playlist(
     Only tracks the user has already played that appear in ANN results
     are included, preserving ANN ranking order.
     """
-    played = set(ctx["played_file_ids"])
+    played = {int(fid) for fid in ctx["played_file_ids"]}
     if not played:
         return []
 
@@ -109,7 +109,7 @@ async def build_familiar_playlist(
     if raw_results is None:
         return []
 
-    file_ids = [r["file_id"] for r in raw_results if r["file_id"] in played][: ctx["max_songs"]]
+    file_ids = [str(r["file_id"]) for r in raw_results if r["file_id"] in played][: ctx["max_songs"]]
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -125,13 +125,13 @@ async def build_discovery_playlist(
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
     """Build a Discovery playlist: ANN search excluding played tracks."""
-    played = set(ctx["played_file_ids"])
+    played = {int(fid) for fid in ctx["played_file_ids"]}
 
     raw_results = await _search_all_clusters(db, ctx, fetch_multiplier=2)
     if raw_results is None:
         return []
 
-    file_ids = [r["file_id"] for r in raw_results if r["file_id"] not in played][: ctx["max_songs"]]
+    file_ids = [str(r["file_id"]) for r in raw_results if r["file_id"] not in played][: ctx["max_songs"]]
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -151,9 +151,11 @@ async def build_hidden_gems_playlist(
     Filters out tracks by artists the user has already listened to,
     surfacing music from unfamiliar artists near the taste centroid.
     """
-    played = set(ctx["played_file_ids"])
+    played = {int(fid) for fid in ctx["played_file_ids"]}
 
-    known_artists: set[str] = set(get_distinct_tag_values_for_files(db, ctx["played_file_ids"], "artist"))
+    known_artists: set[str] = set(
+        await get_distinct_tag_values_for_files(db, [int(fid) for fid in ctx["played_file_ids"]], "artist")
+    )
     if not known_artists:
         logger.debug("[navidrome] No known artists for hidden gems, falling back to discovery-style")
 
@@ -165,10 +167,10 @@ async def build_hidden_gems_playlist(
 
     if known_artists:
         candidate_file_ids = [r["file_id"] for r in candidates]
-        candidate_artists = get_tag_values_grouped_by_file(db, candidate_file_ids, "artist")
+        candidate_artists = await get_tag_values_grouped_by_file(db, candidate_file_ids, "artist")
         candidates = [r for r in candidates if not (candidate_artists.get(r["file_id"], set()) & known_artists)]
 
-    file_ids = [r["file_id"] for r in candidates][: ctx["max_songs"]]
+    file_ids = [str(r["file_id"]) for r in candidates][: ctx["max_songs"]]
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -197,7 +199,7 @@ async def build_universal_playlist(
         step = max(1, len(raw_results) // ctx["max_songs"])
         sampled = raw_results[::step][: ctx["max_songs"]]
         random.shuffle(sampled)
-        file_ids = [r["file_id"] for r in sampled]
+        file_ids = [str(r["file_id"]) for r in sampled]
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -232,20 +234,20 @@ async def build_genre_playlists(
 
     # Get vectors for played files by querying per file_id.
     # Note: db.ml.list_file_vectors() returns EmbeddingRecord which does
-    # not currently include the "vector" field — this is a known
+    # not currently include the "embedding" field — this is a known
     # persistence-layer gap tracked in S2 scope.
-    vector_map: dict[str, list[float]] = {}
-    for fid in played_file_ids:
-        results = await db.ml.list_file_vectors(ctx["backbone_id"], int(fid))
-        for doc in results:  # type: ignore[assignment]
-            if "vector" in doc and doc.get("file_id"):  # type: ignore[operator]
-                vector_map[doc["file_id"]] = doc["vector"]  # type: ignore[index]
+    vector_map: dict[int, list[float]] = {}
+    for fid_str in played_file_ids:
+        results = await db.ml.list_file_vectors(ctx["backbone_id"], int(fid_str))
+        for doc in results:
+            if doc.get("file_id"):
+                vector_map[doc["file_id"]] = doc["embedding"]  # type: ignore[typeddict-item]
 
     if not vector_map:
         return []
 
     # Fetch genre tags for played tracks in one batch
-    file_genres = get_tag_values_grouped_by_file(db, played_file_ids, "genre")
+    file_genres = await get_tag_values_grouped_by_file(db, [int(fid) for fid in played_file_ids], "genre")
 
     now_ms_val = now_ms().value
     half_life = ctx["half_life_days"]
@@ -309,7 +311,7 @@ async def build_genre_playlists(
             )
             continue
 
-        file_ids = [r["file_id"] for r in raw_results][: ctx["max_songs"]]
+        file_ids = [str(r["file_id"]) for r in raw_results][: ctx["max_songs"]]
         playlists.append(
             NavidromePersonalPlaylistEntry(
                 playlist_type=f"genre_{genre.lower()}",

@@ -182,7 +182,7 @@ class StartScanWithStatusResponse(BaseModel):
     stats: StartScanResponse
 
     @classmethod
-    def from_dto(cls, result: StartScanResult, library_id: str) -> Self:
+    def from_dto(cls, result: StartScanResult, library_id: int) -> Self:
         """Transform internal StartScanResult DTO to wrapped API response.
 
         Args:

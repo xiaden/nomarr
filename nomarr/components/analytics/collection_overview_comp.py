@@ -24,7 +24,7 @@ class CollectionOverviewResult(TypedDict):
 
 async def compute_collection_overview(
     db: Database,
-    library_id: str | None = None,
+    library_id: int | None = None,
 ) -> CollectionOverviewResult:
     """Get collection overview: library stats, year/genre distributions.
 

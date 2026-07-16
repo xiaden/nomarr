@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -17,7 +17,7 @@ from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
 @pytest.mark.unit
 @pytest.mark.mocked
-def test_process_file_workflow_packages_resolved_output_streams_and_skips_missing_indexes() -> None:
+async def test_process_file_workflow_packages_resolved_output_streams_and_skips_missing_indexes() -> None:
     """Resolved output-index mappings become deferred writes; missing ones are skipped."""
     config = ProcessorConfig(
         models_dir="models",
@@ -38,8 +38,8 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
             backbones={"bb1": SimpleNamespace(preprocess_params=SimpleNamespace(sample_rate=16000))},
         ),
     )
-    mock_db = MagicMock()
-    library_path = MagicMock()
+    mock_db = AsyncMock()
+    library_path = AsyncMock()
     library_path.is_valid.return_value = True
     library_path.absolute = Path("/music/song.flac")
     library_path.library_id = "libraries/lib1"
@@ -81,7 +81,7 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
         ) as build_output_index_map_mock,
         patch("nomarr.workflows.processing.process_file_wf.build_timing_summary", return_value="timing-summary"),
     ):
-        result = process_file_workflow(
+        result = await process_file_workflow(
             path="song.flac",
             config=config,
             cache=cache,

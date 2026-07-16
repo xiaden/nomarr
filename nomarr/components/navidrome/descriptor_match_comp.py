@@ -103,11 +103,11 @@ async def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
 
 async def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tuple[str | None, str]:
     """Resolve a portable seed descriptor to one Nomarr track record."""
-    candidate_ids = _candidate_file_ids(db, seed)
+    candidate_ids = await _candidate_file_ids(db, seed)
     if not candidate_ids:
         return None, "descriptor_unresolved"
 
-    docs = get_files_by_ids_with_tags(db, sorted(candidate_ids))
+    docs = await get_files_by_ids_with_tags(db, [int(cid) for cid in sorted(candidate_ids)])
     descriptors_by_id = {
         file_id: _descriptor_from_doc(file_doc) for file_doc in docs if isinstance((file_id := file_doc.get("id")), str)
     }

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -20,9 +20,9 @@ class TestCreateLibrary:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_passes_file_write_mode_to_db(self) -> None:
+    async def test_passes_file_write_mode_to_db(self) -> None:
         """Explicit file_write_mode should be forwarded to persistence."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
 
         with (
             patch(
@@ -43,7 +43,7 @@ class TestCreateLibrary:
                 return_value="libraries/1",
             ) as create_record,
         ):
-            result = create_library(
+            result = await create_library(
                 db=mock_db,
                 base_library_root="/configured-music",
                 name=None,
@@ -68,9 +68,9 @@ class TestCreateLibrary:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_default_file_write_mode_is_full(self) -> None:
+    async def test_default_file_write_mode_is_full(self) -> None:
         """Default file_write_mode should remain ``full`` when omitted."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
 
         with (
             patch(
@@ -91,7 +91,7 @@ class TestCreateLibrary:
                 return_value="libraries/1",
             ) as create_record,
         ):
-            result = create_library(
+            result = await create_library(
                 db=mock_db,
                 base_library_root="/configured-music",
                 name=None,
@@ -119,15 +119,15 @@ class TestDeleteLibrary:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_false_when_library_not_found(self) -> None:
+    async def test_returns_false_when_library_not_found(self) -> None:
         """Missing libraries should short-circuit without any deletion."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
 
         with patch(
             "nomarr.components.library.library_admin_comp.get_library_record",
             return_value=None,
         ) as get_library_record_mock:
-            result = delete_library(mock_db, "libraries/missing")
+            result = await delete_library(mock_db, "libraries/missing")
 
         assert result is False
         get_library_record_mock.assert_called_once_with(mock_db, "libraries/missing")
@@ -135,16 +135,16 @@ class TestDeleteLibrary:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_deletes_library_and_returns_true(self) -> None:
+    async def test_deletes_library_and_returns_true(self) -> None:
         """Existing libraries should delegate cascade to db.library.remove_library and return True."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
         library = {"name": "Main Library"}
 
         with patch(
             "nomarr.components.library.library_admin_comp.get_library_record",
             return_value=library,
         ) as get_library_record_mock:
-            result = delete_library(mock_db, "libraries/1")
+            result = await delete_library(mock_db, "libraries/1")
 
         assert result is True
         get_library_record_mock.assert_called_once_with(mock_db, "libraries/1")

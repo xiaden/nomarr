@@ -53,11 +53,11 @@ async def get_short_to_versioned_mapping(
     return mapping
 
 
-def resolve_short_to_versioned_keys(
+async def resolve_short_to_versioned_keys(
     short_name: str,
     db: Database,
     namespace: str = "nom",
 ) -> list[str]:
     """Resolve a short tag name to its versioned storage key(s)."""
-    mapping = get_short_to_versioned_mapping(db, namespace)
+    mapping = await get_short_to_versioned_mapping(db, namespace)
     return mapping.get(short_name, [])

@@ -234,7 +234,7 @@ class NavidromeService:
 
         return await generate_static_playlist_workflow(
             db=self._db,
-            file_ids=file_ids,
+            file_ids=[int(fid) for fid in file_ids],
             playlist_name=playlist_name,
             m3u_output_path=m3u_output_path,
         )

@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 async def scan_setup_workflow(
     db: Database,
-    library_id: str,
+    library_id: int,
     scan_type: str,
 ) -> LibraryDict:
     """Validate a library and prepare it for scanning.

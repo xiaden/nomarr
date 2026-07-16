@@ -114,9 +114,10 @@ async def try_insert_or_steal_claim(
     try:
         await db.app.add_claim(payload)
     except DuplicateKeyError:
-        file_id = str(payload["file_id"])
+        file_id = int(payload["file_id"])
+        all_claims = await _get_all_claims(db)
         existing_claim = next(
-            (claim for claim in _get_all_claims(db) if str(claim.get("file_id")) == file_id),
+            (claim for claim in all_claims if str(claim.get("file_id")) == str(file_id)),
             None,
         )
         if existing_claim is None:
@@ -155,7 +156,7 @@ async def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
         Number of claims removed
 
     """
-    all_claims = _get_all_claims(db)
+    all_claims = await _get_all_claims(db)
     if not all_claims:
         return 0
 
@@ -174,16 +175,16 @@ async def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
         if str(claim["worker_id"]) in active_workers and claim.get("claim_type") != "reconcile"
     ]
 
-    stale_file_ids: set[str] = set()
-    candidate_file_ids = sorted({str(claim["file_id"]) for claim in active_ml_claims})
+    stale_file_ids: set[int] = set()
+    candidate_file_ids = sorted({int(claim["file_id"]) for claim in active_ml_claims})
     if candidate_file_ids:
         file_docs = cast("list[dict[str, Any]]", await db.library.list_files_by_ids(candidate_file_ids))
-        existing_file_ids = {str(doc["id"]) for doc in file_docs if "id" in doc}
+        existing_file_ids = {doc["id"] for doc in file_docs if "id" in doc}
 
         tagged_file_ids = {
-            str(file_doc["id"])
+            file_doc["id"]
             for file_doc in cast("list[dict[str, Any]]", await db.app.list_file_docs_in_state(_TAGGED_STATE_ID))
-            if "id" in file_doc and str(file_doc["id"]) in candidate_file_ids
+            if "id" in file_doc and file_doc["id"] in candidate_file_ids
         }
         stale_file_ids = {
             file_id for file_id in candidate_file_ids if file_id not in existing_file_ids or file_id in tagged_file_ids
@@ -218,12 +219,12 @@ async def discover_and_claim_file(
         Claimed file id or None if no work available or claim failed
 
     """
-    file_id = discover_next_file(db)
+    file_id = await discover_next_file(db)
     if not file_id:
         logger.debug("[discovery] No files found needing processing (worker=%s)", worker_id)
         return None
 
-    if claim_file(db, file_id, worker_id):
+    if await claim_file(db, file_id, worker_id):
         logger.debug("[discovery] Claimed %s for %s", file_id, worker_id)
         return file_id
     # Another worker claimed this file - caller should retry
@@ -241,7 +242,7 @@ async def get_active_claim_count(db: Database) -> int:
         Number of active claim documents
 
     """
-    return await db.app.count_claims()
+    return len(await db.app.list_claims())
 
 
 async def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:

@@ -12,10 +12,12 @@ Architecture:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
 import multiprocessing
+import os
 from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
@@ -60,12 +62,16 @@ class GPUHealthMonitor(multiprocessing.Process):
         except (BrokenPipeError, OSError) as e:
             logger.warning("[GPUHealthMonitor] Failed to send heartbeat: %s", e)
 
-    async def run(self) -> None:
+    def run(self) -> None:
         """Main monitoring loop (runs in separate process).
 
         Continuously probes GPU, writes resource snapshot to DB, and sends
         heartbeat frames to HealthMonitorService.
         """
+        asyncio.run(self._do_run())
+
+    async def _do_run(self) -> None:
+        """Async implementation of the monitoring loop."""
         from nomarr.components.platform import (
             probe_gpu_availability,
         )
@@ -73,7 +79,9 @@ class GPUHealthMonitor(multiprocessing.Process):
 
         logger.info("[GPUHealthMonitor] Starting GPU health monitoring process")
         try:
-            db = Database()
+            db = Database(
+                url=os.environ.get("PG_DATABASE_URL", "postgresql+asyncpg://nomarr:nomarr@localhost:5432/nomarr")
+            )
         except OSError as e:
             logger.exception("[GPUHealthMonitor] Failed to create DB connection: %s", e)
             self._send_heartbeat("unhealthy")

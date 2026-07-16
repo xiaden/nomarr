@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -16,14 +16,14 @@ class TestMarkFileTagged:
     @pytest.mark.unit
     @patch("nomarr.components.library.file_sync_comp.persist_last_tagged_at")
     @patch("nomarr.components.library.file_sync_comp.transition_file_state")
-    def test_delegates_to_state_transition_and_timestamp_update(
+    async def test_delegates_to_state_transition_and_timestamp_update(
         self,
         mock_transition_file_state: MagicMock,
         mock_persist_last_tagged_at: MagicMock,
     ) -> None:
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
 
-        mark_file_processed(mock_db, f"{'library_files'}/xyz")
+        await mark_file_processed(mock_db, f"{'library_files'}/xyz")
 
         mock_transition_file_state.assert_called_once_with(
             mock_db,

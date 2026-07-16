@@ -50,7 +50,7 @@ async def _process_file(db: Database, file_id: int) -> None:
 
     Args:
         db: Database instance
-        file_id: Full track record ``_id`` (e.g. ``"song/12345"``)
+        file_id: Integer primary key of the file record
 
     Raises:
         Exception: Propagated to caller for error counting and state transition
@@ -66,10 +66,10 @@ async def _process_file(db: Database, file_id: int) -> None:
     if file_doc is None:
         msg = f"File not found: {file_id}"
         raise ValueError(msg)
-    path: str = file_doc["path"]
-    namespace: str = file_doc.get("namespace", "nom")
+    path: str = str(file_doc["path"])
+    namespace: str = str(file_doc.get("namespace", "nom"))
 
-    library_path = build_library_path_from_input(path, db)
+    library_path = await build_library_path_from_input(path, db)
     if not library_path.is_valid():
         msg = f"Invalid library path for {file_id}: {library_path.reason}"
         raise ValueError(msg)
@@ -84,17 +84,17 @@ async def _process_file(db: Database, file_id: int) -> None:
             (f"{namespace}:{name}" if not name.startswith(f"{namespace}:") else name): values
             for name, values in parsed_nom_tags.items()
         }
-        save_file_tags(db, file_id, prefixed)
+        await save_file_tags(db, str(file_id), prefixed)
 
     # Seed entity graph (artist, album, genre etc.)
-    seed_entities_for_scan_batch(db, [file_id], {file_id: metadata})
+    await seed_entities_for_scan_batch(db, [str(file_id)], {str(file_id): metadata})
 
     # Update duration_seconds on the track record if not already set
     duration = metadata.get("duration")
     if duration is not None and not file_doc.get("duration_seconds"):
-        db.library.file_repo.update_file(file_id, {"duration_seconds": duration})
+        await db.library.file_repo.update_file(file_id, {"duration_seconds": duration})
 
-    transition_file_state(db, [file_id], STATE_NOT_HYDRATED, STATE_HYDRATED)
+    await transition_file_state(db, [file_id], STATE_NOT_HYDRATED, STATE_HYDRATED)
 
 
 class TagExtractionWorker(threading.Thread):
@@ -126,26 +126,32 @@ class TagExtractionWorker(threading.Thread):
         """Signal the worker to stop after its current file completes."""
         self._stop_event.set()
 
-    async def run(self) -> None:
+    def run(self) -> None:
         """Worker main loop: discover → process, repeat."""
+        import asyncio
+
+        asyncio.run(self._async_run())
+
+    async def _async_run(self) -> None:
+        """Async implementation of the worker main loop."""
         logger.info("[%s] Tag extraction worker started", self._worker_id)
         consecutive_errors = 0
 
         while not self._stop_event.is_set():
-            file_doc = discover_next_file_needing_tags(self._db, exclude_claimed=False)
+            file_doc = await discover_next_file_needing_tags(self._db, exclude_claimed=False)
             if file_doc is None:
                 self._stop_event.wait(IDLE_SLEEP_S)
                 continue
-            file_id = str(file_doc["id"])
+            file_id: int = int(file_doc["id"])
 
             try:
-                _process_file(self._db, file_id)
+                await _process_file(self._db, file_id)
                 consecutive_errors = 0
                 logger.debug("[%s] Extracted tags for %s", self._worker_id, file_id)
             except Exception:
                 logger.exception("[%s] Error extracting tags for %s", self._worker_id, file_id)
                 try:
-                    transition_file_state(self._db, [file_id], STATE_NOT_ERRORED, STATE_ERRORED)
+                    await transition_file_state(self._db, [file_id], STATE_NOT_ERRORED, STATE_ERRORED)
                 except Exception:
                     logger.exception("[%s] Failed to set error state for %s", self._worker_id, file_id)
                 consecutive_errors += 1

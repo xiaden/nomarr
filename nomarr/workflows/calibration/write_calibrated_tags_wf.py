@@ -208,6 +208,6 @@ async def write_calibrated_tags_wf(
         await save_mood_tags(db, file_id, mood_tags)
         global_version = await get_calibration_version(db)
         if global_version:
-            await update_file_calibration_hash(db, str(file_id))
+            await update_file_calibration_hash(db, file_id)
             logger.debug("[calibrated_tags] Updated calibration_hash for %s", file_path)
         logger.debug("[calibrated_tags] Updated mood tags in DB for %s", file_path)

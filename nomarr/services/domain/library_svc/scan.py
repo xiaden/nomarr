@@ -45,7 +45,7 @@ class LibraryScanMixin:
     db: Database
     background_tasks: Any | None
 
-    async def start_quick_scan(self, library_id: str) -> StartScanResult:
+    async def start_quick_scan(self, library_id: int) -> StartScanResult:
         """Start a quick (incremental) library scan.
 
         Validates the library synchronously then dispatches the scan as a
@@ -91,7 +91,7 @@ class LibraryScanMixin:
             job_ids=[task_id],
         )
 
-    async def start_full_scan(self, library_id: str, skip_validation_autorepair: bool = False) -> StartScanResult:
+    async def start_full_scan(self, library_id: int, skip_validation_autorepair: bool = False) -> StartScanResult:
         """Start a full library scan.
 
         Validates the library synchronously then dispatches the scan as a
@@ -149,7 +149,7 @@ class LibraryScanMixin:
             job_ids=[task_id],
         )
 
-    def cancel_scan(self, library_id: str | None = None) -> bool:
+    def cancel_scan(self, library_id: int | None = None) -> bool:
         """Cancel the currently running scan.
 
         Note: Cancellation support not yet implemented for direct scans.
@@ -171,7 +171,7 @@ class LibraryScanMixin:
         logger.warning("[LibraryService] Scan cancellation not yet implemented for direct scans")
         return False
 
-    async def repair_library_tags(self, library_id: str) -> StartScanResult:
+    async def repair_library_tags(self, library_id: int) -> StartScanResult:
         """Mark all files for tag re-hydration and start a full scan.
 
         Transitions every file in the library to the ``not_hydrated``
@@ -197,7 +197,7 @@ class LibraryScanMixin:
         scan_result.files_queued = files_queued
         return scan_result
 
-    async def get_status(self, library_id: str | None = None) -> LibraryScanStatusResult:
+    async def get_status(self, library_id: int | None = None) -> LibraryScanStatusResult:
         """Get current library scan status.
 
         Args:
@@ -259,7 +259,7 @@ class LibraryScanMixin:
 
     async def validate_library_tags(
         self,
-        library_id: str,
+        library_id: int,
         auto_repair: bool = True,
     ) -> dict[str, Any]:
         """Validate tag completeness for files in a library.

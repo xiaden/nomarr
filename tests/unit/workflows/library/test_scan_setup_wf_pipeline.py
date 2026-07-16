@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -58,9 +58,9 @@ class TestScanSetupWorkflowPipeline:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_scan_setup_transitions_library_to_scanning_pipeline_state(self) -> None:
+    async def test_scan_setup_transitions_library_to_scanning_pipeline_state(self) -> None:
         """Scan setup should move the library pipeline state to scanning."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
         library = LibraryDict(
             _id="libraries/abc123",
             _key="abc123",
@@ -86,7 +86,7 @@ class TestScanSetupWorkflowPipeline:
             patch("nomarr.workflows.library.scan_setup_wf.update_scan_progress") as mock_update,
             patch("nomarr.workflows.library.scan_setup_wf.transition_to_scanning") as mock_transition_to_scanning,
         ):
-            result = scan_setup_workflow(mock_db, "libraries/abc123", scan_type="quick")
+            result = await scan_setup_workflow(mock_db, "libraries/abc123", scan_type="quick")
 
         assert result == library
         assert mock_transition_to_scanning.called
@@ -103,9 +103,9 @@ class TestScanSetupWorkflowPipeline:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_scan_setup_rejects_library_already_in_scanning_pipeline_state(self) -> None:
+    async def test_scan_setup_rejects_library_already_in_scanning_pipeline_state(self) -> None:
         """Duplicate scans should be rejected when the pipeline state is already scanning."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
         library = LibraryDict(
             _id="libraries/abc123",
             _key="abc123",
@@ -128,7 +128,7 @@ class TestScanSetupWorkflowPipeline:
             patch("nomarr.workflows.library.scan_setup_wf.transition_to_scanning") as mock_transition,
             pytest.raises(LibraryAlreadyScanningError, match="already being scanned"),
         ):
-            scan_setup_workflow(mock_db, "libraries/abc123", scan_type="quick")
+            await scan_setup_workflow(mock_db, "libraries/abc123", scan_type="quick")
 
         mock_update.assert_not_called()
         mock_transition.assert_not_called()

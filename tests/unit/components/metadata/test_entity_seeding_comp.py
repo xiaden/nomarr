@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -16,9 +16,9 @@ class TestSeedEntitiesForScanBatch:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_persists_full_source_tags_nom_tags_and_cache_updates(self) -> None:
+    async def test_persists_full_source_tags_nom_tags_and_cache_updates(self) -> None:
         """Scanner batch sync should persist entity tags as {name, value} payloads."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
         metadata = {
             "all_tags": {
                 "genre": "Ambient; Drone",
@@ -38,7 +38,7 @@ class TestSeedEntitiesForScanBatch:
             "track_number": 7,
         }
 
-        result = seed_entities_for_scan_batch(
+        result = await seed_entities_for_scan_batch(
             mock_db,
             [f"{'library_files'}/1"],
             {f"{'library_files'}/1": metadata},

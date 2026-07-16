@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 async def reconcile_library_paths_workflow(
     db: Database,
-    library_id: str,
+    library_id: int,
     library_root: str | None,
     policy: ReconcilePolicy = "mark_invalid",
     batch_size: int = 1000,

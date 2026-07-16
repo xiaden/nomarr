@@ -63,7 +63,7 @@ async def compute_taste_profile(
     # get_tag_values_grouped_by_file returns {file_id: {genre_set}}
     file_genre_map: dict[int, set[str]] = {}
     if backbone_id:
-        file_genre_map = get_tag_values_grouped_by_file(db, file_ids, "genre")
+        file_genre_map = await get_tag_values_grouped_by_file(db, file_ids, "genre")
 
     # Invert to {genre: set[file_ids]}
     genre_to_files: dict[str, set[int]] = {}
@@ -85,12 +85,12 @@ async def compute_taste_profile(
         resolved_backbone = backbone_id or "default"
         genre_file_id_list = [p["file_id"] for p in genre_plays if p["file_id"] is not None]
 
-        vector_map: dict[str, list[float]] = {}
+        vector_map: dict[int, list[float]] = {}
         for fid in genre_file_id_list:
             results = await db.ml.list_file_vectors(resolved_backbone, int(fid))
-            for doc in results:  # type: ignore[assignment]
-                if "vector" in doc and doc.get("file_id"):  # type: ignore[operator]
-                    vector_map[doc["file_id"]] = doc["vector"]  # type: ignore[index]
+            for doc in results:
+                if doc.get("file_id"):
+                    vector_map[doc["file_id"]] = doc["embedding"]  # type: ignore[typeddict-item]
 
         paired: list[tuple[TrackPlayData, list[float]]] = []
         for play in genre_plays:
@@ -133,12 +133,12 @@ async def compute_taste_profile(
             resolved_backbone = backbone_id or "default"
             ut_file_ids = [p["file_id"] for p in untagged_plays if p["file_id"] is not None]
 
-            ut_vector_map: dict[str, list[float]] = {}
+            ut_vector_map: dict[int, list[float]] = {}
             for fid in ut_file_ids:
                 ut_results = await db.ml.list_file_vectors(resolved_backbone, int(fid))
-                for doc in ut_results:  # type: ignore[assignment]
-                    if "vector" in doc and doc.get("file_id"):  # type: ignore[operator]
-                        ut_vector_map[doc["file_id"]] = doc["vector"]  # type: ignore[index]
+                for doc in ut_results:
+                    if doc.get("file_id"):
+                        ut_vector_map[doc["file_id"]] = doc["embedding"]  # type: ignore[typeddict-item]
 
             ut_paired: list[tuple[TrackPlayData, list[float]]] = []
             for play in untagged_plays:

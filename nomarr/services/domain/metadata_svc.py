@@ -174,9 +174,9 @@ class MetadataService:
             for artist_tag in artist_tags:
                 # Get the first value from the tag (always a list now)
                 for value in artist_tag.value:
-                    tag_id = find_or_create_tag(self.db, "artist", value)
+                    tag_id = await find_or_create_tag(self.db, "artist", value)
                     if tag_id not in artist_ids_seen:
-                        artist_ids_seen.add(int(tag_id))
+                        artist_ids_seen.add(tag_id)
                         tag = await get_tag(self.db, tag_id)
                         if tag:
                             artists.append(
@@ -217,9 +217,9 @@ class MetadataService:
             for album_tag in album_tags:
                 # Get the first value from the tag (always a list now)
                 for value in album_tag.value:
-                    tag_id = find_or_create_tag(self.db, "album", value)
+                    tag_id = await find_or_create_tag(self.db, "album", value)
                     if tag_id not in album_ids_seen:
-                        album_ids_seen.add(int(tag_id))
+                        album_ids_seen.add(tag_id)
                         tag = await get_tag(self.db, tag_id)
                         if tag:
                             albums.append(
@@ -260,12 +260,12 @@ class MetadataService:
 
         """
         if dry_run:
-            orphan_count = get_orphaned_tag_count(self.db)
+            orphan_count = await get_orphaned_tag_count(self.db)
             return {
                 "orphaned_count": orphan_count,
                 "deleted_count": 0,
             }
-        deleted_count = cleanup_orphaned_tags(self.db)
+        deleted_count = await cleanup_orphaned_tags(self.db)
         return {
             "orphaned_count": deleted_count,  # Was orphaned, now deleted
             "deleted_count": deleted_count,

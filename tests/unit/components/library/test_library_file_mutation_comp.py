@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import AsyncMock, call, patch
 
 import pytest
 
@@ -24,17 +24,17 @@ class TestUpsertBatch:
     """Tests for batch library-file mutation writes."""
 
     @pytest.mark.unit
-    def test_empty_input_returns_empty_list_without_db_calls(self) -> None:
-        mock_db = MagicMock()
+    async def test_empty_input_returns_empty_list_without_db_calls(self) -> None:
+        mock_db = AsyncMock()
 
-        result = upsert_batch(mock_db, [])
+        result = await upsert_batch(mock_db, [])
 
         assert result == []
         mock_db.library.add_files_to_library.assert_not_called()
 
     @pytest.mark.unit
-    def test_batch_groups_payloads_by_library_and_preserves_input_order(self) -> None:
-        mock_db = MagicMock()
+    async def test_batch_groups_payloads_by_library_and_preserves_input_order(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.add_files_to_library.side_effect = [
             [f"{'library_files'}/rock-existing", f"{'library_files'}/rock-new"],
             [f"{'library_files'}/jazz-new"],
@@ -63,7 +63,7 @@ class TestUpsertBatch:
             },
         ]
 
-        result = upsert_batch(mock_db, file_docs)
+        result = await upsert_batch(mock_db, file_docs)
 
         assert result == [
             f"{'library_files'}/rock-existing",
@@ -102,8 +102,8 @@ class TestUpsertBatch:
         ]
 
     @pytest.mark.unit
-    def test_batch_requires_library_id_for_each_doc(self) -> None:
-        mock_db = MagicMock()
+    async def test_batch_requires_library_id_for_each_doc(self) -> None:
+        mock_db = AsyncMock()
         file_docs: list[dict[str, Any]] = [
             {
                 "library_id": None,
@@ -122,7 +122,7 @@ class TestUpsertBatch:
         ]
 
         with pytest.raises(ValueError, match="library_id is required for upsert_batch"):
-            upsert_batch(mock_db, file_docs)
+            await upsert_batch(mock_db, file_docs)
 
         mock_db.library.add_files_to_library.assert_not_called()
 
@@ -131,19 +131,19 @@ class TestDeleteLibraryFile:
     """Tests for single-file deletion cleanup."""
 
     @pytest.mark.unit
-    def test_deletes_file_id_via_library_intent(self) -> None:
-        mock_db = MagicMock()
+    async def test_deletes_file_id_via_library_intent(self) -> None:
+        mock_db = AsyncMock()
 
-        delete_library_file(mock_db, f"{'library_files'}/123")
+        await delete_library_file(mock_db, f"{'library_files'}/123")
 
         mock_db.library.remove_file.assert_called_once_with(f"{'library_files'}/123")
         mock_db.library.remove_file_by_path.assert_not_called()
 
     @pytest.mark.unit
-    def test_resolves_path_delete_via_path_intent(self) -> None:
-        mock_db = MagicMock()
+    async def test_resolves_path_delete_via_path_intent(self) -> None:
+        mock_db = AsyncMock()
 
-        delete_library_file(mock_db, "C:/music/song.mp3")
+        await delete_library_file(mock_db, "C:/music/song.mp3")
 
         mock_db.library.remove_file_by_path.assert_called_once_with("C:/music/song.mp3")
         mock_db.library.remove_file.assert_not_called()
@@ -153,15 +153,15 @@ class TestBulkDeleteFiles:
     """Tests for bulk deletion cleanup."""
 
     @pytest.mark.unit
-    def test_bulk_delete_resolves_paths_and_removes_each_found_file_once(self) -> None:
-        mock_db = MagicMock()
+    async def test_bulk_delete_resolves_paths_and_removes_each_found_file_once(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.find_file_by_path_any_library.side_effect = [
             {"_id": f"{'library_files'}/a"},
             None,
             {"_id": f"{'library_files'}/c"},
         ]
 
-        result = bulk_delete_files(mock_db, ["C:/music/a.mp3", "C:/music/missing.mp3", "C:/music/c.mp3"])
+        result = await bulk_delete_files(mock_db, ["C:/music/a.mp3", "C:/music/missing.mp3", "C:/music/c.mp3"])
 
         assert result == 2
         assert mock_db.library.find_file_by_path_any_library.call_args_list == [
@@ -175,11 +175,11 @@ class TestBulkDeleteFiles:
         ]
 
     @pytest.mark.unit
-    def test_bulk_delete_returns_zero_when_no_paths_match(self) -> None:
-        mock_db = MagicMock()
+    async def test_bulk_delete_returns_zero_when_no_paths_match(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.find_file_by_path_any_library.return_value = None
 
-        result = bulk_delete_files(mock_db, ["C:/music/missing.mp3"])
+        result = await bulk_delete_files(mock_db, ["C:/music/missing.mp3"])
 
         assert result == 0
         mock_db.library.remove_file_by_path.assert_not_called()
@@ -189,10 +189,10 @@ class TestUpsertLibraryFile:
     """Tests for single-file insert/update writes."""
 
     @pytest.mark.unit
-    def test_adds_file_to_library_with_expected_payload(self) -> None:
-        mock_db = MagicMock()
+    async def test_adds_file_to_library_with_expected_payload(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.add_file_to_library.return_value = f"{'library_files'}/123"
-        mock_path = MagicMock()
+        mock_path = AsyncMock()
         mock_path.is_valid.return_value = True
         mock_path.relative = "relative/song.mp3"
         mock_path.absolute = "C:/music/song.mp3"
@@ -205,7 +205,7 @@ class TestUpsertLibraryFile:
             ) as mock_library_key_from_ref,
         ):
             mock_now_ms.return_value.value = 1000
-            result = upsert_library_file(
+            result = await upsert_library_file(
                 mock_db,
                 mock_path,
                 "libraries/1",
@@ -231,15 +231,15 @@ class TestUpsertLibraryFile:
         )
 
     @pytest.mark.unit
-    def test_raises_value_error_for_invalid_path(self) -> None:
-        mock_db = MagicMock()
-        mock_path = MagicMock()
+    async def test_raises_value_error_for_invalid_path(self) -> None:
+        mock_db = AsyncMock()
+        mock_path = AsyncMock()
         mock_path.is_valid.return_value = False
         mock_path.status = "invalid"
         mock_path.reason = "bad path"
 
         with pytest.raises(ValueError, match=r"Cannot upsert invalid path \(invalid\): bad path"):
-            upsert_library_file(
+            await upsert_library_file(
                 mock_db,
                 mock_path,
                 "libraries/1",
@@ -254,12 +254,12 @@ class TestUpdateFilePath:
     """Tests for moved-file path updates."""
 
     @pytest.mark.unit
-    def test_updates_path_and_core_metadata(self) -> None:
-        mock_db = MagicMock()
+    async def test_updates_path_and_core_metadata(self) -> None:
+        mock_db = AsyncMock()
 
         with patch("nomarr.components.library.library_file_mutation_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value.value = 2000
-            update_file_path(
+            await update_file_path(
                 mock_db,
                 f"{'library_files'}/123",
                 "C:/music/new-song.mp3",
@@ -284,12 +284,12 @@ class TestUpdateFilePath:
         )
 
     @pytest.mark.unit
-    def test_includes_normalized_path_when_provided(self) -> None:
-        mock_db = MagicMock()
+    async def test_includes_normalized_path_when_provided(self) -> None:
+        mock_db = AsyncMock()
 
         with patch("nomarr.components.library.library_file_mutation_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value.value = 2000
-            update_file_path(
+            await update_file_path(
                 mock_db,
                 f"{'library_files'}/123",
                 "C:/music/new-song.mp3",
@@ -315,10 +315,10 @@ class TestUpdateFileModifiedTime:
     """Tests for modified-time updates after file writes."""
 
     @pytest.mark.unit
-    def test_updates_modified_time_on_normalized_file_id(self) -> None:
-        mock_db = MagicMock()
+    async def test_updates_modified_time_on_normalized_file_id(self) -> None:
+        mock_db = AsyncMock()
 
-        update_file_modified_time(mock_db, "abc123", 7777)
+        await update_file_modified_time(mock_db, "abc123", 7777)
 
         mock_db.library.update_file.assert_called_once_with(
             f"{'library_files'}/abc123",
@@ -330,21 +330,21 @@ class TestGetFileLibraryKey:
     """Tests for resolving a file's owning library key."""
 
     @pytest.mark.unit
-    def test_returns_library_key_when_file_exists(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_library_key_when_file_exists(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.get_library_ids_for_files.return_value = {f"{'library_files'}/abc123": "libraries/lib_key"}
 
-        result = get_file_library_key(mock_db, "abc123")
+        result = await get_file_library_key(mock_db, "abc123")
 
         assert result == "lib_key"
         mock_db.library.get_library_ids_for_files.assert_called_once_with([f"{'library_files'}/abc123"])
 
     @pytest.mark.unit
-    def test_returns_none_when_file_is_missing(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_none_when_file_is_missing(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.get_library_ids_for_files.return_value = {}
 
-        result = get_file_library_key(mock_db, "abc123")
+        result = await get_file_library_key(mock_db, "abc123")
 
         assert result is None
         mock_db.library.get_library_ids_for_files.assert_called_once_with([f"{'library_files'}/abc123"])
@@ -354,10 +354,10 @@ class TestSetChromaprint:
     """Tests for chromaprint persistence."""
 
     @pytest.mark.unit
-    def test_updates_chromaprint_on_normalized_file_id(self) -> None:
-        mock_db = MagicMock()
+    async def test_updates_chromaprint_on_normalized_file_id(self) -> None:
+        mock_db = AsyncMock()
 
-        set_chromaprint(mock_db, "abc123", "chromaprint-value")
+        await set_chromaprint(mock_db, "abc123", "chromaprint-value")
 
         mock_db.library.update_file.assert_called_once_with(
             f"{'library_files'}/abc123",
@@ -369,12 +369,12 @@ class TestUpdateLastTaggedAt:
     """Tests for tag-timestamp updates."""
 
     @pytest.mark.unit
-    def test_updates_last_tagged_at_with_current_timestamp(self) -> None:
-        mock_db = MagicMock()
+    async def test_updates_last_tagged_at_with_current_timestamp(self) -> None:
+        mock_db = AsyncMock()
 
         with patch("nomarr.components.library.library_file_mutation_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value.value = 9999
-            update_last_tagged_at(mock_db, f"{'library_files'}/123")
+            await update_last_tagged_at(mock_db, f"{'library_files'}/123")
 
         mock_db.library.update_file.assert_called_once_with(
             f"{'library_files'}/123",

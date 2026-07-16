@@ -143,7 +143,9 @@ class MLService:
             label: Human-readable tag label for this activation.
 
         """
-        await update_model_output_label(self.db, model_id=str(model_id), output_id=str(output_id), label=label)
+        await update_model_output_label(
+            self.db, file_id=0, model_id=str(model_id), output_id=str(output_id), label=label
+        )
 
     async def mark_model_configured(self, model_id: str | int, value: bool) -> None:
         """Set the fully_configured flag on a model vertex.

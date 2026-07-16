@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -28,8 +28,8 @@ def _seed(**overrides: object) -> TrackDescriptor:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
-    db = MagicMock()
+async def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
+    db = AsyncMock()
     db.library.search_files_by_tag_pattern.return_value = [{"_id": f"{'library_files'}/1"}]
     db.library.list_file_tags_for_files.return_value = {
         f"{'library_files'}/1": [
@@ -49,7 +49,7 @@ def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
         }
     ]
 
-    resolved, status = resolve_seed_descriptor_to_file(db, _seed())
+    resolved, status = await resolve_seed_descriptor_to_file(db, _seed())
 
     assert status == ""
     assert resolved == f"{'library_files'}/1"
@@ -59,11 +59,11 @@ def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-def test_resolve_seed_descriptor_returns_unresolved_when_title_empty() -> None:
-    db = MagicMock()
+async def test_resolve_seed_descriptor_returns_unresolved_when_title_empty() -> None:
+    db = AsyncMock()
     db.library.search_files_by_tag.return_value = []
 
-    resolved, status = resolve_seed_descriptor_to_file(db, _seed(title=""))
+    resolved, status = await resolve_seed_descriptor_to_file(db, _seed(title=""))
 
     assert status == "descriptor_unresolved"
     assert resolved is None

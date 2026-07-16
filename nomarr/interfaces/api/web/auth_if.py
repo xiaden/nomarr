@@ -37,14 +37,14 @@ class LogoutResponse(BaseModel):
 async def login(request: LoginRequest):
     """Authenticate with admin password and receive a session token."""
     try:
-        password_hash = get_admin_password_hash()
+        password_hash = await get_admin_password_hash()
     except RuntimeError as e:
         logger.exception(f"[Web UI] Admin password not initialized: {e}")
         raise HTTPException(status_code=500, detail="Admin authentication not configured") from None
     if not verify_password(request.password, password_hash):
         logger.warning("[Web UI] Failed login attempt")
         raise HTTPException(status_code=403, detail="Invalid password")
-    session_token = create_session()
+    session_token = await create_session()
     logger.info("[Web UI] New session created")
     return LoginResponse(session_token=session_token, expires_in=86400)
 
@@ -55,5 +55,5 @@ async def logout(creds=Depends(verify_session)):
     bearer = HTTPBearer(auto_error=False)
     auth = await bearer(creds)
     if auth:
-        invalidate_session(auth.credentials)
+        await invalidate_session(auth.credentials)
     return LogoutResponse(status="logged_out")

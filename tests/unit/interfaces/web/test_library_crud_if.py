@@ -273,14 +273,16 @@ class TestLibraryCrudEndpoints:
         mock_vector_maintenance_service: MagicMock,
     ) -> None:
         """GET vector stats should return per-backbone stats (global, no library_key)."""
-        mock_vector_maintenance_service.get_backbone_vector_stats = AsyncMock(return_value=[
-            {
-                "backbone_id": "discogs-effnet",
-                "hot_count": 10,
-                "cold_count": 2,
-                "index_exists": True,
-            }
-        ])
+        mock_vector_maintenance_service.get_backbone_vector_stats = AsyncMock(
+            return_value=[
+                {
+                    "backbone_id": "discogs-effnet",
+                    "hot_count": 10,
+                    "cold_count": 2,
+                    "index_exists": True,
+                }
+            ]
+        )
 
         response = client.get("/api/web/library/1/vector-stats")
 
@@ -303,7 +305,9 @@ class TestLibraryCrudEndpoints:
         mock_vector_maintenance_service: MagicMock,
     ) -> None:
         """Service errors should map to HTTP 500 with sanitized message."""
-        mock_vector_maintenance_service.get_backbone_vector_stats = AsyncMock(side_effect=RuntimeError("internal error"))
+        mock_vector_maintenance_service.get_backbone_vector_stats = AsyncMock(
+            side_effect=RuntimeError("internal error")
+        )
 
         response = client.get("/api/web/library/1/vector-stats")
 

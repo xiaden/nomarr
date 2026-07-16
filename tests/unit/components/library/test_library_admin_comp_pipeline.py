@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -17,9 +17,9 @@ class TestCreateLibraryPipeline:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_create_library_initializes_pipeline_state_after_persisting(self) -> None:
+    async def test_create_library_initializes_pipeline_state_after_persisting(self) -> None:
         """Library creation should pass pipeline defaults to create_library_record."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
 
         with (
             patch(
@@ -40,7 +40,7 @@ class TestCreateLibraryPipeline:
                 return_value="libraries/abc123",
             ) as create_record,
         ):
-            library_id = create_library(
+            library_id = await create_library(
                 db=mock_db,
                 base_library_root="/configured-music",
                 name=None,
@@ -61,9 +61,9 @@ class TestCreateLibraryPipeline:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_create_library_passes_library_auto_write_to_persistence(self) -> None:
+    async def test_create_library_passes_library_auto_write_to_persistence(self) -> None:
         """Explicit library_auto_write should be forwarded to persistence."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
 
         with (
             patch(
@@ -84,7 +84,7 @@ class TestCreateLibraryPipeline:
                 return_value="libraries/abc123",
             ) as create_record,
         ):
-            create_library(
+            await create_library(
                 db=mock_db,
                 base_library_root="/configured-music",
                 name=None,
@@ -105,9 +105,9 @@ class TestCreateLibraryPipeline:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_create_library_initializes_scan_document_after_pipeline_transition(self) -> None:
+    async def test_create_library_initializes_scan_document_after_pipeline_transition(self) -> None:
         """Library creation should seed the scan doc for the new library."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
 
         with (
             patch(
@@ -129,7 +129,7 @@ class TestCreateLibraryPipeline:
             ),
             patch("nomarr.components.library.library_admin_comp.ensure_scan_state") as mock_ensure_scan_state,
         ):
-            create_library(
+            await create_library(
                 db=mock_db,
                 base_library_root="/configured-music",
                 name=None,
@@ -144,28 +144,28 @@ class TestIsScanRunning:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_true_when_libraries_are_scanning(self) -> None:
+    async def test_returns_true_when_libraries_are_scanning(self) -> None:
         """Should return True when there are scanning libraries."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
 
         with patch(
             "nomarr.components.library.library_admin_comp.get_libraries_in_axis_state",
             return_value=["libraries/abc123"],
         ):
-            result = _is_scan_running(mock_db)
+            result = await _is_scan_running(mock_db)
 
         assert result is True
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_false_when_no_libraries_are_scanning(self) -> None:
+    async def test_returns_false_when_no_libraries_are_scanning(self) -> None:
         """Should return False when there are no scanning libraries."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
 
         with patch(
             "nomarr.components.library.library_admin_comp.get_libraries_in_axis_state",
             return_value=[],
         ):
-            result = _is_scan_running(mock_db)
+            result = await _is_scan_running(mock_db)
 
         assert result is False

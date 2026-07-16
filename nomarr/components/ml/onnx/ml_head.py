@@ -139,7 +139,7 @@ class ONNXHeadModel(BaseONNXModel):
         """Delegates to meta.is_regression_head for compatibility with inference pipeline."""
         return self.meta.is_regression_head
 
-    def load(self, device: DevicePlacement) -> None:
+    async def load(self, device: DevicePlacement) -> None:
         """Load the ONNX session and resolve tensor metadata.
 
         After calling :meth:`load`, ``input_node``, ``output_node``,
@@ -153,7 +153,7 @@ class ONNXHeadModel(BaseONNXModel):
                 coordinator rejects the GPU placement request.
 
         """
-        super().load(device)
+        await super().load(device)
         assert self._session is not None  # guaranteed by super().load()
         inputs = self._session.get_inputs()
         outputs = self._session.get_outputs()

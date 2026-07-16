@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -28,23 +28,23 @@ class TestListAllLibraryKeys:
     """Tests for ``list_all_library_keys()``."""
 
     @pytest.mark.unit
-    def test_returns_list_of_keys(self) -> None:
+    async def test_returns_list_of_keys(self) -> None:
         """Returns library document keys from the constructor namespace."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
         mock_db.library.list_library_keys.return_value = ["lib1", "lib2"]
 
-        result = list_all_library_keys(mock_db)
+        result = await list_all_library_keys(mock_db)
 
         assert result == ["lib1", "lib2"]
         mock_db.library.list_library_keys.assert_called_once_with()
 
     @pytest.mark.unit
-    def test_returns_empty_list_when_no_libraries(self) -> None:
+    async def test_returns_empty_list_when_no_libraries(self) -> None:
         """Returns an empty list when no libraries exist."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
         mock_db.library.list_library_keys.return_value = []
 
-        result = list_all_library_keys(mock_db)
+        result = await list_all_library_keys(mock_db)
 
         assert result == []
         mock_db.library.list_library_keys.assert_called_once_with()
@@ -78,13 +78,13 @@ class TestCreateLibraryRecord:
     """Tests for ``create_library_record()``."""
 
     @pytest.mark.unit
-    def test_inserts_constructor_record_with_defaults(self) -> None:
-        mock_db = MagicMock()
+    async def test_inserts_constructor_record_with_defaults(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.add_library.return_value = "libraries/1"
 
         with patch("nomarr.components.library.library_records_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value = MagicMock(value=123456789)
-            result = create_library_record(
+            result = await create_library_record(
                 mock_db,
                 name="Main",
                 root_path="D:/Music",
@@ -109,8 +109,8 @@ class TestGetLibraryRecord:
     """Tests for ``get_library_record()``."""
 
     @pytest.mark.unit
-    def test_gets_full_id_and_merges_scan_by_default(self) -> None:
-        mock_db = MagicMock()
+    async def test_gets_full_id_and_merges_scan_by_default(self) -> None:
+        mock_db = AsyncMock()
         library_doc = {"_id": "libraries/1", "name": "Main"}
         merged_doc = {**library_doc, "scan_status": "idle"}
         mock_db.library.get_library.return_value = library_doc
@@ -119,18 +119,18 @@ class TestGetLibraryRecord:
             "nomarr.components.library.library_records_comp._merge_scan_state",
             return_value=merged_doc,
         ) as merge_scan:
-            result = get_library_record(mock_db, "libraries/1")
+            result = await get_library_record(mock_db, "libraries/1")
 
         assert result == merged_doc
         mock_db.library.get_library.assert_called_once_with("libraries/1")
         merge_scan.assert_called_once_with(mock_db, library_doc)
 
     @pytest.mark.unit
-    def test_gets_by_key_without_merge_when_scan_disabled(self) -> None:
-        mock_db = MagicMock()
+    async def test_gets_by_key_without_merge_when_scan_disabled(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.get_library.return_value = {"_id": "libraries/2", "name": "Alt"}
 
-        result = get_library_record(mock_db, "2", include_scan=False)
+        result = await get_library_record(mock_db, "2", include_scan=False)
 
         assert result == {"_id": "libraries/2", "name": "Alt"}
         mock_db.library.get_library.assert_called_once_with("libraries/2")
@@ -140,8 +140,8 @@ class TestGetLibraryByName:
     """Tests for ``get_library_by_name()``."""
 
     @pytest.mark.unit
-    def test_merges_scan_state_when_requested(self) -> None:
-        mock_db = MagicMock()
+    async def test_merges_scan_state_when_requested(self) -> None:
+        mock_db = AsyncMock()
         library_doc = {"_id": "libraries/1", "name": "Main"}
         merged_doc = {**library_doc, "scan_status": "running"}
         mock_db.library.get_library_by_name.return_value = library_doc
@@ -150,7 +150,7 @@ class TestGetLibraryByName:
             "nomarr.components.library.library_records_comp._merge_scan_state",
             return_value=merged_doc,
         ) as merge_scan:
-            result = get_library_by_name(mock_db, "Main", include_scan=True)
+            result = await get_library_by_name(mock_db, "Main", include_scan=True)
 
         assert result == merged_doc
         mock_db.library.get_library_by_name.assert_called_once_with("Main")
@@ -175,12 +175,12 @@ class TestListLibraryRecords:
         }
 
     @pytest.mark.unit
-    def test_returns_library_docs_from_sub_facade_without_manual_sorting(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_library_docs_from_sub_facade_without_manual_sorting(self) -> None:
+        mock_db = AsyncMock()
         docs = [self._make_lib(_id="libraries/2"), self._make_lib(_id="libraries/1")]
         mock_db.library.list_libraries.return_value = docs
 
-        result = list_library_records(mock_db, include_scan=False)
+        result = await list_library_records(mock_db, include_scan=False)
 
         assert isinstance(result, list)
         assert len(result) == 2
@@ -189,8 +189,8 @@ class TestListLibraryRecords:
         mock_db.library.list_libraries.assert_called_once_with(enabled_only=False)
 
     @pytest.mark.unit
-    def test_merges_scan_state_for_enabled_only_records(self) -> None:
-        mock_db = MagicMock()
+    async def test_merges_scan_state_for_enabled_only_records(self) -> None:
+        mock_db = AsyncMock()
         enabled_docs = [self._make_lib(_id="libraries/1")]
         merged_doc = {**self._make_lib(_id="libraries/1"), "scan_status": "idle"}
         mock_db.library.list_libraries.return_value = enabled_docs
@@ -199,7 +199,7 @@ class TestListLibraryRecords:
             "nomarr.components.library.library_records_comp._merge_scan_state",
             return_value=merged_doc,
         ) as merge_scan:
-            result = list_library_records(mock_db, enabled_only=True)
+            result = await list_library_records(mock_db, enabled_only=True)
 
         assert isinstance(result, list)
         assert len(result) == 1
@@ -213,8 +213,8 @@ class TestListWatchableLibraryRecords:
     """Tests for ``list_watchable_library_records()``."""
 
     @pytest.mark.unit
-    def test_filters_off_modes_and_projects_watch_fields(self) -> None:
-        mock_db = MagicMock()
+    async def test_filters_off_modes_and_projects_watch_fields(self) -> None:
+        mock_db = AsyncMock()
         lib1 = self._make_watchable_lib("libraries/1", "D:/Music", "poll")
         lib2 = self._make_watchable_lib("libraries/2", "D:/Audiobooks", "off")
         lib3 = self._make_watchable_lib("libraries/3", "D:/Podcasts", None)
@@ -223,7 +223,7 @@ class TestListWatchableLibraryRecords:
             "nomarr.components.library.library_records_comp.list_library_records",
             return_value=[lib1, lib2, lib3],
         ) as list_records:
-            result = list_watchable_library_records(mock_db)
+            result = await list_watchable_library_records(mock_db)
 
         assert len(result) == 1
         assert result[0]._id == "libraries/1"
@@ -250,12 +250,12 @@ class TestUpdateLibraryRecord:
     """Tests for ``update_library_record()``."""
 
     @pytest.mark.unit
-    def test_updates_normalized_library_id_with_non_none_fields(self) -> None:
-        mock_db = MagicMock()
+    async def test_updates_normalized_library_id_with_non_none_fields(self) -> None:
+        mock_db = AsyncMock()
 
         with patch("nomarr.components.library.library_records_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value = MagicMock(value=222333444)
-            update_library_record(
+            await update_library_record(
                 mock_db,
                 "main",
                 name="Renamed",
@@ -277,11 +277,11 @@ class TestUpdateLibraryConfigFields:
     """Tests for ``update_library_config_fields()``."""
 
     @pytest.mark.unit
-    def test_merges_set_and_unset_fields_before_delegating(self) -> None:
-        mock_db = MagicMock()
+    async def test_merges_set_and_unset_fields_before_delegating(self) -> None:
+        mock_db = AsyncMock()
 
         with patch("nomarr.components.library.library_records_comp.update_library_record") as update_record:
-            update_library_config_fields(
+            await update_library_config_fields(
                 mock_db,
                 "libraries/1",
                 set_fields={"watch_mode": "event"},
@@ -297,11 +297,11 @@ class TestUpdateLibraryConfigFields:
         )
 
     @pytest.mark.unit
-    def test_returns_early_when_no_fields_provided(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_early_when_no_fields_provided(self) -> None:
+        mock_db = AsyncMock()
 
         with patch("nomarr.components.library.library_records_comp.update_library_record") as update_record:
-            update_library_config_fields(mock_db, "libraries/1")
+            await update_library_config_fields(mock_db, "libraries/1")
 
         update_record.assert_not_called()
 
@@ -323,8 +323,8 @@ class TestFindLibraryContainingPath:
         )
 
     @pytest.mark.unit
-    def test_returns_most_specific_matching_library(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_most_specific_matching_library(self) -> None:
+        mock_db = AsyncMock()
         libraries = [
             self._make_lib_dto("libraries/root", "D:/Music"),
             self._make_lib_dto("libraries/nested", "D:/Music/Rock"),
@@ -334,7 +334,7 @@ class TestFindLibraryContainingPath:
             "nomarr.components.library.library_records_comp.list_library_records",
             return_value=libraries,
         ) as list_records:
-            result = find_library_containing_path(mock_db, "D:/Music/Rock/song.flac")
+            result = await find_library_containing_path(mock_db, "D:/Music/Rock/song.flac")
 
         assert result is not None
         assert result._id == "libraries/nested"
@@ -346,8 +346,8 @@ class TestFindMlCompleteLibraries:
     """Tests for ``find_ml_complete_libraries()``."""
 
     @pytest.mark.unit
-    def test_returns_empty_list_when_no_state_docs(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_empty_list_when_no_state_docs(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.list_libraries.return_value = []
 
         with (
@@ -357,7 +357,7 @@ class TestFindMlCompleteLibraries:
             ) as mock_get_library_counts,
             patch("nomarr.components.library.library_records_comp.count_untagged_files") as mock_count_untagged_files,
         ):
-            result = find_ml_complete_libraries(mock_db, min_files=10)
+            result = await find_ml_complete_libraries(mock_db, min_files=10)
 
         assert result == []
         mock_db.library.list_libraries.assert_called_once_with()
@@ -366,8 +366,8 @@ class TestFindMlCompleteLibraries:
         mock_count_untagged_files.assert_not_called()
 
     @pytest.mark.unit
-    def test_excludes_library_with_untagged_files(self) -> None:
-        mock_db = MagicMock()
+    async def test_excludes_library_with_untagged_files(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.list_libraries.return_value = [{"_key": "42"}]
         mock_db.library.get_pipeline_state.return_value = {
             "scan_state": "scanned",
@@ -386,14 +386,14 @@ class TestFindMlCompleteLibraries:
                 return_value=5,
             ) as mock_count_untagged_files,
         ):
-            result = find_ml_complete_libraries(mock_db, min_files=1)
+            result = await find_ml_complete_libraries(mock_db, min_files=1)
 
         assert result == []
         mock_count_untagged_files.assert_called_once_with(mock_db, "libraries/42")
 
     @pytest.mark.unit
-    def test_includes_fully_tagged_library(self) -> None:
-        mock_db = MagicMock()
+    async def test_includes_fully_tagged_library(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.list_libraries.return_value = [{"_key": "42"}]
         mock_db.library.get_pipeline_state.return_value = {
             "scan_state": "scanned",
@@ -412,14 +412,14 @@ class TestFindMlCompleteLibraries:
                 return_value=0,
             ) as mock_count_untagged_files,
         ):
-            result = find_ml_complete_libraries(mock_db, min_files=99)
+            result = await find_ml_complete_libraries(mock_db, min_files=99)
 
         assert result == [{"library_id": "libraries/42", "tagged_count": 12}]
         mock_count_untagged_files.assert_called_once_with(mock_db, "libraries/42")
 
     @pytest.mark.unit
-    def test_returns_only_fully_tagged_libraries_when_state_docs_are_mixed(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_only_fully_tagged_libraries_when_state_docs_are_mixed(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.list_libraries.return_value = [
             {"_key": "7"},
             {"_key": "42"},
@@ -452,7 +452,7 @@ class TestFindMlCompleteLibraries:
                 side_effect=[4, 0],
             ) as mock_count_untagged_files,
         ):
-            result = find_ml_complete_libraries(mock_db, min_files=2)
+            result = await find_ml_complete_libraries(mock_db, min_files=2)
 
         assert result == [{"library_id": "libraries/42", "tagged_count": 12}]
         assert mock_count_untagged_files.call_args_list == [

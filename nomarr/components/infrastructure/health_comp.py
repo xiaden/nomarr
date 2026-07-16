@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+
+from nomarr.helpers.dto.repo_dto import HealthRow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -25,7 +27,7 @@ class HealthComp:
     def __init__(self, db: Database) -> None:
         self.db = db
 
-    async def get_all_workers(self) -> list[dict[str, Any]]:
+    async def get_all_workers(self) -> list[HealthRow]:
         """Get all registered workers from health monitoring.
 
         Returns:
@@ -34,7 +36,7 @@ class HealthComp:
         """
         return await self.db.app.list_worker_health()
 
-    async def get_component(self, component: str) -> dict[str, Any] | None:
+    async def get_component(self, component: str) -> HealthRow | None:
         """Get health status for a specific component.
 
         Args:
@@ -47,17 +49,17 @@ class HealthComp:
         return await self.db.app.get_health(component)
 
 
-async def get_all_workers(db: Database) -> list[dict[str, Any]]:
+async def get_all_workers(db: Database) -> list[HealthRow]:
     """Get all registered workers from health monitoring.
 
     Canonical function entry point per COMPONENTS.md conventions.
     """
-    return db.app.list_worker_health()
+    return await db.app.list_worker_health()
 
 
-async def get_component(db: Database, component: int) -> dict[str, Any] | None:
+async def get_component(db: Database, component: str) -> HealthRow | None:
     """Get health status for a specific component.
 
     Canonical function entry point per COMPONENTS.md conventions.
     """
-    return db.app.get_health(component)
+    return await db.app.get_health(component)

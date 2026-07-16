@@ -151,7 +151,7 @@ async def seed_entities_for_scan_batch(
     # 4) Batch update metadata cache (single query instead of N)
     if cache_updates:
         try:
-            update_metadata_cache_batch(db, cache_updates)
+            await update_metadata_cache_batch(db, cache_updates)
         except (ValueError, RuntimeError) as e:
             logger.warning("[entity_seeding] Batch cache update failed: %s", e)
 

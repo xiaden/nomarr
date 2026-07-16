@@ -122,7 +122,7 @@ async def load_all_calibration_states(
 
 async def load_calibration_lookup(db: Database) -> dict[str, dict[str, Any]]:
     """Return calibration parameters keyed by label for reconstruction and aggregation."""
-    calibration_states = load_all_calibration_states(db)
+    calibration_states = await load_all_calibration_states(db)
     if not calibration_states:
         logger.debug("[calibration_state] No calibrations in database (initial state)")
         return {}
@@ -150,13 +150,14 @@ async def delete_calibration_state(
     label: str,
 ) -> None:
     """Delete one calibration state record and its edge."""
-    calibration_doc = load_calibration_state(db, head_name, label)
+    calibration_doc = await load_calibration_state(db, head_name, label)
     if calibration_doc is None:
         return
 
-    _key = _make_calibration_state_key(head_name, label)
-    calibration_id = cast("str", calibration_doc.get("_id", f"calibration_state/{_key}"))
-    await db.ml.remove_calibration_state(calibration_id=calibration_id)
+    calibration_id = calibration_doc.get("id")
+    if calibration_id is None:
+        return
+    await db.ml.remove_calibration_state(calibration_id=int(calibration_id))
 
 
 async def create_calibration_history_snapshot(
@@ -266,7 +267,7 @@ async def set_calibration_last_run(db: Database, timestamp: str) -> None:
 
 async def update_file_calibration_hash(
     db: Database,
-    file_id: str,
+    file_id: int,
 ) -> None:
     """Mark a single library file as calibrated."""
     await transition_file_state(db, [file_id], STATE_NOT_CALIBRATED, STATE_CALIBRATED)
@@ -274,7 +275,7 @@ async def update_file_calibration_hash(
 
 async def update_file_calibration_hashes_batch(
     db: Database,
-    file_ids: list[str],
+    file_ids: list[int],
 ) -> None:
     """Mark multiple library files as calibrated.
 
@@ -306,7 +307,7 @@ async def compute_reconciliation_info(
 
     # Get libraries with write modes that use mood tags
     all_libraries = await list_library_records(db, include_scan=False)
-    writable_libraries = {lib["id"]: lib for lib in all_libraries if lib.file_write_mode in ("minimal", "full")}
+    writable_libraries = {lib.id: lib for lib in all_libraries if lib.file_write_mode in ("minimal", "full")}
 
     if not writable_libraries:
         return {"requires_reconciliation": False, "affected_libraries": []}
@@ -349,8 +350,8 @@ async def clear_all_calibration_data(db: Database) -> dict[str, int]:
 
     """
     # Truncate calibration data
-    db.ml.maintenance.truncate_calibration_states()
-    db.ml.maintenance.truncate_calibration_history()
+    await db.ml.maintenance.truncate_calibration_states()
+    await db.ml.maintenance.truncate_calibration_history()
 
     # Clear calibration meta keys
     meta_keys_cleared = 0
@@ -360,7 +361,7 @@ async def clear_all_calibration_data(db: Database) -> dict[str, int]:
             meta_keys_cleared += 1
 
     # Mark all files as not calibrated and not vectors extracted
-    files_updated = bulk_set_not_calibrated(db)
-    bulk_set_not_vectors_extracted(db)
+    files_updated = await bulk_set_not_calibrated(db)
+    await bulk_set_not_vectors_extracted(db)
 
     return {"files_updated": files_updated, "meta_keys_cleared": meta_keys_cleared}

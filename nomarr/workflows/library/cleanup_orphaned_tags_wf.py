@@ -24,7 +24,7 @@ async def cleanup_orphaned_tags_workflow(db: Database, dry_run: bool = False) ->
 
     """
     logger.debug("[tag_cleanup] Starting orphaned tag cleanup workflow")
-    orphaned_count = get_orphaned_tag_count(db)
+    orphaned_count = await get_orphaned_tag_count(db)
     orphaned_log = logger.info if orphaned_count > 0 else logger.debug
     orphaned_log("[tag_cleanup] Found %d orphaned tags", orphaned_count)
     if dry_run:

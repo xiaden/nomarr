@@ -1,6 +1,5 @@
 """Library scan, pipeline, and write endpoints for the web UI."""
 
-import asyncio
 import logging
 import threading
 from typing import TYPE_CHECKING, Annotated, Literal
@@ -44,7 +43,7 @@ async def scan_library_quick(
     """Start a quick scan for a specific library."""
     decoded_library_id: int = decode_path_id(library_id)
     try:
-        stats = library_service.start_quick_scan(library_id=decoded_library_id)
+        stats = await library_service.start_quick_scan(library_id=decoded_library_id)
         return StartScanWithStatusResponse.from_dto(stats, decoded_library_id)
     except LibraryNotFoundError:
         raise HTTPException(status_code=404, detail="Library not found") from None
@@ -66,7 +65,7 @@ async def scan_library_full(
     """Start a full scan for a specific library."""
     decoded_library_id: int = decode_path_id(library_id)
     try:
-        stats = library_service.start_full_scan(library_id=decoded_library_id)
+        stats = await library_service.start_full_scan(library_id=decoded_library_id)
         return StartScanWithStatusResponse.from_dto(stats, decoded_library_id)
     except LibraryNotFoundError:
         raise HTTPException(status_code=404, detail="Library not found") from None
@@ -88,7 +87,7 @@ async def repair_library_tags(
     """Mark all files for tag re-hydration and start a full scan."""
     decoded_library_id: int = decode_path_id(library_id)
     try:
-        stats = library_service.repair_library_tags(library_id=decoded_library_id)
+        stats = await library_service.repair_library_tags(library_id=decoded_library_id)
         return StartScanWithStatusResponse.from_dto(stats, decoded_library_id)
     except LibraryNotFoundError:
         raise HTTPException(status_code=404, detail="Library not found") from None
@@ -115,8 +114,7 @@ async def reconcile_library_paths(
     """Reconcile library paths after configuration changes."""
     decoded_library_id: int = decode_path_id(library_id)
     try:
-        stats = await asyncio.to_thread(
-            library_service.reconcile_library_paths,
+        stats = await library_service.reconcile_library_paths(
             decoded_library_id,
             policy=policy,
             batch_size=batch_size,
@@ -170,7 +168,7 @@ async def get_library_pipeline_status(
     """Get the current pipeline status for a single library."""
     decoded_library_id: int = decode_path_id(library_id)
     try:
-        status = pipeline_service.get_pipeline_status(decoded_library_id)
+        status = await pipeline_service.get_pipeline_status(decoded_library_id)
         if status is None:
             raise HTTPException(status_code=404, detail="Library not found")
         return PipelineStatusResponse.from_dto(status)
@@ -197,8 +195,8 @@ async def update_write_mode(
         raise HTTPException(status_code=400, detail="file_write_mode must be 'none', 'minimal', or 'full'")
     try:
         library_service.update_library(decoded_library_id, file_write_mode=file_write_mode)
-        tagging_service.mark_tags_not_fresh(decoded_library_id)
-        status = tagging_service.get_reconcile_status(library_id=decoded_library_id)
+        await tagging_service.mark_tags_not_fresh(decoded_library_id)
+        status = await tagging_service.get_reconcile_status(library_id=decoded_library_id)
         return UpdateWriteModeResponse(
             file_write_mode=file_write_mode,
             requires_reconciliation=status["pending_count"] > 0,
@@ -220,7 +218,7 @@ async def validate_library_tags(
     """Validate tag completeness for a library's files."""
     decoded_library_id: int = decode_path_id(library_id)
     try:
-        result = library_service.validate_library_tags(library_id=decoded_library_id, auto_repair=auto_repair)
+        result = await library_service.validate_library_tags(library_id=decoded_library_id, auto_repair=auto_repair)
         return ValidateLibraryTagsResponse(**result)
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None

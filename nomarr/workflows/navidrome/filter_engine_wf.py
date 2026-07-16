@@ -88,7 +88,7 @@ async def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlay
     return await _execute_rule_group(db, playlist_filter.root)
 
 
-def _resolve_tag_key(db: Database, tag_key: str) -> list[str]:
+async def _resolve_tag_key(db: Database, tag_key: str) -> list[str]:
     """Resolve a tag key to actual storage key(s).
 
     Handles:
@@ -118,7 +118,7 @@ def _resolve_tag_key(db: Database, tag_key: str) -> list[str]:
         # Try to resolve short name to versioned key(s)
         # Normalize: convert underscores to hyphens for lookup
         short_name = tag_key.replace("_", "-")
-        versioned_keys = resolve_short_to_versioned_keys(short_name, db)
+        versioned_keys = await resolve_short_to_versioned_keys(short_name, db)
         if versioned_keys:
             logger.debug(f"[filter_engine] Resolved '{tag_key}' to {versioned_keys}")
             return versioned_keys
@@ -146,7 +146,7 @@ async def _execute_single_condition(db: Database, condition: TagCondition) -> se
 
     """
     # Resolve tag key to actual storage key(s)
-    storage_keys = _resolve_tag_key(db, condition.tag_key)
+    storage_keys = await _resolve_tag_key(db, condition.tag_key)
 
     # Union results from all resolved keys
     all_matching: set[int] = set()

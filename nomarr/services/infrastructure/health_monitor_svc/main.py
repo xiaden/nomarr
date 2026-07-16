@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -385,14 +386,16 @@ class HealthMonitorService(StateTransitionOpsMixin, DeadlineOpsMixin):
                 try:
                     # Convert monotonic time to wall-clock for DB storage
                     wall_ms = to_wall_ms(internal_s_to_ms(last_time))
-                    self.db.app.update_health(
-                        component_id,
-                        {
-                            "status": status,
-                            "last_snapshot": wall_ms.value,
-                            "created_at": wall_ms.value,
-                            "snapshot_type": "history",
-                        },
+                    asyncio.run(
+                        self.db.app.update_health(
+                            component_id,
+                            {
+                                "status": status,
+                                "last_snapshot": wall_ms.value,
+                                "created_at": wall_ms.value,
+                                "snapshot_type": "history",
+                            },
+                        )
                     )
                 except Exception as e:
                     logger.warning("[HealthMonitor] History write failed for %s: %s", component_id, e, exc_info=True)

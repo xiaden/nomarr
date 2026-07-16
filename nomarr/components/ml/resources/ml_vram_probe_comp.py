@@ -92,7 +92,7 @@ def _init_cuda_context() -> None:
         logger.warning("[vram_probe] CUDA context warming failed", exc_info=True)
 
 
-def _probe_single_model(
+async def _probe_single_model(
     model: BaseONNXModel,
     probe_waveform: np.ndarray | None,
 ) -> int | None:
@@ -137,7 +137,7 @@ def _probe_single_model(
 
     try:
         try:
-            model.load("gpu")
+            await model.load("gpu")
         except (RuntimeError, OSError):
             logger.warning("[vram_probe] Failed to load %s on GPU", model._path, exc_info=True)
             return None
@@ -157,13 +157,13 @@ def _probe_single_model(
         try:
             if probe_waveform is not None:
                 # Backbone: run() handles mel-spectrogram preprocessing internally
-                model.run(probe_waveform)
+                await model.run(probe_waveform)
             else:
                 # Head: input_dim is populated by load(); generate synthetic embeddings
                 input_dim: int | None = getattr(model, "input_dim", None)
                 if input_dim:
                     embeddings = np.zeros((10, input_dim), dtype=np.float32)
-                    model.run(embeddings)
+                    await model.run(embeddings)
                 else:
                     logger.warning(
                         "[vram_probe] Head %s has no input_dim after load — skipping run",
@@ -231,7 +231,7 @@ async def probe_all_models(db: Database, models_dir: str) -> None:
 
     results: list[str] = []
     for model, waveform in all_models:
-        delta = _probe_single_model(model, waveform)
+        delta = await _probe_single_model(model, waveform)
         delta_with_headroom = int(delta * 1.1) if delta is not None else None
         value = str(delta_with_headroom) if delta_with_headroom is not None else str(sys.maxsize)
         await db.app.update_config_option(f"{_META_PREFIX}{model._path}", {"value": value})

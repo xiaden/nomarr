@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -126,18 +126,18 @@ class TestHydrateFileDocsWithMetadata:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_empty_input(self) -> None:
-        mock_db = MagicMock()
+    async def test_empty_input(self) -> None:
+        mock_db = AsyncMock()
 
-        result = hydrate_songs_with_metadata(mock_db, [])
+        result = await hydrate_songs_with_metadata(mock_db, [])
 
         assert result == []
         mock_db.library.list_file_tags_for_files.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_batch_reading_populates_all_docs(self) -> None:
-        mock_db = MagicMock()
+    async def test_batch_reading_populates_all_docs(self) -> None:
+        mock_db = AsyncMock()
         file_docs = [
             {"_id": f"{'library_files'}/1", "path": "/music/song1.flac"},
             {"_id": f"{'library_files'}/2", "path": "/music/song2.flac"},
@@ -163,7 +163,7 @@ class TestHydrateFileDocsWithMetadata:
             ],
         }
 
-        result = hydrate_songs_with_metadata(mock_db, file_docs)
+        result = await hydrate_songs_with_metadata(mock_db, file_docs)
 
         mock_db.library.list_file_tags_for_files.assert_called_once_with(
             [f"{'library_files'}/1", f"{'library_files'}/2"]
@@ -182,14 +182,14 @@ class TestHydrateFileDocsWithMetadata:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_file_with_no_tags_gets_none_fields(self) -> None:
-        mock_db = MagicMock()
+    async def test_file_with_no_tags_gets_none_fields(self) -> None:
+        mock_db = AsyncMock()
         file_docs = [{"_id": f"{'library_files'}/1", "path": "/music/song.flac"}]
         mock_db.library.list_file_tags_for_files.return_value = {
             f"{'library_files'}/1": [],
         }
 
-        result = hydrate_songs_with_metadata(mock_db, file_docs)
+        result = await hydrate_songs_with_metadata(mock_db, file_docs)
 
         assert len(result) == 1
         # None values are stripped before merging — fields are absent unless
@@ -205,8 +205,8 @@ class TestHydrateFileDocsWithMetadata:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_original_docs_not_mutated(self) -> None:
-        mock_db = MagicMock()
+    async def test_original_docs_not_mutated(self) -> None:
+        mock_db = AsyncMock()
         file_docs = [{"_id": f"{'library_files'}/1", "path": "/music/song.flac"}]
         mock_db.library.list_file_tags_for_files.return_value = {
             f"{'library_files'}/1": [
@@ -214,22 +214,22 @@ class TestHydrateFileDocsWithMetadata:
             ],
         }
 
-        result = hydrate_songs_with_metadata(mock_db, file_docs)
+        result = await hydrate_songs_with_metadata(mock_db, file_docs)
 
         assert "artist" not in file_docs[0]
         assert result[0]["artist"] == "New Artist"
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_docs_without_string_id_returned_unchanged(self) -> None:
-        mock_db = MagicMock()
+    async def test_docs_without_string_id_returned_unchanged(self) -> None:
+        mock_db = AsyncMock()
         file_docs = [
             {"path": "/music/no_id.flac"},
             {"_id": 123, "path": "/music/int_id.flac"},
             {"_id": None, "path": "/music/none_id.flac"},
         ]
 
-        result = hydrate_songs_with_metadata(mock_db, file_docs)
+        result = await hydrate_songs_with_metadata(mock_db, file_docs)
 
         mock_db.library.list_file_tags_for_files.assert_not_called()
         assert len(result) == 3
@@ -247,8 +247,8 @@ class TestHydrateFileDocWithMetadata:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_single_file_hydration(self) -> None:
-        mock_db = MagicMock()
+    async def test_single_file_hydration(self) -> None:
+        mock_db = AsyncMock()
         file_doc = {"_id": f"{'library_files'}/1", "path": "/music/song.flac"}
         mock_db.library.list_file_tags_for_files.return_value = {
             f"{'library_files'}/1": [
@@ -262,7 +262,7 @@ class TestHydrateFileDocWithMetadata:
             ],
         }
 
-        result = hydrate_song_with_metadata(mock_db, file_doc)
+        result = await hydrate_song_with_metadata(mock_db, file_doc)
 
         assert result["artist"] == "Solo Artist"
         assert result["album"] == "Solo Album"

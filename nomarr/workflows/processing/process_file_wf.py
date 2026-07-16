@@ -160,7 +160,9 @@ async def process_file_workflow(
         # Persist pooled track-level embedding vector for this backbone
         if file_id is not None:
             assert library_path.library_id is not None  # validated above
-            elapsed_store = await persist_backbone_vector(db, int(file_id), backbone, embeddings_2d, model_suite_hash, path)
+            elapsed_store = await persist_backbone_vector(
+                db, int(file_id), backbone, embeddings_2d, model_suite_hash, path
+            )
             if elapsed_store is not None:
                 timings[f"vector_store_{backbone}"] = elapsed_store
         del embeddings_2d

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -64,8 +64,8 @@ class TestGetUniqueNames:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_all_names_when_nomarr_only_is_false(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_all_names_when_nomarr_only_is_false(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.count_tags.return_value = 3
         mock_db.library.list_all_tag_names.return_value = [
             "genre",
@@ -73,15 +73,15 @@ class TestGetUniqueNames:
             "year",
         ]
 
-        result = get_unique_names(mock_db)
+        result = await get_unique_names(mock_db)
 
         assert result == ["genre", "nom:mood-tier-1", "year"]
         mock_db.library.list_all_tag_names.assert_called_once_with(limit=3)
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_filters_to_nomarr_prefixed_names_when_requested(self) -> None:
-        mock_db = MagicMock()
+    async def test_filters_to_nomarr_prefixed_names_when_requested(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.count_tags.return_value = 4
         mock_db.library.list_all_tag_names.return_value = [
             "genre",
@@ -90,18 +90,18 @@ class TestGetUniqueNames:
             "nom:embedding-cluster",
         ]
 
-        result = get_unique_names(mock_db, nomarr_only=True)
+        result = await get_unique_names(mock_db, nomarr_only=True)
 
         assert result == ["nom:mood-tier-1", "nom:embedding-cluster"]
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_empty_list_when_no_tags_exist(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_empty_list_when_no_tags_exist(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.count_tags.return_value = 0
         mock_db.library.list_all_tag_names.return_value = []
 
-        result = get_unique_names(mock_db)
+        result = await get_unique_names(mock_db)
 
         assert result == []
         mock_db.library.list_all_tag_names.assert_called_once_with(limit=0)
@@ -112,11 +112,11 @@ class TestGetLibraryStats:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_zero_stats_when_no_files_exist(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_zero_stats_when_no_files_exist(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.count_files.return_value = 0
 
-        result = get_library_stats(mock_db)
+        result = await get_library_stats(mock_db)
 
         assert result == {
             "file_count": 0,
@@ -129,8 +129,8 @@ class TestGetLibraryStats:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_aggregated_stats_for_files(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_aggregated_stats_for_files(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.count_files.return_value = 3
         mock_db.library.list_files.return_value = [
             {"duration_seconds": 180.5, "file_size": 1_000},
@@ -138,7 +138,7 @@ class TestGetLibraryStats:
             {"duration_seconds": 59, "file_size": 500},
         ]
 
-        result = get_library_stats(mock_db)
+        result = await get_library_stats(mock_db)
 
         assert result == {
             "file_count": 3,
@@ -155,8 +155,8 @@ class TestGetTagValueCounts:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_value_to_song_count_mapping(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_value_to_song_count_mapping(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.count_tags.return_value = 3
         mock_db.library.list_tags.return_value = [
             {"_id": "tags/1", "value": "Rock"},
@@ -173,7 +173,7 @@ class TestGetTagValueCounts:
             {"_to": "tags/2", "_from": f"{'library_files'}/6"},
         ]
 
-        result = get_tag_value_counts(mock_db, "genre")
+        result = await get_tag_value_counts(mock_db, "genre")
 
         assert result == {"Rock": 4, "Jazz": 2}
         mock_db.library.list_tags.assert_called_once_with(name="genre", limit=3)
@@ -181,11 +181,11 @@ class TestGetTagValueCounts:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_empty_dict_when_no_tags_exist_for_relation(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_empty_dict_when_no_tags_exist_for_relation(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.count_tags.return_value = 0
 
-        result = get_tag_value_counts(mock_db, "genre")
+        result = await get_tag_value_counts(mock_db, "genre")
 
         assert result == {}
         mock_db.library.list_tags.assert_not_called()
@@ -197,19 +197,19 @@ class TestGetAllTagStatsBatched:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_empty_dict_when_no_tags_exist(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_empty_dict_when_no_tags_exist(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.count_tags.return_value = 0
 
-        result = get_all_tag_stats_batched(mock_db)
+        result = await get_all_tag_stats_batched(mock_db)
 
         assert result == {}
         mock_db.library.list_all_tag_names.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_uses_aggregate_counts_for_relation_summaries(self) -> None:
-        mock_db = MagicMock()
+    async def test_uses_aggregate_counts_for_relation_summaries(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.count_tags.return_value = 3
         mock_db.library.list_all_tag_names.return_value = ["genre", "year"]
         mock_db.library.list_tags.return_value = [
@@ -227,7 +227,7 @@ class TestGetAllTagStatsBatched:
             {"_to": "tags/3", "_from": f"{'library_files'}/7"},
         ]
 
-        result = get_all_tag_stats_batched(mock_db)
+        result = await get_all_tag_stats_batched(mock_db)
 
         assert result == {
             "genre": {
@@ -252,18 +252,18 @@ class TestGetYearDistribution:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_empty_list_when_no_tags_exist(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_empty_list_when_no_tags_exist(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.count_tags.return_value = 0
 
-        result = get_year_distribution(mock_db)
+        result = await get_year_distribution(mock_db)
 
         assert result == []
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_year_rows_sorted_descending_and_excludes_zero_counts(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_year_rows_sorted_descending_and_excludes_zero_counts(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.count_tags.return_value = 4
         mock_db.library.list_tags.return_value = [
             {"_id": "tags/2019", "value": 2019},
@@ -280,7 +280,7 @@ class TestGetYearDistribution:
             {"_to": "tags/2020", "_from": f"{'library_files'}/6"},
         ]
 
-        result = get_year_distribution(mock_db)
+        result = await get_year_distribution(mock_db)
 
         assert result == [
             {"year": 2021, "count": 1},
@@ -298,18 +298,18 @@ class TestGetGenreDistribution:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_empty_list_when_no_tags_exist(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_empty_list_when_no_tags_exist(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.count_tags.return_value = 0
 
-        result = get_genre_distribution(mock_db)
+        result = await get_genre_distribution(mock_db)
 
         assert result == []
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_rows_sorted_by_count_desc_then_genre_and_respects_limit(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_rows_sorted_by_count_desc_then_genre_and_respects_limit(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.count_tags.return_value = 4
         mock_db.library.list_tags.return_value = [
             {"_id": "tags/rock", "value": "Rock"},
@@ -332,7 +332,7 @@ class TestGetGenreDistribution:
             {"_to": "tags/blues", "_from": f"{'library_files'}/12"},
         ]
 
-        result = get_genre_distribution(mock_db, limit=2)
+        result = await get_genre_distribution(mock_db, limit=2)
 
         assert result == [
             {"genre": "Blues", "count": 5},

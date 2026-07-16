@@ -179,11 +179,14 @@ async def release_worker_promises(
         Number of promise documents removed.
 
     """
-    removed: int = await db.vram_promises.release_all_for_worker(worker_id=worker_id)  # type: ignore[attr-defined]
-    if removed:
+    # Count promises before releasing (adapter's release_all_for_worker returns None)
+    promises = await db.app.list_vram_promises()
+    count = sum(1 for p in promises if p.get("worker_id") == worker_id)
+    await db.vram_promises.release_all_for_worker(worker_id=worker_id)  # type: ignore[attr-defined]
+    if count:
         logger.info(
             "[vram_coordinator] Released %d promise(s) for worker %s",
-            removed,
+            count,
             worker_id,
         )
-    return removed
+    return count

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call
+from unittest.mock import AsyncMock, call
 
 import pytest
 
@@ -21,11 +21,11 @@ class TestFindOrCreateTag:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_tag_id_from_library_facade(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_tag_id_from_library_facade(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.find_or_create_tag.return_value = "tags/abc"
 
-        result = find_or_create_tag(mock_db, "genre", "rock")
+        result = await find_or_create_tag(mock_db, "genre", "rock")
 
         assert result == "tags/abc"
         mock_db.library.find_or_create_tag.assert_called_once_with("genre", "rock")
@@ -36,8 +36,8 @@ class TestSetSongTags:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_replaces_requested_tag_name_and_keeps_other_tags(self) -> None:
-        mock_db = MagicMock()
+    async def test_replaces_requested_tag_name_and_keeps_other_tags(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.list_file_tags_for_files.return_value = {
             f"{'library_files'}/f1": [
                 {"_id": "tags/old-genre", "name": "genre", "value": "old"},
@@ -45,7 +45,7 @@ class TestSetSongTags:
             ]
         }
 
-        set_song_tags(mock_db, f"{'library_files'}/f1", "genre", ["rock"])
+        await set_song_tags(mock_db, f"{'library_files'}/f1", "genre", ["rock"])
 
         mock_db.library.list_file_tags_for_files.assert_called_once_with([f"{'library_files'}/f1"])
         mock_db.library.replace_file_tags.assert_called_once_with(
@@ -58,8 +58,8 @@ class TestSetSongTags:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_empty_values_remove_only_requested_name(self) -> None:
-        mock_db = MagicMock()
+    async def test_empty_values_remove_only_requested_name(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.list_file_tags_for_files.return_value = {
             f"{'library_files'}/f1": [
                 {"_id": "tags/old-genre", "name": "genre", "value": "old"},
@@ -67,7 +67,7 @@ class TestSetSongTags:
             ]
         }
 
-        set_song_tags(mock_db, f"{'library_files'}/f1", "genre", [])
+        await set_song_tags(mock_db, f"{'library_files'}/f1", "genre", [])
 
         mock_db.library.replace_file_tags.assert_called_once_with(
             f"{'library_files'}/f1",
@@ -76,11 +76,11 @@ class TestSetSongTags:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_handles_missing_existing_tags(self) -> None:
-        mock_db = MagicMock()
+    async def test_handles_missing_existing_tags(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.list_file_tags_for_files.return_value = {}
 
-        set_song_tags(mock_db, f"{'library_files'}/f1", "genre", ["rock"])
+        await set_song_tags(mock_db, f"{'library_files'}/f1", "genre", ["rock"])
 
         mock_db.library.replace_file_tags.assert_called_once_with(
             f"{'library_files'}/f1",
@@ -93,18 +93,18 @@ class TestSetSongTagsBatch:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_immediately_for_empty_entries(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_immediately_for_empty_entries(self) -> None:
+        mock_db = AsyncMock()
 
-        set_song_tags_batch(mock_db, [])
+        await set_song_tags_batch(mock_db, [])
 
         mock_db.library.list_file_tags_for_files.assert_not_called()
         mock_db.library.replace_file_tags.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_processes_multiple_entries_per_song_with_single_replace(self) -> None:
-        mock_db = MagicMock()
+    async def test_processes_multiple_entries_per_song_with_single_replace(self) -> None:
+        mock_db = AsyncMock()
         entries = [
             {"song_id": f"{'library_files'}/a", "name": "genre", "values": ["rock"]},
             {"song_id": f"{'library_files'}/a", "name": "mood", "values": ["happy", "bright"]},
@@ -120,7 +120,7 @@ class TestSetSongTagsBatch:
             ],
         }
 
-        set_song_tags_batch(mock_db, entries)
+        await set_song_tags_batch(mock_db, entries)
 
         mock_db.library.list_file_tags_for_files.assert_called_once_with(
             [f"{'library_files'}/a", f"{'library_files'}/b"]
@@ -150,15 +150,15 @@ class TestAddSongTag:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_appends_tag_via_replace_file_tags(self) -> None:
-        mock_db = MagicMock()
+    async def test_appends_tag_via_replace_file_tags(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.list_file_tags_for_files.return_value = {
             f"{'library_files'}/f1": [
                 {"_id": "tags/existing", "name": "mood", "value": "happy"},
             ]
         }
 
-        add_song_tag(mock_db, f"{'library_files'}/f1", "genre", "rock")
+        await add_song_tag(mock_db, f"{'library_files'}/f1", "genre", "rock")
 
         mock_db.library.replace_file_tags.assert_called_once_with(
             f"{'library_files'}/f1",
@@ -174,10 +174,10 @@ class TestDeleteSongTags:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_deletes_all_edges_for_song(self) -> None:
-        mock_db = MagicMock()
+    async def test_deletes_all_edges_for_song(self) -> None:
+        mock_db = AsyncMock()
 
-        delete_song_tags(mock_db, f"{'library_files'}/f1")
+        await delete_song_tags(mock_db, f"{'library_files'}/f1")
 
         mock_db.library.remove_file_tags.assert_called_once_with(f"{'library_files'}/f1")
 
@@ -187,8 +187,8 @@ class TestRelinkTagEdges:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_zero_moved_when_no_source_tags_exist(self) -> None:
-        mock_db = MagicMock()
+    async def test_returns_zero_moved_when_no_source_tags_exist(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.list_files.return_value = [
             {"_id": f"{'library_files'}/a"},
             {"_id": f"{'library_files'}/b"},
@@ -198,7 +198,7 @@ class TestRelinkTagEdges:
             f"{'library_files'}/b": [{"_id": "tags/another", "name": "mood", "value": "happy"}],
         }
 
-        result = relink_tag_edges(mock_db, "tags/source", "tags/target")
+        result = await relink_tag_edges(mock_db, "tags/source", "tags/target")
 
         assert result == {"moved": 0, "skipped": 0, "source_orphaned": False}
         mock_db.library.replace_tag_references.assert_not_called()
@@ -206,8 +206,8 @@ class TestRelinkTagEdges:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_moves_edges_to_target(self) -> None:
-        mock_db = MagicMock()
+    async def test_moves_edges_to_target(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.list_files.return_value = [
             {"_id": f"{'library_files'}/a"},
             {"_id": f"{'library_files'}/b"},
@@ -217,15 +217,15 @@ class TestRelinkTagEdges:
             f"{'library_files'}/b": [{"_id": "tags/source", "name": "genre", "value": "old-b"}],
         }
 
-        result = relink_tag_edges(mock_db, "tags/source", "tags/target")
+        result = await relink_tag_edges(mock_db, "tags/source", "tags/target")
 
         assert result == {"moved": 2, "skipped": 0, "source_orphaned": True}
         mock_db.library.replace_tag_references.assert_called_once_with("tags/source", "tags/target")
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_skips_already_existing_target_tags(self) -> None:
-        mock_db = MagicMock()
+    async def test_skips_already_existing_target_tags(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.list_files.return_value = [
             {"_id": f"{'library_files'}/a"},
             {"_id": f"{'library_files'}/b"},
@@ -238,15 +238,15 @@ class TestRelinkTagEdges:
             f"{'library_files'}/b": [{"_id": "tags/source", "name": "genre", "value": "old-b"}],
         }
 
-        result = relink_tag_edges(mock_db, "tags/source", "tags/target")
+        result = await relink_tag_edges(mock_db, "tags/source", "tags/target")
 
         assert result == {"moved": 1, "skipped": 1, "source_orphaned": True}
         mock_db.library.replace_tag_references.assert_called_once_with("tags/source", "tags/target")
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_filters_by_song_ids_and_reports_remaining_source_refs(self) -> None:
-        mock_db = MagicMock()
+    async def test_filters_by_song_ids_and_reports_remaining_source_refs(self) -> None:
+        mock_db = AsyncMock()
         mock_db.library.list_files.return_value = [
             {"_id": f"{'library_files'}/a"},
             {"_id": f"{'library_files'}/b"},
@@ -261,7 +261,7 @@ class TestRelinkTagEdges:
             f"{'library_files'}/c": [{"_id": "tags/source", "name": "genre", "value": "old-c"}],
         }
 
-        result = relink_tag_edges(
+        result = await relink_tag_edges(
             mock_db,
             "tags/source",
             "tags/target",

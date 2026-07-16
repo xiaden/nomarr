@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import AsyncMock, call, patch
 
 import pytest
 
@@ -16,15 +16,15 @@ from nomarr.components.platform.locks_comp import (
 
 @pytest.mark.unit
 class TestAcquireDistributedLock:
-    def test_calls_app_add_lock_with_expected_payload(self) -> None:
-        db = MagicMock()
+    async def test_calls_app_add_lock_with_expected_payload(self) -> None:
+        db = AsyncMock()
         db.app.get_lock.return_value = None
 
         with patch(
             "nomarr.components.platform.locks_comp.now_ms",
             return_value=SimpleNamespace(value=10_000),
         ):
-            result = acquire_distributed_lock(db, "vector_promotion", "file-1", "worker-1", 30)
+            result = await acquire_distributed_lock(db, "vector_promotion", "file-1", "worker-1", 30)
 
         assert result is True
         db.app.get_lock.assert_called_once_with("vector_promotion:file-1")
@@ -39,29 +39,29 @@ class TestAcquireDistributedLock:
             }
         )
 
-    def test_returns_false_when_active_lock_is_held_by_other_owner(self) -> None:
-        db = MagicMock()
+    async def test_returns_false_when_active_lock_is_held_by_other_owner(self) -> None:
+        db = AsyncMock()
         db.app.get_lock.return_value = {"expires_at": 10_000.0, "holder": "worker-2"}
 
         with patch(
             "nomarr.components.platform.locks_comp.now_ms",
             return_value=SimpleNamespace(value=9_000),
         ):
-            result = acquire_distributed_lock(db, "vector_promotion", "file-1", "worker-1", 30)
+            result = await acquire_distributed_lock(db, "vector_promotion", "file-1", "worker-1", 30)
 
         assert result is False
         db.app.remove_lock.assert_not_called()
         db.app.add_lock.assert_not_called()
 
-    def test_releases_expired_lock_before_reacquiring(self) -> None:
-        db = MagicMock()
+    async def test_releases_expired_lock_before_reacquiring(self) -> None:
+        db = AsyncMock()
         db.app.get_lock.return_value = {"expires_at": 5_000.0, "holder": "worker-2"}
 
         with patch(
             "nomarr.components.platform.locks_comp.now_ms",
             return_value=SimpleNamespace(value=9_000),
         ):
-            result = acquire_distributed_lock(db, "vector_promotion", "file-1", "worker-1", 30)
+            result = await acquire_distributed_lock(db, "vector_promotion", "file-1", "worker-1", 30)
 
         assert result is True
         db.app.remove_lock.assert_called_once_with("vector_promotion:file-1")
@@ -70,14 +70,14 @@ class TestAcquireDistributedLock:
 
 @pytest.mark.unit
 class TestReleaseDistributedLock:
-    def test_releases_lock_for_matching_owner(self) -> None:
-        db = MagicMock()
+    async def test_releases_lock_for_matching_owner(self) -> None:
+        db = AsyncMock()
         db.app.get_lock.side_effect = [
             {"holder": "worker-1"},
             None,
         ]
 
-        result = release_distributed_lock(db, "vector_promotion", "file-1", "worker-1")
+        result = await release_distributed_lock(db, "vector_promotion", "file-1", "worker-1")
 
         assert result is True
         assert db.app.get_lock.call_args_list == [
@@ -86,11 +86,11 @@ class TestReleaseDistributedLock:
         ]
         db.app.remove_lock.assert_called_once_with("vector_promotion:file-1")
 
-    def test_returns_false_for_missing_or_foreign_lock(self) -> None:
-        db = MagicMock()
+    async def test_returns_false_for_missing_or_foreign_lock(self) -> None:
+        db = AsyncMock()
         db.app.get_lock.return_value = {"holder": "worker-2"}
 
-        result = release_distributed_lock(db, "vector_promotion", "file-1", "worker-1")
+        result = await release_distributed_lock(db, "vector_promotion", "file-1", "worker-1")
 
         assert result is False
         db.app.remove_lock.assert_not_called()
@@ -98,8 +98,8 @@ class TestReleaseDistributedLock:
 
 @pytest.mark.unit
 class TestReapStaleLocks:
-    def test_releases_only_stale_vector_promotion_locks(self) -> None:
-        db = MagicMock()
+    async def test_releases_only_stale_vector_promotion_locks(self) -> None:
+        db = AsyncMock()
         db.app.list_locks.return_value = [
             {
                 "document_reference": "vector_promotion:file-1",
@@ -134,7 +134,7 @@ class TestReapStaleLocks:
             "nomarr.components.platform.locks_comp.now_ms",
             return_value=SimpleNamespace(value=10_000),
         ):
-            reap_stale_locks(db, "worker-1", stale_after_ms=1000)
+            await reap_stale_locks(db, "worker-1", stale_after_ms=1000)
 
         db.app.list_locks.assert_called_once_with()
         assert db.app.remove_lock.call_args_list == [call("vector_promotion:file-1")]

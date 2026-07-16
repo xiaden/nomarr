@@ -38,9 +38,9 @@ class _TaggingQueryService(Protocol):
 
     db: Database
 
-    def write_tags_to_files(
+    async def write_tags_to_files(
         self,
-        library_id: str,
+        library_id: int,
         batch_size: int = 100,
         namespace: str = "nom",
     ) -> WriteTagsResult: ...
@@ -142,11 +142,11 @@ class TaggingQueryMixin:
             return CommitResult(started=False, pending_files=0)
 
         if library_id:
-            self.write_tags_to_files(library_id)
+            await self.write_tags_to_files(int(library_id))
         else:
             libraries = await list_library_records(self.db, include_scan=False)
             for lib in libraries:
-                self.write_tags_to_files(str(lib.id))
+                await self.write_tags_to_files(lib.id)
 
         return CommitResult(started=True, pending_files=pending)
 
@@ -191,7 +191,7 @@ class TaggingQueryMixin:
         values = await get_unique_mood_values(self.db, mood_tier=mood_tier, limit=limit)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
 
-    async def get_file_tags(self, file_id: str, nomarr_only: bool = False) -> FileTagsResult:
+    async def get_file_tags(self, file_id: int, nomarr_only: bool = False) -> FileTagsResult:
         """Get all tags for a specific file.
 
         Args:

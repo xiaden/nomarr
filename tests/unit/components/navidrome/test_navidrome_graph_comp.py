@@ -6,7 +6,7 @@ edge keys replaced by JOIN tables, and the ``_edge_key`` function is removed.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -262,15 +262,17 @@ class TestGetTopNavidromePlays:
 
     async def test_coerces_rows_to_track_play_data(self) -> None:
         db = MagicMock()
-        db.app.get_top_navidrome_plays = AsyncMock(return_value=[
-            {
-                "nd_id": "nd-1",
-                "file_id": 10,
-                "playcount": 10,
-                "last_played": 1700000000,
-            },
-            {"nd_id": "nd-2", "playcount": 3, "last_played": None},
-        ])
+        db.app.get_top_navidrome_plays = AsyncMock(
+            return_value=[
+                {
+                    "nd_id": "nd-1",
+                    "file_id": 10,
+                    "playcount": 10,
+                    "last_played": 1700000000,
+                },
+                {"nd_id": "nd-2", "playcount": 3, "last_played": None},
+            ]
+        )
 
         result = await get_top_navidrome_plays(db, "user1", 5)
 

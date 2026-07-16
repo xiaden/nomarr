@@ -68,7 +68,7 @@ class LibraryQueryMixin:
     db: Database
     cfg: LibraryServiceConfig
 
-    async def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
+    async def _get_library_or_error(self, library_id: int) -> dict[str, Any]:
         """Get a library by ID or raise an error."""
         result = await get_library_record(self.db, int(library_id))
         if result is None:
@@ -147,7 +147,7 @@ class LibraryQueryMixin:
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
         return SearchFilesResult(files=files_with_tags, total=total, limit=query.limit, offset=query.offset)
 
-    async def get_files_by_ids(self, file_ids: list[str]) -> SearchFilesResult:
+    async def get_files_by_ids(self, file_ids: list[int]) -> SearchFilesResult:
         """Get files by IDs with their tags.
 
         Used for batch lookup (e.g., when browsing songs for an entity).
@@ -302,7 +302,7 @@ class LibraryQueryMixin:
             self.db, limit=limit, library_id=int(library_id) if library_id is not None else None
         )
 
-    async def get_errored_files(self, library_id: str) -> ErroredFilesResult:
+    async def get_errored_files(self, library_id: int) -> ErroredFilesResult:
         """Get errored files for a library with basic metadata.
 
         Args:

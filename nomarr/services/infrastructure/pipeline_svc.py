@@ -103,7 +103,9 @@ class LibraryPipelineService:
         # Recover stale scanning
         scanning_libraries = await get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
         stale_scanning = [
-            library_id for library_id in scanning_libraries if not self._is_task_running(self._scan_task_id(str(library_id)))
+            library_id
+            for library_id in scanning_libraries
+            if not self._is_task_running(self._scan_task_id(int(library_id)))
         ]
         for library_id in stale_scanning:
             await transition_pipeline_axis(self.db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
@@ -131,7 +133,7 @@ class LibraryPipelineService:
         # Recover stale writing
         writing_libraries = await get_libraries_in_axis_state(self.db, WRITE_STATE_FIELD, WRITE_IN_PROGRESS)
         for library_id in writing_libraries:
-            if self._is_task_running(self._write_task_id(str(library_id))):
+            if self._is_task_running(self._write_task_id(int(library_id))):
                 continue
             await transition_pipeline_axis(self.db, library_id, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
             recovery_counts["writing"] += 1
@@ -266,14 +268,14 @@ class LibraryPipelineService:
                     "Library %s entering writing stage after calibration apply completion",
                     library_id,
                 )
-                self._dispatch_write(str(library_id))
+                self._dispatch_write(int(library_id))
             else:
                 logger.info(
                     "Library %s calibrated; tag_write axis stays not_written (auto-write disabled)",
                     library_id,
                 )
 
-    async def get_pipeline_status(self, library_id: str) -> LibraryPipelineStatusDTO | None:
+    async def get_pipeline_status(self, library_id: int) -> LibraryPipelineStatusDTO | None:
         """Return state-aware pipeline status details for a library.
 
         Queries all four pipeline axes (scan, ML, calibration, tag-write) and
@@ -319,7 +321,7 @@ class LibraryPipelineService:
             file_write_mode=str(library.get("file_write_mode", "full")),
         )
 
-    def _dispatch_write(self, library_id: str) -> None:
+    def _dispatch_write(self, library_id: int) -> None:
         """Dispatch write-tags background work for a single library."""
         stop_event = threading.Event()
         try:
@@ -334,21 +336,21 @@ class LibraryPipelineService:
 
         logger.info("Started write-tags task %s for library %s", task_id, library_id)
 
-    def stop_write(self, library_id: str) -> None:
+    def stop_write(self, library_id: int) -> None:
         """Request graceful cancellation of an in-flight write task."""
         task_id = self._write_task_id(library_id)
         cancelled = self.bts.cancel_task(task_id)
         logger.info("Requested stop for write-tags task %s: cancelled=%s", task_id, cancelled)
 
-    def handle_auto_write_enabled(self, library_id: str) -> None:
+    def handle_auto_write_enabled(self, library_id: int) -> None:
         """React to auto-write being enabled for a library."""
         self._dispatch_write(library_id)
 
-    def handle_auto_write_disabled(self, library_id: str) -> None:
+    def handle_auto_write_disabled(self, library_id: int) -> None:
         """React to auto-write being disabled for a library."""
         self.stop_write(library_id)
 
-    async def on_write_complete(self, library_id: str) -> None:
+    async def on_write_complete(self, library_id: int) -> None:
         """Mark tag_write axis as complete and trigger Navidrome rescan."""
         await transition_pipeline_axis(self.db, int(library_id), WRITE_STATE_FIELD, WRITE_COMPLETE)
         logger.info("Library %s tag_write axis transitioned to written", library_id)
@@ -364,10 +366,10 @@ class LibraryPipelineService:
         task_status = self.bts.get_task_status(task_id)
         return task_status is not None and task_status.get("status") == "running"
 
-    def _scan_task_id(self, library_id: str) -> str:
+    def _scan_task_id(self, library_id: int) -> str:
         """Build the BTS task identifier used for library scans."""
         return f"scan_library_{library_id}"
 
-    def _write_task_id(self, library_id: str) -> str:
+    def _write_task_id(self, library_id: int) -> str:
         """Build the BTS task identifier used for tag writing."""
         return f"write_tags:{library_id}"
