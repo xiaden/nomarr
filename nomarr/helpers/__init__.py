@@ -12,8 +12,7 @@ Helpers are leaf utilities with no layer-level dependencies. They provide:
 - **Logging** (``logging_helper.py``) — Structured context logging with
   sanitized exception messages.
 - **Vector params** (``vector_params_helper.py``) — pgvector HNSW parameter
-  computation (ef_search, ef_construction, M) and legacy ArangoDB IVF
-  parameter derivation (nLists, nProbe).
+  computation (ef_search, ef_construction, M).
 - **Configuration** (``config_schema.py``) — Static/dynamic config models and
   validation.
 - **Constants** (``constants/``) — Domain constants for file states and pipeline

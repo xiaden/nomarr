@@ -21,7 +21,6 @@ _SUFFIX_TO_ROLE: dict[str, str] = {
     "_svc": "Service",
     "_wf": "Workflow",
     "_comp": "Component",
-    "_aql": "AQL",
     "_dto": "DTO",
     "_if": "Interface",
     "_helper": "Helper",
