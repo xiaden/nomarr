@@ -36,7 +36,7 @@ All phases of this plan are complete. Review the full implementation for quality
  | Services | `.github/instructions/services.instructions.md` | DI wiring, thinness, no business logic | 
  | Workflows | `.github/instructions/workflows.instructions.md` | Use-case orchestration, one public function per file | 
  | Components | `.github/instructions/components.instructions.md` | Domain logic, stateless functions, ML isolation | 
- | Persistence | `.github/instructions/persistence.instructions.md` | AQL queries, db.module.method() access pattern | 
+ | Persistence | `.github/instructions/persistence.instructions.md` | SQL queries, db.module.method() access pattern | 
  | Helpers | `.github/instructions/helpers.instructions.md` | Pure utilities, DTOs, no nomarr imports | 
  | Frontend | `.github/instructions/frontend.instructions.md` | React/TS conventions, MUI sx prop, no `any` | 
 
@@ -109,7 +109,7 @@ Perform ALL of the following checks. Do not skip any category.
 - Dependency injection for db, config — not module-level singletons
 - Functions fully type-annotated (params + return)
 - Proper use of LibraryPath where file paths are involved
-- _id and _key never renamed in ArangoDB documents
+- Primary key columns never renamed in database tables
 - Essentia imports only in ml_audio_comp.py / ml_preprocess_comp.py
 
 ### 6. Completeness

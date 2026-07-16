@@ -19,7 +19,7 @@ The contracts ledger (`CONTRACTS.md`) is a living document updated after every v
 {Rules extracted from copilot-instructions.md relevant to this feature. Examples:}
 
 - Workflows take `db: Database`, never services
-- Persistence uses `DatabaseLike` from `nomarr.persistence.arango_client`
+- Persistence uses `Database` from `nomarr.persistence.db`
 - Timestamps: `now_ms().value` for int epoch millis
 - No upward imports: persistence → components → workflows → services → interfaces
 
@@ -30,7 +30,7 @@ The contracts ledger (`CONTRACTS.md`) is a living document updated after every v
 ### {collection_name} (Plan {letter})
 
 **Document schema:**
-{_key, field1, field2, ...}
+{id, field1, field2, ...}
 
 **Indexes:** {list}
 

@@ -8,7 +8,7 @@ Persistence is the **data access layer**:
 - `base_types.py` defines `Field`, `UniqueField`, and edge metadata/constants
 - `accessors.py` defines `FieldAccessor` plus collection/field get/delete helpers
 - `collections.py` declares concrete collections
-- `constructor/` contains reusable AQL/query helpers (`verbs.py`, `filters.py`, `pagination.py`)
+- `constructor/` contains reusable SQL/query helpers (`verbs.py`, `filters.py`, `pagination.py`)
 
 External code accesses persistence via the injected `Database` facade, for example `db.tags.name.get.many(...)` or `db.library_files.path.get(...)`. Persistence returns raw document dicts and query results; higher layers map them to DTOs when needed.
 
@@ -19,15 +19,14 @@ External code accesses persistence via the injected `Database` facade, for examp
 ```
 persistence/
 ├── db.py                   # Database facade and collection instance binding
-├── arango_client.py        # ArangoDB client wrapper
 ├── collections.py          # Concrete collection declarations
 ├── collections_base.py     # Shared collection wrappers and collection-level verbs
 ├── accessors.py            # FieldAccessor plus collection/field get/delete helpers
 ├── base_types.py           # Field criteria, edge metadata, and constants
 ├── cascade.py              # Cascade compilation helpers
-└── constructor/            # Shared AQL/query helpers
+└── constructor/            # Shared SQL/query helpers
     ├── __init__.py
-    ├── verbs.py            # AQL primitives (insert, delete, get_one_by_field, etc.)
+    ├── verbs.py            # SQL primitives (insert, delete, get_one_by_field, etc.)
     ├── filters.py          # Filter helpers
     └── pagination.py
 ```
@@ -76,9 +75,9 @@ file = LibraryFiles.path.get("/music/track.flac")
 
 ---
 
-## ArangoDB ID Fields
+## Primary Key Fields
 
-**Never rename `_id` or `_key`.** These are ArangoDB-native identifiers.
+**Use `id` as the primary key column.** PostgreSQL tables use auto-incrementing integer or UUID primary keys. Never rename or transform primary key fields — they are the authoritative row identifiers.
 
 ---
 
@@ -92,7 +91,7 @@ When adding a collection:
 5. Use `Field(...)` only for positional collection criteria; `UniqueField[...]` is compatibility-only
 6. Add `EDGES` metadata when traversal or cascade behavior is required
 7. Expose the collection on `Database` in `db.py` if it belongs on the static facade
-8. Add or extend shared AQL helpers in `constructor/` if the existing verbs are insufficient
+8. Add or extend shared SQL helpers in `constructor/` if the existing verbs are insufficient
 
 ### Mutation Rules
 
@@ -133,7 +132,7 @@ Persistence **stores and retrieves** health data. It does **not** make liveness 
 
 - Does this file import from services, workflows, components, or interfaces? **→ Violation**
 - Does this code make business decisions? **→ Move to workflow/component**
-- Are `_id` and `_key` preserved as-is? **→ Required**
+- Are primary key columns properly handled (no renaming, no transformation)? **→ Required**
 - Is external code bypassing the injected `Database` facade? **→ Access via `Database`**
 - Is health/liveness logic here instead of in services? **→ Move to service**
 - **Run `lint_project_backend(path="nomarr/persistence")` after every edit.** Zero errors is the only acceptable state.

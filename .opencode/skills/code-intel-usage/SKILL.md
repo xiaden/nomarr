@@ -51,8 +51,8 @@ Log entries are cheap. Silence is expensive. Log when:
  | Category | When | Example |
  | ---------- | ------ | --------- |
  | `observation` | You notice something unexpected, inconsistent, or fragile in the codebase | "Module X imports Y through a re-export chain that hides the real dependency" |
- | `decision` | You choose between approaches and want the reasoning preserved | "Used batch AQL over per-document updates for performance — see ADR-005" |
- | `discovery` | You find a pattern, convention, or gotcha that future agents should know | "ArangoDB edge collections require `_from`/`_to` even for UPSERT" |
+ | `decision` | You choose between approaches and want the reasoning preserved | "Used batch SQL UPDATE over per-row updates for performance — see ADR-005" |
+ | `discovery` | You find a pattern, convention, or gotcha that future agents should know | "PostgreSQL foreign key constraints require the referenced row to exist before INSERT" |
  | `dead-end` | An approach didn't work — save others from repeating it | "Tried monkey-patching essentia loader — fails silently, reverted to wrapper" |
  | `blocker` | Something blocks progress and needs visibility | "Migration 015 assumes column exists but 014 was never applied in test env" |
  | `research` | You gathered useful findings during investigation | "Traced auth flow: token → middleware → service → component, no workflow layer" |
@@ -138,7 +138,7 @@ log_write(
     agent="exec-executor",
     title="Unsure if edge collection needs unique constraint",
     category="observation",
-    tags=["uncertainty", "arangodb", "schema"],
+    tags=["uncertainty", "database", "schema"],
     body="The plan says to add a unique index on (source, target) but existing edges don't have one. Adding it could fail if duplicates exist. Proceeding without — flagging for review."
 )
 ```

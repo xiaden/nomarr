@@ -1,13 +1,13 @@
 # E2E Testing (Playwright)
 
-**Stack:** Playwright · TypeScript · Docker (app + ArangoDB)
+**Stack:** Playwright · TypeScript · Docker (app + PostgreSQL)
 
 ---
 
 ## Prerequisites
 
 E2E tests run against the **Docker environment**, not native dev:
-1. Docker containers must be running (`nomarr-app` + `nomarr-arangodb`)
+1. Docker containers must be running (`nomarr-app` + `nomarr-postgres`)
 2. App accessible at `http://localhost:8356`
 3. Admin password matches `e2e/fixtures/auth.ts` default (`nomarr`)
 4. Playwright browsers installed: `npx playwright install`

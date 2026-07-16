@@ -80,7 +80,7 @@ If Phase 1, write: "This is the first phase. No prior work."}
  | Services layer | `.github/instructions/services.instructions.md` | DI wiring, thinness, no business logic |
  | Workflows layer | `.github/instructions/workflows.instructions.md` | Use-case orchestration, one public function per file |
  | Components layer | `.github/instructions/components.instructions.md` | Domain logic, stateless functions, ML isolation |
- | Persistence layer | `.github/instructions/persistence.instructions.md` | AQL queries, db.module.method() access pattern |
+ | Persistence layer | `.github/instructions/persistence.instructions.md` | SQL queries, db.module.method() access pattern |
  | Helpers layer | `.github/instructions/helpers.instructions.md` | Pure utilities, DTOs, no nomarr imports |
  | Frontend | `.github/instructions/frontend.instructions.md` | React/TS conventions, MUI sx prop, no `any` |
 
