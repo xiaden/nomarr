@@ -12,15 +12,17 @@ Field mapping note:
 from __future__ import annotations
 
 import time
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, select, update
-from sqlalchemy.engine import Row
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from nomarr.helpers.dto.embedding_stream_repo_dto import EmbeddingStreamRecord
 from nomarr.persistence.models.ml_embedding_stream import MlEmbeddingStream
 from nomarr.persistence.sql.primitives import insert_one
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Row
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 _T = cast("Table", MlEmbeddingStream.__table__)
 

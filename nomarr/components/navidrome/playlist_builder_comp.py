@@ -116,7 +116,7 @@ async def build_familiar_playlist(
             playlist_type="familiar",
             playlist_name="Your Favorites",
             file_ids=file_ids,
-        )
+        ),
     ]
 
 
@@ -138,7 +138,7 @@ async def build_discovery_playlist(
             playlist_type="discovery",
             playlist_name="Discover Weekly",
             file_ids=file_ids,
-        )
+        ),
     ]
 
 
@@ -175,7 +175,7 @@ async def build_hidden_gems_playlist(
             playlist_type="hidden_gems",
             playlist_name="Hidden Gems",
             file_ids=file_ids,
-        )
+        ),
     ]
 
 
@@ -204,7 +204,7 @@ async def build_universal_playlist(
             playlist_type="universal",
             playlist_name="Your Mix",
             file_ids=file_ids,
-        )
+        ),
     ]
 
 
@@ -315,7 +315,7 @@ async def build_genre_playlists(
                 playlist_type=f"genre_{genre.lower()}",
                 playlist_name=f"Your {genre.title()} Mix",
                 file_ids=file_ids,
-            )
+            ),
         )
 
     return playlists

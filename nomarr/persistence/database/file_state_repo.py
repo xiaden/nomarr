@@ -10,15 +10,18 @@ expectations), NOT the original plan-step signatures.
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Table, delete, func, select
-from sqlalchemy.engine import Row
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from nomarr.helpers.dto.repo_dto import FileStateAssignmentRow, FileStateRow
 from nomarr.persistence.models.file_state import FileState
 from nomarr.persistence.models.file_state_assignment import FileStateAssignment
 from nomarr.persistence.sql.primitives import insert_one
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Row
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 _A: Table = FileStateAssignment.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 _S: Table = FileState.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
@@ -94,7 +97,8 @@ class FileStateRepository:
         result = await self._session.execute(stmt)
         row = result.fetchone()
         if row is None:
-            raise ValueError(f"Unknown file state: {state!r}")
+            msg = f"Unknown file state: {state!r}"
+            raise ValueError(msg)
         state_id = row[0]
 
         payload = {

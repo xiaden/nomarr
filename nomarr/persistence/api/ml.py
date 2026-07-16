@@ -1,20 +1,21 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 
-from nomarr.helpers.dto.calibration_repo_dto import CalibrationHistoryRecord, CalibrationStateRecord
-from nomarr.helpers.dto.embedding_stream_repo_dto import EmbeddingStreamRecord
-from nomarr.helpers.dto.model_repo_dto import ModelRecord
-from nomarr.helpers.dto.output_repo_dto import ModelOutputRecord
-from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
-from nomarr.persistence.database.calibration_repo import CalibrationRepo
-from nomarr.persistence.database.embedding_stream_repo import EmbeddingStreamRepository
-from nomarr.persistence.database.model_repo import ModelRepo
-from nomarr.persistence.database.output_repo import OutputRepo
-from nomarr.persistence.database.vector_repo import VectorRepo
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.calibration_repo_dto import CalibrationHistoryRecord, CalibrationStateRecord
+    from nomarr.helpers.dto.embedding_stream_repo_dto import EmbeddingStreamRecord
+    from nomarr.helpers.dto.model_repo_dto import ModelRecord
+    from nomarr.helpers.dto.output_repo_dto import ModelOutputRecord
+    from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
+    from nomarr.persistence.database.calibration_repo import CalibrationRepo
+    from nomarr.persistence.database.embedding_stream_repo import EmbeddingStreamRepository
+    from nomarr.persistence.database.model_repo import ModelRepo
+    from nomarr.persistence.database.output_repo import OutputRepo
+    from nomarr.persistence.database.vector_repo import VectorRepo
 
 logger = logging.getLogger(__name__)
 
@@ -457,7 +458,8 @@ class MlDb:
         Not yet implemented — CalibrationRepo has no bulk-delete-by-model method.
         Callers will be updated in Part F.
         """
-        raise NotImplementedError("CalibrationRepo has no delete_history_for_model — callers must adapt in Part F")
+        msg = "CalibrationRepo has no delete_history_for_model — callers must adapt in Part F"
+        raise NotImplementedError(msg)
 
     async def remove_calibration_history_entries(self, entry_ids: list[str]) -> None:
         """Delete calibration history entries by ID list.
@@ -465,7 +467,8 @@ class MlDb:
         Not yet implemented — CalibrationRepo has no batch-delete method.
         Callers will be updated in Part F.
         """
-        raise NotImplementedError("CalibrationRepo has no delete_history_entries — callers must adapt in Part F")
+        msg = "CalibrationRepo has no delete_history_entries — callers must adapt in Part F"
+        raise NotImplementedError(msg)
 
     async def get_embedding_stats(self, backbone_id: str) -> dict[str, int]:
         """Return hot_count and cold_count for a backbone."""
@@ -502,7 +505,8 @@ class MlDb:
 
         Not applicable — PostgreSQL manages the partial HNSW index automatically.
         """
-        raise NotImplementedError("PostgreSQL manages the HNSW index automatically — no manual rebuild needed")
+        msg = "PostgreSQL manages the HNSW index automatically — no manual rebuild needed"
+        raise NotImplementedError(msg)
 
     # ------------------------------------------------------------------
     # Vector index management methods (Phase 3 — consumer facade)
@@ -518,7 +522,7 @@ class MlDb:
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
         result = await self._vector_repo._session.execute(
-            text("SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'ix_embeddings_cold_hnsw')")
+            text("SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'ix_embeddings_cold_hnsw')"),
         )
         return bool(result.scalar())
 
@@ -532,7 +536,7 @@ class MlDb:
     async def drop_vector_index(self) -> None:
         """No-op — the partial HNSW index is managed by the schema migration."""
         logger.info(
-            "PG partial HNSW index (ix_embeddings_cold_hnsw) is managed by the schema migration — drop is a no-op."
+            "PG partial HNSW index (ix_embeddings_cold_hnsw) is managed by the schema migration — drop is a no-op.",
         )
 
     async def rebuild_vector_index(self, embed_dim: int) -> None:

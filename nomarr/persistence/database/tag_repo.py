@@ -10,12 +10,9 @@ File-tag junction operations live in ``FileTagRepository``
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import delete, func, select
-from sqlalchemy.engine import Row
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.schema import Table
 
 from nomarr.helpers.dto.repo_dto import TagRow
 from nomarr.persistence.models.file_tag import FileTag
@@ -25,6 +22,11 @@ from nomarr.persistence.sql.primitives import (
     insert_one,
     select_by_key,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Row
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.schema import Table
 
 _T: Table = Tag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 _FT: Table = FileTag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table

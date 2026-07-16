@@ -84,6 +84,3 @@ def get_m() -> int:
 
     """
     return _HNSW_M
-
-
-

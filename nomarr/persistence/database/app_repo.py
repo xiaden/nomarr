@@ -5,12 +5,10 @@ Groups multiple KV-table operations under one repository.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Table, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.engine import Row
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from nomarr.helpers.dto.repo_dto import (
     HealthRow,
@@ -35,6 +33,10 @@ from nomarr.persistence.sql.primitives import (
     update_by_field,
     upsert_by_field,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Row
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 _L: Table = Lock.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 _H: Table = Health.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table

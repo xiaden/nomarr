@@ -7,18 +7,20 @@ joins, aggregations, and bulk operations.
 from __future__ import annotations
 
 import time
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.engine import Row
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from nomarr.helpers.dto.navidrome_repo_dto import NdPlayRecord, NdTrackRecord
 from nomarr.persistence.models.navidrome_play import NavidromePlay
 from nomarr.persistence.models.navidrome_play_map import NavidromePlayMap
 from nomarr.persistence.models.navidrome_track import NavidromeTrack
 from nomarr.persistence.models.navidrome_track_map import NavidromeTrackMap
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Row
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 _T_TRACK = cast("Table", NavidromeTrack.__table__)
 _T_TRACK_MAP = cast("Table", NavidromeTrackMap.__table__)
@@ -267,7 +269,7 @@ class NavidromeRepo:
         # 3. Delete tracks that no longer have any mappings
         if affected_nd_ids:
             orphan_check = select(_T_TRACK_MAP.c.navidrome_track_id).where(
-                _T_TRACK_MAP.c.navidrome_track_id.in_(affected_nd_ids)
+                _T_TRACK_MAP.c.navidrome_track_id.in_(affected_nd_ids),
             )
             orphan_result = await self._session.execute(orphan_check)
             still_mapped = {r[0] for r in orphan_result.all()}

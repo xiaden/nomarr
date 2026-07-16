@@ -6,12 +6,10 @@ filtered queries, batch operations, and maintenance methods.
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.engine import Row
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from nomarr.helpers.dto.repo_dto import LibraryFileRow
 from nomarr.persistence.models.file_tag import FileTag
@@ -22,6 +20,10 @@ from nomarr.persistence.sql.primitives import (
     select_by_key,
     update_by_field,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Row
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 _T = cast("Table", LibraryFile.__table__)
 
@@ -107,7 +109,8 @@ class FileRepository:
         result = await self._session.execute(stmt)
         row = result.fetchone()
         if row is None:
-            raise RuntimeError("upsert returned no row")
+            msg = "upsert returned no row"
+            raise RuntimeError(msg)
         await self._session.commit()
         return int(row._mapping["id"])
 
@@ -144,7 +147,7 @@ class FileRepository:
     # ── filtered queries ────────────────────────────────────────
 
     async def list_files(
-        self, *, filters: dict[str, Any] | None = None, limit: int | None = None
+        self, *, filters: dict[str, Any] | None = None, limit: int | None = None,
     ) -> list[LibraryFileRow]:
         """Return files matching optional field-equality filters."""
         stmt = select(_T)

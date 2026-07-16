@@ -7,11 +7,9 @@ filtered queries and deletes.
 from __future__ import annotations
 
 import time
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, select
-from sqlalchemy.engine import Row
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from nomarr.helpers.dto.output_repo_dto import ModelOutputRecord, OutputStreamRecord
 from nomarr.persistence.models.ml_model_output import MlModelOutput
@@ -21,6 +19,10 @@ from nomarr.persistence.sql.primitives import (
     insert_one,
     select_by_key,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Row
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 _T_OUTPUT = cast("Table", MlModelOutput.__table__)
 _T_STREAM = cast("Table", MlOutputStream.__table__)

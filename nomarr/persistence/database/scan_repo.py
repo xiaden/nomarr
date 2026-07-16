@@ -5,11 +5,9 @@ Simple CRUD using Part B primitives.
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, select
-from sqlalchemy.engine import Row
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from nomarr.helpers.dto.repo_dto import LibraryScanRow
 from nomarr.persistence.models.library_scan import LibraryScan
@@ -18,6 +16,10 @@ from nomarr.persistence.sql.primitives import (
     insert_one,
     update_by_field,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Row
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 _T = cast("Table", LibraryScan.__table__)
 

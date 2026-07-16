@@ -6,11 +6,9 @@ filtered queries and pipeline-axis operations.
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, select, update
-from sqlalchemy.engine import Row
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from nomarr.helpers.dto.repo_dto import LibraryRow
 from nomarr.persistence.models.library import Library
@@ -20,6 +18,10 @@ from nomarr.persistence.sql.primitives import (
     select_by_key,
     update_by_field,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Row
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 _T = cast("Table", Library.__table__)
 

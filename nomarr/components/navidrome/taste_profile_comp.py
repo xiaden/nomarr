@@ -120,7 +120,7 @@ async def compute_taste_profile(
                 "centroid": centroid,
                 "track_count": len(paired),
                 "total_weight": total_weight,
-            }
+            },
         )
 
     # Add untagged cluster for files without genre
@@ -163,7 +163,7 @@ async def compute_taste_profile(
                         "centroid": ut_centroid,
                         "track_count": len(ut_paired),
                         "total_weight": sum(ut_weights),
-                    }
+                    },
                 )
 
     if not clusters:
@@ -205,10 +205,7 @@ def _compute_recency_weights(
     weights: list[float] = []
     for play in plays:
         last_ms = play["last_played"]
-        if last_ms is not None:
-            days_since = (now_ms_val - last_ms) / _MS_PER_DAY
-        else:
-            days_since = fallback_days
+        days_since = (now_ms_val - last_ms) / _MS_PER_DAY if last_ms is not None else fallback_days
 
         w = math.log(1 + play["playcount"]) * math.exp(-decay_lambda * days_since)
         weights.append(w)

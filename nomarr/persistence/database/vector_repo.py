@@ -8,15 +8,17 @@ embeddings.
 from __future__ import annotations
 
 import time
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, func, insert, select, text, update
-from sqlalchemy.engine import Row
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
 from nomarr.helpers.vector_params_helper import get_ef_search
 from nomarr.persistence.models.embedding import Embedding
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Row
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 _T = cast("Table", Embedding.__table__)
 
@@ -125,6 +127,7 @@ class VectorRepo:
             ef_search: HNSW query-time search width.  When ``None``, computed
                 via :func:`~nomarr.helpers.vector_params_helper.get_ef_search`
                 with a medium-collection default.
+
         """
         if ef_search is None:
             ef_search = get_ef_search(0)  # sensible default for unknown size

@@ -7,17 +7,19 @@ filtered queries.
 from __future__ import annotations
 
 import time
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.engine import Row
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from nomarr.helpers.dto.model_repo_dto import ModelRecord
 from nomarr.persistence.exceptions import PersistenceError
 from nomarr.persistence.models.ml_model import MlModel
 from nomarr.persistence.sql.primitives import delete_by_key, select_by_key
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Row
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 _T = cast("Table", MlModel.__table__)
 
@@ -147,7 +149,8 @@ class ModelRepo:
         result = await self._session.execute(stmt)
         existing = result.fetchone()
         if existing is None:
-            raise PersistenceError(f"Model {model_id!r} not found for update")
+            msg = f"Model {model_id!r} not found for update"
+            raise PersistenceError(msg)
 
         update_stmt = update(_T).where(_T.c.id == model_id).values(**fields)
         await self._session.execute(update_stmt)

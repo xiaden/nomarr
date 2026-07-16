@@ -69,12 +69,13 @@ def test_removed_unsanctioned_raw_helpers_are_not_exposed() -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-async def test_add_vector_collection_raises_not_implemented() -> None:
+async def test_add_vector_collection_removed() -> None:
     db, _, _, _, _, _ = _make_ml_db()
 
-    with pytest.raises(NotImplementedError, match="PostgreSQL uses a single embeddings table"):
-        await db.add_vector_collection("vectors_track_hot__model__lib", "vectors_track_hot")
+    assert not hasattr(db, "add_vector_collection"), (
+        "add_vector_collection was removed — PostgreSQL uses a single embeddings table; "
+        "no dynamic collection registration is needed"
+    )
 
 
 @pytest.mark.unit
