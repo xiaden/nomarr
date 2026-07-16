@@ -1,9 +1,8 @@
 """Compare mood tags on disk (essentia-tensorflow era) vs database (ONNX).
 
 Reads each file with mutagen to extract nom:mood-* tags, then reports
-the on-disk mood tags found.  Database comparison requires a PostgreSQL
-connection — this script previously queried ArangoDB directly and needs
-to be ported to the PostgreSQL persistence layer.
+the on-disk mood tags found.  Database comparison queries PostgreSQL
+via the nomarr persistence layer (PG_DATABASE_URL environment variable).
 
 Run inside container:
     python3 /tmp/compare_mood_tags.py [--limit N] [--show-matches]
@@ -12,7 +11,9 @@ Run inside container:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -32,15 +33,43 @@ MOOD_TIER_RELS = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
 # ---------------------------------------------------------------------------
 
 
-def load_db_mood_tags(limit: int | None) -> dict[str, dict[str, list[str]]]:
-    """Return {file_path: {tier_name: [mood_label, ...]}} for all files with mood tags.
+async def load_db_mood_tags(
+    db: "Database",
+    limit: int | None = None,
+) -> dict[str, dict[str, list[str]]]:
+    """Return {file_path: {tier_name: [mood_label, ...]}} for files with mood tags.
 
-    NOTE: This function previously queried ArangoDB directly.  It needs to be
-    ported to use the PostgreSQL persistence layer (db.tags, db.library_files).
-    For now it returns an empty result set.
+    Queries the PostgreSQL persistence layer: fetches library files,
+    then batch-loads nom:mood-* tags via ``list_file_tags_for_files``.
+
+    Args:
+        db: A connected ``Database`` instance.
+        limit: Optional cap on the number of files sampled from the DB.
     """
-    print("WARNING: load_db_mood_tags() needs PostgreSQL porting — returning empty.", file=sys.stderr)
-    return {}
+    files = await db.library.list_files(limit=limit)
+    if not files:
+        return {}
+
+    file_ids = [f["id"] for f in files]
+    path_map: dict[int, str] = {f["id"]: f["path"] for f in files}
+
+    tags_by_file = await db.library.list_file_tags_for_files(
+        file_ids, name_starts_with="nom:mood-"
+    )
+
+    result: dict[str, dict[str, list[str]]] = {}
+    for file_id, tag_rows in tags_by_file.items():
+        if not tag_rows:
+            continue
+        path = path_map.get(file_id)
+        if not path:
+            continue
+        tiers: dict[str, list[str]] = {}
+        for tag in tag_rows:
+            tiers.setdefault(tag["name"], []).append(tag["value"])
+        result[path] = tiers
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -237,23 +266,34 @@ def compare(
 # ---------------------------------------------------------------------------
 
 
-def main() -> None:
+async def main() -> None:
     parser = argparse.ArgumentParser(description="Compare on-disk vs DB mood tags")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of files sampled (default: all)")
     parser.add_argument("--show-matches", action="store_true", help="Also print matching files")
     args = parser.parse_args()
 
-    print("Loading DB mood tags...", flush=True)
-    db_tags = load_db_mood_tags(args.limit)
-    print(f"  Found {len(db_tags)} files with mood tags in DB", flush=True)
-
-    if not db_tags:
-        print("No mood tags in DB — DB query needs PostgreSQL porting. Run calibration first.")
+    pg_url = os.environ.get("PG_DATABASE_URL")
+    if not pg_url:
+        print("PG_DATABASE_URL environment variable is not set.", file=sys.stderr)
         sys.exit(1)
 
-    print("Comparing against files on disk...\n", flush=True)
-    compare(db_tags, args.show_matches)
+    from nomarr.persistence.db import Database
+
+    db = Database(url=pg_url)
+    try:
+        print("Loading DB mood tags...", flush=True)
+        db_tags = await load_db_mood_tags(db, args.limit)
+        print(f"  Found {len(db_tags)} files with mood tags in DB", flush=True)
+
+        if not db_tags:
+            print("No mood tags in DB — run calibration first.")
+            sys.exit(1)
+
+        print("Comparing against files on disk...\n", flush=True)
+        compare(db_tags, args.show_matches)
+    finally:
+        await db.close()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
