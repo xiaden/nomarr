@@ -158,25 +158,25 @@ class TestMlIfModelOutputRoutes:
         """GET /model/{model_id}/output decodes the model_id and returns serialised outputs."""
         mock_ml_service.get_model_outputs.return_value = [
             {
-                "_id": "ml_model_outputs/out1",
+                "id": 1,
                 "output_index": 0,
                 "label": "happy",
                 "fully_labeled": True,
             },
         ]
 
-        response = client.get("/api/web/machine-learning/model/ml_models:m1/output")
+        response = client.get("/api/web/machine-learning/model/1/output")
 
         assert response.status_code == 200
         assert response.json() == [
             {
-                "id": "ml_model_outputs:out1",
+                "id": 1,
                 "output_index": 0,
                 "label": "happy",
                 "fully_labeled": True,
             },
         ]
-        mock_ml_service.get_model_outputs.assert_called_once_with("ml_models/m1")
+        mock_ml_service.get_model_outputs.assert_called_once_with("1")
 
     def test_update_output_label_threads_model_id(
         self,
@@ -185,15 +185,15 @@ class TestMlIfModelOutputRoutes:
     ) -> None:
         """PATCH /model/{model_id}/output/{output_id} decodes both IDs and passes model_id."""
         response = client.patch(
-            "/api/web/machine-learning/model/ml_models:m1/output/ml_model_outputs:o1",
+            "/api/web/machine-learning/model/1/output/2",
             json={"label": "happy"},
         )
 
         assert response.status_code == 200
         assert response.json() == {"status": "updated"}
         mock_ml_service.update_output_label.assert_called_once_with(
-            model_id="ml_models/m1",
-            output_id="ml_model_outputs/o1",
+            model_id=1,
+            output_id=2,
             label="happy",
         )
 
@@ -204,13 +204,13 @@ class TestMlIfModelOutputRoutes:
     ) -> None:
         """POST /model/{model_id}/mark-configured decodes the model_id and passes it."""
         response = client.post(
-            "/api/web/machine-learning/model/ml_models:m1/mark-configured",
+            "/api/web/machine-learning/model/1/mark-configured",
             json={"value": True},
         )
 
         assert response.status_code == 200
         assert response.json() == {"status": "updated", "fully_configured": "true"}
-        mock_ml_service.mark_model_configured.assert_called_once_with(model_id="ml_models/m1", value=True)
+        mock_ml_service.mark_model_configured.assert_called_once_with(model_id=1, value=True)
 
     def test_trigger_vram_probe_delegates_to_service(
         self,

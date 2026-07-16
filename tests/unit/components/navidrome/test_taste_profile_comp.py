@@ -9,7 +9,7 @@ Tests cover:
 from __future__ import annotations
 
 import math
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import numpy as np
 import pytest
@@ -50,19 +50,19 @@ def _make_vector(seed: int, dim: int = 64) -> list[float]:
     return v.tolist()
 
 
-def _make_db() -> MagicMock:
+def _make_db() -> AsyncMock:
     """Create a mock Database with async ml.list_file_vectors configured."""
-    db = MagicMock()
+    db = AsyncMock()
     db.ml.list_file_vectors = AsyncMock()
     return db
 
 
 def _make_vector_doc(file_id: int, seed: int) -> dict:
     """Build a mock vector document with a deterministic vector."""
-    return {"file_id": file_id, "vector": _make_vector(seed)}
+    return {"file_id": file_id, "embedding": _make_vector(seed)}
 
 
-def _configure_list_file_vectors(db: MagicMock, vector_docs: list[dict]) -> None:
+def _configure_list_file_vectors(db: AsyncMock, vector_docs: list[dict]) -> None:
     """Set up ``db.ml.list_file_vectors`` to return the right doc per file_id.
 
     Args:
@@ -224,7 +224,7 @@ class TestComputeTasteProfile:
         plays = [_make_play(i, 1, 1000) for i in range(1, 4)]
         db.ml.list_file_vectors.return_value = []
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: {}):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value={})):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -243,7 +243,10 @@ class TestComputeTasteProfile:
         _configure_list_file_vectors(db, vector_docs)
         genre_map = {i: {"Rock"} for i in range(1, 4)}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
+        async def _genre_map(*_args, **_kwargs):
+            return genre_map
+
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=_genre_map):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -274,7 +277,7 @@ class TestComputeTasteProfile:
         for i in range(1, 4):
             genre_map[i + 100] = {"Electronic"}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value=genre_map)):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -307,7 +310,7 @@ class TestComputeTasteProfile:
         for i in range(1, 4):
             genre_map[i + 100] = {"Electronic"}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value=genre_map)):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -328,7 +331,7 @@ class TestComputeTasteProfile:
 
         with patch(
             f"{TAGS_PATH}.get_tag_values_grouped_by_file",
-            new=lambda _db, _file_ids, _name: {i: {"rock"} for i in range(1, 11)},
+            new=AsyncMock(return_value={i: {"rock"} for i in range(1, 11)},)
         ):
             result = await compute_taste_profile(
                 db,
@@ -347,15 +350,15 @@ class TestComputeTasteProfile:
 
         db = _make_db()
 
-        # Configure with docs that have file_id but no vector key
+        # Configure with docs that have file_id but embedding is None
         async def _side_effect(_backbone: str, fid: int) -> list[dict]:
-            return [{"file_id": fid}]  # No "vector" key
+            return [{"file_id": fid, "embedding": None}]  # None embedding
 
         db.ml.list_file_vectors.side_effect = _side_effect
 
         with patch(
             f"{TAGS_PATH}.get_tag_values_grouped_by_file",
-            new=lambda _db, _file_ids, _name: {i: {"rock"} for i in range(1, 6)},
+            new=AsyncMock(return_value={i: {"rock"} for i in range(1, 6)},)
         ):
             result = await compute_taste_profile(
                 db,
@@ -364,7 +367,7 @@ class TestComputeTasteProfile:
                 "backbone/1",
             )
 
-        # All docs missing "vector" → no clusters
+        # All docs with None embedding → no clusters
         assert result is None
 
     # -- untagged cluster tests --
@@ -381,7 +384,7 @@ class TestComputeTasteProfile:
         for i in range(1, 6):
             genre_map[i] = {"Rock"}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value=genre_map)):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -405,7 +408,7 @@ class TestComputeTasteProfile:
         for i in range(1, 4):
             genre_map[i] = {"Rock"}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value=genre_map)):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -428,7 +431,7 @@ class TestComputeTasteProfile:
         for i in range(1, 3):
             genre_map[i] = {"Rock"}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value=genre_map)):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -458,7 +461,7 @@ class TestComputeTasteProfile:
 
         _configure_list_file_vectors(db, vector_docs)
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value=genre_map)):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -485,7 +488,7 @@ class TestComputeTasteProfile:
         _configure_list_file_vectors(db, vector_docs)
         genre_map = {1: {"A"}, 2: {"B"}, 3: {"C"}, 4: {"D"}, 5: {"E"}, 6: {"F"}}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value=genre_map)):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -507,7 +510,7 @@ class TestComputeTasteProfile:
         _configure_list_file_vectors(db, vector_docs)
         genre_map = {1: {"Jazz"}, 2: {"Jazz"}, 3: {"Jazz"}, 101: {"Funk"}, 102: {"Funk"}, 103: {"Funk"}}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value=genre_map)):
             result = await compute_taste_profile(
                 db,
                 "user1",

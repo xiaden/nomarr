@@ -46,7 +46,7 @@ class TestApplyCalibrationWorkflow:
         monkeypatch.setattr(apply_module, "write_calibrated_tags_wf", _write_calibrated_tags)
 
         paths = [f"/music/file-{idx}.flac" for idx in range(5)]
-        result = apply_module.apply_calibration_wf(
+        result = await apply_module.apply_calibration_wf(
             db=db,
             paths=paths,
             models_dir="/models",

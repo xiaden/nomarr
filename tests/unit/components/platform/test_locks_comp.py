@@ -102,19 +102,25 @@ class TestReapStaleLocks:
         db = AsyncMock()
         db.app.list_locks.return_value = [
             {
-                "document_reference": "vector_promotion:file-1",
-                "lock_type": "vector_promotion",
-                "acquired_at": 100.0,
+                "value": {
+                    "document_reference": "vector_promotion:file-1",
+                    "lock_type": "vector_promotion",
+                    "acquired_at": 100.0,
+                },
             },
             {
-                "document_reference": "vector_promotion:file-2",
-                "lock_type": "vector_promotion",
-                "acquired_at": 9_500.0,
+                "value": {
+                    "document_reference": "vector_promotion:file-2",
+                    "lock_type": "vector_promotion",
+                    "acquired_at": 9_500.0,
+                },
             },
             {
-                "document_reference": "other:file-3",
-                "lock_type": "other",
-                "acquired_at": 100.0,
+                "value": {
+                    "document_reference": "other:file-3",
+                    "lock_type": "other",
+                    "acquired_at": 100.0,
+                },
             },
         ]
         db.app.get_lock.side_effect = [

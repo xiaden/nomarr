@@ -34,7 +34,7 @@ class TestNavidromePushPlaylistEndpoint:
 
     def test_push_playlist_returns_descriptors(self, client: TestClient, mock_navidrome_service: MagicMock) -> None:
         mock_navidrome_service.resolve_files_to_descriptors.return_value = {
-            f"{'library_files'}/f1": {
+            "1": {
                 "title": "Song A",
                 "artist": "Artist A",
                 "album": "Album A",
@@ -45,7 +45,7 @@ class TestNavidromePushPlaylistEndpoint:
                 "year": 2020,
                 "nomarr_file_key": "f1",
             },
-            f"{'library_files'}/f2": {
+            "2": {
                 "title": "Song B",
                 "artist": "Artist B",
                 "album": "Album B",
@@ -61,7 +61,7 @@ class TestNavidromePushPlaylistEndpoint:
         response = client.post(
             "/api/web/navidrome/playlist/push",
             json={
-                "file_ids": [f"{'library_files'}:f1", f"{'library_files'}:f2"],
+                "file_ids": ["1", "2"],
                 "playlist_name": "Test Playlist",
             },
         )
@@ -81,7 +81,7 @@ class TestNavidromePushPlaylistEndpoint:
 
         response = client.post(
             "/api/web/navidrome/playlist/push",
-            json={"file_ids": [f"{'library_files'}:f1"], "playlist_name": "Test"},
+            json={"file_ids": ["1"], "playlist_name": "Test"},
         )
 
         assert response.status_code == 200
@@ -98,19 +98,21 @@ class TestNavidromeGeneratePersonalPlaylistsEndpoint:
     def test_generate_personal_playlists_returns_descriptors(
         self, client: TestClient, mock_navidrome_service: MagicMock
     ) -> None:
-        mock_navidrome_service.generate_personal_playlists.return_value = NavidromeGeneratePlaylistsResult(
-            status="ok",
-            message="",
-            playlists=[
-                NavidromePersonalPlaylistEntry(
-                    playlist_type="top_tracks",
-                    playlist_name="Your Top Tracks",
-                    file_ids=[f"{'library_files'}/f1"],
-                )
-            ],
+        mock_navidrome_service.generate_personal_playlists = MagicMock(
+            return_value=NavidromeGeneratePlaylistsResult(
+                status="ok",
+                message="",
+                playlists=[
+                    NavidromePersonalPlaylistEntry(
+                        playlist_type="top_tracks",
+                        playlist_name="Your Top Tracks",
+                        file_ids=["1"],
+                    )
+                ],
+            )
         )
         mock_navidrome_service.resolve_files_to_descriptors.return_value = {
-            f"{'library_files'}/f1": {
+            "1": {
                 "title": "Top Track",
                 "artist": "Some Artist",
                 "album": "Some Album",
@@ -125,7 +127,7 @@ class TestNavidromeGeneratePersonalPlaylistsEndpoint:
 
         response = client.post(
             "/api/web/navidrome/generate-personal-playlists",
-            json={"top_plays": [{"file_id": f"{'library_files'}/f1", "playcount": 5}]},
+            json={"top_plays": [{"file_id": "1", "playcount": 5}]},
         )
 
         assert response.status_code == 200
@@ -139,27 +141,31 @@ class TestNavidromeGeneratePersonalPlaylistsEndpoint:
     def test_generate_personal_playlists_422_when_misconfigured(
         self, client: TestClient, mock_navidrome_service: MagicMock
     ) -> None:
-        mock_navidrome_service.generate_personal_playlists.side_effect = MisconfiguredError(
-            "navidrome_api_user not configured"
+        mock_navidrome_service.generate_personal_playlists = MagicMock(
+            side_effect=MisconfiguredError(
+                "navidrome_api_user not configured"
+            )
         )
 
         response = client.post(
             "/api/web/navidrome/generate-personal-playlists",
-            json={"top_plays": [{"file_id": f"{'library_files'}/f1", "playcount": 1}]},
+            json={"top_plays": [{"file_id": "1", "playcount": 1}]},
         )
 
         assert response.status_code == 422
 
     def test_generate_personal_playlists_no_data(self, client: TestClient, mock_navidrome_service: MagicMock) -> None:
-        mock_navidrome_service.generate_personal_playlists.return_value = NavidromeGeneratePlaylistsResult(
-            status="no_data",
-            message="Not enough play history",
-            playlists=[],
+        mock_navidrome_service.generate_personal_playlists = MagicMock(
+            return_value=NavidromeGeneratePlaylistsResult(
+                status="no_data",
+                message="Not enough play history",
+                playlists=[],
+            )
         )
 
         response = client.post(
             "/api/web/navidrome/generate-personal-playlists",
-            json={"top_plays": [{"file_id": f"{'library_files'}/f1", "playcount": 1}]},
+            json={"top_plays": [{"file_id": "1", "playcount": 1}]},
         )
 
         assert response.status_code == 200

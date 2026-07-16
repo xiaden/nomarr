@@ -79,9 +79,10 @@ class TestReleaseVramPromise:
 class TestReleaseWorkerPromises:
     async def test_releases_all_for_worker_via_vram_facade(self) -> None:
         db = AsyncMock()
-        db.vram_promises.release_all_for_worker.return_value = 2
+        db.app.list_vram_promises.return_value = [{"worker_id": "worker:1"}, {"worker_id": "worker:1"}]
 
         result = await release_worker_promises(db, "worker:1")
 
         assert result == 2
+        db.app.list_vram_promises.assert_called_once_with()
         db.vram_promises.release_all_for_worker.assert_called_once_with(worker_id="worker:1")

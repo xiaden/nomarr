@@ -95,9 +95,7 @@ class TestComputeReconciliationInfo:
         mock_db = AsyncMock()
         libraries = [
             LibraryDict(
-                _id="libraries/1",
-                _key="1",
-                _rev="r1",
+                id=1,
                 name="L1",
                 root_path="/p1",
                 is_enabled=True,
@@ -106,9 +104,7 @@ class TestComputeReconciliationInfo:
                 file_write_mode="none",
             ),
             LibraryDict(
-                _id="libraries/2",
-                _key="2",
-                _rev="r2",
+                id=2,
                 name="L2",
                 root_path="/p2",
                 is_enabled=True,
@@ -130,9 +126,7 @@ class TestComputeReconciliationInfo:
         mock_db = AsyncMock()
         libraries = [
             LibraryDict(
-                _id="libraries/1",
-                _key="1",
-                _rev="r1",
+                id=1,
                 name="Music",
                 root_path="/music",
                 is_enabled=True,
@@ -142,7 +136,7 @@ class TestComputeReconciliationInfo:
             ),
         ]
         calibration_status = [
-            {"library_id": "libraries/1", "not_calibrated_count": 5},
+            {"library_id": 1, "not_calibrated_count": 5},
         ]
         with (
             patch(
@@ -158,7 +152,7 @@ class TestComputeReconciliationInfo:
         assert result["requires_reconciliation"] is True
         assert len(result["affected_libraries"]) == 1
         affected = result["affected_libraries"][0]
-        assert affected["library_id"] == "libraries/1"
+        assert affected["library_id"] == 1
         assert affected["name"] == "Music"
         assert affected["outdated_files"] == 5
         assert affected["file_write_mode"] == "full"
@@ -168,9 +162,7 @@ class TestComputeReconciliationInfo:
         mock_db = AsyncMock()
         libraries = [
             LibraryDict(
-                _id="libraries/1",
-                _key="1",
-                _rev="r1",
+                id=1,
                 name="Writable",
                 root_path="/p1",
                 is_enabled=True,
@@ -179,9 +171,7 @@ class TestComputeReconciliationInfo:
                 file_write_mode="minimal",
             ),
             LibraryDict(
-                _id="libraries/2",
-                _key="2",
-                _rev="r2",
+                id=2,
                 name="ReadOnly",
                 root_path="/p2",
                 is_enabled=True,
@@ -190,9 +180,7 @@ class TestComputeReconciliationInfo:
                 file_write_mode="none",
             ),
             LibraryDict(
-                _id="libraries/3",
-                _key="3",
-                _rev="r3",
+                id=3,
                 name="AlsoWritable",
                 root_path="/p3",
                 is_enabled=True,
@@ -202,9 +190,9 @@ class TestComputeReconciliationInfo:
             ),
         ]
         calibration_status = [
-            {"library_id": "libraries/1", "not_calibrated_count": 3},
-            {"library_id": "libraries/2", "not_calibrated_count": 10},
-            {"library_id": "libraries/3", "not_calibrated_count": 0},
+            {"library_id": 1, "not_calibrated_count": 3},
+            {"library_id": 2, "not_calibrated_count": 10},
+            {"library_id": 3, "not_calibrated_count": 0},
         ]
         with (
             patch(
@@ -219,7 +207,7 @@ class TestComputeReconciliationInfo:
             result = await compute_reconciliation_info(mock_db, "v1")
         assert result["requires_reconciliation"] is True
         assert len(result["affected_libraries"]) == 1
-        assert result["affected_libraries"][0]["library_id"] == "libraries/1"
+        assert result["affected_libraries"][0]["library_id"] == 1
 
 
 class TestCalibrationStateQueries:
@@ -320,11 +308,11 @@ class TestCalibrationStateCrud:
     @pytest.mark.unit
     async def test_delete_removes_edge_and_state_by_constructor_ids(self) -> None:
         mock_db = AsyncMock()
-        mock_db.ml.get_calibration_state_view.return_value = {"_id": "calibration_state/mood_happy:happy"}
+        mock_db.ml.get_calibration_state_view.return_value = {"id": 42}
 
         await delete_calibration_state(mock_db, "mood_happy", "happy")
 
-        mock_db.ml.remove_calibration_state.assert_called_once_with(calibration_id="calibration_state/mood_happy:happy")
+        mock_db.ml.remove_calibration_state.assert_called_once_with(calibration_id=42)
 
 
 class TestClearAllCalibrationData:
@@ -485,11 +473,11 @@ class TestDeleteOldCalibrationHistorySnapshots:
     async def test_deletes_oldest_snapshots_beyond_limit(self) -> None:
         mock_db = AsyncMock()
         snapshots = [
-            {"_id": "calibration_history/a", "snapshot_at": 10},
-            {"_id": "calibration_history/b", "snapshot_at": 50},
-            {"_id": "calibration_history/c", "snapshot_at": 30},
-            {"_id": "calibration_history/d", "snapshot_at": 40},
-            {"_id": "calibration_history/e", "snapshot_at": 20},
+            {"id": "calibration_history/a", "_id": "calibration_history/a", "snapshot_at": 10},
+            {"id": "calibration_history/b", "_id": "calibration_history/b", "snapshot_at": 50},
+            {"id": "calibration_history/c", "_id": "calibration_history/c", "snapshot_at": 30},
+            {"id": "calibration_history/d", "_id": "calibration_history/d", "snapshot_at": 40},
+            {"id": "calibration_history/e", "_id": "calibration_history/e", "snapshot_at": 20},
         ]
         mock_db.ml.list_calibration_history_snapshots.return_value = snapshots
 

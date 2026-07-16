@@ -278,20 +278,22 @@ class TestSetPostGenerationHook:
 class TestClearCalibration:
     """Tests for clearing calibration data."""
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_clear_calibration_raises_if_generation_running(self) -> None:
+    async def test_clear_calibration_raises_if_generation_running(self) -> None:
         """Clearing calibration should be blocked while generation is active."""
         mock_bts = MagicMock()
         mock_bts.get_task_status.return_value = {"status": "running"}
         service = _make_service(bts=mock_bts)
 
         with pytest.raises(RuntimeError, match="Cannot clear calibration while generation is running"):
-            service.clear_calibration()
+            await service.clear_calibration()
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_clear_calibration_delegates_to_clear_all_calibration_data_when_not_running(self) -> None:
+    async def test_clear_calibration_delegates_to_clear_all_calibration_data_when_not_running(self) -> None:
         """Clearing calibration should delegate when no generation is active."""
         service = _make_service()
         expected = {"files_updated": 4, "meta_keys_cleared": 2}
@@ -303,7 +305,7 @@ class TestClearCalibration:
                 return_value=expected,
             ) as mock_clear_all,
         ):
-            result = service.clear_calibration()
+            result = await service.clear_calibration()
 
         assert result == expected
         mock_clear_all.assert_called_once_with(service._db)
@@ -312,20 +314,22 @@ class TestClearCalibration:
 class TestGetHistogramForHead:
     """Tests for per-head histogram retrieval."""
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_get_histogram_for_head_raises_when_state_missing(self) -> None:
+    async def test_get_histogram_for_head_raises_when_state_missing(self) -> None:
         service = _make_service()
 
         with (
             patch("nomarr.services.domain.calibration_svc.load_calibration_state", return_value=None),
             pytest.raises(ValueError, match="No calibration state found for model-1:mood_happy:happy"),
         ):
-            service.get_histogram_for_head("model-1", "mood_happy", "happy")
+            await service.get_histogram_for_head("model-1", "mood_happy", "happy")
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_get_histogram_for_head_returns_histogram_payload_when_state_exists(self) -> None:
+    async def test_get_histogram_for_head_returns_histogram_payload_when_state_exists(self) -> None:
         service = _make_service()
         state = {
             "histogram_bins": [{"val": 0.1, "count": 2}],
@@ -339,7 +343,7 @@ class TestGetHistogramForHead:
             "nomarr.services.domain.calibration_svc.load_calibration_state",
             return_value=state,
         ) as mock_load_state:
-            result = service.get_histogram_for_head("model-1", "mood_happy", "happy")
+            result = await service.get_histogram_for_head("model-1", "mood_happy", "happy")
 
         assert result == {
             "model_key": "model-1",
@@ -357,9 +361,10 @@ class TestGetHistogramForHead:
 class TestGetAllCalibrationStates:
     """Tests for loading all calibration states."""
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_get_all_calibration_states_delegates_to_component(self) -> None:
+    async def test_get_all_calibration_states_delegates_to_component(self) -> None:
         service = _make_service()
         expected = [{"label": "happy", "p5": 0.1, "p95": 0.9}]
 
@@ -367,7 +372,7 @@ class TestGetAllCalibrationStates:
             "nomarr.services.domain.calibration_svc.load_all_calibration_states",
             return_value=expected,
         ) as mock_load_all:
-            result = service.get_all_calibration_states()
+            result = await service.get_all_calibration_states()
 
         assert result == expected
         mock_load_all.assert_called_once_with(service._db)

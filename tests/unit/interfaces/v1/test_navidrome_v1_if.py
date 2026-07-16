@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -15,12 +15,12 @@ from nomarr.interfaces.api.web.dependencies import get_navidrome_service
 
 
 @pytest.fixture
-def mock_navidrome_service() -> MagicMock:
-    return MagicMock()
+def mock_navidrome_service() -> AsyncMock:
+    return AsyncMock()
 
 
 @pytest.fixture
-def app(mock_navidrome_service: MagicMock) -> Iterator[FastAPI]:
+def app(mock_navidrome_service: AsyncMock) -> Iterator[FastAPI]:
     test_app = FastAPI()
     test_app.include_router(navidrome_router, prefix="/api")
 
@@ -47,7 +47,7 @@ class TestSimilarTracksEndpoint:
     def test_success_returns_descriptor_payload(
         self,
         client: TestClient,
-        mock_navidrome_service: MagicMock,
+        mock_navidrome_service: AsyncMock,
     ) -> None:
         mock_navidrome_service.get_similar_tracks.return_value = [
             {
@@ -114,7 +114,7 @@ class TestSimilarTracksEndpoint:
     def test_seed_unresolved_returns_404(
         self,
         client: TestClient,
-        mock_navidrome_service: MagicMock,
+        mock_navidrome_service: AsyncMock,
     ) -> None:
         mock_navidrome_service.get_similar_tracks.side_effect = ValueError("Seed descriptor could not be resolved")
 
@@ -138,7 +138,7 @@ class TestGeneratePlaylistsEndpoint:
     def test_misconfigured_error_returns_422(
         self,
         client: TestClient,
-        mock_navidrome_service: MagicMock,
+        mock_navidrome_service: AsyncMock,
     ) -> None:
         mock_navidrome_service.generate_playlists.side_effect = MisconfiguredError(
             "library_key not configured",
@@ -148,7 +148,7 @@ class TestGeneratePlaylistsEndpoint:
             "/api/v1/navidrome/playlist/generate",
             json={
                 "user_id": "user-1",
-                "top_plays": [{"file_id": f"{'library_files'}/t1", "playcount": 5}],
+                "top_plays": [{"file_id": 1, "playcount": 5}],
             },
         )
 
@@ -163,7 +163,7 @@ class TestGeneratePlaylistsEndpoint:
     def test_no_data_result_returns_200_with_empty_playlists(
         self,
         client: TestClient,
-        mock_navidrome_service: MagicMock,
+        mock_navidrome_service: AsyncMock,
     ) -> None:
         mock_navidrome_service.generate_playlists.return_value = NavidromeGeneratePlaylistsResult(
             status="no_data",
@@ -175,7 +175,7 @@ class TestGeneratePlaylistsEndpoint:
             "/api/v1/navidrome/playlist/generate",
             json={
                 "user_id": "user-1",
-                "top_plays": [{"file_id": f"{'library_files'}/t1", "playcount": 5}],
+                "top_plays": [{"file_id": 1, "playcount": 5}],
             },
         )
 
@@ -189,7 +189,7 @@ class TestGeneratePlaylistsEndpoint:
     def test_success_returns_playlists_with_descriptors(
         self,
         client: TestClient,
-        mock_navidrome_service: MagicMock,
+        mock_navidrome_service: AsyncMock,
     ) -> None:
         mock_navidrome_service.generate_playlists.return_value = NavidromeGeneratePlaylistsResult(
             status="ok",
@@ -220,7 +220,7 @@ class TestGeneratePlaylistsEndpoint:
             "/api/v1/navidrome/playlist/generate",
             json={
                 "user_id": "user-1",
-                "top_plays": [{"file_id": f"{'library_files'}/track-1", "playcount": 5}],
+                "top_plays": [{"file_id": 1, "playcount": 5}],
             },
         )
 
@@ -257,7 +257,7 @@ class TestGeneratePlaylistsEndpoint:
     def test_misconfigured_status_on_result_returns_422(
         self,
         client: TestClient,
-        mock_navidrome_service: MagicMock,
+        mock_navidrome_service: AsyncMock,
     ) -> None:
         mock_navidrome_service.generate_playlists.return_value = NavidromeGeneratePlaylistsResult(
             status="misconfigured",
@@ -269,7 +269,7 @@ class TestGeneratePlaylistsEndpoint:
             "/api/v1/navidrome/playlist/generate",
             json={
                 "user_id": "user-1",
-                "top_plays": [{"file_id": f"{'library_files'}/t1", "playcount": 5}],
+                "top_plays": [{"file_id": 1, "playcount": 5}],
             },
         )
 
@@ -284,7 +284,7 @@ class TestGeneratePlaylistsEndpoint:
     def test_partial_descriptor_resolution_skips_unresolved_files(
         self,
         client: TestClient,
-        mock_navidrome_service: MagicMock,
+        mock_navidrome_service: AsyncMock,
     ) -> None:
         mock_navidrome_service.generate_playlists.return_value = NavidromeGeneratePlaylistsResult(
             status="ok",
@@ -318,7 +318,7 @@ class TestGeneratePlaylistsEndpoint:
             "/api/v1/navidrome/playlist/generate",
             json={
                 "user_id": "user-1",
-                "top_plays": [{"file_id": f"{'library_files'}/track-1", "playcount": 5}],
+                "top_plays": [{"file_id": 1, "playcount": 5}],
             },
         )
 

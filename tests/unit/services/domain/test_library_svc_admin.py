@@ -48,9 +48,10 @@ def _library_dto(*, file_write_mode: str = "full", library_auto_write: bool = Fa
 class TestCreateLibrary:
     """Tests for ``LibraryAdminMixin.create_library``."""
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_create_library_passes_file_write_mode(self) -> None:
+    async def test_create_library_passes_file_write_mode(self) -> None:
         """Explicit file_write_mode should be forwarded to the component call."""
         mock_db = MagicMock()
         mock_cfg = MagicMock()
@@ -69,7 +70,7 @@ class TestCreateLibrary:
                 return_value="libraries/1",
             ) as mock_create_library,
         ):
-            result = mixin.create_library(
+            result = await mixin.create_library(
                 name="Rock Library",
                 root_path="rock",
                 file_write_mode="minimal",
@@ -87,9 +88,10 @@ class TestCreateLibrary:
         )
         assert result == _library_dto(file_write_mode="minimal")
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_create_library_default_file_write_mode_is_full(self) -> None:
+    async def test_create_library_default_file_write_mode_is_full(self) -> None:
         """Omitted file_write_mode should default to ``full``."""
         mock_db = MagicMock()
         mock_cfg = MagicMock()
@@ -104,7 +106,7 @@ class TestCreateLibrary:
                 return_value="libraries/1",
             ) as mock_create_library,
         ):
-            result = mixin.create_library(
+            result = await mixin.create_library(
                 name="Rock Library",
                 root_path="rock",
             )
@@ -121,9 +123,10 @@ class TestCreateLibrary:
         )
         assert result == _library_dto()
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_create_library_does_not_provision_vectors(self) -> None:
+    async def test_create_library_does_not_provision_vectors(self) -> None:
         """Library creation no longer provisions vector collections (per-backbone is done at schema setup)."""
         mock_db = MagicMock()
         mock_cfg = MagicMock()
@@ -138,7 +141,7 @@ class TestCreateLibrary:
                 return_value=1,
             ),
         ):
-            result = mixin.create_library(name="Rock Library", root_path="rock")
+            result = await mixin.create_library(name="Rock Library", root_path="rock")
 
         assert result == _library_dto()
 
@@ -227,9 +230,10 @@ class TestUpdateLibrary:
 class TestDeleteLibrary:
     """Tests for ``LibraryAdminMixin.delete_library``."""
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_deletes_library_without_watcher_service(self) -> None:
+    async def test_deletes_library_without_watcher_service(self) -> None:
         """Delete should still delegate when no watcher service is configured."""
         mixin = _ConcreteAdminMixin(MagicMock(), MagicMock())
 
@@ -237,14 +241,15 @@ class TestDeleteLibrary:
             "nomarr.services.domain.library_svc.admin.delete_library",
             return_value=True,
         ) as mock_delete_library:
-            result = mixin.delete_library("libraries/1")
+            result = await mixin.delete_library("libraries/1")
 
         assert result is True
         mock_delete_library.assert_called_once_with(db=mixin.db, library_id="libraries/1")
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_does_not_stop_watcher_when_library_not_observed(self) -> None:
+    async def test_does_not_stop_watcher_when_library_not_observed(self) -> None:
         """Watcher stop should be skipped when the library is not being observed."""
         mixin = _ConcreteAdminMixin(MagicMock(), MagicMock())
         mixin.file_watcher_service = MagicMock()
@@ -254,15 +259,16 @@ class TestDeleteLibrary:
             "nomarr.services.domain.library_svc.admin.delete_library",
             return_value=False,
         ) as mock_delete_library:
-            result = mixin.delete_library("libraries/1")
+            result = await mixin.delete_library("libraries/1")
 
         assert result is False
         mixin.file_watcher_service.stop_watching_library.assert_not_called()
         mock_delete_library.assert_called_once_with(db=mixin.db, library_id="libraries/1")
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_stops_watcher_before_deleting_observed_library(self) -> None:
+    async def test_stops_watcher_before_deleting_observed_library(self) -> None:
         """Observed libraries should stop watching before persistence delete runs."""
         mixin = _ConcreteAdminMixin(MagicMock(), MagicMock())
         mixin.file_watcher_service = MagicMock()
@@ -283,7 +289,7 @@ class TestDeleteLibrary:
             "nomarr.services.domain.library_svc.admin.delete_library",
             side_effect=_delete_library,
         ) as mock_delete_library:
-            result = mixin.delete_library("libraries/1")
+            result = await mixin.delete_library("libraries/1")
 
         assert result is True
         assert call_order == ["stop", "delete"]

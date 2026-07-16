@@ -229,7 +229,8 @@ class TestRestartWorkerHelper:
 class TestStopAllWorkersTimerCleanup:
     """Test stop_all_workers() cancels pending restart timers."""
 
-    def test_stop_all_workers_cancels_pending_timers(self, worker_service):
+    @pytest.mark.asyncio
+    async def test_stop_all_workers_cancels_pending_timers(self, worker_service):
         """When stopping, cancels all pending restart timers BEFORE setting _shutting_down."""
         # Setup pending timers
         mock_timer_1 = MagicMock()
@@ -245,7 +246,7 @@ class TestStopAllWorkersTimerCleanup:
         mock_worker.is_alive.return_value = False
         worker_service._workers = [mock_worker]
 
-        worker_service.stop_all_workers(timeout=1.0)
+        await worker_service.stop_all_workers(timeout=1.0)
 
         # Verify both timers cancelled
         mock_timer_1.cancel.assert_called_once()
@@ -366,7 +367,8 @@ class TestAddRemoveWorkers:
             assert mock_spawn.call_count == 2
             assert len(worker_service._workers) == 2
 
-    def test_remove_workers_normal(self, worker_service):
+    @pytest.mark.asyncio
+    async def test_remove_workers_normal(self, worker_service):
         """Normal path stops workers, joins, unregisters, removes from pool."""
         mock_workers = [MagicMock() for _ in range(3)]
         for i, mw in enumerate(mock_workers):
@@ -374,7 +376,7 @@ class TestAddRemoveWorkers:
             mw.is_alive.return_value = False
         worker_service._workers = list(mock_workers)
 
-        worker_service.remove_workers(2)
+        await worker_service.remove_workers(2)
 
         # Last two workers should have been stopped
         mock_workers[1].stop.assert_called_once()
@@ -388,13 +390,15 @@ class TestAddRemoveWorkers:
         assert len(worker_service._workers) == 1
         assert worker_service._workers[0] == mock_workers[0]
 
-    def test_remove_workers_zero(self, worker_service, caplog):
+    @pytest.mark.asyncio
+    async def test_remove_workers_zero(self, worker_service, caplog):
         """remove_workers(0) is a no-op with warning logged."""
         caplog.set_level("WARNING")
-        worker_service.remove_workers(0)
+        await worker_service.remove_workers(0)
         assert "remove_workers called with count=0" in caplog.text
 
-    def test_remove_workers_all_when_count_ge_pool(self, worker_service):
+    @pytest.mark.asyncio
+    async def test_remove_workers_all_when_count_ge_pool(self, worker_service):
         """When n >= len(pool), calls stop_all_workers."""
         mock_workers = [MagicMock() for _ in range(2)]
         for i, mw in enumerate(mock_workers):
@@ -402,7 +406,7 @@ class TestAddRemoveWorkers:
         worker_service._workers = list(mock_workers)
 
         with patch.object(worker_service, "stop_all_workers") as mock_stop_all:
-            worker_service.remove_workers(3)
+            await worker_service.remove_workers(3)
 
             mock_stop_all.assert_called_once()
 

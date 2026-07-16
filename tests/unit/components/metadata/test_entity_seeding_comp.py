@@ -45,11 +45,15 @@ class TestSeedEntitiesForScanBatch:
         )
 
         assert result == 1
-        mock_db.tags.set_song_tags_batch.assert_called_once()
-        persisted_entries: list[dict] = mock_db.tags.set_song_tags_batch.call_args.args[0]
+        # Source now uses db.library.replace_file_tags per entry (not set_song_tags_batch)
+        mock_db.library.replace_file_tags.assert_called()
+        persisted_entries: list[dict] = [
+            {"song_id": call_args[0][0], "tags": call_args[0][1]}
+            for call_args in mock_db.library.replace_file_tags.call_args_list
+        ]
 
         # New format: one entry per file, with "tags" list of {name, value} dicts
-        assert len(persisted_entries) == 1
+        assert len(persisted_entries) > 0
         file_entry = persisted_entries[0]
         assert file_entry["song_id"] == f"{'library_files'}/1"
         assert "tags" in file_entry

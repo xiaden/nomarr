@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -30,7 +30,7 @@ def _seed(**overrides: object) -> TrackDescriptor:
 @pytest.mark.mocked
 async def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
     db = AsyncMock()
-    db.library.file_tag_repo.search_files_by_tag_pattern.return_value = [{"id": "1"}]
+    db.library.file_tag_repo.search_files_by_tag_pattern = MagicMock(return_value=[{"id": "1"}])
     db.library.search_files_by_tag.return_value = []
 
     resolved, status = await resolve_seed_descriptor_to_file(db, _seed())

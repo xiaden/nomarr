@@ -27,13 +27,14 @@ class _ConcreteFilesMixin(LibraryFilesMixin):
 class TestRetryErroredFiles:
     """Tests for retry_errored_files."""
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @patch("nomarr.services.domain.library_svc.files.transition_file_state")
     @patch(
         "nomarr.services.domain.library_svc.files.get_errored_file_ids",
         return_value=[f"{'library_files'}/1", f"{'library_files'}/2"],
     )
-    def test_retries_all_errored_when_no_file_ids(
+    async def test_retries_all_errored_when_no_file_ids(
         self,
         mock_get_errored_file_ids: MagicMock,
         mock_transition_file_state: MagicMock,
@@ -42,7 +43,7 @@ class TestRetryErroredFiles:
         mock_db.library.get_library.return_value = {"_id": "libraries/abc123"}
         mixin = _ConcreteFilesMixin(mock_db)
 
-        result = mixin.retry_errored_files("abc123")
+        result = await mixin.retry_errored_files("abc123")
 
         assert result == RetryErroredResult(retried=2)
         mock_get_errored_file_ids.assert_called_once_with(mock_db, "abc123")
@@ -61,6 +62,7 @@ class TestRetryErroredFiles:
             ),
         ]
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @patch("nomarr.services.domain.library_svc.files.transition_file_state")
     @patch(
@@ -71,7 +73,7 @@ class TestRetryErroredFiles:
             f"{'library_files'}/3",
         ],
     )
-    def test_filters_to_specified_file_ids(
+    async def test_filters_to_specified_file_ids(
         self,
         mock_get_errored_file_ids: MagicMock,
         mock_transition_file_state: MagicMock,
@@ -80,7 +82,7 @@ class TestRetryErroredFiles:
         mock_db.library.get_library.return_value = {"_id": "libraries/abc123"}
         mixin = _ConcreteFilesMixin(mock_db)
 
-        mixin.retry_errored_files(
+        await mixin.retry_errored_files(
             "abc123",
             file_ids=[f"{'library_files'}/1", f"{'library_files'}/3"],
         )
@@ -101,13 +103,14 @@ class TestRetryErroredFiles:
             ),
         ]
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @patch("nomarr.services.domain.library_svc.files.transition_file_state")
     @patch(
         "nomarr.services.domain.library_svc.files.get_errored_file_ids",
         return_value=[f"{'library_files'}/1"],
     )
-    def test_calls_transition_helper_twice_for_errored_files(
+    async def test_calls_transition_helper_twice_for_errored_files(
         self,
         _mock_get_errored_file_ids: MagicMock,
         mock_transition_file_state: MagicMock,
@@ -116,12 +119,13 @@ class TestRetryErroredFiles:
         mock_db.library.get_library.return_value = {"_id": "libraries/abc123"}
         mixin = _ConcreteFilesMixin(mock_db)
 
-        mixin.retry_errored_files("abc123")
+        await mixin.retry_errored_files("abc123")
 
         assert mock_transition_file_state.call_count == 2
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
-    def test_raises_on_invalid_library(self) -> None:
+    async def test_raises_on_invalid_library(self) -> None:
         mock_db = MagicMock()
         mixin = _ConcreteFilesMixin(mock_db)
         with (
@@ -131,15 +135,16 @@ class TestRetryErroredFiles:
                 match="not found",
             ),
         ):
-            mixin.retry_errored_files("bad_id")
+            await mixin.retry_errored_files("bad_id")
 
 
 class TestReconcileLibraryPaths:
     """Tests for ``LibraryFilesMixin.reconcile_library_paths``."""
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_delegates_to_workflow_with_expected_arguments(self) -> None:
+    async def test_delegates_to_workflow_with_expected_arguments(self) -> None:
         """Explicit policy and batch size should be forwarded unchanged."""
         mock_db = MagicMock()
         mixin = _ConcreteFilesMixin(mock_db)
@@ -158,7 +163,7 @@ class TestReconcileLibraryPaths:
             "nomarr.services.domain.library_svc.files.reconcile_library_paths_workflow",
             return_value=expected_result,
         ) as mock_reconcile_library_paths_workflow:
-            result = mixin.reconcile_library_paths(
+            result = await mixin.reconcile_library_paths(
                 "libraries/1",
                 policy="delete_invalid",
                 batch_size=250,
@@ -173,9 +178,10 @@ class TestReconcileLibraryPaths:
             batch_size=250,
         )
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_uses_default_policy_and_batch_size(self) -> None:
+    async def test_uses_default_policy_and_batch_size(self) -> None:
         """Omitted args should default to mark_invalid and batch size 1000."""
         mock_db = MagicMock()
         mixin = _ConcreteFilesMixin(mock_db)
@@ -194,7 +200,7 @@ class TestReconcileLibraryPaths:
             "nomarr.services.domain.library_svc.files.reconcile_library_paths_workflow",
             return_value=expected_result,
         ) as mock_reconcile_library_paths_workflow:
-            result = mixin.reconcile_library_paths("libraries/1")
+            result = await mixin.reconcile_library_paths("libraries/1")
 
         assert result is expected_result
         mock_reconcile_library_paths_workflow.assert_called_once_with(

@@ -105,11 +105,12 @@ class TestGetOrRunCapacityProbe:
     async def test_returns_cached_estimate_when_exists(self):
         """Returns cached estimate if it exists for the model hash."""
         mock_db = AsyncMock()
-        cached = {
-            "measured_backbone_vram_mb": 8000,
-            "estimated_worker_ram_mb": 2000,
+        mock_db.app.get_config_option.return_value = {
+            "value": {
+                "measured_backbone_vram_mb": 8000,
+                "estimated_worker_ram_mb": 2000,
+            }
         }
-        mock_db.ml_capacity.get_capacity_estimate.return_value = cached
 
         with (
             tempfile.TemporaryDirectory() as tmpdir,
@@ -149,4 +150,4 @@ class TestInvalidateCapacityEstimate:
         ):
             await invalidate_capacity_estimate(mock_db, tmpdir)
 
-        mock_db.ml_capacity.delete_capacity_estimate.assert_called_once_with("abc123")
+        mock_db.app.remove_config_option.assert_called_once_with(key="capacity_estimate:abc123")

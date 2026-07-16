@@ -25,31 +25,31 @@ class TestGetFileForWriting:
     @pytest.mark.mocked
     async def test_normalizes_raw_key_to_prefixed_id(self) -> None:
         mock_db = AsyncMock()
-        file_doc = {"_id": f"{'library_files'}/abc123"}
+        file_doc = {"id": 123, "path": "/music/song.flac"}
 
         with patch(
             "nomarr.components.processing.file_write_comp.get_file_by_id",
             return_value=file_doc,
         ) as mock_get_file_by_id:
-            result = await get_file_for_writing(mock_db, "abc123")
+            result = await get_file_for_writing(mock_db, "123")
 
-        assert result == (f"{'library_files'}/abc123", "abc123", file_doc)
-        mock_get_file_by_id.assert_called_once_with(mock_db, f"{'library_files'}/abc123")
+        assert result == (123, "123", file_doc)
+        mock_get_file_by_id.assert_called_once_with(mock_db, 123)
 
     @pytest.mark.unit
     @pytest.mark.mocked
     async def test_strips_prefix_from_already_prefixed_key(self) -> None:
         mock_db = AsyncMock()
-        file_doc = {"_id": f"{'library_files'}/abc123"}
+        file_doc = {"id": 456, "path": "/music/song.flac"}
 
         with patch(
             "nomarr.components.processing.file_write_comp.get_file_by_id",
             return_value=file_doc,
         ) as mock_get_file_by_id:
-            result = await get_file_for_writing(mock_db, f"{'library_files'}/abc123")
+            result = await get_file_for_writing(mock_db, "456")
 
-        assert result == (f"{'library_files'}/abc123", "abc123", file_doc)
-        mock_get_file_by_id.assert_called_once_with(mock_db, f"{'library_files'}/abc123")
+        assert result == (456, "456", file_doc)
+        mock_get_file_by_id.assert_called_once_with(mock_db, 456)
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -60,10 +60,10 @@ class TestGetFileForWriting:
             "nomarr.components.processing.file_write_comp.get_file_by_id",
             return_value=None,
         ) as mock_get_file_by_id:
-            result = await get_file_for_writing(mock_db, "missing")
+            result = await get_file_for_writing(mock_db, "999")
 
-        assert result == (f"{'library_files'}/missing", "missing", None)
-        mock_get_file_by_id.assert_called_once_with(mock_db, f"{'library_files'}/missing")
+        assert result == (999, "999", None)
+        mock_get_file_by_id.assert_called_once_with(mock_db, 999)
 
 
 class TestResolveLibraryRoot:
@@ -78,10 +78,10 @@ class TestResolveLibraryRoot:
             "nomarr.components.processing.file_write_comp.get_library_record",
             return_value=None,
         ) as mock_get_library_record:
-            result = await resolve_library_root(mock_db, "libraries/1")
+            result = await resolve_library_root(mock_db, 1)
 
         assert result is None
-        mock_get_library_record.assert_called_once_with(mock_db, "libraries/1", include_scan=False)
+        mock_get_library_record.assert_called_once_with(mock_db, 1, include_scan=False)
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -92,10 +92,10 @@ class TestResolveLibraryRoot:
             "nomarr.components.processing.file_write_comp.get_library_record",
             return_value={"root_path": "/music"},
         ) as mock_get_library_record:
-            result = await resolve_library_root(mock_db, "libraries/1")
+            result = await resolve_library_root(mock_db, 1)
 
         assert result == Path("/music")
-        mock_get_library_record.assert_called_once_with(mock_db, "libraries/1", include_scan=False)
+        mock_get_library_record.assert_called_once_with(mock_db, 1, include_scan=False)
 
 
 class TestGetNomarrTags:
@@ -111,10 +111,10 @@ class TestGetNomarrTags:
             "nomarr.components.processing.file_write_comp.get_song_tags",
             return_value=returned_tags,
         ) as mock_get_song_tags:
-            result = await get_nomarr_tags(mock_db, f"{'library_files'}/abc123")
+            result = await get_nomarr_tags(mock_db, 123)
 
         assert result is returned_tags
-        mock_get_song_tags.assert_called_once_with(mock_db, f"{'library_files'}/abc123", nomarr_only=True)
+        mock_get_song_tags.assert_called_once_with(mock_db, 123, nomarr_only=True)
 
 
 class TestSaveMoodTags:
@@ -127,14 +127,14 @@ class TestSaveMoodTags:
         mood_tags = Tags(items=(Tag(key="mood-strict", value=("happy",)),))
 
         with patch("nomarr.components.processing.file_write_comp.set_song_tags") as mock_set_song_tags:
-            result = await save_mood_tags(mock_db, f"{'library_files'}/abc123", mood_tags)
+            result = await save_mood_tags(mock_db, 123, mood_tags)
 
         assert result == 1
         mock_set_song_tags.assert_has_calls(
             [
-                call(mock_db, f"{'library_files'}/abc123", "nom:mood-strict", ["happy"]),
-                call(mock_db, f"{'library_files'}/abc123", "nom:mood-regular", []),
-                call(mock_db, f"{'library_files'}/abc123", "nom:mood-loose", []),
+                call(mock_db, 123, "nom:mood-strict", ["happy"]),
+                call(mock_db, 123, "nom:mood-regular", []),
+                call(mock_db, 123, "nom:mood-loose", []),
             ]
         )
         assert mock_set_song_tags.call_count == 3
@@ -151,7 +151,7 @@ class TestSaveMoodTags:
         )
 
         with patch("nomarr.components.processing.file_write_comp.set_song_tags"):
-            result = await save_mood_tags(mock_db, f"{'library_files'}/abc123", mood_tags)
+            result = await save_mood_tags(mock_db, 123, mood_tags)
 
         assert result == 2
 
@@ -162,11 +162,11 @@ class TestSaveMoodTags:
         mood_tags = Tags(items=(Tag(key="nom:mood-loose", value=("chill",)),))
 
         with patch("nomarr.components.processing.file_write_comp.set_song_tags") as mock_set_song_tags:
-            await save_mood_tags(mock_db, f"{'library_files'}/abc123", mood_tags)
+            await save_mood_tags(mock_db, 123, mood_tags)
 
-        mock_set_song_tags.assert_any_call(mock_db, f"{'library_files'}/abc123", "nom:mood-strict", [])
-        mock_set_song_tags.assert_any_call(mock_db, f"{'library_files'}/abc123", "nom:mood-regular", [])
-        mock_set_song_tags.assert_any_call(mock_db, f"{'library_files'}/abc123", "nom:mood-loose", ["chill"])
+        mock_set_song_tags.assert_any_call(mock_db, 123, "nom:mood-strict", [])
+        mock_set_song_tags.assert_any_call(mock_db, 123, "nom:mood-regular", [])
+        mock_set_song_tags.assert_any_call(mock_db, 123, "nom:mood-loose", ["chill"])
 
 
 class TestSaveMoodTagsBatch:
@@ -188,7 +188,7 @@ class TestSaveMoodTagsBatch:
     async def test_delegates_to_set_song_tags_batch(self) -> None:
         mock_db = AsyncMock()
         mood_tags = Tags(items=(Tag(key="mood-strict", value=("happy",)),))
-        items: list[tuple[str, Tags]] = [(f"{'library_files'}/abc123", mood_tags)]
+        items: list[tuple[int, Tags]] = [(123, mood_tags)]
 
         with patch(
             "nomarr.components.processing.file_write_comp.set_song_tags_batch",
@@ -200,12 +200,12 @@ class TestSaveMoodTagsBatch:
             mock_db,
             [
                 {
-                    "song_id": f"{'library_files'}/abc123",
+                    "song_id": 123,
                     "name": "nom:mood-strict",
                     "values": ("happy",),
                 },
-                {"song_id": f"{'library_files'}/abc123", "name": "nom:mood-regular", "values": []},
-                {"song_id": f"{'library_files'}/abc123", "name": "nom:mood-loose", "values": []},
+                {"song_id": 123, "name": "nom:mood-regular", "values": []},
+                {"song_id": 123, "name": "nom:mood-loose", "values": []},
             ],
         )
 

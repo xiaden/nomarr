@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, sentinel
+from unittest.mock import AsyncMock, sentinel
 
 import pytest
 
@@ -12,14 +12,14 @@ from nomarr.persistence.api.library import LibraryDb, LibraryMaintenanceDb
 # ── helpers ───────────────────────────────────────────────────────────────
 
 
-def _make_library_db() -> tuple[LibraryDb, MagicMock, MagicMock, MagicMock, MagicMock, MagicMock, MagicMock, MagicMock]:
-    library_repo = MagicMock()
-    file_repo = MagicMock()
-    folder_repo = MagicMock()
-    scan_repo = MagicMock()
-    tag_repo = MagicMock()
-    file_tag_repo = MagicMock()
-    file_state_repo = MagicMock()
+def _make_library_db() -> tuple[LibraryDb, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock]:
+    library_repo = AsyncMock()
+    file_repo = AsyncMock()
+    folder_repo = AsyncMock()
+    scan_repo = AsyncMock()
+    tag_repo = AsyncMock()
+    file_tag_repo = AsyncMock()
+    file_state_repo = AsyncMock()
     db = LibraryDb(
         library_repo=library_repo,
         file_repo=file_repo,
@@ -33,13 +33,13 @@ def _make_library_db() -> tuple[LibraryDb, MagicMock, MagicMock, MagicMock, Magi
 
 
 def _make_library_maintenance_db() -> tuple[
-    LibraryMaintenanceDb, MagicMock, MagicMock, MagicMock, MagicMock, MagicMock
+    LibraryMaintenanceDb, AsyncMock, AsyncMock, AsyncMock, AsyncMock, AsyncMock
 ]:
-    file_repo = MagicMock()
-    tag_repo = MagicMock()
-    file_tag_repo = MagicMock()
-    folder_repo = MagicMock()
-    scan_repo = MagicMock()
+    file_repo = AsyncMock()
+    tag_repo = AsyncMock()
+    file_tag_repo = AsyncMock()
+    folder_repo = AsyncMock()
+    scan_repo = AsyncMock()
     db = LibraryMaintenanceDb(
         file_repo=file_repo,
         tag_repo=tag_repo,
@@ -390,18 +390,6 @@ async def test_list_existing_file_paths_delegates() -> None:
     file_repo.list_existing_file_paths.assert_awaited_once_with(["/a.mp3", "/b.mp3"])
 
 
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_count_library_file_links_delegates() -> None:
-    db, _, file_repo, *_ = _make_library_db()
-    file_repo.count_library_files = AsyncMock(return_value=100)
-
-    result = await db.count_library_file_links(1)
-
-    assert result == 100
-    file_repo.count_library_files.assert_awaited_once_with(1)
-
-
 # ── File mutations ────────────────────────────────────────────────────────
 
 
@@ -467,7 +455,7 @@ async def test_add_files_to_library_skips_state_for_existing_paths() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_update_library_files_reconciles_added_updated_removed() -> None:
-    db, _, file_repo, _, _, _, file_state_repo = _make_library_db()
+    db, _, file_repo, _, _, _, _, file_state_repo = _make_library_db()
     file_repo.list_existing_file_paths = AsyncMock(return_value=[])
     file_repo.upsert_files_for_library = AsyncMock(return_value=[1, 2, 3])
     file_state_repo.ensure_file_state = AsyncMock()
@@ -613,17 +601,6 @@ async def test_remove_file_by_path_returns_silently_when_not_found() -> None:
     file_repo.delete_file.assert_not_called()
 
 
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_update_file_delegates() -> None:
-    db, _, file_repo, *_ = _make_library_db()
-    file_repo.update_file = AsyncMock()
-
-    await db.update_file(10, {"path": "/new.mp3", "file_size": 999})
-
-    file_repo.update_file.assert_awaited_once_with(10, {"path": "/new.mp3", "file_size": 999})
-
-
 # ── Tag operations ────────────────────────────────────────────────────────
 
 
@@ -642,31 +619,31 @@ async def test_search_files_by_tag_delegates() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_search_files_by_tag_contains_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
-    tag_repo.search_files_by_tag_contains = AsyncMock(return_value=sentinel.files)
+    db, _, _, _, _, _, file_tag_repo, _ = _make_library_db()
+    file_tag_repo.search_files_by_tag_contains = AsyncMock(return_value=sentinel.files)
 
     result = await db.search_files_by_tag_contains("nom:mood-strict", "happy", limit=5)
 
     assert result is sentinel.files
-    tag_repo.search_files_by_tag_contains.assert_awaited_once_with("nom:mood-strict", "happy", limit=5)
+    file_tag_repo.search_files_by_tag_contains.assert_awaited_once_with("nom:mood-strict", "happy", limit=5)
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_list_file_ids_for_tag_id_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
-    tag_repo.list_file_ids_for_tag = AsyncMock(return_value=sentinel.ids)
+    db, _, _, _, _, _, file_tag_repo, _ = _make_library_db()
+    file_tag_repo.list_file_ids_for_tag = AsyncMock(return_value=sentinel.ids)
 
     result = await db.list_file_ids_for_tag_id(5, limit=100, offset=0)
 
     assert result is sentinel.ids
-    tag_repo.list_file_ids_for_tag.assert_awaited_once_with(5, limit=100, offset=0)
+    file_tag_repo.list_file_ids_for_tag.assert_awaited_once_with(5, limit=100, offset=0)
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_get_tag_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
+    db, _, _, _, _, tag_repo, *_ = _make_library_db()
     tag_repo.get_tag = AsyncMock(return_value=sentinel.tag)
 
     result = await db.get_tag(5)
@@ -678,19 +655,19 @@ async def test_get_tag_delegates() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_list_tags_for_file_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
-    tag_repo.get_tags_for_file = AsyncMock(return_value=sentinel.tags)
+    db, _, _, _, _, _, file_tag_repo, _ = _make_library_db()
+    file_tag_repo.get_tags_for_file = AsyncMock(return_value=sentinel.tags)
 
     result = await db.list_tags_for_file(10)
 
     assert result is sentinel.tags
-    tag_repo.get_tags_for_file.assert_awaited_once_with(10)
+    file_tag_repo.get_tags_for_file.assert_awaited_once_with(10)
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_list_all_tag_names_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
+    db, _, _, _, _, tag_repo, *_ = _make_library_db()
     tag_repo.list_all_tag_names = AsyncMock(return_value=sentinel.names)
 
     result = await db.list_all_tag_names(limit=50)
@@ -702,7 +679,7 @@ async def test_list_all_tag_names_delegates() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_list_tags_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
+    db, _, _, _, _, tag_repo, *_ = _make_library_db()
     tag_repo.list_tags = AsyncMock(return_value=sentinel.tags)
 
     result = await db.list_tags()
@@ -714,7 +691,7 @@ async def test_list_tags_delegates() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_list_tags_by_name_delegates_with_name_and_limit() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
+    db, _, _, _, _, tag_repo, *_ = _make_library_db()
     tag_repo.list_tags = AsyncMock(return_value=sentinel.tags)
 
     result = await db.list_tags_by_name("genre", limit=10)
@@ -726,7 +703,7 @@ async def test_list_tags_by_name_delegates_with_name_and_limit() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_count_tags_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
+    db, _, _, _, _, tag_repo, *_ = _make_library_db()
     tag_repo.count_tags = AsyncMock(return_value=42)
 
     result = await db.count_tags()
@@ -738,7 +715,7 @@ async def test_count_tags_delegates() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_count_tags_filtered_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
+    db, _, _, _, _, tag_repo, *_ = _make_library_db()
     tag_repo.count_tags_filtered = AsyncMock(return_value=10)
 
     result = await db.count_tags_filtered(name="genre")
@@ -750,7 +727,7 @@ async def test_count_tags_filtered_delegates() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_list_tags_with_song_count_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
+    db, _, _, _, _, tag_repo, *_ = _make_library_db()
     tag_repo.list_tags_with_song_count = AsyncMock(return_value=sentinel.tags)
 
     result = await db.list_tags_with_song_count()
@@ -762,20 +739,20 @@ async def test_list_tags_with_song_count_delegates() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_list_genre_tags_for_files_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
-    tag_repo.get_genre_tags_for_files = AsyncMock(return_value=sentinel.tags)
+    db, _, _, _, _, _, file_tag_repo, _ = _make_library_db()
+    file_tag_repo.get_genre_tags_for_files = AsyncMock(return_value=sentinel.tags)
 
     result = await db.list_genre_tags_for_files([1, 2, 3])
 
     assert result is sentinel.tags
-    tag_repo.get_genre_tags_for_files.assert_awaited_once_with([1, 2, 3])
+    file_tag_repo.get_genre_tags_for_files.assert_awaited_once_with([1, 2, 3])
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_list_file_tags_for_files_groups_by_file_id() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
-    tag_repo.get_tags_for_files_batch = AsyncMock(
+    db, _, _, _, _, _, file_tag_repo, _ = _make_library_db()
+    file_tag_repo.get_tags_for_files_batch = AsyncMock(
         return_value=[
             {"file_id": 1, "tag_id": 100, "tag_name": "genre", "tag_value": "Rock", "source": "ml", "confidence": 0.9},
             {"file_id": 1, "tag_id": 101, "tag_name": "mood", "tag_value": "Happy", "source": "ml", "confidence": 0.8},
@@ -792,14 +769,14 @@ async def test_list_file_tags_for_files_groups_by_file_id() -> None:
     assert result[1][0]["id"] == 100
     assert result[1][0]["name"] == "genre"
     assert result[1][0]["value"] == "Rock"
-    tag_repo.get_tags_for_files_batch.assert_awaited_once_with([1, 2], name_starts_with=None, include_edge=False)
+    file_tag_repo.get_tags_for_files_batch.assert_awaited_once_with([1, 2], name_starts_with=None, include_edge=False)
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_list_file_tags_for_files_empty_result() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
-    tag_repo.get_tags_for_files_batch = AsyncMock(return_value=[])
+    db, _, _, _, _, _, file_tag_repo, _ = _make_library_db()
+    file_tag_repo.get_tags_for_files_batch = AsyncMock(return_value=[])
 
     result = await db.list_file_tags_for_files([1, 2])
 
@@ -810,83 +787,35 @@ async def test_list_file_tags_for_files_empty_result() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_list_file_tags_for_files_with_name_starts_with() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
-    tag_repo.get_tags_for_files_batch = AsyncMock(return_value=[])
+    db, _, _, _, _, _, file_tag_repo, _ = _make_library_db()
+    file_tag_repo.get_tags_for_files_batch = AsyncMock(return_value=[])
 
     await db.list_file_tags_for_files([1], name_starts_with="genre")
 
-    tag_repo.get_tags_for_files_batch.assert_awaited_once_with([1], name_starts_with="genre", include_edge=False)
+    file_tag_repo.get_tags_for_files_batch.assert_awaited_once_with([1], name_starts_with="genre", include_edge=False)
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_count_files_by_tag_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
-    tag_repo.count_files_by_tag = AsyncMock(return_value=15)
+    db, _, _, _, _, _, file_tag_repo, _ = _make_library_db()
+    file_tag_repo.count_files_by_tag = AsyncMock(return_value=15)
 
     result = await db.count_files_by_tag("genre", "Rock")
 
     assert result == 15
-    tag_repo.count_files_by_tag.assert_awaited_once_with("genre", "Rock")
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_search_files_by_tag_pattern_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
-    tag_repo.search_files_by_tag_pattern = AsyncMock(return_value=sentinel.files)
-
-    result = await db.search_files_by_tag_pattern("genre", "R*", limit=10)
-
-    assert result is sentinel.files
-    tag_repo.search_files_by_tag_pattern.assert_awaited_once_with("genre", "R*", limit=10)
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_find_or_create_tag_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
-    tag_repo.get_or_create_tag = AsyncMock(return_value=42)
-
-    result = await db.find_or_create_tag("genre", "Rock")
-
-    assert result == 42
-    tag_repo.get_or_create_tag.assert_awaited_once_with("genre", "Rock", "")
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_get_song_tag_edges_for_tags_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
-    tag_repo.get_file_tag_edges_for_tags = AsyncMock(return_value=sentinel.edges)
-
-    result = await db.get_song_tag_edges_for_tags([1, 2], limit=50)
-
-    assert result is sentinel.edges
-    tag_repo.get_file_tag_edges_for_tags.assert_awaited_once_with([1, 2], limit=50)
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_count_songs_for_tag_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
-    tag_repo.count_songs_for_tag = AsyncMock(return_value=25)
-
-    result = await db.count_songs_for_tag(5)
-
-    assert result == 25
-    tag_repo.count_songs_for_tag.assert_awaited_once_with(5)
+    file_tag_repo.count_files_by_tag.assert_awaited_once_with("genre", "Rock")
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_replace_file_tags_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
-    tag_repo.replace_file_tags = AsyncMock()
+    db, _, _, _, _, _, file_tag_repo, _ = _make_library_db()
+    file_tag_repo.replace_file_tags = AsyncMock()
 
     await db.replace_file_tags(10, [{"tag_id": 1, "confidence": 0.9}])
 
-    tag_repo.replace_file_tags.assert_awaited_once_with(10, [{"tag_id": 1, "confidence": 0.9}])
+    file_tag_repo.replace_file_tags.assert_awaited_once_with(10, [{"tag_id": 1, "confidence": 0.9}])
 
 
 @pytest.mark.unit
@@ -914,7 +843,7 @@ async def test_replace_selected_tag_references_passes_file_ids() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_remove_file_tags_all_tags() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
+    db, _, _, _, _, tag_repo, *_ = _make_library_db()
     tag_repo.cleanup_orphaned_tags = AsyncMock()
 
     await db.remove_file_tags(10)
@@ -925,23 +854,23 @@ async def test_remove_file_tags_all_tags() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_remove_file_tags_specific_tags() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
-    tag_repo.remove_tag_from_file = AsyncMock()
+    db, _, _, _, _, tag_repo, file_tag_repo, _ = _make_library_db()
+    file_tag_repo.remove_tag_from_file = AsyncMock()
     tag_repo.cleanup_orphaned_tags = AsyncMock()
 
     await db.remove_file_tags(10, tag_keys=[1, 2, 3])
 
-    assert tag_repo.remove_tag_from_file.await_count == 3
-    tag_repo.remove_tag_from_file.assert_any_await(10, 1)
-    tag_repo.remove_tag_from_file.assert_any_await(10, 2)
-    tag_repo.remove_tag_from_file.assert_any_await(10, 3)
+    assert file_tag_repo.remove_tag_from_file.await_count == 3
+    file_tag_repo.remove_tag_from_file.assert_any_await(10, 1)
+    file_tag_repo.remove_tag_from_file.assert_any_await(10, 2)
+    file_tag_repo.remove_tag_from_file.assert_any_await(10, 3)
     tag_repo.cleanup_orphaned_tags.assert_awaited_once_with()
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_list_tag_value_frequencies_calls_batch() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
+    db, _, _, _, _, tag_repo, *_ = _make_library_db()
     tag_repo.get_tag_value_frequencies_batch = AsyncMock(
         return_value={
             "genre": [("Rock", 10), ("Pop", 5)],
@@ -1100,87 +1029,6 @@ async def test_remove_scan_noop_when_not_exists() -> None:
 # ── File state ────────────────────────────────────────────────────────────
 
 
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_count_file_states_delegates() -> None:
-    db, _, _, _, _, _, file_state_repo = _make_library_db()
-    file_state_repo.count_for_file_and_state = AsyncMock(return_value=3)
-
-    result = await db.count_file_states(10, 5)
-
-    assert result == 3
-    file_state_repo.count_for_file_and_state.assert_awaited_once_with(10, 5)
-
-
-# ── Clear methods ─────────────────────────────────────────────────────────
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_clear_song_tags_delegates_to_maintenance() -> None:
-    db, *_ = _make_library_db()
-    db.maintenance.truncate_song_tag_edges = AsyncMock()
-
-    await db.clear_song_tags()
-
-    db.maintenance.truncate_song_tag_edges.assert_awaited_once_with()
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_clear_file_links_delegates_to_maintenance() -> None:
-    db, *_ = _make_library_db()
-    db.maintenance.truncate_file_links = AsyncMock()
-
-    await db.clear_file_links()
-
-    db.maintenance.truncate_file_links.assert_awaited_once_with()
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_clear_folder_links_delegates_to_maintenance() -> None:
-    db, *_ = _make_library_db()
-    db.maintenance.truncate_folder_links = AsyncMock()
-
-    await db.clear_folder_links()
-
-    db.maintenance.truncate_folder_links.assert_awaited_once_with()
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_clear_tags_delegates_to_maintenance() -> None:
-    db, *_ = _make_library_db()
-    db.maintenance.truncate_tags = AsyncMock()
-
-    await db.clear_tags()
-
-    db.maintenance.truncate_tags.assert_awaited_once_with()
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_clear_files_delegates_to_maintenance() -> None:
-    db, *_ = _make_library_db()
-    db.maintenance.truncate_files = AsyncMock()
-
-    await db.clear_files()
-
-    db.maintenance.truncate_files.assert_awaited_once_with()
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_clear_folders_delegates_to_maintenance() -> None:
-    db, *_ = _make_library_db()
-    db.maintenance.truncate_folders = AsyncMock()
-
-    await db.clear_folders()
-
-    db.maintenance.truncate_folders.assert_awaited_once_with()
-
-
 # ── LibraryMaintenanceDb ──────────────────────────────────────────────────
 
 
@@ -1244,7 +1092,7 @@ async def test_maintenance_truncate_file_links() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_maintenance_truncate_folder_links() -> None:
-    db, *_, folder_repo = _make_library_maintenance_db()
+    db, _, _, _, folder_repo, _ = _make_library_maintenance_db()
     folder_repo.truncate_folder_links = AsyncMock()
 
     await db.truncate_folder_links()
@@ -1255,7 +1103,7 @@ async def test_maintenance_truncate_folder_links() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_maintenance_truncate_folders() -> None:
-    db, *_, folder_repo = _make_library_maintenance_db()
+    db, _, _, _, folder_repo, _ = _make_library_maintenance_db()
     folder_repo.truncate_folders = AsyncMock()
 
     await db.truncate_folders()
@@ -1277,9 +1125,9 @@ async def test_maintenance_truncate_tags() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_maintenance_truncate_song_tag_edges() -> None:
-    db, _, tag_repo, *_ = _make_library_maintenance_db()
-    tag_repo.truncate_file_tag_assignments = AsyncMock()
+    db, _, _, file_tag_repo, *_ = _make_library_maintenance_db()
+    file_tag_repo.truncate_file_tag_assignments = AsyncMock()
 
     await db.truncate_song_tag_edges()
 
-    tag_repo.truncate_file_tag_assignments.assert_awaited_once_with()
+    file_tag_repo.truncate_file_tag_assignments.assert_awaited_once_with()

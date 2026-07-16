@@ -16,55 +16,11 @@ class TestScanSetupWorkflowPipeline:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def helper_scan_setup_transitions_library_to_scanning_pipeline_state(self) -> None:
-        """Scan setup should move the library pipeline state to scanning."""
-        mock_db = AsyncMock()
-        library = LibraryDict(
-            _id="libraries/abc123",
-            _key="abc123",
-            _rev="r1",
-            name="Main Library",
-            root_path="/music",
-            is_enabled=True,
-            created_at=0,
-            updated_at=0,
-            scan_status="idle",
-        )
-
-        with (
-            patch(
-                "nomarr.workflows.library.scan_setup_wf.resolve_library_for_scan",
-                return_value=library,
-            ),
-            patch(
-                "nomarr.workflows.library.scan_setup_wf.check_interrupted_scan",
-                return_value=(False, None),
-            ),
-            patch("nomarr.workflows.library.scan_setup_wf.is_library_scanning", return_value=False),
-            patch("nomarr.workflows.library.scan_setup_wf.update_scan_progress") as mock_update,
-            patch("nomarr.workflows.library.scan_setup_wf.transition_to_scanning") as mock_transition_to_scanning,
-        ):
-            result = scan_setup_workflow(mock_db, "libraries/abc123", scan_type="quick")
-
-        assert result == library
-        assert mock_transition_to_scanning.called
-        mock_update.assert_called_once_with(
-            mock_db,
-            "libraries/abc123",
-            progress=0,
-            total=0,
-        )
-        mock_transition_to_scanning.assert_called_once_with(mock_db, "libraries/abc123")
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
     async def test_scan_setup_transitions_library_to_scanning_pipeline_state(self) -> None:
         """Scan setup should move the library pipeline state to scanning."""
         mock_db = AsyncMock()
         library = LibraryDict(
-            _id="libraries/abc123",
-            _key="abc123",
-            _rev="r1",
+            id=1,
             name="Main Library",
             root_path="/music",
             is_enabled=True,
@@ -86,20 +42,17 @@ class TestScanSetupWorkflowPipeline:
             patch("nomarr.workflows.library.scan_setup_wf.update_scan_progress") as mock_update,
             patch("nomarr.workflows.library.scan_setup_wf.transition_to_scanning") as mock_transition_to_scanning,
         ):
-            result = await scan_setup_workflow(mock_db, "libraries/abc123", scan_type="quick")
+            result = await scan_setup_workflow(mock_db, 1, scan_type="quick")
 
         assert result == library
         assert mock_transition_to_scanning.called
         mock_update.assert_called_once_with(
             mock_db,
-            "libraries/abc123",
+            1,
             progress=0,
             total=0,
         )
-        mock_transition_to_scanning.assert_called_once_with(
-            mock_db,
-            "libraries/abc123",
-        )
+        mock_transition_to_scanning.assert_called_once_with(mock_db, 1)
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -107,9 +60,7 @@ class TestScanSetupWorkflowPipeline:
         """Duplicate scans should be rejected when the pipeline state is already scanning."""
         mock_db = AsyncMock()
         library = LibraryDict(
-            _id="libraries/abc123",
-            _key="abc123",
-            _rev="r1",
+            id=1,
             name="Main Library",
             root_path="/music",
             is_enabled=True,
@@ -128,7 +79,7 @@ class TestScanSetupWorkflowPipeline:
             patch("nomarr.workflows.library.scan_setup_wf.transition_to_scanning") as mock_transition,
             pytest.raises(LibraryAlreadyScanningError, match="already being scanned"),
         ):
-            await scan_setup_workflow(mock_db, "libraries/abc123", scan_type="quick")
+            await scan_setup_workflow(mock_db, 1, scan_type="quick")
 
         mock_update.assert_not_called()
         mock_transition.assert_not_called()

@@ -86,12 +86,12 @@ class TestListHotVectorTargets:
 
 
 @pytest.mark.unit
-class TestComputePromotionNlists:
-    """Tests for ``compute_promotion_nlists``."""
+class TestComputePromotionEfConstruction:
+    """Tests for ``compute_promotion_ef_construction``."""
 
     @pytest.mark.mocked
-    def test_uses_global_default_group_size(self) -> None:
-        from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import compute_promotion_nlists
+    async def test_uses_global_default_group_size(self) -> None:
+        from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import compute_promotion_ef_construction
 
         db = AsyncMock()
         db.ml.get_embedding_stats.return_value = {
@@ -101,18 +101,18 @@ class TestComputePromotionNlists:
         }
 
         with patch(
-            f"{ML_IDLE_PROMOTION_MODULE}.compute_nlists",
+            f"{ML_IDLE_PROMOTION_MODULE}.get_ef_construction",
             return_value=37,
-        ) as mock_compute_nlists:
-            result = compute_promotion_nlists(db, "effnet")
+        ) as mock_get_ef:
+            result = await compute_promotion_ef_construction(db, "effnet")
 
         assert result == 37
         db.ml.get_embedding_stats.assert_called_once_with("effnet")
-        mock_compute_nlists.assert_called_once_with(300, 15)
+        mock_get_ef.assert_called_once_with(300)
 
     @pytest.mark.mocked
-    def test_uses_total_vector_count_from_both_hot_and_cold(self) -> None:
-        from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import compute_promotion_nlists
+    async def test_uses_total_vector_count_from_both_hot_and_cold(self) -> None:
+        from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import compute_promotion_ef_construction
 
         db = AsyncMock()
         db.ml.get_embedding_stats.return_value = {
@@ -122,11 +122,11 @@ class TestComputePromotionNlists:
         }
 
         with patch(
-            f"{ML_IDLE_PROMOTION_MODULE}.compute_nlists",
+            f"{ML_IDLE_PROMOTION_MODULE}.get_ef_construction",
             return_value=12,
-        ) as mock_compute_nlists:
-            result = compute_promotion_nlists(db, "effnet")
+        ) as mock_get_ef:
+            result = await compute_promotion_ef_construction(db, "effnet")
 
         assert result == 12
         db.ml.get_embedding_stats.assert_called_once_with("effnet")
-        mock_compute_nlists.assert_called_once_with(12, 15)
+        mock_get_ef.assert_called_once_with(12)

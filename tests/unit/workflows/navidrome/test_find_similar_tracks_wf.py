@@ -53,7 +53,7 @@ def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _make_db(
     *,
-    seed_file_id: str | None = f"{'library_files'}/seed-file",
+    seed_file_id: str | None = "1",
     seed_resolution_status: str = "",
     seed_vector: list[float] | None = None,
     ann_results: list[dict] | None = None,
@@ -84,12 +84,12 @@ class TestFindSimilarTracksHappyPath:
     async def test_returns_portable_descriptors(self) -> None:
         db = _make_db(
             ann_results=[
-                {"file_id": f"{'library_files'}/seed-file", "score": 1.0},
-                {"file_id": f"{'library_files'}/match-1", "score": 0.95},
+                {"file_id": 1, "score": 1.0},
+                {"file_id": 2, "score": 0.95},
             ],
             file_docs=[
                 {
-                    "_id": f"{'library_files'}/match-1",
+                    "id": 2,
                     "_key": "match-1",
                     "duration_seconds": 201.2,
                     "tags": [
@@ -125,7 +125,7 @@ class TestFindSimilarTracksHappyPath:
         ann = [{"file_id": f"{'library_files'}/f{i}", "score": 0.9 - i * 0.01} for i in range(10)]
         docs = [
             {
-                "_id": f"{'library_files'}/f{i}",
+                "id": f"{'library_files'}/f{i}",
                 "title": f"S{i}",
                 "artist": "A",
                 "album": "B",
@@ -154,7 +154,7 @@ class TestFindSimilarTracksHappyPath:
             ann_results=[{"file_id": f"{'library_files'}/match-1", "score": 0.95}],
             file_docs=[
                 {
-                    "_id": f"{'library_files'}/match-1",
+                    "id": f"{'library_files'}/match-1",
                     "title": "Song A",
                     "artist": "Artist A",
                     "album": "Album A",
@@ -186,7 +186,7 @@ class TestFindSimilarTracksErrors:
 
     @pytest.mark.unit
     async def test_raises_when_no_vector_exists(self) -> None:
-        db = _make_db(seed_file_id=f"{'library_files'}/seed-file")
+        db = _make_db(seed_file_id="1")
         db._get_cold_track_vector.return_value = None
 
         with pytest.raises(ValueError, match="No vector embedding found"):
@@ -208,7 +208,7 @@ class TestFindSimilarTracksEdgeCases:
     async def test_missing_metadata_defaults(self) -> None:
         db = _make_db(
             ann_results=[{"file_id": f"{'library_files'}/sparse", "score": 0.9}],
-            file_docs=[{"_id": f"{'library_files'}/sparse", "tags": []}],
+            file_docs=[{"id": f"{'library_files'}/sparse", "tags": []}],
         )
 
         results = await find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)

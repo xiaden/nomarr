@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -55,7 +55,7 @@ def mock_navidrome_svc() -> MagicMock:
 def pipeline_state_helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
     """Bridge helper-based production code to the existing service-level mock API."""
 
-    def _update_scan_progress(
+    async def _update_scan_progress(
         db: MagicMock,
         library_id: str,
         *,
@@ -78,37 +78,54 @@ def pipeline_state_helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
             kwargs["started_at"] = started_at
         db.libraries.update_scan_status(library_id, **kwargs)
 
+    async def _get_library_record(db, library_id, **_kwargs):
+        return db.libraries.get_library(library_id)
+
+    async def _get_libraries_in_axis_state(db, axis_field, axis_value):
+        return db.library.get_libraries_in_axis_state(axis_field, axis_value)
+
+    async def _bulk_transition_pipeline_axis(db, axis_field, from_state, to_state):
+        return db.library.bulk_transition_pipeline_axis(axis_field, from_state, to_state)
+
+    async def _transition_pipeline_axis(db, library_id, axis_field, axis_value):
+        return db.library.update_pipeline_axis(library_id, axis_field, axis_value)
+
+    async def _get_pipeline_state(db, library_id):
+        return db.library.get_pipeline_state(library_id)
+
+    async def _count_untagged_files(db, library_id):
+        return db.library_files.count_untagged_files(library_id)
+
+    async def _get_uncalibrated_tagged_file_ids(db, library_id):
+        return db.library_files.get_uncalibrated_tagged_file_ids(library_id)
+
     monkeypatch.setattr(
         "nomarr.services.infrastructure.pipeline_svc.get_library_record",
-        lambda db, library_id, **_kwargs: db.libraries.get_library(library_id),
+        _get_library_record,
     )
     monkeypatch.setattr(
         "nomarr.services.infrastructure.pipeline_svc.get_libraries_in_axis_state",
-        lambda db, axis_field, axis_value: db.library.get_libraries_in_axis_state(axis_field, axis_value),
+        _get_libraries_in_axis_state,
     )
     monkeypatch.setattr(
         "nomarr.services.infrastructure.pipeline_svc.bulk_transition_pipeline_axis",
-        lambda db, axis_field, from_state, to_state: db.library.bulk_transition_pipeline_axis(
-            axis_field, from_state, to_state
-        ),
+        _bulk_transition_pipeline_axis,
     )
     monkeypatch.setattr(
         "nomarr.services.infrastructure.pipeline_svc.transition_pipeline_axis",
-        lambda db, library_id, axis_field, axis_value: db.library.update_pipeline_axis(
-            library_id, axis_field, axis_value
-        ),
+        _transition_pipeline_axis,
     )
     monkeypatch.setattr(
         "nomarr.services.infrastructure.pipeline_svc.get_pipeline_state",
-        lambda db, library_id: db.library.get_pipeline_state(library_id),
+        _get_pipeline_state,
     )
     monkeypatch.setattr(
         "nomarr.services.infrastructure.pipeline_svc.count_untagged_files",
-        lambda db, library_id: db.library_files.count_untagged_files(library_id),
+        _count_untagged_files,
     )
     monkeypatch.setattr(
         "nomarr.services.infrastructure.pipeline_svc.get_uncalibrated_tagged_file_ids",
-        lambda db, library_id: db.library_files.get_uncalibrated_tagged_file_ids(library_id),
+        _get_uncalibrated_tagged_file_ids,
     )
     monkeypatch.setattr(
         "nomarr.services.infrastructure.pipeline_svc.update_scan_progress",
@@ -137,7 +154,8 @@ def pipeline_service(
 class TestRecoverStaleStates:
     """Tests for startup stale-state recovery."""
 
-    def test_recover_stale_states_scanning(
+    @pytest.mark.asyncio
+    async def test_recover_stale_states_scanning(
         self,
         pipeline_service: LibraryPipelineService,
         mock_db: MagicMock,
@@ -149,12 +167,13 @@ class TestRecoverStaleStates:
         mock_db.library.get_libraries_in_axis_state.side_effect = [[library_id], []]
         mock_db.library.bulk_transition_pipeline_axis.return_value = 0
 
-        pipeline_service.recover_stale_states()
+        await pipeline_service.recover_stale_states()
 
         # Should transition scanning library to not_scanned
         mock_db.library.update_pipeline_axis.assert_any_call(library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
 
-    def test_recover_stale_states_calibrating(
+    @pytest.mark.asyncio
+    async def test_recover_stale_states_calibrating(
         self,
         pipeline_service: LibraryPipelineService,
         mock_db: MagicMock,
@@ -164,7 +183,7 @@ class TestRecoverStaleStates:
         mock_db.library.get_libraries_in_axis_state.return_value = []
         mock_db.library.bulk_transition_pipeline_axis.return_value = 1
 
-        pipeline_service.recover_stale_states()
+        await pipeline_service.recover_stale_states()
 
         mock_db.library.bulk_transition_pipeline_axis.assert_called_with(
             CAL_STATE_FIELD, CAL_IN_PROGRESS, CAL_NOT_CALIBRATED
@@ -174,7 +193,8 @@ class TestRecoverStaleStates:
 class TestTriggerCalibration:
     """Tests for calibration triggering."""
 
-    def test_trigger_calibration_starts_background_task(
+    @pytest.mark.asyncio
+    async def test_trigger_calibration_starts_background_task(
         self,
         pipeline_service: LibraryPipelineService,
         mock_db: MagicMock,
@@ -182,10 +202,10 @@ class TestTriggerCalibration:
         mock_calibration_svc: MagicMock,
     ) -> None:
         """Triggering calibration should start a background task."""
-        mock_db.ml.list_calibration_states.return_value = []
+        mock_db.ml.list_calibration_states = AsyncMock(return_value=[])
         mock_db.library.bulk_transition_pipeline_axis.return_value = 1
 
-        pipeline_service.trigger_calibration()
+        await pipeline_service.trigger_calibration()
 
         mock_calibration_svc.start_histogram_calibration_background.assert_called_once()
 
@@ -193,7 +213,8 @@ class TestTriggerCalibration:
 class TestOnCalibrationComplete:
     """Tests for calibration completion handling."""
 
-    def test_on_calibration_complete_transitions_to_calibrated(
+    @pytest.mark.asyncio
+    async def test_on_calibration_complete_transitions_to_calibrated(
         self,
         pipeline_service: LibraryPipelineService,
         mock_db: MagicMock,
@@ -201,7 +222,7 @@ class TestOnCalibrationComplete:
         """Calibration completion should transition to calibrated."""
         mock_db.library.bulk_transition_pipeline_axis.return_value = 1
 
-        pipeline_service.on_calibration_complete()
+        await pipeline_service.on_calibration_complete()
 
         mock_db.library.bulk_transition_pipeline_axis.assert_called_with(CAL_STATE_FIELD, CAL_IN_PROGRESS, CAL_COMPLETE)
 
@@ -209,7 +230,8 @@ class TestOnCalibrationComplete:
 class TestOnApplyComplete:
     """Tests for calibration apply completion handling."""
 
-    def test_on_apply_complete_does_not_crash(
+    @pytest.mark.asyncio
+    async def test_on_apply_complete_does_not_crash(
         self,
         pipeline_service: LibraryPipelineService,
         mock_db: MagicMock,
@@ -218,13 +240,14 @@ class TestOnApplyComplete:
         mock_db.library.get_libraries_in_axis_state.return_value = []
 
         # Should not raise
-        pipeline_service.on_apply_complete()
+        await pipeline_service.on_apply_complete()
 
 
 class TestOnWriteComplete:
     """Tests for tag write completion handling."""
 
-    def test_on_write_complete_transitions_to_written(
+    @pytest.mark.asyncio
+    async def test_on_write_complete_transitions_to_written(
         self,
         pipeline_service: LibraryPipelineService,
         mock_db: MagicMock,
@@ -232,6 +255,6 @@ class TestOnWriteComplete:
         """Write completion should transition to written."""
         library_id = "libraries/lib1"
 
-        pipeline_service.on_write_complete(library_id)
+        await pipeline_service.on_write_complete(library_id)
 
         mock_db.library.update_pipeline_axis.assert_called_with(library_id, WRITE_STATE_FIELD, WRITE_COMPLETE)

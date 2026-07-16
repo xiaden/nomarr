@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -696,7 +696,9 @@ async def test_clear_library_data_truncates_all_facades() -> None:
 
     db = make_db()
 
-    db.ml.list_vector_collection_names.return_value = ["vectors_track__hot__effnet"]
+    # list_vector_collection_names is called synchronously (no await) in source,
+    # so it must be a sync mock — AsyncMock returns a coroutine by default
+    db.ml.list_vector_collection_names = MagicMock(return_value=["vectors_track__hot__effnet"])
 
     db.library.list_files.return_value = [
         {"id": 1},

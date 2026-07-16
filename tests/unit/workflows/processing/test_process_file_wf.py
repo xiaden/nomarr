@@ -86,7 +86,7 @@ async def test_process_file_workflow_packages_resolved_output_streams_and_skips_
             config=config,
             cache=cache,
             db=mock_db,
-            file_id=f"{'library_files'}/file-1",
+            file_id=1,
         )
 
     build_output_index_map_mock.assert_called_once_with(mock_db)

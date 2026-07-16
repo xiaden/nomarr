@@ -20,29 +20,28 @@ class TestUpsertHotTrackVector:
     async def test_replaces_file_vectors_and_reloads_vector_id(self) -> None:
         """Writes the vector document through normalized file-vector methods and reloads its id."""
         mock_db = AsyncMock()
+        expected_key = hashlib.sha1(b"1|abc123").hexdigest()
         mock_db.ml.list_file_vectors.return_value = [
             {
-                "_id": "vectors_track_hot__effnet/vector-doc",
-                "_key": hashlib.sha1(f"{'library_files'}/f1|abc123".encode()).hexdigest(),
+                "id": "vectors_track_hot__effnet/vector-doc",
+                "_key": expected_key,
             }
         ]
 
         with patch(f"{PATCH_BASE}.internal_ms", return_value=MagicMock(value=1234)):
             vector_id = await upsert_hot_track_vector(
                 db=mock_db,
-                file_id=f"{'library_files'}/f1",
+                file_id=1,
                 backbone="effnet",
                 model_suite_hash="abc123",
                 embed_dim=2,
                 vector=[3.0, 4.0],
                 num_segments=7,
-                # library_key removed per ADR-036
             )
 
-        expected_key = hashlib.sha1(f"{'library_files'}/f1|abc123".encode()).hexdigest()
         expected_doc = {
             "_key": expected_key,
-            "file_id": f"{'library_files'}/f1",
+            "file_id": 1,
             "model_suite_hash": "abc123",
             "embed_dim": 2,
             "vector": [3.0, 4.0],
@@ -54,12 +53,12 @@ class TestUpsertHotTrackVector:
         assert vector_id == "vectors_track_hot__effnet/vector-doc"
         mock_db.ml.replace_file_vectors.assert_called_once_with(
             "vectors_track_hot__effnet",
-            f"{'library_files'}/f1",
+            1,
             [expected_doc],
         )
         mock_db.ml.list_file_vectors.assert_called_once_with(
             "vectors_track_hot__effnet",
-            f"{'library_files'}/f1",
+            1,
         )
 
 
@@ -90,12 +89,11 @@ class TestPersistBackboneVector:
         ):
             result = await persist_backbone_vector(
                 db=mock_db,
-                file_id=f"{'library_files'}/f1",
+                file_id=1,
                 backbone="effnet",
                 embeddings_2d=embeddings,
                 model_suite_hash="abc123",
                 path="/music/f1.mp3",
-                # library_key removed per ADR-036
             )
 
         assert result == 50
@@ -104,7 +102,7 @@ class TestPersistBackboneVector:
         mock_get_embedding_dimension.assert_called_once()
         mock_upsert_hot_track_vector.assert_called_once_with(
             db=mock_db,
-            file_id=f"{'library_files'}/f1",
+            file_id=1,
             backbone="effnet",
             model_suite_hash="abc123",
             embed_dim=128,
@@ -129,12 +127,11 @@ class TestPersistBackboneVector:
         ):
             result = await persist_backbone_vector(
                 db=mock_db,
-                file_id=f"{'library_files'}/f1",
+                file_id=1,
                 backbone="effnet",
                 embeddings_2d=embeddings,
                 model_suite_hash="abc123",
                 path="/music/f1.mp3",
-                # library_key removed per ADR-036
             )
 
         assert result is None
@@ -143,7 +140,7 @@ class TestPersistBackboneVector:
         mock_get_embedding_dimension.assert_called_once()
         mock_upsert_hot_track_vector.assert_called_once_with(
             db=mock_db,
-            file_id=f"{'library_files'}/f1",
+            file_id=1,
             backbone="effnet",
             model_suite_hash="abc123",
             embed_dim=128,

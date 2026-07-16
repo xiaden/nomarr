@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -14,13 +14,13 @@ from nomarr.interfaces.api.web.library_scan_if import router as library_router
 
 
 @pytest.fixture
-def mock_pipeline_service() -> MagicMock:
+def mock_pipeline_service() -> AsyncMock:
     """Provide a mocked pipeline service dependency."""
-    return MagicMock()
+    return AsyncMock()
 
 
 @pytest.fixture
-def app(mock_pipeline_service: MagicMock) -> Iterator[FastAPI]:
+def app(mock_pipeline_service: AsyncMock) -> Iterator[FastAPI]:
     """Build a minimal FastAPI app for the library pipeline endpoint."""
     test_app = FastAPI()
     test_app.include_router(library_router, prefix="/api/web")
@@ -51,11 +51,11 @@ class TestPipelineEndpoint:
     def test_get_pipeline_status_happy_path(
         self,
         client: TestClient,
-        mock_pipeline_service: MagicMock,
+        mock_pipeline_service: AsyncMock,
     ) -> None:
         """The endpoint should serialize a pipeline DTO into the response body."""
         mock_pipeline_service.get_pipeline_status.return_value = LibraryPipelineStatusDTO(
-            library_id="libraries/test-lib",
+            library_id=1,
             scan_state="scanned",
             ml_state="ML_processed",
             calibration_state="not_calibrated",
@@ -67,11 +67,11 @@ class TestPipelineEndpoint:
             file_write_mode="full",
         )
 
-        response = client.get("/api/web/library/libraries:test-lib/pipeline")
+        response = client.get("/api/web/library/1/pipeline")
 
         assert response.status_code == 200
         assert response.json() == {
-            "library_id": "libraries/test-lib",
+            "library_id": 1,
             "scan_state": "scanned",
             "ml_state": "ML_processed",
             "calibration_state": "not_calibrated",
@@ -82,18 +82,18 @@ class TestPipelineEndpoint:
             "library_auto_write": False,
             "file_write_mode": "full",
         }
-        mock_pipeline_service.get_pipeline_status.assert_called_once_with("libraries/test-lib")
+        mock_pipeline_service.get_pipeline_status.assert_called_once_with(1)
 
     def test_get_pipeline_status_returns_404_when_library_missing(
         self,
         client: TestClient,
-        mock_pipeline_service: MagicMock,
+        mock_pipeline_service: AsyncMock,
     ) -> None:
         """Missing libraries should surface as HTTP 404."""
         mock_pipeline_service.get_pipeline_status.return_value = None
 
-        response = client.get("/api/web/library/libraries:test-lib/pipeline")
+        response = client.get("/api/web/library/1/pipeline")
 
         assert response.status_code == 404
         assert response.json() == {"detail": "Library not found"}
-        mock_pipeline_service.get_pipeline_status.assert_called_once_with("libraries/test-lib")
+        mock_pipeline_service.get_pipeline_status.assert_called_once_with(1)

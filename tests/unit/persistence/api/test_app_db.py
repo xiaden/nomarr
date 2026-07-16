@@ -18,7 +18,6 @@ from nomarr.helpers.dto.navidrome_repo_dto import NdPlayRecord, NdTrackRecord
 from nomarr.helpers.dto.repo_dto import (
     HealthRow,
     LibraryFileRow,
-    LibraryScanRow,
     LockRow,
     MetaRow,
     SessionRow,
@@ -34,7 +33,6 @@ from nomarr.persistence.database.file_state_repo import FileStateRepository
 from nomarr.persistence.database.library_repo import LibraryRepository
 from nomarr.persistence.database.navidrome_repo import NavidromeRepo
 from nomarr.persistence.database.pipeline_repo import PipelineRepository
-from nomarr.persistence.database.scan_repo import ScanRepository
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -47,11 +45,6 @@ def mock_session() -> AsyncMock:
 @pytest.fixture
 def mock_app_repo() -> AsyncMock:
     return AsyncMock(spec=AppRepository)
-
-
-@pytest.fixture
-def mock_scan_repo() -> AsyncMock:
-    return AsyncMock(spec=ScanRepository)
 
 
 @pytest.fixture
@@ -97,13 +90,11 @@ def app_db(
 def maintenance_db(
     mock_session: AsyncMock,
     mock_app_repo: AsyncMock,
-    mock_scan_repo: AsyncMock,
     mock_file_state_repo: AsyncMock,
 ) -> AppMaintenanceDb:
     return AppMaintenanceDb(
         session=mock_session,
         app_repo=mock_app_repo,
-        scan_repo=mock_scan_repo,
         file_state_repo=mock_file_state_repo,
     )
 
@@ -239,125 +230,6 @@ class TestAppDbFileStateMethods:
         await app_db.remove_file_states([10, 20])
 
         mock_file_state_repo.remove_states_for_files.assert_awaited_once_with([10, 20])
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# AppDb — Scan Methods
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-class TestAppDbScanMethods:
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_get_scan_delegates_to_scan_repo(self, app_db: AppDb, mock_scan_repo: AsyncMock) -> None:
-        expected: LibraryScanRow = {
-            "id": 1,
-            "library_id": 5,
-            "status": "done",
-            "scan_type": "full",
-            "started_at": 0,
-            "finished_at": 0,
-            "files_found": 0,
-            "files_processed": 0,
-            "error": None,
-        }
-        mock_scan_repo.get_scan_record.return_value = expected
-
-        result = await app_db.get_scan(5)
-
-        assert result == expected
-        mock_scan_repo.get_scan_record.assert_awaited_once_with(5)
-
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_get_scan_returns_none_when_not_found(self, app_db: AppDb, mock_scan_repo: AsyncMock) -> None:
-        mock_scan_repo.get_scan_record.return_value = None
-
-        result = await app_db.get_scan(999)
-
-        assert result is None
-
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_add_scan_sets_library_id_default(self, app_db: AppDb, mock_scan_repo: AsyncMock) -> None:
-        mock_scan_repo.create_scan.return_value = 1
-
-        await app_db.add_scan(5, {"status": "running"})
-
-        mock_scan_repo.create_scan.assert_awaited_once_with({"status": "running", "library_id": 5})
-
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_add_scan_does_not_overwrite_existing_library_id(
-        self, app_db: AppDb, mock_scan_repo: AsyncMock
-    ) -> None:
-        mock_scan_repo.create_scan.return_value = 1
-
-        await app_db.add_scan(5, {"status": "running", "library_id": 99})
-
-        mock_scan_repo.create_scan.assert_awaited_once_with({"status": "running", "library_id": 99})
-
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_update_scan_updates_existing(self, app_db: AppDb, mock_scan_repo: AsyncMock) -> None:
-        existing: LibraryScanRow = {
-            "id": 42,
-            "library_id": 5,
-            "status": "running",
-            "scan_type": "full",
-            "started_at": 0,
-            "finished_at": None,
-            "files_found": 0,
-            "files_processed": 0,
-            "error": None,
-        }
-        mock_scan_repo.get_scan_record.return_value = existing
-
-        await app_db.update_scan(5, {"status": "done"})
-
-        mock_scan_repo.update_scan.assert_awaited_once_with(42, {"status": "done"})
-        mock_scan_repo.create_scan.assert_not_awaited()
-
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_update_scan_falls_back_to_add_when_no_existing(
-        self, app_db: AppDb, mock_scan_repo: AsyncMock
-    ) -> None:
-        mock_scan_repo.get_scan_record.return_value = None
-
-        await app_db.update_scan(5, {"status": "queued"})
-
-        mock_scan_repo.update_scan.assert_not_awaited()
-        mock_scan_repo.create_scan.assert_awaited_once_with({"status": "queued", "library_id": 5})
-
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_remove_scan_deletes_when_exists(self, app_db: AppDb, mock_scan_repo: AsyncMock) -> None:
-        existing: LibraryScanRow = {
-            "id": 42,
-            "library_id": 5,
-            "status": "done",
-            "scan_type": "full",
-            "started_at": 0,
-            "finished_at": 0,
-            "files_found": 0,
-            "files_processed": 0,
-            "error": None,
-        }
-        mock_scan_repo.get_scan_record.return_value = existing
-
-        await app_db.remove_scan(5)
-
-        mock_scan_repo.delete_scan_record.assert_awaited_once_with(42)
-
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_remove_scan_is_noop_when_not_found(self, app_db: AppDb, mock_scan_repo: AsyncMock) -> None:
-        mock_scan_repo.get_scan_record.return_value = None
-
-        await app_db.remove_scan(999)
-
-        mock_scan_repo.delete_scan_record.assert_not_awaited()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1114,13 +986,6 @@ class TestAppDbCleanupShimMethods:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_clear_scans_delegates_to_maintenance(self, app_db: AppDb, mock_scan_repo: AsyncMock) -> None:
-        await app_db.clear_scans()
-
-        assert mock_scan_repo.truncate_scans.await_count == 1
-
-    @pytest.mark.unit
-    @pytest.mark.asyncio
     async def test_update_pipeline_state_raises_not_implemented(self, app_db: AppDb) -> None:
         with pytest.raises(NotImplementedError, match="deprecated"):
             await app_db.update_pipeline_state(1, "scanning")
@@ -1147,7 +1012,6 @@ class TestAppDbSurface:
         assert hasattr(app_db.maintenance, "truncate_worker_claims")
         assert hasattr(app_db.maintenance, "truncate_health")
         assert hasattr(app_db.maintenance, "truncate_file_state_edges")
-        assert hasattr(app_db.maintenance, "truncate_scan_records")
 
     @pytest.mark.unit
     def test_exposes_legacy_navidrome_surface(self, app_db: AppDb) -> None:
@@ -1161,7 +1025,6 @@ class TestAppDbSurface:
         assert not hasattr(app_db, "delete_all_worker_claims")
         assert not hasattr(app_db, "truncate_health")
         assert not hasattr(app_db, "truncate_file_state_edges")
-        assert not hasattr(app_db, "truncate_scan_records")
 
     @pytest.mark.unit
     def test_does_not_expose_legacy_navidrome_methods_at_top_level(self, app_db: AppDb) -> None:
@@ -1179,7 +1042,6 @@ class TestAppDbSurface:
     @pytest.mark.unit
     def test_maintenance_methods_not_on_app_db(self, app_db: AppDb) -> None:
         assert not hasattr(app_db, "get_state_edges_for_files")
-        assert not hasattr(app_db, "delete_scan_records_for_library")
         assert not hasattr(app_db, "count_pipeline_states")
         assert not hasattr(app_db, "claim_file")
         assert not hasattr(app_db, "steal_claim")
@@ -1201,15 +1063,6 @@ class TestAppMaintenanceDb:
         await maintenance_db.truncate_file_state_edges()
 
         mock_file_state_repo.truncate_assignments.assert_awaited_once_with()
-
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_truncate_scan_records_delegates(
-        self, maintenance_db: AppMaintenanceDb, mock_scan_repo: AsyncMock
-    ) -> None:
-        await maintenance_db.truncate_scan_records()
-
-        mock_scan_repo.truncate_scans.assert_awaited_once_with()
 
     @pytest.mark.unit
     @pytest.mark.asyncio

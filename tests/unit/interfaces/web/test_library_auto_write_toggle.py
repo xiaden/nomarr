@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -29,21 +29,21 @@ def make_library(*, auto_write: bool, name: str = "Test Library") -> LibraryDict
 
 
 @pytest.fixture
-def mock_library_service() -> MagicMock:
+def mock_library_service() -> AsyncMock:
     """Provide a mocked library service dependency."""
-    return MagicMock()
+    return AsyncMock()
 
 
 @pytest.fixture
-def mock_pipeline_service() -> MagicMock:
+def mock_pipeline_service() -> AsyncMock:
     """Provide a mocked pipeline service dependency."""
-    return MagicMock()
+    return AsyncMock()
 
 
 @pytest.fixture
 def app(
-    mock_library_service: MagicMock,
-    mock_pipeline_service: MagicMock,
+    mock_library_service: AsyncMock,
+    mock_pipeline_service: AsyncMock,
 ) -> Iterator[FastAPI]:
     """Build a minimal FastAPI app for the library update endpoint."""
     test_app = FastAPI()
@@ -76,8 +76,8 @@ class TestLibraryAutoWriteToggle:
     def test_enabling_auto_write_dispatches_write_when_write_ready(
         self,
         client: TestClient,
-        mock_library_service: MagicMock,
-        mock_pipeline_service: MagicMock,
+        mock_library_service: AsyncMock,
+        mock_pipeline_service: AsyncMock,
     ) -> None:
         """Enabling auto-write should start writing immediately from write_ready."""
         old_library = make_library(auto_write=False)
@@ -100,8 +100,8 @@ class TestLibraryAutoWriteToggle:
     def test_disabling_auto_write_stops_write_when_currently_writing(
         self,
         client: TestClient,
-        mock_library_service: MagicMock,
-        mock_pipeline_service: MagicMock,
+        mock_library_service: AsyncMock,
+        mock_pipeline_service: AsyncMock,
     ) -> None:
         """Disabling auto-write mid-write should request cancellation."""
         old_library = make_library(auto_write=True)

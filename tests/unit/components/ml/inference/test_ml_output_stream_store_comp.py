@@ -28,13 +28,13 @@ class TestUpsertOutputStreams:
     async def test_returns_early_for_empty_streams(self) -> None:
         mock_db = AsyncMock()
 
-        await upsert_output_streams(mock_db, file_id=f"{'library_files'}/file-1", streams=[])
+        await upsert_output_streams(mock_db, file_id=1, streams=[])
 
         mock_db.ml.replace_output_streams_for_file.assert_not_called()
 
     async def test_upserts_normalized_stream_payloads(self) -> None:
         mock_db = AsyncMock()
-        file_id = "file-1"
+        file_id = 1
         output_1 = "out-1"
         output_2 = "ml_model_outputs/out-2"
 
@@ -48,9 +48,9 @@ class TestUpsertOutputStreams:
         )
 
         mock_db.ml.replace_output_streams_for_file.assert_called_once_with(
-            file_id=f"{'library_files'}/file-1",
+            file_id=1,
             stream_payloads=[
-                {"output_id": "ml_model_outputs/out-1", "values": [0.1, 0.2]},
+                {"output_id": "out-1", "values": [0.1, 0.2]},
                 {"output_id": "ml_model_outputs/out-2", "values": [0.3, 0.4]},
             ],
         )
@@ -60,7 +60,7 @@ class TestUpsertOutputStreams:
 
         await upsert_output_streams(
             mock_db,
-            file_id=f"{'library_files'}/file-1",
+            file_id=1,
             streams=[
                 StreamWrite(output_id="out-1", values=[0.1]),
                 StreamWrite(output_id="ml_model_outputs/out-1", values=[0.9, 1.1]),
@@ -68,8 +68,9 @@ class TestUpsertOutputStreams:
         )
 
         mock_db.ml.replace_output_streams_for_file.assert_called_once_with(
-            file_id=f"{'library_files'}/file-1",
+            file_id=1,
             stream_payloads=[
+                {"output_id": "out-1", "values": [0.1]},
                 {"output_id": "ml_model_outputs/out-1", "values": [0.9, 1.1]},
             ],
         )
@@ -84,10 +85,10 @@ class TestFetchOutputStreams:
         mock_db = AsyncMock()
         mock_db.ml.list_output_streams_for_file.return_value = []
 
-        result = await fetch_output_streams(mock_db, "file-7")
+        result = await fetch_output_streams(mock_db, file_id=7)
 
         assert result == []
-        mock_db.ml.list_output_streams_for_file.assert_called_once_with(f"{'library_files'}/file-7")
+        mock_db.ml.list_output_streams_for_file.assert_called_once_with(7)
 
     async def test_fetches_stream_records_sorted_by_output_index_then_id(self) -> None:
         mock_db = AsyncMock()
@@ -148,25 +149,25 @@ class TestDeleteOutputStreams:
         mock_db = AsyncMock()
         mock_db.ml.list_output_streams_for_file.return_value = []
 
-        result = await delete_output_streams(mock_db, "file-9")
+        result = await delete_output_streams(mock_db, file_id=9)
 
         assert result == 0
-        mock_db.ml.list_output_streams_for_file.assert_called_once_with(f"{'library_files'}/file-9")
+        mock_db.ml.list_output_streams_for_file.assert_called_once_with(9)
         mock_db.ml.replace_output_streams_for_file.assert_not_called()
 
     async def test_deletes_stream_docs_for_file_once(self) -> None:
         mock_db = AsyncMock()
         mock_db.ml.list_output_streams_for_file.return_value = [
-            {"_id": "ml_output_streams/stream-b"},
-            {"_id": "ml_output_streams/stream-a"},
-            {"_id": "ml_output_streams/stream-a"},
+            {"id": "stream-b"},
+            {"id": "stream-a"},
+            {"id": "stream-a"},
             {"values": [0.2]},
         ]
 
-        result = await delete_output_streams(mock_db, f"{'library_files'}/file-4")
+        result = await delete_output_streams(mock_db, file_id=4)
 
         assert result == 2
-        mock_db.ml.replace_output_streams_for_file.assert_called_once_with(f"{'library_files'}/file-4", [])
+        mock_db.ml.replace_output_streams_for_file.assert_called_once_with(4, [])
 
 
 @pytest.mark.unit

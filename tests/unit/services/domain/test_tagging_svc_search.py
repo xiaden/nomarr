@@ -27,9 +27,10 @@ def _make_service(*, db: MagicMock | None = None) -> TaggingService:
 class TestSearchFilesByTag:
     """Tests for ``TaggingService.search_files_by_tag``."""
 
+    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_uses_count_query_for_total_and_forwards_pagination(self) -> None:
+    async def test_uses_count_query_for_total_and_forwards_pagination(self) -> None:
         """Search should use the dedicated count query rather than page size for total."""
         mock_db = MagicMock()
         raw_files = [
@@ -94,7 +95,7 @@ class TestSearchFilesByTag:
                 side_effect=mapped_files,
             ) as mock_mapper,
         ):
-            result = service.search_files_by_tag(
+            result = await service.search_files_by_tag(
                 tag_key="genre",
                 target_value="rock",
                 limit=25,

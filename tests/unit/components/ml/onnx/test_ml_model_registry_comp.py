@@ -58,17 +58,17 @@ class TestGetRegisteredModelByPath:
 
     async def test_returns_none_when_path_not_registered(self) -> None:
         mock_db = AsyncMock()
-        mock_db.ml.get_model_by_path.return_value = None
+        mock_db.ml.get_model_by_type.return_value = None
 
         result = await get_registered_model_by_path(mock_db, "/missing.onnx")
 
         assert result is None
-        mock_db.ml.get_model_by_path.assert_called_once_with("/missing.onnx")
+        mock_db.ml.get_model_by_type.assert_called_once_with("/missing.onnx")
 
     async def test_returns_doc_when_path_exists(self) -> None:
         mock_db = AsyncMock()
         expected = {"_id": "ml_models/abc", "path": "/effnet.onnx", "backbone": "effnet"}
-        mock_db.ml.get_model_by_path.return_value = expected
+        mock_db.ml.get_model_by_type.return_value = expected
 
         result = await get_registered_model_by_path(mock_db, "/effnet.onnx")
 
@@ -88,7 +88,7 @@ class TestUpsertRegisteredModel:
             "fully_configured": False,
             "is_known": False,
         }
-        mock_db.ml.get_model_by_path.return_value = None
+        mock_db.ml.get_model_by_type.return_value = None
         mock_db.ml.add_model.return_value = model_doc
 
         result = await upsert_registered_model(
@@ -117,7 +117,7 @@ class TestUpsertRegisteredModel:
             "registered_at": 9999,
         }
         updated = {**existing, "output_count": 4}
-        mock_db.ml.get_model_by_path.return_value = existing
+        mock_db.ml.get_model_by_type.return_value = existing
         mock_db.ml.add_model.return_value = updated
 
         result = await upsert_registered_model(
@@ -138,7 +138,7 @@ class TestUpsertRegisteredModel:
     async def test_raises_when_post_upsert_read_fails(self) -> None:
         mock_db = AsyncMock()
         # First call returns None (no existing), second returns None (upsert failure)
-        mock_db.ml.get_model_by_path.return_value = None
+        mock_db.ml.get_model_by_type.return_value = None
         mock_db.ml.add_model.side_effect = RuntimeError("reload failed")
 
         with pytest.raises(RuntimeError, match="Failed to load persisted ml_models document"):
@@ -287,14 +287,15 @@ class TestEnsureModelOutputs:
         mock_db.ml.get_model_output.return_value = None
         mock_db.ml.list_model_outputs.return_value = [{"_id": "ml_model_outputs/new-output", "output_index": 0}]
 
-        await ensure_model_outputs(mock_db, "ml_models/abc", 1)
+        await ensure_model_outputs(mock_db, file_id=1, model_id="ml_models/abc", output_count=1)
 
         output_key = hashlib.sha256(b"ml_models/abc:0").hexdigest()[:16]
         mock_db.ml.replace_model_output.assert_called_once_with(
+            1,
             "ml_models/abc",
             output_key,
             {
-                "_key": output_key,
+                "id": output_key,
                 "output_index": 0,
                 "label": None,
                 "fully_labeled": False,
@@ -308,13 +309,14 @@ class TestEnsureModelOutputs:
         mock_db.ml.get_model_output.return_value = existing_output
         mock_db.ml.list_model_outputs.return_value = [existing_output]
 
-        await ensure_model_outputs(mock_db, "ml_models/abc", 1)
+        await ensure_model_outputs(mock_db, file_id=1, model_id="ml_models/abc", output_count=1)
 
         mock_db.ml.replace_model_output.assert_called_once_with(
+            1,
             "ml_models/abc",
             output_key,
             {
-                "_key": output_key,
+                "id": output_key,
                 "output_index": 0,
                 "label": existing_output.get("label"),
                 "fully_labeled": existing_output.get("fully_labeled", False),
@@ -333,13 +335,16 @@ class TestUpdateModelOutputLabel:
             "output_index": 7,
         }
 
-        await update_model_output_label(mock_db, "ml_models/abc", "ml_model_outputs/abc123", "mood")
+        await update_model_output_label(
+            mock_db, file_id=1, model_id="ml_models/abc", output_id="ml_model_outputs/abc123", label="mood"
+        )
 
         mock_db.ml.replace_model_output.assert_called_once_with(
+            1,
             "ml_models/abc",
-            "abc123",
+            "ml_model_outputs/abc123",
             {
-                "_key": "abc123",
+                "id": "ml_model_outputs/abc123",
                 "output_index": 7,
                 "label": "mood",
                 "fully_labeled": True,
@@ -362,18 +367,18 @@ class TestBuildModelOutputIndexMap:
     async def test_builds_nested_map_and_skips_invalid_output_entries(self) -> None:
         mock_db = AsyncMock()
         mock_db.ml.list_models.return_value = [
-            {"_id": "ml_models/m1", "path": "/effnet.onnx"},
-            {"_id": "ml_models/m2", "path": "/ast.onnx"},
+            {"id": "ml_models/m1", "path": "/effnet.onnx"},
+            {"id": "ml_models/m2", "path": "/ast.onnx"},
         ]
         mock_db.ml.list_model_outputs.side_effect = [
             [
-                {"_id": "ml_model_outputs/o1", "output_index": 0},
-                {"_id": "ml_model_outputs/o2", "output_index": "1"},
-                {"_id": 123, "output_index": 2},
+                {"id": "ml_model_outputs/o1", "output_index": 0},
+                {"id": "ml_model_outputs/o2", "output_index": "1"},
+                {"id": 123, "output_index": 2},
             ],
             [
-                {"_id": "ml_model_outputs/o3", "output_index": 4},
-                {"_id": "ml_model_outputs/o4", "output_index": None},
+                {"id": "ml_model_outputs/o3", "output_index": 4},
+                {"id": "ml_model_outputs/o4", "output_index": None},
             ],
         ]
 

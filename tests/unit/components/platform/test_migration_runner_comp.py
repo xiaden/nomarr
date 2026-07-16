@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import ModuleType
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -136,26 +136,26 @@ class TestApplyMigration:
 
     @pytest.mark.unit
     async def test_calls_module_upgrade_with_raw_db(self) -> None:
-        """apply_migration calls module.upgrade passing db.db."""
+        """apply_migration tracks the migration without calling legacy upgrade()."""
         module = _make_migration_module("1.0.0")
         db = AsyncMock()
 
         await apply_migration("V001_test", module, db)
 
-        module.upgrade.assert_called_once_with(db.db)
+        # Legacy upgrade() is no longer called — Alembic handles PG migrations
+        module.upgrade.assert_not_called()
 
     @pytest.mark.unit
     async def test_calls_record_migration_started_with_name_and_version(self) -> None:
-        """record_migration_started is called with the migration name and version."""
+        """record_migration_started is called with the migration ID and filename."""
         module = _make_migration_module("1.0.0")
         db = AsyncMock()
 
         await apply_migration("V001_test", module, db)
 
         db.migrations.record_migration_started.assert_called_once_with(
-            name="V001_test",
-            migration_version="1.0.0",
-            started_at=ANY,
+            migration_id="V001_test",
+            filename="V001_test.py",
         )
 
     @pytest.mark.unit
@@ -167,9 +167,7 @@ class TestApplyMigration:
         await apply_migration("V001_test", module, db)
 
         db.migrations.mark_migration_applied.assert_called_once_with(
-            name="V001_test",
-            duration_ms=ANY,
-            applied_at=ANY,
+            migration_id="V001_test",
         )
 
     @pytest.mark.unit
