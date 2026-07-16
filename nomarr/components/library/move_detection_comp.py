@@ -28,7 +28,7 @@ class FileMove:
 
     old_path: str
     new_path: str
-    file_id: str  # DB _id of the moved file
+    file_id: int  # DB _id of the moved file
     chromaprint: str
     old_duration: float | None
     new_duration: float | None
@@ -237,7 +237,7 @@ async def apply_detected_moves(
             # new_path not under library_root; skip normalization
             computed_normalized_path = None
 
-        update_file_path(
+        await update_file_path(
             db,
             file_id=move.file_id,
             new_path=move.new_path,
@@ -251,10 +251,10 @@ async def apply_detected_moves(
         if new_metadata:
             try:
                 entity_tags = _extract_entity_tags(new_metadata)
-                entries = _build_song_tag_entries(move.file_id, entity_tags)
+                entries = _build_song_tag_entries(str(move.file_id), entity_tags)
                 if entries:
                     for entry in entries:
-                        await db.library.replace_file_tags(entry["song_id"], entry["tags"])
+                        await db.library.replace_file_tags(int(entry["song_id"]), entry["tags"])
             except RuntimeError as e:
                 logger.warning(
                     "Failed to update entities for moved file %s: %s",
@@ -269,7 +269,7 @@ async def apply_detected_moves(
 
 async def detect_file_move_via_db(
     new_file_entry: dict[str, Any],
-    library_id: str,
+    library_id: int,
     db: Database,
 ) -> FileMove | None:
     """Check whether ``new_file_entry`` is a moved version of an existing DB file.

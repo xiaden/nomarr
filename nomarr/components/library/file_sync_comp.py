@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-async def mark_file_processed(db: Database, file_id: str) -> None:
+async def mark_file_processed(db: Database, file_id: int) -> None:
     """Mark a file as ML processed.
 
     Args:
@@ -37,7 +37,7 @@ async def mark_file_processed(db: Database, file_id: str) -> None:
 
     """
     await transition_file_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
-    persist_last_tagged_at(db, file_id)
+    await persist_last_tagged_at(db, file_id)
 
 
 # ---------------------------------------------------------------------------

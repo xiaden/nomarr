@@ -18,7 +18,7 @@ class UpdateLibraryMetadataComp:
 
     async def update(
         self,
-        library_id: str,
+        library_id: int,
         *,
         name: str | None = None,
         is_enabled: bool | None = None,

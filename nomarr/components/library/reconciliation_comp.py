@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 async def claim_files_for_reconciliation(
     db: Database,
-    library_id: str,
+    library_id: int,
     worker_id: str,
     batch_size: int = 100,
     lease_ms: int = 60000,
@@ -43,7 +43,7 @@ async def claim_files_for_reconciliation(
         worker.
 
     """
-    stale_ids = get_stale_file_ids(db, library_id=library_id)
+    stale_ids = await get_stale_file_ids(db, library_id=library_id)
     if not stale_ids:
         return []
 
@@ -84,7 +84,7 @@ async def set_file_written(db: Database, file_key: str) -> None:
     file_id = int(file_key)
     await transition_file_state(db, [file_id], STATE_NOT_WRITTEN, STATE_WRITTEN)
     await transition_file_state(db, [file_id], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
-    await db.application.release_claim(file_id)
+    await db.app.release_claim(file_id)
 
 
 async def release_claim(db: Database, file_key: str) -> None:
@@ -93,9 +93,9 @@ async def release_claim(db: Database, file_key: str) -> None:
     PostgreSQL uses integer IDs; file_key is the string representation of the ID.
     """
     file_id = int(file_key)
-    await db.application.release_claim(file_id)
+    await db.app.release_claim(file_id)
 
 
-async def count_files_needing_reconciliation(db: Database, library_id: str) -> int:
+async def count_files_needing_reconciliation(db: Database, library_id: int) -> int:
     """Count files that are still in the ``tags_not_fresh`` state."""
     return len(await get_stale_file_ids(db, library_id=library_id))

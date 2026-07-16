@@ -11,7 +11,6 @@ import logging
 from typing import TYPE_CHECKING, Literal
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db
-from nomarr.components.library.library_file_mutation_comp import delete_library_file
 from nomarr.components.library.library_file_query_comp import get_library_stats, list_library_files
 
 logger = logging.getLogger(__name__)
@@ -24,7 +23,7 @@ ReconcilePolicy = Literal["mark_invalid", "delete_invalid", "dry_run"]
 
 async def reconcile_library_paths(
     db: Database,
-    library_id: str,
+    library_id: int,
     policy: ReconcilePolicy = "mark_invalid",
     batch_size: int = 1000,
 ) -> ReconcileResult:
@@ -78,10 +77,10 @@ async def reconcile_library_paths(
                     result["valid_files"] += 1
                 elif library_path.status == "invalid_config":
                     result["invalid_config"] += 1
-                    _handle_invalid_path(db, file_path, library_path, policy, result)
+                    await _handle_invalid_path(db, file_path, library_path, policy, result)
                 elif library_path.status == "not_found":
                     result["not_found"] += 1
-                    _handle_invalid_path(db, file_path, library_path, policy, result)
+                    await _handle_invalid_path(db, file_path, library_path, policy, result)
                 elif library_path.status == "unknown":
                     result["unknown_status"] += 1
                     logger.warning(f"[reconcile_library_paths] Unknown status for {file_path}: {library_path.reason}")
@@ -131,7 +130,7 @@ async def _handle_invalid_path(
         logger.warning(f"[reconcile_library_paths] Invalid path ({status}): {file_path} - {reason}")
     elif policy == "delete_invalid":
         try:
-            await delete_library_file(db, file_path)
+            await db.library.remove_file_by_path(file_path)
             result["deleted_files"] += 1
             logger.info(f"[reconcile_library_paths] Deleted invalid path ({status}): {file_path} - {reason}")
         except RuntimeError as e:

@@ -11,7 +11,7 @@ state bootstrap operations were extracted to
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_records_comp import list_library_records
 from nomarr.components.library.library_scan_state_comp import (
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-async def is_library_scanning(db: Database, library_id: str) -> bool:
+async def is_library_scanning(db: Database, library_id: int) -> bool:
     """Return whether the library pipeline is currently in the scanning state.
 
     Args:
@@ -61,7 +61,7 @@ async def is_library_scanning(db: Database, library_id: str) -> bool:
     return pipeline_state.get(SCAN_STATE_FIELD) == SCAN_IN_PROGRESS
 
 
-async def resolve_library_for_scan(db: Database, library_id: str) -> LibraryDict:
+async def resolve_library_for_scan(db: Database, library_id: int) -> LibraryDict:
     """Fetch a library document, raising if not found.
 
     Args:
@@ -79,7 +79,14 @@ async def resolve_library_for_scan(db: Database, library_id: str) -> LibraryDict
     if not library:
         msg = f"Library {library_id} not found"
         raise LibraryNotFoundError(msg)
-    return LibraryDict(**library)
+    return LibraryDict(
+        id=library["id"],
+        name=library["name"],
+        root_path=library["path"],
+        is_enabled=bool(library.get("auto_tag", 1)),
+        created_at=library.get("created_at", 0),
+        updated_at=library.get("updated_at", 0),
+    )
 
 
 async def check_interrupted_scan(db: Database, library_id: int) -> tuple[bool, str | None]:
@@ -110,16 +117,26 @@ async def get_scanning_library_ids(db: Database) -> list[LibraryDict]:
         List of ``LibraryDict`` objects, deduplicated by ``_id``.
 
     """
-    raw_ids = get_libraries_in_axis_state(db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
-    seen: dict[str, LibraryDict] = {}
+    raw_ids = cast(
+        "list[int]",
+        await get_libraries_in_axis_state(db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS),
+    )
+    seen: dict[int, LibraryDict] = {}
     for library_id in raw_ids:
         library = await db.library.get_library(library_id)
         if library and library_id not in seen:
-            seen[library_id] = LibraryDict(**library)
+            seen[library_id] = LibraryDict(
+                id=library["id"],
+                name=library["name"],
+                root_path=library["path"],
+                is_enabled=bool(library.get("auto_tag", 1)),
+                created_at=library.get("created_at", 0),
+                updated_at=library.get("updated_at", 0),
+            )
     return list(seen.values())
 
 
-async def transition_to_scanning(db: Database, library_id: str) -> None:
+async def transition_to_scanning(db: Database, library_id: int) -> None:
     """Transition a library pipeline into the scanning state.
 
     Args:
@@ -127,7 +144,7 @@ async def transition_to_scanning(db: Database, library_id: str) -> None:
         library_id: Library document ``_id``
 
     """
-    await transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
+    await transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)  # type: ignore[arg-type]
 
 
 async def get_library_scan_histories(
@@ -206,7 +223,7 @@ async def mark_scan_completed(db: Database, library_id: int) -> None:
 
 async def update_scan_progress(
     db: Database,
-    library_id: str,
+    library_id: int,
     *,
     status: str | None = None,
     progress: int | None = None,
@@ -253,7 +270,7 @@ async def is_scan_stale(db: Database, library_id: int, timeout_ms: int = 300_000
         from now.
 
     """
-    state = get_pipeline_state(db, library_id).get(SCAN_STATE_FIELD)
+    state = (await get_pipeline_state(db, library_id)).get(SCAN_STATE_FIELD)
     if state != SCAN_IN_PROGRESS:
         return False
 
@@ -283,6 +300,6 @@ async def on_scan_complete_pipeline_hook(db: Database, library_id: int) -> None:
     """
     file_count = len(await db.library.list_library_file_ids(library_id))
     next_state = ML_IN_PROGRESS if file_count > 0 else ML_NOT_PROCESSED
-    current = get_pipeline_state(db, library_id)
+    current = await get_pipeline_state(db, library_id)
     if current.get(ML_STATE_FIELD) != next_state:
-        transition_pipeline_axis(db, library_id, ML_STATE_FIELD, next_state)
+        await transition_pipeline_axis(db, library_id, ML_STATE_FIELD, next_state)  # type: ignore[arg-type]

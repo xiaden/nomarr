@@ -85,7 +85,7 @@ async def ensure_no_overlapping_library_root(db: Database, candidate_root: str, 
     existing_libraries = await list_library_records(db, enabled_only=False, include_scan=False)
 
     for library in existing_libraries:
-        if ignore_id is not None and library["id"] == ignore_id:
+        if ignore_id is not None and library.id == ignore_id:
             continue
 
         existing_path = Path(library.root_path).resolve()

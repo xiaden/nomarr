@@ -20,7 +20,7 @@ async def list_watchable_libraries(db: Database) -> list[dict[str, Any]]:
     return [_project_watchable_library(library) for library in libraries]
 
 
-async def get_library_watch_config(db: Database, library_id: str) -> dict[str, Any] | None:
+async def get_library_watch_config(db: Database, library_id: int) -> dict[str, Any] | None:
     """Return watch config for a library, or None if not found.
 
     Returns ``{"root_path", "watch_mode", "is_enabled"}``.
