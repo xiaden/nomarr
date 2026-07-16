@@ -38,6 +38,11 @@ if TYPE_CHECKING:
     from .config import LibraryServiceConfig
 
 
+# Keep strong references to fire-and-forget asyncio tasks scheduled by
+# ``_run_async_hook`` so they aren't garbage collected before completion.
+_background_tasks: set[asyncio.Task[Any]] = set()
+
+
 def _run_async_hook(coro_or_result: Any) -> None:
     """Run an async hook result, handling both coroutine and non-coroutine cases.
 
@@ -54,7 +59,9 @@ def _run_async_hook(coro_or_result: Any) -> None:
     except RuntimeError:
         asyncio.run(coro_or_result)
     else:
-        loop.create_task(coro_or_result)
+        task = loop.create_task(coro_or_result)
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
 
 
 class LibraryScanMixin:
