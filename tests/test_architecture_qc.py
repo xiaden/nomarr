@@ -383,56 +383,6 @@ def test_services_do_not_import_interfaces():
 
 @pytest.mark.code_smell
 @pytest.mark.slow
-def test_no_raw_aql_outside_persistence_and_migrations():
-    """Test: Ensure raw AQL (db.aql / .aql.execute) is only used in persistence and migrations.
-
-    Raw AQL queries must be encapsulated in the persistence layer for:
-    - Maintainability (centralized query changes)
-    - Security (consistent bind variable usage)
-    - Testing (easier to mock persistence layer)
-
-    Migrations are also allowed raw AQL access for schema transformations.
-
-    Note: This is a code smell test, not a functional test.
-    Marked with @pytest.mark.code_smell to skip in CI.
-    """
-    allowed_component_aql_files: set[Path] = set()
-    violations = []
-
-    for py_file in find_python_files(NOMARR_DIR, exclude_dirs={"__pycache__", ".pytest_cache"}):
-        # Allow persistence and migrations
-        if "persistence" in py_file.parts or "migrations" in py_file.parts:
-            continue
-
-        rel_path = py_file.relative_to(PROJECT_ROOT)
-        if rel_path in allowed_component_aql_files:
-            continue
-
-        try:
-            with open(py_file, encoding="utf-8") as f:
-                for line_num, line in enumerate(f, start=1):
-                    if re.search(r"\.aql\.", line):
-                        stripped = line.strip()
-                        # Skip comments
-                        if stripped.startswith("#"):
-                            continue
-                        violations.append(f"  {rel_path}:{line_num}: {stripped}")
-        except Exception as e:
-            pytest.fail(f"Failed to read {py_file}: {e}")
-
-    if violations:
-        msg = (
-            "Found raw AQL usage (.aql.) outside persistence and migrations.\n"
-            "Raw AQL is only allowed in nomarr/persistence/, nomarr/migrations/,\n"
-            "and the explicitly allowlisted schema-constructor component seams.\n"
-            "Move all other queries to a persistence/module owner.\n\n"
-            "Violations:\n" + "\n".join(violations)
-        )
-        pytest.fail(msg)
-
-
-@pytest.mark.code_smell
-@pytest.mark.slow
 def test_higher_layers_do_not_import_persistence_collection_or_accessor_internals():
     """Test: Ensure higher layers use the `Database` facade, not persistence internals.
 
@@ -473,14 +423,13 @@ def test_higher_layers_do_not_import_persistence_tier1_or_tier2_internals():
 
     ADR-031 makes `db.library`, `db.app`, and `db.ml` the supported caller
     boundary. Tier 2 (`nomarr.persistence.database`) and Tier 1
-    (`nomarr.persistence.aql`) remain private implementation layers.
+    (`nomarr.persistence.database`) remain private implementation layers.
 
     A narrow bootstrap seam is allowlisted because schema setup intentionally
     works below the normal caller boundary.
     """
     forbidden_imports = [
         "nomarr.persistence.database",
-        "nomarr.persistence.aql",
     ]
     violations = []
 
@@ -500,7 +449,7 @@ def test_higher_layers_do_not_import_persistence_tier1_or_tier2_internals():
             "Found higher-layer imports of Tier 1/Tier 2 persistence internals.\n"
             "Components, services, and workflows must cross the persistence boundary\n"
             "through `Database` and its Tier 3 intent facades (`db.library`, `db.app`, `db.ml`).\n"
-            "Do not import `nomarr.persistence.database` or `nomarr.persistence.aql` directly\n"
+            "Do not import `nomarr.persistence.database` directly\n"
             "outside persistence-local code.\n\n"
             "Violations:\n" + "\n".join(violations)
         )

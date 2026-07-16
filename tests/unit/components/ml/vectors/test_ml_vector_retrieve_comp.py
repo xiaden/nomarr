@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -11,53 +11,58 @@ from nomarr.components.ml.vectors.ml_vector_retrieve_comp import (
     search_similar_cold_track_vectors,
 )
 
-PATCH_BASE = "nomarr.components.ml.vectors.ml_vector_retrieve_comp"
+
+def _make_db() -> MagicMock:
+    """Create a mock Database with async ml methods configured."""
+    db = MagicMock()
+    db.ml.get_embedding_stats = AsyncMock()
+    db.ml.list_file_vectors = AsyncMock()
+    db.ml.search_vectors = AsyncMock()
+    return db
 
 
 @pytest.mark.unit
 class TestGetColdTrackVector:
     """Tests for ``get_cold_track_vector``."""
 
-    def test_returns_none_when_cold_count_zero(self) -> None:
-        """Returns None without fetching cold ops when cold_count is 0."""
-        mock_db = MagicMock()
+    async def test_returns_none_when_cold_count_zero(self) -> None:
+        """Returns None without fetching vectors when cold_count is 0."""
+        mock_db = _make_db()
         mock_db.ml.get_embedding_stats.return_value = {
             "cold_count": 0,
             "hot_count": 5,
             "index_exists": False,
         }
 
-        with patch(f"{PATCH_BASE}.get_cold_namespace") as mock_get_cold:
-            result = get_cold_track_vector(mock_db, f"{'library_files'}/f1", "effnet")
+        result = await get_cold_track_vector(mock_db, 1, "effnet")
 
         assert result is None
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
-        mock_get_cold.assert_not_called()
+        mock_db.ml.list_file_vectors.assert_not_called()
 
-    def test_returns_none_when_cold_count_negative(self) -> None:
-        """Returns None when cold_count is a negative value (string from stats)."""
-        mock_db = MagicMock()
+    async def test_returns_none_when_cold_count_negative(self) -> None:
+        """Returns None when cold_count is a negative/string value from stats."""
+        mock_db = _make_db()
         mock_db.ml.get_embedding_stats.return_value = {
             "cold_count": "-1",
             "hot_count": 0,
             "index_exists": False,
         }
 
-        with patch(f"{PATCH_BASE}.get_cold_namespace") as mock_get_cold:
-            result = get_cold_track_vector(mock_db, f"{'library_files'}/f1", "effnet")
+        result = await get_cold_track_vector(mock_db, 2, "effnet")
 
         assert result is None
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
-        mock_get_cold.assert_not_called()
+        mock_db.ml.list_file_vectors.assert_not_called()
 
-    def test_returns_vector_document_when_cold_exists(self) -> None:
-        """Fetches and returns vector from cold collection when cold_count > 0."""
-        mock_db = MagicMock()
+    async def test_returns_vector_document_when_cold_exists(self) -> None:
+        """Fetches and returns vector via list_file_vectors when cold_count > 0."""
+        mock_db = _make_db()
         expected_doc = {
             "_id": "vectors_track_cold__effnet/k1",
             "_key": "k1",
-            "file_id": f"{'library_files'}/f1",
-            "vector_n": [0.1, 0.2, 0.3],
+            "file_id": 1,
+            "vector": [0.1, 0.2, 0.3],
             "score": 0.95,
         }
         mock_db.ml.get_embedding_stats.return_value = {
@@ -65,92 +70,72 @@ class TestGetColdTrackVector:
             "hot_count": 0,
             "index_exists": True,
         }
-        cold_ops = MagicMock()
-        cold_ops.get_vector.return_value = expected_doc
+        mock_db.ml.list_file_vectors.return_value = [expected_doc]
 
-        with patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold:
-            result = get_cold_track_vector(mock_db, f"{'library_files'}/f1", "effnet")
+        result = await get_cold_track_vector(mock_db, 1, "effnet")
 
         assert result == expected_doc
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
-        mock_get_cold.assert_called_once_with(mock_db, "effnet")
-        cold_ops.get_vector.assert_called_once_with(f"{'library_files'}/f1")
+        mock_db.ml.list_file_vectors.assert_called_once_with("effnet", 1)
 
-    def test_returns_none_when_vector_not_found_in_cold(self) -> None:
-        """Returns None when cold collection exists but track has no vector."""
-        mock_db = MagicMock()
+    async def test_returns_none_when_vector_not_found(self) -> None:
+        """Returns None when cold collection has docs but file has no vector."""
+        mock_db = _make_db()
         mock_db.ml.get_embedding_stats.return_value = {
             "cold_count": 10,
             "hot_count": 0,
             "index_exists": True,
         }
-        cold_ops = MagicMock()
-        cold_ops.get_vector.return_value = None
+        mock_db.ml.list_file_vectors.return_value = []
 
-        with patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold:
-            result = get_cold_track_vector(mock_db, f"{'library_files'}/missing", "effnet")
+        result = await get_cold_track_vector(mock_db, 999, "effnet")
 
         assert result is None
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
-        mock_get_cold.assert_called_once_with(mock_db, "effnet")
-        cold_ops.get_vector.assert_called_once_with(f"{'library_files'}/missing")
+        mock_db.ml.list_file_vectors.assert_called_once_with("effnet", 999)
 
 
 @pytest.mark.unit
 class TestSearchSimilarColdTrackVectors:
     """Tests for ``search_similar_cold_track_vectors``."""
 
-    def test_returns_empty_when_cold_collection_is_empty(self) -> None:
+    async def test_returns_empty_when_cold_collection_is_empty(self) -> None:
         """Skips ANN search when the cold collection has no promoted vectors."""
-        mock_db = MagicMock()
-        cold_ops = MagicMock()
-        cold_ops.count.return_value = 0
+        mock_db = _make_db()
+        mock_db.ml.get_embedding_stats.return_value = {"cold_count": 0}
 
-        with (
-            patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold,
-            patch(f"{PATCH_BASE}.compute_nlists") as mock_compute_nlists,
-            patch(f"{PATCH_BASE}.compute_nprobe") as mock_compute_nprobe,
-        ):
-            result = search_similar_cold_track_vectors(
-                mock_db,
-                backbone_id="effnet",
-                seed_vector=[0.1, 0.2, 0.3],
-                result_limit=11,
-                vector_group_size=15,
-                vector_search_thoroughness=10,
-            )
+        result = await search_similar_cold_track_vectors(
+            mock_db,
+            backbone_id="effnet",
+            seed_vector=[0.1, 0.2, 0.3],
+            result_limit=11,
+            vector_group_size=15,
+            vector_search_thoroughness=10,
+        )
 
         assert result == []
-        mock_get_cold.assert_called_once_with(mock_db, "effnet")
-        mock_compute_nlists.assert_not_called()
-        mock_compute_nprobe.assert_not_called()
-        cold_ops.get.assert_not_called()
-        cold_ops.ann_search.assert_not_called()
+        mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
+        mock_db.ml.search_vectors.assert_not_called()
 
-    def test_computes_nprobe_and_executes_ann_search(self) -> None:
-        """Uses cold count to size ANN probing before delegating to persistence."""
-        mock_db = MagicMock()
-        cold_ops = MagicMock()
-        cold_ops.count.return_value = 300
-        cold_ops.ann_search.return_value = [{"file_id": f"{'library_files'}/2", "score": 0.91}]
+    async def test_queries_search_vectors_when_cold_has_content(self) -> None:
+        """Delegates to db.ml.search_vectors when cold_count > 0."""
+        mock_db = _make_db()
+        mock_db.ml.get_embedding_stats.return_value = {"cold_count": 300}
+        mock_db.ml.search_vectors.return_value = [{"file_id": 2, "score": 0.91}]
 
-        with (
-            patch(f"{PATCH_BASE}.get_cold_namespace", return_value=cold_ops) as mock_get_cold,
-            patch(f"{PATCH_BASE}.compute_nlists", return_value=20) as mock_compute_nlists,
-            patch(f"{PATCH_BASE}.compute_nprobe", return_value=7) as mock_compute_nprobe,
-        ):
-            result = search_similar_cold_track_vectors(
-                mock_db,
-                backbone_id="effnet",
-                seed_vector=[0.1, 0.2, 0.3],
-                result_limit=11,
-                vector_group_size=15,
-                vector_search_thoroughness=25,
-            )
+        result = await search_similar_cold_track_vectors(
+            mock_db,
+            backbone_id="effnet",
+            seed_vector=[0.1, 0.2, 0.3],
+            result_limit=11,
+            vector_group_size=15,
+            vector_search_thoroughness=25,
+        )
 
-        assert result == [{"file_id": f"{'library_files'}/2", "score": 0.91}]
-        mock_get_cold.assert_called_once_with(mock_db, "effnet")
-        mock_compute_nlists.assert_called_once_with(300, 15)
-        mock_compute_nprobe.assert_called_once_with(20, 25)
-        cold_ops.get.assert_not_called()
-        cold_ops.ann_search.assert_called_once_with([0.1, 0.2, 0.3], 11, nprobe=7)
+        assert result == [{"file_id": 2, "score": 0.91}]
+        mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
+        mock_db.ml.search_vectors.assert_called_once_with(
+            "effnet",
+            [0.1, 0.2, 0.3],
+            limit=11,
+        )
