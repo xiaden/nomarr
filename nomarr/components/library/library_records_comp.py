@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_file_query_comp import get_library_counts
 from nomarr.components.library.library_file_state_comp import count_untagged_files
-from nomarr.components.library.library_id_comp import normalize_library_id
 from nomarr.components.library.library_scan_state_comp import (
     _pipeline_state_to_scan_status,
     get_pipeline_state,
@@ -21,7 +20,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def create_library_record(
+async def create_library_record(
     db: Database,
     *,
     name: str,
@@ -30,7 +29,7 @@ def create_library_record(
     watch_mode: str = "off",
     file_write_mode: str = "full",
     library_auto_write: bool = False,
-) -> str:
+) -> int:
     """Insert a library document.
 
     Raises ValueError if watch_mode or file_write_mode is invalid.
@@ -49,38 +48,37 @@ def create_library_record(
         "created_at": timestamp,
         "updated_at": timestamp,
     }
-    return cast("int", db.library.add_library(payload))
+    return cast("int", await db.library.add_library(payload))
 
 
-def get_library_record(
+async def get_library_record(
     db: Database,
-    library_id: str,
+    library_id: int,
     *,
     include_scan: bool = True,
 ) -> dict[str, Any] | None:
     """Get one library by ``id`` and optionally merge scan state."""
-    normalized_library_id = normalize_library_id(library_id)
-    doc = cast("dict[str, Any] | None", db.library.get_library(normalized_library_id))
+    doc = cast("dict[str, Any] | None", await db.library.get_library(library_id))
 
     if doc is None or not include_scan:
         return doc
     return _merge_scan_state(db, doc)
 
 
-def get_library_by_name(
+async def get_library_by_name(
     db: Database,
     name: str,
     *,
     include_scan: bool = False,
 ) -> dict[str, Any] | None:
     """Get one library by unique name."""
-    doc = cast("dict[str, Any] | None", db.library.get_library_by_name(name))
+    doc = cast("dict[str, Any] | None", await db.library.get_library_by_name(name))
     if doc is None or not include_scan:
         return doc
     return _merge_scan_state(db, doc)
 
 
-def list_library_records(
+async def list_library_records(
     db: Database,
     *,
     enabled_only: bool = False,
@@ -89,22 +87,22 @@ def list_library_records(
     """List libraries through constructor verbs, preserving legacy sort order."""
     docs = cast(
         "list[dict[str, Any]]",
-        db.library.list_libraries(enabled_only=enabled_only),
+        await db.library.list_libraries(enabled_only=enabled_only),
     )
     if include_scan:
         docs = [_merge_scan_state(db, doc) for doc in docs]
     return [LibraryDict(**doc) for doc in docs]
 
 
-def list_watchable_library_records(db: Database) -> list[LibraryDict]:
+async def list_watchable_library_records(db: Database) -> list[LibraryDict]:
     """Return enabled libraries with file watching turned on."""
-    libraries = list_library_records(db, enabled_only=True, include_scan=False)
+    libraries = await list_library_records(db, enabled_only=True, include_scan=False)
     return [lib for lib in libraries if lib.watch_mode not in (None, "off")]
 
 
-def update_library_record(
+async def update_library_record(
     db: Database,
-    library_id: str,
+    library_id: int,
     **fields: Any,
 ) -> None:
     """Update a library document by ``id`` through the constructor namespace."""
@@ -118,12 +116,12 @@ def update_library_record(
     if "file_write_mode" in fields and fields["file_write_mode"] is not None:
         _validate_file_write_mode(cast("str", fields["file_write_mode"]))
 
-    db.library.update_library(normalize_library_id(library_id), update_fields)
+    await db.library.update_library(library_id, update_fields)
 
 
-def update_library_config_fields(
+async def update_library_config_fields(
     db: Database,
-    library_id: str,
+    library_id: int,
     set_fields: dict[str, Any] | None = None,
     unset_fields: list[str] | None = None,
 ) -> None:
@@ -143,19 +141,19 @@ def update_library_config_fields(
     update_library_record(db, library_id, **update_fields)
 
 
-def list_all_library_keys(db: Database) -> list[str]:
+async def list_all_library_keys(db: Database) -> list[int]:
     """Return all library document keys for bootstrap-style callers."""
-    return db.library.list_library_keys()
+    return await db.library.list_library_keys()
 
 
-def find_library_containing_path(db: Database, file_path: str) -> LibraryDict | None:
+async def find_library_containing_path(db: Database, file_path: str) -> LibraryDict | None:
     """Find the most specific library root containing ``file_path``."""
     try:
         normalized_path = Path(file_path).resolve()
     except (ValueError, OSError):
         return None
 
-    libraries = list_library_records(db, enabled_only=False, include_scan=False)
+    libraries = await list_library_records(db, enabled_only=False, include_scan=False)
     libraries.sort(key=lambda lib: len(str(lib.root_path)), reverse=True)
 
     for library in libraries:
@@ -171,14 +169,14 @@ def find_library_containing_path(db: Database, file_path: str) -> LibraryDict | 
     return None
 
 
-def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, Any]]:
+async def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, Any]]:
     """Return ML-running libraries whose file set is fully tagged.
 
     Each result dict contains ``library_id`` and ``tagged_count``.
     """
     del min_files
-    library_docs = cast("list[dict[str, Any]]", db.library.list_libraries())
-    counts = get_library_counts(db)
+    library_docs = cast("list[dict[str, Any]]", await db.library.list_libraries())
+    counts = await get_library_counts(db)
     completed: list[dict[str, Any]] = []
 
     for library_doc in library_docs:
@@ -186,10 +184,10 @@ def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, A
         if not isinstance(library_ref, int):
             continue
         library_id = library_ref
-        pipeline_state = db.library.get_pipeline_state(library_id)
+        pipeline_state = await db.library.get_pipeline_state(library_id)
         if not pipeline_state or pipeline_state.get("ml_state") != ML_IN_PROGRESS:
             continue
-        if count_untagged_files(db, str(library_id)) != 0:
+        if await count_untagged_files(db, library_id) != 0:
             continue
 
         tagged_count = counts.get(library_id, {}).get("file_count", 0)
@@ -198,12 +196,12 @@ def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, A
     return completed
 
 
-def _merge_scan_state(db: Database, library: dict[str, Any]) -> dict[str, Any]:
+async def _merge_scan_state(db: Database, library: dict[str, Any]) -> dict[str, Any]:
     """Merge library scan state into a library document for API compatibility."""
     library_id = library["id"]
-    scan_doc = get_scan_state(db, library_id)
+    scan_doc = await get_scan_state(db, library_id)
     try:
-        pipeline_state = get_pipeline_state(db, library_id)
+        pipeline_state = await get_pipeline_state(db, library_id)
     except ValueError:
         pipeline_state = None
 

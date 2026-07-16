@@ -217,7 +217,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
             )
         return worker
 
-    def stop_all_workers(self, timeout: float = 10.0) -> None:
+    async def stop_all_workers(self, timeout: float = 10.0) -> None:
         """Stop all worker processes gracefully."""
         if not self._workers:
             logger.debug("[WorkerSystemService] No workers to stop")
@@ -253,7 +253,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
                     worker.join(timeout=0.5)
         for worker in self._workers:
             try:
-                release_worker_promises(self.db, worker.worker_id)
+                await release_worker_promises(self.db, worker.worker_id)
             except Exception:
                 logger.warning(
                     "[WorkerSystemService] Failed to release VRAM promises for worker %s",
@@ -400,6 +400,6 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
 
     # ---------------------------- Claim Cleanup ----------------------------
 
-    def cleanup_stale_claims(self) -> int:
+    async def cleanup_stale_claims(self) -> int:
         """Remove stale or orphaned worker claims."""
-        return cleanup_stale_claims(self.db, DEFAULT_HEARTBEAT_TIMEOUT_MS)
+        return await cleanup_stale_claims(self.db, DEFAULT_HEARTBEAT_TIMEOUT_MS)

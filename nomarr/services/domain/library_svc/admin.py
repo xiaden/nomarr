@@ -39,7 +39,7 @@ class LibraryAdminMixin:
     db: Database
     file_watcher_service: FileWatcherService | None
 
-    def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
+    async def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
         """Get a library by ID or raise an error.
 
         Libraries are used only to determine scan roots. This method retrieves
@@ -56,7 +56,7 @@ class LibraryAdminMixin:
             ValueError: If library does not exist
 
         """
-        result = get_library_record(self.db, library_id)
+        result = await get_library_record(self.db, library_id)
         if result is None:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
@@ -71,7 +71,7 @@ class LibraryAdminMixin:
         """
         return self.cfg.library_root is not None
 
-    def list_libraries(self, enabled_only: bool = False) -> list[LibraryDict]:
+    async def list_libraries(self, enabled_only: bool = False) -> list[LibraryDict]:
         """List all configured libraries.
 
         Args:
@@ -81,10 +81,10 @@ class LibraryAdminMixin:
             List of LibraryDict DTOs with file/folder counts
 
         """
-        libraries = list_library_records(self.db, enabled_only=enabled_only)
+        libraries = await list_library_records(self.db, enabled_only=enabled_only)
 
         # Get file/folder counts for all libraries
-        counts = get_library_counts(self.db)
+        counts = await get_library_counts(self.db)
 
         result = []
         for lib in libraries:
@@ -112,7 +112,7 @@ class LibraryAdminMixin:
         library = self._get_library_or_error(library_id)
         return LibraryDict(**library)
 
-    def create_library(
+    async def create_library(
         self,
         name: str | None,
         root_path: str,
@@ -139,7 +139,7 @@ class LibraryAdminMixin:
             LibraryDict DTO for the created library record.
 
         """
-        library_id = create_library(
+        library_id = await create_library(
             db=self.db,
             base_library_root=self.cfg.library_root,
             name=name,
@@ -153,9 +153,9 @@ class LibraryAdminMixin:
         library = self._get_library_or_error(library_id)
         return LibraryDict(**library)
 
-    def update_library_root(self, library_id: str, root_path: str) -> LibraryDict:
+    async def update_library_root(self, library_id: str, root_path: str) -> LibraryDict:
         """Update a library's root path."""
-        update_library_root(
+        await update_library_root(
             db=self.db,
             base_library_root=self.cfg.library_root,
             library_id=library_id,
@@ -214,7 +214,7 @@ class LibraryAdminMixin:
 
         return self.get_library(library_id)
 
-    def delete_library(self, library_id: str) -> bool:
+    async def delete_library(self, library_id: str) -> bool:
         """Stop file watching for a library and delete it.
 
         Args:
@@ -226,7 +226,7 @@ class LibraryAdminMixin:
         """
         if self.file_watcher_service is not None and library_id in self.file_watcher_service.observers:
             self.file_watcher_service.stop_watching_library(library_id)
-        return delete_library(db=self.db, library_id=library_id)
+        return await delete_library(db=self.db, library_id=library_id)
 
     def update_library_metadata(
         self,
@@ -273,7 +273,7 @@ class LibraryAdminMixin:
         updated = self._get_library_or_error(library_id)
         return LibraryDict(**updated)
 
-    def clear_library_data(self) -> None:
+    async def clear_library_data(self) -> None:
         """Clear all library data (files, tags, scan queue).
 
         Wipes all library files, tags, edges, vectors, scan records, and
@@ -284,4 +284,4 @@ class LibraryAdminMixin:
             RuntimeError: If a library scan is currently running.
 
         """
-        clear_library_data(db=self.db, library_root=self.cfg.library_root)
+        await clear_library_data(db=self.db, library_root=self.cfg.library_root)

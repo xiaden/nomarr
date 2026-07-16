@@ -64,15 +64,15 @@ def _default_scan_doc(library_id: str) -> dict[str, Any]:
     }
 
 
-def ensure_scan_state(db: Database, library_id: str) -> dict[str, Any]:
+async def ensure_scan_state(db: Database, library_id: int) -> dict[str, Any]:
     """Return the scan document for a library, creating or repairing it when needed."""
     library_key = library_key_from_ref(library_id)
-    scan_doc = cast("dict[str, Any] | None", db.library.get_scan(library_id))
+    scan_doc = cast("dict[str, Any] | None", await db.library.get_scan(library_id))
 
     if scan_doc is None:
         default_doc = _default_scan_doc(library_id)
-        db.library.add_scan(library_id, default_doc)
-        scan_doc = cast("dict[str, Any] | None", db.library.get_scan(library_id)) or default_doc
+        await db.library.add_scan(library_id, default_doc)
+        scan_doc = cast("dict[str, Any] | None", await db.library.get_scan(library_id)) or default_doc
     elif scan_doc.get("library_key") != library_key:
         repaired_doc = {
             **_DEFAULT_SCAN_FIELDS,
@@ -80,16 +80,16 @@ def ensure_scan_state(db: Database, library_id: str) -> dict[str, Any]:
             "_key": library_key,
             "library_key": library_key,
         }
-        db.library.remove_scan(library_id)
-        db.library.add_scan(library_id, repaired_doc)
-        scan_doc = cast("dict[str, Any] | None", db.library.get_scan(library_id)) or repaired_doc
+        await db.library.remove_scan(library_id)
+        await db.library.add_scan(library_id, repaired_doc)
+        scan_doc = cast("dict[str, Any] | None", await db.library.get_scan(library_id)) or repaired_doc
 
     return scan_doc
 
 
-def get_scan_state(db: Database, library_id: str) -> dict[str, Any] | None:
+async def get_scan_state(db: Database, library_id: int) -> dict[str, Any] | None:
     """Return the scan document for a library, repairing legacy rows when found."""
-    scan_doc = cast("dict[str, Any] | None", db.library.get_scan(library_id))
+    scan_doc = cast("dict[str, Any] | None", await db.library.get_scan(library_id))
     if scan_doc is None:
         return None
     if scan_doc.get("library_key") != library_key_from_ref(library_id):
@@ -97,20 +97,20 @@ def get_scan_state(db: Database, library_id: str) -> dict[str, Any] | None:
     return scan_doc
 
 
-def update_scan_state(db: Database, library_id: str, **fields: Any) -> dict[str, Any]:
+async def update_scan_state(db: Database, library_id: int, **fields: Any) -> dict[str, Any]:
     """Persist scan-state changes through the constructor-backed namespace."""
     scan_doc = ensure_scan_state(db, library_id)
     if not fields:
         return scan_doc
 
-    db.library.update_scan(library_id, fields)
-    refreshed = cast("dict[str, Any] | None", db.library.get_scan(library_id))
+    await db.library.update_scan(library_id, fields)
+    refreshed = cast("dict[str, Any] | None", await db.library.get_scan(library_id))
     if refreshed is not None:
         return refreshed
     return {**scan_doc, **fields}
 
 
-def transition_pipeline_axis(
+async def transition_pipeline_axis(
     db: Database,
     library_id: str,
     axis_field: str,
@@ -124,7 +124,7 @@ def transition_pipeline_axis(
         ValueError: If the transition is not valid from the current axis state.
 
     """
-    current = db.app.get_pipeline_state(library_id)
+    current = await db.app.get_pipeline_state(library_id)
     if current is not None:
         current_value = current.get(axis_field)
         if current_value is not None:
@@ -139,30 +139,30 @@ def transition_pipeline_axis(
                     f"Allowed targets: {sorted(allowed)}"
                 )
                 raise ValueError(msg)
-    db.app.update_pipeline_axis(library_id, axis_field, next_state)
+    await db.app.update_pipeline_axis(library_id, axis_field, next_state)
 
 
-def get_pipeline_state(db: Database, library_id: str) -> dict[str, str]:
+async def get_pipeline_state(db: Database, library_id: int) -> dict[str, str]:
     """Return the four pipeline axis values for a library.
 
     Returns default values if the library has no pipeline state fields set.
     """
-    state = db.app.get_pipeline_state(library_id)
+    state = await db.app.get_pipeline_state(library_id)
     if state is None:
         return dict(PIPELINE_DEFAULTS)
     return state
 
 
-def get_libraries_in_axis_state(
+async def get_libraries_in_axis_state(
     db: Database,
     axis_field: str,
     axis_value: str,
 ) -> list[str]:
     """Return library document IDs where the given axis field matches the value."""
-    return db.app.get_libraries_in_axis_state(axis_field, axis_value)
+    return await db.app.get_libraries_in_axis_state(axis_field, axis_value)
 
 
-def bulk_transition_pipeline_axis(
+async def bulk_transition_pipeline_axis(
     db: Database,
     axis_field: str,
     from_state: str,
@@ -189,5 +189,5 @@ def bulk_transition_pipeline_axis(
         raise ValueError(msg)
     library_ids = get_libraries_in_axis_state(db, axis_field, from_state)
     for library_id in library_ids:
-        db.app.update_pipeline_axis(library_id, axis_field, to_state)
+        await db.app.update_pipeline_axis(library_id, axis_field, to_state)
     return len(library_ids)

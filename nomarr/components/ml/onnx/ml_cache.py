@@ -62,7 +62,7 @@ class ONNXModelCache:
     heads: dict[str, list[ONNXHeadModel]]
     """Head models keyed by backbone name; each list is sorted by model name."""
 
-    def __init__(
+    async def __init__(
         self,
         models_dir: str,
         device: DevicePlacement,
@@ -85,7 +85,7 @@ class ONNXModelCache:
 
         backbone_list: list[ONNXBackboneModel] = discover_backbone_models(models_dir)
         head_list: list[ONNXHeadModel] = (
-            discover_head_models(models_dir, db) if db is not None else discover_head_models_no_db(models_dir)
+            await discover_head_models(models_dir, db) if db is not None else discover_head_models_no_db(models_dir)
         )
 
         self.backbones = {m.backbone_name: m for m in backbone_list}

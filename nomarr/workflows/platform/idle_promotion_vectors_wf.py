@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: str) -> int:
+async def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: str) -> int:
     """Run hot→cold vector promotion for all pending backbones.
 
     Intended to be called from a background thread when the discovery worker
@@ -52,7 +52,7 @@ def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: st
 
     """
     # Step 1: Find targets (list[str] — backbone IDs only)
-    targets = list_hot_vector_targets(db, models_dir)
+    targets = await list_hot_vector_targets(db, models_dir)
     if not targets:
         logger.debug("[%s] No hot vectors pending promotion", worker_id)
         return 0
@@ -81,14 +81,14 @@ def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: st
             continue
 
         try:
-            nlists = compute_promotion_ef_construction(db, backbone_id)
+            nlists = await compute_promotion_ef_construction(db, backbone_id)
             logger.info(
                 "[%s] Promoting %s (nlists=%d)",
                 worker_id,
                 backbone_id,
                 nlists,
             )
-            promote_and_rebuild_workflow(db, backbone_id, nlists, models_dir)
+            await promote_and_rebuild_workflow(db, backbone_id, nlists, models_dir)
             promoted += 1
         except Exception:
             logger.exception(

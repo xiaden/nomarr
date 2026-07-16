@@ -190,12 +190,12 @@ class ConfigService:
 
         self._logger.debug("Subscribed callback for observable key '%s'", key)
 
-    def _write_to_db(self, key: str, value: str) -> None:
+    async def _write_to_db(self, key: str, value: str) -> None:
         """Persist a config value to DB meta table via throwaway connection."""
         try:
             db = Database()
             try:
-                db.app.update_config_option(f"config_{key}", {"value": value})
+                await db.app.update_config_option(f"config_{key}", {"value": value})
             finally:
                 db.close()
         except Exception:
@@ -275,7 +275,7 @@ class ConfigService:
     # Private composition logic
     # ----------------------------------------------------------------------
 
-    def _bootstrap_and_load(self) -> None:
+    async def _bootstrap_and_load(self) -> None:
         """Bootstrap config to DB and load cache from DB.
 
         Opens ONE throwaway Database connection and performs:
@@ -292,20 +292,20 @@ class ConfigService:
             db = Database()
             try:
                 # Batch-read existing config keys from DB
-                docs = db.app.list_config_options(prefix="config_")
+                docs = await db.app.list_config_options(prefix="config_")
                 existing_keys = {str(doc["key"])[7:] for doc in docs if "key" in doc}  # Strip 'config_' prefix
 
                 # Seed: write only keys NOT already in DB
                 for key in _ALLOWED_CONFIG_KEYS:
                     if key not in existing_keys and key in bootstrap_config:
                         value = bootstrap_config[key]
-                        db.app.update_config_option(
+                        await db.app.update_config_option(
                             f"config_{key}",
                             {"value": str(value) if value is not None else ""},
                         )
 
                 # Load: read all config_* keys back into cache
-                all_docs = db.app.list_config_options(prefix="config_")
+                all_docs = await db.app.list_config_options(prefix="config_")
                 for meta_doc in all_docs:
                     meta_key = str(meta_doc.get("key", ""))
                     config_key = meta_key[7:]  # Strip 'config_' prefix

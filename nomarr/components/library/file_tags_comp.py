@@ -17,7 +17,7 @@ class _FileTagItem(TypedDict):
     is_nomarr_tag: bool
 
 
-async def get_file_tags_with_path(db: Database, file_id: str, nomarr_only: bool = False) -> dict[str, Any] | None:
+async def get_file_tags_with_path(db: Database, file_id: int, nomarr_only: bool = False) -> dict[str, Any] | None:
     """Get all tags for a file along with file path.
 
     Returns dict with 'path' and 'tags' keys, or None if file not found.

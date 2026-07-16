@@ -16,7 +16,7 @@ class UpdateLibraryMetadataComp:
     def __init__(self, db: Database) -> None:
         self.db = db
 
-    def update(
+    async def update(
         self,
         library_id: str,
         *,
@@ -27,7 +27,7 @@ class UpdateLibraryMetadataComp:
         library_auto_write: bool | None = None,
     ) -> None:
         """Update library metadata fields via library_records_comp."""
-        update_library_record(
+        await update_library_record(
             self.db,
             library_id,
             name=name,

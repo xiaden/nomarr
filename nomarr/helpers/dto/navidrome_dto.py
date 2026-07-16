@@ -28,7 +28,7 @@ class TrackPlayData(TypedDict):
     """
 
     nd_id: NotRequired[str]
-    file_id: str | None
+    file_id: int | None
     playcount: int
     last_played: int | None
 

@@ -27,7 +27,7 @@ def _tag_name(tag_doc: dict[str, Any]) -> str | None:
 
 
 def _tag_id(tag_doc: dict[str, Any]) -> str | None:
-    tag_id = tag_doc.get("_id")
+    tag_id = tag_doc.get("id")
     return str(tag_id) if isinstance(tag_id, str) else None
 
 
@@ -43,10 +43,10 @@ def _merge_replaced_tags(
     return merged_tags
 
 
-def set_song_tags(db: Database, song_id: str, name: str, values: list[TagValue]) -> None:
+async def set_song_tags(db: Database, song_id: int, name: str, values: list[TagValue]) -> None:
     """Replace all tags for one ``song_id`` + ``name`` pair."""
-    existing_tags = db.library.list_file_tags_for_files([song_id]).get(song_id, [])
-    db.library.replace_file_tags(
+    existing_tags = await db.library.list_file_tags_for_files([song_id]).get(song_id, [])
+    await db.library.replace_file_tags(
         song_id,
         _merge_replaced_tags(existing_tags, replacements_by_name={name: values}),
     )
@@ -59,7 +59,7 @@ def _validate_tag_value(value: object) -> TagValue:
     raise TypeError(f"Invalid tag value type: {type(value).__name__}")
 
 
-def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
+async def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
     """Replace tags for many ``(song_id, name)`` pairs using intent-level file-tag writes."""
     if not entries:
         return
@@ -72,9 +72,9 @@ def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
         song_replacements = replacements_by_song.setdefault(song_id, {})
         song_replacements.setdefault(name, []).extend(values)
 
-    existing_tags_by_song = db.library.list_file_tags_for_files(list(replacements_by_song))
+    existing_tags_by_song = await db.library.list_file_tags_for_files(list(replacements_by_song))
     for song_id, replacements_by_name in replacements_by_song.items():
-        db.library.replace_file_tags(
+        await db.library.replace_file_tags(
             song_id,
             _merge_replaced_tags(
                 existing_tags_by_song.get(song_id, []),
@@ -83,21 +83,21 @@ def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
         )
 
 
-def add_song_tag(db: Database, song_id: str, name: str, value: TagValue) -> None:
+async def add_song_tag(db: Database, song_id: int, name: str, value: TagValue) -> None:
     """Add one tag value to a song without replacing other values for the name."""
-    existing_tags = db.library.list_file_tags_for_files([song_id]).get(song_id, [])
-    db.library.replace_file_tags(
+    existing_tags = await db.library.list_file_tags_for_files([song_id]).get(song_id, [])
+    await db.library.replace_file_tags(
         song_id,
         [*existing_tags, {"name": name, "value": value}],
     )
 
 
-def delete_song_tags(db: Database, song_id: str) -> None:
+async def delete_song_tags(db: Database, song_id: int) -> None:
     """Delete all tag edges for one song."""
-    db.library.remove_file_tags(song_id)
+    await db.library.remove_file_tags(song_id)
 
 
-def relink_tag_edges(
+async def relink_tag_edges(
     db: Database,
     source_tag_id: str,
     target_tag_id: str,
@@ -107,12 +107,12 @@ def relink_tag_edges(
     if source_tag_id == target_tag_id:
         return {"moved": 0, "skipped": 0, "source_orphaned": False}
 
-    all_file_docs = _narrow_tag_list(db.library.list_files(limit=None))
-    all_file_ids = [file_id for file_doc in all_file_docs if isinstance((file_id := file_doc.get("_id")), str)]
+    all_file_docs = _narrow_tag_list(await db.library.list_files(limit=None))
+    all_file_ids = [file_id for file_doc in all_file_docs if isinstance((file_id := file_doc.get("id")), str)]
     if not all_file_ids:
         return {"moved": 0, "skipped": 0, "source_orphaned": False}
 
-    all_tags_by_file = db.library.list_file_tags_for_files(all_file_ids)
+    all_tags_by_file = await db.library.list_file_tags_for_files(all_file_ids)
     allowed_song_ids = set(song_ids) if song_ids is not None else None
     selected_source_file_ids: list[str] = []
     moved = 0
@@ -139,9 +139,9 @@ def relink_tag_edges(
         return {"moved": 0, "skipped": 0, "source_orphaned": False}
 
     if song_ids is None:
-        db.library.replace_tag_references(source_tag_id, target_tag_id)
+        await db.library.replace_tag_references(source_tag_id, target_tag_id)
     else:
-        db.library.replace_selected_tag_references(selected_source_file_ids, source_tag_id, target_tag_id)
+        await db.library.replace_selected_tag_references(selected_source_file_ids, source_tag_id, target_tag_id)
 
     return {
         "moved": moved,

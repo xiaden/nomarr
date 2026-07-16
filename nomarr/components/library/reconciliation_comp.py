@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def claim_files_for_reconciliation(
+async def claim_files_for_reconciliation(
     db: Database,
     library_id: str,
     worker_id: str,
@@ -50,7 +50,7 @@ def claim_files_for_reconciliation(
     candidates = [
         candidate
         for file_id in stale_ids
-        if (candidate := cast("dict[str, Any] | None", db.library.get_file(file_id))) is not None
+        if (candidate := cast("dict[str, Any] | None", await db.library.get_file(file_id))) is not None
     ]
 
     claimed: list[dict[str, Any]] = []
@@ -96,6 +96,6 @@ async def release_claim(db: Database, file_key: str) -> None:
     await db.application.release_claim(file_id)
 
 
-def count_files_needing_reconciliation(db: Database, library_id: str) -> int:
+async def count_files_needing_reconciliation(db: Database, library_id: str) -> int:
     """Count files that are still in the ``tags_not_fresh`` state."""
-    return len(get_stale_file_ids(db, library_id=library_id))
+    return len(await get_stale_file_ids(db, library_id=library_id))

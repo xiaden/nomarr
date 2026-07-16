@@ -51,7 +51,7 @@ def _run_alembic_upgrade() -> None:
     logger.info("Alembic migrations completed successfully")
 
 
-def prepare_database_workflow(
+async def prepare_database_workflow(
     db: Database,
     *,
     models_dir: str | None = None,
@@ -80,7 +80,7 @@ def prepare_database_workflow(
     try:
         from nomarr.workflows.platform.prune_orphaned_files_wf import prune_orphaned_files_workflow
 
-        prune_orphaned_files_workflow(db)
+        await prune_orphaned_files_workflow(db)
     except Exception as exc:
         logger.warning("Orphaned file pruning failed (non-fatal): %s", exc, exc_info=True)
 

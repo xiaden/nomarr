@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def load_calibrations_from_db_wf(db: Database) -> dict[str, dict[str, Any]]:
+async def load_calibrations_from_db_wf(db: Database) -> dict[str, dict[str, Any]]:
     """Load all calibrations from calibration_state collection.
 
     Returns dict mapping label -> {p5, p95} for use in aggregation.
@@ -51,7 +51,7 @@ def load_calibrations_from_db_wf(db: Database) -> dict[str, dict[str, Any]]:
 
     """
     try:
-        calibration_states = load_all_calibration_states(db)
+        calibration_states = await load_all_calibration_states(db)
 
         if not calibration_states:
             logger.debug("[calibration_loader] No calibrations in database (initial state)")
@@ -82,7 +82,7 @@ _cached_calibrations: dict[str, dict[str, float]] | None = None
 _cached_version: str | None = None
 
 
-def load_calibrations_cached_wf(db: Database) -> dict[str, dict[str, float]]:
+async def load_calibrations_cached_wf(db: Database) -> dict[str, dict[str, float]]:
     """Load calibrations with caching based on version hash.
 
     Checks calibration_version in meta collection. If version matches cached
@@ -106,7 +106,7 @@ def load_calibrations_cached_wf(db: Database) -> dict[str, dict[str, float]]:
     global _cached_calibrations, _cached_version
 
     # Check current version (cheap: single doc lookup)
-    current_version = get_calibration_version(db)
+    current_version = await get_calibration_version(db)
 
     # Cache miss or version changed - reload calibrations
     if _cached_version != current_version:

@@ -22,7 +22,7 @@ __all__ = [
 ]
 
 
-def discover_and_claim_file_for_tags(db: Database, worker_id: str) -> str | None:
+async def discover_and_claim_file_for_tags(db: Database, worker_id: str) -> str | None:
     """Discover and atomically claim the next file needing tag extraction.
 
     Args:
@@ -33,10 +33,10 @@ def discover_and_claim_file_for_tags(db: Database, worker_id: str) -> str | None
         File ``_id`` string if a file was claimed, ``None`` if no work available
 
     """
-    file_doc = discover_next_file_needing_tags(db, exclude_claimed=True)
+    file_doc = await discover_next_file_needing_tags(db, exclude_claimed=True)
     if file_doc is None:
         return None
-    file_id = str(file_doc["_id"])
-    if claim_file(db, file_id, worker_id):
+    file_id = str(file_doc["id"])
+    if await claim_file(db, file_id, worker_id):
         return file_id
     return None

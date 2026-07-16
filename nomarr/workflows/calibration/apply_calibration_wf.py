@@ -39,7 +39,7 @@ class ApplyProgressCallback(Protocol):
     ) -> None: ...
 
 
-def apply_calibration_wf(
+async def apply_calibration_wf(
     *,
     db: Database,
     paths: list[str],
@@ -98,9 +98,9 @@ def apply_calibration_wf(
     # --- Pre-compute small invariants once (cheap, shared across all chunks) ---
     _t0 = internal_ms()
     logger.info("[apply_calibration] Pre-computing batch context...")
-    heads = discover_heads(models_dir, db)
+    heads = await discover_heads(models_dir, db)
     calibrations = load_calibrations_from_db_wf(db)
-    calibration_version = get_calibration_version(db)
+    calibration_version = await get_calibration_version(db)
 
     _t_setup = (internal_ms().value - _t0.value) / 1000
     n_chunks = math.ceil(total / prefetch_chunk_size)
@@ -109,7 +109,7 @@ def apply_calibration_wf(
         f"{total} files in {n_chunks} chunk(s) of {prefetch_chunk_size}"
     )
 
-    def _process_file(file_path: str, ctx: BatchContext) -> bool:
+    async def _process_file(file_path: str, ctx: BatchContext) -> bool:
         """Process a single file (runs in thread pool)."""
         try:
             params = WriteCalibratedTagsParams(
@@ -119,7 +119,7 @@ def apply_calibration_wf(
                 version_tag_key=version_tag_key,
                 calibrate_heads=calibrate_heads,
             )
-            write_calibrated_tags_wf(db=db, params=params, batch_ctx=ctx)
+            await write_calibrated_tags_wf(db=db, params=params, batch_ctx=ctx)
             return True
         except Exception as e:
             logger.warning(f"Failed to write calibrated tags for {file_path}: {e}", exc_info=True)
@@ -183,7 +183,7 @@ def apply_calibration_wf(
                 f"flushing {len(batch_ctx.pending_mood_tags)} mood tag writes..."
             )
             try:
-                save_mood_tags_batch(db, batch_ctx.pending_mood_tags)
+                await save_mood_tags_batch(db, batch_ctx.pending_mood_tags)
             except Exception as e:
                 logger.warning(f"[apply_calibration] Batch mood tag flush failed: {e}", exc_info=True)
 
@@ -193,7 +193,7 @@ def apply_calibration_wf(
                 f"flushing {len(batch_ctx.pending_calibration_hashes)} calibration hash updates..."
             )
             try:
-                update_file_calibration_hashes_batch(db, batch_ctx.pending_calibration_hashes)
+                await update_file_calibration_hashes_batch(db, batch_ctx.pending_calibration_hashes)
             except Exception as e:
                 logger.warning(f"[apply_calibration] Batch calibration hash flush failed: {e}", exc_info=True)
 

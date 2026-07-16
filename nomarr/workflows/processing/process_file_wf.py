@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def process_file_workflow(
+async def process_file_workflow(
     path: str,
     config: ProcessorConfig,
     cache: ONNXModelCache,
@@ -68,11 +68,11 @@ def process_file_workflow(
         RuntimeError: If no heads are found or all heads fail.
 
     """
-    library_path = build_library_path_from_db(stored_path=path, db=db, library_id=None, check_disk=True)
+    library_path = await build_library_path_from_db(stored_path=path, db=db, library_id=None, check_disk=True)
     if not library_path.is_valid():
         if library_path.status == "not_found":
             logger.warning(f"[process_file_workflow] File no longer exists on disk, cleaning up: {path}")
-            bulk_delete_files(db, [path])
+            await bulk_delete_files(db, [path])
             return ProcessFileResult(
                 file_path=path,
                 elapsed=0,
@@ -119,7 +119,7 @@ def process_file_workflow(
         raise
     except AudioLoadCrashError as e:
         logger.error(f"[processor] Audio load crashed for {path}: {e}")
-        bulk_delete_files(db, [path])
+        await bulk_delete_files(db, [path])
         logger.info(f"[processor] Deleted invalid file: {path}")
         elapsed = round((internal_ms().value - start_all.value) / 1000, 2)
         return ProcessFileResult(
@@ -161,7 +161,7 @@ def process_file_workflow(
         if file_id is not None:
             assert library_path.library_id is not None  # validated above
             library_path.library_id.split("/")[-1]
-            elapsed_store = persist_backbone_vector(db, file_id, backbone, embeddings_2d, model_suite_hash, path)
+            elapsed_store = await persist_backbone_vector(db, file_id, backbone, embeddings_2d, model_suite_hash, path)
             if elapsed_store is not None:
                 timings[f"vector_store_{backbone}"] = elapsed_store
         del embeddings_2d
@@ -193,7 +193,7 @@ def process_file_workflow(
     tags_accum.update(mood_tags)
     resolved_output_streams: list[DeferredOutputStreamWrite] = []
     if all_raw_output_streams:
-        output_index_map = build_model_output_index_map(db)
+        output_index_map = await build_model_output_index_map(db)
         for model_path, output_streams in all_raw_output_streams.items():
             output_ids_by_index = output_index_map.get(model_path)
             if output_ids_by_index is None:

@@ -82,7 +82,7 @@ class Application:
     The singleton instance is available as `application` at module level.
     """
 
-    def __init__(self) -> None:
+    async def __init__(self) -> None:
         """Initialize application with core dependencies.
 
         Loads configuration and creates database and queue immediately.
@@ -122,7 +122,7 @@ class Application:
         self.db = Database(url=os.environ["PG_DATABASE_URL"])
         from nomarr.workflows.platform.prepare_database_wf import prepare_database_workflow
 
-        prepare_database_workflow(self.db, models_dir=self.models_dir)
+        await prepare_database_workflow(self.db, models_dir=self.models_dir)
         self._config_service = config_service
         self.services: dict[str, Any] = {}
         self.worker_system: WorkerSystemService | None = None
@@ -202,14 +202,14 @@ class Application:
                 )
                 time.sleep(2)
 
-    def _start_app_heartbeat(self) -> None:
+    async def _start_app_heartbeat(self) -> None:
         """Start background thread to write app heartbeat (Phase 3: DB-based IPC)."""
         db = self.db
 
-        def heartbeat_loop() -> None:
+        async def heartbeat_loop() -> None:
             while self._running:
                 try:
-                    db.app.update_health(
+                    await db.app.update_health(
                         "app",
                         {
                             "component_type": "app",

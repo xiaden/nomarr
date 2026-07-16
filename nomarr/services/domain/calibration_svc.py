@@ -147,7 +147,7 @@ class CalibrationService:
     #  Histogram-Based Calibration (Primary System)
     # -------------------------------------------------------------------------
 
-    def generate_histogram_calibration(self) -> dict[str, Any]:
+    async def generate_histogram_calibration(self) -> dict[str, Any]:
         """Generate calibrations using sparse uniform histogram approach.
 
         Stateless, idempotent. Always computes from current DB state.
@@ -176,7 +176,7 @@ class CalibrationService:
         )
 
         # Compute reconciliation info after calibration completes
-        reconciliation_info = compute_reconciliation_info(
+        reconciliation_info = await compute_reconciliation_info(
             self._db,
             result.get("global_version"),
         )
@@ -296,7 +296,7 @@ class CalibrationService:
             "result": self._generation_result,
         }
 
-    def _get_generation_progress(self) -> HistogramGenerationProgressDict:
+    async def _get_generation_progress(self) -> HistogramGenerationProgressDict:
         """Get calibration generation progress.
 
         When generation is running, returns live progress from background thread:
@@ -338,10 +338,10 @@ class CalibrationService:
 
         # Count heads with recent calibration_state (within 24 hours)
         recent_threshold = now_ms().value - (24 * 60 * 60 * 1000)
-        completed = count_recent_calibration_states(self._db, recent_threshold)
+        completed = await count_recent_calibration_states(self._db, recent_threshold)
 
         # Get most recent calibration timestamp
-        last_updated = get_latest_calibration_state_updated_at(self._db)
+        last_updated = await get_latest_calibration_state_updated_at(self._db)
 
         return {
             "current_head": None,
@@ -377,7 +377,7 @@ class CalibrationService:
             **self._get_generation_progress(),
         }
 
-    def get_histogram_for_head(self, model_key: str, head_name: str, label: str) -> dict[str, Any]:
+    async def get_histogram_for_head(self, model_key: str, head_name: str, label: str) -> dict[str, Any]:
         """Get stored histogram bins for a specific label.
 
         Args:
@@ -401,7 +401,7 @@ class CalibrationService:
             ValueError: If no calibration state found for label
 
         """
-        state = load_calibration_state(self._db, head_name, label)
+        state = await load_calibration_state(self._db, head_name, label)
         if not state:
             raise ValueError(f"No calibration state found for {model_key}:{head_name}:{label}")
 
@@ -416,18 +416,18 @@ class CalibrationService:
             "histogram_spec": state.get("histogram", {}),
         }
 
-    def get_all_calibration_states(self) -> list[dict[str, Any]]:
+    async def get_all_calibration_states(self) -> list[dict[str, Any]]:
         """Get all calibration states with histogram bins.
 
         Returns:
             List of calibration state documents with histogram_bins
 
         """
-        return load_all_calibration_states(self._db)
+        return await load_all_calibration_states(self._db)
 
     # -------------------------------------------------------------------------
 
-    def clear_calibration(self) -> dict[str, int]:
+    async def clear_calibration(self) -> dict[str, int]:
         """Clear all calibration data from the database.
 
         Removes calibration_state, calibration_history, meta keys,
@@ -444,7 +444,7 @@ class CalibrationService:
             msg = "Cannot clear calibration while generation is running."
             raise RuntimeError(msg)
 
-        return clear_all_calibration_data(self._db)
+        return await clear_all_calibration_data(self._db)
 
     # -------------------------------------------------------------------------
     #  Reconciliation Info

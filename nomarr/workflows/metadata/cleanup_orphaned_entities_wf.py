@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def cleanup_orphaned_entities_workflow(db: Database, dry_run: bool = False) -> dict[str, int | dict[str, int]]:
+async def cleanup_orphaned_entities_workflow(db: Database, dry_run: bool = False) -> dict[str, int | dict[str, int]]:
     """Clean up orphaned tags from the tags collection.
 
     Removes tags that have no incoming edges from songs. This happens when
@@ -53,7 +53,7 @@ def cleanup_orphaned_entities_workflow(db: Database, dry_run: bool = False) -> d
         }
 
     # Delete orphaned tags
-    deleted_count = cleanup_orphaned_tags(db)
+    deleted_count = await cleanup_orphaned_tags(db)
 
     deleted_log = logger.info if deleted_count > 0 else logger.debug
     deleted_log("[tag_cleanup] Deleted %d orphaned tags", deleted_count)

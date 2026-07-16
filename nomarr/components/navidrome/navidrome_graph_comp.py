@@ -1,8 +1,11 @@
-"""Component-owned graph helpers for Navidrome track and playcount storage."""
+"""Component-owned graph helpers for Navidrome track and playcount storage.
+
+Updated for PostgreSQL: all methods are async and use ``AppDb`` directly
+instead of the removed ``AppLegacyNavidromeDb`` surface.
+"""
 
 from __future__ import annotations
 
-import hashlib
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.dto.navidrome_dto import TrackPlayData
@@ -11,121 +14,124 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def _edge_key(left_id: str, right_id: str) -> str:
-    """Return a stable edge-document key."""
-    return hashlib.sha256(f"{left_id}:{right_id}".encode()).hexdigest()[:16]
+def _to_int_file_id(file_id: str | int | None) -> int | None:
+    """Coerce a file-ID value to ``int`` or ``None``."""
+    if isinstance(file_id, int):
+        return file_id
+    if isinstance(file_id, str) and file_id.isdigit():
+        return int(file_id)
+    return None
 
 
-def _build_edge_namespace(db: Database, name: str) -> Any:
-    """Return the runtime-wired edge namespace for an edge collection."""
-    return cast("Any", getattr(db, name))
+async def upsert_navidrome_track(db: Database, nd_id: str) -> None:
+    # The legacy signature only supplied a key; we pass None for the optional fields.
+    await db.app.upsert_navidrome_track(nd_id, title=None, artist=None, album=None, file_path=None)
 
 
-def _is_dict_list(value: object) -> bool:
-    return isinstance(value, list) and all(isinstance(item, dict) for item in value)
-
-
-def upsert_navidrome_track(db: Database, nd_id: str) -> None:
-    """Ensure one Navidrome track vertex exists."""
-    db.app.legacy_navidrome.upsert_nd_track({"_key": nd_id})
-
-
-def bulk_upsert_navidrome_tracks(db: Database, nd_ids: list[str]) -> int:
-    """Ensure all provided Navidrome track vertices exist."""
+async def bulk_upsert_navidrome_tracks(db: Database, nd_ids: list[str]) -> int:
     if not nd_ids:
         return 0
-
-    return db.app.legacy_navidrome.bulk_upsert_nd_tracks(nd_ids)
-
-
-def ensure_navidrome_file_link(db: Database, nd_id: str, file_id: str) -> None:
-    """Ensure a single Navidrome track → library file edge exists."""
-    bulk_ensure_navidrome_file_links(db, [{"nd_id": nd_id, "file_id": file_id}])
+    return await db.app.bulk_upsert_navidrome_tracks(nd_ids)
 
 
-def bulk_ensure_navidrome_file_links(db: Database, mappings: list[dict[str, str]]) -> int:
-    """Ensure track → file link edges exist for each mapping entry."""
+async def ensure_navidrome_file_link(db: Database, nd_id: str, file_id: int) -> None:
+    await db.app.map_navidrome_track_to_file(nd_id, file_id)
+
+
+async def bulk_ensure_navidrome_file_links(db: Database, mappings: list[dict[str, str]]) -> int:
     if not mappings:
         return 0
-
-    return db.app.legacy_navidrome.bulk_ensure_nd_file_links(mappings)
-
-
-def list_navidrome_track_keys(db: Database) -> list[str]:
-    """Return all Navidrome track key values."""
-    return [str(key) for key in db.app.legacy_navidrome.list_nd_track_keys()]
+    return await db.app.bulk_map_navidrome_tracks(mappings)
 
 
-def delete_navidrome_tracks_cascade(db: Database, nd_ids: list[str]) -> int:
-    """Cascade-delete track vertices and their connected edges.
+async def list_navidrome_track_keys(db: Database) -> list[str]:
+    return [str(key) for key in await db.app.legacy_navidrome.list_nd_track_keys()]
 
-    Args:
-        db: Database instance.
-        nd_ids: Navidrome track id strings (bare keys, not ``_id`` paths).
-            The function constructs the full ``navidrome_tracks/<id>`` paths internally.
 
-    Returns:
-        Number of track vertex documents deleted, or 0 if ``nd_ids`` is empty.
+async def delete_navidrome_tracks_cascade(db: Database, nd_ids: list[str]) -> int:
+    """Cascade-delete Navidrome tracks.
 
+    The PostgreSQL API deletes tracks by file_id, not by nd_id.
+    We loop through nd_ids resolving each to a file_id first.
     """
     if not nd_ids:
         return 0
-
-    return db.app.legacy_navidrome.delete_nd_tracks_cascade(nd_ids)
-
-
-def resolve_navidrome_track_to_file(db: Database, nd_id: str) -> str | None:
-    """Resolve one Navidrome track id to a library file `_id`."""
-    return db.app.legacy_navidrome.resolve_nd_track_to_file(nd_id)
-
-
-def resolve_file_to_navidrome_track(db: Database, file_id: str) -> str | None:
-    """Resolve one library file `_id` to its Navidrome track key."""
-    return db.app.legacy_navidrome.resolve_file_to_nd_track(file_id)
+    total = 0
+    for nd_id in nd_ids:
+        file_id = await db.app.get_mapped_file_for_navidrome_track(nd_id)
+        if file_id is not None:
+            total += await db.app.delete_navidrome_tracks_for_file(file_id)
+    return total
 
 
-def bulk_resolve_navidrome_tracks_to_files(db: Database, nd_ids: list[str]) -> dict[str, str]:
+async def resolve_navidrome_track_to_file(db: Database, nd_id: str) -> int | None:
+    return await db.app.get_mapped_file_for_navidrome_track(nd_id)
+
+
+async def resolve_file_to_navidrome_track(db: Database, file_id: int) -> str | None:
+    return await db.app.resolve_file_to_navidrome_track(file_id)
+
+
+async def bulk_resolve_navidrome_tracks_to_files(db: Database, nd_ids: list[str]) -> dict[str, int]:
     """Resolve multiple Navidrome track ids to library file ids."""
     if not nd_ids:
         return {}
+    result: dict[str, int] = {}
+    for nd_id in nd_ids:
+        file_id = await db.app.get_mapped_file_for_navidrome_track(nd_id)
+        if file_id is not None:
+            result[nd_id] = file_id
+    return result
 
-    return {
-        str(nd_id): str(file_id)
-        for nd_id, file_id in db.app.legacy_navidrome.bulk_resolve_nd_tracks_to_files(nd_ids).items()
-    }
 
-
-def bulk_resolve_files_to_navidrome_ids(db: Database, file_ids: list[str]) -> dict[str, str]:
+async def bulk_resolve_files_to_navidrome_ids(db: Database, file_ids: list[int]) -> dict[int, str]:
     """Resolve multiple library file ids to Navidrome track ids."""
     if not file_ids:
         return {}
-
-    return {
-        str(file_id): str(nd_id)
-        for file_id, nd_id in db.app.legacy_navidrome.bulk_resolve_files_to_nd_ids(file_ids).items()
-    }
-
-
-def bulk_upsert_navidrome_plays(db: Database, user_id: str, plays: list[dict[str, Any]]) -> int:
-    """Replace the user's existing bucketed play graph with the provided payload."""
-    return db.app.legacy_navidrome.bulk_upsert_nd_plays(user_id, plays)
+    result: dict[int, str] = {}
+    for file_id in file_ids:
+        nd_id = await db.app.resolve_file_to_navidrome_track(file_id)
+        if nd_id is not None:
+            result[file_id] = nd_id
+    return result
 
 
-def _coerce_top_play_rows(rows: list[dict[str, Any]]) -> list[TrackPlayData]:
+async def bulk_upsert_navidrome_plays(db: Database, user_id: str, plays: list[dict[str, Any]]) -> int:
+    """Record plays for a user.
+
+    The legacy ArangoDB API bulk-upserted a play graph. PostgreSQL records
+    individual plays via ``record_navidrome_play``.
+    """
+    if not plays:
+        return 0
+    total = 0
+    for play in plays:
+        nd_id = str(play.get("nd_id", ""))
+        if not nd_id:
+            continue
+        played_at = play.get("played_at")
+        if not isinstance(played_at, int):
+            continue
+        file_id = _to_int_file_id(play.get("file_id"))
+        total += await db.app.record_navidrome_play(nd_id, user_id, played_at, file_id)
+    return total
+
+
+def _coerce_top_play_rows(rows: list[Any]) -> list[TrackPlayData]:
     return [
         TrackPlayData(
-            nd_id=str(row["nd_id"]),
-            file_id=file_id if isinstance((file_id := row.get("file_id")), str) else None,
-            playcount=int(row["playcount"]),
+            nd_id=str(row.get("nd_id", row.get("nd_id", ""))),
+            file_id=_to_int_file_id(row.get("file_id")),
+            playcount=int(row.get("playcount", row.get("playcount", 0))),
             last_played=last_played if isinstance((last_played := row.get("last_played")), int) else None,
         )
         for row in rows
     ]
 
 
-def get_top_navidrome_plays(db: Database, user_id: str, top_n: int) -> list[TrackPlayData]:
-    """Return the user's most-played tracks, resolving ``file_id`` where a library link exists."""
+async def get_top_navidrome_plays(db: Database, user_id: str, top_n: int) -> list[TrackPlayData]:
+    """Return the user's most-played tracks, resolving file_id where a library link exists."""
     if top_n <= 0:
         return []
-
-    return _coerce_top_play_rows(db.app.legacy_navidrome.get_top_nd_plays(user_id, top_n))
+    rows = await db.app.get_top_navidrome_plays(user_id, top_n)
+    return _coerce_top_play_rows(cast("list[Any]", rows))

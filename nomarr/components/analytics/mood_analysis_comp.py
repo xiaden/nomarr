@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from nomarr.components.analytics.analytics_comp import DominantVibeResult, compute_dominant_vibes
 from nomarr.components.library.library_file_query_comp import get_library_stats
+from nomarr.helpers.dto.repo_dto import TagRow
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -29,27 +30,27 @@ class MoodAnalysisResult(TypedDict):
 # ---------------------------------------------------------------------------
 
 
-def _get_library_file_ids(db: Database, library_id: str | None) -> set[str] | None:
+async def _get_library_file_ids(db: Database, library_id: int | None) -> set[int] | None:
     """Return the allowed file-id set for a library scope when requested."""
     if library_id is None:
         return None
 
-    file_ids: set[str] = set()
-    file_docs = db.library.list_files(filters={"library_id": library_id}, limit=None)
+    file_ids: set[int] = set()
+    file_docs = await db.library.list_files(filters={"library_id": library_id}, limit=None)
     for file_doc in file_docs:
         f_id = file_doc.get("id")
-        if isinstance(f_id, str):
+        if isinstance(f_id, int):
             file_ids.add(f_id)
 
     return file_ids
 
 
-def _get_tag_docs_for_name(db: Database, name: str) -> list[dict[str, Any]]:
+async def _get_tag_docs_for_name(db: Database, name: str) -> list[TagRow]:
     """Return all tag documents for one tag name via constructor verbs."""
-    tags: list[dict[str, Any]] = []
+    tags: list[TagRow] = []
     offset = 0
     while True:
-        tag_page = db.library.list_tags(name=name, limit=_PAGE_SIZE, offset=offset)
+        tag_page = await db.library.list_tags(name=name, limit=_PAGE_SIZE, offset=offset)
         if not tag_page:
             break
         tags.extend(tag_page)
@@ -60,35 +61,32 @@ def _get_tag_docs_for_name(db: Database, name: str) -> list[dict[str, Any]]:
     return tags
 
 
-def _get_tag_edge_rows(
+async def _get_tag_edge_rows(
     db: Database,
     name: str,
-    library_id: str | None = None,
-) -> list[tuple[str, str]]:
+    library_id: int | None = None,
+) -> list[tuple[int, str]]:
     """Return ``(file_id, tag_value)`` rows for one tag name."""
-    library_file_ids = _get_library_file_ids(db, library_id)
+    library_file_ids = await _get_library_file_ids(db, library_id)
 
-    tag_docs = _get_tag_docs_for_name(db, name)
-    tag_id_to_value: dict[str, str] = {}
+    tag_docs = await _get_tag_docs_for_name(db, name)
+    tag_id_to_value: dict[int, str] = {}
     for tag_doc in tag_docs:
         tag_id = tag_doc.get("id")
         tag_value = tag_doc.get("value")
-        if isinstance(tag_id, str) and tag_value is not None:
+        if isinstance(tag_id, int) and tag_value is not None:
             tag_id_to_value[tag_id] = str(tag_value)
 
     if not tag_id_to_value:
         return []
 
     # Query files for each tag value using search_files_by_tag
-    rows: list[tuple[str, str]] = []
+    rows: list[tuple[int, str]] = []
     for tag_value in tag_id_to_value.values():
-        file_docs = cast(
-            "list[dict[str, Any]]",
-            db.library.search_files_by_tag(name, tag_value, limit=None),
-        )
+        file_docs = await db.library.search_files_by_tag(name, tag_value, limit=None)
         for file_doc in file_docs:
             file_id = file_doc.get("id")
-            if not isinstance(file_id, str):
+            if not isinstance(file_id, int):
                 continue
             if library_file_ids is not None and file_id not in library_file_ids:
                 continue
@@ -97,13 +95,13 @@ def _get_tag_edge_rows(
     return rows
 
 
-def _get_tier_tag_keys(db: Database) -> list[str]:
+async def _get_tier_tag_keys(db: Database) -> list[str]:
     """Return the names of all tier tags (nom:energy_tier, etc.)."""
     # Tier tags follow the nom:<attribute>_tier pattern
     tag_names: set[str] = set()
     offset = 0
     while True:
-        tag_page = db.library.list_tags(limit=_PAGE_SIZE, offset=offset)
+        tag_page = await db.library.list_tags(limit=_PAGE_SIZE, offset=offset)
         if not tag_page:
             break
         for tag_doc in tag_page:
@@ -122,7 +120,7 @@ def _get_tier_tag_keys(db: Database) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def get_mood_and_tier_tags_for_correlation(db: Database) -> dict[str, Any]:
+async def get_mood_and_tier_tags_for_correlation(db: Database) -> dict[str, Any]:
     """Get raw mood and tier tag rows for correlation analysis.
 
     Args:
@@ -137,19 +135,19 @@ def get_mood_and_tier_tags_for_correlation(db: Database) -> dict[str, Any]:
         tag_value)`` tuples.
 
     """
-    mood_tag_rows: list[tuple[str, str]] = []
+    mood_tag_rows: list[tuple[int, str]] = []
     for name in _MOOD_TAG_NAMES:
-        mood_tag_rows.extend(_get_tag_edge_rows(db, name))
+        mood_tag_rows.extend(await _get_tag_edge_rows(db, name))
 
-    tier_tag_keys = _get_tier_tag_keys(db)
-    tier_tag_rows: dict[str, list[tuple[str, str]]] = {}
+    tier_tag_keys = await _get_tier_tag_keys(db)
+    tier_tag_rows: dict[str, list[tuple[int, str]]] = {}
     for tier_name in tier_tag_keys:
-        tier_tag_rows[tier_name] = _get_tag_edge_rows(db, tier_name)
+        tier_tag_rows[tier_name] = await _get_tag_edge_rows(db, tier_name)
 
     return {"mood_tag_rows": mood_tag_rows, "tier_tag_keys": tier_tag_keys, "tier_tag_rows": tier_tag_rows}
 
 
-def get_mood_distribution_data(db: Database, library_id: str | None = None) -> list[tuple[str, str]]:
+async def get_mood_distribution_data(db: Database, library_id: int | None = None) -> list[tuple[str, str]]:
     """Get raw mood rows for distribution analytics.
 
     Args:
@@ -162,13 +160,13 @@ def get_mood_distribution_data(db: Database, library_id: str | None = None) -> l
     """
     rows: list[tuple[str, str]] = []
     for name in _MOOD_TAG_NAMES:
-        tier_rows = _get_tag_edge_rows(db, name, library_id)
+        tier_rows = await _get_tag_edge_rows(db, name, library_id)
         for _file_id, tag_value in tier_rows:
             rows.append((name, tag_value))
     return rows
 
 
-def get_mood_coverage(db: Database, library_id: str | None = None) -> dict[str, Any]:
+async def get_mood_coverage(db: Database, library_id: int | None = None) -> dict[str, Any]:
     """Compute mood tag coverage as percentage per tier.
 
     Args:
@@ -180,7 +178,7 @@ def get_mood_coverage(db: Database, library_id: str | None = None) -> dict[str, 
         and ``percentage`` for each of strict, regular, and loose.
 
     """
-    stats = get_library_stats(db, library_id)
+    stats = await get_library_stats(db, library_id)
     total_files = stats.get("total_files", 0)
     if total_files == 0:
         return {
@@ -191,8 +189,8 @@ def get_mood_coverage(db: Database, library_id: str | None = None) -> dict[str, 
     result: dict[str, Any] = {"total_files": total_files, "tiers": {}}
     for tier in ("strict", "regular", "loose"):
         name = f"nom:mood-{tier}"
-        rows = _get_tag_edge_rows(db, name, library_id=library_id)
-        unique_files: set[str] = set()
+        rows = await _get_tag_edge_rows(db, name, library_id=library_id)
+        unique_files: set[int] = set()
         for file_id, _tag_value in rows:
             unique_files.add(file_id)
         tagged = len(unique_files)
@@ -201,7 +199,7 @@ def get_mood_coverage(db: Database, library_id: str | None = None) -> dict[str, 
     return result
 
 
-def get_mood_balance(db: Database, library_id: str | None = None) -> dict[str, Any]:
+async def get_mood_balance(db: Database, library_id: int | None = None) -> dict[str, Any]:
     """Get the value distribution (balance) for each mood tier.
 
     Args:
@@ -220,7 +218,7 @@ def get_mood_balance(db: Database, library_id: str | None = None) -> dict[str, A
     result: dict[str, Any] = {}
     for tier in ("strict", "regular", "loose"):
         name = f"nom:mood-{tier}"
-        rows = _get_tag_edge_rows(db, name, library_id=library_id)
+        rows = await _get_tag_edge_rows(db, name, library_id=library_id)
         counter: Counter[str] = Counter()
         for _file_id, tag_value in rows:
             # Split compound moods like "(happy,sad)"
@@ -239,9 +237,9 @@ def get_mood_balance(db: Database, library_id: str | None = None) -> dict[str, A
     return result
 
 
-def _get_top_mood_pairs(
+async def _get_top_mood_pairs(
     db: Database,
-    library_id: str | None,
+    library_id: int | None,
     mood_tier: str,
     limit: int = 10,
 ) -> list[dict[str, Any]]:
@@ -260,12 +258,12 @@ def _get_top_mood_pairs(
     names = tier_hierarchy.get(mood_tier, ["nom:mood-strict"])
 
     # Fetch (file_id, tag_value) pairs for all requested mood names
-    tag_value_rows: list[tuple[str, str]] = []
+    tag_value_rows: list[tuple[int, str]] = []
     for name in names:
-        tag_value_rows.extend(_get_tag_edge_rows(db, name, library_id))
+        tag_value_rows.extend(await _get_tag_edge_rows(db, name, library_id))
 
     # Build mood-per-song map
-    moods_by_song: dict[str, set[str]] = {}
+    moods_by_song: dict[int, set[str]] = {}
     for fid, mood_value in tag_value_rows:
         if not mood_value:
             continue
@@ -290,9 +288,9 @@ def _get_top_mood_pairs(
     ]
 
 
-def compute_mood_analysis(
+async def compute_mood_analysis(
     db: Database,
-    library_id: str | None = None,
+    library_id: int | None = None,
 ) -> MoodAnalysisResult:
     """Compute mood analysis: coverage, balance, top pairs, dominant vibes.
 
@@ -301,10 +299,11 @@ def compute_mood_analysis(
         library_id: Optional library id to filter by.
 
     """
-    coverage = get_mood_coverage(db, library_id)
-    balance = get_mood_balance(db, library_id)
+    coverage = await get_mood_coverage(db, library_id)
+    balance = await get_mood_balance(db, library_id)
     top_pairs_by_tier = {
-        tier: _get_top_mood_pairs(db, library_id, mood_tier=tier, limit=50) for tier in ("strict", "regular", "loose")
+        tier: await _get_top_mood_pairs(db, library_id, mood_tier=tier, limit=50)
+        for tier in ("strict", "regular", "loose")
     }
     dominant_vibes = compute_dominant_vibes(balance)
 

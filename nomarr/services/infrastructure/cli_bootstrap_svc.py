@@ -35,7 +35,10 @@ def get_database() -> Database:
         Database instance
 
     """
-    return Database()
+    import os
+
+    url = os.environ.get("PG_DATABASE_URL", "postgresql+asyncpg://nomarr:nomarr@localhost:5432/nomarr")
+    return Database(url=url)
 
 
 def get_keys_service() -> KeyManagementService:

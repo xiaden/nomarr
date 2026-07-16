@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def generate_navidrome_config_workflow(db: Database, namespace: str = "nom") -> str:
+async def generate_navidrome_config_workflow(db: Database, namespace: str = "nom") -> str:
     """Generate Navidrome TOML configuration for custom tags.
 
     Queries the tags collection to discover all nomarr tags, detects their types,
@@ -47,7 +47,7 @@ def generate_navidrome_config_workflow(db: Database, namespace: str = "nom") -> 
 
     """
     logger.info("[navidrome] Generating Navidrome config from library tags")
-    all_names = get_nomarr_tag_names(db)
+    all_names = await get_nomarr_tag_names(db)
     if not all_names:
         return "# No tags found in library. Run a library scan first.\n"
     filtered_names = [name for name in all_names if name.startswith("nom:")]
@@ -69,7 +69,7 @@ def generate_navidrome_config_workflow(db: Database, namespace: str = "nom") -> 
     # Group by short name to detect collisions (multiple versions of same label)
     short_name_to_names: dict[str, list[str]] = {}
     for name in filtered_names:
-        value_counts = get_tag_value_counts(db, name)
+        value_counts = await get_tag_value_counts(db, name)
         is_numeric = _compute_tag_stats(value_counts)["type"] in ("number", "integer")
         short_name = make_short_tag_name(name, is_numeric=is_numeric)
         if short_name not in short_name_to_names:
@@ -88,7 +88,7 @@ def generate_navidrome_config_workflow(db: Database, namespace: str = "nom") -> 
         is_multivalue = False
 
         for name in names:
-            value_counts = get_tag_value_counts(db, name)
+            value_counts = await get_tag_value_counts(db, name)
             total_count += sum(value_counts.values())
             stats = _compute_tag_stats(value_counts)
             if stats["type"] != "string":

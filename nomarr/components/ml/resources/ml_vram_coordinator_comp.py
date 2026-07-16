@@ -42,7 +42,7 @@ def _promise_key(worker_id: str, model_path: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
-def register_vram_promise(
+async def register_vram_promise(
     db: Database,
     worker_id: str,
     pid: int,
@@ -83,7 +83,7 @@ def register_vram_promise(
     total_mb: float = float(vram["total_mb"])
     used_mb: float = float(vram["used_mb"])
 
-    registered: bool = db.vram_promises.try_register(  # type: ignore[attr-defined]
+    registered: bool = await db.vram_promises.try_register(  # type: ignore[attr-defined]
         worker_id=worker_id,
         pid=pid,
         model_path=model_path,
@@ -115,7 +115,7 @@ def register_vram_promise(
     return registered
 
 
-def release_vram_promise(
+async def release_vram_promise(
     db: Database,
     worker_id: str,
     model_path: str,
@@ -131,7 +131,7 @@ def release_vram_promise(
         model_path:  Absolute path to the ONNX model file.
 
     """
-    db.vram_promises.release(worker_id=worker_id, model_path=model_path)  # type: ignore[attr-defined]
+    await db.vram_promises.release(worker_id=worker_id, model_path=model_path)  # type: ignore[attr-defined]
     logger.debug(
         "[vram_coordinator] Released promise: worker=%s model=%s",
         worker_id,
@@ -139,7 +139,7 @@ def release_vram_promise(
     )
 
 
-def get_fleet_vram_state(
+async def get_fleet_vram_state(
     db: Database,
 ) -> FleetVramState:
     """Return a snapshot of current fleet VRAM promises and live GPU telemetry.
@@ -153,12 +153,12 @@ def get_fleet_vram_state(
         FleetVramState with ``promises`` list and ``vram`` telemetry snapshot.
 
     """
-    promises: list[dict[str, Any]] = db.vram_promises.get_all()  # type: ignore[attr-defined]
+    promises: list[dict[str, Any]] = await db.vram_promises.get_all()  # type: ignore[attr-defined]
     vram = _resource_monitor.get_vram_usage_mb()
     return FleetVramState(promises=promises, vram=vram)  # type: ignore[typeddict-item]
 
 
-def release_worker_promises(
+async def release_worker_promises(
     db: Database,
     worker_id: str,
 ) -> int:
@@ -179,7 +179,7 @@ def release_worker_promises(
         Number of promise documents removed.
 
     """
-    removed: int = db.vram_promises.release_all_for_worker(worker_id=worker_id)  # type: ignore[attr-defined]
+    removed: int = await db.vram_promises.release_all_for_worker(worker_id=worker_id)  # type: ignore[attr-defined]
     if removed:
         logger.info(
             "[vram_coordinator] Released %d promise(s) for worker %s",

@@ -6,7 +6,7 @@ from nomarr.helpers.files_helper import is_audio_file
 from nomarr.persistence.db import Database
 
 
-def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
+async def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
     """Build LibraryPath from user input (API, CLI, etc.).
 
     This is the primary entry point for external path inputs.
@@ -36,7 +36,7 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
         )
 
     # Find which library contains this path
-    library = find_library_containing_path(db, str(absolute))
+    library = await find_library_containing_path(db, str(absolute))
     if not library:
         return LibraryPath(
             relative="",
@@ -100,7 +100,7 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
     )
 
 
-def build_library_path_from_db(
+async def build_library_path_from_db(
     stored_path: str,
     db: Database,
     library_id: int | None = None,
@@ -126,7 +126,7 @@ def build_library_path_from_db(
     """
     # If we have a library_id, fetch that library's configuration
     if library_id:
-        library = get_library_record(db, library_id, include_scan=False)
+        library = await get_library_record(db, library_id, include_scan=False)
         if not library or not library["is_enabled"]:
             # Library was disabled or deleted
             return LibraryPath(
@@ -172,7 +172,7 @@ def build_library_path_from_db(
                 reason=f"Cannot resolve stored path: {e}",
             )
 
-        found = find_library_containing_path(db, str(absolute))
+        found = await find_library_containing_path(db, str(absolute))
         if not found:
             return LibraryPath(
                 relative=stored_path,
@@ -236,7 +236,7 @@ def build_library_path_from_db(
     )
 
 
-def get_library_root(library_path: LibraryPath, db: Database) -> Path | None:
+async def get_library_root(library_path: LibraryPath, db: Database) -> Path | None:
     """Get the library root path for a given LibraryPath.
 
     Args:
@@ -250,7 +250,7 @@ def get_library_root(library_path: LibraryPath, db: Database) -> Path | None:
     if not library_path.library_id:
         return None
 
-    library = get_library_record(db, library_path.library_id, include_scan=False)
+    library = await get_library_record(db, library_path.library_id, include_scan=False)
     if not library:
         return None
 

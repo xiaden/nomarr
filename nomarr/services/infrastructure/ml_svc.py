@@ -104,25 +104,25 @@ class MLService:
             msg = f"Failed to discover model heads: {e}"
             raise RuntimeError(msg) from e
 
-    def clear_vram_measurements(self) -> None:
+    async def clear_vram_measurements(self) -> None:
         """Delete all per-model VRAM measurements from meta.
 
         The next discovery worker startup will re-run the probe and record
         fresh measurements.
         """
-        clear_model_vram_measurements(self.db)
+        await clear_model_vram_measurements(self.db)
         logger.info("[MLService] VRAM measurements cleared — probe will re-run on next worker start")
 
-    def list_all_models(self) -> list[dict[str, Any]]:
+    async def list_all_models(self) -> list[dict[str, Any]]:
         """Return all registered ML model vertices.
 
         Returns:
             List of ml_models documents.
 
         """
-        return list_registered_models(self.db)
+        return await list_registered_models(self.db)
 
-    def get_model_outputs(self, model_id: str) -> list[dict[str, Any]]:
+    async def get_model_outputs(self, model_id: str) -> list[dict[str, Any]]:
         """Return output vertices for a specific model.
 
         Args:
@@ -132,9 +132,9 @@ class MLService:
             List of ml_model_outputs documents ordered by output_index.
 
         """
-        return list_model_outputs_for_model(self.db, model_id)
+        return await list_model_outputs_for_model(self.db, model_id)
 
-    def update_output_label(self, model_id: int, output_id: int, label: str) -> None:
+    async def update_output_label(self, model_id: int, output_id: int, label: str) -> None:
         """Write a human-readable label for a model output vertex.
 
         Args:
@@ -143,9 +143,9 @@ class MLService:
             label: Human-readable tag label for this activation.
 
         """
-        update_model_output_label(self.db, model_id=model_id, output_id=output_id, label=label)
+        await update_model_output_label(self.db, model_id=model_id, output_id=output_id, label=label)
 
-    def mark_model_configured(self, model_id: int, value: bool) -> None:
+    async def mark_model_configured(self, model_id: int, value: bool) -> None:
         """Set the fully_configured flag on a model vertex.
 
         Args:
@@ -153,4 +153,4 @@ class MLService:
             value: True to enable model for inference, False to disable.
 
         """
-        mark_model_fully_configured(self.db, model_id, value)
+        await mark_model_fully_configured(self.db, model_id, value)

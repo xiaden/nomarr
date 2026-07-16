@@ -44,7 +44,7 @@ from nomarr.helpers.exceptions import PlaylistConversionError
 logger = logging.getLogger(__name__)
 
 
-def convert_playlist_workflow(
+async def convert_playlist_workflow(
     db: Database,
     playlist_url: str,
     *,
@@ -89,7 +89,7 @@ def convert_playlist_workflow(
     logger.info(f"Fetched {len(input_tracks)} tracks from '{metadata.name}'")
 
     # Step 3: Load library tracks
-    library_rows = get_tracks_for_matching(db, library_id=library_id)
+    library_rows = await get_tracks_for_matching(db, library_id=library_id)
     library_tracks = [LibraryTrack.from_db_row(row) for row in library_rows]
 
     logger.info(f"Loaded {len(library_tracks)} library tracks for matching")

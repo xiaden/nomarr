@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -41,7 +42,7 @@ HEALTH_FRAME_PREFIX = "HEALTH|"
 IDLE_FRAME_PREFIX = "IDLE|"  # Frame prefix for idle/active state signals
 
 
-def _check_idle_pipeline_completion(db: Database, health_pipe: multiprocessing.connection.Connection | None) -> int:
+async def _check_idle_pipeline_completion(db: Database, health_pipe: multiprocessing.connection.Connection | None) -> int:
     """Transition idle ML-complete libraries and signal calibration health updates."""
     from nomarr.components.library.library_records_comp import find_ml_complete_libraries
     from nomarr.components.library.library_scan_state_comp import transition_pipeline_axis
@@ -54,16 +55,16 @@ def _check_idle_pipeline_completion(db: Database, health_pipe: multiprocessing.c
     from nomarr.helpers.dto.health_dto import PIPELINE_FRAME_PREFIX
     from nomarr.services.infrastructure.config_svc import INTERNAL_CALIBRATION_MIN_FILES
 
-    completed = find_ml_complete_libraries(db, INTERNAL_CALIBRATION_MIN_FILES)
+    completed = await find_ml_complete_libraries(db, INTERNAL_CALIBRATION_MIN_FILES)
     transitions_fired = 0
     for result in completed:
         library_id = result["library_id"]
         tagged_count = result["tagged_count"]
         # Mark ML axis as complete
-        transition_pipeline_axis(db, library_id, ML_STATE_FIELD, ML_COMPLETE)
+        await transition_pipeline_axis(db, library_id, ML_STATE_FIELD, ML_COMPLETE)
         # If enough files, mark calibration axis as needing work
         if tagged_count >= INTERNAL_CALIBRATION_MIN_FILES:
-            transition_pipeline_axis(db, library_id, CAL_STATE_FIELD, CAL_NOT_CALIBRATED)
+            await transition_pipeline_axis(db, library_id, CAL_STATE_FIELD, CAL_NOT_CALIBRATED)
         transitions_fired += 1
     if transitions_fired > 0 and health_pipe is not None:
         try:
@@ -84,7 +85,7 @@ def _malloc_trim() -> None:
         ctypes.CDLL("libc.so.6").malloc_trim(0)
 
 
-def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id: str) -> None:
+async def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id: str) -> None:
     """Persist deferred file writes and release the worker claim."""
     from nomarr.components.library.file_sync_comp import save_file_tags
     from nomarr.components.library.library_file_mutation_comp import set_chromaprint
@@ -93,17 +94,18 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
     from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
     from nomarr.components.workers.worker_discovery_comp import release_claim
 
-    file_id = writes.file_id
+    file_id_str = writes.file_id
+    file_id = int(file_id_str)
     try:
         parsed_nom_tags = parse_tag_values(writes.db_tags) if writes.db_tags else {}
         prefixed_nom_tags = {
             (f"nom:{name}" if not name.startswith("nom:") else name): values for name, values in parsed_nom_tags.items()
         }
-        save_file_tags(db, file_id, prefixed_nom_tags)
+        await save_file_tags(db, file_id_str, prefixed_nom_tags)
         if writes.chromaprint:
-            set_chromaprint(db, file_id, writes.chromaprint)
+            await set_chromaprint(db, file_id, int(writes.chromaprint))
         if writes.raw_output_streams:
-            upsert_output_streams(
+            await upsert_output_streams(
                 db,
                 file_id=file_id,
                 streams=[
@@ -111,18 +113,23 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
                     for stream in writes.raw_output_streams
                 ],
             )
-        transition_file_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
-        update_last_tagged_at(db, file_id)
-        transition_file_state(db, [file_id], STATE_NOT_VECTORS_EXTRACTED, STATE_VECTORS_EXTRACTED)
+        await transition_file_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
+        await update_last_tagged_at(db, file_id)
+        await transition_file_state(db, [file_id], STATE_NOT_VECTORS_EXTRACTED, STATE_VECTORS_EXTRACTED)
         logger.debug("[%s] Async writes done for %s (%d tags)", worker_id, writes.path, len(writes.db_tags))
     except Exception:
         try:
-            transition_file_state(db, [file_id], STATE_NOT_ERRORED, STATE_ERRORED)
+            await transition_file_state(db, [file_id], STATE_NOT_ERRORED, STATE_ERRORED)
         except Exception:
             logger.warning("[%s] Failed to set errored state for %s", worker_id, file_id, exc_info=True)
         logger.exception("[%s] Async write failed for %s — file will be retried", worker_id, writes.path)
     finally:
-        release_claim(db, file_id)
+        await release_claim(db, file_id)
+
+
+def _sync_execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id: str) -> None:
+    """Synchronous wrapper for _execute_deferred_writes to use with ThreadPoolExecutor.submit."""
+    asyncio.run(_execute_deferred_writes(db, writes, worker_id))
 
 
 class DiscoveryWorker(multiprocessing.Process):
@@ -190,7 +197,7 @@ class DiscoveryWorker(multiprocessing.Process):
                     break
                 time.sleep(0.1)
 
-    def _preflight_and_connect(self) -> tuple[Database, ProcessorConfig, ResourceManagementConfig | None] | None:
+    async def _preflight_and_connect(self) -> tuple[Database, ProcessorConfig, ResourceManagementConfig | None] | None:
         """Run worker startup, connect to the database, and return initialized runtime state."""
         import faulthandler
 
@@ -216,15 +223,15 @@ class DiscoveryWorker(multiprocessing.Process):
             self._current_status = "unhealthy"
             time.sleep(10)
             return None
-        db = Database(hosts=self.db_hosts, password=self.db_password)
+        db = Database(url=self.db_hosts)
         register_worker_context(db, self.worker_id)
         try:
-            release_worker_promises(db, self.worker_id)
+            await release_worker_promises(db, self.worker_id)
         except Exception:
             logger.warning("[%s] Failed to clear stale VRAM promises at startup", self.worker_id, exc_info=True)
         config = ProcessorConfig(**self.processor_config_dict)
         self._current_status = "healthy"
-        db.app.update_health(
+        await db.app.update_health(
             self.worker_id,
             {
                 "component_type": "worker",
@@ -232,7 +239,7 @@ class DiscoveryWorker(multiprocessing.Process):
                 "last_heartbeat": now_ms().value,
             },
         )
-        db.app.update_health(
+        await db.app.update_health(
             self.worker_id,
             {"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
         )
@@ -265,7 +272,7 @@ class DiscoveryWorker(multiprocessing.Process):
         except (OSError, BrokenPipeError) as exc:
             logger.debug("[%s] Failed to send idle frame: %s", self.worker_id, exc)
 
-    def _warm_onnx_cache(self, db: Database, config: ProcessorConfig) -> ONNXModelCache | None:
+    async def _warm_onnx_cache(self, db: Database, config: ProcessorConfig) -> ONNXModelCache | None:
         """Warm the ONNX cache and probe GPU VRAM measurements when needed."""
         from nomarr.components.ml.onnx.ml_base import DevicePlacement as _DevicePlacement
         from nomarr.components.ml.onnx.ml_cache import ONNXModelCache as _ONNXModelCache
@@ -273,15 +280,15 @@ class DiscoveryWorker(multiprocessing.Process):
         from nomarr.components.platform.resource_monitor_comp import check_nvidia_gpu_capability
 
         try:
-            if self.prefer_gpu and check_nvidia_gpu_capability() and not has_model_vram_measurements(db):
+            if self.prefer_gpu and check_nvidia_gpu_capability() and not await has_model_vram_measurements(db):
                 logger.info("[%s] Running per-model VRAM probe...", self.worker_id)
-                probe_all_models(db, config.models_dir)
+                await probe_all_models(db, config.models_dir)
             cache_device: _DevicePlacement = "gpu" if self.prefer_gpu else "cpu"
             onnx_cache = _ONNXModelCache(config.models_dir, cache_device, db=db)
             from nomarr.components.ml.resources import ml_vram_coordinator_comp as _coordinator
 
             onnx_cache.warm = True
-            fleet = _coordinator.get_fleet_vram_state(db)
+            fleet = await _coordinator.get_fleet_vram_state(db)
             vram = fleet["vram"]
             promises = fleet["promises"]
             device_lookup = {m._path: (m._device or "cpu").upper() for m in onnx_cache._all_models()}
@@ -304,8 +311,8 @@ class DiscoveryWorker(multiprocessing.Process):
             logger.exception("[%s] Failed to warm ONNX model cache: %s", self.worker_id, exc)
             return None
 
-    def _check_resource_headroom(
-        self, db: Database, file_id: str, rm_config: ResourceManagementConfig | None
+    async def _check_resource_headroom(
+        self, db: Database, file_id: int, rm_config: ResourceManagementConfig | None
     ) -> float | None:
         if rm_config is None or not rm_config.enabled:
             return None
@@ -326,7 +333,7 @@ class DiscoveryWorker(multiprocessing.Process):
                 resource_status.vram_used_mb,
                 resource_status.ram_used_mb,
             )
-            release_claim(db, file_id)
+            await release_claim(db, file_id)
             self._current_status = "recovering"
             return internal_s().value + 30.0
         if not resource_status.vram_ok and resource_status.ram_ok:
@@ -335,10 +342,10 @@ class DiscoveryWorker(multiprocessing.Process):
             )
         return None
 
-    def _process_claimed_file(
+    async def _process_claimed_file(
         self,
         db: Database,
-        file_id: str,
+        file_id: int,
         config: ProcessorConfig,
         onnx_cache: ONNXModelCache | None,
         pending_write: Future[None] | None,
@@ -353,10 +360,10 @@ class DiscoveryWorker(multiprocessing.Process):
         from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
         logger.debug("[%s] Fetching file doc for %s", self.worker_id, file_id)
-        file_doc = get_file_by_id(db, file_id)
+        file_doc = await get_file_by_id(db, file_id)
         if not file_doc:
             logger.warning("[%s] Claimed file %s not found in database", self.worker_id, file_id)
-            release_claim(db, file_id)
+            await release_claim(db, file_id)
             return pending_write, False
         file_path = file_doc["path"]
         try:
@@ -367,7 +374,7 @@ class DiscoveryWorker(multiprocessing.Process):
         sys.stdout.flush()
         sys.stderr.flush()
         assert onnx_cache is not None, "onnx_cache must be warmed before processing"
-        result = process_file_workflow(path=file_path, config=config, db=db, file_id=file_id, cache=onnx_cache)
+        result = await process_file_workflow(path=file_path, config=config, db=db, file_id=str(file_id), cache=onnx_cache)
         logger.debug("[%s] Workflow returned for %s", self.worker_id, file_path)
         _malloc_trim()
         if pending_write is not None:
@@ -375,12 +382,14 @@ class DiscoveryWorker(multiprocessing.Process):
             pending_write = None
         if result.heads_processed == 0 and result.tags_written == 0:
             logger.info("[%s] Skipped %s (all heads skipped - likely too short)", self.worker_id, file_path)
-            transition_file_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
-            update_last_tagged_at(db, file_id)
-            release_claim(db, file_id)
+            await transition_file_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
+            await update_last_tagged_at(db, file_id)
+            await release_claim(db, file_id)
             return None, True
         if result.deferred_writes is not None:
-            pending_write = write_executor.submit(_execute_deferred_writes, db, result.deferred_writes, self.worker_id)
+            pending_write = write_executor.submit(
+                _sync_execute_deferred_writes, db, result.deferred_writes, self.worker_id
+            )
             timing = f" | {result.timing_summary}" if result.timing_summary else ""
             logger.debug(
                 "[%s] Completed %s in %.2fs (%d heads, %d tags)%s",
@@ -392,136 +401,141 @@ class DiscoveryWorker(multiprocessing.Process):
                 timing,
             )
             return pending_write, True
-        release_claim(db, file_id)
+        await release_claim(db, file_id)
         return pending_write, True
 
-    def _handle_process_error(self, db: Database, file_id: str, error: Exception, consecutive_errors: int) -> int:
+    async def _handle_process_error(self, db: Database, file_id: int, error: Exception, consecutive_errors: int) -> int:
         from nomarr.components.library.library_file_state_comp import transition_file_state
         from nomarr.components.workers.worker_discovery_comp import release_claim
 
         next_errors = consecutive_errors + 1
         logger.exception("[%s] Error processing %s: %s", self.worker_id, file_id, error)
         try:
-            transition_file_state(db, [file_id], STATE_NOT_ERRORED, STATE_ERRORED)
+            await transition_file_state(db, [file_id], STATE_NOT_ERRORED, STATE_ERRORED)
         except Exception:
             logger.warning("[%s] Failed to set errored state for %s", self.worker_id, file_id, exc_info=True)
-        release_claim(db, file_id)
+        await release_claim(db, file_id)
         if next_errors >= MAX_CONSECUTIVE_ERRORS:
             logger.exception("[%s] Too many consecutive errors (%d), shutting down", self.worker_id, next_errors)
         return next_errors
 
     def run(self) -> None:
         """Run the worker preflight and claim-process loop until shutdown."""
-        setup = self._preflight_and_connect()
-        if setup is None:
-            return
-        from nomarr.components.workers.worker_discovery_comp import discover_and_claim_file
 
-        db, config, rm_config = setup
-        consecutive_errors, files_processed = 0, 0
-        cache_warmed = False
-        last_work_time: float | None = None
-        onnx_cache: ONNXModelCache | None = None
-        recovering_until: float | None = None
-        idle_consecutive_polls = 0
-        idle_frame_sent: bool = False
-        write_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="db-write")
-        pending_write: Future[None] | None = None
+        async def _body() -> None:
+            setup = await self._preflight_and_connect()
+            if setup is None:
+                return
+            from nomarr.components.workers.worker_discovery_comp import discover_and_claim_file
 
-        try:
-            while not self._stop_event.is_set():
-                if recovering_until is not None:
-                    if internal_s().value < recovering_until:
-                        time.sleep(1.0)
-                        continue
-                    recovering_until = None
-                    self._current_status = "healthy"
-                    logger.info("[%s] Recovery window expired, resuming work", self.worker_id)
+            db, config, rm_config = setup
+            consecutive_errors, files_processed = 0, 0
+            cache_warmed = False
+            last_work_time: float | None = None
+            onnx_cache: ONNXModelCache | None = None
+            recovering_until: float | None = None
+            idle_consecutive_polls = 0
+            idle_frame_sent: bool = False
+            write_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="db-write")
+            pending_write: Future[None] | None = None
 
-                logger.debug("[%s] Polling for work...", self.worker_id)
-                file_id = discover_and_claim_file(db, self.worker_id)
-                if file_id is None:
-                    idle_consecutive_polls += 1
-                    if idle_consecutive_polls >= 3 and not idle_frame_sent:
-                        self._send_idle_frame(True)
-                        idle_frame_sent = True
-                        logger.debug("[%s] Sent idle frame to main process", self.worker_id)
-                    logger.debug("[%s] No work found, sleeping %.1fs", self.worker_id, IDLE_SLEEP_S)
-                    onnx_cache, cache_warmed = self._evict_idle_cache(onnx_cache, last_work_time, cache_warmed)
-                    try:
-                        _check_idle_pipeline_completion(db, self._health_pipe)
-                    except Exception:
-                        logger.warning("[%s] _check_idle_pipeline_completion failed", self.worker_id, exc_info=True)
-                    time.sleep(IDLE_SLEEP_S)
-                    continue
+            try:
+                while not self._stop_event.is_set():
+                    if recovering_until is not None:
+                        if internal_s().value < recovering_until:
+                            time.sleep(1.0)
+                            continue
+                        recovering_until = None
+                        self._current_status = "healthy"
+                        logger.info("[%s] Recovery window expired, resuming work", self.worker_id)
 
-                logger.debug("[%s] Work found: claimed file %s", self.worker_id, file_id)
-                if idle_frame_sent:
-                    self._send_idle_frame(False)
-                    idle_frame_sent = False
-                idle_consecutive_polls = 0
-                last_work_time = internal_s().value
-                recovering_until = self._check_resource_headroom(db, file_id, rm_config)
-                if recovering_until is not None:
-                    continue
-                if not cache_warmed:
-                    logger.debug("[%s] Warming ONNX model cache...", self.worker_id)
-                    onnx_cache = self._warm_onnx_cache(db, config)
-                    if onnx_cache is None:
-                        from nomarr.components.workers.worker_discovery_comp import release_claim
-
-                        logger.warning(
-                            "[%s] Cache warmup failed; releasing claim on %s and will retry",
-                            self.worker_id,
-                            file_id,
-                        )
-                        release_claim(db, file_id)
-                        consecutive_errors += 1
-                        if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
-                            logger.error(
-                                "[%s] Too many consecutive warmup failures (%d), shutting down",
-                                self.worker_id,
-                                consecutive_errors,
-                            )
-                            break
+                    logger.debug("[%s] Polling for work...", self.worker_id)
+                    file_id = await discover_and_claim_file(db, self.worker_id)
+                    if file_id is None:
+                        idle_consecutive_polls += 1
+                        if idle_consecutive_polls >= 3 and not idle_frame_sent:
+                            self._send_idle_frame(True)
+                            idle_frame_sent = True
+                            logger.debug("[%s] Sent idle frame to main process", self.worker_id)
+                        logger.debug("[%s] No work found, sleeping %.1fs", self.worker_id, IDLE_SLEEP_S)
+                        onnx_cache, cache_warmed = self._evict_idle_cache(onnx_cache, last_work_time, cache_warmed)
+                        try:
+                            await _check_idle_pipeline_completion(db, self._health_pipe)
+                        except Exception:
+                            logger.warning("[%s] _check_idle_pipeline_completion failed", self.worker_id, exc_info=True)
                         time.sleep(IDLE_SLEEP_S)
                         continue
-                    cache_warmed = True
 
+                    int_file_id = int(file_id)
+                    logger.debug("[%s] Work found: claimed file %s", self.worker_id, file_id)
+                    if idle_frame_sent:
+                        self._send_idle_frame(False)
+                        idle_frame_sent = False
+                    idle_consecutive_polls = 0
+                    last_work_time = internal_s().value
+                    recovering_until = await self._check_resource_headroom(db, int_file_id, rm_config)
+                    if recovering_until is not None:
+                        continue
+                    if not cache_warmed:
+                        logger.debug("[%s] Warming ONNX model cache...", self.worker_id)
+                        onnx_cache = await self._warm_onnx_cache(db, config)
+                        if onnx_cache is None:
+                            from nomarr.components.workers.worker_discovery_comp import release_claim
+
+                            logger.warning(
+                                "[%s] Cache warmup failed; releasing claim on %s and will retry",
+                                self.worker_id,
+                                file_id,
+                            )
+                            await release_claim(db, int_file_id)
+                            consecutive_errors += 1
+                            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                                logger.error(
+                                    "[%s] Too many consecutive warmup failures (%d), shutting down",
+                                    self.worker_id,
+                                    consecutive_errors,
+                                )
+                                break
+                            time.sleep(IDLE_SLEEP_S)
+                            continue
+                        cache_warmed = True
+
+                    try:
+                        pending_write, processed = await self._process_claimed_file(
+                            db, int_file_id, config, onnx_cache, pending_write, write_executor
+                        )
+                        if processed:
+                            files_processed += 1
+                            consecutive_errors = 0
+                    except Exception as exc:
+                        consecutive_errors = await self._handle_process_error(db, int_file_id, exc, consecutive_errors)
+                        if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                            break
+            finally:
+                if pending_write is not None:
+                    try:
+                        pending_write.result(timeout=30)
+                    except Exception:
+                        logger.exception("[%s] Pending write failed during shutdown", self.worker_id)
+                write_executor.shutdown(wait=True)
+                logger.info("[%s] Discovery worker stopping (processed %d files)", self.worker_id, files_processed)
+                await db.app.update_health(self.worker_id, {"status": "stopping"})
                 try:
-                    pending_write, processed = self._process_claimed_file(
-                        db, file_id, config, onnx_cache, pending_write, write_executor
-                    )
-                    if processed:
-                        files_processed += 1
-                        consecutive_errors = 0
-                except Exception as exc:
-                    consecutive_errors = self._handle_process_error(db, file_id, exc, consecutive_errors)
-                    if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
-                        break
-        finally:
-            if pending_write is not None:
-                try:
-                    pending_write.result(timeout=30)
+                    from nomarr.components.ml.resources.ml_vram_coordinator_comp import release_worker_promises
+
+                    await release_worker_promises(db, self.worker_id)
                 except Exception:
-                    logger.exception("[%s] Pending write failed during shutdown", self.worker_id)
-            write_executor.shutdown(wait=True)
-            logger.info("[%s] Discovery worker stopping (processed %d files)", self.worker_id, files_processed)
-            db.app.update_health(self.worker_id, {"status": "stopping"})
-            try:
-                from nomarr.components.ml.resources.ml_vram_coordinator_comp import release_worker_promises
+                    logger.warning("[%s] Failed to release VRAM promises on shutdown", self.worker_id, exc_info=True)
+                from nomarr.components.ml.audio.ml_audio_comp import shutdown_audio_loader
+                from nomarr.components.ml.inference.ml_head_pipeline_comp import shutdown_head_pool
 
-                release_worker_promises(db, self.worker_id)
-            except Exception:
-                logger.warning("[%s] Failed to release VRAM promises on shutdown", self.worker_id, exc_info=True)
-            from nomarr.components.ml.audio.ml_audio_comp import shutdown_audio_loader
-            from nomarr.components.ml.inference.ml_head_pipeline_comp import shutdown_head_pool
+                shutdown_audio_loader()
+                shutdown_head_pool()
+                if self._health_pipe is not None:
+                    with contextlib.suppress(OSError):  # Pipe may already be closed during shutdown
+                        self._health_pipe.close()
 
-            shutdown_audio_loader()
-            shutdown_head_pool()
-            if self._health_pipe is not None:
-                with contextlib.suppress(OSError):  # Pipe may already be closed during shutdown
-                    self._health_pipe.close()
+        asyncio.run(_body())
 
     def stop(self) -> None:
         """Signal the worker to stop."""

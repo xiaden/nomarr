@@ -28,7 +28,7 @@ from nomarr.workflows.navidrome.parse_smart_playlist_query_wf import (
 )
 
 
-def preview_smart_playlist_workflow(
+async def preview_smart_playlist_workflow(
     db: Database,
     query: str,
     *,
@@ -64,7 +64,7 @@ def preview_smart_playlist_workflow(
     total_count = len(file_ids)
 
     # Fetch sample tracks (limit already validated at API layer: 1-100)
-    sample_tracks = get_tracks_by_file_ids(
+    sample_tracks = await get_tracks_by_file_ids(
         db,
         file_ids=file_ids,
         order_by=None,  # Random order for preview

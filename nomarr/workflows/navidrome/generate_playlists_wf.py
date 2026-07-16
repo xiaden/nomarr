@@ -37,7 +37,7 @@ _BUILDERS = {
 }
 
 
-def generate_playlists(
+async def generate_playlists(
     db: Database,
     *,
     user_id: str,
@@ -83,7 +83,7 @@ def generate_playlists(
 
     """
     # Step 1: Compute taste profile from caller-provided play data
-    profile = compute_taste_profile(
+    profile = await compute_taste_profile(
         db=db,
         user_id=user_id,
         top_plays=top_plays,

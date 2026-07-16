@@ -87,21 +87,21 @@ def _search_candidate_docs(db: Database, field_name: str, value: str) -> list[di
     )
 
 
-def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
+async def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
     title = seed.get("title", "")
     if title:
         title_docs = _search_candidate_docs(db, "title", title)
-        return {file_id for doc in title_docs if isinstance((file_id := doc.get("_id")), str)}
+        return {file_id for doc in title_docs if isinstance((file_id := doc.get("id")), str)}
 
     artist = seed.get("artist", "")
     if artist:
-        artist_docs = cast("list[dict[str, Any]]", db.library.search_files_by_tag("artist", artist, limit=None))
-        return {file_id for doc in artist_docs if isinstance((file_id := doc.get("_id")), str)}
+        artist_docs = cast("list[dict[str, Any]]", await db.library.search_files_by_tag("artist", artist, limit=None))
+        return {file_id for doc in artist_docs if isinstance((file_id := doc.get("id")), str)}
 
     return set()
 
 
-def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tuple[str | None, str]:
+async def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tuple[str | None, str]:
     """Resolve a portable seed descriptor to one Nomarr track record."""
     candidate_ids = _candidate_file_ids(db, seed)
     if not candidate_ids:
@@ -111,7 +111,7 @@ def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tupl
     descriptors_by_id = {
         file_id: _descriptor_from_doc(file_doc)
         for file_doc in docs
-        if isinstance((file_id := file_doc.get("_id")), str)
+        if isinstance((file_id := file_doc.get("id")), str)
     }
 
     title = _normalize_title(seed.get("title", ""))

@@ -77,8 +77,8 @@ class WorkerDeathOpsMixin:
         except Exception:
             logger.warning("[WorkerSystemService] Failed to reset restart count for %s", component_id, exc_info=True)
 
-    def _handle_worker_death(self, component_id: str) -> None:
-        released_file_ids = release_claims_for_worker(self.db, component_id)
+    async def _handle_worker_death(self, component_id: str) -> None:
+        released_file_ids = await release_claims_for_worker(self.db, component_id)
         if released_file_ids:
             logger.info(
                 "[WorkerSystemService] Released %d claim(s) for dead worker %s - files will be reprocessed",
@@ -86,7 +86,7 @@ class WorkerDeathOpsMixin:
                 component_id,
             )
         try:
-            release_worker_promises(self.db, component_id)
+            await release_worker_promises(self.db, component_id)
         except Exception:
             logger.warning(
                 "[WorkerSystemService] Failed to release VRAM promises for dead worker %s", component_id, exc_info=True

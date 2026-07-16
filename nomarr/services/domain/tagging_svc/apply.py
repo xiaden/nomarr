@@ -46,7 +46,7 @@ class TaggingApplyMixin:
     _apply_progress_lock: threading.Lock
     _apply_progress: dict[str, Any]
 
-    def tag_file(self, file_path: str) -> None:
+    async def tag_file(self, file_path: str) -> None:
         """Write calibrated tags to a single file.
 
         Args:
@@ -61,10 +61,10 @@ class TaggingApplyMixin:
             calibrate_heads=self._config_service.get("calibrate_heads", False),
         )
 
-        write_calibrated_tags_wf(db=self.db, params=params)
+        await write_calibrated_tags_wf(db=self.db, params=params)
         logger.info(f"Wrote calibrated tags: {file_path}")
 
-    def tag_library(self) -> ApplyCalibrationResult:
+    async def tag_library(self) -> ApplyCalibrationResult:
         """Apply calibration to all tagged library files that need it.
 
         Only processes files whose DB mood tags are stale relative to the
@@ -95,7 +95,7 @@ class TaggingApplyMixin:
         else:
             logger.info("[TaggingService] All tagged files are already calibrated")
 
-        return apply_calibration_wf(
+        return await apply_calibration_wf(
             db=self.db,
             paths=paths,
             models_dir=self.cfg.models_dir,
@@ -273,13 +273,13 @@ class TaggingApplyMixin:
             "is_running": progress["is_running"],
         }
 
-    def get_calibration_status(self) -> dict[str, Any]:
+    async def get_calibration_status(self) -> dict[str, Any]:
         """Get global calibration status with per-library breakdown.
 
         Returns:
             Dict representation of GlobalCalibrationStatus DTO
 
         """
-        result = get_calibration_status_workflow(db=self.db)
+        result = await get_calibration_status_workflow(db=self.db)
         result_dict: dict[str, Any] = asdict(result)
         return result_dict

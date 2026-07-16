@@ -37,7 +37,7 @@ IDLE_SLEEP_S = 1.0
 MAX_CONSECUTIVE_ERRORS = 10
 
 
-def _process_file(db: Database, file_id: str) -> None:
+async def _process_file(db: Database, file_id: int) -> None:
     """Extract tags for one file and transition it to hydrated.
 
     Steps:
@@ -62,7 +62,7 @@ def _process_file(db: Database, file_id: str) -> None:
     from nomarr.components.metadata.entity_seeding_comp import seed_entities_for_scan_batch
     from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
 
-    file_doc = db.library.get_file(file_id)
+    file_doc = await db.library.get_file(file_id)
     if file_doc is None:
         msg = f"File not found: {file_id}"
         raise ValueError(msg)
@@ -126,7 +126,7 @@ class TagExtractionWorker(threading.Thread):
         """Signal the worker to stop after its current file completes."""
         self._stop_event.set()
 
-    def run(self) -> None:
+    async def run(self) -> None:
         """Worker main loop: discover → process, repeat."""
         logger.info("[%s] Tag extraction worker started", self._worker_id)
         consecutive_errors = 0
@@ -136,7 +136,7 @@ class TagExtractionWorker(threading.Thread):
             if file_doc is None:
                 self._stop_event.wait(IDLE_SLEEP_S)
                 continue
-            file_id = str(file_doc["_id"])
+            file_id = str(file_doc["id"])
 
             try:
                 _process_file(self._db, file_id)

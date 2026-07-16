@@ -32,15 +32,15 @@ class TaggingCurationMixin:
             )
             raise ValueError(msg)
 
-    def _get_tag_or_error(self, tag_id: str) -> dict[str, Any]:
+    async def _get_tag_or_error(self, tag_id: str) -> dict[str, Any]:
         """Fetch a tag document or raise ValueError."""
-        tag = get_tag(self.db, tag_id)
+        tag = await get_tag(self.db, tag_id)
         if not tag:
             msg = f"Tag not found: {tag_id}"
             raise ValueError(msg)
         return tag
 
-    def rename_tag(self, tag_id: str, new_value: str) -> RenameResult:
+    async def rename_tag(self, tag_id: str, new_value: str) -> RenameResult:
         """Rename a tag to a new value.
 
         Rejects nom: prefix tags (ADR-009). Creates target tag if needed,
@@ -63,15 +63,15 @@ class TaggingCurationMixin:
         target_tag_id = find_or_create_tag(self.db, source_tag["name"], new_value)
         merged_into_existing = target_tag_id != tag_id
 
-        relink = relink_tag_edges(self.db, tag_id, target_tag_id)
+        relink = await relink_tag_edges(self.db, tag_id, target_tag_id)
 
-        song_ids = list_songs_for_tag(self.db, target_tag_id)
+        song_ids = await list_songs_for_tag(self.db, target_tag_id)
         for song_id in song_ids:
-            transition_file_state(self.db, [song_id], STATE_WRITTEN, STATE_NOT_WRITTEN)
+            await transition_file_state(self.db, [song_id], STATE_WRITTEN, STATE_NOT_WRITTEN)
 
         return RenameResult(moved=relink["moved"], merged_into_existing=merged_into_existing)
 
-    def merge_tags(self, source_tag_ids: list[str], canonical_tag_id: str) -> MergeResult:
+    async def merge_tags(self, source_tag_ids: list[str], canonical_tag_id: str) -> MergeResult:
         """Merge multiple source tags into a canonical tag.
 
         Rejects nom: prefix tags (ADR-009). Iterates each source through
@@ -100,18 +100,18 @@ class TaggingCurationMixin:
             source_tag = self._get_tag_or_error(source_id)
             self._reject_nom_prefix(tag_doc=source_tag)
 
-            relink = relink_tag_edges(self.db, source_id, canonical_tag_id)
+            relink = await relink_tag_edges(self.db, source_id, canonical_tag_id)
             total_moved += relink["moved"]
             if relink["source_orphaned"]:
                 sources_removed += 1
 
-        song_ids = list_songs_for_tag(self.db, canonical_tag_id)
+        song_ids = await list_songs_for_tag(self.db, canonical_tag_id)
         for song_id in song_ids:
-            transition_file_state(self.db, [song_id], STATE_WRITTEN, STATE_NOT_WRITTEN)
+            await transition_file_state(self.db, [song_id], STATE_WRITTEN, STATE_NOT_WRITTEN)
 
         return MergeResult(total_moved=total_moved, sources_removed=sources_removed)
 
-    def split_tag(self, source_tag_id: str, song_ids: list[str], new_value: str) -> SplitResult:
+    async def split_tag(self, source_tag_id: str, song_ids: list[str], new_value: str) -> SplitResult:
         """Split selected songs from a tag into a new tag value.
 
         Rejects nom: prefix tags (ADR-009). Creates a new tag with the given
@@ -135,14 +135,14 @@ class TaggingCurationMixin:
         target_tag_id = find_or_create_tag(self.db, source_tag["name"], new_value)
         new_tag_created = target_tag_id != source_tag_id
 
-        relink = relink_tag_edges(self.db, source_tag_id, target_tag_id, song_ids=song_ids)
+        relink = await relink_tag_edges(self.db, source_tag_id, target_tag_id, song_ids=song_ids)
 
         for song_id in song_ids:
-            transition_file_state(self.db, [song_id], STATE_WRITTEN, STATE_NOT_WRITTEN)
+            await transition_file_state(self.db, [song_id], STATE_WRITTEN, STATE_NOT_WRITTEN)
 
         return SplitResult(moved=relink["moved"], new_tag_created=new_tag_created)
 
-    def update_file_tags(self, file_id: str, name: str, values: list[str]) -> dict[str, Any]:
+    async def update_file_tags(self, file_id: str, name: str, values: list[str]) -> dict[str, Any]:
         """Replace all tags for a file+name with new values.
 
         Rejects nom: prefix names (ADR-009). Delegates to set_song_tags
@@ -161,7 +161,7 @@ class TaggingCurationMixin:
 
         """
         self._reject_nom_prefix(name=name)
-        set_song_tags(self.db, file_id, name, list(values))
-        transition_file_state(self.db, [file_id], STATE_WRITTEN, STATE_NOT_WRITTEN)
-        tags = get_song_tags(self.db, file_id, name=name)
+        await set_song_tags(self.db, file_id, name, list(values))
+        await transition_file_state(self.db, [file_id], STATE_WRITTEN, STATE_NOT_WRITTEN)
+        tags = await get_song_tags(self.db, file_id, name=name)
         return {"file_id": file_id, "name": name, "tags": tags.to_dict()}

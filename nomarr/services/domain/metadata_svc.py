@@ -57,7 +57,7 @@ class MetadataService:
         """
         self.db = db
 
-    def list_entities(
+    async def list_entities(
         self,
         collection: EntityCollection,
         limit: int = 100,
@@ -77,8 +77,8 @@ class MetadataService:
 
         """
         name = COLLECTION_REL_MAP[collection]
-        tags = list_tags_by_name(self.db, name, limit=limit, offset=offset, search=search)
-        total = count_tags_by_name(self.db, name, search=search)
+        tags = await list_tags_by_name(self.db, name, limit=limit, offset=offset, search=search)
+        total = await count_tags_by_name(self.db, name, search=search)
 
         entity_dicts: list[EntityDict] = [
             {
@@ -233,7 +233,7 @@ class MetadataService:
         albums.sort(key=lambda a: a["display_name"])
         return albums[:limit]
 
-    def get_entity_counts(self) -> dict[str, int]:
+    async def get_entity_counts(self) -> dict[str, int]:
         """Get total counts for all entity types (tag names).
 
         Returns:
@@ -241,14 +241,14 @@ class MetadataService:
 
         """
         return {
-            "artists": count_tags_by_name(self.db, "artist"),
-            "albums": count_tags_by_name(self.db, "album"),
-            "labels": count_tags_by_name(self.db, "label"),
-            "genres": count_tags_by_name(self.db, "genre"),
-            "years": count_tags_by_name(self.db, "year"),
+            "artists": await count_tags_by_name(self.db, "artist"),
+            "albums": await count_tags_by_name(self.db, "album"),
+            "labels": await count_tags_by_name(self.db, "label"),
+            "genres": await count_tags_by_name(self.db, "genre"),
+            "years": await count_tags_by_name(self.db, "year"),
         }
 
-    def cleanup_orphaned_entities(self, dry_run: bool = False) -> dict[str, int | dict[str, int]]:
+    async def cleanup_orphaned_entities(self, dry_run: bool = False) -> dict[str, int | dict[str, int]]:
         """Clean up orphaned tags (tags with no edges).
 
         Args:
@@ -264,7 +264,7 @@ class MetadataService:
                 "orphaned_count": orphan_count,
                 "deleted_count": 0,
             }
-        deleted_count = cleanup_orphaned_tags(self.db)
+        deleted_count = await cleanup_orphaned_tags(self.db)
         return {
             "orphaned_count": deleted_count,  # Was orphaned, now deleted
             "deleted_count": deleted_count,

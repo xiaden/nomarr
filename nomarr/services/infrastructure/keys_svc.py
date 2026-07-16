@@ -286,7 +286,7 @@ class KeyManagementService:
             int(now_s().value * 1000),
             session_count,
         )
-        _session_cache.update((s["session_id"], s["expiry_timestamp"] / 1000.0) for s in sessions)
+        _session_cache.update((s["id"], s["expires_at"] / 1000.0) for s in sessions)
         logger.debug(f"[KeyManagement] Loaded {len(sessions)} active session(s) from database")
         return len(sessions)
 

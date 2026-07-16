@@ -8,7 +8,7 @@ while the schema constructor owns the public persistence facade.
 from __future__ import annotations
 
 import hashlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.time_helper import now_ms
 
@@ -26,19 +26,19 @@ def _output_key(model_id: str, output_index: int) -> str:
     return hashlib.sha256(f"{model_id}:{output_index}".encode()).hexdigest()[:16]
 
 
-def list_registered_models(db: Database) -> list[dict[str, Any]]:
+async def list_registered_models(db: Database) -> list[dict[str, Any]]:
     """Return every registered ML model document."""
-    result = db.ml.list_models()
-    return result if isinstance(result, list) else []
+    result = await db.ml.list_models()
+    return cast("list[dict[str, Any]]", result if isinstance(result, list) else [])
 
 
-def get_registered_model_by_path(db: Database, path: str) -> dict[str, Any] | None:
+async def get_registered_model_by_path(db: Database, path: str) -> dict[str, Any] | None:
     """Return the registered model document for ``path`` if present."""
-    result = db.ml.get_model_by_path(path)
-    return result if isinstance(result, dict) else None
+    result = await db.ml.get_model_by_type(path)
+    return cast("dict[str, Any] | None", result if isinstance(result, dict) else None)
 
 
-def upsert_registered_model(
+async def upsert_registered_model(
     db: Database,
     *,
     path: str,
@@ -68,10 +68,10 @@ def upsert_registered_model(
         primary key plus the registered model metadata.
 
     """
-    existing = get_registered_model_by_path(db, path)
+    existing = await get_registered_model_by_path(db, path)
     timestamp = now_ms().value
     payload: dict[str, Any] = {
-        "_key": _model_key(path),
+        "id": _model_key(path),
         "path": path,
         "backbone": backbone,
         "head_type": head_type,
@@ -100,7 +100,7 @@ def upsert_registered_model(
         )
 
     try:
-        result = db.ml.add_model(payload)
+        result = await db.ml.add_model(payload)
         if not isinstance(result, dict):
             raise RuntimeError(f"Failed to load persisted ml_models document for path={path}")
         return result
@@ -109,13 +109,13 @@ def upsert_registered_model(
         raise RuntimeError(msg) from exc
 
 
-def mark_model_fully_configured(db: Database, model_id: int, value: bool) -> None:
+async def mark_model_fully_configured(db: Database, model_id: str, value: bool) -> None:
     """Set the ``fully_configured`` flag on one registered model."""
-    model_doc = db.ml.get_model(model_id)
+    model_doc = await db.ml.get_model(model_id)
     if not isinstance(model_doc, dict):
         return
 
-    db.ml.update_model(
+    await db.ml.update_model(
         model_id,
         {
             "fully_configured": value,
@@ -124,13 +124,13 @@ def mark_model_fully_configured(db: Database, model_id: int, value: bool) -> Non
     )
 
 
-def mark_model_known(db: Database, model_id: int, value: bool) -> None:
+async def mark_model_known(db: Database, model_id: str, value: bool) -> None:
     """Set the ``is_known`` flag on one registered model."""
-    model_doc = db.ml.get_model(model_id)
+    model_doc = await db.ml.get_model(model_id)
     if not isinstance(model_doc, dict):
         return
 
-    db.ml.update_model(
+    await db.ml.update_model(
         model_id,
         {
             "is_known": value,
@@ -139,55 +139,53 @@ def mark_model_known(db: Database, model_id: int, value: bool) -> None:
     )
 
 
-def delete_registered_model(db: Database, model_id: int) -> None:
+async def delete_registered_model(db: Database, model_id: str) -> None:
     """Delete one registered model vertex by ID."""
-    db.ml.remove_model(model_id)
+    await db.ml.remove_model(model_id)
 
 
-def list_model_outputs_for_model(db: Database, model_id: int) -> list[dict[str, Any]]:
+async def list_model_outputs_for_model(db: Database, model_id: str) -> list[dict[str, Any]]:
     """Return all output vertices attached to one model, ordered by index."""
-    result = db.ml.list_model_outputs(model_id)
-    return result if isinstance(result, list) else []
+    result = await db.ml.list_model_outputs(model_id)
+    return cast("list[dict[str, Any]]", result if isinstance(result, list) else [])
 
 
-def list_fully_labeled_model_outputs(db: Database, model_id: int) -> list[dict[str, Any]]:
+async def list_fully_labeled_model_outputs(db: Database, model_id: str) -> list[dict[str, Any]]:
     """Return only labeled output vertices for one model."""
-    return [doc for doc in list_model_outputs_for_model(db, model_id) if bool(doc.get("fully_labeled"))]
+    return [doc for doc in await list_model_outputs_for_model(db, model_id) if bool(doc.get("fully_labeled"))]
 
 
-def ensure_model_outputs(db: Database, model_id: int, output_count: int) -> list[dict[str, Any]]:
-    """Ensure all expected output vertices and edges exist for a model."""
+async def ensure_model_outputs(db: Database, model_id: str, output_count: int) -> list[dict[str, Any]]:
+    """Ensure all expected output vertices exist for a model."""
     for output_index in range(output_count):
         output_key = _output_key(model_id, output_index)
-        output_id = f"ml_model_outputs/{output_key}"
-        _existing = db.ml.get_model_output(output_id)
+        existing = await db.ml.get_model_output(output_index)
         payload = {
-            "_key": output_key,
+            "id": output_key,
             "output_index": output_index,
             "label": None,
             "fully_labeled": False,
         }
-        if isinstance(_existing, dict):
-            payload["label"] = _existing.get("label")
-            payload["fully_labeled"] = _existing.get("fully_labeled", False)
+        if isinstance(existing, dict):
+            payload["label"] = existing.get("label")
+            payload["fully_labeled"] = existing.get("fully_labeled", False)
 
-        db.ml.replace_model_output(model_id, output_key, payload)
+        await db.ml.replace_model_output(model_id, output_key, payload)
 
-    return list_model_outputs_for_model(db, model_id)
+    return await list_model_outputs_for_model(db, model_id)
 
 
-def update_model_output_label(db: Database, model_id: int, output_id: int, label: str) -> None:
+async def update_model_output_label(db: Database, model_id: str, output_id: str, label: str) -> None:
     """Write label metadata for one output vertex."""
-    existing_output = db.ml.get_model_output(output_id)
+    existing_output = await db.ml.get_model_output(output_id)  # type: ignore[arg-type]
     if not isinstance(existing_output, dict):
         return
 
-    output_key = str(output_id)
-    db.ml.replace_model_output(
+    await db.ml.replace_model_output(
         model_id,
-        output_key,
+        output_id,
         {
-            "_key": output_key,
+            "id": output_id,
             "output_index": existing_output.get("output_index"),
             "label": label,
             "fully_labeled": True,
@@ -195,43 +193,40 @@ def update_model_output_label(db: Database, model_id: int, output_id: int, label
     )
 
 
-def build_model_output_index_map(db: Database) -> dict[str, dict[int, str]]:
+async def build_model_output_index_map(db: Database) -> dict[str, dict[int, str]]:
     """Return ``{model_path: {output_index: output_id}}`` for registered outputs."""
     result: dict[str, dict[int, str]] = {}
-    for model_doc in list_registered_models(db):
+    for model_doc in await list_registered_models(db):
         model_path = model_doc.get("path")
-        model_id = model_doc.get("_id")
+        model_id = model_doc.get("id")
         if not isinstance(model_path, str) or not isinstance(model_id, str):
             continue
-        for output_doc in list_model_outputs_for_model(db, model_id):
+        for output_doc in await list_model_outputs_for_model(db, model_id):
             output_index = output_doc.get("output_index")
-            output_id = output_doc.get("_id")
-            if isinstance(output_index, int) and isinstance(output_id, str):
-                result.setdefault(model_path, {})[output_index] = output_id
+            output_id_key = output_doc.get("id")
+            if isinstance(output_index, int) and isinstance(output_id_key, str):
+                result.setdefault(model_path, {})[output_index] = output_id_key
     return result
 
 
-def delete_model_outputs_for_model(db: Database, model_id: str) -> list[str]:
-    """Delete all output vertices and model-output edges for one model."""
-    result = db.ml.remove_model_outputs_for_model(model_id)
+async def delete_model_outputs_for_model(db: Database, model_id: str) -> list[str]:
+    """Delete all output vertices for one model."""
+    result = await db.ml.remove_model_outputs_for_model(model_id)  # type: ignore[attr-defined]
     if isinstance(result, list):
         return [str(r) for r in result]
     return []
 
 
-def prune_registered_model(db: Database, model_id: str) -> dict[str, list[str]]:
+async def prune_registered_model(db: Database, model_id: str) -> dict[str, list[str]]:
     """Delete a stale model along with its outputs.
-
     Args:
         db: Database instance
-        model_id: Integer ID of the model to delete.
-
+        model_id: String ID of the model to delete.
     Returns:
         Summary containing ``output_ids`` for deleted output vertices.
-
     """
-    deleted_output_ids = delete_model_outputs_for_model(db, model_id)
-    delete_registered_model(db, model_id)
+    deleted_output_ids = await delete_model_outputs_for_model(db, model_id)
+    await delete_registered_model(db, model_id)
     return {
         "output_ids": deleted_output_ids,
     }

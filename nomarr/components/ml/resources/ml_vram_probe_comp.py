@@ -197,7 +197,7 @@ def _probe_single_model(
     return delta_bytes
 
 
-def probe_all_models(db: Database, models_dir: str) -> None:
+async def probe_all_models(db: Database, models_dir: str) -> None:
     """Probe every backbone and head model and store VRAM measurements in meta.
 
     Runs sequentially: only one model is live on the GPU at a time.  Warms the
@@ -234,7 +234,7 @@ def probe_all_models(db: Database, models_dir: str) -> None:
         delta = _probe_single_model(model, waveform)
         delta_with_headroom = int(delta * 1.1) if delta is not None else None
         value = str(delta_with_headroom) if delta_with_headroom is not None else str(sys.maxsize)
-        db.app.update_config_option(f"{_META_PREFIX}{model._path}", {"value": value})
+        await db.app.update_config_option(f"{_META_PREFIX}{model._path}", {"value": value})
         readable = _fmt_bytes(delta_with_headroom) if delta_with_headroom is not None else "unmeasured"
         results.append(f"  {model._path} -> {readable}")
 
@@ -249,7 +249,7 @@ def probe_all_models(db: Database, models_dir: str) -> None:
     )
 
 
-def has_model_vram_measurements(db: Database) -> bool:
+async def has_model_vram_measurements(db: Database) -> bool:
     """Return True if any per-model VRAM measurements exist in meta.
 
     Args:
@@ -259,24 +259,24 @@ def has_model_vram_measurements(db: Database) -> bool:
         True if at least one ``ml_model_vram:*`` key is present.
 
     """
-    docs = cast("list[dict[str, Any]]", db.app.list_config_options(prefix=_META_PREFIX))
+    docs = cast("list[dict[str, Any]]", await db.app.list_config_options(prefix=_META_PREFIX))
     return bool(docs)
 
 
-def clear_model_vram_measurements(db: Database) -> None:
+async def clear_model_vram_measurements(db: Database) -> None:
     """Delete all per-model VRAM measurements from meta.
 
     Args:
         db: Database instance.
 
     """
-    existing_docs = cast("list[dict[str, Any]]", db.app.list_config_options(prefix=_META_PREFIX))
+    existing_docs = cast("list[dict[str, Any]]", await db.app.list_config_options(prefix=_META_PREFIX))
     removed = 0
     for doc in existing_docs:
         key = doc.get("_key")
         if not isinstance(key, str) or not key:
             continue
-        db.app.remove_config_option(key)
+        await db.app.remove_config_option(key)
         removed += 1
     logger.info("[vram_probe] Cleared %d VRAM measurement(s)", removed)
 

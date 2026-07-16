@@ -33,7 +33,7 @@ class TaggingWriteMixin:
     db: Database
     _bts: BackgroundTaskService
 
-    def read_file_tags(self, path: str, namespace: str) -> dict[str, Any]:
+    async def read_file_tags(self, path: str, namespace: str) -> dict[str, Any]:
         """Read tags from an audio file.
 
         Args:
@@ -48,9 +48,9 @@ class TaggingWriteMixin:
             RuntimeError: If file cannot be read
 
         """
-        return read_file_tags_workflow(db=self.db, path=path, namespace=namespace)
+        return await read_file_tags_workflow(db=self.db, path=path, namespace=namespace)
 
-    def remove_file_tags(self, path: str, namespace: str) -> int:
+    async def remove_file_tags(self, path: str, namespace: str) -> int:
         """Remove all namespaced tags from an audio file.
 
         Args:
@@ -65,9 +65,9 @@ class TaggingWriteMixin:
             RuntimeError: If file cannot be modified
 
         """
-        return remove_file_tags_workflow(db=self.db, path=path, namespace=namespace)
+        return await remove_file_tags_workflow(db=self.db, path=path, namespace=namespace)
 
-    def write_tags_to_files(
+    async def write_tags_to_files(
         self,
         library_id: str,
         batch_size: int = 100,
@@ -90,7 +90,7 @@ class TaggingWriteMixin:
             WriteTagsResult with processed, remaining, and failed counts
 
         """
-        library = get_library_record(self.db, library_id)
+        library = await get_library_record(self.db, library_id)
         if not library:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
@@ -101,7 +101,7 @@ class TaggingWriteMixin:
         has_calibration = bool(calibration_hash)
 
         worker_id = f"reconcile:{library_id}"
-        claimed_files = claim_files_for_reconciliation(
+        claimed_files = await claim_files_for_reconciliation(
             self.db,
             library_id=library_id,
             worker_id=worker_id,
@@ -128,7 +128,7 @@ class TaggingWriteMixin:
                     logger.debug(
                         f"[reconcile] Skipping {file_key}: modified externally, will retry after rescan",
                     )
-                    release_claim(self.db, file_key)
+                    await release_claim(self.db, file_key)
                 else:
                     failed += 1
                     logger.warning(f"[reconcile] Failed to write tags for {file_key}: {result.error}")
@@ -136,11 +136,11 @@ class TaggingWriteMixin:
                 failed += 1
                 logger.exception(f"[reconcile] Error processing {file_key}: {e}")
                 try:
-                    release_claim(self.db, file_key)
+                    await release_claim(self.db, file_key)
                 except Exception as release_err:
                     logger.warning(f"[reconcile] Failed to release claim for {file_key}: {release_err}", exc_info=True)
 
-        remaining = count_files_needing_reconciliation(self.db, library_id=library_id)
+        remaining = await count_files_needing_reconciliation(self.db, library_id=library_id)
 
         logger.info(f"[reconcile] Library {library_id}: processed={processed}, failed={failed}, remaining={remaining}")
 
@@ -194,7 +194,7 @@ class TaggingWriteMixin:
             ),
         )
 
-    def mark_tags_not_fresh(self, library_id: str) -> int:
+    async def mark_tags_not_fresh(self, library_id: str) -> int:
         """Mark all file tags in a library as not fresh.
 
         Args:
@@ -204,9 +204,9 @@ class TaggingWriteMixin:
             Number of files marked not fresh
 
         """
-        return bulk_set_tags_not_fresh(self.db, library_id)
+        return await bulk_set_tags_not_fresh(self.db, library_id)
 
-    def get_reconcile_status(self, library_id: str) -> dict[str, Any]:
+    async def get_reconcile_status(self, library_id: str) -> dict[str, Any]:
         """Get reconciliation status for a library.
 
         Args:
@@ -216,12 +216,12 @@ class TaggingWriteMixin:
             Dict with pending_count and in_progress status
 
         """
-        library = get_library_record(self.db, library_id)
+        library = await get_library_record(self.db, library_id)
         if not library:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
 
-        pending_count = count_files_needing_reconciliation(self.db, library_id=library_id)
+        pending_count = await count_files_needing_reconciliation(self.db, library_id=library_id)
         task_status = self._bts.get_task_status(f"write_tags:{library_id}")
         in_progress = task_status is not None and task_status["status"] == "running"
 

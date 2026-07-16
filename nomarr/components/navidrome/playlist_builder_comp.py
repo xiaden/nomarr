@@ -379,7 +379,7 @@ async def _interleave_per_cluster(
             continue
         file_ids: list[str] = []
         for item in items:
-            fid = item.get("file_id") or item.get("_id")
+            fid = item.get("file_id") or item.get("id")
             if isinstance(fid, str):
                 file_ids.append(fid)
         clusters[key] = file_ids

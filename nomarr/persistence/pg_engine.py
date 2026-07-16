@@ -13,12 +13,20 @@ from sqlalchemy.ext.asyncio import (
 )
 
 
-def create_pg_engine(database_url: str) -> AsyncEngine:
+def create_pg_engine(
+    database_url: str,
+    echo: bool = False,
+    pool_size: int = 5,
+    max_overflow: int = 10,
+) -> AsyncEngine:
     """Create a configured async PostgreSQL engine.
 
     Args:
         database_url: Full connection string (e.g.
             ``postgresql+asyncpg://user:pass@host:5432/db``).
+        echo: If ``True``, log all SQL statements (default: ``False``).
+        pool_size: Connection pool size (default: 5).
+        max_overflow: Max overflow connections beyond pool_size (default: 10).
 
     Returns:
         Configured AsyncEngine instance.
@@ -26,8 +34,9 @@ def create_pg_engine(database_url: str) -> AsyncEngine:
     """
     return create_async_engine(
         database_url,
-        pool_size=5,
-        max_overflow=10,
+        echo=echo,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
         pool_pre_ping=True,
         connect_args={
             "statement_timeout": 30000,  # 30 seconds

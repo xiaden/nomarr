@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
+from nomarr.components.navidrome.navidrome_graph_comp import get_top_navidrome_plays
 from nomarr.components.tagging.tag_query_comp import get_tag_values_grouped_by_file
 from nomarr.helpers.time_helper import now_ms
 
@@ -40,7 +41,7 @@ async def compute_taste_profile(
     # Accept plays from either kwarg (prefer top_plays then plays)
     resolved_plays_raw: list[TrackPlayData] | None = top_plays or plays
     if resolved_plays_raw is None:
-        resolved_plays_raw = db.app.legacy_navidrome.get_top_nd_plays(user_id, top_n)  # type: ignore[assignment]
+        resolved_plays_raw = await get_top_navidrome_plays(db, user_id, top_n)
 
     if not resolved_plays_raw:
         logger.info("[navidrome] No play data for user %s — cannot build taste profile", user_id)
@@ -60,12 +61,12 @@ async def compute_taste_profile(
 
     # Group file_ids by genre
     # get_tag_values_grouped_by_file returns {file_id: {genre_set}}
-    file_genre_map: dict[str, set[str]] = {}
+    file_genre_map: dict[int, set[str]] = {}
     if backbone_id:
         file_genre_map = get_tag_values_grouped_by_file(db, file_ids, "genre")
 
     # Invert to {genre: set[file_ids]}
-    genre_to_files: dict[str, set[str]] = {}
+    genre_to_files: dict[str, set[int]] = {}
     for fid, genres in file_genre_map.items():
         for genre in genres:
             genre_to_files.setdefault(genre, set()).add(fid)

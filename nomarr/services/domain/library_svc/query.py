@@ -68,22 +68,22 @@ class LibraryQueryMixin:
     db: Database
     cfg: LibraryServiceConfig
 
-    def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
+    async def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
         """Get a library by ID or raise an error."""
-        result = get_library_record(self.db, library_id)
+        result = await get_library_record(self.db, library_id)
         if result is None:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
         return result
 
-    def get_library_stats(self) -> LibraryStatsResult:
+    async def get_library_stats(self) -> LibraryStatsResult:
         """Get library statistics (total files, total duration, etc.).
 
         Returns:
             LibraryStatsResult DTO
 
         """
-        stats = get_library_stats(self.db)
+        stats = await get_library_stats(self.db)
         return LibraryStatsResult(
             total_files=stats.get("total_files", 0),
             total_artists=stats.get("total_artists", 0),
@@ -93,25 +93,25 @@ class LibraryQueryMixin:
             needs_tagging_count=stats.get("needs_tagging_count", 0),
         )
 
-    def get_all_library_paths(self) -> list[str]:
+    async def get_all_library_paths(self) -> list[str]:
         """Get all file paths in the library.
 
         Returns:
             List of absolute file paths
 
         """
-        return get_all_library_paths(self.db)
+        return await get_all_library_paths(self.db)
 
-    def get_tagged_library_paths(self) -> list[str]:
+    async def get_tagged_library_paths(self) -> list[str]:
         """Get all file paths that have been tagged (have tags in database).
 
         Returns:
             List of absolute file paths that have been tagged
 
         """
-        return get_tagged_file_paths(self.db)
+        return await get_tagged_file_paths(self.db)
 
-    def get_paths_needing_calibration(self) -> list[str]:
+    async def get_paths_needing_calibration(self) -> list[str]:
         """Get tagged file paths that are not yet calibrated.
 
         Iterates all enabled libraries and collects uncalibrated-but-tagged
@@ -121,17 +121,17 @@ class LibraryQueryMixin:
             List of absolute file paths needing calibration.
 
         """
-        libraries = list_library_records(self.db, enabled_only=True)
+        libraries = await list_library_records(self.db, enabled_only=True)
         all_file_ids: list[str] = []
         for lib in libraries:
-            file_ids = get_uncalibrated_tagged_file_ids(self.db, lib.id)
+            file_ids = await get_uncalibrated_tagged_file_ids(self.db, lib.id)
             all_file_ids.extend(file_ids)
         if not all_file_ids:
             return []
-        files = get_files_by_ids_with_tags(self.db, all_file_ids)
+        files = await get_files_by_ids_with_tags(self.db, all_file_ids)
         return [f["path"] for f in files if f.get("path")]
 
-    def search_files(self, query: SearchFilesQuery) -> SearchFilesResult:
+    async def search_files(self, query: SearchFilesQuery) -> SearchFilesResult:
         """Search library files with optional filters.
 
         Args:
@@ -143,11 +143,11 @@ class LibraryQueryMixin:
             limit, and offset.
 
         """
-        files, total = search_library_files(self.db, query)
+        files, total = await search_library_files(self.db, query)
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
         return SearchFilesResult(files=files_with_tags, total=total, limit=query.limit, offset=query.offset)
 
-    def get_files_by_ids(self, file_ids: list[str]) -> SearchFilesResult:
+    async def get_files_by_ids(self, file_ids: list[str]) -> SearchFilesResult:
         """Get files by IDs with their tags.
 
         Used for batch lookup (e.g., when browsing songs for an entity).
@@ -159,11 +159,11 @@ class LibraryQueryMixin:
             SearchFilesResult with files matching the IDs
 
         """
-        files = get_files_by_ids_with_tags(self.db, file_ids)
+        files = await get_files_by_ids_with_tags(self.db, file_ids)
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
         return SearchFilesResult(files=files_with_tags, total=len(files), limit=len(file_ids), offset=0)
 
-    def search_files_by_tag(
+    async def search_files_by_tag(
         self,
         tag_key: str,
         target_value: float | str,
@@ -185,12 +185,12 @@ class LibraryQueryMixin:
             SearchFilesResult with matched files (includes distance for float searches)
 
         """
-        files = search_files_by_tag(self.db, tag_key, target_value, limit, offset)
-        total = count_files_by_tag(self.db, tag_key, target_value)
+        files = await search_files_by_tag(self.db, tag_key, target_value, limit, offset)
+        total = await count_files_by_tag(self.db, tag_key, target_value)
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
         return SearchFilesResult(files=files_with_tags, total=total, limit=limit, offset=offset)
 
-    def get_unique_tag_keys(self, nomarr_only: bool = False) -> UniqueTagKeysResult:
+    async def get_unique_tag_keys(self, nomarr_only: bool = False) -> UniqueTagKeysResult:
         """Get all unique tag keys across the library.
 
         Args:
@@ -200,10 +200,10 @@ class LibraryQueryMixin:
             UniqueTagKeysResult DTO with tag_keys list and total count.
 
         """
-        keys = get_unique_names(self.db, nomarr_only)
+        keys = await get_unique_names(self.db, nomarr_only)
         return UniqueTagKeysResult(tag_keys=keys, count=len(keys), calibration=None, library_id=None)
 
-    def get_unique_tag_values(self, tag_key: str, nomarr_only: bool = False) -> UniqueTagKeysResult:
+    async def get_unique_tag_values(self, tag_key: str, nomarr_only: bool = False) -> UniqueTagKeysResult:
         """Get all unique values for a specific tag key.
 
         Args:
@@ -214,10 +214,10 @@ class LibraryQueryMixin:
             UniqueTagKeysResult DTO with tag_keys list and total count.
 
         """
-        values = get_unique_tag_values(self.db, tag_key, nomarr_only)
+        values = await get_unique_tag_values(self.db, tag_key, nomarr_only)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
 
-    def get_unique_mood_values(self, mood_tier: str = "mood-strict", limit: int = 100) -> UniqueTagKeysResult:
+    async def get_unique_mood_values(self, mood_tier: str = "mood-strict", limit: int = 100) -> UniqueTagKeysResult:
         """Get unique individual mood values extracted from tuple string tags.
 
         Args:
@@ -228,10 +228,10 @@ class LibraryQueryMixin:
             UniqueTagKeysResult DTO with tag_keys list and total count.
 
         """
-        values = get_unique_mood_values(self.db, mood_tier=mood_tier, limit=limit)
+        values = await get_unique_mood_values(self.db, mood_tier=mood_tier, limit=limit)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
 
-    def get_work_status(self) -> WorkStatusResult:
+    async def get_work_status(self) -> WorkStatusResult:
         """Get unified work status for the system.
 
         Returns status of:
@@ -245,16 +245,16 @@ class LibraryQueryMixin:
             WorkStatusResult DTO with scanning and processing status
 
         """
-        libraries = list_library_records(self.db, enabled_only=False)
+        libraries = await list_library_records(self.db, enabled_only=False)
         stats = self.get_library_stats()
-        recently_tagged = count_recently_tagged(self.db)
+        recently_tagged = await count_recently_tagged(self.db)
 
         # Build per-axis pipeline states for all libraries
-        scan_not_set = get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
-        scan_ing_set = get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
-        ml_set = get_libraries_in_axis_state(self.db, ML_STATE_FIELD, ML_NOT_PROCESSED)
-        cal_set = get_libraries_in_axis_state(self.db, CAL_STATE_FIELD, CAL_NOT_CALIBRATED)
-        tw_set = get_libraries_in_axis_state(self.db, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
+        scan_not_set = await get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
+        scan_ing_set = await get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
+        ml_set = await get_libraries_in_axis_state(self.db, ML_STATE_FIELD, ML_NOT_PROCESSED)
+        cal_set = await get_libraries_in_axis_state(self.db, CAL_STATE_FIELD, CAL_NOT_CALIBRATED)
+        tw_set = await get_libraries_in_axis_state(self.db, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
 
         pipeline_states: dict[str, dict[str, str]] = {}
         for lib in libraries:
@@ -282,7 +282,7 @@ class LibraryQueryMixin:
             library_docs=libraries,
         )
 
-    def get_recently_processed(
+    async def get_recently_processed(
         self,
         limit: int = 20,
         library_id: str | None = None,
@@ -298,9 +298,9 @@ class LibraryQueryMixin:
             sorted by scanned_at DESC.
 
         """
-        return get_recently_processed(self.db, limit=limit, library_id=library_id)
+        return await get_recently_processed(self.db, limit=limit, library_id=library_id)
 
-    def get_errored_files(self, library_id: str) -> ErroredFilesResult:
+    async def get_errored_files(self, library_id: str) -> ErroredFilesResult:
         """Get errored files for a library with basic metadata.
 
         Args:
@@ -314,9 +314,9 @@ class LibraryQueryMixin:
 
         """
         self._get_library_or_error(library_id)
-        total = count_errored_files(self.db, library_id)
-        errored_ids = get_errored_file_ids(self.db, library_id)
-        files_raw = get_files_by_ids_with_tags(self.db, errored_ids)
+        total = await count_errored_files(self.db, library_id)
+        errored_ids = await get_errored_file_ids(self.db, library_id)
+        files_raw = await get_files_by_ids_with_tags(self.db, errored_ids)
         files: list[ErroredFileItem] = [
             ErroredFileItem(
                 id=f["id"],

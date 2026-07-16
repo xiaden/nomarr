@@ -205,7 +205,7 @@ class FileWatcherService:
             f"FileWatcherService initialized (debounce={debounce_seconds}s, poll_interval={polling_interval_seconds}s)",
         )
 
-    def sync_watchers(self) -> None:
+    async def sync_watchers(self) -> None:
         """Sync watchers with the library collection (DB is source of truth).
 
         - Starts watchers for libraries in DB with watch_mode != 'off'
@@ -214,8 +214,8 @@ class FileWatcherService:
         Should be called on startup and can be called periodically if needed.
         """
         # Get libraries that should be watched from DB
-        watchable = list_watchable_libraries(self._db)
-        watchable_ids = {lib["_id"] for lib in watchable}
+        watchable = await list_watchable_libraries(self._db)
+        watchable_ids = {lib["id"] for lib in watchable}
 
         # Stop watchers for libraries no longer watchable
         for library_id in list(self.observers.keys()):
@@ -225,7 +225,7 @@ class FileWatcherService:
 
         # Start watchers for new watchable libraries
         for lib in watchable:
-            library_id = lib["_id"]
+            library_id = lib["id"]
             if library_id not in self.observers:
                 try:
                     self.start_watching_library(library_id)
@@ -249,7 +249,7 @@ class FileWatcherService:
             if library_id in self.observers:
                 self.stop_watching_library(library_id)
 
-    def start_watching_library(self, library_id: str) -> None:
+    async def start_watching_library(self, library_id: str) -> None:
         """Start watching a library for changes.
 
         If already watching, restarts the watcher.
@@ -267,7 +267,7 @@ class FileWatcherService:
 
         """
         # Get library info
-        library = get_library_watch_config(self._db, library_id)
+        library = await get_library_watch_config(self._db, library_id)
         if not library:
             msg = f"Library {library_id} not found"
             raise ValueError(msg)
@@ -448,7 +448,7 @@ class FileWatcherService:
         for library_id in list(self.observers.keys()):
             self.stop_watching_library(library_id)
 
-    def switch_watch_mode(self, library_id: str, new_mode: str) -> None:
+    async def switch_watch_mode(self, library_id: str, new_mode: str) -> None:
         """Switch watch mode for a library at runtime.
 
         Stops the existing watcher (if any), updates the library's watch_mode
@@ -470,7 +470,7 @@ class FileWatcherService:
             raise ValueError(msg)
 
         # Verify library exists
-        library = get_library_watch_config(self._db, library_id)
+        library = await get_library_watch_config(self._db, library_id)
         if not library:
             msg = f"Library {library_id} not found"
             raise ValueError(msg)

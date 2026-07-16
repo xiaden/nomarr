@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 _MAX_TRACKS = 200
 
 
-def generate_static_playlist_workflow(
+async def generate_static_playlist_workflow(
     db: Database,
     file_ids: list[str],
     playlist_name: str = "Vector Search Playlist",
@@ -70,8 +70,8 @@ def generate_static_playlist_workflow(
         )
 
     # Step 1: Resolve file metadata from database
-    files = get_files_by_ids_with_tags(db, file_ids)
-    found_ids = {f["_id"] for f in files}
+    files = await get_files_by_ids_with_tags(db, file_ids)
+    found_ids = {f["id"] for f in files}
     missing_ids = [fid for fid in file_ids if fid not in found_ids]
 
     if missing_ids:
@@ -85,8 +85,8 @@ def generate_static_playlist_workflow(
     library_root = ""
     if files:
         first_path = str(files[0].get("path", ""))
-        library_path = build_library_path_from_db(first_path, db, check_disk=False)
-        root = get_library_root(library_path, db)
+        library_path = await build_library_path_from_db(first_path, db, check_disk=False)
+        root = await get_library_root(library_path, db)
         if root is not None:
             library_root = str(root)
 

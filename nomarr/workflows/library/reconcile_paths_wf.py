@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def reconcile_library_paths_workflow(
+async def reconcile_library_paths_workflow(
     db: Database,
     library_id: str,
     library_root: str | None,
@@ -58,7 +58,7 @@ def reconcile_library_paths_workflow(
         msg = f"Invalid policy '{policy}'. Must be one of: {valid_policies}"
         raise ValueError(msg)
     logger.info(f"[reconcile_paths] Starting reconciliation: policy={policy}, batch_size={batch_size}")
-    result = reconcile_library_paths(db=db, library_id=library_id, policy=policy, batch_size=batch_size)
+    result = await reconcile_library_paths(db=db, library_id=library_id, policy=policy, batch_size=batch_size)
     logger.info(
         f"[reconcile_paths] Reconciliation complete: "
         f"{result['total_files']} files checked, {result['valid_files']} valid, "

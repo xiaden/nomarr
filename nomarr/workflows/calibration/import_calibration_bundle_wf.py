@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def import_calibration_bundle_wf(
+async def import_calibration_bundle_wf(
     db: Database,
     bundle_path: str,
 ) -> dict[str, Any]:
@@ -100,13 +100,13 @@ def import_calibration_bundle_wf(
         raise ValueError(msg)
 
     # Build model lookup cache: (backbone, embedder_release_date) -> model_id
-    all_models = list_registered_models(db)
+    all_models = await list_registered_models(db)
     model_lookup: dict[tuple[str, str], str] = {}
     for model in all_models:
         backbone = model.get("backbone", "")
         embedder_date = model.get("embedder_release_date", "")
         if backbone and embedder_date:
-            model_lookup[(backbone, embedder_date)] = model["_id"]
+            model_lookup[(backbone, embedder_date)] = model["id"]
 
     # Import calibrations to database
     imported_count = 0
@@ -171,7 +171,7 @@ def import_calibration_bundle_wf(
                 "bin_width": (params.get("hi", 1.0) - params.get("lo", 0.0)) / params.get("bins", 10000),
             }
 
-            save_calibration_state(
+            await save_calibration_state(
                 db,
                 model_id=model_id,
                 head_name=head_name,
@@ -194,9 +194,9 @@ def import_calibration_bundle_wf(
             logger.exception(f"[import_calibration] Failed to import {label}: {e}")
 
     # Update global calibration version
-    calibration_states = load_all_calibration_states(db)
+    calibration_states = await load_all_calibration_states(db)
     global_version = compute_global_calibration_hash(calibration_states)
-    set_calibration_version(db, global_version)
+    await set_calibration_version(db, global_version)
 
     logger.info(
         f"[import_calibration] Import complete: {imported_count} imported, "
@@ -212,7 +212,7 @@ def import_calibration_bundle_wf(
     }
 
 
-def import_calibration_bundles_from_directory_wf(
+async def import_calibration_bundles_from_directory_wf(
     db: Database,
     models_dir: str,
     calibrate_heads: bool = False,
@@ -285,7 +285,7 @@ def import_calibration_bundles_from_directory_wf(
             total_skipped += 1
 
     # Final global version (computed after all imports)
-    calibration_states = load_all_calibration_states(db)
+    calibration_states = await load_all_calibration_states(db)
     global_version = compute_global_calibration_hash(calibration_states)
 
     logger.info(

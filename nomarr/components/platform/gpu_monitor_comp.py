@@ -60,7 +60,7 @@ class GPUHealthMonitor(multiprocessing.Process):
         except (BrokenPipeError, OSError) as e:
             logger.warning("[GPUHealthMonitor] Failed to send heartbeat: %s", e)
 
-    def run(self) -> None:
+    async def run(self) -> None:
         """Main monitoring loop (runs in separate process).
 
         Continuously probes GPU, writes resource snapshot to DB, and sends
@@ -88,7 +88,7 @@ class GPUHealthMonitor(multiprocessing.Process):
                     "error_summary": result.get("error_summary"),
                 }
                 try:
-                    db.app.update_config_option("gpu_resources", resource_snapshot)
+                    await db.app.update_config_option("gpu_resources", resource_snapshot)
                     consecutive_errors = 0
                     self._send_heartbeat("healthy")
                 except OSError as db_error:

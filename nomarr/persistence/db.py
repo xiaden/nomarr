@@ -74,7 +74,8 @@ class Database:
             pool_size=pool_size,
             max_overflow=max_overflow,
         )
-        self._pg_session = async_session_factory(self._pg_engine)
+        _session_factory = async_session_factory(self._pg_engine)
+        self._pg_session = _session_factory()
 
         # Instantiate all repositories
         self._app_repo = AppRepository(self._pg_session)

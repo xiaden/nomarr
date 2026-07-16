@@ -25,12 +25,12 @@ def _claim_key(file_id: str | int) -> str:
     return f"claim_{file_id}"
 
 
-def _get_all_claims(db: Database) -> list[dict[str, Any]]:
+async def _get_all_claims(db: Database) -> list[dict[str, Any]]:
     """Return all worker claims via the application facade."""
-    return cast("list[dict[str, Any]]", db.app.list_claims())
+    return cast("list[dict[str, Any]]", await db.app.list_claims())
 
 
-def discover_next_file(
+async def discover_next_file(
     db: Database,
 ) -> str | None:
     """Discover next untagged file.
@@ -45,13 +45,13 @@ def discover_next_file(
         File id or None if no work available
 
     """
-    file_doc = discover_next_untagged_file(db, exclude_claimed=True)
+    file_doc = await discover_next_untagged_file(db, exclude_claimed=True)
     if file_doc:
         return str(file_doc["id"])
     return None
 
 
-def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
+async def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
     """Attempt to claim file for processing.
 
     Uses deterministic key based on file id to enforce uniqueness.
@@ -73,13 +73,13 @@ def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
         "claimed_at": now_ms().value,
     }
     try:
-        db.app.add_claim(payload)
+        await db.app.add_claim(payload)
     except DuplicateKeyError:
         return False
     return True
 
 
-def release_claim(db: Database, file_id: str) -> None:
+async def release_claim(db: Database, file_id: int) -> None:
     """Release claim on file (after processing or error).
 
     Args:
@@ -87,10 +87,10 @@ def release_claim(db: Database, file_id: str) -> None:
         file_id: File document id
 
     """
-    db.app.remove_claim(file_id)
+    await db.app.remove_claim(file_id)
 
 
-def try_insert_or_steal_claim(
+async def try_insert_or_steal_claim(
     db: Database,
     payload: dict[str, Any],
     now: int,
@@ -112,7 +112,7 @@ def try_insert_or_steal_claim(
 
     """
     try:
-        db.app.add_claim(payload)
+        await db.app.add_claim(payload)
     except DuplicateKeyError:
         file_id = str(payload["file_id"])
         existing_claim = next(
@@ -121,7 +121,7 @@ def try_insert_or_steal_claim(
         )
         if existing_claim is None:
             try:
-                db.app.add_claim(payload)
+                await db.app.add_claim(payload)
             except DuplicateKeyError:
                 return False
             return True
@@ -130,16 +130,16 @@ def try_insert_or_steal_claim(
         if claimed_at > now - lease_ms:
             return False
 
-        db.app.remove_claim(file_id)
+        await db.app.remove_claim(file_id)
         try:
-            db.app.add_claim(payload)
+            await db.app.add_claim(payload)
         except DuplicateKeyError:
             return False
         return True
     return True
 
 
-def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
+async def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
     """Remove claims from inactive workers and completed/ineligible files.
 
     Cleanup runs all three cleanup operations:
@@ -160,7 +160,7 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
         return 0
 
     heartbeat_cutoff = now_ms().value - heartbeat_timeout_ms
-    health_docs = cast("list[dict[str, Any]]", db.app.list_worker_health())
+    health_docs = cast("list[dict[str, Any]]", await db.app.list_worker_health())
     active_workers = {
         str(doc.get("component_id")) for doc in health_docs if int(doc.get("last_heartbeat", 0)) > heartbeat_cutoff
     }
@@ -177,12 +177,12 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
     stale_file_ids: set[str] = set()
     candidate_file_ids = sorted({str(claim["file_id"]) for claim in active_ml_claims})
     if candidate_file_ids:
-        file_docs = cast("list[dict[str, Any]]", db.library.list_files_by_ids(candidate_file_ids))
+        file_docs = cast("list[dict[str, Any]]", await db.library.list_files_by_ids(candidate_file_ids))
         existing_file_ids = {str(doc["id"]) for doc in file_docs if "id" in doc}
 
         tagged_file_ids = {
             str(file_doc["id"])
-            for file_doc in cast("list[dict[str, Any]]", db.app.list_file_docs_in_state(_TAGGED_STATE_ID))
+            for file_doc in cast("list[dict[str, Any]]", await db.app.list_file_docs_in_state(_TAGGED_STATE_ID))
             if "id" in file_doc and str(file_doc["id"]) in candidate_file_ids
         }
         stale_file_ids = {
@@ -191,13 +191,13 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
 
     removed = 0
     if inactive_worker_ids:
-        removed += db.app.remove_claims(worker_ids=sorted(inactive_worker_ids))
+        removed += await db.app.remove_claims(worker_ids=sorted(inactive_worker_ids))
     if stale_file_ids:
-        removed += db.app.remove_claims(file_ids=sorted(stale_file_ids))
+        removed += await db.app.remove_claims(file_ids=sorted(stale_file_ids))
     return removed
 
 
-def discover_and_claim_file(
+async def discover_and_claim_file(
     db: Database,
     worker_id: str,
 ) -> str | None:
@@ -231,7 +231,7 @@ def discover_and_claim_file(
     return None
 
 
-def get_active_claim_count(db: Database) -> int:
+async def get_active_claim_count(db: Database) -> int:
     """Get count of active claims.
 
     Args:
@@ -241,10 +241,10 @@ def get_active_claim_count(db: Database) -> int:
         Number of active claim documents
 
     """
-    return db.app.count_claims()
+    return await db.app.count_claims()
 
 
-def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
+async def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
     """Release all claims held by a specific worker.
 
     Used when a worker dies/crashes to free its claimed files for rediscovery.
@@ -259,12 +259,12 @@ def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
     """
     claims = [
         claim
-        for claim in cast("list[dict[str, Any]]", db.app.list_claims())
+        for claim in cast("list[dict[str, Any]]", await db.app.list_claims())
         if str(claim.get("worker_id")) == worker_id
     ]
     if not claims:
         return []
 
     file_ids = [str(claim["file_id"]) for claim in claims]
-    db.app.remove_claims(worker_ids=[worker_id])
+    await db.app.remove_claims(worker_ids=[worker_id])
     return file_ids

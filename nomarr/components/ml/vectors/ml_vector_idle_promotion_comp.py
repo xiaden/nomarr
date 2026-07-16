@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def list_hot_vector_targets(db: Database, models_dir: str) -> list[str]:
+async def list_hot_vector_targets(db: Database, models_dir: str) -> list[str]:
     """Find backbone IDs with pending hot vectors.
 
     Enumerates backbones from the filesystem and checks each for a
@@ -35,14 +35,14 @@ def list_hot_vector_targets(db: Database, models_dir: str) -> list[str]:
 
     targets: list[str] = []
     for backbone_id in backbones:
-        stats = db.ml.get_embedding_stats(backbone_id)
+        stats = await db.ml.get_embedding_stats(backbone_id)
         if int(stats["hot_count"]) > 0:
             targets.append(backbone_id)
 
     return targets
 
 
-def compute_promotion_ef_construction(db: Database, backbone_id: str) -> int:
+async def compute_promotion_ef_construction(db: Database, backbone_id: int) -> int:
     """Compute optimal HNSW ef_construction for a backbone.
 
     Sums hot and cold counts to determine total document count, then
@@ -57,7 +57,7 @@ def compute_promotion_ef_construction(db: Database, backbone_id: str) -> int:
 
     """
     # Sum hot + cold counts
-    stats = db.ml.get_embedding_stats(backbone_id)
+    stats = await db.ml.get_embedding_stats(backbone_id)
     hot_count = int(stats["hot_count"])
     cold_count = int(stats["cold_count"])
 

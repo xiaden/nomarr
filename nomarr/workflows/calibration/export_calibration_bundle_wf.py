@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def export_calibration_bundle_wf(
+async def export_calibration_bundle_wf(
     db: Database,
     output_path: str,
     include_metadata: bool = True,
@@ -78,7 +78,7 @@ def export_calibration_bundle_wf(
     logger.info(f"[export_calibration] Exporting calibrations to {output_path}")
 
     # Read all calibrations from database
-    calibration_states = load_all_calibration_states(db)
+    calibration_states = await load_all_calibration_states(db)
 
     if not calibration_states:
         msg = "No calibrations in database to export"
@@ -107,7 +107,7 @@ def export_calibration_bundle_wf(
         }
 
     # Get global version
-    global_version = get_calibration_version(db)
+    global_version = await get_calibration_version(db)
 
     # Build bundle
     bundle: dict[str, Any] = {"labels": labels}

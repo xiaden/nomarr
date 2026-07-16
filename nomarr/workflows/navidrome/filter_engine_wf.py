@@ -131,7 +131,7 @@ def _resolve_tag_key(db: Database, tag_key: str) -> list[str]:
     return [tag_key]
 
 
-def _execute_single_condition(db: Database, condition: TagCondition) -> set[str]:
+async def _execute_single_condition(db: Database, condition: TagCondition) -> set[str]:
     """Execute a single tag condition and return matching file IDs.
 
     Supports both full versioned tag keys and short user-friendly names.
@@ -153,14 +153,14 @@ def _execute_single_condition(db: Database, condition: TagCondition) -> set[str]
 
     for name in storage_keys:
         if condition.operator == "contains":
-            file_ids = find_files_matching_tag(
+            file_ids = await find_files_matching_tag(
                 db,
                 name=name,
                 operator="CONTAINS",
                 value=str(condition.value),
             )
         elif condition.operator == "notcontains":
-            file_ids = find_files_matching_tag(
+            file_ids = await find_files_matching_tag(
                 db,
                 name=name,
                 operator="NOTCONTAINS",
@@ -168,7 +168,7 @@ def _execute_single_condition(db: Database, condition: TagCondition) -> set[str]
             )
         else:
             # Numeric comparison query
-            file_ids = find_files_matching_tag(
+            file_ids = await find_files_matching_tag(
                 db,
                 name=name,
                 operator=condition.operator,

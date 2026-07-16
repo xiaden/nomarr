@@ -305,7 +305,7 @@ def _compare_calibrations(
 # =============================================================================
 
 
-def generate_histogram_calibration_wf(
+async def generate_histogram_calibration_wf(
     db: Database,
     models_dir: str,
     namespace: str = "nom",
@@ -345,7 +345,7 @@ def generate_histogram_calibration_wf(
     logger.info("[histogram_calibration_wf] Starting histogram-based calibration generation")
 
     # Discover all heads
-    heads = discover_heads(models_dir, db)
+    heads = await discover_heads(models_dir, db)
     if not heads:
         logger.warning("[histogram_calibration_wf] No heads found in models directory")
         return {"version": 0, "heads_processed": 0, "heads_success": 0, "heads_failed": 0, "results": {}}
@@ -359,13 +359,13 @@ def generate_histogram_calibration_wf(
 
     for head_idx, head_info in enumerate(heads):
         # Resolve model_id from head's model_path
-        model_doc = get_registered_model_by_path(db, head_info.model_path)
+        model_doc = await get_registered_model_by_path(db, head_info.model_path)
         if model_doc is None:
             logger.error(f"[histogram_calibration_wf] No model found for path: {head_info.model_path}")
             failed_count += 1
             continue
 
-        model_id = model_doc["_id"]
+        model_id = model_doc["id"]
         head_name = head_info.name
         labels = head_info.labels
 
@@ -388,7 +388,7 @@ def generate_histogram_calibration_wf(
 
             try:
                 # Generate calibration from histogram (single label)
-                calib_result = generate_calibration_from_histogram(
+                calib_result = await generate_calibration_from_histogram(
                     db=db,
                     model_id=model_id,
                     head_name=head_name,
@@ -402,7 +402,7 @@ def generate_histogram_calibration_wf(
                 calib_def_hash = compute_calibration_def_hash(model_id, head_name, label)
 
                 # Upsert calibration_state (includes label)
-                save_calibration_state(
+                await save_calibration_state(
                     db,
                     model_id=model_id,
                     head_name=head_name,
@@ -432,12 +432,12 @@ def generate_histogram_calibration_wf(
     logger.info(f"[histogram_calibration_wf] Completed: {success_count} success, {failed_count} failed")
 
     # Compute and store global calibration version
-    all_calibration_states = load_all_calibration_states(db)
+    all_calibration_states = await load_all_calibration_states(db)
     global_version_hash = compute_global_calibration_hash(all_calibration_states)
     current_timestamp = str(int(__import__("time").time() * 1000))
 
-    set_calibration_version(db, global_version_hash)
-    set_calibration_last_run(db, current_timestamp)
+    await set_calibration_version(db, global_version_hash)
+    await set_calibration_last_run(db, current_timestamp)
 
     logger.info(f"[histogram_calibration_wf] Stored global calibration version: {global_version_hash[:12]}...")
 

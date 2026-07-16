@@ -29,10 +29,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def get_file_for_writing(
+async def get_file_for_writing(
     db: Database,
     file_key: str,
-) -> tuple[str, str, dict[str, Any] | None]:
+) -> tuple[int, str, dict[str, Any] | None]:
     """Normalise *file_key* and fetch the library-file document.
 
     Returns:
@@ -40,9 +40,9 @@ def get_file_for_writing(
         document does not exist.
 
     """
-    # PostgreSQL uses integer IDs; file_key is already the string representation
-    file_id = str(file_key)
-    file_doc = get_file_by_id(db, file_id)
+    # PostgreSQL uses integer IDs; convert file_key to int
+    file_id = int(file_key)
+    file_doc = await get_file_by_id(db, file_id)
     return file_id, file_key, file_doc
 
 
@@ -51,12 +51,12 @@ def get_file_for_writing(
 # ---------------------------------------------------------------------------
 
 
-def resolve_library_root(
+async def resolve_library_root(
     db: Database,
-    library_id: str,
+    library_id: int,
 ) -> Path | None:
     """Return the library's root path, or ``None`` if the library is missing."""
-    library_doc = get_library_record(db, library_id, include_scan=False)
+    library_doc = await get_library_record(db, library_id, include_scan=False)
     if not library_doc:
         return None
     return Path(library_doc["root_path"])
@@ -67,16 +67,16 @@ def resolve_library_root(
 # ---------------------------------------------------------------------------
 
 
-def get_nomarr_tags(
+async def get_nomarr_tags(
     db: Database,
-    file_id: str,
+    file_id: int,
 ) -> Tags:
     """Fetch Nomarr-namespaced tags for *file_id*.
 
     Equivalent to calling the component-owned tag query helper with
     ``nomarr_only=True``.
     """
-    return get_song_tags(db, file_id, nomarr_only=True)
+    return await get_song_tags(db, file_id, nomarr_only=True)
 
 
 # All three mood tier names that must always be written (or cleared) together.
@@ -85,9 +85,9 @@ def get_nomarr_tags(
 _MOOD_TIER_NAMES = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
 
 
-def save_mood_tags(
+async def save_mood_tags(
     db: Database,
-    file_id: str,
+    file_id: int,
     mood_tags: Tags,
 ) -> int:
     """Write mood-* tags to the database for a file.
@@ -99,7 +99,7 @@ def save_mood_tags(
 
     Args:
         db: Database instance
-        file_id: File ID (integer as string)
+        file_id: File ID (integer)
         mood_tags: Tags DTO containing mood tags to write
 
     Returns:
@@ -115,15 +115,15 @@ def save_mood_tags(
     count = 0
     for name in _MOOD_TIER_NAMES:
         values = written.get(name, [])
-        set_song_tags(db, file_id, name, list(values))
+        await set_song_tags(db, file_id, name, list(values))
         if values:
             count += 1
     return count
 
 
-def save_mood_tags_batch(
+async def save_mood_tags_batch(
     db: Database,
-    items: list[tuple[str, Tags]],
+    items: list[tuple[int, Tags]],
 ) -> int:
     """Write mood tags for multiple files via constructor-backed verbs.
 
@@ -152,9 +152,9 @@ def save_mood_tags_batch(
             nomarr_name = f"nom:{tag.key}" if not tag.key.startswith("nom:") else tag.key
             written[nomarr_name] = tag.value
         # Always emit all three tiers; absent ones get an empty list (→ delete)
-        entries.extend({"song_id": file_id, "name": name, "values": written.get(name, [])} for name in _MOOD_TIER_NAMES)
+        entries.extend({"song_id": int(file_id), "name": name, "values": written.get(name, [])} for name in _MOOD_TIER_NAMES)
 
-    set_song_tags_batch(db, entries)
+    await set_song_tags_batch(db, entries)
     return sum(1 for e in entries if e["values"])
 
 
@@ -163,7 +163,7 @@ def save_mood_tags_batch(
 # ---------------------------------------------------------------------------
 
 
-def release_file_claim(
+async def release_file_claim(
     db: Database,
     file_key: str,
 ) -> None:
@@ -172,7 +172,7 @@ def release_file_claim(
     Swallows exceptions so callers in error paths don't need try/except.
     """
     try:
-        release_claim(db, file_key)
+        await release_claim(db, file_key)
     except (ValueError, RuntimeError) as exc:
         logger.warning(
             "[file_write_comp] Failed to release claim for %s: %s",

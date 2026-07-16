@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def _sync_tags_and_entities(
+async def _sync_tags_and_entities(
     db: Database,
     file_id: str,
     file_path: str,
@@ -77,7 +77,7 @@ def _sync_tags_and_entities(
         entries = _build_song_tag_entries(file_id, entity_tags)
         if entries:
             for entry in entries:
-                db.library.replace_file_tags(entry["song_id"], entry["tags"])
+                await db.library.replace_file_tags(entry["song_id"], entry["tags"])
         logger.debug(f"[sync_file_to_library] Seeded entities for {file_path}")
     except Exception as entity_error:
         logger.warning(f"[sync_file_to_library] Failed to seed entities: {entity_error}", exc_info=True)
@@ -93,7 +93,7 @@ def _sync_tags_and_entities(
     logger.debug(f"[sync_file_to_library] Synced {file_path}")
 
 
-def sync_file_to_library(
+async def sync_file_to_library(
     db: Database,
     file_path: str,
     metadata: dict[str, Any],
@@ -143,7 +143,7 @@ def sync_file_to_library(
             if not library:
                 logger.warning(f"[sync_file_to_library] File path not in any library: {file_path}")
                 return
-            library_id = library._id
+            library_id = library["id"]
 
         assert library_id is not None
         file_stat = os.stat(file_path)
@@ -171,7 +171,7 @@ def sync_file_to_library(
             logger.warning(f"[sync_file_to_library] File record not found after upsert: {file_path}")
             return
 
-        resolved_file_id = str(file_record["_id"])
+        resolved_file_id = str(file_record["id"])
         _sync_tags_and_entities(db, resolved_file_id, file_path, metadata, namespace, tagged_version)
 
     except Exception as e:

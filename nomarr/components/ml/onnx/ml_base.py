@@ -74,7 +74,7 @@ class BaseONNXModel(ABC):
     # Session lifecycle
     # ------------------------------------------------------------------
 
-    def load(self, device: DevicePlacement) -> None:
+    async def load(self, device: DevicePlacement) -> None:
         """Create and store an ONNX session for *device*.
 
         When *device* is ``"gpu"``, retrieves the worker context from
@@ -103,7 +103,7 @@ class BaseONNXModel(ABC):
             ctx = _worker_ctx.get_worker_context()
             if ctx is not None:
                 db, worker_id = ctx
-                raw_doc = db.app.get_config_option(key=f"{_VRAM_META_PREFIX}{self._path}")
+                raw_doc = await db.app.get_config_option(key=f"{_VRAM_META_PREFIX}{self._path}")
                 raw = None if raw_doc is None else raw_doc.get("value")
                 if raw is not None:
                     vram_limit_bytes = int(raw)
@@ -200,7 +200,7 @@ class BaseONNXModel(ABC):
 
         """
 
-    def run(self, inputs: np.ndarray) -> np.ndarray:
+    async def run(self, inputs: np.ndarray) -> np.ndarray:
         """Run inference, self-healing and falls back to CPU when needed.
 
         The loop repeats until either:
@@ -235,7 +235,7 @@ class BaseONNXModel(ABC):
                 if ctx is None:
                     raise  # probe / test context — no DB, cannot self-heal
                 db, _ = ctx
-                new_limit = update_model_vram_from_oom(db, self._path, requested)
+                new_limit = await update_model_vram_from_oom(db, self._path, requested)
                 logger.warning(
                     "[model] BFC OOM on %s (requested=%d bytes) — "
                     "updated DB limit to %d bytes; reloading (will fall to CPU if still too large)",

@@ -54,7 +54,7 @@ _EMPTY_MOVE_RESULT = MoveDetectionResult(
 )
 
 
-def detect_file_moves(
+async def detect_file_moves(
     files_to_remove: list[dict[str, Any]],
     new_file_entries: list[dict[str, Any]],
     db: Database,
@@ -94,7 +94,7 @@ def detect_file_moves(
     logger.info(f"Checking {len(new_file_entries)} new files for moves against {len(files_to_remove)} removed files...")
 
     # Sort removed files by ID for deterministic matching when duplicates exist
-    files_to_remove.sort(key=lambda f: f["_id"])
+    files_to_remove.sort(key=lambda f: f["id"])
 
     # Build set of removed-file durations for fast pre-filtering.
     # A new file can only be a move if its duration is within 1 s of some
@@ -135,7 +135,7 @@ def detect_file_moves(
 
         # Compute chromaprint for new file
         try:
-            library_path_for_audio = build_library_path_from_input(new_path, db)
+            library_path_for_audio = await build_library_path_from_input(new_path, db)
             if not library_path_for_audio.is_valid():
                 continue
 
@@ -167,7 +167,7 @@ def detect_file_moves(
                         move = FileMove(
                             old_path=removed_file["path"],
                             new_path=new_path,
-                            file_id=removed_file["_id"],
+                            file_id=removed_file["id"],
                             chromaprint=new_chromaprint,
                             old_duration=removed_duration,
                             new_duration=new_duration,
@@ -204,7 +204,7 @@ def detect_file_moves(
     )
 
 
-def apply_detected_moves(
+async def apply_detected_moves(
     moves: list[FileMove],
     metadata_map: dict[str, dict[str, Any]],
     db: Database,
@@ -254,7 +254,7 @@ def apply_detected_moves(
                 entries = _build_song_tag_entries(move.file_id, entity_tags)
                 if entries:
                     for entry in entries:
-                        db.library.replace_file_tags(entry["song_id"], entry["tags"])
+                        await db.library.replace_file_tags(entry["song_id"], entry["tags"])
             except RuntimeError as e:
                 logger.warning(
                     "Failed to update entities for moved file %s: %s",
@@ -267,7 +267,7 @@ def apply_detected_moves(
     return applied
 
 
-def detect_file_move_via_db(
+async def detect_file_move_via_db(
     new_file_entry: dict[str, Any],
     library_id: str,
     db: Database,
@@ -284,7 +284,7 @@ def detect_file_move_via_db(
     new_path = new_file_entry["path"]
 
     try:
-        library_path = build_library_path_from_input(new_path, db)
+        library_path = await build_library_path_from_input(new_path, db)
         if not library_path.is_valid():
             return None
         chromaprint = compute_chromaprint_for_file(library_path)
@@ -295,7 +295,7 @@ def detect_file_move_via_db(
     if not chromaprint:
         return None
 
-    candidate = find_move_candidate_by_chromaprint(db, library_id, chromaprint)
+    candidate = await find_move_candidate_by_chromaprint(db, library_id, chromaprint)
     if candidate is None:
         return None
 
@@ -320,7 +320,7 @@ def detect_file_move_via_db(
     return FileMove(
         old_path=candidate["path"],
         new_path=new_path,
-        file_id=candidate["_id"],
+        file_id=candidate["id"],
         chromaprint=chromaprint,
         old_duration=removed_duration,
         new_duration=new_duration,

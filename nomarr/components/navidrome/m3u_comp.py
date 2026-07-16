@@ -21,7 +21,7 @@ def build_m3u(
 ) -> str:
     """Build M3U playlist content with paths relative to *library_root*."""
     root = library_root.replace("\\", "/").rstrip("/") + "/"
-    files_by_id: dict[str, dict[str, Any]] = {str(f["_id"]): f for f in files}
+    files_by_id: dict[str, dict[str, Any]] = {str(f["id"]): f for f in files}
 
     lines = [
         "#EXTM3U",

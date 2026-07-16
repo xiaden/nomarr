@@ -334,7 +334,7 @@ class InfoService:
             monitor_healthy = status in ("healthy", "recovering")
 
         # Read GPU resources from DB
-        gpu_resources_doc = self.cfg.db.app.get_config_option("gpu_resources")
+        gpu_resources_doc = await self.cfg.db.app.get_config_option("gpu_resources")
         gpu_resources_json = None if gpu_resources_doc is None else gpu_resources_doc.get("value")
         if not gpu_resources_json:
             # No GPU resource data in DB yet

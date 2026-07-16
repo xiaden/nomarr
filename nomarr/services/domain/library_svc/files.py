@@ -40,15 +40,15 @@ class LibraryFilesMixin:
     db: Database
     cfg: LibraryServiceConfig
 
-    def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
+    async def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
         """Get a library by ID or raise an error."""
-        result = get_library_record(self.db, library_id)
+        result = await get_library_record(self.db, library_id)
         if result is None:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
         return result
 
-    def cleanup_orphaned_tags(self, dry_run: bool = False) -> TagCleanupResult:
+    async def cleanup_orphaned_tags(self, dry_run: bool = False) -> TagCleanupResult:
         """Clean up orphaned tags from the database.
 
         Args:
@@ -58,13 +58,13 @@ class LibraryFilesMixin:
             TagCleanupResult DTO with orphaned_count and deleted_count
 
         """
-        result = cleanup_orphaned_tags_workflow(self.db, dry_run=dry_run)
+        result = await cleanup_orphaned_tags_workflow(self.db, dry_run=dry_run)
         return TagCleanupResult(
             orphaned_count=result["orphaned_count"],
             deleted_count=result["deleted_count"],
         )
 
-    def get_file_tags(self, file_id: str, nomarr_only: bool = False) -> FileTagsResult:
+    async def get_file_tags(self, file_id: str, nomarr_only: bool = False) -> FileTagsResult:
         """Get all tags for a specific file.
 
         Args:
@@ -79,7 +79,7 @@ class LibraryFilesMixin:
 
         """
         # Get file and tags from component
-        result = get_file_tags_with_path(self.db, file_id, nomarr_only=nomarr_only)
+        result = await get_file_tags_with_path(self.db, file_id, nomarr_only=nomarr_only)
         if not result:
             msg = f"File with ID {file_id} not found"
             raise ValueError(msg)
@@ -101,7 +101,7 @@ class LibraryFilesMixin:
             tags=tags,
         )
 
-    def reconcile_library_paths(
+    async def reconcile_library_paths(
         self,
         library_id: str,
         policy: ReconcilePolicy = "mark_invalid",
@@ -144,7 +144,7 @@ class LibraryFilesMixin:
             print(f"Cleaned up {result['deleted_files']} invalid files")
 
         """
-        return reconcile_library_paths_workflow(
+        return await reconcile_library_paths_workflow(
             db=self.db,
             library_id=library_id,
             library_root=self.cfg.library_root,
@@ -177,7 +177,7 @@ class LibraryFilesMixin:
         """
         return resolve_path_within_library(library_root, user_path, must_exist=must_exist, must_be_file=must_be_file)
 
-    def retry_errored_files(
+    async def retry_errored_files(
         self,
         library_id: str,
         file_ids: list[str] | None = None,
@@ -196,12 +196,12 @@ class LibraryFilesMixin:
 
         """
         self._get_library_or_error(library_id)
-        errored_ids = get_errored_file_ids(self.db, library_id)
+        errored_ids = await get_errored_file_ids(self.db, library_id)
         if file_ids:
             allowed = set(file_ids)
             errored_ids = [fid for fid in errored_ids if fid in allowed]
         if errored_ids:
-            transition_file_state(self.db, errored_ids, STATE_ERRORED, STATE_NOT_ERRORED)
-            transition_file_state(self.db, errored_ids, STATE_PROCESSED, STATE_NOT_PROCESSED)
+            await transition_file_state(self.db, errored_ids, STATE_ERRORED, STATE_NOT_ERRORED)
+            await transition_file_state(self.db, errored_ids, STATE_PROCESSED, STATE_NOT_PROCESSED)
         cleared = len(errored_ids)
         return RetryErroredResult(retried=cleared)

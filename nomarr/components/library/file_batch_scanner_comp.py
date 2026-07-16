@@ -32,7 +32,7 @@ class FileBatchResult:
     edge_bootstraps: list[dict[str, Any]] = field(default_factory=list)  # Post-upsert edge creation metadata
 
 
-def scan_folder_files(
+async def scan_folder_files(
     folder_path: Path,
     folder_rel_path: str,
     library_root: Path,
@@ -89,7 +89,7 @@ def scan_folder_files(
     for file_path in files:
         try:
             # Validate path
-            library_path = build_library_path_from_input(file_path, db)
+            library_path = await build_library_path_from_input(file_path, db)
             if not library_path.is_valid():
                 warnings.append(f"Invalid path: {file_path} - {library_path.reason}")
                 stats["files_failed"] += 1
