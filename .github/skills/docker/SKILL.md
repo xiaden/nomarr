@@ -1,6 +1,6 @@
 ---
 name: docker
-description: Reference for the Nomarr Docker development environment. Use when working with Docker containers, running e2e tests, querying ArangoDB directly, debugging prod-like issues, testing DB migrations, or interacting with the containerized Nomarr API. Contains credentials, ports, PowerShell snippets, AQL queries, and collection schema.
+description: Reference for the Nomarr Docker development environment. Use when working with Docker containers, running e2e tests, querying PostgreSQL directly, debugging prod-like issues, testing DB migrations, or interacting with the containerized Nomarr API. Contains credentials, ports, PowerShell snippets, SQL queries, and table schema.
 ---
 
 # Docker Development Environment
@@ -10,7 +10,7 @@ The containerized dev environment lives in `.devcontainer/`. The compose file is
 | Service name | Container name | Image |
 | --- | --- | --- |
 | `nomarr` | `nomarr-dev` | built from repo `dockerfile` |
-| `nomarr-arangodb` | `nomarr-arangodb-dev` | `arangodb:3.12` |
+| `nomarr-postgres` | `nomarr-postgres-dev` | `postgres:16` |
 
 The `devcontainer.json` wires this compose stack into VS Code Dev Containers. The workspace folder inside the container is `/workspace` (the full repo, read-only). The active Python source is at `/app/nomarr` (bind-mounted from `../nomarr` — editable without rebuild).
 
@@ -21,12 +21,12 @@ Key paths inside `.devcontainer/` (all gitignored except the compose and JSON fi
 | `docker-compose.dev.yaml` | Compose definition |
 | `devcontainer.json` | VS Code Dev Containers config |
 | `nomarr.dev.env` | Env vars for the `nomarr` service |
-| `nomarr-arangodb.dev.env` | Env vars for the `nomarr-arangodb` service |
+| `nomarr-postgres.dev.env` | Env vars for the `nomarr-postgres` service |
 | `config/` | Nomarr runtime config — populated on first start |
-| `arangodb-data/` | ArangoDB data directory — delete to reset the DB |
+| `postgres-data/` | PostgreSQL data directory — delete to reset the DB |
 | `test-media/` | Drop audio files here to create a scannable library |
 
-Templates for the env files live in `docker/nomarr.env.example` and `docker/nomarr-arangodb.env.example`.
+Templates for the env files live in `docker/nomarr.env.example` and `docker/nomarr-postgres.env.example`.
 
 ---
 
@@ -76,7 +76,7 @@ If NVIDIA Container Toolkit is not installed or no GPU is present, `docker compo
 
 - Reproducing prod-reported issues not visible in native dev
 - Running e2e tests with Playwright (`npx playwright test` from the host against the running container)
-- Testing DB migration behavior on a real ArangoDB instance
+- Testing DB migration behavior on a real PostgreSQL instance
 - Verifying ML inference or audio analysis in a prod-like environment
 
 **Use native dev when:**
@@ -93,9 +93,9 @@ If NVIDIA Container Toolkit is not installed or no GPU is present, `docker compo
 ### Dev (Local Docker)
 
 - **Nomarr admin password**: `.devcontainer/config/config.yaml` → `admin_password` (set on first run)
-- **ArangoDB password**: `.devcontainer/nomarr-arangodb.dev.env` → `ARANGO_ROOT_PASSWORD`
+- **PostgreSQL password**: `.devcontainer/nomarr-postgres.dev.env` → `POSTGRES_PASSWORD`
 - **Nomarr API**: `http://127.0.0.1:8356`
-- **ArangoDB Web UI**: `http://127.0.0.1:8529`
+- **PostgreSQL port**: `5432`
 
 **CRITICAL: Use `127.0.0.1` not `localhost`** — On Windows, `localhost` resolves to IPv6 (`::1`) first. Docker only binds IPv4, so `localhost` hangs ~21 seconds before falling back. Every API call in this skill uses `127.0.0.1`.
 
@@ -104,7 +104,7 @@ Both ports are published directly by the compose file (`ports:` binding) **and**
 ### Remote (Production)
 
 - **Nomarr App**: `http://nomarr.nyxcore.me` (port 80)
-- **ArangoDB**: `https://nomarr.arango.nyxcore.me` (HTTPS only — HTTP redirects to HTTPS)
+- **Database**: Managed PostgreSQL instance (connection details in production config)
 
 The `/info` endpoint (`http://nomarr.nyxcore.me/info`) is **unauthenticated** and serves as a healthcheck. Authentication is password-based (no OAuth required).
 
@@ -117,22 +117,21 @@ The `.devcontainer/` env files are gitignored and must be created before `compos
 ```powershell
 # From the repo root
 Copy-Item docker/nomarr.env.example .devcontainer/nomarr.dev.env
-Copy-Item docker/nomarr-arangodb.env.example .devcontainer/nomarr-arangodb.dev.env
+Copy-Item docker/nomarr-postgres.env.example .devcontainer/nomarr-postgres.dev.env
 ```
 
 Then edit `.devcontainer/nomarr.dev.env`:
 ```
-ARANGO_HOST=http://nomarr-arangodb:8529     # service name on the compose network — do NOT use localhost
-ARANGO_ROOT_PASSWORD=nomarr_dev_password    # must match nomarr-arangodb.dev.env
+DATABASE_URL=postgresql+asyncpg://nomarr:nomarr_dev_password@nomarr-postgres:5432/nomarr  # service name on the compose network — do NOT use localhost
 ```
 
-Edit `.devcontainer/nomarr-arangodb.dev.env`:
+Edit `.devcontainer/nomarr-postgres.dev.env`:
 ```
-ARANGO_ROOT_PASSWORD=nomarr_dev_password
-ARANGO_NO_AUTH=0
+POSTGRES_PASSWORD=nomarr_dev_password
+POSTGRES_DB=nomarr
 ```
 
-`ARANGO_HOST` uses the compose service name (`nomarr-arangodb`), not `localhost`. Containers reach each other via the internal compose network.
+`DATABASE_URL` uses the compose service name (`nomarr-postgres`), not `localhost`. Containers reach each other via the internal compose network.
 
 ---
 
@@ -150,7 +149,7 @@ Tears down the compose stack, rebuilds the `nomarr-dev` Docker image from `docke
 - `dockerfile.base` changed
 - Extensions or settings in `devcontainer.json` changed
 
-**Cost:** Full image build (minutes). ArangoDB data is preserved (bind mount in `.devcontainer/arangodb-data/`). Nomarr config is preserved (bind mount in `.devcontainer/config/`).
+**Cost:** Full image build (minutes). PostgreSQL data is preserved (bind mount in `.devcontainer/postgres-data/`). Nomarr config is preserved (bind mount in `.devcontainer/config/`).
 
 ### Restart Container (Dev Containers: Restart Container)
 
@@ -171,7 +170,7 @@ VS Code reconnects to the already-running devcontainer. If containers are stoppe
 
 ### Close Remote Connection (not a container action)
 
-Disconnects VS Code from the container but does not stop it. `shutdownAction: "stopCompose"` in `devcontainer.json` means closing the VS Code window **stops the entire compose stack** (both `nomarr-dev` and `nomarr-arangodb-dev`). Container stop is graceful (`stop_grace_period: 30s`).
+Disconnects VS Code from the container but does not stop it. `shutdownAction: "stopCompose"` in `devcontainer.json` means closing the VS Code window **stops the entire compose stack** (both `nomarr-dev` and `nomarr-postgres-dev`). Container stop is graceful (`stop_grace_period: 30s`).
 
 ---
 
@@ -179,22 +178,22 @@ Disconnects VS Code from the container but does not stop it. `shutdownAction: "s
 
 ### Startup sequence
 
-`nomarr-dev` has a `depends_on` condition requiring `nomarr-arangodb-dev` to be healthy before `nomarr-dev` starts. The sequence is:
+`nomarr-dev` has a `depends_on` condition requiring `nomarr-postgres-dev` to be healthy before `nomarr-dev` starts. The sequence is:
 
-1. `nomarr-arangodb-dev` starts → waits up to 130s total (30s start period + 10 retries × 10s)  
-   Healthcheck: `arangosh` JS command that connects and runs `db._version()`
-2. Once ArangoDB is healthy, `nomarr-dev` starts → waits up to 180s total (60s start period + 12 retries × 10s)  
+1. `nomarr-postgres-dev` starts → waits up to 60s total (10s start period + 5 retries × 10s)  
+   Healthcheck: `pg_isready -U nomarr -d nomarr`
+2. Once PostgreSQL is healthy, `nomarr-dev` starts → waits up to 180s total (60s start period + 12 retries × 10s)  
    Healthcheck: `curl -sf http://127.0.0.1:8356/info`
 
-**Total cold-start time:** Up to 5 minutes. A large `arangodb-data/` directory makes ArangoDB slower to start. This is normal — wait the full window before declaring failure.
+**Total cold-start time:** Up to 4 minutes. A large `postgres-data/` directory makes PostgreSQL slower to start. This is normal — wait the full window before declaring failure.
 
 ### Expected timing on first run (empty DB)
 
 | Milestone | Typical time |
 | --- | --- |
-| ArangoDB healthy | 30–60s |
-| Nomarr started | 60–90s after ArangoDB |
-| `/info` endpoint responding | Up to 120s total |
+| PostgreSQL healthy | 5–15s |
+| Nomarr started | 30–45s after PostgreSQL |
+| `/info` endpoint responding | Up to 60s total |
 
 ### Expected timing after schema migration
 
@@ -204,7 +203,7 @@ First start after a migration runs DB schema changes. Nomarr logs will show migr
 
 ## Container Introspection
 
-Container names: `nomarr-dev`, `nomarr-arangodb-dev`. Confirm with `docker ps --format '{{.Names}}'` before running other commands.
+Container names: `nomarr-dev`, `nomarr-postgres-dev`. Confirm with `docker ps --format '{{.Names}}'` before running other commands.
 
 The agent has no dedicated MCP tool for containers. Use `docker` CLI via `run_in_terminal`.
 
@@ -235,7 +234,7 @@ docker compose -f .devcontainer/docker-compose.dev.yaml ps
 
 # 2. Recent log output from the failing service
 docker logs nomarr-dev --tail 200
-docker logs nomarr-arangodb-dev --tail 100
+docker logs nomarr-postgres-dev --tail 100
 
 # 3. Healthcheck probe history (last 3 runs) — tells you what the probe actually saw
 docker inspect nomarr-dev --format '{{json .State.Health}}' | ConvertFrom-Json | Select-Object -ExpandProperty Log -Last 3
@@ -247,7 +246,7 @@ docker inspect nomarr-dev --format 'ExitCode={{.State.ExitCode}} OOMKilled={{.St
 
 Common causes in priority order:
 1. **GPU not available** — `could not select device driver "nvidia"` in compose output. Fix: install NVIDIA Container Toolkit, or the machine has no NVIDIA GPU.
-2. **ArangoDB not healthy** — nomarr-dev never starts because its `depends_on` condition is not met. Check `docker logs nomarr-arangodb-dev`.
+2. **PostgreSQL not healthy** — nomarr-dev never starts because its `depends_on` condition is not met. Check `docker logs nomarr-postgres-dev`.
 3. **Missing env file** — compose fails immediately with `env file ... not found`. Create from templates (see Env File Bootstrap section).
 4. **Port already in use** — `bind: address already in use` for 8356 or 8529. Find and stop the conflicting process.
 5. **Config error in nomarr** — check `docker logs nomarr-dev` for Python tracebacks or `validate_environment()` failures.
@@ -258,7 +257,7 @@ Common causes in priority order:
 # Process tree — confirms the app is running and what workers exist
 docker exec nomarr-dev ps -ef
 
-# Effective environment — .env file values land here; check ARANGO_HOST is set correctly
+# Effective environment — .env file values land here; check DATABASE_URL is set correctly
 docker exec nomarr-dev env
 
 # Installed Python packages (useful to confirm a dependency is present)
@@ -300,7 +299,7 @@ docker exec nomarr-dev nvidia-smi
 The compose mounts `../nomarr` into `/app/nomarr`. Edits on the host are immediately visible inside the container. **Nomarr does not use uvicorn `--reload`**, so changes only take effect after the process restarts:
 
 ```powershell
-# Restart nomarr-dev only; nomarr-arangodb-dev is unaffected
+# Restart nomarr-dev only; nomarr-postgres-dev is unaffected
 docker compose -f .devcontainer/docker-compose.dev.yaml restart nomarr
 
 # Follow logs to confirm clean startup
@@ -346,79 +345,69 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8356/info"
 
 ---
 
-## ArangoDB Direct Queries
+## PostgreSQL Direct Queries
 
 ```powershell
-$auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("root:nomarr_dev_password"))
+# Connect to PostgreSQL inside the container
+docker exec nomarr-postgres-dev psql -U nomarr -d nomarr -c "SELECT * FROM libraries;"
 
-# Single query
-$body = @{query='FOR doc IN libraries RETURN doc'} | ConvertTo-Json
-$r = Invoke-RestMethod -Uri "http://127.0.0.1:8529/_db/nomarr/_api/cursor" -Method Post `
-  -Body $body -ContentType "application/json" -Headers @{Authorization="Basic $auth"}
-$r.result | ConvertTo-Json -Depth 5
+# Explore tables
+docker exec nomarr-postgres-dev psql -U nomarr -d nomarr -c "\dt"
 
-# Batch queries
-$queries = @(
-  "RETURN LENGTH(library_files)"
-  "RETURN LENGTH(tags)"
-  "RETURN LENGTH(song_has_tags)"
-  "FOR lib IN libraries RETURN { name: lib.name, scan_status: lib.scan_status }"
-)
-foreach ($q in $queries) {
-  Write-Host "=== $q ==="
-  $body = @{query=$q} | ConvertTo-Json
-  $r = Invoke-RestMethod -Uri "http://127.0.0.1:8529/_db/nomarr/_api/cursor" -Method Post `
-    -Body $body -ContentType "application/json" -Headers @{Authorization="Basic $auth"}
-  $r.result | ConvertTo-Json -Depth 5
-}
+# Row counts
+docker exec nomarr-postgres-dev psql -U nomarr -d nomarr -c "
+  SELECT 'library_files' AS tbl, COUNT(*) FROM library_files
+  UNION ALL SELECT 'tags', COUNT(*) FROM tags
+  UNION ALL SELECT 'song_has_tags', COUNT(*) FROM song_has_tags;"
+
+# Library scan status
+docker exec nomarr-postgres-dev psql -U nomarr -d nomarr -c "
+  SELECT name, scan_status FROM libraries;"
 ```
 
 **Performance expectations:**
 
-- `song_has_tags` (~200k+ docs) / `tags` (~30k+ docs) queries: 5–30+ seconds
-- Full-table scans (orphaned edge checks): 30–60+ seconds
+- Typical queries return in < 1 second with proper indexes
+- Full-table scans: 1–10 seconds for large tables
 - Calibration generation: 30–120 seconds
-- **Always set 60–120s timeouts** for `Invoke-RestMethod` and `run_in_terminal`
-- Never assume a query failed because it was slow — check with longer timeouts first
+- PostgreSQL runs inside the compose network; use `docker exec` for direct access
 
 ---
 
-## Collection Schema
+## Table Schema
 
 - `libraries` — library config and scan state
-- `library_files` — scanned audio files (one doc per file)
-- `tags` — tag vertices `{name, value}` (e.g. `{name: "artist", value: "Beatles"}`)
-- `song_has_tags` — edges `library_files/*` → `tags/*`
+- `library_files` — scanned audio files (one row per file)
+- `tags` — tag rows `{name, value}` (e.g. `{name: "artist", value: "Beatles"}`)
+- `song_has_tags` — join table `library_files.id` → `tags.id`
 - `library_folders` — folder-level cache for quick scan skipping
 - `calibration_state`, `calibration_history` — calibration data
 - `sessions` — auth sessions
 - `meta` — schema version and app config
 
-**No separate `songs`, `artists`, or `albums` collections.** Browse/entity data comes from `tags` filtered by `name`.
+**No separate `songs`, `artists`, or `albums` tables.** Browse/entity data comes from `tags` filtered by `name`.
 
 ---
 
-## Useful AQL Snippets
+## Useful SQL Snippets
 
-```aql
-// List all collections
-RETURN COLLECTIONS()[*].name
+```sql
+-- List all tables
+SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
 
-// Collection counts
-RETURN LENGTH(library_files)
+-- Table row counts
+SELECT COUNT(*) FROM library_files;
 
-// Tag names by frequency
-FOR t IN tags COLLECT name = t.name WITH COUNT INTO c SORT c DESC RETURN {name, c}
+-- Tag names by frequency
+SELECT name, COUNT(*) AS c FROM tags GROUP BY name ORDER BY c DESC;
 
-// Sample edges
-FOR edge IN song_has_tags LIMIT 3 RETURN { from: edge._from, to: edge._to }
+-- Sample joins
+SELECT sf.song_id, sf.tag_id FROM song_has_tags sf LIMIT 3;
 
-// Orphaned edge count (slow on large collections)
-RETURN LENGTH(
-  FOR edge IN song_has_tags
-    FILTER !DOCUMENT(edge._from)
-    RETURN 1
-)
+-- Orphaned rows
+SELECT COUNT(*) FROM song_has_tags sf
+  LEFT JOIN library_files lf ON sf.song_id = lf.id
+  WHERE lf.id IS NULL;
 ```
 
 ---
@@ -433,7 +422,7 @@ Keep digging without asking when:
 
 Ask the user before:
 
-- Wiping `.devcontainer/arangodb-data/` (destroys local database state)
+- Wiping `.devcontainer/postgres-data/` (destroys local database state)
 - Wiping `.devcontainer/config/` (destroys Nomarr config and generated credentials)
 - Running `docker compose down -v` (removes named volumes)
 - Running `docker system prune` (host-wide, affects all Docker projects)

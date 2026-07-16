@@ -78,7 +78,7 @@ After performing deep research on a **stable, non-churning** subsystem — readi
 
 - Assume causality without evidence.
 - Import `essentia` anywhere except `components/ml/audio/ml_audio_comp.py` (MonoLoader audio loading) and `components/ml/audio/ml_preprocess_comp.py` (mel spectrogram preprocessing). Essentia is no longer the ML backend — ONNX is. Essentia is a thin set of functions for audio I/O and preprocessing only.
-- Rename `_id` or `_key` (ArangoDB-native identifiers)
+- Rename `_id` or `_key` (legacy identifiers)
 - Let workflows import services or interfaces
 - Let helpers import any `nomarr.*` modules
 - Read files when directed to dispatch them to subagents. **Pass the file paths — the subagent reads them itself.** Reading the content first wastes tokens and delays dispatch without adding value, while risking adding misaligned intent to the dispatch.

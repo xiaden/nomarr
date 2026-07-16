@@ -36,13 +36,6 @@ jobs:
       - name: Create Docker environment files
         run: |
           cat > docker/nomarr.env <<'EOF'
-          ARANGO_HOST=http://nomarr-arangodb:8529
-          ARANGO_ROOT_PASSWORD=e2e_test_password
-          EOF
-
-          cat > docker/nomarr-arangodb.env <<'EOF'
-          ARANGO_ROOT_PASSWORD=e2e_test_password
-          ARANGO_NO_AUTH=0
           EOF
 
       - name: Create compose override for CI
@@ -60,9 +53,6 @@ jobs:
                 - nomarr-media:/media
               env_file:
                 - nomarr.env
-              depends_on:
-                nomarr-arangodb:
-                  condition: service_healthy
               deploy: {}
               restart: "no"
               healthcheck:
@@ -72,26 +62,9 @@ jobs:
                 retries: 30
                 start_period: 30s
 
-            nomarr-arangodb:
-              container_name: nomarr-arangodb
-              image: arangodb:3.12
-              env_file:
-                - nomarr-arangodb.env
-              command: ["--vector-index", "--query.memory-limit=1073741824"]
-              volumes:
-                - arangodb-data:/var/lib/arangodb3
-              restart: "no"
-              healthcheck:
-                test: ["CMD-SHELL", "arangosh --server.endpoint tcp://127.0.0.1:8529 --server.username root --server.password \"$$ARANGO_ROOT_PASSWORD\" --javascript.execute-string 'db._version()' >/dev/null 2>&1"]
-                interval: 5s
-                timeout: 5s
-                retries: 20
-                start_period: 15s
-
           volumes:
             nomarr-config:
             nomarr-media:
-            arangodb-data:
           EOF
 
       - name: Log in to GitHub Container Registry
@@ -112,14 +85,13 @@ jobs:
           docker compose -f compose.e2e.yaml logs -f &
           LOG_PID=$!
 
-          # Wait for both services to be healthy
+          # Wait for the service to be healthy
           timeout 180 bash -c '
             while true; do
               NOMARR_HEALTH=$(docker inspect --format="{{.State.Health.Status}}" nomarr 2>/dev/null || echo "missing")
-              ARANGO_HEALTH=$(docker inspect --format="{{.State.Health.Status}}" nomarr-arangodb 2>/dev/null || echo "missing")
-              echo "  nomarr: ${NOMARR_HEALTH} | arangodb: ${ARANGO_HEALTH}"
-              if [ "$NOMARR_HEALTH" = "healthy" ] && [ "$ARANGO_HEALTH" = "healthy" ]; then
-                echo "✅ All services healthy"
+              echo "  nomarr: ${NOMARR_HEALTH}"
+              if [ "$NOMARR_HEALTH" = "healthy" ]; then
+                echo "✅ Service healthy"
                 break
               fi
               sleep 5
@@ -171,9 +143,6 @@ jobs:
         run: |
           echo "========== NOMARR LOGS =========="
           docker compose -f compose.e2e.yaml logs nomarr --tail=200
-          echo ""
-          echo "========== ARANGODB LOGS =========="
-          docker compose -f compose.e2e.yaml logs nomarr-arangodb --tail=100
 
       - name: Upload Playwright report
         if: always()

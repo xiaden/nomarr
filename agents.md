@@ -63,7 +63,7 @@ Embedding research pipeline conventions and contracts for `scripts/embedding_res
 
 ### `nomarr-tags`
 
-Deep reference for the Nomarr `nom:` tag system — creation, gating, storage, reading, curation, calibration, thresholds, opponent suppression, and the ArangoDB tag schema.
+Deep reference for the Nomarr `nom:` tag system — creation, gating, storage, reading, curation, calibration, thresholds, opponent suppression, and the database tag schema.
 
 ### `nomarr-code-migration`
 
@@ -75,7 +75,7 @@ Procedures for moving logic between layers, deprecating patterns, and enforcing 
 
 ### `docker`
 
-Docker development environment reference — containers, e2e testing, ArangoDB queries, credentials, and collection schema.
+Docker development environment reference — containers, e2e testing, PostgreSQL queries, credentials, and table schema.
 
 ### `playwright-cli`
 

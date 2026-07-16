@@ -7,7 +7,7 @@ description: Data flow for library_files (song/track) documents — persistence,
 
 ## Mental Model
 
-Songs/tracks in Nomarr are stored as **ArangoDB documents in the `library_files` collection**, but their metadata fields (`artist`, `album`, `title`) are NOT stored on the document — they are **derived from tags** at query time via a hydration step. The `library_files` document only stores filesystem properties: path, size, timestamps, chromaprint. Tags are stored as edges in the `song_has_tags` edge collection and are batch-loaded during search.
+Songs/tracks in Nomarr are stored as **rows in the `library_files` table**, but their metadata fields (`artist`, `album`, `title`) are NOT stored on the row — they are **derived from tags** at query time via a hydration step. The `library_files` row only stores filesystem properties: path, size, timestamps, chromaprint. Tags are stored in the `song_has_tags` join table and are batch-loaded during search.
 
 ## Coverage
 
@@ -25,8 +25,8 @@ Songs/tracks in Nomarr are stored as **ArangoDB documents in the `library_files`
 @dataclass(frozen=True)
 class Song:
     name: str
-    DBkey: str       # ArangoDB _key
-    DBid: str        # ArangoDB _id
+    DBkey: str       # Database row key
+    DBid: str        # Database row ID
     path: str
     tags: list[Tag]  # Tag has name + value
     embeddings: list[Vector]  # Vector has name + value
@@ -82,7 +82,7 @@ class LibraryFileWithTags:
 
 **Critical finding:** `tagged`, `skip_auto_tag`, `created_at`, `updated_at`, `calibration`, `tagged_version` are read from `file_dict.get()` with defaults. These fields may not actually exist on DB documents — they are conventions carried forward from earlier schema versions or from the `map_file_with_tags_to_dto` function which reads them defensively.
 
-### 4. ALLOWED_FILE_FIELDS (Actual DB schema — `nomarr/persistence/database/library_files_aql/main.py`)
+### 4. ALLOWED_FILE_FIELDS (Actual DB schema — `nomarr/persistence/database/library_files_repo/main.py`)
 
 ```python
 ALLOWED_FILE_FIELDS = frozenset({
@@ -92,7 +92,7 @@ ALLOWED_FILE_FIELDS = frozenset({
 })
 ```
 
-These 11 fields are the **only fields** that the persistence layer allows to be written via `_update_file()` / `_upsert_file()`. Any field not in this set cannot be written through the AQL persistence layer.
+These 11 fields are the **only fields** that the persistence layer allows to be written via `_update_file()` / `_upsert_file()`. Any field not in this set cannot be written through the SQL persistence layer.
 
 DDL indexes on `library_files` (from `nomarr/persistence/schema/ddl.py`) include additional fields:
 - `library_id + path` (unique)
@@ -105,16 +105,16 @@ DDL indexes on `library_files` (from `nomarr/persistence/schema/ddl.py`) include
 - `calibration_hash`
 - `write_claimed_by` (sparse)
 
-**Notable:** `calibration_hash`, `needs_tagging`, `tagged`, `write_claimed_by` have indexes but are NOT in `ALLOWED_FILE_FIELDS`. These fields may exist on documents but are set through raw AQL or schema migrations, not through the standard file mutation paths.
+**Notable:** `calibration_hash`, `needs_tagging`, `tagged`, `write_claimed_by` have indexes but are NOT in `ALLOWED_FILE_FIELDS`. These fields may exist on rows but are set through raw SQL or schema migrations, not through the standard file mutation paths.
 
 ### 5. Tag-Derived Metadata Pattern
 
 Metadata (`artist`, `album`, `title`, `artists`, `labels`, `genres`, `year`) is **NOT stored on the `library_files` document**. Instead:
 
-- Tags are stored as edges in the `song_has_tags` collection
+- Tags are stored as rows in the `song_has_tags` join table
 - `extract_canonical_metadata()` in `tag_hydration_comp.py` groups tags by name: `artist`, `artists`, `album`, `title`, `label`, `genre`, `year`
 - `hydrate_songs_with_tags()` batch-reads all tags for all songs and **merges** the metadata onto song dicts at query time
-- Queries use `file_doc.get('title')` / `file_doc.get('artist')` / `file_doc.get('album')` — these are populated by hydration, not DB fields
+- Queries use `file_row.get('title')` / `file_row.get('artist')` / `file_row.get('album')` — these are populated by hydration, not DB columns
 
 **Fields like `bpm`, `musical_key`, `track_number`, `disc_number` are not regular tags.** `bpm` is computed by Essentia algorithms during ML inference. These are stored as `nom:*` tags if configured.
 
@@ -146,7 +146,7 @@ The `calibration_hash` parameter used in `write_file_tags_wf.py` comes from a **
 
 ### 8. File State Machine
 
-File state is tracked through ArangoDB edge documents in the `file_has_state` collection. State axis pairs:
+File state is tracked through join table rows in the `file_has_state` table. State axis pairs:
 - **Processing:** `not_processed` ↔ `processed`
 - **Hydration:** `not_hydrated` ↔ `hydrated`  
 - **Vectors:** `not_vectors_extracted` ↔ `vectors_extracted`
@@ -161,7 +161,7 @@ Transitions happen via `transition_file_state()` in `library_file_state_comp.py`
 
 | Operation | Location | Batch Size |
 |-----------|----------|------------|
-| Bulk file upsert | `_upsert_files_batch()` in `library_files_aql/main.py` | Via `upsert_files_for_library()` |
+| Bulk file upsert | `_upsert_files_batch()` in `library_files_repo/main.py` | Via `upsert_files_for_library()` |
 | Scan (discovery) | `scan_folder_files()` → `FileBatchResult` | Configurable |
 | Batch tag writeback | `write_tags_to_files()` in `tagging_svc/write.py` | Default 100 |
 | Reconcile stale files | `claim_files_for_reconciliation()` in `reconciliation_comp.py` | Default 100 |
@@ -182,7 +182,7 @@ The v2 domain component directory `v2/nomarr/components/domain/songs/` is **empt
 
 ### 11. Serialization Pattern
 
-**There are NO typed row/record types for library_files in persistence.** All files are returned as `dict[str, Any]` (`Document`) from AQL. Typed data is only introduced at the DTO level (`helpers/dto/library_dto.py`) via `map_file_with_tags_to_dto()`, which converts raw dicts to `LibraryFileWithTags` dataclass.
+**There are NO typed row/record types for library_files in persistence.** All files are returned as `dict[str, Any]` from SQL. Typed data is only introduced at the DTO level (`helpers/dto/library_dto.py`) via `map_file_with_tags_to_dto()`, which converts raw dicts to `LibraryFileWithTags` dataclass.
 
 This means:
 - Persistence layer: raw dicts with `.get()` for field access
@@ -196,11 +196,11 @@ This means:
 1. **DiscoveryWorker** claims a file via worker claim mechanism
 2. **process_file_workflow()** loads audio, runs backbones + heads, produces `DeferredFileWrites`
 3. **_execute_deferred_writes()** persists:
-   - Tags → `song_has_tags` edges via `save_file_tags()`
+   - Tags → `song_has_tags` rows via `save_file_tags()`
    - Chromaprint → `library_files` doc
    - Output streams → `ml_output_streams` collection
-   - Transition states: `not_processed` → `processed`, `not_vectors_extracted` → `vectors_extracted`
-   - Update `last_tagged_at` timestamp
+- Transition states: `not_processed` → `processed`, `not_vectors_extracted` → `vectors_extracted`
+- Update `last_tagged_at` timestamp on `library_files` row
 4. **Reconciliation** (later): `write_tags_to_files()` writes tags from DB to audio files via TagWriter
 5. **Calibration apply**: `apply_calibration_wf()` updates mood tags based on calibration state
 
@@ -215,12 +215,12 @@ The frontend `LibraryFile` interface (in `frontend/src/shared/api/files.ts`) exp
 
 ## Critical Invariants
 
-1. **artist/album/title are NOT file doc fields** — they are tag-derived and set during hydration. NEVER assume these exist on raw DB documents.
+1. **artist/album/title are NOT file table columns** — they are tag-derived and set during hydration. NEVER assume these exist on raw DB rows.
 2. **ALLOWED_FILE_FIELDS is the sole write-allowlist** — fields outside this set (`tagged`, `skip_auto_tag`, `calibration_hash`, `created_at`, `updated_at`, `needs_tagging`, `write_claimed_by`) cannot be written through standard file mutation functions.
 3. **calibration_hash on file docs is unused** — calibration is tracked via state edges (`not_calibrated` ↔ `calibrated`). The field has an index but is never set by code.
 4. **Tag metadata is always batch-loaded** — `hydrate_songs_with_tags` makes one batch call. Never fetch per-file.
-5. **File state is separate from file doc** — state lives in edge documents (`file_has_state` collection), not on the `library_files` document.
-6. **No typed rows in persistence** — all raw AQL results are plain dicts. Type safety starts at DTO level.
+5. **File state is separate from file row** — state lives in join table rows (`file_has_state` table), not on the `library_files` row.
+6. **No typed rows in persistence** — all raw SQL results are plain dicts. Type safety starts at DTO level.
 
 ## Sources
 
@@ -237,8 +237,8 @@ The frontend `LibraryFile` interface (in `frontend/src/shared/api/files.ts`) exp
 - `nomarr/helpers/dto/library_dto.py`
 - `nomarr/helpers/dto/processing_dto.py`
 - `nomarr/helpers/dto/metadata_dto.py`
-- `nomarr/persistence/database/library_files_aql/main.py`
-- `nomarr/persistence/database/app_aql/main.py`
+- `nomarr/persistence/database/library_files_repo/main.py`
+- `nomarr/persistence/database/app_repo/main.py`
 - `nomarr/persistence/api/library.py`
 - `nomarr/persistence/api/application.py`
 - `nomarr/persistence/schema/names.py`

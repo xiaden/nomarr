@@ -1,20 +1,20 @@
 # Tag System Architecture
 
-## ArangoDB Schema
+## Database Schema
 
-### `tags` (document collection)
+### `tags` (table)
 
 | Field | Type | Notes |
 | ------- | ------ | ------- |
-| `_id` / `_key` | ArangoDB-native | Auto-generated |
+| `id` | Database-native | Auto-generated (UUID) |
 | `name` | `str` | Full namespaced key: `nom:happy_effnet_mood_happy-msd-musicnn-1` |
 | `value` | `str` | Stored as string; lists are JSON-encoded |
 
-### `song_has_tags` (edge collection)
+### `song_has_tags` (join table)
 
-Bare edge: `_from: library_files/_id` → `_to: tags/_id`. No payload.
+Bare join: `song_id → tag_id`. No payload.
 
-### `tag_model_output` (edge collection — provenance)
+### `tag_model_output` (join table — provenance)
 
 | Field | Type | Notes |
 | ------- | ------ | ------- |
@@ -22,7 +22,7 @@ Bare edge: `_from: library_files/_id` → `_to: tags/_id`. No payload.
 | `created_at` | `int` | Epoch ms |
 | `updated_at` | `int` | Epoch ms |
 
-### `ml_model_outputs` (document collection)
+### `ml_model_outputs` (table)
 
 | Field | Type |
 | ------- | ------ |
@@ -30,7 +30,7 @@ Bare edge: `_from: library_files/_id` → `_to: tags/_id`. No payload.
 | `label` | `str \| None` |
 | `fully_labeled` | `bool` |
 
-### `segment_scores_stats` (document collection — calibration source)
+### `segment_scores_stats` (table — calibration source)
 
 | Field | Type |
 | ------- | ------ |
@@ -51,7 +51,7 @@ Bare edge: `_from: library_files/_id` → `_to: tags/_id`. No payload.
 
 - `nom` = default namespace for all Nomarr-generated tags (set in `TagWriter(namespace="nom")` and `ProcessorConfig.namespace`)
 - `_ns_key(key, "nom")` applies prefix exactly once — already-prefixed keys pass through unchanged
-- In DB: `name` field IS the full namespaced key (`nom:mood-strict`, `nom:happy_effnet_...`)
+- In DB: `name` column IS the full namespaced key (`nom:mood-strict`, `nom:happy_effnet_...`)
 - During read: `get_song_tags(nomarr_only=True)` filters `tag_name.startswith("nom:")`
 - Vorbis format: `nom:mood-strict` stored as `NOM_MOOD_STRICT`, normalized back on read by `tag_normalization_comp.py`
 - Non-`nom:` tags (`genre`, `artist`, `album`, `title`, `year`, `bpm`) are canonical metadata read from audio files
@@ -85,11 +85,11 @@ AudioFile
        async via _execute_deferred_writes():
          1. parse_tag_values(db_tags)               string → typed, always lists
          2. prefix all keys: "name" → "nom:name"
-         3. save_file_tags(db, file_id, nom_tags)
+          3. save_file_tags(db, file_id, nom_tags)
               set_song_tags_batch()  [tag_write_comp.py]
-                delete old song_has_tags edges for (song, name)
-                upsert tag vertex: db.tags.upsert(name=name, value=value)
-                upsert song_has_tags edge: (song → tag)
+                delete old song_has_tags rows for (song, name)
+                upsert tag row: db.tags.upsert(name=name, value=value)
+                upsert song_has_tags row: (song → tag)
          4. resolve_tag_ids() + write_tag_model_output_edges_batch()
          5. set_chromaprint()
          6. upsert_segment_stats_batch()
@@ -108,9 +108,9 @@ Example: `"Happy"` from `mood_happy-msd-musicnn-1` with effnet backbone → `hap
 
 `set_song_tags_batch(db, file_id, tags)` — full-replace semantics per tag name:
 
-1. Delete existing `song_has_tags` edges for `(song, name)`
-2. Upsert tag vertex `{name, value}`
-3. Upsert `song_has_tags` edge
+1. Delete existing `song_has_tags` rows for `(song, name)`
+2. Upsert tag row `{name, value}`
+3. Upsert `song_has_tags` row
 
 ### Calibration update (mood only)
 
@@ -118,9 +118,9 @@ Example: `"Happy"` from `mood_happy-msd-musicnn-1` with effnet backbone → `hap
 
 ### Orphan cleanup
 
-`cleanup_orphaned_tags_wf.py` — deletes tag vertices with no `song_has_tags` edges AND no `tag_model_output` outbound edges. Called after curation relink and via `GET /library/cleanup-tag`.
+`cleanup_orphaned_tags_wf.py` — deletes tag rows with no `song_has_tags` joins AND no `tag_model_output` outbound rows. Called after curation relink and via `GET /library/cleanup-tag`.
 
-Note: Tags with `tag_model_output` provenance edges but no `song_has_tags` links survive cleanup ("ghost" tags after curation).
+Note: Tags with `tag_model_output` provenance rows but no `song_has_tags` links survive cleanup ("ghost" tags after curation).
 
 ### File removal
 
@@ -134,7 +134,7 @@ All curation operations are DB-only. Affected files are set to `tags_not_written
 
 | Operation | Mechanism |
 | ----------- | ----------- |
-| **Rename** | Upsert new tag vertex, `relink_tag_edges` moves `song_has_tags` edges, orphan cleanup |
+| **Rename** | Upsert new tag row, `relink_tag_edges` moves `song_has_tags` rows, orphan cleanup |
 | **Merge** | `relink_tag_edges` from all sources to canonical target, orphan cleanup |
 | **Split** | Subset of songs relinked to new tag value |
 | **Commit writeback** | `write_file_tags_wf` writes pending DB tags to audio files |

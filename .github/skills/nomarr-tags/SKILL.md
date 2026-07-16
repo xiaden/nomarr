@@ -1,11 +1,11 @@
 ---
 name: nomarr-tags
-description: Deep reference for the Nomarr nom: tag system. Use when creating, gating, storing, reading, curating, or calibrating tags — including any work on ML-to-tag pipelines, confidence thresholds, tier logic, opponent suppression, mood aggregation, calibration, tag writeback to audio files, or tag curation (rename/merge/split). Also covers the ArangoDB tag schema and the nom: namespace convention.
+description: Deep reference for the Nomarr nom: tag system. Use when creating, gating, storing, reading, curating, or calibrating tags — including any work on ML-to-tag pipelines, confidence thresholds, tier logic, opponent suppression, mood aggregation, calibration, tag writeback to audio files, or tag curation (rename/merge/split). Also covers the database tag schema and the nom: namespace convention.
 ---
 
 # Nomarr Tag System
 
-Two-tier architecture: ArangoDB is the source of truth (vertex+edge graph); audio files are projections written on demand. ML inference flows through ONNX head models → `HeadDecision` → `HeadOutput` objects with confidence tiers → mood aggregation with opponent suppression → `DeferredFileWrites` → async DB write.
+Two-tier architecture: PostgreSQL is the source of truth (relational tables); audio files are projections written on demand. ML inference flows through ONNX head models → `HeadDecision` → `HeadOutput` objects with confidence tiers → mood aggregation with opponent suppression → `DeferredFileWrites` → async DB write.
 
 **Load references as needed:**
 - [references/architecture.md](references/architecture.md) — full schema, data flow, nom: convention, CRUD, curation, API surface

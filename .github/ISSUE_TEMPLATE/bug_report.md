@@ -62,15 +62,6 @@ What actually happened.
 </details>
 
 <details>
-<summary>ArangoDB logs (if database-related)</summary>
-
-```
-# Paste output of: docker compose logs arangodb --tail=50
-```
-
-</details>
-
-<details>
 <summary>Browser console (if web UI issue)</summary>
 
 ```
