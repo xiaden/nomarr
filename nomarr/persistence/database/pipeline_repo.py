@@ -101,13 +101,19 @@ class PipelineRepository:
         return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult vs Result — mypy sees Result but .rowcount exists at runtime
 
     async def list_libraries_in_pipeline_state(self, state_key: str, state_value: str) -> list[int]:
-        """Return library ids whose JSONB *state_data* contains *state_value*."""
-        stmt = select(_T.c.library_id).where(
+        """Return library ids whose *state_data* contains *state_value*.
+
+        Filters in Python after fetching all rows for *state_key* to avoid
+        PostgreSQL-specific JSONB containment operators (``@>``).
+        """
+        stmt = select(_T.c.library_id, _T.c.state_data).where(
             _T.c.state_key == state_key,
-            _T.c.state_data.contains({"state": state_value}),
         )
         result = await self._session.execute(stmt)
-        return [row[0] for row in result.all()]
+        return [
+            row[0] for row in result.all()
+            if isinstance(row[1], dict) and row[1].get("state") == state_value
+        ]
 
     async def count_pipeline_states(self) -> int:
         """Return total row count of ``pipeline_states``."""

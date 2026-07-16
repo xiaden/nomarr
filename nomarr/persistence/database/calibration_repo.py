@@ -9,7 +9,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import Table, delete, select, text, update
+from sqlalchemy import Table, delete, select, update
 
 from nomarr.helpers.dto.calibration_repo_dto import (
     CalibrationHistoryRecord,
@@ -140,7 +140,8 @@ class CalibrationRepo:
 
     async def truncate_states(self) -> None:
         """Delete all rows from ``calibration_states`` (full reset)."""
-        await self._session.execute(text("TRUNCATE TABLE calibration_states"))
+        stmt = delete(_T_STATE)
+        await self._session.execute(stmt)
         await self._session.commit()
 
     # ── calibration history ─────────────────────────────────────
@@ -169,7 +170,8 @@ class CalibrationRepo:
 
     async def truncate_history(self) -> None:
         """Delete all rows from ``calibration_history`` (full reset)."""
-        await self._session.execute(text("TRUNCATE TABLE calibration_history"))
+        stmt = delete(_T_HISTORY)
+        await self._session.execute(stmt)
         await self._session.commit()
 
     async def delete_history_for_model(self, model_id: str) -> None:
