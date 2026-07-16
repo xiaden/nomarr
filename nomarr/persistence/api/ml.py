@@ -453,22 +453,19 @@ class MlDb:
         await self._calibration_repo.delete_state(calibration_id)
 
     async def remove_calibration_history_for_model(self, model_id: str) -> None:
-        """Delete all calibration history entries for one model.
-
-        Not yet implemented — CalibrationRepo has no bulk-delete-by-model method.
-        Callers will be updated in Part F.
-        """
-        msg = "CalibrationRepo has no delete_history_for_model — callers must adapt in Part F"
-        raise NotImplementedError(msg)
+        """Delete all calibration history entries for one model."""
+        assert self._calibration_repo is not None, "CalibrationRepo not wired"
+        await self._calibration_repo.delete_history_for_model(model_id)
 
     async def remove_calibration_history_entries(self, entry_ids: list[str]) -> None:
         """Delete calibration history entries by ID list.
 
-        Not yet implemented — CalibrationRepo has no batch-delete method.
-        Callers will be updated in Part F.
+        Entry IDs are converted from ``str`` to ``int`` for the PostgreSQL
+        ``calibration_history.id`` integer primary key.
         """
-        msg = "CalibrationRepo has no delete_history_entries — callers must adapt in Part F"
-        raise NotImplementedError(msg)
+        assert self._calibration_repo is not None, "CalibrationRepo not wired"
+        int_ids: list[int] = [int(e) for e in entry_ids]
+        await self._calibration_repo.delete_history_entries(int_ids)
 
     async def get_embedding_stats(self, backbone_id: str) -> dict[str, int]:
         """Return hot_count and cold_count for a backbone."""
@@ -503,10 +500,15 @@ class MlDb:
     ) -> None:
         """Rebuild the ANN index for a backbone.
 
-        Not applicable — PostgreSQL manages the partial HNSW index automatically.
+        PostgreSQL manages the partial HNSW index automatically — no manual
+        rebuild is needed.  ``embed_dim`` and ``nlists`` are accepted for
+        backwards compatibility but ignored.
         """
-        msg = "PostgreSQL manages the HNSW index automatically — no manual rebuild needed"
-        raise NotImplementedError(msg)
+        logger.info(
+            "PostgreSQL-managed HNSW index for backbone %s — no manual rebuild needed",
+            backbone_id,
+        )
+        return
 
     # ------------------------------------------------------------------
     # Vector index management methods (Phase 3 — consumer facade)

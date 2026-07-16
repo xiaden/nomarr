@@ -171,3 +171,15 @@ class CalibrationRepo:
         """Delete all rows from ``calibration_history`` (full reset)."""
         await self._session.execute(text("TRUNCATE TABLE calibration_history"))
         await self._session.commit()
+
+    async def delete_history_for_model(self, model_id: str) -> None:
+        """Delete all calibration history entries for a model."""
+        stmt = delete(_T_HISTORY).where(_T_HISTORY.c.model_id == model_id)
+        await self._session.execute(stmt)
+        await self._session.commit()
+
+    async def delete_history_entries(self, entry_ids: list[int]) -> None:
+        """Delete calibration history entries by primary key list."""
+        stmt = delete(_T_HISTORY).where(_T_HISTORY.c.id.in_(entry_ids))
+        await self._session.execute(stmt)
+        await self._session.commit()
