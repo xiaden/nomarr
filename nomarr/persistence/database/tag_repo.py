@@ -1,8 +1,7 @@
 """TagRepository — CRUD and domain queries for tags.
 
-Replaces ``nomarr/persistence/database/tags_aql/``.  Uses Part B
-primitives for simple lookups and direct SQLAlchemy Core for JOINs,
-filtered queries, and batch operations.
+Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
+JOINs, filtered queries, and batch operations.
 
 File-tag junction operations live in ``FileTagRepository``
 (``file_tag_repo.py``).

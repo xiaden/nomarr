@@ -1,6 +1,5 @@
 """ModelRepo — CRUD and domain queries for the ``ml_models`` table.
 
-Replaces the ML-model portion of ``nomarr/persistence/database/ml_models_aql.py``.
 Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
 filtered queries.
 """

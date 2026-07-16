@@ -1,6 +1,5 @@
 """FileStateRepository — manages file ↔ state assignments.
 
-Replaces ``file_states_aql.py`` and ``file_state_assignments_aql.py``.
 Uses the ``file_state_assignments`` junction table (M:N between files
 and states) and the ``file_states`` lookup table.
 

@@ -112,10 +112,6 @@ class MlDb:
     # Canonical routine top-level methods aligned with the DD contract
     # ------------------------------------------------------------------
 
-    async def add_vector_collection(self, name: str, template: str) -> None:
-        """Register a named vector collection — not supported in PostgreSQL."""
-        raise NotImplementedError("PostgreSQL uses a single embeddings table — no dynamic collections")
-
     def list_vector_collection_names(self) -> list[str]:
         """Return all registered vector collection names."""
         return ["embeddings"]

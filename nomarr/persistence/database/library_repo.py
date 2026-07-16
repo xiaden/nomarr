@@ -1,8 +1,7 @@
 """LibraryRepository — CRUD and domain queries for the ``libraries`` table.
 
-Replaces ``nomarr/persistence/database/libraries_aql.py``.  Uses Part B
-primitives for simple lookups and direct SQLAlchemy Core for filtered
-queries and pipeline-axis operations.
+Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
+filtered queries and pipeline-axis operations.
 """
 
 from __future__ import annotations

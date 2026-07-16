@@ -1,8 +1,6 @@
 """AppRepository — KV-table operations for locks, health, meta, sessions, etc.
 
-Replaces ``nomarr/persistence/database/app_aql/``.  Groups multiple
-KV-table operations under one repository (same cohesion pattern as
-the legacy ``app_aql/main.py``).
+Groups multiple KV-table operations under one repository.
 """
 
 from __future__ import annotations

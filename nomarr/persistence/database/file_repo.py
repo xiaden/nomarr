@@ -1,8 +1,7 @@
 """FileRepository — CRUD and domain queries for the ``library_files`` table.
 
-Replaces ``nomarr/persistence/database/library_files_aql/``.  Uses Part B
-primitives for simple lookups and direct SQLAlchemy Core for filtered
-queries, batch operations, and maintenance methods.
+Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
+filtered queries, batch operations, and maintenance methods.
 """
 
 from __future__ import annotations

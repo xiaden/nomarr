@@ -1,6 +1,5 @@
 """CalibrationRepo — CRUD for ``calibration_states`` and ``calibration_history``.
 
-Replaces the calibration portion of ``nomarr/persistence/database/ml_models_aql.py``.
 Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
 upserts and joins.
 """

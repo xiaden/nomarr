@@ -1,6 +1,5 @@
 """EmbeddingStreamRepository — CRUD for the ``ml_embedding_streams`` table.
 
-Replaces ``nomarr/persistence/database/ml_embedding_streams_aql.py``.
 Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
 upserts and filtered queries.
 

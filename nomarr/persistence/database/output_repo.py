@@ -1,6 +1,5 @@
 """OutputRepo — CRUD for ``ml_model_outputs`` and ``ml_output_streams`` tables.
 
-Replaces the output/stream portion of ``nomarr/persistence/database/ml_models_aql.py``.
 Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
 filtered queries and deletes.
 """

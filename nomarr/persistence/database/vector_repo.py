@@ -1,8 +1,8 @@
 """VectorRepo — embedding storage and ANN search for the ``embeddings`` table.
 
-Replaces ``nomarr/persistence/database/vectors_aql.py``.  Uses SQLAlchemy
-Core against the single ``embeddings`` table with pgvector ``<=>`` operator
-for approximate nearest-neighbour search on cold-tier embeddings.
+Uses SQLAlchemy Core against the single ``embeddings`` table with pgvector
+``<=>`` operator for approximate nearest-neighbour search on cold-tier
+embeddings.
 """
 
 from __future__ import annotations

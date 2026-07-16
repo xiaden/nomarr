@@ -1,7 +1,6 @@
 """ScanRepository — CRUD for the ``library_scans`` table.
 
-Replaces ``nomarr/persistence/database/scan_aql.py``.  Simple CRUD
-using Part B primitives.
+Simple CRUD using Part B primitives.
 """
 
 from __future__ import annotations

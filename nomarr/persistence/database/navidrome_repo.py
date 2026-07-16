@@ -1,8 +1,7 @@
 """NavidromeRepo — CRUD for Navidrome track, play, and junction tables.
 
-Replaces ``nomarr/persistence/database/navidrome_aql.py``.  Uses Part B
-primitives for simple lookups and direct SQLAlchemy Core for joins,
-aggregations, and bulk operations.
+Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
+joins, aggregations, and bulk operations.
 """
 
 from __future__ import annotations

@@ -1,6 +1,5 @@
 """PipelineRepository — CRUD for the ``pipeline_states`` table.
 
-Replaces ``nomarr/persistence/database/app_aql/pipeline_state_ops.py``.
 Uses ``pipeline_states`` table with ``(library_id, state_key)`` unique
 constraint.
 """
