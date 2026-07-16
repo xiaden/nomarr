@@ -38,7 +38,7 @@ Those endpoints replace older startup-log and "guess from container startup" sty
 ## Local prerequisites
 
 - Nomarr reachable at `http://localhost:8356`
-- Backend services and ArangoDB running
+- Backend services and PostgreSQL running
 - Playwright dependencies installed
 - A usable admin password exposed to the tests
 - The container-side fixture library available at the configured path when running `library-integration.spec.ts`

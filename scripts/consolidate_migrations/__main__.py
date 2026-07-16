@@ -1,4 +1,8 @@
-"""CLI entry point for the migration consolidation tool.
+"""CLI entry point for the migration consolidation tool — HISTORICAL (ArangoDB era).
+
+This tool was used to consolidate ArangoDB migration files (V004-V019)
+into a single V001_baseline.py migration.  It is no longer applicable
+after the PostgreSQL transition.  Retained for historical reference only.
 
 Run as:
     python -m scripts.consolidate_migrations [options]
@@ -16,8 +20,8 @@ Two modes of operation:
     (V004-V019), and prints the reset AQL.
 
 ``--execute-db-reset`` (implies ``--consolidate``):
-    After consolidation, connects to ArangoDB and executes the reset AQL
-    to clear applied_migrations and reset schema_version to "0".
+    After consolidation, connects to the database and executes the reset
+    statements to clear applied_migrations and reset schema_version.
 """
 
 from __future__ import annotations
@@ -66,16 +70,6 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--execute-db-reset",
-        action="store_true",
-        default=False,
-        help=(
-            "After consolidation, connect to ArangoDB and execute the reset AQL "
-            "(clears applied_migrations, resets schema_version to '0'). "
-            "Implies --consolidate. Requires python-arango."
-        ),
-    )
-    parser.add_argument(
         "--migrations-dir",
         type=Path,
         default=_DEFAULT_MIGRATIONS_DIR,
@@ -89,31 +83,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help=(f"Path to arango_bootstrap_comp.py (ensure_schema source). Default: {_DEFAULT_BOOTSTRAP_PATH}"),
     )
-    # DB connection args (only used with --execute-db-reset)
-    parser.add_argument(
-        "--db-host",
-        default="http://127.0.0.1:8529",
-        metavar="URL",
-        help="ArangoDB host URL. Default: http://127.0.0.1:8529",
-    )
-    parser.add_argument(
-        "--db-name",
-        default="nomarr",
-        metavar="NAME",
-        help="ArangoDB database name. Default: nomarr",
-    )
-    parser.add_argument(
-        "--db-user",
-        default="root",
-        metavar="USER",
-        help="ArangoDB username. Default: root",
-    )
-    parser.add_argument(
-        "--db-password",
-        default="",
-        metavar="PASSWORD",
-        help="ArangoDB password. Default: (empty)",
-    )
+    # DB connection args removed — PostgreSQL migration complete.
     return parser
 
 
@@ -255,54 +225,12 @@ def _run_consolidate(migrations_dir: Path, shape_a: object, shape_b: object, dif
     print("=" * 60, flush=True)
 
 
-def _run_db_reset(
-    db_host: str,
-    db_name: str,
-    db_user: str,
-    db_password: str,
-) -> None:
-    """Connect to ArangoDB and execute the reset AQL statements.
-
-    Exits with code 2 on errors (including missing python-arango).
-    """
-    try:
-        from arango import ArangoClient  # type: ignore[import-untyped]
-    except ImportError:
-        print(
-            "ERROR: python-arango is not installed. Run: pip install python-arango",
-            file=sys.stderr,
-        )
-        sys.exit(2)
-
-    from scripts.consolidate_migrations.consolidator import generate_reset_aql
-
-    reset_aql = generate_reset_aql()
-    # Split the two AQL statements (separated by blank line)
-    statements = [s.strip() for s in reset_aql.strip().split("\n\n") if s.strip()]
-
-    print(f"\nConnecting to ArangoDB at {db_host} (db={db_name})...", flush=True)
-    try:
-        client = ArangoClient(hosts=db_host)
-        db = client.db(db_name, username=db_user, password=db_password)
-        for stmt in statements:
-            print(f"  Executing: {stmt[:80]}...", flush=True)
-            db.aql.execute(stmt)
-        print("  DB reset complete.", flush=True)
-    except Exception as exc:
-        print(f"ERROR executing reset AQL: {exc}", file=sys.stderr)
-        sys.exit(2)
-
-
 def main() -> None:
     """Main CLI entry point."""
     _check_shadow_file()
 
     parser = _build_parser()
     args = parser.parse_args()
-
-    # --execute-db-reset implies --consolidate
-    if args.execute_db_reset:
-        args.consolidate = True
 
     migrations_dir: Path = args.migrations_dir
     bootstrap_path: Path = args.bootstrap_path
@@ -318,10 +246,6 @@ def main() -> None:
     # ---- Consolidate (optional) ------------------------------------------------
     if args.consolidate:
         _run_consolidate(migrations_dir, shape_a, shape_b, diff)
-
-    # ---- DB reset (optional) ---------------------------------------------------
-    if args.execute_db_reset:
-        _run_db_reset(args.db_host, args.db_name, args.db_user, args.db_password)
 
     sys.exit(0)
 

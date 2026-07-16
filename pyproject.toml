@@ -196,7 +196,7 @@ ignore = [
 # Evaluation harness scripts are standalone runners — not nomarr package code
 "code-intel/skills/mcp-builder/scripts/evaluation.py" = ["TID251"]
 # Migration files use V-prefix naming convention (V006_*, V007_*, etc.)
-# Migrations use arango directly for schema operations — not ORM-routed
+# Migrations use the database directly for schema operations — not ORM-routed
 "nomarr/migrations/V*.py" = ["N999", "TID251"]
 # ML components use intentional lazy imports to avoid loading TF/numpy until needed
 "nomarr/components/ml/*.py" = ["PLC0415"]
@@ -232,14 +232,7 @@ known-first-party = ["nomarr"]
 "datetime.datetime.now".msg = "Use now_ms() from nomarr.helpers.time_helper, or format_wall_timestamp() for display"
 "datetime.datetime.utcnow".msg = "Use now_ms() from nomarr.helpers.time_helper (utcnow is deprecated in Python 3.12)"
 "builtins.print".msg = "Use logging (logger.info/debug/warning) instead of print() for proper log management"
-# Raw arango access — use the persistence ORM (db.collection.field.verb) instead
-# arango.exceptions is intentionally not banned: catching DB errors anywhere is fine
-"arango.ArangoClient".msg = "Do not construct raw ArangoClient; use nomarr.persistence.db.Database (injected by app.py)"
-"arango.aql".msg = "Do not use raw AQL; use the persistence ORM (db.collection.field.verb) instead"
-"arango.cursor".msg = "Do not use raw AQL cursors; use the persistence ORM (db.collection.field.verb) instead"
-"arango.database".msg = "Do not import StandardDatabase directly; use nomarr.persistence.db.Database for type hints"
-"arango.collection".msg = "Do not access arango collections directly; use the persistence ORM (db.collection.field.verb) instead"
-"Database.cursor".msg = "Do not use raw AQL; use the persistence ORM (db.collection.field.verb) instead"
+
 
 
 # === Import Linter Configuration ===
@@ -302,7 +295,6 @@ type = "forbidden"
 source_modules = ["nomarr.services"]
 forbidden_modules = [
     "nomarr.persistence.database",
-    "nomarr.persistence.arango_client",
 ]
 allow_indirect_imports = true
 # Note: import-linter cannot enforce TYPE_CHECKING-only imports.

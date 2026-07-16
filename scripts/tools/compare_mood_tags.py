@@ -1,7 +1,9 @@
 """Compare mood tags on disk (essentia-tensorflow era) vs database (ONNX).
 
-Queries the database for all songs with nom:mood-* tags, reads each file
-with mutagen to extract the same tags, then reports matches/mismatches.
+Reads each file with mutagen to extract nom:mood-* tags, then reports
+the on-disk mood tags found.  Database comparison requires a PostgreSQL
+connection — this script previously queried ArangoDB directly and needs
+to be ported to the PostgreSQL persistence layer.
 
 Run inside container:
     python3 /tmp/compare_mood_tags.py [--limit N] [--show-matches]
@@ -21,10 +23,6 @@ import mutagen.id3
 import mutagen.mp3
 import mutagen.mp4
 import mutagen.oggvorbis
-import requests
-
-ARANGO_URL = "http://nomarr-arangodb:8529/_db/nomarr/_api/cursor"
-ARANGO_AUTH = ("root", "nomarr_dev_password")
 
 MOOD_TIER_RELS = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
 
@@ -34,67 +32,15 @@ MOOD_TIER_RELS = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
 # ---------------------------------------------------------------------------
 
 
-def _aql(query: str, bind_vars: dict | None = None, batch_size: int = 10000) -> list:
-    payload: dict = {"query": query, "batchSize": batch_size}
-    if bind_vars:
-        payload["bindVars"] = bind_vars
-    results = []
-    resp = requests.post(ARANGO_URL, json=payload, auth=ARANGO_AUTH, timeout=120)
-    resp.raise_for_status()
-    data = resp.json()
-    results.extend(data["result"])
-    cursor_id = data.get("id")
-    while data.get("hasMore") and cursor_id:
-        data = requests.put(
-            f"{ARANGO_URL}/{cursor_id}",
-            auth=ARANGO_AUTH,
-            timeout=120,
-        ).json()
-        results.extend(data["result"])
-    return results
-
-
 def load_db_mood_tags(limit: int | None) -> dict[str, dict[str, list[str]]]:
-    """Return {file_path: {tier_name: [mood_label, ...]}} for all files with mood tags."""
-    # Step 1: get distinct file IDs that have any mood tag (limit applies here = per file)
-    limit_clause = f"LIMIT {limit}" if limit else ""
-    file_rows = _aql(f"""
-        FOR e IN song_has_tags
-          LET tag = DOCUMENT(e._to)
-          FILTER tag.rel IN ["nom:mood-strict", "nom:mood-regular", "nom:mood-loose"]
-          COLLECT file_id = e._from
-          {limit_clause}
-          RETURN file_id
-    """)
+    """Return {file_path: {tier_name: [mood_label, ...]}} for all files with mood tags.
 
-    if not file_rows:
-        return {}
-
-    # Step 2: fetch all mood edges for those files
-    rows = _aql(
-        """
-        FOR file_id IN @file_ids
-          FOR e IN song_has_tags
-            FILTER e._from == file_id
-            LET tag = DOCUMENT(e._to)
-            FILTER tag.rel IN ["nom:mood-strict", "nom:mood-regular", "nom:mood-loose"]
-            LET file = DOCUMENT(file_id)
-            FILTER file != null
-            COLLECT file_path = file.path, tier = tag.rel INTO groups
-            RETURN {
-              path: file_path,
-              tier: tier,
-              values: groups[*].tag.value
-            }
-    """,
-        {"file_ids": file_rows},
-    )
-
-    result: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
-    for row in rows:
-        result[row["path"]][row["tier"]] = row["values"]
-
-    return {k: dict(v) for k, v in result.items()}
+    NOTE: This function previously queried ArangoDB directly.  It needs to be
+    ported to use the PostgreSQL persistence layer (db.tags, db.library_files).
+    For now it returns an empty result set.
+    """
+    print("WARNING: load_db_mood_tags() needs PostgreSQL porting — returning empty.", file=sys.stderr)
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -302,8 +248,8 @@ def main() -> None:
     print(f"  Found {len(db_tags)} files with mood tags in DB", flush=True)
 
     if not db_tags:
-        print("No mood tags in DB — run calibration first.")
-        sys.exit(0)
+        print("No mood tags in DB — DB query needs PostgreSQL porting. Run calibration first.")
+        sys.exit(1)
 
     print("Comparing against files on disk...\n", flush=True)
     compare(db_tags, args.show_matches)

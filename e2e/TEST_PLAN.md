@@ -103,7 +103,7 @@ CI run characteristics:
 ### Required runtime pieces
 
 - Nomarr available at `http://localhost:8356`
-- Backend services and ArangoDB available
+- Backend services and PostgreSQL available
 - Valid admin password deterministically configured in CI via matching `E2E_WEB_PASSWORD` and `NOMARR_ADMIN_PASSWORD`
 - Fixture library path (`E2E_TEST_LIBRARY_PATH`) must exist inside the running Nomarr container — not only on the host via a bind mount
 - Docker CLI available on the host when running mutation tests (tests 5 and 7); set `SKIP_CONTAINER_MUTATION=true` when Docker is unavailable
