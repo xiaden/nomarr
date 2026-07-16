@@ -133,9 +133,7 @@ class TestCleanupStaleClaims:
         assert result == 3
         mock_db.app.list_claims.assert_called_once_with()
         mock_db.app.list_worker_health.assert_called_once_with()
-        mock_db.library.list_files_by_ids.assert_called_once_with(
-            [2, 3]
-        )
+        mock_db.library.list_files_by_ids.assert_called_once_with([2, 3])
         mock_db.app.list_file_docs_in_state.assert_called_once_with("tagged")
         assert mock_db.app.remove_claims.call_args_list == [
             call(worker_ids=["worker:stale"]),

@@ -41,17 +41,17 @@ class TestScanDispatch:
                 "nomarr.services.domain.library_svc.scan.on_scan_complete_pipeline_hook",
             ) as mock_on_complete_hook,
         ):
-            result = await service.start_quick_scan("lib1")
+            result = await service.start_quick_scan(1)
 
-        mock_scan_setup.assert_called_once_with(service.db, "lib1", scan_type="quick")
+        mock_scan_setup.assert_called_once_with(service.db, 1, scan_type="quick")
         mock_bts.start_task.assert_called_once()
         managed_task = mock_bts.start_task.call_args.args[0]
         assert isinstance(managed_task, ManagedTask)
-        assert managed_task.task_id == "scan_library_lib1"
+        assert managed_task.task_id == "scan_library_1"
         assert managed_task.on_complete is not None
         managed_task.on_complete()
-        mock_on_complete_hook.assert_called_once_with(service.db, "lib1")
-        assert result.job_ids == ["scan_library_lib1"]
+        mock_on_complete_hook.assert_called_once_with(service.db, 1)
+        assert result.job_ids == ["scan_library_1"]
 
     @pytest.mark.asyncio
     @pytest.mark.unit
@@ -67,17 +67,17 @@ class TestScanDispatch:
                 "nomarr.services.domain.library_svc.scan.on_scan_complete_pipeline_hook",
             ) as mock_on_complete_hook,
         ):
-            result = await service.start_full_scan("lib1")
+            result = await service.start_full_scan(1)
 
-        mock_scan_setup.assert_called_once_with(service.db, "lib1", scan_type="full")
+        mock_scan_setup.assert_called_once_with(service.db, 1, scan_type="full")
         mock_bts.start_task.assert_called_once()
         managed_task = mock_bts.start_task.call_args.args[0]
         assert isinstance(managed_task, ManagedTask)
-        assert managed_task.task_id == "scan_library_lib1"
+        assert managed_task.task_id == "scan_library_1"
         assert managed_task.on_complete is not None
         managed_task.on_complete()
-        mock_on_complete_hook.assert_called_once_with(service.db, "lib1")
-        assert result.job_ids == ["scan_library_lib1"]
+        mock_on_complete_hook.assert_called_once_with(service.db, 1)
+        assert result.job_ids == ["scan_library_1"]
 
 
 class TestScanStateQueries:
@@ -122,7 +122,7 @@ class TestScanStateQueries:
                 },
             ),
         ):
-            result = await service.get_status("libraries/lib1")
+            result = await service.get_status(1)
 
         assert result.scan_status == "scanning"
 
@@ -155,7 +155,7 @@ class TestScanStateQueries:
                 },
             ),
         ):
-            result = await service.get_status("libraries/lib1")
+            result = await service.get_status(1)
 
         assert result.scan_status == "idle"
 
@@ -224,7 +224,7 @@ class TestValidateLibraryTags:
     @pytest.mark.mocked
     async def test_validate_library_tags_calls_resolve_then_workflow(self) -> None:
         service = _make_service()
-        library_id = "libraries/lib1"
+        library_id = 1
         expected = {
             "files_checked": 10,
             "incomplete_files": 2,
@@ -257,7 +257,7 @@ class TestValidateLibraryTags:
     @pytest.mark.mocked
     async def test_validate_library_tags_propagates_library_not_found(self) -> None:
         service = _make_service()
-        library_id = "libraries/missing"
+        library_id = 999
 
         with (
             patch(

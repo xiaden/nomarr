@@ -341,4 +341,6 @@ class TestGetGenreDistribution:
             {"genre": "Jazz", "count": 5},
         ]
         mock_db.library.list_tags.assert_called_once_with(name="genre", limit=4)
-        mock_db.library.file_tag_repo.get_file_tag_edges_for_tags.assert_called_once_with(["tags/rock", "tags/jazz", "tags/blues"])
+        mock_db.library.file_tag_repo.get_file_tag_edges_for_tags.assert_called_once_with(
+            ["tags/rock", "tags/jazz", "tags/blues"]
+        )

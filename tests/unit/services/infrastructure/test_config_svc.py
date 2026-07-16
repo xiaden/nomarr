@@ -88,7 +88,9 @@ class TestBootstrapAndLoad:
 
         with patch("nomarr.services.infrastructure.config_svc.Database") as mock_database:
             mock_db_instance = mock_database.return_value
-            mock_db_instance.app.list_config_options.return_value = []
+            mock_db_instance.app.list_config_options = AsyncMock(return_value=[])
+            mock_db_instance.app.update_config_option = AsyncMock()
+            mock_db_instance.close = AsyncMock()
 
             await service._bootstrap_and_load()
 
@@ -107,7 +109,9 @@ class TestBootstrapAndLoad:
 
         with patch("nomarr.services.infrastructure.config_svc.Database") as mock_database:
             mock_db_instance = mock_database.return_value
-            mock_db_instance.app.list_config_options.side_effect = [[], []]
+            mock_db_instance.app.list_config_options = AsyncMock(side_effect=[[], []])
+            mock_db_instance.app.update_config_option = AsyncMock()
+            mock_db_instance.close = AsyncMock()
 
             await service._bootstrap_and_load()
 
@@ -128,10 +132,12 @@ class TestBootstrapAndLoad:
 
         with patch("nomarr.services.infrastructure.config_svc.Database") as mock_database:
             mock_db_instance = mock_database.return_value
-            mock_db_instance.app.list_config_options.side_effect = [
+            mock_db_instance.app.list_config_options = AsyncMock(side_effect=[
                 [],
                 [{"key": "config_library_root", "value": "/myns"}],
-            ]
+            ])
+            mock_db_instance.app.update_config_option = AsyncMock()
+            mock_db_instance.close = AsyncMock()
 
             await service._bootstrap_and_load()
 
@@ -214,9 +220,10 @@ class TestSetCallbacks:
 
             service.set("tagger_worker_count", 3)
 
-        mock_asyncio.create_task.assert_called_once()
-        # Verify the callback was wrapped in create_task
-        coro = mock_asyncio.create_task.call_args[0][0]
+        # Two calls: one for _write_to_db, one for the callback
+        assert mock_asyncio.create_task.call_count == 2
+        # Verify the callback was wrapped in create_task (second call)
+        coro = mock_asyncio.create_task.call_args_list[1][0][0]
         assert coro is not None
 
     @pytest.mark.unit
@@ -235,4 +242,5 @@ class TestSetCallbacks:
         ):
             service.set("calibrate_heads", True)
 
-        mock_asyncio.create_task.assert_not_called()
+        # _write_to_db still creates a task for any set(), even non-observable keys
+        mock_asyncio.create_task.assert_called_once()

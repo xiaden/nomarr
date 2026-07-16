@@ -122,9 +122,7 @@ class TestSetSongTagsBatch:
 
         await set_song_tags_batch(mock_db, entries)
 
-        mock_db.library.list_file_tags_for_files.assert_called_once_with(
-            [1, 2]
-        )
+        mock_db.library.list_file_tags_for_files.assert_called_once_with([1, 2])
         assert mock_db.library.replace_file_tags.call_args_list == [
             call(
                 1,

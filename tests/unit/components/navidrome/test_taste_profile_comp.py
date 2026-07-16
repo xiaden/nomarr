@@ -331,7 +331,9 @@ class TestComputeTasteProfile:
 
         with patch(
             f"{TAGS_PATH}.get_tag_values_grouped_by_file",
-            new=AsyncMock(return_value={i: {"rock"} for i in range(1, 11)},)
+            new=AsyncMock(
+                return_value={i: {"rock"} for i in range(1, 11)},
+            ),
         ):
             result = await compute_taste_profile(
                 db,
@@ -358,7 +360,9 @@ class TestComputeTasteProfile:
 
         with patch(
             f"{TAGS_PATH}.get_tag_values_grouped_by_file",
-            new=AsyncMock(return_value={i: {"rock"} for i in range(1, 6)},)
+            new=AsyncMock(
+                return_value={i: {"rock"} for i in range(1, 6)},
+            ),
         ):
             result = await compute_taste_profile(
                 db,

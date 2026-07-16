@@ -142,9 +142,7 @@ class TestNavidromeGeneratePersonalPlaylistsEndpoint:
         self, client: TestClient, mock_navidrome_service: MagicMock
     ) -> None:
         mock_navidrome_service.generate_personal_playlists = MagicMock(
-            side_effect=MisconfiguredError(
-                "navidrome_api_user not configured"
-            )
+            side_effect=MisconfiguredError("navidrome_api_user not configured")
         )
 
         response = client.post(

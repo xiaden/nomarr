@@ -75,8 +75,12 @@ class TestLoadOutputStreamsForFile:
         ]
         fetch_output_streams.assert_called_once_with(db, f"{'library_files'}/1")
 
-    async def test_returns_empty_and_skips_lookup_when_streams_are_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_returns_empty_and_skips_lookup_when_streams_are_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         db = MagicMock()
+        db.app.get_file_states_for_files = AsyncMock(return_value={})
+        db.app.remove_file_states = AsyncMock()
         head_infos = [_FakeHeadInfo(name="mood_multiclass", labels=["happy", "sad"], model_path="/models/mood.onnx")]
         fetch_output_streams = AsyncMock(return_value=[])
         monkeypatch.setattr(stream_store_module, "fetch_output_streams", fetch_output_streams)
@@ -96,6 +100,8 @@ class TestLoadOutputStreamsForFile:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         db = MagicMock()
+        db.app.get_file_states_for_files = AsyncMock(return_value={})
+        db.app.remove_file_states = AsyncMock()
         head_infos = [_FakeHeadInfo(name="mood_multiclass", labels=["happy", "sad"], model_path="/models/mood.onnx")]
         monkeypatch.setattr(
             stream_store_module,

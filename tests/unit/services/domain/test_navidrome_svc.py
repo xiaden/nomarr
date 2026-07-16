@@ -32,7 +32,7 @@ def _playlist_entry() -> dict[str, object]:
         "playlist_type": "familiar",
         "playlist_name": "Familiar Favorites",
         "file_ids": [
-            f"{'library_files'}/track-1",
+            1,
             f"{'library_files'}/track-2",
         ],
     }
@@ -174,7 +174,7 @@ class TestNavidromeServiceDescriptorResolution:
         with (
             patch(
                 "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
-                return_value=[{"_id": f"{'library_files'}/track-1", "_key": "track-1"}],
+                return_value=[{"_id": 1, "_key": "track-1"}],
             ) as mock_get_files,
             patch(
                 "nomarr.services.domain.navidrome_svc.build_track_descriptor",
@@ -191,10 +191,10 @@ class TestNavidromeServiceDescriptorResolution:
                 },
             ) as mock_build,
         ):
-            descriptors = await service.resolve_files_to_descriptors([f"{'library_files'}/track-1"])
+            descriptors = await service.resolve_files_to_descriptors([1])
 
         assert descriptors == {
-            f"{'library_files'}/track-1": {
+            1: {
                 "title": "Song A",
                 "artist": "Artist A",
                 "album": "Album A",
@@ -206,7 +206,7 @@ class TestNavidromeServiceDescriptorResolution:
                 "nomarr_file_key": "track-1",
             },
         }
-        mock_get_files.assert_called_once_with(service._db, [f"{'library_files'}/track-1"])
+        mock_get_files.assert_called_once_with(service._db, [1])
         mock_build.assert_called_once()
 
     @pytest.mark.asyncio
@@ -217,7 +217,7 @@ class TestNavidromeServiceDescriptorResolution:
             "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
             return_value=[{"_key": "missing-id"}],
         ):
-            descriptors = await service.resolve_files_to_descriptors([f"{'library_files'}/track-1"])
+            descriptors = await service.resolve_files_to_descriptors([1])
 
         assert descriptors == {}
 
@@ -232,7 +232,7 @@ class TestNavidromeServiceDescriptorResolution:
             ),
             pytest.raises(RuntimeError, match="query failed"),
         ):
-            await service.resolve_files_to_descriptors([f"{'library_files'}/track-1"])
+            await service.resolve_files_to_descriptors([1])
 
     @pytest.mark.asyncio
     async def test_resolve_files_to_descriptors_propagates_build_errors(self) -> None:
@@ -241,7 +241,7 @@ class TestNavidromeServiceDescriptorResolution:
         with (
             patch(
                 "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
-                return_value=[{"_id": f"{'library_files'}/track-1"}],
+                return_value=[{"_id": 1}],
             ),
             patch(
                 "nomarr.services.domain.navidrome_svc.build_track_descriptor",
@@ -249,7 +249,7 @@ class TestNavidromeServiceDescriptorResolution:
             ),
             pytest.raises(ValueError, match="bad descriptor"),
         ):
-            await service.resolve_files_to_descriptors([f"{'library_files'}/track-1"])
+            await service.resolve_files_to_descriptors([1])
 
 
 @pytest.mark.unit

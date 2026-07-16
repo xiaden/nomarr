@@ -82,8 +82,8 @@ class TestLibraryAutoWriteToggle:
         """Enabling auto-write should start writing immediately from write_ready."""
         old_library = make_library(auto_write=False)
         new_library = make_library(auto_write=True)
-        mock_library_service.get_library.return_value = old_library
-        mock_library_service.update_library.return_value = new_library
+        mock_library_service.get_library = MagicMock(return_value=old_library)
+        mock_library_service.update_library = MagicMock(return_value=new_library)
         mock_pipeline_service.get_pipeline_status.return_value = MagicMock(tag_write_state="not_written")
 
         response = client.patch(
@@ -106,8 +106,8 @@ class TestLibraryAutoWriteToggle:
         """Disabling auto-write mid-write should request cancellation."""
         old_library = make_library(auto_write=True)
         new_library = make_library(auto_write=False)
-        mock_library_service.get_library.return_value = old_library
-        mock_library_service.update_library.return_value = new_library
+        mock_library_service.get_library = MagicMock(return_value=old_library)
+        mock_library_service.update_library = MagicMock(return_value=new_library)
         mock_pipeline_service.get_pipeline_status.return_value = MagicMock(tag_write_state="writing")
 
         response = client.patch(
@@ -127,7 +127,7 @@ class TestLibraryAutoWriteToggle:
         mock_pipeline_service: MagicMock,
     ) -> None:
         """PATCH requests that do not touch auto-write should not trigger pipeline behavior."""
-        mock_library_service.update_library.return_value = make_library(auto_write=False, name="Renamed Library")
+        mock_library_service.update_library = MagicMock(return_value=make_library(auto_write=False, name="Renamed Library"))
 
         response = client.patch(
             "/api/web/library/1",

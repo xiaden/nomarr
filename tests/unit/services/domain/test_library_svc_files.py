@@ -40,13 +40,13 @@ class TestRetryErroredFiles:
         mock_transition_file_state: MagicMock,
     ) -> None:
         mock_db = MagicMock()
-        mock_db.library.get_library.return_value = {"_id": "libraries/abc123"}
+        mock_db.library.get_library.return_value = {"_id": 123}
         mixin = _ConcreteFilesMixin(mock_db)
 
-        result = await mixin.retry_errored_files("abc123")
+        result = await mixin.retry_errored_files(123)
 
         assert result == RetryErroredResult(retried=2)
-        mock_get_errored_file_ids.assert_called_once_with(mock_db, "abc123")
+        mock_get_errored_file_ids.assert_called_once_with(mock_db, 123)
         assert mock_transition_file_state.call_args_list == [
             call(
                 mock_db,
@@ -79,15 +79,15 @@ class TestRetryErroredFiles:
         mock_transition_file_state: MagicMock,
     ) -> None:
         mock_db = MagicMock()
-        mock_db.library.get_library.return_value = {"_id": "libraries/abc123"}
+        mock_db.library.get_library.return_value = {"_id": 123}
         mixin = _ConcreteFilesMixin(mock_db)
 
         await mixin.retry_errored_files(
-            "abc123",
+            123,
             file_ids=[f"{'library_files'}/1", f"{'library_files'}/3"],
         )
 
-        mock_get_errored_file_ids.assert_called_once_with(mock_db, "abc123")
+        mock_get_errored_file_ids.assert_called_once_with(mock_db, 123)
         assert mock_transition_file_state.call_args_list == [
             call(
                 mock_db,
@@ -116,10 +116,10 @@ class TestRetryErroredFiles:
         mock_transition_file_state: MagicMock,
     ) -> None:
         mock_db = MagicMock()
-        mock_db.library.get_library.return_value = {"_id": "libraries/abc123"}
+        mock_db.library.get_library.return_value = {"_id": 123}
         mixin = _ConcreteFilesMixin(mock_db)
 
-        await mixin.retry_errored_files("abc123")
+        await mixin.retry_errored_files(123)
 
         assert mock_transition_file_state.call_count == 2
 

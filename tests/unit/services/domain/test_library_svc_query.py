@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -157,7 +157,7 @@ class TestGetErroredFiles:
             patch.object(
                 mixin,
                 "_get_library_or_error",
-                return_value={"_id": "abc123"},
+                return_value={"_id": 123},
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.count_errored_files",
@@ -187,7 +187,7 @@ class TestGetErroredFiles:
                 ],
             ),
         ):
-            result = await mixin.get_errored_files("abc123")
+            result = await mixin.get_errored_files(123)
 
         assert result["total"] == 2
         assert len(result["files"]) == 2
@@ -215,7 +215,7 @@ class TestGetErroredFiles:
             patch.object(
                 mixin,
                 "_get_library_or_error",
-                return_value={"_id": "abc123"},
+                return_value={"_id": 123},
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.count_errored_files",
@@ -230,7 +230,7 @@ class TestGetErroredFiles:
                 return_value=[],
             ),
         ):
-            result = await mixin.get_errored_files("abc123")
+            result = await mixin.get_errored_files(123)
 
         assert result["total"] == 0
         assert result["files"] == []
@@ -254,6 +254,7 @@ class TestGetWorkStatus:
     async def test_returns_work_status_result(self) -> None:
         """Should return a WorkStatusResult instance."""
         mock_db = MagicMock()
+        mock_db.app.get_file_query_stats = AsyncMock(return_value={})
         mixin = _ConcreteQueryMixin(mock_db)
 
         with (
@@ -290,6 +291,7 @@ class TestGetWorkStatus:
     async def test_pipeline_states_bulk_fetched(self) -> None:
         """Library in not_written tag_write state maps to state='write_ready' in result."""
         mock_db = MagicMock()
+        mock_db.app.get_file_query_stats = AsyncMock(return_value={})
         mixin = _ConcreteQueryMixin(mock_db)
 
         def _state_side_effect(_db: MagicMock, axis_field: str, axis_value: str) -> list[str]:
@@ -332,6 +334,7 @@ class TestGetWorkStatus:
     async def test_no_libraries_returns_empty_pipeline(self) -> None:
         """Empty library list produces empty pipeline_libraries."""
         mock_db = MagicMock()
+        mock_db.app.get_file_query_stats = AsyncMock(return_value={})
         mixin = _ConcreteQueryMixin(mock_db)
 
         with (

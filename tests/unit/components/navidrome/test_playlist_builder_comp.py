@@ -193,7 +193,9 @@ async def test_interleave_round_robin_descending_weight_order() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.xfail(reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)")
+@pytest.mark.xfail(
+    reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)"
+)
 async def test_interleave_clusters_exhausted_returns_partial() -> None:
     """When clusters run out before target_size, return what we have."""
     results = {
@@ -283,7 +285,9 @@ async def test_familiar_no_played_in_ann_results_returns_empty_file_ids() -> Non
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.xfail(reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)")
+@pytest.mark.xfail(
+    reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)"
+)
 async def test_familiar_multiple_clusters_proportional_mix() -> None:
     """Multiple clusters produce interleaved results proportional to weight."""
     played = [f"f{i}" for i in range(100)]
@@ -362,7 +366,9 @@ TAGS_ARTIST_PATH = "nomarr.components.navidrome.playlist_builder_comp"
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.xfail(reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)")
+@pytest.mark.xfail(
+    reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)"
+)
 async def test_hidden_gems_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
     db = _make_db(cold_count=0)
@@ -377,7 +383,9 @@ async def test_hidden_gems_empty_cold_collection_returns_empty() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.xfail(reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)")
+@pytest.mark.xfail(
+    reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)"
+)
 async def test_hidden_gems_no_known_artists_skips_artist_filter() -> None:
     """When no known artists, behaves like discovery (no artist exclusion)."""
     ctx = _make_ctx(played_file_ids=[1], max_songs=10)
@@ -401,7 +409,9 @@ async def test_hidden_gems_no_known_artists_skips_artist_filter() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.xfail(reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)")
+@pytest.mark.xfail(
+    reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)"
+)
 async def test_hidden_gems_known_artists_excludes_artist_tracks() -> None:
     """Tracks by known artists are excluded from results."""
     ctx = _make_ctx(played_file_ids=[1], max_songs=10)
@@ -436,7 +446,9 @@ async def test_hidden_gems_known_artists_excludes_artist_tracks() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.xfail(reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)")
+@pytest.mark.xfail(
+    reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)"
+)
 async def test_hidden_gems_both_played_and_artist_exclusion() -> None:
     """Both played tracks and known-artist tracks are excluded."""
     ctx = _make_ctx(played_file_ids=[1, 2], max_songs=10)

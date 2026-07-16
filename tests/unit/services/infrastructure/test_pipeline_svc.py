@@ -162,7 +162,7 @@ class TestRecoverStaleStates:
         mock_bts: MagicMock,
     ) -> None:
         """Missing scan task should transition scanning libraries to not_scanned."""
-        library_id = "libraries/lib1"
+        library_id = 1
         # First call: scanning libraries, Second call: writing libraries
         mock_db.library.get_libraries_in_axis_state.side_effect = [[library_id], []]
         mock_db.library.bulk_transition_pipeline_axis.return_value = 0
@@ -253,7 +253,7 @@ class TestOnWriteComplete:
         mock_db: MagicMock,
     ) -> None:
         """Write completion should transition to written."""
-        library_id = "libraries/lib1"
+        library_id = 1
 
         await pipeline_service.on_write_complete(library_id)
 

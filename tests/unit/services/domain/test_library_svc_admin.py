@@ -241,10 +241,10 @@ class TestDeleteLibrary:
             "nomarr.services.domain.library_svc.admin.delete_library",
             return_value=True,
         ) as mock_delete_library:
-            result = await mixin.delete_library("libraries/1")
+            result = await mixin.delete_library(1)
 
         assert result is True
-        mock_delete_library.assert_called_once_with(db=mixin.db, library_id="libraries/1")
+        mock_delete_library.assert_called_once_with(db=mixin.db, library_id=1)
 
     @pytest.mark.asyncio
     @pytest.mark.unit
@@ -253,17 +253,17 @@ class TestDeleteLibrary:
         """Watcher stop should be skipped when the library is not being observed."""
         mixin = _ConcreteAdminMixin(MagicMock(), MagicMock())
         mixin.file_watcher_service = MagicMock()
-        mixin.file_watcher_service.observers = {"libraries/other": object()}
+        mixin.file_watcher_service.observers = {2: object()}
 
         with patch(
             "nomarr.services.domain.library_svc.admin.delete_library",
             return_value=False,
         ) as mock_delete_library:
-            result = await mixin.delete_library("libraries/1")
+            result = await mixin.delete_library(1)
 
         assert result is False
         mixin.file_watcher_service.stop_watching_library.assert_not_called()
-        mock_delete_library.assert_called_once_with(db=mixin.db, library_id="libraries/1")
+        mock_delete_library.assert_called_once_with(db=mixin.db, library_id=1)
 
     @pytest.mark.asyncio
     @pytest.mark.unit
@@ -272,15 +272,15 @@ class TestDeleteLibrary:
         """Observed libraries should stop watching before persistence delete runs."""
         mixin = _ConcreteAdminMixin(MagicMock(), MagicMock())
         mixin.file_watcher_service = MagicMock()
-        mixin.file_watcher_service.observers = {"libraries/1": object()}
+        mixin.file_watcher_service.observers = {1: object()}
         call_order: list[str] = []
 
-        def _delete_library(*, db: MagicMock, library_id: str) -> bool:
+        def _delete_library(*, db: MagicMock, library_id: int) -> bool:
             call_order.append("delete")
             return True
 
-        def _stop_watching_library(library_id: str) -> None:
-            assert library_id == "libraries/1"
+        def _stop_watching_library(library_id: int) -> None:
+            assert library_id == 1
             call_order.append("stop")
 
         mixin.file_watcher_service.stop_watching_library.side_effect = _stop_watching_library
@@ -289,9 +289,9 @@ class TestDeleteLibrary:
             "nomarr.services.domain.library_svc.admin.delete_library",
             side_effect=_delete_library,
         ) as mock_delete_library:
-            result = await mixin.delete_library("libraries/1")
+            result = await mixin.delete_library(1)
 
         assert result is True
         assert call_order == ["stop", "delete"]
-        mixin.file_watcher_service.stop_watching_library.assert_called_once_with("libraries/1")
-        mock_delete_library.assert_called_once_with(db=mixin.db, library_id="libraries/1")
+        mixin.file_watcher_service.stop_watching_library.assert_called_once_with(1)
+        mock_delete_library.assert_called_once_with(db=mixin.db, library_id=1)
