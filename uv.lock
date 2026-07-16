@@ -776,7 +776,6 @@ dependencies = [
     { name = "mutagen" },
     { name = "numpy" },
     { name = "psutil" },
-    { name = "python-arango" },
     { name = "pyyaml" },
     { name = "rapidfuzz" },
     { name = "requests" },
@@ -818,7 +817,6 @@ requires-dist = [
     { name = "pydub", marker = "extra == 'dev'", specifier = ">=0.25.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0.0" },
-    { name = "python-arango", specifier = ">=8.0.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "radon", marker = "extra == 'dev'", specifier = ">=5.1.0" },
     { name = "rapidfuzz", specifier = ">=3.0.0" },
@@ -1076,22 +1074,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/5e/f7/c933acc76f5208b3b00089573cf6a2bc26dc80a8aece8f52bb7d6b1855ca/pytest_cov-7.0.0.tar.gz", hash = "sha256:33c97eda2e049a0c5298e91f519302a1334c26ac65c1a483d6206fd458361af1", size = 54328 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ee/49/1377b49de7d0c1ce41292161ea0f721913fa8722c19fb9c1e3aa0367eecb/pytest_cov-7.0.0-py3-none-any.whl", hash = "sha256:3b8e9558b16cc1479da72058bdecf8073661c7f57f7d3c5f22a1c23507f2d861", size = 22424 },
-]
-
-[[package]]
-name = "python-arango"
-version = "8.3.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "packaging" },
-    { name = "pyjwt" },
-    { name = "requests" },
-    { name = "requests-toolbelt" },
-    { name = "urllib3" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/19/2b/2849beef8f9d2a57fa6305033dd91cb52628eb3e3f7d825b02812e207b00/python_arango-8.3.0.tar.gz", hash = "sha256:3b89268f50c816aabc7b2651cdb2b980919cc547490f5d37a3124f8fccfc08be", size = 154720 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ca/c8/0eadc927b2e281dfdce1348ddffdc177dc75b7ba2f024dd9dae96522de3d/python_arango-8.3.0-py3-none-any.whl", hash = "sha256:4c8bb1d859a39152dd69a7ee03c6702cdcb62f0bb19060d4ffa219a9b425b526", size = 116189 },
 ]
 
 [[package]]

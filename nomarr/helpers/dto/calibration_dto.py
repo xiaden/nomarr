@@ -44,9 +44,9 @@ class GenerateCalibrationResult:
 
 @dataclass
 class CalibrationStateDict:
-    """Calibration state document from calibration_state collection."""
+    """Calibration state for a single model head."""
 
-    _key: str  # "model_key:head_name"
+    calibration_key: str  # "model_key:head_name"
     model_key: str
     head_name: str
     calibration_def_hash: str
