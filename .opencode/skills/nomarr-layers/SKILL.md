@@ -65,7 +65,7 @@ Services may skip workflows for simple single-step operations. Workflows exist f
 These apply across all layers:
 
 - **Never** import `essentia` anywhere except `components/ml/audio/ml_audio_comp.py` and `components/ml/audio/ml_preprocess_comp.py`
-- **Migrating from ArangoDB:** `_id`, `_key`, and `_rev` fields are being removed from DTOs in favor of PostgreSQL integer `id` fields. Do not introduce new `_id`/`_key`/`_rev` fields.
+- **PostgreSQL IDs:** All DTOs use PostgreSQL integer `id` fields. `_id`, `_key`, and `_rev` fields (pre-migration legacy) are fully removed. Do not introduce new `_id`/`_key`/`_rev` fields.
 - **Never** let helpers import any `nomarr.*` modules
 - **Alpha development policy:** Breaking changes are allowed before 1.0. Fix breakage by updating callers and adding migrations. Priority: clean architecture > working code > self-repairing > git history.
 

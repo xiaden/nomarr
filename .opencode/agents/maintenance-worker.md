@@ -68,7 +68,7 @@ nomarr/                    # Python backend
     COMPONENTS.md
   persistence/             # Database, storage, caching
   helpers/                 # Pure utility functions
-  migrations/              # ArangoDB migrations
+  migrations/              # Database migrations
   app.py                   # FastAPI application entry point
   __version__.py
 

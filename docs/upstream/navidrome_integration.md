@@ -224,7 +224,7 @@ part is the Nomarr-side API endpoint that accepts `(navidrome_song_id) →
 
 Instead of writing `.nsp` files to disk for Navidrome to pick up on next scan, Nomarr
 calls `createPlaylist` / `updatePlaylist` directly. Smart playlists stored in
-ArangoDB would be synced on demand or on schedule.
+the database would be synced on demand or on schedule.
 
 This replaces the current file-generation and drop workflow entirely for users who
 have Navidrome configured.

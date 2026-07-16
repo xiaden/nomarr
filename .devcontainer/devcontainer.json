@@ -1,6 +1,6 @@
 {
     // Full VS Code Dev Container for Nomarr.
-    // Builds from local source, runs alongside ArangoDB.
+    // Builds from local source, runs alongside PostgreSQL.
     // Requires NVIDIA GPU + NVIDIA Container Toolkit.
     "name": "Nomarr Dev",
     "dockerComposeFile": "docker-compose.dev.yaml",
@@ -14,7 +14,7 @@
     "forwardPorts": [8356, 8529],
     "portsAttributes": {
         "8356": { "label": "Nomarr API", "onAutoForward": "silent" },
-        "8529": { "label": "ArangoDB", "onAutoForward": "silent" }
+        "8529": { "label": "PostgreSQL", "onAutoForward": "silent" }
     },
 
     "customizations": {

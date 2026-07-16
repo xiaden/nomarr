@@ -62,7 +62,7 @@ Every test MUST have at least one type marker.
 | `@pytest.mark.slow` | Takes >1 second |
 | `@pytest.mark.requires_models` | Needs ML model files on disk |
 | `@pytest.mark.requires_audio` | Needs real audio files |
-| `@pytest.mark.requires_database` | Needs ArangoDB running |
+| `@pytest.mark.requires_database` | Needs PostgreSQL running |
 | `@pytest.mark.requires_essentia` | Needs Essentia library installed |
 | `@pytest.mark.requires_onnx` | Needs ONNX Runtime installed |
 | `@pytest.mark.container_only` | Must run inside Docker |
@@ -178,7 +178,7 @@ def test_library_scan_discovers_files(test_db, tmp_path) -> None:
 | **Components** | Domain logic, data transformation | Database, filesystem, ML backends |
 | **Workflows** | Orchestration flow, error handling | Components (or use real components with mocked DB) |
 | **Services** | DI wiring, delegation correctness | Workflows, components |
-| **Persistence** | Query correctness, data shapes | ArangoDB client (or use real test DB) |
+| **Persistence** | Query correctness, data shapes | PostgreSQL (or use real test DB) |
 | **Interfaces** | Request/response shapes, auth | Services |
 
 ### Priority Order

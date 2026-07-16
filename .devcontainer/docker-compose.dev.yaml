@@ -4,7 +4,7 @@
 #
 # DO NOT reference this file directly. It is consumed by devcontainer.json.
 # Drop audio files into ./test-media/ to have a library to scan.
-# Generated config and DB data are written to ./config/ and ./arangodb-data/
+# Generated config and DB data are written to ./config/ and ./pg_data/
 # (both gitignored — see .gitignore in this directory).
 
 services:
