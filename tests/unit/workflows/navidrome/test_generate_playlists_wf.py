@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -12,7 +12,7 @@ from nomarr.workflows.navidrome.generate_playlists_wf import generate_playlists
 
 def _make_db() -> AsyncMock:
     """Create a mock Database."""
-    return MagicMock()
+    return AsyncMock()
 
 
 def _profile() -> dict[str, object]:
@@ -96,7 +96,7 @@ class TestGeneratePlaylistsWorkflow:
     ) -> None:
         """Filtering every generated playlist should emit a warning."""
         db = _make_db()
-        builder = MagicMock(return_value=[_playlist_entry(f"{'library_files'}/track-1")])
+        builder = AsyncMock(return_value=[_playlist_entry(f"{'library_files'}/track-1")])
         workflow_logger = logging.getLogger("nomarr.workflows.navidrome.generate_playlists_wf")
         original_propagate = workflow_logger.propagate
         workflow_logger.propagate = True

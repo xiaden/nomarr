@@ -38,25 +38,25 @@ def make_library(*, auto_write: bool = False, name: str = "Test Library") -> Lib
 @pytest.fixture
 def mock_library_service() -> MagicMock:
     """Provide a mocked library service dependency."""
-    return MagicMock()
+    return AsyncMock()
 
 
 @pytest.fixture
 def mock_config_service() -> MagicMock:
     """Provide a mocked config service dependency."""
-    return MagicMock()
+    return AsyncMock()
 
 
 @pytest.fixture
 def mock_pipeline_service() -> MagicMock:
     """Provide a mocked pipeline service dependency."""
-    return MagicMock()
+    return AsyncMock()
 
 
 @pytest.fixture
 def mock_vector_maintenance_service() -> MagicMock:
     """Provide a mocked vector maintenance service dependency."""
-    return MagicMock()
+    return AsyncMock()
 
 
 @pytest.fixture

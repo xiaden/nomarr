@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -14,7 +14,7 @@ class TestListHotVectorTargets:
     """Tests for list_hot_vector_targets."""
 
     @patch(f"{ML_IDLE_PROMOTION_MODULE}.discover_backbones")
-    async def test_returns_backbones_with_hot_vectors(self, mock_discover: MagicMock) -> None:
+    async def test_returns_backbones_with_hot_vectors(self, mock_discover: AsyncMock) -> None:
         """Returns backbone IDs where hot count > 0 (no library enumeration)."""
         from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
             list_hot_vector_targets,
@@ -44,7 +44,7 @@ class TestListHotVectorTargets:
         mock_discover.assert_called_once_with("/models")
 
     @patch(f"{ML_IDLE_PROMOTION_MODULE}.discover_backbones")
-    async def test_returns_empty_when_no_backbones(self, mock_discover: MagicMock) -> None:
+    async def test_returns_empty_when_no_backbones(self, mock_discover: AsyncMock) -> None:
         """Returns empty list when no backbones discovered."""
         from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
             list_hot_vector_targets,
@@ -59,7 +59,7 @@ class TestListHotVectorTargets:
         db.ml.get_embedding_stats.assert_not_called()
 
     @patch(f"{ML_IDLE_PROMOTION_MODULE}.discover_backbones")
-    async def test_filters_out_backbones_with_no_hot_vectors(self, mock_discover: MagicMock) -> None:
+    async def test_filters_out_backbones_with_no_hot_vectors(self, mock_discover: AsyncMock) -> None:
         """Backbones with zero or missing hot collections are excluded."""
         from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
             list_hot_vector_targets,
@@ -93,7 +93,7 @@ class TestComputePromotionNlists:
     def test_uses_global_default_group_size(self) -> None:
         from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import compute_promotion_nlists
 
-        db = MagicMock()
+        db = AsyncMock()
         db.ml.get_embedding_stats.return_value = {
             "hot_count": 100,
             "cold_count": 200,
@@ -114,7 +114,7 @@ class TestComputePromotionNlists:
     def test_uses_total_vector_count_from_both_hot_and_cold(self) -> None:
         from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import compute_promotion_nlists
 
-        db = MagicMock()
+        db = AsyncMock()
         db.ml.get_embedding_stats.return_value = {
             "hot_count": 5,
             "cold_count": 7,

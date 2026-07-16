@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -44,9 +44,9 @@ def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
 def _make_db(
     path_map: dict[str, dict[str, str]] | None = None,
     existing_track_keys: list[str] | None = None,
-) -> MagicMock:
+) -> AsyncMock:
     """Create a mock Database with app and library mocks."""
-    db = MagicMock()
+    db = AsyncMock()
     db.library.get_files_by_paths_bulk.return_value = path_map or {}
     db.app.bulk_upsert_nd_tracks.return_value = 0
     db.app.bulk_ensure_nd_file_links.return_value = None
@@ -202,7 +202,7 @@ class TestSyncNavidrome:
         db.app.bulk_upsert_nd_tracks.return_value = 2
         client = AsyncMock()
 
-        def lookup(_db: MagicMock, paths: list[str]) -> dict[str, dict[str, str]]:
+        def lookup(_db: AsyncMock, paths: list[str]) -> dict[str, dict[str, str]]:
             if paths == ["Artist/Album/t1.mp3", "Artist/Album/t2.mp3"]:
                 return {
                     "Artist/Album/t1.mp3": {"_id": f"{'library_files'}/f1"},
@@ -237,7 +237,7 @@ class TestSyncNavidrome:
         db.app.bulk_upsert_nd_tracks.return_value = 205
         client = AsyncMock()
 
-        def lookup(_db: MagicMock, paths: list[str]) -> dict[str, dict[str, str]]:
+        def lookup(_db: AsyncMock, paths: list[str]) -> dict[str, dict[str, str]]:
             return {path: {"_id": f"{'library_files'}/{path}"} for path in paths}
 
         with (

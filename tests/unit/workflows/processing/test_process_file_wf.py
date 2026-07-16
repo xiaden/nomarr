@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -44,7 +44,7 @@ async def test_process_file_workflow_packages_resolved_output_streams_and_skips_
     library_path.absolute = Path("/music/song.flac")
     library_path.library_id = "libraries/lib1"
     embed_result = BackboneEmbeddingResult(
-        embeddings=[BackboneEmbedding(backbone="bb1", heads=[head_model], embeddings=MagicMock())],
+        embeddings=[BackboneEmbedding(backbone="bb1", heads=[head_model], embeddings=AsyncMock())],
         errors={},
         timings={},
     )
@@ -68,7 +68,7 @@ async def test_process_file_workflow_packages_resolved_output_streams_and_skips_
         patch("nomarr.workflows.processing.process_file_wf.compute_model_suite_hash", return_value="suite-hash"),
         patch(
             "nomarr.workflows.processing.process_file_wf.load_audio_mono",
-            return_value=LoadAudioMonoResult(waveform=MagicMock(), sample_rate=16000, duration=120.0),
+            return_value=LoadAudioMonoResult(waveform=AsyncMock(), sample_rate=16000, duration=120.0),
         ),
         patch("nomarr.workflows.processing.process_file_wf.compute_chromaprint", return_value="fp"),
         patch("nomarr.workflows.processing.process_file_wf.compute_backbone_embeddings", return_value=embed_result),

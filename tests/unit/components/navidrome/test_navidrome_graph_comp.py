@@ -30,7 +30,7 @@ from nomarr.components.navidrome.navidrome_graph_comp import (
 @pytest.mark.asyncio
 class TestUpsertNavidromeTrack:
     async def test_calls_app_upsert_nd_track(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
         db.app.upsert_navidrome_track = AsyncMock()
 
         await upsert_navidrome_track(db, "nd-42")
@@ -44,7 +44,7 @@ class TestUpsertNavidromeTrack:
 @pytest.mark.asyncio
 class TestBulkUpsertNavidromeTracks:
     async def test_returns_zero_for_empty_list(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
 
         result = await bulk_upsert_navidrome_tracks(db, [])
 
@@ -52,7 +52,7 @@ class TestBulkUpsertNavidromeTracks:
         db.app.bulk_upsert_navidrome_tracks.assert_not_called()
 
     async def test_delegates_to_app_bulk_upsert(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
         db.app.bulk_upsert_navidrome_tracks = AsyncMock(return_value=3)
 
         result = await bulk_upsert_navidrome_tracks(db, ["a", "b", "c"])
@@ -65,7 +65,7 @@ class TestBulkUpsertNavidromeTracks:
 @pytest.mark.asyncio
 class TestEnsureNavidromeFileLink:
     async def test_delegates_to_app_map(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
         db.app.map_navidrome_track_to_file = AsyncMock()
 
         await ensure_navidrome_file_link(db, "nd-1", 42)
@@ -77,7 +77,7 @@ class TestEnsureNavidromeFileLink:
 @pytest.mark.asyncio
 class TestBulkEnsureNavidromeFileLinks:
     async def test_returns_zero_for_empty_mappings(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
 
         result = await bulk_ensure_navidrome_file_links(db, [])
 
@@ -85,7 +85,7 @@ class TestBulkEnsureNavidromeFileLinks:
         db.app.bulk_map_navidrome_tracks.assert_not_called()
 
     async def test_delegates_to_app_bulk_map(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
         db.app.bulk_map_navidrome_tracks = AsyncMock(return_value=2)
         mappings = [
             {"nd_id": "nd-1", "file_id": 10},
@@ -102,7 +102,7 @@ class TestBulkEnsureNavidromeFileLinks:
 @pytest.mark.asyncio
 class TestListNavidromeTrackKeys:
     async def test_returns_all_keys_as_strings(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
         db.app.legacy_navidrome = MagicMock()
         db.app.legacy_navidrome.list_nd_track_keys = AsyncMock(return_value=[1, 2])
 
@@ -116,14 +116,14 @@ class TestListNavidromeTrackKeys:
 @pytest.mark.asyncio
 class TestDeleteNavidromeTracksCascade:
     async def test_returns_zero_for_empty_list(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
 
         result = await delete_navidrome_tracks_cascade(db, [])
 
         assert result == 0
 
     async def test_cascade_deletes_resolved_tracks(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
         db.app.get_mapped_file_for_navidrome_track = AsyncMock(side_effect=[10, None, 20])
         db.app.delete_navidrome_tracks_for_file = AsyncMock(side_effect=[1, 1])
 
@@ -138,7 +138,7 @@ class TestDeleteNavidromeTracksCascade:
 @pytest.mark.asyncio
 class TestResolveNavidromeTrackToFile:
     async def test_returns_int_file_id(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
         db.app.get_mapped_file_for_navidrome_track = AsyncMock(return_value=42)
 
         result = await resolve_navidrome_track_to_file(db, "nd-1")
@@ -147,7 +147,7 @@ class TestResolveNavidromeTrackToFile:
         db.app.get_mapped_file_for_navidrome_track.assert_called_once_with("nd-1")
 
     async def test_returns_none_when_no_mapping(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
         db.app.get_mapped_file_for_navidrome_track = AsyncMock(return_value=None)
 
         result = await resolve_navidrome_track_to_file(db, "nd-1")
@@ -159,7 +159,7 @@ class TestResolveNavidromeTrackToFile:
 @pytest.mark.asyncio
 class TestResolveFileToNavidromeTrack:
     async def test_returns_nd_id_string(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
         db.app.resolve_file_to_navidrome_track = AsyncMock(return_value="nd-42")
 
         result = await resolve_file_to_navidrome_track(db, 10)
@@ -168,7 +168,7 @@ class TestResolveFileToNavidromeTrack:
         db.app.resolve_file_to_navidrome_track.assert_called_once_with(10)
 
     async def test_returns_none_when_no_mapping(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
         db.app.resolve_file_to_navidrome_track = AsyncMock(return_value=None)
 
         result = await resolve_file_to_navidrome_track(db, 10)
@@ -180,14 +180,14 @@ class TestResolveFileToNavidromeTrack:
 @pytest.mark.asyncio
 class TestBulkResolveNavidromeTracksToFiles:
     async def test_returns_empty_dict_when_no_ids(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
 
         result = await bulk_resolve_navidrome_tracks_to_files(db, [])
 
         assert result == {}
 
     async def test_resolves_multiple_tracks(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
         db.app.get_mapped_file_for_navidrome_track = AsyncMock(side_effect=[10, None, 30])
 
         result = await bulk_resolve_navidrome_tracks_to_files(db, ["nd-1", "nd-2", "nd-3"])
@@ -200,14 +200,14 @@ class TestBulkResolveNavidromeTracksToFiles:
 @pytest.mark.asyncio
 class TestBulkResolveFilesToNavidromeIds:
     async def test_returns_empty_dict_for_empty_input(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
 
         result = await bulk_resolve_files_to_navidrome_ids(db, [])
 
         assert result == {}
 
     async def test_resolves_multiple_files(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
         db.app.resolve_file_to_navidrome_track = AsyncMock(side_effect=["nd-1", None])
 
         result = await bulk_resolve_files_to_navidrome_ids(db, [10, 20])
@@ -220,7 +220,7 @@ class TestBulkResolveFilesToNavidromeIds:
 @pytest.mark.asyncio
 class TestBulkUpsertNavidromePlays:
     async def test_records_plays(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
         db.app.record_navidrome_play = AsyncMock(side_effect=[1, 1])
         plays = [
             {"nd_id": "nd-1", "playcount": 5, "last_played": 1700000000, "played_at": 1700000000},
@@ -233,7 +233,7 @@ class TestBulkUpsertNavidromePlays:
         assert db.app.record_navidrome_play.call_count == 2
 
     async def test_returns_zero_for_empty_payload(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
 
         result = await bulk_upsert_navidrome_plays(db, "user1", [])
 
@@ -245,7 +245,7 @@ class TestBulkUpsertNavidromePlays:
 @pytest.mark.asyncio
 class TestGetTopNavidromePlays:
     async def test_returns_empty_when_top_n_is_zero(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
 
         result = await get_top_navidrome_plays(db, "user1", 0)
 
@@ -253,7 +253,7 @@ class TestGetTopNavidromePlays:
         db.app.get_top_navidrome_plays.assert_not_called()
 
     async def test_returns_empty_when_top_n_is_negative(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
 
         result = await get_top_navidrome_plays(db, "user1", -5)
 
@@ -261,7 +261,7 @@ class TestGetTopNavidromePlays:
         db.app.get_top_navidrome_plays.assert_not_called()
 
     async def test_coerces_rows_to_track_play_data(self) -> None:
-        db = MagicMock()
+        db = AsyncMock()
         db.app.get_top_navidrome_plays = AsyncMock(
             return_value=[
                 {

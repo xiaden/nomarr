@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock
 import pytest
 
 from nomarr.components.library.file_tags_comp import get_file_tags_with_path
-from nomarr.helpers.dataclasses.tags_dataclass import Tag
 
 
 class TestGetFileTagsWithPath:
@@ -17,38 +16,39 @@ class TestGetFileTagsWithPath:
     @pytest.mark.mocked
     async def test_returns_none_when_file_not_found(self) -> None:
         mock_db = AsyncMock()
-        mock_db.library_files.get_file.return_value = None
+        mock_db.library.get_file.return_value = None
 
-        result = await get_file_tags_with_path(mock_db, f"{'library_files'}/missing")
+        result = await get_file_tags_with_path(mock_db, 1)
 
         assert result is None
-        mock_db.library_files.get_file.assert_called_once_with(f"{'library_files'}/missing")
-        mock_db.tags.get_song_tags.assert_not_called()
+        mock_db.library.get_file.assert_called_once_with(1)
+        mock_db.library.list_tags_for_file.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     async def test_returns_path_and_empty_tags_when_no_tags(self) -> None:
         mock_db = AsyncMock()
         file_doc = {"path": "D:/Music/song.flac"}
-        mock_db.library_files.get_file.return_value = file_doc
-        mock_db.tags.get_song_tags.return_value = []
+        mock_db.library.get_file.return_value = file_doc
+        mock_db.library.list_tags_for_file.return_value = []
 
-        result = await get_file_tags_with_path(mock_db, f"{'library_files'}/1")
+        result = await get_file_tags_with_path(mock_db, 1)
 
         assert result == {"path": "D:/Music/song.flac", "tags": []}
-        mock_db.library_files.get_file.assert_called_once_with(f"{'library_files'}/1")
-        mock_db.tags.get_song_tags.assert_called_once_with(f"{'library_files'}/1", nomarr_only=False)
+        mock_db.library.get_file.assert_called_once_with(1)
+        mock_db.library.list_tags_for_file.assert_called_once_with(1)
 
     @pytest.mark.unit
     @pytest.mark.mocked
     async def test_transforms_single_value_tags(self) -> None:
         mock_db = AsyncMock()
         file_doc = {"path": "D:/Music/song.flac"}
-        mock_db.library_files.get_file.return_value = file_doc
-        tag = Tag(name="nom:mood", values=("happy",))
-        mock_db.tags.get_song_tags.return_value = [tag]
+        mock_db.library.get_file.return_value = file_doc
+        mock_db.library.list_tags_for_file.return_value = [
+            {"name": "nom:mood", "value": "happy"},
+        ]
 
-        result = await get_file_tags_with_path(mock_db, f"{'library_files'}/1")
+        result = await get_file_tags_with_path(mock_db, 1)
 
         assert result == {
             "path": "D:/Music/song.flac",
@@ -67,11 +67,13 @@ class TestGetFileTagsWithPath:
     async def test_transforms_multi_value_tags_to_individual_entries(self) -> None:
         mock_db = AsyncMock()
         file_doc = {"path": "D:/Music/song.flac"}
-        mock_db.library_files.get_file.return_value = file_doc
-        tag = Tag(name="genre", values=("a", "b"))
-        mock_db.tags.get_song_tags.return_value = [tag]
+        mock_db.library.get_file.return_value = file_doc
+        mock_db.library.list_tags_for_file.return_value = [
+            {"name": "genre", "value": "a"},
+            {"name": "genre", "value": "b"},
+        ]
 
-        result = await get_file_tags_with_path(mock_db, f"{'library_files'}/1")
+        result = await get_file_tags_with_path(mock_db, 1)
 
         assert result == {
             "path": "D:/Music/song.flac",
@@ -96,9 +98,9 @@ class TestGetFileTagsWithPath:
     async def test_passes_nomarr_only_flag(self) -> None:
         mock_db = AsyncMock()
         file_doc = {"path": "D:/Music/song.flac"}
-        mock_db.library_files.get_file.return_value = file_doc
-        mock_db.tags.get_song_tags.return_value = []
+        mock_db.library.get_file.return_value = file_doc
+        mock_db.library.list_tags_for_file.return_value = []
 
-        await get_file_tags_with_path(mock_db, f"{'library_files'}/1", nomarr_only=True)
+        await get_file_tags_with_path(mock_db, 1, nomarr_only=True)
 
-        mock_db.tags.get_song_tags.assert_called_once_with(f"{'library_files'}/1", nomarr_only=True)
+        mock_db.library.list_tags_for_file.assert_called_once_with(1)

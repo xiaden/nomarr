@@ -23,6 +23,7 @@ class TestCreateLibrary:
     async def test_passes_file_write_mode_to_db(self) -> None:
         """Explicit file_write_mode should be forwarded to persistence."""
         mock_db = AsyncMock()
+        mock_db.library.get_scan.return_value = None
 
         with (
             patch(
@@ -71,6 +72,7 @@ class TestCreateLibrary:
     async def test_default_file_write_mode_is_full(self) -> None:
         """Default file_write_mode should remain ``full`` when omitted."""
         mock_db = AsyncMock()
+        mock_db.library.get_scan.return_value = None
 
         with (
             patch(

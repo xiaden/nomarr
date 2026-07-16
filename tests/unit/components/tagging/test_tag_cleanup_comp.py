@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -16,9 +16,9 @@ def _make_cleanup_db(
     *,
     orphan_ids: list[str],
     delete_result: int = 0,
-) -> MagicMock:
+) -> AsyncMock:
     """Build a db mock for orphan cleanup tests."""
-    mock_db = MagicMock()
+    mock_db = AsyncMock()
     mock_db.library.maintenance.list_orphaned_tag_ids.return_value = orphan_ids
     mock_db.library.maintenance.delete_tags_by_ids.return_value = delete_result
     return mock_db

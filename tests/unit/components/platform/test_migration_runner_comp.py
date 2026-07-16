@@ -20,10 +20,10 @@ from nomarr.components.platform.migration_runner_comp import (
 
 def _make_migration_module(version: str, description: str = "Test migration") -> MagicMock:
     """Return a mock module with all required migration attributes."""
-    m = MagicMock()
+    m = AsyncMock()
     m.MIGRATION_VERSION = version
     m.DESCRIPTION = description
-    m.upgrade = MagicMock()
+    m.upgrade = AsyncMock()
     return m
 
 
@@ -57,7 +57,7 @@ class TestDiscoverMigrations:
         (tmp_path / "V001_bad.py").write_text("")
         bad_module = MagicMock(spec=["DESCRIPTION", "upgrade"])
         bad_module.DESCRIPTION = "Missing version"
-        bad_module.upgrade = MagicMock()
+        bad_module.upgrade = AsyncMock()
 
         with (
             patch("nomarr.components.platform.migration_runner_comp.MIGRATIONS_DIR", tmp_path),

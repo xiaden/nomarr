@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -58,7 +58,7 @@ def _make_db(
     seed_vector: list[float] | None = None,
     ann_results: list[dict] | None = None,
     file_docs: list[dict] | None = None,
-) -> MagicMock:
+) -> AsyncMock:
     """Build a mock Database with pre-configured return values."""
     if seed_vector is None:
         seed_vector = [0.1, 0.2, 0.3]
@@ -67,12 +67,12 @@ def _make_db(
     if file_docs is None:
         file_docs = []
 
-    db = MagicMock()
-    db._resolve_seed_descriptor_to_file = MagicMock(return_value=(seed_file_id, seed_resolution_status))
-    db._get_cold_track_vector = MagicMock(
+    db = AsyncMock()
+    db._resolve_seed_descriptor_to_file = AsyncMock(return_value=(seed_file_id, seed_resolution_status))
+    db._get_cold_track_vector = AsyncMock(
         return_value={"vector_n": seed_vector, "file_id": seed_file_id} if seed_file_id else None,
     )
-    db._search_similar_cold_track_vectors = MagicMock(return_value=ann_results)
+    db._search_similar_cold_track_vectors = AsyncMock(return_value=ann_results)
     db.library.get_files_by_ids_with_tags.return_value = file_docs
     return db
 

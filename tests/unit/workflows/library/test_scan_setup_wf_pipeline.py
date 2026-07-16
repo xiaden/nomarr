@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -18,7 +18,7 @@ class TestScanSetupWorkflowPipeline:
     @pytest.mark.mocked
     def helper_scan_setup_transitions_library_to_scanning_pipeline_state(self) -> None:
         """Scan setup should move the library pipeline state to scanning."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
         library = LibraryDict(
             _id="libraries/abc123",
             _key="abc123",

@@ -273,7 +273,7 @@ class FileWatcherService:
             raise ValueError(msg)
 
         library_root = Path(library["root_path"])
-        if not library_root.exists():
+        if not await asyncio.to_thread(library_root.exists):
             msg = f"Library path does not exist: {library_root}"
             raise ValueError(msg)
 

@@ -30,11 +30,11 @@ def processor_config() -> ProcessorConfig:
 @pytest.fixture
 def worker_db() -> MagicMock:
     """Provide a mocked database handle with worker connection metadata."""
-    db = MagicMock()
+    db = AsyncMock()
     db.hosts = "http://localhost:8529"
     db.password = "test"
-    db.meta = MagicMock()
-    db.worker_restart_policy = MagicMock()
+    db.meta = AsyncMock()
+    db.worker_restart_policy = AsyncMock()
     db.worker_restart_policy.component_id.get.return_value = None
     return db
 

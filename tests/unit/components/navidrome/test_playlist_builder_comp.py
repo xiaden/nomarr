@@ -366,7 +366,7 @@ async def test_hidden_gems_empty_cold_collection_returns_empty() -> None:
 
     with patch(
         f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files",
-        new=lambda db, file_ids, name: ["Artist A"],
+        new=lambda _db, _file_ids, _name: ["Artist A"],
     ):
         result = await build_hidden_gems_playlist(db, ctx)
     assert result == []
@@ -381,7 +381,7 @@ async def test_hidden_gems_no_known_artists_skips_artist_filter() -> None:
     db = _make_db(cold_count=1000, search_results=[[_make_result("f10"), _make_result("f11")], [_make_result("f12")]])
 
     with (
-        patch(f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files", new=lambda db, file_ids, name: []),
+        patch(f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files", new=lambda _db, _file_ids, _name: []),
         patch(f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file") as mock_grouped,
     ):
         result = await build_hidden_gems_playlist(db, ctx)
@@ -406,10 +406,10 @@ async def test_hidden_gems_known_artists_excludes_artist_tracks() -> None:
     db = _make_db(cold_count=1000, search_results=[ann_c1, ann_c2])
 
     with (
-        patch(f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files", new=lambda db, file_ids, name: ["Known Artist"]),
+        patch(f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files", new=lambda _db, _file_ids, _name: ["Known Artist"]),
         patch(
             f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file",
-            new=lambda db, file_ids, name: {
+            new=lambda _db, _file_ids, _name: {
                 "f10": {"Unknown Artist"},
                 "f11": {"Known Artist"},
                 "f12": {"Another Unknown"},
@@ -438,10 +438,10 @@ async def test_hidden_gems_both_played_and_artist_exclusion() -> None:
     db = _make_db(cold_count=1000, search_results=[ann_c1, ann_c2])
 
     with (
-        patch(f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files", new=lambda db, file_ids, name: ["Known Artist"]),
+        patch(f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files", new=lambda _db, _file_ids, _name: ["Known Artist"]),
         patch(
             f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file",
-            new=lambda db, file_ids, name: {
+            new=lambda _db, _file_ids, _name: {
                 "f10": {"Known Artist"},
                 "f11": {"Unknown"},
                 "f12": {"Other Unknown"},

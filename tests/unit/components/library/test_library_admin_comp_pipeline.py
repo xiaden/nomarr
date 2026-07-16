@@ -20,6 +20,7 @@ class TestCreateLibraryPipeline:
     async def test_create_library_initializes_pipeline_state_after_persisting(self) -> None:
         """Library creation should pass pipeline defaults to create_library_record."""
         mock_db = AsyncMock()
+        mock_db.library.get_scan.return_value = None
 
         with (
             patch(
@@ -64,6 +65,7 @@ class TestCreateLibraryPipeline:
     async def test_create_library_passes_library_auto_write_to_persistence(self) -> None:
         """Explicit library_auto_write should be forwarded to persistence."""
         mock_db = AsyncMock()
+        mock_db.library.get_scan.return_value = None
 
         with (
             patch(

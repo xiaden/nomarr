@@ -233,8 +233,8 @@ class TestGetTagEdgeRows:
         mock_db = AsyncMock()
         mock_db.library.list_tags.side_effect = [
             [
-                {"_id": "tags/1", "value": "happy"},
-                {"_id": "tags/2", "value": "calm"},
+                {"id": 1, "value": "happy"},
+                {"id": 2, "value": "calm"},
             ],
             [],
         ]
@@ -246,8 +246,8 @@ class TestGetTagEdgeRows:
         ) -> list[dict[str, str]]:
             assert kwargs == {"limit": None}
             return {
-                "happy": [{"_id": f"{'library_files'}/1"}],
-                "calm": [{"_id": f"{'library_files'}/2"}],
+                "happy": [{"id": 1}],
+                "calm": [{"id": 2}],
             }[tag_value]
 
         mock_db.library.search_files_by_tag.side_effect = search_files_by_tag_side_effect
@@ -255,8 +255,8 @@ class TestGetTagEdgeRows:
         result = await _get_tag_edge_rows(mock_db, "nom:mood-strict")
 
         assert result == [
-            (f"{'library_files'}/1", "happy"),
-            (f"{'library_files'}/2", "calm"),
+            (1, "happy"),
+            (2, "calm"),
         ]
         mock_db.library.search_files_by_tag.assert_any_call("nom:mood-strict", "happy", limit=None)
         mock_db.library.search_files_by_tag.assert_any_call("nom:mood-strict", "calm", limit=None)

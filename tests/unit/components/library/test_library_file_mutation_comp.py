@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -134,9 +134,9 @@ class TestDeleteLibraryFile:
     async def test_deletes_file_id_via_library_intent(self) -> None:
         mock_db = AsyncMock()
 
-        await delete_library_file(mock_db, f"{'library_files'}/123")
+        await delete_library_file(mock_db, 123)
 
-        mock_db.library.remove_file.assert_called_once_with(f"{'library_files'}/123")
+        mock_db.library.remove_file.assert_called_once_with(123)
         mock_db.library.remove_file_by_path.assert_not_called()
 
     @pytest.mark.unit
@@ -192,7 +192,7 @@ class TestUpsertLibraryFile:
     async def test_adds_file_to_library_with_expected_payload(self) -> None:
         mock_db = AsyncMock()
         mock_db.library.add_file_to_library.return_value = f"{'library_files'}/123"
-        mock_path = AsyncMock()
+        mock_path = MagicMock()
         mock_path.is_valid.return_value = True
         mock_path.relative = "relative/song.mp3"
         mock_path.absolute = "C:/music/song.mp3"
@@ -233,7 +233,7 @@ class TestUpsertLibraryFile:
     @pytest.mark.unit
     async def test_raises_value_error_for_invalid_path(self) -> None:
         mock_db = AsyncMock()
-        mock_path = AsyncMock()
+        mock_path = MagicMock()
         mock_path.is_valid.return_value = False
         mock_path.status = "invalid"
         mock_path.reason = "bad path"
@@ -272,7 +272,7 @@ class TestUpdateFilePath:
             f"{'library_files'}/123",
             "C:/music/new-song.mp3",
         )
-        mock_db.library.update_file.assert_called_once_with(
+        mock_db.library.file_repo.update_file.assert_called_once_with(
             f"{'library_files'}/123",
             {
                 "file_size": 4321,
@@ -298,7 +298,7 @@ class TestUpdateFilePath:
                 normalized_path="relative/new-song.mp3",
             )
 
-        mock_db.library.update_file.assert_called_once_with(
+        mock_db.library.file_repo.update_file.assert_called_once_with(
             f"{'library_files'}/123",
             {
                 "file_size": 4321,
@@ -320,9 +320,9 @@ class TestUpdateFileModifiedTime:
 
         await update_file_modified_time(mock_db, "abc123", 7777)
 
-        mock_db.library.update_file.assert_called_once_with(
-            f"{'library_files'}/abc123",
-            {"modified_time": 7777},
+        mock_db.library.update_library_file_modified_time.assert_called_once_with(
+            "abc123",
+            7777,
         )
 
 
@@ -359,9 +359,9 @@ class TestSetChromaprint:
 
         await set_chromaprint(mock_db, "abc123", "chromaprint-value")
 
-        mock_db.library.update_file.assert_called_once_with(
-            f"{'library_files'}/abc123",
-            {"chromaprint": "chromaprint-value"},
+        mock_db.library.set_library_file_chromaprint.assert_called_once_with(
+            "abc123",
+            "chromaprint-value",
         )
 
 
@@ -376,7 +376,7 @@ class TestUpdateLastTaggedAt:
             mock_now_ms.return_value.value = 9999
             await update_last_tagged_at(mock_db, f"{'library_files'}/123")
 
-        mock_db.library.update_file.assert_called_once_with(
+        mock_db.library.update_library_file_last_tagged_at.assert_called_once_with(
             f"{'library_files'}/123",
-            {"last_tagged_at": 9999},
+            9999,
         )

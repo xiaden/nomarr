@@ -224,7 +224,7 @@ class TestComputeTasteProfile:
         plays = [_make_play(i, 1, 1000) for i in range(1, 4)]
         db.ml.list_file_vectors.return_value = []
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda db, file_ids, name: {}):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: {}):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -243,7 +243,7 @@ class TestComputeTasteProfile:
         _configure_list_file_vectors(db, vector_docs)
         genre_map = {i: {"Rock"} for i in range(1, 4)}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda db, file_ids, name: genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -274,7 +274,7 @@ class TestComputeTasteProfile:
         for i in range(1, 4):
             genre_map[i + 100] = {"Electronic"}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda db, file_ids, name: genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -307,7 +307,7 @@ class TestComputeTasteProfile:
         for i in range(1, 4):
             genre_map[i + 100] = {"Electronic"}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda db, file_ids, name: genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -328,7 +328,7 @@ class TestComputeTasteProfile:
 
         with patch(
             f"{TAGS_PATH}.get_tag_values_grouped_by_file",
-            new=lambda db, file_ids, name: {i: {"rock"} for i in range(1, 11)},
+            new=lambda _db, _file_ids, _name: {i: {"rock"} for i in range(1, 11)},
         ):
             result = await compute_taste_profile(
                 db,
@@ -355,7 +355,7 @@ class TestComputeTasteProfile:
 
         with patch(
             f"{TAGS_PATH}.get_tag_values_grouped_by_file",
-            new=lambda db, file_ids, name: {i: {"rock"} for i in range(1, 6)},
+            new=lambda _db, _file_ids, _name: {i: {"rock"} for i in range(1, 6)},
         ):
             result = await compute_taste_profile(
                 db,
@@ -381,7 +381,7 @@ class TestComputeTasteProfile:
         for i in range(1, 6):
             genre_map[i] = {"Rock"}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda db, file_ids, name: genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -405,7 +405,7 @@ class TestComputeTasteProfile:
         for i in range(1, 4):
             genre_map[i] = {"Rock"}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda db, file_ids, name: genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -428,7 +428,7 @@ class TestComputeTasteProfile:
         for i in range(1, 3):
             genre_map[i] = {"Rock"}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda db, file_ids, name: genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -458,7 +458,7 @@ class TestComputeTasteProfile:
 
         _configure_list_file_vectors(db, vector_docs)
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda db, file_ids, name: genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -485,7 +485,7 @@ class TestComputeTasteProfile:
         _configure_list_file_vectors(db, vector_docs)
         genre_map = {1: {"A"}, 2: {"B"}, 3: {"C"}, 4: {"D"}, 5: {"E"}, 6: {"F"}}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda db, file_ids, name: genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
             result = await compute_taste_profile(
                 db,
                 "user1",
@@ -507,7 +507,7 @@ class TestComputeTasteProfile:
         _configure_list_file_vectors(db, vector_docs)
         genre_map = {1: {"Jazz"}, 2: {"Jazz"}, 3: {"Jazz"}, 101: {"Funk"}, 102: {"Funk"}, 103: {"Funk"}}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda db, file_ids, name: genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=lambda _db, _file_ids, _name: genre_map):
             result = await compute_taste_profile(
                 db,
                 "user1",

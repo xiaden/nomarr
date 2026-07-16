@@ -10,10 +10,10 @@ Results stored as measured_backbone_vram_mb and estimated_worker_ram_mb.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import os
-import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -359,7 +359,7 @@ async def _wait_for_probe_completion(
             # Probe completed but we missed the estimate query - retry
             continue
 
-        time.sleep(PROBE_POLL_INTERVAL_MS / 1000)
+        await asyncio.sleep(PROBE_POLL_INTERVAL_MS / 1000)
 
     # Timeout or lock released without estimate - use conservative fallback
     logger.warning("[ml_capacity_probe] Probe timeout/failure, using conservative estimates (max_workers=1)")
