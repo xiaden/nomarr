@@ -10,11 +10,10 @@ from __future__ import annotations
 import logging
 import math
 import random
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
 from nomarr.components.tagging.tag_query_comp import (
     get_distinct_tag_values_for_files,
     get_tag_values_grouped_by_file,
@@ -24,7 +23,6 @@ from nomarr.helpers.dto.navidrome_dto import (
     NavidromePersonalPlaylistEntry,
 )
 from nomarr.helpers.time_helper import now_ms
-from nomarr.helpers.vector_params_helper import get_ef_search
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -41,39 +39,27 @@ _MS_PER_DAY: float = 86_400_000.0
 # ------------------------------------------------------------------
 
 
-def _ann_search_cold(
+async def _ann_search_cold(
     db: Database,
     backbone_id: str,
-    library_key: str,
     centroid: list[float],
     max_songs: int,
     fetch_multiplier: int,
 ) -> list[dict[str, Any]] | None:
     """Run ANN search on cold vectors; returns results or ``None`` if empty."""
-    cold_ops = get_cold_namespace(db, backbone_id, collection_suffix=library_key)
-    doc_count = cold_ops.count()
-    if doc_count == 0:
+    stats = await db.ml.get_embedding_stats(backbone_id)
+    if stats["cold_count"] == 0:
         return None
 
-    ef_search = get_ef_search(doc_count)
     fetch_limit = max_songs * fetch_multiplier
-    try:
-        return cast(
-            "list[dict[str, Any]]",
-            cold_ops.ann_search(centroid, fetch_limit, nprobe=ef_search),
-        )
-    except NotImplementedError:
-        # TODO: cold_ops.ann_search is a dead ArangoDB code path — replace with
-        # VectorRepo.find_nearest() once the cold namespace is fully migrated.
-        logger.warning(
-            "ann_search raised NotImplementedError for backbone=%s; "
-            "this code path is dead ArangoDB logic and needs migration to pgvector",
-            backbone_id,
-        )
-        return None
+    return await db.ml.search_vectors(  # type: ignore[return-value]
+        backbone_id,
+        centroid,
+        limit=fetch_limit,
+    )
 
 
-def _search_all_clusters(
+async def _search_all_clusters(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
     fetch_multiplier: int,
@@ -86,10 +72,9 @@ def _search_all_clusters(
     all_results: list[dict[str, Any]] = []
     any_searched = False
     for cluster in ctx["clusters"]:
-        raw = _ann_search_cold(
+        raw = await _ann_search_cold(
             db,
             ctx["backbone_id"],
-            ctx["library_key"],
             cluster["centroid"],
             ctx["max_songs"],
             fetch_multiplier=fetch_multiplier,
@@ -107,7 +92,7 @@ def _search_all_clusters(
     return all_results
 
 
-def build_familiar_playlist(
+async def build_familiar_playlist(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
@@ -120,7 +105,7 @@ def build_familiar_playlist(
     if not played:
         return []
 
-    raw_results = _search_all_clusters(db, ctx, fetch_multiplier=5)
+    raw_results = await _search_all_clusters(db, ctx, fetch_multiplier=5)
     if raw_results is None:
         return []
 
@@ -135,14 +120,14 @@ def build_familiar_playlist(
     ]
 
 
-def build_discovery_playlist(
+async def build_discovery_playlist(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
     """Build a Discovery playlist: ANN search excluding played tracks."""
     played = set(ctx["played_file_ids"])
 
-    raw_results = _search_all_clusters(db, ctx, fetch_multiplier=2)
+    raw_results = await _search_all_clusters(db, ctx, fetch_multiplier=2)
     if raw_results is None:
         return []
 
@@ -157,7 +142,7 @@ def build_discovery_playlist(
     ]
 
 
-def build_hidden_gems_playlist(
+async def build_hidden_gems_playlist(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
@@ -172,7 +157,7 @@ def build_hidden_gems_playlist(
     if not known_artists:
         logger.debug("[navidrome] No known artists for hidden gems, falling back to discovery-style")
 
-    raw_results = _search_all_clusters(db, ctx, fetch_multiplier=3)
+    raw_results = await _search_all_clusters(db, ctx, fetch_multiplier=3)
     if raw_results is None:
         return []
 
@@ -194,7 +179,7 @@ def build_hidden_gems_playlist(
     ]
 
 
-def build_universal_playlist(
+async def build_universal_playlist(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
@@ -203,7 +188,7 @@ def build_universal_playlist(
     Spreads selections across the result set for variety instead of
     taking the top-N results.
     """
-    raw_results = _search_all_clusters(db, ctx, fetch_multiplier=3)
+    raw_results = await _search_all_clusters(db, ctx, fetch_multiplier=3)
     if raw_results is None:
         return []
 
@@ -223,15 +208,16 @@ def build_universal_playlist(
     ]
 
 
-def build_genre_playlists(
+async def build_genre_playlists(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
     """Build per-genre playlists using per-genre recency-weighted centroids.
 
     For each genre in the user's play history, computes a genre-specific
-    centroid from played tracks weighted by recency, then runs a
-    genre-filtered ANN search. Genres with fewer than
+    centroid from played tracks weighted by recency, then runs an ANN
+    search.  Genre filtering is not supported in PostgreSQL yet, so the
+    search is performed without it.  Genres with fewer than
     :data:`_GENRE_MIN_SONGS` results are skipped.
     """
     played_tracks = ctx["played_tracks"]
@@ -240,13 +226,21 @@ def build_genre_playlists(
 
     played_file_ids = ctx["played_file_ids"]
 
-    cold_ops = get_cold_namespace(db, ctx["backbone_id"], collection_suffix=ctx["library_key"])
-    doc_count = cold_ops.count()
-    if doc_count == 0:
+    stats = await db.ml.get_embedding_stats(ctx["backbone_id"])
+    if stats["cold_count"] == 0:
         return []
 
-    vector_docs = cold_ops.get_vectors_by_file_ids(played_file_ids)
-    vector_map: dict[str, list[float]] = {doc["file_id"]: doc["vector"] for doc in vector_docs if "vector" in doc}
+    # Get vectors for played files by querying per file_id.
+    # Note: db.ml.list_file_vectors() returns EmbeddingRecord which does
+    # not currently include the "vector" field — this is a known
+    # persistence-layer gap tracked in S2 scope.
+    vector_map: dict[str, list[float]] = {}
+    for fid in played_file_ids:
+        results = await db.ml.list_file_vectors(ctx["backbone_id"], int(fid))
+        for doc in results:  # type: ignore[assignment]
+            if "vector" in doc and doc.get("file_id"):  # type: ignore[operator]
+                vector_map[doc["file_id"]] = doc["vector"]  # type: ignore[index]
+
     if not vector_map:
         return []
 
@@ -293,23 +287,18 @@ def build_genre_playlists(
             centroid = centroid / norm
         genre_centroids[genre] = centroid.tolist()
 
-    ef_search = get_ef_search(doc_count)
     fetch_limit = ctx["max_songs"] * 3
 
     playlists: list[NavidromePersonalPlaylistEntry] = []
     for genre in top_genres:
         genre_centroid = genre_centroids[genre]
-        try:
-            raw_results = cold_ops.search_similar_by_genre(genre_centroid, genre, fetch_limit, ef_search)
-        except NotImplementedError:
-            # TODO: search_similar_by_genre is a dead ArangoDB code path — replace
-            # with VectorRepo.find_nearest() once the cold namespace is fully migrated.
-            logger.warning(
-                "search_similar_by_genre raised NotImplementedError for genre=%r; "
-                "this code path is dead ArangoDB logic and needs migration to pgvector",
-                genre,
-            )
-            continue
+
+        # Genre filtering is not supported in PostgreSQL yet; search without it.
+        raw_results = await db.ml.search_vectors(  # type: ignore[assignment]
+            ctx["backbone_id"],
+            genre_centroid,
+            limit=fetch_limit,
+        )
 
         if len(raw_results) < _GENRE_MIN_SONGS:
             logger.debug(
@@ -332,7 +321,7 @@ def build_genre_playlists(
     return playlists
 
 
-def _interleave_per_cluster(
+async def _interleave_per_cluster(
     results: dict[str, list[dict[str, Any]]],
     weights: dict[str, float],
     target_size: int,

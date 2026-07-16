@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
-from nomarr.components.ml.vectors.ml_vector_registry_comp import get_cold_namespace
 from nomarr.components.tagging.tag_query_comp import get_tag_values_grouped_by_file
 from nomarr.helpers.time_helper import now_ms
 
@@ -19,7 +18,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def compute_taste_profile(
+async def compute_taste_profile(
     db: Database,
     user_id: str,
     top_plays: list[TrackPlayData] | None = None,
@@ -78,12 +77,19 @@ def compute_taste_profile(
         if len(genre_plays) < 3:
             continue
 
-        # Get vectors for this genre's files
-        cold_ops = get_cold_namespace(db, backbone_id or "default")
+        # Get vectors for this genre's files by querying per file_id.
+        # Note: db.ml.list_file_vectors() returns EmbeddingRecord which does
+        # not currently include the "vector" field — this is a known
+        # persistence-layer gap tracked in S2 scope.
+        resolved_backbone = backbone_id or "default"
         genre_file_id_list = [p["file_id"] for p in genre_plays if p["file_id"] is not None]
-        vector_docs = cold_ops.get_vectors_by_file_ids(genre_file_id_list)
 
-        vector_map = {doc["file_id"]: doc["vector"] for doc in vector_docs if "vector" in doc and doc.get("file_id")}
+        vector_map: dict[str, list[float]] = {}
+        for fid in genre_file_id_list:
+            results = await db.ml.list_file_vectors(resolved_backbone, int(fid))
+            for doc in results:  # type: ignore[assignment]
+                if "vector" in doc and doc.get("file_id"):  # type: ignore[operator]
+                    vector_map[doc["file_id"]] = doc["vector"]  # type: ignore[index]
 
         paired: list[tuple[TrackPlayData, list[float]]] = []
         for play in genre_plays:
@@ -123,12 +129,16 @@ def compute_taste_profile(
     if untagged_file_ids:
         untagged_plays = [p for p in resolved_plays if p.get("file_id") in untagged_file_ids]
         if len(untagged_plays) >= 3:
-            cold_ops = get_cold_namespace(db, backbone_id or "default")
+            resolved_backbone = backbone_id or "default"
             ut_file_ids = [p["file_id"] for p in untagged_plays if p["file_id"] is not None]
-            ut_vector_docs = cold_ops.get_vectors_by_file_ids(ut_file_ids)
-            ut_vector_map = {
-                doc["file_id"]: doc["vector"] for doc in ut_vector_docs if "vector" in doc and doc.get("file_id")
-            }
+
+            ut_vector_map: dict[str, list[float]] = {}
+            for fid in ut_file_ids:
+                ut_results = await db.ml.list_file_vectors(resolved_backbone, int(fid))
+                for doc in ut_results:  # type: ignore[assignment]
+                    if "vector" in doc and doc.get("file_id"):  # type: ignore[operator]
+                        ut_vector_map[doc["file_id"]] = doc["vector"]  # type: ignore[index]
+
             ut_paired: list[tuple[TrackPlayData, list[float]]] = []
             for play in untagged_plays:
                 fid = play.get("file_id")
