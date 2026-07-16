@@ -2,7 +2,7 @@
 
 **Audience:** Developers working on worker processes, health monitoring, or debugging worker behavior.
 
-Nomarr uses a unified discovery-based worker system for background ML processing. Workers query `library_files` for work and claim files via the `worker_claims` collection. This document describes the worker lifecycle, claim-based processing, and crash recovery.
+Nomarr uses a unified discovery-based worker system for background ML processing. Workers query `library_files` for work and claim files via the `worker_claims` table. This document describes the worker lifecycle, claim-based processing, and crash recovery.
 
 ---
 
@@ -185,18 +185,18 @@ file_id = discover_and_claim_file(
 
  | Operation | Constructor accessor | Description |
  | ----------- | ---------------------- | ------------- |
- | Claim file | `worker_claims.insert([claim_doc])` | Insert claim with deterministic `_key` (atomic uniqueness) |
+ | Claim file | `worker_claims.insert([claim_doc])` | Insert claim with deterministic key (atomic uniqueness) |
  | Release claim | `worker_claims.file_id.delete(file_id)` | Delete claim after processing |
  | Get claim | `worker_claims.file_id.get(file_id)` | Check if file is claimed |
  | Worker claims | `worker_claims.worker_id.get.many(worker_id, limit=worker_claims.count())` | All claims held by a worker |
- | Release all | `worker_claims.delete([claim["_id"] for claim in claims])` | Release all claims (crash recovery) |
- | Cleanup stale | `worker_claims.get.many.by_filter({}, limit=None)` + `worker_claims.delete(...)` | Enumerate claims via constructor verbs, filter stale rows in component code, then delete by `_id` |
+ | Release all | `worker_claims.delete([claim["id"] for claim in claims])` | Release all claims (crash recovery) |
+ | Cleanup stale | `worker_claims.get.many.by_filter({}, limit=None)` + `worker_claims.delete(...)` | Enumerate claims via constructor verbs, filter stale rows in component code, then delete by `id` |
 
 **Claim document structure:**
 
 ```json
 {
-  "_key": "claim_{file_key}",
+  "id": "claim_{file_id}",
   "file_id": "library_files/12345",
   "worker_id": "worker:discovery:0",
   "claimed_at": 1705779600000
@@ -249,7 +249,7 @@ PIPELINE|calibration_trigger
 
 ### 5. Pause/Resume
 
-`WorkerSystemService` controls workers globally via the `worker_enabled` flag in the `meta` collection:
+`WorkerSystemService` controls workers globally via the `worker_enabled` flag in the `meta` table:
 
 ```python
 worker_svc.disable_worker_system()  # Disables processing, stops workers
@@ -292,7 +292,7 @@ When `HealthMonitorService` transitions a worker to `dead`, it calls `WorkerSyst
 
 1. **Release file claims:** `release_claims_for_worker(worker_id)` frees all claimed files for rediscovery
 2. **Release VRAM promises:** Reclaims fleet headroom from the dead worker
-3. **Consult restart policy:** `worker_restart_policy` collection tracks per-worker restart count and history
+3. **Consult restart policy:** `worker_restart_policy` table tracks per-worker restart count and history
 4. **Decision:**
    - **Restart:** Increment restart count, schedule replacement worker with backoff delay
    - **Mark failed:** Call `health_monitor.set_failed()` → permanent, no further monitoring
@@ -304,7 +304,7 @@ Restart decisions use `should_restart_worker(restart_count, last_restart_wall_ms
 - `action="restart"` with `backoff_seconds` (exponential backoff)
 - `action="mark_failed"` with `failure_reason` (restart limit exceeded)
 
-**Restart state** is tracked in `worker_restart_policy` collection per component ID.
+**Restart state** is tracked in `worker_restart_policy` table per component ID.
 
 ### Claim Recovery
 
@@ -414,7 +414,7 @@ docker logs nomarr 2>&1 | grep "worker:discovery:0"
 
 - Check logs for specific file paths causing crashes
 - Verify VRAM availability (effnet backbone requires significant GPU memory)
-- Check restart count via `worker_restart_policy` collection
+- Check restart count via `worker_restart_policy` table
 - Inspect problematic files with `ffprobe`
 
 **`[vram_probe] OOM self-heal` warnings on startup:**
@@ -429,7 +429,7 @@ docker logs nomarr 2>&1 | grep "worker:discovery:0"
 - Verify `worker_enabled=True` (check `/api/v1/info`)
 - Ensure files exist in `library_files` with tagging state needing processing
 - Check worker is `healthy` (health pipe active)
-- Check for orphaned claims: query `worker_claims` collection
+- Check for orphaned claims: query `worker_claims` table
 
 **Consecutive error shutdown:**
 

@@ -86,15 +86,15 @@ Rules:
 
 ### Persistence (`persistence/`)
 
-**Purpose:** Database access layer (PostgreSQL for library/app/file/tag/scan and ML domains; ArangoDB for app-state, migrations, and legacy AQL operations during the migration period).
+**Purpose:** Database access layer (PostgreSQL for all domains).
 
 **Contains:**
 
-- `db.py` — `Database` facade that creates the shared database connections, wires the thin operation objects and repository classes, and exposes intent-level sub-facades
-- `database/` — repository classes and thin operation classes grouped by domain concern: PostgreSQL repository classes for library-domain (`LibraryRepository`, `FileRepository`, `FolderRepository`, `TagRepository`, `ScanRepository`, `FileStateRepository`) and ML-domain (`VectorRepo`, `ModelRepo`, `OutputRepo`, `CalibrationRepo`, `EmbeddingStreamRepository`); AQL operation classes for ArangoDB-backed domains (`LibrariesAqlOperations`, `LibraryFilesAqlOperations`, `TagsAqlOperations`, `ScanAqlOperations`, `FileStatesAqlOperations`, `AppAqlOperations`, `NavidromeAqlOperations`)
+- `db.py` — `Database` facade that creates the shared database connections, wires the repository classes, and exposes intent-level sub-facades
+- `database/` — repository classes grouped by domain concern: library-domain (`LibraryRepository`, `FileRepository`, `FolderRepository`, `TagRepository`, `ScanRepository`, `FileStateRepository`) and ML-domain (`VectorRepo`, `ModelRepo`, `OutputRepo`, `CalibrationRepo`, `EmbeddingStreamRepository`)
 - `api/` — intent-level sub-facades for higher layers: `db.library` (`LibraryDb`), `db.app` (`AppDb`), and `db.ml` (`MlDb`)
 
-**Access pattern:** Go through the injected `Database` facade and use the intent-level namespaces (`db.library`, `db.app`, `db.ml`). Lower persistence tiers (`nomarr.persistence.database/*_aql.py` and `nomarr.persistence.aql/primitives.py`) are persistence-internal implementation layers, not higher-layer APIs.
+**Access pattern:** Go through the injected `Database` facade and use the intent-level namespaces (`db.library`, `db.app`, `db.ml`). Lower persistence tiers are persistence-internal implementation layers, not higher-layer APIs.
 
 ```python
 # ✅ Preferred: intent-level persistence access
@@ -107,8 +107,7 @@ model = await db.ml.get_model(model_id)
 outputs = await db.ml.list_model_outputs(model_id)
 similar = await db.ml.search_vectors("discogs_effnet", query_vector, limit=10)
 
-# ❌ Do not import `nomarr.persistence.database` or `nomarr.persistence.aql` internals from higher layers
-# ❌ Do not treat `db.libraries`, `db.tags`, `db.file_states`, etc. as new caller APIs
+# ❌ Do not import `nomarr.persistence.database` internals from higher layers
 ```
 
 **Key namespaces (via `db.*`):**
@@ -118,9 +117,6 @@ similar = await db.ml.search_vectors("discogs_effnet", query_vector, limit=10)
 | `db.library` | Library, file, tag, and scan persistence | Preferred facade for library-domain callers |
 | `db.app` | Application state, file states, locks/claims, sessions, health, meta/migrations, and Navidrome-related persistence | Preferred facade for operational/app-state callers |
 | `db.ml` | ML models, streams, vectors, and calibration persistence | Preferred facade for ML-domain callers |
-| `db.libraries`, `db.library_files`, `db.tags`, `db.scan`, `db.file_states`, `db.ml_streams`, `db.ml_models` | Legacy compatibility aliases | Temporary migration surfaces; not supported higher-layer APIs |
-
-The explicit `*_aql` attributes also still exist inside `Database` as implementation-facing compatibility names. Treat them as persistence-internal or migration/bootstrap-only seams, not normal caller dependencies.
 
 ### Helpers (`helpers/`)
 
@@ -151,9 +147,9 @@ The explicit `*_aql` attributes also still exist inside `Database` as implementa
 
 ## Database startup lifecycle
 
-1. Open ArangoDB connection
-2. Prepare database and run migrations
-3. Bind collection classes and expose them through `Database`
+1. Open PostgreSQL connection
+2. Run Alembic migrations
+3. Wire repository classes and expose them through `Database`
 4. Start workers, services, and interfaces
 
 Persistence wiring happens after the database is available and before higher layers begin using `db.*` accessors.

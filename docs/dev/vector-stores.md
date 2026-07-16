@@ -17,8 +17,8 @@ Existing deployments (schema version 6) move to the hot/cold model via
 1. For each backbone, rename `vectors_track__{backbone}` to
    `vectors_track_cold__{backbone}` so that all existing vectors remain readable
    and keep their ANN index.
-2. Create a fresh empty `vectors_track_hot__{backbone}` collection with the
-   required `_key` and `file_id` persistent indexes.
+2. Create a fresh empty `vectors_track_hot__{backbone}` table with the
+   required `id` and `file_id` B-tree indexes.
 3. Recreate persistent indexes on the cold collection (excluding vector indexes)
    to guarantee convergence and cascade-delete performance.
 4. Operators must run promote & rebuild after the migration to rebuild the ANN

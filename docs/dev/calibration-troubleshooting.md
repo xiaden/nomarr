@@ -35,23 +35,20 @@ For a library with 30,000 audio files:
 
 ### Verification Query
 
-```aql
-// Count samples per label for gender head
-FOR doc IN calibration_state
-  FILTER doc.head == "gender"
-  RETURN {
-    label: doc.label,
-    sample_count: doc.histogram.n,
-    p5: doc.histogram.percentiles.p5,
-    p95: doc.histogram.percentiles.p95
-  }
+```sql
+-- Count samples per label for gender head
+SELECT label, histogram->>'n' AS sample_count,
+       histogram->'percentiles'->>'p5' AS p5,
+       histogram->'percentiles'->>'p95' AS p95
+FROM calibration_state
+WHERE head = 'gender';
 
-// Expected output (for 30k file library):
-// [
-//   {label: "male", sample_count: ~30000, p5: X, p95: Y},
-//   {label: "female", sample_count: ~30000, p5: A, p95: B}
-// ]
-// Note: X ≠ A and Y ≠ B (independent distributions)
+-- Expected output (for 30k file library):
+--  label  | sample_count |  p5  | p95
+-- --------+-------------+------+------
+--  male   | ~30000      |  X   |  Y
+--  female | ~30000      |  A   |  B
+-- Note: X ≠ A and Y ≠ B (independent distributions)
 ```
 
 ---
@@ -82,14 +79,14 @@ FOR doc IN calibration_state
 
 ### Verification Query
 
-```aql
-// Count documents per head
-FOR doc IN calibration_state
-  COLLECT head = doc.head WITH COUNT INTO label_count
-  SORT head
-  RETURN {head, label_count}
+```sql
+-- Count documents per head
+SELECT head, COUNT(*) AS label_count
+FROM calibration_state
+GROUP BY head
+ORDER BY head;
 
-// Expected: Binary heads → 2 docs each, Regression heads → 1 doc each
+-- Expected: Binary heads → 2 docs each, Regression heads → 1 doc each
 ```
 
 ---
@@ -104,7 +101,7 @@ FOR doc IN calibration_state
 
 **Verification:**
 
-1. Check library file count: `RETURN LENGTH(library_files)`
+1. Check library file count: `SELECT COUNT(*) FROM library_files;`
 2. Compare to calibration sample count: should match file count, not 2× file count
 
 ---
@@ -133,16 +130,14 @@ FOR doc IN calibration_state
 
 **Verification:**
 
-```aql
-// Check which labels have predictions
-FOR label IN ["male", "female", "voice", "instrumental", /* ... all 23 labels ... */]
-  LET count = (
-    FOR file IN library_files
-      FILTER file.song.predictions.effnet_discogs[label] != null
-      LIMIT 1
-      RETURN 1
-  )
-  RETURN {label, has_predictions: LENGTH(count) > 0}
+```sql
+-- Check which labels have predictions
+SELECT label, EXISTS(
+  SELECT 1 FROM library_files
+  WHERE song->'predictions'->'effnet_discogs'->>label IS NOT NULL
+  LIMIT 1
+) AS has_predictions
+FROM unnest(ARRAY['male','female','voice','instrumental', /* ... all 23 labels ... */]) AS label;
 ```
 
 ---
@@ -153,7 +148,7 @@ FOR label IN ["male", "female", "voice", "instrumental", /* ... all 23 labels ..
 
 ```typescript
 {
-  _key: string;        // Format: "model:head:label" (e.g., "effnet-20220825:gender:male")
+  id: string;          // Format: "model:head:label" (e.g., "effnet-20220825:gender:male")
   model: string;       // "effnet-20220825"
   head: string;        // "gender", "danceability", etc.
   label: string;       // "male", "female", "danceability", etc.
@@ -173,12 +168,11 @@ FOR label IN ["male", "female", "voice", "instrumental", /* ... all 23 labels ..
 
 ### Query Pattern: Get Calibration for Specific Label
 
-```aql
-FOR doc IN calibration_state
-  FILTER doc.model == @model 
-    AND doc.head == @head 
-    AND doc.label == @label  // Single label filter (not array aggregation)
-  RETURN doc
+```sql
+SELECT * FROM calibration_state
+WHERE model = @model
+  AND head = @head
+  AND label = @label;  -- Single label filter (not array aggregation)
 ```
 
 ---
@@ -189,9 +183,8 @@ FOR doc IN calibration_state
 
 1. **Delete old documents:**
 
-   ```aql
-   FOR doc IN calibration_state
-     REMOVE doc IN calibration_state
+   ```sql
+   DELETE FROM calibration_state;
    ```
 
 2. **Trigger regeneration via API:**
@@ -211,8 +204,8 @@ FOR doc IN calibration_state
 
 3. **Verify result:**
 
-   ```aql
-   RETURN LENGTH(calibration_state)  // Should be 23
+   ```sql
+   SELECT COUNT(*) FROM calibration_state;  -- Should be 23
    ```
 
 ### Testing Calibration Changes
@@ -220,7 +213,7 @@ FOR doc IN calibration_state
 Use Docker environment (`.docker/compose.yaml`) to test with realistic data:
 
 1. Start services: `docker compose -f .docker/compose.yaml up -d`
-2. Wait for ArangoDB initialization (~30 seconds)
+2. Wait for PostgreSQL initialization (~30 seconds)
 3. Trigger library scan (first-time setup creates predictions)
 4. Generate calibration histograms via API
 5. Query calibration_state to verify expectations

@@ -1,25 +1,12 @@
 # Database Migration System
 
-Nomarr uses a **baseline + delta** migration system. The baseline schema is created by `ensure_schema()` on every startup, and migrations apply incremental changes on top of it.
+Nomarr uses **Alembic** for PostgreSQL schema migrations. Alembic provides a battle-tested, version-controlled approach to database schema evolution.
 
-## Core Principle: Single Source of Truth
+## Core Principle: Version-Controlled Migrations
 
-**`ensure_schema()` is a frozen baseline.** It represents the schema state at the last consolidation point. It is NOT edited when writing new migrations.
-
-**Migrations are the ONLY place for schema changes.** When you need a new collection, index, graph, or data transformation, you write a migration file. You do NOT touch `ensure_schema()`.
+**Every schema change is a migration.** When you need a new table, column, index, constraint, or data transformation, you generate and write an Alembic migration. You do NOT edit the SQLAlchemy models and hope they sync — migrations are the single source of truth for production schema state.
 
 This eliminates the drift problem: there is exactly one place that defines each schema change.
-
-### When ensure_schema Gets Updated
-
-`ensure_schema()` is updated **only during consolidation** — when all existing migrations are squashed into a new baseline (typically at a major release boundary). The consolidation process:
-
-1. Captures the current DB state (all migrations applied) as the new `ensure_schema()`
-2. Deletes all historical migration files
-3. Resets the schema version
-4. Creates a single baseline verification migration (V001)
-
-Use `scripts/consolidate_migrations.py` for this. It is an alpha-only operation.
 
 ## Architecture
 
@@ -28,172 +15,156 @@ Startup Flow:
   validate_environment()
   → ConfigService
   → Database()
-  → prepare_database_workflow()
-      → ensure_schema()           # Creates baseline collections/indexes (frozen)
-      → ensure_schema_version()   # Reads/initializes schema version
-      → check_version_mismatch()  # Fails fast if DB is ahead of code
-      → discover_migrations()     # Finds migration files
-      → get_pending_migrations()  # Filters to unapplied
-      → validate_version_chain()  # Ensures contiguous chain
-      → apply_migration() loop    # Applies each pending migration
-      → update_schema_version()   # Records final version
-  → Application.start()           # Services initialize
+  → alembic upgrade head         # Applies all pending migrations
+  → Application.start()          # Services initialize
 ```
 
-**Fresh install:** `ensure_schema()` creates the baseline, then all migrations run sequentially to bring the schema to the current version.
+**Fresh install:** `alembic upgrade head` creates the full schema from all migrations.
 
-**Existing install:** `ensure_schema()` is a no-op (everything already exists), then only pending migrations run.
+**Existing install:** Alembic detects the current revision and applies only pending migrations.
 
 ### Migration Tracking
 
-Applied migrations are tracked in the `applied_migrations` collection:
+Alembic tracks applied migrations in the `alembic_version` table:
 
-```json
-{
-  "_key": "V020_example_migration",
-  "name": "V020_example_migration",
-  "applied_at": "2026-03-22T12:00:00Z",
-  "schema_version_before": 19,
-  "schema_version_after": 20,
-  "duration_ms": 142
-}
+```sql
+SELECT * FROM alembic_version;
+--  version_num
+-- ------------
+--  a1b2c3d4e5f6
 ```
 
-Duplicate prevention is automatic via ArangoDB's `_key` uniqueness constraint.
+Alembic's built-in version table ensures each migration runs exactly once.
 
 ### Execution Order
 
-Migrations execute in **lexical sort order** of their filenames. The version prefix (`V019_`, `V020_`) guarantees correct ordering.
+Migrations execute in **revision chain order** following the dependency graph defined by `down_revision`. Alembic handles ordering, detection of already-applied migrations, and sequential application automatically.
 
 The runner:
 
-1. Scans `nomarr/migrations/` for `V*.py` files
-2. Queries `applied_migrations` for already-applied migration keys
-3. Filters to pending migrations (not yet applied)
-4. Validates the version chain is contiguous
-5. Executes each pending migration in order
-6. Records each successful migration in `applied_migrations`
-7. Updates `schema_version` in meta collection after all migrations complete
+1. Connects to PostgreSQL
+2. Reads `alembic_version` to determine current state
+3. Computes the migration path from current to `head`
+4. Executes each pending migration in order, within a transaction
+5. Records each successful migration in `alembic_version`
 
 ### Error Handling
 
-- **Migration failure**: App startup aborts immediately. The failed migration is NOT
-  recorded, so it retries on next startup. Previously successful migrations remain recorded.
-- **DB newer than code**: If the database `schema_version` exceeds the code's
-  `SCHEMA_VERSION`, startup aborts with a clear error message.
-- **Partial completion**: Each migration is responsible for its own idempotency.
-  If a migration partially completes before failing, it must handle re-execution gracefully.
+- **Migration failure**: App startup aborts immediately. Alembic rolls back the failed migration's transaction. Previously successful migrations remain recorded.
+- **DB newer than code**: If the database revision is not in the migration chain, startup aborts with a clear error message.
+- **Partial completion**: Each migration runs in a transaction. If it fails, the transaction is rolled back completely.
 
 ## Writing Migrations
 
 ### Workflow
 
-1. **Create a migration file** in `nomarr/migrations/`
-2. **Define the schema change** in the migration's `upgrade()` function
-3. **Do NOT edit `ensure_schema()`** — the migration is the single source of truth
+1. **Create a migration** using Alembic's autogenerate or manually:
+   ```bash
+   alembic revision --autogenerate -m "add_playlist_table"
+   ```
+2. **Review and refine** the generated migration in `nomarr/migrations/versions/`
+3. **Do NOT edit SQLAlchemy models and skip migrations** — the migration is the source of truth
 4. **Run `lint_project_backend`** to verify
-5. Test on a fresh database (ensure_schema + all migrations must produce correct state)
+5. Test on a fresh database (all migrations must produce correct state)
 
 ### File Location
 
-All migration files live in `nomarr/migrations/`.
+All migration files live in `nomarr/migrations/versions/`.
 
 ### Naming Convention
 
-```
-V{NNN}_{description}.py
-```
+Alembic auto-generates revision IDs with descriptive slugs:
 
-Where:
-
-- `NNN` is a zero-padded 3-digit **target** schema version
-- `description` is snake_case describing what the migration does
+```
+{revision_id}_{description}.py
+```
 
 Examples:
 
-- `V020_add_playlist_collection.py`
-- `V021_normalize_tag_values.py`
-- `V022_drop_legacy_collection.py`
+- `a1b2c3d4e5f6_add_playlist_table.py`
+- `b2c3d4e5f6a7_normalize_tag_values.py`
+- `c3d4e5f6a7b8_drop_legacy_table.py`
 
 ### Required Interface
 
 ```python
-"""V020: Add playlist collection.
+"""Add playlist table.
+
+Revision ID: a1b2c3d4e5f6
+Revises: previous_revision_id
+Create Date: 2026-03-22T12:00:00
 
 Brief description of what this migration does and why.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Sequence, Union
 
-if TYPE_CHECKING:
-    from nomarr.persistence.arango_client import DatabaseLike
+from alembic import op
+import sqlalchemy as sa
 
-# Required metadata
-SCHEMA_VERSION_BEFORE: int = 19
-SCHEMA_VERSION_AFTER: int = 20
-DESCRIPTION: str = "Add playlist collection"
+# revision identifiers, used by Alembic.
+revision: str = "a1b2c3d4e5f6"
+down_revision: Union[str, None] = "previous_revision_id"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
 
 
-def upgrade(db: DatabaseLike) -> None:
-    """Apply this migration.
+def upgrade() -> None:
+    """Apply this migration."""
+    op.create_table(
+        "playlists",
+        sa.Column("id", sa.String(), nullable=False),
+        sa.Column("name", sa.String(), nullable=False),
+        sa.Column("library_id", sa.String(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.func.now()),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("ix_playlists_library_id", "playlists", ["library_id"])
 
-    Args:
-        db: ArangoDB database handle. Use db.aql.execute() for AQL queries,
-            db.has_collection() / db.create_collection() for DDL, etc.
 
-    Raises:
-        Any exception aborts the migration and prevents startup.
-    """
-    # Create the collection, index, graph, or transform data here.
-    # This is the ONLY place for this schema change.
-    ...
+def downgrade() -> None:
+    """Revert this migration."""
+    op.drop_index("ix_playlists_library_id", table_name="playlists")
+    op.drop_table("playlists")
 ```
-
-### Metadata Fields
-
- | Field | Type | Description |
- | ------- | ------ | ------------- |
- | `SCHEMA_VERSION_BEFORE` | `int` | Schema version this migration expects to find |
- | `SCHEMA_VERSION_AFTER` | `int` | Schema version after this migration completes |
- | `DESCRIPTION` | `str` | Human-readable description for logs |
- | `upgrade(db)` | function | The migration logic |
-
-The runner validates the version chain: each migration's `SCHEMA_VERSION_BEFORE` must
-match the previous migration's `SCHEMA_VERSION_AFTER` (or the current DB version for
-the first pending migration).
 
 ### Migration Responsibilities
 
-Since migrations are now the single source of truth for schema changes, they must handle ALL DDL for the change:
+Migrations must handle ALL DDL for the change:
 
-- **New collections**: create with `db.create_collection(name, edge=bool)`
-- **New indexes**: create with `collection.add_persistent_index(fields=..., unique=...)`
-- **New graphs**: create with `db.create_graph(name=..., edge_definitions=[...])`
-- **Data transforms**: use AQL for bulk operations
-- **Collection drops**: guard with `db.has_collection()` for idempotency
+- **New tables**: create with `op.create_table()`
+- **New columns**: add with `op.add_column()`
+- **New indexes**: create with `op.create_index()`
+- **New constraints**: add with `op.create_unique_constraint()`, `op.create_foreign_key()`, etc.
+- **Data transforms**: use `op.execute()` with raw SQL for bulk operations
+- **Table drops**: use `op.drop_table()`
+- **Column drops**: use `op.drop_column()`
 
-All operations should be idempotent — guard creation with existence checks and use `contextlib.suppress` for race conditions.
+All operations should be guarded for idempotency where possible:
+- Check table existence before dropping
+- Use `IF NOT EXISTS` / `IF EXISTS` clauses in raw SQL
 
 ### Best Practices
 
 1. **Make migrations idempotent** where possible. If a migration partially completes
-   and fails, it will re-run on next startup. Guard destructive operations:
+   and fails, guard destructive operations:
 
    ```python
-   if db.has_collection("old_collection"):
-       db.delete_collection("old_collection")
+   def upgrade() -> None:
+       op.execute("DROP TABLE IF EXISTS old_table")
    ```
 
-2. **Use AQL for bulk data operations** — it's faster than document-by-document:
+2. **Use raw SQL for bulk data operations** — it's faster than row-by-row:
 
    ```python
-   db.aql.execute("""
-       FOR doc IN library_files
-           FILTER doc.old_field != null
-           UPDATE doc WITH { new_field: doc.old_field, old_field: null } IN library_files
-   """)
+   def upgrade() -> None:
+       op.execute("""
+           UPDATE library_files
+           SET new_field = old_field, old_field = NULL
+           WHERE old_field IS NOT NULL
+       """)
    ```
 
 3. **Keep migrations focused** — one logical change per migration. Don't combine
@@ -204,72 +175,39 @@ All operations should be idempotent — guard creation with existence checks and
    ```python
    import logging
    logger = logging.getLogger(__name__)
-   logger.info("Migrating %d documents...", count)
+   logger.info("Migrating %d rows...", count)
    ```
 
-5. **Never import from `nomarr.services` or `nomarr.interfaces`** — migrations run
-   before services are initialized. Only import from `nomarr.persistence` and
-   `nomarr.helpers` if needed.
+5. **Always provide a `downgrade()` function** so migrations can be rolled back.
+   For destructive operations, the downgrade should recreate what was lost or raise
+   an informative error if rollback is not feasible.
 
-### AQL Safety Rules
+6. **Test migrations against both fresh and populated databases.** The same migration
+   can succeed on one and fail on the other — unique constraint violations only fire
+   when duplicates exist. Always test both paths before merging.
 
-These rules were learned from production migration failures (V021/V022 fix cycles). Violating them produces errors that only manifest on databases with existing data — they pass on fresh installs.
+7. **Never import from `nomarr.services` or `nomarr.interfaces`** — migrations run
+   before services are initialized. Only import from SQLAlchemy and Alembic.
 
-1. **Never read and write the same collection in a single AQL statement** (beyond the document being modified). ArangoDB raises `ERR 1579` ("access after data-modification") when a query reads a collection that was already modified by an earlier operation in the same statement. The simple `FOR doc IN X UPDATE doc IN X` pattern is safe, but any cross-operation read (subqueries, LET lookups after INSERT/REMOVE) is not.
+### SQL Safety Rules
 
-   Split into sequential Python calls — first a read-only query to collect data into a Python variable, then a write-only query using bind vars:
+These rules were learned from production migration experience:
 
-   ```python
-   # WRONG — reads library_files after INSERT into library_files
-   db.aql.execute("""
-       FOR doc IN source_collection
-           INSERT { ... } INTO library_files
-           LET existing = (FOR f IN library_files FILTER f.path == doc.path RETURN f)
-           ...
-   """)
+1. **Use transactions.** Alembic wraps each migration in a transaction by default.
+   If a migration needs to run outside a transaction (e.g., creating indexes concurrently),
+   set `transaction_per_migration = False` or use `op.execute("COMMIT; ...")` carefully.
 
-   # RIGHT — separate read and write phases
-   cursor = db.aql.execute("FOR doc IN source_collection RETURN doc")
-   rows = [doc for doc in cursor]
-   for batch in chunked(rows, 1000):
-       db.aql.execute("FOR item IN @batch INSERT item INTO library_files", bind_vars={"batch": batch})
-   ```
+2. **Drop conflicting indexes BEFORE any UPDATE that changes indexed columns.**
+   If a unique index exists on fields being nullified or modified, the UPDATE will hit
+   a unique constraint violation when two rows collapse to the same indexed values.
 
-2. **Drop conflicting indexes BEFORE any UPDATE/UPSERT that changes indexed fields.** If a unique index exists on fields being nullified or modified, the UPDATE will hit `ERR 1210` (unique constraint violated) when two documents collapse to the same indexed values (e.g., multiple documents with `field: null`).
+3. **Guard against empty tables on fresh databases.** Migrations run on both existing
+   databases (with data) and fresh databases (empty tables). Every query should handle
+   empty result sets gracefully.
 
-   Use a broad match — drop any index where the modified field appears in the fields array, not just exact field-list matches. This future-proofs against compound indexes you don't know about:
-
-   ```python
-   for idx in coll.indexes():
-       if idx.get("type") == "persistent" and "field_name" in (idx.get("fields") or []):
-           coll.delete_index(idx["id"])
-   ```
-
-3. **`ensure_schema` does NOT run on existing databases (ADR-016).** The frozen baseline is a no-op when collections already exist. Migrations cannot rely on `ensure_schema` to repair partial failures or create missing indexes. Each migration must be self-contained and handle its own collection/index creation if needed.
-
-4. **Guard against empty collections on fresh databases.** Migrations run on both existing databases (with data) and fresh databases (empty collections after `ensure_schema`). Every AQL query should handle empty result sets gracefully — don't assume documents exist. Use `FILTER != null` guards and test both paths.
-
-5. **Never UPSERT with user-generated or external data as `_key`.** ArangoDB `_key` has strict character restrictions (no `/`, `?`, `#`, etc.). If source data may contain these characters, use a different field for lookup and let ArangoDB auto-generate `_key`:
-
-   ```python
-   # WRONG — path may contain forbidden characters
-   db.aql.execute('UPSERT { _key: @path } INSERT { ... } UPDATE { ... } IN files', bind_vars={"path": path})
-
-   # RIGHT — use a non-key field for matching
-   db.aql.execute('UPSERT { path: @path } INSERT { ... } UPDATE { ... } IN files', bind_vars={"path": path})
-   ```
-
-6. **Test migrations against both fresh and populated databases.** The same migration can succeed on one and fail on the other — `ERR 1579` only fires when the collection has data, unique constraint violations only fire when duplicates exist. Always test both paths before merging.
-
-## Schema Consolidation
-
-When the migration chain grows long, consolidate:
-
-1. Run `scripts/consolidate_migrations.py` — this captures the current cumulative schema state into `ensure_schema()`, deletes all migration files, and creates a V001 baseline verification migration
-2. Reset existing databases' schema version (the script provides AQL commands)
-3. Future migrations start at V002
-
-This is an alpha-only operation. After 1.0, migration history is preserved.
+4. **Never assume auto-generated IDs match external identifiers.** Use explicit
+   natural keys (like `path`, `name`) for lookups in data migrations, not surrogate
+   IDs that differ between environments.
 
 ## Testing Migrations
 
@@ -278,12 +216,12 @@ This is an alpha-only operation. After 1.0, migration history is preserved.
 Every migration must:
 
 1. **Pass lint**: `lint_project_backend(path="nomarr/migrations")` reports zero errors
-2. **Have correct metadata**: All four required fields present with correct types
-3. **Have contiguous versions**: `SCHEMA_VERSION_BEFORE` of migration N+1 equals
-   `SCHEMA_VERSION_AFTER` of migration N
+2. **Have correct metadata**: Valid `revision`, `down_revision`, and docstring
+3. **Have contiguous chain**: `down_revision` of migration N+1 equals `revision` of migration N
 4. **Be idempotent**: Running the migration twice on the same database must not fail
    or corrupt data
-5. **Work on fresh install**: `ensure_schema()` (baseline) + all migrations must produce the correct final state
+5. **Work on fresh install**: All migrations from base to head must produce the correct final state
+6. **Have a working downgrade**: `alembic downgrade -1` must cleanly revert the migration
 
 ### Manual Testing
 
@@ -294,13 +232,10 @@ Use the Docker test environment to validate migrations:
 cd docker; docker compose down -v; docker compose up -d
 
 # Check migration ran in startup logs
-docker compose logs nomarr | Select-String "migration"
+docker compose logs nomarr | Select-String "alembic"
 
-# Verify applied_migrations collection
-$auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("root:nomarr_dev_password"))
-$body = @{query="FOR m IN applied_migrations RETURN m"} | ConvertTo-Json
-Invoke-RestMethod -Uri "http://127.0.0.1:8529/_db/nomarr/_api/cursor" -Method Post `
-  -Body $body -ContentType "application/json" -Headers @{Authorization="Basic $auth"}
+# Verify schema
+docker exec -it nomarr-postgres psql -U nomarr -d nomarr -c "\dt"
 ```
 
 ## Expected Startup Logs
@@ -308,104 +243,73 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8529/_db/nomarr/_api/cursor" -Method Po
 ### Fresh database (first startup)
 
 ```
-INFO  ensure_schema: Created collections, indexes, graphs (baseline)
-INFO  Database schema version: 0, code schema version: 19
-INFO  Running 16 pending migration(s) (v0 -> v19)
-INFO  Applying migration V004_add_segment_scores_stats...
+INFO  Running alembic upgrade head
+INFO  Running upgrade  -> a1b2c3d4e5f6, add_library_table
+INFO  Running upgrade a1b2c3d4e5f6 -> b2c3d4e5f6a7, add_file_table
 ...
-INFO  All migrations completed. Schema version: 19
+INFO  Migrations complete
 ```
 
 ### Existing database (all migrations applied)
 
 ```
-INFO  Database schema version: 19, code schema version: 19
-INFO  All migrations already applied
+INFO  Running alembic upgrade head
+INFO  Database already at head revision
 ```
 
 ### New migration pending
 
 ```
-INFO  Database schema version: 19, code schema version: 20
-INFO  Running 1 pending migration(s) (v19 -> v20)
-INFO  Applying migration V020_add_playlist_collection...
-INFO  All migrations completed. Schema version: 20
+INFO  Running alembic upgrade head
+INFO  Running upgrade b2c3d4e5f6a7 -> c3d4e5f6a7b8, add_playlist_table
+INFO  Migrations complete
 ```
 
 ## Troubleshooting
 
-### "Database schema version (X) is newer than code (Y)"
+### "Database revision is newer than code"
 
 The database was migrated by a newer version of Nomarr. Update the application code
 to match or restore the database from backup.
 
-### "Migration version chain broken"
+### "Migration chain broken"
 
-A migration's `SCHEMA_VERSION_BEFORE` doesn't match the expected version. Check for
-missing migration files or incorrect version numbers.
+A migration's `down_revision` doesn't match any known revision. Check for
+missing migration files or incorrect revision IDs.
 
 ### Migration fails on startup
 
 The app will not start until the migration succeeds. Check logs for the specific error.
-If the migration partially completed, it must handle re-execution (idempotency).
+Alembic rolls back the failed migration's transaction automatically.
 Fix the migration code and restart.
 
 ### Fresh install schema doesn't match migrated install
 
-This means `ensure_schema()` is out of date relative to the migrations. If you're
-post-consolidation, this shouldn't happen. If it does, run the consolidation script
-to re-sync the baseline.
+This means your SQLAlchemy models are out of sync with the migration chain.
+Regenerate the migration with `--autogenerate`, review carefully, and ensure
+the new migration captures the model changes correctly.
 
-## Migration History
+## Alembic Commands
 
-### V023_library_pipeline_states — Library Pipeline Automation Graph
+```bash
+# Generate a new migration from model changes
+alembic revision --autogenerate -m "description_of_change"
 
-Adds the persistence graph that backs end-to-end library pipeline automation.
+# Create an empty migration for manual edits
+alembic revision -m "description_of_change"
 
-**Schema changes:**
+# Apply all pending migrations
+alembic upgrade head
 
-- Creates `library_pipeline_states` with the singleton states `idle`, `scanning`, `ml_running`, `too_small`, `awaiting_calibration`, `calibrating`, `applying`, `write_ready`, `writing`, and `done`
-- Creates `library_has_pipeline_state` so each library points to exactly one current pipeline state vertex
-- Adds `library_auto_write: false` to existing library documents
+# Roll back one migration
+alembic downgrade -1
 
-**Data migration:**
+# Show current revision
+alembic current
 
-- Derives an initial pipeline state for each existing library from file-state counts
-- Seeds one `library_has_pipeline_state` edge per library during migration
+# Show migration history
+alembic history
 
-**Operational impact:**
-
-- Enables idle-path transitions out of `ml_running`
-- Supports startup recovery of `scanning`, `calibrating`, `applying`, and `writing`
-- Makes auto-write a per-library setting instead of a global calibration loop switch
-
-### V021_schema_refactor_v1 — FK-to-Edge Schema Refactor
-
-Major schema refactor converting foreign key properties to edge collections for graph-native traversal.
-
-**Edge collections created:**
-
-- `library_contains_file` — library → file relationship
-- `library_has_scan` — library → scan state (separated from libraries)
-- `model_has_output` — ML model → output relationship
-- `model_has_calibration` — ML model → calibration state relationship
-- `file_has_vectors` — file → vector storage relationship
-- `file_has_segment_stats` — file → segment statistics relationship
-
-**Data migrations:**
-
-- Populates all edge collections from existing FK properties
-- Uses `OPTIONS { ignoreErrors: true }` for idempotent edge creation
-
-**FK fields dropped after edge migration:**
-
-- `library_id` (from library_files, library_scans)
-- `model_key` (from ml_model_outputs, calibration_states)
-- `file_id` (from vectors_track_hot, vectors_track_cold, segment_scores_stats)
-
-**Additional changes:**
-
-- Creates unified `locks` collection (consolidates ml_capacity_probe_locks + vector_promotion_locks)
-- Updates graphs: `LibraryGraph`, `MLGraph`, `FileArtifactsGraph`
-
-**Idempotency:** Fully idempotent via `IF NOT EXISTS`, `FILTER != null` guards, and `ignoreErrors` options.
+# Generate SQL for a migration (dry-run)
+alembic upgrade head --sql
+```

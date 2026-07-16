@@ -36,7 +36,7 @@ A domain is a **vertical slice** through the layers that encapsulates:
 
 ### 1. Data Ownership
 
-The domain owns specific ArangoDB collections.
+The domain owns specific PostgreSQL tables.
 
 ### 2. Invariants
 
@@ -93,14 +93,14 @@ def scan_file_workflow(db, file_doc, tags):
     seed_entities(db, file_doc["_id"], tags)          # Metadata domain
 
 # ❌ BAD — Library workflow bypasses metadata domain
-db.entities.insert({"_key": artist_key})  # No invariant enforcement!
+db.entities.insert({"id": artist_id})  # No invariant enforcement!
 ```
 
 ---
 
 ## Domain Catalog
 
-Each domain maps to a subfolder under `components/` and owns specific ArangoDB collections.
+Each domain maps to a subfolder under `components/` and owns specific PostgreSQL tables.
 
 ### library
 
@@ -111,7 +111,7 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 - `libraries` — Library definitions, root paths
 - `library_files` — File records, paths, audio metadata, tagging state
 - `library_folders` — Folder cache for quick scanning
-- `file_states` — Edge collection for file lifecycle state (e.g., `ml_tagged`)
+- `file_states` — Table for file lifecycle state (e.g., `ml_tagged`)
 
 **Invariants:**
 
@@ -157,7 +157,7 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 
 **Owns:**
 
-- `tags` — Edge collection linking files to tag labels with scores
+- `tags` — Table linking files to tag labels with scores
 
 
 **Invariants:**
@@ -214,7 +214,7 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 
 **Owns:**
 
-- No persistent collections (computes on-demand from other domains)
+- No persistent tables (computes on-demand from other domains)
 
 **Key components:**
 
@@ -263,7 +263,7 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 
 **Invariants:**
 
-- Claims use deterministic `_key` based on file `_key` (one claim per file)
+- Claims use deterministic key based on file ID (one claim per file)
 - Claims are ephemeral (represent active work, not scheduled work)
 
 **Key components:**
@@ -288,14 +288,14 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 
 **Key components:**
 
-- `arango_bootstrap_comp.py` — Database schema creation
-- `arango_first_run_comp.py` — First-run provisioning
+- `db_bootstrap_comp.py` — Database schema creation
+- `db_first_run_comp.py` — First-run provisioning
 - `migration_runner_comp.py` — Migration execution
 - `gpu_probe_comp.py` — GPU hardware detection
 - `gpu_monitor_comp.py` — GPU health monitoring
 - `resource_monitor_comp.py` — System resource monitoring
 
-**Note:** Platform is infrastructure, not a traditional domain. It has no business invariants but does own system-level collections.
+**Note:** Platform is infrastructure, not a traditional domain. It has no business invariants but does own system-level tables.
 
 ---
 
@@ -305,7 +305,7 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 
 **Owns:**
 
-- No persistent collections (processes external playlists into library references)
+- No persistent tables (processes external playlists into library references)
 
 **Key components:**
 
@@ -323,7 +323,7 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 
 **Owns:**
 
-- No persistent collections (coordinates file writing)
+- No persistent tables (coordinates file writing)
 
 **Key components:**
 
@@ -337,7 +337,7 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 
 **Owns:**
 
-- No persistent collections
+- No persistent tables
 
 **Key components:**
 
@@ -356,8 +356,8 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 
 ### Where does this component belong?
 
-**Q1: Does it write to a specific collection?**
-→ Component belongs to the domain that owns that collection.
+**Q1: Does it write to a specific table?**
+→ Component belongs to the domain that owns that table.
 
 **Q2: Does it enforce invariants for a specific domain?**
 → Component belongs to that domain.
@@ -375,7 +375,7 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
  | Where does "normalize tag label" belong? | `components/tagging/tag_normalization_comp.py` — enforces tagging invariants |
  | Where does "discover next file to process" belong? | `components/workers/worker_discovery_comp.py` — queries library_files |
  | Where does "load audio file" belong? | `components/ml/audio/ml_audio_comp.py` — ML domain audio I/O |
- | Where does "bootstrap database" belong? | `components/platform/arango_bootstrap_comp.py` — infrastructure |
+ | Where does "bootstrap database" belong? | `components/platform/db_bootstrap_comp.py` — infrastructure |
  | Where does "match Spotify tracks" belong? | `components/playlist_import/track_matcher_comp.py` — playlist_import domain |
 
 ---
@@ -388,7 +388,7 @@ Each domain maps to a subfolder under `components/` and owns specific ArangoDB c
 
 ### Code Review Checklist
 
-- ☐ Does this component import persistence? (Only if it owns that collection)
+- ☐ Does this component import persistence? (Only if it owns that table)
 - ☐ Does this workflow import persistence? (Should be NO)
 - ☐ Are invariants enforced before writing?
 - ☐ Is the component in the correct domain folder?

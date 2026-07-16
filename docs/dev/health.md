@@ -270,7 +270,7 @@ Optional append-only snapshots for audit/debugging:
 
 ```json
 {
-  "_key": "snap_1705779600",
+  "id": "snap_1705779600",
   "timestamp": 1705779600000,
   "components": [
     {"component_id": "worker:discovery:0", "status": "healthy", "current_job": "library_files/12345"},
@@ -292,14 +292,13 @@ Optional append-only snapshots for audit/debugging:
 curl http://127.0.0.1:8356/api/v1/info
 ```
 
-### View Health History (ArangoDB)
+### View Health History (PostgreSQL)
 
 ```bash
-docker exec -it nomarr-arangodb arangosh \
-  --server.username nomarr \
-  --server.password "<password>" \
-  --server.database nomarr \
-  --javascript.execute-string 'db.health.toArray().forEach(d => print(JSON.stringify(d, null, 2)))'
+docker exec -it nomarr-postgres psql \
+  -U nomarr \
+  -d nomarr \
+  -c "SELECT * FROM health ORDER BY timestamp DESC LIMIT 20;"
 ```
 
 ### Common Issues

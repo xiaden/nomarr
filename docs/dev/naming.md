@@ -191,7 +191,7 @@ New verbs require:
 ```python
 class LibraryDict(TypedDict):
     """Library metadata."""
-    _key: str
+    id: str
     name: str
     path: str
     created_at: int

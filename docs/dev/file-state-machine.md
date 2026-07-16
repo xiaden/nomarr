@@ -1,6 +1,6 @@
 # File State Machine
 
-Nomarr tracks per-file processing status through a boolean state graph stored in the `file_states` ArangoDB collection. Each file can simultaneously hold one vertex per axis — every axis is an independent boolean.
+Nomarr tracks per-file processing status through a boolean state graph stored in the `file_states` PostgreSQL table. Each file can simultaneously hold one vertex per axis — every axis is an independent boolean.
 
 ## Canonical definitions
 
@@ -66,5 +66,5 @@ All callers that mutate file state should go through this function rather than c
 2. Add both to `ALL_STATE_VERTICES`.
 3. Add `"foo": (STATE_FOO, STATE_NOT_FOO)` to `AXIS_PAIRS`.
 4. Extend `StateAxis` with the new literal.
-5. Write a migration that inserts the two new vertices into the `file_states` collection and connects existing files to one pole (typically the negative).
+5. Write a migration that inserts the two new vertices into the `file_states` table and connects existing files to one pole (typically the negative).
 6. Export both constants in `__all__`.
