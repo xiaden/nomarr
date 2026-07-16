@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 from sqlalchemy import Column, Integer, MetaData, String, Table, Text, UniqueConstraint
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from nomarr.persistence.exceptions import DuplicateKeyError
 from nomarr.persistence.sql.primitives import (
@@ -22,16 +22,13 @@ from nomarr.persistence.sql.primitives import (
     update_by_field,
     upsert_by_field,
 )
-
-_ASYNC_URL = "sqlite+aiosqlite:///:memory:"
+from persistence.database.conftest import pg_async_engine, pg_engine  # noqa: F401 — shared fixtures
 
 
 @pytest_asyncio.fixture
-async def async_engine():
-    """Create an async engine connected to an in-memory SQLite database."""
-    engine = create_async_engine(_ASYNC_URL, echo=False)
-    yield engine
-    await engine.dispose()
+async def async_engine(pg_async_engine):  # noqa: F811
+    """Reuse the shared async engine from the database conftest."""
+    yield pg_async_engine
 
 
 @pytest_asyncio.fixture

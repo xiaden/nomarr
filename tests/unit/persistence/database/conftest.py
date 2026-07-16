@@ -11,8 +11,22 @@ import tempfile
 import pytest
 import pytest_asyncio
 from sqlalchemy import create_engine
+from sqlalchemy.dialects.sqlite.base import SQLiteTypeCompiler
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.ext.asyncio import create_async_engine as _create_async_engine
+
+# ── JSONB → JSON type mapping for SQLite ────────────────────
+# SQLAlchemy models use PostgreSQL JSONB columns which SQLite's dialect
+# cannot compile (no visit_JSONB). We monkey-patch the SQLite type compiler
+# so JSONB is rendered as JSON — safe because SQLite stores JSON as text
+# regardless of which JSON variant is declared.
+
+
+def _compile_jsonb_as_json(self, type_, **kw):
+    return self.visit_JSON(type_, **kw)
+
+
+SQLiteTypeCompiler.visit_JSONB = _compile_jsonb_as_json  # type: ignore[attr-defined]
 
 # ── SQLite fixtures for Part C repository tests ─────────────
 
