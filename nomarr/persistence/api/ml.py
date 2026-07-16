@@ -508,7 +508,6 @@ class MlDb:
             "PostgreSQL-managed HNSW index for backbone %s — no manual rebuild needed",
             backbone_id,
         )
-        return
 
     # ------------------------------------------------------------------
     # Vector index management methods (Phase 3 — consumer facade)

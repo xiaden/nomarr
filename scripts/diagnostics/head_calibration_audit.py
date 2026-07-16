@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Head calibration + STD gate audit.
+"""Head calibration + STD gate audit.
 
 For every (head, label) pair this script reports:
   - Raw mean/std distribution (p25/p50/p75/p90/p95/max)
@@ -30,7 +29,6 @@ from collections import defaultdict
 import numpy as np
 from scipy import stats as spstats
 
-from nomarr.helpers.time_helper import format_wall_timestamp, now_ms
 from nomarr.persistence.db import Database
 
 # ── defaults ────────────────────────────────────────────────────────────────
@@ -140,8 +138,7 @@ def _extract_segment_arrays(
 
 
 def classify_distribution(means: np.ndarray) -> tuple[str, str]:
-    """
-    Returns (shape_label, calibration_recommendation).
+    """Returns (shape_label, calibration_recommendation).
 
     Shapes:
       compressed   IQR < 0.05 — whole library jammed near one value
@@ -192,10 +189,9 @@ def _none_pct(ss: np.ndarray, threshold: float) -> float:
 
 
 def simulate_gates(raw_stds: np.ndarray, scale: float, exponent: float = 1.0) -> dict[str, float]:
-    """
-    Returns fraction of files in each gate bucket.
-      exponent < 1.0 dampens scale explosion on compressed-distribution heads.
-      exponent=1.0 is current behaviour (full linear scale).
+    """Returns fraction of files in each gate bucket.
+    exponent < 1.0 dampens scale explosion on compressed-distribution heads.
+    exponent=1.0 is current behaviour (full linear scale).
     """
     ss = raw_stds * (scale**exponent)
     n = len(ss)
@@ -259,29 +255,21 @@ async def main() -> None:
     logging.getLogger("head_calibration_audit")
     logging.basicConfig(level=logging.WARNING)  # keep DB chatter quiet
 
-    print(f"Head Calibration Audit — {format_wall_timestamp(now_ms())}")
-    print(f"Database: {args.db_url.split('@')[-1] if '@' in args.db_url else args.db_url}")
-    print()
 
     db = Database(url=args.db_url)
 
     try:
         # ── 0. Tag tier counts ──────────────────────────────────────────
-        tier_counts = await _fetch_tier_counts(db)
+        await _fetch_tier_counts(db)
         if not args.quiet:
-            print("─ Tag tier hit counts ─".ljust(72, "─"))
-            for tier_name in ("strict", "regular", "loose", "other"):
-                print(f"  {tier_name:>10}: {tier_counts.get(tier_name, 0)}")
-            print()
+            for _tier_name in ("strict", "regular", "loose", "other"):
+                pass
 
         # ── 1. Calibration states ───────────────────────────────────────
         states = await db.ml.list_all_calibration_states_with_models()
         if not states:
-            print("No calibration states found in the database.")
             return
 
-        print(f"Found {len(states)} calibration state(s)")
-        print()
 
         # ── 2. Per-state analysis ───────────────────────────────────────
         report_lines: list[dict] = []
@@ -388,35 +376,22 @@ def _print_state_report(
     verbose: bool = False,
 ) -> None:
     """Print a single calibration-state report."""
-    print(f"[{idx}/{total}] {entry['head']}:{entry['label']}".ljust(72, "─"))
-    print(f"  p5={entry['p5']:.4f}  p95={entry['p95']:.4f}  "
-          f"scale={entry['scale']:.4f}  n_files={entry['n_files']}  "
-          f"n_segments={entry['n_segments']}")
-    print(f"  shape: {entry['shape']}  {entry['recommendation']}")
-
-    gates = entry["gates"]
-    print(f"  gates [full/med/low/none]: {gates['full']:.1%} / {gates['med']:.1%} / "
-          f"{gates['low']:.1%} / {gates['none']:.1%}")
+    entry["gates"]
 
     # Show the most concerning sweep values
     t_sweep = entry["threshold_sweep"]
     e_sweep = entry["exponent_sweep"]
     if entry["shape"] == "bimodal":
-        worst_t = max(t_sweep.items(), key=lambda x: x[1])
-        print(f"  threshold sweep: worst @ {worst_t[0]:.2f} → {worst_t[1]:.1%} none")
+        max(t_sweep.items(), key=lambda x: x[1])
     elif entry["shape"] == "compressed":
         worst_e = max(e_sweep.items(), key=lambda x: x[1])
-        print(f"  exponent sweep:  worst @ e={worst_e[0]:.2f} → {worst_e[1]:.1%} none")
         best_e = min(e_sweep.items(), key=lambda x: x[1])
         if best_e[0] != worst_e[0]:
-            print(f"                    best @ e={best_e[0]:.2f} → {best_e[1]:.1%} none")
+            pass
 
     if verbose and entry["percentiles"]:
-        pcts = entry["percentiles"]
-        print(f"  means: p25={pcts.get('p25')} p50={pcts.get('p50')} p75={pcts.get('p75')} "
-              f"p90={pcts.get('p90')} p95={pcts.get('p95')} max={pcts.get('max')}")
+        entry["percentiles"]
 
-    print()
 
 
 def _print_summary(
@@ -427,33 +402,23 @@ def _print_summary(
     if not report_lines:
         return
 
-    print("=" * 72)
-    print("SUMMARY".center(72))
-    print("=" * 72)
 
     shape_counts: dict[str, int] = defaultdict(int)
     for entry in report_lines:
         shape_counts[entry["shape"]] += 1
 
-    print(f"\n  Total states: {len(report_lines)}")
-    print("  Shapes: " + ", ".join(f"{s}={c}" for s, c in sorted(shape_counts.items())))
 
     # Flag concerning states
     concerns = [e for e in report_lines if e["shape"] in ("compressed", "bimodal")]
     if concerns:
-        print(f"\n  ⚠  {len(concerns)} state(s) with concerning distributions:")
-        for e in concerns:
-            print(f"     {e['head']}:{e['label']} → {e['shape']}  ({e['recommendation']})")
+        for _e in concerns:
+            pass
 
     # Highest none% per head group
-    print("\n  Highest none% per head group:")
     for head_name in sorted(head_groups):
         entries = head_groups[head_name]
-        worst = max(entries, key=lambda e: e["gates"]["none"])
-        print(f"    {head_name:20s}: {worst['label']:15s} → {worst['gates']['none']:.1%} none  "
-              f"(shape={worst['shape']}, scale={worst['scale']:.4f})")
+        max(entries, key=lambda e: e["gates"]["none"])
 
-    print()
 
 
 # ── entry point ──────────────────────────────────────────────────────────────

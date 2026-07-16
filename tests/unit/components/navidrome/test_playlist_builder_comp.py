@@ -18,7 +18,6 @@ from nomarr.components.navidrome.playlist_builder_comp import (
     build_universal_playlist,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

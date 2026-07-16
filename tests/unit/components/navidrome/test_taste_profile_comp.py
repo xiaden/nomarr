@@ -321,10 +321,7 @@ class TestComputeTasteProfile:
 
     async def test_partial_vector_resolution(self) -> None:
         """Only 7 of 10 plays have vectors → only those 7 contribute."""
-        plays = [
-            _make_play(i, 5, 1000 + i * 100)
-            for i in range(1, 11)
-        ]
+        plays = [_make_play(i, 5, 1000 + i * 100) for i in range(1, 11)]
         vector_docs = [_make_vector_doc(i, i) for i in range(1, 8)]
         db = _make_db()
         _configure_list_file_vectors(db, vector_docs)
@@ -349,6 +346,7 @@ class TestComputeTasteProfile:
         plays = [_make_play(i, 5, 1000 + i * 100) for i in range(1, 6)]
 
         db = _make_db()
+
         # Configure with docs that have file_id but no vector key
         async def _side_effect(_backbone: str, fid: int) -> list[dict]:
             return [{"file_id": fid}]  # No "vector" key

@@ -147,7 +147,10 @@ class FileRepository:
     # ── filtered queries ────────────────────────────────────────
 
     async def list_files(
-        self, *, filters: dict[str, Any] | None = None, limit: int | None = None,
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        limit: int | None = None,
     ) -> list[LibraryFileRow]:
         """Return files matching optional field-equality filters."""
         stmt = select(_T)

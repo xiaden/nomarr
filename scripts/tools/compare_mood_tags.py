@@ -34,7 +34,7 @@ MOOD_TIER_RELS = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
 
 
 async def load_db_mood_tags(
-    db: "Database",
+    db: Database,
     limit: int | None = None,
 ) -> dict[str, dict[str, list[str]]]:
     """Return {file_path: {tier_name: [mood_label, ...]}} for files with mood tags.
@@ -45,6 +45,7 @@ async def load_db_mood_tags(
     Args:
         db: A connected ``Database`` instance.
         limit: Optional cap on the number of files sampled from the DB.
+
     """
     files = await db.library.list_files(limit=limit)
     if not files:
@@ -54,7 +55,7 @@ async def load_db_mood_tags(
     path_map: dict[int, str] = {f["id"]: f["path"] for f in files}
 
     tags_by_file = await db.library.list_file_tags_for_files(
-        file_ids, name_starts_with="nom:mood-"
+        file_ids, name_starts_with="nom:mood-",
     )
 
     result: dict[str, dict[str, list[str]]] = {}
@@ -127,8 +128,7 @@ def read_file_mood_tags(path: str) -> tuple[dict[str, list[str]], list[str]] | N
     """
     try:
         audio = mutagen.File(path, easy=False)
-    except Exception as exc:
-        print(f"  [read error] {exc}")
+    except Exception:
         return None
     if audio is None:
         return None
@@ -189,7 +189,7 @@ def compare(
     db_tags: dict[str, dict[str, list[str]]],
     show_matches: bool,
 ) -> None:
-    total = len(db_tags)
+    len(db_tags)
     match_count = 0
     mismatch_count = 0
     file_missing_count = 0
@@ -206,11 +206,9 @@ def compare(
         if result is None:
             file_missing_count += 1
             continue
-        file_tiers, all_keys = result
+        file_tiers, _all_keys = result
         if not file_tiers:
             no_file_tags_count += 1
-            print(f"\nNO MOOD TAGS ON DISK  {path}")
-            print(f"  All tag keys ({len(all_keys)}): {sorted(all_keys)}")
             continue
 
         # Normalise both to sets of (tier, label) tuples for comparison
@@ -227,38 +225,28 @@ def compare(
         if db_set == file_set:
             match_count += 1
             if show_matches:
-                print(f"  MATCH  {Path(path).name}")
-                for t, l in sorted(db_set):
-                    print(f"         {t}: {l}")
+                for _t, _l in sorted(db_set):
+                    pass
         else:
             mismatch_count += 1
             only_in_db = db_set - file_set
             only_in_file = file_set - db_set
             for tier, _ in only_in_db | only_in_file:
                 tier_mismatch[tier] += 1
-            print(f"\nMISMATCH  {path}")
             for tier in MOOD_TIER_RELS:
                 added = sorted(l for t, l in only_in_db if t == tier)
                 removed = sorted(l for t, l in only_in_file if t == tier)
                 if added or removed:
-                    tier_short = tier.replace("nom:mood-", "")
+                    tier.replace("nom:mood-", "")
                     parts = []
                     if added:
                         parts.append(f"+db: {', '.join(added)}")
                     if removed:
                         parts.append(f"-db: {', '.join(removed)}")
-                    print(f"  {tier_short:<8} {' | '.join(parts)}")
 
-    print("\n" + "=" * 60)
-    print(f"Total files with DB mood tags : {total}")
-    print(f"  File not found / unreadable  : {file_missing_count}")
-    print(f"  No mood tags on disk         : {no_file_tags_count}")
-    print(f"  Match                        : {match_count}")
-    print(f"  Mismatch                     : {mismatch_count}")
     if mismatch_count:
-        print("\nMismatches by tier:")
         for tier in MOOD_TIER_RELS:
-            print(f"  {tier}: {tier_mismatch.get(tier, 0)}")
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -274,22 +262,17 @@ async def main() -> None:
 
     pg_url = os.environ.get("PG_DATABASE_URL")
     if not pg_url:
-        print("PG_DATABASE_URL environment variable is not set.", file=sys.stderr)
         sys.exit(1)
 
     from nomarr.persistence.db import Database
 
     db = Database(url=pg_url)
     try:
-        print("Loading DB mood tags...", flush=True)
         db_tags = await load_db_mood_tags(db, args.limit)
-        print(f"  Found {len(db_tags)} files with mood tags in DB", flush=True)
 
         if not db_tags:
-            print("No mood tags in DB — run calibration first.")
             sys.exit(1)
 
-        print("Comparing against files on disk...\n", flush=True)
         compare(db_tags, args.show_matches)
     finally:
         await db.close()
