@@ -446,7 +446,9 @@ async def search_library_files_with_tags(
 
     if tag_key:
         matching_tags = (
-            await _tags_by_name_value(db, tag_key, str(tag_value)) if tag_value is not None else await _tags_by_name(db, tag_key)
+            await _tags_by_name_value(db, tag_key, str(tag_value))
+            if tag_value is not None
+            else await _tags_by_name(db, tag_key)
         )
         tag_ids = {tag_id for tag_doc in matching_tags if isinstance((tag_id := tag_doc.get("id")), int)}
         _intersect(await _collect_file_ids_for_tag_ids(db, tag_ids))
@@ -533,7 +535,9 @@ async def list_all_file_ids(db: Database, limit: int | None = None) -> list[int]
     """
     collect_limit = limit or DEFAULT_LIMIT
     return [
-        file_doc["id"] for file_doc in await db.library.list_files(limit=collect_limit) if isinstance(file_doc.get("id"), int)
+        file_doc["id"]
+        for file_doc in await db.library.list_files(limit=collect_limit)
+        if isinstance(file_doc.get("id"), int)
     ]
 
 
@@ -552,7 +556,9 @@ async def get_files_for_folder(
     folder_rel_path: str,
 ) -> dict[str, dict[str, Any]]:
     """Get file documents for a single folder. Has_tagged_state is annotated in-query."""
-    file_docs = cast("list[dict[str, Any]]", await db.library.list_library_files_for_folder(library_id, folder_rel_path))
+    file_docs = cast(
+        "list[dict[str, Any]]", await db.library.list_library_files_for_folder(library_id, folder_rel_path)
+    )
     return {file_doc["path"]: file_doc for file_doc in file_docs if isinstance(file_doc.get("path"), str)}
 
 
@@ -712,7 +718,9 @@ async def search_files_by_tag(
 
         edges = cast(
             "list[dict[str, Any]]",
-            await db.library.file_tag_repo.get_file_tag_edges_for_tags(list(tag_value_by_id.keys()), limit=DEFAULT_LIMIT),
+            await db.library.file_tag_repo.get_file_tag_edges_for_tags(
+                list(tag_value_by_id.keys()), limit=DEFAULT_LIMIT
+            ),
         )
         best_match_by_file_id: dict[int, dict[str, Any]] = {}
         for edge in edges:
@@ -844,7 +852,9 @@ async def get_tracks_for_matching(db: Database, library_id: int | None = None) -
             await db.library.list_tracks_for_matching(library_id, limit=DEFAULT_LIMIT),
         )
     else:
-        file_docs = cast("list[dict[str, Any]]", await db.library.list_files(filters={"is_valid": True}, limit=DEFAULT_LIMIT))
+        file_docs = cast(
+            "list[dict[str, Any]]", await db.library.list_files(filters={"is_valid": True}, limit=DEFAULT_LIMIT)
+        )
 
     file_docs = await hydrate_songs_with_metadata(db, file_docs)
 

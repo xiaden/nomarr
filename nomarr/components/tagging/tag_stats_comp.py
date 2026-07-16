@@ -317,7 +317,9 @@ async def get_genre_distribution(
             if isinstance(file_id := file_doc.get("id"), int)
         }
     total_genre = int(await db.library.count_tags())
-    genre_tags = _narrow_tag_list(await db.library.list_tags(name="genre", limit=total_genre)) if total_genre > 0 else []
+    genre_tags = (
+        _narrow_tag_list(await db.library.list_tags(name="genre", limit=total_genre)) if total_genre > 0 else []
+    )
     count_by_tag_id = (
         _song_count_rows_for_tag_ids(
             db,

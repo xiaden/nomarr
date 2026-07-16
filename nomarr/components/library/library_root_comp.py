@@ -74,7 +74,9 @@ def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str
     return str(resolved)
 
 
-async def ensure_no_overlapping_library_root(db: Database, candidate_root: str, *, ignore_id: str | None = None) -> None:
+async def ensure_no_overlapping_library_root(
+    db: Database, candidate_root: str, *, ignore_id: str | None = None
+) -> None:
     """Ensure a candidate library root does not overlap with any existing library.
 
     Raises ValueError if roots overlap — library roots must be disjoint.

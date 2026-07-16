@@ -134,23 +134,23 @@ class MLService:
         """
         return await list_model_outputs_for_model(self.db, model_id)
 
-    async def update_output_label(self, model_id: str, output_id: str, label: str) -> None:
+    async def update_output_label(self, model_id: str | int, output_id: str | int, label: str) -> None:
         """Write a human-readable label for a model output vertex.
 
         Args:
-            model_id: Model identifier (e.g., 'effnet-v1').
-            output_id: Output identifier string.
+            model_id: Model identifier (e.g., 'effnet-v1' or int DB key).
+            output_id: Output identifier string or int DB key.
             label: Human-readable tag label for this activation.
 
         """
-        await update_model_output_label(self.db, model_id=model_id, output_id=output_id, label=label)
+        await update_model_output_label(self.db, model_id=str(model_id), output_id=str(output_id), label=label)
 
-    async def mark_model_configured(self, model_id: str, value: bool) -> None:
+    async def mark_model_configured(self, model_id: str | int, value: bool) -> None:
         """Set the fully_configured flag on a model vertex.
 
         Args:
-            model_id: Model identifier (e.g., 'effnet-v1').
+            model_id: Model identifier (e.g., 'effnet-v1' or int DB key).
             value: True to enable model for inference, False to disable.
 
         """
-        await mark_model_fully_configured(self.db, model_id, value)
+        await mark_model_fully_configured(self.db, str(model_id), value)

@@ -152,7 +152,9 @@ async def save_mood_tags_batch(
             nomarr_name = f"nom:{tag.key}" if not tag.key.startswith("nom:") else tag.key
             written[nomarr_name] = tag.value
         # Always emit all three tiers; absent ones get an empty list (→ delete)
-        entries.extend({"song_id": int(file_id), "name": name, "values": written.get(name, [])} for name in _MOOD_TIER_NAMES)
+        entries.extend(
+            {"song_id": int(file_id), "name": name, "values": written.get(name, [])} for name in _MOOD_TIER_NAMES
+        )
 
     await set_song_tags_batch(db, entries)
     return sum(1 for e in entries if e["values"])

@@ -7,6 +7,7 @@ display metadata is derived on read rather than stored redundantly.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -91,10 +92,8 @@ async def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]])
     for song in songs:
         raw_id = song.get("id")
         if isinstance(raw_id, (str, int)):
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 song_ids.append(int(raw_id))
-            except (ValueError, TypeError):
-                pass
 
     if not song_ids:
         return [{**song} for song in songs]
@@ -106,10 +105,8 @@ async def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]])
         raw_id = song.get("id")
         lookup_id: int | None = None
         if isinstance(raw_id, (str, int)):
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 lookup_id = int(raw_id)
-            except (ValueError, TypeError):
-                pass
 
         if lookup_id is None:
             result.append({**song})

@@ -88,7 +88,7 @@ async def scan_library_quick_workflow(
     scan_id = f"{library_id}_{now_ms()}"
 
     # Step 1 — Resolve library and validate root
-    library = await resolve_library_for_scan(db, str(library_id))
+    library = await resolve_library_for_scan(db, library_id)
     library_root = Path(library.root_path).resolve()
     validate_library_root(library_root)
     await mark_scan_started(db, library_id, scan_type="quick")
@@ -103,7 +103,7 @@ async def scan_library_quick_workflow(
         all_folders = discover_library_folders(library_root, [library_root])
         discovered_folder_paths = {f.rel_path for f in all_folders}
 
-        await update_scan_progress(db, str(library_id), total=file_count or sum(f.file_count for f in all_folders))
+        await update_scan_progress(db, library_id, total=file_count or sum(f.file_count for f in all_folders))
 
         # Step 4 — Track which folders vanished so their files can be deleted after the loop
         vanished_folder_paths = db_folder_paths - discovered_folder_paths
@@ -143,7 +143,9 @@ async def scan_library_quick_workflow(
                     # Upsert all discovered files immediately
                     if batch.file_entries:
                         new_paths = batch.discovered_paths - set(existing_for_folder)
-                        file_ids = cast("list[int]", await upsert_scanned_files(db, batch.file_entries, batch.edge_bootstraps))
+                        file_ids = cast(
+                            "list[int]", await upsert_scanned_files(db, batch.file_entries, batch.edge_bootstraps)
+                        )
                         await transition_file_state(db, file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
                         await transition_file_state(db, file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
                         # Reset hydrated → not_hydrated for modified files
@@ -191,7 +193,7 @@ async def scan_library_quick_workflow(
                         stats["files_failed"] += folder.file_count
                         warnings.append(f"Folder {folder.rel_path!r} skipped after error: {e}")
 
-            await update_scan_progress(db, str(library_id), progress=len(all_discovered_paths))
+            await update_scan_progress(db, library_id, progress=len(all_discovered_paths))
 
         # Step 6 — Delete files from folders that vanished entirely from disk
         for folder_rel_path in vanished_folder_paths:
@@ -215,7 +217,7 @@ async def scan_library_quick_workflow(
         await mark_scan_completed(db, library_id)
         await update_scan_progress(
             db,
-            str(library_id),
+            library_id,
             progress=stats["files_discovered"],
             scan_error=None,
         )
@@ -237,9 +239,9 @@ async def scan_library_quick_workflow(
 
     except Exception as e:
         logger.error("Quick scan crashed: %s", e, exc_info=True)
-        await update_scan_progress(db, str(library_id), scan_error=str(e))
+        await update_scan_progress(db, library_id, scan_error=str(e))
         try:
-            await transition_pipeline_axis(db, str(library_id), SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
+            await transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
         except Exception:
             logger.exception(
                 "Failed to reset scan axis to not_scanned after scan failure for library %s",

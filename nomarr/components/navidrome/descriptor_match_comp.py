@@ -109,9 +109,7 @@ async def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -
 
     docs = get_files_by_ids_with_tags(db, sorted(candidate_ids))
     descriptors_by_id = {
-        file_id: _descriptor_from_doc(file_doc)
-        for file_doc in docs
-        if isinstance((file_id := file_doc.get("id")), str)
+        file_id: _descriptor_from_doc(file_doc) for file_doc in docs if isinstance((file_id := file_doc.get("id")), str)
     }
 
     title = _normalize_title(seed.get("title", ""))

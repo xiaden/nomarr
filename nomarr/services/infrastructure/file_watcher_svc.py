@@ -267,7 +267,7 @@ class FileWatcherService:
 
         """
         # Get library info
-        library = await get_library_watch_config(self._db, library_id)
+        library = await get_library_watch_config(self._db, int(library_id))
         if not library:
             msg = f"Library {library_id} not found"
             raise ValueError(msg)
@@ -373,7 +373,7 @@ class FileWatcherService:
                 await asyncio.sleep(self.polling_interval_seconds)
 
                 # Validate library still exists and should be watched
-                library = await get_library_watch_config(self._db, library_id)
+                library = await get_library_watch_config(self._db, int(library_id))
                 if not library:
                     logger.info(f"Library {library_id} no longer exists, stopping watcher")
                     self._schedule_cleanup(library_id)
@@ -470,7 +470,7 @@ class FileWatcherService:
             raise ValueError(msg)
 
         # Verify library exists
-        library = await get_library_watch_config(self._db, library_id)
+        library = await get_library_watch_config(self._db, int(library_id))
         if not library:
             msg = f"Library {library_id} not found"
             raise ValueError(msg)
@@ -485,7 +485,7 @@ class FileWatcherService:
             self.pending_changes = {(lib_id, path) for lib_id, path in self.pending_changes if lib_id != library_id}
 
         # Update watch_mode in database
-        await UpdateLibraryMetadataComp(self._db).update(library_id, watch_mode=new_mode)
+        await UpdateLibraryMetadataComp(self._db).update(int(library_id), watch_mode=new_mode)
         logger.info(f"Updated library {library_id} watch_mode to '{new_mode}'")
 
         # Start new mode if not 'off'

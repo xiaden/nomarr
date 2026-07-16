@@ -51,9 +51,9 @@ async def scan_setup_workflow(
         LibraryAlreadyScanningError: If the library is already being scanned.
 
     """
-    library = await resolve_library_for_scan(db, library_id)  # raises LibraryNotFoundError
+    library = await resolve_library_for_scan(db, int(library_id))  # raises LibraryNotFoundError
 
-    if await is_library_scanning(db, library_id):
+    if await is_library_scanning(db, int(library_id)):
         msg = f"Library {library_id} is already being scanned"
         raise LibraryAlreadyScanningError(msg)
 
@@ -73,7 +73,7 @@ async def scan_setup_workflow(
         library.name,
     )
 
-    await update_scan_progress(db, library_id, progress=0, total=0)
-    await transition_to_scanning(db, library_id)
+    await update_scan_progress(db, int(library_id), progress=0, total=0)
+    await transition_to_scanning(db, int(library_id))
 
     return library

@@ -177,9 +177,7 @@ async def get_nomarr_tags_bulk(db: Database, file_ids: list[int]) -> dict[int, T
     )
     if not isinstance(result_raw, dict):
         return {}
-    tags_by_file = {
-        int(k): list(v) if isinstance(v, list) else [] for k, v in result_raw.items() if isinstance(k, int)
-    }
+    tags_by_file = {int(k): list(v) if isinstance(v, list) else [] for k, v in result_raw.items() if isinstance(k, int)}
     result: dict[int, Tags] = {}
     for file_id, tag_docs in tags_by_file.items():
         rows = [
@@ -335,9 +333,7 @@ async def get_distinct_tag_values_for_files(db: Database, file_ids: list[int], n
     raw = await db.library.list_file_tags_for_files(file_ids)
     if not isinstance(raw, dict):
         return []
-    tags_by_file = {
-        k: list(v) if isinstance(v, list) else [] for k, v in raw.items() if isinstance(k, int)
-    }
+    tags_by_file = {k: list(v) if isinstance(v, list) else [] for k, v in raw.items() if isinstance(k, int)}
     values = {
         value
         for tag_docs in tags_by_file.values()
@@ -355,9 +351,7 @@ async def get_tag_values_grouped_by_file(db: Database, file_ids: list[int], name
     raw = await db.library.list_file_tags_for_files(file_ids)
     if not isinstance(raw, dict):
         return {}
-    tags_by_file = {
-        k: list(v) if isinstance(v, list) else [] for k, v in raw.items() if isinstance(k, int)
-    }
+    tags_by_file = {k: list(v) if isinstance(v, list) else [] for k, v in raw.items() if isinstance(k, int)}
     result: dict[int, set[str]] = {}
     for file_id, tag_docs in tags_by_file.items():
         for tag in tag_docs:

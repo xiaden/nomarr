@@ -103,7 +103,7 @@ class LibraryPipelineService:
         # Recover stale scanning
         scanning_libraries = await get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
         stale_scanning = [
-            library_id for library_id in scanning_libraries if not self._is_task_running(self._scan_task_id(library_id))
+            library_id for library_id in scanning_libraries if not self._is_task_running(self._scan_task_id(str(library_id)))
         ]
         for library_id in stale_scanning:
             await transition_pipeline_axis(self.db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
@@ -131,7 +131,7 @@ class LibraryPipelineService:
         # Recover stale writing
         writing_libraries = await get_libraries_in_axis_state(self.db, WRITE_STATE_FIELD, WRITE_IN_PROGRESS)
         for library_id in writing_libraries:
-            if self._is_task_running(self._write_task_id(library_id)):
+            if self._is_task_running(self._write_task_id(str(library_id))):
                 continue
             await transition_pipeline_axis(self.db, library_id, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
             recovery_counts["writing"] += 1
@@ -266,7 +266,7 @@ class LibraryPipelineService:
                     "Library %s entering writing stage after calibration apply completion",
                     library_id,
                 )
-                self._dispatch_write(library_id)
+                self._dispatch_write(str(library_id))
             else:
                 logger.info(
                     "Library %s calibrated; tag_write axis stays not_written (auto-write disabled)",
@@ -350,7 +350,7 @@ class LibraryPipelineService:
 
     async def on_write_complete(self, library_id: str) -> None:
         """Mark tag_write axis as complete and trigger Navidrome rescan."""
-        await transition_pipeline_axis(self.db, library_id, WRITE_STATE_FIELD, WRITE_COMPLETE)
+        await transition_pipeline_axis(self.db, int(library_id), WRITE_STATE_FIELD, WRITE_COMPLETE)
         logger.info("Library %s tag_write axis transitioned to written", library_id)
         rescan_triggered = self.navidrome_svc.trigger_rescan()
         logger.info(

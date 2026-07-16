@@ -105,7 +105,7 @@ async def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, wor
         }
         await save_file_tags(db, file_id_str, prefixed_nom_tags)
         if writes.chromaprint:
-            await set_chromaprint(db, file_id, int(writes.chromaprint))
+            await set_chromaprint(db, file_id, writes.chromaprint)
         if writes.raw_output_streams:
             await upsert_output_streams(
                 db,

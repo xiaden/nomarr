@@ -64,7 +64,10 @@ class LibraryScanMixin:
         """
         await scan_setup_workflow(self.db, library_id, scan_type="quick")
         task_id = f"scan_library_{library_id}"
-        on_complete = lambda: asyncio.run(on_scan_complete_pipeline_hook(self.db, int(library_id)))
+
+        def on_complete():
+            return asyncio.run(on_scan_complete_pipeline_hook(self.db, int(library_id)))
+
         if self.background_tasks is None:
             msg = "Background task service is not available"
             raise RuntimeError(msg)
@@ -116,7 +119,10 @@ class LibraryScanMixin:
         # so the ML axis stays at whichever state it was already in.
         on_complete: Callable[[], None] | None = None
         if not skip_validation_autorepair:
-            on_complete = lambda: asyncio.run(on_scan_complete_pipeline_hook(self.db, int(library_id)))
+
+            def on_complete():
+                return asyncio.run(on_scan_complete_pipeline_hook(self.db, int(library_id)))
+
         if self.background_tasks is None:
             msg = "Background task service is not available"
             raise RuntimeError(msg)
@@ -184,7 +190,7 @@ class LibraryScanMixin:
             LibraryAlreadyScanningError: If library is already being scanned
 
         """
-        await resolve_library_for_scan(self.db, library_id)
+        await resolve_library_for_scan(self.db, int(library_id))
         files_queued = await bulk_set_not_hydrated(self.db, int(library_id))
         logger.info("[LibraryService] Marked %d files for tag re-hydration in library %s", files_queued, library_id)
         scan_result = await self.start_full_scan(library_id, skip_validation_autorepair=True)
@@ -213,7 +219,7 @@ class LibraryScanMixin:
                 library_path=self.cfg.library_root,
                 enabled=self.background_tasks is not None,
             )
-        await resolve_library_for_scan(self.db, library_id)  # Validate library exists
+        await resolve_library_for_scan(self.db, int(library_id))  # Validate library exists
         scan_state = await get_scan_state(self.db, int(library_id))
         try:
             pipeline_state = await get_pipeline_state(self.db, int(library_id))
@@ -270,7 +276,7 @@ class LibraryScanMixin:
             Validation summary dict (files_checked, incomplete_files, etc.)
 
         """
-        await resolve_library_for_scan(self.db, library_id)
+        await resolve_library_for_scan(self.db, int(library_id))
         return await validate_library_tags_workflow(
             db=self.db,
             models_dir=self.cfg.models_dir,

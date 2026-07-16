@@ -253,9 +253,7 @@ async def get_errored_file_ids(db: Database, library_id: int, limit: int | None 
     library_file_ids = await _library_file_ids(db, library_id)
     errored_files = await db.app.list_file_docs_in_state(STATE_ERRORED)
     errored_file_ids = [
-        doc["id"]
-        for doc in errored_files
-        if isinstance(doc, dict) and "id" in doc and doc["id"] in library_file_ids
+        doc["id"] for doc in errored_files if isinstance(doc, dict) and "id" in doc and doc["id"] in library_file_ids
     ]
     return errored_file_ids if limit is None else errored_file_ids[:limit]
 
@@ -356,7 +354,9 @@ async def get_files_with_incomplete_tags(
         library_file_ids = await _library_file_ids(db, library_id)
         written_files = [doc for doc in written_files if isinstance(doc, dict) and doc.get("id") in library_file_ids]
     file_ids = [doc["id"] for doc in written_files if isinstance(doc, dict) and "id" in doc]
-    tags_by_file = await db.library.list_file_tags_for_files(file_ids, name_starts_with=namespace_prefix) if file_ids else {}
+    tags_by_file = (
+        await db.library.list_file_tags_for_files(file_ids, name_starts_with=namespace_prefix) if file_ids else {}
+    )
 
     results: list[dict[str, Any]] = []
     for file_doc in written_files:
