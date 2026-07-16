@@ -40,7 +40,7 @@ export interface VectorSearchResponse {
 export interface VectorHotColdStats {
   /** Backbone identifier */
   backbone_id: string;
-  /** ArangoDB library _key */
+  /** Library identifier */
   library_key: string;
   /** Number of vectors in hot collection */
   hot_count: number;
@@ -58,7 +58,7 @@ export interface VectorStatsResponse {
 export interface VectorPromoteRequest {
   /** Backbone identifier (e.g., "effnet", "yamnet") */
   backbone_id: string;
-  /** ArangoDB library _key */
+  /** Library identifier */
   library_key: string;
   /** Number of HNSW graph lists (optional, auto-calculated if null) */
   nlists?: number | null;
@@ -191,7 +191,7 @@ export async function getTrackVector(
 export interface VectorRebuildIndexRequest {
   /** Backbone identifier (e.g., "effnet", "yamnet") */
   backbone_id: string;
-  /** ArangoDB library _key */
+  /** Library identifier */
   library_key: string;
   /** Number of Voronoi cells (optional, auto-calculated if null) */
   nlists?: number | null;

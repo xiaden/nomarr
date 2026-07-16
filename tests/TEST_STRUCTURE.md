@@ -85,7 +85,7 @@ Tests multiple components working together with real dependencies.
 
 - Testing workflows that call multiple components
 - Testing service layer orchestration
-- Using real database (ArangoDB test instance)
+- Using real database (PostgreSQL test instance)
 - Testing file I/O with test fixtures
 
 **Example:**
@@ -229,7 +229,7 @@ Informational marker indicating test uses real database (not in-memory).
 
 **When to use:**
 
-- Tests using persistent ArangoDB instance
+- Tests using persistent PostgreSQL instance
 - Helps identify tests that need cleanup
 - Usually combined with `@pytest.mark.integration`
 
@@ -294,7 +294,7 @@ pytest -m "container_only"
 ### 2. Add Integration Tests for Complex Flows
 
 - Test workflows that orchestrate multiple components
-- Use real database (ArangoDB test instance)
+- Use real database (PostgreSQL test instance)
 - Test actual file operations with fixtures
 
 ### 3. Use Appropriate Markers
