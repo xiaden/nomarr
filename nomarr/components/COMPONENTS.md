@@ -123,8 +123,6 @@ components/
 │   └── templates_comp.py              # Playlist template handling
 │
   ├── platform/
-│   ├── arango_bootstrap_comp.py       # ArangoDB initialization
-│   ├── arango_first_run_comp.py       # First-run provisioning
 │   ├── gpu_monitor_comp.py            # GPU monitoring
 │   ├── gpu_probe_comp.py              # GPU detection
 │   ├── locks_comp.py                  # Distributed locking
@@ -250,7 +248,7 @@ Aim for **pure, stateless functions**. Avoid long-lived mutable globals. If cach
 
 ### Persistence Usage
 
-Components access the database through the persistence layer (`db.module.method()`). No raw AQL inside components.
+Components access the database through the persistence layer (`db.module.method()`). No raw SQL inside components.
 
 ```python
 # ✅ Uses persistence through the intent-level facade

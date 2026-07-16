@@ -4,8 +4,8 @@ Database bootstrap, GPU monitoring, migration execution, and resource tracking.
 
 ## Responsibilities
 
-- Wait for ArangoDB availability and provision database/user on first run
-- Ensure baseline schema (collections, indexes, graphs) exists on startup
+- Wait for PostgreSQL availability and provision database/user on first run
+- Ensure baseline schema (tables, indexes) exists on startup
 - Discover, validate, and apply forward-only database migrations in semver order
 - Probe GPU availability and monitor VRAM/RAM resource headroom
 - Run continuous GPU health monitoring in an isolated process
@@ -14,8 +14,6 @@ Database bootstrap, GPU monitoring, migration execution, and resource tracking.
 
  | Module | Purpose |
  | -------- | ---------- |
- | `arango_bootstrap_comp` | `wait_for_arango` (connection retry loop), `ensure_schema` (frozen baseline — collections, indexes, graphs), per-backbone vector collection creation |
- | `arango_first_run_comp` | First-run provisioning — create database, generate app password, detect fresh installs vs. existing config |
  | `migration_runner_comp` | Discover migration modules, validate version chains, apply pending migrations with two-phase recording, detect schema version mismatches |
  | `gpu_probe_comp` | Single-shot `nvidia-smi` subprocess check — fail-fast GPU availability detection without importing CUDA libraries |
  | `gpu_monitor_comp` | `GPUHealthMonitor` (multiprocessing.Process) — continuous GPU probing with heartbeat frames sent to HealthMonitorService |
@@ -30,5 +28,5 @@ Database bootstrap, GPU monitoring, migration execution, and resource tracking.
 ## Dependencies
 
 - **Upstream:** Called by startup sequence and ML resource management
-- **Downstream:** Calls persistence directly (ArangoDB system API for provisioning, app DB for schema/migrations)
-- **External:** `python-arango`, `psutil` (RAM), `nvidia-smi` subprocess (GPU)
+- **Downstream:** Calls persistence directly (PostgreSQL for provisioning, app DB for schema/migrations)
+- **External:** `psutil` (RAM), `nvidia-smi` subprocess (GPU)
