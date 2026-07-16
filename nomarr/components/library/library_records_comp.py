@@ -62,7 +62,7 @@ async def get_library_record(
 
     if doc is None or not include_scan:
         return doc
-    return _merge_scan_state(db, doc)
+    return await _merge_scan_state(db, doc)
 
 
 async def get_library_by_name(
@@ -75,7 +75,7 @@ async def get_library_by_name(
     doc = cast("dict[str, Any] | None", await db.library.get_library_by_name(name))
     if doc is None or not include_scan:
         return doc
-    return _merge_scan_state(db, doc)
+    return await _merge_scan_state(db, doc)
 
 
 async def list_library_records(
@@ -90,7 +90,8 @@ async def list_library_records(
         await db.library.list_libraries(enabled_only=enabled_only),
     )
     if include_scan:
-        docs = [_merge_scan_state(db, doc) for doc in docs]
+        merged = [_merge_scan_state(db, doc) for doc in docs]
+        docs = [await d for d in merged]
     return [LibraryDict(**doc) for doc in docs]
 
 
@@ -138,7 +139,7 @@ async def update_library_config_fields(
     if not update_fields:
         return
 
-    update_library_record(db, library_id, **update_fields)
+    await update_library_record(db, library_id, **update_fields)
 
 
 async def list_all_library_keys(db: Database) -> list[int]:

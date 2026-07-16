@@ -87,7 +87,14 @@ async def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]])
         returned as-is (no ``None``-valued metadata keys are injected).
 
     """
-    song_ids = [song_id for song in songs if isinstance(song_id := song.get("id"), str)]
+    song_ids: list[int] = []
+    for song in songs:
+        raw_id = song.get("id")
+        if isinstance(raw_id, (str, int)):
+            try:
+                song_ids.append(int(raw_id))
+            except (ValueError, TypeError):
+                pass
 
     if not song_ids:
         return [{**song} for song in songs]
@@ -96,14 +103,20 @@ async def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]])
 
     result: list[dict[str, Any]] = []
     for song in songs:
-        song_id = song.get("id")
+        raw_id = song.get("id")
+        lookup_id: int | None = None
+        if isinstance(raw_id, (str, int)):
+            try:
+                lookup_id = int(raw_id)
+            except (ValueError, TypeError):
+                pass
 
-        if not isinstance(song_id, str):
+        if lookup_id is None:
             result.append({**song})
             continue
 
-        song_tags = tags_by_song.get(song_id, [])
-        metadata = extract_canonical_metadata(song_tags)
+        song_tags = tags_by_song.get(lookup_id, [])
+        metadata = extract_canonical_metadata(song_tags)  # type: ignore[arg-type]
         # Strip None values so they don't override embedded cache fields
         # (e.g., artist/album stored via update_metadata_cache_batch)
         metadata = {k: v for k, v in metadata.items() if v is not None}
@@ -127,7 +140,8 @@ async def hydrate_song_with_metadata(db: Database, song: dict[str, Any]) -> dict
         returns a shallow copy unchanged.
 
     """
-    return hydrate_songs_with_metadata(db, [song])[0]
+    result = await hydrate_songs_with_metadata(db, [song])
+    return result[0]
 
 
 def _group_tags_by_name(song_tags: list[dict[str, Any]]) -> dict[str, list[Any]]:

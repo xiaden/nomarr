@@ -40,7 +40,7 @@ async def upsert_library_file(
     scanned_at = now_ms().value
     normalized_path = str(path.relative)
     absolute_path = str(path.absolute)
-    library_key = library_key_from_ref(library_id)
+    library_key = library_key_from_ref(str(library_id))
     return await db.library.add_file_to_library(
         library_id,
         {
@@ -70,7 +70,7 @@ async def delete_library_file(db: Database, file_id: int) -> None:
         await db.library.remove_file(file_id)
     except ValueError:
         # Not an integer, treat as path
-        await db.library.remove_file_by_path(file_id)
+        await db.library.remove_file_by_path(str(file_id))
 
 
 async def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[int]:
@@ -124,7 +124,7 @@ async def update_file_path(
     }
     if normalized_path is not None:
         fields["normalized_path"] = normalized_path
-    db.library.file_repo.update_file(file_id, fields)
+    await db.library.file_repo.update_file(file_id, fields)
 
 
 async def update_file_modified_time(db: Database, file_key: int, modified_time_ms: int) -> None:
@@ -140,13 +140,11 @@ async def bulk_delete_files(db: Database, paths: list[str]) -> int:
     if not paths:
         return 0
 
-    matched_paths = list(
-        dict.fromkeys(
-            path
-            for path in paths
-            if cast("dict[str, Any] | None", await db.library.find_file_by_path_any_library(path)) is not None
-        )
-    )
+    resolved = []
+    for path in paths:
+        if cast("dict[str, Any] | None", await db.library.find_file_by_path_any_library(path)) is not None:
+            resolved.append(path)
+    matched_paths = list(dict.fromkeys(resolved))
     if not matched_paths:
         return 0
 
@@ -164,7 +162,7 @@ async def get_file_library_key(db: Database, file_id: int) -> int | None:
     return library_ids.get(file_id)
 
 
-async def set_chromaprint(db: Database, file_id: int, chromaprint: int) -> None:
+async def set_chromaprint(db: Database, file_id: int, chromaprint: str) -> None:
     """Persist a chromaprint fingerprint for one file."""
     await db.library.set_library_file_chromaprint(file_id, chromaprint)
 
