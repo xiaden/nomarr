@@ -42,7 +42,7 @@ async def list_hot_vector_targets(db: Database, models_dir: str) -> list[str]:
     return targets
 
 
-async def compute_promotion_ef_construction(db: Database, backbone_id: int) -> int:
+async def compute_promotion_ef_construction(db: Database, backbone_id: str) -> int:
     """Compute optimal HNSW ef_construction for a backbone.
 
     Sums hot and cold counts to determine total document count, then

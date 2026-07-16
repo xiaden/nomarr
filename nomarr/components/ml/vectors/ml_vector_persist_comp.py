@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _make_vector_key(file_id: str, model_suite_hash: str) -> str:
+def _make_vector_key(file_id: int, model_suite_hash: str) -> str:
     """Return the deterministic key for one persisted track vector."""
     return hashlib.sha1(f"{file_id}|{model_suite_hash}".encode()).hexdigest()
 
@@ -33,7 +33,7 @@ def _normalize_vector(vector: list[float]) -> list[float]:
 
 async def upsert_hot_track_vector(
     db: Database,
-    file_id: str,
+    file_id: int,
     backbone: str,
     model_suite_hash: str,
     embed_dim: int,
@@ -96,7 +96,7 @@ async def upsert_hot_track_vector(
 
 async def persist_backbone_vector(
     db: Database,
-    file_id: str,
+    file_id: int,
     backbone: str,
     embeddings_2d: np.ndarray,
     model_suite_hash: str,
@@ -123,7 +123,7 @@ async def persist_backbone_vector(
     try:
         vector = pool_embedding_for_storage(embeddings_2d)
         embed_dim = get_embedding_dimension(embeddings_2d)
-        upsert_hot_track_vector(
+        await upsert_hot_track_vector(
             db=db,
             file_id=file_id,
             backbone=backbone,

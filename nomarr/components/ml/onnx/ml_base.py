@@ -147,7 +147,7 @@ class BaseONNXModel(ABC):
             ctx = _worker_ctx.get_worker_context()
             if ctx is not None:
                 db, worker_id = ctx
-                _coordinator.release_vram_promise(db, worker_id, self._path)
+                _coordinator.release_vram_promise(db, worker_id, self._path)  # type: ignore[unused-coroutine]
         self._session = None
         self._device = None
 
@@ -175,13 +175,13 @@ class BaseONNXModel(ABC):
             return
         self.unload()
         try:
-            self.load(value)
+            self.load(value)  # type: ignore[unused-coroutine]
         except VramFitError:
             logger.warning(
                 "[model] VRAM coordinator rejected GPU for %s — falling back to CPU",
                 self._path,
             )
-            self.load("cpu")
+            self.load("cpu")  # type: ignore[unused-coroutine]
             raise
 
     # ------------------------------------------------------------------
@@ -249,10 +249,10 @@ class BaseONNXModel(ABC):
                 # time, not at load time).
                 self.unload()
                 try:
-                    self.load("gpu")
+                    await self.load("gpu")
                 except VramFitError:
                     # Coordinator rejected the larger limit — not enough free
                     # VRAM in the fleet.  Model is already on CPU after the
                     # VramFitError path in load().  Loop will see
                     # self._device == "cpu" and raise on next iteration.
-                    self.load("cpu")
+                    await self.load("cpu")

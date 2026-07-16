@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING, Any, cast
 
+from nomarr.helpers.dto.model_repo_dto import ModelRecord
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
@@ -49,7 +50,7 @@ async def upsert_registered_model(
     source: str = "discovered",
     head_release_date: str = "",
     embedder_release_date: str = "",
-) -> dict[str, Any]:
+) -> ModelRecord:
     """Insert or update one registered model via constructor verbs.
 
     Args:
@@ -155,7 +156,7 @@ async def list_fully_labeled_model_outputs(db: Database, model_id: str) -> list[
     return [doc for doc in await list_model_outputs_for_model(db, model_id) if bool(doc.get("fully_labeled"))]
 
 
-async def ensure_model_outputs(db: Database, model_id: str, output_count: int) -> list[dict[str, Any]]:
+async def ensure_model_outputs(db: Database, file_id: int, model_id: str, output_count: int) -> list[dict[str, Any]]:
     """Ensure all expected output vertices exist for a model."""
     for output_index in range(output_count):
         output_key = _output_key(model_id, output_index)
@@ -170,18 +171,19 @@ async def ensure_model_outputs(db: Database, model_id: str, output_count: int) -
             payload["label"] = existing.get("label")
             payload["fully_labeled"] = existing.get("fully_labeled", False)
 
-        await db.ml.replace_model_output(model_id, output_key, payload)
+        await db.ml.replace_model_output(file_id, model_id, output_key, payload)
 
     return await list_model_outputs_for_model(db, model_id)
 
 
-async def update_model_output_label(db: Database, model_id: str, output_id: str, label: str) -> None:
+async def update_model_output_label(db: Database, file_id: int, model_id: str, output_id: str, label: str) -> None:
     """Write label metadata for one output vertex."""
     existing_output = await db.ml.get_model_output(output_id)  # type: ignore[arg-type]
     if not isinstance(existing_output, dict):
         return
 
     await db.ml.replace_model_output(
+        file_id,
         model_id,
         output_id,
         {

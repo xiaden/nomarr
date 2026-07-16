@@ -62,7 +62,7 @@ class ONNXModelCache:
     heads: dict[str, list[ONNXHeadModel]]
     """Head models keyed by backbone name; each list is sorted by model name."""
 
-    async def __init__(
+    async def __init__(  # type: ignore[misc]
         self,
         models_dir: str,
         device: DevicePlacement,
