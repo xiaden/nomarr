@@ -70,7 +70,7 @@ async def claim_files_for_reconciliation(
             "claim_type": "reconcile",
         }
 
-        if try_insert_or_steal_claim(db, payload, now, lease_ms):
+        if await try_insert_or_steal_claim(db, payload, now, lease_ms):
             claimed.append(candidate)
 
     return claimed

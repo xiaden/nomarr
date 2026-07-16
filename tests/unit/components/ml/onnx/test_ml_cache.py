@@ -1,6 +1,6 @@
 import tempfile
 from dataclasses import dataclass
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -33,7 +33,7 @@ def _make_head(
 
 @pytest.mark.unit
 class TestONNXModelCacheInit:
-    def test_no_models_dir_produces_empty_cache(self) -> None:
+    async def test_no_models_dir_produces_empty_cache(self) -> None:
         with (
             tempfile.TemporaryDirectory() as tmpdir,
             patch(
@@ -45,12 +45,12 @@ class TestONNXModelCacheInit:
                 return_value=[],
             ),
         ):
-            cache = ONNXModelCache(tmpdir, device="cpu")
+            cache = await ONNXModelCache(tmpdir, device="cpu")
 
         assert cache.backbones == {}
         assert cache.heads == {}
 
-    def test_heads_grouped_by_meta_backbone(self) -> None:
+    async def test_heads_grouped_by_meta_backbone(self) -> None:
         heads = [
             _make_head(backbone="effnet", model_stem="mood_happy"),
             _make_head(backbone="yamnet", model_stem="genre_rock"),
@@ -67,11 +67,11 @@ class TestONNXModelCacheInit:
                 return_value=heads,
             ),
         ):
-            cache = ONNXModelCache(tmpdir, device="cpu")
+            cache = await ONNXModelCache(tmpdir, device="cpu")
 
         assert set(cache.heads) == {"effnet", "yamnet"}
 
-    def test_heads_from_same_backbone_grouped_together(self) -> None:
+    async def test_heads_from_same_backbone_grouped_together(self) -> None:
         heads = [
             _make_head(backbone="effnet", model_stem="mood_happy"),
             _make_head(backbone="effnet", model_stem="genre_rock"),
@@ -88,11 +88,11 @@ class TestONNXModelCacheInit:
                 return_value=heads,
             ),
         ):
-            cache = ONNXModelCache(tmpdir, device="cpu")
+            cache = await ONNXModelCache(tmpdir, device="cpu")
 
         assert len(cache.heads["effnet"]) == 2
 
-    def test_with_db_calls_discover_head_models_not_no_db(self) -> None:
+    async def test_with_db_calls_discover_head_models_not_no_db(self) -> None:
         db = MagicMock()
 
         with (
@@ -103,6 +103,7 @@ class TestONNXModelCacheInit:
             ),
             patch(
                 "nomarr.components.ml.onnx.ml_cache.discover_head_models",
+                new_callable=AsyncMock,
                 return_value=[],
             ) as mock_discover_with_db,
             patch(
@@ -110,12 +111,12 @@ class TestONNXModelCacheInit:
                 return_value=[],
             ) as mock_discover_no_db,
         ):
-            ONNXModelCache(tmpdir, device="cpu", db=db)
+            await ONNXModelCache(tmpdir, device="cpu", db=db)
 
         mock_discover_with_db.assert_called_once_with(tmpdir, db)
         mock_discover_no_db.assert_not_called()
 
-    def test_without_db_calls_discover_head_models_no_db(self) -> None:
+    async def test_without_db_calls_discover_head_models_no_db(self) -> None:
         with (
             tempfile.TemporaryDirectory() as tmpdir,
             patch(
@@ -131,7 +132,7 @@ class TestONNXModelCacheInit:
                 return_value=[],
             ) as mock_discover_no_db,
         ):
-            ONNXModelCache(tmpdir, device="cpu", db=None)
+            await ONNXModelCache(tmpdir, device="cpu", db=None)
 
         mock_discover_with_db.assert_not_called()
         mock_discover_no_db.assert_called_once_with(tmpdir)
@@ -139,7 +140,7 @@ class TestONNXModelCacheInit:
 
 @pytest.mark.unit
 class TestONNXModelCacheModelCount:
-    def test_model_count_is_zero_for_empty_cache(self) -> None:
+    async def test_model_count_is_zero_for_empty_cache(self) -> None:
         with (
             tempfile.TemporaryDirectory() as tmpdir,
             patch(
@@ -151,11 +152,11 @@ class TestONNXModelCacheModelCount:
                 return_value=[],
             ),
         ):
-            cache = ONNXModelCache(tmpdir, device="cpu")
+            cache = await ONNXModelCache(tmpdir, device="cpu")
 
         assert cache.model_count == 0
 
-    def test_model_count_sums_backbones_and_heads(self) -> None:
+    async def test_model_count_sums_backbones_and_heads(self) -> None:
         backbones = [_FakeBackbone("effnet"), _FakeBackbone("yamnet")]
         heads = [
             _make_head(backbone="effnet", model_stem="mood_happy"),
@@ -174,6 +175,6 @@ class TestONNXModelCacheModelCount:
                 return_value=heads,
             ),
         ):
-            cache = ONNXModelCache(tmpdir, device="cpu")
+            cache = await ONNXModelCache(tmpdir, device="cpu")
 
         assert cache.model_count == 5

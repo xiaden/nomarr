@@ -1,14 +1,10 @@
-"""Unit tests for SQL Core primitives against an ephemeral PostgreSQL instance.
+"""Unit tests for SQL Core primitives against an ephemeral SQLite instance.
 
 Each primitive function in ``nomarr.persistence.sql.primitives`` is tested
-against a real PostgreSQL database using a simple SQLAlchemy Core table.
-The database connection uses a local PostgreSQL instance (nomarr_test)
-since Docker/testcontainers is not available in this environment.
+against a SQLite in-memory database using a simple SQLAlchemy Core table.
 """
 
 from __future__ import annotations
-
-import os
 
 import pytest
 import pytest_asyncio
@@ -27,17 +23,12 @@ from nomarr.persistence.sql.primitives import (
     upsert_by_field,
 )
 
-# Build async URL from environment or default local PostgreSQL
-_SYNC_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://nomarr_test:nomarr_test@localhost:5432/nomarr_test",
-)
-_ASYNC_URL = _SYNC_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+_ASYNC_URL = "sqlite+aiosqlite:///:memory:"
 
 
 @pytest_asyncio.fixture
 async def async_engine():
-    """Create an async engine connected to the test database."""
+    """Create an async engine connected to an in-memory SQLite database."""
     engine = create_async_engine(_ASYNC_URL, echo=False)
     yield engine
     await engine.dispose()
@@ -45,7 +36,7 @@ async def async_engine():
 
 @pytest_asyncio.fixture
 async def metadata_and_engine(async_engine):
-    """Define test table schema and create tables."""
+    """Define test table schema and create tables on the in-memory database."""
     md = MetaData()
     Table(
         "test_items",
@@ -55,18 +46,23 @@ async def metadata_and_engine(async_engine):
         Column("value", Text),
         UniqueConstraint("name", name="uq_test_items_name"),
     )
-    async with async_engine.begin() as conn:
+    # SQLite in-memory: use connect+run_sync instead of begin (avoids
+    # nested-transaction issues with aiosqlite).
+    async with async_engine.connect() as conn:
         await conn.run_sync(md.create_all)
+        await conn.commit()
     yield async_engine, md
-    async with async_engine.begin() as conn:
+    async with async_engine.connect() as conn:
         await conn.run_sync(md.drop_all)
+        await conn.commit()
 
 
 @pytest_asyncio.fixture
 async def session(metadata_and_engine):
     """Provide a transactional async session that rolls back after each test."""
     engine, _ = metadata_and_engine
-    async with engine.begin() as conn:
+    async with engine.connect() as conn:
+        await conn.begin()
         await conn.begin_nested()
         session = AsyncSession(bind=conn)
         try:
@@ -266,16 +262,18 @@ async def test_is_table_empty_true_on_fresh_table(async_engine):
         Column("id", Integer, primary_key=True, autoincrement=True),
         Column("name", String(100)),
     )
-    async with async_engine.begin() as conn:
+    async with async_engine.connect() as conn:
         await conn.run_sync(md.create_all)
+        await conn.commit()
 
     try:
         async with AsyncSession(async_engine) as sess:
             result = await is_table_empty(fresh_table, session=sess)
             assert result is True
     finally:
-        async with async_engine.begin() as conn:
+        async with async_engine.connect() as conn:
             await conn.run_sync(md.drop_all)
+            await conn.commit()
 
 
 async def test_is_table_empty_false_after_insert(session: AsyncSession, test_table: Table):

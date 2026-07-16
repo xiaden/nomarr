@@ -1,56 +1,61 @@
 """Shared fixtures for integration tests.
 
-Duplicates the ephemeral PostgreSQL fixtures from the database unit-test
+Duplicates the ephemeral SQLite fixtures from the database unit-test
 conftest so that integration tests under ``tests/integration/`` can use
 ``pg_session`` without requiring ``tests/`` to be a Python package.
 """
 
+import atexit
 import os
+import tempfile
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine as _create_async_engine
 
-# ── PostgreSQL fixtures for integration tests ───────────────────
+# ── SQLite fixtures for integration tests ───────────────────
 
-_PG_IMAGE = os.environ.get("PGVECTOR_IMAGE", "pgvector/pgvector:pg17")
+# Temp file shared between sync (DDL) and async (query) engines
+# because SQLite :memory: databases are per-connection.
+_DB_FD, _DB_PATH = tempfile.mkstemp(suffix=".db", prefix="nomarr_int_test_")
+os.close(_DB_FD)
+_SYNC_URL = f"sqlite:///{_DB_PATH}"
+_ASYNC_URL = f"sqlite+aiosqlite:///{_DB_PATH}"
+atexit.register(os.unlink, _DB_PATH)
 
 
 @pytest.fixture(scope="session")
 def pg_engine():
-    """Session-scoped ephemeral PostgreSQL container via testcontainers.
+    """Session-scoped ephemeral SQLite database.
 
-    Starts a ``pgvector/pgvector:pg17`` container, creates all tables
-    (including ``embeddings`` with halfvec) via ``Base.metadata.create_all``,
-    and yields a sync ``Engine``.  The container is torn down when the
-    session ends.
+    Creates a temp-file SQLite database, creates all compatible tables
+    via ``Base.metadata.create_all``, and yields a sync ``Engine``.
+    The temp file is cleaned up on process exit.
     """
-    from testcontainers.postgres import PostgresContainer
+    engine = create_engine(_SYNC_URL, echo=False)
 
-    with PostgresContainer(_PG_IMAGE) as pg:
-        # Construct sync engine URL from the container
-        sync_url = pg.get_connection_url().replace("postgresql+psycopg2://", "postgresql://", 1)
-        from sqlalchemy import create_engine
+    # Import all model modules so Base.metadata is fully populated
+    import nomarr.persistence.models as _models  # noqa: F401 — registers tables
+    from nomarr.persistence.models.base import Base
 
-        engine = create_engine(sync_url, echo=False)
-        from nomarr.persistence.models.base import Base
+    # Filter out tables with PostgreSQL-specific column types that
+    # cannot be compiled for SQLite (e.g. HALFVEC, PG_ARRAY).
+    safe_tables = [t for t in Base.metadata.sorted_tables if t.name != "embeddings"]
+    Base.metadata.create_all(engine, tables=safe_tables)
 
-        Base.metadata.create_all(engine)
-        yield engine
-        engine.dispose()
+    yield engine
+    engine.dispose()
 
 
 @pytest_asyncio.fixture
 async def pg_async_engine(pg_engine):
-    """Create an async engine from the session-scoped sync engine URL.
+    """Create an async engine sharing the same temp-file SQLite database.
 
-    Shares the same ephemeral PostgreSQL container — no extra container
-    needed.
+    Depends on ``pg_engine`` for table creation ordering.
     """
-    from sqlalchemy.ext.asyncio import create_async_engine as _create_async_engine
-
-    async_url = str(pg_engine.url).replace("postgresql://", "postgresql+asyncpg://", 1)
-    engine = _create_async_engine(async_url, echo=False)
+    engine = _create_async_engine(_ASYNC_URL, echo=False)
     yield engine
     await engine.dispose()
 
@@ -59,8 +64,9 @@ async def pg_async_engine(pg_engine):
 async def pg_session(pg_async_engine):
     """Provide a transactional async session that rolls back after each test.
 
-    Uses the async engine from the testcontainers PG container.  All tables
-    (including ``embeddings`` with halfvec) exist — no exclusions.
+    Uses the async engine from the SQLite temp-file database.  All compatible
+    tables exist — the ``embeddings`` table is excluded because it requires
+    PostgreSQL-specific types.
     """
     engine = pg_async_engine
     async with engine.connect() as conn:

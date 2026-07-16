@@ -22,9 +22,7 @@ class TestListWatchableLibraries:
         mock_db = AsyncMock()
         libraries = [
             LibraryDict(
-                _id="libraries/one",
-                _key="one",
-                _rev="_",
+                id=1,
                 name="Main Library",
                 root_path="C:/music/one",
                 is_enabled=True,
@@ -33,9 +31,7 @@ class TestListWatchableLibraries:
                 watch_mode="poll",
             ),
             LibraryDict(
-                _id="libraries/two",
-                _key="two",
-                _rev="_",
+                id=2,
                 name="Lib",
                 root_path="C:/music/two",
                 is_enabled=True,
@@ -53,12 +49,12 @@ class TestListWatchableLibraries:
 
         assert result == [
             {
-                "_id": "libraries/one",
+                "id": 1,
                 "root_path": "C:/music/one",
                 "watch_mode": "poll",
             },
             {
-                "_id": "libraries/two",
+                "id": 2,
                 "root_path": "C:/music/two",
                 "watch_mode": "event",
             },
@@ -91,17 +87,17 @@ class TestGetLibraryWatchConfig:
             "nomarr.components.library.library_watch_config_comp.get_library_record",
             return_value=None,
         ) as get_record:
-            result = await get_library_watch_config(mock_db, "libraries/missing")
+            result = await get_library_watch_config(mock_db, 999)
 
         assert result is None
-        get_record.assert_called_once_with(mock_db, "libraries/missing", include_scan=False)
+        get_record.assert_called_once_with(mock_db, 999, include_scan=False)
 
     @pytest.mark.unit
     @pytest.mark.mocked
     async def test_returns_projected_watch_config_fields_only(self) -> None:
         mock_db = AsyncMock()
         library_doc = {
-            "_id": "libraries/one",
+            "id": 1,
             "root_path": "C:/music/one",
             "watch_mode": "poll",
             "is_enabled": False,
@@ -113,11 +109,11 @@ class TestGetLibraryWatchConfig:
             "nomarr.components.library.library_watch_config_comp.get_library_record",
             return_value=library_doc,
         ) as get_record:
-            result = await get_library_watch_config(mock_db, "libraries/one")
+            result = await get_library_watch_config(mock_db, 1)
 
         assert result == {
             "root_path": "C:/music/one",
             "watch_mode": "poll",
             "is_enabled": False,
         }
-        get_record.assert_called_once_with(mock_db, "libraries/one", include_scan=False)
+        get_record.assert_called_once_with(mock_db, 1, include_scan=False)

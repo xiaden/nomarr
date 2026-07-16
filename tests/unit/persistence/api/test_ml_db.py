@@ -15,7 +15,7 @@ def _make_ml_db() -> tuple[MlDb, MagicMock, MagicMock, MagicMock, MagicMock, Mag
     vector_repo = MagicMock()
     model_repo = MagicMock()
     output_repo = MagicMock()
-    calibration_repo = MagicMock()
+    calibration_repo = AsyncMock()
     embedding_stream_repo = MagicMock()
     db = MlDb(
         vector_repo=vector_repo,
@@ -30,7 +30,7 @@ def _make_ml_db() -> tuple[MlDb, MagicMock, MagicMock, MagicMock, MagicMock, Mag
 def _make_ml_maintenance_db() -> tuple[MlMaintenanceDb, MagicMock, MagicMock, MagicMock]:
     vector_repo = MagicMock()
     model_repo = MagicMock()
-    calibration_repo = MagicMock()
+    calibration_repo = AsyncMock()
     db = MlMaintenanceDb(
         vector_repo=vector_repo,
         model_repo=model_repo,
@@ -813,35 +813,42 @@ async def test_list_calibration_history_snapshots_delegates_to_calibration_repo(
 
 
 # ---------------------------------------------------------------------------
-# Group 6: NotImplementedError methods
+# Group 6: Formerly-NotImplemented methods (now delegated in PostgreSQL)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_remove_calibration_history_for_model_raises_not_implemented() -> None:
-    db, _, _, _, _, _ = _make_ml_db()
+async def test_remove_calibration_history_for_model_delegates_to_calibration_repo() -> None:
+    db, _, _, _, calibration_repo, _ = _make_ml_db()
+    calibration_repo.delete_history_for_model = AsyncMock()
 
-    with pytest.raises(NotImplementedError, match="CalibrationRepo has no delete_history_for_model"):
-        await db.remove_calibration_history_for_model("model1")
+    await db.remove_calibration_history_for_model("model1")
 
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_remove_calibration_history_entries_raises_not_implemented() -> None:
-    db, _, _, _, _, _ = _make_ml_db()
-
-    with pytest.raises(NotImplementedError, match="CalibrationRepo has no delete_history_entries"):
-        await db.remove_calibration_history_entries(["id1", "id2"])
+    calibration_repo.delete_history_for_model.assert_awaited_once_with("model1")
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_rebuild_backbone_embedding_index_raises_not_implemented() -> None:
+async def test_remove_calibration_history_entries_delegates_to_calibration_repo() -> None:
+    db, _, _, _, calibration_repo, _ = _make_ml_db()
+    calibration_repo.delete_history_entries = AsyncMock()
+
+    await db.remove_calibration_history_entries([1, 2])
+
+    # Entry IDs are converted from str to int before delegation
+    calibration_repo.delete_history_entries.assert_awaited_once_with([1, 2])
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_rebuild_backbone_embedding_index_succeeds_silently() -> None:
     db, _, _, _, _, _ = _make_ml_db()
 
-    with pytest.raises(NotImplementedError, match="PostgreSQL manages the HNSW index automatically"):
-        await db.rebuild_backbone_embedding_index("openl3", embed_dim=128, nlists=100)
+    # PostgreSQL manages the HNSW index automatically — the method
+    # accepts embed_dim/nlists for backwards compatibility but should
+    # not raise.
+    await db.rebuild_backbone_embedding_index("openl3", embed_dim=128, nlists=100)
 
 
 # ---------------------------------------------------------------------------

@@ -210,27 +210,27 @@ class TestListSongsForTag:
     @pytest.mark.mocked
     async def test_returns_from_values_as_strings(self) -> None:
         mock_db = AsyncMock()
-        mock_db.library.get_tag.return_value = {"_id": "tags/1", "name": "genre", "value": "Rock"}
-        mock_db.library.list_file_ids_for_tag_id.return_value = [f"{'library_files'}/1"]
+        mock_db.library.get_tag.return_value = {"id": 1, "name": "genre", "value": "Rock"}
+        mock_db.library.list_file_ids_for_tag_id.return_value = [1]
 
-        result = await list_songs_for_tag(mock_db, "tags/1", limit=5, offset=2)
+        result = await list_songs_for_tag(mock_db, 1, limit=5, offset=2)
 
-        assert result == [f"{'library_files'}/1"]
-        mock_db.library.get_tag.assert_called_once_with("tags/1")
-        mock_db.library.list_file_ids_for_tag_id.assert_called_once_with("tags/1", limit=5, offset=2)
+        assert result == [1]
+        mock_db.library.get_tag.assert_called_once_with(1)
+        mock_db.library.list_file_ids_for_tag_id.assert_called_once_with(1, limit=5, offset=2)
 
     @pytest.mark.unit
     @pytest.mark.mocked
     async def test_returns_empty_list_when_no_edges_exist(self) -> None:
         mock_db = AsyncMock()
-        mock_db.library.get_tag.return_value = {"_id": "tags/1", "name": "genre", "value": "Rock"}
+        mock_db.library.get_tag.return_value = {"id": 1, "name": "genre", "value": "Rock"}
         mock_db.library.list_file_ids_for_tag_id.return_value = []
 
-        result = await list_songs_for_tag(mock_db, "tags/1")
+        result = await list_songs_for_tag(mock_db, 1)
 
         assert result == []
-        mock_db.library.get_tag.assert_called_once_with("tags/1")
-        mock_db.library.list_file_ids_for_tag_id.assert_called_once_with("tags/1", limit=100, offset=0)
+        mock_db.library.get_tag.assert_called_once_with(1)
+        mock_db.library.list_file_ids_for_tag_id.assert_called_once_with(1, limit=100, offset=0)
 
 
 class TestCountTagsByName:
@@ -288,19 +288,19 @@ class TestGetNomarrTagsBulk:
     async def test_batches_nomarr_rows_by_file_id(self) -> None:
         mock_db = AsyncMock()
         mock_db.library.list_file_tags_for_files.return_value = {
-            f"{'library_files'}/1": [
+            1: [
                 {"name": "nom:mood", "value": "calm"},
                 {"name": "nom:mood", "value": "bright"},
             ],
-            f"{'library_files'}/2": [{"name": "nom:energy", "value": 0.91}],
+            2: [{"name": "nom:energy", "value": 0.91}],
         }
 
-        result = await get_nomarr_tags_bulk(mock_db, [f"{'library_files'}/1", f"{'library_files'}/2"])
+        result = await get_nomarr_tags_bulk(mock_db, [1, 2])
 
-        assert result[f"{'library_files'}/1"].to_dict() == {"nom:mood": ("calm", "bright")}
-        assert result[f"{'library_files'}/2"].to_dict() == {"nom:energy": (0.91,)}
+        assert result[1].to_dict() == {"nom:mood": ("calm", "bright")}
+        assert result[2].to_dict() == {"nom:energy": (0.91,)}
         mock_db.library.list_file_tags_for_files.assert_called_once_with(
-            [f"{'library_files'}/1", f"{'library_files'}/2"],
+            [1, 2],
             name_starts_with="nom:",
         )
 
@@ -323,11 +323,11 @@ class TestGetDistinctTagValuesForFiles:
     async def test_returns_sorted_distinct_string_values(self) -> None:
         mock_db = AsyncMock()
         mock_db.library.list_file_tags_for_files.return_value = {
-            f"{'library_files'}/1": [
+            1: [
                 {"name": "genre", "value": "Rock"},
                 {"name": "genre", "value": "Pop"},
             ],
-            f"{'library_files'}/2": [
+            2: [
                 {"name": "genre", "value": "Rock"},
                 {"name": "genre", "value": "Ambient"},
                 {"name": "genre", "value": 123},
@@ -336,14 +336,12 @@ class TestGetDistinctTagValuesForFiles:
 
         result = await get_distinct_tag_values_for_files(
             mock_db,
-            [f"{'library_files'}/1", f"{'library_files'}/2"],
+            [1, 2],
             "genre",
         )
 
         assert result == ["Ambient", "Pop", "Rock"]
-        mock_db.library.list_file_tags_for_files.assert_called_once_with(
-            [f"{'library_files'}/1", f"{'library_files'}/2"]
-        )
+        mock_db.library.list_file_tags_for_files.assert_called_once_with([1, 2])
 
 
 class TestGetTagValuesGroupedByFile:
@@ -364,12 +362,12 @@ class TestGetTagValuesGroupedByFile:
     async def test_groups_matching_values_by_file(self) -> None:
         mock_db = AsyncMock()
         mock_db.library.list_file_tags_for_files.return_value = {
-            f"{'library_files'}/1": [
+            1: [
                 {"name": "genre", "value": "Rock"},
                 {"name": "genre", "value": "Pop"},
             ],
-            f"{'library_files'}/2": [{"name": "artist", "value": "Artist One"}],
-            f"{'library_files'}/3": [
+            2: [{"name": "artist", "value": "Artist One"}],
+            3: [
                 {"name": "genre", "value": "Jazz"},
                 {"name": "genre", "value": "Jazz"},
             ],
@@ -377,25 +375,15 @@ class TestGetTagValuesGroupedByFile:
 
         result = await get_tag_values_grouped_by_file(
             mock_db,
-            [
-                f"{'library_files'}/1",
-                f"{'library_files'}/2",
-                f"{'library_files'}/3",
-            ],
+            [1, 2, 3],
             "genre",
         )
 
         assert result == {
-            f"{'library_files'}/1": {"Rock", "Pop"},
-            f"{'library_files'}/3": {"Jazz"},
+            1: {"Rock", "Pop"},
+            3: {"Jazz"},
         }
-        mock_db.library.list_file_tags_for_files.assert_called_once_with(
-            [
-                f"{'library_files'}/1",
-                f"{'library_files'}/2",
-                f"{'library_files'}/3",
-            ]
-        )
+        mock_db.library.list_file_tags_for_files.assert_called_once_with([1, 2, 3])
 
 
 class TestGetSongTags:
@@ -459,17 +447,17 @@ class TestGetFileIdsMatchingTag:
         mock_db = AsyncMock()
         mock_db.library.count_tags.return_value = 2
         mock_db.library.list_tags.return_value = [
-            {"_id": "tags/1", "name": "genre", "value": "Rock"},
-            {"_id": "tags/2", "name": "genre", "value": "Jazz"},
+            {"id": 1, "name": "genre", "value": "Rock"},
+            {"id": 2, "name": "genre", "value": "Jazz"},
         ]
         mock_db.library.search_files_by_tag.return_value = [
-            {"_id": f"{'library_files'}/1"},
-            {"_id": f"{'library_files'}/2"},
+            {"id": 1},
+            {"id": 2},
         ]
 
         result = await get_file_ids_matching_tag(mock_db, "genre", "eq", "Rock")
 
-        assert result == {f"{'library_files'}/1", f"{'library_files'}/2"}
+        assert result == {1, 2}
         mock_db.library.search_files_by_tag.assert_called_once_with("genre", "Rock", limit=None)
 
 
@@ -487,13 +475,13 @@ class TestGetFileIdsForMoodTags:
         mock_db.library.search_files_by_tag_contains.side_effect = [
             # Files with "aggressive" in their mood array
             [
-                {"_id": f"{'library_files'}/1"},
-                {"_id": f"{'library_files'}/2"},
+                {"id": 1},
+                {"id": 2},
             ],
             # Files with "happy" in their mood array
             [
-                {"_id": f"{'library_files'}/2"},
-                {"_id": f"{'library_files'}/3"},
+                {"id": 2},
+                {"id": 3},
             ],
         ]
 
@@ -504,8 +492,8 @@ class TestGetFileIdsForMoodTags:
         )
 
         assert result == {
-            "aggressive": {f"{'library_files'}/1", f"{'library_files'}/2"},
-            "happy": {f"{'library_files'}/2", f"{'library_files'}/3"},
+            "aggressive": {1, 2},
+            "happy": {2, 3},
         }
         # Verify CONTAINS method was called (not exact match)
         assert mock_db.library.search_files_by_tag_contains.call_count == 2
@@ -520,24 +508,24 @@ class TestGetFileIdsForMoodTags:
 
         mock_db = AsyncMock()
         mock_db.library.list_library_files.return_value = [
-            {"_id": f"{'library_files'}/1"},
-            {"_id": f"{'library_files'}/2"},
+            {"id": 1},
+            {"id": 2},
         ]
         mock_db.library.search_files_by_tag_contains.return_value = [
-            {"_id": f"{'library_files'}/1"},
-            {"_id": f"{'library_files'}/2"},
-            {"_id": f"{'library_files'}/3"},  # Not in library
+            {"id": 1},
+            {"id": 2},
+            {"id": 3},  # Not in library
         ]
 
         result = await get_file_ids_for_mood_tags(
             mock_db,
             mood_values=["aggressive"],
             mood_tier="mood-strict",
-            library_id="libraries/123",
+            library_id=123,
         )
 
         # Should only include files 1 and 2 (file 3 is not in the library)
-        assert result == {"aggressive": {f"{'library_files'}/1", f"{'library_files'}/2"}}
+        assert result == {"aggressive": {1, 2}}
 
     @pytest.mark.unit
     @pytest.mark.mocked

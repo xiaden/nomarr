@@ -332,22 +332,22 @@ class TestGetFileLibraryKey:
     @pytest.mark.unit
     async def test_returns_library_key_when_file_exists(self) -> None:
         mock_db = AsyncMock()
-        mock_db.library.get_library_ids_for_files.return_value = {f"{'library_files'}/abc123": "libraries/lib_key"}
+        mock_db.library.get_library_ids_for_files.return_value = {123: 456}
 
-        result = await get_file_library_key(mock_db, "abc123")
+        result = await get_file_library_key(mock_db, 123)
 
-        assert result == "lib_key"
-        mock_db.library.get_library_ids_for_files.assert_called_once_with([f"{'library_files'}/abc123"])
+        assert result == 456
+        mock_db.library.get_library_ids_for_files.assert_called_once_with([123])
 
     @pytest.mark.unit
     async def test_returns_none_when_file_is_missing(self) -> None:
         mock_db = AsyncMock()
         mock_db.library.get_library_ids_for_files.return_value = {}
 
-        result = await get_file_library_key(mock_db, "abc123")
+        result = await get_file_library_key(mock_db, 123)
 
         assert result is None
-        mock_db.library.get_library_ids_for_files.assert_called_once_with([f"{'library_files'}/abc123"])
+        mock_db.library.get_library_ids_for_files.assert_called_once_with([123])
 
 
 class TestSetChromaprint:

@@ -12,12 +12,13 @@ from nomarr.persistence.api.library import LibraryDb, LibraryMaintenanceDb
 # ── helpers ───────────────────────────────────────────────────────────────
 
 
-def _make_library_db() -> tuple[LibraryDb, MagicMock, MagicMock, MagicMock, MagicMock, MagicMock, MagicMock]:
+def _make_library_db() -> tuple[LibraryDb, MagicMock, MagicMock, MagicMock, MagicMock, MagicMock, MagicMock, MagicMock]:
     library_repo = MagicMock()
     file_repo = MagicMock()
     folder_repo = MagicMock()
     scan_repo = MagicMock()
     tag_repo = MagicMock()
+    file_tag_repo = MagicMock()
     file_state_repo = MagicMock()
     db = LibraryDb(
         library_repo=library_repo,
@@ -25,21 +26,28 @@ def _make_library_db() -> tuple[LibraryDb, MagicMock, MagicMock, MagicMock, Magi
         folder_repo=folder_repo,
         scan_repo=scan_repo,
         tag_repo=tag_repo,
+        file_tag_repo=file_tag_repo,
         file_state_repo=file_state_repo,
     )
-    return db, library_repo, file_repo, folder_repo, scan_repo, tag_repo, file_state_repo
+    return db, library_repo, file_repo, folder_repo, scan_repo, tag_repo, file_tag_repo, file_state_repo
 
 
-def _make_library_maintenance_db() -> tuple[LibraryMaintenanceDb, MagicMock, MagicMock, MagicMock]:
+def _make_library_maintenance_db() -> tuple[
+    LibraryMaintenanceDb, MagicMock, MagicMock, MagicMock, MagicMock, MagicMock
+]:
     file_repo = MagicMock()
     tag_repo = MagicMock()
+    file_tag_repo = MagicMock()
     folder_repo = MagicMock()
+    scan_repo = MagicMock()
     db = LibraryMaintenanceDb(
         file_repo=file_repo,
         tag_repo=tag_repo,
+        file_tag_repo=file_tag_repo,
         folder_repo=folder_repo,
+        scan_repo=scan_repo,
     )
-    return db, file_repo, tag_repo, folder_repo
+    return db, file_repo, tag_repo, file_tag_repo, folder_repo, scan_repo
 
 
 # ── surface / contract ────────────────────────────────────────────────────
@@ -422,7 +430,7 @@ async def test_add_file_to_library_raises_on_empty_result() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_add_files_to_library_ensures_state_for_new_files() -> None:
-    db, _, file_repo, _, _, _, file_state_repo = _make_library_db()
+    db, _, file_repo, *_, file_state_repo = _make_library_db()
     file_repo.list_existing_file_paths = AsyncMock(return_value=["/existing.mp3"])
     file_repo.upsert_files_for_library = AsyncMock(return_value=[10, 20, 30])
     file_state_repo.ensure_file_state = AsyncMock()
@@ -445,7 +453,7 @@ async def test_add_files_to_library_ensures_state_for_new_files() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_add_files_to_library_skips_state_for_existing_paths() -> None:
-    db, _, file_repo, _, _, _, file_state_repo = _make_library_db()
+    db, _, file_repo, *_, file_state_repo = _make_library_db()
     file_repo.list_existing_file_paths = AsyncMock(return_value=["/a.mp3", "/b.mp3"])
     file_repo.upsert_files_for_library = AsyncMock(return_value=[1, 2])
     file_state_repo.ensure_file_state = AsyncMock()
@@ -478,7 +486,7 @@ async def test_update_library_files_reconciles_added_updated_removed() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_update_library_files_no_remove_when_flag_false() -> None:
-    db, _, file_repo, _, _, _, file_state_repo = _make_library_db()
+    db, _, file_repo, *_, file_state_repo = _make_library_db()
     file_repo.list_existing_file_paths = AsyncMock(return_value=[])
     file_repo.upsert_files_for_library = AsyncMock(return_value=[1, 2, 3])
     file_state_repo.ensure_file_state = AsyncMock()
@@ -622,7 +630,7 @@ async def test_update_file_delegates() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_search_files_by_tag_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
+    db, *_, tag_repo, _ = _make_library_db()
     tag_repo.search_files_by_tag = AsyncMock(return_value=sentinel.files)
 
     result = await db.search_files_by_tag("genre", "Rock", limit=10)
@@ -884,7 +892,7 @@ async def test_replace_file_tags_delegates() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_replace_tag_references_delegates() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
+    db, *_, tag_repo, _ = _make_library_db()
     tag_repo.replace_tag_references = AsyncMock()
 
     await db.replace_tag_references(5, 10)
@@ -895,7 +903,7 @@ async def test_replace_tag_references_delegates() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_replace_selected_tag_references_passes_file_ids() -> None:
-    db, _, _, _, _, tag_repo, _ = _make_library_db()
+    db, *_, tag_repo, _ = _make_library_db()
     tag_repo.replace_tag_references = AsyncMock()
 
     await db.replace_selected_tag_references([1, 2, 3], 5, 10)
@@ -1179,7 +1187,7 @@ async def test_clear_folders_delegates_to_maintenance() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_maintenance_list_orphaned_file_ids() -> None:
-    db, file_repo, _, _ = _make_library_maintenance_db()
+    db, file_repo, *_ = _make_library_maintenance_db()
     file_repo.list_orphaned_file_ids = AsyncMock(return_value=sentinel.ids)
 
     result = await db.list_orphaned_file_ids()
@@ -1191,7 +1199,7 @@ async def test_maintenance_list_orphaned_file_ids() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_maintenance_list_orphaned_tag_ids() -> None:
-    db, _, tag_repo, _ = _make_library_maintenance_db()
+    db, _, tag_repo, *_ = _make_library_maintenance_db()
     tag_repo.get_orphaned_tag_ids = AsyncMock(return_value=sentinel.ids)
 
     result = await db.list_orphaned_tag_ids()
@@ -1203,7 +1211,7 @@ async def test_maintenance_list_orphaned_tag_ids() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_maintenance_delete_tags_by_ids() -> None:
-    db, _, tag_repo, _ = _make_library_maintenance_db()
+    db, _, tag_repo, *_ = _make_library_maintenance_db()
     tag_repo.delete_tags_by_ids = AsyncMock()
 
     await db.delete_tags_by_ids([1, 2, 3])
@@ -1214,7 +1222,7 @@ async def test_maintenance_delete_tags_by_ids() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_maintenance_truncate_files() -> None:
-    db, file_repo, _, _ = _make_library_maintenance_db()
+    db, file_repo, *_ = _make_library_maintenance_db()
     file_repo.truncate_files = AsyncMock()
 
     await db.truncate_files()
@@ -1225,7 +1233,7 @@ async def test_maintenance_truncate_files() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_maintenance_truncate_file_links() -> None:
-    db, file_repo, _, _ = _make_library_maintenance_db()
+    db, file_repo, *_ = _make_library_maintenance_db()
     file_repo.truncate_file_links = AsyncMock()
 
     await db.truncate_file_links()
@@ -1236,7 +1244,7 @@ async def test_maintenance_truncate_file_links() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_maintenance_truncate_folder_links() -> None:
-    db, _, _, folder_repo = _make_library_maintenance_db()
+    db, *_, folder_repo = _make_library_maintenance_db()
     folder_repo.truncate_folder_links = AsyncMock()
 
     await db.truncate_folder_links()
@@ -1247,7 +1255,7 @@ async def test_maintenance_truncate_folder_links() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_maintenance_truncate_folders() -> None:
-    db, _, _, folder_repo = _make_library_maintenance_db()
+    db, *_, folder_repo = _make_library_maintenance_db()
     folder_repo.truncate_folders = AsyncMock()
 
     await db.truncate_folders()
@@ -1258,7 +1266,7 @@ async def test_maintenance_truncate_folders() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_maintenance_truncate_tags() -> None:
-    db, _, tag_repo, _ = _make_library_maintenance_db()
+    db, _, tag_repo, *_ = _make_library_maintenance_db()
     tag_repo.truncate_tags = AsyncMock()
 
     await db.truncate_tags()
@@ -1269,7 +1277,7 @@ async def test_maintenance_truncate_tags() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_maintenance_truncate_song_tag_edges() -> None:
-    db, _, tag_repo, _ = _make_library_maintenance_db()
+    db, _, tag_repo, *_ = _make_library_maintenance_db()
     tag_repo.truncate_file_tag_assignments = AsyncMock()
 
     await db.truncate_song_tag_edges()

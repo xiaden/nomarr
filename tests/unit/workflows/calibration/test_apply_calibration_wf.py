@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -18,16 +18,16 @@ apply_module = importlib.import_module("nomarr.workflows.calibration.apply_calib
 class TestApplyCalibrationWorkflow:
     """Tests for chunk-limited calibration apply."""
 
-    def test_flushes_deferred_writes_per_chunk_limit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_flushes_deferred_writes_per_chunk_limit(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Chunk size should bound each deferred batch flush even without read prefetching."""
         db = MagicMock()
-        save_mood_tags_batch = MagicMock()
-        update_file_calibration_hashes_batch = MagicMock()
+        save_mood_tags_batch = AsyncMock()
+        update_file_calibration_hashes_batch = AsyncMock()
         write_calls: list[str] = []
 
-        monkeypatch.setattr(apply_module, "discover_heads", MagicMock(return_value=[{"head": "mood"}]))
-        monkeypatch.setattr(apply_module, "load_calibrations_from_db_wf", MagicMock(return_value={}))
-        monkeypatch.setattr(apply_module, "get_calibration_version", MagicMock(return_value="version-1"))
+        monkeypatch.setattr(apply_module, "discover_heads", AsyncMock(return_value=[{"head": "mood"}]))
+        monkeypatch.setattr(apply_module, "load_calibrations_from_db_wf", AsyncMock(return_value={}))
+        monkeypatch.setattr(apply_module, "get_calibration_version", AsyncMock(return_value="version-1"))
         monkeypatch.setattr(apply_module, "save_mood_tags_batch", save_mood_tags_batch)
         monkeypatch.setattr(
             apply_module,

@@ -111,7 +111,7 @@ class TestGetLibraryRecord:
     @pytest.mark.unit
     async def test_gets_full_id_and_merges_scan_by_default(self) -> None:
         mock_db = AsyncMock()
-        library_doc = {"_id": "libraries/1", "name": "Main"}
+        library_doc = {"id": 1, "name": "Main"}
         merged_doc = {**library_doc, "scan_status": "idle"}
         mock_db.library.get_library.return_value = library_doc
 
@@ -119,21 +119,21 @@ class TestGetLibraryRecord:
             "nomarr.components.library.library_records_comp._merge_scan_state",
             return_value=merged_doc,
         ) as merge_scan:
-            result = await get_library_record(mock_db, "libraries/1")
+            result = await get_library_record(mock_db, 1)
 
         assert result == merged_doc
-        mock_db.library.get_library.assert_called_once_with("libraries/1")
+        mock_db.library.get_library.assert_called_once_with(1)
         merge_scan.assert_called_once_with(mock_db, library_doc)
 
     @pytest.mark.unit
     async def test_gets_by_key_without_merge_when_scan_disabled(self) -> None:
         mock_db = AsyncMock()
-        mock_db.library.get_library.return_value = {"_id": "libraries/2", "name": "Alt"}
+        mock_db.library.get_library.return_value = {"id": 2, "name": "Alt"}
 
-        result = await get_library_record(mock_db, "2", include_scan=False)
+        result = await get_library_record(mock_db, 2, include_scan=False)
 
-        assert result == {"_id": "libraries/2", "name": "Alt"}
-        mock_db.library.get_library.assert_called_once_with("libraries/2")
+        assert result == {"id": 2, "name": "Alt"}
+        mock_db.library.get_library.assert_called_once_with(2)
 
 
 class TestGetLibraryByName:
@@ -142,7 +142,7 @@ class TestGetLibraryByName:
     @pytest.mark.unit
     async def test_merges_scan_state_when_requested(self) -> None:
         mock_db = AsyncMock()
-        library_doc = {"_id": "libraries/1", "name": "Main"}
+        library_doc = {"id": 1, "name": "Main"}
         merged_doc = {**library_doc, "scan_status": "running"}
         mock_db.library.get_library_by_name.return_value = library_doc
 
@@ -163,9 +163,7 @@ class TestListLibraryRecords:
     @staticmethod
     def _make_lib(**overrides: Any) -> dict[str, Any]:
         return {
-            "_id": "libraries/test",
-            "_key": "test",
-            "_rev": "rev",
+            "id": 1,
             "name": "Test Library",
             "root_path": "/tmp",
             "is_enabled": True,
@@ -177,22 +175,22 @@ class TestListLibraryRecords:
     @pytest.mark.unit
     async def test_returns_library_docs_from_sub_facade_without_manual_sorting(self) -> None:
         mock_db = AsyncMock()
-        docs = [self._make_lib(_id="libraries/2"), self._make_lib(_id="libraries/1")]
+        docs = [self._make_lib(id=2), self._make_lib(id=1)]
         mock_db.library.list_libraries.return_value = docs
 
         result = await list_library_records(mock_db, include_scan=False)
 
         assert isinstance(result, list)
         assert len(result) == 2
-        assert result[0]._id == "libraries/2"
-        assert result[1]._id == "libraries/1"
+        assert result[0].id == 2
+        assert result[1].id == 1
         mock_db.library.list_libraries.assert_called_once_with(enabled_only=False)
 
     @pytest.mark.unit
     async def test_merges_scan_state_for_enabled_only_records(self) -> None:
         mock_db = AsyncMock()
-        enabled_docs = [self._make_lib(_id="libraries/1")]
-        merged_doc = {**self._make_lib(_id="libraries/1"), "scan_status": "idle"}
+        enabled_docs = [self._make_lib(id=1)]
+        merged_doc = {**self._make_lib(id=1), "scan_status": "idle"}
         mock_db.library.list_libraries.return_value = enabled_docs
 
         with patch(
@@ -203,7 +201,7 @@ class TestListLibraryRecords:
 
         assert isinstance(result, list)
         assert len(result) == 1
-        assert result[0]._id == "libraries/1"
+        assert result[0].id == 1
         assert result[0].scan_status == "idle"
         mock_db.library.list_libraries.assert_called_once_with(enabled_only=True)
         merge_scan.assert_called_once_with(mock_db, enabled_docs[0])
@@ -215,9 +213,9 @@ class TestListWatchableLibraryRecords:
     @pytest.mark.unit
     async def test_filters_off_modes_and_projects_watch_fields(self) -> None:
         mock_db = AsyncMock()
-        lib1 = self._make_watchable_lib("libraries/1", "D:/Music", "poll")
-        lib2 = self._make_watchable_lib("libraries/2", "D:/Audiobooks", "off")
-        lib3 = self._make_watchable_lib("libraries/3", "D:/Podcasts", None)
+        lib1 = self._make_watchable_lib(1, "D:/Music", "poll")
+        lib2 = self._make_watchable_lib(2, "D:/Audiobooks", "off")
+        lib3 = self._make_watchable_lib(3, "D:/Podcasts", None)
 
         with patch(
             "nomarr.components.library.library_records_comp.list_library_records",
@@ -226,17 +224,15 @@ class TestListWatchableLibraryRecords:
             result = await list_watchable_library_records(mock_db)
 
         assert len(result) == 1
-        assert result[0]._id == "libraries/1"
+        assert result[0].id == 1
         assert result[0].root_path == "D:/Music"
         assert result[0].watch_mode == "poll"
         list_records.assert_called_once_with(mock_db, enabled_only=True, include_scan=False)
 
     @staticmethod
-    def _make_watchable_lib(_id: str, root_path: str, watch_mode: str | None) -> LibraryDict:
+    def _make_watchable_lib(id: int, root_path: str, watch_mode: str | None) -> LibraryDict:
         return LibraryDict(
-            _id=_id,
-            _key="_",
-            _rev="_",
+            id=id,
             name="x",
             root_path=root_path,
             is_enabled=True,
@@ -257,14 +253,14 @@ class TestUpdateLibraryRecord:
             mock_now_ms.return_value = MagicMock(value=222333444)
             await update_library_record(
                 mock_db,
-                "main",
+                1,
                 name="Renamed",
                 watch_mode="poll",
                 description=None,
             )
 
         mock_db.library.update_library.assert_called_once_with(
-            "libraries/main",
+            1,
             {
                 "updated_at": 222333444,
                 "name": "Renamed",
@@ -310,12 +306,10 @@ class TestFindLibraryContainingPath:
     """Tests for ``find_library_containing_path()``."""
 
     @staticmethod
-    def _make_lib_dto(_id: str, root_path: str) -> LibraryDict:
+    def _make_lib_dto(id: int, root_path: str) -> LibraryDict:
         return LibraryDict(
-            _id=_id,
-            _key=_id.split("/", 1)[1],
-            _rev="_",
-            name=_id,
+            id=id,
+            name=f"Library {id}",
             root_path=root_path,
             is_enabled=True,
             created_at=0,
@@ -326,8 +320,8 @@ class TestFindLibraryContainingPath:
     async def test_returns_most_specific_matching_library(self) -> None:
         mock_db = AsyncMock()
         libraries = [
-            self._make_lib_dto("libraries/root", "D:/Music"),
-            self._make_lib_dto("libraries/nested", "D:/Music/Rock"),
+            self._make_lib_dto(1, "D:/Music"),
+            self._make_lib_dto(2, "D:/Music/Rock"),
         ]
 
         with patch(
@@ -337,7 +331,7 @@ class TestFindLibraryContainingPath:
             result = await find_library_containing_path(mock_db, "D:/Music/Rock/song.flac")
 
         assert result is not None
-        assert result._id == "libraries/nested"
+        assert result.id == 2
         assert result.root_path == "D:/Music/Rock"
         list_records.assert_called_once_with(mock_db, enabled_only=False, include_scan=False)
 
@@ -368,7 +362,7 @@ class TestFindMlCompleteLibraries:
     @pytest.mark.unit
     async def test_excludes_library_with_untagged_files(self) -> None:
         mock_db = AsyncMock()
-        mock_db.library.list_libraries.return_value = [{"_key": "42"}]
+        mock_db.library.list_libraries.return_value = [{"id": 42}]
         mock_db.library.get_pipeline_state.return_value = {
             "scan_state": "scanned",
             "ml_state": ML_IN_PROGRESS,
@@ -379,7 +373,7 @@ class TestFindMlCompleteLibraries:
         with (
             patch(
                 "nomarr.components.library.library_records_comp.get_library_counts",
-                return_value={"libraries/42": {"file_count": 12}},
+                return_value={42: {"file_count": 12}},
             ),
             patch(
                 "nomarr.components.library.library_records_comp.count_untagged_files",
@@ -389,12 +383,12 @@ class TestFindMlCompleteLibraries:
             result = await find_ml_complete_libraries(mock_db, min_files=1)
 
         assert result == []
-        mock_count_untagged_files.assert_called_once_with(mock_db, "libraries/42")
+        mock_count_untagged_files.assert_called_once_with(mock_db, 42)
 
     @pytest.mark.unit
     async def test_includes_fully_tagged_library(self) -> None:
         mock_db = AsyncMock()
-        mock_db.library.list_libraries.return_value = [{"_key": "42"}]
+        mock_db.library.list_libraries.return_value = [{"id": 42}]
         mock_db.library.get_pipeline_state.return_value = {
             "scan_state": "scanned",
             "ml_state": ML_IN_PROGRESS,
@@ -405,7 +399,7 @@ class TestFindMlCompleteLibraries:
         with (
             patch(
                 "nomarr.components.library.library_records_comp.get_library_counts",
-                return_value={"libraries/42": {"file_count": 12}},
+                return_value={42: {"file_count": 12}},
             ),
             patch(
                 "nomarr.components.library.library_records_comp.count_untagged_files",
@@ -414,15 +408,15 @@ class TestFindMlCompleteLibraries:
         ):
             result = await find_ml_complete_libraries(mock_db, min_files=99)
 
-        assert result == [{"library_id": "libraries/42", "tagged_count": 12}]
-        mock_count_untagged_files.assert_called_once_with(mock_db, "libraries/42")
+        assert result == [{"library_id": 42, "tagged_count": 12}]
+        mock_count_untagged_files.assert_called_once_with(mock_db, 42)
 
     @pytest.mark.unit
     async def test_returns_only_fully_tagged_libraries_when_state_docs_are_mixed(self) -> None:
         mock_db = AsyncMock()
         mock_db.library.list_libraries.return_value = [
-            {"_key": "7"},
-            {"_key": "42"},
+            {"id": 7},
+            {"id": 42},
         ]
         mock_db.library.get_pipeline_state.side_effect = [
             {
@@ -443,8 +437,8 @@ class TestFindMlCompleteLibraries:
             patch(
                 "nomarr.components.library.library_records_comp.get_library_counts",
                 return_value={
-                    "libraries/7": {"file_count": 3},
-                    "libraries/42": {"file_count": 12},
+                    7: {"file_count": 3},
+                    42: {"file_count": 12},
                 },
             ),
             patch(
@@ -454,8 +448,8 @@ class TestFindMlCompleteLibraries:
         ):
             result = await find_ml_complete_libraries(mock_db, min_files=2)
 
-        assert result == [{"library_id": "libraries/42", "tagged_count": 12}]
+        assert result == [{"library_id": 42, "tagged_count": 12}]
         assert mock_count_untagged_files.call_args_list == [
-            ((mock_db, "libraries/7"),),
-            ((mock_db, "libraries/42"),),
+            ((mock_db, 7),),
+            ((mock_db, 42),),
         ]

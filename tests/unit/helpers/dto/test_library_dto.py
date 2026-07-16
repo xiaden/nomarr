@@ -143,30 +143,24 @@ class TestLibraryStatsResult:
 class TestLibraryDict:
     """Tests for LibraryDict dataclass."""
 
-    @pytest.mark.unit
     def test_can_create_basic_library(self) -> None:
         """Should create library with required fields."""
         lib = LibraryDict(
-            _id="libraries/12345",
-            _key="12345",
-            _rev="_abc123",
+            id=12345,
             name="Music",
             root_path="/music",
             is_enabled=True,
             created_at="2024-01-01T00:00:00Z",
             updated_at="2024-01-01T00:00:00Z",
         )
-        assert lib._id == "libraries/12345"
+        assert lib.id == 12345
         assert lib.name == "Music"
         assert lib.is_enabled
 
-    @pytest.mark.unit
     def test_can_create_library_with_scan_info(self) -> None:
         """Should create library with scan progress."""
         lib = LibraryDict(
-            _id="libraries/12345",
-            _key="12345",
-            _rev="_abc123",
+            id=12345,
             name="Music",
             root_path="/music",
             is_enabled=True,
@@ -179,7 +173,6 @@ class TestLibraryDict:
         assert lib.scan_status == "scanning"
         assert lib.scan_progress == 250
 
-    @pytest.mark.unit
     def test_can_create_library_with_joined_scan_state(self) -> None:
         """Should include scan fields joined from library_scans collection.
 
@@ -188,9 +181,7 @@ class TestLibraryDict:
         accepts the joined fields.
         """
         lib = LibraryDict(
-            _id="libraries/12345",
-            _key="12345",
-            _rev="_abc123",
+            id=12345,
             name="Music",
             root_path="/music",
             is_enabled=True,
@@ -210,13 +201,10 @@ class TestLibraryDict:
         assert lib.last_scan_at == 1700001000000
         assert lib.scan_type_in_progress is None
 
-    @pytest.mark.unit
     def test_can_create_library_with_active_scan(self) -> None:
         """Should handle library with active scan in progress."""
         lib = LibraryDict(
-            _id="libraries/12345",
-            _key="12345",
-            _rev="_abc123",
+            id=12345,
             name="Music",
             root_path="/music",
             is_enabled=True,

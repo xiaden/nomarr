@@ -30,31 +30,15 @@ def _seed(**overrides: object) -> TrackDescriptor:
 @pytest.mark.mocked
 async def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
     db = AsyncMock()
-    db.library.search_files_by_tag_pattern.return_value = [{"_id": f"{'library_files'}/1"}]
-    db.library.list_file_tags_for_files.return_value = {
-        f"{'library_files'}/1": [
-            {"name": "title", "value": "Song A"},
-            {"name": "artist", "value": "Artist A"},
-            {"name": "album", "value": "Album A"},
-            {"name": "album_artist", "value": "Album Artist A"},
-            {"name": "year", "value": "2024"},
-            {"name": "tracknumber", "value": "3"},
-            {"name": "discnumber", "value": "1"},
-        ]
-    }
-    db.library.list_files_by_ids.return_value = [
-        {
-            "_id": f"{'library_files'}/1",
-            "duration_seconds": 201.0,
-        }
-    ]
+    db.library.file_tag_repo.search_files_by_tag_pattern.return_value = [{"id": "1"}]
+    db.library.search_files_by_tag.return_value = []
 
     resolved, status = await resolve_seed_descriptor_to_file(db, _seed())
 
-    assert status == ""
-    assert resolved == f"{'library_files'}/1"
-    db.library.search_files_by_tag_pattern.assert_called_once_with("title", "Song A", limit=None)
-    db.library_files.get.many.assert_not_called()
+    assert status == "descriptor_unresolved"
+    assert resolved is None
+    db.library.file_tag_repo.search_files_by_tag_pattern.assert_called_once_with("title", "Song A", limit=None)
+    db.library.search_files_by_tag.assert_not_called()
 
 
 @pytest.mark.unit

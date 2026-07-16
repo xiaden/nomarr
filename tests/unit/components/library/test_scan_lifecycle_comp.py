@@ -59,17 +59,18 @@ class TestBootstrapFileStateEdges:
     async def test_ml_tagged_type_creates_edge_via_transition(self) -> None:
         mock_db = AsyncMock()
         mock_db.library.list_file_docs_in_state.side_effect = lambda state: list(
-            [{"_id": f"{'library_files'}/abc"}] if state == STATE_NOT_PROCESSED else []
+            [{"id": 123}] if state == STATE_NOT_PROCESSED else []
         )
+        mock_db.app.get_file_states_for_files.return_value = {}
         bootstraps = [
             {"normalized_path": "/music/song.mp3", "type": "ml_tagged"},
         ]
-        file_id_by_path = {"/music/song.mp3": f"{'library_files'}/abc"}
+        file_id_by_path = {"/music/song.mp3": 123}
         result = await bootstrap_file_state_edges(mock_db, bootstraps, file_id_by_path)
         assert result == 1
-        mock_db.library.remove_file_states.assert_called_once_with([f"{'library_files'}/abc"])
-        mock_db.library.add_file_states.assert_called_once_with([f"{'library_files'}/abc"], STATE_PROCESSED)
-        mock_db.library.transition_file_states.assert_not_called()
+        mock_db.app.remove_file_states.assert_called_once_with([123])
+        mock_db.app.add_file_states.assert_called_once_with([123], STATE_PROCESSED)
+        mock_db.app.transition_file_states.assert_not_called()
 
     @pytest.mark.unit
     async def test_unknown_bootstrap_type_is_skipped(self) -> None:

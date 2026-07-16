@@ -78,7 +78,6 @@ def mock_pipeline_repo() -> AsyncMock:
 def app_db(
     mock_session: AsyncMock,
     mock_app_repo: AsyncMock,
-    mock_scan_repo: AsyncMock,
     mock_library_repo: AsyncMock,
     mock_navidrome_repo: AsyncMock,
     mock_file_state_repo: AsyncMock,
@@ -87,7 +86,6 @@ def app_db(
     return AppDb(
         session=mock_session,
         app_repo=mock_app_repo,
-        scan_repo=mock_scan_repo,
         library_repo=mock_library_repo,
         navidrome_repo=mock_navidrome_repo,
         file_state_repo=mock_file_state_repo,
