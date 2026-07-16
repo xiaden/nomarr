@@ -86,9 +86,7 @@ class TestGetPathsNeedingCalibration:
                 "nomarr.services.domain.library_svc.query.list_library_records",
                 return_value=[
                     LibraryDict(
-                        _id="libraries/1",
-                        _key="1",
-                        _rev="r1",
+                        id=1,
                         name="L1",
                         root_path="/p1",
                         is_enabled=True,
@@ -105,7 +103,7 @@ class TestGetPathsNeedingCalibration:
             result = mixin.get_paths_needing_calibration()
 
         assert result == []
-        mock_uncalibrated.assert_called_once_with(mock_db, "libraries/1")
+        mock_uncalibrated.assert_called_once_with(mock_db, 1)
 
     @pytest.mark.unit
     def test_uncalibrated_files_resolves_to_paths(self) -> None:
@@ -117,9 +115,7 @@ class TestGetPathsNeedingCalibration:
                 "nomarr.services.domain.library_svc.query.list_library_records",
                 return_value=[
                     LibraryDict(
-                        _id="libraries/1",
-                        _key="1",
-                        _rev="r1",
+                        id=1,
                         name="L1",
                         root_path="/p1",
                         is_enabled=True,
@@ -169,14 +165,14 @@ class TestGetErroredFiles:
                 "nomarr.services.domain.library_svc.query.get_files_by_ids_with_tags",
                 return_value=[
                     {
-                        "_id": f"{'library_files'}/1",
+                        "id": 1,
                         "path": "/music/song1.mp3",
                         "duration_seconds": 180,
                         "artist": "Artist A",
                         "title": "Song 1",
                     },
                     {
-                        "_id": f"{'library_files'}/2",
+                        "id": 2,
                         "path": "/music/song2.mp3",
                         "duration_seconds": 200,
                         "artist": "Artist B",
@@ -189,7 +185,7 @@ class TestGetErroredFiles:
 
         assert result["total"] == 2
         assert len(result["files"]) == 2
-        assert result["files"][0]["_id"] == f"{'library_files'}/1"
+        assert result["files"][0]["id"] == 1
         assert result["files"][1]["path"] == "/music/song2.mp3"
 
     @pytest.mark.unit
@@ -256,9 +252,7 @@ class TestGetWorkStatus:
                 "nomarr.services.domain.library_svc.query.list_library_records",
                 return_value=[
                     LibraryDict(
-                        _id="libraries/1",
-                        _key="1",
-                        _rev="r1",
+                        id=1,
                         name="Rock Library",
                         root_path="/music",
                         is_enabled=True,
@@ -290,7 +284,7 @@ class TestGetWorkStatus:
 
         def _state_side_effect(_db: MagicMock, axis_field: str, axis_value: str) -> list[str]:
             if axis_field == "tag_write_state" and axis_value == "not_written":
-                return ["libraries/1"]
+                return ["1"]
             return []
 
         with (
@@ -298,9 +292,7 @@ class TestGetWorkStatus:
                 "nomarr.services.domain.library_svc.query.list_library_records",
                 return_value=[
                     LibraryDict(
-                        _id="libraries/1",
-                        _key="1",
-                        _rev="r1",
+                        id=1,
                         name="Rock Library",
                         root_path="/music",
                         is_enabled=True,

@@ -23,9 +23,7 @@ class _ConcreteAdminMixin(LibraryAdminMixin):
 def _library_record(*, file_write_mode: str = "full", library_auto_write: bool = False) -> dict[str, Any]:
     """Build a valid library record for ``LibraryDict`` construction."""
     return {
-        "_id": "libraries/1",
-        "_key": "1",
-        "_rev": "_rev1",
+        "id": 1,
         "name": "Rock Library",
         "root_path": "/music/rock",
         "is_enabled": True,
@@ -137,7 +135,7 @@ class TestCreateLibrary:
             patch.object(mixin, "_get_library_or_error", return_value=_library_record()),
             patch(
                 "nomarr.services.domain.library_svc.admin.create_library",
-                return_value="libraries/1",
+                return_value=1,
             ),
         ):
             result = mixin.create_library(name="Rock Library", root_path="rock")

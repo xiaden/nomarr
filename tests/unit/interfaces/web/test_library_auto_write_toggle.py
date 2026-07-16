@@ -16,9 +16,7 @@ from nomarr.interfaces.api.web.library_if import router as library_router
 def make_library(*, auto_write: bool, name: str = "Test Library") -> LibraryDict:
     """Build a minimal LibraryDict fixture for interface tests."""
     return LibraryDict(
-        _id="libraries/test-lib",
-        _key="test-lib",
-        _rev="rev-1",
+        id=1,
         name=name,
         root_path="D:/Music/Test",
         is_enabled=True,
@@ -89,14 +87,14 @@ class TestLibraryAutoWriteToggle:
         mock_pipeline_service.get_pipeline_status.return_value = MagicMock(tag_write_state="not_written")
 
         response = client.patch(
-            "/api/web/library/libraries:test-lib",
+            "/api/web/library/1",
             json={"library_auto_write": True},
         )
 
         assert response.status_code == 200
-        mock_library_service.get_library.assert_called_once_with("libraries/test-lib")
-        mock_pipeline_service.get_pipeline_status.assert_called_once_with("libraries/test-lib")
-        mock_pipeline_service.handle_auto_write_enabled.assert_called_once_with("libraries/test-lib")
+        mock_library_service.get_library.assert_called_once_with(1)
+        mock_pipeline_service.get_pipeline_status.assert_called_once_with(1)
+        mock_pipeline_service.handle_auto_write_enabled.assert_called_once_with(1)
         mock_pipeline_service.handle_auto_write_disabled.assert_not_called()
 
     def test_disabling_auto_write_stops_write_when_currently_writing(
@@ -113,13 +111,13 @@ class TestLibraryAutoWriteToggle:
         mock_pipeline_service.get_pipeline_status.return_value = MagicMock(tag_write_state="writing")
 
         response = client.patch(
-            "/api/web/library/libraries:test-lib",
+            "/api/web/library/1",
             json={"library_auto_write": False},
         )
 
         assert response.status_code == 200
-        mock_pipeline_service.get_pipeline_status.assert_called_once_with("libraries/test-lib")
-        mock_pipeline_service.handle_auto_write_disabled.assert_called_once_with("libraries/test-lib")
+        mock_pipeline_service.get_pipeline_status.assert_called_once_with(1)
+        mock_pipeline_service.handle_auto_write_disabled.assert_called_once_with(1)
         mock_pipeline_service.handle_auto_write_enabled.assert_not_called()
 
     def test_updating_other_library_fields_does_not_trigger_pipeline_calls(
@@ -132,7 +130,7 @@ class TestLibraryAutoWriteToggle:
         mock_library_service.update_library.return_value = make_library(auto_write=False, name="Renamed Library")
 
         response = client.patch(
-            "/api/web/library/libraries:test-lib",
+            "/api/web/library/1",
             json={"name": "Renamed Library"},
         )
 

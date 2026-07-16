@@ -20,12 +20,12 @@ from nomarr.interfaces.api.web.dependencies import get_library_service, get_tagg
 from nomarr.interfaces.api.web.library_files_if import router as library_files_router
 
 
-def make_library_file(file_id: str = f"{'library_files'}/abc") -> LibraryFileWithTags:
+def make_library_file(file_id: int = 1) -> LibraryFileWithTags:
     """Build a minimal library file DTO for interface tests."""
     return LibraryFileWithTags(
-        _id=file_id,
+        id=file_id,
         path="/music/song.flac",
-        library_id="libraries/test-lib",
+        library_id=1,
         file_size=1234,
         modified_time=1710000000,
         duration_seconds=215.5,
@@ -132,9 +132,9 @@ class TestLibraryFilesEndpoints:
         assert response.json() == {
             "files": [
                 {
-                    "file_id": f"{'library_files'}:abc",
+                    "file_id": 1,
                     "path": "/music/song.flac",
-                    "library_id": "libraries:test-lib",
+                    "library_id": 1,
                     "file_size": 1234,
                     "modified_time": 1710000000,
                     "duration_seconds": 215.5,
@@ -183,7 +183,7 @@ class TestLibraryFilesEndpoints:
     ) -> None:
         """POST by-ids should decode every file ID before invoking the service."""
         mock_library_service.get_files_by_ids.return_value = SearchFilesResult(
-            files=[make_library_file(file_id=f"{'library_files'}/xyz")],
+            files=[make_library_file(file_id=42)],
             total=1,
             limit=1,
             offset=0,
@@ -191,13 +191,13 @@ class TestLibraryFilesEndpoints:
 
         response = client.post(
             "/api/web/library/file/by-ids",
-            json={"file_ids": [f"{'library_files'}:abc", f"{'library_files'}:def"]},
+            json={"file_ids": ["1", "2"]},
         )
 
         assert response.status_code == 200
-        assert response.json()["files"][0]["file_id"] == f"{'library_files'}:xyz"
+        assert response.json()["files"][0]["file_id"] == 42
         mock_library_service.get_files_by_ids.assert_called_once_with(
-            [f"{'library_files'}/abc", f"{'library_files'}/def"],
+            [1, 2],
         )
 
     def test_search_files_by_tag_returns_response(
@@ -303,7 +303,7 @@ class TestLibraryFilesEndpoints:
     ) -> None:
         """GET file tags should decode the path ID and serialize the tag payload."""
         mock_tagging_service.get_file_tags.return_value = FileTagsResult(
-            file_id=f"{'library_files'}/abc",
+            file_id=1,
             path="/music/song.flac",
             tags=[
                 FileTag(
@@ -315,11 +315,11 @@ class TestLibraryFilesEndpoints:
             ],
         )
 
-        response = client.get(f"/api/web/library/file/{'library_files'}:abc/tag")
+        response = client.get("/api/web/library/file/1/tag")
 
         assert response.status_code == 200
         assert response.json() == {
-            "file_id": f"{'library_files'}/abc",
+            "file_id": 1,
             "path": "/music/song.flac",
             "tags": [
                 {
@@ -331,7 +331,7 @@ class TestLibraryFilesEndpoints:
             ],
         }
         mock_tagging_service.get_file_tags.assert_called_once_with(
-            file_id=f"{'library_files'}/abc",
+            file_id=1,
             nomarr_only=False,
         )
 
@@ -343,12 +343,12 @@ class TestLibraryFilesEndpoints:
         """Missing files should surface as HTTP 404."""
         mock_tagging_service.get_file_tags.side_effect = ValueError("missing")
 
-        response = client.get(f"/api/web/library/file/{'library_files'}:abc/tag")
+        response = client.get("/api/web/library/file/1/tag")
 
         assert response.status_code == 404
         assert response.json() == {"detail": "File not found"}
         mock_tagging_service.get_file_tags.assert_called_once_with(
-            file_id=f"{'library_files'}/abc",
+            file_id=1,
             nomarr_only=False,
         )
 
@@ -360,12 +360,12 @@ class TestLibraryFilesEndpoints:
         """POST retry-errored should default to retrying the entire library when no body is sent."""
         mock_library_service.retry_errored_files.return_value = {"retried": 3}
 
-        response = client.post("/api/web/library/libraries:test-lib/retry-errored")
+        response = client.post("/api/web/library/1/retry-errored")
 
         assert response.status_code == 200
         assert response.json() == {"retried": 3}
         mock_library_service.retry_errored_files.assert_called_once_with(
-            library_id="libraries/test-lib",
+            library_id=1,
             file_ids=None,
         )
 
@@ -377,11 +377,11 @@ class TestLibraryFilesEndpoints:
         """Missing libraries should surface as HTTP 404 for retry-errored."""
         mock_library_service.retry_errored_files.side_effect = ValueError("missing")
 
-        response = client.post("/api/web/library/libraries:test-lib/retry-errored")
+        response = client.post("/api/web/library/1/retry-errored")
 
         assert response.status_code == 404
         assert response.json() == {"detail": "Library not found"}
         mock_library_service.retry_errored_files.assert_called_once_with(
-            library_id="libraries/test-lib",
+            library_id=1,
             file_ids=None,
         )

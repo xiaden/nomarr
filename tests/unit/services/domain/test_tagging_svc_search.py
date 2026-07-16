@@ -33,14 +33,14 @@ class TestSearchFilesByTag:
         """Search should use the dedicated count query rather than page size for total."""
         mock_db = MagicMock()
         raw_files = [
-            {"_id": f"{'library_files'}/1"},
-            {"_id": f"{'library_files'}/2"},
+            {"id": 1},
+            {"id": 2},
         ]
         mapped_files = [
             LibraryFileWithTags(
-                _id=f"{'library_files'}/1",
+                id=1,
                 path="/music/one.flac",
-                library_id="libraries/1",
+                library_id=1,
                 file_size=None,
                 modified_time=None,
                 duration_seconds=None,
@@ -58,9 +58,9 @@ class TestSearchFilesByTag:
                 tags=[],
             ),
             LibraryFileWithTags(
-                _id=f"{'library_files'}/2",
+                id=2,
                 path="/music/two.flac",
-                library_id="libraries/1",
+                library_id=1,
                 file_size=None,
                 modified_time=None,
                 duration_seconds=None,
