@@ -19,12 +19,12 @@ Pure computation for collection statistics, mood analysis, and tag analytics.
 
 ## Patterns
 
-- **Pure computation vs. DB reads:** `analytics_comp` functions are pure — they accept pre-fetched data and return computed results. `collection_overview_comp` and `mood_analysis_comp` accept a `Database` handle and query ArangoDB directly.
+- **Pure computation vs. DB reads:** `analytics_comp` functions are pure — they accept pre-fetched data and return computed results. `collection_overview_comp` and `mood_analysis_comp` accept a `Database` handle and query PostgreSQL directly.
 - **Optional library filtering:** DB-querying modules accept `library_id` to scope stats to a single library or compute across all.
 - **Namespace-aware:** Tag functions work with namespaced key:value format (e.g., `mood-strict:happy`).
 
 ## Dependencies
 
 - **Upstream:** Called by analytics services/workflows for dashboard data
-- **Downstream:** `collection_overview_comp` and `mood_analysis_comp` call persistence directly (ArangoDB queries)
+- **Downstream:** `collection_overview_comp` and `mood_analysis_comp` call persistence directly (PostgreSQL queries)
 - **External:** Standard library only (no third-party deps)

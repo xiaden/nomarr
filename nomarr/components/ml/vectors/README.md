@@ -7,7 +7,7 @@ Embedding vector storage with hot/cold tiered collections for similarity search.
 - Pool segment-level embeddings into track-level vectors for storage
 - Persist vectors to hot collections during ML processing
 - Promote vectors from hot to cold collections (drain + UPSERT)
-- Build and maintain ArangoDB vector indexes on cold collections
+- Build and maintain pgvector indexes on cold collections
 - Retrieve promoted vectors for similarity queries
 - Backfill genre metadata on cold vectors
 
@@ -24,7 +24,7 @@ Embedding vector storage with hot/cold tiered collections for similarity search.
 ## Patterns
 
 - **Hot/cold tiering:** Hot collections are write-only accumulation targets during ML processing. Cold collections hold promoted, indexed vectors for search. Hot is never searched.
-- **Convergent drain:** `drain_hot_to_cold` uses AQL UPSERT (idempotent by `_key`) then truncates hot — safe to run multiple times.
+- **Convergent drain:** `drain_hot_to_cold` uses ON CONFLICT UPSERT (idempotent by primary key) then truncates hot — safe to run multiple times.
 - **Genre enrichment:** During drain, each vector document is enriched with genre tags from the graph (song_has_tags → tags where name="genre").
 - **Per-backbone collections:** Each backbone (effnet, musicnn, etc.) has its own hot and cold vector collection, selected by backbone name.
 

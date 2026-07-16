@@ -24,5 +24,5 @@ Health monitoring and path resolution for filesystem–database coordination.
 ## Dependencies
 
 - **Upstream:** Called by services and workflows for path validation and health checks
-- **Downstream:** Calls persistence directly (ArangoDB queries for health records and library config)
+- **Downstream:** Calls persistence directly (PostgreSQL queries for health records and library config)
 - **External:** Standard library `pathlib`

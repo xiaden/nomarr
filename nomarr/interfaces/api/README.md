@@ -6,7 +6,7 @@ FastAPI application setup, authentication, and ID encoding for HTTP transport.
 
 - Create and configure the FastAPI application with lifespan management
 - Authenticate requests via API key or session token
-- Encode/decode ArangoDB `_id` fields for safe HTTP transport (`collection/key` ↔ `collection:key`)
+- Encode/decode database ID fields for safe HTTP transport (`collection/key` ↔ `collection:key`)
 - Serve the SPA dashboard and handle catch-all routing
 
 ## Key Modules
@@ -15,7 +15,7 @@ FastAPI application setup, authentication, and ID encoding for HTTP transport.
  | -------- | -------- |
  | `api_app.py` | FastAPI app factory — lifespan, exception handler, SPA serving, health check |
  | `auth.py` | `verify_key`, `verify_session`, password hashing, session create/validate/invalidate |
- | `id_codec.py` | `encode_id`/`decode_id` for ArangoDB IDs, recursive `encode_ids` for response data |
+ | `id_codec.py` | `encode_id`/`decode_id` for database IDs, recursive `encode_ids` for response data |
  | `INTERFACE_STATUS.md` | Tracks API endpoint completion status |
 
 ## Subfolders
@@ -28,7 +28,7 @@ FastAPI application setup, authentication, and ID encoding for HTTP transport.
 
 ## Patterns
 
-- **ID encoding**: All ArangoDB `_id` fields are encoded before HTTP responses and decoded on ingress via `decode_path_id` or `EncodedId` Pydantic type
+- **ID encoding**: All database ID fields are encoded before HTTP responses and decoded on ingress via `decode_path_id` or `EncodedId` Pydantic type
 - **Auth dependency**: `verify_key` and `verify_session` are FastAPI `Depends()` guards on protected routes
 - **SPA catch-all**: Non-API paths serve `index.html` for client-side React Router
 

@@ -5,7 +5,7 @@ Work discovery, claiming, and crash recovery for the ML tagging worker fleet.
 ## Responsibilities
 
 - Discover unprocessed files and claim them for processing
-- Prevent duplicate work via deterministic ArangoDB document key uniqueness
+- Prevent duplicate work via deterministic PostgreSQL primary key uniqueness
 - Clean up stale claims from inactive workers
 - Decide whether to restart or permanently fail crashed workers
 - Calculate exponential backoff delays for restarts
@@ -19,7 +19,7 @@ Work discovery, claiming, and crash recovery for the ML tagging worker fleet.
 
 ## Patterns
 
-- **Claim-based work distribution:** Workers discover the next file via deterministic `_key` ordering, then atomically claim it. ArangoDB key uniqueness prevents duplicate claims without distributed locks.
+- **Claim-based work distribution:** Workers discover the next file via deterministic `_key` ordering, then atomically claim it. primary key uniqueness prevents duplicate claims without distributed locks.
 - **Two-tier crash limiting:** Short window (5 restarts in 5 minutes) catches rapid crashes (OOM, bad config). Lifetime cap (20 total restarts) catches slow thrashing (killed every 10 minutes from resource pressure).
 - **Stale claim cleanup:** Runs three operations: remove claims from workers with stale heartbeats, claims for already-tagged files, and claims for files no longer needing processing.
 

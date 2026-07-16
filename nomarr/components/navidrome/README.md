@@ -33,5 +33,5 @@ Navidrome/Subsonic integration — API communication, play data crawling, playli
 ## Dependencies
 
 - **Upstream:** Called by Navidrome services and playlist workflows
-- **Downstream:** `collection_overview_comp`, `mood_analysis_comp`, `taste_profile_comp`, `playlist_builder_comp`, `tag_query_comp` call persistence directly (ArangoDB)
+- **Downstream:** `collection_overview_comp`, `mood_analysis_comp`, `taste_profile_comp`, `playlist_builder_comp`, `tag_query_comp` call persistence directly (PostgreSQL)
 - **External:** `requests` (Subsonic API), `spotipy` (indirect via playlist import), `numpy` (centroid math)

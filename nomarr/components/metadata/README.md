@@ -7,7 +7,7 @@ Entity lifecycle management — seeding tag relationships from raw metadata, reb
 - Seed song–entity edges (artist, album, genre, label, year) from raw file metadata
 - Compute and write denormalized metadata cache fields on song documents
 - Detect and remove orphaned tags no longer referenced by any song
-- Batch-optimized seeding for scan workflows (4 AQL per folder instead of ~20×N per file)
+- Batch-optimized seeding for scan workflows (4 queries per folder instead of ~20×N per file)
 
 ## Key Modules
 
@@ -19,7 +19,7 @@ Entity lifecycle management — seeding tag relationships from raw metadata, reb
 ## Patterns
 
 - **Hybrid storage model:** Tags live in a graph (vertices + edges) for querying, but songs also carry denormalized cache fields for fast reads. Both must stay in sync.
-- **Batch optimization:** `seed_entities_for_scan_batch` collects per-file entries in memory, then issues 3 AQL for tags + 1 AQL for cache = 4 total, regardless of file count.
+- **Batch optimization:** `seed_entities_for_scan_batch` collects per-file entries in memory, then issues 3 queries for tags + 1 query for cache = 4 total, regardless of file count.
 - **Pure + DB dual paths:** `compute_metadata_cache_fields` is pure (no DB), used during scan to skip read-back. `rebuild_song_metadata_cache` reads tags from DB for repair.
 
 ## Dependencies

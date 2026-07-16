@@ -46,7 +46,7 @@ File and library management — scanning, syncing, metadata extraction, move det
 
 - **Incremental scanning:** `folder_analysis_comp` compares folder mtime and file count against a DB cache to skip unchanged folders, making re-scans fast.
 - **Move detection:** When files disappear and new files appear, chromaprints are compared. Duration pre-filtering and early termination optimize the matching.
-- **Batch upserts:** `scan_lifecycle_comp.upsert_scanned_files` writes files in bulk AQL operations, with optional edge bootstrapping for files that should skip ML processing.
+- **Batch upserts:** `scan_lifecycle_comp.upsert_scanned_files` writes files in bulk SQL operations, with optional edge bootstrapping for files that should skip ML processing.
 - **Security boundary:** All library roots must be nested under a configured `base_library_root`. Path traversal is prevented by `library_root_comp`.
 
 ## Dependencies

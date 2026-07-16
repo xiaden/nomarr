@@ -5,7 +5,7 @@ GPU/VRAM coordination, capacity probing, and execution tier selection for the ML
 ## Responsibilities
 
 - Probe per-model VRAM requirements via isolated GPU measurements
-- Coordinate fleet-wide VRAM promises (atomic register/release via ArangoDB transactions)
+- Coordinate fleet-wide VRAM promises (atomic register/release via PostgreSQL transactions)
 - Select execution tier based on resource budgets (GPU memory, RAM, worker count)
 - Provide process-local worker context registry for VRAM coordinator access
 - Build timing summaries for per-file processing diagnostics

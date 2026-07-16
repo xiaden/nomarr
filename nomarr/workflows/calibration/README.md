@@ -30,7 +30,7 @@ Multi-step workflows for generating, applying, importing, and exporting histogra
 
 ## Architecture Rules
 
-> **Workflows MUST NOT call persistence directly.** Workflows receive `Database` and pass it to components. Direct collection access in these modules uses the `Database` abstraction layer, not raw ArangoDB queries.
+> **Workflows MUST NOT call persistence directly.** Workflows receive `Database` and pass it to components. Direct collection access in these modules uses the `Database` abstraction layer, not raw SQL queries.
 
 ## Dependencies
 

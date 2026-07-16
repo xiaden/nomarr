@@ -28,5 +28,5 @@ Fetch playlists from streaming platforms, normalize metadata, and match tracks a
 ## Dependencies
 
 - **Upstream:** Called by playlist import workflows
-- **Downstream:** `track_matcher_comp` calls persistence directly (ArangoDB library file queries for matching candidates)
+- **Downstream:** `track_matcher_comp` calls persistence directly (PostgreSQL library file queries for matching candidates)
 - **External:** `spotipy` (Spotify API), `requests` (Deezer API), `thefuzz` (fuzzy string matching)
