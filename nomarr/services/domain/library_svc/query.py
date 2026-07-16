@@ -298,7 +298,9 @@ class LibraryQueryMixin:
             sorted by scanned_at DESC.
 
         """
-        return await get_recently_processed(self.db, limit=limit, library_id=int(library_id) if library_id is not None else None)
+        return await get_recently_processed(
+            self.db, limit=limit, library_id=int(library_id) if library_id is not None else None
+        )
 
     async def get_errored_files(self, library_id: str) -> ErroredFilesResult:
         """Get errored files for a library with basic metadata.

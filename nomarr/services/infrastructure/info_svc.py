@@ -9,7 +9,6 @@ NOT a health service - HealthMonitorService tracks component liveness.
 from __future__ import annotations
 
 import contextlib
-import json
 import logging
 import multiprocessing
 from dataclasses import dataclass

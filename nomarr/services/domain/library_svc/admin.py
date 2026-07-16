@@ -262,14 +262,16 @@ class LibraryAdminMixin:
 
         """
         asyncio.run(self._get_library_or_error(library_id))
-        asyncio.run(UpdateLibraryMetadataComp(self.db).update(
-            library_id,
-            name=name,
-            is_enabled=is_enabled,
-            watch_mode=watch_mode,
-            file_write_mode=file_write_mode,
-            library_auto_write=library_auto_write,
-        ))
+        asyncio.run(
+            UpdateLibraryMetadataComp(self.db).update(
+                library_id,
+                name=name,
+                is_enabled=is_enabled,
+                watch_mode=watch_mode,
+                file_write_mode=file_write_mode,
+                library_auto_write=library_auto_write,
+            )
+        )
 
         updated = asyncio.run(self._get_library_or_error(library_id))
         return LibraryDict(**updated)
