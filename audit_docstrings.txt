@@ -11,7 +11,7 @@
 [F] list_file_tags_for_files:
   Return tags for many files, grouped by file id. |  | Uses a single batch read for all supplied files. When | ``name_starts_with`` is provided, only tags whose names start with that | prefix are included. |  | Args: |     file_ids: Files whose tags should be fetche
 [F] remove_library:
-  Delete a library and all associated data. |  | Returns True if the library was found and deleted, False if not found. | Delegates to the hand-written AQL cascade in LibrariesAqlOperations. | Orphaned tag documents are not cleaned up — callers should invoke | c
+  Delete a library and all associated data. |  | Returns True if the library was found and deleted, False if not found. | Delegates to the hand-written deletion cascade in persistence operations. | Orphaned tag documents are not cleaned up — callers should invoke | c
 [F] add_file_to_library:
   Insert or update one library-file document and initialize its state edges. |  | Returns the ``_id`` of the upserted document.
 [F] add_files_to_library:
@@ -151,7 +151,7 @@
 
 === db.py ===
 [C] Database:
-  Application database (ArangoDB). |  | Handles all data persistence: queue, library, sessions, meta config. | Single source of truth for database operations across all services. |  | Connection pooling is handled automatically by python-arango. | Thread-safe with
+  Application database (PostgreSQL). |  | Handles all data persistence: queue, library, sessions, meta config. | Single source of truth for database operations across all services. |  | Connection pooling is handled automatically by the database driver. | Thread-safe with
 [F] get_version:
   Read the current schema version from the meta store.
 [F] set_version:
@@ -163,7 +163,7 @@
 [F] create_library_record:
   Insert a library document through the constructor namespace. |  | Args: |     db: Database handle used to insert the library document. |     name: Human-readable library name. |     root_path: Absolute root path scanned for this library. |     is_enabled: Whethe
 [F] get_library_record:
-  Get one library by ``_id`` or ``_key`` and optionally merge scan state.
+  Get one library by identifier and optionally merge scan state.
 [F] get_library_by_name:
   Get one library by unique name.
 [F] list_library_records:
@@ -173,7 +173,7 @@
 [F] update_library_record:
   Update a library document by ``_id`` through the constructor namespace.
 [F] update_library_config_fields:
-  Update optional library config fields. |  | Constructor ``update`` does not expose Arango's ``keepNull: false`` toggle, | so clearing an override persists ``null``. Callers should treat missing and | ``None`` values equivalently for inheritance.
+  Update optional library config fields. |  | Constructor ``update`` does not expose a keep-null toggle, | so clearing an override persists ``null``. Callers should treat missing and | ``None`` values equivalently for inheritance.
 [F] list_all_library_keys:
   Return all library document keys for bootstrap-style callers.
 [F] find_library_containing_path:

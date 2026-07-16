@@ -100,7 +100,7 @@ interfaces → services → workflows → components → (persistence / helpers)
 - `nomarr/services/` - Service layer, orchestrates workflows and components
 - `nomarr/workflows/` - Multi-step business logic, calls components
 - `nomarr/components/` - Reusable domain logic, calls persistence/helpers
-- `nomarr/persistence/` - Database access, ArangoDB queries
+- `nomarr/persistence/` - Database access, SQL queries
 - `nomarr/helpers/` - Pure utility functions, no nomarr imports
 
 See [.github/instructions/](.github/instructions/) for detailed layer conventions.
@@ -148,7 +148,7 @@ All development targets the `develop` branch. Clone the repository and switch to
 
    ```bash
    # From repo root
-   docker compose -f docker/compose.yaml up -d arangodb  # Start database only
+   docker compose -f docker/compose.yaml up -d nomarr-postgres  # Start database only
 
    # In one terminal - backend
    source .venv/bin/activate
