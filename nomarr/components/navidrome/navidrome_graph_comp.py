@@ -52,7 +52,7 @@ def bulk_ensure_navidrome_file_links(db: Database, mappings: list[dict[str, str]
 
 
 def list_navidrome_track_keys(db: Database) -> list[str]:
-    """Return all Navidrome track `_key` values."""
+    """Return all Navidrome track key values."""
     return [str(key) for key in db.app.legacy_navidrome.list_nd_track_keys()]
 
 

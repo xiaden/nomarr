@@ -137,7 +137,7 @@ class LibraryFilesMixin:
         Example:
             # After changing library root configuration
             result = library_service.reconcile_library_paths(
-                library_id="libraries/12345",
+                library_id=1,
                 policy="delete_invalid",
                 batch_size=500
             )

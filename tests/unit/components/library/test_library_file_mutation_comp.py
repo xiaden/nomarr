@@ -41,25 +41,22 @@ class TestUpsertBatch:
         ]
         file_docs: list[dict[str, Any]] = [
             {
-                "library_id": "libraries/rock",
+                "library_id": 1,
                 "path": "C:/music/existing.mp3",
-                "library_key": "rock",
                 "normalized_path": "existing.mp3",
                 "file_size": 111,
                 "modified_time": 1000,
             },
             {
-                "library_id": "libraries/jazz",
+                "library_id": 2,
                 "path": "C:/music/jazz.mp3",
-                "library_key": "jazz",
                 "normalized_path": "jazz.mp3",
                 "file_size": 222,
                 "modified_time": 2000,
             },
             {
-                "library_id": "libraries/rock",
+                "library_id": 1,
                 "path": "C:/music/new.mp3",
-                "library_key": "rock",
                 "normalized_path": "new.mp3",
                 "file_size": 333,
                 "modified_time": 3000,
@@ -75,18 +72,16 @@ class TestUpsertBatch:
         ]
         assert mock_db.library.add_files_to_library.call_args_list == [
             call(
-                "libraries/rock",
+                1,
                 [
                     {
                         "path": "C:/music/existing.mp3",
-                        "library_key": "rock",
                         "normalized_path": "existing.mp3",
                         "file_size": 111,
                         "modified_time": 1000,
                     },
                     {
                         "path": "C:/music/new.mp3",
-                        "library_key": "rock",
                         "normalized_path": "new.mp3",
                         "file_size": 333,
                         "modified_time": 3000,
@@ -94,11 +89,10 @@ class TestUpsertBatch:
                 ],
             ),
             call(
-                "libraries/jazz",
+                2,
                 [
                     {
                         "path": "C:/music/jazz.mp3",
-                        "library_key": "jazz",
                         "normalized_path": "jazz.mp3",
                         "file_size": 222,
                         "modified_time": 2000,

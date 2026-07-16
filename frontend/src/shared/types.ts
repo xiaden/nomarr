@@ -53,8 +53,8 @@ export interface FsEntry {
 // ──────────────────────────────────────────────────────────────────────
 
 export interface Entity {
-  entity_id: string; // Entity _id (e.g., 'artists:v1_abc123...')
-  key: string; // Entity _key
+  entity_id: string; // Entity primary key
+  key: string; // Entity natural key
   display_name: string; // Display string
   song_count?: number; // Optional song count
 }

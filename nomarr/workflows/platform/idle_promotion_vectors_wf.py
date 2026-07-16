@@ -18,7 +18,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from nomarr.components.ml.vectors.ml_vector_idle_promotion_comp import (
-    compute_promotion_nlists,
+    compute_promotion_ef_construction,
     list_hot_vector_targets,
 )
 from nomarr.components.platform import locks_comp
@@ -81,7 +81,7 @@ def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: st
             continue
 
         try:
-            nlists = compute_promotion_nlists(db, backbone_id)
+            nlists = compute_promotion_ef_construction(db, backbone_id)
             logger.info(
                 "[%s] Promoting %s (nlists=%d)",
                 worker_id,

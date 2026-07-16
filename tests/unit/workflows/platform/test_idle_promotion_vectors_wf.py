@@ -27,9 +27,9 @@ class TestIdlePromotionVectorsWorkflow:
 
         assert result == 0
 
-    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow")
+    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow", new_callable=MagicMock)
     @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
-    @patch(f"{MODULE_UNDER_TEST}.compute_promotion_nlists")
+    @patch(f"{MODULE_UNDER_TEST}.compute_promotion_ef_construction")
     def test_promotes_when_lock_acquired(
         self,
         mock_nlists: MagicMock,
@@ -69,9 +69,9 @@ class TestIdlePromotionVectorsWorkflow:
             call(db, "vector_promotion", "musicnn", "worker:tag:0"),
         ]
 
-    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow")
+    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow", new_callable=MagicMock)
     @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
-    @patch(f"{MODULE_UNDER_TEST}.compute_promotion_nlists")
+    @patch(f"{MODULE_UNDER_TEST}.compute_promotion_ef_construction")
     def test_skips_when_lock_not_acquired(
         self,
         mock_nlists: MagicMock,
@@ -104,9 +104,9 @@ class TestIdlePromotionVectorsWorkflow:
         mock_acquire.assert_called_once_with(db, "vector_promotion", "effnet", "worker:tag:0", 1800)
         mock_release.assert_not_called()
 
-    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow")
+    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow", new_callable=MagicMock)
     @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
-    @patch(f"{MODULE_UNDER_TEST}.compute_promotion_nlists")
+    @patch(f"{MODULE_UNDER_TEST}.compute_promotion_ef_construction")
     def test_releases_lock_on_workflow_failure(
         self,
         mock_nlists: MagicMock,
@@ -139,9 +139,9 @@ class TestIdlePromotionVectorsWorkflow:
         mock_acquire.assert_called_once_with(db, "vector_promotion", "effnet", "worker:tag:0", 1800)
         mock_release.assert_called_once_with(db, "vector_promotion", "effnet", "worker:tag:0")
 
-    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow")
+    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow", new_callable=MagicMock)
     @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
-    @patch(f"{MODULE_UNDER_TEST}.compute_promotion_nlists")
+    @patch(f"{MODULE_UNDER_TEST}.compute_promotion_ef_construction")
     def test_reaps_stale_locks(
         self,
         mock_nlists: MagicMock,
