@@ -272,15 +272,14 @@ class TestDeleteLibrary:
         """Observed libraries should stop watching before persistence delete runs."""
         mixin = _ConcreteAdminMixin(MagicMock(), MagicMock())
         mixin.file_watcher_service = MagicMock()
-        mixin.file_watcher_service.observers = {1: object()}
+        mixin.file_watcher_service.observers = {"1": object()}
         call_order: list[str] = []
 
         def _delete_library(*, db: MagicMock, library_id: int) -> bool:
             call_order.append("delete")
             return True
 
-        def _stop_watching_library(library_id: int) -> None:
-            assert library_id == 1
+        def _stop_watching_library(library_id: str) -> None:
             call_order.append("stop")
 
         mixin.file_watcher_service.stop_watching_library.side_effect = _stop_watching_library
@@ -293,5 +292,5 @@ class TestDeleteLibrary:
 
         assert result is True
         assert call_order == ["stop", "delete"]
-        mixin.file_watcher_service.stop_watching_library.assert_called_once_with(1)
+        mixin.file_watcher_service.stop_watching_library.assert_called_once_with("1")
         mock_delete_library.assert_called_once_with(db=mixin.db, library_id=1)

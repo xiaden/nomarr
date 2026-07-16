@@ -43,14 +43,14 @@ class TestScanDispatch:
         ):
             result = await service.start_quick_scan(1)
 
-        mock_scan_setup.assert_called_once_with(service.db, 1, scan_type="quick")
-        mock_bts.start_task.assert_called_once()
-        managed_task = mock_bts.start_task.call_args.args[0]
-        assert isinstance(managed_task, ManagedTask)
-        assert managed_task.task_id == "scan_library_1"
-        assert managed_task.on_complete is not None
-        managed_task.on_complete()
-        mock_on_complete_hook.assert_called_once_with(service.db, 1)
+            mock_scan_setup.assert_called_once_with(service.db, 1, scan_type="quick")
+            mock_bts.start_task.assert_called_once()
+            managed_task = mock_bts.start_task.call_args.args[0]
+            assert isinstance(managed_task, ManagedTask)
+            assert managed_task.task_id == "scan_library_1"
+            assert managed_task.on_complete is not None
+            managed_task.on_complete()
+            mock_on_complete_hook.assert_called_once_with(service.db, 1)
         assert result.job_ids == ["scan_library_1"]
 
     @pytest.mark.asyncio
@@ -69,14 +69,14 @@ class TestScanDispatch:
         ):
             result = await service.start_full_scan(1)
 
-        mock_scan_setup.assert_called_once_with(service.db, 1, scan_type="full")
-        mock_bts.start_task.assert_called_once()
-        managed_task = mock_bts.start_task.call_args.args[0]
-        assert isinstance(managed_task, ManagedTask)
-        assert managed_task.task_id == "scan_library_1"
-        assert managed_task.on_complete is not None
-        managed_task.on_complete()
-        mock_on_complete_hook.assert_called_once_with(service.db, 1)
+            mock_scan_setup.assert_called_once_with(service.db, 1, scan_type="full")
+            mock_bts.start_task.assert_called_once()
+            managed_task = mock_bts.start_task.call_args.args[0]
+            assert isinstance(managed_task, ManagedTask)
+            assert managed_task.task_id == "scan_library_1"
+            assert managed_task.on_complete is not None
+            managed_task.on_complete()
+            mock_on_complete_hook.assert_called_once_with(service.db, 1)
         assert result.job_ids == ["scan_library_1"]
 
 

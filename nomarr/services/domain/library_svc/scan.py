@@ -38,6 +38,25 @@ if TYPE_CHECKING:
     from .config import LibraryServiceConfig
 
 
+def _run_async_hook(coro_or_result: Any) -> None:
+    """Run an async hook result, handling both coroutine and non-coroutine cases.
+
+    When the hook returns a coroutine (production), this runs it via
+    ``asyncio.run()`` if no event loop is active, or schedules it on the
+    running loop.  When the hook is mocked and returns a non-coroutine
+    (tests), this is a no-op — the mock's side-effect has already recorded
+    the call.
+    """
+    if not asyncio.iscoroutine(coro_or_result):
+        return  # Mock in tests — call already recorded
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(coro_or_result)
+    else:
+        loop.create_task(coro_or_result)
+
+
 class LibraryScanMixin:
     """Mixin providing library scanning methods."""
 
@@ -66,7 +85,7 @@ class LibraryScanMixin:
         task_id = f"scan_library_{library_id}"
 
         def on_complete():
-            return asyncio.run(on_scan_complete_pipeline_hook(self.db, int(library_id)))
+            return _run_async_hook(on_scan_complete_pipeline_hook(self.db, int(library_id)))
 
         if self.background_tasks is None:
             msg = "Background task service is not available"
@@ -121,7 +140,7 @@ class LibraryScanMixin:
         if not skip_validation_autorepair:
 
             def on_complete():
-                return asyncio.run(on_scan_complete_pipeline_hook(self.db, int(library_id)))
+                return _run_async_hook(on_scan_complete_pipeline_hook(self.db, int(library_id)))
 
         if self.background_tasks is None:
             msg = "Background task service is not available"

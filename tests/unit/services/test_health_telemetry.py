@@ -340,6 +340,7 @@ class TestComponentLifecycleHandler:
     def test_on_status_change_does_not_raise(self) -> None:
         """on_status_change should not raise."""
         from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
+        from unittest.mock import patch
 
         mock_db = MagicMock()
         mock_db.hosts = "http://localhost:8529"
@@ -364,9 +365,11 @@ class TestComponentLifecycleHandler:
 
         context = StatusChangeContext(consecutive_misses=0)
 
-        # Should not raise
-        service.on_status_change("worker:tag:0", "pending", "healthy", context)
-        service.on_status_change("worker:tag:0", "healthy", "dead", context)
+        # Patch ensure_future to avoid event-loop errors in sync tests
+        with patch("asyncio.ensure_future"):
+            # Should not raise
+            service.on_status_change("worker:tag:0", "pending", "healthy", context)
+            service.on_status_change("worker:tag:0", "healthy", "dead", context)
 
 
 class TestHealthFrameEmission:

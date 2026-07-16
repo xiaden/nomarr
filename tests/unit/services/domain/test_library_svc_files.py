@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -40,7 +40,9 @@ class TestRetryErroredFiles:
         mock_transition_file_state: MagicMock,
     ) -> None:
         mock_db = MagicMock()
-        mock_db.library.get_library.return_value = {"_id": 123}
+        mock_db.library.get_library = AsyncMock(return_value={"_id": 123, "id": 123})
+        mock_db.library.get_scan = AsyncMock(return_value=None)
+        mock_db.app.get_pipeline_state = AsyncMock(return_value=None)
         mixin = _ConcreteFilesMixin(mock_db)
 
         result = await mixin.retry_errored_files(123)
@@ -79,7 +81,9 @@ class TestRetryErroredFiles:
         mock_transition_file_state: MagicMock,
     ) -> None:
         mock_db = MagicMock()
-        mock_db.library.get_library.return_value = {"_id": 123}
+        mock_db.library.get_library = AsyncMock(return_value={"_id": 123, "id": 123})
+        mock_db.library.get_scan = AsyncMock(return_value=None)
+        mock_db.app.get_pipeline_state = AsyncMock(return_value=None)
         mixin = _ConcreteFilesMixin(mock_db)
 
         await mixin.retry_errored_files(
@@ -116,7 +120,9 @@ class TestRetryErroredFiles:
         mock_transition_file_state: MagicMock,
     ) -> None:
         mock_db = MagicMock()
-        mock_db.library.get_library.return_value = {"_id": 123}
+        mock_db.library.get_library = AsyncMock(return_value={"_id": 123, "id": 123})
+        mock_db.library.get_scan = AsyncMock(return_value=None)
+        mock_db.app.get_pipeline_state = AsyncMock(return_value=None)
         mixin = _ConcreteFilesMixin(mock_db)
 
         await mixin.retry_errored_files(123)

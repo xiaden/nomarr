@@ -103,16 +103,14 @@ class PipelineRepository:
     async def list_libraries_in_pipeline_state(self, state_key: str, state_value: str) -> list[int]:
         """Return library ids whose *state_data* contains *state_value*.
 
-        Filters in Python after fetching all rows for *state_key* to avoid
-        PostgreSQL-specific JSONB containment operators (``@>``).
+        Filters on the Python side to avoid PostgreSQL ``@>`` operator,
+        which is not available on SQLite.  Works identically on both
+        backends.
         """
-        stmt = select(_T.c.library_id, _T.c.state_data).where(
-            _T.c.state_key == state_key,
-        )
+        stmt = select(_T).where(_T.c.state_key == state_key)
         result = await self._session.execute(stmt)
         return [
-            row[0] for row in result.all()
-            if isinstance(row[1], dict) and row[1].get("state") == state_value
+            row._mapping["library_id"] for row in result.all() if row._mapping["state_data"].get("state") == state_value
         ]
 
     async def count_pipeline_states(self) -> int:

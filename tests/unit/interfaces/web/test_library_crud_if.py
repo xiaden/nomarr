@@ -163,7 +163,9 @@ class TestLibraryCrudEndpoints:
         mock_library_service: MagicMock,
     ) -> None:
         """GET item should decode the path ID and serialize the returned library."""
-        mock_library_service.get_library.return_value = make_library()
+        # Use sync MagicMock because the endpoint calls get_library()
+        # without await (the service returns a sync value).
+        mock_library_service.get_library = MagicMock(return_value=make_library())
 
         response = client.get("/api/web/library/1")
 
@@ -178,7 +180,10 @@ class TestLibraryCrudEndpoints:
         mock_library_service: MagicMock,
     ) -> None:
         """Missing libraries should surface as HTTP 404."""
-        mock_library_service.get_library.side_effect = ValueError("missing")
+        # Use sync MagicMock because the endpoint calls get_library()
+        # without await; an AsyncMock would return a coroutine instead of
+        # raising the ValueError.
+        mock_library_service.get_library = MagicMock(side_effect=ValueError("missing"))
 
         response = client.get("/api/web/library/1")
 

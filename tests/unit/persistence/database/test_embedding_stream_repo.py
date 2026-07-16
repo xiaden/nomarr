@@ -69,8 +69,8 @@ class TestEmbeddingStreamRepository:
         assert record["backbone"] == "bb_test"
         assert record["patches_emb"] == b"\x00\x01\x02"
         assert record["created_at"] > 0
-        # updated_at mirrors created_at (model has no updated_at column)
-        assert record["updated_at"] == record["created_at"]
+        # model has no updated_at column — DTO always maps it to None
+        assert record["updated_at"] is None
 
     @pytest.mark.asyncio
     async def test_upsert_stream_update(self, pg_session) -> None:

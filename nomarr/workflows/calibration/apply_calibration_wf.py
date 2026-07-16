@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING, Protocol
 
 from nomarr.components.ml.calibration.ml_calibration_state_comp import (
@@ -128,10 +127,18 @@ async def apply_calibration_wf(
     # --- Chunk loop: process → flush ---
     success_count = 0
     fail_count = 0
-    completed_count = [0]
-    completed_lock = threading.Lock()
+    completed_count = 0
 
     _t_io_total = 0.0
+
+    # Use asyncio.Semaphore for concurrency control instead of ThreadPoolExecutor.
+    # This avoids the anti-pattern of submitting async functions to a thread pool
+    # where the returned coroutine is never awaited.
+    sem = asyncio.Semaphore(max_write_workers)
+
+    async def _process_with_semaphore(file_path: str, ctx: BatchContext) -> bool:
+        async with sem:
+            return await _process_file(file_path, ctx)
 
     for chunk_start in range(0, total, prefetch_chunk_size):
         chunk_paths = paths[chunk_start : chunk_start + prefetch_chunk_size]
@@ -150,28 +157,26 @@ async def apply_calibration_wf(
         )
 
         _t_io_start = internal_ms()
-        futures_map = {}
-        with ThreadPoolExecutor(max_workers=max_write_workers) as executor:
-            for file_path in chunk_paths:
-                fut = executor.submit(_process_file, file_path, batch_ctx)
-                futures_map[fut] = file_path
+        tasks = [_process_with_semaphore(fp, batch_ctx) for fp in chunk_paths]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            for fut in as_completed(futures_map):
-                file_path = futures_map[fut]
-                ok = fut.result()
-                if ok:
-                    success_count += 1
-                else:
-                    fail_count += 1
-                with completed_lock:
-                    completed_count[0] += 1
-                    done_so_far = completed_count[0]
-                if on_progress is not None:
-                    on_progress(
-                        completed_files=done_so_far,
-                        total_files=total,
-                        current_file=file_path,
-                    )
+        for file_path, result in zip(chunk_paths, results):
+            if isinstance(result, BaseException):
+                logger.warning(
+                    f"Failed to write calibrated tags for {file_path}: {result}", exc_info=True
+                )
+                fail_count += 1
+            elif result:
+                success_count += 1
+            else:
+                fail_count += 1
+            completed_count += 1
+            if on_progress is not None:
+                on_progress(
+                    completed_files=completed_count,
+                    total_files=total,
+                    current_file=file_path,
+                )
 
         _t_io_chunk = (internal_ms().value - _t_io_start.value) / 1000
         _t_io_total += _t_io_chunk

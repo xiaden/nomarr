@@ -443,10 +443,13 @@ class TestFileRepository:
         # Create library and file
         lib_id = await _create_library(pg_session)
         file_id = await _create_file(pg_session, lib_id, "/music/orphan.mp3")
-        # Delete the library to create an orphan (disable FK check temporarily)
-        await pg_session.execute(text("SET session_replication_role = replica"))
+        # Delete the library to create an orphan — temporarily disable FK checks
+        # so SQLite doesn't cascade-delete the file (library_files.library_id
+        # has ondelete=CASCADE).  PostgreSQL uses ``SET session_replication_role``;
+        # SQLite uses ``PRAGMA foreign_keys``.
+        await pg_session.execute(text("PRAGMA foreign_keys = OFF"))
         await pg_session.execute(delete(Library).where(Library.id == lib_id))
-        await pg_session.execute(text("SET session_replication_role = DEFAULT"))
+        await pg_session.execute(text("PRAGMA foreign_keys = ON"))
         await pg_session.commit()
         repo = FileRepository(pg_session)
         result = await repo.list_orphaned_file_ids()

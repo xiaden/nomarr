@@ -35,7 +35,7 @@ class TestApplyCalibrationWorkflow:
             update_file_calibration_hashes_batch,
         )
 
-        def _write_calibrated_tags(*, db: MagicMock, params: Any, batch_ctx: Any | None = None) -> None:
+        async def _write_calibrated_tags(*, db: MagicMock, params: Any, batch_ctx: Any | None = None) -> None:
             assert batch_ctx is not None
             file_path = params.file_path
             write_calls.append(file_path)

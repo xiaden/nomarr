@@ -81,6 +81,7 @@ class TestLoadOutputStreamsForFile:
         db = MagicMock()
         db.app.get_file_states_for_files = AsyncMock(return_value={})
         db.app.remove_file_states = AsyncMock()
+        db.app.add_file_states = AsyncMock()
         head_infos = [_FakeHeadInfo(name="mood_multiclass", labels=["happy", "sad"], model_path="/models/mood.onnx")]
         fetch_output_streams = AsyncMock(return_value=[])
         monkeypatch.setattr(stream_store_module, "fetch_output_streams", fetch_output_streams)
@@ -102,6 +103,7 @@ class TestLoadOutputStreamsForFile:
         db = MagicMock()
         db.app.get_file_states_for_files = AsyncMock(return_value={})
         db.app.remove_file_states = AsyncMock()
+        db.app.add_file_states = AsyncMock()
         head_infos = [_FakeHeadInfo(name="mood_multiclass", labels=["happy", "sad"], model_path="/models/mood.onnx")]
         monkeypatch.setattr(
             stream_store_module,

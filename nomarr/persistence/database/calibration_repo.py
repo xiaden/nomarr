@@ -140,8 +140,7 @@ class CalibrationRepo:
 
     async def truncate_states(self) -> None:
         """Delete all rows from ``calibration_states`` (full reset)."""
-        stmt = delete(_T_STATE)
-        await self._session.execute(stmt)
+        await self._session.execute(delete(_T_STATE))
         await self._session.commit()
 
     # ── calibration history ─────────────────────────────────────
@@ -170,8 +169,7 @@ class CalibrationRepo:
 
     async def truncate_history(self) -> None:
         """Delete all rows from ``calibration_history`` (full reset)."""
-        stmt = delete(_T_HISTORY)
-        await self._session.execute(stmt)
+        await self._session.execute(delete(_T_HISTORY))
         await self._session.commit()
 
     async def delete_history_for_model(self, model_id: str) -> None:
