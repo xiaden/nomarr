@@ -102,7 +102,7 @@ class VectorSearchService:
 
         return filtered_results
 
-    def get_track_vector(self, backbone_id: str, file_id: int) -> dict[str, Any] | None:
+    async def get_track_vector(self, backbone_id: str, file_id: int) -> dict[str, Any] | None:
         """Get vector for a specific track.
 
         Delegates to the get_track_vector workflow, which fetches from the
@@ -118,4 +118,4 @@ class VectorSearchService:
         """
         from nomarr.workflows.vectors.get_track_vector_wf import get_track_vector as get_track_vector_wf
 
-        return get_track_vector_wf(self.db, file_id, backbone_id)
+        return await get_track_vector_wf(self.db, file_id, backbone_id)

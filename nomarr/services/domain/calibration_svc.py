@@ -7,6 +7,7 @@ context to the pure workflow function.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 from collections.abc import Callable
@@ -168,7 +169,7 @@ class CalibrationService:
         """
         logger.debug("[CalibrationService] Delegating to histogram calibration workflow")
 
-        result = generate_histogram_calibration_wf(
+        result = await generate_histogram_calibration_wf(
             db=self._db,
             models_dir=self.cfg.models_dir,
             namespace=self.cfg.namespace,
@@ -236,7 +237,7 @@ class CalibrationService:
         """Managed background task: run histogram calibration generation."""
         try:
             logger.info("[CalibrationService] Background generation started")
-            result = self.generate_histogram_calibration()
+            result = asyncio.run(self.generate_histogram_calibration())
             self._generation_result = result
             logger.info(
                 f"[CalibrationService] Background generation completed: "
@@ -374,7 +375,7 @@ class CalibrationService:
         """
         return {
             **self._get_generation_status(),
-            **self._get_generation_progress(),
+            **asyncio.run(self._get_generation_progress()),
         }
 
     async def get_histogram_for_head(self, model_key: str, head_name: str, label: str) -> dict[str, Any]:

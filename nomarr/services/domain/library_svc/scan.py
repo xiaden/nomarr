@@ -63,7 +63,7 @@ class LibraryScanMixin:
         """
         await scan_setup_workflow(self.db, library_id, scan_type="quick")
         task_id = f"scan_library_{library_id}"
-        on_complete = functools.partial(on_scan_complete_pipeline_hook, self.db, library_id)
+        on_complete = functools.partial(on_scan_complete_pipeline_hook, self.db, int(library_id))
         if self.background_tasks is None:
             msg = "Background task service is not available"
             raise RuntimeError(msg)
@@ -72,7 +72,7 @@ class LibraryScanMixin:
             fn=functools.partial(
                 scan_library_quick_workflow,
                 db=self.db,
-                library_id=library_id,
+                library_id=int(library_id),
                 tagger_version=self.cfg.tagger_version,
             ),
             on_complete=on_complete,
@@ -115,7 +115,7 @@ class LibraryScanMixin:
         # so the ML axis stays at whichever state it was already in.
         on_complete: Callable[[], None] | None = None
         if not skip_validation_autorepair:
-            on_complete = functools.partial(on_scan_complete_pipeline_hook, self.db, library_id)
+            on_complete = functools.partial(on_scan_complete_pipeline_hook, self.db, int(library_id))
         if self.background_tasks is None:
             msg = "Background task service is not available"
             raise RuntimeError(msg)
@@ -124,7 +124,7 @@ class LibraryScanMixin:
             fn=functools.partial(
                 scan_library_full_workflow,
                 db=self.db,
-                library_id=library_id,
+                library_id=int(library_id),
                 tagger_version=self.cfg.tagger_version,
                 models_dir=self.cfg.models_dir,
                 namespace=self.cfg.namespace,
@@ -184,9 +184,9 @@ class LibraryScanMixin:
 
         """
         await resolve_library_for_scan(self.db, library_id)
-        files_queued = await bulk_set_not_hydrated(self.db, library_id)
+        files_queued = await bulk_set_not_hydrated(self.db, int(library_id))
         logger.info("[LibraryService] Marked %d files for tag re-hydration in library %s", files_queued, library_id)
-        scan_result = self.start_full_scan(library_id, skip_validation_autorepair=True)
+        scan_result = await self.start_full_scan(library_id, skip_validation_autorepair=True)
         scan_result.files_queued = files_queued
         return scan_result
 
@@ -213,9 +213,9 @@ class LibraryScanMixin:
                 enabled=self.background_tasks is not None,
             )
         await resolve_library_for_scan(self.db, library_id)  # Validate library exists
-        scan_state = await get_scan_state(self.db, library_id)
+        scan_state = await get_scan_state(self.db, int(library_id))
         try:
-            pipeline_state = await get_pipeline_state(self.db, library_id)
+            pipeline_state = await get_pipeline_state(self.db, int(library_id))
         except ValueError:
             pipeline_state = None
         scan_status = _pipeline_state_to_scan_status(pipeline_state, scan_state)
@@ -270,7 +270,7 @@ class LibraryScanMixin:
 
         """
         await resolve_library_for_scan(self.db, library_id)
-        return validate_library_tags_workflow(
+        return await validate_library_tags_workflow(
             db=self.db,
             models_dir=self.cfg.models_dir,
             library_id=library_id,

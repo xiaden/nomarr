@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 from dataclasses import asdict
@@ -89,7 +90,7 @@ class TaggingApplyMixin:
             msg = "LibraryService not configured. Cannot get library paths."
             raise ValueError(msg)
 
-        paths = self.library_service.get_paths_needing_calibration()
+        paths = await self.library_service.get_paths_needing_calibration()
         if paths:
             logger.info(f"[TaggingService] {len(paths)} files need calibration update")
         else:
@@ -146,7 +147,7 @@ class TaggingApplyMixin:
         """
         try:
             logger.info("[TaggingService] Background apply started")
-            result = self.tag_library()
+            result = asyncio.run(self.tag_library())
             self._apply_result = result
             logger.info(
                 f"[TaggingService] Background apply completed: "

@@ -8,6 +8,7 @@ This module handles:
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_admin_comp import (
@@ -56,7 +57,7 @@ class LibraryAdminMixin:
             ValueError: If library does not exist
 
         """
-        result = await get_library_record(self.db, library_id)
+        result = await get_library_record(self.db, int(library_id))
         if result is None:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
@@ -109,7 +110,7 @@ class LibraryAdminMixin:
             ValueError: If library not found
 
         """
-        library = self._get_library_or_error(library_id)
+        library = asyncio.run(self._get_library_or_error(library_id))
         return LibraryDict(**library)
 
     async def create_library(
@@ -150,7 +151,7 @@ class LibraryAdminMixin:
             library_auto_write=library_auto_write,
         )
 
-        library = self._get_library_or_error(library_id)
+        library = await self._get_library_or_error(library_id)
         return LibraryDict(**library)
 
     async def update_library_root(self, library_id: str, root_path: str) -> LibraryDict:
@@ -161,7 +162,7 @@ class LibraryAdminMixin:
             library_id=library_id,
             root_path=root_path,
         )
-        updated = self._get_library_or_error(library_id)
+        updated = await self._get_library_or_error(library_id)
         return LibraryDict(**updated)
 
     def update_library(
@@ -191,10 +192,10 @@ class LibraryAdminMixin:
 
         """
         # Validate library exists
-        self._get_library_or_error(library_id)
+        asyncio.run(self._get_library_or_error(library_id))
 
         if root_path is not None:
-            self.update_library_root(library_id, root_path)
+            asyncio.run(self.update_library_root(library_id, root_path))
 
         if (
             name is not None
@@ -226,7 +227,7 @@ class LibraryAdminMixin:
         """
         if self.file_watcher_service is not None and library_id in self.file_watcher_service.observers:
             self.file_watcher_service.stop_watching_library(library_id)
-        return await delete_library(db=self.db, library_id=library_id)
+        return await delete_library(db=self.db, library_id=int(library_id))
 
     def update_library_metadata(
         self,
@@ -260,17 +261,17 @@ class LibraryAdminMixin:
             ValueError: If the library does not exist.
 
         """
-        self._get_library_or_error(library_id)
-        UpdateLibraryMetadataComp(self.db).update(
+        asyncio.run(self._get_library_or_error(library_id))
+        asyncio.run(UpdateLibraryMetadataComp(self.db).update(
             library_id,
             name=name,
             is_enabled=is_enabled,
             watch_mode=watch_mode,
             file_write_mode=file_write_mode,
             library_auto_write=library_auto_write,
-        )
+        ))
 
-        updated = self._get_library_or_error(library_id)
+        updated = asyncio.run(self._get_library_or_error(library_id))
         return LibraryDict(**updated)
 
     async def clear_library_data(self) -> None:
@@ -284,4 +285,4 @@ class LibraryAdminMixin:
             RuntimeError: If a library scan is currently running.
 
         """
-        await clear_library_data(db=self.db, library_root=self.cfg.library_root)
+        clear_library_data(db=self.db, library_root=self.cfg.library_root)

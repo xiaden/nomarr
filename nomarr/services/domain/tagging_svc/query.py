@@ -101,8 +101,8 @@ class TaggingQueryMixin:
             Dict with songs list and total count.
 
         """
-        raw_songs = await get_tag_songs_with_metadata(self.db, tag_id, limit=limit, offset=offset)
-        total = await count_songs_for_tag(self.db, tag_id)
+        raw_songs = await get_tag_songs_with_metadata(self.db, int(tag_id), limit=limit, offset=offset)
+        total = await count_songs_for_tag(self.db, int(tag_id))
 
         songs: list[TagSongItem] = [
             TagSongItem(
@@ -205,7 +205,7 @@ class TaggingQueryMixin:
             ValueError: If file not found
 
         """
-        result = await get_file_tags_with_path(self.db, file_id, nomarr_only=nomarr_only)
+        result = await get_file_tags_with_path(self.db, int(file_id), nomarr_only=nomarr_only)
         if not result:
             msg = f"File with ID {file_id} not found"
             raise ValueError(msg)
@@ -221,7 +221,7 @@ class TaggingQueryMixin:
         ]
 
         return FileTagsResult(
-            file_id=file_id,
+            file_id=int(file_id),
             path=result["path"],
             tags=tags,
         )

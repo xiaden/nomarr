@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 from collections.abc import Callable
@@ -90,14 +91,14 @@ class TaggingWriteMixin:
             WriteTagsResult with processed, remaining, and failed counts
 
         """
-        library = await get_library_record(self.db, library_id)
+        library = await get_library_record(self.db, int(library_id))
         if not library:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
 
         target_mode = library.get("file_write_mode", "full")
-        calibration_doc = cast("dict[str, Any] | None", self.db.app.get_config_option("calibration_version"))
-        calibration_hash = None if calibration_doc is None else calibration_doc.get("value")
+        calibration_doc = cast("dict[str, Any] | None", await self.db.app.get_config_option("calibration_version"))
+        calibration_hash = None if calibration_doc is None else calibration_doc["value"]
         has_calibration = bool(calibration_hash)
 
         worker_id = f"reconcile:{library_id}"
@@ -114,7 +115,7 @@ class TaggingWriteMixin:
         for file_doc in claimed_files:
             file_key = file_doc["_key"]
             try:
-                result = write_file_tags_workflow(
+                result = await write_file_tags_workflow(
                     db=self.db,
                     file_key=file_key,
                     target_mode=target_mode,
@@ -180,7 +181,7 @@ class TaggingWriteMixin:
 
         def _task() -> None:
             while not stop_event.is_set():
-                result = self.write_tags_to_files(library_id)
+                result = asyncio.run(self.write_tags_to_files(library_id))
                 if result.remaining == 0:
                     break
 
@@ -204,7 +205,7 @@ class TaggingWriteMixin:
             Number of files marked not fresh
 
         """
-        return await bulk_set_tags_not_fresh(self.db, library_id)
+        return await bulk_set_tags_not_fresh(self.db, int(library_id))
 
     async def get_reconcile_status(self, library_id: str) -> dict[str, Any]:
         """Get reconciliation status for a library.
@@ -216,7 +217,7 @@ class TaggingWriteMixin:
             Dict with pending_count and in_progress status
 
         """
-        library = await get_library_record(self.db, library_id)
+        library = await get_library_record(self.db, int(library_id))
         if not library:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)

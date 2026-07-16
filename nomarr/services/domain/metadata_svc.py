@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Literal
 
 from nomarr.components.tagging.tag_cleanup_comp import cleanup_orphaned_tags, get_orphaned_tag_count
 from nomarr.components.tagging.tag_query_comp import (
+    count_songs_for_tag,
     count_tags_by_name,
     get_song_tags,
     get_tag,
@@ -106,11 +107,11 @@ class MetadataService:
             EntityDict or None if not found
 
         """
-        tag = get_tag(self.db, str(entity_id))
+        tag = await get_tag(self.db, entity_id)
         if not tag:
             return None
 
-        song_count = await self.db.library.tag_repo.count_files_for_tag(entity_id)
+        song_count = await count_songs_for_tag(self.db, entity_id)
 
         return EntityDict(
             id=tag["id"],
@@ -137,11 +138,11 @@ class MetadataService:
             SongListForEntityResult with song_ids, total, limit, offset
 
         """
-        song_ids = list_songs_for_tag(self.db, str(entity_id), limit=limit, offset=offset)
-        total = await self.db.library.tag_repo.count_files_for_tag(entity_id)
+        song_ids_int = await list_songs_for_tag(self.db, entity_id, limit=limit, offset=offset)
+        total = await count_songs_for_tag(self.db, entity_id)
 
         return SongListForEntityResult(
-            song_ids=song_ids,
+            song_ids=[str(sid) for sid in song_ids_int],
             total=total,
             limit=limit,
             offset=offset,
@@ -162,21 +163,21 @@ class MetadataService:
 
         """
         # Get all songs for this album
-        song_ids = list_songs_for_tag(self.db, str(album_id), limit=10000)
+        song_ids = await list_songs_for_tag(self.db, album_id, limit=10000)
 
         # For each song, get primary artist tags
         artist_ids_seen: set[int] = set()
         artists: list[EntityDict] = []
 
         for song_id in song_ids:
-            artist_tags = get_song_tags(self.db, song_id, name="artist")
+            artist_tags = await get_song_tags(self.db, song_id, name="artist")
             for artist_tag in artist_tags:
                 # Get the first value from the tag (always a list now)
                 for value in artist_tag.value:
                     tag_id = find_or_create_tag(self.db, "artist", value)
                     if tag_id not in artist_ids_seen:
                         artist_ids_seen.add(int(tag_id))
-                        tag = get_tag(self.db, tag_id)
+                        tag = await get_tag(self.db, tag_id)
                         if tag:
                             artists.append(
                                 EntityDict(
@@ -205,21 +206,21 @@ class MetadataService:
 
         """
         # Get all songs for this artist
-        song_ids = list_songs_for_tag(self.db, str(artist_id), limit=10000)
+        song_ids = await list_songs_for_tag(self.db, artist_id, limit=10000)
 
         # For each song, get album tags
         album_ids_seen: set[int] = set()
         albums: list[EntityDict] = []
 
         for song_id in song_ids:
-            album_tags = get_song_tags(self.db, song_id, name="album")
+            album_tags = await get_song_tags(self.db, song_id, name="album")
             for album_tag in album_tags:
                 # Get the first value from the tag (always a list now)
                 for value in album_tag.value:
                     tag_id = find_or_create_tag(self.db, "album", value)
                     if tag_id not in album_ids_seen:
                         album_ids_seen.add(int(tag_id))
-                        tag = get_tag(self.db, tag_id)
+                        tag = await get_tag(self.db, tag_id)
                         if tag:
                             albums.append(
                                 EntityDict(
@@ -264,7 +265,7 @@ class MetadataService:
                 "orphaned_count": orphan_count,
                 "deleted_count": 0,
             }
-        deleted_count = await cleanup_orphaned_tags(self.db)
+        deleted_count = cleanup_orphaned_tags(self.db)
         return {
             "orphaned_count": deleted_count,  # Was orphaned, now deleted
             "deleted_count": deleted_count,

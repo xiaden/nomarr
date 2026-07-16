@@ -42,7 +42,7 @@ class LibraryFilesMixin:
 
     async def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
         """Get a library by ID or raise an error."""
-        result = await get_library_record(self.db, library_id)
+        result = await get_library_record(self.db, int(library_id))
         if result is None:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
@@ -79,7 +79,7 @@ class LibraryFilesMixin:
 
         """
         # Get file and tags from component
-        result = await get_file_tags_with_path(self.db, file_id, nomarr_only=nomarr_only)
+        result = await get_file_tags_with_path(self.db, int(file_id), nomarr_only=nomarr_only)
         if not result:
             msg = f"File with ID {file_id} not found"
             raise ValueError(msg)
@@ -195,8 +195,8 @@ class LibraryFilesMixin:
             ValueError: If library does not exist
 
         """
-        self._get_library_or_error(library_id)
-        errored_ids = await get_errored_file_ids(self.db, library_id)
+        await self._get_library_or_error(library_id)
+        errored_ids = await get_errored_file_ids(self.db, int(library_id))
         if file_ids:
             allowed = set(file_ids)
             errored_ids = [fid for fid in errored_ids if fid in allowed]

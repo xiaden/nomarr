@@ -6,6 +6,7 @@ Navidrome config/playlist generation without exposing DB to interfaces.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
@@ -472,7 +473,7 @@ class NavidromeService:
         if not file_ids:
             return {}
 
-        file_docs = await get_files_by_ids_with_tags(self._db, file_ids)
+        file_docs = await get_files_by_ids_with_tags(self._db, [int(fid) for fid in file_ids])
         descriptors_by_file_id: dict[str, TrackDescriptor] = {}
         for file_doc in file_docs:
             file_id = file_doc.get("id")
@@ -504,4 +505,4 @@ class NavidromeService:
         _, api_user, _ = self._get_api_credentials()
         if not api_user:
             raise MisconfiguredError("navidrome_api_user not configured")
-        return self.generate_playlists(user_id=api_user, top_plays=top_plays)
+        return asyncio.run(self.generate_playlists(user_id=api_user, top_plays=top_plays))

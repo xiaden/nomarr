@@ -70,7 +70,7 @@ class LibraryQueryMixin:
 
     async def _get_library_or_error(self, library_id: str) -> dict[str, Any]:
         """Get a library by ID or raise an error."""
-        result = await get_library_record(self.db, library_id)
+        result = await get_library_record(self.db, int(library_id))
         if result is None:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
@@ -122,7 +122,7 @@ class LibraryQueryMixin:
 
         """
         libraries = await list_library_records(self.db, enabled_only=True)
-        all_file_ids: list[str] = []
+        all_file_ids: list[int] = []
         for lib in libraries:
             file_ids = await get_uncalibrated_tagged_file_ids(self.db, lib.id)
             all_file_ids.extend(file_ids)
@@ -159,7 +159,7 @@ class LibraryQueryMixin:
             SearchFilesResult with files matching the IDs
 
         """
-        files = await get_files_by_ids_with_tags(self.db, file_ids)
+        files = await get_files_by_ids_with_tags(self.db, [int(fid) for fid in file_ids])
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
         return SearchFilesResult(files=files_with_tags, total=len(files), limit=len(file_ids), offset=0)
 
@@ -246,7 +246,7 @@ class LibraryQueryMixin:
 
         """
         libraries = await list_library_records(self.db, enabled_only=False)
-        stats = self.get_library_stats()
+        stats = await self.get_library_stats()
         recently_tagged = await count_recently_tagged(self.db)
 
         # Build per-axis pipeline states for all libraries
@@ -298,7 +298,7 @@ class LibraryQueryMixin:
             sorted by scanned_at DESC.
 
         """
-        return await get_recently_processed(self.db, limit=limit, library_id=library_id)
+        return await get_recently_processed(self.db, limit=limit, library_id=int(library_id) if library_id is not None else None)
 
     async def get_errored_files(self, library_id: str) -> ErroredFilesResult:
         """Get errored files for a library with basic metadata.
@@ -313,9 +313,9 @@ class LibraryQueryMixin:
             ValueError: If library does not exist
 
         """
-        self._get_library_or_error(library_id)
-        total = await count_errored_files(self.db, library_id)
-        errored_ids = await get_errored_file_ids(self.db, library_id)
+        await self._get_library_or_error(library_id)
+        total = await count_errored_files(self.db, int(library_id))
+        errored_ids = await get_errored_file_ids(self.db, int(library_id))
         files_raw = await get_files_by_ids_with_tags(self.db, errored_ids)
         files: list[ErroredFileItem] = [
             ErroredFileItem(

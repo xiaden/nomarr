@@ -315,7 +315,7 @@ class InfoService:
             worker=worker_info,
         )
 
-    def get_gpu_health(self) -> GPUHealthResult:
+    async def get_gpu_health(self) -> GPUHealthResult:
         """Get GPU resource snapshot and monitor liveness.
 
         Reads cached GPU probe results written by GPUHealthMonitor process.
@@ -335,7 +335,7 @@ class InfoService:
 
         # Read GPU resources from DB
         gpu_resources_doc = await self.cfg.db.app.get_config_option("gpu_resources")
-        gpu_resources_json = None if gpu_resources_doc is None else gpu_resources_doc.get("value")
+        gpu_resources_json = None if gpu_resources_doc is None else gpu_resources_doc["value"]
         if not gpu_resources_json:
             # No GPU resource data in DB yet
             return GPUHealthResult(
@@ -344,14 +344,7 @@ class InfoService:
                 monitor_healthy=monitor_healthy,
             )
 
-        try:
-            resource_data = json.loads(gpu_resources_json)
-        except json.JSONDecodeError:
-            return GPUHealthResult(
-                available=False,
-                error_summary="GPU resource data corrupted",
-                monitor_healthy=monitor_healthy,
-            )
+        resource_data = gpu_resources_json
 
         # Return resource snapshot with monitor liveness
         return GPUHealthResult(

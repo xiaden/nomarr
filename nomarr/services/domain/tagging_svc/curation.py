@@ -34,7 +34,7 @@ class TaggingCurationMixin:
 
     async def _get_tag_or_error(self, tag_id: str) -> dict[str, Any]:
         """Fetch a tag document or raise ValueError."""
-        tag = await get_tag(self.db, tag_id)
+        tag = await get_tag(self.db, int(tag_id))
         if not tag:
             msg = f"Tag not found: {tag_id}"
             raise ValueError(msg)
@@ -57,17 +57,17 @@ class TaggingCurationMixin:
             ValueError: If tag not found or has nom: prefix
 
         """
-        source_tag = self._get_tag_or_error(tag_id)
+        source_tag = await self._get_tag_or_error(tag_id)
         self._reject_nom_prefix(tag_doc=source_tag)
 
         target_tag_id = find_or_create_tag(self.db, source_tag["name"], new_value)
         merged_into_existing = target_tag_id != tag_id
 
-        relink = await relink_tag_edges(self.db, tag_id, target_tag_id)
+        relink = await relink_tag_edges(self.db, tag_id, str(target_tag_id))
 
-        song_ids = await list_songs_for_tag(self.db, target_tag_id)
+        song_ids = await list_songs_for_tag(self.db, int(target_tag_id))
         for song_id in song_ids:
-            await transition_file_state(self.db, [song_id], STATE_WRITTEN, STATE_NOT_WRITTEN)
+            await transition_file_state(self.db, [int(song_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
 
         return RenameResult(moved=relink["moved"], merged_into_existing=merged_into_existing)
 
@@ -88,7 +88,7 @@ class TaggingCurationMixin:
             ValueError: If any tag not found or has nom: prefix
 
         """
-        canonical_tag = self._get_tag_or_error(canonical_tag_id)
+        canonical_tag = await self._get_tag_or_error(canonical_tag_id)
         self._reject_nom_prefix(tag_doc=canonical_tag)
 
         total_moved = 0
@@ -97,7 +97,7 @@ class TaggingCurationMixin:
         for source_id in source_tag_ids:
             if source_id == canonical_tag_id:
                 continue
-            source_tag = self._get_tag_or_error(source_id)
+            source_tag = await self._get_tag_or_error(source_id)
             self._reject_nom_prefix(tag_doc=source_tag)
 
             relink = await relink_tag_edges(self.db, source_id, canonical_tag_id)
@@ -105,9 +105,9 @@ class TaggingCurationMixin:
             if relink["source_orphaned"]:
                 sources_removed += 1
 
-        song_ids = await list_songs_for_tag(self.db, canonical_tag_id)
+        song_ids = await list_songs_for_tag(self.db, int(canonical_tag_id))
         for song_id in song_ids:
-            await transition_file_state(self.db, [song_id], STATE_WRITTEN, STATE_NOT_WRITTEN)
+            await transition_file_state(self.db, [int(song_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
 
         return MergeResult(total_moved=total_moved, sources_removed=sources_removed)
 
@@ -129,16 +129,16 @@ class TaggingCurationMixin:
             ValueError: If tag not found or has nom: prefix
 
         """
-        source_tag = self._get_tag_or_error(source_tag_id)
+        source_tag = await self._get_tag_or_error(source_tag_id)
         self._reject_nom_prefix(tag_doc=source_tag)
 
         target_tag_id = find_or_create_tag(self.db, source_tag["name"], new_value)
         new_tag_created = target_tag_id != source_tag_id
 
-        relink = await relink_tag_edges(self.db, source_tag_id, target_tag_id, song_ids=song_ids)
+        relink = await relink_tag_edges(self.db, source_tag_id, str(target_tag_id), song_ids=song_ids)
 
         for song_id in song_ids:
-            await transition_file_state(self.db, [song_id], STATE_WRITTEN, STATE_NOT_WRITTEN)
+            await transition_file_state(self.db, [int(song_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
 
         return SplitResult(moved=relink["moved"], new_tag_created=new_tag_created)
 
@@ -161,7 +161,7 @@ class TaggingCurationMixin:
 
         """
         self._reject_nom_prefix(name=name)
-        await set_song_tags(self.db, file_id, name, list(values))
-        await transition_file_state(self.db, [file_id], STATE_WRITTEN, STATE_NOT_WRITTEN)
-        tags = await get_song_tags(self.db, file_id, name=name)
+        await set_song_tags(self.db, int(file_id), name, list(values))
+        await transition_file_state(self.db, [int(file_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
+        tags = await get_song_tags(self.db, int(file_id), name=name)
         return {"file_id": file_id, "name": name, "tags": tags.to_dict()}

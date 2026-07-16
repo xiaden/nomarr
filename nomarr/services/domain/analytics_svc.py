@@ -123,7 +123,7 @@ class AnalyticsService:
             for tag, count in result.nom_tags
         ]
 
-    def get_tag_frequencies_with_result(self, limit: int = 50) -> TagFrequenciesResult:
+    async def get_tag_frequencies_with_result(self, limit: int = 50) -> TagFrequenciesResult:
         """Get frequency counts for all tags with wrapper DTO.
 
         Same data as ``get_tag_frequencies`` but wrapped in a
@@ -136,7 +136,7 @@ class AnalyticsService:
             TagFrequenciesResult DTO with tag_frequencies list.
 
         """
-        tag_frequencies = self.get_tag_frequencies(limit=limit)
+        tag_frequencies = await self.get_tag_frequencies(limit=limit)
         return TagFrequenciesResult(tag_frequencies=tag_frequencies)
 
     async def get_tag_correlation_matrix(self, top_n: int = 20) -> TagCorrelationData:
@@ -175,7 +175,7 @@ class AnalyticsService:
             List of MoodDistributionItem DTOs
 
         """
-        mood_rows = await get_mood_distribution_data(self._db, library_id)
+        mood_rows = await get_mood_distribution_data(self._db, int(library_id) if library_id is not None else None)
         result = compute_mood_distribution(mood_rows=mood_rows)
 
         # Transform to list format with percentages
@@ -191,7 +191,7 @@ class AnalyticsService:
             for mood, count in top_moods
         ]
 
-    def get_mood_distribution_with_result(self, library_id: str | None = None) -> MoodDistributionResult:
+    async def get_mood_distribution_with_result(self, library_id: str | None = None) -> MoodDistributionResult:
         """Get mood distribution with wrapper DTO.
 
         Same data as ``get_mood_distribution`` but wrapped in a
@@ -204,7 +204,7 @@ class AnalyticsService:
             MoodDistributionResult DTO with mood_distribution list.
 
         """
-        mood_distribution = self.get_mood_distribution(library_id=library_id)
+        mood_distribution = await self.get_mood_distribution(library_id=library_id)
         return MoodDistributionResult(mood_distribution=mood_distribution)
 
     async def get_tag_co_occurrence(
@@ -247,15 +247,15 @@ class AnalyticsService:
         tag_data: dict[tuple[str, str], set[int]] = {}
 
         # Regular tags: use exact match
+        lib_id = int(library_id) if library_id is not None else None
         if regular_specs:
             regular_tag_data = await get_file_ids_for_tags(
                 self._db,
                 tag_specs=regular_specs,
-                library_id=library_id,
+                library_id=lib_id,
             )
-            # Convert string IDs to int
             for tag_key, file_ids in regular_tag_data.items():
-                tag_data[tag_key] = {int(fid.split("/")[1]) if "/" in fid else int(fid) for fid in file_ids}
+                tag_data[tag_key] = set(file_ids)
 
         # Mood tags: use CONTAINS matching for each tier
         for tier, values in mood_specs.items():
@@ -263,14 +263,11 @@ class AnalyticsService:
                 self._db,
                 mood_values=values,
                 mood_tier=tier,
-                library_id=library_id,
+                library_id=lib_id,
             )
             # Convert mood_value -> file_ids to (key, value) -> file_ids format
             for mood_value, file_ids in mood_data.items():
-                # Convert string IDs to int
-                tag_data[(f"nom:{tier}", mood_value)] = {
-                    int(fid.split("/")[1]) if "/" in fid else int(fid) for fid in file_ids
-                }
+                tag_data[(f"nom:{tier}", mood_value)] = set(file_ids)
 
         params = ComputeTagCoOccurrenceParams(x_tags=x_tag_specs, y_tags=y_tag_specs, tag_data=tag_data)
         return cast("TagCoOccurrenceData", compute_tag_co_occurrence(params=params))
@@ -311,4 +308,4 @@ class AnalyticsService:
             Dict with: coverage, balance, top_pairs_by_tier, dominant_vibes
 
         """
-        return await compute_mood_analysis(self._db, library_id=library_id)
+        return await compute_mood_analysis(self._db, library_id=int(library_id) if library_id is not None else None)
