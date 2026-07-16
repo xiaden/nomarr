@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Annotated
 
@@ -11,7 +10,6 @@ from pydantic import BaseModel
 
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.id_codec import decode_path_id
 from nomarr.interfaces.api.web.dependencies import get_tagging_service
 from nomarr.services.domain.tagging_svc import TaggingService
 
@@ -107,8 +105,7 @@ async def rename_tag(
 ) -> RenameTagResponse:
     """Rename a tag to a new value."""
     try:
-        result = await asyncio.to_thread(
-            tagging_service.rename_tag,
+        result = await tagging_service.rename_tag(
             tag_id=request.tag_id,
             new_value=request.new_value,
         )
@@ -130,8 +127,7 @@ async def merge_tags(
 ) -> MergeTagsResponse:
     """Merge multiple tags into a canonical tag."""
     try:
-        result = await asyncio.to_thread(
-            tagging_service.merge_tags,
+        result = await tagging_service.merge_tags(
             source_tag_ids=request.source_tag_ids,
             canonical_tag_id=request.canonical_tag_id,
         )
@@ -153,8 +149,7 @@ async def split_tag(
 ) -> SplitTagResponse:
     """Split selected songs from a tag into a new tag value."""
     try:
-        result = await asyncio.to_thread(
-            tagging_service.split_tag,
+        result = await tagging_service.split_tag(
             source_tag_id=request.source_tag_id,
             song_ids=request.song_ids,
             new_value=request.new_value,
@@ -180,8 +175,7 @@ async def list_tag_values(
 ) -> TagListResponse:
     """List tag values with optional filtering and pagination."""
     try:
-        result = await asyncio.to_thread(
-            tagging_service.list_tag_values,
+        result = await tagging_service.list_tag_values(
             name=name,
             prefix=prefix,
             limit=limit,
@@ -204,11 +198,9 @@ async def get_tag_songs(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> TagSongsResponse:
     """Get songs linked to a tag with metadata."""
-    decoded_tag_id: int = decode_path_id(tag_id)
     try:
-        result = await asyncio.to_thread(
-            tagging_service.get_tag_songs,
-            tag_id=decoded_tag_id,
+        result = await tagging_service.get_tag_songs(
+            tag_id=tag_id,
             limit=limit,
             offset=offset,
         )
@@ -230,8 +222,7 @@ async def commit_pending_tags(
 ) -> CommitResponse:
     """Commit pending tag writes to files."""
     try:
-        result = await asyncio.to_thread(
-            tagging_service.commit_pending_tags,
+        result = await tagging_service.commit_pending_tags(
             library_id=request.library_id,
         )
         return CommitResponse.model_validate(result)
@@ -249,7 +240,7 @@ async def get_pending_commit_count(
 ) -> PendingCountResponse:
     """Get count of files with pending tag writes."""
     try:
-        count = await asyncio.to_thread(tagging_service.get_pending_commit_count)
+        count = await tagging_service.get_pending_commit_count()
         return PendingCountResponse(count=count)
     except Exception as e:
         logger.exception("[Web API] Error getting pending commit count")
@@ -266,11 +257,9 @@ async def update_file_tags(
     tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],
 ) -> UpdateFileTagsResponse:
     """Replace all tags for a file+name with new values."""
-    decoded_file_id: int = decode_path_id(file_id)
     try:
-        result = await asyncio.to_thread(
-            tagging_service.update_file_tags,
-            file_id=decoded_file_id,
+        result = await tagging_service.update_file_tags(
+            file_id=file_id,
             name=request.name,
             values=request.values,
         )

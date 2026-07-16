@@ -137,7 +137,7 @@ async def export_calibration_bundle_wf(
     }
 
 
-def export_calibration_bundles_to_directory_wf(
+async def export_calibration_bundles_to_directory_wf(
     db: Database,
     models_dir: str,
     bundle_name: str = "calibration",
@@ -165,7 +165,7 @@ def export_calibration_bundles_to_directory_wf(
     output_path = Path(models_dir) / f"{bundle_name}.json"
 
     try:
-        result = export_calibration_bundle_wf(db, str(output_path))
+        result = await export_calibration_bundle_wf(db, str(output_path))
 
         return {
             "bundles_created": 1,

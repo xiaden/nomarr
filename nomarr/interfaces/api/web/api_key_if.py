@@ -22,7 +22,7 @@ async def get_api_key(
     key_service: Annotated[KeyManagementService, Depends(get_key_service)],
 ) -> ApiKeyResponse:
     """Return the current API key."""
-    key = key_service.get_or_create_api_key()
+    key = await key_service.get_or_create_api_key()
     return ApiKeyResponse(api_key=key)
 
 
@@ -31,5 +31,5 @@ async def regenerate_api_key(
     key_service: Annotated[KeyManagementService, Depends(get_key_service)],
 ) -> ApiKeyResponse:
     """Regenerate the API key and return the new value."""
-    key = key_service.regenerate_api_key()
+    key = await key_service.regenerate_api_key()
     return ApiKeyResponse(api_key=key)

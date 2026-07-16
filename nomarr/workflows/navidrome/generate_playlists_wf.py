@@ -107,15 +107,16 @@ async def generate_playlists(
     played_tracks: list[TrackPlayData] = [
         p for p in plays if p["file_id"] is not None and p["playcount"] >= min_play_count
     ]
-    played_file_ids: list[str] = [p["file_id"] for p in played_tracks if p["file_id"] is not None]
+    played_file_ids: list[int] = [p["file_id"] for p in played_tracks if p["file_id"] is not None]
 
     # Step 3: Build context DTO
+    # TODO(S6): NavidromePersonalPlaylistContext.played_file_ids should be list[int]
     ctx = NavidromePersonalPlaylistContext(
         backbone_id=backbone_id,
         library_key="",
         clusters=profile["clusters"],
         max_songs=max_songs,
-        played_file_ids=played_file_ids,
+        played_file_ids=played_file_ids,  # type: ignore[typeddict-item]
         played_tracks=played_tracks,
         max_genre_playlists=max_genre_playlists,
         half_life_days=half_life_days,
@@ -137,7 +138,7 @@ async def generate_playlists(
                 },
             )
             continue
-        playlists.extend(builder(db, ctx))
+        playlists.extend(await builder(db, ctx))
 
     # Step 5: Filter out playlists below min_songs
     playlists_before_filter = len(playlists)

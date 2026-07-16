@@ -31,7 +31,7 @@ else:
     from nomarr.helpers.dto.navidrome_dto import RuleGroup
 
 
-def _execute_rule_group(db: Database, rule_group: RuleGroup) -> set[str]:  # type: ignore[name-defined]
+async def _execute_rule_group(db: Database, rule_group: RuleGroup) -> set[int]:  # type: ignore[name-defined]
     """Recursively execute a rule group and return matching file IDs.
 
     Combines conditions and nested groups using set operations based on
@@ -45,16 +45,16 @@ def _execute_rule_group(db: Database, rule_group: RuleGroup) -> set[str]:  # typ
         Set of file IDs matching the rule group
 
     """
-    result_sets: list[set[str]] = []
+    result_sets: list[set[int]] = []
 
     # Execute conditions in this group
     for condition in rule_group.conditions:
-        file_ids = _execute_single_condition(db, condition)
+        file_ids = await _execute_single_condition(db, condition)
         result_sets.append(file_ids)
 
     # Recursively execute nested groups
     for nested_group in rule_group.groups:
-        file_ids = _execute_rule_group(db, nested_group)
+        file_ids = await _execute_rule_group(db, nested_group)
         result_sets.append(file_ids)
 
     # Combine results based on logic
@@ -69,7 +69,7 @@ def _execute_rule_group(db: Database, rule_group: RuleGroup) -> set[str]:  # typ
     return set.union(*result_sets)
 
 
-def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlaylistFilter) -> set[str]:
+async def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlaylistFilter) -> set[int]:
     """Execute a smart playlist filter and return matching file IDs.
 
     Uses Python set operations to combine conditions:
@@ -85,7 +85,7 @@ def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlaylistFi
         Set of file IDs matching the filter
 
     """
-    return _execute_rule_group(db, playlist_filter.root)
+    return await _execute_rule_group(db, playlist_filter.root)
 
 
 def _resolve_tag_key(db: Database, tag_key: str) -> list[str]:
@@ -131,7 +131,7 @@ def _resolve_tag_key(db: Database, tag_key: str) -> list[str]:
     return [tag_key]
 
 
-async def _execute_single_condition(db: Database, condition: TagCondition) -> set[str]:
+async def _execute_single_condition(db: Database, condition: TagCondition) -> set[int]:
     """Execute a single tag condition and return matching file IDs.
 
     Supports both full versioned tag keys and short user-friendly names.
@@ -149,7 +149,7 @@ async def _execute_single_condition(db: Database, condition: TagCondition) -> se
     storage_keys = _resolve_tag_key(db, condition.tag_key)
 
     # Union results from all resolved keys
-    all_matching: set[str] = set()
+    all_matching: set[int] = set()
 
     for name in storage_keys:
         if condition.operator == "contains":

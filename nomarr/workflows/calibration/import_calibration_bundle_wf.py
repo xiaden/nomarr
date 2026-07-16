@@ -276,7 +276,7 @@ async def import_calibration_bundles_from_directory_wf(
 
     for bundle_file in bundle_files:
         try:
-            result = import_calibration_bundle_wf(db, str(bundle_file))
+            result = await import_calibration_bundle_wf(db, str(bundle_file))
             total_imported += result["imported_count"]
             total_skipped += result["skipped_count"]
             bundles_processed += 1

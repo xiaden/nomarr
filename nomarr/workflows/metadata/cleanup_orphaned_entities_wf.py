@@ -53,7 +53,7 @@ async def cleanup_orphaned_entities_workflow(db: Database, dry_run: bool = False
         }
 
     # Delete orphaned tags
-    deleted_count = await cleanup_orphaned_tags(db)
+    deleted_count = cleanup_orphaned_tags(db)
 
     deleted_log = logger.info if deleted_count > 0 else logger.debug
     deleted_log("[tag_cleanup] Deleted %d orphaned tags", deleted_count)

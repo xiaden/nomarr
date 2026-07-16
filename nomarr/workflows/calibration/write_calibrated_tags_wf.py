@@ -92,8 +92,8 @@ class BatchContext:
     calibrations: dict[str, Any]
     calibration_version: str | None
     output_stream_lookup: dict[str, tuple[str, str]] | None = None
-    pending_mood_tags: list[tuple[str, Tags]] = field(default_factory=list)
-    pending_calibration_hashes: list[str] = field(default_factory=list)
+    pending_mood_tags: list[tuple[int, Tags]] = field(default_factory=list)
+    pending_calibration_hashes: list[int] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
 
@@ -200,12 +200,12 @@ async def write_calibrated_tags_wf(
     # Write to DB — batch mode defers, single-file mode writes immediately
     if batch_ctx is not None:
         with batch_ctx._lock:
-            batch_ctx.pending_mood_tags.append((str(file_id), mood_tags))
+            batch_ctx.pending_mood_tags.append((file_id, mood_tags))
             global_version = batch_ctx.calibration_version
             if global_version:
-                batch_ctx.pending_calibration_hashes.append(str(file_id))
+                batch_ctx.pending_calibration_hashes.append(file_id)
     else:
-        await save_mood_tags(db, str(file_id), mood_tags)
+        await save_mood_tags(db, file_id, mood_tags)
         global_version = await get_calibration_version(db)
         if global_version:
             await update_file_calibration_hash(db, str(file_id))

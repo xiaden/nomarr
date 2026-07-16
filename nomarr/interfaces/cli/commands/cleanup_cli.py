@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from nomarr.interfaces.cli.cli_ui import InfoPanel, print_error
@@ -21,7 +22,7 @@ def cmd_cleanup(args: argparse.Namespace) -> int:
     try:
         dry_run = getattr(args, "dry_run", False)
 
-        result = service.cleanup_orphaned_entities(dry_run=dry_run)
+        result = asyncio.run(service.cleanup_orphaned_entities(dry_run=dry_run))
 
         total_deleted = result.get("total_deleted", 0)
         deleted_counts = result.get("deleted_counts", {})

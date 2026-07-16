@@ -6,7 +6,7 @@ import logging
 import threading
 import time
 from multiprocessing import Event, Pipe
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.ml.resources.ml_capacity_probe_comp import CapacityEstimate
 from nomarr.components.ml.resources.ml_tier_selection_comp import (
@@ -51,6 +51,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
         default_enabled: bool = True,
     ) -> None:
         """Initialize worker system service."""
+
         self.db = db
         self.processor_config = processor_config
         self.pipeline_svc = pipeline_svc
@@ -58,16 +59,15 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
         self.worker_count = worker_count
         self.default_enabled = default_enabled
         if self.health_monitor is not None:
-            self.health_monitor.set_pipeline_callback(self.pipeline_svc.trigger_calibration)
+            self.health_monitor.set_pipeline_callback(self._trigger_calibration_callback)
             self.health_monitor.set_idle_callback(self._on_worker_idle)
-        if not db.hosts or not db.password:
-            msg = "Database hosts and password required for worker system"
-            raise ValueError(msg)
-        self._db_hosts: str = db.hosts
-        self._db_password: str = db.password
+        # Postgres: extract URL from Database._url (kept as _db_hosts for mixin compat)
+        self._db_hosts: str = db._url  # full PostgreSQL URL
+        self._db_password: str = ""
         self._workers: list[DiscoveryWorker] = []
         self._shutting_down: bool = False
         self._started = False
+        self._worker_enabled: bool = default_enabled
         self._pending_restart_timers: dict[str, threading.Timer] = {}
         self._gpu_capable: bool | None = None
         self._capacity_estimate: CapacityEstimate | None = None
@@ -85,6 +85,8 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
         context: StatusChangeContext,
     ) -> None:
         """Handle a health-monitor status transition for a worker."""
+        import asyncio
+
         logger.debug(
             "[WorkerSystemService] %s: %s -> %s (misses=%d)",
             component_id,
@@ -93,13 +95,19 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
             context.consecutive_misses,
         )
         if new_status == "dead":
-            self._handle_worker_death(component_id)
+            asyncio.ensure_future(self._handle_worker_death(component_id))
         elif new_status == "unhealthy":
             logger.warning(
                 "[WorkerSystemService] Worker %s unhealthy (%d misses)", component_id, context.consecutive_misses
             )
         elif new_status == "healthy" and old_status == "pending":
-            self._reset_restart_count(component_id)
+            asyncio.ensure_future(self._reset_restart_count(component_id))
+
+    def _trigger_calibration_callback(self) -> None:
+        """Bridge async trigger_calibration to sync HealthMonitor callback."""
+        import asyncio
+
+        asyncio.ensure_future(self.pipeline_svc.trigger_calibration())
 
     def _on_worker_idle(self, worker_id: str, is_idle: bool) -> None:
         """Handle idle/active state transitions from worker processes.
@@ -142,25 +150,24 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
     # ---------------------------- Control Methods ----------------------------
 
     def is_worker_system_enabled(self) -> bool:
-        """Return whether the worker system is globally enabled."""
-        meta = cast("dict[str, Any] | None", self.db.app.get_config_option("worker_enabled"))
-        if meta is None:
-            return self.default_enabled
-        return cast("str | None", meta.get("value")) == "true"
+        """Return whether the worker system is globally enabled (cached)."""
+        return self._worker_enabled
 
-    def enable_worker_system(self) -> None:
+    async def enable_worker_system(self) -> None:
         """Enable worker system globally (sets worker_enabled=true in DB meta)."""
-        self.db.app.update_config_option("worker_enabled", {"value": "true"})
+        await self.db.app.update_config_option("worker_enabled", {"value": "true"})
+        self._worker_enabled = True
         logger.info("[WorkerSystemService] Worker system globally enabled")
 
-    def disable_worker_system(self) -> None:
+    async def disable_worker_system(self) -> None:
         """Disable worker system globally (sets worker_enabled=false in DB meta)."""
-        self.db.app.update_config_option("worker_enabled", {"value": "false"})
+        await self.db.app.update_config_option("worker_enabled", {"value": "false"})
+        self._worker_enabled = False
         logger.info("[WorkerSystemService] Worker system globally disabled")
 
     # ---------------------------- Worker Lifecycle ----------------------------
 
-    def start_all_workers(self) -> None:
+    async def start_all_workers(self) -> None:
         """Start worker processes based on admission control and tier selection."""
         if self._started:
             logger.debug("[WorkerSystemService] Workers already started")
@@ -168,7 +175,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
         if not self.is_worker_system_enabled():
             logger.info("[WorkerSystemService] Worker system disabled, not starting")
             return
-        tier_selection = self._run_admission_control()
+        tier_selection = await self._run_admission_control()
         if tier_selection.tier == ExecutionTier.REFUSE:
             logger.error(
                 "[WorkerSystemService] Tier 4 (Refuse): %s. No workers will be started.", tier_selection.reason
@@ -181,7 +188,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
             actual_worker_count,
             tier_selection.config.description,
         )
-        removed_claims = self.cleanup_stale_claims()
+        removed_claims = await self.cleanup_stale_claims()
         if removed_claims > 0:
             logger.info("[WorkerSystemService] Cleaned up %d stale claim(s) from previous session", removed_claims)
         started_workers: list[str] = []
@@ -299,7 +306,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
             )
         logger.info("[WorkerSystemService] Added %d worker(s), total=%d", count, len(self._workers))
 
-    def remove_workers(self, count: int) -> None:
+    async def remove_workers(self, count: int) -> None:
         """Remove worker processes from the pool dynamically.
 
         Args:
@@ -319,7 +326,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
                 count,
                 len(self._workers),
             )
-            self.stop_all_workers()
+            await self.stop_all_workers()
             return
         logger.info("[WorkerSystemService] Removing %d worker(s) from pool of %d", count, len(self._workers))
         workers_to_remove = self._workers[-count:]

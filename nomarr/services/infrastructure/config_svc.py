@@ -105,7 +105,7 @@ class ConfigService:
         self._subscriptions: dict[str, list[Callable[[str, Any], Coroutine[Any, Any, None]]]] = {}
         self._background_tasks: set[asyncio.Task[None]] = set()
         self._logger = logging.getLogger(__name__)
-        self._bootstrap_and_load()
+        asyncio.run(self._bootstrap_and_load())
 
     def get_config(self) -> ConfigResult:
         """Get a snapshot of the current configuration.
@@ -157,7 +157,7 @@ class ConfigService:
                 list(self._subscriptions.get(key, [])) if key in OBSERVABLE_KEYS else []
             )
 
-        self._write_to_db(key, str(value) if value is not None else "")
+        _task = asyncio.create_task(self._write_to_db(key, str(value) if value is not None else ""))
         self._logger.info("Config '%s' updated (cache + DB)", key)
 
         for cb in callbacks:
@@ -193,11 +193,13 @@ class ConfigService:
     async def _write_to_db(self, key: str, value: str) -> None:
         """Persist a config value to DB meta table via throwaway connection."""
         try:
-            db = Database()
+            db = Database(
+                url=os.environ.get("PG_DATABASE_URL", "postgresql+asyncpg://nomarr:nomarr@localhost:5432/nomarr")
+            )
             try:
                 await db.app.update_config_option(f"config_{key}", {"value": value})
             finally:
-                db.close()
+                await db.close()
         except Exception:
             self._logger.exception("Failed to persist config '%s' to DB", key)
 
@@ -289,7 +291,9 @@ class ConfigService:
         bootstrap_config = self._build_bootstrap_config()
 
         try:
-            db = Database()
+            db = Database(
+                url=os.environ.get("PG_DATABASE_URL", "postgresql+asyncpg://nomarr:nomarr@localhost:5432/nomarr")
+            )
             try:
                 # Batch-read existing config keys from DB
                 docs = await db.app.list_config_options(prefix="config_")
@@ -314,7 +318,7 @@ class ConfigService:
 
                 self._logger.debug("Config bootstrap complete: %d keys loaded", len(self._cache))
             finally:
-                db.close()
+                await db.close()
 
         except Exception as e:
             # DB unavailable at startup — fall back to bootstrap config directly

@@ -57,7 +57,7 @@ async def scan_setup_workflow(
         msg = f"Library {library_id} is already being scanned"
         raise LibraryAlreadyScanningError(msg)
 
-    interrupted, prev_scan_type = await check_interrupted_scan(db, library_id)
+    interrupted, prev_scan_type = await check_interrupted_scan(db, int(library_id))
     if interrupted:
         logger.warning(
             "Detected interrupted %s scan for library %s — continuing with new %s scan",

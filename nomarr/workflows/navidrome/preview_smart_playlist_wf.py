@@ -58,7 +58,7 @@ async def preview_smart_playlist_workflow(
     playlist_filter = parse_smart_playlist_query(query, namespace)
 
     # Execute filter to get matching file IDs
-    file_ids = execute_smart_playlist_filter(db, playlist_filter)
+    file_ids = await execute_smart_playlist_filter(db, playlist_filter)
 
     # Count total matches
     total_count = len(file_ids)

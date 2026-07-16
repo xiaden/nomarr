@@ -42,9 +42,9 @@ async def web_convert_playlist(
     Deezer works immediately (public API).
     """
     try:
-        result_dto = playlist_service.convert_playlist(
+        result_dto = await playlist_service.convert_playlist(
             playlist_url=request.playlist_url,
-            library_id=request.library_id,
+            library_id=str(request.library_id) if request.library_id is not None else None,
         )
         return ConvertPlaylistResponse.from_dto(result_dto)
 

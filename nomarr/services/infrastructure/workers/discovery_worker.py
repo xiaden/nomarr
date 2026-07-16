@@ -42,7 +42,9 @@ HEALTH_FRAME_PREFIX = "HEALTH|"
 IDLE_FRAME_PREFIX = "IDLE|"  # Frame prefix for idle/active state signals
 
 
-async def _check_idle_pipeline_completion(db: Database, health_pipe: multiprocessing.connection.Connection | None) -> int:
+async def _check_idle_pipeline_completion(
+    db: Database, health_pipe: multiprocessing.connection.Connection | None
+) -> int:
     """Transition idle ML-complete libraries and signal calibration health updates."""
     from nomarr.components.library.library_records_comp import find_ml_complete_libraries
     from nomarr.components.library.library_scan_state_comp import transition_pipeline_axis
@@ -374,7 +376,9 @@ class DiscoveryWorker(multiprocessing.Process):
         sys.stdout.flush()
         sys.stderr.flush()
         assert onnx_cache is not None, "onnx_cache must be warmed before processing"
-        result = await process_file_workflow(path=file_path, config=config, db=db, file_id=str(file_id), cache=onnx_cache)
+        result = await process_file_workflow(
+            path=file_path, config=config, db=db, file_id=str(file_id), cache=onnx_cache
+        )
         logger.debug("[%s] Workflow returned for %s", self.worker_id, file_path)
         _malloc_trim()
         if pending_write is not None:

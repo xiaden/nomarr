@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 async def _sync_tags_and_entities(
     db: Database,
-    file_id: str,
+    file_id: int,
     file_path: str,
     metadata: dict[str, Any],
     namespace: str,
@@ -38,7 +38,7 @@ async def _sync_tags_and_entities(
 
     Args:
         db: Database instance
-        file_id: Song document _id (e.g., "song/12345")
+        file_id: File row ID (Postgres primary key)
         file_path: Absolute path (for logging only)
         metadata: Pre-extracted metadata dict
         namespace: Tag namespace
@@ -57,13 +57,13 @@ async def _sync_tags_and_entities(
     parsed_nom_tags = parse_tag_values(nom_tags) if nom_tags else {}
 
     # Persist all external tags
-    save_file_tags(db, file_id, parsed_all_tags)
+    await save_file_tags(db, file_id, parsed_all_tags)  # type: ignore[arg-type]  # TODO(migration): component expects str, should be int
 
     # Persist nomarr-namespaced tags (prefix names with "nom:")
     prefixed_nom_tags = {
         (f"nom:{name}" if not name.startswith("nom:") else name): values for name, values in parsed_nom_tags.items()
     }
-    save_file_tags(db, file_id, prefixed_nom_tags)
+    await save_file_tags(db, file_id, prefixed_nom_tags)  # type: ignore[arg-type]  # TODO(migration): component expects str, should be int
 
     try:
         entity_tags = {
@@ -74,7 +74,7 @@ async def _sync_tags_and_entities(
             "genre": metadata.get("genre"),
             "year": metadata.get("year"),
         }
-        entries = _build_song_tag_entries(file_id, entity_tags)
+        entries = _build_song_tag_entries(file_id, entity_tags)  # type: ignore[arg-type]  # TODO(migration): component expects str, should be int
         if entries:
             for entry in entries:
                 await db.library.replace_file_tags(entry["song_id"], entry["tags"])
@@ -84,11 +84,11 @@ async def _sync_tags_and_entities(
 
     chromaprint = metadata.get("chromaprint")
     if chromaprint:
-        set_chromaprint(db, file_id, chromaprint)
+        await set_chromaprint(db, file_id, chromaprint)
         logger.debug(f"[sync_file_to_library] Stored chromaprint for {file_path}")
 
     if tagged_version:
-        mark_file_processed(db, file_id)
+        await mark_file_processed(db, file_id)  # type: ignore[arg-type]  # TODO(migration): component expects str, should be int
 
     logger.debug(f"[sync_file_to_library] Synced {file_path}")
 
@@ -99,8 +99,8 @@ async def sync_file_to_library(
     metadata: dict[str, Any],
     namespace: str,
     tagged_version: str | None,
-    library_id: str | None,
-    file_id: str | None = None,
+    library_id: int | None,
+    file_id: int | None = None,
 ) -> None:
     """Sync a file's metadata and tags to the library database.
 
@@ -119,8 +119,8 @@ async def sync_file_to_library(
         namespace: Tag namespace (e.g., "nom")
         tagged_version: Tagger version if file was tagged, None otherwise
         library_id: Optional library ID (will auto-detect if None)
-        file_id: Song document _id. When provided, skips
-            path-based upsert and uses direct _id lookup instead.
+        file_id: File row ID (Postgres primary key). When provided, skips
+            path-based upsert and uses direct file_id lookup instead.
 
     Returns:
         None (updates database in-place)
@@ -133,31 +133,31 @@ async def sync_file_to_library(
         if file_id is not None:
             # Fast path: we already have the track identifier (from worker flow)
             # Skip path-based upsert — the scanner already processed this track
-            _sync_tags_and_entities(db, file_id, file_path, metadata, namespace, tagged_version)
+            await _sync_tags_and_entities(db, file_id, file_path, metadata, namespace, tagged_version)
             return
 
         # Slow path: no track identifier provided, need path-based lookup
         # This path is used by the scanner's initial sync
         if library_id is None:
-            library = find_library_containing_path(db, file_path)
+            library = await find_library_containing_path(db, file_path)
             if not library:
                 logger.warning(f"[sync_file_to_library] File path not in any library: {file_path}")
                 return
-            library_id = library["id"]
+            library_id = library.id
 
         assert library_id is not None
         file_stat = os.stat(file_path)
         file_size = file_stat.st_size
         modified_time = int(file_stat.st_mtime * 1000)
 
-        library_path = build_library_path_from_input(file_path, db)
+        library_path = await build_library_path_from_input(file_path, db)
         if not library_path.is_valid():
             logger.warning(
                 f"[sync_file_to_library] Invalid path ({library_path.status}): {file_path} - {library_path.reason}",
             )
             return
 
-        upsert_library_file(
+        await upsert_library_file(
             db,
             path=library_path,
             library_id=library_id,
@@ -166,13 +166,13 @@ async def sync_file_to_library(
             duration_seconds=metadata.get("duration"),
         )
 
-        file_record = get_library_file(db, file_path)
+        file_record = await get_library_file(db, file_path)
         if not file_record:
             logger.warning(f"[sync_file_to_library] File record not found after upsert: {file_path}")
             return
 
-        resolved_file_id = str(file_record["id"])
-        _sync_tags_and_entities(db, resolved_file_id, file_path, metadata, namespace, tagged_version)
+        resolved_file_id = file_record["id"]
+        await _sync_tags_and_entities(db, resolved_file_id, file_path, metadata, namespace, tagged_version)
 
     except Exception as e:
         logger.warning(f"[sync_file_to_library] Failed to sync {file_path}: {e}", exc_info=True)

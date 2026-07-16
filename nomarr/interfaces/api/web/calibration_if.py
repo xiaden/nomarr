@@ -33,7 +33,7 @@ async def clear_calibration(
 ) -> ClearCalibrationResponse:
     """Clear all calibration data and return files-updated / meta-keys-cleared counts."""
     try:
-        result = calibration_service.clear_calibration()
+        result = await calibration_service.clear_calibration()
         return ClearCalibrationResponse(**result)
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
@@ -87,7 +87,7 @@ async def get_calibration_status(
 ) -> CalibrationStatusResponse:
     """Get current calibration status with per-library breakdown."""
     try:
-        result = tagging_service.get_calibration_status()
+        result = await tagging_service.get_calibration_status()
         return CalibrationStatusResponse(
             global_version=result["global_version"],
             last_run=result["last_run"],
@@ -139,7 +139,7 @@ async def get_all_calibration_histograms(
 ) -> GetAllCalibrationHistogramsResponse:
     """Get all calibration states with histogram bins (22 items, one per label)."""
     try:
-        states = calibration_service.get_all_calibration_states()
+        states = await calibration_service.get_all_calibration_states()
         return GetAllCalibrationHistogramsResponse(calibrations=states)
     except Exception as e:
         logger.error(f"[Web] Failed to get all calibration histograms: {e}", exc_info=True)

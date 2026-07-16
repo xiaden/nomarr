@@ -110,7 +110,7 @@ async def load_calibrations_cached_wf(db: Database) -> dict[str, dict[str, float
 
     # Cache miss or version changed - reload calibrations
     if _cached_version != current_version:
-        _cached_calibrations = load_calibrations_from_db_wf(db)
+        _cached_calibrations = await load_calibrations_from_db_wf(db)
         _cached_version = current_version
 
         if current_version:

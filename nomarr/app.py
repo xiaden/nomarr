@@ -16,6 +16,7 @@ The singleton instance is available as `application` at module level.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -82,7 +83,7 @@ class Application:
     The singleton instance is available as `application` at module level.
     """
 
-    async def __init__(self) -> None:
+    def __init__(self) -> None:
         """Initialize application with core dependencies.
 
         Loads configuration and creates database and queue immediately.
@@ -122,7 +123,7 @@ class Application:
         self.db = Database(url=os.environ["PG_DATABASE_URL"])
         from nomarr.workflows.platform.prepare_database_wf import prepare_database_workflow
 
-        await prepare_database_workflow(self.db, models_dir=self.models_dir)
+        asyncio.get_event_loop().run_until_complete(prepare_database_workflow(self.db, models_dir=self.models_dir))
         self._config_service = config_service
         self.services: dict[str, Any] = {}
         self.worker_system: WorkerSystemService | None = None
@@ -243,20 +244,24 @@ class Application:
             return
         logger.debug("[Application] Starting...")
         logger.debug("[Application] Cleaning ephemeral runtime state...")
-        self.db.app.maintenance.truncate_health()
-        self.db.app.update_health(
-            "app",
-            {
-                "component_type": "app",
-                "status": "starting",
-                "last_heartbeat": now_ms().value,
-            },
+        asyncio.get_event_loop().run_until_complete(self.db.app.maintenance.truncate_health())
+        asyncio.get_event_loop().run_until_complete(
+            self.db.app.update_health(
+                "app",
+                {
+                    "component_type": "app",
+                    "status": "starting",
+                    "last_heartbeat": now_ms().value,
+                },
+            )
         )
         logger.debug("[Application] Initializing authentication...")
         key_service = KeyManagementService(self.db)
-        self.api_key = key_service.get_or_create_api_key()
-        self.admin_password = key_service.get_or_create_admin_password(self.admin_password_config)
-        key_service.load_sessions_from_db()
+        self.api_key = asyncio.get_event_loop().run_until_complete(key_service.get_or_create_api_key())
+        self.admin_password = asyncio.get_event_loop().run_until_complete(
+            key_service.get_or_create_admin_password(self.admin_password_config)
+        )
+        asyncio.get_event_loop().run_until_complete(key_service.load_sessions_from_db())
         self.register_service("keys", key_service)
         self.register_service("config", self._config_service)
         logger.debug("[Application] Initializing services...")
@@ -330,7 +335,7 @@ class Application:
 
             def _sync_watchers_bg() -> None:
                 try:
-                    file_watcher.sync_watchers()
+                    asyncio.run(file_watcher.sync_watchers())
                     logger.debug("[Application] File watchers synced with library collection")
                 except Exception:
                     logger.exception("[Application] Failed to sync file watchers")
@@ -362,7 +367,9 @@ class Application:
             navidrome_svc=navidrome_service,
         )
         self.register_service("pipeline", pipeline_svc)
-        calibration_service.set_post_generation_hook(pipeline_svc.on_calibration_complete)
+        calibration_service.set_post_generation_hook(
+            lambda: asyncio.get_event_loop().run_until_complete(pipeline_svc.on_calibration_complete())
+        )
         logger.debug(
             "[Application] Wired calibration post-generation hook → LibraryPipelineService.on_calibration_complete"
         )
@@ -394,7 +401,7 @@ class Application:
         )
         self.register_service("worker_system", self.worker_system)
         if self.worker_system.is_worker_system_enabled():
-            self.worker_system.start_all_workers()
+            asyncio.get_event_loop().run_until_complete(self.worker_system.start_all_workers())
         else:
             logger.debug("[Application] Worker system disabled, not starting workers")
         self._config_service.subscribe("tagger_worker_count", self._on_tagger_worker_count_changed)
@@ -420,10 +427,12 @@ class Application:
         logger.debug("[Application] Starting InfoService (GPU monitor)...")
         info_service.start()
         self._running = True
-        self._start_app_heartbeat()
-        self.db.app.update_health(
-            "app",
-            {"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
+        asyncio.get_event_loop().run_until_complete(self._start_app_heartbeat())
+        asyncio.get_event_loop().run_until_complete(
+            self.db.app.update_health(
+                "app",
+                {"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
+            )
         )
 
         # Summary log with key startup info
@@ -473,7 +482,7 @@ class Application:
                 new_count,
                 abs(delta),
             )
-            self.worker_system.remove_workers(abs(delta))
+            await self.worker_system.remove_workers(abs(delta))
         else:
             logger.debug("[Application] tagger_worker_count unchanged at %d", new_count)
 
@@ -497,7 +506,7 @@ class Application:
             logger.info("[Application] Tag extraction worker stopped")
         if self.worker_system:
             logger.info("[Application] Stopping worker processes...")
-            self.worker_system.stop_all_workers()
+            asyncio.get_event_loop().run_until_complete(self.worker_system.stop_all_workers())
             logger.info("[Application] Worker processes stopped")
         if "info" in self.services:
             logger.info("[Application] Stopping InfoService (GPU monitor)...")
@@ -507,12 +516,14 @@ class Application:
             logger.info("[Application] Stopping health monitor...")
             self.health_monitor.stop()
         try:
-            self.db.app.update_health(
-                "app",
-                {"status": "stopping", "exit_code": 0},
+            asyncio.get_event_loop().run_until_complete(
+                self.db.app.update_health(
+                    "app",
+                    {"status": "stopping", "exit_code": 0},
+                )
             )
             logger.info("[Application] Cleaning ephemeral runtime state...")
-            self.db.app.maintenance.truncate_health()
+            asyncio.get_event_loop().run_until_complete(self.db.app.maintenance.truncate_health())
         except Exception as e:
             logger.warning(f"[Application] DB unavailable during shutdown (expected if containers stopping): {e}")
         self._running = False

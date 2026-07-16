@@ -48,7 +48,7 @@ async def convert_playlist_workflow(
     db: Database,
     playlist_url: str,
     *,
-    library_id: str | None = None,
+    library_id: int | None = None,
     spotify_client_id: str | None = None,
     spotify_client_secret: str | None = None,
 ) -> PlaylistConversionResult:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import functools
+import asyncio
 import logging
 import threading
 
@@ -153,7 +153,7 @@ class LibraryPipelineService:
         scanning_libraries = await get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
         recovered = 0
         for library_id in scanning_libraries:
-            if await is_scan_stale(self.db, library_id, timeout_ms):
+            if await is_scan_stale(self.db, int(library_id), timeout_ms):
                 await transition_pipeline_axis(self.db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
                 await update_scan_progress(
                     self.db,
@@ -174,7 +174,7 @@ class LibraryPipelineService:
         directly to ``calibrating`` and apply is dispatched.  Otherwise histogram
         calibration generation is started via ``CalibrationService``.
         """
-        calibration_exists = len(self.db.ml.list_calibration_states()) > 0
+        calibration_exists = len(await self.db.ml.list_calibration_states()) > 0
         calibrating_count = await bulk_transition_pipeline_axis(
             self.db,
             CAL_STATE_FIELD,
@@ -233,7 +233,7 @@ class LibraryPipelineService:
         task = ManagedTask(
             task_id=CALIBRATION_APPLY_TASK_ID,
             fn=self.tagging_svc._run_apply_calibration,
-            on_complete=self.on_apply_complete,
+            on_complete=lambda: asyncio.run(self.on_apply_complete()),
             daemon=False,
         )
         try:
@@ -249,11 +249,11 @@ class LibraryPipelineService:
         # Find libraries that were calibrating and are now calibrated
         calibrated_libraries = await get_libraries_in_axis_state(self.db, CAL_STATE_FIELD, CAL_COMPLETE)
         for library_id in calibrated_libraries:
-            state = await get_pipeline_state(self.db, library_id)
+            state = await get_pipeline_state(self.db, int(library_id))
             if state.get(WRITE_STATE_FIELD) == WRITE_IN_PROGRESS:
                 continue  # Already writing
 
-            library = await get_library_record(self.db, library_id, include_scan=False)
+            library = await get_library_record(self.db, int(library_id), include_scan=False)
             if library is None:
                 logger.warning("Library %s was missing during apply completion", library_id)
                 continue
@@ -288,22 +288,23 @@ class LibraryPipelineService:
             domain counts, or ``None`` if the library does not exist.
 
         """
-        library = await get_library_record(self.db, library_id, include_scan=False)
+        library = await get_library_record(self.db, int(library_id), include_scan=False)
         if library is None:
             return None
 
-        state = await get_pipeline_state(self.db, library_id)
+        state = await get_pipeline_state(self.db, int(library_id))
 
         untagged_count: int | None = None
         uncalibrated_count: int | None = None
         pending_write_count: int | None = None
 
         if state.get(ML_STATE_FIELD) == ML_IN_PROGRESS:
-            untagged_count = await count_untagged_files(self.db, library_id)
+            untagged_count = await count_untagged_files(self.db, int(library_id))
         elif state.get(CAL_STATE_FIELD) in {CAL_NOT_CALIBRATED, CAL_IN_PROGRESS}:
-            uncalibrated_count = len(await get_uncalibrated_tagged_file_ids(self.db, library_id))
+            uncalibrated_count = len(await get_uncalibrated_tagged_file_ids(self.db, int(library_id)))
         elif state.get(WRITE_STATE_FIELD) in {WRITE_NOT_WRITTEN, WRITE_IN_PROGRESS}:
-            pending_write_count = int(self.tagging_svc.get_reconcile_status(library_id)["pending_count"])
+            reconcile_status = await self.tagging_svc.get_reconcile_status(library_id)
+            pending_write_count = int(reconcile_status["pending_count"])
 
         return LibraryPipelineStatusDTO(
             library_id=int(library_id),
@@ -325,7 +326,7 @@ class LibraryPipelineService:
             task_id = self.tagging_svc.start_write_tags_background(
                 library_id,
                 stop_event,
-                on_complete=functools.partial(self.on_write_complete, library_id),
+                on_complete=lambda: asyncio.run(self.on_write_complete(library_id)),
             )
         except ValueError:
             logger.warning("Write-tags task already running for library %s", library_id)

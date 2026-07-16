@@ -99,7 +99,7 @@ async def apply_calibration_wf(
     _t0 = internal_ms()
     logger.info("[apply_calibration] Pre-computing batch context...")
     heads = await discover_heads(models_dir, db)
-    calibrations = load_calibrations_from_db_wf(db)
+    calibrations = await load_calibrations_from_db_wf(db)
     calibration_version = await get_calibration_version(db)
 
     _t_setup = (internal_ms().value - _t0.value) / 1000
@@ -193,7 +193,7 @@ async def apply_calibration_wf(
                 f"flushing {len(batch_ctx.pending_calibration_hashes)} calibration hash updates..."
             )
             try:
-                await update_file_calibration_hashes_batch(db, batch_ctx.pending_calibration_hashes)
+                await update_file_calibration_hashes_batch(db, batch_ctx.pending_calibration_hashes)  # type: ignore[arg-type]  # TODO(migration): component expects list[str], should be list[int]
             except Exception as e:
                 logger.warning(f"[apply_calibration] Batch calibration hash flush failed: {e}", exc_info=True)
 

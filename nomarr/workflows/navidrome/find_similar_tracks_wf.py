@@ -75,13 +75,14 @@ async def find_similar_tracks(
 
     """
     # 1. Resolve seed descriptor to Nomarr file_id
-    seed_file_id, seed_resolution_status = await resolve_seed_descriptor_to_file(db, seed_descriptor)
-    if seed_file_id is None:
+    seed_file_id_str, seed_resolution_status = await resolve_seed_descriptor_to_file(db, seed_descriptor)
+    if seed_file_id_str is None:
         if seed_resolution_status == "descriptor_ambiguous":
             msg = "Seed descriptor matched multiple tracks in Nomarr and is ambiguous."
             raise ValueError(msg)
         msg = "Seed descriptor could not be resolved to an analyzed Nomarr track."
         raise ValueError(msg)
+    seed_file_id = int(seed_file_id_str)
 
     logger.debug("Seed descriptor resolved to file_id %s", seed_file_id)
 

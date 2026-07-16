@@ -86,4 +86,4 @@ async def prepare_database_workflow(
 
     # Step 3: Register ML models and seed known labels
     if models_dir is not None:
-        register_ml_models_workflow(db, models_dir)
+        await register_ml_models_workflow(db, models_dir)

@@ -28,7 +28,7 @@ _MAX_TRACKS = 200
 
 async def generate_static_playlist_workflow(
     db: Database,
-    file_ids: list[str],
+    file_ids: list[int],
     playlist_name: str = "Vector Search Playlist",
     m3u_output_path: str = "",
 ) -> StaticPlaylistResult:
@@ -91,7 +91,8 @@ async def generate_static_playlist_workflow(
             library_root = str(root)
 
     # Step 3: Build M3U content (relative paths)
-    m3u_content = build_m3u(playlist_name, files, file_ids, library_root=library_root)
+    # TODO(S6): build_m3u ordered_ids param should be list[int]
+    m3u_content = build_m3u(playlist_name, files, file_ids, library_root=library_root)  # type: ignore[arg-type]
 
     # Step 4: Server-side save when configured
     saved_path: str | None = None
@@ -102,6 +103,6 @@ async def generate_static_playlist_workflow(
         playlist_name=playlist_name,
         m3u_content=m3u_content,
         track_count=len(files),
-        missing_ids=missing_ids,
+        missing_ids=missing_ids,  # type: ignore[arg-type]  # TODO(S6): should be list[int]
         saved_path=saved_path,
     )

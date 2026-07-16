@@ -149,7 +149,7 @@ async def write_file_tags_workflow(
             )
 
         # Resolve library path
-        library_path = _resolve_library_path(file_doc, db)
+        library_path = await _resolve_library_path(file_doc, db)
         if not library_path:
             return WriteResult(
                 file_key=file_key,
@@ -161,7 +161,7 @@ async def write_file_tags_workflow(
 
         # Get library root for safe write
         library_id = file_doc.get("library_id")
-        if not library_id or not isinstance(library_id, str):
+        if not library_id or not isinstance(library_id, int):
             return WriteResult(
                 file_key=file_key,
                 tags_written=0,
@@ -222,7 +222,7 @@ async def write_file_tags_workflow(
 
         # Sync mtime in DB so scanner skips this file on next scan
         if result.new_mtime_ms is not None:
-            await update_file_modified_time(db, file_key, result.new_mtime_ms)
+            await update_file_modified_time(db, file_id, result.new_mtime_ms)
 
         # Update file projection state in database
         await set_file_written(db, file_key)

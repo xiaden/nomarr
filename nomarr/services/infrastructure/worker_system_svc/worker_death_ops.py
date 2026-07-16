@@ -55,17 +55,17 @@ class WorkerDeathOpsMixin:
         """Stub — implemented by the main class."""
         raise NotImplementedError
 
-    def _reset_restart_count(self, component_id: str) -> None:
+    async def _reset_restart_count(self, component_id: str) -> None:
         """Reset the restart counter once a worker has confirmed healthy after starting.
 
         A worker that starts and runs successfully should not carry forward crash
         counts from earlier sessions or restart cycles.
         """
         try:
-            restart_state = self.db.app.get_worker_restart_policy(component_id)
+            restart_state = await self.db.app.get_worker_restart_policy(component_id)
             if isinstance(restart_state, dict) and int(restart_state.get("restart_count", 0)) > 0:
                 timestamp = now_ms().value
-                self.db.app.update_worker_restart_policy(
+                await self.db.app.update_worker_restart_policy(
                     component_id,
                     {
                         "restart_count": 0,
@@ -100,7 +100,7 @@ class WorkerDeathOpsMixin:
             logger.debug("[WorkerSystemService] Cancelled existing restart timer for %s", component_id)
         restart_state = cast(
             "dict[str, Any] | None",
-            self.db.app.get_worker_restart_policy(component_id),
+            await self.db.app.get_worker_restart_policy(component_id),
         )
         restart_count = int(restart_state.get("restart_count", 0)) if restart_state is not None else 0
         last_restart_wall_ms = (
@@ -116,7 +116,7 @@ class WorkerDeathOpsMixin:
         if decision.action == "restart":
             timestamp = now_ms().value
             if restart_state is None:
-                self.db.app.upsert_worker_restart_policy(
+                await self.db.app.upsert_worker_restart_policy(
                     component_id,
                     {
                         "restart_count": 1,
@@ -127,7 +127,7 @@ class WorkerDeathOpsMixin:
                     },
                 )
             else:
-                self.db.app.update_worker_restart_policy(
+                await self.db.app.update_worker_restart_policy(
                     component_id,
                     {
                         "restart_count": restart_count + 1,
@@ -144,7 +144,7 @@ class WorkerDeathOpsMixin:
         failure_reason = decision.failure_reason or "Restart limit exceeded"
         timestamp = now_ms().value
         if restart_state is None:
-            self.db.app.upsert_worker_restart_policy(
+            await self.db.app.upsert_worker_restart_policy(
                 component_id,
                 {
                     "restart_count": 0,
@@ -155,7 +155,7 @@ class WorkerDeathOpsMixin:
                 },
             )
         else:
-            self.db.app.update_worker_restart_policy(
+            await self.db.app.update_worker_restart_policy(
                 component_id,
                 {
                     "failed_at_wall_ms": timestamp,

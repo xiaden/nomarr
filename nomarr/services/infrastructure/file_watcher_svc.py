@@ -228,7 +228,7 @@ class FileWatcherService:
             library_id = lib["id"]
             if library_id not in self.observers:
                 try:
-                    self.start_watching_library(library_id)
+                    await self.start_watching_library(library_id)
                 except ValueError as e:
                     logger.warning(f"Could not start watcher for library {library_id}: {e}")
                 except Exception as e:
@@ -373,7 +373,7 @@ class FileWatcherService:
                 await asyncio.sleep(self.polling_interval_seconds)
 
                 # Validate library still exists and should be watched
-                library = get_library_watch_config(self._db, library_id)
+                library = await get_library_watch_config(self._db, library_id)
                 if not library:
                     logger.info(f"Library {library_id} no longer exists, stopping watcher")
                     self._schedule_cleanup(library_id)
@@ -391,7 +391,7 @@ class FileWatcherService:
                 logger.debug(f"Polling library {library_id}: triggering quick scan")
 
                 try:
-                    self.library_service.start_quick_scan(library_id)
+                    await self.library_service.start_quick_scan(library_id)
                 except LibraryNotFoundError:
                     logger.warning(f"Library {library_id} no longer exists, stopping watcher")
                     self._schedule_cleanup(library_id)
@@ -485,12 +485,12 @@ class FileWatcherService:
             self.pending_changes = {(lib_id, path) for lib_id, path in self.pending_changes if lib_id != library_id}
 
         # Update watch_mode in database
-        UpdateLibraryMetadataComp(self._db).update(library_id, watch_mode=new_mode)
+        await UpdateLibraryMetadataComp(self._db).update(library_id, watch_mode=new_mode)
         logger.info(f"Updated library {library_id} watch_mode to '{new_mode}'")
 
         # Start new mode if not 'off'
         if new_mode != "off":
-            self.start_watching_library(library_id)
+            await self.start_watching_library(library_id)
         else:
             logger.info(f"Watch mode is 'off' for library {library_id}, no watcher started")
 
@@ -550,6 +550,6 @@ class FileWatcherService:
         # folders are actually re-scanned.
         for library_id in affected_libraries:
             try:
-                self.library_service.start_quick_scan(library_id)
+                await self.library_service.start_quick_scan(library_id)
             except Exception as e:
                 logger.error(f"Failed to trigger scan for library {library_id}: {e}", exc_info=True)

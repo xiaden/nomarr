@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 async def validate_library_tags_workflow(
     db: Database,
     models_dir: str,
-    library_id: str | None = None,
+    library_id: int | None = None,
     namespace: str = "nom",
     auto_repair: bool = True,
 ) -> dict[str, Any]:

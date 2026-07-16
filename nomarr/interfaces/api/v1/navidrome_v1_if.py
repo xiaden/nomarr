@@ -6,13 +6,13 @@ Auth: API key (verify_key).
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from nomarr.components.navidrome.descriptor_match_comp import TrackDescriptor
 from nomarr.helpers.dto.navidrome_dto import TrackPlayData
 from nomarr.helpers.exceptions import MisconfiguredError
 from nomarr.interfaces.api.auth import verify_key
@@ -72,8 +72,7 @@ async def navidrome_similar_tracks(
         body.backbone_id,
     )
     try:
-        results = await asyncio.to_thread(
-            svc.get_similar_tracks,
+        results = await svc.get_similar_tracks(
             seed_descriptor=body.seed.model_dump(),
             count=body.count,
             backbone_id=body.backbone_id,
@@ -121,7 +120,7 @@ class TrackPlayInput(BaseModel):
     descriptor responses.
     """
 
-    file_id: str
+    file_id: int
     playcount: int = Field(ge=0)
     last_played: int | None = None
 
@@ -167,7 +166,7 @@ async def navidrome_generate_playlists(
     # Convert Pydantic models to TrackPlayData TypedDicts
     top_plays: list[TrackPlayData] = [
         TrackPlayData(
-            file_id=p.file_id,
+            file_id=int(p.file_id),
             playcount=p.playcount,
             last_played=p.last_played,
         )
@@ -182,8 +181,7 @@ async def navidrome_generate_playlists(
         body.max_songs,
     )
     try:
-        result = await asyncio.to_thread(
-            svc.generate_playlists,
+        result = await svc.generate_playlists(
             user_id=body.user_id,
             top_plays=top_plays,
             enabled_types=body.enabled_types,
@@ -213,7 +211,9 @@ async def navidrome_generate_playlists(
     # Resolve internal file_ids to portable descriptors for plugin-side
     # Navidrome mediafile-ID resolution.
     all_file_ids = list({fid for playlist in result.playlists for fid in playlist["file_ids"]})
-    descriptor_map = await asyncio.to_thread(svc.resolve_files_to_descriptors, all_file_ids) if all_file_ids else {}
+    descriptor_map: dict[str, TrackDescriptor] = (
+        await svc.resolve_files_to_descriptors(all_file_ids) if all_file_ids else {}
+    )
 
     return GeneratePlaylistsResponse(
         status=result.status,

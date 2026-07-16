@@ -21,7 +21,7 @@ async def web_show_tags(
     """Read tags from an audio file (web UI proxy)."""
     try:
         namespace = tagging_service.namespace
-        tags = tagging_service.read_file_tags(path, namespace)
+        tags = await tagging_service.read_file_tags(path, namespace)
         return {"path": path, "namespace": namespace, "tags": tags, "count": len(tags)}
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid file path") from None
@@ -37,7 +37,7 @@ async def web_remove_tags(
     """Remove all namespaced tags from an audio file (web UI proxy)."""
     try:
         namespace = tagging_service.namespace
-        count = tagging_service.remove_file_tags(path, namespace)
+        count = await tagging_service.remove_file_tags(path, namespace)
         return {"path": path, "namespace": namespace, "removed": count}
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid file path") from None
