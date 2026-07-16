@@ -205,7 +205,7 @@ file_id = discover_and_claim_file(
 
 **Key properties:**
 
-- **Deterministic `_key`:** Based on file `_key`; ArangoDB uniqueness prevents duplicate claims
+- **Deterministic claim key:** Based on file ID; database uniqueness constraint prevents duplicate claims
 - **One claim per file:** Only one worker can process a file at a time
 - **Ephemeral:** Represents active work, not scheduled work; deleted after processing
 

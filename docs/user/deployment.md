@@ -107,37 +107,16 @@ cd /opt/nomarr
 
 ## Production Configuration
 
-### 1. Environment Files
+### 1. Environment File
 
-Nomarr uses two environment files:
-
-**`nomarr-arangodb.env`**:
-
-```bash
-# Root password for initial database provisioning
-ARANGO_ROOT_PASSWORD=<generate-with-openssl-rand-hex-32>
-ARANGO_NO_AUTH=0
-```
+Nomarr uses a single environment file:
 
 **`nomarr.env`**:
 
 ```bash
-# ArangoDB connection
-ARANGO_HOST=http://nomarr-arangodb:8529
-
-# Root password — must match nomarr-arangodb.env
-# Only needed for first-run provisioning
-ARANGO_ROOT_PASSWORD=<same-as-above>
+# Nomarr manages its own internal PostgreSQL database.
+# No external database connection configuration is required.
 ```
-
-Generate a strong password:
-
-```bash
-openssl rand -hex 32
-```
-
-!!! note
-    On first run, Nomarr automatically provisions the ArangoDB database, generates a secure application password, and stores it in `config/nomarr.yaml` as `arango_password`.
 
 ### 2. Production `config/nomarr.yaml`
 
@@ -149,7 +128,6 @@ Create `config/nomarr.yaml`:
 
 ```yaml
 # Production Nomarr Configuration
-# Database password is auto-generated on first run and stored here.
 
 library_root: "/media"
 models_dir: "/app/models"
@@ -165,30 +143,12 @@ Most settings have sensible defaults. Libraries are configured via the Web UI.
  | `library_auto_tag` | `true` | Automatically process discovered files |
  | `calibrate_heads` | `false` | Enable calibration for tag thresholds |
 
-All settings can also be changed via the Web UI’s Settings page at runtime.
+All settings can also be changed via the Web UI's Settings page at runtime.
 
 ### 3. Production `compose.yaml`
 
 ```yaml
 services:
-  nomarr-arangodb:
-    image: arangodb:latest
-    container_name: nomarr-arangodb
-    networks:
-      - internal_network
-    restart: unless-stopped
-    env_file:
-      - nomarr-arangodb.env
-    command: ["--vector-index"]
-    volumes:
-      - ./config/arangodb:/var/lib/arangodb3
-    healthcheck:
-      test: ["CMD-SHELL", "arangosh --server.endpoint tcp://127.0.0.1:8529 --server.username root --server.password \"$$ARANGO_ROOT_PASSWORD\" --javascript.execute-string 'db._version()' >/dev/null 2>&1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-
   nomarr:
     image: ghcr.io/xiaden/nomarr:latest
     container_name: nomarr
@@ -196,11 +156,7 @@ services:
     stop_grace_period: 30s
     networks:
       - front_network
-      - internal_network
     restart: unless-stopped
-    depends_on:
-      nomarr-arangodb:
-        condition: service_healthy
     env_file:
       - nomarr.env
     # Uncomment for direct access (without reverse proxy):
@@ -218,22 +174,19 @@ services:
               capabilities: [gpu]
 
 networks:
-  internal_network:
-    internal: true   # Isolated network for DB (no external access)
   front_network:
     external: true   # Your reverse proxy network
 ```
 
 **Production features:**
 
-- ArangoDB on isolated internal network (no external access)
-- Nomarr waits for healthy database before starting
 - Pre-built image from GitHub Container Registry
 - Models packaged in image (no separate volume needed)
 - Non-root user (1000:1000)
 - GPU reservation for CUDA acceleration
 - Reverse proxy network for external access
 - 30-second graceful shutdown period
+- Internal PostgreSQL database managed automatically
 
 ---
 
@@ -436,6 +389,8 @@ crontab -e
 
 ### Database Backup
 
+Nomarr uses an internal PostgreSQL database. Back up the database using `pg_dump` from within the container:
+
 **Automated backup script** (`/opt/nomarr/backup.sh`):
 
 ```bash
@@ -445,26 +400,16 @@ DATE=$(date +%Y%m%d_%H%M%S)
 
 mkdir -p "$BACKUP_DIR"
 
-# Get password from config
-PASSWORD=$(grep arango_password /opt/nomarr/config/nomarr.yaml | cut -d: -f2 | tr -d ' "')
+# Back up PostgreSQL database from within the Nomarr container
+docker exec nomarr pg_dump -U nomarr nomarr > "$BACKUP_DIR/nomarr_$DATE.sql"
 
-# Hot backup using arangodump (no downtime)
-docker exec nomarr-arangodb arangodump \
-  --server.username nomarr \
-  --server.password "$PASSWORD" \
-  --server.database nomarr \
-  --output-directory /tmp/backup_$DATE
-
-# Copy backup out of container
-docker cp nomarr-arangodb:/tmp/backup_$DATE "$BACKUP_DIR/nomarr_$DATE"
-
-# Cleanup temp backup inside container
-docker exec nomarr-arangodb rm -rf /tmp/backup_$DATE
+# Compress the backup
+gzip "$BACKUP_DIR/nomarr_$DATE.sql"
 
 # Keep only last 7 days
-find "$BACKUP_DIR" -name "nomarr_*" -type d -mtime +7 -exec rm -rf {} +
+find "$BACKUP_DIR" -name "nomarr_*.sql.gz" -type f -mtime +7 -delete
 
-echo "$(date): Backup completed: nomarr_$DATE"
+echo "$(date): Backup completed: nomarr_$DATE.sql.gz"
 ```
 
 **Schedule daily backups:**
@@ -489,7 +434,7 @@ tar -czf /opt/nomarr/backups/config_$(date +%Y%m%d).tar.gz \
 
 ### Database
 
-ArangoDB handles optimization automatically. For large libraries, ensure the database volume is on fast storage (SSD/NVMe).
+PostgreSQL handles optimization automatically. For large libraries, ensure the database volume is on fast storage (SSD/NVMe).
 
 ### Disk I/O
 
@@ -502,7 +447,7 @@ volumes:
 
 ### Worker Tuning
 
-Start with the default worker count (1) and increase via the Web UI’s Settings page:
+Start with the default worker count (1) and increase via the Web UI's Settings page:
 
 - **Increase if:** GPU memory usage < 80%, GPU utilization < 90%
 - **Decrease if:** Out of memory errors or instability
@@ -588,14 +533,8 @@ docker compose down
 docker compose up -d
 
 # If database is incompatible, restore from backup:
-PASSWORD=$(grep arango_password /opt/nomarr/config/nomarr.yaml | cut -d: -f2 | tr -d ' "')
-docker cp /opt/nomarr/backups/nomarr_YYYYMMDD nomarr-arangodb:/tmp/restore
-docker exec nomarr-arangodb arangorestore \
-  --server.username nomarr \
-  --server.password "$PASSWORD" \
-  --server.database nomarr \
-  --input-directory /tmp/restore \
-  --overwrite true
+gunzip -c /opt/nomarr/backups/nomarr_YYYYMMDD.sql.gz | \
+  docker exec -i nomarr psql -U nomarr nomarr
 ```
 
 ---

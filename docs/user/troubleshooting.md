@@ -6,60 +6,30 @@
 
 ## Docker & Networking
 
-### Containers Can’t Reach Each Other
+### Containers Can't Reach Each Other
 
-**Symptoms:** Nomarr fails to start with "connection refused" to ArangoDB, or Navidrome push fails with timeout.
+**Symptoms:** Nomarr fails to start with "connection refused" to the database, or Navidrome push fails with timeout.
 
-**Cause:** Docker containers on different networks can’t communicate.
+**Cause:** Docker containers on different networks can't communicate.
 
 **Solution:**
 
-1. Ensure both containers are on the same Docker network. In compose.yaml, Nomarr and ArangoDB share `internal_network`:
+1. Ensure both containers are on the same Docker network. In compose.yaml, Nomarr should share a network with any external services:
 
     ```yaml
     networks:
-      internal_network:
-        internal: true
+      front_network:
+        external: true
     ```
 
 2. Use container names (not `localhost`) for inter-container communication:
-    - ArangoDB: `http://nomarr-arangodb:8529`
     - Navidrome: `http://navidrome:4533` (if on a shared network)
 
 3. Verify connectivity from inside the container:
 
     ```bash
-    docker exec nomarr curl -s http://nomarr-arangodb:8529/_api/version
+    docker exec nomarr curl -s http://navidrome:4533/rest/ping
     ```
-
-### ArangoDB Health Check Fails
-
-**Symptoms:** Nomarr container stays in "waiting" state, logs show `depends_on: service_healthy` never satisfied.
-
-**Cause:** ArangoDB hasn’t finished starting, or the root password is wrong.
-
-**Solution:**
-
-1. Check ArangoDB logs:
-
-    ```bash
-    docker compose logs nomarr-arangodb
-    ```
-
-2. Verify `ARANGO_ROOT_PASSWORD` matches in both `nomarr-arangodb.env` and `nomarr.env`.
-
-3. If ArangoDB is stuck, remove its data and let it reinitialize:
-
-    ```bash
-    docker compose down
-    rm -rf config/arangodb
-    docker compose up -d
-    ```
-
-    !!! warning
-        This deletes the database. Restore from backup if you have data to keep.
-
-4. Ensure the health check matches your setup. The default compose.yaml includes a health check that uses `ARANGO_ROOT_PASSWORD` — it must be set correctly.
 
 ---
 
@@ -130,55 +100,34 @@
 
 ---
 
-## First-Run Database Provisioning
+## Database Issues
 
-### Provisioning Fails on First Start
+### Database Connection Errors
 
-**Symptoms:** Nomarr crashes on first start with database errors. Logs show "authentication failed" or "database not found".
+**Symptoms:** Nomarr starts but can't connect to the database. Logs show "connection refused" or "authentication failed".
 
-**Cause:** `ARANGO_ROOT_PASSWORD` mismatch between the two containers, or ArangoDB didn’t start cleanly.
-
-**Solution:**
-
-1. Ensure `ARANGO_ROOT_PASSWORD` is identical in `nomarr-arangodb.env` and `nomarr.env`.
-
-2. Check that ArangoDB started successfully:
-
-    ```bash
-    docker compose logs nomarr-arangodb | tail -20
-    ```
-
-3. If the password was changed after ArangoDB was first created, you need to reset:
-
-    ```bash
-    docker compose down
-    rm -rf config/arangodb  # Wipes database
-    # Update both .env files with matching passwords
-    docker compose up -d
-    ```
-
-### "arango_password" Missing from nomarr.yaml
-
-**Symptoms:** Nomarr starts but can’t connect to the database after restart.
-
-**Cause:** First-run provisioning didn’t complete, so the generated password wasn’t saved.
+**Cause:** Database credentials are misconfigured or the database hasn't finished starting.
 
 **Solution:**
 
-1. Check `config/nomarr.yaml` for an `arango_password` entry.
-2. If missing, delete the ArangoDB data and re-provision:
+1. Check Nomarr logs for connection errors:
+
+    ```bash
+    docker compose logs nomarr | tail -30
+    ```
+
+2. Verify the database connection settings in `config/nomarr.yaml` are correct.
+
+3. If the database data appears corrupted, reset it:
 
     ```bash
     docker compose down
-    rm -rf config/arangodb
+    rm -rf config/db  # Wipes database
     docker compose up -d
     ```
 
-3. Watch logs to confirm provisioning succeeds:
-
-    ```bash
-    docker compose logs -f nomarr
-    ```
+    !!! warning
+        This deletes the database. Restore from backup if you have data to keep.
 
 ---
 
@@ -192,9 +141,9 @@
 
 **Solution:**
 
-1. If using the official image (`ghcr.io/xiaden/nomarr:latest`), models are included. Don’t override `models_dir` unless you know what you’re doing.
+1. If using the official image (`ghcr.io/xiaden/nomarr:latest`), models are included. Don't override `models_dir` unless you know what you're doing.
 
-2. If you’ve mounted a custom models volume, ensure all required model files are present:
+2. If you've mounted a custom models volume, ensure all required model files are present:
 
     ```bash
     docker exec -it nomarr ls /app/models/
@@ -210,7 +159,7 @@
 
 **Symptoms:** Library scan completes instantly with 0 files found.
 
-**Cause:** Volume mount mismatch — the music directory isn’t accessible inside the container at the expected path.
+**Cause:** Volume mount mismatch — the music directory isn't accessible inside the container at the expected path.
 
 **Solution:**
 
@@ -237,7 +186,7 @@
 
 **Symptoms:** Scan finds files but processing fails with "Permission denied".
 
-**Cause:** The container runs as user `1000:1000` and can’t read the music files.
+**Cause:** The container runs as user `1000:1000` and can't read the music files.
 
 **Solution:**
 
@@ -263,9 +212,9 @@
 
 ### File Watcher Not Detecting Changes
 
-**Symptoms:** New files added to the library aren’t picked up automatically.
+**Symptoms:** New files added to the library aren't picked up automatically.
 
-**Cause:** Event-based watching doesn’t work reliably on network mounts (NFS, SMB/CIFS).
+**Cause:** Event-based watching doesn't work reliably on network mounts (NFS, SMB/CIFS).
 
 **Solution:**
 
@@ -305,7 +254,7 @@ Polling mode checks for changes every 60 seconds, which is slower than event mod
 
 **Symptoms:** Push to Navidrome returns errors about unresolved songs.
 
-**Cause:** Nomarr can’t map its file IDs to Navidrome song IDs.
+**Cause:** Nomarr can't map its file IDs to Navidrome song IDs.
 
 **Solution:**
 
@@ -320,7 +269,7 @@ Polling mode checks for changes every 60 seconds, which is slower than event mod
 
 ## Calibration
 
-### Calibration Won’t Run
+### Calibration Won't Run
 
 **Symptoms:** Calibration page shows no data or "not enough tracks".
 
@@ -358,9 +307,6 @@ docker compose logs -f nomarr
 
 # Filter for errors
 docker compose logs nomarr 2>&1 | grep -i error
-
-# Check ArangoDB logs
-docker compose logs nomarr-arangodb
 ```
 
 ### Restart Services
@@ -395,7 +341,7 @@ nvidia-smi
 
 ## Getting Help
 
-If the solutions above don’t resolve your issue:
+If the solutions above don't resolve your issue:
 
 1. Search [GitHub Issues](https://github.com/xiaden/nomarr/issues) for similar problems
 2. Open a new issue with:

@@ -17,7 +17,7 @@ Nomarr analyzes your music files with machine learning and writes rich metadata 
 
 - **ML Inference** — ONNX Runtime for fast, portable model execution (GPU-accelerated when available)
 - **Audio Loading** — Custom Essentia build for audio decoding and mel spectrogram preprocessing
-- **Database** — ArangoDB for graph-aware metadata storage and querying
+- **Database** — PostgreSQL for metadata storage and querying
 - **Deployment** — Docker with optional GPU passthrough for production use
 
 Perfect for organizing large libraries, discovering moods and genres, and enriching metadata for music servers like Navidrome and Plex.

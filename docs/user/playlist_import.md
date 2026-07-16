@@ -25,7 +25,7 @@ User pastes URL
     ↓
 Fetch playlist from API (Spotify/Deezer)
     ↓
-Load library tracks from ArangoDB
+Load library tracks from database
     ↓
 Match tracks (ISRC → Exact → Fuzzy)
     ↓

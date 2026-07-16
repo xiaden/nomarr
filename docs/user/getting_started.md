@@ -107,29 +107,17 @@ mkdir -p /opt/nomarr
 cd /opt/nomarr
 ```
 
-### 4. Create Environment Files
-
-**`nomarr-arangodb.env`** (for the ArangoDB container):
-
-```bash
-# Root password — REQUIRED for first-run provisioning
-ARANGO_ROOT_PASSWORD=change_this_to_a_strong_password
-ARANGO_NO_AUTH=0
-```
+### 4. Create Environment File
 
 **`nomarr.env`** (for the Nomarr container):
 
 ```bash
-# ArangoDB connection
-ARANGO_HOST=http://nomarr-arangodb:8529
-
-# Root password — must match nomarr-arangodb.env
-# Only needed for first-run provisioning
-ARANGO_ROOT_PASSWORD=change_this_to_a_strong_password
+# Database connection is managed internally by the application.
+# No external database container is required.
 ```
 
 !!! tip
-    Generate a strong password with `openssl rand -hex 32`.
+    Nomarr manages its own PostgreSQL database internally. You do not need to set up or configure a separate database container.
 
 ### 5. Create `config/nomarr.yaml`
 
@@ -151,7 +139,7 @@ models_dir: "/app/models"
 ```
 
 !!! note
-    On first run, Nomarr connects to ArangoDB using `ARANGO_ROOT_PASSWORD`, provisions the database and user, then generates a secure application password stored in `config/nomarr.yaml` as `arango_password`. You never need to manage this manually.
+    Database connection and provisioning are handled automatically by Nomarr on first run. You do not need to manage database credentials manually.
 
 ### 6. Create `compose.yaml`
 
@@ -159,22 +147,6 @@ Create a `compose.yaml` in your deployment directory. The example below matches 
 
 ```yaml
 services:
-  nomarr-arangodb:
-    image: arangodb:latest
-    container_name: nomarr-arangodb
-    env_file:
-      - nomarr-arangodb.env
-    command: ["--vector-index"]
-    volumes:
-      - ./config/arangodb:/var/lib/arangodb3
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "arangosh --server.endpoint tcp://127.0.0.1:8529 --server.username root --server.password \"$$ARANGO_ROOT_PASSWORD\" --javascript.execute-string 'db._version()' >/dev/null 2>&1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-
   nomarr:
     image: ghcr.io/xiaden/nomarr:latest
     container_name: nomarr
@@ -187,9 +159,6 @@ services:
       - /path/to/your/music:/media:ro  # CHANGE THIS to your music library path
     env_file:
       - nomarr.env
-    depends_on:
-      nomarr-arangodb:
-        condition: service_healthy
     deploy:
       resources:
         reservations:
@@ -204,9 +173,7 @@ services:
 **Key changes to make:**
 
 - Replace `/path/to/your/music` with your actual music library path
-- If you don’t have a reverse proxy, uncomment the `ports:` section for direct access
 - Remove the `deploy.resources` GPU section if running CPU-only (not recommended)
-- If you don’t have an existing `front_network`, either create one (`docker network create front_network`) or replace with a simpler network setup
 
 ### 7. Start Nomarr
 
@@ -237,7 +204,7 @@ docker compose down
 Nomarr runs on port **8356** inside the container. How you access it depends on your setup:
 
 - **With reverse proxy:** `https://nomarr.yourdomain.com`
-- **Direct access:** Uncomment `ports` in compose.yaml, then open `http://localhost:8356`
+- **Direct access:** Open `http://localhost:8356`
 
 You should see the Nomarr dashboard.
 
@@ -300,7 +267,7 @@ Then restart: `docker compose restart nomarr`
 
 ### 5. Processing Runs Automatically
 
-**Discovery workers start automatically** when Nomarr launches. There’s no need to manually start processing.
+**Discovery workers start automatically** when Nomarr launches. There's no need to manually start processing.
 
 **How it works:**
 
@@ -472,22 +439,24 @@ docker exec -it nomarr nom manage-password reset
 
 **Solutions:**
 
-1. **Check ArangoDB is running:**
+1. **Check logs for database errors:**
 
     ```bash
-    docker compose ps nomarr-arangodb
-    docker compose logs nomarr-arangodb
+    docker compose logs nomarr | grep -i database
     ```
 
-2. **Verify credentials:**
-
-    Check that `ARANGO_ROOT_PASSWORD` matches in both `.env` files.
-    After first run, check `config/nomarr.yaml` has a generated `arango_password`.
-
-3. **Restart services:**
+2. **Restart services:**
 
     ```bash
     docker compose restart
+    ```
+
+3. **If the database data appears corrupted, reset:**
+
+    ```bash
+    docker compose down
+    rm -rf config/db
+    docker compose up -d
     ```
 
 ### Calibration

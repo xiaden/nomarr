@@ -85,7 +85,7 @@ For the technically curious:
 
 - **Dual embedding models** — out of the box, every song gets processed by TWO different embedding models. BYO models supported with proper folder structure.
 - **Custom Essentia build** — audio loading and preprocessing via a hardened Essentia fork. Corrupt files won't crash the application. This is why Docker-only is the supported path.
-- **ArangoDB** — graph database dynamics for relationship queries ("songs similar to X that share tags with Y"), relational speed for standard operations. Best of both worlds.
+- **PostgreSQL** — relational database for all library, file, tag, scan, and ML metadata storage with efficient indexing and querying.
 
 ---
 
@@ -105,8 +105,7 @@ Let's be honest about what you're getting into:
 git clone https://github.com/xiaden/nomarr.git
 cd nomarr/docker
 cp nomarr.env.example nomarr.env
-cp nomarr-arangodb.env.example nomarr-arangodb.env
-# Edit both .env files — set a strong root password, map your music library volume
+# Edit the .env file — map your music library volume, set your preferences
 docker compose up -d
 docker compose logs nomarr | grep "Admin password"
 ```
@@ -195,7 +194,7 @@ Built with:
 - **[Essentia](https://essentia.upf.edu/)** — Audio loading and preprocessing, by the Music Technology Group, Universitat Pompeu Fabra
 - **[ONNX Runtime](https://onnxruntime.ai/)** — ML inference engine
 - **[FastAPI](https://fastapi.tiangolo.com/)** — Python web framework
-- **[ArangoDB](https://www.arangodb.com/)** — Multi-model database
+- **[PostgreSQL](https://www.postgresql.org/)** — Relational database
 
 ---
 

@@ -20,7 +20,7 @@ Currently, only the latest commit on the `main` branch is supported. Version num
 - **API Key Authentication** - Bearer token auth for API endpoints
 - **Session-based Auth** - Web UI uses secure session cookies
 - **Docker Isolation** - Runs in containerized environment
-- **Database Authentication** - ArangoDB requires credentials
+- **Database Authentication** - PostgreSQL requires credentials
 - **No External Network Access** - ML models run locally, no telemetry
 
 ### Known Limitations (Alpha)
@@ -42,7 +42,7 @@ Currently, only the latest commit on the `main` branch is supported. Version num
 4. **Strong passwords** - Change auto-generated admin password immediately
 5. **Regular updates** - Pull latest images frequently during alpha
 6. **Filesystem permissions** - Music library should be read-only for Nomarr
-7. **Backup database** - ArangoDB data in `config/db` should be backed up
+7. **Backup database** - PostgreSQL data should be backed up regularly
 
 **Docker security:**
 
@@ -101,7 +101,7 @@ services:
 ### Environment Variables
 
 - **Never commit `.env` files** to version control
-- **Use strong passwords** for `NOMARR_ARANGO_ROOT_PASSWORD`
+- **Use strong passwords** for database credentials
 - **Rotate API keys** if compromised
 
 ### File System Access
@@ -159,7 +159,7 @@ Nomarr relies on:
 
 - **Python 3.12+** - Security updates via official Python channels
 - **FastAPI** - Web framework security
-- **ArangoDB** - Database security
+- **PostgreSQL** - Database security
 - **Essentia** - ML model security
 - **TensorFlow** - ML inference security
 
