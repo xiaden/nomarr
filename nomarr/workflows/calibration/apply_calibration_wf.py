@@ -160,11 +160,9 @@ async def apply_calibration_wf(
         tasks = [_process_with_semaphore(fp, batch_ctx) for fp in chunk_paths]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        for file_path, result in zip(chunk_paths, results):
+        for file_path, result in zip(chunk_paths, results, strict=False):
             if isinstance(result, BaseException):
-                logger.warning(
-                    f"Failed to write calibrated tags for {file_path}: {result}", exc_info=True
-                )
+                logger.warning(f"Failed to write calibrated tags for {file_path}: {result}")
                 fail_count += 1
             elif result:
                 success_count += 1
