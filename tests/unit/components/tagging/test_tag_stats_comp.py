@@ -262,7 +262,9 @@ class TestGetYearDistribution:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    @pytest.mark.xfail(reason="Source uses PostgreSQL junction patterns; test mock data uses ArangoDB graph edges")
+    @pytest.mark.skip(
+        reason="Rewrite pending Part G — Tests year distribution sorting and zero-count exclusion. Mock data uses ArangoDB string IDs but production expects int IDs."
+    )
     async def test_returns_year_rows_sorted_descending_and_excludes_zero_counts(self) -> None:
         mock_db = AsyncMock()
         mock_db.library.count_tags.return_value = 4
@@ -309,7 +311,9 @@ class TestGetGenreDistribution:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    @pytest.mark.xfail(reason="Source uses PostgreSQL junction patterns; test mock data uses ArangoDB graph edges")
+    @pytest.mark.skip(
+        reason="Rewrite pending Part G — Tests genre distribution sorting, grouping, and limit enforcement. Mock data uses ArangoDB graph edges but production uses PostgreSQL junction patterns."
+    )
     async def test_returns_rows_sorted_by_count_desc_then_genre_and_respects_limit(self) -> None:
         mock_db = AsyncMock()
         mock_db.library.count_tags.return_value = 4

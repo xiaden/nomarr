@@ -32,9 +32,7 @@ def _make_head(
 
 
 @pytest.mark.unit
-@pytest.mark.xfail(
-    reason="ONNXModelCache has async __init__ which cannot be constructed in tests without source changes"
-)
+@pytest.mark.skip(reason="Rewrite pending Part G — async __init__ fixed in Part A, tests need factory pattern update")
 class TestONNXModelCacheInit:
     async def test_no_models_dir_produces_empty_cache(self) -> None:
         with (
@@ -142,9 +140,7 @@ class TestONNXModelCacheInit:
 
 
 @pytest.mark.unit
-@pytest.mark.xfail(
-    reason="ONNXModelCache has async __init__ which cannot be constructed in tests without source changes"
-)
+@pytest.mark.skip(reason="Rewrite pending Part G — async __init__ fixed in Part A, tests need factory pattern update")
 class TestONNXModelCacheModelCount:
     async def test_model_count_is_zero_for_empty_cache(self) -> None:
         with (

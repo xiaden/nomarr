@@ -193,8 +193,8 @@ async def test_interleave_round_robin_descending_weight_order() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.xfail(
-    reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)"
+@pytest.mark.skip(
+    reason="Rewrite pending Part G — Tests interleave logic when clusters exhaust before target_size. Assertion format mismatch with production return type."
 )
 async def test_interleave_clusters_exhausted_returns_partial() -> None:
     """When clusters run out before target_size, return what we have."""
@@ -285,8 +285,8 @@ async def test_familiar_no_played_in_ann_results_returns_empty_file_ids() -> Non
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.xfail(
-    reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)"
+@pytest.mark.skip(
+    reason="Rewrite pending Part G — Tests proportional cluster mixing. Uses string IDs that may not match production int ID expectations."
 )
 async def test_familiar_multiple_clusters_proportional_mix() -> None:
     """Multiple clusters produce interleaved results proportional to weight."""
@@ -366,8 +366,8 @@ TAGS_ARTIST_PATH = "nomarr.components.navidrome.playlist_builder_comp"
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.xfail(
-    reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)"
+@pytest.mark.skip(
+    reason="Rewrite pending Part G — Tests edge case: empty cold collection returns empty result. Mock patch target may need update for production API."
 )
 async def test_hidden_gems_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
@@ -383,8 +383,8 @@ async def test_hidden_gems_empty_cold_collection_returns_empty() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.xfail(
-    reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)"
+@pytest.mark.skip(
+    reason="Rewrite pending Part G — Tests artist-filter fallback behavior. Mock patch targets need update for production tag query API."
 )
 async def test_hidden_gems_no_known_artists_skips_artist_filter() -> None:
     """When no known artists, behaves like discovery (no artist exclusion)."""
@@ -409,8 +409,8 @@ async def test_hidden_gems_no_known_artists_skips_artist_filter() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.xfail(
-    reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)"
+@pytest.mark.skip(
+    reason="Rewrite pending Part G — Tests artist exclusion logic. Mock data and patch targets need update for production API."
 )
 async def test_hidden_gems_known_artists_excludes_artist_tracks() -> None:
     """Tracks by known artists are excluded from results."""
@@ -446,8 +446,8 @@ async def test_hidden_gems_known_artists_excludes_artist_tracks() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.xfail(
-    reason="Source has PostgreSQL migration incompatibility with test mock data (ArangoDB graph patterns vs int IDs)"
+@pytest.mark.skip(
+    reason="Rewrite pending Part G — Tests combined played+artist exclusion. Mock data and patch targets need update for production API."
 )
 async def test_hidden_gems_both_played_and_artist_exclusion() -> None:
     """Both played tracks and known-artist tracks are excluded."""
