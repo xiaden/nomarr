@@ -71,3 +71,13 @@ repos:
         language: system
         pass_filenames: false
         files: ^(nomarr|tests/unit)/
+
+  # --- ArangoDB field name enforcement ---
+  - repo: local
+    hooks:
+      - id: no-arango-field-names
+        name: "No ArangoDB field names in non-persistence code"
+        entry: bash scripts/check-arango-fields.sh
+        language: system
+        pass_filenames: false
+        types: [python]

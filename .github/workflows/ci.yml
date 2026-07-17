@@ -15,6 +15,9 @@ on:
       - "playwright.config.ts"
       - "BASE_VERSION"
       - ".github/workflows/ci.yml"
+      - "scripts/check-arango-fields.sh"
+      - ".arango-field-allowlist.yaml"
+      - "scripts/validate-arango-allowlist.py"
   pull_request:
     branches: [main, develop]
     paths:
@@ -28,6 +31,9 @@ on:
       - "pyproject.toml"
       - "playwright.config.ts"
       - ".github/workflows/ci.yml"
+      - "scripts/check-arango-fields.sh"
+      - ".arango-field-allowlist.yaml"
+      - "scripts/validate-arango-allowlist.py"
   workflow_dispatch:
 
 jobs:
@@ -147,8 +153,33 @@ jobs:
           source .venv/bin/activate
           pytest tests/ -v -m "not container_only and not requires_database and not code_smell"
 
+  arango-field-check:
+    name: "No ArangoDB field names in non-persistence code"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install ripgrep 14.1.1
+        run: |
+          curl -sLO https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz
+          tar xzf ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz
+          sudo mv ripgrep-14.1.1-x86_64-unknown-linux-musl/rg /usr/local/bin/
+          rm -rf ripgrep-14.1.1-x86_64-unknown-linux-musl ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz
+          rg --version
+
+      - name: Install PyYAML
+        run: python3 -m pip install pyyaml
+
+      - name: Validate allowlist not expired
+        run: python scripts/validate-arango-allowlist.py
+
+      - name: Check for ArangoDB field name violations
+        run: bash scripts/check-arango-fields.sh
+
   build-and-push:
-    needs: [lint, test, frontend-test]
+    needs: [lint, test, frontend-test, arango-field-check]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
