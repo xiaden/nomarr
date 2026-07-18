@@ -220,17 +220,10 @@ def _process_song_head(
     """
     missing: frozenset[float]
     if not force and done_set is not None:
-        all_done = all(
-            (sid, backbone, head_name, float(std_thresh)) in done_set
-            for std_thresh in std_thresholds
-        )
+        all_done = all((sid, backbone, head_name, float(std_thresh)) in done_set for std_thresh in std_thresholds)
         if all_done:
             return 0, 0
-        missing = frozenset(
-            float(st)
-            for st in std_thresholds
-            if (sid, backbone, head_name, float(st)) not in done_set
-        )
+        missing = frozenset(float(st) for st in std_thresholds if (sid, backbone, head_name, float(st)) not in done_set)
     else:
         missing = frozenset(float(st) for st in std_thresholds)
     return _process_song_head_missing(
@@ -339,9 +332,7 @@ def run_ptc_heads(
 
         # Pre-build done sets — one frozenset per (head, bin_mode, std_thresh) so
         # is_done() checks are O(1) set membership, not one stat() per song.
-        all_combos: set[tuple[str, float]] = {
-            combo for combos in sids_with_combos.values() for combo in combos
-        }
+        all_combos: set[tuple[str, float]] = {combo for combos in sids_with_combos.values() for combo in combos}
         ptc_heads_done: dict[tuple[str, str, float], frozenset[str]] = {
             (head_name, bin_mode, std_thresh): _build_done_set(
                 _binned_ptc_heads_cache.config_dir(backbone_name, head_name, bin_mode, std_thresh),

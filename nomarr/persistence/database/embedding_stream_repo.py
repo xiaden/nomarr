@@ -18,6 +18,7 @@ from sqlalchemy import Table, delete, select, update
 
 from nomarr.helpers.dto.embedding_stream_repo_dto import EmbeddingStreamRecord
 from nomarr.persistence.models.ml_embedding_stream import MlEmbeddingStream
+from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 from nomarr.persistence.sql.primitives import insert_one
 
 if TYPE_CHECKING:
@@ -63,34 +64,38 @@ class EmbeddingStreamRepository:
         ``(file_id, backbone_id)``, so this uses a select-then-insert-or-update
         pattern.  ``patches_emb`` is extracted from *stream_payload*.
         """
-        patches_emb: bytes = stream_payload["patches_emb"]
-        existing = await self._get_existing(file_id, backbone)
+        async with map_persistence_exceptions():
+            patches_emb: bytes = stream_payload["patches_emb"]
+            existing = await self._get_existing(file_id, backbone)
 
-        if existing is not None:
-            stmt = update(_T).where(_T.c.id == existing["id"]).values(patches_emb=patches_emb).returning(_T)
-            result = await self._session.execute(stmt)
+            if existing is not None:
+                async with self._session.begin_nested():
+                    stmt = update(_T).where(_T.c.id == existing["id"]).values(patches_emb=patches_emb).returning(_T)
+                    result = await self._session.execute(stmt)
+                await self._session.commit()
+                row = result.fetchone()
+                assert row is not None
+                return _row_to_dto(row)
+
+            now = int(time.time())
+            async with self._session.begin_nested():
+                row = await insert_one(
+                    _T,
+                    {
+                        "file_id": file_id,
+                        "backbone_id": backbone,
+                        "patches_emb": patches_emb,
+                        "created_at": now,
+                    },
+                    session=self._session,
+                )
             await self._session.commit()
-            row = result.fetchone()
-            assert row is not None
             return _row_to_dto(row)
-
-        now = int(time.time())
-        row = await insert_one(
-            _T,
-            {
-                "file_id": file_id,
-                "backbone_id": backbone,
-                "patches_emb": patches_emb,
-                "created_at": now,
-            },
-            session=self._session,
-        )
-        await self._session.commit()
-        return _row_to_dto(row)
 
     async def get_stream(self, file_id: int, backbone: str) -> EmbeddingStreamRecord | None:
         """Fetch the embedding stream for a (file, backbone) pair."""
-        return await self._get_existing(file_id, backbone)
+        async with map_persistence_exceptions():
+            return await self._get_existing(file_id, backbone)
 
     async def list_by_backbone(
         self,
@@ -103,19 +108,22 @@ class EmbeddingStreamRepository:
 
         Supports optional pagination via *limit* and *offset*.
         """
-        stmt = select(_T).where(_T.c.backbone_id == backbone).order_by(_T.c.id)
-        if offset:
-            stmt = stmt.offset(offset)
-        if limit is not None:
-            stmt = stmt.limit(limit)
-        result = await self._session.execute(stmt)
-        return [_row_to_dto(r) for r in result.all()]
+        async with map_persistence_exceptions():
+            stmt = select(_T).where(_T.c.backbone_id == backbone).order_by(_T.c.id)
+            if offset:
+                stmt = stmt.offset(offset)
+            if limit is not None:
+                stmt = stmt.limit(limit)
+            result = await self._session.execute(stmt)
+            return [_row_to_dto(r) for r in result.all()]
 
     async def delete_for_file(self, file_id: int) -> None:
         """Delete all embedding streams for a given file."""
-        stmt = delete(_T).where(_T.c.file_id == file_id)
-        await self._session.execute(stmt)
-        await self._session.commit()
+        async with map_persistence_exceptions():
+            async with self._session.begin_nested():
+                stmt = delete(_T).where(_T.c.file_id == file_id)
+                await self._session.execute(stmt)
+            await self._session.commit()
 
     # ── internal helpers ────────────────────────────────────────
 

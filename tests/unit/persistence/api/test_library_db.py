@@ -344,6 +344,18 @@ async def test_list_library_files_delegates() -> None:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_count_files_for_library_delegates() -> None:
+    db, _, file_repo, *_ = _make_library_db()
+    file_repo.count_library_files = AsyncMock(return_value=42)
+
+    result = await db.count_files_for_library(1)
+
+    assert result == 42
+    file_repo.count_library_files.assert_awaited_once_with(1)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_find_library_file_by_chromaprint_delegates() -> None:
     db, _, file_repo, *_ = _make_library_db()
     file_repo.find_by_chromaprint = AsyncMock(return_value=sentinel.file_row)
@@ -552,6 +564,17 @@ async def test_update_library_file_last_tagged_at_delegates() -> None:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_update_file_fields_delegates() -> None:
+    db, _, file_repo, *_ = _make_library_db()
+    file_repo.update_file = AsyncMock()
+
+    await db.update_file_fields(10, {"duration_seconds": 120.5})
+
+    file_repo.update_file.assert_awaited_once_with(10, {"duration_seconds": 120.5})
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_remove_file_delegates() -> None:
     db, _, file_repo, *_ = _make_library_db()
     file_repo.delete_file = AsyncMock()
@@ -630,6 +653,30 @@ async def test_search_files_by_tag_contains_delegates() -> None:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_search_files_by_tag_pattern_delegates() -> None:
+    db, _, _, _, _, _, file_tag_repo, _ = _make_library_db()
+    file_tag_repo.search_files_by_tag_pattern = AsyncMock(return_value=sentinel.files)
+
+    result = await db.search_files_by_tag_pattern("artist", "%Beatles%")
+
+    assert result is sentinel.files
+    file_tag_repo.search_files_by_tag_pattern.assert_awaited_once_with("artist", "%Beatles%", limit=None)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_search_files_by_tag_pattern_with_limit_delegates() -> None:
+    db, _, _, _, _, _, file_tag_repo, _ = _make_library_db()
+    file_tag_repo.search_files_by_tag_pattern = AsyncMock(return_value=sentinel.files)
+
+    result = await db.search_files_by_tag_pattern("artist", "%Beatles%", limit=5)
+
+    assert result is sentinel.files
+    file_tag_repo.search_files_by_tag_pattern.assert_awaited_once_with("artist", "%Beatles%", limit=5)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_list_file_ids_for_tag_id_delegates() -> None:
     db, _, _, _, _, _, file_tag_repo, _ = _make_library_db()
     file_tag_repo.list_file_ids_for_tag = AsyncMock(return_value=sentinel.ids)
@@ -638,6 +685,42 @@ async def test_list_file_ids_for_tag_id_delegates() -> None:
 
     assert result is sentinel.ids
     file_tag_repo.list_file_ids_for_tag.assert_awaited_once_with(5, limit=100, offset=0)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_list_file_tag_edges_delegates() -> None:
+    db, _, _, _, _, _, file_tag_repo, _ = _make_library_db()
+    file_tag_repo.get_file_tag_edges_for_tags = AsyncMock(return_value=sentinel.edges)
+
+    result = await db.list_file_tag_edges([1, 2, 3])
+
+    assert result is sentinel.edges
+    file_tag_repo.get_file_tag_edges_for_tags.assert_awaited_once_with([1, 2, 3], limit=None)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_list_file_tag_edges_with_limit_delegates() -> None:
+    db, _, _, _, _, _, file_tag_repo, _ = _make_library_db()
+    file_tag_repo.get_file_tag_edges_for_tags = AsyncMock(return_value=sentinel.edges)
+
+    result = await db.list_file_tag_edges([1, 2, 3], limit=10)
+
+    assert result is sentinel.edges
+    file_tag_repo.get_file_tag_edges_for_tags.assert_awaited_once_with([1, 2, 3], limit=10)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_find_or_create_tag_delegates() -> None:
+    db, _, _, _, _, tag_repo, *_ = _make_library_db()
+    tag_repo.get_or_create_tag = AsyncMock(return_value=42)
+
+    result = await db.find_or_create_tag("nom:mood-strict", "happy", "")
+
+    assert result == 42
+    tag_repo.get_or_create_tag.assert_awaited_once_with("nom:mood-strict", "happy", "")
 
 
 @pytest.mark.unit

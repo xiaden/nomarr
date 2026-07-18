@@ -65,6 +65,7 @@ dev = [
     "httpx>=0.27.0",
     "pre-commit>=4.0.0",
     "testcontainers[postgres]>=4.9.0",
+    "grimp>=3.14",
 ]
 
 [project.urls]
@@ -107,6 +108,9 @@ markers = [
     "code_smell: Architecture/style tests that dont indicate broken functionality (skip in CI)",
     "mocked: Test uses mocked dependencies (informational)",
     "hnsw_build: Heavy HNSW index build tests — skip locally with `-m 'not hnsw_build'`",
+]
+filterwarnings = [
+    "error::nomarr.helpers.exceptions.FacadeMisuseWarning",
 ]
 
 # === Mypy Configuration ===

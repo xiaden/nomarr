@@ -16,19 +16,13 @@ from scripts.embedding_research.strategy_binned._constants import _BIN_POOL_STRA
 _KNOWN_HEAD_NAMES: list[str] = sorted({head for head_map in HEADS.values() for head in head_map} or HEAD_LABELS.keys())
 
 STRATEGY_NAMES: list[str] = [
-    f"ctp_{head_name}_{std_thresh:.2f}"
-    for head_name in _KNOWN_HEAD_NAMES
-    for std_thresh in STD_THRESHOLDS
+    f"ctp_{head_name}_{std_thresh:.2f}" for head_name in _KNOWN_HEAD_NAMES for std_thresh in STD_THRESHOLDS
 ]
 
 
 def make_strategy_names(head_names) -> list[str]:
     """Return CTP strategy names for the given head names only."""
-    return [
-        f"ctp_{head_name}_{std_thresh:.2f}"
-        for head_name in sorted(head_names)
-        for std_thresh in STD_THRESHOLDS
-    ]
+    return [f"ctp_{head_name}_{std_thresh:.2f}" for head_name in sorted(head_names) for std_thresh in STD_THRESHOLDS]
 
 
 def _decode_strategy_name(strategy_name: str) -> tuple[str, float]:

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
-import time
 from multiprocessing import Event, Pipe
 from typing import TYPE_CHECKING, Any
 
@@ -74,6 +74,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
         self._tier_selection: TierSelection | None = None
         self._idle_workers: set[str] = set()
         self._promotion_suppressed: bool = False
+        self._background_tasks: set[asyncio.Task] = set()
 
     # ------------------- ComponentLifecycleHandler Protocol ------------------
 
@@ -95,19 +96,25 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
             context.consecutive_misses,
         )
         if new_status == "dead":
-            asyncio.ensure_future(self._handle_worker_death(component_id))
+            task = asyncio.ensure_future(self._handle_worker_death(component_id))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
         elif new_status == "unhealthy":
             logger.warning(
                 "[WorkerSystemService] Worker %s unhealthy (%d misses)", component_id, context.consecutive_misses
             )
         elif new_status == "healthy" and old_status == "pending":
-            asyncio.ensure_future(self._reset_restart_count(component_id))
+            task = asyncio.ensure_future(self._reset_restart_count(component_id))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
 
     def _trigger_calibration_callback(self) -> None:
         """Bridge async trigger_calibration to sync HealthMonitor callback."""
         import asyncio
 
-        asyncio.ensure_future(self.pipeline_svc.trigger_calibration())
+        task = asyncio.ensure_future(self.pipeline_svc.trigger_calibration())
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     def _on_worker_idle(self, worker_id: str, is_idle: bool) -> None:
         """Handle idle/active state transitions from worker processes.
@@ -194,7 +201,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
         started_workers: list[str] = []
         for i in range(actual_worker_count):
             if i > 0:
-                time.sleep(WORKER_STAGGER_DELAY_S)
+                await asyncio.sleep(WORKER_STAGGER_DELAY_S)
             worker = self._spawn_worker(i, tier_selection)
             started_workers.append(f"worker:tag:{i} (pid={worker.pid})")
         logger.info("[WorkerSystemService] Started %d worker(s): %s", actual_worker_count, ", ".join(started_workers))
@@ -224,7 +231,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
             )
         return worker
 
-    async def stop_all_workers(self, timeout: float = 10.0) -> None:
+    async def stop_all_workers(self, timeout_sec: float = 10.0) -> None:
         """Stop all worker processes gracefully."""
         if not self._workers:
             logger.debug("[WorkerSystemService] No workers to stop")
@@ -241,7 +248,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
             for worker in self._workers:
                 self.health_monitor.unregister_component(worker.worker_id)
         for worker in self._workers:
-            worker.join(timeout=timeout)
+            worker.join(timeout=timeout_sec)
             if worker.is_alive():
                 logger.warning(
                     "[WorkerSystemService] Worker %s (pid=%s) did not stop gracefully, terminating",

@@ -23,6 +23,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import anyio
+
 from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     get_calibration_version,
     load_all_calibration_states,
@@ -125,8 +127,8 @@ async def export_calibration_bundle_wf(
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(output, "w", encoding="utf-8") as f:
-        json.dump(bundle, f, indent=2)
+    async with await anyio.open_file(output, "w", encoding="utf-8") as f:
+        await f.write(json.dumps(bundle, indent=2))
 
     logger.info(f"[export_calibration] Exported {len(labels)} calibrations to {output_path}")
 

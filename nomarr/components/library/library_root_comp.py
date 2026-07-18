@@ -82,7 +82,7 @@ async def ensure_no_overlapping_library_root(
     Raises ValueError if roots overlap — library roots must be disjoint.
     """
     # Resolve candidate to canonical absolute path
-    candidate_path = Path(candidate_root).resolve()
+    candidate_path = Path(candidate_root).resolve()  # noqa: ASYNC240
 
     existing_libraries = await list_library_records(db, enabled_only=False, include_scan=False)
 
@@ -90,7 +90,7 @@ async def ensure_no_overlapping_library_root(
         if ignore_id is not None and library.id == ignore_id:
             continue
 
-        existing_path = Path(library.root_path).resolve()
+        existing_path = Path(library.root_path).resolve()  # noqa: ASYNC240
 
         try:
             candidate_path.relative_to(existing_path)

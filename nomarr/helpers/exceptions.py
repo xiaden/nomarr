@@ -39,3 +39,35 @@ class SubsonicApiError(Exception):
         self.code = code
         self.message = message
         super().__init__(f"Subsonic error {code}: {message}")
+
+
+class EntityNotFoundError(Exception):
+    """Raised when a database query returns no result (pgcode 02000 no_data)."""
+
+    def __init__(self, message: str | None = None) -> None:
+        super().__init__(message)
+
+
+class DuplicateEntityError(Exception):
+    """Raised when an insert violates a uniqueness constraint (pgcode 23505 unique_violation)."""
+
+    def __init__(self, message: str | None = None) -> None:
+        super().__init__(message)
+
+
+class ReferentialIntegrityError(Exception):
+    """Raised when a foreign key constraint is violated (pgcode 23503 foreign_key_violation)."""
+
+    def __init__(self, message: str | None = None) -> None:
+        super().__init__(message)
+
+
+class DatabaseStateError(Exception):
+    """Raised for unknown database errors, operational failures, or unrecognized pgcodes."""
+
+    def __init__(self, message: str | None = None) -> None:
+        super().__init__(message)
+
+
+class FacadeMisuseWarning(FutureWarning):
+    """Warning for direct repo access bypassing intent facades."""

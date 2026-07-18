@@ -48,11 +48,11 @@ def test_genre_pass(con) -> None:
 
 
 def test_genre_pass_preserves_large_genres(con) -> None:
-    songs = [{"song_id": f"r{i:03d}", "artist": f"rock-{i:03d}", "genre": "rock"} for i in range(100)] + [
-        {"song_id": f"j{i:03d}", "artist": f"jazz-{i:03d}", "genre": "jazz"} for i in range(20)
-    ] + [
-        {"song_id": f"p{i:03d}", "artist": f"pop-{i:03d}", "genre": "pop"} for i in range(3)
-    ]
+    songs = (
+        [{"song_id": f"r{i:03d}", "artist": f"rock-{i:03d}", "genre": "rock"} for i in range(100)]
+        + [{"song_id": f"j{i:03d}", "artist": f"jazz-{i:03d}", "genre": "jazz"} for i in range(20)]
+        + [{"song_id": f"p{i:03d}", "artist": f"pop-{i:03d}", "genre": "pop"} for i in range(3)]
+    )
     _insert_songs(con, songs)
 
     result = run_stratify(con, {"limit": 80, "song_ids": None}, "c0ffee0000000001")

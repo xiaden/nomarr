@@ -21,6 +21,7 @@ from nomarr.persistence.database.repo_helpers import _file_row_to_dto
 from nomarr.persistence.models.file_tag import FileTag
 from nomarr.persistence.models.library_file import LibraryFile
 from nomarr.persistence.models.tag import Tag
+from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 from nomarr.persistence.sql.primitives import insert_one
 
 _T: Table = Tag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
@@ -54,9 +55,10 @@ class FileTagRepository:
 
     async def get_tags_for_file(self, file_id: int) -> list[TagRow]:
         """Return all tags assigned to a file via the ``file_tags`` junction."""
-        stmt = select(_T).join(_FT, _T.c.id == _FT.c.tag_id).where(_FT.c.file_id == file_id)
-        result = await self._session.execute(stmt)
-        return [_tag_row_to_dto(r) for r in result.all()]
+        async with map_persistence_exceptions():
+            stmt = select(_T).join(_FT, _T.c.id == _FT.c.tag_id).where(_FT.c.file_id == file_id)
+            result = await self._session.execute(stmt)
+            return [_tag_row_to_dto(r) for r in result.all()]
 
     async def assign_tag_to_file(
         self,
@@ -66,50 +68,57 @@ class FileTagRepository:
         source: str | None = None,
     ) -> None:
         """Insert a row into ``file_tags`` linking *file_id* to *tag_id*."""
-        payload = {
-            "file_id": file_id,
-            "tag_id": tag_id,
-            "confidence": confidence,
-            "source": source or "nomarr",
-            "created_at": int(time.time() * 1000),
-        }
-        await insert_one(_FT, payload, session=self._session)
-        await self._session.commit()
+        async with map_persistence_exceptions():
+            async with self._session.begin_nested():
+                payload = {
+                    "file_id": file_id,
+                    "tag_id": tag_id,
+                    "confidence": confidence,
+                    "source": source or "nomarr",
+                    "created_at": int(time.time() * 1000),
+                }
+                await insert_one(_FT, payload, session=self._session)
+            await self._session.commit()
 
     async def remove_tag_from_file(self, file_id: int, tag_id: int) -> None:
         """Delete the junction row for a specific file + tag pair."""
-        stmt = delete(_FT).where(
-            _FT.c.file_id == file_id,
-            _FT.c.tag_id == tag_id,
-        )
-        await self._session.execute(stmt)
-        await self._session.commit()
+        async with map_persistence_exceptions():
+            async with self._session.begin_nested():
+                stmt = delete(_FT).where(
+                    _FT.c.file_id == file_id,
+                    _FT.c.tag_id == tag_id,
+                )
+                await self._session.execute(stmt)
+            await self._session.commit()
 
     async def replace_file_tags(self, file_id: int, tags: list[dict[str, Any]]) -> None:
         """Delete all existing tag assignments for a file and insert new ones."""
-        await self._session.execute(delete(_FT).where(_FT.c.file_id == file_id))
-        if tags:
-            now_ms = int(time.time() * 1000)
-            rows = [
-                {
-                    "file_id": file_id,
-                    "tag_id": t["tag_id"],
-                    "confidence": t.get("confidence", 1.0),
-                    "source": t.get("source", "nomarr"),
-                    "created_at": now_ms,
-                }
-                for t in tags
-            ]
-            await self._session.execute(pg_insert(_FT).values(rows))
-        await self._session.commit()
+        async with map_persistence_exceptions():
+            async with self._session.begin_nested():
+                await self._session.execute(delete(_FT).where(_FT.c.file_id == file_id))
+                if tags:
+                    now_ms = int(time.time() * 1000)
+                    rows = [
+                        {
+                            "file_id": file_id,
+                            "tag_id": t["tag_id"],
+                            "confidence": t.get("confidence", 1.0),
+                            "source": t.get("source", "nomarr"),
+                            "created_at": now_ms,
+                        }
+                        for t in tags
+                    ]
+                    await self._session.execute(pg_insert(_FT).values(rows))
+            await self._session.commit()
 
     async def get_files_for_tag(self, tag_id: int, limit: int | None = None) -> list[LibraryFileRow]:
         """Return files assigned to a tag via JOIN."""
-        stmt = select(_LF).join(_FT, _LF.c.id == _FT.c.file_id).where(_FT.c.tag_id == tag_id)
-        if limit is not None:
-            stmt = stmt.limit(limit)
-        result = await self._session.execute(stmt)
-        return [_file_row_to_dto(r) for r in result.all()]
+        async with map_persistence_exceptions():
+            stmt = select(_LF).join(_FT, _LF.c.id == _FT.c.file_id).where(_FT.c.tag_id == tag_id)
+            if limit is not None:
+                stmt = stmt.limit(limit)
+            result = await self._session.execute(stmt)
+            return [_file_row_to_dto(r) for r in result.all()]
 
     async def list_file_ids_for_tag(
         self,
@@ -119,13 +128,14 @@ class FileTagRepository:
         offset: int = 0,
     ) -> list[int]:
         """Return file ids assigned to a tag with pagination."""
-        stmt = select(_FT.c.file_id).where(_FT.c.tag_id == tag_id)
-        if offset:
-            stmt = stmt.offset(offset)
-        if limit is not None:
-            stmt = stmt.limit(limit)
-        result = await self._session.execute(stmt)
-        return [row[0] for row in result.all()]
+        async with map_persistence_exceptions():
+            stmt = select(_FT.c.file_id).where(_FT.c.tag_id == tag_id)
+            if offset:
+                stmt = stmt.offset(offset)
+            if limit is not None:
+                stmt = stmt.limit(limit)
+            result = await self._session.execute(stmt)
+            return [row[0] for row in result.all()]
 
     # ── batch queries ───────────────────────────────────────────
 
@@ -142,50 +152,52 @@ class FileTagRepository:
         ``tag_value``, ``namespace``, ``parent_tag_id``, ``tier``,
         ``created_at``, ``confidence``, and ``source``.
         """
-        if not file_ids:
-            return []
-        stmt = (
-            select(
-                _FT.c.file_id,
-                _FT.c.tag_id,
-                _T.c.name,
-                _T.c.value,
-                _T.c.namespace,
-                _T.c.parent_tag_id,
-                _T.c.tier,
-                _T.c.created_at,
-                _FT.c.confidence,
-                _FT.c.source,
+        async with map_persistence_exceptions():
+            if not file_ids:
+                return []
+            stmt = (
+                select(
+                    _FT.c.file_id,
+                    _FT.c.tag_id,
+                    _T.c.name,
+                    _T.c.value,
+                    _T.c.namespace,
+                    _T.c.parent_tag_id,
+                    _T.c.tier,
+                    _T.c.created_at,
+                    _FT.c.confidence,
+                    _FT.c.source,
+                )
+                .join(_T, _T.c.id == _FT.c.tag_id)
+                .where(_FT.c.file_id.in_(file_ids))
             )
-            .join(_T, _T.c.id == _FT.c.tag_id)
-            .where(_FT.c.file_id.in_(file_ids))
-        )
-        if name_starts_with is not None:
-            stmt = stmt.where(_T.c.name.like(name_starts_with + "%"))
-        result = await self._session.execute(stmt)
-        return [
-            {
-                "file_id": r[0],
-                "tag_id": r[1],
-                "tag_name": r[2],
-                "tag_value": r[3],
-                "namespace": r[4],
-                "parent_tag_id": r[5],
-                "tier": r[6],
-                "created_at": r[7],
-                "confidence": r[8],
-                "source": r[9],
-            }
-            for r in result.all()
-        ]
+            if name_starts_with is not None:
+                stmt = stmt.where(_T.c.name.like(name_starts_with + "%"))
+            result = await self._session.execute(stmt)
+            return [
+                {
+                    "file_id": r[0],
+                    "tag_id": r[1],
+                    "tag_name": r[2],
+                    "tag_value": r[3],
+                    "namespace": r[4],
+                    "parent_tag_id": r[5],
+                    "tier": r[6],
+                    "created_at": r[7],
+                    "confidence": r[8],
+                    "source": r[9],
+                }
+                for r in result.all()
+            ]
 
     async def get_song_tags(self, file_id: int, nomarr_only: bool = False) -> list[TagRow]:
         """Return tags for a file, optionally filtered to ``nom:`` namespace."""
-        stmt = select(_T).join(_FT, _T.c.id == _FT.c.tag_id).where(_FT.c.file_id == file_id)
-        if nomarr_only:
-            stmt = stmt.where(_T.c.namespace == "nom")
-        result = await self._session.execute(stmt)
-        return [_tag_row_to_dto(r) for r in result.all()]
+        async with map_persistence_exceptions():
+            stmt = select(_T).join(_FT, _T.c.id == _FT.c.tag_id).where(_FT.c.file_id == file_id)
+            if nomarr_only:
+                stmt = stmt.where(_T.c.namespace == "nom")
+            result = await self._session.execute(stmt)
+            return [_tag_row_to_dto(r) for r in result.all()]
 
     # ── search ──────────────────────────────────────────────────
 
@@ -197,16 +209,17 @@ class FileTagRepository:
         limit: int | None = None,
     ) -> list[LibraryFileRow]:
         """Return files that have a tag with exact *tag_key* name and *value*."""
-        stmt = (
-            select(_LF)
-            .join(_FT, _LF.c.id == _FT.c.file_id)
-            .join(_T, _T.c.id == _FT.c.tag_id)
-            .where(_T.c.name == tag_key, _T.c.value == value)
-        )
-        if limit is not None:
-            stmt = stmt.limit(limit)
-        result = await self._session.execute(stmt)
-        return [_file_row_to_dto(r) for r in result.all()]
+        async with map_persistence_exceptions():
+            stmt = (
+                select(_LF)
+                .join(_FT, _LF.c.id == _FT.c.file_id)
+                .join(_T, _T.c.id == _FT.c.tag_id)
+                .where(_T.c.name == tag_key, _T.c.value == value)
+            )
+            if limit is not None:
+                stmt = stmt.limit(limit)
+            result = await self._session.execute(stmt)
+            return [_file_row_to_dto(r) for r in result.all()]
 
     async def search_files_by_tag_contains(
         self,
@@ -216,19 +229,20 @@ class FileTagRepository:
         limit: int | None = None,
     ) -> list[LibraryFileRow]:
         """Return files whose tag value contains *value* (ILIKE)."""
-        stmt = (
-            select(_LF)
-            .join(_FT, _LF.c.id == _FT.c.file_id)
-            .join(_T, _T.c.id == _FT.c.tag_id)
-            .where(
-                _T.c.name == tag_key,
-                _T.c.value.ilike(f"%{value}%"),
+        async with map_persistence_exceptions():
+            stmt = (
+                select(_LF)
+                .join(_FT, _LF.c.id == _FT.c.file_id)
+                .join(_T, _T.c.id == _FT.c.tag_id)
+                .where(
+                    _T.c.name == tag_key,
+                    _T.c.value.ilike(f"%{value}%"),
+                )
             )
-        )
-        if limit is not None:
-            stmt = stmt.limit(limit)
-        result = await self._session.execute(stmt)
-        return [_file_row_to_dto(r) for r in result.all()]
+            if limit is not None:
+                stmt = stmt.limit(limit)
+            result = await self._session.execute(stmt)
+            return [_file_row_to_dto(r) for r in result.all()]
 
     async def search_files_by_tag_pattern(
         self,
@@ -238,19 +252,20 @@ class FileTagRepository:
         limit: int | None = None,
     ) -> list[LibraryFileRow]:
         """Return files whose tag value matches an ILIKE *pattern*."""
-        stmt = (
-            select(_LF)
-            .join(_FT, _LF.c.id == _FT.c.file_id)
-            .join(_T, _T.c.id == _FT.c.tag_id)
-            .where(
-                _T.c.name == tag_name,
-                _T.c.value.ilike(pattern),
+        async with map_persistence_exceptions():
+            stmt = (
+                select(_LF)
+                .join(_FT, _LF.c.id == _FT.c.file_id)
+                .join(_T, _T.c.id == _FT.c.tag_id)
+                .where(
+                    _T.c.name == tag_name,
+                    _T.c.value.ilike(pattern),
+                )
             )
-        )
-        if limit is not None:
-            stmt = stmt.limit(limit)
-        result = await self._session.execute(stmt)
-        return [_file_row_to_dto(r) for r in result.all()]
+            if limit is not None:
+                stmt = stmt.limit(limit)
+            result = await self._session.execute(stmt)
+            return [_file_row_to_dto(r) for r in result.all()]
 
     async def replace_tag_references(
         self,
@@ -260,55 +275,62 @@ class FileTagRepository:
         file_ids: list[int] | None = None,
     ) -> None:
         """Re-point file-tag assignments from *source_tag_id* to *target_tag_id*."""
-        stmt = update(_FT).where(_FT.c.tag_id == source_tag_id)
-        if file_ids is not None:
-            stmt = stmt.where(_FT.c.file_id.in_(file_ids))
-        stmt = stmt.values(tag_id=target_tag_id)
-        await self._session.execute(stmt)
-        await self._session.commit()
+        async with map_persistence_exceptions():
+            async with self._session.begin_nested():
+                stmt = update(_FT).where(_FT.c.tag_id == source_tag_id)
+                if file_ids is not None:
+                    stmt = stmt.where(_FT.c.file_id.in_(file_ids))
+                stmt = stmt.values(tag_id=target_tag_id)
+                await self._session.execute(stmt)
+            await self._session.commit()
 
     # ── Plan E facade support ───────────────────────────────────
 
     async def get_genre_tags_for_files(self, file_ids: list[int]) -> list[TagRow]:
         """Return genre tags assigned to the given file ids."""
-        if not file_ids:
-            return []
-        stmt = (
-            select(_T)
-            .join(_FT, _T.c.id == _FT.c.tag_id)
-            .where(
-                _FT.c.file_id.in_(file_ids),
-                _T.c.name == "genre",
+        async with map_persistence_exceptions():
+            if not file_ids:
+                return []
+            stmt = (
+                select(_T)
+                .join(_FT, _T.c.id == _FT.c.tag_id)
+                .where(
+                    _FT.c.file_id.in_(file_ids),
+                    _T.c.name == "genre",
+                )
             )
-        )
-        result = await self._session.execute(stmt)
-        return [_tag_row_to_dto(r) for r in result.all()]
+            result = await self._session.execute(stmt)
+            return [_tag_row_to_dto(r) for r in result.all()]
 
     # ── maintenance ─────────────────────────────────────────────
 
     async def truncate_file_tag_assignments(self) -> None:
         """Delete all rows from ``file_tags``."""
-        await self._session.execute(delete(_FT))
-        await self._session.commit()
+        async with map_persistence_exceptions():
+            async with self._session.begin_nested():
+                await self._session.execute(delete(_FT))
+            await self._session.commit()
 
     async def count_songs_for_tag(self, tag_id: int) -> int:
         """Count file-tag assignments for a specific tag."""
-        stmt = select(func.count()).select_from(_FT).where(_FT.c.tag_id == tag_id)
-        result = await self._session.execute(stmt)
-        return result.scalar() or 0
+        async with map_persistence_exceptions():
+            stmt = select(func.count()).select_from(_FT).where(_FT.c.tag_id == tag_id)
+            result = await self._session.execute(stmt)
+            return result.scalar() or 0
 
     async def count_files_by_tag(self, tag_key: str, target_value: str) -> int:
         """Count distinct files assigned to tags matching *tag_key* and *target_value*."""
-        stmt = (
-            select(func.count(func.distinct(_FT.c.file_id)))
-            .join(_T, _T.c.id == _FT.c.tag_id)
-            .where(
-                _T.c.name == tag_key,
-                _T.c.value == target_value,
+        async with map_persistence_exceptions():
+            stmt = (
+                select(func.count(func.distinct(_FT.c.file_id)))
+                .join(_T, _T.c.id == _FT.c.tag_id)
+                .where(
+                    _T.c.name == tag_key,
+                    _T.c.value == target_value,
+                )
             )
-        )
-        result = await self._session.execute(stmt)
-        return result.scalar() or 0
+            result = await self._session.execute(stmt)
+            return result.scalar() or 0
 
     async def get_file_tag_edges_for_tags(
         self,
@@ -320,23 +342,24 @@ class FileTagRepository:
 
         Each dict contains ``file_id``, ``tag_id``, ``confidence``, and ``source``.
         """
-        if not tag_ids:
-            return []
-        stmt = select(
-            _FT.c.file_id,
-            _FT.c.tag_id,
-            _FT.c.confidence,
-            _FT.c.source,
-        ).where(_FT.c.tag_id.in_(tag_ids))
-        if limit is not None:
-            stmt = stmt.limit(limit)
-        result = await self._session.execute(stmt)
-        return [
-            {
-                "file_id": r[0],
-                "tag_id": r[1],
-                "confidence": r[2],
-                "source": r[3],
-            }
-            for r in result.all()
-        ]
+        async with map_persistence_exceptions():
+            if not tag_ids:
+                return []
+            stmt = select(
+                _FT.c.file_id,
+                _FT.c.tag_id,
+                _FT.c.confidence,
+                _FT.c.source,
+            ).where(_FT.c.tag_id.in_(tag_ids))
+            if limit is not None:
+                stmt = stmt.limit(limit)
+            result = await self._session.execute(stmt)
+            return [
+                {
+                    "file_id": r[0],
+                    "tag_id": r[1],
+                    "confidence": r[2],
+                    "source": r[3],
+                }
+                for r in result.all()
+            ]

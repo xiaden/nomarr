@@ -40,7 +40,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_TAGS_NOT_FRESH,
     STATE_VECTORS_EXTRACTED,
 )
-from nomarr.persistence.exceptions import DuplicateKeyError
+from nomarr.helpers.exceptions import DuplicateEntityError
 
 
 def _make_mock_db() -> AsyncMock:
@@ -72,7 +72,7 @@ class TestInitializeFileStates:
     async def test_silently_skips_duplicate_key_error(self) -> None:
         mock_db = _make_mock_db()
         expected_negative_states = [state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_")]
-        mock_db.app.add_file_states.side_effect = DuplicateKeyError()
+        mock_db.app.add_file_states.side_effect = DuplicateEntityError()
 
         await initialize_file_states(mock_db, 1)
 
@@ -104,7 +104,7 @@ class TestInitializeFileStatesBatch:
     async def test_silently_skips_duplicate_key_error(self) -> None:
         mock_db = _make_mock_db()
         expected_negative_states = [state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_")]
-        mock_db.app.add_file_states.side_effect = DuplicateKeyError()
+        mock_db.app.add_file_states.side_effect = DuplicateEntityError()
 
         await initialize_file_states_batch(mock_db, [1, 2])
 

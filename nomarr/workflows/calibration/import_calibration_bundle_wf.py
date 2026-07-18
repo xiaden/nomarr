@@ -22,6 +22,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import anyio
+
 from nomarr.components.ml.calibration.ml_calibration_comp import (
     compute_calibration_def_hash,
     compute_global_calibration_hash,
@@ -81,14 +83,15 @@ async def import_calibration_bundle_wf(
     logger.info(f"[import_calibration] Importing bundle from {bundle_path}")
 
     path = Path(bundle_path)
-    if not path.exists():
+    if not await anyio.to_thread.run_sync(lambda: path.exists()):
         msg = f"Bundle file not found: {bundle_path}"
         raise FileNotFoundError(msg)
 
     # Parse bundle JSON
     try:
-        with open(path, encoding="utf-8") as f:
-            bundle_data = json.load(f)
+        async with await anyio.open_file(path, encoding="utf-8") as f:
+            content = await f.read()
+            bundle_data = json.loads(content)
     except json.JSONDecodeError as e:
         msg = f"Invalid JSON in bundle: {e}"
         raise ValueError(msg) from e
@@ -241,7 +244,7 @@ async def import_calibration_bundles_from_directory_wf(
     logger.info(f"[import_calibration] Scanning {models_dir} for calibration bundles")
 
     models_path = Path(models_dir)
-    if not models_path.exists():
+    if not await anyio.to_thread.run_sync(lambda: models_path.exists()):
         logger.warning(f"[import_calibration] Models directory not found: {models_dir}")
         return {
             "bundles_processed": 0,
@@ -252,10 +255,10 @@ async def import_calibration_bundles_from_directory_wf(
 
     # Find bundle files
     if calibrate_heads:
-        bundle_files = list(models_path.rglob("*-calibration-v*.json"))
+        bundle_files = await anyio.to_thread.run_sync(lambda: list(models_path.rglob("*-calibration-v*.json")))
         logger.debug(f"[import_calibration] Found {len(bundle_files)} versioned bundles (dev mode)")
     else:
-        bundle_files = list(models_path.rglob("*-calibration.json"))
+        bundle_files = await anyio.to_thread.run_sync(lambda: list(models_path.rglob("*-calibration.json")))
         # Filter out versioned files
         bundle_files = [f for f in bundle_files if "-calibration-v" not in f.name]
         logger.debug(f"[import_calibration] Found {len(bundle_files)} reference bundles")

@@ -174,8 +174,8 @@ class TestNavidromeServiceDescriptorResolution:
         with (
             patch(
                 "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
-                    return_value=[{"id": "1", "_key": "track-1"}],
-                ) as mock_get_files,
+                return_value=[{"id": "1", "_key": "track-1"}],
+            ) as mock_get_files,
             patch(
                 "nomarr.services.domain.navidrome_svc.build_track_descriptor",
                 return_value={
@@ -241,11 +241,11 @@ class TestNavidromeServiceDescriptorResolution:
         with (
             patch(
                 "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
-                    return_value=[{"id": "1"}],
-                ),
-                patch(
-                    "nomarr.services.domain.navidrome_svc.build_track_descriptor",
-                    side_effect=ValueError("bad descriptor"),
+                return_value=[{"id": "1"}],
+            ),
+            patch(
+                "nomarr.services.domain.navidrome_svc.build_track_descriptor",
+                side_effect=ValueError("bad descriptor"),
             ),
             pytest.raises(ValueError, match="bad descriptor"),
         ):

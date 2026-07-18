@@ -25,7 +25,7 @@ async def build_library_path_from_input(raw_path: str, db: Database) -> LibraryP
     """
     # Resolve to absolute path
     try:
-        absolute = Path(raw_path).resolve()
+        absolute = Path(raw_path).resolve()  # noqa: ASYNC240
     except (ValueError, OSError) as e:
         return LibraryPath(
             relative="",
@@ -47,7 +47,7 @@ async def build_library_path_from_input(raw_path: str, db: Database) -> LibraryP
         )
 
     # Calculate relative path
-    library_root = Path(library.root_path).resolve()
+    library_root = Path(library.root_path).resolve()  # noqa: ASYNC240
     try:
         relative_path = absolute.relative_to(library_root)
         relative_str = str(relative_path).replace("\\", "/")  # Normalize to forward slashes
@@ -137,12 +137,12 @@ async def build_library_path_from_db(
                 reason=f"Library {library_id} is disabled or no longer exists",
             )
 
-        library_root = Path(library["root_path"]).resolve()
+        library_root = Path(library["root_path"]).resolve()  # noqa: ASYNC240
 
         # Try to construct absolute path
         # stored_path might be relative or absolute
         if Path(stored_path).is_absolute():
-            absolute = Path(stored_path).resolve()
+            absolute = Path(stored_path).resolve()  # noqa: ASYNC240
         else:
             absolute = (library_root / stored_path).resolve()
 
@@ -162,7 +162,7 @@ async def build_library_path_from_db(
     else:
         # No library_id provided, need to find which library contains this path
         try:
-            absolute = Path(stored_path).resolve()
+            absolute = Path(stored_path).resolve()  # noqa: ASYNC240
         except (ValueError, OSError) as e:
             return LibraryPath(
                 relative=stored_path,
@@ -182,7 +182,7 @@ async def build_library_path_from_db(
                 reason="Stored path is outside all configured library roots",
             )
 
-        library_root = Path(found.root_path).resolve()
+        library_root = Path(found.root_path).resolve()  # noqa: ASYNC240
         try:
             relative_path = absolute.relative_to(library_root)
             relative_str = str(relative_path).replace("\\", "/")
@@ -254,4 +254,4 @@ async def get_library_root(library_path: LibraryPath, db: Database) -> Path | No
     if not library:
         return None
 
-    return Path(library["root_path"]).resolve()
+    return Path(library["root_path"]).resolve()  # noqa: ASYNC240

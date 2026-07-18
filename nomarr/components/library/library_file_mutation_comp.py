@@ -124,7 +124,7 @@ async def update_file_path(
     }
     if normalized_path is not None:
         fields["normalized_path"] = normalized_path
-    await db.library.file_repo.update_file(file_id, fields)
+    await db.library.update_file_fields(file_id, fields)
 
 
 async def update_file_modified_time(db: Database, file_key: int, modified_time_ms: int) -> None:
@@ -140,10 +140,11 @@ async def bulk_delete_files(db: Database, paths: list[str]) -> int:
     if not paths:
         return 0
 
-    resolved = []
-    for path in paths:
-        if cast("dict[str, Any] | None", await db.library.find_file_by_path_any_library(path)) is not None:
-            resolved.append(path)
+    resolved = [
+        path
+        for path in paths
+        if cast("dict[str, Any] | None", await db.library.find_file_by_path_any_library(path)) is not None
+    ]
     matched_paths = list(dict.fromkeys(resolved))
     if not matched_paths:
         return 0

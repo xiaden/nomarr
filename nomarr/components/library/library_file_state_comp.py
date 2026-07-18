@@ -24,7 +24,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_VECTORS_EXTRACTED,
     STATE_WRITTEN,
 )
-from nomarr.persistence.exceptions import DuplicateKeyError
+from nomarr.helpers.exceptions import DuplicateEntityError
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -76,7 +76,7 @@ async def transition_file_state(db: Database, file_ids: list[int], from_state: s
 
 async def _insert_file_state_edges_ignoring_duplicates(db: Database, edge_docs: list[dict[str, Any]]) -> None:
     for edge_doc in edge_docs:
-        with contextlib.suppress(DuplicateKeyError):
+        with contextlib.suppress(DuplicateEntityError):
             await db.app.add_file_states([edge_doc["_from"]], edge_doc["_to"])
 
 

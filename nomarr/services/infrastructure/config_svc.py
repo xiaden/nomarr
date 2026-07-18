@@ -157,7 +157,9 @@ class ConfigService:
                 list(self._subscriptions.get(key, [])) if key in OBSERVABLE_KEYS else []
             )
 
-        _task = asyncio.create_task(self._write_to_db(key, str(value) if value is not None else ""))
+        db_task = asyncio.create_task(self._write_to_db(key, str(value) if value is not None else ""))
+        self._background_tasks.add(db_task)
+        db_task.add_done_callback(self._background_tasks.discard)
         self._logger.info("Config '%s' updated (cache + DB)", key)
 
         for cb in callbacks:

@@ -92,7 +92,7 @@ async def _process_file(db: Database, file_id: int) -> None:
     # Update duration_seconds on the track record if not already set
     duration = metadata.get("duration")
     if duration is not None and not file_doc.get("duration_seconds"):
-        await db.library.file_repo.update_file(file_id, {"duration_seconds": duration})
+        await db.library.update_file_fields(file_id, {"duration_seconds": duration})
 
     await transition_file_state(db, [file_id], STATE_NOT_HYDRATED, STATE_HYDRATED)
 

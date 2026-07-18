@@ -61,7 +61,7 @@ async def _song_count_rows_for_tag_ids(db: Database, tag_ids: list[int]) -> dict
 
     count_by_tag_id = dict.fromkeys(valid_tag_ids, 0)
     for edge in _narrow_tag_list(
-        await db.library.file_tag_repo.get_file_tag_edges_for_tags(valid_tag_ids),
+        await db.library.list_file_tag_edges(valid_tag_ids),
     ):
         if isinstance(tag_id := edge.get("tag_id"), int) and tag_id in count_by_tag_id:
             count_by_tag_id[tag_id] += 1

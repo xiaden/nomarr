@@ -132,10 +132,12 @@ class TestBootstrapAndLoad:
 
         with patch("nomarr.services.infrastructure.config_svc.Database") as mock_database:
             mock_db_instance = mock_database.return_value
-            mock_db_instance.app.list_config_options = AsyncMock(side_effect=[
-                [],
-                [{"key": "config_library_root", "value": "/myns"}],
-            ])
+            mock_db_instance.app.list_config_options = AsyncMock(
+                side_effect=[
+                    [],
+                    [{"key": "config_library_root", "value": "/myns"}],
+                ]
+            )
             mock_db_instance.app.update_config_option = AsyncMock()
             mock_db_instance.close = AsyncMock()
 

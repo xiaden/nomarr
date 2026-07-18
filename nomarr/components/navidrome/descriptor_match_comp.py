@@ -81,16 +81,14 @@ def build_track_descriptor(file_doc: dict[str, Any]) -> TrackDescriptor:
     return _descriptor_from_doc(file_doc)
 
 
-def _search_candidate_docs(db: Database, field_name: str, value: str) -> list[dict[str, Any]]:
-    return cast(
-        "list[dict[str, Any]]", db.library.file_tag_repo.search_files_by_tag_pattern(field_name, value, limit=None)
-    )
+async def _search_candidate_docs(db: Database, field_name: str, value: str) -> list[dict[str, Any]]:
+    return cast("list[dict[str, Any]]", await db.library.search_files_by_tag_pattern(field_name, value))
 
 
 async def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
     title = seed.get("title", "")
     if title:
-        title_docs = _search_candidate_docs(db, "title", title)
+        title_docs = await _search_candidate_docs(db, "title", title)
         return {file_id for doc in title_docs if isinstance((file_id := doc.get("id")), str)}
 
     artist = seed.get("artist", "")

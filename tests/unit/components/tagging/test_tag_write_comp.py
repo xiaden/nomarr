@@ -23,12 +23,12 @@ class TestFindOrCreateTag:
     @pytest.mark.mocked
     async def test_returns_tag_id_from_library_facade(self) -> None:
         mock_db = AsyncMock()
-        mock_db.library.tag_repo.get_or_create_tag.return_value = 42
+        mock_db.library.find_or_create_tag.return_value = 42
 
         result = await find_or_create_tag(mock_db, "genre", "rock")
 
         assert result == 42
-        mock_db.library.tag_repo.get_or_create_tag.assert_called_once_with("genre", "rock", "")
+        mock_db.library.find_or_create_tag.assert_called_once_with("genre", "rock", "")
 
 
 class TestSetSongTags:

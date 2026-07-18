@@ -60,11 +60,15 @@ class TestOnStatusChangeRestartLogic:
     """Test on_status_change() restart decision integration."""
 
     @pytest.mark.asyncio
-    @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_worker_promises", new_callable=AsyncMock)
-    @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_claims_for_worker", new_callable=AsyncMock)
-    async def test_graceful_shutdown_prevents_restart(
-        self, mock_release_claims, mock_release_promises, worker_service
-    ):
+    @patch(
+        "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_worker_promises",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_claims_for_worker",
+        new_callable=AsyncMock,
+    )
+    async def test_graceful_shutdown_prevents_restart(self, mock_release_claims, mock_release_promises, worker_service):
         """When stop_event is set, no restart attempted."""
         worker_service._shutting_down = True
 
@@ -77,8 +81,14 @@ class TestOnStatusChangeRestartLogic:
         assert worker_service.db.app.update_worker_restart_policy.call_count == 0
 
     @pytest.mark.asyncio
-    @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_worker_promises", new_callable=AsyncMock)
-    @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_claims_for_worker", new_callable=AsyncMock)
+    @patch(
+        "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_worker_promises",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_claims_for_worker",
+        new_callable=AsyncMock,
+    )
     @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.should_restart_worker")
     async def test_restart_decision_schedules_timer(
         self, mock_should_restart, mock_release_claims, mock_release_promises, worker_service, mock_db
@@ -130,8 +140,14 @@ class TestOnStatusChangeRestartLogic:
             assert update_args[1]["restart_count"] == 3
 
     @pytest.mark.asyncio
-    @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_worker_promises", new_callable=AsyncMock)
-    @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_claims_for_worker", new_callable=AsyncMock)
+    @patch(
+        "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_worker_promises",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_claims_for_worker",
+        new_callable=AsyncMock,
+    )
     @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.should_restart_worker")
     async def test_mark_failed_decision(
         self, mock_should_restart, mock_release_claims, mock_release_promises, worker_service, mock_db
@@ -169,8 +185,14 @@ class TestOnStatusChangeRestartLogic:
         assert "worker_2" not in worker_service._pending_restart_timers
 
     @pytest.mark.asyncio
-    @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_worker_promises", new_callable=AsyncMock)
-    @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_claims_for_worker", new_callable=AsyncMock)
+    @patch(
+        "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_worker_promises",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_claims_for_worker",
+        new_callable=AsyncMock,
+    )
     @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.should_restart_worker")
     async def test_idempotent_restart_cancels_existing_timer(
         self, mock_should_restart, mock_release_claims, mock_release_promises, worker_service, mock_db
@@ -292,7 +314,7 @@ class TestStopAllWorkersTimerCleanup:
         mock_worker.is_alive.return_value = False
         worker_service._workers = [mock_worker]
 
-        await worker_service.stop_all_workers(timeout=1.0)
+        await worker_service.stop_all_workers(timeout_sec=1.0)
 
         # Verify both timers cancelled
         mock_timer_1.cancel.assert_called_once()
@@ -457,8 +479,14 @@ class TestAddRemoveWorkers:
             mock_stop_all.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_worker_promises", new_callable=AsyncMock)
-    @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_claims_for_worker", new_callable=AsyncMock)
+    @patch(
+        "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_worker_promises",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_claims_for_worker",
+        new_callable=AsyncMock,
+    )
     async def test_shutting_down_gates_restart_in_handle_worker_death(
         self, mock_release_claims, mock_release_promises, worker_service
     ):

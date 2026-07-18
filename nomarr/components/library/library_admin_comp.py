@@ -23,7 +23,7 @@ from nomarr.components.library.library_scan_state_comp import (
     get_libraries_in_axis_state,
 )
 from nomarr.helpers.constants.pipeline_states import PIPELINE_DEFAULTS, SCAN_IN_PROGRESS, SCAN_STATE_FIELD
-from nomarr.persistence.exceptions import PersistenceError
+from nomarr.helpers.exceptions import DatabaseStateError
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -60,7 +60,7 @@ async def create_library(
             **PIPELINE_DEFAULTS,
         )
         await ensure_scan_state(db, library_id)
-    except (ValueError, PersistenceError, OSError) as e:
+    except (ValueError, DatabaseStateError, OSError) as e:
         msg = f"Failed to create library: {e}"
         raise ValueError(msg) from e
     logger.info(f"[LibraryAdmin] Created library: {resolved_name} at {abs_path}")

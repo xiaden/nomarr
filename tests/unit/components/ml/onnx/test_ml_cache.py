@@ -32,7 +32,6 @@ def _make_head(
 
 
 @pytest.mark.unit
-@pytest.mark.skip(reason="Rewrite pending Part G — async __init__ fixed in Part A, tests need factory pattern update")
 class TestONNXModelCacheInit:
     async def test_no_models_dir_produces_empty_cache(self) -> None:
         with (
@@ -46,7 +45,7 @@ class TestONNXModelCacheInit:
                 return_value=[],
             ),
         ):
-            cache = await ONNXModelCache(tmpdir, device="cpu")
+            cache = await ONNXModelCache.create(tmpdir, device="cpu")
 
         assert cache.backbones == {}
         assert cache.heads == {}
@@ -68,7 +67,7 @@ class TestONNXModelCacheInit:
                 return_value=heads,
             ),
         ):
-            cache = await ONNXModelCache(tmpdir, device="cpu")
+            cache = await ONNXModelCache.create(tmpdir, device="cpu")
 
         assert set(cache.heads) == {"effnet", "yamnet"}
 
@@ -89,7 +88,7 @@ class TestONNXModelCacheInit:
                 return_value=heads,
             ),
         ):
-            cache = await ONNXModelCache(tmpdir, device="cpu")
+            cache = await ONNXModelCache.create(tmpdir, device="cpu")
 
         assert len(cache.heads["effnet"]) == 2
 
@@ -112,7 +111,7 @@ class TestONNXModelCacheInit:
                 return_value=[],
             ) as mock_discover_no_db,
         ):
-            await ONNXModelCache(tmpdir, device="cpu", db=db)
+            await ONNXModelCache.create(tmpdir, device="cpu", db=db)
 
         mock_discover_with_db.assert_called_once_with(tmpdir, db)
         mock_discover_no_db.assert_not_called()
@@ -133,14 +132,13 @@ class TestONNXModelCacheInit:
                 return_value=[],
             ) as mock_discover_no_db,
         ):
-            await ONNXModelCache(tmpdir, device="cpu", db=None)
+            await ONNXModelCache.create(tmpdir, device="cpu", db=None)
 
         mock_discover_with_db.assert_not_called()
         mock_discover_no_db.assert_called_once_with(tmpdir)
 
 
 @pytest.mark.unit
-@pytest.mark.skip(reason="Rewrite pending Part G — async __init__ fixed in Part A, tests need factory pattern update")
 class TestONNXModelCacheModelCount:
     async def test_model_count_is_zero_for_empty_cache(self) -> None:
         with (
@@ -154,7 +152,7 @@ class TestONNXModelCacheModelCount:
                 return_value=[],
             ),
         ):
-            cache = await ONNXModelCache(tmpdir, device="cpu")
+            cache = await ONNXModelCache.create(tmpdir, device="cpu")
 
         assert cache.model_count == 0
 
@@ -177,6 +175,6 @@ class TestONNXModelCacheModelCount:
                 return_value=heads,
             ),
         ):
-            cache = await ONNXModelCache(tmpdir, device="cpu")
+            cache = await ONNXModelCache.create(tmpdir, device="cpu")
 
         assert cache.model_count == 5

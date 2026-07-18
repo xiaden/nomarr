@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from nomarr.helpers.exceptions import DatabaseStateError
 from nomarr.persistence.database.model_repo import ModelRepo
-from nomarr.persistence.exceptions import PersistenceError
 
 
 @pytest.mark.unit
@@ -162,9 +162,9 @@ class TestModelRepo:
 
     @pytest.mark.asyncio
     async def test_update_model_not_found(self, pg_session) -> None:
-        """update_model should raise PersistenceError for a missing model."""
+        """update_model should raise DatabaseStateError for a missing model."""
         repo = ModelRepo(pg_session)
-        with pytest.raises(PersistenceError, match="not found"):
+        with pytest.raises(DatabaseStateError, match="not found"):
             await repo.update_model("missing_model", {"enabled": 0})
 
     @pytest.mark.asyncio

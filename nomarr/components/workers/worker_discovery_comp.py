@@ -10,8 +10,8 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_file_state_comp import discover_next_untagged_file
+from nomarr.helpers.exceptions import DuplicateEntityError
 from nomarr.helpers.time_helper import now_ms
-from nomarr.persistence.exceptions import DuplicateKeyError
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -74,7 +74,7 @@ async def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
     }
     try:
         await db.app.add_claim(payload)
-    except DuplicateKeyError:
+    except DuplicateEntityError:
         return False
     return True
 
@@ -113,7 +113,7 @@ async def try_insert_or_steal_claim(
     """
     try:
         await db.app.add_claim(payload)
-    except DuplicateKeyError:
+    except DuplicateEntityError:
         file_id = int(payload["file_id"])
         all_claims = await _get_all_claims(db)
         existing_claim = next(
@@ -123,7 +123,7 @@ async def try_insert_or_steal_claim(
         if existing_claim is None:
             try:
                 await db.app.add_claim(payload)
-            except DuplicateKeyError:
+            except DuplicateEntityError:
                 return False
             return True
 
@@ -134,7 +134,7 @@ async def try_insert_or_steal_claim(
         await db.app.remove_claim(file_id)
         try:
             await db.app.add_claim(payload)
-        except DuplicateKeyError:
+        except DuplicateEntityError:
             return False
         return True
     return True

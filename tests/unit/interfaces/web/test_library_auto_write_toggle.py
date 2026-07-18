@@ -127,7 +127,9 @@ class TestLibraryAutoWriteToggle:
         mock_pipeline_service: MagicMock,
     ) -> None:
         """PATCH requests that do not touch auto-write should not trigger pipeline behavior."""
-        mock_library_service.update_library = MagicMock(return_value=make_library(auto_write=False, name="Renamed Library"))
+        mock_library_service.update_library = MagicMock(
+            return_value=make_library(auto_write=False, name="Renamed Library")
+        )
 
         response = client.patch(
             "/api/web/library/1",

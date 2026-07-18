@@ -1,7 +1,9 @@
 """ONNXModelCache: grouped, warmable container for all discovered ONNX models.
 
-The cache owns all backbone and head models for a given models directory.  It
-discoveries models at construction time and provides two high-level controls:
+The cache owns all backbone and head models for a given models directory.
+Use :meth:`ONNXModelCache.create` to construct a fully-initialized
+instance (the synchronous constructor stores parameters only).  It provides
+two high-level controls:
 
 - ``cache.warm = True`` — load all sessions.  Worker identity and database are
   retrieved from the process-local registry (see :mod:`ml_worker_context_comp`);
@@ -45,9 +47,10 @@ logger = logging.getLogger(__name__)
 class ONNXModelCache:
     """Grouped, warmable container for all ONNX backbone and head models.
 
-    Constructed from a *models_dir* root and a *device* target.  Immediately
-    discovers all ``.onnx`` files and wraps each in the appropriate class;
-    no sessions are loaded until ``warm = True`` is set.
+    Use :meth:`create` to construct a fully-initialized instance.  The
+    synchronous constructor stores parameters only; model discovery
+    (filesystem + database) happens in the async factory.  No sessions are
+    loaded until ``warm = True`` is set.
 
     Attributes:
         backbones: Backbone models keyed by backbone name (e.g. ``"effnet"``).
@@ -62,30 +65,26 @@ class ONNXModelCache:
     heads: dict[str, list[ONNXHeadModel]]
     """Head models keyed by backbone name; each list is sorted by model name."""
 
-    async def __init__(  # type: ignore[misc]
+    def __init__(
         self,
         models_dir: str,
         device: DevicePlacement,
         db: Database | None = None,
     ) -> None:
-        """Discover all ONNX models under *models_dir* and prepare them for warming.
-
-        No sessions are loaded during construction.  Set ``warm = True`` to
-        load all sessions.
-
-        Args:
-            models_dir: Root directory containing backbone sub-directories.
-            device: Default execution device (``"cpu"`` or ``"gpu"``).
-            db: Optional database handle; when provided, head labels and
-                release dates are sourced from the database.
-
-        """
+        """Synchronous constructor. Does NOT perform I/O. Stores parameters only."""
         self._models_dir = models_dir
         self._device: DevicePlacement = device
+        self.db = db
+        self.backbones: dict[str, ONNXBackboneModel] = {}
+        self.heads: dict[str, list[ONNXHeadModel]] = {}
 
-        backbone_list: list[ONNXBackboneModel] = discover_backbone_models(models_dir)
+    async def _discover(self) -> None:
+        """Shared discovery logic. Discovers backbone models from filesystem and head models from database. Called by factory and refresh methods."""
+        backbone_list: list[ONNXBackboneModel] = discover_backbone_models(self._models_dir)
         head_list: list[ONNXHeadModel] = (
-            await discover_head_models(models_dir, db) if db is not None else discover_head_models_no_db(models_dir)
+            await discover_head_models(self._models_dir, self.db)
+            if self.db is not None
+            else discover_head_models_no_db(self._models_dir)
         )
 
         self.backbones = {m.backbone_name: m for m in backbone_list}
@@ -98,9 +97,21 @@ class ONNXModelCache:
             "[cache] Discovered %d backbone(s), %d head(s) in %s (device=%s)",
             len(self.backbones),
             len(head_list),
-            models_dir,
-            device,
+            self._models_dir,
+            self._device,
         )
+
+    @classmethod
+    async def create(
+        cls,
+        models_dir: str,
+        device: DevicePlacement,
+        db: Database | None = None,
+    ) -> ONNXModelCache:
+        """Async factory. Performs model discovery (file I/O + DB queries). Use instead of direct construction."""
+        instance = cls(models_dir, device, db)
+        await instance._discover()
+        return instance
 
     # ------------------------------------------------------------------
     # Internal helpers

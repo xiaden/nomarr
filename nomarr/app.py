@@ -220,7 +220,7 @@ class Application:
                     )
                 except Exception as e:
                     logger.exception(f"[Application] Heartbeat error: {e}")
-                time.sleep(5)
+                await asyncio.sleep(5)
 
         self._heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True, name="AppHeartbeat")
         self._heartbeat_thread.start()

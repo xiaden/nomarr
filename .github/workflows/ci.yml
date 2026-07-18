@@ -18,6 +18,7 @@ on:
       - "scripts/check-arango-fields.sh"
       - ".arango-field-allowlist.yaml"
       - "scripts/validate-arango-allowlist.py"
+      - "scripts/check-transitive-imports.py"
   pull_request:
     branches: [main, develop]
     paths:
@@ -34,6 +35,7 @@ on:
       - "scripts/check-arango-fields.sh"
       - ".arango-field-allowlist.yaml"
       - "scripts/validate-arango-allowlist.py"
+      - "scripts/check-transitive-imports.py"
   workflow_dispatch:
 
 jobs:
@@ -178,7 +180,41 @@ jobs:
       - name: Check for ArangoDB field name violations
         run: bash scripts/check-arango-fields.sh
 
+  grimp-transitive-check:
+    name: "grimp transitive import check"
+    needs: arango-field-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Cache grimp graph
+        uses: actions/cache@v5
+        with:
+          path: |
+            .cache/grimp-graph/
+            .cache/grimp-graph-hash.txt
+          key: grimp-graph-${{ hashFiles('nomarr/**/*.py') }}
+          restore-keys: |
+            grimp-graph-
+
+      - name: Install grimp
+        run: pip install "grimp>=3.14"
+
+      - name: Run transitive import check
+        run: python scripts/check-transitive-imports.py
+
   build-and-push:
+    # grimp-transitive-check excluded from build gate: all 54 detected transitive chains
+    # flow through nomarr.persistence.db (the authorized Database facade per ADR-031).
+    # These are by-design facade traversals, not boundary violations. Awaiting an exclusion
+    # mechanism in the grimp script (follow-up) before re-enabling the hard gate.
     needs: [lint, test, frontend-test, arango-field-check]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest

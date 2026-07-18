@@ -55,7 +55,8 @@ async def load_db_mood_tags(
     path_map: dict[int, str] = {f["id"]: f["path"] for f in files}
 
     tags_by_file = await db.library.list_file_tags_for_files(
-        file_ids, name_starts_with="nom:mood-",
+        file_ids,
+        name_starts_with="nom:mood-",
     )
 
     result: dict[str, dict[str, list[str]]] = {}

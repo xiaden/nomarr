@@ -744,7 +744,7 @@ async def test_collect_file_ids_for_tag_ids_returns_edge_sources() -> None:
 
     db = make_db()
 
-    db.library.file_tag_repo.get_file_tag_edges_for_tags.return_value = [
+    db.library.list_file_tag_edges.return_value = [
         {"file_id": 1, "tag_id": 1},
         {"file_id": 2, "tag_id": 2},
         {"tag_id": 3},
@@ -754,7 +754,7 @@ async def test_collect_file_ids_for_tag_ids_returns_edge_sources() -> None:
 
     assert result == {1, 2}
 
-    db.library.file_tag_repo.get_file_tag_edges_for_tags.assert_called_once()
+    db.library.list_file_tag_edges.assert_called_once()
 
 
 @pytest.mark.unit
@@ -776,10 +776,10 @@ async def test_search_library_files_with_tags_filters_and_hydrates_page() -> Non
             "path": "D:/Music/two.flac",
         },
     ]
-    db.library.file_tag_repo.search_files_by_tag_pattern.side_effect = [file_docs, file_docs, [file_docs[0]]]
+    db.library.search_files_by_tag_pattern.side_effect = [file_docs, file_docs, [file_docs[0]]]
     db.library.count_tags.return_value = 1
     db.library.list_tags_by_name.return_value = [{"id": 1, "value": "rock"}]
-    db.library.file_tag_repo.get_file_tag_edges_for_tags.return_value = [{"file_id": 1, "tag_id": 1}]
+    db.library.list_file_tag_edges.return_value = [{"file_id": 1, "tag_id": 1}]
     db.app.list_files_in_state.return_value = [1]
     db.library.list_files_by_ids.return_value = [{**file_docs[0], "library_key": "1"}]
     db.library.list_file_tags_for_files.return_value = {1: [{"name": "genre", "value": "rock"}]}
@@ -814,14 +814,14 @@ async def test_search_library_files_with_tags_filters_and_hydrates_page() -> Non
             "library_id": 1,
         }
     ]
-    assert db.library.file_tag_repo.search_files_by_tag_pattern.call_args_list == [
-        call("artist", "%Artist%", limit=None),
-        call("album", "%Album%", limit=None),
-        call("title", "%song%", limit=None),
+    assert db.library.search_files_by_tag_pattern.call_args_list == [
+        call("artist", "%Artist%"),
+        call("album", "%Album%"),
+        call("title", "%song%"),
     ]
     db.library.count_tags.assert_called_once_with()
     db.library.list_tags_by_name.assert_called_once_with("genre", limit=1)
-    db.library.file_tag_repo.get_file_tag_edges_for_tags.assert_called_once_with([1])
+    db.library.list_file_tag_edges.assert_called_once_with([1])
     db.app.list_files_in_state.assert_called_once_with(STATE_PROCESSED, limit=DEFAULT_LIMIT)
     db.library.list_files_by_ids.assert_called_once_with([1])
     db.library.list_file_tags_for_files.assert_called_once_with([1])
@@ -832,7 +832,7 @@ async def test_count_files_by_tag_uses_library_facade_for_string_and_numeric_mod
     db = make_db()
     db.library.count_tags.return_value = 1
     db.library.list_tags_by_name.return_value = [{"id": 1, "value": "rock"}]
-    db.library.file_tag_repo.get_file_tag_edges_for_tags.return_value = [
+    db.library.list_file_tag_edges.return_value = [
         {"file_id": 1, "tag_id": 1},
         {"file_id": 2, "tag_id": 1},
     ]
@@ -842,7 +842,7 @@ async def test_count_files_by_tag_uses_library_facade_for_string_and_numeric_mod
     assert string_count == 2
     db.library.count_tags.assert_called_once_with()
     db.library.list_tags_by_name.assert_called_once_with("genre", limit=1)
-    db.library.file_tag_repo.get_file_tag_edges_for_tags.assert_called_once_with([1])
+    db.library.list_file_tag_edges.assert_called_once_with([1])
 
     db = make_db()
     db.library.count_tags.return_value = 2
@@ -850,14 +850,14 @@ async def test_count_files_by_tag_uses_library_facade_for_string_and_numeric_mod
         {"id": 1, "value": 120.0},
         {"id": 2, "value": True},
     ]
-    db.library.file_tag_repo.get_file_tag_edges_for_tags.return_value = [{"file_id": 1, "tag_id": 1}]
+    db.library.list_file_tag_edges.return_value = [{"file_id": 1, "tag_id": 1}]
 
     numeric_count = await count_files_by_tag(db, "nom:bpm", 120.0)
 
     assert numeric_count == 1
     db.library.count_tags.assert_called_once_with()
     db.library.list_tags_by_name.assert_called_once_with("nom:bpm", limit=2)
-    db.library.file_tag_repo.get_file_tag_edges_for_tags.assert_called_once_with([1])
+    db.library.list_file_tag_edges.assert_called_once_with([1])
 
 
 @pytest.mark.unit
@@ -868,7 +868,7 @@ async def test_search_files_by_tag_numeric_sorts_by_distance_and_hydrates_tags()
         {"id": 1, "value": 118.0},
         {"id": 2, "value": 121.0},
     ]
-    db.library.file_tag_repo.get_file_tag_edges_for_tags.return_value = [
+    db.library.list_file_tag_edges.return_value = [
         {"file_id": 1, "tag_id": 1},
         {"file_id": 2, "tag_id": 2},
     ]
@@ -905,7 +905,7 @@ async def test_search_files_by_tag_numeric_sorts_by_distance_and_hydrates_tags()
     assert result[0]["library_id"] == 1
     db.library.count_tags.assert_called_once_with()
     db.library.list_tags_by_name.assert_called_once_with("nom:bpm", limit=2)
-    db.library.file_tag_repo.get_file_tag_edges_for_tags.assert_called_once_with([1, 2], limit=DEFAULT_LIMIT)
+    db.library.list_file_tag_edges.assert_called_once_with([1, 2], limit=DEFAULT_LIMIT)
     db.library.list_files_by_ids.assert_called_once_with([1, 2])
     db.library.list_file_tags_for_files.assert_called_once_with([2])
 

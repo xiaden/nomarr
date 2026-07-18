@@ -51,12 +51,14 @@ def parse_args() -> argparse.Namespace:
         help="PostgreSQL connection URL (asyncpg driver).  Default: %(default)s",
     )
     p.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Show per-state segment-stat detail (p25/p50/p75/p90/p95).",
     )
     p.add_argument(
-        "--quiet", "-q",
+        "--quiet",
+        "-q",
         action="store_true",
         help="Suppress per-state output; show summary only.",
     )
@@ -229,9 +231,13 @@ async def _fetch_tier_counts(db: Database) -> dict[str, int]:
     from nomarr.persistence.models.tag import Tag
 
     _tbl = Tag.__table__  # type: ignore[assignment]
-    stmt = select(_tbl.c.tier, func.count().label("cnt")).where(
-        _tbl.c.tier.isnot(None),
-    ).group_by(_tbl.c.tier)
+    stmt = (
+        select(_tbl.c.tier, func.count().label("cnt"))
+        .where(
+            _tbl.c.tier.isnot(None),
+        )
+        .group_by(_tbl.c.tier)
+    )
     counts: dict[str, int] = {"strict": 0, "regular": 0, "loose": 0, "other": 0}
     tier_labels = {1: "strict", 2: "regular", 3: "loose"}
 
@@ -255,7 +261,6 @@ async def main() -> None:
     logging.getLogger("head_calibration_audit")
     logging.basicConfig(level=logging.WARNING)  # keep DB chatter quiet
 
-
     db = Database(url=args.db_url)
 
     try:
@@ -269,7 +274,6 @@ async def main() -> None:
         states = await db.ml.list_all_calibration_states_with_models()
         if not states:
             return
-
 
         # ── 2. Per-state analysis ───────────────────────────────────────
         report_lines: list[dict] = []
@@ -393,7 +397,6 @@ def _print_state_report(
         entry["percentiles"]
 
 
-
 def _print_summary(
     report_lines: list[dict],
     head_groups: dict[str, list[dict]],
@@ -402,11 +405,9 @@ def _print_summary(
     if not report_lines:
         return
 
-
     shape_counts: dict[str, int] = defaultdict(int)
     for entry in report_lines:
         shape_counts[entry["shape"]] += 1
-
 
     # Flag concerning states
     concerns = [e for e in report_lines if e["shape"] in ("compressed", "bimodal")]
@@ -418,7 +419,6 @@ def _print_summary(
     for head_name in sorted(head_groups):
         entries = head_groups[head_name]
         max(entries, key=lambda e: e["gates"]["none"])
-
 
 
 # ── entry point ──────────────────────────────────────────────────────────────

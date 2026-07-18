@@ -272,7 +272,7 @@ class TestUpdateFilePath:
             f"{'library_files'}/123",
             "C:/music/new-song.mp3",
         )
-        mock_db.library.file_repo.update_file.assert_called_once_with(
+        mock_db.library.update_file_fields.assert_called_once_with(
             f"{'library_files'}/123",
             {
                 "file_size": 4321,
@@ -298,7 +298,7 @@ class TestUpdateFilePath:
                 normalized_path="relative/new-song.mp3",
             )
 
-        mock_db.library.file_repo.update_file.assert_called_once_with(
+        mock_db.library.update_file_fields.assert_called_once_with(
             f"{'library_files'}/123",
             {
                 "file_size": 4321,

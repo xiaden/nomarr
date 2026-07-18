@@ -150,7 +150,7 @@ async def list_all_library_keys(db: Database) -> list[int]:
 async def find_library_containing_path(db: Database, file_path: str) -> LibraryDict | None:
     """Find the most specific library root containing ``file_path``."""
     try:
-        normalized_path = Path(file_path).resolve()
+        normalized_path = Path(file_path).resolve()  # noqa: ASYNC240
     except (ValueError, OSError):
         return None
 
@@ -162,7 +162,7 @@ async def find_library_containing_path(db: Database, file_path: str) -> LibraryD
         if not isinstance(library_root, str):
             continue
         try:
-            normalized_path.relative_to(Path(library_root).resolve())
+            normalized_path.relative_to(Path(library_root).resolve())  # noqa: ASYNC240
             return library
         except ValueError:
             continue  # Path is not under this library root; try the next one

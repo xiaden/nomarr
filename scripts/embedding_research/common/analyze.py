@@ -208,9 +208,7 @@ def _filter_binned_pairs(vecs: Any, keep: list[int], extra_cfg: Mapping[str, Any
     ]
 
 
-def _load_head_scores_and_names(
-    backbone: str, sids: list[str]
-) -> tuple[list[list[float]] | None, list[str] | None]:
+def _load_head_scores_and_names(backbone: str, sids: list[str]) -> tuple[list[list[float]] | None, list[str] | None]:
     """Load mean/ptc head scores from the filesystem cache.
 
     Returns one row per head (sorted by head name), each row a list of

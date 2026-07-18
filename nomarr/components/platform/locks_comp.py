@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
+from nomarr.helpers.exceptions import DuplicateEntityError
 from nomarr.helpers.time_helper import now_ms
-from nomarr.persistence.exceptions import DuplicateKeyError
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -48,7 +48,7 @@ async def acquire_distributed_lock(
     }
     try:
         await db.app.add_lock(payload)
-    except DuplicateKeyError:
+    except DuplicateEntityError:
         return False
     return True
 

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 async def find_or_create_tag(db: Database, name: str, value: TagValue) -> int:
     """Find or create one tag vertex and return its id."""
-    return await db.library.tag_repo.get_or_create_tag(name, str(value), "")
+    return await db.library.find_or_create_tag(name, str(value), "")
 
 
 def _tag_name(tag_doc: Mapping[str, Any]) -> str | None:

@@ -21,8 +21,8 @@ from nomarr.components.library.library_file_state_comp import (
 )
 from nomarr.components.library.library_id_comp import library_key_from_ref
 from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
+from nomarr.helpers.exceptions import DatabaseStateError
 from nomarr.helpers.time_helper import now_ms
-from nomarr.persistence.exceptions import PersistenceError
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -250,5 +250,5 @@ async def cleanup_stale_folders(
         if stale_ids:
             for stale_id in stale_ids:
                 await db.library.remove_library_folder(library_id, stale_id)
-    except PersistenceError as e:
+    except DatabaseStateError as e:
         logger.warning("[scan] Failed to clean up folder records: %s", e)

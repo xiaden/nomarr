@@ -13,10 +13,7 @@ from typing import Any
 from sqlalchemy import Table, delete, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Row
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from .exceptions import map_sqlalchemy_error
 
 
 async def select_by_key(
@@ -30,12 +27,9 @@ async def select_by_key(
 
     Returns ``None`` when no row matches.
     """
-    try:
-        stmt = select(table).where(table.c[key_col] == key_val)
-        result = await session.execute(stmt)
-        return result.fetchone()
-    except SQLAlchemyError as exc:
-        raise map_sqlalchemy_error(exc) from exc
+    stmt = select(table).where(table.c[key_col] == key_val)
+    result = await session.execute(stmt)
+    return result.fetchone()
 
 
 async def select_many_by_keys(
@@ -52,12 +46,9 @@ async def select_many_by_keys(
     """
     if not keys:
         return []
-    try:
-        stmt = select(table).where(table.c[key_col].in_(keys))
-        result = await session.execute(stmt)
-        return list(result.all())
-    except SQLAlchemyError as exc:
-        raise map_sqlalchemy_error(exc) from exc
+    stmt = select(table).where(table.c[key_col].in_(keys))
+    result = await session.execute(stmt)
+    return list(result.all())
 
 
 async def insert_one(
@@ -68,17 +59,15 @@ async def insert_one(
 ) -> Row:
     """Insert a single row and return it via ``RETURNING``.
 
-    Raises ``DuplicateKeyError`` (via ``map_sqlalchemy_error``) when the
-    insert violates a uniqueness constraint.
+    Raises raw SQLAlchemy exceptions on failure; translation to domain
+    exceptions happens at the repository level via
+    ``map_persistence_exceptions()``.
     """
-    try:
-        stmt = insert(table).values(**data).returning(table)
-        result = await session.execute(stmt)
-        row = result.fetchone()
-        assert row is not None  # RETURNING always yields a row on success
-        return row
-    except SQLAlchemyError as exc:
-        raise map_sqlalchemy_error(exc) from exc
+    stmt = insert(table).values(**data).returning(table)
+    result = await session.execute(stmt)
+    row = result.fetchone()
+    assert row is not None  # RETURNING always yields a row on success
+    return row
 
 
 async def upsert_by_field(
@@ -94,23 +83,20 @@ async def upsert_by_field(
     Uses PostgreSQL ``ON CONFLICT (field) DO UPDATE``.  The ``set_`` dict
     excludes the conflict field to avoid a no-op self-assignment.
     """
-    try:
-        set_clause = {k: v for k, v in data.items() if k != field}
-        stmt = (
-            pg_insert(table)
-            .values(**data)
-            .on_conflict_do_update(
-                index_elements=[field],
-                set_=set_clause,
-            )
-            .returning(table)
+    set_clause = {k: v for k, v in data.items() if k != field}
+    stmt = (
+        pg_insert(table)
+        .values(**data)
+        .on_conflict_do_update(
+            index_elements=[field],
+            set_=set_clause,
         )
-        result = await session.execute(stmt)
-        row = result.fetchone()
-        assert row is not None
-        return row
-    except SQLAlchemyError as exc:
-        raise map_sqlalchemy_error(exc) from exc
+        .returning(table)
+    )
+    result = await session.execute(stmt)
+    row = result.fetchone()
+    assert row is not None
+    return row
 
 
 async def update_by_field(
@@ -125,12 +111,9 @@ async def update_by_field(
 
     Returns ``None`` when no row matches.
     """
-    try:
-        stmt = update(table).where(table.c[field] == match_val).values(**data).returning(table)
-        result = await session.execute(stmt)
-        return result.fetchone()
-    except SQLAlchemyError as exc:
-        raise map_sqlalchemy_error(exc) from exc
+    stmt = update(table).where(table.c[field] == match_val).values(**data).returning(table)
+    result = await session.execute(stmt)
+    return result.fetchone()
 
 
 async def delete_by_key(
@@ -144,11 +127,8 @@ async def delete_by_key(
 
     No error is raised when the key does not exist.
     """
-    try:
-        stmt = delete(table).where(table.c[key_col] == key_val)
-        await session.execute(stmt)
-    except SQLAlchemyError as exc:
-        raise map_sqlalchemy_error(exc) from exc
+    stmt = delete(table).where(table.c[key_col] == key_val)
+    await session.execute(stmt)
 
 
 async def batch_upsert(
@@ -167,17 +147,14 @@ async def batch_upsert(
     """
     if not data_list:
         return []
-    try:
-        insert_stmt = pg_insert(table).values(data_list)
-        set_clause = {col: insert_stmt.excluded[col] for col in data_list[0] if col not in conflict_fields}
-        stmt = insert_stmt.on_conflict_do_update(
-            index_elements=conflict_fields,
-            set_=set_clause,
-        ).returning(table)
-        result = await session.execute(stmt)
-        return list(result.all())
-    except SQLAlchemyError as exc:
-        raise map_sqlalchemy_error(exc) from exc
+    insert_stmt = pg_insert(table).values(data_list)
+    set_clause = {col: insert_stmt.excluded[col] for col in data_list[0] if col not in conflict_fields}
+    stmt = insert_stmt.on_conflict_do_update(
+        index_elements=conflict_fields,
+        set_=set_clause,
+    ).returning(table)
+    result = await session.execute(stmt)
+    return list(result.all())
 
 
 async def is_table_empty(
@@ -186,10 +163,7 @@ async def is_table_empty(
     session: AsyncSession,
 ) -> bool:
     """Return ``True`` when *table* contains zero rows."""
-    try:
-        stmt = select(func.count()).select_from(table)
-        result = await session.execute(stmt)
-        count = result.scalar()
-        return count == 0
-    except SQLAlchemyError as exc:
-        raise map_sqlalchemy_error(exc) from exc
+    stmt = select(func.count()).select_from(table)
+    result = await session.execute(stmt)
+    count = result.scalar()
+    return count == 0

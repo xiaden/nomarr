@@ -15,6 +15,7 @@ from sqlalchemy import Table, delete, func, insert, select, text, update
 from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
 from nomarr.helpers.vector_params_helper import get_ef_search
 from nomarr.persistence.models.embedding import Embedding
+from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
@@ -79,30 +80,32 @@ class VectorRepo:
         ``num_segments`` and ``segmentation_hash`` are ``None`` — populated
         later by the segmentation analysis pipeline.
         """
-        now = int(time.time())
-        stmt = (
-            insert(_T)
-            .values(
-                file_id=file_id,
-                backbone_id=backbone_id,
-                model_id=model_id,
-                embed_dim=len(embedding_vector),
-                model_suite_hash="",
-                num_segments=None,
-                segmentation_hash=None,
-                embedding=embedding_vector,
-                genres=genres,
-                tier="hot",
-                created_at=now,
-                updated_at=now,
-            )
-            .returning(_T)
-        )
-        result = await self._session.execute(stmt)
-        await self._session.commit()
-        row = result.fetchone()
-        assert row is not None  # RETURNING always yields a row on success
-        return _row_to_embedding_record(row)
+        async with map_persistence_exceptions():
+            async with self._session.begin_nested():
+                now = int(time.time())
+                stmt = (
+                    insert(_T)
+                    .values(
+                        file_id=file_id,
+                        backbone_id=backbone_id,
+                        model_id=model_id,
+                        embed_dim=len(embedding_vector),
+                        model_suite_hash="",
+                        num_segments=None,
+                        segmentation_hash=None,
+                        embedding=embedding_vector,
+                        genres=genres,
+                        tier="hot",
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    .returning(_T)
+                )
+                result = await self._session.execute(stmt)
+            await self._session.commit()
+            row = result.fetchone()
+            assert row is not None  # RETURNING always yields a row on success
+            return _row_to_embedding_record(row)
 
     # ── ANN search ──────────────────────────────────────────────
 
@@ -129,27 +132,28 @@ class VectorRepo:
                 with a medium-collection default.
 
         """
-        if ef_search is None:
-            ef_search = get_ef_search(0)  # sensible default for unknown size
-        await self._session.execute(text("SET LOCAL hnsw.iterative_scan = 'strict_order'"))
-        await self._session.execute(text(f"SET LOCAL hnsw.ef_search = {int(ef_search)}"))
+        async with map_persistence_exceptions():
+            if ef_search is None:
+                ef_search = get_ef_search(0)  # sensible default for unknown size
+            await self._session.execute(text("SET LOCAL hnsw.iterative_scan = 'strict_order'"))
+            await self._session.execute(text(f"SET LOCAL hnsw.ef_search = {int(ef_search)}"))
 
-        distance_expr = _T.c.embedding.op("<=>")(embedding)
-        stmt = (
-            select(
-                _T.c.file_id,
-                _T.c.backbone_id,
-                distance_expr.label("distance"),
+            distance_expr = _T.c.embedding.op("<=>")(embedding)
+            stmt = (
+                select(
+                    _T.c.file_id,
+                    _T.c.backbone_id,
+                    distance_expr.label("distance"),
+                )
+                .where(
+                    _T.c.tier == "cold",
+                    _T.c.backbone_id == backbone_id,
+                )
+                .order_by(distance_expr)
+                .limit(limit)
             )
-            .where(
-                _T.c.tier == "cold",
-                _T.c.backbone_id == backbone_id,
-            )
-            .order_by(distance_expr)
-            .limit(limit)
-        )
-        result = await self._session.execute(stmt)
-        return [_row_to_similar_result(r) for r in result.all()]
+            result = await self._session.execute(stmt)
+            return [_row_to_similar_result(r) for r in result.all()]
 
     # ── tier lifecycle ──────────────────────────────────────────
 
@@ -160,67 +164,78 @@ class VectorRepo:
         index picks up newly-cold rows on next VACUUM.  Returns the
         number of rows updated.
         """
-        now = int(time.time())
-        stmt = (
-            update(_T)
-            .where(
-                _T.c.backbone_id == backbone_id,
-                _T.c.tier == "hot",
-            )
-            .values(tier="cold", updated_at=now)
-        )
-        result = await self._session.execute(stmt)
-        await self._session.commit()
-        return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult.rowcount is int at runtime
+        async with map_persistence_exceptions():
+            async with self._session.begin_nested():
+                now = int(time.time())
+                stmt = (
+                    update(_T)
+                    .where(
+                        _T.c.backbone_id == backbone_id,
+                        _T.c.tier == "hot",
+                    )
+                    .values(tier="cold", updated_at=now)
+                )
+                result = await self._session.execute(stmt)
+            await self._session.commit()
+            return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult.rowcount is int at runtime
 
     # ── queries ─────────────────────────────────────────────────
 
     async def get_embeddings_for_file(self, file_id: int) -> list[EmbeddingRecord]:
         """Return all embeddings (all backbones) for a given file."""
-        stmt = select(_T).where(_T.c.file_id == file_id)
-        result = await self._session.execute(stmt)
-        return [_row_to_embedding_record(r) for r in result.all()]
+        async with map_persistence_exceptions():
+            stmt = select(_T).where(_T.c.file_id == file_id)
+            result = await self._session.execute(stmt)
+            return [_row_to_embedding_record(r) for r in result.all()]
 
     async def count_cold_embeddings(self, backbone_id: str) -> int:
         """Count cold-tier embeddings for a given backbone."""
-        stmt = (
-            select(func.count())
-            .select_from(_T)
-            .where(
-                _T.c.tier == "cold",
-                _T.c.backbone_id == backbone_id,
+        async with map_persistence_exceptions():
+            stmt = (
+                select(func.count())
+                .select_from(_T)
+                .where(
+                    _T.c.tier == "cold",
+                    _T.c.backbone_id == backbone_id,
+                )
             )
-        )
-        result = await self._session.execute(stmt)
-        return result.scalar() or 0
+            result = await self._session.execute(stmt)
+            return result.scalar() or 0
 
     async def get_embedding_stats(self, backbone_id: str) -> dict[str, int]:
         """Return hot and cold embedding counts for a given backbone."""
-        stmt = select(_T.c.tier, func.count().label("cnt")).where(_T.c.backbone_id == backbone_id).group_by(_T.c.tier)
-        result = await self._session.execute(stmt)
-        counts: dict[str, int] = {"hot_count": 0, "cold_count": 0}
-        for row in result.all():
-            m = row._mapping
-            tier = m["tier"]
-            cnt = m["cnt"]
-            if tier == "hot":
-                counts["hot_count"] = cnt
-            elif tier == "cold":
-                counts["cold_count"] = cnt
-        return counts
+        async with map_persistence_exceptions():
+            stmt = (
+                select(_T.c.tier, func.count().label("cnt")).where(_T.c.backbone_id == backbone_id).group_by(_T.c.tier)
+            )
+            result = await self._session.execute(stmt)
+            counts: dict[str, int] = {"hot_count": 0, "cold_count": 0}
+            for row in result.all():
+                m = row._mapping
+                tier = m["tier"]
+                cnt = m["cnt"]
+                if tier == "hot":
+                    counts["hot_count"] = cnt
+                elif tier == "cold":
+                    counts["cold_count"] = cnt
+            return counts
 
     # ── delete / truncate ───────────────────────────────────────
 
     async def delete_all_embeddings(self) -> None:
         """Delete all rows from the ``embeddings`` table."""
-        await self._session.execute(delete(_T))
-        await self._session.commit()
+        async with map_persistence_exceptions():
+            async with self._session.begin_nested():
+                await self._session.execute(delete(_T))
+            await self._session.commit()
 
     async def delete_embeddings_for_file(self, file_id: int) -> None:
         """Delete all embeddings for a given file."""
-        stmt = delete(_T).where(_T.c.file_id == file_id)
-        await self._session.execute(stmt)
-        await self._session.commit()
+        async with map_persistence_exceptions():
+            async with self._session.begin_nested():
+                stmt = delete(_T).where(_T.c.file_id == file_id)
+                await self._session.execute(stmt)
+            await self._session.commit()
 
     async def truncate_embeddings(self) -> None:
         """Truncate the ``embeddings`` table (full reset).
@@ -228,5 +243,7 @@ class VectorRepo:
         Uses ``TRUNCATE TABLE`` for performance on full resets — distinct
         from ``delete_all_embeddings`` only in semantic intent.
         """
-        await self._session.execute(text("TRUNCATE TABLE embeddings"))
-        await self._session.commit()
+        async with map_persistence_exceptions():
+            async with self._session.begin_nested():
+                await self._session.execute(text("TRUNCATE TABLE embeddings"))
+            await self._session.commit()

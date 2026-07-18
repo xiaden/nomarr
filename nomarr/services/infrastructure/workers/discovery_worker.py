@@ -15,6 +15,8 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from multiprocessing import Event
 from typing import TYPE_CHECKING, Any
 
+import anyio
+
 from nomarr.components.library.library_file_mutation_comp import update_last_tagged_at
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
@@ -223,7 +225,7 @@ class DiscoveryWorker(multiprocessing.Process):
         if not ml_is_available():
             logger.error("[%s] ML backend (ONNX) not available - marking unhealthy", self.worker_id)
             self._current_status = "unhealthy"
-            time.sleep(10)
+            await asyncio.sleep(10)
             return None
         db = Database(url=self.db_hosts)
         register_worker_context(db, self.worker_id)
@@ -286,7 +288,7 @@ class DiscoveryWorker(multiprocessing.Process):
                 logger.info("[%s] Running per-model VRAM probe...", self.worker_id)
                 await probe_all_models(db, config.models_dir)
             cache_device: _DevicePlacement = "gpu" if self.prefer_gpu else "cpu"
-            onnx_cache = _ONNXModelCache(config.models_dir, cache_device, db=db)
+            onnx_cache = await _ONNXModelCache.create(config.models_dir, cache_device, db=db)
             from nomarr.components.ml.resources import ml_vram_coordinator_comp as _coordinator
 
             onnx_cache.warm = True
@@ -369,7 +371,7 @@ class DiscoveryWorker(multiprocessing.Process):
             return pending_write, False
         file_path = file_doc["path"]
         try:
-            file_size = os.path.getsize(file_path)
+            file_size = await anyio.to_thread.run_sync(os.path.getsize, file_path)
         except OSError:
             file_size = -1
         logger.debug("[%s] Processing %s (size=%d bytes)", self.worker_id, file_path, file_size)
@@ -447,7 +449,7 @@ class DiscoveryWorker(multiprocessing.Process):
                 while not self._stop_event.is_set():
                     if recovering_until is not None:
                         if internal_s().value < recovering_until:
-                            time.sleep(1.0)
+                            await asyncio.sleep(1.0)
                             continue
                         recovering_until = None
                         self._current_status = "healthy"
@@ -467,7 +469,7 @@ class DiscoveryWorker(multiprocessing.Process):
                             await _check_idle_pipeline_completion(db, self._health_pipe)
                         except Exception:
                             logger.warning("[%s] _check_idle_pipeline_completion failed", self.worker_id, exc_info=True)
-                        time.sleep(IDLE_SLEEP_S)
+                        await asyncio.sleep(IDLE_SLEEP_S)
                         continue
 
                     int_file_id = int(file_id)
@@ -500,7 +502,7 @@ class DiscoveryWorker(multiprocessing.Process):
                                     consecutive_errors,
                                 )
                                 break
-                            time.sleep(IDLE_SLEEP_S)
+                            await asyncio.sleep(IDLE_SLEEP_S)
                             continue
                         cache_warmed = True
 

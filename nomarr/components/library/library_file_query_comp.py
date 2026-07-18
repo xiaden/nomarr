@@ -226,7 +226,7 @@ def _paginate_rows(rows: list[dict[str, Any]], limit: int, offset: int) -> list[
 
 async def _collect_file_ids_for_tag_ids(db: Database, tag_ids: set[int]) -> set[int]:
     """Return file ids matched by the supplied tag ids via song-tag edges."""
-    edges = cast("list[dict[str, Any]]", await db.library.file_tag_repo.get_file_tag_edges_for_tags(list(tag_ids)))
+    edges = cast("list[dict[str, Any]]", await db.library.list_file_tag_edges(list(tag_ids)))
     return {edge["file_id"] for edge in edges if isinstance(edge.get("file_id"), int)}
 
 
@@ -398,7 +398,7 @@ async def search_library_files_with_tags(
             _ids(
                 cast(
                     "list[dict[str, Any]]",
-                    await db.library.file_tag_repo.search_files_by_tag_pattern("artist", f"%{artist}%", limit=None),
+                    await db.library.search_files_by_tag_pattern("artist", f"%{artist}%"),
                 )
             )
         )
@@ -409,7 +409,7 @@ async def search_library_files_with_tags(
             _ids(
                 cast(
                     "list[dict[str, Any]]",
-                    await db.library.file_tag_repo.search_files_by_tag_pattern("album", f"%{album}%", limit=None),
+                    await db.library.search_files_by_tag_pattern("album", f"%{album}%"),
                 )
             )
         )
@@ -422,7 +422,7 @@ async def search_library_files_with_tags(
                 _ids(
                     cast(
                         "list[dict[str, Any]]",
-                        await db.library.file_tag_repo.search_files_by_tag_pattern("title", q_pattern, limit=None),
+                        await db.library.search_files_by_tag_pattern("title", q_pattern),
                     )
                 )
             )
@@ -432,14 +432,14 @@ async def search_library_files_with_tags(
             matched |= _ids(
                 cast(
                     "list[dict[str, Any]]",
-                    await db.library.file_tag_repo.search_files_by_tag_pattern("title", q_pattern, limit=None),
+                    await db.library.search_files_by_tag_pattern("title", q_pattern),
                 )
             )
             for tag_name in ("artist", "album"):
                 matched |= _ids(
                     cast(
                         "list[dict[str, Any]]",
-                        await db.library.file_tag_repo.search_files_by_tag_pattern(tag_name, q_pattern, limit=None),
+                        await db.library.search_files_by_tag_pattern(tag_name, q_pattern),
                     )
                 )
             _intersect(matched)
@@ -610,7 +610,7 @@ async def get_library_stats(db: Database, library_id: int | None = None) -> dict
             "list[dict[str, Any]]",
             await db.library.list_library_files(library_id, limit=None),
         )
-        total_files = await db.library.file_repo.count_library_files(library_id)
+        total_files = await db.library.count_files_for_library(library_id)
         file_ids = [doc["id"] for doc in file_docs if isinstance(doc.get("id"), int)]
         tags_by_file = await db.library.list_file_tags_for_files(file_ids)
         total_artists = len(
@@ -718,9 +718,7 @@ async def search_files_by_tag(
 
         edges = cast(
             "list[dict[str, Any]]",
-            await db.library.file_tag_repo.get_file_tag_edges_for_tags(
-                list(tag_value_by_id.keys()), limit=DEFAULT_LIMIT
-            ),
+            await db.library.list_file_tag_edges(list(tag_value_by_id.keys()), limit=DEFAULT_LIMIT),
         )
         best_match_by_file_id: dict[int, dict[str, Any]] = {}
         for edge in edges:
@@ -796,7 +794,7 @@ async def count_files_by_tag(db: Database, tag_key: str, target_value: float | s
     if not tag_ids:
         return 0
 
-    edges = cast("list[dict[str, Any]]", await db.library.file_tag_repo.get_file_tag_edges_for_tags(tag_ids))
+    edges = cast("list[dict[str, Any]]", await db.library.list_file_tag_edges(tag_ids))
     return len({edge["file_id"] for edge in edges if isinstance(edge.get("file_id"), (int, str))})
 
 

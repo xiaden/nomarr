@@ -183,4 +183,3 @@ def load_analyze_metrics(con) -> pd.DataFrame:
     if "disc_general" in df.columns:
         df = df.sort_values("disc_general", ascending=False, na_position="last")
     return df
-

@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import anyio
+
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 from nomarr.helpers.files_helper import is_audio_file
 from nomarr.helpers.time_helper import now_ms
@@ -72,7 +74,7 @@ async def scan_folder_files(
         files = [
             os.path.join(str(folder_path), f)
             for f in filenames
-            if is_audio_file(f) and os.path.isfile(os.path.join(str(folder_path), f))
+            if is_audio_file(f) and await anyio.to_thread.run_sync(os.path.isfile, os.path.join(str(folder_path), f))
         ]
     except OSError as e:
         logger.exception(f"Cannot read folder {folder_path}: {e}")

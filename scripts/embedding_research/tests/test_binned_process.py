@@ -68,4 +68,3 @@ def test_compute_retrieval_rows_returns_expected_tuple() -> None:
         assert row.sim_metric == "cosine"
         assert row.k == 1
         assert row.n_songs == 3
-

@@ -17,7 +17,7 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
-from nomarr.persistence.exceptions import PersistenceError
+from nomarr.helpers.exceptions import DatabaseStateError
 
 if TYPE_CHECKING:
     from nomarr.components.ml.onnx.ml_backbone import ONNXBackboneModel
@@ -506,7 +506,7 @@ async def discover_head_models(
         heads = await discover_heads(models_dir, db)
         for hi in heads:
             head_info_map[hi.model_stem] = hi
-    except PersistenceError:
+    except DatabaseStateError:
         logger.warning("[discovery] Failed to load HeadInfo from DB; labels will be empty")
 
     models: list[ONNXHeadModel] = []

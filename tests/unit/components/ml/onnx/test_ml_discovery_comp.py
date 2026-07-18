@@ -14,7 +14,7 @@ from nomarr.components.ml.onnx.ml_discovery_comp import (
 )
 from nomarr.components.ml.onnx.ml_head import ONNXHeadModel
 from nomarr.helpers.dto.ml_head_dto import HeadInfo
-from nomarr.persistence.exceptions import PersistenceError
+from nomarr.helpers.exceptions import DatabaseStateError
 
 
 def _create_head_onnx(models_dir: str, backbone: str, head_type: str, stem: str) -> str:
@@ -153,7 +153,7 @@ class TestDiscoverHeadModels:
             with patch(
                 "nomarr.components.ml.onnx.ml_discovery_comp.discover_heads",
                 new_callable=AsyncMock,
-                side_effect=PersistenceError("DB unavailable"),
+                side_effect=DatabaseStateError("DB unavailable"),
             ):
                 result = await discover_head_models(tmpdir, mock_db)
 

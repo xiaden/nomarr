@@ -89,14 +89,14 @@ async def scan_library_quick_workflow(
 
     # Step 1 — Resolve library and validate root
     library = await resolve_library_for_scan(db, library_id)
-    library_root = Path(library.root_path).resolve()
+    library_root = Path(library.root_path).resolve()  # noqa: ASYNC240
     validate_library_root(library_root)
     await mark_scan_started(db, library_id, scan_type="quick")
 
     try:
         # Step 2 — Pre-scan DB lookups
         db_folder_paths = await get_folder_rel_paths(db, library_id)
-        file_count = await db.library.file_repo.count_library_files(library_id)
+        file_count = await db.library.count_files_for_library(library_id)
         cached_folders = await get_cached_folders(db, library_id)
 
         # Step 3 — Discover folders on disk

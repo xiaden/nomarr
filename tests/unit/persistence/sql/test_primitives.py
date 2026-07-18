@@ -9,9 +9,9 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 from sqlalchemy import Column, Integer, MetaData, String, Table, Text, UniqueConstraint
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from nomarr.persistence.exceptions import DuplicateKeyError
 from nomarr.persistence.sql.primitives import (
     batch_upsert,
     delete_by_key,
@@ -132,9 +132,16 @@ async def test_insert_one_returns_row(session: AsyncSession, test_table: Table):
 
 
 async def test_insert_one_raises_on_duplicate(session: AsyncSession, test_table: Table):
-    """insert_one raises DuplicateKeyError on constraint violation."""
+    """insert_one raises IntegrityError on constraint violation.
+
+    Primitives propagate raw SQLAlchemy exceptions (Phase 3).  The
+    translation to ``DuplicateEntityError`` happens at the repository
+    level via ``map_persistence_exceptions()`` using PostgreSQL pgcodes,
+    which SQLite does not provide.  Tested separately in
+    ``test_exception_mapping.py``.
+    """
     await insert_one(test_table, {"name": "epsilon", "value": "v5"}, session=session)
-    with pytest.raises(DuplicateKeyError):
+    with pytest.raises(IntegrityError):
         await insert_one(test_table, {"name": "epsilon", "value": "v5_dup"}, session=session)
 
 

@@ -824,9 +824,10 @@ def section_flat_binned_correlation(df: pd.DataFrame) -> dict:
         )
 
     has_spearman = "flat_binned_spearman" in binned_df.columns and binned_df["flat_binned_spearman"].notna().any()
-    has_reorder = "flat_binned_beneficial_reorder_rate" in binned_df.columns and binned_df[
-        "flat_binned_beneficial_reorder_rate"
-    ].notna().any()
+    has_reorder = (
+        "flat_binned_beneficial_reorder_rate" in binned_df.columns
+        and binned_df["flat_binned_beneficial_reorder_rate"].notna().any()
+    )
     if not has_spearman and not has_reorder:
         return make_section(
             "flat-binned-corr",
@@ -864,7 +865,9 @@ def section_flat_binned_correlation(df: pd.DataFrame) -> dict:
             for col in present_cols:
                 val = row[col]
                 if col == "head":
-                    tbl_row[col] = str(val) if val is not None and not (isinstance(val, float) and pd.isna(val)) else "—"
+                    tbl_row[col] = (
+                        str(val) if val is not None and not (isinstance(val, float) and pd.isna(val)) else "—"
+                    )
                 elif col == "std_thresh":
                     tbl_row[col] = fmt(val)
                 else:
@@ -903,7 +906,10 @@ def section_flat_binned_correlation(df: pd.DataFrame) -> dict:
                 )
             apply_dark_theme(fig)
             fig.update_layout(
-                title={"text": f"{backbone} \u2014 flat-binned Spearman ρ vs threshold", "font": {"color": _FONT_COLOR}},
+                title={
+                    "text": f"{backbone} \u2014 flat-binned Spearman ρ vs threshold",
+                    "font": {"color": _FONT_COLOR},
+                },
                 height=_H_MED,
                 xaxis_title="std_thresh",
                 yaxis_title="Spearman ρ",
@@ -916,7 +922,11 @@ def section_flat_binned_correlation(df: pd.DataFrame) -> dict:
                 make_panel(
                     id=f"fb_corr_tbl_{backbone}",
                     title="Raw stats",
-                    tables=[make_table(tbl_rows, id=f"fb_corr_tbl_data_{backbone}", title="Flat-binned correlation per config")],
+                    tables=[
+                        make_table(
+                            tbl_rows, id=f"fb_corr_tbl_data_{backbone}", title="Flat-binned correlation per config"
+                        )
+                    ],
                 )
             )
 

@@ -13,7 +13,7 @@ from nomarr.components.workers.worker_discovery_comp import (
     discover_next_file,
     release_claims_for_worker,
 )
-from nomarr.persistence.exceptions import DuplicateKeyError
+from nomarr.helpers.exceptions import DuplicateEntityError
 
 
 class TestDiscoverNextFile:
@@ -49,9 +49,9 @@ class TestClaimFile:
     """Tests for claim_file."""
 
     @staticmethod
-    def _duplicate_claim_error() -> DuplicateKeyError:
-        """Build a duplicate key error for the claim path."""
-        return DuplicateKeyError()
+    def _duplicate_claim_error() -> DuplicateEntityError:
+        """Build a duplicate entity error for the claim path."""
+        return DuplicateEntityError()
 
     @pytest.mark.unit
     async def test_returns_true_on_success(self) -> None:

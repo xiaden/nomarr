@@ -11,11 +11,11 @@ Songs/tracks in Nomarr are stored as **rows in the `library_files` table**, but 
 
 ## Coverage
 
-**Documented:** Song/track data structures, persistence layer operations, ALLOWED_FILE_FIELDS vs DTO/API field coverage, tag-derived metadata hydration, bulk operations (scan/batch upsert/reconciliation), serialization (dict-based), calibration_hash field tracking, file state transitions, and v2 dataclass comparison.
+**Documented:** Song/track data structures, persistence layer operations, ALLOWED_FILE_FIELDS vs DTO/API field coverage, tag-derived metadata hydration, bulk operations (scan/batch upsert/reconciliation), serialization (dict-based), calibration_hash field tracking, file state transitions, v2 dataclass comparison, and sub-repo → facade mock migration patterns.
 
 **Not yet documented:** Embedding stream persistence, Navidrome config generation, playlist import flow.
 
-**Last extended:** 2026-07-13
+**Last extended:** 2026-07-17
 
 ## Key Findings
 
@@ -212,6 +212,23 @@ The frontend `LibraryFile` interface (in `frontend/src/shared/api/files.ts`) exp
 - `tagged_version?: string`
 - `calibration?: string`
 - `artist?, album?, title?` — all optional, populated by hydration
+
+### 14. Sub-Repo → Library Facade Mock Migration (2026-07-17)
+
+The `LibraryDb` class in `nomarr/persistence/api/library.py` exposes deprecated sub-repo properties (`file_repo`, `file_tag_repo`, `tag_repo`, `file_state_repo`) which emit `FacadeMisuseWarning` when accessed. Production code has been migrated to use intent-level methods directly on `db.library`.
+
+**Mock path rename patterns for tests:**
+
+| Old mock path | New mock path |
+|---|---|
+| `db.library.file_tag_repo.get_file_tag_edges_for_tags` | `db.library.list_file_tag_edges` |
+| `db.library.file_tag_repo.search_files_by_tag_pattern` | `db.library.search_files_by_tag_pattern` |
+| `db.library.tag_repo.get_or_create_tag` | `db.library.find_or_create_tag` |
+| `db.library.file_repo.update_file` | `db.library.update_file_fields` |
+
+**Files affected:** `test_tag_stats_comp.py`, `test_tag_write_comp.py`, `test_library_file_mutation_comp.py`, `test_library_file_query_comp.py`, `test_descriptor_match_comp.py`.
+
+**Also:** Some tests set `MagicMock` on these paths but the production code `await`s them — must use `AsyncMock`.
 
 ## Critical Invariants
 

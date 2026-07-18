@@ -193,14 +193,11 @@ async def test_interleave_round_robin_descending_weight_order() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.skip(
-    reason="Rewrite pending Part G — Tests interleave logic when clusters exhaust before target_size. Assertion format mismatch with production return type."
-)
 async def test_interleave_clusters_exhausted_returns_partial() -> None:
     """When clusters run out before target_size, return what we have."""
     results = {
-        "A": [_make_result(1)],
-        "B": [_make_result(1)],
+        "A": [_make_result("a1")],
+        "B": [_make_result("b1")],
     }
     weights = {"A": 0.5, "B": 0.5}
     result = await _interleave_per_cluster(results, weights, target_size=100)
@@ -285,12 +282,9 @@ async def test_familiar_no_played_in_ann_results_returns_empty_file_ids() -> Non
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.skip(
-    reason="Rewrite pending Part G — Tests proportional cluster mixing. Uses string IDs that may not match production int ID expectations."
-)
 async def test_familiar_multiple_clusters_proportional_mix() -> None:
     """Multiple clusters produce interleaved results proportional to weight."""
-    played = [f"f{i}" for i in range(100)]
+    played = list(range(100))
     ctx = _make_ctx(played_file_ids=played, max_songs=10)
 
     ann_c1 = [_make_result(i) for i in range(10)]
@@ -366,16 +360,13 @@ TAGS_ARTIST_PATH = "nomarr.components.navidrome.playlist_builder_comp"
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.skip(
-    reason="Rewrite pending Part G — Tests edge case: empty cold collection returns empty result. Mock patch target may need update for production API."
-)
 async def test_hidden_gems_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
     db = _make_db(cold_count=0)
 
     with patch(
         f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files",
-        new=lambda _db, _file_ids, _name: ["Artist A"],
+        new=AsyncMock(return_value=["Artist A"]),
     ):
         result = await build_hidden_gems_playlist(db, ctx)
     assert result == []
@@ -383,9 +374,6 @@ async def test_hidden_gems_empty_cold_collection_returns_empty() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.skip(
-    reason="Rewrite pending Part G — Tests artist-filter fallback behavior. Mock patch targets need update for production tag query API."
-)
 async def test_hidden_gems_no_known_artists_skips_artist_filter() -> None:
     """When no known artists, behaves like discovery (no artist exclusion)."""
     ctx = _make_ctx(played_file_ids=[1], max_songs=10)
@@ -393,8 +381,8 @@ async def test_hidden_gems_no_known_artists_skips_artist_filter() -> None:
     db = _make_db(cold_count=1000, search_results=[[_make_result(10), _make_result(11)], [_make_result(12)]])
 
     with (
-        patch(f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files", new=lambda _db, _file_ids, _name: []),
-        patch(f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file") as mock_grouped,
+        patch(f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files", new=AsyncMock(return_value=[])),
+        patch(f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value={})) as mock_grouped,
     ):
         result = await build_hidden_gems_playlist(db, ctx)
 
@@ -403,15 +391,12 @@ async def test_hidden_gems_no_known_artists_skips_artist_filter() -> None:
     assert entry["playlist_type"] == "hidden_gems"
     assert entry["playlist_name"] == "Hidden Gems"
     mock_grouped.assert_not_called()
-    assert 1 not in entry["file_ids"]
+    assert "1" not in entry["file_ids"]
     assert len(entry["file_ids"]) > 0
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.skip(
-    reason="Rewrite pending Part G — Tests artist exclusion logic. Mock data and patch targets need update for production API."
-)
 async def test_hidden_gems_known_artists_excludes_artist_tracks() -> None:
     """Tracks by known artists are excluded from results."""
     ctx = _make_ctx(played_file_ids=[1], max_songs=10)
@@ -422,33 +407,33 @@ async def test_hidden_gems_known_artists_excludes_artist_tracks() -> None:
 
     with (
         patch(
-            f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files", new=lambda _db, _file_ids, _name: ["Known Artist"]
+            f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files",
+            new=AsyncMock(return_value=["Known Artist"]),
         ),
         patch(
             f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file",
-            new=lambda _db, _file_ids, _name: {
-                10: {"Unknown Artist"},
-                11: {"Known Artist"},
-                12: {"Another Unknown"},
-                13: {"Yet Another"},
-            },
+            new=AsyncMock(
+                return_value={
+                    10: {"Unknown Artist"},
+                    11: {"Known Artist"},
+                    12: {"Another Unknown"},
+                    13: {"Yet Another"},
+                }
+            ),
         ),
     ):
         result = await build_hidden_gems_playlist(db, ctx)
 
     assert len(result) == 1
     entry = result[0]
-    assert 11 not in entry["file_ids"]
-    assert 10 in entry["file_ids"]
-    assert 12 in entry["file_ids"]
-    assert 13 in entry["file_ids"]
+    assert "11" not in entry["file_ids"]
+    assert "10" in entry["file_ids"]
+    assert "12" in entry["file_ids"]
+    assert "13" in entry["file_ids"]
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-@pytest.mark.skip(
-    reason="Rewrite pending Part G — Tests combined played+artist exclusion. Mock data and patch targets need update for production API."
-)
 async def test_hidden_gems_both_played_and_artist_exclusion() -> None:
     """Both played tracks and known-artist tracks are excluded."""
     ctx = _make_ctx(played_file_ids=[1, 2], max_songs=10)
@@ -459,26 +444,29 @@ async def test_hidden_gems_both_played_and_artist_exclusion() -> None:
 
     with (
         patch(
-            f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files", new=lambda _db, _file_ids, _name: ["Known Artist"]
+            f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files",
+            new=AsyncMock(return_value=["Known Artist"]),
         ),
         patch(
             f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file",
-            new=lambda _db, _file_ids, _name: {
-                10: {"Known Artist"},
-                11: {"Unknown"},
-                12: {"Other Unknown"},
-            },
+            new=AsyncMock(
+                return_value={
+                    10: {"Known Artist"},
+                    11: {"Unknown"},
+                    12: {"Other Unknown"},
+                }
+            ),
         ),
     ):
         result = await build_hidden_gems_playlist(db, ctx)
 
     assert len(result) == 1
     entry = result[0]
-    assert 1 not in entry["file_ids"]
-    assert 2 not in entry["file_ids"]
-    assert 10 not in entry["file_ids"]
-    assert 11 in entry["file_ids"]
-    assert 12 in entry["file_ids"]
+    assert "1" not in entry["file_ids"]
+    assert "2" not in entry["file_ids"]
+    assert "10" not in entry["file_ids"]
+    assert "11" in entry["file_ids"]
+    assert "12" in entry["file_ids"]
 
 
 # ===================================================================

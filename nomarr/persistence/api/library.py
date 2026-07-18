@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 from nomarr.helpers.dto.repo_dto import LibraryFileRow, LibraryFolderRow, LibraryRow, LibraryScanRow, TagRow
+from nomarr.helpers.exceptions import FacadeMisuseWarning
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.database.file_repo import FileRepository
 from nomarr.persistence.database.file_state_repo import FileStateRepository
@@ -134,28 +136,48 @@ class LibraryDb:
         )
 
     # ------------------------------------------------------------------
-    # Public repo accessors — used by callers that previously went through
-    # the temporary compatibility shims.
+    # Compatibility shims — emit FacadeMisuseWarning for direct repo access.
+    # Callers should use intent facade methods instead.
     # ------------------------------------------------------------------
 
     @property
     def file_repo(self) -> FileRepository:
-        """Public accessor for the file repository."""
+        """Compatibility shim — emits warning for direct repo access."""
+        warnings.warn(
+            "Direct repo access is not part of the public API. Use db.library intent methods instead.",
+            FacadeMisuseWarning,
+            stacklevel=2,
+        )
         return self._file_repo
 
     @property
     def tag_repo(self) -> TagRepository:
-        """Public accessor for the tag repository."""
+        """Compatibility shim — emits warning for direct repo access."""
+        warnings.warn(
+            "Direct repo access is not part of the public API. Use db.library intent methods instead.",
+            FacadeMisuseWarning,
+            stacklevel=2,
+        )
         return self._tag_repo
 
     @property
     def file_tag_repo(self) -> FileTagRepository:
-        """Public accessor for the file-tag repository."""
+        """Compatibility shim — emits warning for direct repo access."""
+        warnings.warn(
+            "Direct repo access is not part of the public API. Use db.library intent methods instead.",
+            FacadeMisuseWarning,
+            stacklevel=2,
+        )
         return self._file_tag_repo
 
     @property
     def file_state_repo(self) -> FileStateRepository:
-        """Public accessor for the file-state repository."""
+        """Compatibility shim — emits warning for direct repo access."""
+        warnings.warn(
+            "Direct repo access is not part of the public API. Use db.library intent methods instead.",
+            FacadeMisuseWarning,
+            stacklevel=2,
+        )
         return self._file_state_repo
 
     # ------------------------------------------------------------------
@@ -253,6 +275,10 @@ class LibraryDb:
         """Return file rows belonging to a library, with optional limit."""
         return await self._file_repo.list_library_files(library_id, limit=limit)
 
+    async def count_files_for_library(self, library_id: int) -> int:
+        """Return the number of files belonging to a library."""
+        return await self._file_repo.count_library_files(library_id)
+
     async def find_library_file_by_chromaprint(
         self,
         library_id: int,
@@ -296,13 +322,74 @@ class LibraryDb:
         """
         return await self._file_tag_repo.search_files_by_tag_contains(tag_key, value, limit=limit)
 
+    async def search_files_by_tag_pattern(
+        self,
+        tag_name: str,
+        pattern: str,
+        *,
+        limit: int | None = None,
+    ) -> list[LibraryFileRow]:
+        """Return files whose tag value matches an ILIKE *pattern*.
+
+        Joins library files to their tag edges and tag rows, filtering on
+        exact ``tag_name`` match and ILIKE ``pattern`` against the tag value.
+
+        Args:
+            tag_name: Tag name to match exactly (e.g. ``"artist"``).
+            pattern: SQL ILIKE pattern for the tag value (e.g. ``"%Beatles%"``).
+            limit: Optional maximum number of file rows to return.
+
+        Returns:
+            List of matching :class:`LibraryFileRow` dicts.
+
+        """
+        return await self._file_tag_repo.search_files_by_tag_pattern(tag_name, pattern, limit=limit)
+
     async def list_file_ids_for_tag_id(self, tag_id: int, *, limit: int | None, offset: int = 0) -> list[int]:
         """Return file IDs assigned to a tag, with paging."""
         return await self._file_tag_repo.list_file_ids_for_tag(tag_id, limit=limit, offset=offset)
 
+    async def list_file_tag_edges(
+        self,
+        tag_ids: list[int],
+        *,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return file-tag edge rows for the given tag IDs.
+
+        Each returned dict contains ``file_id``, ``tag_id``, ``confidence``,
+        and ``source`` keys.
+
+        Args:
+            tag_ids: Tag IDs whose edges should be returned.
+            limit: Optional maximum number of edges to return.
+
+        Returns:
+            List of edge dicts.
+
+        """
+        return await self._file_tag_repo.get_file_tag_edges_for_tags(tag_ids, limit=limit)
+
     async def get_tag(self, tag_id: int) -> TagRow | None:
         """Get a tag by its ID."""
         return await self._tag_repo.get_tag(tag_id)
+
+    async def find_or_create_tag(self, name: str, value: str, namespace: str) -> int:
+        """Return the ID of an existing tag or create a new one.
+
+        Looks up a tag by its ``(name, value, namespace)`` triple.  If no
+        matching row exists a new tag is inserted and its ID is returned.
+
+        Args:
+            name: Tag name (e.g. ``"nom:mood-strict"``).
+            value: Tag value string.
+            namespace: Tag namespace (empty string for the default namespace).
+
+        Returns:
+            The integer ID of the found or created tag row.
+
+        """
+        return await self._tag_repo.get_or_create_tag(name, value, namespace)
 
     async def list_tags_for_file(self, file_id: int) -> list[TagRow]:
         """Return all tags assigned to a file."""
@@ -558,6 +645,20 @@ class LibraryDb:
     async def update_library_file_last_tagged_at(self, file_id: int, tagged_at_ms: int) -> None:
         """Update the last-tagged timestamp on a library file."""
         await self._file_repo.update_file(file_id, {"last_tagged_at": tagged_at_ms})
+
+    async def update_file_fields(self, file_id: int, fields: dict[str, Any]) -> None:
+        """Update arbitrary fields on a library file row.
+
+        Generic field-update facade for callers that need to patch one or
+        more columns on a file row without going through a specialised
+        setter.
+
+        Args:
+            file_id: Primary key of the file row to update.
+            fields: Mapping of column names to their new values.
+
+        """
+        await self._file_repo.update_file(file_id, fields)
 
     async def remove_file(self, file_id: int) -> None:
         """Remove one file. FK CASCADE handles derived streams and vectors.

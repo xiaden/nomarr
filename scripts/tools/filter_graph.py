@@ -34,11 +34,11 @@ LAYERS = ["interfaces", "services", "workflows", "components", "persistence", "h
 
 LAYER_STYLE: dict[str, dict] = {
     "interfaces": {"color": "#2471A3", "fillcolor": "#D6EAF8", "label": "Interfaces"},
-    "services":   {"color": "#1E8449", "fillcolor": "#D5F5E3", "label": "Services"},
-    "workflows":  {"color": "#B9770E", "fillcolor": "#FDEBD0", "label": "Workflows"},
+    "services": {"color": "#1E8449", "fillcolor": "#D5F5E3", "label": "Services"},
+    "workflows": {"color": "#B9770E", "fillcolor": "#FDEBD0", "label": "Workflows"},
     "components": {"color": "#6C3483", "fillcolor": "#E8DAEF", "label": "Components"},
-    "persistence":{"color": "#B7950B", "fillcolor": "#FEF9E7", "label": "Persistence"},
-    "helpers":    {"color": "#717D7E", "fillcolor": "#EAECEE", "label": "Helpers"},
+    "persistence": {"color": "#B7950B", "fillcolor": "#FEF9E7", "label": "Persistence"},
+    "helpers": {"color": "#717D7E", "fillcolor": "#EAECEE", "label": "Helpers"},
 }
 
 # Exclude private/dunder functions by default
@@ -183,7 +183,7 @@ def emit_gv(
         "    ranksep=1.2;",
         f'    rankdir="{rankdir}";',
         '    node [shape=rect style="rounded,filled" margin="0.15,0.08"];',
-        '    edge [arrowsize=0.7];',
+        "    edge [arrowsize=0.7];",
         "",
     ]
 
@@ -242,7 +242,7 @@ def main() -> None:
         nargs="*",
         metavar="PATTERN",
         help=f"Regex patterns applied to function names (default: {DEFAULT_EXCLUDES}). "
-             "Replaces the default list when supplied.",
+        "Replaces the default list when supplied.",
     )
     ap.add_argument(
         "--extra-exclude",

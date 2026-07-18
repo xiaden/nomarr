@@ -228,7 +228,7 @@ async def _run_capacity_probe(
         # Warm up ONNX model cache to measure actual memory usage
         from nomarr.components.ml.onnx.ml_cache import ONNXModelCache as _ONNXModelCache
 
-        _probe_cache = _ONNXModelCache(models_dir, "gpu" if gpu_capable else "cpu")
+        _probe_cache = await _ONNXModelCache.create(models_dir, "gpu" if gpu_capable else "cpu")
         _probe_cache.warm = True
 
         # Measure RAM after loading

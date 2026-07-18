@@ -314,9 +314,7 @@ class TestProcessClaimedFile:
     @pytest.mark.asyncio
     @patch(_PATCH_RELEASE, new_callable=AsyncMock)
     @patch(_PATCH_GET_FILE, new_callable=AsyncMock)
-    async def test_releases_claim_and_returns_false_when_file_not_found(
-        self, mock_get_file_by_id, mock_release_claim
-    ):
+    async def test_releases_claim_and_returns_false_when_file_not_found(self, mock_get_file_by_id, mock_release_claim):
         mock_self = _make_worker_self()
         mock_db = MagicMock()
         mock_get_file_by_id.return_value = None

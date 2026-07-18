@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from unittest.mock import patch
+
 import pytest
 from sqlalchemy import insert, select
 
+from nomarr.helpers.exceptions import DuplicateEntityError
 from nomarr.persistence.database.app_repo import AppRepository
 from nomarr.persistence.models.health import Health
 from nomarr.persistence.models.worker_claim import WorkerClaim
@@ -62,12 +66,28 @@ class TestAppRepository:
 
     @pytest.mark.asyncio
     async def test_acquire_lock_failure(self, pg_session) -> None:
-        """acquire_lock should return False if lock already exists."""
+        """acquire_lock should return False if lock already exists.
+
+        SQLite does not provide pgcodes, so the real ``map_persistence_exceptions``
+        translates UNIQUE violations to ``DatabaseStateError`` instead of
+        ``DuplicateEntityError``.  We patch the context manager to simulate
+        PostgreSQL behaviour (pgcode 23505 → DuplicateEntityError).
+        """
         repo = AppRepository(pg_session)
-        # First acquire succeeds
+        # First acquire succeeds (uses the real context manager)
         await repo.upsert_lock("resource5", {"value": {"holder": "worker1"}})
-        # Second acquire should return False (lock already held)
-        result = await repo.acquire_lock("resource5", {"value": {"holder": "worker2"}})
+
+        @asynccontextmanager
+        async def _raise_duplicate():
+            raise DuplicateEntityError("Duplicate entity: lock already exists")
+            yield  # unreachable, satisfies generator protocol
+
+        # Patch so acquire_lock sees DuplicateEntityError (as PostgreSQL would)
+        with patch(
+            "nomarr.persistence.database.app_repo.map_persistence_exceptions",
+            side_effect=_raise_duplicate,
+        ):
+            result = await repo.acquire_lock("resource5", {"value": {"holder": "worker2"}})
         assert result is False
 
     @pytest.mark.asyncio

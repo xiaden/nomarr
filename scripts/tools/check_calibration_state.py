@@ -31,7 +31,6 @@ async def main() -> None:
             )
             result.scalar() or 0
 
-
         # ── Check calibration version ──────────────────────────────
         ver_doc = await db.app.get_config_option("calibration_version")
         last_run_doc = await db.app.get_config_option("calibration_last_run")
