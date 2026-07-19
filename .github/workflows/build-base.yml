@@ -58,10 +58,10 @@ jobs:
           context: .
           file: ./dockerfile.base
           push: true
+          pull: true
           tags: ${{ steps.tags.outputs.tags }}
           cache-from: |
             type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr-base:buildcache
-            type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr-base:latest
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr-base:buildcache,mode=max
           provenance: true
           sbom: true

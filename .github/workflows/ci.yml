@@ -211,11 +211,7 @@ jobs:
         run: python scripts/check-transitive-imports.py
 
   build-and-push:
-    # grimp-transitive-check excluded from build gate: all 54 detected transitive chains
-    # flow through nomarr.persistence.db (the authorized Database facade per ADR-031).
-    # These are by-design facade traversals, not boundary violations. Awaiting an exclusion
-    # mechanism in the grimp script (follow-up) before re-enabling the hard gate.
-    needs: [lint, test, frontend-test, arango-field-check]
+    needs: [lint, test, frontend-test, arango-field-check, grimp-transitive-check]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
@@ -288,12 +284,12 @@ jobs:
           context: .
           file: ./dockerfile
           push: true
+          pull: true
           build-args: |
             BASE_TAG=${{ steps.tags.outputs.base_tag }}
           tags: ${{ steps.tags.outputs.sha_tag }}
           cache-from: |
             type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:buildcache
-            type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:latest
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:buildcache,mode=max
           provenance: true
           sbom: true
