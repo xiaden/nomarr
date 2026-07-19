@@ -41,15 +41,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # ----------------------------------------------------------------------
-# Install core deps before essentia — numpy is needed at configure time;
-# PostgreSQL deps go here so python3-dev is still available for any source builds.
+# Install ALL Python packages before essentia — numpy is needed at configure time;
+# everything else goes here so python3-dev is available for any source builds.
 RUN python3 -m pip install --no-cache-dir --break-system-packages \
     "numpy==1.26.4" \
+    "scipy>=1.13.1" \
+    "onnxruntime-gpu>=1.18.0,<1.27.0" \
+    "mutagen==1.47.0" \
+    "pyyaml==6.0.2" \
+    "fastapi==0.115.0" \
+    "uvicorn==0.30.6" \
+    "rich==13.7.1" \
+    "requests==2.32.3" \
+    "bcrypt==4.2.1" \
     "psycopg2-binary>=2.9.10" \
     "sqlalchemy>=2.0.37" \
     "pgvector>=0.3.6" \
     "alembic>=1.14.0" \
-    "packaging>=24.0"
+    "packaging>=24.0" \
+    "watchdog==6.0.0" \
+    "spotipy>=2.24.0" \
+    "rapidfuzz>=3.0.0" \
+    "pytest==8.3.3" \
+    "pytest-cov==5.0.0" \
+    "psutil==7.2.1" \
+    "setproctitle" \
+    "pyacoustid>=1.3.0"
 #  Build essentia — minimal: AudioLoader + MonoLoader + MonoMixer +
 #  Resample + FrameCutter (FrameCutter required by waf Python bindings check)
 #  No TF, no Vamp, no examples, no tests.
@@ -74,31 +91,13 @@ RUN apt-get purge -y g++ pkg-config git python3-dev \
     && apt-get autoremove -y \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# ----------------------------------------------------------------------
-#  Python packages
-# ----------------------------------------------------------------------
-RUN python3 -m pip install --no-cache-dir --break-system-packages \
-    "numpy==1.26.4" \
-    "scipy>=1.13.1" \
-    "onnxruntime-gpu>=1.18.0,<1.27.0" \
-    "mutagen==1.47.0" \
-    "pyyaml==6.0.2" \
-    "fastapi==0.115.0" \
-    "uvicorn==0.30.6" \
-    "rich==13.7.1" \
-    "requests==2.32.3" \
-    "bcrypt==4.2.1" \
-    "watchdog==6.0.0" \
-    "spotipy>=2.24.0" \
-    "rapidfuzz>=3.0.0" \
-    "pytest==8.3.3" \
-    "pytest-cov==5.0.0" \
-    "psutil==7.2.1" \
-    "setproctitle" \
-    "pyacoustid>=1.3.0" \
-    # Sanity probes
-    && python3 -c "import onnxruntime; print('ONNX Runtime:', onnxruntime.__version__, '| providers:', onnxruntime.get_available_providers())" \
+# Sanity probe imports — verify key packages resolve after build
+RUN python3 -c "import onnxruntime; print('ONNX Runtime:', onnxruntime.__version__, '| providers:', onnxruntime.get_available_providers())" \
     && python3 -c "import essentia; import essentia.standard as es; es.MonoLoader; print('essentia:', essentia.__version__, '| MonoLoader: ok')" \
-    && python3 -c "import chromaprint; fp, _ = chromaprint.fingerprint(44100, 1, [b'\\x00' * 4096]); print('chromaprint:', len(fp), 'chars')"
+    && python3 -c "import chromaprint; fp, _ = chromaprint.fingerprint(44100, 1, [b'\\x00' * 4096]); print('chromaprint:', len(fp), 'chars')" \
+    && python3 -c "import psycopg2; print('psycopg2:', psycopg2.__version__)" \
+    && python3 -c "import sqlalchemy; print('sqlalchemy:', sqlalchemy.__version__)" \
+    && python3 -c "import pgvector; print('pgvector: ok')" \
+    && python3 -c "import alembic; print('alembic:', alembic.__version__)"
 
 WORKDIR /app
