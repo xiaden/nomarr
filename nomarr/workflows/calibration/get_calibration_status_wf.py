@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-async def get_calibration_status_workflow(db: Database) -> GlobalCalibrationStatus:
+def get_calibration_status_workflow(db: Database) -> GlobalCalibrationStatus:
     """Return global calibration status with per-library breakdown.
 
     Args:
@@ -28,16 +28,16 @@ async def get_calibration_status_workflow(db: Database) -> GlobalCalibrationStat
 
     """
     # Step 1: Read global calibration metadata
-    global_version = await get_calibration_version(db)
-    last_run = await get_calibration_last_run(db)
+    global_version = get_calibration_version(db)
+    last_run = get_calibration_last_run(db)
 
     # Step 2: Compute per-library breakdown if calibration has run
     library_status_list: list[LibraryCalibrationStatus] = []
     if global_version:
-        status_data = await get_calibration_status_by_library(db)
+        status_data = get_calibration_status_by_library(db)
         for status in status_data:
             library_id = status["library_id"]
-            library_doc = await get_library_record(db, library_id, include_scan=False)
+            library_doc = get_library_record(db, library_id, include_scan=False)
             if library_doc:
                 calibrated = status["calibrated_count"]
                 not_calibrated = status["not_calibrated_count"]

@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def compute_taste_profile(
+def compute_taste_profile(
     db: Database,
     user_id: str,
     top_plays: list[TrackPlayData] | None = None,
@@ -41,7 +41,7 @@ async def compute_taste_profile(
     # Accept plays from either kwarg (prefer top_plays then plays)
     resolved_plays_raw: list[TrackPlayData] | None = top_plays or plays
     if resolved_plays_raw is None:
-        resolved_plays_raw = await get_top_navidrome_plays(db, user_id, top_n)
+        resolved_plays_raw = get_top_navidrome_plays(db, user_id, top_n)
 
     if not resolved_plays_raw:
         logger.info("[navidrome] No play data for user %s — cannot build taste profile", user_id)
@@ -63,7 +63,7 @@ async def compute_taste_profile(
     # get_tag_values_grouped_by_file returns {file_id: {genre_set}}
     file_genre_map: dict[int, set[str]] = {}
     if backbone_id:
-        file_genre_map = await get_tag_values_grouped_by_file(db, file_ids, "genre")
+        file_genre_map = get_tag_values_grouped_by_file(db, file_ids, "genre")
 
     # Invert to {genre: set[file_ids]}
     genre_to_files: dict[str, set[int]] = {}
@@ -87,7 +87,7 @@ async def compute_taste_profile(
 
         vector_map: dict[int, list[float]] = {}
         for fid in genre_file_id_list:
-            results = await db.ml.list_file_vectors(resolved_backbone, int(fid))
+            results = db.ml.list_file_vectors(resolved_backbone, int(fid))
             for doc in results:
                 if doc.get("file_id"):
                     vector_map[doc["file_id"]] = doc["embedding"]  # type: ignore[typeddict-item]
@@ -135,7 +135,7 @@ async def compute_taste_profile(
 
             ut_vector_map: dict[int, list[float]] = {}
             for fid in ut_file_ids:
-                ut_results = await db.ml.list_file_vectors(resolved_backbone, int(fid))
+                ut_results = db.ml.list_file_vectors(resolved_backbone, int(fid))
                 for doc in ut_results:
                     if doc.get("file_id"):
                         ut_vector_map[doc["file_id"]] = doc["embedding"]  # type: ignore[typeddict-item]

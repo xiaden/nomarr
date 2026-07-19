@@ -3,6 +3,7 @@
 Converts streaming playlist URLs (Spotify, Deezer) to local M3U playlists.
 """
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Annotated
 
@@ -42,7 +43,8 @@ async def web_convert_playlist(
     Deezer works immediately (public API).
     """
     try:
-        result_dto = await playlist_service.convert_playlist(
+        result_dto = await asyncio.to_thread(
+            playlist_service.convert_playlist,
             playlist_url=request.playlist_url,
             library_id=str(request.library_id) if request.library_id is not None else None,
         )

@@ -97,7 +97,7 @@ class BatchContext:
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
 
-async def write_calibrated_tags_wf(
+def write_calibrated_tags_wf(
     db: Database,
     params: WriteCalibratedTagsParams,
     *,
@@ -145,16 +145,16 @@ async def write_calibrated_tags_wf(
     file_path = params.file_path
     models_dir = params.models_dir
     logger.debug("[calibrated_tags] Processing %s", file_path)
-    file_id = await require_library_file_id(db, file_path)
+    file_id = require_library_file_id(db, file_path)
 
     # Use cached values from batch context when available
     heads: list[Any] | None = batch_ctx.heads if batch_ctx is not None else None
-    calibrations = batch_ctx.calibrations if batch_ctx is not None else await load_calibration_lookup(db)
+    calibrations = batch_ctx.calibrations if batch_ctx is not None else load_calibration_lookup(db)
 
     # Use discovered heads or discover them
     heads_list: list[Any]
     if heads is None:
-        heads_list = await discover_heads(models_dir, db)
+        heads_list = discover_heads(models_dir, db)
         if not heads_list:
             msg = f"No heads discovered in {models_dir}"
             raise ValueError(msg)
@@ -163,14 +163,14 @@ async def write_calibrated_tags_wf(
 
     output_stream_lookup = batch_ctx.output_stream_lookup if batch_ctx is not None else None
     if output_stream_lookup is None:
-        output_stream_lookup = await build_output_stream_lookup(db, heads_list)
+        output_stream_lookup = build_output_stream_lookup(db, heads_list)
         if batch_ctx is not None:
             with batch_ctx._lock:
                 if batch_ctx.output_stream_lookup is None:
                     batch_ctx.output_stream_lookup = output_stream_lookup
                 output_stream_lookup = batch_ctx.output_stream_lookup
 
-    output_streams = await load_output_streams_for_file(
+    output_streams = load_output_streams_for_file(
         db,
         file_id,
         file_path,
@@ -205,9 +205,9 @@ async def write_calibrated_tags_wf(
             if global_version:
                 batch_ctx.pending_calibration_hashes.append(file_id)
     else:
-        await save_mood_tags(db, file_id, mood_tags)
-        global_version = await get_calibration_version(db)
+        save_mood_tags(db, file_id, mood_tags)
+        global_version = get_calibration_version(db)
         if global_version:
-            await update_file_calibration_hash(db, file_id)
+            update_file_calibration_hash(db, file_id)
             logger.debug("[calibrated_tags] Updated calibration_hash for %s", file_path)
         logger.debug("[calibrated_tags] Updated mood tags in DB for %s", file_path)

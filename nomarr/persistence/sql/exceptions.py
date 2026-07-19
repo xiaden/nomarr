@@ -5,15 +5,15 @@ exceptions defined in ``nomarr.helpers.exceptions`` so callers above
 the persistence boundary never see SQLAlchemy types.
 
 The primary translation mechanism is :func:`map_persistence_exceptions`,
-an async context manager that uses PostgreSQL error codes (pgcodes) to
+a context manager that uses PostgreSQL error codes (pgcodes) to
 discriminate between different failure modes.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError, SQLAlchemyError
 
@@ -28,11 +28,11 @@ from nomarr.persistence.exceptions import DuplicateKeyError, PersistenceError
 logger = logging.getLogger(__name__)
 
 
-@asynccontextmanager
-async def map_persistence_exceptions() -> AsyncIterator[None]:
+@contextmanager
+def map_persistence_exceptions() -> Iterator[None]:
     """Translate SQLAlchemy exceptions into domain exceptions.
 
-    Catches SQLAlchemy exceptions raised inside the ``async with`` block
+    Catches SQLAlchemy exceptions raised inside the ``with`` block
     and re-raises the appropriate domain exception from
     ``nomarr.helpers.exceptions``.  The original exception chain is
     suppressed (``from None``) so SQLAlchemy internals never leak to
@@ -68,7 +68,7 @@ async def map_persistence_exceptions() -> AsyncIterator[None]:
 # This synchronous function maps all IntegrityError to DuplicateKeyError
 # without pgcode discrimination, which is incorrect for foreign-key and
 # check-constraint violations.  It is retained only for callers that have
-# not yet migrated to the async context manager above.
+# not yet migrated to the context manager above.
 # ---------------------------------------------------------------------------
 
 

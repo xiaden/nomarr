@@ -58,7 +58,7 @@ class MetadataService:
         """
         self.db = db
 
-    async def list_entities(
+    def list_entities(
         self,
         collection: EntityCollection,
         limit: int = 100,
@@ -78,8 +78,8 @@ class MetadataService:
 
         """
         name = COLLECTION_REL_MAP[collection]
-        tags = await list_tags_by_name(self.db, name, limit=limit, offset=offset, search=search)
-        total = await count_tags_by_name(self.db, name, search=search)
+        tags = list_tags_by_name(self.db, name, limit=limit, offset=offset, search=search)
+        total = count_tags_by_name(self.db, name, search=search)
 
         entity_dicts: list[EntityDict] = [
             {
@@ -97,7 +97,7 @@ class MetadataService:
             offset=offset,
         )
 
-    async def get_entity(self, entity_id: int) -> EntityDict | None:
+    def get_entity(self, entity_id: int) -> EntityDict | None:
         """Get entity (tag) details by ID.
 
         Args:
@@ -107,11 +107,11 @@ class MetadataService:
             EntityDict or None if not found
 
         """
-        tag = await get_tag(self.db, entity_id)
+        tag = get_tag(self.db, entity_id)
         if not tag:
             return None
 
-        song_count = await count_songs_for_tag(self.db, entity_id)
+        song_count = count_songs_for_tag(self.db, entity_id)
 
         return EntityDict(
             id=tag["id"],
@@ -119,7 +119,7 @@ class MetadataService:
             song_count=song_count,
         )
 
-    async def list_songs_for_entity(
+    def list_songs_for_entity(
         self,
         entity_id: int,
         name: str,
@@ -138,8 +138,8 @@ class MetadataService:
             SongListForEntityResult with song_ids, total, limit, offset
 
         """
-        song_ids_int = await list_songs_for_tag(self.db, entity_id, limit=limit, offset=offset)
-        total = await count_songs_for_tag(self.db, entity_id)
+        song_ids_int = list_songs_for_tag(self.db, entity_id, limit=limit, offset=offset)
+        total = count_songs_for_tag(self.db, entity_id)
 
         return SongListForEntityResult(
             song_ids=[str(sid) for sid in song_ids_int],
@@ -148,7 +148,7 @@ class MetadataService:
             offset=offset,
         )
 
-    async def list_artists_for_album(self, album_id: int, limit: int = 100) -> list[EntityDict]:
+    def list_artists_for_album(self, album_id: int, limit: int = 100) -> list[EntityDict]:
         """List artists for an album via traversal (album→songs→artists).
 
         Traverses: album tag → songs → artist tags
@@ -163,21 +163,21 @@ class MetadataService:
 
         """
         # Get all songs for this album
-        song_ids = await list_songs_for_tag(self.db, album_id, limit=10000)
+        song_ids = list_songs_for_tag(self.db, album_id, limit=10000)
 
         # For each song, get primary artist tags
         artist_ids_seen: set[int] = set()
         artists: list[EntityDict] = []
 
         for song_id in song_ids:
-            artist_tags = await get_song_tags(self.db, song_id, name="artist")
+            artist_tags = get_song_tags(self.db, song_id, name="artist")
             for artist_tag in artist_tags:
                 # Get the first value from the tag (always a list now)
                 for value in artist_tag.value:
-                    tag_id = await find_or_create_tag(self.db, "artist", value)
+                    tag_id = find_or_create_tag(self.db, "artist", value)
                     if tag_id not in artist_ids_seen:
                         artist_ids_seen.add(tag_id)
-                        tag = await get_tag(self.db, tag_id)
+                        tag = get_tag(self.db, tag_id)
                         if tag:
                             artists.append(
                                 EntityDict(
@@ -191,7 +191,7 @@ class MetadataService:
         artists.sort(key=lambda a: a["display_name"])
         return artists[:limit]
 
-    async def list_albums_for_artist(self, artist_id: int, limit: int = 100) -> list[EntityDict]:
+    def list_albums_for_artist(self, artist_id: int, limit: int = 100) -> list[EntityDict]:
         """List albums for an artist via traversal (artist→songs→albums).
 
         Traverses: artist tag → songs → album tags
@@ -206,21 +206,21 @@ class MetadataService:
 
         """
         # Get all songs for this artist
-        song_ids = await list_songs_for_tag(self.db, artist_id, limit=10000)
+        song_ids = list_songs_for_tag(self.db, artist_id, limit=10000)
 
         # For each song, get album tags
         album_ids_seen: set[int] = set()
         albums: list[EntityDict] = []
 
         for song_id in song_ids:
-            album_tags = await get_song_tags(self.db, song_id, name="album")
+            album_tags = get_song_tags(self.db, song_id, name="album")
             for album_tag in album_tags:
                 # Get the first value from the tag (always a list now)
                 for value in album_tag.value:
-                    tag_id = await find_or_create_tag(self.db, "album", value)
+                    tag_id = find_or_create_tag(self.db, "album", value)
                     if tag_id not in album_ids_seen:
                         album_ids_seen.add(tag_id)
-                        tag = await get_tag(self.db, tag_id)
+                        tag = get_tag(self.db, tag_id)
                         if tag:
                             albums.append(
                                 EntityDict(
@@ -234,7 +234,7 @@ class MetadataService:
         albums.sort(key=lambda a: a["display_name"])
         return albums[:limit]
 
-    async def get_entity_counts(self) -> dict[str, int]:
+    def get_entity_counts(self) -> dict[str, int]:
         """Get total counts for all entity types (tag names).
 
         Returns:
@@ -242,14 +242,14 @@ class MetadataService:
 
         """
         return {
-            "artists": await count_tags_by_name(self.db, "artist"),
-            "albums": await count_tags_by_name(self.db, "album"),
-            "labels": await count_tags_by_name(self.db, "label"),
-            "genres": await count_tags_by_name(self.db, "genre"),
-            "years": await count_tags_by_name(self.db, "year"),
+            "artists": count_tags_by_name(self.db, "artist"),
+            "albums": count_tags_by_name(self.db, "album"),
+            "labels": count_tags_by_name(self.db, "label"),
+            "genres": count_tags_by_name(self.db, "genre"),
+            "years": count_tags_by_name(self.db, "year"),
         }
 
-    async def cleanup_orphaned_entities(self, dry_run: bool = False) -> dict[str, int | dict[str, int]]:
+    def cleanup_orphaned_entities(self, dry_run: bool = False) -> dict[str, int | dict[str, int]]:
         """Clean up orphaned tags (tags with no edges).
 
         Args:
@@ -260,12 +260,12 @@ class MetadataService:
 
         """
         if dry_run:
-            orphan_count = await get_orphaned_tag_count(self.db)
+            orphan_count = get_orphaned_tag_count(self.db)
             return {
                 "orphaned_count": orphan_count,
                 "deleted_count": 0,
             }
-        deleted_count = await cleanup_orphaned_tags(self.db)
+        deleted_count = cleanup_orphaned_tags(self.db)
         return {
             "orphaned_count": deleted_count,  # Was orphaned, now deleted
             "deleted_count": deleted_count,

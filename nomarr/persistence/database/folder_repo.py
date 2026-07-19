@@ -10,7 +10,7 @@ from typing import Any, cast
 
 from sqlalchemy import Table, delete, select
 from sqlalchemy.engine import Row
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.repo_dto import LibraryFolderRow
 from nomarr.persistence.models.library_folder import LibraryFolder
@@ -38,108 +38,108 @@ def _row_to_dto(row: Row) -> LibraryFolderRow:
 class FolderRepository:
     """Repository for the ``library_folders`` table."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: scoped_session[Session]) -> None:
         self._session = session
 
     # ── basic CRUD ──────────────────────────────────────────────
 
-    async def add_folder(self, payload: dict[str, Any]) -> int:
+    def add_folder(self, payload: dict[str, Any]) -> int:
         """Insert a new folder row and return its ``id``."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
-                row = await insert_one(_T, payload, session=self._session)
-            await self._session.commit()
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                row = insert_one(_T, payload, session=self._session)
+            self._session.commit()
             return int(row._mapping["id"])
 
-    async def add_library_folder(self, library_id: int, payload: dict[str, Any]) -> int:
+    def add_library_folder(self, library_id: int, payload: dict[str, Any]) -> int:
         """Insert a folder linked to a specific library."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
                 data = {**payload, "library_id": library_id}
-                row = await insert_one(_T, data, session=self._session)
-            await self._session.commit()
+                row = insert_one(_T, data, session=self._session)
+            self._session.commit()
             return int(row._mapping["id"])
 
-    async def get_folder(self, folder_id: int) -> LibraryFolderRow | None:
+    def get_folder(self, folder_id: int) -> LibraryFolderRow | None:
         """Fetch a single folder by primary key."""
-        async with map_persistence_exceptions():
-            row = await select_by_key(_T, folder_id, session=self._session)
+        with map_persistence_exceptions():
+            row = select_by_key(_T, folder_id, session=self._session)
             return _row_to_dto(row) if row else None
 
-    async def get_folder_by_path(self, library_id: int, path: str) -> LibraryFolderRow | None:
+    def get_folder_by_path(self, library_id: int, path: str) -> LibraryFolderRow | None:
         """Fetch a folder by path within a specific library."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T).where(
                 _T.c.library_id == library_id,
                 _T.c.path == path,
             )
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             row = result.fetchone()
             return _row_to_dto(row) if row else None
 
-    async def list_folders_for_library(self, library_id: int) -> list[LibraryFolderRow]:
+    def list_folders_for_library(self, library_id: int) -> list[LibraryFolderRow]:
         """Return all folders belonging to a library."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T).where(_T.c.library_id == library_id)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [_row_to_dto(r) for r in result.all()]
 
-    async def get_root_folders(self, library_id: int) -> list[LibraryFolderRow]:
+    def get_root_folders(self, library_id: int) -> list[LibraryFolderRow]:
         """Return top-level folders (``parent_id IS NULL``) for a library."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T).where(
                 _T.c.library_id == library_id,
                 _T.c.parent_id.is_(None),
             )
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [_row_to_dto(r) for r in result.all()]
 
-    async def get_by_parent(self, library_id: int, parent_id: int) -> list[LibraryFolderRow]:
+    def get_by_parent(self, library_id: int, parent_id: int) -> list[LibraryFolderRow]:
         """Return child folders of a given parent within a library."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T).where(
                 _T.c.library_id == library_id,
                 _T.c.parent_id == parent_id,
             )
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [_row_to_dto(r) for r in result.all()]
 
-    async def remove_library_folder(self, library_id: int, folder_id: int) -> None:
+    def remove_library_folder(self, library_id: int, folder_id: int) -> None:
         """Delete a folder by id, scoped to a library."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
                 stmt = delete(_T).where(
                     _T.c.id == folder_id,
                     _T.c.library_id == library_id,
                 )
-                await self._session.execute(stmt)
-            await self._session.commit()
+                self._session.execute(stmt)
+            self._session.commit()
 
-    async def replace_library_folders(self, library_id: int, payloads: list[dict[str, Any]]) -> None:
+    def replace_library_folders(self, library_id: int, payloads: list[dict[str, Any]]) -> None:
         """Delete all folders for a library and re-insert from *payloads*.
 
         FK CASCADE removes any child folders and disassociated files.
         """
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
                 # Delete existing folders for this library
-                await self._session.execute(delete(_T).where(_T.c.library_id == library_id))
+                self._session.execute(delete(_T).where(_T.c.library_id == library_id))
                 # Insert new folders
                 if payloads:
                     rows_data = [{**p, "library_id": library_id} for p in payloads]
-                    await self._session.execute(_T.insert().values(rows_data))
-            await self._session.commit()
+                    self._session.execute(_T.insert().values(rows_data))
+            self._session.commit()
 
     # ── maintenance ─────────────────────────────────────────────
 
-    async def truncate_folders(self) -> None:
+    def truncate_folders(self) -> None:
         """Delete all rows from ``library_folders``."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
-                await self._session.execute(delete(_T))
-            await self._session.commit()
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                self._session.execute(delete(_T))
+            self._session.commit()
 
-    async def truncate_folder_links(self) -> None:
+    def truncate_folder_links(self) -> None:
         """Clear folder relationship data.
 
         The ``library_folders`` table uses a self-referencing FK

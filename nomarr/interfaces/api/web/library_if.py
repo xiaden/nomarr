@@ -1,5 +1,6 @@
 """Library statistics and management endpoints for web UI."""
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Annotated
 
@@ -70,7 +71,7 @@ async def web_library_stats(
 ) -> LibraryStatsResponse:
     """Get library statistics (total files, artists, albums, duration)."""
     try:
-        stats = await library_service.get_library_stats()
+        stats = await asyncio.to_thread(library_service.get_library_stats)
         return LibraryStatsResponse.from_dto(stats)
     except Exception as e:
         logger.exception("[Web API] Error getting library stats")
@@ -84,7 +85,7 @@ async def list_libraries(
 ) -> ListLibrariesResponse:
     """List all configured libraries."""
     try:
-        libraries = await library_service.list_libraries(enabled_only=enabled_only)
+        libraries = await asyncio.to_thread(library_service.list_libraries, enabled_only=enabled_only)
         return ListLibrariesResponse.from_dto(libraries)
     except Exception as e:
         logger.exception("[Web API] Error listing libraries")
@@ -115,7 +116,8 @@ async def create_library(
 ) -> LibraryResponse:
     """Create a new library."""
     try:
-        library = await library_service.create_library(
+        library = await asyncio.to_thread(
+            library_service.create_library,
             name=request.name,
             root_path=request.root_path,
             is_enabled=request.is_enabled,
@@ -166,7 +168,7 @@ async def update_library(
         )
 
         if current_library is not None and current_library.library_auto_write != library.library_auto_write:
-            pipeline_status = await pipeline_service.get_pipeline_status(decoded_library_id)
+            pipeline_status = await asyncio.to_thread(pipeline_service.get_pipeline_status, decoded_library_id)
             if pipeline_status is not None:
                 if (
                     not current_library.library_auto_write
@@ -202,7 +204,7 @@ async def delete_library(
     """
     decoded_library_id: int = decode_path_id(library_id)
     try:
-        deleted = await library_service.delete_library(decoded_library_id)
+        deleted = await asyncio.to_thread(library_service.delete_library, decoded_library_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Library not found")
         return DeleteLibraryResponse(status="success", message=f"Library {decoded_library_id} deleted")
@@ -227,7 +229,7 @@ async def clear_library_data(
     full re-import is needed.
     """
     try:
-        await library_service.clear_library_data()
+        await asyncio.to_thread(library_service.clear_library_data)
         return ClearLibraryDataResponse(status="success", message="Library data cleared")
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
@@ -253,7 +255,7 @@ async def get_library_vector_stats(
     """Get vector statistics across all backbones."""
     decoded_library_id: int = decode_path_id(library_id)
     try:
-        stats = await vector_maintenance_service.get_backbone_vector_stats()
+        stats = await asyncio.to_thread(vector_maintenance_service.get_backbone_vector_stats)
     except Exception as e:
         logger.exception(f"[Web API] Error getting vector stats for library {decoded_library_id}")
         raise HTTPException(

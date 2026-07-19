@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -17,7 +17,7 @@ from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_process_file_workflow_packages_resolved_output_streams_and_skips_missing_indexes() -> None:
+def test_process_file_workflow_packages_resolved_output_streams_and_skips_missing_indexes() -> None:
     """Resolved output-index mappings become deferred writes; missing ones are skipped."""
     config = ProcessorConfig(
         models_dir="models",
@@ -38,13 +38,13 @@ async def test_process_file_workflow_packages_resolved_output_streams_and_skips_
             backbones={"bb1": SimpleNamespace(preprocess_params=SimpleNamespace(sample_rate=16000))},
         ),
     )
-    mock_db = AsyncMock()
-    library_path = AsyncMock()
+    mock_db = MagicMock()
+    library_path = MagicMock()
     library_path.is_valid.return_value = True
     library_path.absolute = Path("/music/song.flac")
     library_path.library_id = "libraries/lib1"
     embed_result = BackboneEmbeddingResult(
-        embeddings=[BackboneEmbedding(backbone="bb1", heads=[head_model], embeddings=AsyncMock())],
+        embeddings=[BackboneEmbedding(backbone="bb1", heads=[head_model], embeddings=MagicMock())],
         errors={},
         timings={},
     )
@@ -68,7 +68,7 @@ async def test_process_file_workflow_packages_resolved_output_streams_and_skips_
         patch("nomarr.workflows.processing.process_file_wf.compute_model_suite_hash", return_value="suite-hash"),
         patch(
             "nomarr.workflows.processing.process_file_wf.load_audio_mono",
-            return_value=LoadAudioMonoResult(waveform=AsyncMock(), sample_rate=16000, duration=120.0),
+            return_value=LoadAudioMonoResult(waveform=MagicMock(), sample_rate=16000, duration=120.0),
         ),
         patch("nomarr.workflows.processing.process_file_wf.compute_chromaprint", return_value="fp"),
         patch("nomarr.workflows.processing.process_file_wf.compute_backbone_embeddings", return_value=embed_result),
@@ -81,7 +81,7 @@ async def test_process_file_workflow_packages_resolved_output_streams_and_skips_
         ) as build_output_index_map_mock,
         patch("nomarr.workflows.processing.process_file_wf.build_timing_summary", return_value="timing-summary"),
     ):
-        result = await process_file_workflow(
+        result = process_file_workflow(
             path="song.flac",
             config=config,
             cache=cache,

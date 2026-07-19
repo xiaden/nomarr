@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -13,11 +13,11 @@ from nomarr.components.ml.vectors.ml_vector_retrieve_comp import (
 
 
 def _make_db() -> MagicMock:
-    """Create a mock Database with async ml methods configured."""
+    """Create a mock Database with sync ml methods configured."""
     db = MagicMock()
-    db.ml.get_embedding_stats = AsyncMock()
-    db.ml.list_file_vectors = AsyncMock()
-    db.ml.search_vectors = AsyncMock()
+    db.ml.get_embedding_stats = MagicMock()
+    db.ml.list_file_vectors = MagicMock()
+    db.ml.search_vectors = MagicMock()
     return db
 
 
@@ -25,7 +25,7 @@ def _make_db() -> MagicMock:
 class TestGetColdTrackVector:
     """Tests for ``get_cold_track_vector``."""
 
-    async def test_returns_none_when_cold_count_zero(self) -> None:
+    def test_returns_none_when_cold_count_zero(self) -> None:
         """Returns None without fetching vectors when cold_count is 0."""
         mock_db = _make_db()
         mock_db.ml.get_embedding_stats.return_value = {
@@ -34,13 +34,13 @@ class TestGetColdTrackVector:
             "index_exists": False,
         }
 
-        result = await get_cold_track_vector(mock_db, 1, "effnet")
+        result = get_cold_track_vector(mock_db, 1, "effnet")
 
         assert result is None
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
         mock_db.ml.list_file_vectors.assert_not_called()
 
-    async def test_returns_none_when_cold_count_negative(self) -> None:
+    def test_returns_none_when_cold_count_negative(self) -> None:
         """Returns None when cold_count is a negative/string value from stats."""
         mock_db = _make_db()
         mock_db.ml.get_embedding_stats.return_value = {
@@ -49,13 +49,13 @@ class TestGetColdTrackVector:
             "index_exists": False,
         }
 
-        result = await get_cold_track_vector(mock_db, 2, "effnet")
+        result = get_cold_track_vector(mock_db, 2, "effnet")
 
         assert result is None
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
         mock_db.ml.list_file_vectors.assert_not_called()
 
-    async def test_returns_vector_document_when_cold_exists(self) -> None:
+    def test_returns_vector_document_when_cold_exists(self) -> None:
         """Fetches and returns vector via list_file_vectors when cold_count > 0."""
         mock_db = _make_db()
         expected_doc = {
@@ -72,13 +72,13 @@ class TestGetColdTrackVector:
         }
         mock_db.ml.list_file_vectors.return_value = [expected_doc]
 
-        result = await get_cold_track_vector(mock_db, 1, "effnet")
+        result = get_cold_track_vector(mock_db, 1, "effnet")
 
         assert result == expected_doc
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
         mock_db.ml.list_file_vectors.assert_called_once_with("effnet", 1)
 
-    async def test_returns_none_when_vector_not_found(self) -> None:
+    def test_returns_none_when_vector_not_found(self) -> None:
         """Returns None when cold collection has docs but file has no vector."""
         mock_db = _make_db()
         mock_db.ml.get_embedding_stats.return_value = {
@@ -88,7 +88,7 @@ class TestGetColdTrackVector:
         }
         mock_db.ml.list_file_vectors.return_value = []
 
-        result = await get_cold_track_vector(mock_db, 999, "effnet")
+        result = get_cold_track_vector(mock_db, 999, "effnet")
 
         assert result is None
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
@@ -99,12 +99,12 @@ class TestGetColdTrackVector:
 class TestSearchSimilarColdTrackVectors:
     """Tests for ``search_similar_cold_track_vectors``."""
 
-    async def test_returns_empty_when_cold_collection_is_empty(self) -> None:
+    def test_returns_empty_when_cold_collection_is_empty(self) -> None:
         """Skips ANN search when the cold collection has no promoted vectors."""
         mock_db = _make_db()
         mock_db.ml.get_embedding_stats.return_value = {"cold_count": 0}
 
-        result = await search_similar_cold_track_vectors(
+        result = search_similar_cold_track_vectors(
             mock_db,
             backbone_id="effnet",
             seed_vector=[0.1, 0.2, 0.3],
@@ -117,13 +117,13 @@ class TestSearchSimilarColdTrackVectors:
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
         mock_db.ml.search_vectors.assert_not_called()
 
-    async def test_queries_search_vectors_when_cold_has_content(self) -> None:
+    def test_queries_search_vectors_when_cold_has_content(self) -> None:
         """Delegates to db.ml.search_vectors when cold_count > 0."""
         mock_db = _make_db()
         mock_db.ml.get_embedding_stats.return_value = {"cold_count": 300}
         mock_db.ml.search_vectors.return_value = [{"file_id": 2, "score": 0.91}]
 
-        result = await search_similar_cold_track_vectors(
+        result = search_similar_cold_track_vectors(
             mock_db,
             backbone_id="effnet",
             seed_vector=[0.1, 0.2, 0.3],

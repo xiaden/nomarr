@@ -3,7 +3,7 @@
 These are the Tier 1 building blocks that every Tier 2 repository calls
 for basic select, insert, upsert, update, delete, batch upsert, and
 emptiness checks.  All functions accept a SQLAlchemy ``Table`` object
-and an ``AsyncSession``; they never import ORM models.
+and a ``Session``; they never import ORM models.
 """
 
 from __future__ import annotations
@@ -13,14 +13,14 @@ from typing import Any
 from sqlalchemy import Table, delete, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Row
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session, scoped_session
 
 
-async def select_by_key(
+def select_by_key(
     table: Table,
     key_val: Any,
     *,
-    session: AsyncSession,
+    session: scoped_session[Session],
     key_col: str = "id",
 ) -> Row | None:
     """Fetch a single row by primary-key (or alternate key) value.
@@ -28,15 +28,15 @@ async def select_by_key(
     Returns ``None`` when no row matches.
     """
     stmt = select(table).where(table.c[key_col] == key_val)
-    result = await session.execute(stmt)
+    result = session.execute(stmt)
     return result.fetchone()
 
 
-async def select_many_by_keys(
+def select_many_by_keys(
     table: Table,
     keys: list,
     *,
-    session: AsyncSession,
+    session: scoped_session[Session],
     key_col: str = "id",
 ) -> list[Row]:
     """Fetch all rows whose key column value is in *keys*.
@@ -47,15 +47,15 @@ async def select_many_by_keys(
     if not keys:
         return []
     stmt = select(table).where(table.c[key_col].in_(keys))
-    result = await session.execute(stmt)
+    result = session.execute(stmt)
     return list(result.all())
 
 
-async def insert_one(
+def insert_one(
     table: Table,
     data: dict,
     *,
-    session: AsyncSession,
+    session: scoped_session[Session],
 ) -> Row:
     """Insert a single row and return it via ``RETURNING``.
 
@@ -64,19 +64,19 @@ async def insert_one(
     ``map_persistence_exceptions()``.
     """
     stmt = insert(table).values(**data).returning(table)
-    result = await session.execute(stmt)
+    result = session.execute(stmt)
     row = result.fetchone()
     assert row is not None  # RETURNING always yields a row on success
     return row
 
 
-async def upsert_by_field(
+def upsert_by_field(
     table: Table,
     field: str,
     match_val: Any,
     data: dict,
     *,
-    session: AsyncSession,
+    session: scoped_session[Session],
 ) -> Row:
     """Insert or update a row keyed on *field*.
 
@@ -93,34 +93,34 @@ async def upsert_by_field(
         )
         .returning(table)
     )
-    result = await session.execute(stmt)
+    result = session.execute(stmt)
     row = result.fetchone()
     assert row is not None
     return row
 
 
-async def update_by_field(
+def update_by_field(
     table: Table,
     field: str,
     match_val: Any,
     data: dict,
     *,
-    session: AsyncSession,
+    session: scoped_session[Session],
 ) -> Row | None:
     """Update rows where *field* equals *match_val*, returning the updated row.
 
     Returns ``None`` when no row matches.
     """
     stmt = update(table).where(table.c[field] == match_val).values(**data).returning(table)
-    result = await session.execute(stmt)
+    result = session.execute(stmt)
     return result.fetchone()
 
 
-async def delete_by_key(
+def delete_by_key(
     table: Table,
     key_val: Any,
     *,
-    session: AsyncSession,
+    session: scoped_session[Session],
     key_col: str = "id",
 ) -> None:
     """Delete the row whose key column equals *key_val*.
@@ -128,15 +128,15 @@ async def delete_by_key(
     No error is raised when the key does not exist.
     """
     stmt = delete(table).where(table.c[key_col] == key_val)
-    await session.execute(stmt)
+    session.execute(stmt)
 
 
-async def batch_upsert(
+def batch_upsert(
     table: Table,
     data_list: list[dict],
     conflict_fields: list[str],
     *,
-    session: AsyncSession,
+    session: scoped_session[Session],
 ) -> list[Row]:
     """Batch insert-or-update using PostgreSQL ``ON CONFLICT … DO UPDATE``.
 
@@ -153,17 +153,17 @@ async def batch_upsert(
         index_elements=conflict_fields,
         set_=set_clause,
     ).returning(table)
-    result = await session.execute(stmt)
+    result = session.execute(stmt)
     return list(result.all())
 
 
-async def is_table_empty(
+def is_table_empty(
     table: Table,
     *,
-    session: AsyncSession,
+    session: scoped_session[Session],
 ) -> bool:
     """Return ``True`` when *table* contains zero rows."""
     stmt = select(func.count()).select_from(table)
-    result = await session.execute(stmt)
+    result = session.execute(stmt)
     count = result.scalar()
     return count == 0

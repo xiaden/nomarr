@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-async def get_file_for_writing(
+def get_file_for_writing(
     db: Database,
     file_key: str,
 ) -> tuple[int, str, dict[str, Any] | None]:
@@ -42,7 +42,7 @@ async def get_file_for_writing(
     """
     # PostgreSQL uses integer IDs; convert file_key to int
     file_id = int(file_key)
-    file_doc = await get_file_by_id(db, file_id)
+    file_doc = get_file_by_id(db, file_id)
     return file_id, file_key, file_doc
 
 
@@ -51,12 +51,12 @@ async def get_file_for_writing(
 # ---------------------------------------------------------------------------
 
 
-async def resolve_library_root(
+def resolve_library_root(
     db: Database,
     library_id: int,
 ) -> Path | None:
     """Return the library's root path, or ``None`` if the library is missing."""
-    library_doc = await get_library_record(db, library_id, include_scan=False)
+    library_doc = get_library_record(db, library_id, include_scan=False)
     if not library_doc:
         return None
     return Path(library_doc["root_path"])
@@ -67,7 +67,7 @@ async def resolve_library_root(
 # ---------------------------------------------------------------------------
 
 
-async def get_nomarr_tags(
+def get_nomarr_tags(
     db: Database,
     file_id: int,
 ) -> Tags:
@@ -76,7 +76,7 @@ async def get_nomarr_tags(
     Equivalent to calling the component-owned tag query helper with
     ``nomarr_only=True``.
     """
-    return await get_song_tags(db, file_id, nomarr_only=True)
+    return get_song_tags(db, file_id, nomarr_only=True)
 
 
 # All three mood tier names that must always be written (or cleared) together.
@@ -85,7 +85,7 @@ async def get_nomarr_tags(
 _MOOD_TIER_NAMES = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
 
 
-async def save_mood_tags(
+def save_mood_tags(
     db: Database,
     file_id: int,
     mood_tags: Tags,
@@ -115,13 +115,13 @@ async def save_mood_tags(
     count = 0
     for name in _MOOD_TIER_NAMES:
         values = written.get(name, [])
-        await set_song_tags(db, file_id, name, list(values))
+        set_song_tags(db, file_id, name, list(values))
         if values:
             count += 1
     return count
 
 
-async def save_mood_tags_batch(
+def save_mood_tags_batch(
     db: Database,
     items: list[tuple[int, Tags]],
 ) -> int:
@@ -156,7 +156,7 @@ async def save_mood_tags_batch(
             {"song_id": int(file_id), "name": name, "values": written.get(name, [])} for name in _MOOD_TIER_NAMES
         )
 
-    await set_song_tags_batch(db, entries)
+    set_song_tags_batch(db, entries)
     return sum(1 for e in entries if e["values"])
 
 
@@ -165,7 +165,7 @@ async def save_mood_tags_batch(
 # ---------------------------------------------------------------------------
 
 
-async def release_file_claim(
+def release_file_claim(
     db: Database,
     file_key: str,
 ) -> None:
@@ -174,7 +174,7 @@ async def release_file_claim(
     Swallows exceptions so callers in error paths don't need try/except.
     """
     try:
-        await release_claim(db, file_key)
+        release_claim(db, file_key)
     except (ValueError, RuntimeError) as exc:
         logger.warning(
             "[file_write_comp] Failed to release claim for %s: %s",

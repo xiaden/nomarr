@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -44,9 +44,9 @@ def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
 def _make_db(
     path_map: dict[str, dict[str, str]] | None = None,
     existing_track_keys: list[str] | None = None,
-) -> AsyncMock:
+) -> MagicMock:
     """Create a mock Database with app and library mocks."""
-    db = AsyncMock()
+    db = MagicMock()
     db.library.get_files_by_paths_bulk.return_value = path_map or {}
     db.app.bulk_upsert_nd_tracks.return_value = 0
     db.app.bulk_ensure_nd_file_links.return_value = None
@@ -79,7 +79,7 @@ _GET_FILES_BY_PATHS = "nomarr.workflows.navidrome.sync_navidrome_wf.get_files_by
 class TestSyncNavidrome:
     """Tests for the sync_navidrome workflow."""
 
-    async def test_full_sync_with_play_counts(self) -> None:
+    def test_full_sync_with_play_counts(self) -> None:
         """All songs resolve, play counts are captured."""
         songs = [
             _song("nd-1", "/music/t1.mp3", play_count=5, last_played_ms=1000),
@@ -95,13 +95,13 @@ class TestSyncNavidrome:
         db.app.bulk_upsert_nd_tracks.return_value = 2
         db.app.bulk_upsert_nd_plays.return_value = 1
 
-        client = AsyncMock()
+        client = MagicMock()
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
             patch(_GET_FILES_BY_PATHS, return_value=db.library.get_files_by_paths_bulk.return_value),
         ):
-            result = await sync_navidrome(client, db, "user-1")
+            result = sync_navidrome(client, db, "user-1")
 
         assert isinstance(result, dict)
         assert result["total_songs"] == 2
@@ -114,7 +114,7 @@ class TestSyncNavidrome:
 
         db.app.bulk_upsert_nd_plays.assert_called_once()
 
-    async def test_unresolved_songs_counted(self) -> None:
+    def test_unresolved_songs_counted(self) -> None:
         """Songs that don't resolve to Nomarr files are counted."""
         songs = [
             _song("nd-1", "/music/t1.mp3"),
@@ -125,19 +125,19 @@ class TestSyncNavidrome:
             existing_track_keys=[],
         )
         db.app.bulk_upsert_nd_tracks.return_value = 2
-        client = AsyncMock()
+        client = MagicMock()
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
             patch(_GET_FILES_BY_PATHS, return_value=db.library.get_files_by_paths_bulk.return_value),
         ):
-            result = await sync_navidrome(client, db, "user-1")
+            result = sync_navidrome(client, db, "user-1")
 
         assert result["total_songs"] == 2
         assert result["resolved"] == 1
         assert result["unresolved"] == 1
 
-    async def test_raw_relative_paths_resolve_without_remapping(self) -> None:
+    def test_raw_relative_paths_resolve_without_remapping(self) -> None:
         """Relative Navidrome paths should resolve directly when they already match Nomarr."""
         songs = [_song("nd-1", "Artist/Album/t1.mp3")]
         db = _make_db(
@@ -145,31 +145,31 @@ class TestSyncNavidrome:
             existing_track_keys=["nd-1"],
         )
         db.app.bulk_upsert_nd_tracks.return_value = 1
-        client = AsyncMock()
+        client = MagicMock()
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
             patch(_GET_FILES_BY_PATHS, return_value=db.library.get_files_by_paths_bulk.return_value),
         ):
-            result = await sync_navidrome(client, db, "user-1")
+            result = sync_navidrome(client, db, "user-1")
 
         assert result["resolved"] == 1
 
-    async def test_non_exact_paths_do_not_resolve_without_remapping(self) -> None:
+    def test_non_exact_paths_do_not_resolve_without_remapping(self) -> None:
         """Paths that differ from stored values should stay unresolved without config remaps."""
         songs = [_song("nd-1", r"Artist\Album\t1.mp3")]
         db = _make_db(existing_track_keys=["nd-1"])
         db.app.bulk_upsert_nd_tracks.return_value = 1
-        client = AsyncMock()
+        client = MagicMock()
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
             patch(_GET_FILES_BY_PATHS, return_value={}),
             pytest.raises(ValueError, match="Could not match Navidrome paths"),
         ):
-            await sync_navidrome(client, db, "user-1")
+            sync_navidrome(client, db, "user-1")
 
-    async def test_configured_prefix_map_applies_remapping(self) -> None:
+    def test_configured_prefix_map_applies_remapping(self) -> None:
         """Configured path-prefix mappings should rewrite paths before lookup."""
         songs = [_song("nd-1", "/music/Artist/Album/t1.mp3")]
         db = _make_db(
@@ -177,13 +177,13 @@ class TestSyncNavidrome:
             existing_track_keys=["nd-1"],
         )
         db.app.bulk_upsert_nd_tracks.return_value = 1
-        client = AsyncMock()
+        client = MagicMock()
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
             patch(_GET_FILES_BY_PATHS, return_value=db.library.get_files_by_paths_bulk.return_value),
         ):
-            result = await sync_navidrome(
+            result = sync_navidrome(
                 client,
                 db,
                 "user-1",
@@ -192,7 +192,7 @@ class TestSyncNavidrome:
 
         assert result["resolved"] == 1
 
-    async def test_mixed_exact_and_prefix_mapped_paths_both_resolve(self) -> None:
+    def test_mixed_exact_and_prefix_mapped_paths_both_resolve(self) -> None:
         """When remapping is configured, every song uses the configured path transform."""
         songs = [
             _song("nd-1", "/music/Artist/Album/t1.mp3"),
@@ -200,9 +200,9 @@ class TestSyncNavidrome:
         ]
         db = _make_db(existing_track_keys=["nd-1", "nd-2"])
         db.app.bulk_upsert_nd_tracks.return_value = 2
-        client = AsyncMock()
+        client = MagicMock()
 
-        def lookup(_db: AsyncMock, paths: list[str]) -> dict[str, dict[str, str]]:
+        def lookup(_db: MagicMock, paths: list[str]) -> dict[str, dict[str, str]]:
             if paths == ["Artist/Album/t1.mp3", "Artist/Album/t2.mp3"]:
                 return {
                     "Artist/Album/t1.mp3": {"id": f"{'library_files'}/f1"},
@@ -214,7 +214,7 @@ class TestSyncNavidrome:
             patch(_CRAWL_PATH, return_value=songs),
             patch(_GET_FILES_BY_PATHS, side_effect=lookup),
         ):
-            result = await sync_navidrome(
+            result = sync_navidrome(
                 client,
                 db,
                 "user-1",
@@ -230,36 +230,36 @@ class TestSyncNavidrome:
             ]
         )
 
-    async def test_path_resolution_batches_library_file_lookups_in_hundreds(self) -> None:
+    def test_path_resolution_batches_library_file_lookups_in_hundreds(self) -> None:
         """Library-file path lookups should be batched in groups of 100 paths."""
         songs = [_song(f"nd-{index}", f"Artist/Album/t{index}.mp3") for index in range(205)]
         db = _make_db(existing_track_keys=[])
         db.app.bulk_upsert_nd_tracks.return_value = 205
-        client = AsyncMock()
+        client = MagicMock()
 
-        def lookup(_db: AsyncMock, paths: list[str]) -> dict[str, dict[str, str]]:
+        def lookup(_db: MagicMock, paths: list[str]) -> dict[str, dict[str, str]]:
             return {path: {"id": f"{'library_files'}/{path}"} for path in paths}
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
             patch(_GET_FILES_BY_PATHS, side_effect=lookup) as lookup_mock,
         ):
-            result = await sync_navidrome(client, db, "user-1")
+            result = sync_navidrome(client, db, "user-1")
 
         assert result["resolved"] == 205
         assert lookup_mock.call_count == 3
         assert [len(call.args[1]) for call in lookup_mock.call_args_list] == [100, 100, 5]
 
-    async def test_empty_library(self) -> None:
+    def test_empty_library(self) -> None:
         """No songs returns zero-filled result."""
         db = _make_db(existing_track_keys=[])
-        client = AsyncMock()
+        client = MagicMock()
 
         with (
             patch(_CRAWL_PATH, return_value=[]),
             patch(_GET_FILES_BY_PATHS, return_value=db.library.get_files_by_paths_bulk.return_value),
         ):
-            result = await sync_navidrome(client, db, "user-1")
+            result = sync_navidrome(client, db, "user-1")
 
         assert result["total_songs"] == 0
         assert result["resolved"] == 0
@@ -267,7 +267,7 @@ class TestSyncNavidrome:
         assert result["play_edges_upserted"] == 0
         assert result["orphans_removed"] == 0
 
-    async def test_orphan_cleanup(self) -> None:
+    def test_orphan_cleanup(self) -> None:
         """Tracks in DB but not in Navidrome are removed."""
         songs = [_song("nd-1", "/music/t1.mp3")]
         db = _make_db(
@@ -276,20 +276,20 @@ class TestSyncNavidrome:
         )
         db.app.bulk_upsert_nd_tracks.return_value = 1
         db.app.delete_nd_tracks_cascade.return_value = 2
-        client = AsyncMock()
+        client = MagicMock()
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
             patch(_GET_FILES_BY_PATHS, return_value=db.library.get_files_by_paths_bulk.return_value),
         ):
-            result = await sync_navidrome(client, db, "user-1")
+            result = sync_navidrome(client, db, "user-1")
 
         assert result["orphans_removed"] == 2
         db.app.delete_nd_tracks_cascade.assert_called_once_with(
             ["nd-orphan-1", "nd-orphan-2"],
         )
 
-    async def test_no_orphan_deletion_when_empty(self) -> None:
+    def test_no_orphan_deletion_when_empty(self) -> None:
         """delete_tracks_cascade is not called when there are no orphans."""
         songs = [_song("nd-1", "/music/t1.mp3")]
         db = _make_db(
@@ -297,18 +297,18 @@ class TestSyncNavidrome:
             existing_track_keys=["nd-1"],
         )
         db.app.bulk_upsert_nd_tracks.return_value = 1
-        client = AsyncMock()
+        client = MagicMock()
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
             patch(_GET_FILES_BY_PATHS, return_value=db.library.get_files_by_paths_bulk.return_value),
         ):
-            result = await sync_navidrome(client, db, "user-1")
+            result = sync_navidrome(client, db, "user-1")
 
         assert result["orphans_removed"] == 0
         db.app.delete_nd_tracks_cascade.assert_not_called()
 
-    async def test_play_edges_only_for_nonzero_counts(self) -> None:
+    def test_play_edges_only_for_nonzero_counts(self) -> None:
         """Only songs with play_count > 0 produce play edges."""
         songs = [
             _song("nd-1", "/music/t1.mp3", play_count=3, last_played_ms=9000),
@@ -325,13 +325,13 @@ class TestSyncNavidrome:
         )
         db.app.bulk_upsert_nd_tracks.return_value = 3
         db.app.bulk_upsert_nd_plays.return_value = 2
-        client = AsyncMock()
+        client = MagicMock()
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
             patch(_GET_FILES_BY_PATHS, return_value=db.library.get_files_by_paths_bulk.return_value),
         ):
-            result = await sync_navidrome(client, db, "user-1")
+            result = sync_navidrome(client, db, "user-1")
 
         assert result["play_edges_upserted"] == 2
         # bulk_upsert_plays(user_id, plays) — plays is the second positional arg

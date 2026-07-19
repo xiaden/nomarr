@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -102,9 +102,9 @@ class TestCapacityEstimate:
 class TestGetOrRunCapacityProbe:
     """Tests for get_or_run_capacity_probe()."""
 
-    async def test_returns_cached_estimate_when_exists(self):
+    def test_returns_cached_estimate_when_exists(self):
         """Returns cached estimate if it exists for the model hash."""
-        mock_db = AsyncMock()
+        mock_db = MagicMock()
         mock_db.app.get_config_option.return_value = {
             "value": {
                 "measured_backbone_vram_mb": 8000,
@@ -123,7 +123,7 @@ class TestGetOrRunCapacityProbe:
                 return_value=True,
             ),
         ):
-            result = await get_or_run_capacity_probe(
+            result = get_or_run_capacity_probe(
                 db=mock_db,
                 models_dir=tmpdir,
                 worker_id="worker-1",
@@ -137,9 +137,9 @@ class TestGetOrRunCapacityProbe:
 class TestInvalidateCapacityEstimate:
     """Tests for invalidate_capacity_estimate()."""
 
-    async def test_deletes_cached_estimate(self):
+    def test_deletes_cached_estimate(self):
         """Invalidate calls delete on DB."""
-        mock_db = AsyncMock()
+        mock_db = MagicMock()
 
         with (
             tempfile.TemporaryDirectory() as tmpdir,
@@ -148,6 +148,6 @@ class TestInvalidateCapacityEstimate:
                 return_value="abc123",
             ),
         ):
-            await invalidate_capacity_estimate(mock_db, tmpdir)
+            invalidate_capacity_estimate(mock_db, tmpdir)
 
         mock_db.app.remove_config_option.assert_called_once_with(key="capacity_estimate:abc123")

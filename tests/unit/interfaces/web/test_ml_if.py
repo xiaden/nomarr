@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -16,13 +16,13 @@ from nomarr.interfaces.api.web.ml_if import router as ml_router
 @pytest.fixture
 def mock_library_service() -> MagicMock:
     """Provide a mocked library service dependency."""
-    return AsyncMock()
+    return MagicMock()
 
 
 @pytest.fixture
 def mock_ml_service() -> MagicMock:
     """Provide a mocked ML service dependency."""
-    return AsyncMock()
+    return MagicMock()
 
 
 @pytest.fixture

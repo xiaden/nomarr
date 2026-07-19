@@ -5,6 +5,7 @@ Auth: session token (verify_session). Admin-only for maintenance endpoints.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -52,7 +53,8 @@ async def search_vectors(
 ) -> VectorSearchResponse:
     """Search for similar vectors using ANN similarity."""
     try:
-        results = await vector_search_service.search_similar_tracks(
+        results = await asyncio.to_thread(
+            vector_search_service.search_similar_tracks,
             file_id=decode_id(request.file_id),
             backbone_id=request.backbone_id,
             limit=request.limit,
@@ -91,7 +93,7 @@ async def get_track_vector(
 ) -> VectorGetResponse:
     """Get embedding vector for a specific track."""
     decoded_file_id: int = decode_path_id(file_id)
-    result = await vector_search_service.get_track_vector(backbone_id, decoded_file_id)
+    result = await asyncio.to_thread(vector_search_service.get_track_vector, backbone_id, decoded_file_id)
 
     if result is None:
         raise HTTPException(
@@ -116,7 +118,7 @@ async def get_vector_stats(
 ) -> VectorStatsResponse:
     """Get hot/cold statistics for all backbones."""
 
-    stats_rows = await vector_maintenance_service.get_backbone_vector_stats()
+    stats_rows = await asyncio.to_thread(vector_maintenance_service.get_backbone_vector_stats)
     stats_list = [
         VectorHotColdStats(
             backbone_id=str(row["backbone_id"]),
@@ -137,7 +139,8 @@ async def promote_vectors(
 ) -> VectorPromoteResponse:
     """Promote vectors from hot to cold and rebuild index."""
     try:
-        await vector_maintenance_service.promote_and_rebuild(
+        await asyncio.to_thread(
+            vector_maintenance_service.promote_and_rebuild,
             backbone_id=request.backbone_id,
             nlists=request.nlists,
         )
@@ -168,7 +171,8 @@ async def rebuild_vector_index(
 ) -> VectorRebuildIndexResponse:
     """Rebuild vector index without promoting hot vectors."""
     try:
-        await vector_maintenance_service.rebuild_index(
+        await asyncio.to_thread(
+            vector_maintenance_service.rebuild_index,
             backbone_id=request.backbone_id,
             nlists=request.nlists,
         )

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -13,12 +13,12 @@ from nomarr.components.ml.vectors.ml_vector_registry_comp import (
 
 
 def _make_db() -> MagicMock:
-    """Create a mock Database with async ml methods configured."""
+    """Create a mock Database with sync ml methods configured."""
     db = MagicMock()
     db.ml.list_vector_collection_names = MagicMock()
-    db.ml.list_file_vectors = AsyncMock()
-    db.ml.remove_file_vectors = AsyncMock()
-    db.ml.remove_vectors_for_files = AsyncMock()
+    db.ml.list_file_vectors = MagicMock()
+    db.ml.remove_file_vectors = MagicMock()
+    db.ml.remove_vectors_for_files = MagicMock()
     return db
 
 
@@ -27,7 +27,7 @@ class TestDeleteVectorsByFileId:
     """Tests for ``delete_vectors_by_file_id``."""
 
     @pytest.mark.mocked
-    async def test_iterates_all_registered_vector_collections_and_executes_edge_cleanup(self) -> None:
+    def test_iterates_all_registered_vector_collections_and_executes_edge_cleanup(self) -> None:
         db = _make_db()
 
         db.ml.list_vector_collection_names.return_value = [
@@ -42,7 +42,7 @@ class TestDeleteVectorsByFileId:
             ],
         ]
 
-        deleted = await delete_vectors_by_file_id(db, "7")
+        deleted = delete_vectors_by_file_id(db, "7")
 
         assert deleted == 3
         db.ml.list_vector_collection_names.assert_called_once_with()
@@ -57,17 +57,17 @@ class TestDeleteVectorsByFileIds:
     """Tests for ``delete_vectors_by_file_ids``."""
 
     @pytest.mark.mocked
-    async def test_returns_zero_for_empty_input(self) -> None:
+    def test_returns_zero_for_empty_input(self) -> None:
         db = _make_db()
 
-        deleted = await delete_vectors_by_file_ids(db, [])
+        deleted = delete_vectors_by_file_ids(db, [])
 
         assert deleted == 0
         db.ml.list_vector_collection_names.assert_not_called()
         db.ml.remove_vectors_for_files.assert_not_called()
 
     @pytest.mark.mocked
-    async def test_iterates_every_namespace_for_each_file_id_and_executes_batch_cleanup(self) -> None:
+    def test_iterates_every_namespace_for_each_file_id_and_executes_batch_cleanup(self) -> None:
         db = _make_db()
 
         db.ml.list_vector_collection_names.return_value = [
@@ -85,7 +85,7 @@ class TestDeleteVectorsByFileIds:
             ],
         ]
 
-        deleted = await delete_vectors_by_file_ids(db, ["1", "2"])
+        deleted = delete_vectors_by_file_ids(db, ["1", "2"])
 
         assert deleted == 6
         db.ml.list_vector_collection_names.assert_called_once_with()

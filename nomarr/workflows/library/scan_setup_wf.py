@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def scan_setup_workflow(
+def scan_setup_workflow(
     db: Database,
     library_id: int,
     scan_type: str,
@@ -51,13 +51,13 @@ async def scan_setup_workflow(
         LibraryAlreadyScanningError: If the library is already being scanned.
 
     """
-    library = await resolve_library_for_scan(db, int(library_id))  # raises LibraryNotFoundError
+    library = resolve_library_for_scan(db, int(library_id))  # raises LibraryNotFoundError
 
-    if await is_library_scanning(db, int(library_id)):
+    if is_library_scanning(db, int(library_id)):
         msg = f"Library {library_id} is already being scanned"
         raise LibraryAlreadyScanningError(msg)
 
-    interrupted, prev_scan_type = await check_interrupted_scan(db, int(library_id))
+    interrupted, prev_scan_type = check_interrupted_scan(db, int(library_id))
     if interrupted:
         logger.warning(
             "Detected interrupted %s scan for library %s — continuing with new %s scan",
@@ -73,7 +73,7 @@ async def scan_setup_workflow(
         library.name,
     )
 
-    await update_scan_progress(db, int(library_id), progress=0, total=0)
-    await transition_to_scanning(db, int(library_id))
+    update_scan_progress(db, int(library_id), progress=0, total=0)
+    transition_to_scanning(db, int(library_id))
 
     return library

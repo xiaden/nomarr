@@ -180,7 +180,7 @@ def discover_backbones(models_dir: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-async def _discover_heads_from_db(models_dir: str, db: Database) -> list[HeadInfo]:
+def _discover_heads_from_db(models_dir: str, db: Database) -> list[HeadInfo]:
     """Build :class:`HeadInfo` objects from ``ml_models`` / ``ml_model_outputs``.
 
     Only models with ``fully_configured`` truthy (non-zero) are returned.
@@ -188,7 +188,7 @@ async def _discover_heads_from_db(models_dir: str, db: Database) -> list[HeadInf
     returned objects are ready for inference.
     """
     heads: list[HeadInfo] = []
-    all_models = await db.ml.list_models()
+    all_models = db.ml.list_models()
 
     for doc in all_models:
         if not doc.get("fully_configured", 0):
@@ -210,7 +210,7 @@ async def _discover_heads_from_db(models_dir: str, db: Database) -> list[HeadInf
 
         # Labels from fully-labeled output vertices
         model_id: str = doc["id"]
-        output_records = await db.ml.list_model_outputs(model_id)
+        output_records = db.ml.list_model_outputs(model_id)
         labels = [
             lbl for od in output_records if od.get("fully_labeled", False) and (lbl := od.get("label")) is not None
         ]
@@ -285,7 +285,7 @@ def discover_heads_no_db(models_dir: str) -> list[HeadInfo]:
     return heads
 
 
-async def discover_heads(
+def discover_heads(
     models_dir: str,
     db: Database,
 ) -> list[HeadInfo]:
@@ -306,7 +306,7 @@ async def discover_heads(
         Sorted list of :class:`HeadInfo` objects.
 
     """
-    return await _discover_heads_from_db(models_dir, db)
+    return _discover_heads_from_db(models_dir, db)
 
 
 def filter_configured_heads(
@@ -474,7 +474,7 @@ def discover_head_models_no_db(models_dir: str) -> list[ONNXHeadModel]:
     return models
 
 
-async def discover_head_models(
+def discover_head_models(
     models_dir: str,
     db: Database,
 ) -> list[ONNXHeadModel]:
@@ -503,7 +503,7 @@ async def discover_head_models(
     # Build metadata lookup from HeadInfo (DB-backed).
     head_info_map: dict[str, HeadInfo] = {}
     try:
-        heads = await discover_heads(models_dir, db)
+        heads = discover_heads(models_dir, db)
         for hi in heads:
             head_info_map[hi.model_stem] = hi
     except DatabaseStateError:
@@ -512,15 +512,15 @@ async def discover_head_models(
     models: list[ONNXHeadModel] = []
 
     for backbone_dir in glob.glob(os.path.join(models_dir, "*")):
-        if not os.path.isdir(backbone_dir):  # noqa: ASYNC240
+        if not os.path.isdir(backbone_dir):
             continue
 
         heads_dir = os.path.join(backbone_dir, "heads")
-        if not os.path.isdir(heads_dir):  # noqa: ASYNC240
+        if not os.path.isdir(heads_dir):
             continue
 
         for head_type_dir in sorted(glob.glob(os.path.join(heads_dir, "*"))):
-            if not os.path.isdir(head_type_dir):  # noqa: ASYNC240
+            if not os.path.isdir(head_type_dir):
                 continue
 
             for onnx_path in sorted(glob.glob(os.path.join(head_type_dir, "*.onnx"))):

@@ -41,7 +41,7 @@ class SimilarTrackResult(TypedDict):
     score: float
 
 
-async def find_similar_tracks(
+def find_similar_tracks(
     seed_descriptor: TrackDescriptor,
     count: int,
     backbone_id: str,
@@ -75,7 +75,7 @@ async def find_similar_tracks(
 
     """
     # 1. Resolve seed descriptor to Nomarr file_id
-    seed_file_id_str, seed_resolution_status = await resolve_seed_descriptor_to_file(db, seed_descriptor)
+    seed_file_id_str, seed_resolution_status = resolve_seed_descriptor_to_file(db, seed_descriptor)
     if seed_file_id_str is None:
         if seed_resolution_status == "descriptor_ambiguous":
             msg = "Seed descriptor matched multiple tracks in Nomarr and is ambiguous."
@@ -87,7 +87,7 @@ async def find_similar_tracks(
     logger.debug("Seed descriptor resolved to file_id %s", seed_file_id)
 
     # 2. Get seed vector from per-backbone cold collection (no library_key needed)
-    seed_doc = await get_cold_track_vector(db, seed_file_id, backbone_id)
+    seed_doc = get_cold_track_vector(db, seed_file_id, backbone_id)
     if seed_doc is None:
         msg = (
             f"No vector embedding found for file '{seed_file_id}' "
@@ -100,7 +100,7 @@ async def find_similar_tracks(
 
     # 3. ANN search on per-backbone cold collection
     fetch_limit = count + 1  # +1 for potential self-match
-    raw_results = await search_similar_cold_track_vectors(
+    raw_results = search_similar_cold_track_vectors(
         db=db,
         backbone_id=backbone_id,
         seed_vector=seed_vector,
@@ -119,7 +119,7 @@ async def find_similar_tracks(
     # 4. Enrich with metadata
     results = results[:count]
     enrichment_file_ids = [r["file_id"] for r in results]
-    file_docs = await get_files_by_ids_with_tags(db, enrichment_file_ids)
+    file_docs = get_files_by_ids_with_tags(db, enrichment_file_ids)
     file_docs_by_id: dict[str, dict] = {doc["id"]: doc for doc in file_docs}
 
     # 5. Build result list

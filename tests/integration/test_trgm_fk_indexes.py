@@ -13,9 +13,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from sqlalchemy import insert, text
+from sqlalchemy import Engine, insert, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nomarr.persistence.database.library_repo import LibraryRepository
 from nomarr.persistence.database.vector_repo import VectorRepo
@@ -30,9 +29,9 @@ _BACKBONE = "test_backbone"
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-async def _create_library(session, name: str = "Test Lib") -> int:
+def _create_library(session, name: str = "Test Lib") -> int:
     """Insert a library row and return its id."""
-    r = await session.execute(
+    r = session.execute(
         insert(Library).values(
             name=name,
             path=f"/music/{name.lower().replace(' ', '_')}",
@@ -46,9 +45,9 @@ async def _create_library(session, name: str = "Test Lib") -> int:
     return int(r.inserted_primary_key[0])
 
 
-async def _create_file(session, library_id: int, path: str) -> int:
+def _create_file(session, library_id: int, path: str) -> int:
     """Insert a library file row and return its id."""
-    r = await session.execute(
+    r = session.execute(
         insert(LibraryFile).values(
             library_id=library_id,
             path=path,
@@ -78,26 +77,25 @@ def _random_vector(dim: int = _EMBED_DIM, seed: int = 42) -> list[float]:
 
 @pytest.mark.integration
 @pytest.mark.requires_database
-@pytest.mark.asyncio
 class TestPgTrgm:
     """pg_trgm extension availability and fuzzy matching tests."""
 
-    async def test_pg_trgm_extension_available(self, pg_async_engine: AsyncEngine) -> None:
+    def test_pg_trgm_extension_available(self, pg_engine: Engine) -> None:
         """pg_trgm extension should be installable and similarity() should return > 0."""
-        async with pg_async_engine.connect() as conn:
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
-            result = await conn.execute(text("SELECT similarity('foo', 'foobar')"))
+        with pg_engine.connect() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+            result = conn.execute(text("SELECT similarity('foo', 'foobar')"))
             sim = result.scalar()
             assert sim is not None
             assert sim > 0
 
-    async def test_fuzzy_match_typo_query(self, pg_async_engine: AsyncEngine) -> None:
+    def test_fuzzy_match_typo_query(self, pg_engine: Engine) -> None:
         """pg_trgm ``%`` operator should match paths with typos (e.g. 'Abby Road' → 'Abbey Road')."""
-        async with pg_async_engine.connect() as conn:
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+        with pg_engine.connect() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
 
             # Insert test data via raw SQL
-            r = await conn.execute(
+            r = conn.execute(
                 text(
                     "INSERT INTO libraries (name, path, library_type, auto_tag, auto_curate, "
                     "created_at, updated_at) VALUES ('Beatles Lib', '/music/beatles', 'music', "
@@ -112,7 +110,7 @@ class TestPgTrgm:
                 "/music/beatles/Led Zeppelin IV/01-black_mountain_side.flac",
             ]
             for path in paths:
-                await conn.execute(
+                conn.execute(
                     text(
                         "INSERT INTO library_files (library_id, path, normalized_path, file_size, "
                         "modified_time, duration_seconds, needs_tagging, is_valid, tagged, created_at) "
@@ -120,10 +118,10 @@ class TestPgTrgm:
                     ),
                     {"lib_id": lib_id, "path": path},
                 )
-            await conn.commit()
+            conn.commit()
 
             # Query with pg_trgm similarity — 'Abby Road' should match 'Abbey Road'
-            result = await conn.execute(
+            result = conn.execute(
                 text("SELECT path, similarity(path, 'Abby Road') AS sim FROM library_files WHERE path % 'Abby Road'")
             )
             rows = result.fetchall()
@@ -134,10 +132,10 @@ class TestPgTrgm:
             assert len(abbey_matches) >= 1
             assert abbey_matches[0][1] >= 0.10, "Similarity should be non-trivial"
 
-    async def test_similarity_scores_for_typo_queries(self, pg_async_engine: AsyncEngine) -> None:
+    def test_similarity_scores_for_typo_queries(self, pg_engine: Engine) -> None:
         """Verify similarity() returns expected scores for common typo patterns."""
-        async with pg_async_engine.connect() as conn:
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+        with pg_engine.connect() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
 
             # Direct similarity tests
             cases = [
@@ -146,7 +144,7 @@ class TestPgTrgm:
                 ("Led Zeppelin IV", "Led Zepplin IV"),
             ]
             for correct, typo in cases:
-                result = await conn.execute(text(f"SELECT similarity('{correct}', '{typo}')"))
+                result = conn.execute(text(f"SELECT similarity('{correct}', '{typo}')"))
                 sim = result.scalar()
                 assert sim is not None
                 assert sim > 0, f"similarity('{correct}', '{typo}') should be > 0"
@@ -157,20 +155,19 @@ class TestPgTrgm:
 
 @pytest.mark.integration
 @pytest.mark.requires_database
-@pytest.mark.asyncio
 class TestFkIndexes:
     """Verify every FK column has a supporting B-tree index."""
 
-    async def test_all_fk_columns_have_supporting_indexes(self, pg_async_engine: AsyncEngine) -> None:
+    def test_all_fk_columns_have_supporting_indexes(self, pg_engine: Engine) -> None:
         """Query pg_catalog to verify every FK column has a supporting index.
 
         This enforces the DD §6/§7 requirement that every FK column must have
         a supporting index to prevent FK CASCADE deadlock during
         ``remove_library()`` and other cascade operations.
         """
-        async with pg_async_engine.connect() as conn:
+        with pg_engine.connect() as conn:
             # Find all FK columns
-            fk_result = await conn.execute(
+            fk_result = conn.execute(
                 text(
                     "SELECT tc.table_schema, tc.table_name, kcu.column_name "
                     "FROM information_schema.table_constraints AS tc "
@@ -187,7 +184,7 @@ class TestFkIndexes:
             missing_indexes: list[str] = []
             for schema, table, column in fk_columns:
                 # Check if this FK column is the leading column of any index
-                idx_result = await conn.execute(
+                idx_result = conn.execute(
                     text(
                         "SELECT 1 FROM pg_indexes "
                         "WHERE schemaname = :schema AND tablename = :table "
@@ -206,10 +203,10 @@ class TestFkIndexes:
 
             assert not missing_indexes, f"FK columns missing supporting indexes: {', '.join(missing_indexes)}"
 
-    async def test_critical_cascade_indexes_exist(self, pg_async_engine: AsyncEngine) -> None:
+    def test_critical_cascade_indexes_exist(self, pg_engine: Engine) -> None:
         """Verify specific critical indexes exist for cascade delete performance."""
-        async with pg_async_engine.connect() as conn:
-            result = await conn.execute(
+        with pg_engine.connect() as conn:
+            result = conn.execute(
                 text("SELECT indexname FROM pg_indexes WHERE schemaname = 'public' ORDER BY indexname")
             )
             index_names = {row[0] for row in result.fetchall()}
@@ -234,22 +231,21 @@ class TestFkIndexes:
 
 @pytest.mark.integration
 @pytest.mark.requires_database
-@pytest.mark.asyncio
 class TestFkEnforcement:
     """Verify FK constraints and cascade behavior."""
 
-    async def test_cascade_delete_library_removes_embeddings(self, pg_session) -> None:
+    def test_cascade_delete_library_removes_embeddings(self, pg_session) -> None:
         """Deleting a library should cascade through files to embeddings.
 
         The FK chain is: libraries → library_files → embeddings (all CASCADE).
         Verifies zero orphaned rows after remove_library().
         """
-        lib_id = await _create_library(pg_session, "FK Cascade Lib")
-        file_id = await _create_file(pg_session, lib_id, "/music/fk_test/test.mp3")
+        lib_id = _create_library(pg_session, "FK Cascade Lib")
+        file_id = _create_file(pg_session, lib_id, "/music/fk_test/test.mp3")
 
         # Insert an embedding
         repo = VectorRepo(pg_session)
-        await repo.insert_embedding(
+        repo.insert_embedding(
             file_id=file_id,
             backbone_id=_BACKBONE,
             model_id="test_model",
@@ -257,30 +253,30 @@ class TestFkEnforcement:
         )
 
         # Verify embedding exists
-        embeddings = await repo.get_embeddings_for_file(file_id)
+        embeddings = repo.get_embeddings_for_file(file_id)
         assert len(embeddings) == 1
 
         # Delete the library — should cascade through files to embeddings
         lib_repo = LibraryRepository(pg_session)
-        await lib_repo.remove_library(lib_id)
+        lib_repo.remove_library(lib_id)
 
         # Verify library is gone
-        result = await pg_session.execute(text("SELECT COUNT(*) FROM libraries WHERE id = :id"), {"id": lib_id})
+        result = pg_session.execute(text("SELECT COUNT(*) FROM libraries WHERE id = :id"), {"id": lib_id})
         assert result.scalar() == 0
 
         # Verify file is gone (cascaded)
-        result = await pg_session.execute(text("SELECT COUNT(*) FROM library_files WHERE id = :id"), {"id": file_id})
+        result = pg_session.execute(text("SELECT COUNT(*) FROM library_files WHERE id = :id"), {"id": file_id})
         assert result.scalar() == 0
 
         # Verify embedding is gone (cascaded)
-        embeddings = await repo.get_embeddings_for_file(file_id)
+        embeddings = repo.get_embeddings_for_file(file_id)
         assert len(embeddings) == 0
 
-    async def test_insert_embedding_with_invalid_file_id_fails(self, pg_session) -> None:
+    def test_insert_embedding_with_invalid_file_id_fails(self, pg_session) -> None:
         """Inserting an embedding with a non-existent file_id should raise FK violation."""
         repo = VectorRepo(pg_session)
         with pytest.raises(IntegrityError) as exc_info:
-            await repo.insert_embedding(
+            repo.insert_embedding(
                 file_id=999999,  # non-existent
                 backbone_id=_BACKBONE,
                 model_id="test_model",

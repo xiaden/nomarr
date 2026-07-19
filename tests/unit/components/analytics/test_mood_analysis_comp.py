@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -20,15 +20,15 @@ class TestGetMoodCoverage:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_zero_coverage_when_no_files(self) -> None:
+    def test_returns_zero_coverage_when_no_files(self) -> None:
         """Zero files should produce zero coverage for every tier."""
-        mock_db = AsyncMock()
+        mock_db = MagicMock()
 
         with patch(
             "nomarr.components.analytics.mood_analysis_comp.get_library_stats",
             return_value={"total_files": 0},
         ) as get_library_stats_mock:
-            result = await get_mood_coverage(mock_db)
+            result = get_mood_coverage(mock_db)
 
         assert result == {
             "total_files": 0,
@@ -43,9 +43,9 @@ class TestGetMoodCoverage:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_percentage_for_each_tier(self) -> None:
+    def test_returns_percentage_for_each_tier(self) -> None:
         """Tier counts should be converted into rounded percentages."""
-        mock_db = AsyncMock()
+        mock_db = MagicMock()
         with (
             patch(
                 "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
@@ -68,7 +68,7 @@ class TestGetMoodCoverage:
                 return_value={"total_files": 10},
             ) as get_library_stats_mock,
         ):
-            result = await get_mood_coverage(mock_db)
+            result = get_mood_coverage(mock_db)
 
         assert result == {
             "total_files": 10,
@@ -87,23 +87,23 @@ class TestGetMoodBalance:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_empty_tiers_when_no_data(self) -> None:
+    def test_returns_empty_tiers_when_no_data(self) -> None:
         """Each tier should return an empty list when the query yields no rows."""
-        mock_db = AsyncMock()
+        mock_db = MagicMock()
         with patch(
             "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
             side_effect=[[], [], []],
         ) as get_tag_edge_rows_mock:
-            result = await get_mood_balance(mock_db)
+            result = get_mood_balance(mock_db)
 
         assert result == {"strict": [], "regular": [], "loose": []}
         assert get_tag_edge_rows_mock.call_count == 3
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_counts_plain_mood_values(self) -> None:
+    def test_counts_plain_mood_values(self) -> None:
         """Repeated plain mood values should be counted within their tier."""
-        mock_db = AsyncMock()
+        mock_db = MagicMock()
         with patch(
             "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
             side_effect=[
@@ -115,7 +115,7 @@ class TestGetMoodBalance:
                 [],
             ],
         ):
-            result = await get_mood_balance(mock_db)
+            result = get_mood_balance(mock_db)
 
         assert result == {
             "strict": [{"mood": "happy", "count": 2}],
@@ -125,14 +125,14 @@ class TestGetMoodBalance:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_splits_parenthetical_compound_values(self) -> None:
+    def test_splits_parenthetical_compound_values(self) -> None:
         """Compound mood tuples should increment each cleaned mood separately."""
-        mock_db = AsyncMock()
+        mock_db = MagicMock()
         with patch(
             "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
             side_effect=[[(f"{'library_files'}/1", "(happy,sad)")], [], []],
         ):
-            result = await get_mood_balance(mock_db)
+            result = get_mood_balance(mock_db)
 
         assert result == {
             "strict": [
@@ -149,9 +149,9 @@ class TestGetMoodAndTierTagsForCorrelation:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_mood_rows_tier_keys_and_tier_rows(self) -> None:
+    def test_returns_mood_rows_tier_keys_and_tier_rows(self) -> None:
         """Collects rows from the three mood relations plus discovered tier tags."""
-        mock_db = AsyncMock()
+        mock_db = MagicMock()
         with (
             patch(
                 "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
@@ -168,7 +168,7 @@ class TestGetMoodAndTierTagsForCorrelation:
                 return_value=["nom:energy_tier", "nom:tempo_tier"],
             ) as get_tier_tag_keys_mock,
         ):
-            result = await get_mood_and_tier_tags_for_correlation(mock_db)
+            result = get_mood_and_tier_tags_for_correlation(mock_db)
 
         assert result == {
             "mood_tag_rows": [
@@ -190,8 +190,8 @@ class TestGetMoodDistributionData:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_flattened_rows_for_each_mood_tier(self) -> None:
-        mock_db = AsyncMock()
+    def test_returns_flattened_rows_for_each_mood_tier(self) -> None:
+        mock_db = MagicMock()
         with patch(
             "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
             side_effect=[
@@ -200,7 +200,7 @@ class TestGetMoodDistributionData:
                 [(f"{'library_files'}/3", "dreamy")],
             ],
         ) as get_tag_edge_rows_mock:
-            result = await get_mood_distribution_data(mock_db)
+            result = get_mood_distribution_data(mock_db)
 
         assert result == [
             ("nom:mood-strict", "happy"),
@@ -211,13 +211,13 @@ class TestGetMoodDistributionData:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_passes_library_id_when_filtering_distribution(self) -> None:
-        mock_db = AsyncMock()
+    def test_passes_library_id_when_filtering_distribution(self) -> None:
+        mock_db = MagicMock()
         with patch(
             "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
             side_effect=[[], [(f"{'library_files'}/2", "warm")], []],
         ) as get_tag_edge_rows_mock:
-            result = await get_mood_distribution_data(mock_db, library_id="libraries/1")
+            result = get_mood_distribution_data(mock_db, library_id="libraries/1")
 
         assert result == [("nom:mood-regular", "warm")]
         for call in get_tag_edge_rows_mock.call_args_list:
@@ -229,8 +229,8 @@ class TestGetTagEdgeRows:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_batches_tag_edge_lookup_with_single_in_query(self) -> None:
-        mock_db = AsyncMock()
+    def test_batches_tag_edge_lookup_with_single_in_query(self) -> None:
+        mock_db = MagicMock()
         mock_db.library.list_tags.side_effect = [
             [
                 {"id": 1, "value": "happy"},
@@ -252,7 +252,7 @@ class TestGetTagEdgeRows:
 
         mock_db.library.search_files_by_tag.side_effect = search_files_by_tag_side_effect
 
-        result = await _get_tag_edge_rows(mock_db, "nom:mood-strict")
+        result = _get_tag_edge_rows(mock_db, "nom:mood-strict")
 
         assert result == [
             (1, "happy"),

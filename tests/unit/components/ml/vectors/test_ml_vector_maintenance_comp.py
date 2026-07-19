@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -17,42 +17,39 @@ PATCH_BASE = "nomarr.components.ml.vectors.ml_vector_maintenance_comp"
 class TestBackfillGenres:
     """Tests for ``backfill_genres`` — delegates to ``db.ml.backfill_genres``."""
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_count_from_facade(self) -> None:
+    def test_returns_count_from_facade(self) -> None:
         """backfill_genres should return the count from db.ml.backfill_genres."""
         mock_db = MagicMock()
-        mock_db.ml.backfill_genres = AsyncMock(return_value=42)
+        mock_db.ml.backfill_genres = MagicMock(return_value=42)
 
-        result = await backfill_genres(mock_db, "ast")
+        result = backfill_genres(mock_db, "ast")
 
         assert result == 42
         mock_db.ml.backfill_genres.assert_called_once_with("ast")
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_zero_when_no_embeddings_need_backfill(self) -> None:
+    def test_returns_zero_when_no_embeddings_need_backfill(self) -> None:
         """Zero-count pass-through when no embeddings need genre backfill."""
         mock_db = MagicMock()
-        mock_db.ml.backfill_genres = AsyncMock(return_value=0)
+        mock_db.ml.backfill_genres = MagicMock(return_value=0)
 
-        result = await backfill_genres(mock_db, "ast")
+        result = backfill_genres(mock_db, "ast")
 
         assert result == 0
         mock_db.ml.backfill_genres.assert_called_once_with("ast")
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_propagates_exception_from_facade(self) -> None:
+    def test_propagates_exception_from_facade(self) -> None:
         """Exceptions from the facade should propagate to the caller."""
         mock_db = MagicMock()
-        mock_db.ml.backfill_genres = AsyncMock(side_effect=RuntimeError("DB connection lost"))
+        mock_db.ml.backfill_genres = MagicMock(side_effect=RuntimeError("DB connection lost"))
 
         with pytest.raises(RuntimeError, match="DB connection lost"):
-            await backfill_genres(mock_db, "ast")
+            backfill_genres(mock_db, "ast")
 
 
 class TestDeriveEmbedDim:

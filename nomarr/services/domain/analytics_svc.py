@@ -74,7 +74,7 @@ class AnalyticsService:
         self._db = db
         self.cfg = cfg
 
-    async def get_tag_frequencies(self, limit: int = 50) -> list[TagFrequencyItem]:
+    def get_tag_frequencies(self, limit: int = 50) -> list[TagFrequencyItem]:
         """Get frequency counts for tag VALUES in the library (API-ready format).
 
         Returns counts for mood values (e.g., "happy", "dark"), not tag keys.
@@ -88,11 +88,11 @@ class AnalyticsService:
         """
         namespace_prefix = f"{self.cfg.namespace}:"
         # Get tag frequencies from tags
-        tag_data = await get_tag_frequencies(self._db, limit=limit, namespace_prefix=namespace_prefix)
+        tag_data = get_tag_frequencies(self._db, limit=limit, namespace_prefix=namespace_prefix)
         # Get artist/album frequencies from songs
-        file_data = await get_artist_album_frequencies(self._db, limit=limit)
+        file_data = get_artist_album_frequencies(self._db, limit=limit)
         # Get total file count
-        _, total_count = await list_library_files(self._db, limit=1)
+        _, total_count = list_library_files(self._db, limit=1)
 
         data = {
             "total_files": total_count,
@@ -123,7 +123,7 @@ class AnalyticsService:
             for tag, count in result.nom_tags
         ]
 
-    async def get_tag_frequencies_with_result(self, limit: int = 50) -> TagFrequenciesResult:
+    def get_tag_frequencies_with_result(self, limit: int = 50) -> TagFrequenciesResult:
         """Get frequency counts for all tags with wrapper DTO.
 
         Same data as ``get_tag_frequencies`` but wrapped in a
@@ -136,10 +136,10 @@ class AnalyticsService:
             TagFrequenciesResult DTO with tag_frequencies list.
 
         """
-        tag_frequencies = await self.get_tag_frequencies(limit=limit)
+        tag_frequencies = self.get_tag_frequencies(limit=limit)
         return TagFrequenciesResult(tag_frequencies=tag_frequencies)
 
-    async def get_tag_correlation_matrix(self, top_n: int = 20) -> TagCorrelationData:
+    def get_tag_correlation_matrix(self, top_n: int = 20) -> TagCorrelationData:
         """Compute VALUE-based correlation matrix for mood tags.
 
         Args:
@@ -149,7 +149,7 @@ class AnalyticsService:
             TagCorrelationData with mood-to-mood and mood-to-tier correlations
 
         """
-        tag_data = await get_mood_and_tier_tags_for_correlation(self._db)
+        tag_data = get_mood_and_tier_tags_for_correlation(self._db)
         data = {
             "mood_tag_rows": tag_data["mood_tag_rows"],
             "tier_tag_keys": tag_data["tier_tag_keys"],
@@ -165,17 +165,17 @@ class AnalyticsService:
         )
         return cast("TagCorrelationData", compute_tag_correlation_matrix(params=params))
 
-    async def get_mood_distribution(self, library_id: str | None = None) -> list[MoodDistributionItem]:
+    def get_mood_distribution(self, library_id: str | None = None) -> list[MoodDistributionItem]:
         """Get mood distribution across all tiers.
 
         Args:
-            library_id: Optional library _id to filter by.
+            library_id: Optional library ID to filter by.
 
         Returns:
             List of MoodDistributionItem DTOs
 
         """
-        mood_rows = await get_mood_distribution_data(self._db, int(library_id) if library_id is not None else None)
+        mood_rows = get_mood_distribution_data(self._db, int(library_id) if library_id is not None else None)
         result = compute_mood_distribution(mood_rows=mood_rows)
 
         # Transform to list format with percentages
@@ -191,7 +191,7 @@ class AnalyticsService:
             for mood, count in top_moods
         ]
 
-    async def get_mood_distribution_with_result(self, library_id: str | None = None) -> MoodDistributionResult:
+    def get_mood_distribution_with_result(self, library_id: str | None = None) -> MoodDistributionResult:
         """Get mood distribution with wrapper DTO.
 
         Same data as ``get_mood_distribution`` but wrapped in a
@@ -204,10 +204,10 @@ class AnalyticsService:
             MoodDistributionResult DTO with mood_distribution list.
 
         """
-        mood_distribution = await self.get_mood_distribution(library_id=library_id)
+        mood_distribution = self.get_mood_distribution(library_id=library_id)
         return MoodDistributionResult(mood_distribution=mood_distribution)
 
-    async def get_tag_co_occurrence(
+    def get_tag_co_occurrence(
         self,
         x_tags: list[tuple[str, str]],
         y_tags: list[tuple[str, str]],
@@ -218,7 +218,7 @@ class AnalyticsService:
         Args:
             x_tags: List of (key, value) tuples for X-axis
             y_tags: List of (key, value) tuples for Y-axis
-            library_id: Optional library _id to filter by.
+            library_id: Optional library ID to filter by.
 
         Returns:
             TagCoOccurrenceData with matrix where matrix[j][i] = count of files with both
@@ -249,7 +249,7 @@ class AnalyticsService:
         # Regular tags: use exact match
         lib_id = int(library_id) if library_id is not None else None
         if regular_specs:
-            regular_tag_data = await get_file_ids_for_tags(
+            regular_tag_data = get_file_ids_for_tags(
                 self._db,
                 tag_specs=regular_specs,
                 library_id=lib_id,
@@ -259,7 +259,7 @@ class AnalyticsService:
 
         # Mood tags: use CONTAINS matching for each tier
         for tier, values in mood_specs.items():
-            mood_data = await get_file_ids_for_mood_tags(
+            mood_data = get_file_ids_for_mood_tags(
                 self._db,
                 mood_values=values,
                 mood_tier=tier,
@@ -276,7 +276,7 @@ class AnalyticsService:
     # Collection Profile Analytics
     # ──────────────────────────────────────────────────────────────────────────────
 
-    async def get_collection_overview(
+    def get_collection_overview(
         self,
         library_id: str | None = None,
     ) -> CollectionOverviewResult:
@@ -285,17 +285,15 @@ class AnalyticsService:
         Simple persistence pass-through: library stats, year/genre distributions.
 
         Args:
-            library_id: Optional library _id to filter by.
+            library_id: Optional library ID to filter by.
 
         Returns:
             Dict with: stats, year_distribution, genre_distribution
 
         """
-        return await compute_collection_overview(
-            self._db, library_id=int(library_id) if library_id is not None else None
-        )
+        return compute_collection_overview(self._db, library_id=int(library_id) if library_id is not None else None)
 
-    async def get_mood_analysis(
+    def get_mood_analysis(
         self,
         library_id: str | None = None,
     ) -> MoodAnalysisResult:
@@ -304,10 +302,10 @@ class AnalyticsService:
         Delegates to compute_mood_analysis component.
 
         Args:
-            library_id: Optional library _id to filter by.
+            library_id: Optional library ID to filter by.
 
         Returns:
             Dict with: coverage, balance, top_pairs_by_tier, dominant_vibes
 
         """
-        return await compute_mood_analysis(self._db, library_id=int(library_id) if library_id is not None else None)
+        return compute_mood_analysis(self._db, library_id=int(library_id) if library_id is not None else None)

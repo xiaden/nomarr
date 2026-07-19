@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-async def read_file_tags_workflow(db: Database, path: str, namespace: str) -> dict[str, Any]:
+def read_file_tags_workflow(db: Database, path: str, namespace: str) -> dict[str, Any]:
     """Read tags from an audio file.
 
     Args:
@@ -29,7 +29,7 @@ async def read_file_tags_workflow(db: Database, path: str, namespace: str) -> di
 
     """
     # Build and validate LibraryPath
-    library_path = await build_library_path_from_input(raw_path=path, db=db)
+    library_path = build_library_path_from_input(raw_path=path, db=db)
 
     if not library_path.is_valid():
         msg = f"Invalid path: {library_path.reason}"
@@ -42,7 +42,7 @@ async def read_file_tags_workflow(db: Database, path: str, namespace: str) -> di
     return tags.to_dict()
 
 
-async def remove_file_tags_workflow(db: Database, path: str, namespace: str) -> int:
+def remove_file_tags_workflow(db: Database, path: str, namespace: str) -> int:
     """Remove all namespaced tags from an audio file.
 
     Args:
@@ -59,7 +59,7 @@ async def remove_file_tags_workflow(db: Database, path: str, namespace: str) -> 
 
     """
     # Build and validate LibraryPath
-    library_path = await build_library_path_from_input(raw_path=path, db=db)
+    library_path = build_library_path_from_input(raw_path=path, db=db)
 
     if not library_path.is_valid():
         msg = f"Invalid path: {library_path.reason}"

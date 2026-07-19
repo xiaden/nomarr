@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -38,25 +38,25 @@ def make_library(*, auto_write: bool = False, name: str = "Test Library") -> Lib
 @pytest.fixture
 def mock_library_service() -> MagicMock:
     """Provide a mocked library service dependency."""
-    return AsyncMock()
+    return MagicMock()
 
 
 @pytest.fixture
 def mock_config_service() -> MagicMock:
     """Provide a mocked config service dependency."""
-    return AsyncMock()
+    return MagicMock()
 
 
 @pytest.fixture
 def mock_pipeline_service() -> MagicMock:
     """Provide a mocked pipeline service dependency."""
-    return AsyncMock()
+    return MagicMock()
 
 
 @pytest.fixture
 def mock_vector_maintenance_service() -> MagicMock:
     """Provide a mocked vector maintenance service dependency."""
-    return AsyncMock()
+    return MagicMock()
 
 
 @pytest.fixture
@@ -278,7 +278,7 @@ class TestLibraryCrudEndpoints:
         mock_vector_maintenance_service: MagicMock,
     ) -> None:
         """GET vector stats should return per-backbone stats (global, no library_key)."""
-        mock_vector_maintenance_service.get_backbone_vector_stats = AsyncMock(
+        mock_vector_maintenance_service.get_backbone_vector_stats = MagicMock(
             return_value=[
                 {
                     "backbone_id": "discogs-effnet",
@@ -310,7 +310,7 @@ class TestLibraryCrudEndpoints:
         mock_vector_maintenance_service: MagicMock,
     ) -> None:
         """Service errors should map to HTTP 500 with sanitized message."""
-        mock_vector_maintenance_service.get_backbone_vector_stats = AsyncMock(
+        mock_vector_maintenance_service.get_backbone_vector_stats = MagicMock(
             side_effect=RuntimeError("internal error")
         )
 

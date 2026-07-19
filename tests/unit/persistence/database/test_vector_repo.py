@@ -15,9 +15,9 @@ _EMBED_DIM = 1280
 _BACKBONE = "test_backbone"
 
 
-async def _create_library_and_file(session) -> tuple[int, int]:
+def _create_library_and_file(session) -> tuple[int, int]:
     """Helper: create a library and a file, return (library_id, file_id)."""
-    lib_r = await session.execute(
+    lib_r = session.execute(
         insert(Library).values(
             name="Vector Lib",
             path="/vector/lib",
@@ -29,7 +29,7 @@ async def _create_library_and_file(session) -> tuple[int, int]:
         )
     )
     lib_id = lib_r.inserted_primary_key[0]
-    file_r = await session.execute(
+    file_r = session.execute(
         insert(LibraryFile).values(
             library_id=lib_id,
             path="/vector/lib/test.mp3",
@@ -66,13 +66,12 @@ class TestVectorRepo:
 
     # ── insert_embedding ────────────────────────────────────────
 
-    @pytest.mark.asyncio
-    async def test_insert_embedding(self, pg_session) -> None:
+    def test_insert_embedding(self, pg_session) -> None:
         """insert_embedding should insert a row with tier='hot'."""
-        _, file_id = await _create_library_and_file(pg_session)
+        _, file_id = _create_library_and_file(pg_session)
         repo = VectorRepo(pg_session)
         vec = _random_vector(seed=1)
-        record = await repo.insert_embedding(
+        record = repo.insert_embedding(
             file_id=file_id,
             backbone_id=_BACKBONE,
             model_id="test_model",
@@ -84,13 +83,12 @@ class TestVectorRepo:
         assert record["tier"] == "hot"
         assert record["embed_dim"] == _EMBED_DIM
 
-    @pytest.mark.asyncio
-    async def test_insert_embedding_with_genres(self, pg_session) -> None:
+    def test_insert_embedding_with_genres(self, pg_session) -> None:
         """insert_embedding should store genres when provided."""
-        _, file_id = await _create_library_and_file(pg_session)
+        _, file_id = _create_library_and_file(pg_session)
         repo = VectorRepo(pg_session)
         vec = _random_vector(seed=2)
-        record = await repo.insert_embedding(
+        record = repo.insert_embedding(
             file_id=file_id,
             backbone_id=_BACKBONE,
             model_id="test_model",
@@ -101,17 +99,16 @@ class TestVectorRepo:
 
     # ── find_nearest ────────────────────────────────────────────
 
-    @pytest.mark.asyncio
-    async def test_find_nearest_returns_ordered_results(self, pg_session) -> None:
+    def test_find_nearest_returns_ordered_results(self, pg_session) -> None:
         """find_nearest should return SimilarResult list ordered by cosine distance."""
-        lib_id, file_id = await _create_library_and_file(pg_session)
+        lib_id, file_id = _create_library_and_file(pg_session)
         repo = VectorRepo(pg_session)
 
         # Insert several embeddings — each needs a unique file_id due to FK constraint
         vectors = [_random_vector(seed=i) for i in range(10)]
         file_ids = [file_id]
         for i in range(1, 10):
-            file_r = await pg_session.execute(
+            file_r = pg_session.execute(
                 insert(LibraryFile).values(
                     library_id=lib_id,
                     path=f"/vector/lib/test_{i}.mp3",
@@ -128,7 +125,7 @@ class TestVectorRepo:
             file_ids.append(file_r.inserted_primary_key[0])
 
         for i, vec in enumerate(vectors):
-            await repo.insert_embedding(
+            repo.insert_embedding(
                 file_id=file_ids[i],
                 backbone_id=_BACKBONE,
                 model_id="test_model",
@@ -136,11 +133,11 @@ class TestVectorRepo:
             )
 
         # Drain to cold so find_nearest can search them
-        await repo.drain_hot_to_cold(_BACKBONE)
+        repo.drain_hot_to_cold(_BACKBONE)
 
         # Query with the first vector — it should be the nearest to itself
         query_vec = vectors[0]
-        results = await repo.find_nearest(query_vec, _BACKBONE, limit=5)
+        results = repo.find_nearest(query_vec, _BACKBONE, limit=5)
         assert len(results) > 0
         assert len(results) <= 5
         # Results should be ordered by distance (ascending)
@@ -149,25 +146,23 @@ class TestVectorRepo:
         # First result should have very small distance (near-zero for same vector)
         assert results[0]["distance"] < 0.01
 
-    @pytest.mark.asyncio
-    async def test_find_nearest_empty_table(self, pg_session) -> None:
+    def test_find_nearest_empty_table(self, pg_session) -> None:
         """find_nearest should return empty list when no cold embeddings exist."""
         repo = VectorRepo(pg_session)
         query_vec = _random_vector(seed=99)
-        results = await repo.find_nearest(query_vec, _BACKBONE, limit=10)
+        results = repo.find_nearest(query_vec, _BACKBONE, limit=10)
         assert results == []
 
     # ── drain_hot_to_cold ───────────────────────────────────────
 
-    @pytest.mark.asyncio
-    async def test_drain_hot_to_cold(self, pg_session) -> None:
+    def test_drain_hot_to_cold(self, pg_session) -> None:
         """drain_hot_to_cold should update tier and return count."""
-        _, file_id = await _create_library_and_file(pg_session)
+        _, file_id = _create_library_and_file(pg_session)
         repo = VectorRepo(pg_session)
 
         # Insert 5 hot embeddings
         for i in range(5):
-            await repo.insert_embedding(
+            repo.insert_embedding(
                 file_id=file_id,
                 backbone_id=_BACKBONE,
                 model_id="test_model",
@@ -175,71 +170,67 @@ class TestVectorRepo:
             )
 
         # Verify they're hot
-        stats = await repo.get_embedding_stats(_BACKBONE)
+        stats = repo.get_embedding_stats(_BACKBONE)
         assert stats["hot_count"] == 5
         assert stats["cold_count"] == 0
 
         # Drain
-        count = await repo.drain_hot_to_cold(_BACKBONE)
+        count = repo.drain_hot_to_cold(_BACKBONE)
         assert count == 5
 
         # Verify they're now cold
-        stats = await repo.get_embedding_stats(_BACKBONE)
+        stats = repo.get_embedding_stats(_BACKBONE)
         assert stats["hot_count"] == 0
         assert stats["cold_count"] == 5
 
-    @pytest.mark.asyncio
-    async def test_drain_hot_to_cold_no_rows(self, pg_session) -> None:
+    def test_drain_hot_to_cold_no_rows(self, pg_session) -> None:
         """drain_hot_to_cold should return 0 when no hot embeddings exist."""
         repo = VectorRepo(pg_session)
-        count = await repo.drain_hot_to_cold("nonexistent_backbone")
+        count = repo.drain_hot_to_cold("nonexistent_backbone")
         assert count == 0
 
     # ── get_embeddings_for_file ─────────────────────────────────
 
-    @pytest.mark.asyncio
-    async def test_get_embeddings_for_file(self, pg_session) -> None:
+    def test_get_embeddings_for_file(self, pg_session) -> None:
         """get_embeddings_for_file should return all embeddings for a file."""
-        _, file_id = await _create_library_and_file(pg_session)
+        _, file_id = _create_library_and_file(pg_session)
         repo = VectorRepo(pg_session)
 
         # Insert embeddings for this file with different backbones
-        await repo.insert_embedding(
+        repo.insert_embedding(
             file_id=file_id,
             backbone_id="backbone_a",
             model_id="model_a",
             embedding_vector=_random_vector(seed=200),
         )
-        await repo.insert_embedding(
+        repo.insert_embedding(
             file_id=file_id,
             backbone_id="backbone_b",
             model_id="model_b",
             embedding_vector=_random_vector(seed=201),
         )
 
-        results = await repo.get_embeddings_for_file(file_id)
+        results = repo.get_embeddings_for_file(file_id)
         assert len(results) == 2
         backbone_ids = {r["backbone_id"] for r in results}
         assert "backbone_a" in backbone_ids
         assert "backbone_b" in backbone_ids
 
-    @pytest.mark.asyncio
-    async def test_get_embeddings_for_file_nonexistent(self, pg_session) -> None:
+    def test_get_embeddings_for_file_nonexistent(self, pg_session) -> None:
         """get_embeddings_for_file should return empty list for unknown file."""
         repo = VectorRepo(pg_session)
-        results = await repo.get_embeddings_for_file(999999)
+        results = repo.get_embeddings_for_file(999999)
         assert results == []
 
     # ── count_cold_embeddings ───────────────────────────────────
 
-    @pytest.mark.asyncio
-    async def test_count_cold_embeddings(self, pg_session) -> None:
+    def test_count_cold_embeddings(self, pg_session) -> None:
         """count_cold_embeddings should return correct count after drain."""
-        _, file_id = await _create_library_and_file(pg_session)
+        _, file_id = _create_library_and_file(pg_session)
         repo = VectorRepo(pg_session)
 
         for i in range(3):
-            await repo.insert_embedding(
+            repo.insert_embedding(
                 file_id=file_id,
                 backbone_id=_BACKBONE,
                 model_id="test_model",
@@ -247,76 +238,72 @@ class TestVectorRepo:
             )
 
         # Before drain — all hot
-        assert await repo.count_cold_embeddings(_BACKBONE) == 0
+        assert repo.count_cold_embeddings(_BACKBONE) == 0
 
         # After drain
-        await repo.drain_hot_to_cold(_BACKBONE)
-        assert await repo.count_cold_embeddings(_BACKBONE) == 3
+        repo.drain_hot_to_cold(_BACKBONE)
+        assert repo.count_cold_embeddings(_BACKBONE) == 3
 
     # ── get_embedding_stats ─────────────────────────────────────
 
-    @pytest.mark.asyncio
-    async def test_get_embedding_stats(self, pg_session) -> None:
+    def test_get_embedding_stats(self, pg_session) -> None:
         """get_embedding_stats should return hot and cold counts."""
-        _, file_id = await _create_library_and_file(pg_session)
+        _, file_id = _create_library_and_file(pg_session)
         repo = VectorRepo(pg_session)
 
         # Insert 4 embeddings (all hot)
         for i in range(4):
-            await repo.insert_embedding(
+            repo.insert_embedding(
                 file_id=file_id,
                 backbone_id=_BACKBONE,
                 model_id="test_model",
                 embedding_vector=_random_vector(seed=400 + i),
             )
 
-        stats = await repo.get_embedding_stats(_BACKBONE)
+        stats = repo.get_embedding_stats(_BACKBONE)
         assert stats["hot_count"] == 4
         assert stats["cold_count"] == 0
 
         # Drain 2 by inserting 2 more and draining all
-        await repo.drain_hot_to_cold(_BACKBONE)
-        stats = await repo.get_embedding_stats(_BACKBONE)
+        repo.drain_hot_to_cold(_BACKBONE)
+        stats = repo.get_embedding_stats(_BACKBONE)
         assert stats["hot_count"] == 0
         assert stats["cold_count"] == 4
 
-    @pytest.mark.asyncio
-    async def test_get_embedding_stats_nonexistent_backbone(self, pg_session) -> None:
+    def test_get_embedding_stats_nonexistent_backbone(self, pg_session) -> None:
         """get_embedding_stats should return zeros for unknown backbone."""
         repo = VectorRepo(pg_session)
-        stats = await repo.get_embedding_stats("nonexistent")
+        stats = repo.get_embedding_stats("nonexistent")
         assert stats["hot_count"] == 0
         assert stats["cold_count"] == 0
 
     # ── delete_all_embeddings ───────────────────────────────────
 
-    @pytest.mark.asyncio
-    async def test_delete_all_embeddings(self, pg_session) -> None:
+    def test_delete_all_embeddings(self, pg_session) -> None:
         """delete_all_embeddings should remove all rows."""
-        _, file_id = await _create_library_and_file(pg_session)
+        _, file_id = _create_library_and_file(pg_session)
         repo = VectorRepo(pg_session)
 
         for i in range(3):
-            await repo.insert_embedding(
+            repo.insert_embedding(
                 file_id=file_id,
                 backbone_id=_BACKBONE,
                 model_id="test_model",
                 embedding_vector=_random_vector(seed=500 + i),
             )
 
-        await repo.delete_all_embeddings()
-        assert await repo.count_cold_embeddings(_BACKBONE) == 0
-        stats = await repo.get_embedding_stats(_BACKBONE)
+        repo.delete_all_embeddings()
+        assert repo.count_cold_embeddings(_BACKBONE) == 0
+        stats = repo.get_embedding_stats(_BACKBONE)
         assert stats["hot_count"] == 0
 
     # ── truncate_embeddings ────────────────────────────────────
 
-    @pytest.mark.asyncio
-    async def test_truncate_embeddings_clears_all_rows(self, pg_session) -> None:
+    def test_truncate_embeddings_clears_all_rows(self, pg_session) -> None:
         """truncate_embeddings should remove all rows from the embeddings table."""
-        _lib_id1, file_id1 = await _create_library_and_file(pg_session)
+        _lib_id1, file_id1 = _create_library_and_file(pg_session)
         # Create a second library + file
-        lib_r = await pg_session.execute(
+        lib_r = pg_session.execute(
             insert(Library).values(
                 name="Truncate Lib 2",
                 path="/vector/lib/truncate2",
@@ -328,7 +315,7 @@ class TestVectorRepo:
             )
         )
         lib_id2 = lib_r.inserted_primary_key[0]
-        file_r = await pg_session.execute(
+        file_r = pg_session.execute(
             insert(LibraryFile).values(
                 library_id=lib_id2,
                 path="/vector/lib/truncate2.mp3",
@@ -347,13 +334,13 @@ class TestVectorRepo:
         repo = VectorRepo(pg_session)
 
         # Insert embeddings for two different files
-        await repo.insert_embedding(
+        repo.insert_embedding(
             file_id=file_id1,
             backbone_id=_BACKBONE,
             model_id="test_model",
             embedding_vector=_random_vector(seed=700),
         )
-        await repo.insert_embedding(
+        repo.insert_embedding(
             file_id=file_id2,
             backbone_id=_BACKBONE,
             model_id="test_model",
@@ -361,28 +348,27 @@ class TestVectorRepo:
         )
 
         # Drain to cold
-        await repo.drain_hot_to_cold(_BACKBONE)
+        repo.drain_hot_to_cold(_BACKBONE)
 
         # Verify embeddings exist
-        stats = await repo.get_embedding_stats(_BACKBONE)
+        stats = repo.get_embedding_stats(_BACKBONE)
         assert stats["cold_count"] == 2
 
         # Truncate
-        await repo.truncate_embeddings()
+        repo.truncate_embeddings()
 
         # Verify all embeddings are gone
-        stats = await repo.get_embedding_stats(_BACKBONE)
+        stats = repo.get_embedding_stats(_BACKBONE)
         assert stats["hot_count"] == 0
         assert stats["cold_count"] == 0
 
     # ── delete_embeddings_for_file ──────────────────────────────
 
-    @pytest.mark.asyncio
-    async def test_delete_embeddings_for_file(self, pg_session) -> None:
+    def test_delete_embeddings_for_file(self, pg_session) -> None:
         """delete_embeddings_for_file should remove only that file's embeddings."""
-        lib_id, file_id1 = await _create_library_and_file(pg_session)
+        lib_id, file_id1 = _create_library_and_file(pg_session)
         # Create a second file
-        file_r = await pg_session.execute(
+        file_r = pg_session.execute(
             insert(LibraryFile).values(
                 library_id=lib_id,
                 path="/vector/lib/test2.mp3",
@@ -399,13 +385,13 @@ class TestVectorRepo:
         file_id2 = file_r.inserted_primary_key[0]
 
         repo = VectorRepo(pg_session)
-        await repo.insert_embedding(
+        repo.insert_embedding(
             file_id=file_id1,
             backbone_id=_BACKBONE,
             model_id="test_model",
             embedding_vector=_random_vector(seed=600),
         )
-        await repo.insert_embedding(
+        repo.insert_embedding(
             file_id=file_id2,
             backbone_id=_BACKBONE,
             model_id="test_model",
@@ -413,12 +399,12 @@ class TestVectorRepo:
         )
 
         # Delete only file_id1's embeddings
-        await repo.delete_embeddings_for_file(file_id1)
+        repo.delete_embeddings_for_file(file_id1)
 
         # file_id1 should have none
-        results1 = await repo.get_embeddings_for_file(file_id1)
+        results1 = repo.get_embeddings_for_file(file_id1)
         assert len(results1) == 0
 
         # file_id2 should still have its embedding
-        results2 = await repo.get_embeddings_for_file(file_id2)
+        results2 = repo.get_embeddings_for_file(file_id2)
         assert len(results2) == 1

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import threading
 from dataclasses import asdict
@@ -47,7 +46,7 @@ class TaggingApplyMixin:
     _apply_progress_lock: threading.Lock
     _apply_progress: dict[str, Any]
 
-    async def tag_file(self, file_path: str) -> None:
+    def tag_file(self, file_path: str) -> None:
         """Write calibrated tags to a single file.
 
         Args:
@@ -62,10 +61,10 @@ class TaggingApplyMixin:
             calibrate_heads=self._config_service.get("calibrate_heads", False),
         )
 
-        await write_calibrated_tags_wf(db=self.db, params=params)
+        write_calibrated_tags_wf(db=self.db, params=params)
         logger.info(f"Wrote calibrated tags: {file_path}")
 
-    async def tag_library(self) -> ApplyCalibrationResult:
+    def tag_library(self) -> ApplyCalibrationResult:
         """Apply calibration to all tagged library files that need it.
 
         Only processes files whose DB mood tags are stale relative to the
@@ -90,13 +89,13 @@ class TaggingApplyMixin:
             msg = "LibraryService not configured. Cannot get library paths."
             raise ValueError(msg)
 
-        paths = await self.library_service.get_paths_needing_calibration()
+        paths = self.library_service.get_paths_needing_calibration()
         if paths:
             logger.info(f"[TaggingService] {len(paths)} files need calibration update")
         else:
             logger.info("[TaggingService] All tagged files are already calibrated")
 
-        return await apply_calibration_wf(
+        return apply_calibration_wf(
             db=self.db,
             paths=paths,
             models_dir=self.cfg.models_dir,
@@ -147,7 +146,7 @@ class TaggingApplyMixin:
         """
         try:
             logger.info("[TaggingService] Background apply started")
-            result = asyncio.run(self.tag_library())
+            result = self.tag_library()
             self._apply_result = result
             logger.info(
                 f"[TaggingService] Background apply completed: "
@@ -274,13 +273,13 @@ class TaggingApplyMixin:
             "is_running": progress["is_running"],
         }
 
-    async def get_calibration_status(self) -> dict[str, Any]:
+    def get_calibration_status(self) -> dict[str, Any]:
         """Get global calibration status with per-library breakdown.
 
         Returns:
             Dict representation of GlobalCalibrationStatus DTO
 
         """
-        result = await get_calibration_status_workflow(db=self.db)
+        result = get_calibration_status_workflow(db=self.db)
         result_dict: dict[str, Any] = asdict(result)
         return result_dict

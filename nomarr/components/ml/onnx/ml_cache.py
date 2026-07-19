@@ -49,7 +49,7 @@ class ONNXModelCache:
 
     Use :meth:`create` to construct a fully-initialized instance.  The
     synchronous constructor stores parameters only; model discovery
-    (filesystem + database) happens in the async factory.  No sessions are
+    (filesystem + database) happens in the factory.  No sessions are
     loaded until ``warm = True`` is set.
 
     Attributes:
@@ -78,11 +78,11 @@ class ONNXModelCache:
         self.backbones: dict[str, ONNXBackboneModel] = {}
         self.heads: dict[str, list[ONNXHeadModel]] = {}
 
-    async def _discover(self) -> None:
+    def _discover(self) -> None:
         """Shared discovery logic. Discovers backbone models from filesystem and head models from database. Called by factory and refresh methods."""
         backbone_list: list[ONNXBackboneModel] = discover_backbone_models(self._models_dir)
         head_list: list[ONNXHeadModel] = (
-            await discover_head_models(self._models_dir, self.db)
+            discover_head_models(self._models_dir, self.db)
             if self.db is not None
             else discover_head_models_no_db(self._models_dir)
         )
@@ -102,15 +102,15 @@ class ONNXModelCache:
         )
 
     @classmethod
-    async def create(
+    def create(
         cls,
         models_dir: str,
         device: DevicePlacement,
         db: Database | None = None,
     ) -> ONNXModelCache:
-        """Async factory. Performs model discovery (file I/O + DB queries). Use instead of direct construction."""
+        """Factory method. Performs model discovery (file I/O + DB queries). Use instead of direct construction."""
         instance = cls(models_dir, device, db)
-        await instance._discover()
+        instance._discover()
         return instance
 
     # ------------------------------------------------------------------

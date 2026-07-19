@@ -57,13 +57,13 @@ def _normalize_streams(streams: list[StreamWrite]) -> list[StreamWrite]:
     return list(deduped.values())
 
 
-async def upsert_output_streams(db: Database, *, file_id: int, streams: list[StreamWrite]) -> None:
+def upsert_output_streams(db: Database, *, file_id: int, streams: list[StreamWrite]) -> None:
     """Upsert canonical raw output streams for a file."""
     if not streams:
         return
 
     normalized_streams = _normalize_streams(streams)
-    await db.ml.replace_output_streams_for_file(
+    db.ml.replace_output_streams_for_file(
         file_id=file_id,
         stream_payloads=[
             {
@@ -75,9 +75,9 @@ async def upsert_output_streams(db: Database, *, file_id: int, streams: list[Str
     )
 
 
-async def fetch_output_streams(db: Database, file_id: int) -> list[StreamRecord]:
+def fetch_output_streams(db: Database, file_id: int) -> list[StreamRecord]:
     """Fetch all canonical output streams linked to one file."""
-    stream_docs = await db.ml.list_output_streams_for_file(file_id)
+    stream_docs = db.ml.list_output_streams_for_file(file_id)
     if not stream_docs:
         return []
 
@@ -101,12 +101,12 @@ async def fetch_output_streams(db: Database, file_id: int) -> list[StreamRecord]
     return records
 
 
-async def build_output_stream_lookup(
+def build_output_stream_lookup(
     db: Database,
     head_infos: list[Any],
 ) -> dict[str, tuple[str, str]]:
     """Build ``{output_id: (head_name, label)}`` from registered outputs and heads."""
-    output_index_map = await build_model_output_index_map(db)
+    output_index_map = build_model_output_index_map(db)
     output_lookup: dict[str, tuple[str, str]] = {}
 
     for head_info in head_infos:
@@ -138,7 +138,7 @@ async def build_output_stream_lookup(
     return output_lookup
 
 
-async def resolve_output_stream_lookup(
+def resolve_output_stream_lookup(
     db: Database,
     head_infos: list[Any],
     *,
@@ -147,10 +147,10 @@ async def resolve_output_stream_lookup(
     """Return cached output-stream enrichment metadata when available."""
     if cached_lookup is not None:
         return cached_lookup
-    return await build_output_stream_lookup(db, head_infos)
+    return build_output_stream_lookup(db, head_infos)
 
 
-async def load_output_streams_for_file(
+def load_output_streams_for_file(
     db: Database,
     file_id: int,
     file_path: str,
@@ -159,16 +159,16 @@ async def load_output_streams_for_file(
     output_lookup: dict[str, tuple[str, str]] | None = None,
 ) -> list[LoadedOutputStream]:
     """Load canonical streams for one file and enrich them with discovered head metadata."""
-    stream_records = await fetch_output_streams(db, file_id)
+    stream_records = fetch_output_streams(db, file_id)
     if not stream_records:
         logger.warning(
             "[output_stream_store] No canonical output streams found for %s, transitioning to not_processed for re-inference",
             file_path,
         )
-        await transition_file_state(db, [file_id], STATE_PROCESSED, STATE_NOT_PROCESSED)
+        transition_file_state(db, [file_id], STATE_PROCESSED, STATE_NOT_PROCESSED)
         return []
 
-    lookup = await resolve_output_stream_lookup(db, head_infos, cached_lookup=output_lookup)
+    lookup = resolve_output_stream_lookup(db, head_infos, cached_lookup=output_lookup)
     output_streams: list[LoadedOutputStream] = []
     unmatched_output_ids: list[str] = []
 
@@ -197,7 +197,7 @@ async def load_output_streams_for_file(
             file_path,
             unmatched_output_ids,
         )
-        await transition_file_state(db, [file_id], STATE_PROCESSED, STATE_NOT_PROCESSED)
+        transition_file_state(db, [file_id], STATE_PROCESSED, STATE_NOT_PROCESSED)
         return []
 
     logger.debug(
@@ -208,14 +208,14 @@ async def load_output_streams_for_file(
     return output_streams
 
 
-async def delete_output_streams(db: Database, file_id: int) -> int:
+def delete_output_streams(db: Database, file_id: int) -> int:
     """Delete all canonical output streams for one file."""
-    stream_docs = await db.ml.list_output_streams_for_file(file_id)
+    stream_docs = db.ml.list_output_streams_for_file(file_id)
     stream_ids = sorted(
         {stream_id for stream_doc in stream_docs if isinstance((stream_id := stream_doc.get("id")), (str, int))}
     )
     if not stream_ids:
         return 0
 
-    await db.ml.replace_output_streams_for_file(file_id, [])
+    db.ml.replace_output_streams_for_file(file_id, [])
     return len(stream_ids)

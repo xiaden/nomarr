@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import ModuleType
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -20,10 +20,10 @@ from nomarr.components.platform.migration_runner_comp import (
 
 def _make_migration_module(version: str, description: str = "Test migration") -> MagicMock:
     """Return a mock module with all required migration attributes."""
-    m = AsyncMock()
+    m = MagicMock()
     m.MIGRATION_VERSION = version
     m.DESCRIPTION = description
-    m.upgrade = AsyncMock()
+    m.upgrade = MagicMock()
     return m
 
 
@@ -57,7 +57,7 @@ class TestDiscoverMigrations:
         (tmp_path / "V001_bad.py").write_text("")
         bad_module = MagicMock(spec=["DESCRIPTION", "upgrade"])
         bad_module.DESCRIPTION = "Missing version"
-        bad_module.upgrade = AsyncMock()
+        bad_module.upgrade = MagicMock()
 
         with (
             patch("nomarr.components.platform.migration_runner_comp.MIGRATIONS_DIR", tmp_path),
@@ -135,23 +135,23 @@ class TestApplyMigration:
     """Tests for apply_migration()."""
 
     @pytest.mark.unit
-    async def test_calls_module_upgrade_with_raw_db(self) -> None:
+    def test_calls_module_upgrade_with_raw_db(self) -> None:
         """apply_migration tracks the migration without calling legacy upgrade()."""
         module = _make_migration_module("1.0.0")
-        db = AsyncMock()
+        db = MagicMock()
 
-        await apply_migration("V001_test", module, db)
+        apply_migration("V001_test", module, db)
 
         # Legacy upgrade() is no longer called — Alembic handles PG migrations
         module.upgrade.assert_not_called()
 
     @pytest.mark.unit
-    async def test_calls_record_migration_started_with_name_and_version(self) -> None:
+    def test_calls_record_migration_started_with_name_and_version(self) -> None:
         """record_migration_started is called with the migration ID and filename."""
         module = _make_migration_module("1.0.0")
-        db = AsyncMock()
+        db = MagicMock()
 
-        await apply_migration("V001_test", module, db)
+        apply_migration("V001_test", module, db)
 
         db.migrations.record_migration_started.assert_called_once_with(
             migration_id="V001_test",
@@ -159,24 +159,24 @@ class TestApplyMigration:
         )
 
     @pytest.mark.unit
-    async def test_calls_mark_migration_applied_after_upgrade(self) -> None:
+    def test_calls_mark_migration_applied_after_upgrade(self) -> None:
         """mark_migration_applied is called once after upgrade() succeeds."""
         module = _make_migration_module("1.0.0")
-        db = AsyncMock()
+        db = MagicMock()
 
-        await apply_migration("V001_test", module, db)
+        apply_migration("V001_test", module, db)
 
         db.migrations.mark_migration_applied.assert_called_once_with(
             migration_id="V001_test",
         )
 
     @pytest.mark.unit
-    async def test_calls_set_version_with_migration_version(self) -> None:
+    def test_calls_set_version_with_migration_version(self) -> None:
         """db.set_version is called with the migration's MIGRATION_VERSION."""
         module = _make_migration_module("1.0.0")
-        db = AsyncMock()
+        db = MagicMock()
 
-        await apply_migration("V001_test", module, db)
+        apply_migration("V001_test", module, db)
 
         db.set_version.assert_called_once_with("1.0.0")
 
@@ -185,9 +185,9 @@ class TestRunPendingMigrations:
     """Tests for run_pending_migrations()."""
 
     @pytest.mark.unit
-    async def test_calls_get_version_on_db(self) -> None:
+    def test_calls_get_version_on_db(self) -> None:
         """run_pending_migrations reads the current DB version before discovering migrations."""
-        db = AsyncMock()
+        db = MagicMock()
         db.get_version.return_value = None
 
         with (
@@ -201,15 +201,15 @@ class TestRunPendingMigrations:
                 return_value=[],
             ),
         ):
-            await run_pending_migrations(db)
+            run_pending_migrations(db)
 
         db.get_version.assert_called()
 
     @pytest.mark.unit
-    async def test_calls_apply_migration_for_each_pending(self) -> None:
+    def test_calls_apply_migration_for_each_pending(self) -> None:
         """run_pending_migrations dispatches apply_migration for every pending migration."""
         mod = _make_migration_module("0.1.0")
-        db = AsyncMock()
+        db = MagicMock()
         db.get_version.return_value = None
 
         with (
@@ -226,15 +226,15 @@ class TestRunPendingMigrations:
                 "nomarr.components.platform.migration_runner_comp.apply_migration",
             ) as mock_apply,
         ):
-            await run_pending_migrations(db)
+            run_pending_migrations(db)
 
         mock_apply.assert_called_once_with("V001", mod, db)
 
     @pytest.mark.unit
-    async def test_calls_set_version_via_apply_migration(self) -> None:
+    def test_calls_set_version_via_apply_migration(self) -> None:
         """db.set_version is called (via apply_migration) after each migration is applied."""
         mod = _make_migration_module("0.1.0")
-        db = AsyncMock()
+        db = MagicMock()
         db.get_version.return_value = None
 
         with (
@@ -248,6 +248,6 @@ class TestRunPendingMigrations:
                 return_value=[("V001", mod)],
             ),
         ):
-            await run_pending_migrations(db)
+            run_pending_migrations(db)
 
         db.set_version.assert_called_once_with("0.1.0")

@@ -38,7 +38,7 @@ class _TaggingQueryService(Protocol):
 
     db: Database
 
-    async def write_tags_to_files(
+    def write_tags_to_files(
         self,
         library_id: int,
         batch_size: int = 100,
@@ -51,7 +51,7 @@ class TaggingQueryMixin:
 
     db: Database
 
-    async def list_tag_values(
+    def list_tag_values(
         self,
         name: str | None = None,
         prefix: str | None = None,
@@ -70,8 +70,8 @@ class TaggingQueryMixin:
             TagListResult with tags list and total count.
 
         """
-        raw_tags = await list_tags_by_name(self.db, name=name, limit=limit, offset=offset, search=prefix)
-        total = await count_tags_by_name(self.db, name=name, search=prefix)
+        raw_tags = list_tags_by_name(self.db, name=name, limit=limit, offset=offset, search=prefix)
+        total = count_tags_by_name(self.db, name=name, search=prefix)
 
         tags: list[TagValueItem] = [
             TagValueItem(
@@ -84,7 +84,7 @@ class TaggingQueryMixin:
         ]
         return TagListResult(tags=tags, total=total)
 
-    async def get_tag_songs(
+    def get_tag_songs(
         self,
         tag_id: str,
         limit: int = 50,
@@ -101,8 +101,8 @@ class TaggingQueryMixin:
             Dict with songs list and total count.
 
         """
-        raw_songs = await get_tag_songs_with_metadata(self.db, int(tag_id), limit=limit, offset=offset)
-        total = await count_songs_for_tag(self.db, int(tag_id))
+        raw_songs = get_tag_songs_with_metadata(self.db, int(tag_id), limit=limit, offset=offset)
+        total = count_songs_for_tag(self.db, int(tag_id))
 
         songs: list[TagSongItem] = [
             TagSongItem(
@@ -116,7 +116,7 @@ class TaggingQueryMixin:
         ]
         return {"songs": songs, "total": total}
 
-    async def get_pending_commit_count(self) -> int:
+    def get_pending_commit_count(self) -> int:
         """Count files with pending tag writes (tags_not_written state).
 
         Returns:
@@ -124,9 +124,9 @@ class TaggingQueryMixin:
             have not yet had their tags written to the audio file.
 
         """
-        return await count_pending_tag_writes(self.db)
+        return count_pending_tag_writes(self.db)
 
-    async def commit_pending_tags(self: _TaggingQueryService, library_id: str | None = None) -> CommitResult:
+    def commit_pending_tags(self: _TaggingQueryService, library_id: str | None = None) -> CommitResult:
         """Commit pending tag writes by writing tags for affected libraries.
 
         Args:
@@ -137,20 +137,20 @@ class TaggingQueryMixin:
             CommitResult with started flag and pending file count.
 
         """
-        pending = await count_pending_tag_writes(self.db)
+        pending = count_pending_tag_writes(self.db)
         if pending == 0:
             return CommitResult(started=False, pending_files=0)
 
         if library_id:
-            await self.write_tags_to_files(int(library_id))
+            self.write_tags_to_files(int(library_id))
         else:
-            libraries = await list_library_records(self.db, include_scan=False)
+            libraries = list_library_records(self.db, include_scan=False)
             for lib in libraries:
-                await self.write_tags_to_files(lib.id)
+                self.write_tags_to_files(lib.id)
 
         return CommitResult(started=True, pending_files=pending)
 
-    async def get_unique_tag_keys(self, nomarr_only: bool = False) -> UniqueTagKeysResult:
+    def get_unique_tag_keys(self, nomarr_only: bool = False) -> UniqueTagKeysResult:
         """Get all unique tag keys across the library.
 
         Args:
@@ -160,10 +160,10 @@ class TaggingQueryMixin:
             UniqueTagKeysResult DTO with tag_keys list and total count.
 
         """
-        keys = await get_unique_names(self.db, nomarr_only)
+        keys = get_unique_names(self.db, nomarr_only)
         return UniqueTagKeysResult(tag_keys=keys, count=len(keys), calibration=None, library_id=None)
 
-    async def get_unique_tag_values(self, tag_key: str, nomarr_only: bool = False) -> UniqueTagKeysResult:
+    def get_unique_tag_values(self, tag_key: str, nomarr_only: bool = False) -> UniqueTagKeysResult:
         """Get all unique values for a specific tag key.
 
         Args:
@@ -174,10 +174,10 @@ class TaggingQueryMixin:
             UniqueTagKeysResult DTO with tag_keys list and total count.
 
         """
-        values = await get_unique_tag_values(self.db, tag_key, nomarr_only)
+        values = get_unique_tag_values(self.db, tag_key, nomarr_only)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
 
-    async def get_unique_mood_values(self, mood_tier: str = "mood-strict", limit: int = 100) -> UniqueTagKeysResult:
+    def get_unique_mood_values(self, mood_tier: str = "mood-strict", limit: int = 100) -> UniqueTagKeysResult:
         """Get unique individual mood values extracted from tuple string tags.
 
         Args:
@@ -188,10 +188,10 @@ class TaggingQueryMixin:
             UniqueTagKeysResult DTO with tag_keys list and total count.
 
         """
-        values = await get_unique_mood_values(self.db, mood_tier=mood_tier, limit=limit)
+        values = get_unique_mood_values(self.db, mood_tier=mood_tier, limit=limit)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
 
-    async def get_file_tags(self, file_id: int, nomarr_only: bool = False) -> FileTagsResult:
+    def get_file_tags(self, file_id: int, nomarr_only: bool = False) -> FileTagsResult:
         """Get all tags for a specific file.
 
         Args:
@@ -205,7 +205,7 @@ class TaggingQueryMixin:
             ValueError: If file not found
 
         """
-        result = await get_file_tags_with_path(self.db, int(file_id), nomarr_only=nomarr_only)
+        result = get_file_tags_with_path(self.db, int(file_id), nomarr_only=nomarr_only)
         if not result:
             msg = f"File with ID {file_id} not found"
             raise ValueError(msg)
@@ -226,7 +226,7 @@ class TaggingQueryMixin:
             tags=tags,
         )
 
-    async def cleanup_orphaned_tags(self, dry_run: bool = False) -> TagCleanupResult:
+    def cleanup_orphaned_tags(self, dry_run: bool = False) -> TagCleanupResult:
         """Clean up orphaned tags from the database.
 
         Args:
@@ -236,13 +236,13 @@ class TaggingQueryMixin:
             TagCleanupResult DTO with orphaned_count and deleted_count
 
         """
-        result = await cleanup_orphaned_tags_workflow(self.db, dry_run=dry_run)
+        result = cleanup_orphaned_tags_workflow(self.db, dry_run=dry_run)
         return TagCleanupResult(
             orphaned_count=result["orphaned_count"],
             deleted_count=result["deleted_count"],
         )
 
-    async def search_files_by_tag(
+    def search_files_by_tag(
         self,
         tag_key: str,
         target_value: float | str,
@@ -261,7 +261,7 @@ class TaggingQueryMixin:
             SearchFilesResult with matched files
 
         """
-        files = await search_files_by_tag(self.db, tag_key, target_value, limit, offset)
-        total = await count_files_by_tag(self.db, tag_key, target_value)
+        files = search_files_by_tag(self.db, tag_key, target_value, limit, offset)
+        total = count_files_by_tag(self.db, tag_key, target_value)
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
         return SearchFilesResult(files=files_with_tags, total=total, limit=limit, offset=offset)

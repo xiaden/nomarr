@@ -166,7 +166,7 @@ def get_pending_migrations(
     return pending
 
 
-async def apply_migration(name: str, module: ModuleType, db: Database) -> None:
+def apply_migration(name: str, module: ModuleType, db: Database) -> None:
     """Apply a single migration with two-phase recording.
 
     Records the migration as 'in_progress' BEFORE running upgrade(), then
@@ -198,7 +198,7 @@ async def apply_migration(name: str, module: ModuleType, db: Database) -> None:
         module.MIGRATION_VERSION,
     )
 
-    await db.migrations.record_migration_started(
+    db.migrations.record_migration_started(
         migration_id=name,
         filename=f"{name}.py",
     )
@@ -213,10 +213,10 @@ async def apply_migration(name: str, module: ModuleType, db: Database) -> None:
 
     duration_ms = internal_ms().value - start_time.value
 
-    await db.migrations.mark_migration_applied(migration_id=name)
+    db.migrations.mark_migration_applied(migration_id=name)
 
     # Write the new version only after the migration is fully recorded
-    await db.set_version(module.MIGRATION_VERSION)
+    db.set_version(module.MIGRATION_VERSION)
 
     logger.info(
         "Migration %s (version %s) tracked in %dms",
@@ -226,7 +226,7 @@ async def apply_migration(name: str, module: ModuleType, db: Database) -> None:
     )
 
 
-async def run_pending_migrations(db: Database) -> None:
+def run_pending_migrations(db: Database) -> None:
     """Discover and apply all pending migrations, then verify version compatibility.
 
     This is the unified public entry point for the migration subsystem.
@@ -250,7 +250,7 @@ async def run_pending_migrations(db: Database) -> None:
             exceeds the running application version.
 
     """
-    current = await db.get_version()
+    current = db.get_version()
     logger.debug("Current database version: %s", current or "<none>")
 
     migrations = discover_migrations()
@@ -258,10 +258,10 @@ async def run_pending_migrations(db: Database) -> None:
 
     pending = get_pending_migrations(migrations, current)
     for name, module in pending:
-        await apply_migration(name, module, db)
+        apply_migration(name, module, db)
 
     # After applying all migrations, guard against DB being ahead of the code
-    final_version = await db.get_version()
+    final_version = db.get_version()
     if final_version is not None and Version(final_version) > Version(__version__):
         msg = (
             f"Database schema version ({final_version}) is newer than "

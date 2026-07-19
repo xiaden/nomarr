@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -16,11 +16,11 @@ from nomarr.components.ml.resources.ml_vram_probe_comp import (
 
 @pytest.mark.unit
 class TestProbeAllModels:
-    async def test_persists_measurements_via_app_config_options(self) -> None:
-        db = AsyncMock()
-        backbone = AsyncMock()
+    def test_persists_measurements_via_app_config_options(self) -> None:
+        db = MagicMock()
+        backbone = MagicMock()
         backbone._path = "backbone.onnx"
-        head = AsyncMock()
+        head = MagicMock()
         head._path = "head.onnx"
 
         with (
@@ -46,7 +46,7 @@ class TestProbeAllModels:
                 side_effect=[100, None],
             ),
         ):
-            await probe_all_models(db, "models")
+            probe_all_models(db, "models")
 
         assert db.app.update_config_option.call_args_list == [
             call("ml_model_vram:backbone.onnx", {"value": "110"}),
@@ -56,30 +56,30 @@ class TestProbeAllModels:
 
 @pytest.mark.unit
 class TestHasModelVramMeasurements:
-    async def test_returns_true_when_matching_docs_exist(self) -> None:
-        db = AsyncMock()
+    def test_returns_true_when_matching_docs_exist(self) -> None:
+        db = MagicMock()
         db.app.list_config_options.return_value = [{"_key": "ml_model_vram:model.onnx", "value": "123"}]
 
-        assert await has_model_vram_measurements(db) is True
+        assert has_model_vram_measurements(db) is True
         db.app.list_config_options.assert_called_once_with(prefix="ml_model_vram:")
 
-    async def test_returns_false_when_no_matching_docs_exist(self) -> None:
-        db = AsyncMock()
+    def test_returns_false_when_no_matching_docs_exist(self) -> None:
+        db = MagicMock()
         db.app.list_config_options.return_value = []
 
-        assert await has_model_vram_measurements(db) is False
+        assert has_model_vram_measurements(db) is False
 
 
 @pytest.mark.unit
 class TestClearModelVramMeasurements:
-    async def test_deletes_each_matching_config_option(self) -> None:
-        db = AsyncMock()
+    def test_deletes_each_matching_config_option(self) -> None:
+        db = MagicMock()
         db.app.list_config_options.return_value = [
             {"_key": "ml_model_vram:first.onnx", "value": "101"},
             {"_key": "ml_model_vram:second.onnx", "value": "202"},
         ]
 
-        await clear_model_vram_measurements(db)
+        clear_model_vram_measurements(db)
 
         db.app.list_config_options.assert_called_once_with(prefix="ml_model_vram:")
         assert db.app.remove_config_option.call_args_list == [

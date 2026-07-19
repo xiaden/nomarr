@@ -1,8 +1,10 @@
 """VRAM promise coordinator component.
 
 Provides fleet-aware VRAM coordination for multi-worker GPU model placement.
-Before any model is loaded to GPU, the worker registers a promise here via
-an atomic SQL fit-check. Stale promises (from crashed workers) are reaped
+Before any model is loaded to GPU, the worker registers a promise here
+after a fleet headroom fit-check (queries existing promises, sums
+committed VRAM, rejects if the new model would exceed 90%% of total
+GPU memory). Stale promises (from crashed workers) are reaped
 periodically so their reserved VRAM becomes available to other workers.
 
 All four functions are stateless: the ``db`` argument carries all state.
@@ -42,29 +44,42 @@ def _promise_key(worker_id: str, model_path: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
-async def register_vram_promise(
+def register_vram_promise(
     db: Database,
     worker_id: str,
     pid: int,
     model_path: str,
     promised_mb: float,
 ) -> bool:
-    """Atomically register a VRAM promise if the model fits in available headroom.
+    """Register a VRAM promise after a two-step fit-check.
 
-    Queries current VRAM usage (fresh reading, telemetry cache reset), then
-    calls the fit-check transaction. Returns True only if the promise
-    was inserted (model fits). Returns False if the GPU has insufficient
-    headroom — the caller should fall back to CPU.
+    Performs two sequential validations before inserting the promise:
+
+    1. **nvidia-smi availability** — forces a fresh telemetry reading
+       (cache reset) and queries current GPU usage.  If nvidia-smi
+       reports an error the promise is denied immediately.
+    2. **Fleet headroom fit-check** — queries all existing promises from
+       the database, sums their ``promised_mb``, and rejects the new
+       promise when ``committed_mb + promised_mb`` would exceed 90%% of
+       total GPU VRAM.  The 10%% headroom reserves capacity for driver
+       overhead and memory fragmentation.
+
+    Only when both checks pass is the promise inserted via
+    ``db.vram_promises.promise()``.
 
     Args:
         db:          Application database (must have ``vram_promises`` attribute).
-        worker_id:   Worker identifier (e.g., ``“nomarr-tag:0”``).
+        worker_id:   Worker identifier (e.g., ``"nomarr-tag:0"``).
         pid:         Worker OS PID.
         model_path:  Absolute path to the ONNX model file.
         promised_mb: VRAM required for this model (MB).
 
     Returns:
-        True if registered (model may proceed to GPU), False if rejected.
+        True if the promise was registered and the model may proceed to
+        GPU.  False in two distinct cases: (a) nvidia-smi returned an
+        error and GPU state cannot be determined, or (b) fleet headroom
+        is exhausted (adding this promise would exceed 90%% of total GPU
+        VRAM).  The caller should fall back to CPU on False.
 
     """
     # Force a fresh nvidia-smi reading; avoid stale TTL-cached values from a
@@ -83,7 +98,24 @@ async def register_vram_promise(
     total_mb: float = float(vram["total_mb"])
     used_mb: float = float(vram["used_mb"])
 
-    registered: bool = await db.vram_promises.try_register(  # type: ignore[attr-defined]
+    # Fleet headroom fit-check: reject if adding this promise would exceed
+    # 90% of total GPU VRAM (10% headroom for driver overhead/fragmentation).
+    existing = db.vram_promises.list_all()
+    committed_mb = sum(float(p.get("promised_mb", 0)) for p in existing)
+    if committed_mb + promised_mb > total_mb * 0.90:
+        logger.debug(
+            "[vram_coordinator] Headroom exhausted: worker=%s model=%s promised=%.0f MB "
+            "committed=%.0f MB total=%.0f MB (threshold=%.0f MB) — rejecting GPU placement",
+            worker_id,
+            model_path,
+            promised_mb,
+            committed_mb,
+            total_mb,
+            total_mb * 0.90,
+        )
+        return False
+
+    db.vram_promises.promise(
         worker_id=worker_id,
         pid=pid,
         model_path=model_path,
@@ -91,31 +123,22 @@ async def register_vram_promise(
         total_mb=total_mb,
         used_mb=used_mb,
     )
+    registered = True
 
-    if registered:
-        logger.debug(
-            "[vram_coordinator] Registered promise: worker=%s model=%s promised=%.0f MB (total=%.0f used=%.0f)",
-            worker_id,
-            model_path,
-            promised_mb,
-            total_mb,
-            used_mb,
-        )
-    else:
-        logger.debug(
-            "[vram_coordinator] Rejected promise: worker=%s model=%s promised=%.0f MB "
-            "(total=%.0f used=%.0f) — insufficient headroom",
-            worker_id,
-            model_path,
-            promised_mb,
-            total_mb,
-            used_mb,
-        )
+    # registered is always True here — rejection paths return False above.
+    logger.debug(
+        "[vram_coordinator] Registered promise: worker=%s model=%s promised=%.0f MB (total=%.0f used=%.0f)",
+        worker_id,
+        model_path,
+        promised_mb,
+        total_mb,
+        used_mb,
+    )
 
     return registered
 
 
-async def release_vram_promise(
+def release_vram_promise(
     db: Database,
     worker_id: str,
     model_path: str,
@@ -131,7 +154,7 @@ async def release_vram_promise(
         model_path:  Absolute path to the ONNX model file.
 
     """
-    await db.vram_promises.release(worker_id=worker_id, model_path=model_path)  # type: ignore[attr-defined]
+    db.vram_promises.release(worker_id=worker_id, model_path=model_path)
     logger.debug(
         "[vram_coordinator] Released promise: worker=%s model=%s",
         worker_id,
@@ -139,7 +162,7 @@ async def release_vram_promise(
     )
 
 
-async def get_fleet_vram_state(
+def get_fleet_vram_state(
     db: Database,
 ) -> FleetVramState:
     """Return a snapshot of current fleet VRAM promises and live GPU telemetry.
@@ -153,12 +176,12 @@ async def get_fleet_vram_state(
         FleetVramState with ``promises`` list and ``vram`` telemetry snapshot.
 
     """
-    promises: list[dict[str, Any]] = await db.vram_promises.get_all()  # type: ignore[attr-defined]
+    promises: list[dict[str, Any]] = db.vram_promises.list_all()
     vram = _resource_monitor.get_vram_usage_mb()
     return FleetVramState(promises=promises, vram=vram)  # type: ignore[typeddict-item]
 
 
-async def release_worker_promises(
+def release_worker_promises(
     db: Database,
     worker_id: str,
 ) -> int:
@@ -180,9 +203,9 @@ async def release_worker_promises(
 
     """
     # Count promises before releasing (adapter's release_all_for_worker returns None)
-    promises = await db.app.list_vram_promises()
+    promises = db.app.list_vram_promises()
     count = sum(1 for p in promises if p.get("worker_id") == worker_id)
-    await db.vram_promises.release_all_for_worker(worker_id=worker_id)  # type: ignore[attr-defined]
+    db.vram_promises.release_all_for_worker(worker_id=worker_id)
     if count:
         logger.info(
             "[vram_coordinator] Released %d promise(s) for worker %s",

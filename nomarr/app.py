@@ -5,7 +5,7 @@ and lifecycle manager for the Nomarr application. All services, workers, and inf
 are owned and initialized by the Application instance.
 
 Architecture:
-- Application owns: config, db, queue, services, workers, coordinator, event broker, health monitor
+- Application owns: config, db, services, workers, health monitor
 - All configuration values are instance attributes (no module-level config globals)
 - Services are registered via register_service() during start()
 - Access services via: application.get_service("name") or application.services["name"]
@@ -16,7 +16,6 @@ The singleton instance is available as `application` at module level.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import sys
@@ -48,7 +47,7 @@ def validate_environment() -> None:
     Fails fast with clear message if config is incomplete.
 
     Note: PG_DATABASE_URL must be a full PostgreSQL connection string
-    (e.g., ``postgresql+asyncpg://user:pass@host:5432/db``).
+    (e.g., ``postgresql+psycopg2://user:pass@host:5432/db``).
     """
     required_vars = ["PG_DATABASE_URL"]
     missing = [var for var in required_vars if not os.getenv(var)]
@@ -62,9 +61,9 @@ class Application:
 
     This class is the single source of truth for all application dependencies:
     - Configuration values (extracted from ConfigService)
-    - Database and queue instances
-    - All services (keys, queue, worker, library, processing, recalibration, etc.)
-    - Workers and infrastructure (coordinator, health monitor, event broker)
+    - Database instance
+    - All services (keys, worker, library, processing, recalibration, etc.)
+    - Workers and infrastructure (worker_system, health_monitor)
     - Lifecycle management (start/stop)
 
     Architecture:
@@ -75,8 +74,8 @@ class Application:
     - Do NOT construct services directly outside of this class
 
     Configuration Access:
-    - Raw config is PRIVATE (_config) and used only internally in Application
-    - External modules MUST NOT access application._config directly
+    - Raw config is PRIVATE (_config_service) and used only internally in Application
+    - External modules MUST NOT access application._config_service directly
     - To access config outside app.py, use: application.get_service("config").get_config()
     - Prefer using specific instance attributes (api_host, models_dir, etc.) over raw config
 
@@ -86,7 +85,7 @@ class Application:
     def __init__(self) -> None:
         """Initialize application with core dependencies.
 
-        Loads configuration and creates database and queue immediately.
+        Loads configuration, validates environment, provisions database, and creates the Database instance.
         Services are initialized later during start().
         """
         validate_environment()
@@ -123,7 +122,7 @@ class Application:
         self.db = Database(url=os.environ["PG_DATABASE_URL"])
         from nomarr.workflows.platform.prepare_database_wf import prepare_database_workflow
 
-        asyncio.get_event_loop().run_until_complete(prepare_database_workflow(self.db, models_dir=self.models_dir))
+        prepare_database_workflow(self.db, models_dir=self.models_dir)
         self._config_service = config_service
         self.services: dict[str, Any] = {}
         self.worker_system: WorkerSystemService | None = None
@@ -166,7 +165,7 @@ class Application:
 
         PostgreSQL databases are pre-provisioned (no first-run user/database
         creation needed). This method only waits for the server to accept
-        connections, then stores the URL for Database construction.
+        connections.
 
         Raises:
             RuntimeError: If PostgreSQL is unreachable after 60 seconds.
@@ -181,14 +180,9 @@ class Application:
                 from nomarr.persistence.pg_engine import create_pg_engine
 
                 engine = create_pg_engine(pg_url)
-                import asyncio
-
-                async def _check(eng: Any = engine) -> None:
-                    async with eng.connect() as conn:
-                        await conn.execute(text("SELECT 1"))
-                    await eng.dispose()
-
-                asyncio.get_event_loop().run_until_complete(_check())
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+                engine.dispose()
                 logger.info("PostgreSQL reachable (attempt %d/%d)", attempt, max_attempts)
                 return
             except Exception as exc:
@@ -203,14 +197,14 @@ class Application:
                 )
                 time.sleep(2)
 
-    async def _start_app_heartbeat(self) -> None:
-        """Start background thread to write app heartbeat (Phase 3: DB-based IPC)."""
+    def _start_app_heartbeat(self) -> None:
+        """Start background heartbeat thread."""
         db = self.db
 
-        async def heartbeat_loop() -> None:
+        def heartbeat_loop() -> None:
             while self._running:
                 try:
-                    await db.app.update_health(
+                    db.app.update_health(
                         "app",
                         {
                             "component_type": "app",
@@ -220,7 +214,7 @@ class Application:
                     )
                 except Exception as e:
                     logger.exception(f"[Application] Heartbeat error: {e}")
-                await asyncio.sleep(5)
+                time.sleep(5)
 
         self._heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True, name="AppHeartbeat")
         self._heartbeat_thread.start()
@@ -230,11 +224,10 @@ class Application:
         """Start the application - initialize all services, workers, and background tasks.
 
         This method:
-        1. Cleans up orphaned jobs and stuck scans from previous sessions
+        1. Cleans ephemeral runtime state (health table truncation) from previous sessions
         2. Initializes authentication (API keys, passwords, sessions)
         3. Registers all services in self.services (DI container)
-        4. Starts workers, coordinator, health monitor, and event broker
-        5. Performs ML cache warmup
+        4. Starts workers, health monitor, and info service (GPU monitor)
 
         All dependencies are injected via constructors using instance attributes.
         Services are registered via register_service() for access by interfaces.
@@ -244,24 +237,20 @@ class Application:
             return
         logger.debug("[Application] Starting...")
         logger.debug("[Application] Cleaning ephemeral runtime state...")
-        asyncio.get_event_loop().run_until_complete(self.db.app.maintenance.truncate_health())
-        asyncio.get_event_loop().run_until_complete(
-            self.db.app.update_health(
-                "app",
-                {
-                    "component_type": "app",
-                    "status": "starting",
-                    "last_heartbeat": now_ms().value,
-                },
-            )
+        self.db.app.maintenance.truncate_health()
+        self.db.app.update_health(
+            "app",
+            {
+                "component_type": "app",
+                "status": "starting",
+                "last_heartbeat": now_ms().value,
+            },
         )
         logger.debug("[Application] Initializing authentication...")
         key_service = KeyManagementService(self.db)
-        self.api_key = asyncio.get_event_loop().run_until_complete(key_service.get_or_create_api_key())
-        self.admin_password = asyncio.get_event_loop().run_until_complete(
-            key_service.get_or_create_admin_password(self.admin_password_config)
-        )
-        asyncio.get_event_loop().run_until_complete(key_service.load_sessions_from_db())
+        self.api_key = key_service.get_or_create_api_key()
+        self.admin_password = key_service.get_or_create_admin_password(self.admin_password_config)
+        key_service.load_sessions_from_db()
         self.register_service("keys", key_service)
         self.register_service("config", self._config_service)
         logger.debug("[Application] Initializing services...")
@@ -331,11 +320,9 @@ class Application:
             # Sync watchers in background - observer.start() traverses the entire
             # directory tree to register inotify watches, which blocks for large libraries.
             # Nothing downstream depends on watchers being active at startup.
-            import threading
-
             def _sync_watchers_bg() -> None:
                 try:
-                    asyncio.run(file_watcher.sync_watchers())
+                    file_watcher.sync_watchers()
                     logger.debug("[Application] File watchers synced with library collection")
                 except Exception:
                     logger.exception("[Application] Failed to sync file watchers")
@@ -367,9 +354,7 @@ class Application:
             navidrome_svc=navidrome_service,
         )
         self.register_service("pipeline", pipeline_svc)
-        calibration_service.set_post_generation_hook(
-            lambda: asyncio.get_event_loop().run_until_complete(pipeline_svc.on_calibration_complete())
-        )
+        calibration_service.set_post_generation_hook(lambda: pipeline_svc.on_calibration_complete())
         logger.debug(
             "[Application] Wired calibration post-generation hook → LibraryPipelineService.on_calibration_complete"
         )
@@ -401,7 +386,7 @@ class Application:
         )
         self.register_service("worker_system", self.worker_system)
         if self.worker_system.is_worker_system_enabled():
-            asyncio.get_event_loop().run_until_complete(self.worker_system.start_all_workers())
+            self.worker_system.start_all_workers()
         else:
             logger.debug("[Application] Worker system disabled, not starting workers")
         self._config_service.subscribe("tagger_worker_count", self._on_tagger_worker_count_changed)
@@ -427,12 +412,10 @@ class Application:
         logger.debug("[Application] Starting InfoService (GPU monitor)...")
         info_service.start()
         self._running = True
-        asyncio.get_event_loop().run_until_complete(self._start_app_heartbeat())
-        asyncio.get_event_loop().run_until_complete(
-            self.db.app.update_health(
-                "app",
-                {"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
-            )
+        self._start_app_heartbeat()
+        self.db.app.update_health(
+            "app",
+            {"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
         )
 
         # Summary log with key startup info
@@ -450,7 +433,7 @@ class Application:
         )
         logger.debug("[Application] Started successfully")
 
-    async def _on_tagger_worker_count_changed(self, key: str, value: Any) -> None:
+    def _on_tagger_worker_count_changed(self, key: str, value: Any) -> None:
         """Handle live changes to tagger_worker_count config.
 
         Computes the delta between desired and current worker count, then
@@ -482,15 +465,12 @@ class Application:
                 new_count,
                 abs(delta),
             )
-            await self.worker_system.remove_workers(abs(delta))
+            self.worker_system.remove_workers(abs(delta))
         else:
             logger.debug("[Application] tagger_worker_count unchanged at %d", new_count)
 
     def stop(self) -> None:
-        """Stop the application - clean shutdown of all services and workers.
-
-        This replaces the shutdown logic that was in api_app.py:lifespan().
-        """
+        """Stop the application - clean shutdown of all services and workers."""
         if not self._running:
             return
         logger.info("[Application] Shutting down...")
@@ -506,7 +486,7 @@ class Application:
             logger.info("[Application] Tag extraction worker stopped")
         if self.worker_system:
             logger.info("[Application] Stopping worker processes...")
-            asyncio.get_event_loop().run_until_complete(self.worker_system.stop_all_workers())
+            self.worker_system.stop_all_workers()
             logger.info("[Application] Worker processes stopped")
         if "info" in self.services:
             logger.info("[Application] Stopping InfoService (GPU monitor)...")
@@ -516,14 +496,12 @@ class Application:
             logger.info("[Application] Stopping health monitor...")
             self.health_monitor.stop()
         try:
-            asyncio.get_event_loop().run_until_complete(
-                self.db.app.update_health(
-                    "app",
-                    {"status": "stopping", "exit_code": 0},
-                )
+            self.db.app.update_health(
+                "app",
+                {"status": "stopping", "exit_code": 0},
             )
             logger.info("[Application] Cleaning ephemeral runtime state...")
-            asyncio.get_event_loop().run_until_complete(self.db.app.maintenance.truncate_health())
+            self.db.app.maintenance.truncate_health()
         except Exception as e:
             logger.warning(f"[Application] DB unavailable during shutdown (expected if containers stopping): {e}")
         self._running = False

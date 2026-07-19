@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -29,7 +29,7 @@ def _fake_onnxruntime_module(output_count: int) -> SimpleNamespace:
 class TestRegisterMlModelsWorkflow:
     """Tests for ``register_ml_models_workflow``."""
 
-    async def test_preserves_existing_known_labels_and_only_seeds_missing_outputs(
+    def test_preserves_existing_known_labels_and_only_seeds_missing_outputs(
         self,
         tmp_path: Path,
     ) -> None:
@@ -38,7 +38,7 @@ class TestRegisterMlModelsWorkflow:
         onnx_path.parent.mkdir(parents=True)
         onnx_path.write_bytes(b"fake")
 
-        db = AsyncMock()
+        db = MagicMock()
         model_id = "ml_models/model-1"
         outputs = [
             {
@@ -91,7 +91,7 @@ class TestRegisterMlModelsWorkflow:
             ),
             patch("nomarr.workflows.platform.register_ml_models_wf.prune_registered_model") as mock_prune,
         ):
-            await register_ml_models_workflow(db, str(tmp_path))
+            register_ml_models_workflow(db, str(tmp_path))
 
         mock_update_label.assert_called_once_with(
             db,
@@ -104,7 +104,7 @@ class TestRegisterMlModelsWorkflow:
         mock_mark_known.assert_called_once_with(db, model_id, value=True)
         mock_prune.assert_not_called()
 
-    async def test_seeds_all_known_outputs_when_model_is_new(
+    def test_seeds_all_known_outputs_when_model_is_new(
         self,
         tmp_path: Path,
     ) -> None:
@@ -113,7 +113,7 @@ class TestRegisterMlModelsWorkflow:
         onnx_path.parent.mkdir(parents=True)
         onnx_path.write_bytes(b"fake")
 
-        db = AsyncMock()
+        db = MagicMock()
         model_id = "ml_models/model-1"
         outputs = [
             {
@@ -166,7 +166,7 @@ class TestRegisterMlModelsWorkflow:
             ),
             patch("nomarr.workflows.platform.register_ml_models_wf.prune_registered_model"),
         ):
-            await register_ml_models_workflow(db, str(tmp_path))
+            register_ml_models_workflow(db, str(tmp_path))
 
         assert mock_update_label.call_args_list == [
             call(db, file_id=0, model_id=model_id, output_id="ml_model_outputs/output-0", label="happy"),

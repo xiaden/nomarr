@@ -40,14 +40,13 @@ class VectorMaintenanceService:
         self.models_dir = models_dir
         self._config_svc = config_svc
 
-    async def promote_and_rebuild(
+    def promote_and_rebuild(
         self,
         backbone_id: str,
         nlists: int | None = None,
     ) -> None:
         """Promote vectors from hot to cold and rebuild vector index.
 
-        Async operation - awaits until complete.
         If nlists not provided, calculates optimal value based on cold tier size.
 
         Args:
@@ -61,7 +60,7 @@ class VectorMaintenanceService:
         """
         # Auto-calculate ef_construction if not provided
         if nlists is None:
-            stats = await self.get_hot_cold_stats(backbone_id)
+            stats = self.get_hot_cold_stats(backbone_id)
             # Use cold count + hot count for sizing (total vectors after merge)
             total_count = stats["hot_count"] + stats["cold_count"]
             nlists = self.calculate_optimal_ef_construction(total_count)
@@ -73,7 +72,7 @@ class VectorMaintenanceService:
         logger.info(f"Starting promote & rebuild: backbone={backbone_id}, nlists={nlists}")
 
         try:
-            await promote_and_rebuild_workflow(
+            promote_and_rebuild_workflow(
                 db=self.db,
                 backbone_id=backbone_id,
                 nlists=nlists,
@@ -87,7 +86,7 @@ class VectorMaintenanceService:
             )
             raise
 
-    async def get_hot_cold_stats(self, backbone_id: str) -> dict[str, int | bool]:
+    def get_hot_cold_stats(self, backbone_id: str) -> dict[str, int | bool]:
         """Get hot/cold statistics for a backbone.
 
         Args:
@@ -100,9 +99,9 @@ class VectorMaintenanceService:
                 - index_exists: Whether cold tier has vector index
 
         """
-        return await self.db.ml.get_embedding_stats(backbone_id)
+        return self.db.ml.get_embedding_stats(backbone_id)
 
-    async def get_backbone_vector_stats(self) -> list[dict[str, str | int | bool]]:
+    def get_backbone_vector_stats(self) -> list[dict[str, str | int | bool]]:
         """Get per-backbone vector statistics for all backbones.
 
         Iterates all discovered backbones and returns hot/cold stats for each.
@@ -115,7 +114,7 @@ class VectorMaintenanceService:
         stats: list[dict[str, str | int | bool]] = []
         for backbone_id in discover_backbones(self.models_dir):
             try:
-                backbone_stats = await self.get_hot_cold_stats(backbone_id)
+                backbone_stats = self.get_hot_cold_stats(backbone_id)
                 stats.append(
                     {
                         "backbone_id": backbone_id,
@@ -145,7 +144,7 @@ class VectorMaintenanceService:
         """
         return get_ef_construction(doc_count)
 
-    async def rebuild_index(
+    def rebuild_index(
         self,
         backbone_id: str,
         nlists: int | None = None,
@@ -167,7 +166,7 @@ class VectorMaintenanceService:
 
         """
         if nlists is None:
-            stats = await self.get_hot_cold_stats(backbone_id)
+            stats = self.get_hot_cold_stats(backbone_id)
             nlists = self.calculate_optimal_ef_construction(int(stats["cold_count"]))
             logger.info(
                 f"Auto-calculated ef_construction={nlists} for backbone={backbone_id} (cold={stats['cold_count']})"
@@ -176,7 +175,7 @@ class VectorMaintenanceService:
         logger.info(f"Starting index rebuild: backbone={backbone_id}, nlists={nlists}")
 
         try:
-            await rebuild_vector_index_workflow(
+            rebuild_vector_index_workflow(
                 db=self.db,
                 backbone_id=backbone_id,
                 models_dir=self.models_dir,

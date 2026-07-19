@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: str) -> int:
+def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: str) -> int:
     """Run hot→cold vector promotion for all pending backbones.
 
     Intended to be called from a background thread when the discovery worker
@@ -52,7 +52,7 @@ async def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_d
 
     """
     # Step 1: Find targets (list[str] — backbone IDs only)
-    targets = await list_hot_vector_targets(db, models_dir)
+    targets = list_hot_vector_targets(db, models_dir)
     if not targets:
         logger.debug("[%s] No hot vectors pending promotion", worker_id)
         return 0
@@ -64,7 +64,7 @@ async def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_d
     )
 
     # Step 2: Reap stale locks (crashed workers, >10 minutes)
-    await locks_comp.reap_stale_locks(db, worker_id, stale_after_ms=600_000)
+    locks_comp.reap_stale_locks(db, worker_id, stale_after_ms=600_000)
 
     # Step 3-4: Acquire lock, compute nlists, promote and rebuild
     promoted = 0
@@ -72,7 +72,7 @@ async def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_d
     for backbone_id in targets:
         resource_id = f"{backbone_id}"
         lock_reference = locks_comp.make_lock_reference("vector_promotion", resource_id)
-        if not await locks_comp.acquire_distributed_lock(db, "vector_promotion", resource_id, worker_id, ttl_seconds):
+        if not locks_comp.acquire_distributed_lock(db, "vector_promotion", resource_id, worker_id, ttl_seconds):
             logger.debug(
                 "[%s] Lock held for %s — skipping",
                 worker_id,
@@ -82,14 +82,14 @@ async def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_d
 
         try:
             # TODO(S4): compute_promotion_ef_construction backbone_id should be str, not int
-            nlists = await compute_promotion_ef_construction(db, backbone_id)  # type: ignore[arg-type]
+            nlists = compute_promotion_ef_construction(db, backbone_id)  # type: ignore[arg-type]
             logger.info(
                 "[%s] Promoting %s (nlists=%d)",
                 worker_id,
                 backbone_id,
                 nlists,
             )
-            await promote_and_rebuild_workflow(db, backbone_id, nlists, models_dir)
+            promote_and_rebuild_workflow(db, backbone_id, nlists, models_dir)
             promoted += 1
         except Exception:
             logger.exception(
@@ -98,7 +98,7 @@ async def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_d
                 backbone_id,
             )
         finally:
-            await locks_comp.release_distributed_lock(db, "vector_promotion", resource_id, worker_id)
+            locks_comp.release_distributed_lock(db, "vector_promotion", resource_id, worker_id)
 
     logger.info("[%s] Idle promotion complete: %d promoted", worker_id, promoted)
     return promoted

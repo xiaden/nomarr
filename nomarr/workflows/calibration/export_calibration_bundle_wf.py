@@ -23,8 +23,6 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import anyio
-
 from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     get_calibration_version,
     load_all_calibration_states,
@@ -38,7 +36,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def export_calibration_bundle_wf(
+def export_calibration_bundle_wf(
     db: Database,
     output_path: str,
     include_metadata: bool = True,
@@ -80,7 +78,7 @@ async def export_calibration_bundle_wf(
     logger.info(f"[export_calibration] Exporting calibrations to {output_path}")
 
     # Read all calibrations from database
-    calibration_states = await load_all_calibration_states(db)
+    calibration_states = load_all_calibration_states(db)
 
     if not calibration_states:
         msg = "No calibrations in database to export"
@@ -109,7 +107,7 @@ async def export_calibration_bundle_wf(
         }
 
     # Get global version
-    global_version = await get_calibration_version(db)
+    global_version = get_calibration_version(db)
 
     # Build bundle
     bundle: dict[str, Any] = {"labels": labels}
@@ -127,8 +125,8 @@ async def export_calibration_bundle_wf(
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    async with await anyio.open_file(output, "w", encoding="utf-8") as f:
-        await f.write(json.dumps(bundle, indent=2))
+    with open(output, "w", encoding="utf-8") as f:
+        json.dump(bundle, f, indent=2)
 
     logger.info(f"[export_calibration] Exported {len(labels)} calibrations to {output_path}")
 
@@ -139,7 +137,7 @@ async def export_calibration_bundle_wf(
     }
 
 
-async def export_calibration_bundles_to_directory_wf(
+def export_calibration_bundles_to_directory_wf(
     db: Database,
     models_dir: str,
     bundle_name: str = "calibration",
@@ -167,7 +165,7 @@ async def export_calibration_bundles_to_directory_wf(
     output_path = Path(models_dir) / f"{bundle_name}.json"
 
     try:
-        result = await export_calibration_bundle_wf(db, str(output_path))
+        result = export_calibration_bundle_wf(db, str(output_path))
 
         return {
             "bundles_created": 1,

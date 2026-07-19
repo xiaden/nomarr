@@ -98,7 +98,7 @@ def _build_song_tag_entries(song_id: str, tags: dict[str, Any]) -> list[dict[str
     return [{"song_id": song_id, "tags": tag_payloads}]
 
 
-async def seed_entities_for_scan_batch(
+def seed_entities_for_scan_batch(
     db: "Database",
     file_ids: list[str],
     metadata_by_id: dict[str, dict[str, Any]],
@@ -143,7 +143,7 @@ async def seed_entities_for_scan_batch(
     if all_tag_entries:
         try:
             for entry in all_tag_entries:
-                await db.library.replace_file_tags(entry["song_id"], entry["tags"])
+                db.library.replace_file_tags(entry["song_id"], entry["tags"])
         except (ValueError, RuntimeError) as e:
             logger.warning("[entity_seeding] Batch tag seeding failed: %s", e)
             return 0
@@ -151,7 +151,7 @@ async def seed_entities_for_scan_batch(
     # 4) Batch update metadata cache (single query instead of N)
     if cache_updates:
         try:
-            await update_metadata_cache_batch(db, cache_updates)
+            update_metadata_cache_batch(db, cache_updates)
         except (ValueError, RuntimeError) as e:
             logger.warning("[entity_seeding] Batch cache update failed: %s", e)
 

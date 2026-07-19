@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -22,24 +22,23 @@ from nomarr.components.ml.calibration.ml_calibration_comp import (
 class TestGetSparseHistogram:
     """Tests for constructor-backed sparse histogram generation."""
 
-    @pytest.mark.asyncio
-    async def test_aggregates_matching_numeric_values_into_sorted_sparse_bins(self) -> None:
+    def test_aggregates_matching_numeric_values_into_sorted_sparse_bins(self) -> None:
         mock_db = MagicMock()
-        mock_db.ml.get_model = AsyncMock(
+        mock_db.ml.get_model = MagicMock(
             return_value={
                 "id": 1,
                 "backbone": "ast",
                 "embedder_release_date": "2026-01-01",
             }
         )
-        mock_db.library.list_all_tag_names = AsyncMock(
+        mock_db.library.list_all_tag_names = MagicMock(
             return_value=[
                 "nom:sigmoid_happy_ast_20260101",
                 "nom:sigmoid_sad_ast_20260101",
                 "genre",
             ]
         )
-        mock_db.library.list_tags_by_name = AsyncMock(
+        mock_db.library.list_tags_by_name = MagicMock(
             return_value=[
                 {"value": -0.2},
                 {"value": 0.1},
@@ -50,7 +49,7 @@ class TestGetSparseHistogram:
             ]
         )
 
-        result = await get_sparse_histogram(
+        result = get_sparse_histogram(
             mock_db,
             model_id="ml_models/model-1",
             label="happy",
@@ -67,12 +66,11 @@ class TestGetSparseHistogram:
         mock_db.library.list_all_tag_names.assert_called_once_with(limit=10000)
         mock_db.library.list_tags_by_name.assert_called_once_with(name="nom:sigmoid_happy_ast_20260101", limit=50000)
 
-    @pytest.mark.asyncio
-    async def test_returns_empty_when_model_metadata_is_missing(self) -> None:
+    def test_returns_empty_when_model_metadata_is_missing(self) -> None:
         mock_db = MagicMock()
-        mock_db.ml.get_model = AsyncMock(return_value=None)
+        mock_db.ml.get_model = MagicMock(return_value=None)
 
-        result = await get_sparse_histogram(mock_db, model_id="ml_models/missing", label="happy")
+        result = get_sparse_histogram(mock_db, model_id="ml_models/missing", label="happy")
 
         assert result == []
         mock_db.library.list_all_tag_names.assert_not_called()
@@ -166,21 +164,20 @@ class TestDerivePercentilesFromSparseHistogram:
 class TestGenerateCalibrationFromHistogram:
     """Tests for ``generate_calibration_from_histogram``."""
 
-    @pytest.mark.asyncio
-    async def test_returns_default_payload_when_sparse_histogram_is_empty(self) -> None:
+    def test_returns_default_payload_when_sparse_histogram_is_empty(self) -> None:
         mock_db = MagicMock()
 
         with (
             patch(
                 "nomarr.components.ml.calibration.ml_calibration_comp.get_sparse_histogram",
-                new_callable=AsyncMock,
+                new_callable=MagicMock,
                 return_value=[],
             ),
             patch(
                 "nomarr.components.ml.calibration.ml_calibration_comp.derive_percentiles_from_sparse_histogram"
             ) as mock_derive,
         ):
-            result = await generate_calibration_from_histogram(
+            result = generate_calibration_from_histogram(
                 mock_db,
                 model_id="ml_models/model-1",
                 head_name="mood_happy",
@@ -200,8 +197,7 @@ class TestGenerateCalibrationFromHistogram:
         }
         mock_derive.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_returns_percentiles_and_histogram_bins_when_sparse_histogram_exists(self) -> None:
+    def test_returns_percentiles_and_histogram_bins_when_sparse_histogram_exists(self) -> None:
         mock_db = MagicMock()
         sparse_bins = [
             {"min_val": 0.1, "count": 2, "underflow_count": 1, "overflow_count": 0},
@@ -211,7 +207,7 @@ class TestGenerateCalibrationFromHistogram:
         with (
             patch(
                 "nomarr.components.ml.calibration.ml_calibration_comp.get_sparse_histogram",
-                new_callable=AsyncMock,
+                new_callable=MagicMock,
                 return_value=sparse_bins,
             ),
             patch(
@@ -225,7 +221,7 @@ class TestGenerateCalibrationFromHistogram:
                 },
             ) as mock_derive,
         ):
-            result = await generate_calibration_from_histogram(
+            result = generate_calibration_from_histogram(
                 mock_db,
                 model_id="ml_models/model-2",
                 head_name="mood_happy",

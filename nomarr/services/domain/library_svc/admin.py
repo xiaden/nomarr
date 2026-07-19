@@ -8,7 +8,6 @@ This module handles:
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_admin_comp import (
@@ -40,7 +39,7 @@ class LibraryAdminMixin:
     db: Database
     file_watcher_service: FileWatcherService | None
 
-    async def _get_library_or_error(self, library_id: int) -> dict[str, Any]:
+    def _get_library_or_error(self, library_id: int) -> dict[str, Any]:
         """Get a library by ID or raise an error.
 
         Libraries are used only to determine scan roots. This method retrieves
@@ -57,7 +56,7 @@ class LibraryAdminMixin:
             ValueError: If library does not exist
 
         """
-        result = await get_library_record(self.db, int(library_id))
+        result = get_library_record(self.db, int(library_id))
         if result is None:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
@@ -72,7 +71,7 @@ class LibraryAdminMixin:
         """
         return self.cfg.library_root is not None
 
-    async def list_libraries(self, enabled_only: bool = False) -> list[LibraryDict]:
+    def list_libraries(self, enabled_only: bool = False) -> list[LibraryDict]:
         """List all configured libraries.
 
         Args:
@@ -82,10 +81,10 @@ class LibraryAdminMixin:
             List of LibraryDict DTOs with file/folder counts
 
         """
-        libraries = await list_library_records(self.db, enabled_only=enabled_only)
+        libraries = list_library_records(self.db, enabled_only=enabled_only)
 
         # Get file/folder counts for all libraries
-        counts = await get_library_counts(self.db)
+        counts = get_library_counts(self.db)
 
         result = []
         for lib in libraries:
@@ -110,10 +109,10 @@ class LibraryAdminMixin:
             ValueError: If library not found
 
         """
-        library = asyncio.run(self._get_library_or_error(library_id))
+        library = self._get_library_or_error(library_id)
         return LibraryDict(**library)
 
-    async def create_library(
+    def create_library(
         self,
         name: str | None,
         root_path: str,
@@ -140,7 +139,7 @@ class LibraryAdminMixin:
             LibraryDict DTO for the created library record.
 
         """
-        library_id = await create_library(
+        library_id = create_library(
             db=self.db,
             base_library_root=self.cfg.library_root,
             name=name,
@@ -151,18 +150,18 @@ class LibraryAdminMixin:
             library_auto_write=library_auto_write,
         )
 
-        library = await self._get_library_or_error(library_id)
+        library = self._get_library_or_error(library_id)
         return LibraryDict(**library)
 
-    async def update_library_root(self, library_id: int, root_path: str) -> LibraryDict:
+    def update_library_root(self, library_id: int, root_path: str) -> LibraryDict:
         """Update a library's root path."""
-        await update_library_root(
+        update_library_root(
             db=self.db,
             base_library_root=self.cfg.library_root,
             library_id=library_id,
             root_path=root_path,
         )
-        updated = await self._get_library_or_error(library_id)
+        updated = self._get_library_or_error(library_id)
         return LibraryDict(**updated)
 
     def update_library(
@@ -179,7 +178,7 @@ class LibraryAdminMixin:
         """Update library properties.
 
         Args:
-            library_id: Library document ``_id``.
+            library_id: Library database ID.
             name: New display name (optional).
             root_path: New filesystem root path (optional).
             is_enabled: New enabled state (optional).
@@ -192,10 +191,10 @@ class LibraryAdminMixin:
 
         """
         # Validate library exists
-        asyncio.run(self._get_library_or_error(library_id))
+        self._get_library_or_error(library_id)
 
         if root_path is not None:
-            asyncio.run(self.update_library_root(library_id, root_path))
+            self.update_library_root(library_id, root_path)
 
         if (
             name is not None
@@ -215,11 +214,11 @@ class LibraryAdminMixin:
 
         return self.get_library(library_id)
 
-    async def delete_library(self, library_id: int) -> bool:
+    def delete_library(self, library_id: int) -> bool:
         """Stop file watching for a library and delete it.
 
         Args:
-            library_id: Library document ``_id`` to delete.
+            library_id: Library database ID to delete.
 
         Returns:
             True if the library was deleted, False if it was not found.
@@ -227,7 +226,7 @@ class LibraryAdminMixin:
         """
         if self.file_watcher_service is not None and str(library_id) in self.file_watcher_service.observers:
             self.file_watcher_service.stop_watching_library(str(library_id))
-        return await delete_library(db=self.db, library_id=int(library_id))
+        return delete_library(db=self.db, library_id=int(library_id))
 
     def update_library_metadata(
         self,
@@ -246,7 +245,7 @@ class LibraryAdminMixin:
         component for persistence.
 
         Args:
-            library_id: Library document ``_id`` to update.
+            library_id: Library database ID to update.
             name: Optional new display name for the library.
             is_enabled: Optionally enable or disable the library.
             watch_mode: Optional watch mode (e.g. ``"polling"``, ``"inotify"``).
@@ -261,22 +260,20 @@ class LibraryAdminMixin:
             ValueError: If the library does not exist.
 
         """
-        asyncio.run(self._get_library_or_error(library_id))
-        asyncio.run(
-            UpdateLibraryMetadataComp(self.db).update(
-                library_id,
-                name=name,
-                is_enabled=is_enabled,
-                watch_mode=watch_mode,
-                file_write_mode=file_write_mode,
-                library_auto_write=library_auto_write,
-            )
+        self._get_library_or_error(library_id)
+        UpdateLibraryMetadataComp(self.db).update(
+            library_id,
+            name=name,
+            is_enabled=is_enabled,
+            watch_mode=watch_mode,
+            file_write_mode=file_write_mode,
+            library_auto_write=library_auto_write,
         )
 
-        updated = asyncio.run(self._get_library_or_error(library_id))
+        updated = self._get_library_or_error(library_id)
         return LibraryDict(**updated)
 
-    async def clear_library_data(self) -> None:
+    def clear_library_data(self) -> None:
         """Clear all library data (files, tags, scan queue).
 
         Wipes all library files, tags, edges, vectors, scan records, and
@@ -287,4 +284,4 @@ class LibraryAdminMixin:
             RuntimeError: If a library scan is currently running.
 
         """
-        await clear_library_data(db=self.db, library_root=self.cfg.library_root)
+        clear_library_data(db=self.db, library_root=self.cfg.library_root)

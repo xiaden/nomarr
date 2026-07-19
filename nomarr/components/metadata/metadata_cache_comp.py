@@ -62,7 +62,7 @@ def compute_metadata_cache_fields(metadata: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-async def update_metadata_cache_batch(db: Database, updates: list[dict[str, Any]]) -> None:
+def update_metadata_cache_batch(db: Database, updates: list[dict[str, Any]]) -> None:
     """Write metadata cache fields to song documents in batch.
 
     Each update dict must include a ``song_id`` key identifying the file
@@ -82,7 +82,7 @@ async def update_metadata_cache_batch(db: Database, updates: list[dict[str, Any]
         if not isinstance(song_id, int):
             continue
         update["_cache_updated_at"] = now_val.value
-        await db.library.update_file_fields(song_id, update)
+        db.library.update_file_fields(song_id, update)
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ async def update_metadata_cache_batch(db: Database, updates: list[dict[str, Any]
 # ---------------------------------------------------------------------------
 
 
-async def rebuild_song_metadata_cache(db: Database, song_id: int) -> None:
+def rebuild_song_metadata_cache(db: Database, song_id: int) -> None:
     """Rebuild embedded metadata cache fields on a song from tags.
 
     Reads all tags for the song and recomputes cache fields.
@@ -102,7 +102,7 @@ async def rebuild_song_metadata_cache(db: Database, song_id: int) -> None:
     """
     from nomarr.components.tagging.tag_query_comp import get_song_tags
 
-    tags = await get_song_tags(db, song_id)
+    tags = get_song_tags(db, song_id)
     tags_dict = tags.to_dict()
 
     artists_raw = [str(v) for v in tags_dict.get("artists", [])]
@@ -138,10 +138,10 @@ async def rebuild_song_metadata_cache(db: Database, song_id: int) -> None:
         if v is not None
     }
     if fields:
-        await db.library.update_file_fields(song_id, fields)
+        db.library.update_file_fields(song_id, fields)
 
 
-async def rebuild_all_song_metadata_caches(db: Database, limit: int | None = None) -> int:
+def rebuild_all_song_metadata_caches(db: Database, limit: int | None = None) -> int:
     """Rebuild metadata caches for every song in the database.
 
     Args:
@@ -154,9 +154,9 @@ async def rebuild_all_song_metadata_caches(db: Database, limit: int | None = Non
     """
     from nomarr.components.library.library_file_query_comp import list_all_file_ids
 
-    file_ids = await list_all_file_ids(db, limit=limit)
+    file_ids = list_all_file_ids(db, limit=limit)
     count = 0
     for file_id in file_ids:
-        await rebuild_song_metadata_cache(db, file_id)
+        rebuild_song_metadata_cache(db, file_id)
         count += 1
     return count

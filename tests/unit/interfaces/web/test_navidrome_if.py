@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -175,7 +175,7 @@ class TestNavidromeGeneratePersonalPlaylistsEndpoint:
 @pytest.fixture
 def mock_navidrome_service() -> MagicMock:
     """Provide a mocked NavidromeService dependency."""
-    return AsyncMock()
+    return MagicMock()
 
 
 @pytest.fixture

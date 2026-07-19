@@ -2,15 +2,23 @@
 
 Each primitive function in ``nomarr.persistence.sql.primitives`` is tested
 against a SQLite in-memory database using a simple SQLAlchemy Core table.
+
+This module uses ``pytest.mark.serial`` to avoid SQLite lock contention
+when the full suite runs in parallel — each test creates and drops
+temporary tables on a shared SQLite file.
 """
 
 from __future__ import annotations
 
+import contextlib
+import os
+import tempfile
+
 import pytest
-import pytest_asyncio
-from sqlalchemy import Column, Integer, MetaData, String, Table, Text, UniqueConstraint
+from sqlalchemy import Column, Integer, MetaData, String, Table, Text, UniqueConstraint, create_engine
+from sqlalchemy.dialects.sqlite.base import SQLiteTypeCompiler
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from nomarr.persistence.sql.primitives import (
     batch_upsert,
@@ -22,17 +30,45 @@ from nomarr.persistence.sql.primitives import (
     update_by_field,
     upsert_by_field,
 )
-from persistence.database.conftest import pg_async_engine, pg_engine  # noqa: F401 — shared fixtures
 
 
-@pytest_asyncio.fixture
-async def async_engine(pg_async_engine):  # noqa: F811
-    """Reuse the shared async engine from the database conftest."""
-    yield pg_async_engine
+# Monkey-patch JSONB → JSON for SQLite (same as persistence/database/conftest.py)
+def _compile_jsonb_as_json(self, type_, **kw):
+    return self.visit_JSON(type_, **kw)
 
 
-@pytest_asyncio.fixture
-async def metadata_and_engine(async_engine):
+SQLiteTypeCompiler.visit_JSONB = _compile_jsonb_as_json  # type: ignore[attr-defined]
+
+
+@pytest.fixture
+def pg_engine():
+    """Function-scoped isolated SQLite engine — avoids lock contention."""
+    fd, db_path = tempfile.mkstemp(suffix=".db", prefix="nomarr_test_primitives_")
+    os.close(fd)
+    url = f"sqlite:///{db_path}"
+    engine = create_engine(url, echo=False)
+
+    # Create safe tables (skip pgvector-only tables like embeddings)
+    import nomarr.persistence.models as _models  # noqa: F401
+    from nomarr.persistence.models.base import Base
+
+    safe_tables = [t for t in Base.metadata.sorted_tables if t.name != "embeddings"]
+    Base.metadata.create_all(engine, tables=safe_tables)
+
+    yield engine
+    engine.dispose()
+    with contextlib.suppress(OSError):
+        os.unlink(db_path)
+
+
+@pytest.fixture
+def engine(pg_engine):
+    """Reuse the isolated function-scoped engine."""
+    yield pg_engine
+
+
+@pytest.fixture
+def metadata_and_engine(engine):
     """Define test table schema and create tables on the in-memory database."""
     md = MetaData()
     Table(
@@ -43,30 +79,26 @@ async def metadata_and_engine(async_engine):
         Column("value", Text),
         UniqueConstraint("name", name="uq_test_items_name"),
     )
-    # SQLite in-memory: use connect+run_sync instead of begin (avoids
-    # nested-transaction issues with aiosqlite).
-    async with async_engine.connect() as conn:
-        await conn.run_sync(md.create_all)
-        await conn.commit()
-    yield async_engine, md
-    async with async_engine.connect() as conn:
-        await conn.run_sync(md.drop_all)
-        await conn.commit()
+    with engine.begin() as conn:
+        md.create_all(conn)
+    yield engine, md
+    with engine.begin() as conn:
+        md.drop_all(conn)
 
 
-@pytest_asyncio.fixture
-async def session(metadata_and_engine):
-    """Provide a transactional async session that rolls back after each test."""
+@pytest.fixture
+def session(metadata_and_engine):
+    """Provide a transactional sync session that rolls back after each test."""
     engine, _ = metadata_and_engine
-    async with engine.connect() as conn:
-        await conn.begin()
-        await conn.begin_nested()
-        session = AsyncSession(bind=conn)
+    with engine.connect() as conn:
+        conn.begin()
+        conn.begin_nested()
+        session = Session(bind=conn)
         try:
             yield session
         finally:
-            await session.close()
-            await conn.rollback()
+            session.close()
+            conn.rollback()
 
 
 @pytest.fixture
@@ -79,36 +111,36 @@ def test_table(metadata_and_engine) -> Table:
 # --- select_by_key ---
 
 
-async def test_select_by_key_returns_row(session: AsyncSession, test_table: Table):
+def test_select_by_key_returns_row(session: Session, test_table: Table):
     """select_by_key returns the matching row when key exists."""
-    await insert_one(test_table, {"name": "alpha", "value": "v1"}, session=session)
-    row = await select_by_key(test_table, 1, session=session)
+    insert_one(test_table, {"name": "alpha", "value": "v1"}, session=session)
+    row = select_by_key(test_table, 1, session=session)
     assert row is not None
     assert row.name == "alpha"
     assert row.value == "v1"
 
 
-async def test_select_by_key_returns_none_for_missing(session: AsyncSession, test_table: Table):
+def test_select_by_key_returns_none_for_missing(session: Session, test_table: Table):
     """select_by_key returns None when no row matches."""
-    row = await select_by_key(test_table, 99999, session=session)
+    row = select_by_key(test_table, 99999, session=session)
     assert row is None
 
 
 # --- select_many_by_keys ---
 
 
-async def test_select_many_by_keys_empty_input(session: AsyncSession, test_table: Table):
+def test_select_many_by_keys_empty_input(session: Session, test_table: Table):
     """select_many_by_keys returns [] for empty keys list."""
-    result = await select_many_by_keys(test_table, [], session=session)
+    result = select_many_by_keys(test_table, [], session=session)
     assert result == []
 
 
-async def test_select_many_by_keys_partial_matches(session: AsyncSession, test_table: Table):
+def test_select_many_by_keys_partial_matches(session: Session, test_table: Table):
     """select_many_by_keys returns only found rows, silently omitting missing keys."""
-    await insert_one(test_table, {"name": "beta", "value": "v2"}, session=session)
-    await insert_one(test_table, {"name": "gamma", "value": "v3"}, session=session)
+    insert_one(test_table, {"name": "beta", "value": "v2"}, session=session)
+    insert_one(test_table, {"name": "gamma", "value": "v3"}, session=session)
     # Insert returns rows with auto-incremented ids; fetch them to get actual ids
-    all_rows = await select_many_by_keys(
+    all_rows = select_many_by_keys(
         test_table,
         [1, 2, 3, 99999],
         session=session,
@@ -122,16 +154,16 @@ async def test_select_many_by_keys_partial_matches(session: AsyncSession, test_t
 # --- insert_one ---
 
 
-async def test_insert_one_returns_row(session: AsyncSession, test_table: Table):
+def test_insert_one_returns_row(session: Session, test_table: Table):
     """insert_one inserts and returns the row."""
-    row = await insert_one(test_table, {"name": "delta", "value": "v4"}, session=session)
+    row = insert_one(test_table, {"name": "delta", "value": "v4"}, session=session)
     assert row is not None
     assert row.name == "delta"
     assert row.value == "v4"
     assert row.id is not None
 
 
-async def test_insert_one_raises_on_duplicate(session: AsyncSession, test_table: Table):
+def test_insert_one_raises_on_duplicate(session: Session, test_table: Table):
     """insert_one raises IntegrityError on constraint violation.
 
     Primitives propagate raw SQLAlchemy exceptions (Phase 3).  The
@@ -140,17 +172,17 @@ async def test_insert_one_raises_on_duplicate(session: AsyncSession, test_table:
     which SQLite does not provide.  Tested separately in
     ``test_exception_mapping.py``.
     """
-    await insert_one(test_table, {"name": "epsilon", "value": "v5"}, session=session)
+    insert_one(test_table, {"name": "epsilon", "value": "v5"}, session=session)
     with pytest.raises(IntegrityError):
-        await insert_one(test_table, {"name": "epsilon", "value": "v5_dup"}, session=session)
+        insert_one(test_table, {"name": "epsilon", "value": "v5_dup"}, session=session)
 
 
 # --- upsert_by_field ---
 
 
-async def test_upsert_by_field_inserts_when_no_match(session: AsyncSession, test_table: Table):
+def test_upsert_by_field_inserts_when_no_match(session: Session, test_table: Table):
     """upsert_by_field inserts when no existing row matches."""
-    row = await upsert_by_field(
+    row = upsert_by_field(
         test_table,
         "name",
         "zeta_new",
@@ -162,10 +194,10 @@ async def test_upsert_by_field_inserts_when_no_match(session: AsyncSession, test
     assert row.value == "inserted"
 
 
-async def test_upsert_by_field_updates_when_match_exists(session: AsyncSession, test_table: Table):
+def test_upsert_by_field_updates_when_match_exists(session: Session, test_table: Table):
     """upsert_by_field updates when a matching row already exists."""
-    await insert_one(test_table, {"name": "eta", "value": "original"}, session=session)
-    row = await upsert_by_field(
+    insert_one(test_table, {"name": "eta", "value": "original"}, session=session)
+    row = upsert_by_field(
         test_table,
         "name",
         "eta",
@@ -180,10 +212,10 @@ async def test_upsert_by_field_updates_when_match_exists(session: AsyncSession, 
 # --- update_by_field ---
 
 
-async def test_update_by_field_returns_updated_row(session: AsyncSession, test_table: Table):
+def test_update_by_field_returns_updated_row(session: Session, test_table: Table):
     """update_by_field updates and returns the row."""
-    await insert_one(test_table, {"name": "theta", "value": "before"}, session=session)
-    row = await update_by_field(
+    insert_one(test_table, {"name": "theta", "value": "before"}, session=session)
+    row = update_by_field(
         test_table,
         "name",
         "theta",
@@ -194,9 +226,9 @@ async def test_update_by_field_returns_updated_row(session: AsyncSession, test_t
     assert row.value == "after"
 
 
-async def test_update_by_field_returns_none_when_no_match(session: AsyncSession, test_table: Table):
+def test_update_by_field_returns_none_when_no_match(session: Session, test_table: Table):
     """update_by_field returns None when no row matches."""
-    row = await update_by_field(
+    row = update_by_field(
         test_table,
         "name",
         "nonexistent_item_xyz",
@@ -209,41 +241,41 @@ async def test_update_by_field_returns_none_when_no_match(session: AsyncSession,
 # --- delete_by_key ---
 
 
-async def test_delete_by_key_deletes_without_error(session: AsyncSession, test_table: Table):
+def test_delete_by_key_deletes_without_error(session: Session, test_table: Table):
     """delete_by_key deletes without error."""
-    row = await insert_one(test_table, {"name": "iota", "value": "to_delete"}, session=session)
-    await delete_by_key(test_table, row.id, session=session)
+    row = insert_one(test_table, {"name": "iota", "value": "to_delete"}, session=session)
+    delete_by_key(test_table, row.id, session=session)
     # Verify it's gone
-    result = await select_by_key(test_table, row.id, session=session)
+    result = select_by_key(test_table, row.id, session=session)
     assert result is None
 
 
-async def test_delete_by_key_no_error_when_missing(session: AsyncSession, test_table: Table):
+def test_delete_by_key_no_error_when_missing(session: Session, test_table: Table):
     """delete_by_key does not error when key is missing."""
     # Should not raise
-    await delete_by_key(test_table, 999999, session=session)
+    delete_by_key(test_table, 999999, session=session)
 
 
 # --- batch_upsert ---
 
 
-async def test_batch_upsert_empty_list(session: AsyncSession, test_table: Table):
+def test_batch_upsert_empty_list(session: Session, test_table: Table):
     """batch_upsert returns [] for empty input."""
-    result = await batch_upsert(test_table, [], ["name"], session=session)
+    result = batch_upsert(test_table, [], ["name"], session=session)
     assert result == []
 
 
-async def test_batch_upsert_inserts_and_updates(session: AsyncSession, test_table: Table):
+def test_batch_upsert_inserts_and_updates(session: Session, test_table: Table):
     """batch_upsert upserts all rows and returns them."""
     # Insert one row first
-    await insert_one(test_table, {"name": "kappa", "value": "original"}, session=session)
+    insert_one(test_table, {"name": "kappa", "value": "original"}, session=session)
 
     # Batch upsert: kappa should update, lambda should insert
     data_list = [
         {"name": "kappa", "value": "updated"},
         {"name": "lambda", "value": "new"},
     ]
-    rows = await batch_upsert(test_table, data_list, ["name"], session=session)
+    rows = batch_upsert(test_table, data_list, ["name"], session=session)
     assert len(rows) == 2
     returned_names = {r.name for r in rows}
     assert "kappa" in returned_names
@@ -256,7 +288,7 @@ async def test_batch_upsert_inserts_and_updates(session: AsyncSession, test_tabl
 # --- is_table_empty ---
 
 
-async def test_is_table_empty_true_on_fresh_table(async_engine):
+def test_is_table_empty_true_on_fresh_table(engine):
     """is_table_empty returns True on a fresh (empty) table."""
     # Use a separate table that we know is empty
     md = MetaData()
@@ -266,22 +298,20 @@ async def test_is_table_empty_true_on_fresh_table(async_engine):
         Column("id", Integer, primary_key=True, autoincrement=True),
         Column("name", String(100)),
     )
-    async with async_engine.connect() as conn:
-        await conn.run_sync(md.create_all)
-        await conn.commit()
+    with engine.begin() as conn:
+        md.create_all(conn)
 
     try:
-        async with AsyncSession(async_engine) as sess:
-            result = await is_table_empty(fresh_table, session=sess)
+        with Session(engine) as sess:
+            result = is_table_empty(fresh_table, session=sess)
             assert result is True
     finally:
-        async with async_engine.connect() as conn:
-            await conn.run_sync(md.drop_all)
-            await conn.commit()
+        with engine.begin() as conn:
+            md.drop_all(conn)
 
 
-async def test_is_table_empty_false_after_insert(session: AsyncSession, test_table: Table):
+def test_is_table_empty_false_after_insert(session: Session, test_table: Table):
     """is_table_empty returns False after inserting a row."""
-    await insert_one(test_table, {"name": "mu", "value": "v"}, session=session)
-    result = await is_table_empty(test_table, session=session)
+    insert_one(test_table, {"name": "mu", "value": "v"}, session=session)
+    result = is_table_empty(test_table, session=session)
     assert result is False

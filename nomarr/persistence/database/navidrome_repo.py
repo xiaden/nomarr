@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.navidrome_repo_dto import NdPlayRecord, NdTrackRecord
 from nomarr.persistence.models.navidrome_play import NavidromePlay
@@ -21,7 +22,6 @@ from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
-    from sqlalchemy.ext.asyncio import AsyncSession
 
 _T_TRACK = cast("Table", NavidromeTrack.__table__)
 _T_TRACK_MAP = cast("Table", NavidromeTrackMap.__table__)
@@ -56,12 +56,12 @@ def _row_to_play_record(row: Row[Any]) -> NdPlayRecord:
 class NavidromeRepo:
     """Repository for Navidrome track, play, and junction tables."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: scoped_session[Session]) -> None:
         self._session = session
 
     # ── tracks ──────────────────────────────────────────────────
 
-    async def upsert_track(
+    def upsert_track(
         self,
         nd_id: str,
         title: str | None,
@@ -74,8 +74,8 @@ class NavidromeRepo:
         ``NavidromeTrack`` columns are NOT NULL, so ``None`` values are
         coerced to empty strings at the DB boundary.
         """
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
                 now = int(time.time())
                 data = {
                     "id": nd_id,
@@ -95,33 +95,33 @@ class NavidromeRepo:
                     )
                     .returning(_T_TRACK)
                 )
-                result = await self._session.execute(stmt)
-            await self._session.commit()
-            row = result.fetchone()
+                result = self._session.execute(stmt)
+                row = result.fetchone()
+            self._session.commit()
             assert row is not None
             return _row_to_track_record(row)
 
-    async def get_track(self, nd_id: str) -> NdTrackRecord | None:
+    def get_track(self, nd_id: str) -> NdTrackRecord | None:
         """Fetch a single track by its Navidrome ID (string PK)."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T_TRACK).where(_T_TRACK.c.id == nd_id)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             row = result.fetchone()
             return _row_to_track_record(row) if row else None
 
-    async def list_nd_track_keys(self) -> list[str]:
+    def list_nd_track_keys(self) -> list[str]:
         """Return all Navidrome track IDs."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T_TRACK.c.id)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [row[0] for row in result.all()]
 
     # ── track ↔ file junction ───────────────────────────────────
 
-    async def map_track_to_file(self, nd_id: str, file_id: int) -> None:
+    def map_track_to_file(self, nd_id: str, file_id: int) -> None:
         """Insert a track-to-file mapping (ON CONFLICT DO NOTHING)."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
                 now = int(time.time())
                 stmt = (
                     pg_insert(_T_TRACK_MAP)
@@ -132,31 +132,31 @@ class NavidromeRepo:
                     )
                     .on_conflict_do_nothing(index_elements=["navidrome_track_id", "file_id"])
                 )
-                await self._session.execute(stmt)
-            await self._session.commit()
+                self._session.execute(stmt)
+            self._session.commit()
 
-    async def get_mapped_file(self, nd_id: str) -> int | None:
+    def get_mapped_file(self, nd_id: str) -> int | None:
         """Return the file_id mapped to a Navidrome track, or ``None``."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T_TRACK_MAP.c.file_id).where(_T_TRACK_MAP.c.navidrome_track_id == nd_id)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             row = result.fetchone()
             return row[0] if row else None
 
-    async def resolve_file_to_nd_track(self, file_id: int) -> str | None:
+    def resolve_file_to_nd_track(self, file_id: int) -> str | None:
         """Reverse lookup: return the Navidrome track ID for a file."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T_TRACK_MAP.c.navidrome_track_id).where(_T_TRACK_MAP.c.file_id == file_id)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             row = result.fetchone()
             return row[0] if row else None
 
-    async def bulk_upsert_tracks(self, nd_ids: list[str]) -> int:
+    def bulk_upsert_tracks(self, nd_ids: list[str]) -> int:
         """Batch insert track stubs (ON CONFLICT DO NOTHING).  Returns count."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             if not nd_ids:
                 return 0
-            async with self._session.begin_nested():
+            with self._session.begin_nested():
                 now = int(time.time())
                 values = [
                     {
@@ -170,19 +170,19 @@ class NavidromeRepo:
                     for nd_id in nd_ids
                 ]
                 stmt = pg_insert(_T_TRACK).values(values).on_conflict_do_nothing(index_elements=["id"])
-                result = await self._session.execute(stmt)
-            await self._session.commit()
+                result = self._session.execute(stmt)
+            self._session.commit()
             return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult.rowcount is int at runtime
 
-    async def bulk_map_tracks(self, mappings: list[dict[str, str]]) -> int:
+    def bulk_map_tracks(self, mappings: list[dict[str, str]]) -> int:
         """Batch insert track-to-file mappings.  Returns count inserted.
 
         Each dict in *mappings* must have ``nd_id`` and ``file_id`` keys.
         """
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             if not mappings:
                 return 0
-            async with self._session.begin_nested():
+            with self._session.begin_nested():
                 now = int(time.time())
                 values = [
                     {
@@ -197,13 +197,13 @@ class NavidromeRepo:
                     .values(values)
                     .on_conflict_do_nothing(index_elements=["navidrome_track_id", "file_id"])
                 )
-                result = await self._session.execute(stmt)
-            await self._session.commit()
+                result = self._session.execute(stmt)
+            self._session.commit()
             return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult.rowcount is int at runtime
 
     # ── plays ───────────────────────────────────────────────────
 
-    async def record_play(
+    def record_play(
         self,
         nd_id: str,
         user_id: str | None,
@@ -214,8 +214,8 @@ class NavidromeRepo:
 
         Returns the new play row's primary key.
         """
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
                 stmt = (
                     pg_insert(_T_PLAY)
                     .values(
@@ -225,7 +225,7 @@ class NavidromeRepo:
                     )
                     .returning(_T_PLAY.c.id)
                 )
-                result = await self._session.execute(stmt)
+                result = self._session.execute(stmt)
                 row = result.fetchone()
                 assert row is not None
                 play_id: int = row[0]
@@ -237,17 +237,17 @@ class NavidromeRepo:
                         .values(play_id=play_id, file_id=file_id, created_at=now)
                         .on_conflict_do_nothing(index_elements=["play_id", "file_id"])
                     )
-                    await self._session.execute(map_stmt)
-            await self._session.commit()
+                    self._session.execute(map_stmt)
+            self._session.commit()
             return play_id
 
-    async def get_top_plays(self, user_id: str, top_n: int) -> list[NdPlayRecord]:
+    def get_top_plays(self, user_id: str, top_n: int) -> list[NdPlayRecord]:
         """Return top-played tracks for a user, aggregated via junction tables.
 
         Joins ``navidrome_plays`` → ``navidrome_play_maps`` to compute
         per-track play counts and most-recent play timestamps.
         """
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             np_ = _T_PLAY
             npm = _T_PLAY_MAP
             stmt = (
@@ -263,24 +263,24 @@ class NavidromeRepo:
                 .order_by(func.count().desc())
                 .limit(top_n)
             )
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [_row_to_play_record(r) for r in result.all()]
 
-    async def delete_tracks_for_file(self, file_id: int) -> int:
+    def delete_tracks_for_file(self, file_id: int) -> int:
         """Delete track mappings for a file, then orphaned tracks.
 
         Returns the number of track-map rows deleted.
         """
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
                 # 1. Collect track IDs that will lose their last mapping
                 sel = select(_T_TRACK_MAP.c.navidrome_track_id).where(_T_TRACK_MAP.c.file_id == file_id)
-                result = await self._session.execute(sel)
+                result = self._session.execute(sel)
                 affected_nd_ids = [r[0] for r in result.all()]
 
                 # 2. Delete the track-map rows for this file
                 del_map = delete(_T_TRACK_MAP).where(_T_TRACK_MAP.c.file_id == file_id)
-                map_result = await self._session.execute(del_map)
+                map_result = self._session.execute(del_map)
                 map_deleted = int(map_result.rowcount)  # type: ignore[attr-defined]  # CursorResult.rowcount is int at runtime
 
                 # 3. Delete tracks that no longer have any mappings
@@ -288,11 +288,11 @@ class NavidromeRepo:
                     orphan_check = select(_T_TRACK_MAP.c.navidrome_track_id).where(
                         _T_TRACK_MAP.c.navidrome_track_id.in_(affected_nd_ids),
                     )
-                    orphan_result = await self._session.execute(orphan_check)
+                    orphan_result = self._session.execute(orphan_check)
                     still_mapped = {r[0] for r in orphan_result.all()}
                     orphans = [nid for nid in affected_nd_ids if nid not in still_mapped]
                     if orphans:
                         del_tracks = delete(_T_TRACK).where(_T_TRACK.c.id.in_(orphans))
-                        await self._session.execute(del_tracks)
-            await self._session.commit()
+                        self._session.execute(del_tracks)
+            self._session.commit()
             return map_deleted

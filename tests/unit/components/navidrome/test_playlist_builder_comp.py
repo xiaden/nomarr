@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -57,7 +57,7 @@ def _make_result(file_id: int) -> dict:
     return {"file_id": file_id}
 
 
-def _make_db(cold_count: int = 1000, search_results: list[list[dict]] | None = None) -> AsyncMock:
+def _make_db(cold_count: int = 1000, search_results: list[list[dict]] | None = None) -> MagicMock:
     """Build a mock Database with pre-configured ml namespace.
 
     Args:
@@ -66,9 +66,9 @@ def _make_db(cold_count: int = 1000, search_results: list[list[dict]] | None = N
             next list from this sequence. If exhausted, returns [].
 
     """
-    db = AsyncMock()
-    db.ml.get_embedding_stats = AsyncMock(return_value={"cold_count": cold_count})
-    db.ml.search_vectors = AsyncMock()
+    db = MagicMock()
+    db.ml.get_embedding_stats = MagicMock(return_value={"cold_count": cold_count})
+    db.ml.search_vectors = MagicMock()
     if search_results is not None:
         db.ml.search_vectors.side_effect = search_results
     else:
@@ -83,46 +83,46 @@ def _make_db(cold_count: int = 1000, search_results: list[list[dict]] | None = N
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_interleave_empty_results_returns_empty() -> None:
-    result = await _interleave_per_cluster({}, {"A": 1.0}, target_size=10)
+def test_interleave_empty_results_returns_empty() -> None:
+    result = _interleave_per_cluster({}, {"A": 1.0}, target_size=10)
     assert result == []
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_interleave_target_size_zero_returns_empty() -> None:
+def test_interleave_target_size_zero_returns_empty() -> None:
     results = {"A": [_make_result(1)]}
-    result = await _interleave_per_cluster(results, {"A": 1.0}, target_size=0)
+    result = _interleave_per_cluster(results, {"A": 1.0}, target_size=0)
     assert result == []
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_interleave_all_empty_clusters_returns_empty() -> None:
+def test_interleave_all_empty_clusters_returns_empty() -> None:
     results = {"A": [], "B": []}
-    result = await _interleave_per_cluster(results, {"A": 1.0, "B": 1.0}, target_size=10)
+    result = _interleave_per_cluster(results, {"A": 1.0, "B": 1.0}, target_size=10)
     assert result == []
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_interleave_single_cluster_returns_up_to_target() -> None:
+def test_interleave_single_cluster_returns_up_to_target() -> None:
     results = {"A": [_make_result(f"f{i}") for i in range(20)]}
-    result = await _interleave_per_cluster(results, {"A": 1.0}, target_size=5)
+    result = _interleave_per_cluster(results, {"A": 1.0}, target_size=5)
     assert result == [f"f{i}" for i in range(5)]
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_interleave_single_cluster_fewer_than_target() -> None:
+def test_interleave_single_cluster_fewer_than_target() -> None:
     results = {"A": [_make_result("f1"), _make_result("f2")]}
-    result = await _interleave_per_cluster(results, {"A": 1.0}, target_size=10)
+    result = _interleave_per_cluster(results, {"A": 1.0}, target_size=10)
     assert result == ["f1", "f2"]
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_interleave_proportional_weights_largest_remainder() -> None:
+def test_interleave_proportional_weights_largest_remainder() -> None:
     """Verify largest-remainder slot allocation with known weights."""
     results = {
         "A": [_make_result(f"a{i}") for i in range(10)],
@@ -130,7 +130,7 @@ async def test_interleave_proportional_weights_largest_remainder() -> None:
         "C": [_make_result(f"c{i}") for i in range(10)],
     }
     weights = {"A": 0.5, "B": 0.3, "C": 0.2}
-    result = await _interleave_per_cluster(results, weights, target_size=10)
+    result = _interleave_per_cluster(results, weights, target_size=10)
 
     a_count = sum(1 for x in result if x.startswith("a"))
     b_count = sum(1 for x in result if x.startswith("b"))
@@ -143,14 +143,14 @@ async def test_interleave_proportional_weights_largest_remainder() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_interleave_largest_remainder_distributes_leftover() -> None:
+def test_interleave_largest_remainder_distributes_leftover() -> None:
     """When floors don't sum to target, largest fractional remainders get +1."""
     results = {
         "A": [_make_result(f"a{i}") for i in range(5)],
         "B": [_make_result(f"b{i}") for i in range(5)],
     }
     weights = {"A": 0.5, "B": 0.5}
-    result = await _interleave_per_cluster(results, weights, target_size=5)
+    result = _interleave_per_cluster(results, weights, target_size=5)
     assert len(result) == 5
     a_count = sum(1 for x in result if x.startswith("a"))
     b_count = sum(1 for x in result if x.startswith("b"))
@@ -160,14 +160,14 @@ async def test_interleave_largest_remainder_distributes_leftover() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_interleave_zero_total_weight_even_split() -> None:
+def test_interleave_zero_total_weight_even_split() -> None:
     """When all weights are zero, fallback to even split across sorted labels."""
     results = {
         "B": [_make_result(f"b{i}") for i in range(5)],
         "A": [_make_result(f"a{i}") for i in range(5)],
     }
     weights = {"A": 0.0, "B": 0.0}
-    result = await _interleave_per_cluster(results, weights, target_size=4)
+    result = _interleave_per_cluster(results, weights, target_size=4)
     a_count = sum(1 for x in result if x.startswith("a"))
     b_count = sum(1 for x in result if x.startswith("b"))
     assert a_count == 2
@@ -177,14 +177,14 @@ async def test_interleave_zero_total_weight_even_split() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_interleave_round_robin_descending_weight_order() -> None:
+def test_interleave_round_robin_descending_weight_order() -> None:
     """Round-robin should interleave in descending weight order."""
     results = {
         "A": [_make_result(f"a{i}") for i in range(5)],
         "B": [_make_result(f"b{i}") for i in range(5)],
     }
     weights = {"A": 0.7, "B": 0.3}
-    result = await _interleave_per_cluster(results, weights, target_size=4)
+    result = _interleave_per_cluster(results, weights, target_size=4)
 
     assert result[0] == "a0"  # First from A (highest weight)
     assert result[1] == "b0"  # Then B
@@ -193,28 +193,28 @@ async def test_interleave_round_robin_descending_weight_order() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_interleave_clusters_exhausted_returns_partial() -> None:
+def test_interleave_clusters_exhausted_returns_partial() -> None:
     """When clusters run out before target_size, return what we have."""
     results = {
         "A": [_make_result("a1")],
         "B": [_make_result("b1")],
     }
     weights = {"A": 0.5, "B": 0.5}
-    result = await _interleave_per_cluster(results, weights, target_size=100)
+    result = _interleave_per_cluster(results, weights, target_size=100)
     assert len(result) == 2
     assert set(result) == {"a1", "b1"}
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_interleave_no_mutation_of_input_lists() -> None:
+def test_interleave_no_mutation_of_input_lists() -> None:
     """Original result lists must not be modified."""
     original_a = [_make_result(1), _make_result(2)]
     original_b = [_make_result(1), _make_result(2)]
     results = {"A": deepcopy(original_a), "B": deepcopy(original_b)}
     weights = {"A": 0.5, "B": 0.5}
 
-    await _interleave_per_cluster(results, weights, target_size=4)
+    _interleave_per_cluster(results, weights, target_size=4)
 
     assert results["A"] == original_a
     assert results["B"] == original_b
@@ -227,25 +227,25 @@ async def test_interleave_no_mutation_of_input_lists() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_familiar_no_played_tracks_returns_empty() -> None:
+def test_familiar_no_played_tracks_returns_empty() -> None:
     ctx = _make_ctx(played_file_ids=[])
     db = _make_db()
-    result = await build_familiar_playlist(db, ctx)
+    result = build_familiar_playlist(db, ctx)
     assert result == []
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_familiar_empty_cold_collection_returns_empty() -> None:
+def test_familiar_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
     db = _make_db(cold_count=0)
-    result = await build_familiar_playlist(db, ctx)
+    result = build_familiar_playlist(db, ctx)
     assert result == []
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_familiar_normal_case_filters_to_played() -> None:
+def test_familiar_normal_case_filters_to_played() -> None:
     """ANN results are filtered to only include played file_ids."""
     played = [1, 2, 3]
     ctx = _make_ctx(played_file_ids=played, max_songs=10)
@@ -254,7 +254,7 @@ async def test_familiar_normal_case_filters_to_played() -> None:
     ann_c2 = [_make_result(3), _make_result(98)]
     db = _make_db(cold_count=1000, search_results=[ann_c1, ann_c2])
 
-    result = await build_familiar_playlist(db, ctx)
+    result = build_familiar_playlist(db, ctx)
 
     assert len(result) == 1
     entry = result[0]
@@ -266,7 +266,7 @@ async def test_familiar_normal_case_filters_to_played() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_familiar_no_played_in_ann_results_returns_empty_file_ids() -> None:
+def test_familiar_no_played_in_ann_results_returns_empty_file_ids() -> None:
     """When no ANN results match played tracks, file_ids is empty but entry still returned."""
     ctx = _make_ctx(played_file_ids=[1], max_songs=10)
 
@@ -274,7 +274,7 @@ async def test_familiar_no_played_in_ann_results_returns_empty_file_ids() -> Non
     ann_c2 = [_make_result(97)]
     db = _make_db(cold_count=1000, search_results=[ann_c1, ann_c2])
 
-    result = await build_familiar_playlist(db, ctx)
+    result = build_familiar_playlist(db, ctx)
 
     assert len(result) == 1
     assert result[0]["file_ids"] == []
@@ -282,7 +282,7 @@ async def test_familiar_no_played_in_ann_results_returns_empty_file_ids() -> Non
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_familiar_multiple_clusters_proportional_mix() -> None:
+def test_familiar_multiple_clusters_proportional_mix() -> None:
     """Multiple clusters produce interleaved results proportional to weight."""
     played = list(range(100))
     ctx = _make_ctx(played_file_ids=played, max_songs=10)
@@ -291,7 +291,7 @@ async def test_familiar_multiple_clusters_proportional_mix() -> None:
     ann_c2 = [_make_result(i) for i in range(10, 20)]
     db = _make_db(cold_count=1000, search_results=[ann_c1, ann_c2])
 
-    result = await build_familiar_playlist(db, ctx)
+    result = build_familiar_playlist(db, ctx)
 
     assert len(result) == 1
     entry = result[0]
@@ -305,16 +305,16 @@ async def test_familiar_multiple_clusters_proportional_mix() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_discovery_empty_cold_collection_returns_empty() -> None:
+def test_discovery_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
     db = _make_db(cold_count=0)
-    result = await build_discovery_playlist(db, ctx)
+    result = build_discovery_playlist(db, ctx)
     assert result == []
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_discovery_normal_case_excludes_played() -> None:
+def test_discovery_normal_case_excludes_played() -> None:
     """ANN results exclude played file_ids."""
     played = [1, 2]
     ctx = _make_ctx(played_file_ids=played, max_songs=10)
@@ -323,7 +323,7 @@ async def test_discovery_normal_case_excludes_played() -> None:
     ann_c2 = [_make_result(2), _make_result(12)]
     db = _make_db(cold_count=1000, search_results=[ann_c1, ann_c2])
 
-    result = await build_discovery_playlist(db, ctx)
+    result = build_discovery_playlist(db, ctx)
 
     assert len(result) == 1
     entry = result[0]
@@ -336,7 +336,7 @@ async def test_discovery_normal_case_excludes_played() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_discovery_all_results_are_played_returns_empty_file_ids() -> None:
+def test_discovery_all_results_are_played_returns_empty_file_ids() -> None:
     """When all ANN results are played tracks, file_ids is empty."""
     played = [1, 2, 3]
     ctx = _make_ctx(played_file_ids=played, max_songs=10)
@@ -345,7 +345,7 @@ async def test_discovery_all_results_are_played_returns_empty_file_ids() -> None
     ann_c2 = [_make_result(3)]
     db = _make_db(cold_count=1000, search_results=[ann_c1, ann_c2])
 
-    result = await build_discovery_playlist(db, ctx)
+    result = build_discovery_playlist(db, ctx)
 
     assert len(result) == 1
     assert result[0]["file_ids"] == []
@@ -360,31 +360,31 @@ TAGS_ARTIST_PATH = "nomarr.components.navidrome.playlist_builder_comp"
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_hidden_gems_empty_cold_collection_returns_empty() -> None:
+def test_hidden_gems_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
     db = _make_db(cold_count=0)
 
     with patch(
         f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files",
-        new=AsyncMock(return_value=["Artist A"]),
+        new=MagicMock(return_value=["Artist A"]),
     ):
-        result = await build_hidden_gems_playlist(db, ctx)
+        result = build_hidden_gems_playlist(db, ctx)
     assert result == []
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_hidden_gems_no_known_artists_skips_artist_filter() -> None:
+def test_hidden_gems_no_known_artists_skips_artist_filter() -> None:
     """When no known artists, behaves like discovery (no artist exclusion)."""
     ctx = _make_ctx(played_file_ids=[1], max_songs=10)
 
     db = _make_db(cold_count=1000, search_results=[[_make_result(10), _make_result(11)], [_make_result(12)]])
 
     with (
-        patch(f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files", new=AsyncMock(return_value=[])),
-        patch(f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value={})) as mock_grouped,
+        patch(f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files", new=MagicMock(return_value=[])),
+        patch(f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file", new=MagicMock(return_value={})) as mock_grouped,
     ):
-        result = await build_hidden_gems_playlist(db, ctx)
+        result = build_hidden_gems_playlist(db, ctx)
 
     assert len(result) == 1
     entry = result[0]
@@ -397,7 +397,7 @@ async def test_hidden_gems_no_known_artists_skips_artist_filter() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_hidden_gems_known_artists_excludes_artist_tracks() -> None:
+def test_hidden_gems_known_artists_excludes_artist_tracks() -> None:
     """Tracks by known artists are excluded from results."""
     ctx = _make_ctx(played_file_ids=[1], max_songs=10)
 
@@ -408,11 +408,11 @@ async def test_hidden_gems_known_artists_excludes_artist_tracks() -> None:
     with (
         patch(
             f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files",
-            new=AsyncMock(return_value=["Known Artist"]),
+            new=MagicMock(return_value=["Known Artist"]),
         ),
         patch(
             f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file",
-            new=AsyncMock(
+            new=MagicMock(
                 return_value={
                     10: {"Unknown Artist"},
                     11: {"Known Artist"},
@@ -422,7 +422,7 @@ async def test_hidden_gems_known_artists_excludes_artist_tracks() -> None:
             ),
         ),
     ):
-        result = await build_hidden_gems_playlist(db, ctx)
+        result = build_hidden_gems_playlist(db, ctx)
 
     assert len(result) == 1
     entry = result[0]
@@ -434,7 +434,7 @@ async def test_hidden_gems_known_artists_excludes_artist_tracks() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_hidden_gems_both_played_and_artist_exclusion() -> None:
+def test_hidden_gems_both_played_and_artist_exclusion() -> None:
     """Both played tracks and known-artist tracks are excluded."""
     ctx = _make_ctx(played_file_ids=[1, 2], max_songs=10)
 
@@ -445,11 +445,11 @@ async def test_hidden_gems_both_played_and_artist_exclusion() -> None:
     with (
         patch(
             f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files",
-            new=AsyncMock(return_value=["Known Artist"]),
+            new=MagicMock(return_value=["Known Artist"]),
         ),
         patch(
             f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file",
-            new=AsyncMock(
+            new=MagicMock(
                 return_value={
                     10: {"Known Artist"},
                     11: {"Unknown"},
@@ -458,7 +458,7 @@ async def test_hidden_gems_both_played_and_artist_exclusion() -> None:
             ),
         ),
     ):
-        result = await build_hidden_gems_playlist(db, ctx)
+        result = build_hidden_gems_playlist(db, ctx)
 
     assert len(result) == 1
     entry = result[0]
@@ -476,16 +476,16 @@ async def test_hidden_gems_both_played_and_artist_exclusion() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_universal_empty_cold_collection_returns_empty() -> None:
+def test_universal_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
     db = _make_db(cold_count=0)
-    result = await build_universal_playlist(db, ctx)
+    result = build_universal_playlist(db, ctx)
     assert result == []
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_universal_normal_case_stride_sampling() -> None:
+def test_universal_normal_case_stride_sampling() -> None:
     """Stride sampling selects every Nth result from each cluster."""
     ctx = _make_ctx(max_songs=5)
 
@@ -493,7 +493,7 @@ async def test_universal_normal_case_stride_sampling() -> None:
     ann_c2 = [_make_result(f"b{i}") for i in range(20)]
     db = _make_db(cold_count=1000, search_results=[ann_c1, ann_c2])
 
-    result = await build_universal_playlist(db, ctx)
+    result = build_universal_playlist(db, ctx)
 
     assert len(result) == 1
     entry = result[0]
@@ -504,7 +504,7 @@ async def test_universal_normal_case_stride_sampling() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_universal_shuffle_is_applied() -> None:
+def test_universal_shuffle_is_applied() -> None:
     """Results should be shuffled — verify by running multiple times and checking order differs."""
     ctx = _make_ctx(max_songs=20)
 
@@ -514,7 +514,7 @@ async def test_universal_shuffle_is_applied() -> None:
     results_sets = []
     for _ in range(5):
         db = _make_db(cold_count=1000, search_results=[ann_c1, ann_c2])
-        result = await build_universal_playlist(db, ctx)
+        result = build_universal_playlist(db, ctx)
         results_sets.append(tuple(result[0]["file_ids"]))
 
     unique_orders = set(results_sets)
@@ -523,11 +523,11 @@ async def test_universal_shuffle_is_applied() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_universal_empty_results_returns_empty_file_ids() -> None:
+def test_universal_empty_results_returns_empty_file_ids() -> None:
     """When ANN returns empty for all clusters, file_ids is empty."""
     ctx = _make_ctx(max_songs=10)
     db = _make_db(cold_count=1000, search_results=[[], []])
-    result = await build_universal_playlist(db, ctx)
+    result = build_universal_playlist(db, ctx)
     assert len(result) == 1
     assert result[0]["file_ids"] == []
 
@@ -539,30 +539,30 @@ async def test_universal_empty_results_returns_empty_file_ids() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_genre_no_clusters_returns_empty() -> None:
+def test_genre_no_clusters_returns_empty() -> None:
     ctx = _make_ctx(clusters=[])
     db = _make_db()
-    result = await build_genre_playlists(db, ctx)
+    result = build_genre_playlists(db, ctx)
     assert result == []
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_genre_empty_cold_collection_returns_empty() -> None:
+def test_genre_empty_cold_collection_returns_empty() -> None:
     ctx = _make_ctx()
     db = _make_db(cold_count=0)
-    result = await build_genre_playlists(db, ctx)
+    result = build_genre_playlists(db, ctx)
     assert result == []
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_genre_no_played_tracks_returns_empty() -> None:
+def test_genre_no_played_tracks_returns_empty() -> None:
     """When played_tracks is empty, genre playlists returns empty."""
     ctx = _make_ctx()
     ctx["played_tracks"] = []
     db = _make_db(cold_count=1000)
-    result = await build_genre_playlists(db, ctx)
+    result = build_genre_playlists(db, ctx)
     assert result == []
 
 
@@ -583,11 +583,11 @@ def test_genre_max_cap_constant_is_25() -> None:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-async def test_genre_empty_no_tracks_returns_empty() -> None:
+def test_genre_empty_no_tracks_returns_empty() -> None:
     """When played_tracks is empty, genre playlists are empty."""
     ctx = _make_ctx(clusters=[{"label": "Rock", "centroid": [0.1], "track_count": 100, "total_weight": 1.0}])
     ctx["played_tracks"] = []
     ctx["played_file_ids"] = []
     db = _make_db()
-    result = await build_genre_playlists(db, ctx)
+    result = build_genre_playlists(db, ctx)
     assert result == []

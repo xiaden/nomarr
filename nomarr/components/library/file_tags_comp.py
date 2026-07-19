@@ -17,18 +17,18 @@ class _FileTagItem(TypedDict):
     is_nomarr_tag: bool
 
 
-async def get_file_tags_with_path(db: Database, file_id: int, nomarr_only: bool = False) -> dict[str, Any] | None:
+def get_file_tags_with_path(db: Database, file_id: int, nomarr_only: bool = False) -> dict[str, Any] | None:
     """Get all tags for a file along with file path.
 
     Returns dict with 'path' and 'tags' keys, or None if file not found.
     'tags' is a list of ``_FileTagItem`` dicts.
     """
-    file_record = await db.library.get_file(file_id)
+    file_record = db.library.get_file(file_id)
     if not file_record:
         return None
 
     # Get tags from library facade and filter if needed
-    all_tags = await db.library.list_tags_for_file(file_id)
+    all_tags = db.library.list_tags_for_file(file_id)
     if nomarr_only:
         tags = [tag for tag in all_tags if tag["name"].startswith("nom:")]
     else:

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import threading
+import time
 from multiprocessing import Event, Pipe
 from typing import TYPE_CHECKING, Any
 
@@ -74,7 +74,6 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
         self._tier_selection: TierSelection | None = None
         self._idle_workers: set[str] = set()
         self._promotion_suppressed: bool = False
-        self._background_tasks: set[asyncio.Task] = set()
 
     # ------------------- ComponentLifecycleHandler Protocol ------------------
 
@@ -86,8 +85,6 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
         context: StatusChangeContext,
     ) -> None:
         """Handle a health-monitor status transition for a worker."""
-        import asyncio
-
         logger.debug(
             "[WorkerSystemService] %s: %s -> %s (misses=%d)",
             component_id,
@@ -96,25 +93,25 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
             context.consecutive_misses,
         )
         if new_status == "dead":
-            task = asyncio.ensure_future(self._handle_worker_death(component_id))
-            self._background_tasks.add(task)
-            task.add_done_callback(self._background_tasks.discard)
+            self._handle_worker_death(component_id)
         elif new_status == "unhealthy":
             logger.warning(
                 "[WorkerSystemService] Worker %s unhealthy (%d misses)", component_id, context.consecutive_misses
             )
         elif new_status == "healthy" and old_status == "pending":
-            task = asyncio.ensure_future(self._reset_restart_count(component_id))
-            self._background_tasks.add(task)
-            task.add_done_callback(self._background_tasks.discard)
+            self._reset_restart_count(component_id)
 
     def _trigger_calibration_callback(self) -> None:
-        """Bridge async trigger_calibration to sync HealthMonitor callback."""
-        import asyncio
+        """Trigger calibration via daemon thread to avoid blocking the HealthMonitor callback."""
 
-        task = asyncio.ensure_future(self.pipeline_svc.trigger_calibration())
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
+        def _run_calibration():
+            try:
+                self.pipeline_svc.trigger_calibration()
+            except Exception:
+                logger.warning("[WorkerSystemService] Failed to trigger calibration callback", exc_info=True)
+
+        thread = threading.Thread(target=_run_calibration, daemon=True, name="CalibBridge")
+        thread.start()
 
     def _on_worker_idle(self, worker_id: str, is_idle: bool) -> None:
         """Handle idle/active state transitions from worker processes.
@@ -160,21 +157,21 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
         """Return whether the worker system is globally enabled (cached)."""
         return self._worker_enabled
 
-    async def enable_worker_system(self) -> None:
+    def enable_worker_system(self) -> None:
         """Enable worker system globally (sets worker_enabled=true in DB meta)."""
-        await self.db.app.update_config_option("worker_enabled", {"value": "true"})
+        self.db.app.update_config_option("worker_enabled", {"value": "true"})
         self._worker_enabled = True
         logger.info("[WorkerSystemService] Worker system globally enabled")
 
-    async def disable_worker_system(self) -> None:
+    def disable_worker_system(self) -> None:
         """Disable worker system globally (sets worker_enabled=false in DB meta)."""
-        await self.db.app.update_config_option("worker_enabled", {"value": "false"})
+        self.db.app.update_config_option("worker_enabled", {"value": "false"})
         self._worker_enabled = False
         logger.info("[WorkerSystemService] Worker system globally disabled")
 
     # ---------------------------- Worker Lifecycle ----------------------------
 
-    async def start_all_workers(self) -> None:
+    def start_all_workers(self) -> None:
         """Start worker processes based on admission control and tier selection."""
         if self._started:
             logger.debug("[WorkerSystemService] Workers already started")
@@ -182,7 +179,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
         if not self.is_worker_system_enabled():
             logger.info("[WorkerSystemService] Worker system disabled, not starting")
             return
-        tier_selection = await self._run_admission_control()
+        tier_selection = self._run_admission_control()
         if tier_selection.tier == ExecutionTier.REFUSE:
             logger.error(
                 "[WorkerSystemService] Tier 4 (Refuse): %s. No workers will be started.", tier_selection.reason
@@ -195,13 +192,13 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
             actual_worker_count,
             tier_selection.config.description,
         )
-        removed_claims = await self.cleanup_stale_claims()
+        removed_claims = self.cleanup_stale_claims()
         if removed_claims > 0:
             logger.info("[WorkerSystemService] Cleaned up %d stale claim(s) from previous session", removed_claims)
         started_workers: list[str] = []
         for i in range(actual_worker_count):
             if i > 0:
-                await asyncio.sleep(WORKER_STAGGER_DELAY_S)
+                time.sleep(WORKER_STAGGER_DELAY_S)
             worker = self._spawn_worker(i, tier_selection)
             started_workers.append(f"worker:tag:{i} (pid={worker.pid})")
         logger.info("[WorkerSystemService] Started %d worker(s): %s", actual_worker_count, ", ".join(started_workers))
@@ -231,7 +228,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
             )
         return worker
 
-    async def stop_all_workers(self, timeout_sec: float = 10.0) -> None:
+    def stop_all_workers(self, timeout_sec: float = 10.0) -> None:
         """Stop all worker processes gracefully."""
         if not self._workers:
             logger.debug("[WorkerSystemService] No workers to stop")
@@ -267,7 +264,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
                     worker.join(timeout=0.5)
         for worker in self._workers:
             try:
-                await release_worker_promises(self.db, worker.worker_id)
+                release_worker_promises(self.db, worker.worker_id)
             except Exception:
                 logger.warning(
                     "[WorkerSystemService] Failed to release VRAM promises for worker %s",
@@ -313,7 +310,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
             )
         logger.info("[WorkerSystemService] Added %d worker(s), total=%d", count, len(self._workers))
 
-    async def remove_workers(self, count: int) -> None:
+    def remove_workers(self, count: int) -> None:
         """Remove worker processes from the pool dynamically.
 
         Args:
@@ -333,7 +330,7 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
                 count,
                 len(self._workers),
             )
-            await self.stop_all_workers()
+            self.stop_all_workers()
             return
         logger.info("[WorkerSystemService] Removing %d worker(s) from pool of %d", count, len(self._workers))
         workers_to_remove = self._workers[-count:]
@@ -414,6 +411,6 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
 
     # ---------------------------- Claim Cleanup ----------------------------
 
-    async def cleanup_stale_claims(self) -> int:
+    def cleanup_stale_claims(self) -> int:
         """Remove stale or orphaned worker claims."""
-        return await cleanup_stale_claims(self.db, DEFAULT_HEARTBEAT_TIMEOUT_MS)
+        return cleanup_stale_claims(self.db, DEFAULT_HEARTBEAT_TIMEOUT_MS)

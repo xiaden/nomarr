@@ -55,7 +55,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def scan_library_full_workflow(
+def scan_library_full_workflow(
     db: Database,
     library_id: int,
     tagger_version: str,
@@ -97,23 +97,23 @@ async def scan_library_full_workflow(
     scan_id = f"{library_id}_{now_ms()}"
 
     # Step 1 — Resolve library and validate root
-    library = await resolve_library_for_scan(db, library_id)
-    library_root = Path(library.root_path).resolve()  # noqa: ASYNC240
+    library = resolve_library_for_scan(db, library_id)
+    library_root = Path(library.root_path).resolve()
     validate_library_root(library_root)
-    await mark_scan_started(db, library_id, scan_type="full")
+    mark_scan_started(db, library_id, scan_type="full")
 
     try:
         # Step 2 — Pre-scan DB lookups
-        db_folder_paths = await get_folder_rel_paths(db, library_id)
-        file_count = await db.library.count_files_for_library(library_id)
-        cached_folders = await get_cached_folders(db, library_id)
+        db_folder_paths = get_folder_rel_paths(db, library_id)
+        file_count = db.library.count_files_for_library(library_id)
+        cached_folders = get_cached_folders(db, library_id)
 
         # Step 3 — Discover folders on disk
         all_folders = discover_library_folders(library_root, [library_root])
         discovered_folder_paths = {f.rel_path for f in all_folders}
 
         estimated_total = sum(f.file_count for f in all_folders)
-        await update_scan_progress(db, library_id, total=file_count or estimated_total)
+        update_scan_progress(db, library_id, total=file_count or estimated_total)
 
         # Step 4 — Track which folders vanished so their files can be deleted after the loop
         vanished_folder_paths = db_folder_paths - discovered_folder_paths
@@ -124,8 +124,8 @@ async def scan_library_full_workflow(
             stats["folders_scanned"] += 1
             for attempt in range(2):
                 try:
-                    existing_for_folder = await get_files_for_folder(db, library_id, folder.rel_path)
-                    batch = await scan_folder_files(
+                    existing_for_folder = get_files_for_folder(db, library_id, folder.rel_path)
+                    batch = scan_folder_files(
                         folder_path=Path(folder.abs_path),
                         folder_rel_path=folder.rel_path,
                         library_root=library_root,
@@ -146,10 +146,10 @@ async def scan_library_full_workflow(
                     if batch.file_entries:
                         new_paths = batch.discovered_paths - set(existing_for_folder)
                         file_ids = cast(
-                            "list[int]", await upsert_scanned_files(db, batch.file_entries, batch.edge_bootstraps)
+                            "list[int]", upsert_scanned_files(db, batch.file_entries, batch.edge_bootstraps)
                         )
-                        await transition_file_state(db, file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
-                        await transition_file_state(db, file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
+                        transition_file_state(db, file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
+                        transition_file_state(db, file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
                         # Reset hydrated → not_hydrated for modified files
                         # so the tag extraction worker re-extracts their audio tags.
                         # New files already get not_hydrated from state bootstrap.
@@ -159,7 +159,7 @@ async def scan_library_full_workflow(
                             if e["path"] not in new_paths
                         ]
                         if modified_file_ids:
-                            await transition_file_state(db, modified_file_ids, STATE_HYDRATED, STATE_NOT_HYDRATED)
+                            transition_file_state(db, modified_file_ids, STATE_HYDRATED, STATE_NOT_HYDRATED)
                         new_file_ids = [
                             fid for fid, e in zip(file_ids, batch.file_entries, strict=True) if e["path"] in new_paths
                         ]
@@ -168,10 +168,10 @@ async def scan_library_full_workflow(
                     # Files in DB for this folder no longer on disk → delete
                     deleted_paths = [p for p in existing_for_folder if p not in batch.discovered_paths]
                     if deleted_paths:
-                        stats["files_removed"] += await remove_deleted_files(db, deleted_paths)
+                        stats["files_removed"] += remove_deleted_files(db, deleted_paths)
 
                     cached_folder = cached_folders.get(folder.rel_path)
-                    await save_folder_record(
+                    save_folder_record(
                         db,
                         library_id,
                         folder.rel_path,
@@ -194,27 +194,27 @@ async def scan_library_full_workflow(
                         stats["files_failed"] += folder.file_count
                         warnings.append(f"Folder {folder.rel_path!r} skipped after error: {e}")
 
-            await update_scan_progress(db, library_id, progress=len(all_discovered_paths))
+            update_scan_progress(db, library_id, progress=len(all_discovered_paths))
 
         # Step 6 — Delete files from folders that vanished entirely from disk
         for folder_rel_path in vanished_folder_paths:
-            vanished_files = await get_files_for_folder(db, library_id, folder_rel_path)
+            vanished_files = get_files_for_folder(db, library_id, folder_rel_path)
             if vanished_files:
-                stats["files_removed"] += await remove_deleted_files(db, list(vanished_files.keys()))
+                stats["files_removed"] += remove_deleted_files(db, list(vanished_files.keys()))
 
         # Step 7 — Clean up stale folder records
-        await cleanup_stale_folders(db, library_id, discovered_folder_paths)
+        cleanup_stale_folders(db, library_id, discovered_folder_paths)
 
         # Step 9 — Entity graph cleanup
         try:
-            await cleanup_orphaned_entities_workflow(db, dry_run=False)
+            cleanup_orphaned_entities_workflow(db, dry_run=False)
         except Exception as e:
             logger.warning("Entity cleanup failed: %s", e, exc_info=True)
 
         # Step 9b — Tag graph validation (optional, requires models_dir)
         if models_dir:
             try:
-                validation = await validate_library_tags_workflow(
+                validation = validate_library_tags_workflow(
                     db,
                     models_dir,
                     library_id=library_id,
@@ -247,8 +247,8 @@ async def scan_library_full_workflow(
 
         # Step 10 — Finalize
         scan_duration = internal_ms().value - start_time.value
-        await mark_scan_completed(db, library_id)
-        await update_scan_progress(
+        mark_scan_completed(db, library_id)
+        update_scan_progress(
             db,
             library_id,
             progress=stats["files_discovered"],
@@ -271,9 +271,9 @@ async def scan_library_full_workflow(
 
     except Exception as e:
         logger.error("Full scan crashed: %s", e, exc_info=True)
-        await update_scan_progress(db, library_id, scan_error=str(e))
+        update_scan_progress(db, library_id, scan_error=str(e))
         try:
-            await transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
+            transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
         except Exception:
             logger.exception(
                 "Failed to reset scan axis to not_scanned after scan failure for library %s",

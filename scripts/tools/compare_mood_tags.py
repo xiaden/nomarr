@@ -11,7 +11,6 @@ Run inside container:
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import os
 import sys
@@ -33,7 +32,7 @@ MOOD_TIER_RELS = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
 # ---------------------------------------------------------------------------
 
 
-async def load_db_mood_tags(
+def load_db_mood_tags(
     db: Database,
     limit: int | None = None,
 ) -> dict[str, dict[str, list[str]]]:
@@ -47,14 +46,14 @@ async def load_db_mood_tags(
         limit: Optional cap on the number of files sampled from the DB.
 
     """
-    files = await db.library.list_files(limit=limit)
+    files = db.library.list_files(limit=limit)
     if not files:
         return {}
 
     file_ids = [f["id"] for f in files]
     path_map: dict[int, str] = {f["id"]: f["path"] for f in files}
 
-    tags_by_file = await db.library.list_file_tags_for_files(
+    tags_by_file = db.library.list_file_tags_for_files(
         file_ids,
         name_starts_with="nom:mood-",
     )
@@ -255,7 +254,7 @@ def compare(
 # ---------------------------------------------------------------------------
 
 
-async def main() -> None:
+def main() -> None:
     parser = argparse.ArgumentParser(description="Compare on-disk vs DB mood tags")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of files sampled (default: all)")
     parser.add_argument("--show-matches", action="store_true", help="Also print matching files")
@@ -269,15 +268,15 @@ async def main() -> None:
 
     db = Database(url=pg_url)
     try:
-        db_tags = await load_db_mood_tags(db, args.limit)
+        db_tags = load_db_mood_tags(db, args.limit)
 
         if not db_tags:
             sys.exit(1)
 
         compare(db_tags, args.show_matches)
     finally:
-        await db.close()
+        db.close()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -104,30 +104,28 @@ class TestHandleProcessError:
 
     _PATCH_RELEASE = "nomarr.components.workers.worker_discovery_comp.release_claim"
 
-    async def _call(self, mock_self, db, file_id, error, consecutive_errors):
+    def _call(self, mock_self, db, file_id, error, consecutive_errors):
         from nomarr.services.infrastructure.workers.discovery_worker import DiscoveryWorker
 
-        return await DiscoveryWorker._handle_process_error(mock_self, db, file_id, error, consecutive_errors)
+        return DiscoveryWorker._handle_process_error(mock_self, db, file_id, error, consecutive_errors)
 
     @pytest.mark.unit
-    @pytest.mark.asyncio
-    @patch(_PATCH_RELEASE, new_callable=AsyncMock)
-    async def test_returns_incremented_error_count(self, mock_release):
+    @patch(_PATCH_RELEASE)
+    def test_returns_incremented_error_count(self, mock_release):
         """Error count should be incremented by 1."""
         mock_self = _make_worker_self()
-        result = await self._call(mock_self, MagicMock(), f"{'library_files'}/abc", RuntimeError("oops"), 3)
+        result = self._call(mock_self, MagicMock(), f"{'library_files'}/abc", RuntimeError("oops"), 3)
         assert result == 4
 
     @pytest.mark.unit
-    @pytest.mark.asyncio
-    @patch("nomarr.components.library.library_file_state_comp.transition_file_state", new_callable=AsyncMock)
-    @patch(_PATCH_RELEASE, new_callable=AsyncMock)
-    async def test_sets_file_state_errored(self, mock_release, mock_transition_file_state):
+    @patch("nomarr.components.library.library_file_state_comp.transition_file_state")
+    @patch(_PATCH_RELEASE)
+    def test_sets_file_state_errored(self, mock_release, mock_transition_file_state):
         """Should mark the file as errored in the database."""
         mock_self = _make_worker_self()
         mock_db = MagicMock()
 
-        await self._call(mock_self, mock_db, f"{'library_files'}/xyz", ValueError("bad"), 0)
+        self._call(mock_self, mock_db, f"{'library_files'}/xyz", ValueError("bad"), 0)
 
         mock_transition_file_state.assert_called_once_with(
             mock_db,
@@ -137,31 +135,28 @@ class TestHandleProcessError:
         )
 
     @pytest.mark.unit
-    @pytest.mark.asyncio
-    @patch(_PATCH_RELEASE, new_callable=AsyncMock)
-    async def test_releases_claim_on_error(self, mock_release):
+    @patch(_PATCH_RELEASE)
+    def test_releases_claim_on_error(self, mock_release):
         """Should release the file claim regardless of error type."""
         mock_self = _make_worker_self()
         mock_db = MagicMock()
 
-        await self._call(mock_self, mock_db, f"{'library_files'}/abc", RuntimeError("x"), 0)
+        self._call(mock_self, mock_db, f"{'library_files'}/abc", RuntimeError("x"), 0)
 
         mock_release.assert_called_once_with(mock_db, f"{'library_files'}/abc")
 
     @pytest.mark.unit
-    @pytest.mark.asyncio
     @patch(
         "nomarr.components.library.library_file_state_comp.transition_file_state",
-        new_callable=AsyncMock,
         side_effect=RuntimeError("db down"),
     )
-    @patch(_PATCH_RELEASE, new_callable=AsyncMock)
-    async def test_releases_claim_even_when_set_errored_fails(self, mock_release, mock_transition_file_state):
+    @patch(_PATCH_RELEASE)
+    def test_releases_claim_even_when_set_errored_fails(self, mock_release, mock_transition_file_state):
         """Claim must be released even if state transition helper raises."""
         mock_self = _make_worker_self()
         mock_db = MagicMock()
 
-        await self._call(mock_self, mock_db, f"{'library_files'}/abc", RuntimeError("x"), 0)
+        self._call(mock_self, mock_db, f"{'library_files'}/abc", RuntimeError("x"), 0)
 
         mock_transition_file_state.assert_called_once_with(
             mock_db,
@@ -172,14 +167,13 @@ class TestHandleProcessError:
         mock_release.assert_called_once_with(mock_db, f"{'library_files'}/abc")
 
     @pytest.mark.unit
-    @pytest.mark.asyncio
-    @patch(_PATCH_RELEASE, new_callable=AsyncMock)
-    async def test_returns_incremented_count_at_max_threshold(self, mock_release):
+    @patch(_PATCH_RELEASE)
+    def test_returns_incremented_count_at_max_threshold(self, mock_release):
         """At MAX_CONSECUTIVE_ERRORS-1 errors in, returns exactly MAX_CONSECUTIVE_ERRORS."""
         from nomarr.services.infrastructure.workers.discovery_worker import MAX_CONSECUTIVE_ERRORS
 
         mock_self = _make_worker_self()
-        result = await self._call(
+        result = self._call(
             mock_self,
             MagicMock(),
             f"{'library_files'}/abc",
@@ -200,37 +194,34 @@ class TestCheckResourceHeadroom:
     _PATCH_CHECK = "nomarr.components.platform.resource_monitor_comp.check_resource_headroom"
     _PATCH_RELEASE = "nomarr.components.workers.worker_discovery_comp.release_claim"
 
-    async def _call(self, mock_self, db, file_id, rm_config):
+    def _call(self, mock_self, db, file_id, rm_config):
         from nomarr.services.infrastructure.workers.discovery_worker import DiscoveryWorker
 
-        return await DiscoveryWorker._check_resource_headroom(mock_self, db, file_id, rm_config)
+        return DiscoveryWorker._check_resource_headroom(mock_self, db, file_id, rm_config)
 
     @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_returns_none_when_resource_management_config_is_none(self):
+    def test_returns_none_when_resource_management_config_is_none(self):
         mock_self = _make_worker_self()
 
-        result = await self._call(mock_self, MagicMock(), f"{'library_files'}/abc", None)
+        result = self._call(mock_self, MagicMock(), f"{'library_files'}/abc", None)
 
         assert result is None
 
     @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_returns_none_when_resource_management_disabled(self):
+    def test_returns_none_when_resource_management_disabled(self):
         mock_self = _make_worker_self()
         mock_rm = MagicMock()
         mock_rm.enabled = False
 
-        result = await self._call(mock_self, MagicMock(), f"{'library_files'}/abc", mock_rm)
+        result = self._call(mock_self, MagicMock(), f"{'library_files'}/abc", mock_rm)
 
         assert result is None
 
     @pytest.mark.unit
-    @pytest.mark.asyncio
     @patch(f"{_MODULE}.internal_s")
-    @patch(_PATCH_RELEASE, new_callable=AsyncMock)
+    @patch(_PATCH_RELEASE)
     @patch(_PATCH_CHECK)
-    async def test_releases_claim_and_enters_recovery_when_vram_and_ram_exhausted(
+    def test_releases_claim_and_enters_recovery_when_vram_and_ram_exhausted(
         self, mock_check_headroom, mock_release_claim, mock_internal_s
     ):
         mock_self = _make_worker_self()
@@ -248,7 +239,7 @@ class TestCheckResourceHeadroom:
         )
         mock_internal_s.return_value = MagicMock(value=100.0)
 
-        result = await self._call(mock_self, mock_db, f"{'library_files'}/abc", mock_rm)
+        result = self._call(mock_self, mock_db, f"{'library_files'}/abc", mock_rm)
 
         assert result == 130.0
         assert mock_self._current_status == "recovering"
@@ -262,10 +253,9 @@ class TestCheckResourceHeadroom:
         mock_release_claim.assert_called_once_with(mock_db, f"{'library_files'}/abc")
 
     @pytest.mark.unit
-    @pytest.mark.asyncio
-    @patch(_PATCH_RELEASE, new_callable=AsyncMock)
+    @patch(_PATCH_RELEASE)
     @patch(_PATCH_CHECK)
-    async def test_returns_none_without_releasing_claim_when_only_vram_under_pressure(
+    def test_returns_none_without_releasing_claim_when_only_vram_under_pressure(
         self, mock_check_headroom, mock_release_claim
     ):
         mock_self = _make_worker_self()
@@ -282,7 +272,7 @@ class TestCheckResourceHeadroom:
             ram_used_mb=12000,
         )
 
-        result = await self._call(mock_self, mock_db, f"{'library_files'}/abc", mock_rm)
+        result = self._call(mock_self, mock_db, f"{'library_files'}/abc", mock_rm)
 
         assert result is None
         mock_release_claim.assert_not_called()
@@ -303,24 +293,23 @@ class TestProcessClaimedFile:
     _PATCH_GETSIZE = f"{_MODULE}.os.path.getsize"
     _PATCH_MALLOC_TRIM = f"{_MODULE}._malloc_trim"
 
-    async def _call(self, mock_self, db, file_id, config, onnx_cache, pending_write, write_executor):
+    def _call(self, mock_self, db, file_id, config, onnx_cache, pending_write, write_executor):
         from nomarr.services.infrastructure.workers.discovery_worker import DiscoveryWorker
 
-        return await DiscoveryWorker._process_claimed_file(
+        return DiscoveryWorker._process_claimed_file(
             mock_self, db, file_id, config, onnx_cache, pending_write, write_executor
         )
 
     @pytest.mark.unit
-    @pytest.mark.asyncio
-    @patch(_PATCH_RELEASE, new_callable=AsyncMock)
-    @patch(_PATCH_GET_FILE, new_callable=AsyncMock)
-    async def test_releases_claim_and_returns_false_when_file_not_found(self, mock_get_file_by_id, mock_release_claim):
+    @patch(_PATCH_RELEASE)
+    @patch(_PATCH_GET_FILE)
+    def test_releases_claim_and_returns_false_when_file_not_found(self, mock_get_file_by_id, mock_release_claim):
         mock_self = _make_worker_self()
         mock_db = MagicMock()
         mock_get_file_by_id.return_value = None
         pending_write = MagicMock()
 
-        result = await self._call(
+        result = self._call(
             mock_self,
             mock_db,
             f"{'library_files'}/missing",
@@ -334,15 +323,14 @@ class TestProcessClaimedFile:
         mock_release_claim.assert_called_once_with(mock_db, f"{'library_files'}/missing")
 
     @pytest.mark.unit
-    @pytest.mark.asyncio
-    @patch("nomarr.components.library.library_file_state_comp.transition_file_state", new_callable=AsyncMock)
-    @patch(_PATCH_UPDATE_TAGGED, new_callable=AsyncMock)
-    @patch(_PATCH_RELEASE, new_callable=AsyncMock)
+    @patch("nomarr.components.library.library_file_state_comp.transition_file_state")
+    @patch(_PATCH_UPDATE_TAGGED)
+    @patch(_PATCH_RELEASE)
     @patch(_PATCH_MALLOC_TRIM)
     @patch(_PATCH_GETSIZE)
-    @patch(_PATCH_PROCESS, new_callable=AsyncMock)
-    @patch(_PATCH_GET_FILE, new_callable=AsyncMock)
-    async def test_sets_tagged_and_releases_claim_when_all_heads_skipped(
+    @patch(_PATCH_PROCESS)
+    @patch(_PATCH_GET_FILE)
+    def test_sets_tagged_and_releases_claim_when_all_heads_skipped(
         self,
         mock_get_file_by_id,
         mock_process_file_workflow,
@@ -363,7 +351,7 @@ class TestProcessClaimedFile:
             deferred_writes=None,
         )
 
-        result = await self._call(
+        result = self._call(
             mock_self,
             mock_db,
             f"{'library_files'}/abc",
@@ -385,16 +373,15 @@ class TestProcessClaimedFile:
         mock_malloc_trim.assert_called_once_with()
 
     @pytest.mark.unit
-    @pytest.mark.asyncio
-    @patch(_PATCH_RELEASE, new_callable=AsyncMock)
+    @patch(_PATCH_RELEASE)
     @patch(_PATCH_MALLOC_TRIM)
     @patch(_PATCH_GETSIZE)
-    @patch(_PATCH_PROCESS, new_callable=AsyncMock)
-    @patch(_PATCH_GET_FILE, new_callable=AsyncMock)
-    async def test_submits_deferred_writes_when_workflow_returns_them(
+    @patch(_PATCH_PROCESS)
+    @patch(_PATCH_GET_FILE)
+    def test_submits_deferred_writes_when_workflow_returns_them(
         self, mock_get_file_by_id, mock_process_file_workflow, mock_getsize, mock_malloc_trim, mock_release_claim
     ):
-        from nomarr.services.infrastructure.workers.discovery_worker import _sync_execute_deferred_writes
+        from nomarr.services.infrastructure.workers.discovery_worker import _execute_deferred_writes
 
         mock_self = _make_worker_self()
         mock_db = MagicMock()
@@ -413,7 +400,7 @@ class TestProcessClaimedFile:
             elapsed=1.25,
         )
 
-        result = await self._call(
+        result = self._call(
             mock_self,
             mock_db,
             f"{'library_files'}/abc",
@@ -425,7 +412,7 @@ class TestProcessClaimedFile:
 
         assert result == (new_future, True)
         write_executor.submit.assert_called_once_with(
-            _sync_execute_deferred_writes,
+            _execute_deferred_writes,
             mock_db,
             deferred_writes,
             mock_self.worker_id,
@@ -434,13 +421,12 @@ class TestProcessClaimedFile:
         mock_malloc_trim.assert_called_once_with()
 
     @pytest.mark.unit
-    @pytest.mark.asyncio
-    @patch(_PATCH_RELEASE, new_callable=AsyncMock)
+    @patch(_PATCH_RELEASE)
     @patch(_PATCH_MALLOC_TRIM)
     @patch(_PATCH_GETSIZE)
-    @patch(_PATCH_PROCESS, new_callable=AsyncMock)
-    @patch(_PATCH_GET_FILE, new_callable=AsyncMock)
-    async def test_releases_claim_and_returns_pending_write_when_no_deferred_writes(
+    @patch(_PATCH_PROCESS)
+    @patch(_PATCH_GET_FILE)
+    def test_releases_claim_and_returns_pending_write_when_no_deferred_writes(
         self, mock_get_file_by_id, mock_process_file_workflow, mock_getsize, mock_malloc_trim, mock_release_claim
     ):
         mock_self = _make_worker_self()
@@ -453,7 +439,7 @@ class TestProcessClaimedFile:
             deferred_writes=None,
         )
 
-        result = await self._call(
+        result = self._call(
             mock_self,
             mock_db,
             f"{'library_files'}/abc",

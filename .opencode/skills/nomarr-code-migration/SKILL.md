@@ -220,6 +220,79 @@ When someone proposes keeping both:
 
 ---
 
+## Async → Sync Persistence Migration Hazards
+
+When migrating repository/component code from `async def` → `def` (e.g., asyncpg → psycopg2), watch for these specific failure modes discovered during the sync-first persistence migration (commit `26353d58`):
+
+### 1. `result.fetchone()` outside `with begin_nested()` block
+
+**Bug:** `result.fetchone()` placed after the `with self._session.begin_nested()` block exits, when the statement uses `.returning()`. On savepoint release, SQLite (and potentially psycopg2) refuses with:
+
+```
+sqlite3.OperationalError: cannot release savepoint - SQL statements in progress
+[SQL: RELEASE SAVEPOINT sa_savepoint_N]
+```
+
+**Root cause:** The INSERT/UPDATE with `.returning()` produces a `CursorResult` with unread rows. When the `with` block exits, SQLAlchemy tries `RELEASE SAVEPOINT` on the connection, but the database refuses because there are unread result statements.
+
+**Fix:** Always consume `result.fetchone()` (or `result.fetchall()` / `result.scalar_one()`) **inside** the `with begin_nested()` block, before the savepoint is released.
+
+```python
+# ❌ Wrong — fetchone() outside the with block
+def upsert_track(self, ...) -> Record:
+    with self._session.begin_nested():
+        stmt = pg_insert(T).values(...).returning(T)
+        result = self._session.execute(stmt)   # unread rows!
+    # ← RELEASE SAVEPOINT fails here
+    self._session.commit()
+    row = result.fetchone()                      # NEVER REACHED
+
+# ✅ Correct — fetchone() inside the with block
+def upsert_track(self, ...) -> Record:
+    with self._session.begin_nested():
+        stmt = pg_insert(T).values(...).returning(T)
+        result = self._session.execute(stmt)
+        row = result.fetchone()                  # consume before savepoint release
+    self._session.commit()
+```
+
+**Affected files:** `nomarr/persistence/database/navidrome_repo.py::upsert_track` (L77-L102). Other repos with `.returning()` inside `begin_nested()` blocks should be audited: `model_repo.py:L144`, `file_repo.py:L116`, `vector_repo.py:L102`, `embedding_stream_repo.py:L73`, `calibration_repo.py:L86`.
+
+### 2. Stale `async def` test methods
+
+**Bug:** Test methods still declared `async def` after the source code was converted to sync `def`. With `pytest-asyncio` in `Mode.STRICT`, unmarked async tests are rejected:
+
+```
+Failed: async def functions are not natively supported.
+You need to install a suitable plugin for your async framework
+```
+
+**Fix:** Update tests to match: `async def` → `def`, remove `await`, switch `AsyncMock` → `MagicMock`, remove `@pytest.mark.asyncio`.
+
+### 3. `AsyncMock` used with `asyncio.to_thread()`
+
+**Bug:** FastAPI routes call sync services via `asyncio.to_thread(service.method, ...)`. When the service mock is `AsyncMock`, `asyncio.to_thread` calls the mock in a worker thread, which returns a **coroutine** (not the `return_value`). The coroutine is never awaited, producing:
+
+```
+RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+AssertionError: assert isinstance(dto, LibraryPipelineStatusDTO)  # coroutine, not DTO
+```
+
+**Fix:** Use `MagicMock` (not `AsyncMock`) for any mock that will be called via `asyncio.to_thread()`. Pattern already used correctly in `test_library_auto_write_toggle.py` and `test_library_crud_if.py`.
+
+### 4. Cascading connection pool failures
+
+**Bug:** When a repository test fails due to bug #1 (unread result rows), the session-scoped `pg_engine` connection pool may retain a dirty connection. Subsequent tests fail during fixture **setup** (`conn.begin_nested()`) with:
+
+```
+sqlite3.OperationalError: cannot open savepoint - SQL statements in progress
+[SQL: SAVEPOINT sa_savepoint_1]
+```
+
+**Fix:** Fix bug #1 first. The cascading errors resolve automatically once all result rows are consumed before savepoint release.
+
+---
+
 ## Validation
 
 Before considering a migration complete, run:

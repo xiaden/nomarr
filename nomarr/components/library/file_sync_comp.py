@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-async def mark_file_processed(db: Database, file_id: int) -> None:
+def mark_file_processed(db: Database, file_id: int) -> None:
     """Mark a file as ML processed.
 
     Args:
@@ -36,8 +36,8 @@ async def mark_file_processed(db: Database, file_id: int) -> None:
         file_id: Document ``_id``
 
     """
-    await transition_file_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
-    await persist_last_tagged_at(db, file_id)
+    transition_file_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
+    persist_last_tagged_at(db, file_id)
 
 
 # ---------------------------------------------------------------------------
@@ -45,7 +45,7 @@ async def mark_file_processed(db: Database, file_id: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def save_file_tags(
+def save_file_tags(
     db: Database,
     file_id: str,
     parsed_tags: dict[str, list[Any]],
@@ -62,4 +62,4 @@ async def save_file_tags(
 
     """
     entries = [{"song_id": file_id, "name": name, "values": values} for name, values in parsed_tags.items()]
-    await set_song_tags_batch(db, entries)
+    set_song_tags_batch(db, entries)

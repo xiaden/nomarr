@@ -1,4 +1,9 @@
-"""Admin endpoints for web UI."""
+"""Admin endpoints for web UI.
+
+I2 exception: this file is deliberately excluded from the asyncio.to_thread() conversion.
+It uses asyncio.sleep() + asyncio.create_task() for server restart orchestration — these are
+asyncio infrastructure primitives, not service bridge calls. No sync services are called here.
+"""
 
 import asyncio
 import logging

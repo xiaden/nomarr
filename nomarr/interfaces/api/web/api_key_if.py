@@ -6,6 +6,7 @@ Auth: session token (verify_session).
 
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -22,7 +23,7 @@ async def get_api_key(
     key_service: Annotated[KeyManagementService, Depends(get_key_service)],
 ) -> ApiKeyResponse:
     """Return the current API key."""
-    key = await key_service.get_or_create_api_key()
+    key = await asyncio.to_thread(key_service.get_or_create_api_key)
     return ApiKeyResponse(api_key=key)
 
 
@@ -31,5 +32,5 @@ async def regenerate_api_key(
     key_service: Annotated[KeyManagementService, Depends(get_key_service)],
 ) -> ApiKeyResponse:
     """Regenerate the API key and return the new value."""
-    key = await key_service.regenerate_api_key()
+    key = await asyncio.to_thread(key_service.regenerate_api_key)
     return ApiKeyResponse(api_key=key)

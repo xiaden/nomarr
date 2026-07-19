@@ -10,9 +10,9 @@ from nomarr.persistence.models.library import Library
 from nomarr.persistence.models.library_scan import LibraryScan
 
 
-async def _create_library(session) -> int:
+def _create_library(session) -> int:
     """Helper: insert a library row and return its id."""
-    r = await session.execute(
+    r = session.execute(
         insert(Library).values(
             name="Scan Lib",
             path="/scan/lib",
@@ -31,12 +31,11 @@ async def _create_library(session) -> int:
 class TestScanRepository:
     """Tests for ScanRepository CRUD and query methods."""
 
-    @pytest.mark.asyncio
-    async def test_create_scan_returns_id(self, pg_session) -> None:
+    def test_create_scan_returns_id(self, pg_session) -> None:
         """create_scan should insert a row and return its id."""
-        lib_id = await _create_library(pg_session)
+        lib_id = _create_library(pg_session)
         repo = ScanRepository(pg_session)
-        scan_id = await repo.create_scan(
+        scan_id = repo.create_scan(
             {
                 "library_id": lib_id,
                 "scan_type": "full",
@@ -51,12 +50,11 @@ class TestScanRepository:
         assert isinstance(scan_id, int)
         assert scan_id > 0
 
-    @pytest.mark.asyncio
-    async def test_get_scan_record_existing(self, pg_session) -> None:
+    def test_get_scan_record_existing(self, pg_session) -> None:
         """get_scan_record should return the most recent scan for a library."""
-        lib_id = await _create_library(pg_session)
+        lib_id = _create_library(pg_session)
         repo = ScanRepository(pg_session)
-        await repo.create_scan(
+        repo.create_scan(
             {
                 "library_id": lib_id,
                 "scan_type": "full",
@@ -68,19 +66,18 @@ class TestScanRepository:
                 "error": None,
             }
         )
-        result = await repo.get_scan_record(lib_id)
+        result = repo.get_scan_record(lib_id)
         assert result is not None
         assert result["library_id"] == lib_id
         assert result["scan_type"] == "full"
         assert result["status"] == "completed"
         assert result["files_found"] == 100
 
-    @pytest.mark.asyncio
-    async def test_get_scan_record_returns_most_recent(self, pg_session) -> None:
+    def test_get_scan_record_returns_most_recent(self, pg_session) -> None:
         """get_scan_record should return the most recent scan when multiple exist."""
-        lib_id = await _create_library(pg_session)
+        lib_id = _create_library(pg_session)
         repo = ScanRepository(pg_session)
-        await repo.create_scan(
+        repo.create_scan(
             {
                 "library_id": lib_id,
                 "scan_type": "full",
@@ -92,7 +89,7 @@ class TestScanRepository:
                 "error": None,
             }
         )
-        await repo.create_scan(
+        repo.create_scan(
             {
                 "library_id": lib_id,
                 "scan_type": "incremental",
@@ -104,23 +101,21 @@ class TestScanRepository:
                 "error": None,
             }
         )
-        result = await repo.get_scan_record(lib_id)
+        result = repo.get_scan_record(lib_id)
         assert result is not None
         assert result["scan_type"] == "incremental"
 
-    @pytest.mark.asyncio
-    async def test_get_scan_record_nonexistent(self, pg_session) -> None:
+    def test_get_scan_record_nonexistent(self, pg_session) -> None:
         """get_scan_record should return None for library with no scans."""
         repo = ScanRepository(pg_session)
-        result = await repo.get_scan_record(999999)
+        result = repo.get_scan_record(999999)
         assert result is None
 
-    @pytest.mark.asyncio
-    async def test_update_scan(self, pg_session) -> None:
+    def test_update_scan(self, pg_session) -> None:
         """update_scan should modify specified fields."""
-        lib_id = await _create_library(pg_session)
+        lib_id = _create_library(pg_session)
         repo = ScanRepository(pg_session)
-        scan_id = await repo.create_scan(
+        scan_id = repo.create_scan(
             {
                 "library_id": lib_id,
                 "scan_type": "full",
@@ -132,19 +127,18 @@ class TestScanRepository:
                 "error": None,
             }
         )
-        await repo.update_scan(scan_id, {"status": "completed", "files_processed": 50})
-        result = await repo.get_scan_record(lib_id)
+        repo.update_scan(scan_id, {"status": "completed", "files_processed": 50})
+        result = repo.get_scan_record(lib_id)
         assert result is not None
         assert result["status"] == "completed"
         assert result["files_processed"] == 50
         assert result["scan_type"] == "full"  # unchanged
 
-    @pytest.mark.asyncio
-    async def test_delete_scan_record(self, pg_session) -> None:
+    def test_delete_scan_record(self, pg_session) -> None:
         """delete_scan_record should remove the row."""
-        lib_id = await _create_library(pg_session)
+        lib_id = _create_library(pg_session)
         repo = ScanRepository(pg_session)
-        scan_id = await repo.create_scan(
+        scan_id = repo.create_scan(
             {
                 "library_id": lib_id,
                 "scan_type": "full",
@@ -156,16 +150,15 @@ class TestScanRepository:
                 "error": None,
             }
         )
-        await repo.delete_scan_record(scan_id)
-        result = await repo.get_scan_record(lib_id)
+        repo.delete_scan_record(scan_id)
+        result = repo.get_scan_record(lib_id)
         assert result is None
 
-    @pytest.mark.asyncio
-    async def test_truncate_scans(self, pg_session) -> None:
+    def test_truncate_scans(self, pg_session) -> None:
         """truncate_scans should remove all scan rows."""
-        lib_id = await _create_library(pg_session)
+        lib_id = _create_library(pg_session)
         repo = ScanRepository(pg_session)
-        await repo.create_scan(
+        repo.create_scan(
             {
                 "library_id": lib_id,
                 "scan_type": "full",
@@ -177,7 +170,7 @@ class TestScanRepository:
                 "error": None,
             }
         )
-        await repo.truncate_scans()
-        result = await pg_session.execute(select(LibraryScan))
+        repo.truncate_scans()
+        result = pg_session.execute(select(LibraryScan))
         rows = result.all()
         assert len(rows) == 0

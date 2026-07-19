@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import threading
 from collections.abc import Callable
@@ -34,7 +33,7 @@ class TaggingWriteMixin:
     db: Database
     _bts: BackgroundTaskService
 
-    async def read_file_tags(self, path: str, namespace: str) -> dict[str, Any]:
+    def read_file_tags(self, path: str, namespace: str) -> dict[str, Any]:
         """Read tags from an audio file.
 
         Args:
@@ -49,9 +48,9 @@ class TaggingWriteMixin:
             RuntimeError: If file cannot be read
 
         """
-        return await read_file_tags_workflow(db=self.db, path=path, namespace=namespace)
+        return read_file_tags_workflow(db=self.db, path=path, namespace=namespace)
 
-    async def remove_file_tags(self, path: str, namespace: str) -> int:
+    def remove_file_tags(self, path: str, namespace: str) -> int:
         """Remove all namespaced tags from an audio file.
 
         Args:
@@ -66,9 +65,9 @@ class TaggingWriteMixin:
             RuntimeError: If file cannot be modified
 
         """
-        return await remove_file_tags_workflow(db=self.db, path=path, namespace=namespace)
+        return remove_file_tags_workflow(db=self.db, path=path, namespace=namespace)
 
-    async def write_tags_to_files(
+    def write_tags_to_files(
         self,
         library_id: int,
         batch_size: int = 100,
@@ -83,7 +82,7 @@ class TaggingWriteMixin:
         - New ML results (files analyzed but never written)
 
         Args:
-            library_id: Library document _id
+            library_id: Library database ID
             batch_size: Number of files to process per batch
             namespace: Tag namespace (default: "nom")
 
@@ -91,18 +90,18 @@ class TaggingWriteMixin:
             WriteTagsResult with processed, remaining, and failed counts
 
         """
-        library = await get_library_record(self.db, int(library_id))
+        library = get_library_record(self.db, int(library_id))
         if not library:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
 
         target_mode = library.get("file_write_mode", "full")
-        calibration_doc = cast("dict[str, Any] | None", await self.db.app.get_config_option("calibration_version"))
+        calibration_doc = cast("dict[str, Any] | None", self.db.app.get_config_option("calibration_version"))
         calibration_hash = None if calibration_doc is None else calibration_doc["value"]
         has_calibration = bool(calibration_hash)
 
         worker_id = f"reconcile:{library_id}"
-        claimed_files = await claim_files_for_reconciliation(
+        claimed_files = claim_files_for_reconciliation(
             self.db,
             library_id=library_id,
             worker_id=worker_id,
@@ -113,9 +112,9 @@ class TaggingWriteMixin:
         failed = 0
 
         for file_doc in claimed_files:
-            file_key = file_doc["_key"]
+            file_key = str(file_doc["id"])
             try:
-                result = await write_file_tags_workflow(
+                result = write_file_tags_workflow(
                     db=self.db,
                     file_key=file_key,
                     target_mode=target_mode,
@@ -129,7 +128,7 @@ class TaggingWriteMixin:
                     logger.debug(
                         f"[reconcile] Skipping {file_key}: modified externally, will retry after rescan",
                     )
-                    await release_claim(self.db, file_key)
+                    release_claim(self.db, file_key)
                 else:
                     failed += 1
                     logger.warning(f"[reconcile] Failed to write tags for {file_key}: {result.error}")
@@ -137,11 +136,11 @@ class TaggingWriteMixin:
                 failed += 1
                 logger.exception(f"[reconcile] Error processing {file_key}: {e}")
                 try:
-                    await release_claim(self.db, file_key)
+                    release_claim(self.db, file_key)
                 except Exception as release_err:
                     logger.warning(f"[reconcile] Failed to release claim for {file_key}: {release_err}", exc_info=True)
 
-        remaining = await count_files_needing_reconciliation(self.db, library_id=library_id)
+        remaining = count_files_needing_reconciliation(self.db, library_id=library_id)
 
         logger.info(f"[reconcile] Library {library_id}: processed={processed}, failed={failed}, remaining={remaining}")
 
@@ -165,7 +164,7 @@ class TaggingWriteMixin:
         set.
 
         Args:
-            library_id: Library document _id to write
+            library_id: Library database ID to write
             stop_event: Cooperative cancellation event. The background loop exits
                 when this event is set.
             on_complete: Optional callback invoked after successful completion
@@ -181,7 +180,7 @@ class TaggingWriteMixin:
 
         def _task() -> None:
             while not stop_event.is_set():
-                result = asyncio.run(self.write_tags_to_files(library_id))
+                result = self.write_tags_to_files(library_id)
                 if result.remaining == 0:
                     break
 
@@ -195,34 +194,34 @@ class TaggingWriteMixin:
             ),
         )
 
-    async def mark_tags_not_fresh(self, library_id: int) -> int:
+    def mark_tags_not_fresh(self, library_id: int) -> int:
         """Mark all file tags in a library as not fresh.
 
         Args:
-            library_id: Library document _id
+            library_id: Library database ID
 
         Returns:
             Number of files marked not fresh
 
         """
-        return await bulk_set_tags_not_fresh(self.db, int(library_id))
+        return bulk_set_tags_not_fresh(self.db, int(library_id))
 
-    async def get_reconcile_status(self, library_id: int) -> dict[str, Any]:
+    def get_reconcile_status(self, library_id: int) -> dict[str, Any]:
         """Get reconciliation status for a library.
 
         Args:
-            library_id: Library document _id
+            library_id: Library database ID
 
         Returns:
             Dict with pending_count and in_progress status
 
         """
-        library = await get_library_record(self.db, int(library_id))
+        library = get_library_record(self.db, int(library_id))
         if not library:
             msg = f"Library not found: {library_id}"
             raise ValueError(msg)
 
-        pending_count = await count_files_needing_reconciliation(self.db, library_id=library_id)
+        pending_count = count_files_needing_reconciliation(self.db, library_id=library_id)
         task_status = self._bts.get_task_status(f"write_tags:{library_id}")
         in_progress = task_status is not None and task_status["status"] == "running"
 

@@ -45,7 +45,7 @@ async def web_navidrome_preview(
 ) -> PreviewTagStatsResponse:
     """Get preview of tags for Navidrome config generation (web UI proxy)."""
     try:
-        result_dto = await navidrome_service.preview_tag_stats()
+        result_dto = await asyncio.to_thread(navidrome_service.preview_tag_stats)
         return PreviewTagStatsResponse.from_dto(result_dto)
     except Exception as e:
         logger.exception("[Web API] Error generating Navidrome preview")
@@ -59,7 +59,7 @@ async def web_navidrome_tag_values(
 ) -> TagValuesResponse:
     """Get distinct values for a specific tag name."""
     try:
-        values = await navidrome_service.get_tag_values(name)
+        values = await asyncio.to_thread(navidrome_service.get_tag_values, name)
         return TagValuesResponse(name=name, values=values)
     except Exception as e:
         logger.exception("[Web API] Error fetching tag values")
@@ -72,7 +72,7 @@ async def web_navidrome_config(
 ) -> NavidromeConfigResponse:
     """Generate Navidrome TOML configuration (web UI proxy)."""
     try:
-        toml_config = await navidrome_service.generate_navidrome_config()
+        toml_config = await asyncio.to_thread(navidrome_service.generate_navidrome_config)
         return NavidromeConfigResponse.from_toml(toml_config)
     except Exception as e:
         logger.exception("[Web API] Error generating Navidrome config")
@@ -85,7 +85,11 @@ async def web_navidrome_playlist_preview(
 ) -> PlaylistPreviewResponse:
     """Preview Smart Playlist query results."""
     try:
-        result_dto = await navidrome_service.preview_playlist(query=request.query, preview_limit=request.preview_limit)
+        result_dto = await asyncio.to_thread(
+            navidrome_service.preview_playlist,
+            query=request.query,
+            preview_limit=request.preview_limit,
+        )
         return PlaylistPreviewResponse.from_dto(result_dto)
     except PlaylistQueryError:
         raise HTTPException(status_code=400, detail="Invalid playlist query") from None
@@ -159,7 +163,8 @@ async def web_navidrome_static_playlist(
 ) -> StaticPlaylistResponse:
     """Generate a static M3U playlist from a list of file IDs."""
     try:
-        result_dto = await navidrome_service.generate_static_playlist(
+        result_dto = await asyncio.to_thread(
+            navidrome_service.generate_static_playlist,
             file_ids=[str(decode_id(fid)) for fid in request.file_ids],
             playlist_name=request.playlist_name,
         )
@@ -185,7 +190,8 @@ async def web_navidrome_push_playlist(
     """
     try:
         file_ids = [str(decode_id(fid)) for fid in request.file_ids]
-        descriptor_map = await navidrome_service.resolve_files_to_descriptors(
+        descriptor_map = await asyncio.to_thread(
+            navidrome_service.resolve_files_to_descriptors,
             file_ids,
         )
         songs = [TrackDescriptorResponse(**descriptor_map[fid]) for fid in file_ids if fid in descriptor_map]
@@ -250,7 +256,9 @@ async def web_generate_personal_playlists(
 
         all_file_ids = list({fid for playlist in gen_result.playlists for fid in playlist["file_ids"]})
         descriptor_map: dict[str, Any] = (
-            await navidrome_service.resolve_files_to_descriptors(all_file_ids) if all_file_ids else {}
+            await asyncio.to_thread(navidrome_service.resolve_files_to_descriptors, all_file_ids)
+            if all_file_ids
+            else {}
         )
 
         return TriggerPersonalPlaylistsResponse(

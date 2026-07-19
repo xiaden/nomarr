@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import math
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Protocol
 
 from nomarr.components.ml.calibration.ml_calibration_state_comp import (
@@ -38,7 +38,7 @@ class ApplyProgressCallback(Protocol):
     ) -> None: ...
 
 
-async def apply_calibration_wf(
+def apply_calibration_wf(
     *,
     db: Database,
     paths: list[str],
@@ -97,9 +97,9 @@ async def apply_calibration_wf(
     # --- Pre-compute small invariants once (cheap, shared across all chunks) ---
     _t0 = internal_ms()
     logger.info("[apply_calibration] Pre-computing batch context...")
-    heads = await discover_heads(models_dir, db)
-    calibrations = await load_calibrations_from_db_wf(db)
-    calibration_version = await get_calibration_version(db)
+    heads = discover_heads(models_dir, db)
+    calibrations = load_calibrations_from_db_wf(db)
+    calibration_version = get_calibration_version(db)
 
     _t_setup = (internal_ms().value - _t0.value) / 1000
     n_chunks = math.ceil(total / prefetch_chunk_size)
@@ -108,7 +108,7 @@ async def apply_calibration_wf(
         f"{total} files in {n_chunks} chunk(s) of {prefetch_chunk_size}"
     )
 
-    async def _process_file(file_path: str, ctx: BatchContext) -> bool:
+    def _process_file(file_path: str, ctx: BatchContext) -> bool:
         """Process a single file (runs in thread pool)."""
         try:
             params = WriteCalibratedTagsParams(
@@ -118,7 +118,7 @@ async def apply_calibration_wf(
                 version_tag_key=version_tag_key,
                 calibrate_heads=calibrate_heads,
             )
-            await write_calibrated_tags_wf(db=db, params=params, batch_ctx=ctx)
+            write_calibrated_tags_wf(db=db, params=params, batch_ctx=ctx)
             return True
         except Exception as e:
             logger.warning(f"Failed to write calibrated tags for {file_path}: {e}", exc_info=True)
@@ -131,76 +131,75 @@ async def apply_calibration_wf(
 
     _t_io_total = 0.0
 
-    # Use asyncio.Semaphore for concurrency control instead of ThreadPoolExecutor.
-    # This avoids the anti-pattern of submitting async functions to a thread pool
-    # where the returned coroutine is never awaited.
-    sem = asyncio.Semaphore(max_write_workers)
+    # Use ThreadPoolExecutor for concurrency control (replaces asyncio.Semaphore).
+    # max_workers limits concurrent file processing, matching the previous semaphore behavior.
+    with ThreadPoolExecutor(max_workers=max_write_workers) as executor:
+        for chunk_start in range(0, total, prefetch_chunk_size):
+            chunk_paths = paths[chunk_start : chunk_start + prefetch_chunk_size]
+            chunk_num = chunk_start // prefetch_chunk_size + 1
+            chunk_size = len(chunk_paths)
 
-    async def _process_with_semaphore(file_path: str, ctx: BatchContext) -> bool:
-        async with sem:
-            return await _process_file(file_path, ctx)
+            logger.info(
+                f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: processing {chunk_size} files "
+                f"(chunk limit={prefetch_chunk_size})..."
+            )
 
-    for chunk_start in range(0, total, prefetch_chunk_size):
-        chunk_paths = paths[chunk_start : chunk_start + prefetch_chunk_size]
-        chunk_num = chunk_start // prefetch_chunk_size + 1
-        chunk_size = len(chunk_paths)
+            batch_ctx = BatchContext(
+                heads=heads,
+                calibrations=calibrations,
+                calibration_version=calibration_version,
+            )
 
-        logger.info(
-            f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: processing {chunk_size} files "
-            f"(chunk limit={prefetch_chunk_size})..."
-        )
+            _t_io_start = internal_ms()
+            futures = [executor.submit(_process_file, fp, batch_ctx) for fp in chunk_paths]
+            results: list[bool | BaseException] = []
+            for f in futures:
+                try:
+                    results.append(f.result())
+                except Exception as e:
+                    results.append(e)
 
-        batch_ctx = BatchContext(
-            heads=heads,
-            calibrations=calibrations,
-            calibration_version=calibration_version,
-        )
+            for file_path, result in zip(chunk_paths, results, strict=False):
+                if isinstance(result, BaseException):
+                    logger.warning(f"Failed to write calibrated tags for {file_path}: {result}")
+                    fail_count += 1
+                elif result:
+                    success_count += 1
+                else:
+                    fail_count += 1
+                completed_count += 1
+                if on_progress is not None:
+                    on_progress(
+                        completed_files=completed_count,
+                        total_files=total,
+                        current_file=file_path,
+                    )
 
-        _t_io_start = internal_ms()
-        tasks = [_process_with_semaphore(fp, batch_ctx) for fp in chunk_paths]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+            _t_io_chunk = (internal_ms().value - _t_io_start.value) / 1000
+            _t_io_total += _t_io_chunk
 
-        for file_path, result in zip(chunk_paths, results, strict=False):
-            if isinstance(result, BaseException):
-                logger.warning(f"Failed to write calibrated tags for {file_path}: {result}")
-                fail_count += 1
-            elif result:
-                success_count += 1
-            else:
-                fail_count += 1
-            completed_count += 1
-            if on_progress is not None:
-                on_progress(
-                    completed_files=completed_count,
-                    total_files=total,
-                    current_file=file_path,
+            # Flush deferred DB writes for this chunk
+            if batch_ctx.pending_mood_tags:
+                logger.debug(
+                    f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: "
+                    f"flushing {len(batch_ctx.pending_mood_tags)} mood tag writes..."
                 )
+                try:
+                    save_mood_tags_batch(db, batch_ctx.pending_mood_tags)
+                except Exception as e:
+                    logger.warning(f"[apply_calibration] Batch mood tag flush failed: {e}", exc_info=True)
 
-        _t_io_chunk = (internal_ms().value - _t_io_start.value) / 1000
-        _t_io_total += _t_io_chunk
+            if batch_ctx.pending_calibration_hashes:
+                logger.debug(
+                    f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: "
+                    f"flushing {len(batch_ctx.pending_calibration_hashes)} calibration hash updates..."
+                )
+                try:
+                    update_file_calibration_hashes_batch(db, batch_ctx.pending_calibration_hashes)  # type: ignore[arg-type]  # TODO(migration): component expects list[str], should be list[int]
+                except Exception as e:
+                    logger.warning(f"[apply_calibration] Batch calibration hash flush failed: {e}", exc_info=True)
 
-        # Flush deferred DB writes for this chunk
-        if batch_ctx.pending_mood_tags:
-            logger.debug(
-                f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: "
-                f"flushing {len(batch_ctx.pending_mood_tags)} mood tag writes..."
-            )
-            try:
-                await save_mood_tags_batch(db, batch_ctx.pending_mood_tags)
-            except Exception as e:
-                logger.warning(f"[apply_calibration] Batch mood tag flush failed: {e}", exc_info=True)
-
-        if batch_ctx.pending_calibration_hashes:
-            logger.debug(
-                f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: "
-                f"flushing {len(batch_ctx.pending_calibration_hashes)} calibration hash updates..."
-            )
-            try:
-                await update_file_calibration_hashes_batch(db, batch_ctx.pending_calibration_hashes)  # type: ignore[arg-type]  # TODO(migration): component expects list[str], should be list[int]
-            except Exception as e:
-                logger.warning(f"[apply_calibration] Batch calibration hash flush failed: {e}", exc_info=True)
-
-        logger.debug(f"[apply_calibration] Chunk {chunk_num}/{n_chunks} done in {_t_io_chunk:.2f}s I/O")
+            logger.debug(f"[apply_calibration] Chunk {chunk_num}/{n_chunks} done in {_t_io_chunk:.2f}s I/O")
 
     _t_total = (internal_ms().value - _t0.value) / 1000
     logger.info(

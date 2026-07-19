@@ -39,7 +39,7 @@ for _positive, _negative in AXIS_PAIRS.values():
     _VALID_TRANSITIONS.add((_negative, _positive))
 
 
-async def transition_file_state(db: Database, file_ids: list[int], from_state: str, to_state: str) -> None:
+def transition_file_state(db: Database, file_ids: list[int], from_state: str, to_state: str) -> None:
     """Transition files between boolean state vertices with axis-pair validation.
 
     Validates that ``from_state`` and ``to_state`` belong to the same axis pair
@@ -59,8 +59,8 @@ async def transition_file_state(db: Database, file_ids: list[int], from_state: s
         return
 
     unique_file_ids = list(dict.fromkeys(file_ids))
-    state_membership = await _state_membership_for_files(db, unique_file_ids)
-    await db.app.remove_file_states(unique_file_ids)
+    state_membership = _state_membership_for_files(db, unique_file_ids)
+    db.app.remove_file_states(unique_file_ids)
 
     next_state_groups: defaultdict[str, list[int]] = defaultdict(list)
     for file_id in unique_file_ids:
@@ -71,47 +71,47 @@ async def transition_file_state(db: Database, file_ids: list[int], from_state: s
             next_state_groups[state].append(file_id)
 
     for state, grouped_file_ids in next_state_groups.items():
-        await db.app.add_file_states(grouped_file_ids, state)
+        db.app.add_file_states(grouped_file_ids, state)
 
 
-async def _insert_file_state_edges_ignoring_duplicates(db: Database, edge_docs: list[dict[str, Any]]) -> None:
+def _insert_file_state_edges_ignoring_duplicates(db: Database, edge_docs: list[dict[str, Any]]) -> None:
     for edge_doc in edge_docs:
         with contextlib.suppress(DuplicateEntityError):
-            await db.app.add_file_states([edge_doc["_from"]], edge_doc["_to"])
+            db.app.add_file_states([edge_doc["_from"]], edge_doc["_to"])
 
 
-async def _state_file_docs(db: Database, state_id: str) -> list[Any]:
-    docs = await db.app.list_file_docs_in_state(state_id)
+def _state_file_docs(db: Database, state_id: str) -> list[Any]:
+    docs = db.app.list_file_docs_in_state(state_id)
     return list(docs)
 
 
-async def _state_file_ids(db: Database, state_id: str) -> set[int]:
-    docs = await _state_file_docs(db, state_id)
+def _state_file_ids(db: Database, state_id: str) -> set[int]:
+    docs = _state_file_docs(db, state_id)
     return {doc["id"] for doc in docs if isinstance(doc, dict) and "id" in doc}
 
 
-async def _library_file_docs(db: Database, library_id: int) -> list[Any]:
-    docs = await db.library.list_library_files(library_id)
+def _library_file_docs(db: Database, library_id: int) -> list[Any]:
+    docs = db.library.list_library_files(library_id)
     return list(docs)
 
 
-async def _library_file_ids(db: Database, library_id: int) -> set[int]:
-    docs = await _library_file_docs(db, library_id)
+def _library_file_ids(db: Database, library_id: int) -> set[int]:
+    docs = _library_file_docs(db, library_id)
     return {doc["id"] for doc in docs if isinstance(doc, dict) and "id" in doc}
 
 
-async def _count_state_edges_for_files(db: Database, file_ids: list[int]) -> int:
+def _count_state_edges_for_files(db: Database, file_ids: list[int]) -> int:
     if not file_ids:
         return 0
     file_id_set = set(file_ids)
     total = 0
     for state_id in ALL_STATE_VERTICES:
-        state_ids = await _state_file_ids(db, state_id)
+        state_ids = _state_file_ids(db, state_id)
         total += len(state_ids & file_id_set)
     return total
 
 
-async def _state_membership_for_files(db: Database, file_ids: list[int]) -> dict[int, set[str]]:
+def _state_membership_for_files(db: Database, file_ids: list[int]) -> dict[int, set[str]]:
     """Return the current state memberships for the given file IDs.
 
     Uses a single targeted edge-traversal query — no full state scan,
@@ -119,7 +119,7 @@ async def _state_membership_for_files(db: Database, file_ids: list[int]) -> dict
     """
     if not file_ids:
         return {}
-    return await db.app.get_file_states_for_files(file_ids)
+    return db.app.get_file_states_for_files(file_ids)
 
 
 def _extract_matching_head_keys(
@@ -150,53 +150,53 @@ def _extract_matching_head_keys(
     return matched_heads
 
 
-async def initialize_file_states(db: Database, file_id: int) -> None:
+def initialize_file_states(db: Database, file_id: int) -> None:
     """Create all-negative state edges for one file."""
     negative_states = [state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_")]
     edge_docs = [{"_from": file_id, "_to": state} for state in negative_states]
-    await _insert_file_state_edges_ignoring_duplicates(db, edge_docs)
+    _insert_file_state_edges_ignoring_duplicates(db, edge_docs)
 
 
-async def initialize_file_states_batch(db: Database, file_ids: list[int]) -> None:
+def initialize_file_states_batch(db: Database, file_ids: list[int]) -> None:
     """Create all-negative state edges for multiple files."""
     if not file_ids:
         return
     negative_states = [state for state in ALL_STATE_VERTICES if state.startswith("file_states/not_")]
     edge_docs = [{"_from": file_id, "_to": state} for file_id in file_ids for state in negative_states]
-    await _insert_file_state_edges_ignoring_duplicates(db, edge_docs)
+    _insert_file_state_edges_ignoring_duplicates(db, edge_docs)
 
 
-async def clear_all_states(db: Database, file_id: int) -> int:
+def clear_all_states(db: Database, file_id: int) -> int:
     """Remove all state edges for one file."""
-    deleted_count = await _count_state_edges_for_files(db, [file_id])
-    await db.app.remove_file_states([file_id])
+    deleted_count = _count_state_edges_for_files(db, [file_id])
+    db.app.remove_file_states([file_id])
     return deleted_count
 
 
-async def clear_all_states_batch(db: Database, file_ids: list[int]) -> int:
+def clear_all_states_batch(db: Database, file_ids: list[int]) -> int:
     """Remove all state edges for a batch of files."""
     if not file_ids:
         return 0
-    deleted_count = await _count_state_edges_for_files(db, file_ids)
-    await db.app.remove_file_states(file_ids)
+    deleted_count = _count_state_edges_for_files(db, file_ids)
+    db.app.remove_file_states(file_ids)
     return deleted_count
 
 
-async def discover_next_untagged_file(
+def discover_next_untagged_file(
     db: Database,
     library_id: int | None = None,
     exclude_claimed: bool = True,
 ) -> dict[str, Any] | None:
     """Find the next file eligible for ML discovery, excluding errored files."""
-    untagged_files = await _state_file_docs(db, STATE_NOT_PROCESSED)
+    untagged_files = _state_file_docs(db, STATE_NOT_PROCESSED)
     candidate_ids = {doc["id"] for doc in untagged_files if isinstance(doc, dict) and "id" in doc}
-    errored_ids = await _state_file_ids(db, STATE_ERRORED)
+    errored_ids = _state_file_ids(db, STATE_ERRORED)
     candidate_ids -= errored_ids
     if library_id is not None:
-        library_file_ids = await _library_file_ids(db, library_id)
+        library_file_ids = _library_file_ids(db, library_id)
         candidate_ids &= library_file_ids
     if exclude_claimed:
-        claims = await db.app.list_claims()
+        claims = db.app.list_claims()
         claimed_ids: set[int] = set()
         for c in claims:
             with contextlib.suppress(ValueError, KeyError):
@@ -208,30 +208,30 @@ async def discover_next_untagged_file(
     return min(candidate_docs, key=lambda doc: str(doc.get("id") or ""))  # type: ignore[no-any-return]
 
 
-async def count_untagged_files(db: Database, library_id: int | None = None) -> int:
+def count_untagged_files(db: Database, library_id: int | None = None) -> int:
     """Count files in the ``not_tagged`` state that are still taggable."""
-    untagged_ids = await _state_file_ids(db, STATE_NOT_PROCESSED)
+    untagged_ids = _state_file_ids(db, STATE_NOT_PROCESSED)
     if library_id is not None:
-        library_file_ids = await _library_file_ids(db, library_id)
+        library_file_ids = _library_file_ids(db, library_id)
         untagged_ids &= library_file_ids
     return len(untagged_ids)
 
 
-async def discover_next_file_needing_tags(
+def discover_next_file_needing_tags(
     db: Database,
     library_id: int | None = None,
     exclude_claimed: bool = True,
 ) -> dict[str, Any] | None:
     """Find the next file needing audio tag extraction, excluding errored files."""
-    pending_files = await _state_file_docs(db, STATE_NOT_HYDRATED)
+    pending_files = _state_file_docs(db, STATE_NOT_HYDRATED)
     candidate_ids = {doc["id"] for doc in pending_files if isinstance(doc, dict) and "id" in doc}
-    errored_ids = await _state_file_ids(db, STATE_ERRORED)
+    errored_ids = _state_file_ids(db, STATE_ERRORED)
     candidate_ids -= errored_ids
     if library_id is not None:
-        library_file_ids = await _library_file_ids(db, library_id)
+        library_file_ids = _library_file_ids(db, library_id)
         candidate_ids &= library_file_ids
     if exclude_claimed:
-        claims = await db.app.list_claims()
+        claims = db.app.list_claims()
         claimed_ids: set[int] = set()
         for c in claims:
             with contextlib.suppress(ValueError, KeyError):
@@ -243,68 +243,68 @@ async def discover_next_file_needing_tags(
     return min(candidate_docs, key=lambda doc: str(doc.get("id") or ""))  # type: ignore[no-any-return]
 
 
-async def count_pending_tag_writes(db: Database) -> int:
+def count_pending_tag_writes(db: Database) -> int:
     """Count files still waiting for file-tag writeback."""
-    return await db.app.count_files_in_state(STATE_NOT_WRITTEN)
+    return db.app.count_files_in_state(STATE_NOT_WRITTEN)
 
 
-async def get_errored_file_ids(db: Database, library_id: int, limit: int | None = 500) -> list[int]:
+def get_errored_file_ids(db: Database, library_id: int, limit: int | None = 500) -> list[int]:
     """Return errored file ids for one library."""
-    library_file_ids = await _library_file_ids(db, library_id)
-    errored_files = await db.app.list_file_docs_in_state(STATE_ERRORED)
+    library_file_ids = _library_file_ids(db, library_id)
+    errored_files = db.app.list_file_docs_in_state(STATE_ERRORED)
     errored_file_ids = [
         doc["id"] for doc in errored_files if isinstance(doc, dict) and "id" in doc and doc["id"] in library_file_ids
     ]
     return errored_file_ids if limit is None else errored_file_ids[:limit]
 
 
-async def count_errored_files(db: Database, library_id: int) -> int:
+def count_errored_files(db: Database, library_id: int) -> int:
     """Count errored files for one library."""
-    errored = await get_errored_file_ids(db, library_id, limit=None)
+    errored = get_errored_file_ids(db, library_id, limit=None)
     return len(errored)
 
 
-async def mark_file_errored(db: Database, file_id: int) -> None:
+def mark_file_errored(db: Database, file_id: int) -> None:
     """Transition a file from its current positive state to errored."""
-    membership = await _state_membership_for_files(db, [file_id])
+    membership = _state_membership_for_files(db, [file_id])
     current_states = membership.get(file_id, set())
     positive_states = [s for s in current_states if not s.startswith("file_states/not_")]
     if not positive_states:
         logger.warning("File %s has no positive state to transition from", file_id)
         return
     from_state = positive_states[0]
-    await transition_file_state(db, [file_id], from_state, STATE_ERRORED)
+    transition_file_state(db, [file_id], from_state, STATE_ERRORED)
     logger.info("File %s transitioned to errored from %s", file_id, from_state)
 
 
-async def get_uncalibrated_tagged_file_ids(db: Database, library_id: int) -> list[int]:
+def get_uncalibrated_tagged_file_ids(db: Database, library_id: int) -> list[int]:
     """Return ids that are tagged and not calibrated within one library."""
-    tagged_ids = await _state_file_ids(db, STATE_PROCESSED)
-    not_calibrated_ids = await _state_file_ids(db, STATE_NOT_CALIBRATED)
-    library_docs = await _library_file_docs(db, library_id)
+    tagged_ids = _state_file_ids(db, STATE_PROCESSED)
+    not_calibrated_ids = _state_file_ids(db, STATE_NOT_CALIBRATED)
+    library_docs = _library_file_docs(db, library_id)
     library_file_ids = [doc["id"] for doc in library_docs if isinstance(doc, dict) and "id" in doc]
     eligible_ids = tagged_ids & not_calibrated_ids
     return [file_id for file_id in library_file_ids if file_id in eligible_ids]
 
 
-async def get_stale_file_ids(db: Database, library_id: int | None = None) -> list[int]:
+def get_stale_file_ids(db: Database, library_id: int | None = None) -> list[int]:
     """Return file ids in the ``tags_not_fresh`` state."""
-    stale_files = await _state_file_docs(db, STATE_TAGS_NOT_FRESH)
+    stale_files = _state_file_docs(db, STATE_TAGS_NOT_FRESH)
     if library_id is None:
         return [doc["id"] for doc in stale_files if isinstance(doc, dict) and "id" in doc]
-    library_file_ids = await _library_file_ids(db, library_id)
+    library_file_ids = _library_file_ids(db, library_id)
     return [doc["id"] for doc in stale_files if isinstance(doc, dict) and "id" in doc and doc["id"] in library_file_ids]
 
 
-async def get_calibration_status_by_library(db: Database) -> list[dict[str, Any]]:
+def get_calibration_status_by_library(db: Database) -> list[dict[str, Any]]:
     """Return per-library calibrated and not-calibrated counts."""
-    calibrated_ids = await _state_file_ids(db, STATE_CALIBRATED)
-    not_calibrated_ids = await _state_file_ids(db, STATE_NOT_CALIBRATED)
+    calibrated_ids = _state_file_ids(db, STATE_CALIBRATED)
+    not_calibrated_ids = _state_file_ids(db, STATE_NOT_CALIBRATED)
     results: list[dict[str, Any]] = []
-    libraries = await db.library.list_libraries()
+    libraries = db.library.list_libraries()
     for library in libraries:
         library_id = library["id"]
-        library_file_ids = await _library_file_ids(db, library_id)
+        library_file_ids = _library_file_ids(db, library_id)
         results.append(
             {
                 "library_id": library_id,
@@ -315,20 +315,20 @@ async def get_calibration_status_by_library(db: Database) -> list[dict[str, Any]
     return results
 
 
-async def library_has_tagged_files(db: Database, library_id: int) -> bool:
+def library_has_tagged_files(db: Database, library_id: int) -> bool:
     """Return whether a library contains at least one tagged file."""
-    tagged_ids = await _state_file_ids(db, STATE_PROCESSED)
-    lib_ids = await _library_file_ids(db, library_id)
+    tagged_ids = _state_file_ids(db, STATE_PROCESSED)
+    lib_ids = _library_file_ids(db, library_id)
     return bool(tagged_ids & lib_ids)
 
 
-async def file_has_tagged_state(db: Database, file_id: int) -> bool:
+def file_has_tagged_state(db: Database, file_id: int) -> bool:
     """Return whether one file currently has the tagged-state edge."""
-    state = await db.app.get_file_state(file_id)
+    state = db.app.get_file_state(file_id)
     return state == STATE_PROCESSED
 
 
-async def get_files_with_incomplete_tags(
+def get_files_with_incomplete_tags(
     db: Database,
     expected_heads: list[dict[str, Any]],
     namespace_prefix: str,
@@ -349,14 +349,12 @@ async def get_files_with_incomplete_tags(
             written file missing one or more expected heads.
 
     """
-    written_files = await _state_file_docs(db, STATE_WRITTEN)
+    written_files = _state_file_docs(db, STATE_WRITTEN)
     if library_id is not None:
-        library_file_ids = await _library_file_ids(db, library_id)
+        library_file_ids = _library_file_ids(db, library_id)
         written_files = [doc for doc in written_files if isinstance(doc, dict) and doc.get("id") in library_file_ids]
     file_ids = [doc["id"] for doc in written_files if isinstance(doc, dict) and "id" in doc]
-    tags_by_file = (
-        await db.library.list_file_tags_for_files(file_ids, name_starts_with=namespace_prefix) if file_ids else {}
-    )
+    tags_by_file = db.library.list_file_tags_for_files(file_ids, name_starts_with=namespace_prefix) if file_ids else {}
 
     results: list[dict[str, Any]] = []
     for file_doc in written_files:
@@ -383,40 +381,40 @@ async def get_files_with_incomplete_tags(
     return results
 
 
-async def bulk_set_not_calibrated(db: Database) -> int:
+def bulk_set_not_calibrated(db: Database) -> int:
     """Transition all calibrated files back to not-calibrated."""
-    docs = await _state_file_docs(db, STATE_CALIBRATED)
+    docs = _state_file_docs(db, STATE_CALIBRATED)
     file_ids = [doc["id"] for doc in docs if isinstance(doc, dict) and "id" in doc]
     if not file_ids:
         return 0
-    await transition_file_state(db, file_ids, STATE_CALIBRATED, STATE_NOT_CALIBRATED)
+    transition_file_state(db, file_ids, STATE_CALIBRATED, STATE_NOT_CALIBRATED)
     return len(file_ids)
 
 
-async def bulk_set_tags_not_fresh(db: Database, library_id: int | None = None) -> int:
+def bulk_set_tags_not_fresh(db: Database, library_id: int | None = None) -> int:
     """Transition ``tags_current`` files to ``tags_not_fresh``."""
-    docs = await _state_file_docs(db, STATE_TAGS_CURRENT)
+    docs = _state_file_docs(db, STATE_TAGS_CURRENT)
     file_ids = [doc["id"] for doc in docs if isinstance(doc, dict) and "id" in doc]
     if library_id is not None:
-        library_file_ids = await _library_file_ids(db, library_id)
+        library_file_ids = _library_file_ids(db, library_id)
         file_ids = [file_id for file_id in file_ids if file_id in library_file_ids]
     if not file_ids:
         return 0
-    await transition_file_state(db, file_ids, STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH)
+    transition_file_state(db, file_ids, STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH)
     return len(file_ids)
 
 
-async def bulk_set_not_vectors_extracted(db: Database) -> int:
+def bulk_set_not_vectors_extracted(db: Database) -> int:
     """Transition all vector-extracted files back to not-extracted."""
-    docs = await _state_file_docs(db, STATE_VECTORS_EXTRACTED)
+    docs = _state_file_docs(db, STATE_VECTORS_EXTRACTED)
     file_ids = [doc["id"] for doc in docs if isinstance(doc, dict) and "id" in doc]
     if not file_ids:
         return 0
-    await transition_file_state(db, file_ids, STATE_VECTORS_EXTRACTED, STATE_NOT_VECTORS_EXTRACTED)
+    transition_file_state(db, file_ids, STATE_VECTORS_EXTRACTED, STATE_NOT_VECTORS_EXTRACTED)
     return len(file_ids)
 
 
-async def bulk_set_not_hydrated(db: Database, library_id: int | None = None) -> int:
+def bulk_set_not_hydrated(db: Database, library_id: int | None = None) -> int:
     """Transition all library files needing it to not_hydrated, forcing re-hydration.
 
     Files can exist without any hydration-state edge at all (hydration axis
@@ -428,25 +426,25 @@ async def bulk_set_not_hydrated(db: Database, library_id: int | None = None) -> 
     Returns the number of files that were changed.
     """
     if library_id is not None:
-        docs = await _library_file_docs(db, library_id)
+        docs = _library_file_docs(db, library_id)
         file_ids = [doc["id"] for doc in docs if isinstance(doc, dict) and "id" in doc]
     else:
         # All files globally
-        all_files = await db.library.list_files(limit=None)
+        all_files = db.library.list_files(limit=None)
         file_ids = [doc["id"] for doc in all_files if isinstance(doc, dict) and "id" in doc]
 
     if not file_ids:
         return 0
 
-    hydrated_ids = await _state_file_ids(db, STATE_HYDRATED)
-    not_hydrated_ids = await _state_file_ids(db, STATE_NOT_HYDRATED)
+    hydrated_ids = _state_file_ids(db, STATE_HYDRATED)
+    not_hydrated_ids = _state_file_ids(db, STATE_NOT_HYDRATED)
 
     to_transition = [fid for fid in file_ids if fid in hydrated_ids]
     to_add = [fid for fid in file_ids if fid not in hydrated_ids and fid not in not_hydrated_ids]
 
     if to_transition:
-        await transition_file_state(db, to_transition, STATE_HYDRATED, STATE_NOT_HYDRATED)
+        transition_file_state(db, to_transition, STATE_HYDRATED, STATE_NOT_HYDRATED)
     if to_add:
-        await db.app.add_file_states(to_add, STATE_NOT_HYDRATED)
+        db.app.add_file_states(to_add, STATE_NOT_HYDRATED)
 
     return len(to_transition) + len(to_add)

@@ -19,7 +19,7 @@ def make_lock_reference(lock_type: str, resource_id: str) -> str:
     return f"{lock_type}:{resource_id}"
 
 
-async def acquire_distributed_lock(
+def acquire_distributed_lock(
     db: Database,
     lock_type: str,
     resource_id: str,
@@ -31,12 +31,12 @@ async def acquire_distributed_lock(
     now = float(now_ms().value)
     expires_at = now + float(ttl_seconds * 1000)
 
-    existing = cast("dict[str, Any] | None", await db.app.get_lock(reference))
+    existing = cast("dict[str, Any] | None", db.app.get_lock(reference))
     if existing is not None:
         existing_expires_at = float(existing.get("expires_at", 0.0))
         if existing_expires_at >= now and existing.get("holder") != holder:
             return False
-        await db.app.remove_lock(reference)
+        db.app.remove_lock(reference)
 
     payload = {
         "document_reference": reference,
@@ -47,28 +47,28 @@ async def acquire_distributed_lock(
         "status": "active",
     }
     try:
-        await db.app.add_lock(payload)
+        db.app.add_lock(payload)
     except DuplicateEntityError:
         return False
     return True
 
 
-async def release_distributed_lock(db: Database, lock_type: str, resource_id: str, holder: str) -> bool:
+def release_distributed_lock(db: Database, lock_type: str, resource_id: str, holder: str) -> bool:
     """Release a distributed lock only when it is still owned by the holder."""
     reference = make_lock_reference(lock_type, resource_id)
-    existing = cast("dict[str, Any] | None", await db.app.get_lock(reference))
+    existing = cast("dict[str, Any] | None", db.app.get_lock(reference))
     if existing is None or existing.get("holder") != holder:
         return False
 
-    await db.app.remove_lock(reference)
-    remaining = cast("dict[str, Any] | None", await db.app.get_lock(reference))
+    db.app.remove_lock(reference)
+    remaining = cast("dict[str, Any] | None", db.app.get_lock(reference))
     return remaining is None or remaining.get("holder") != holder
 
 
-async def reap_stale_locks(db: Database, worker_id: str, stale_after_ms: int) -> None:
+def reap_stale_locks(db: Database, worker_id: str, stale_after_ms: int) -> None:
     """Delete stale vector-promotion locks older than the provided age threshold."""
     stale_threshold = float(now_ms().value - stale_after_ms)
-    stale_locks = await db.app.list_locks()
+    stale_locks = db.app.list_locks()
     for lock in stale_locks:
         if lock["value"].get("lock_type") != "vector_promotion":
             continue
@@ -77,7 +77,7 @@ async def reap_stale_locks(db: Database, worker_id: str, stale_after_ms: int) ->
             continue
 
         reference = str(lock["value"]["document_reference"])
-        current = cast("dict[str, Any] | None", await db.app.get_lock(reference))
+        current = cast("dict[str, Any] | None", db.app.get_lock(reference))
         if current is None:
             continue
         if current.get("lock_type") != "vector_promotion":
@@ -87,5 +87,5 @@ async def reap_stale_locks(db: Database, worker_id: str, stale_after_ms: int) ->
             continue
 
         resource_id = reference.split(":", maxsplit=1)[1]
-        await db.app.remove_lock(reference)
+        db.app.remove_lock(reference)
         logger.warning("[locks] %s reaped stale promotion lock for %s", worker_id, resource_id)

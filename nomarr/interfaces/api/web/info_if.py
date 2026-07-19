@@ -1,5 +1,6 @@
 """System info and health endpoints for web UI."""
 
+import asyncio
 import logging
 from typing import Annotated
 
@@ -46,7 +47,7 @@ async def web_gpu_health(info_service: Annotated[InfoService, Depends(get_info_s
     not by inspecting this response.
     """
     try:
-        result = await info_service.get_gpu_health()
+        result = await asyncio.to_thread(info_service.get_gpu_health)
         return GPUHealthResponse.from_dto(result)
     except RuntimeError:
         return GPUHealthResponse(available=False, error_summary="GPU monitoring not available", monitor_healthy=False)

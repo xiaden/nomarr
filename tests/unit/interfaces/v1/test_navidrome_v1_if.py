@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -15,12 +15,12 @@ from nomarr.interfaces.api.web.dependencies import get_navidrome_service
 
 
 @pytest.fixture
-def mock_navidrome_service() -> AsyncMock:
-    return AsyncMock()
+def mock_navidrome_service() -> MagicMock:
+    return MagicMock()
 
 
 @pytest.fixture
-def app(mock_navidrome_service: AsyncMock) -> Iterator[FastAPI]:
+def app(mock_navidrome_service: MagicMock) -> Iterator[FastAPI]:
     test_app = FastAPI()
     test_app.include_router(navidrome_router, prefix="/api")
 
@@ -47,7 +47,7 @@ class TestSimilarTracksEndpoint:
     def test_success_returns_descriptor_payload(
         self,
         client: TestClient,
-        mock_navidrome_service: AsyncMock,
+        mock_navidrome_service: MagicMock,
     ) -> None:
         mock_navidrome_service.get_similar_tracks.return_value = [
             {
@@ -114,7 +114,7 @@ class TestSimilarTracksEndpoint:
     def test_seed_unresolved_returns_404(
         self,
         client: TestClient,
-        mock_navidrome_service: AsyncMock,
+        mock_navidrome_service: MagicMock,
     ) -> None:
         mock_navidrome_service.get_similar_tracks.side_effect = ValueError("Seed descriptor could not be resolved")
 
@@ -138,7 +138,7 @@ class TestGeneratePlaylistsEndpoint:
     def test_misconfigured_error_returns_422(
         self,
         client: TestClient,
-        mock_navidrome_service: AsyncMock,
+        mock_navidrome_service: MagicMock,
     ) -> None:
         mock_navidrome_service.generate_playlists.side_effect = MisconfiguredError(
             "library_key not configured",
@@ -163,7 +163,7 @@ class TestGeneratePlaylistsEndpoint:
     def test_no_data_result_returns_200_with_empty_playlists(
         self,
         client: TestClient,
-        mock_navidrome_service: AsyncMock,
+        mock_navidrome_service: MagicMock,
     ) -> None:
         mock_navidrome_service.generate_playlists.return_value = NavidromeGeneratePlaylistsResult(
             status="no_data",
@@ -189,7 +189,7 @@ class TestGeneratePlaylistsEndpoint:
     def test_success_returns_playlists_with_descriptors(
         self,
         client: TestClient,
-        mock_navidrome_service: AsyncMock,
+        mock_navidrome_service: MagicMock,
     ) -> None:
         mock_navidrome_service.generate_playlists.return_value = NavidromeGeneratePlaylistsResult(
             status="ok",
@@ -257,7 +257,7 @@ class TestGeneratePlaylistsEndpoint:
     def test_misconfigured_status_on_result_returns_422(
         self,
         client: TestClient,
-        mock_navidrome_service: AsyncMock,
+        mock_navidrome_service: MagicMock,
     ) -> None:
         mock_navidrome_service.generate_playlists.return_value = NavidromeGeneratePlaylistsResult(
             status="misconfigured",
@@ -284,7 +284,7 @@ class TestGeneratePlaylistsEndpoint:
     def test_partial_descriptor_resolution_skips_unresolved_files(
         self,
         client: TestClient,
-        mock_navidrome_service: AsyncMock,
+        mock_navidrome_service: MagicMock,
     ) -> None:
         mock_navidrome_service.generate_playlists.return_value = NavidromeGeneratePlaylistsResult(
             status="ok",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -50,14 +50,14 @@ class TestBootstrapFileStateEdges:
     """Tests for bootstrap_file_state_edges."""
 
     @pytest.mark.unit
-    async def test_empty_bootstraps_returns_zero(self) -> None:
-        mock_db = AsyncMock()
-        result = await bootstrap_file_state_edges(mock_db, [], {})
+    def test_empty_bootstraps_returns_zero(self) -> None:
+        mock_db = MagicMock()
+        result = bootstrap_file_state_edges(mock_db, [], {})
         assert result == 0
 
     @pytest.mark.unit
-    async def test_ml_tagged_type_creates_edge_via_transition(self) -> None:
-        mock_db = AsyncMock()
+    def test_ml_tagged_type_creates_edge_via_transition(self) -> None:
+        mock_db = MagicMock()
         mock_db.library.list_file_docs_in_state.side_effect = lambda state: list(
             [{"id": 123}] if state == STATE_NOT_PROCESSED else []
         )
@@ -66,33 +66,33 @@ class TestBootstrapFileStateEdges:
             {"normalized_path": "/music/song.mp3", "type": "ml_tagged"},
         ]
         file_id_by_path = {"/music/song.mp3": 123}
-        result = await bootstrap_file_state_edges(mock_db, bootstraps, file_id_by_path)
+        result = bootstrap_file_state_edges(mock_db, bootstraps, file_id_by_path)
         assert result == 1
         mock_db.app.remove_file_states.assert_called_once_with([123])
         mock_db.app.add_file_states.assert_called_once_with([123], STATE_PROCESSED)
         mock_db.app.transition_file_states.assert_not_called()
 
     @pytest.mark.unit
-    async def test_unknown_bootstrap_type_is_skipped(self) -> None:
-        mock_db = AsyncMock()
+    def test_unknown_bootstrap_type_is_skipped(self) -> None:
+        mock_db = MagicMock()
         bootstraps = [
             {"normalized_path": "/music/song.mp3", "type": "unknown_type"},
         ]
         file_id_by_path = {"/music/song.mp3": 123}
-        result = await bootstrap_file_state_edges(mock_db, bootstraps, file_id_by_path)
+        result = bootstrap_file_state_edges(mock_db, bootstraps, file_id_by_path)
         assert result == 0
         mock_db.library.remove_file_states.assert_not_called()
         mock_db.library.add_file_states.assert_not_called()
         mock_db.library.transition_file_states.assert_not_called()
 
     @pytest.mark.unit
-    async def test_file_not_in_file_id_by_path_is_skipped(self) -> None:
-        mock_db = AsyncMock()
+    def test_file_not_in_file_id_by_path_is_skipped(self) -> None:
+        mock_db = MagicMock()
         bootstraps = [
             {"normalized_path": "/music/missing.mp3", "type": "ml_tagged"},
         ]
         file_id_by_path = {"/music/other.mp3": 456}
-        result = await bootstrap_file_state_edges(mock_db, bootstraps, file_id_by_path)
+        result = bootstrap_file_state_edges(mock_db, bootstraps, file_id_by_path)
         assert result == 0
         mock_db.library.remove_file_states.assert_not_called()
         mock_db.library.add_file_states.assert_not_called()
@@ -104,12 +104,12 @@ class TestIsLibraryScanning:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_false_when_get_state_raises_value_error(self) -> None:
-        mock_db = AsyncMock()
+    def test_returns_false_when_get_state_raises_value_error(self) -> None:
+        mock_db = MagicMock()
         library_id = 1
         mock_db.app.get_pipeline_state.return_value = None
 
-        result = await is_library_scanning(mock_db, library_id)
+        result = is_library_scanning(mock_db, library_id)
 
         assert result is False
         mock_db.app.get_pipeline_state.assert_called_once_with(1)
@@ -120,8 +120,8 @@ class TestGetScanningLibraryIds:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_deduplicated_library_dicts(self) -> None:
-        mock_db = AsyncMock()
+    def test_returns_deduplicated_library_dicts(self) -> None:
+        mock_db = MagicMock()
 
         def _get_library(library_id: int) -> dict | None:
             return {
@@ -139,7 +139,7 @@ class TestGetScanningLibraryIds:
             "nomarr.components.library.scan_lifecycle_comp.get_libraries_in_axis_state",
             return_value=[1, 2, 1],
         ) as mock_get_libraries:
-            result = await get_scanning_library_ids(mock_db)
+            result = get_scanning_library_ids(mock_db)
 
         assert isinstance(result, list)
         assert len(result) == 2
@@ -152,8 +152,8 @@ class TestGetLibraryScanHistories:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_projected_scan_history_for_all_libraries(self) -> None:
-        mock_db = AsyncMock()
+    def test_returns_projected_scan_history_for_all_libraries(self) -> None:
+        mock_db = MagicMock()
         lib_one = LibraryDict(
             id=1,
             name="Main Library",
@@ -180,7 +180,7 @@ class TestGetLibraryScanHistories:
             "nomarr.components.library.scan_lifecycle_comp.list_library_records",
             return_value=libraries,
         ):
-            result = await get_library_scan_histories(mock_db)
+            result = get_library_scan_histories(mock_db)
 
         assert result == [
             {
@@ -199,8 +199,8 @@ class TestGetLibraryScanHistories:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_applies_limit_before_projection(self) -> None:
-        mock_db = AsyncMock()
+    def test_applies_limit_before_projection(self) -> None:
+        mock_db = MagicMock()
         libraries = [
             LibraryDict(
                 id=1,
@@ -238,7 +238,7 @@ class TestGetLibraryScanHistories:
             "nomarr.components.library.scan_lifecycle_comp.list_library_records",
             return_value=libraries,
         ):
-            result = await get_library_scan_histories(mock_db, limit=2)
+            result = get_library_scan_histories(mock_db, limit=2)
 
         assert result == [
             {
@@ -257,8 +257,8 @@ class TestGetLibraryScanHistories:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_true_when_pipeline_state_is_scanning(self) -> None:
-        mock_db = AsyncMock()
+    def test_returns_true_when_pipeline_state_is_scanning(self) -> None:
+        mock_db = MagicMock()
         library_id = 1
         mock_db.app.get_pipeline_state.return_value = {
             SCAN_STATE_FIELD: SCAN_IN_PROGRESS,
@@ -267,15 +267,15 @@ class TestGetLibraryScanHistories:
             WRITE_STATE_FIELD: WRITE_NOT_WRITTEN,
         }
 
-        result = await is_library_scanning(mock_db, library_id)
+        result = is_library_scanning(mock_db, library_id)
 
         assert result is True
         mock_db.app.get_pipeline_state.assert_called_once_with(1)
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_false_when_pipeline_state_is_not_scanning(self) -> None:
-        mock_db = AsyncMock()
+    def test_returns_false_when_pipeline_state_is_not_scanning(self) -> None:
+        mock_db = MagicMock()
         library_id = 1
         mock_db.app.get_pipeline_state.return_value = {
             SCAN_STATE_FIELD: "scanned",
@@ -284,7 +284,7 @@ class TestGetLibraryScanHistories:
             WRITE_STATE_FIELD: WRITE_NOT_WRITTEN,
         }
 
-        result = await is_library_scanning(mock_db, library_id)
+        result = is_library_scanning(mock_db, library_id)
 
         assert result is False
         mock_db.app.get_pipeline_state.assert_called_once_with(1)
@@ -295,11 +295,11 @@ class TestScanStateHelpers:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_ensure_scan_state_inserts_default_doc_and_edge_when_missing(self) -> None:
-        mock_db = AsyncMock()
+    def test_ensure_scan_state_inserts_default_doc_and_edge_when_missing(self) -> None:
+        mock_db = MagicMock()
         mock_db.library.get_scan.side_effect = [None, {"id": 1, "library_key": "1"}]
 
-        result = await ensure_scan_state(mock_db, 1)
+        result = ensure_scan_state(mock_db, 1)
 
         mock_db.library.add_scan.assert_called_once()
         assert mock_db.library.add_scan.call_args.args[0] == 1
@@ -310,11 +310,11 @@ class TestScanStateHelpers:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_get_scan_state_looks_up_scan_doc_by_id_keyword(self) -> None:
-        mock_db = AsyncMock()
+    def test_get_scan_state_looks_up_scan_doc_by_id_keyword(self) -> None:
+        mock_db = MagicMock()
         mock_db.library.get_scan.return_value = None
 
-        result = await get_scan_state(mock_db, 1)
+        result = get_scan_state(mock_db, 1)
 
         mock_db.library.get_scan.assert_called_once_with(1)
         mock_db.library.add_scan.assert_not_called()
@@ -322,15 +322,15 @@ class TestScanStateHelpers:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_get_scan_state_repairs_legacy_row_missing_library_key(self) -> None:
-        mock_db = AsyncMock()
+    def test_get_scan_state_repairs_legacy_row_missing_library_key(self) -> None:
+        mock_db = MagicMock()
         mock_db.library.get_scan.side_effect = [
             {"id": 1, "status": "idle"},
             {"id": 1, "status": "idle"},
             {"id": 1, "library_key": "1", "status": "idle"},
         ]
 
-        result = await get_scan_state(mock_db, 1)
+        result = get_scan_state(mock_db, 1)
 
         mock_db.library.get_scan.assert_any_call(1)
         mock_db.library.remove_scan.assert_called_once_with(1)
@@ -341,28 +341,28 @@ class TestScanStateHelpers:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_mark_scan_started_delegates_to_database_facade(self) -> None:
-        mock_db = AsyncMock()
+    def test_mark_scan_started_delegates_to_database_facade(self) -> None:
+        mock_db = MagicMock()
 
-        await mark_scan_started(mock_db, 1, "full")
+        mark_scan_started(mock_db, 1, "full")
 
         mock_db.library.add_scan.assert_called_once()
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_mark_scan_completed_delegates_to_database_facade(self) -> None:
-        mock_db = AsyncMock()
+    def test_mark_scan_completed_delegates_to_database_facade(self) -> None:
+        mock_db = MagicMock()
 
-        await mark_scan_completed(mock_db, 1)
+        mark_scan_completed(mock_db, 1)
 
         mock_db.library.update_scan.assert_called_once()
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_update_scan_progress_delegates_to_database_facade(self) -> None:
-        mock_db = AsyncMock()
+    def test_update_scan_progress_delegates_to_database_facade(self) -> None:
+        mock_db = MagicMock()
 
-        await update_scan_progress(
+        update_scan_progress(
             mock_db,
             1,
             progress=5,
@@ -377,11 +377,11 @@ class TestScanStateHelpers:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_check_interrupted_scan_delegates_to_database_facade(self) -> None:
-        mock_db = AsyncMock()
+    def test_check_interrupted_scan_delegates_to_database_facade(self) -> None:
+        mock_db = MagicMock()
         mock_db.library.get_scan.return_value = {"status": "in_progress", "scan_type": "quick"}
 
-        assert await check_interrupted_scan(mock_db, 1) == (True, "quick")
+        assert check_interrupted_scan(mock_db, 1) == (True, "quick")
         mock_db.library.get_scan.assert_called_once_with(1)
 
 
@@ -390,12 +390,12 @@ class TestFolderCacheHelpers:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_save_folder_record_replaces_existing_doc_via_library_intents(self) -> None:
-        mock_db = AsyncMock()
+    def test_save_folder_record_replaces_existing_doc_via_library_intents(self) -> None:
+        mock_db = MagicMock()
 
         with patch("nomarr.components.library.library_scan_file_ops_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value.value = 456
-            await save_folder_record(
+            save_folder_record(
                 mock_db,
                 1,
                 "Rock",
@@ -413,8 +413,8 @@ class TestFolderCacheHelpers:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_cleanup_stale_folders_deletes_only_missing_paths(self) -> None:
-        mock_db = AsyncMock()
+    def test_cleanup_stale_folders_deletes_only_missing_paths(self) -> None:
+        mock_db = MagicMock()
 
         with patch(
             "nomarr.components.library.library_scan_file_ops_comp.get_cached_folders",
@@ -423,7 +423,7 @@ class TestFolderCacheHelpers:
                 "Drop": {"id": 2, "path": "Drop"},
             },
         ):
-            await cleanup_stale_folders(mock_db, 1, {"Keep"})
+            cleanup_stale_folders(mock_db, 1, {"Keep"})
 
         mock_db.library.remove_library_folder.assert_called_once_with(1, 2)
 
@@ -433,9 +433,9 @@ class TestFolderCacheHelpers:
 class TestRemoveDeletedFiles:
     """Tests for remove_deleted_files."""
 
-    async def test_remove_deleted_files_delegates_cleanup_to_remove_file(self) -> None:
+    def test_remove_deleted_files_delegates_cleanup_to_remove_file(self) -> None:
         """remove_deleted_files resolves file ids and delegates deletion to library.remove_file."""
-        mock_db = AsyncMock()
+        mock_db = MagicMock()
         paths = ["/music/a.mp3", "/music/b.mp3", "/music/c.mp3"]
         mock_db.library.find_file_by_path_any_library.side_effect = [
             {"id": 1},
@@ -443,7 +443,7 @@ class TestRemoveDeletedFiles:
             None,
         ]
 
-        result = await remove_deleted_files(mock_db, paths)
+        result = remove_deleted_files(mock_db, paths)
 
         assert mock_db.library.remove_file.call_args_list == [
             call(1),
@@ -451,11 +451,11 @@ class TestRemoveDeletedFiles:
         ]
         assert result == 2
 
-    async def test_remove_deleted_files_returns_zero_for_empty_list(self) -> None:
+    def test_remove_deleted_files_returns_zero_for_empty_list(self) -> None:
         """remove_deleted_files skips lookup and deletion when no file paths are supplied."""
-        mock_db = AsyncMock()
+        mock_db = MagicMock()
 
-        result = await remove_deleted_files(mock_db, [])
+        result = remove_deleted_files(mock_db, [])
 
         mock_db.library.find_file_by_path_any_library.assert_not_called()
         mock_db.library.remove_file.assert_not_called()
@@ -467,8 +467,8 @@ class TestRemoveDeletedFiles:
 class TestResolveLibraryForScan:
     """Tests for library lookup before a scan starts."""
 
-    async def test_returns_library_when_lookup_succeeds(self) -> None:
-        mock_db = AsyncMock()
+    def test_returns_library_when_lookup_succeeds(self) -> None:
+        mock_db = MagicMock()
         library = {
             "id": 1,
             "name": "Main",
@@ -479,19 +479,19 @@ class TestResolveLibraryForScan:
         }
         mock_db.library.get_library.return_value = library
 
-        result = await resolve_library_for_scan(mock_db, 1)
+        result = resolve_library_for_scan(mock_db, 1)
 
         assert isinstance(result, LibraryDict)
         assert result.id == 1
         assert result.name == "Main"
         mock_db.library.get_library.assert_called_once_with(1)
 
-    async def test_raises_library_not_found_when_lookup_returns_none(self) -> None:
-        mock_db = AsyncMock()
+    def test_raises_library_not_found_when_lookup_returns_none(self) -> None:
+        mock_db = MagicMock()
         mock_db.library.get_library.return_value = None
 
         with pytest.raises(LibraryNotFoundError, match="Library 999 not found"):
-            await resolve_library_for_scan(mock_db, 999)
+            resolve_library_for_scan(mock_db, 999)
 
         mock_db.library.get_library.assert_called_once_with(999)
 
@@ -501,13 +501,13 @@ class TestResolveLibraryForScan:
 class TestTransitionToScanning:
     """Tests for pipeline transition into scanning."""
 
-    async def test_delegates_to_transition_pipeline_axis_with_scanning(self) -> None:
-        mock_db = AsyncMock()
+    def test_delegates_to_transition_pipeline_axis_with_scanning(self) -> None:
+        mock_db = MagicMock()
 
         with patch(
             "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis"
         ) as mock_transition_pipeline_axis:
-            await transition_to_scanning(mock_db, 1)
+            transition_to_scanning(mock_db, 1)
 
         mock_transition_pipeline_axis.assert_called_once_with(
             mock_db,
@@ -522,14 +522,14 @@ class TestTransitionToScanning:
 class TestOnScanCompletePipelineHook:
     """Tests for post-scan pipeline state transitions."""
 
-    async def test_transitions_ml_axis_when_files_exist(self) -> None:
-        mock_db = AsyncMock()
+    def test_transitions_ml_axis_when_files_exist(self) -> None:
+        mock_db = MagicMock()
         mock_db.library.list_library_file_ids.return_value = ["file1", "file2"]
 
         with patch(
             "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis"
         ) as mock_transition_pipeline_axis:
-            await on_scan_complete_pipeline_hook(mock_db, 1)
+            on_scan_complete_pipeline_hook(mock_db, 1)
 
         mock_transition_pipeline_axis.assert_called_once_with(
             mock_db,
@@ -538,14 +538,14 @@ class TestOnScanCompletePipelineHook:
             ML_IN_PROGRESS,
         )
 
-    async def test_transitions_ml_axis_when_no_files(self) -> None:
-        mock_db = AsyncMock()
+    def test_transitions_ml_axis_when_no_files(self) -> None:
+        mock_db = MagicMock()
         mock_db.library.list_library_file_ids.return_value = []
 
         with patch(
             "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis"
         ) as mock_transition_pipeline_axis:
-            await on_scan_complete_pipeline_hook(mock_db, 1)
+            on_scan_complete_pipeline_hook(mock_db, 1)
 
         mock_transition_pipeline_axis.assert_called_once_with(
             mock_db,
@@ -560,8 +560,8 @@ class TestOnScanCompletePipelineHook:
 class TestSnapshotExistingFiles:
     """Tests for collecting the pre-scan file snapshot."""
 
-    async def test_returns_existing_files_indexed_by_path_and_tagged_flag(self) -> None:
-        mock_db = AsyncMock()
+    def test_returns_existing_files_indexed_by_path_and_tagged_flag(self) -> None:
+        mock_db = MagicMock()
         files = [
             {"id": 1, "path": "a.mp3"},
             {"id": 2, "path": "b.mp3"},
@@ -577,14 +577,14 @@ class TestSnapshotExistingFiles:
                 return_value=True,
             ) as mock_library_has_tagged_files,
         ):
-            result = await snapshot_existing_files(mock_db, 1)
+            result = snapshot_existing_files(mock_db, 1)
 
         assert result == ({"a.mp3": files[0], "b.mp3": files[1]}, True)
         mock_list_library_files.assert_called_once_with(mock_db, limit=1_000_000, offset=0)
         mock_library_has_tagged_files.assert_called_once_with(mock_db, 1)
 
-    async def test_returns_empty_snapshot_when_library_has_no_files(self) -> None:
-        mock_db = AsyncMock()
+    def test_returns_empty_snapshot_when_library_has_no_files(self) -> None:
+        mock_db = MagicMock()
 
         with (
             patch(
@@ -596,7 +596,7 @@ class TestSnapshotExistingFiles:
                 return_value=False,
             ) as mock_library_has_tagged_files,
         ):
-            result = await snapshot_existing_files(mock_db, 1)
+            result = snapshot_existing_files(mock_db, 1)
 
         assert result == ({}, False)
         mock_list_library_files.assert_called_once_with(mock_db, limit=1_000_000, offset=0)
@@ -608,8 +608,8 @@ class TestSnapshotExistingFiles:
 class TestUpsertScannedFiles:
     """Tests for batched scan-time file upserts."""
 
-    async def test_returns_batch_ids_without_bootstrapping_edges_when_none_provided(self) -> None:
-        mock_db = AsyncMock()
+    def test_returns_batch_ids_without_bootstrapping_edges_when_none_provided(self) -> None:
+        mock_db = MagicMock()
         file_entries = [{"normalized_path": "music/song.mp3"}]
 
         with (
@@ -621,14 +621,14 @@ class TestUpsertScannedFiles:
                 "nomarr.components.library.library_scan_file_ops_comp.bootstrap_file_state_edges"
             ) as mock_bootstrap_file_state_edges,
         ):
-            result = await upsert_scanned_files(mock_db, file_entries)
+            result = upsert_scanned_files(mock_db, file_entries)
 
         assert result == [1]
         mock_upsert_batch.assert_called_once_with(mock_db, file_entries)
         mock_bootstrap_file_state_edges.assert_not_called()
 
-    async def test_bootstraps_edges_with_path_to_id_map_when_metadata_is_provided(self) -> None:
-        mock_db = AsyncMock()
+    def test_bootstraps_edges_with_path_to_id_map_when_metadata_is_provided(self) -> None:
+        mock_db = MagicMock()
         file_entries = [
             {"normalized_path": "music/song-a.mp3", "path": "C:/music/song-a.mp3"},
             {"normalized_path": "music/song-b.mp3", "path": "C:/music/song-b.mp3"},
@@ -647,7 +647,7 @@ class TestUpsertScannedFiles:
                 "nomarr.components.library.library_scan_file_ops_comp.bootstrap_file_state_edges"
             ) as mock_bootstrap_file_state_edges,
         ):
-            result = await upsert_scanned_files(mock_db, file_entries, edge_bootstraps=edge_bootstraps)
+            result = upsert_scanned_files(mock_db, file_entries, edge_bootstraps=edge_bootstraps)
 
         assert result == [1, 2]
         mock_upsert_batch.assert_called_once_with(mock_db, file_entries)

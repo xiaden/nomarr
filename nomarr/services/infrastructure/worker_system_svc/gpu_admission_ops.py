@@ -52,7 +52,7 @@ class GpuAdmissionOpsMixin:
                 logger.info("[WorkerSystemService] GPU not available, running CPU-only")
         return self._gpu_capable
 
-    async def _run_admission_control(self) -> TierSelection:
+    def _run_admission_control(self) -> TierSelection:
         """Determine execution tier and worker count."""
         rm_config = self.processor_config.resource_management
         if rm_config is None or not rm_config.enabled:
@@ -66,7 +66,7 @@ class GpuAdmissionOpsMixin:
             return self._tier_selection
         self._check_gpu_capability()
         logger.info("[WorkerSystemService] Running capacity probe...")
-        capacity_estimate = await get_or_run_capacity_probe(
+        capacity_estimate = get_or_run_capacity_probe(
             db=self.db,
             models_dir=self.processor_config.models_dir,
             worker_id="worker_system_service",

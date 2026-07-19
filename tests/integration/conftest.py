@@ -10,11 +10,9 @@ import os
 import tempfile
 
 import pytest
-import pytest_asyncio
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.sqlite.base import SQLiteTypeCompiler
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.ext.asyncio import create_async_engine as _create_async_engine
+from sqlalchemy.orm import Session
 
 # ── JSONB → JSON type mapping for SQLite ────────────────────
 # SQLAlchemy models use PostgreSQL JSONB columns which SQLite's dialect
@@ -31,12 +29,12 @@ SQLiteTypeCompiler.visit_JSONB = _compile_jsonb_as_json  # type: ignore[attr-def
 
 # ── SQLite fixtures for integration tests ───────────────────
 
-# Temp file shared between sync (DDL) and async (query) engines
-# because SQLite :memory: databases are per-connection.
+# Temp file for the shared SQLite database.  SQLite :memory: databases
+# are per-connection, so a temp file is required to share state between
+# the DDL (session-scoped) and query (per-test) engines.
 _DB_FD, _DB_PATH = tempfile.mkstemp(suffix=".db", prefix="nomarr_int_test_")
 os.close(_DB_FD)
 _SYNC_URL = f"sqlite:///{_DB_PATH}"
-_ASYNC_URL = f"sqlite+aiosqlite:///{_DB_PATH}"
 atexit.register(os.unlink, _DB_PATH)
 
 
@@ -63,32 +61,21 @@ def pg_engine():
     engine.dispose()
 
 
-@pytest_asyncio.fixture
-async def pg_async_engine(pg_engine):
-    """Create an async engine sharing the same temp-file SQLite database.
+@pytest.fixture
+def pg_session(pg_engine):
+    """Provide a transactional sync session that rolls back after each test.
 
-    Depends on ``pg_engine`` for table creation ordering.
-    """
-    engine = _create_async_engine(_ASYNC_URL, echo=False)
-    yield engine
-    await engine.dispose()
-
-
-@pytest_asyncio.fixture
-async def pg_session(pg_async_engine):
-    """Provide a transactional async session that rolls back after each test.
-
-    Uses the async engine from the SQLite temp-file database.  All compatible
+    Uses the sync engine from the SQLite temp-file database.  All compatible
     tables exist — the ``embeddings`` table is excluded because it requires
     PostgreSQL-specific types.
     """
-    engine = pg_async_engine
-    async with engine.connect() as conn:
-        await conn.begin()
-        await conn.begin_nested()
-        session = AsyncSession(bind=conn)
+    engine = pg_engine
+    with engine.connect() as conn:
+        conn.begin()
+        conn.begin_nested()
+        session = Session(bind=conn)
         try:
             yield session
         finally:
-            await session.close()
-            await conn.rollback()
+            session.close()
+            conn.rollback()

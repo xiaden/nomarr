@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-async def create_library(
+def create_library(
     db: Database,
     base_library_root: str | None,
     name: str | None,
@@ -46,10 +46,10 @@ async def create_library(
     """
     base_root = get_base_library_root(base_library_root)
     abs_path = normalize_library_root(base_root, root_path)
-    await ensure_no_overlapping_library_root(db, abs_path, ignore_id=None)
-    resolved_name = await _resolve_library_name(db, name, abs_path)
+    ensure_no_overlapping_library_root(db, abs_path, ignore_id=None)
+    resolved_name = _resolve_library_name(db, name, abs_path)
     try:
-        library_id = await create_library_record(
+        library_id = create_library_record(
             db,
             name=resolved_name,
             root_path=abs_path,
@@ -59,7 +59,7 @@ async def create_library(
             library_auto_write=library_auto_write,
             **PIPELINE_DEFAULTS,
         )
-        await ensure_scan_state(db, library_id)
+        ensure_scan_state(db, library_id)
     except (ValueError, DatabaseStateError, OSError) as e:
         msg = f"Failed to create library: {e}"
         raise ValueError(msg) from e
@@ -67,37 +67,37 @@ async def create_library(
     return library_id
 
 
-async def update_library_root(db: Database, base_library_root: str | None, library_id: int, root_path: str) -> None:
+def update_library_root(db: Database, base_library_root: str | None, library_id: int, root_path: str) -> None:
     """Update a library's root path.
 
     Raises ValueError if the library is not found or the path is invalid.
     """
-    library = await get_library_record(db, library_id)
+    library = get_library_record(db, library_id)
     if not library:
         msg = f"Library not found: {library_id}"
         raise ValueError(msg)
     base_root = get_base_library_root(base_library_root)
     abs_path = normalize_library_root(base_root, root_path)
-    await ensure_no_overlapping_library_root(db, abs_path, ignore_id=str(library_id))
-    await update_library_record(db, library_id, root_path=abs_path)
+    ensure_no_overlapping_library_root(db, abs_path, ignore_id=str(library_id))
+    update_library_record(db, library_id, root_path=abs_path)
     logger.info(f"[LibraryAdmin] Updated library {library_id} root path to {abs_path}")
 
 
-async def delete_library(db: Database, library_id: int) -> bool:
+def delete_library(db: Database, library_id: int) -> bool:
     """Delete a library and all associated data.
 
     Returns True if deleted, False if not found.
     """
-    library = await get_library_record(db, library_id)
+    library = get_library_record(db, library_id)
     if not library:
         return False
 
-    await db.library.remove_library(library_id)
+    db.library.remove_library(library_id)
     logger.info(f"[LibraryAdmin] Deleted library {library_id}: {library.get('name')}")
     return True
 
 
-async def clear_library_data(db: Database, library_root: str | None) -> None:
+def clear_library_data(db: Database, library_root: str | None) -> None:
     """Clear all library data.
 
     Raises ValueError if library_root is not configured,
@@ -106,31 +106,31 @@ async def clear_library_data(db: Database, library_root: str | None) -> None:
     if not library_root:
         msg = "Library root not configured"
         raise ValueError(msg)
-    if await _is_scan_running(db):
+    if _is_scan_running(db):
         msg = "Cannot clear library while scan jobs are running. Cancel scans first."
         raise RuntimeError(msg)
-    await clear_library_file_data(db)
+    clear_library_file_data(db)
     logger.info("[LibraryAdmin] Library data cleared")
 
 
-async def _resolve_library_name(db: Database, name: str | None, abs_path: str) -> str:
+def _resolve_library_name(db: Database, name: str | None, abs_path: str) -> str:
     """Resolve library name - generate from path or validate uniqueness."""
     if not name or not name.strip():
         generated_name = os.path.basename(abs_path.rstrip(os.sep)) or "Library"
         base_name = generated_name
         counter = 1
-        while await get_library_by_name(db, generated_name):
+        while get_library_by_name(db, generated_name):
             counter += 1
             generated_name = f"{base_name} ({counter})"
         return generated_name
-    existing = await get_library_by_name(db, name)
+    existing = get_library_by_name(db, name)
     if existing:
         msg = f"Library name already exists: {name}"
         raise ValueError(msg)
     return name
 
 
-async def _is_scan_running(db: Database) -> bool:
+def _is_scan_running(db: Database) -> bool:
     """Return True if any library pipeline is currently scanning."""
-    scanning_libraries = await get_libraries_in_axis_state(db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
+    scanning_libraries = get_libraries_in_axis_state(db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
     return len(scanning_libraries) > 0

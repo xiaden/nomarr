@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-async def is_library_scanning(db: Database, library_id: int) -> bool:
+def is_library_scanning(db: Database, library_id: int) -> bool:
     """Return whether the library pipeline is currently in the scanning state.
 
     Args:
@@ -55,13 +55,13 @@ async def is_library_scanning(db: Database, library_id: int) -> bool:
 
     """
     try:
-        pipeline_state = await get_pipeline_state(db, library_id)
+        pipeline_state = get_pipeline_state(db, library_id)
     except ValueError:
         return False
     return pipeline_state.get(SCAN_STATE_FIELD) == SCAN_IN_PROGRESS
 
 
-async def resolve_library_for_scan(db: Database, library_id: int) -> LibraryDict:
+def resolve_library_for_scan(db: Database, library_id: int) -> LibraryDict:
     """Fetch a library document, raising if not found.
 
     Args:
@@ -75,7 +75,7 @@ async def resolve_library_for_scan(db: Database, library_id: int) -> LibraryDict
         LibraryNotFoundError: If library not found
 
     """
-    library = await db.library.get_library(library_id)
+    library = db.library.get_library(library_id)
     if not library:
         msg = f"Library {library_id} not found"
         raise LibraryNotFoundError(msg)
@@ -89,7 +89,7 @@ async def resolve_library_for_scan(db: Database, library_id: int) -> LibraryDict
     )
 
 
-async def check_interrupted_scan(db: Database, library_id: int) -> tuple[bool, str | None]:
+def check_interrupted_scan(db: Database, library_id: int) -> tuple[bool, str | None]:
     """Check whether a previous scan was interrupted.
 
     Args:
@@ -101,13 +101,13 @@ async def check_interrupted_scan(db: Database, library_id: int) -> tuple[bool, s
         or ``"full"`` when interrupted, ``None`` otherwise.
 
     """
-    scan = await db.library.get_scan(library_id)
+    scan = db.library.get_scan(library_id)
     if scan and scan.get("status") == "in_progress":
         return (True, scan.get("scan_type"))
     return (False, None)
 
 
-async def get_scanning_library_ids(db: Database) -> list[LibraryDict]:
+def get_scanning_library_ids(db: Database) -> list[LibraryDict]:
     """Return the set of library domain objects currently in scanning state.
 
     Args:
@@ -119,11 +119,11 @@ async def get_scanning_library_ids(db: Database) -> list[LibraryDict]:
     """
     raw_ids = cast(
         "list[int]",
-        await get_libraries_in_axis_state(db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS),
+        get_libraries_in_axis_state(db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS),
     )
     seen: dict[int, LibraryDict] = {}
     for library_id in raw_ids:
-        library = await db.library.get_library(library_id)
+        library = db.library.get_library(library_id)
         if library and library_id not in seen:
             seen[library_id] = LibraryDict(
                 id=library["id"],
@@ -136,7 +136,7 @@ async def get_scanning_library_ids(db: Database) -> list[LibraryDict]:
     return list(seen.values())
 
 
-async def transition_to_scanning(db: Database, library_id: int) -> None:
+def transition_to_scanning(db: Database, library_id: int) -> None:
     """Transition a library pipeline into the scanning state.
 
     Args:
@@ -144,10 +144,10 @@ async def transition_to_scanning(db: Database, library_id: int) -> None:
         library_id: Library document ``_id``
 
     """
-    await transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)  # type: ignore[arg-type]
+    transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)  # type: ignore[arg-type]
 
 
-async def get_library_scan_histories(
+def get_library_scan_histories(
     db: Database,
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
@@ -165,7 +165,7 @@ async def get_library_scan_histories(
         ``scanned_at``, and ``scan_status``.
 
     """
-    libraries = await list_library_records(db)
+    libraries = list_library_records(db)
     if limit is not None:
         libraries = libraries[:limit]
 
@@ -185,7 +185,7 @@ async def get_library_scan_histories(
 # ---------------------------------------------------------------------------
 
 
-async def mark_scan_started(db: Database, library_id: int, scan_type: str) -> None:
+def mark_scan_started(db: Database, library_id: int, scan_type: str) -> None:
     """Record that a scan has started.
 
     Args:
@@ -194,7 +194,7 @@ async def mark_scan_started(db: Database, library_id: int, scan_type: str) -> No
         scan_type: ``"quick"`` or ``"full"``
 
     """
-    await db.library.add_scan(
+    db.library.add_scan(
         library_id,
         {
             "scan_type": scan_type,
@@ -204,7 +204,7 @@ async def mark_scan_started(db: Database, library_id: int, scan_type: str) -> No
     )
 
 
-async def mark_scan_completed(db: Database, library_id: int) -> None:
+def mark_scan_completed(db: Database, library_id: int) -> None:
     """Record that a scan has completed successfully.
 
     Args:
@@ -212,7 +212,7 @@ async def mark_scan_completed(db: Database, library_id: int) -> None:
         library_id: Library document ``_id``
 
     """
-    await db.library.update_scan(
+    db.library.update_scan(
         library_id,
         {
             "status": "completed",
@@ -221,7 +221,7 @@ async def mark_scan_completed(db: Database, library_id: int) -> None:
     )
 
 
-async def update_scan_progress(
+def update_scan_progress(
     db: Database,
     library_id: int,
     *,
@@ -253,10 +253,10 @@ async def update_scan_progress(
     if scan_error is not None:
         payload["scan_error"] = scan_error
     if payload:
-        await db.library.update_scan(library_id, payload)
+        db.library.update_scan(library_id, payload)
 
 
-async def is_scan_stale(db: Database, library_id: int, timeout_ms: int = 300_000) -> bool:
+def is_scan_stale(db: Database, library_id: int, timeout_ms: int = 300_000) -> bool:
     """Check whether a running scan has exceeded the timeout.
 
     Args:
@@ -270,11 +270,11 @@ async def is_scan_stale(db: Database, library_id: int, timeout_ms: int = 300_000
         from now.
 
     """
-    state = (await get_pipeline_state(db, library_id)).get(SCAN_STATE_FIELD)
+    state = (get_pipeline_state(db, library_id)).get(SCAN_STATE_FIELD)
     if state != SCAN_IN_PROGRESS:
         return False
 
-    scan = await db.library.get_scan(library_id)
+    scan = db.library.get_scan(library_id)
     if not scan:
         return False
 
@@ -287,7 +287,7 @@ async def is_scan_stale(db: Database, library_id: int, timeout_ms: int = 300_000
     return elapsed > timeout_ms
 
 
-async def on_scan_complete_pipeline_hook(db: Database, library_id: int) -> None:
+def on_scan_complete_pipeline_hook(db: Database, library_id: int) -> None:
     """Transition pipeline state after scan completion based on file count.
 
     If the library contains files, transitions the ml axis to ``ML_IN_PROGRESS``.
@@ -298,8 +298,8 @@ async def on_scan_complete_pipeline_hook(db: Database, library_id: int) -> None:
         library_id: Library document ``_id``
 
     """
-    file_count = len(await db.library.list_library_file_ids(library_id))
+    file_count = len(db.library.list_library_file_ids(library_id))
     next_state = ML_IN_PROGRESS if file_count > 0 else ML_NOT_PROCESSED
-    current = await get_pipeline_state(db, library_id)
+    current = get_pipeline_state(db, library_id)
     if current.get(ML_STATE_FIELD) != next_state:
-        await transition_pipeline_axis(db, library_id, ML_STATE_FIELD, next_state)  # type: ignore[arg-type]
+        transition_pipeline_axis(db, library_id, ML_STATE_FIELD, next_state)  # type: ignore[arg-type]

@@ -14,21 +14,19 @@ Watch Modes:
   - Conservative default: 60 seconds
 
 Architecture:
-- One Observer (event mode) or polling task (poll mode) per library
+- One Observer (event mode) or polling thread (poll mode) per library
 - Events/scans are debounced (configurable quiet period)
 - Only relevant file types are processed (audio, playlists, artwork)
 - Triggers full library scans; folder-level caching in the scan workflow
   handles incremental optimization
 - Calls LibraryService.start_quick_scan() / start_full_scan() - NO direct persistence access
 
-CRITICAL (event mode): Watchdog callbacks run on background threads, NOT the asyncio event loop.
-Must use thread-safe handoff via loop.call_soon_threadsafe().
+CRITICAL (event mode): Watchdog callbacks run on background threads.
+All state mutations use threading primitives (Lock, Event, Timer) for thread safety.
 """
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
 import threading
 from pathlib import Path
@@ -155,7 +153,8 @@ class FileWatcherService:
     Thread Safety:
     - Event mode: Watchdog callbacks execute on background threads
     - Uses lock for pending_changes access
-    - Uses loop.call_soon_threadsafe() to schedule async work
+    - Uses threading.Event for polling loop cancellation
+    - Uses threading.Timer for debounce delays
     """
 
     def __init__(
@@ -163,7 +162,6 @@ class FileWatcherService:
         db: Database,
         library_service: LibraryService,
         debounce_seconds: float = 2.0,
-        event_loop: asyncio.AbstractEventLoop | None = None,
         polling_interval_seconds: float = 300.0,
     ) -> None:
         """Initialise the FileWatcherService.
@@ -172,31 +170,25 @@ class FileWatcherService:
             db: PostgreSQL database handle.
             library_service: Domain service used to trigger scans.
             debounce_seconds: Quiet period before triggering a scan after file events.
-            event_loop: Explicit event loop to use; if None, uses the running loop or creates a new one.
             polling_interval_seconds: Interval between polls when using poll watch mode.
 
         """
         self._db = db
         self.library_service = library_service
         self.debounce_seconds = debounce_seconds
-        # Use provided loop or get running loop (avoid deprecated get_event_loop)
-        try:
-            self.event_loop = event_loop or asyncio.get_running_loop()
-        except RuntimeError:
-            # No running loop - create new one (for non-async context)
-            self.event_loop = asyncio.new_event_loop()
         self.polling_interval_seconds = polling_interval_seconds
 
-        # Active watchers (event mode: Observer, poll mode: Task or Thread)
-        self.observers: dict[str, Any] = {}  # Observer | Task | Thread
+        # Active watchers (event mode: Observer, poll mode: Thread)
+        self.observers: dict[str, Any] = {}  # Observer | Thread
 
         # Debouncing state (thread-safe)
         self._lock = threading.Lock()
         self.pending_changes: set[tuple[str, str]] = set()  # (library_id, relative_path)
-        self.debounce_task: asyncio.Task | None = None
+        self._debounce_timer: threading.Timer | None = None
 
-        # Polling state (minimal - just last poll time per library)
+        # Polling state
         self.last_poll_time: dict[str, InternalSeconds] = {}
+        self._stop_events: dict[str, threading.Event] = {}  # per-library cancellation
 
         # Libraries scheduled for cleanup (when not found)
         self._pending_cleanups: set[str] = set()
@@ -205,7 +197,7 @@ class FileWatcherService:
             f"FileWatcherService initialized (debounce={debounce_seconds}s, poll_interval={polling_interval_seconds}s)",
         )
 
-    async def sync_watchers(self) -> None:
+    def sync_watchers(self) -> None:
         """Sync watchers with the library collection (DB is source of truth).
 
         - Starts watchers for libraries in DB with watch_mode != 'off'
@@ -214,7 +206,7 @@ class FileWatcherService:
         Should be called on startup and can be called periodically if needed.
         """
         # Get libraries that should be watched from DB
-        watchable = await list_watchable_libraries(self._db)
+        watchable = list_watchable_libraries(self._db)
         watchable_ids = {lib["id"] for lib in watchable}
 
         # Stop watchers for libraries no longer watchable
@@ -228,7 +220,7 @@ class FileWatcherService:
             library_id = lib["id"]
             if library_id not in self.observers:
                 try:
-                    await self.start_watching_library(library_id)
+                    self.start_watching_library(library_id)
                 except ValueError as e:
                     logger.warning(f"Could not start watcher for library {library_id}: {e}")
                 except Exception as e:
@@ -237,19 +229,17 @@ class FileWatcherService:
     def _schedule_cleanup(self, library_id: str) -> None:
         """Schedule a library for cleanup (called from polling loop when library not found)."""
         self._pending_cleanups.add(library_id)
-        # Schedule actual cleanup on event loop
-        with contextlib.suppress(RuntimeError):
-            # Event loop not running - just mark for cleanup
-            self.event_loop.call_soon_threadsafe(self._do_cleanup, library_id)
+        # Direct call — all sync now, safe from polling thread
+        self._do_cleanup(library_id)
 
     def _do_cleanup(self, library_id: str) -> None:
-        """Actually stop watching a library (runs on event loop)."""
+        """Actually stop watching a library."""
         if library_id in self._pending_cleanups:
             self._pending_cleanups.discard(library_id)
             if library_id in self.observers:
                 self.stop_watching_library(library_id)
 
-    async def start_watching_library(self, library_id: str) -> None:
+    def start_watching_library(self, library_id: str) -> None:
         """Start watching a library for changes.
 
         If already watching, restarts the watcher.
@@ -260,20 +250,20 @@ class FileWatcherService:
         - 'poll': Periodic polling loop
 
         Args:
-            library_id: Library document _id (e.g., "libraries/lib1")
+            library_id: Library database ID
 
         Raises:
             ValueError: If library not found or path invalid
 
         """
         # Get library info
-        library = await get_library_watch_config(self._db, int(library_id))
+        library = get_library_watch_config(self._db, int(library_id))
         if not library:
             msg = f"Library {library_id} not found"
             raise ValueError(msg)
 
         library_root = Path(library["root_path"])
-        if not await asyncio.to_thread(library_root.exists):
+        if not library_root.exists():
             msg = f"Library path does not exist: {library_root}"
             raise ValueError(msg)
 
@@ -303,7 +293,7 @@ class FileWatcherService:
         """Start event-based watching with watchdog Observer.
 
         Args:
-            library_id: Library document _id
+            library_id: Library database ID
             library_root: Absolute path to library root
 
         """
@@ -326,95 +316,92 @@ class FileWatcherService:
         """Start polling-based watching with periodic full-library scans.
 
         Network-mount-safe alternative to event-based watching.
-        Uses a background thread since this may be called from sync context.
+        Uses a daemon thread for the polling loop.
 
         Args:
-            library_id: Library document _id
+            library_id: Library database ID
 
         """
         # Initialize last poll time to now (so first poll happens after interval)
         self.last_poll_time[library_id] = internal_s()
 
-        # Try to schedule on existing event loop, fall back to thread
-        try:
-            loop = asyncio.get_running_loop()
-            task = loop.create_task(self._polling_loop(library_id))
-            self.observers[library_id] = task
-        except RuntimeError:
-            # No running event loop - use a background thread with its own loop
-            def run_polling() -> None:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(self._polling_loop(library_id))
-                finally:
-                    loop.close()
+        # Create per-library stop event for cancellation
+        self._stop_events[library_id] = threading.Event()
 
-            thread = threading.Thread(target=run_polling, daemon=True, name=f"poll-{library_id}")
-            thread.start()
-            self.observers[library_id] = thread
+        # Start polling in a daemon thread
+        thread = threading.Thread(
+            target=self._polling_loop,
+            args=(library_id,),
+            daemon=True,
+            name=f"poll-{library_id}",
+        )
+        thread.start()
+        self.observers[library_id] = thread
 
         logger.info(
             f"Started polling-based watching for library {library_id} (interval={self.polling_interval_seconds}s)",
         )
 
-    async def _polling_loop(self, library_id: str) -> None:
+    def _polling_loop(self, library_id: str) -> None:
         """Periodic polling loop for one library.
 
-        Runs until cancelled. Triggers full-library scan at fixed intervals.
+        Runs until the stop event is set. Triggers full-library scan at fixed intervals.
         Validates library still exists and is watchable before each scan.
 
         Args:
-            library_id: Library document _id
+            library_id: Library database ID
 
         """
-        try:
-            while True:
-                await asyncio.sleep(self.polling_interval_seconds)
+        stop_event = self._stop_events.get(library_id)
+        if stop_event is None:
+            return
 
-                # Validate library still exists and should be watched
-                library = await get_library_watch_config(self._db, int(library_id))
-                if not library:
-                    logger.info(f"Library {library_id} no longer exists, stopping watcher")
-                    self._schedule_cleanup(library_id)
-                    return
+        while not stop_event.is_set():
+            # Sleep in small increments so we can respond to cancellation quickly
+            if stop_event.wait(timeout=self.polling_interval_seconds):
+                # Stop event was set during sleep — exit cleanly
+                break
 
-                watch_mode = library.get("watch_mode", "off")
-                if watch_mode == "off" or not library.get("is_enabled", True):
-                    logger.info(f"Library {library_id} watch_mode is '{watch_mode}' or disabled, stopping watcher")
-                    self._schedule_cleanup(library_id)
-                    return
+            # Validate library still exists and should be watched
+            library = get_library_watch_config(self._db, int(library_id))
+            if not library:
+                logger.info(f"Library {library_id} no longer exists, stopping watcher")
+                self._schedule_cleanup(library_id)
+                return
 
-                # Update last poll time
-                self.last_poll_time[library_id] = internal_s()
+            watch_mode = library.get("watch_mode", "off")
+            if watch_mode == "off" or not library.get("is_enabled", True):
+                logger.info(f"Library {library_id} watch_mode is '{watch_mode}' or disabled, stopping watcher")
+                self._schedule_cleanup(library_id)
+                return
 
-                logger.debug(f"Polling library {library_id}: triggering quick scan")
+            # Update last poll time
+            self.last_poll_time[library_id] = internal_s()
 
-                try:
-                    await self.library_service.start_quick_scan(int(library_id))
-                except LibraryNotFoundError:
-                    logger.warning(f"Library {library_id} no longer exists, stopping watcher")
-                    self._schedule_cleanup(library_id)
-                    return
-                except LibraryAlreadyScanningError:
-                    logger.debug(f"Library {library_id} is already being scanned, skipping this poll")
-                    # Benign startup race: watcher may poll before recover_stale_states() runs, so skipping is correct.
-                    continue  # Don't exit the loop! Continue polling.
-                except Exception as e:
-                    logger.error(f"Failed to trigger poll scan for library {library_id}: {e}", exc_info=True)
+            logger.debug(f"Polling library {library_id}: triggering quick scan")
 
-        except asyncio.CancelledError:
-            logger.info(f"Polling loop cancelled for library {library_id}")
-            raise
+            try:
+                self.library_service.start_quick_scan(int(library_id))
+            except LibraryNotFoundError:
+                logger.warning(f"Library {library_id} no longer exists, stopping watcher")
+                self._schedule_cleanup(library_id)
+                return
+            except LibraryAlreadyScanningError:
+                logger.debug(f"Library {library_id} is already being scanned, skipping this poll")
+                # Benign startup race: watcher may poll before recover_stale_states() runs, so skipping is correct.
+                continue  # Don't exit the loop! Continue polling.
+            except Exception as e:
+                logger.error(f"Failed to trigger poll scan for library {library_id}: {e}", exc_info=True)
+
+        logger.info(f"Polling loop stopped for library {library_id}")
 
     def stop_watching_library(self, library_id: str) -> None:
         """Stop watching a library.
 
-        Handles event-based (Observer), polling task (asyncio.Task), and
-        polling thread (threading.Thread) modes.
+        Handles event-based (Observer) and polling thread (threading.Thread) modes.
 
         Args:
-            library_id: Library document _id
+            library_id: Library database ID
 
         """
         if library_id not in self.observers:
@@ -424,16 +411,14 @@ class FileWatcherService:
         watcher = self.observers[library_id]
 
         # Check watcher type and stop appropriately
-        if isinstance(watcher, asyncio.Task):
-            # Polling mode: cancel the task
-            watcher.cancel()
+        if isinstance(watcher, threading.Thread):
+            # Polling mode: signal the thread to stop via event
+            stop_event = self._stop_events.pop(library_id, None)
+            if stop_event is not None:
+                stop_event.set()
+            watcher.join(timeout=5.0)
             if library_id in self.last_poll_time:
                 del self.last_poll_time[library_id]
-        elif isinstance(watcher, threading.Thread):
-            # Polling mode (thread): just remove reference, daemon thread will die
-            if library_id in self.last_poll_time:
-                del self.last_poll_time[library_id]
-            # Note: daemon threads auto-terminate on main exit
         else:
             # Event mode: stop the observer
             watcher.stop()
@@ -448,7 +433,7 @@ class FileWatcherService:
         for library_id in list(self.observers.keys()):
             self.stop_watching_library(library_id)
 
-    async def switch_watch_mode(self, library_id: str, new_mode: str) -> None:
+    def switch_watch_mode(self, library_id: str, new_mode: str) -> None:
         """Switch watch mode for a library at runtime.
 
         Stops the existing watcher (if any), updates the library's watch_mode
@@ -457,7 +442,7 @@ class FileWatcherService:
         Idempotent - safe to call multiple times with the same mode.
 
         Args:
-            library_id: Library document _id (e.g., "libraries/lib1")
+            library_id: Library database ID
             new_mode: New watch mode ('off', 'event', or 'poll')
 
         Raises:
@@ -470,7 +455,7 @@ class FileWatcherService:
             raise ValueError(msg)
 
         # Verify library exists
-        library = await get_library_watch_config(self._db, int(library_id))
+        library = get_library_watch_config(self._db, int(library_id))
         if not library:
             msg = f"Library {library_id} not found"
             raise ValueError(msg)
@@ -485,49 +470,44 @@ class FileWatcherService:
             self.pending_changes = {(lib_id, path) for lib_id, path in self.pending_changes if lib_id != library_id}
 
         # Update watch_mode in database
-        await UpdateLibraryMetadataComp(self._db).update(int(library_id), watch_mode=new_mode)
+        UpdateLibraryMetadataComp(self._db).update(int(library_id), watch_mode=new_mode)
         logger.info(f"Updated library {library_id} watch_mode to '{new_mode}'")
 
         # Start new mode if not 'off'
         if new_mode != "off":
-            await self.start_watching_library(library_id)
+            self.start_watching_library(library_id)
         else:
             logger.info(f"Watch mode is 'off' for library {library_id}, no watcher started")
 
     def _on_file_change(self, library_id: str, relative_path: str) -> None:
         """Handle file change event from watchdog thread.
 
-        CRITICAL: This runs on a watchdog background thread, NOT the event loop.
-        Must use thread-safe handoff to schedule async work.
+        CRITICAL: This runs on a watchdog background thread.
+        Uses threading primitives for thread-safe debounce scheduling.
 
         Args:
-            library_id: Library document _id
+            library_id: Library database ID
             relative_path: Path relative to library root
 
         """
-        # Add to pending changes (thread-safe)
+        # Add to pending changes and manage debounce timer (thread-safe)
         with self._lock:
             self.pending_changes.add((library_id, relative_path))
 
             # Cancel existing debounce timer
-            if self.debounce_task and not self.debounce_task.done():
-                self.debounce_task.cancel()
+            if self._debounce_timer is not None:
+                self._debounce_timer.cancel()
 
-        # Schedule new debounce timer (thread-safe handoff to event loop)
-        self.event_loop.call_soon_threadsafe(self._schedule_debounce)
+            # Schedule new debounce timer
+            self._debounce_timer = threading.Timer(self.debounce_seconds, self._trigger_after_debounce)
+            self._debounce_timer.daemon = True
+            self._debounce_timer.start()
 
-    def _schedule_debounce(self) -> None:
-        """Schedule debounce coroutine in event loop.
+    def _trigger_after_debounce(self) -> None:
+        """Wait for quiet period, then trigger scan for affected libraries.
 
-        Called from event loop context (via call_soon_threadsafe).
-        Safe to create asyncio tasks here.
+        Called by threading.Timer after the debounce interval elapses.
         """
-        self.debounce_task = asyncio.create_task(self._trigger_after_debounce())
-
-    async def _trigger_after_debounce(self) -> None:
-        """Wait for quiet period, then trigger scan for affected libraries."""
-        await asyncio.sleep(self.debounce_seconds)
-
         # Collect pending changes (thread-safe)
         with self._lock:
             changes = self.pending_changes.copy()
@@ -550,6 +530,6 @@ class FileWatcherService:
         # folders are actually re-scanned.
         for library_id in affected_libraries:
             try:
-                await self.library_service.start_quick_scan(int(library_id))
+                self.library_service.start_quick_scan(int(library_id))
             except Exception as e:
                 logger.error(f"Failed to trigger scan for library {library_id}: {e}", exc_info=True)

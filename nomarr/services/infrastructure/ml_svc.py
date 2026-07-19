@@ -68,7 +68,7 @@ class MLService:
         """
         return discover_backbones(self.cfg.models_dir)
 
-    async def discover_heads(self) -> list[HeadInfo]:
+    def discover_heads(self) -> list[HeadInfo]:
         """Discover all available model heads in models directory.
 
         Only returns heads whose corresponding ``ml_models`` entry is
@@ -83,7 +83,7 @@ class MLService:
 
         """
         try:
-            raw_heads = await discover_heads(self.cfg.models_dir, self.db)
+            raw_heads = discover_heads(self.cfg.models_dir, self.db)
             logger.info("[MLService] Discovered %d model heads", len(raw_heads))
             # Convert component-level HeadInfo to DTO HeadInfo
             return [
@@ -104,25 +104,25 @@ class MLService:
             msg = f"Failed to discover model heads: {e}"
             raise RuntimeError(msg) from e
 
-    async def clear_vram_measurements(self) -> None:
+    def clear_vram_measurements(self) -> None:
         """Delete all per-model VRAM measurements from meta.
 
         The next discovery worker startup will re-run the probe and record
         fresh measurements.
         """
-        await clear_model_vram_measurements(self.db)
+        clear_model_vram_measurements(self.db)
         logger.info("[MLService] VRAM measurements cleared — probe will re-run on next worker start")
 
-    async def list_all_models(self) -> list[dict[str, Any]]:
+    def list_all_models(self) -> list[dict[str, Any]]:
         """Return all registered ML model vertices.
 
         Returns:
             List of ml_models documents.
 
         """
-        return await list_registered_models(self.db)
+        return list_registered_models(self.db)
 
-    async def get_model_outputs(self, model_id: str) -> list[dict[str, Any]]:
+    def get_model_outputs(self, model_id: str) -> list[dict[str, Any]]:
         """Return output vertices for a specific model.
 
         Args:
@@ -132,9 +132,9 @@ class MLService:
             List of ml_model_outputs documents ordered by output_index.
 
         """
-        return await list_model_outputs_for_model(self.db, model_id)
+        return list_model_outputs_for_model(self.db, model_id)
 
-    async def update_output_label(self, model_id: str | int, output_id: str | int, label: str) -> None:
+    def update_output_label(self, model_id: str | int, output_id: str | int, label: str) -> None:
         """Write a human-readable label for a model output vertex.
 
         Args:
@@ -143,11 +143,9 @@ class MLService:
             label: Human-readable tag label for this activation.
 
         """
-        await update_model_output_label(
-            self.db, file_id=0, model_id=str(model_id), output_id=str(output_id), label=label
-        )
+        update_model_output_label(self.db, file_id=0, model_id=str(model_id), output_id=str(output_id), label=label)
 
-    async def mark_model_configured(self, model_id: str | int, value: bool) -> None:
+    def mark_model_configured(self, model_id: str | int, value: bool) -> None:
         """Set the fully_configured flag on a model vertex.
 
         Args:
@@ -155,4 +153,4 @@ class MLService:
             value: True to enable model for inference, False to disable.
 
         """
-        await mark_model_fully_configured(self.db, str(model_id), value)
+        mark_model_fully_configured(self.db, str(model_id), value)

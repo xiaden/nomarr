@@ -33,7 +33,6 @@ dependencies = [
     "rich>=13.7.0",
     "requests>=2.32.0",
     "bcrypt>=4.2.0",
-    "asyncpg>=0.30.0",
     "psycopg2-binary>=2.9.10",
     "sqlalchemy[asyncio]>=2.0.37",
     "pgvector>=0.3.6",
@@ -51,7 +50,6 @@ dependencies = [
 dev = [
     "pytest>=8.3.0",
     "pytest-cov>=5.0.0",
-    "pytest-asyncio>=0.24.0",
     "ruff==0.15.9",
     "mypy>=1.19.0",
     "bandit>=1.7.5",
@@ -83,8 +81,6 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"
 addopts = [
     "-v",
     "--strict-markers",
@@ -94,7 +90,6 @@ console_output_style = "progress"
 log_cli = false
 log_cli_level = "ERROR"
 markers = [
-    "asyncio: Async tests using pytest-asyncio",
     "unit: Unit tests (minimal mocking, fast)",
     "integration: Integration tests (multiple components, real DB)",
     "e2e: End-to-end tests (full pipeline)",
@@ -108,6 +103,7 @@ markers = [
     "code_smell: Architecture/style tests that dont indicate broken functionality (skip in CI)",
     "mocked: Test uses mocked dependencies (informational)",
     "hnsw_build: Heavy HNSW index build tests — skip locally with `-m 'not hnsw_build'`",
+    "serial: Tests that must run serially (SQLite lock avoidance)",
 ]
 filterwarnings = [
     "error::nomarr.helpers.exceptions.FacadeMisuseWarning",

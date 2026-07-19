@@ -92,7 +92,7 @@ def _init_cuda_context() -> None:
         logger.warning("[vram_probe] CUDA context warming failed", exc_info=True)
 
 
-async def _probe_single_model(
+def _probe_single_model(
     model: BaseONNXModel,
     probe_waveform: np.ndarray | None,
 ) -> int | None:
@@ -137,7 +137,7 @@ async def _probe_single_model(
 
     try:
         try:
-            await model.load("gpu")
+            model.load("gpu")
         except (RuntimeError, OSError):
             logger.warning("[vram_probe] Failed to load %s on GPU", model._path, exc_info=True)
             return None
@@ -157,13 +157,13 @@ async def _probe_single_model(
         try:
             if probe_waveform is not None:
                 # Backbone: run() handles mel-spectrogram preprocessing internally
-                await model.run(probe_waveform)
+                model.run(probe_waveform)
             else:
                 # Head: input_dim is populated by load(); generate synthetic embeddings
                 input_dim: int | None = getattr(model, "input_dim", None)
                 if input_dim:
                     embeddings = np.zeros((10, input_dim), dtype=np.float32)
-                    await model.run(embeddings)
+                    model.run(embeddings)
                 else:
                     logger.warning(
                         "[vram_probe] Head %s has no input_dim after load — skipping run",
@@ -197,7 +197,7 @@ async def _probe_single_model(
     return delta_bytes
 
 
-async def probe_all_models(db: Database, models_dir: str) -> None:
+def probe_all_models(db: Database, models_dir: str) -> None:
     """Probe every backbone and head model and store VRAM measurements in meta.
 
     Runs sequentially: only one model is live on the GPU at a time.  Warms the
@@ -231,10 +231,10 @@ async def probe_all_models(db: Database, models_dir: str) -> None:
 
     results: list[str] = []
     for model, waveform in all_models:
-        delta = await _probe_single_model(model, waveform)
+        delta = _probe_single_model(model, waveform)
         delta_with_headroom = int(delta * 1.1) if delta is not None else None
         value = str(delta_with_headroom) if delta_with_headroom is not None else str(sys.maxsize)
-        await db.app.update_config_option(f"{_META_PREFIX}{model._path}", {"value": value})
+        db.app.update_config_option(f"{_META_PREFIX}{model._path}", {"value": value})
         readable = _fmt_bytes(delta_with_headroom) if delta_with_headroom is not None else "unmeasured"
         results.append(f"  {model._path} -> {readable}")
 
@@ -249,7 +249,7 @@ async def probe_all_models(db: Database, models_dir: str) -> None:
     )
 
 
-async def has_model_vram_measurements(db: Database) -> bool:
+def has_model_vram_measurements(db: Database) -> bool:
     """Return True if any per-model VRAM measurements exist in meta.
 
     Args:
@@ -259,24 +259,24 @@ async def has_model_vram_measurements(db: Database) -> bool:
         True if at least one ``ml_model_vram:*`` key is present.
 
     """
-    docs = cast("list[dict[str, Any]]", await db.app.list_config_options(prefix=_META_PREFIX))
+    docs = cast("list[dict[str, Any]]", db.app.list_config_options(prefix=_META_PREFIX))
     return bool(docs)
 
 
-async def clear_model_vram_measurements(db: Database) -> None:
+def clear_model_vram_measurements(db: Database) -> None:
     """Delete all per-model VRAM measurements from meta.
 
     Args:
         db: Database instance.
 
     """
-    existing_docs = cast("list[dict[str, Any]]", await db.app.list_config_options(prefix=_META_PREFIX))
+    existing_docs = cast("list[dict[str, Any]]", db.app.list_config_options(prefix=_META_PREFIX))
     removed = 0
     for doc in existing_docs:
         key = doc.get("_key")
         if not isinstance(key, str) or not key:
             continue
-        await db.app.remove_config_option(key)
+        db.app.remove_config_option(key)
         removed += 1
     logger.info("[vram_probe] Cleared %d VRAM measurement(s)", removed)
 

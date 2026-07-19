@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-async def cleanup_orphaned_tags_workflow(db: Database, dry_run: bool = False) -> dict[str, int]:
+def cleanup_orphaned_tags_workflow(db: Database, dry_run: bool = False) -> dict[str, int]:
     """Clean up orphaned tags from the database.
 
     Args:
@@ -24,13 +24,13 @@ async def cleanup_orphaned_tags_workflow(db: Database, dry_run: bool = False) ->
 
     """
     logger.debug("[tag_cleanup] Starting orphaned tag cleanup workflow")
-    orphaned_count = await get_orphaned_tag_count(db)
+    orphaned_count = get_orphaned_tag_count(db)
     orphaned_log = logger.info if orphaned_count > 0 else logger.debug
     orphaned_log("[tag_cleanup] Found %d orphaned tags", orphaned_count)
     if dry_run:
         logger.info("[tag_cleanup] Dry run - no tags deleted")
         return {"orphaned_count": orphaned_count, "deleted_count": 0}
-    deleted_count = await cleanup_orphaned_tags(db)
+    deleted_count = cleanup_orphaned_tags(db)
     deleted_log = logger.info if deleted_count > 0 else logger.debug
     deleted_log("[tag_cleanup] Deleted %d orphaned tags", deleted_count)
     return {"orphaned_count": orphaned_count, "deleted_count": deleted_count}

@@ -9,7 +9,7 @@ Tests cover:
 from __future__ import annotations
 
 import math
-from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -50,10 +50,10 @@ def _make_vector(seed: int, dim: int = 64) -> list[float]:
     return v.tolist()
 
 
-def _make_db() -> AsyncMock:
-    """Create a mock Database with async ml.list_file_vectors configured."""
-    db = AsyncMock()
-    db.ml.list_file_vectors = AsyncMock()
+def _make_db() -> MagicMock:
+    """Create a mock Database with sync ml.list_file_vectors configured."""
+    db = MagicMock()
+    db.ml.list_file_vectors = MagicMock()
     return db
 
 
@@ -62,7 +62,7 @@ def _make_vector_doc(file_id: int, seed: int) -> dict:
     return {"file_id": file_id, "embedding": _make_vector(seed)}
 
 
-def _configure_list_file_vectors(db: AsyncMock, vector_docs: list[dict]) -> None:
+def _configure_list_file_vectors(db: MagicMock, vector_docs: list[dict]) -> None:
     """Set up ``db.ml.list_file_vectors`` to return the right doc per file_id.
 
     Args:
@@ -75,7 +75,7 @@ def _configure_list_file_vectors(db: AsyncMock, vector_docs: list[dict]) -> None
         fid = doc["file_id"]
         by_file.setdefault(fid, []).append(doc)
 
-    async def _side_effect(_backbone: str, fid: int) -> list[dict]:
+    def _side_effect(_backbone: str, fid: int) -> list[dict]:
         return by_file.get(fid, [])
 
     db.ml.list_file_vectors.side_effect = _side_effect
@@ -193,10 +193,10 @@ class TestComputeTasteProfile:
 
     # -- early return paths --
 
-    async def test_empty_top_plays_returns_none(self) -> None:
+    def test_empty_top_plays_returns_none(self) -> None:
         """Empty ``top_plays`` list returns ``None``."""
         db = _make_db()
-        result = await compute_taste_profile(
+        result = compute_taste_profile(
             db,
             "user1",
             [],
@@ -206,11 +206,11 @@ class TestComputeTasteProfile:
         )
         assert result is None
 
-    async def test_all_plays_have_none_file_id(self) -> None:
+    def test_all_plays_have_none_file_id(self) -> None:
         """All plays have ``file_id=None`` → returns ``None``."""
         db = _make_db()
         plays = [_make_play(file_id=None, playcount=1, last_played=1000) for _ in range(5)]
-        result = await compute_taste_profile(
+        result = compute_taste_profile(
             db,
             "user1",
             plays,
@@ -218,14 +218,14 @@ class TestComputeTasteProfile:
         )
         assert result is None
 
-    async def test_no_vectors_found_returns_none(self) -> None:
+    def test_no_vectors_found_returns_none(self) -> None:
         """Resolved plays but list_file_vectors returns empty → ``None``."""
         db = _make_db()
         plays = [_make_play(i, 1, 1000) for i in range(1, 4)]
         db.ml.list_file_vectors.return_value = []
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value={})):
-            result = await compute_taste_profile(
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=MagicMock(return_value={})):
+            result = compute_taste_profile(
                 db,
                 "user1",
                 plays,
@@ -235,7 +235,7 @@ class TestComputeTasteProfile:
 
     # -- basic success paths --
 
-    async def test_single_genre_one_cluster(self) -> None:
+    def test_single_genre_one_cluster(self) -> None:
         """Single genre with ≥3 tracks → 1 cluster with matching label."""
         db = _make_db()
         plays = [_make_play(i, 5, 100_000_000) for i in range(1, 4)]
@@ -243,11 +243,11 @@ class TestComputeTasteProfile:
         _configure_list_file_vectors(db, vector_docs)
         genre_map = {i: {"Rock"} for i in range(1, 4)}
 
-        async def _genre_map(*_args, **_kwargs):
+        def _genre_map(*_args, **_kwargs):
             return genre_map
 
         with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=_genre_map):
-            result = await compute_taste_profile(
+            result = compute_taste_profile(
                 db,
                 "user1",
                 plays,
@@ -261,7 +261,7 @@ class TestComputeTasteProfile:
         assert result["user_id"] == "user1"
         assert result["backbone_id"] == "backbone/1"
 
-    async def test_multiple_genres_multiple_clusters(self) -> None:
+    def test_multiple_genres_multiple_clusters(self) -> None:
         """Two genres each with ≥3 tracks → 2 clusters sorted by weight."""
         db = _make_db()
         plays = [_make_play(i, 5, 100_000_000) for i in range(1, 4)] + [
@@ -277,8 +277,8 @@ class TestComputeTasteProfile:
         for i in range(1, 4):
             genre_map[i + 100] = {"Electronic"}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value=genre_map)):
-            result = await compute_taste_profile(
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=MagicMock(return_value=genre_map)):
+            result = compute_taste_profile(
                 db,
                 "user1",
                 plays,
@@ -294,7 +294,7 @@ class TestComputeTasteProfile:
         assert result["clusters"][0]["track_count"] == 3
         assert result["clusters"][1]["track_count"] == 3
 
-    async def test_genre_with_two_tracks_skipped(self) -> None:
+    def test_genre_with_two_tracks_skipped(self) -> None:
         """Genre with only 2 tracks → skipped. 3-track genre included."""
         plays = [_make_play(i, 5, 100_000_000) for i in range(1, 3)] + [
             _make_play(i + 100, 5, 100_000_000) for i in range(1, 4)
@@ -310,8 +310,8 @@ class TestComputeTasteProfile:
         for i in range(1, 4):
             genre_map[i + 100] = {"Electronic"}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value=genre_map)):
-            result = await compute_taste_profile(
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=MagicMock(return_value=genre_map)):
+            result = compute_taste_profile(
                 db,
                 "user1",
                 plays,
@@ -322,7 +322,7 @@ class TestComputeTasteProfile:
         assert len(result["clusters"]) == 1
         assert result["clusters"][0]["label"] == "Electronic"
 
-    async def test_partial_vector_resolution(self) -> None:
+    def test_partial_vector_resolution(self) -> None:
         """Only 7 of 10 plays have vectors → only those 7 contribute."""
         plays = [_make_play(i, 5, 1000 + i * 100) for i in range(1, 11)]
         vector_docs = [_make_vector_doc(i, i) for i in range(1, 8)]
@@ -331,11 +331,11 @@ class TestComputeTasteProfile:
 
         with patch(
             f"{TAGS_PATH}.get_tag_values_grouped_by_file",
-            new=AsyncMock(
+            new=MagicMock(
                 return_value={i: {"rock"} for i in range(1, 11)},
             ),
         ):
-            result = await compute_taste_profile(
+            result = compute_taste_profile(
                 db,
                 "user1",
                 plays,
@@ -346,25 +346,25 @@ class TestComputeTasteProfile:
         assert len(result["clusters"]) == 1
         assert result["clusters"][0]["track_count"] == 7
 
-    async def test_vector_doc_missing_vector_key(self) -> None:
+    def test_vector_doc_missing_vector_key(self) -> None:
         """Vector doc without 'vector' field → silently skipped."""
         plays = [_make_play(i, 5, 1000 + i * 100) for i in range(1, 6)]
 
         db = _make_db()
 
         # Configure with docs that have file_id but embedding is None
-        async def _side_effect(_backbone: str, fid: int) -> list[dict]:
+        def _side_effect(_backbone: str, fid: int) -> list[dict]:
             return [{"file_id": fid, "embedding": None}]  # None embedding
 
         db.ml.list_file_vectors.side_effect = _side_effect
 
         with patch(
             f"{TAGS_PATH}.get_tag_values_grouped_by_file",
-            new=AsyncMock(
+            new=MagicMock(
                 return_value={i: {"rock"} for i in range(1, 6)},
             ),
         ):
-            result = await compute_taste_profile(
+            result = compute_taste_profile(
                 db,
                 "user1",
                 plays,
@@ -376,7 +376,7 @@ class TestComputeTasteProfile:
 
     # -- untagged cluster tests --
 
-    async def test_untagged_above_threshold_includes_cluster(self) -> None:
+    def test_untagged_above_threshold_includes_cluster(self) -> None:
         """≥3 untagged tracks with >50% avg above-threshold → untagged cluster."""
         db = _make_db()
         plays = [_make_play(i, 5, 100_000_000) for i in range(1, 10)]
@@ -388,8 +388,8 @@ class TestComputeTasteProfile:
         for i in range(1, 6):
             genre_map[i] = {"Rock"}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value=genre_map)):
-            result = await compute_taste_profile(
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=MagicMock(return_value=genre_map)):
+            result = compute_taste_profile(
                 db,
                 "user1",
                 plays,
@@ -401,7 +401,7 @@ class TestComputeTasteProfile:
         assert "Rock" in labels
         assert "untagged" in labels
 
-    async def test_untagged_below_threshold_no_cluster(self) -> None:
+    def test_untagged_below_threshold_no_cluster(self) -> None:
         """Only 2 untagged tracks (<3) → no untagged cluster."""
         db = _make_db()
         plays = [_make_play(i, 5, 100_000_000) for i in range(1, 6)]
@@ -412,8 +412,8 @@ class TestComputeTasteProfile:
         for i in range(1, 4):
             genre_map[i] = {"Rock"}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value=genre_map)):
-            result = await compute_taste_profile(
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=MagicMock(return_value=genre_map)):
+            result = compute_taste_profile(
                 db,
                 "user1",
                 plays,
@@ -424,7 +424,7 @@ class TestComputeTasteProfile:
         labels = [c["label"] for c in result["clusters"]]
         assert "untagged" not in labels
 
-    async def test_untagged_less_than_three_no_cluster(self) -> None:
+    def test_untagged_less_than_three_no_cluster(self) -> None:
         """<3 untagged tracks → no untagged cluster regardless of threshold."""
         db = _make_db()
         plays = [_make_play(i, 5, 100_000_000) for i in range(1, 5)]
@@ -435,8 +435,8 @@ class TestComputeTasteProfile:
         for i in range(1, 3):
             genre_map[i] = {"Rock"}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value=genre_map)):
-            result = await compute_taste_profile(
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=MagicMock(return_value=genre_map)):
+            result = compute_taste_profile(
                 db,
                 "user1",
                 plays,
@@ -446,7 +446,7 @@ class TestComputeTasteProfile:
         labels = [c["label"] for c in result["clusters"]] if result else []
         assert "untagged" not in labels
 
-    async def test_cluster_capping(self) -> None:
+    def test_cluster_capping(self) -> None:
         """15 genres but pp_max_clusters=5 → top 5 clusters only."""
         db = _make_db()
         genres = [f"Genre{g}" for g in range(1, 16)]
@@ -465,8 +465,8 @@ class TestComputeTasteProfile:
 
         _configure_list_file_vectors(db, vector_docs)
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value=genre_map)):
-            result = await compute_taste_profile(
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=MagicMock(return_value=genre_map)):
+            result = compute_taste_profile(
                 db,
                 "user1",
                 plays,
@@ -477,7 +477,7 @@ class TestComputeTasteProfile:
         assert result is not None
         assert len(result["clusters"]) == 5
 
-    async def test_all_genres_skipped_returns_none(self) -> None:
+    def test_all_genres_skipped_returns_none(self) -> None:
         """All genres have <3 tracks → no clusters → ``None``."""
         plays = [
             _make_play(1, 5, 100_000_000),
@@ -492,8 +492,8 @@ class TestComputeTasteProfile:
         _configure_list_file_vectors(db, vector_docs)
         genre_map = {1: {"A"}, 2: {"B"}, 3: {"C"}, 4: {"D"}, 5: {"E"}, 6: {"F"}}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value=genre_map)):
-            result = await compute_taste_profile(
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=MagicMock(return_value=genre_map)):
+            result = compute_taste_profile(
                 db,
                 "user1",
                 plays,
@@ -502,7 +502,7 @@ class TestComputeTasteProfile:
 
         assert result is None
 
-    async def test_multi_tag_determinism(self) -> None:
+    def test_multi_tag_determinism(self) -> None:
         """Two genres = 6 tracks total → both included as one cluster each."""
         plays = [_make_play(i, 5, 100_000_000) for i in range(1, 4)] + [
             _make_play(i + 100, 5, 100_000_000) for i in range(1, 4)
@@ -514,8 +514,8 @@ class TestComputeTasteProfile:
         _configure_list_file_vectors(db, vector_docs)
         genre_map = {1: {"Jazz"}, 2: {"Jazz"}, 3: {"Jazz"}, 101: {"Funk"}, 102: {"Funk"}, 103: {"Funk"}}
 
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=AsyncMock(return_value=genre_map)):
-            result = await compute_taste_profile(
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=MagicMock(return_value=genre_map)):
+            result = compute_taste_profile(
                 db,
                 "user1",
                 plays,

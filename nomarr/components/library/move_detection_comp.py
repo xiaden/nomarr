@@ -54,7 +54,7 @@ _EMPTY_MOVE_RESULT = MoveDetectionResult(
 )
 
 
-async def detect_file_moves(
+def detect_file_moves(
     files_to_remove: list[dict[str, Any]],
     new_file_entries: list[dict[str, Any]],
     db: Database,
@@ -135,7 +135,7 @@ async def detect_file_moves(
 
         # Compute chromaprint for new file
         try:
-            library_path_for_audio = await build_library_path_from_input(new_path, db)
+            library_path_for_audio = build_library_path_from_input(new_path, db)
             if not library_path_for_audio.is_valid():
                 continue
 
@@ -204,7 +204,7 @@ async def detect_file_moves(
     )
 
 
-async def apply_detected_moves(
+def apply_detected_moves(
     moves: list[FileMove],
     metadata_map: dict[str, dict[str, Any]],
     db: Database,
@@ -237,7 +237,7 @@ async def apply_detected_moves(
             # new_path not under library_root; skip normalization
             computed_normalized_path = None
 
-        await update_file_path(
+        update_file_path(
             db,
             file_id=move.file_id,
             new_path=move.new_path,
@@ -254,7 +254,7 @@ async def apply_detected_moves(
                 entries = _build_song_tag_entries(str(move.file_id), entity_tags)
                 if entries:
                     for entry in entries:
-                        await db.library.replace_file_tags(int(entry["song_id"]), entry["tags"])
+                        db.library.replace_file_tags(int(entry["song_id"]), entry["tags"])
             except RuntimeError as e:
                 logger.warning(
                     "Failed to update entities for moved file %s: %s",
@@ -267,7 +267,7 @@ async def apply_detected_moves(
     return applied
 
 
-async def detect_file_move_via_db(
+def detect_file_move_via_db(
     new_file_entry: dict[str, Any],
     library_id: int,
     db: Database,
@@ -284,7 +284,7 @@ async def detect_file_move_via_db(
     new_path = new_file_entry["path"]
 
     try:
-        library_path = await build_library_path_from_input(new_path, db)
+        library_path = build_library_path_from_input(new_path, db)
         if not library_path.is_valid():
             return None
         chromaprint = compute_chromaprint_for_file(library_path)
@@ -295,7 +295,7 @@ async def detect_file_move_via_db(
     if not chromaprint:
         return None
 
-    candidate = await find_move_candidate_by_chromaprint(db, library_id, chromaprint)
+    candidate = find_move_candidate_by_chromaprint(db, library_id, chromaprint)
     if candidate is None:
         return None
 

@@ -74,23 +74,21 @@ def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str
     return str(resolved)
 
 
-async def ensure_no_overlapping_library_root(
-    db: Database, candidate_root: str, *, ignore_id: str | None = None
-) -> None:
+def ensure_no_overlapping_library_root(db: Database, candidate_root: str, *, ignore_id: str | None = None) -> None:
     """Ensure a candidate library root does not overlap with any existing library.
 
     Raises ValueError if roots overlap — library roots must be disjoint.
     """
     # Resolve candidate to canonical absolute path
-    candidate_path = Path(candidate_root).resolve()  # noqa: ASYNC240
+    candidate_path = Path(candidate_root).resolve()
 
-    existing_libraries = await list_library_records(db, enabled_only=False, include_scan=False)
+    existing_libraries = list_library_records(db, enabled_only=False, include_scan=False)
 
     for library in existing_libraries:
         if ignore_id is not None and library.id == ignore_id:
             continue
 
-        existing_path = Path(library.root_path).resolve()  # noqa: ASYNC240
+        existing_path = Path(library.root_path).resolve()
 
         try:
             candidate_path.relative_to(existing_path)

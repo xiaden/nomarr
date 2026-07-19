@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -35,10 +35,10 @@ class _FakeHeadInfo:
 class TestLoadOutputStreamsForFile:
     """Tests for canonical stream loading and enrichment."""
 
-    async def test_enriches_fetched_streams_with_head_metadata(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_enriches_fetched_streams_with_head_metadata(self, monkeypatch: pytest.MonkeyPatch) -> None:
         db = MagicMock()
         head_infos = [_FakeHeadInfo(name="mood_multiclass", labels=["happy", "sad"], model_path="/models/mood.onnx")]
-        fetch_output_streams = AsyncMock(
+        fetch_output_streams = MagicMock(
             return_value=[
                 StreamRecord(output_id="ml_model_outputs/out-1", output_index=0, values=[0.8, 0.7]),
                 StreamRecord(output_id="ml_model_outputs/out-2", output_index=1, values=[0.2, 0.3]),
@@ -46,7 +46,7 @@ class TestLoadOutputStreamsForFile:
         )
         monkeypatch.setattr(stream_store_module, "fetch_output_streams", fetch_output_streams)
 
-        result = await stream_store_module.load_output_streams_for_file(
+        result = stream_store_module.load_output_streams_for_file(
             db,
             f"{'library_files'}/1",
             "/music/example.flac",
@@ -75,18 +75,16 @@ class TestLoadOutputStreamsForFile:
         ]
         fetch_output_streams.assert_called_once_with(db, f"{'library_files'}/1")
 
-    async def test_returns_empty_and_skips_lookup_when_streams_are_missing(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_returns_empty_and_skips_lookup_when_streams_are_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         db = MagicMock()
-        db.app.get_file_states_for_files = AsyncMock(return_value={})
-        db.app.remove_file_states = AsyncMock()
-        db.app.add_file_states = AsyncMock()
+        db.app.get_file_states_for_files = MagicMock(return_value={})
+        db.app.remove_file_states = MagicMock()
+        db.app.add_file_states = MagicMock()
         head_infos = [_FakeHeadInfo(name="mood_multiclass", labels=["happy", "sad"], model_path="/models/mood.onnx")]
-        fetch_output_streams = AsyncMock(return_value=[])
+        fetch_output_streams = MagicMock(return_value=[])
         monkeypatch.setattr(stream_store_module, "fetch_output_streams", fetch_output_streams)
 
-        result = await stream_store_module.load_output_streams_for_file(
+        result = stream_store_module.load_output_streams_for_file(
             db,
             f"{'library_files'}/1",
             "/music/example.flac",
@@ -96,22 +94,22 @@ class TestLoadOutputStreamsForFile:
 
         assert result == []
 
-    async def test_returns_empty_when_any_stream_cannot_be_matched_to_discovered_heads(
+    def test_returns_empty_when_any_stream_cannot_be_matched_to_discovered_heads(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         db = MagicMock()
-        db.app.get_file_states_for_files = AsyncMock(return_value={})
-        db.app.remove_file_states = AsyncMock()
-        db.app.add_file_states = AsyncMock()
+        db.app.get_file_states_for_files = MagicMock(return_value={})
+        db.app.remove_file_states = MagicMock()
+        db.app.add_file_states = MagicMock()
         head_infos = [_FakeHeadInfo(name="mood_multiclass", labels=["happy", "sad"], model_path="/models/mood.onnx")]
         monkeypatch.setattr(
             stream_store_module,
             "fetch_output_streams",
-            AsyncMock(return_value=[StreamRecord(output_id="ml_model_outputs/out-404", output_index=0, values=[0.5])]),
+            MagicMock(return_value=[StreamRecord(output_id="ml_model_outputs/out-404", output_index=0, values=[0.5])]),
         )
 
-        result = await stream_store_module.load_output_streams_for_file(
+        result = stream_store_module.load_output_streams_for_file(
             db,
             f"{'library_files'}/1",
             "/music/example.flac",
@@ -127,7 +125,7 @@ class TestLoadOutputStreamsForFile:
 class TestWriteCalibratedTagsWorkflow:
     """Tests for stream-based calibration writes."""
 
-    async def test_uses_canonical_streams_and_never_touches_legacy_segment_stats(
+    def test_uses_canonical_streams_and_never_touches_legacy_segment_stats(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -160,15 +158,15 @@ class TestWriteCalibratedTagsWorkflow:
             )
         ]
         mood_tags = _make_tags(**{"nom:mood-happy": "high"})
-        require_library_file_id = AsyncMock(return_value=f"{'library_files'}/1")
-        discover_heads = AsyncMock(return_value=head_infos)
-        build_output_stream_lookup = AsyncMock(return_value={"ml_model_outputs/out-1": ("mood_multiclass", "happy")})
-        load_output_streams_for_file = AsyncMock(return_value=output_streams)
+        require_library_file_id = MagicMock(return_value=f"{'library_files'}/1")
+        discover_heads = MagicMock(return_value=head_infos)
+        build_output_stream_lookup = MagicMock(return_value={"ml_model_outputs/out-1": ("mood_multiclass", "happy")})
+        load_output_streams_for_file = MagicMock(return_value=output_streams)
         reconstruct = MagicMock(return_value=head_outputs)
         aggregate_mood_tags = MagicMock(return_value=mood_tags)
-        save_mood_tags = AsyncMock()
-        get_calibration_version = AsyncMock(return_value="cal-v1")
-        update_file_calibration_hash = AsyncMock()
+        save_mood_tags = MagicMock()
+        get_calibration_version = MagicMock(return_value="cal-v1")
+        update_file_calibration_hash = MagicMock()
         monkeypatch.setattr(wf_module, "require_library_file_id", require_library_file_id)
         monkeypatch.setattr(wf_module, "discover_heads", discover_heads)
         monkeypatch.setattr(wf_module, "build_output_stream_lookup", build_output_stream_lookup)
@@ -178,9 +176,9 @@ class TestWriteCalibratedTagsWorkflow:
         monkeypatch.setattr(wf_module, "save_mood_tags", save_mood_tags)
         monkeypatch.setattr(wf_module, "get_calibration_version", get_calibration_version)
         monkeypatch.setattr(wf_module, "update_file_calibration_hash", update_file_calibration_hash)
-        monkeypatch.setattr(wf_module, "load_calibration_lookup", AsyncMock(return_value={"happy": {"p5": 0.1}}))
+        monkeypatch.setattr(wf_module, "load_calibration_lookup", MagicMock(return_value={"happy": {"p5": 0.1}}))
 
-        await wf_module.write_calibrated_tags_wf(db, params)
+        wf_module.write_calibrated_tags_wf(db, params)
 
         require_library_file_id.assert_called_once_with(db, "/music/example.flac")
         build_output_stream_lookup.assert_called_once_with(db, head_infos)
@@ -201,7 +199,7 @@ class TestWriteCalibratedTagsWorkflow:
         update_file_calibration_hash.assert_called_once_with(db, f"{'library_files'}/1")
         assert db.segment_scores_stats.mock_calls == []
 
-    async def test_batch_context_reuses_cached_output_lookup_and_defers_batch_writes(
+    def test_batch_context_reuses_cached_output_lookup_and_defers_batch_writes(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -267,14 +265,14 @@ class TestWriteCalibratedTagsWorkflow:
             calibrations={"happy": {"p5": 0.1}},
             calibration_version="cal-v1",
         )
-        require_library_file_id = AsyncMock(side_effect=[f"{'library_files'}/1", f"{'library_files'}/2"])
-        discover_heads = AsyncMock()
-        build_output_stream_lookup = AsyncMock(return_value=lookup)
-        load_output_streams_for_file = AsyncMock(side_effect=[output_streams_1, output_streams_2])
+        require_library_file_id = MagicMock(side_effect=[f"{'library_files'}/1", f"{'library_files'}/2"])
+        discover_heads = MagicMock()
+        build_output_stream_lookup = MagicMock(return_value=lookup)
+        load_output_streams_for_file = MagicMock(side_effect=[output_streams_1, output_streams_2])
         reconstruct = MagicMock(side_effect=[head_outputs_1, head_outputs_2])
         aggregate_mood_tags = MagicMock(side_effect=[mood_tags_1, mood_tags_2])
-        save_mood_tags = AsyncMock()
-        update_file_calibration_hash = AsyncMock()
+        save_mood_tags = MagicMock()
+        update_file_calibration_hash = MagicMock()
         monkeypatch.setattr(wf_module, "require_library_file_id", require_library_file_id)
         monkeypatch.setattr(wf_module, "discover_heads", discover_heads)
         monkeypatch.setattr(wf_module, "build_output_stream_lookup", build_output_stream_lookup)
@@ -284,8 +282,8 @@ class TestWriteCalibratedTagsWorkflow:
         monkeypatch.setattr(wf_module, "save_mood_tags", save_mood_tags)
         monkeypatch.setattr(wf_module, "update_file_calibration_hash", update_file_calibration_hash)
 
-        await wf_module.write_calibrated_tags_wf(db, params_1, batch_ctx=batch_ctx)
-        await wf_module.write_calibrated_tags_wf(db, params_2, batch_ctx=batch_ctx)
+        wf_module.write_calibrated_tags_wf(db, params_1, batch_ctx=batch_ctx)
+        wf_module.write_calibrated_tags_wf(db, params_2, batch_ctx=batch_ctx)
 
         discover_heads.assert_not_called()
         build_output_stream_lookup.assert_called_once_with(db, head_infos)
@@ -304,7 +302,7 @@ class TestWriteCalibratedTagsWorkflow:
         save_mood_tags.assert_not_called()
         update_file_calibration_hash.assert_not_called()
 
-    async def test_returns_early_when_streams_are_missing_and_leaves_db_untouched(
+    def test_returns_early_when_streams_are_missing_and_leaves_db_untouched(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -317,13 +315,13 @@ class TestWriteCalibratedTagsWorkflow:
             calibrate_heads=False,
         )
         head_infos = [_FakeHeadInfo(name="mood_multiclass", labels=["happy", "sad"], model_path="/models/mood.onnx")]
-        require_library_file_id = AsyncMock(return_value=f"{'library_files'}/1")
-        discover_heads = AsyncMock(return_value=head_infos)
-        build_output_stream_lookup = AsyncMock(return_value={"ml_model_outputs/out-1": ("mood_multiclass", "happy")})
-        load_output_streams_for_file = AsyncMock(return_value=[])
+        require_library_file_id = MagicMock(return_value=f"{'library_files'}/1")
+        discover_heads = MagicMock(return_value=head_infos)
+        build_output_stream_lookup = MagicMock(return_value={"ml_model_outputs/out-1": ("mood_multiclass", "happy")})
+        load_output_streams_for_file = MagicMock(return_value=[])
         reconstruct = MagicMock()
-        save_mood_tags = AsyncMock()
-        update_file_calibration_hash = AsyncMock()
+        save_mood_tags = MagicMock()
+        update_file_calibration_hash = MagicMock()
         monkeypatch.setattr(wf_module, "require_library_file_id", require_library_file_id)
         monkeypatch.setattr(wf_module, "discover_heads", discover_heads)
         monkeypatch.setattr(wf_module, "build_output_stream_lookup", build_output_stream_lookup)
@@ -331,9 +329,9 @@ class TestWriteCalibratedTagsWorkflow:
         monkeypatch.setattr(wf_module, "reconstruct_head_outputs_from_streams", reconstruct)
         monkeypatch.setattr(wf_module, "save_mood_tags", save_mood_tags)
         monkeypatch.setattr(wf_module, "update_file_calibration_hash", update_file_calibration_hash)
-        monkeypatch.setattr(wf_module, "load_calibration_lookup", AsyncMock(return_value={}))
+        monkeypatch.setattr(wf_module, "load_calibration_lookup", MagicMock(return_value={}))
 
-        await wf_module.write_calibrated_tags_wf(db, params)
+        wf_module.write_calibrated_tags_wf(db, params)
 
         reconstruct.assert_not_called()
         save_mood_tags.assert_not_called()

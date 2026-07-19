@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import logging
-from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from nomarr.workflows.navidrome.generate_playlists_wf import generate_playlists
 
 
-def _make_db() -> AsyncMock:
+def _make_db() -> MagicMock:
     """Create a mock Database."""
-    return AsyncMock()
+    return MagicMock()
 
 
 def _profile() -> dict[str, object]:
@@ -53,7 +53,7 @@ def _playlist_entry(*file_ids: str) -> dict[str, object]:
 class TestGeneratePlaylistsWorkflow:
     """Tests for the personal-playlist generation workflow."""
 
-    async def test_warning_logged_when_no_taste_profile(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_warning_logged_when_no_taste_profile(self, caplog: pytest.LogCaptureFixture) -> None:
         """Missing taste profile should emit a warning and return an empty list."""
         db = _make_db()
         workflow_logger = logging.getLogger("nomarr.workflows.navidrome.generate_playlists_wf")
@@ -68,7 +68,7 @@ class TestGeneratePlaylistsWorkflow:
                 ),
                 caplog.at_level(logging.WARNING, logger="nomarr.workflows.navidrome.generate_playlists_wf"),
             ):
-                result = await generate_playlists(
+                result = generate_playlists(
                     db,
                     user_id="user-1",
                     top_plays=_mock_plays("track-1"),
@@ -90,13 +90,13 @@ class TestGeneratePlaylistsWorkflow:
             record.levelno == logging.WARNING and "No taste profile" in record.getMessage() for record in caplog.records
         )
 
-    async def test_warning_logged_when_all_playlists_filtered_by_min_songs(
+    def test_warning_logged_when_all_playlists_filtered_by_min_songs(
         self,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Filtering every generated playlist should emit a warning."""
         db = _make_db()
-        builder = AsyncMock(return_value=[_playlist_entry(f"{'library_files'}/track-1")])
+        builder = MagicMock(return_value=[_playlist_entry(f"{'library_files'}/track-1")])
         workflow_logger = logging.getLogger("nomarr.workflows.navidrome.generate_playlists_wf")
         original_propagate = workflow_logger.propagate
         workflow_logger.propagate = True
@@ -117,7 +117,7 @@ class TestGeneratePlaylistsWorkflow:
                     logger="nomarr.workflows.navidrome.generate_playlists_wf",
                 ),
             ):
-                result = await generate_playlists(
+                result = generate_playlists(
                     db,
                     user_id="user-1",
                     top_plays=_mock_plays("track-1"),
@@ -142,7 +142,7 @@ class TestGeneratePlaylistsWorkflow:
             for record in caplog.records
         )
 
-    async def test_returns_empty_when_no_taste_profile(self) -> None:
+    def test_returns_empty_when_no_taste_profile(self) -> None:
         """Behavior should remain an empty list when no taste profile exists."""
         db = _make_db()
 
@@ -150,7 +150,7 @@ class TestGeneratePlaylistsWorkflow:
             "nomarr.workflows.navidrome.generate_playlists_wf.compute_taste_profile",
             return_value=None,
         ):
-            result = await generate_playlists(
+            result = generate_playlists(
                 db,
                 user_id="user-1",
                 top_plays=_mock_plays("track-1"),

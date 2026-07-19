@@ -1,5 +1,6 @@
 """Library file and tag endpoints for the web UI."""
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Annotated
 
@@ -72,7 +73,7 @@ async def search_library_files(
             limit=limit,
             offset=offset,
         )
-        result = await library_service.search_files(query)
+        result = await asyncio.to_thread(library_service.search_files, query)
         return SearchFilesResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error searching library files")
@@ -94,7 +95,7 @@ async def get_files_by_ids(
     """
     try:
         decoded_ids = [decode_path_id(fid) for fid in request.file_ids]
-        result = await library_service.get_files_by_ids(decoded_ids)
+        result = await asyncio.to_thread(library_service.get_files_by_ids, decoded_ids)
         return SearchFilesResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error getting files by IDs")
@@ -112,7 +113,8 @@ async def search_files_by_tag(
     For string values: Returns files with exact match on the tag value.
     """
     try:
-        result = await tagging_service.search_files_by_tag(
+        result = await asyncio.to_thread(
+            tagging_service.search_files_by_tag,
             tag_key=request.tag_key,
             target_value=request.target_value,
             limit=request.limit,
@@ -134,7 +136,7 @@ async def get_unique_tag_keys(
     Returns all distinct tag keys found in the database.
     """
     try:
-        result = await tagging_service.get_unique_tag_keys(nomarr_only=nomarr_only)
+        result = await asyncio.to_thread(tagging_service.get_unique_tag_keys, nomarr_only=nomarr_only)
         return UniqueTagKeysResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error getting unique tag keys")
@@ -152,7 +154,9 @@ async def get_unique_tag_values(
     Returns all distinct values for the given tag key.
     """
     try:
-        result = await tagging_service.get_unique_tag_values(tag_key=tag_key, nomarr_only=nomarr_only)
+        result = await asyncio.to_thread(
+            tagging_service.get_unique_tag_values, tag_key=tag_key, nomarr_only=nomarr_only
+        )
         return UniqueTagKeysResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error getting unique tag values")
@@ -175,7 +179,7 @@ async def get_unique_mood_values(
 
     """
     try:
-        result = await tagging_service.get_unique_mood_values(mood_tier=mood_tier, limit=limit)
+        result = await asyncio.to_thread(tagging_service.get_unique_mood_values, mood_tier=mood_tier, limit=limit)
         return UniqueTagKeysResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error getting unique mood values")
@@ -194,7 +198,7 @@ async def cleanup_orphaned_tags(
     after deleting files or changing tag structures.
     """
     try:
-        result = await tagging_service.cleanup_orphaned_tags(dry_run=dry_run)
+        result = await asyncio.to_thread(tagging_service.cleanup_orphaned_tags, dry_run=dry_run)
         return TagCleanupResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error cleaning up orphaned tags")
@@ -210,7 +214,9 @@ async def get_file_tags(
     """Get all tags for a specific file."""
     decoded_file_id: int = decode_path_id(file_id)
     try:
-        result = await tagging_service.get_file_tags(file_id=decoded_file_id, nomarr_only=nomarr_only)
+        result = await asyncio.to_thread(
+            tagging_service.get_file_tags, file_id=decoded_file_id, nomarr_only=nomarr_only
+        )
         return FileTagsResponse.from_dto(result)
     except ValueError:
         raise HTTPException(status_code=404, detail="File not found") from None
@@ -227,7 +233,7 @@ async def get_errored_files(
     """Get errored files for a library."""
     decoded_library_id: int = decode_path_id(library_id)
     try:
-        result = await library_service.get_errored_files(library_id=decoded_library_id)
+        result = await asyncio.to_thread(library_service.get_errored_files, library_id=decoded_library_id)
         return ErroredFilesResponse(
             files=[
                 ErroredFileItemResponse(
@@ -258,7 +264,9 @@ async def retry_errored_files(
     decoded_library_id: int = decode_path_id(library_id)
     file_ids = [decode_path_id(fid) for fid in request.file_ids] if request and request.file_ids else None
     try:
-        result = await library_service.retry_errored_files(library_id=decoded_library_id, file_ids=file_ids)
+        result = await asyncio.to_thread(
+            library_service.retry_errored_files, library_id=decoded_library_id, file_ids=file_ids
+        )
         return RetryErroredResponse(**result)
     except ValueError:
         raise HTTPException(status_code=404, detail="Library not found") from None

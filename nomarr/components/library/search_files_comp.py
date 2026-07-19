@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-async def search_library_files(
+def search_library_files(
     db: Database,
     query: SearchFilesQuery,
 ) -> tuple[list[dict[str, Any]], int]:
@@ -30,7 +30,7 @@ async def search_library_files(
 
     """
     # Use joined queries for efficient file+tag retrieval
-    return await search_library_files_with_tags(
+    return search_library_files_with_tags(
         db,
         query_text=query.query_text,
         artist=query.artist,
@@ -43,7 +43,7 @@ async def search_library_files(
     )
 
 
-async def get_unique_tag_values(db: Database, tag_key: str, nomarr_only: bool = False) -> list[str]:
+def get_unique_tag_values(db: Database, tag_key: str, nomarr_only: bool = False) -> list[str]:
     """Get list of unique values for a specific tag key (name).
 
     Args:
@@ -56,5 +56,5 @@ async def get_unique_tag_values(db: Database, tag_key: str, nomarr_only: bool = 
 
     """
     # Get all tags for this name (limited to reasonable count)
-    tags = await list_tags_by_name(db, tag_key, limit=10000, sort_by_count=True)
+    tags = list_tags_by_name(db, tag_key, limit=10000, sort_by_count=True)
     return [str(t["value"]) for t in tags]

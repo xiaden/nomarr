@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def register_ml_models_workflow(
+def register_ml_models_workflow(
     db: Database,
     models_dir: str,
 ) -> None:
@@ -80,7 +80,7 @@ async def register_ml_models_workflow(
         # Step 3: Upsert model vertex
         known_outputs = get_known_outputs(model_stem)
         source = "known" if known_outputs is not None else "discovered"
-        model_doc = await upsert_registered_model(
+        model_doc = upsert_registered_model(
             db,
             path=onnx_path,
             backbone=backbone,
@@ -92,7 +92,7 @@ async def register_ml_models_workflow(
         model_id: str = model_doc["id"]
 
         # Step 4: Ensure output vertices exist
-        outputs = await ensure_model_outputs(db, file_id=0, model_id=model_id, output_count=output_count)
+        outputs = ensure_model_outputs(db, file_id=0, model_id=model_id, output_count=output_count)
 
         # Step 5: Seed missing labels for known shipped models
         if known_outputs is not None:
@@ -100,16 +100,16 @@ async def register_ml_models_workflow(
                 output_doc = outputs[output_index]
                 if output_doc.get("fully_labeled", False):
                     continue
-                await update_model_output_label(
+                update_model_output_label(
                     db,
                     file_id=0,
                     model_id=model_id,
                     output_id=output_doc["id"],
                     label=label,
                 )
-            fully_labeled = await list_fully_labeled_model_outputs(db, model_id)
+            fully_labeled = list_fully_labeled_model_outputs(db, model_id)
             if len(fully_labeled) == output_count:
-                await mark_model_fully_configured(db, model_id, value=True)
+                mark_model_fully_configured(db, model_id, value=True)
                 logger.debug(
                     "Model %s: known, %d/%d outputs labeled, fully_configured=True",
                     model_stem,
@@ -124,7 +124,7 @@ async def register_ml_models_workflow(
                     len(fully_labeled),
                     output_count,
                 )
-            await mark_model_known(db, model_id, value=True)
+            mark_model_known(db, model_id, value=True)
         else:
             logger.warning(
                 "Model %s: unknown, %d outputs need labeling via UI",
@@ -134,12 +134,12 @@ async def register_ml_models_workflow(
 
     # Prune stale model vertices — models in DB whose ONNX file no longer exists
     discovered_paths: set[str] = set(onnx_paths)
-    all_registered = await list_registered_models(db)
+    all_registered = list_registered_models(db)
     stale_models = [m for m in all_registered if m["path"] not in discovered_paths]
     for stale in stale_models:
         stale_id: str = stale["id"]
         stale_path: str = stale["path"]
-        prune_result = await prune_registered_model(db, stale_id)
+        prune_result = prune_registered_model(db, stale_id)
         output_ids = cast("list[str]", prune_result["output_ids"])
         edge_count = cast("int", prune_result["tag_model_output_edges_deleted"])
         logger.warning(

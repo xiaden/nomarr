@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 ReconcilePolicy = Literal["mark_invalid", "delete_invalid", "dry_run"]
 
 
-async def reconcile_library_paths(
+def reconcile_library_paths(
     db: Database,
     library_id: int,
     policy: ReconcilePolicy = "mark_invalid",
@@ -30,7 +30,7 @@ async def reconcile_library_paths(
     """Re-validate all library paths against current configuration.
 
     This component scans the songs collection and re-validates each path
-    using await build_library_path_from_db() to check against current config.
+    using build_library_path_from_db() to check against current config.
     Useful after library root changes or library deletions.
 
     Args:
@@ -56,12 +56,12 @@ async def reconcile_library_paths(
         "deleted_files": 0,
         "errors": 0,
     }
-    stats = await get_library_stats(db)
+    stats = get_library_stats(db)
     total_count = stats.get("total_files", 0)
     logger.info(f"[reconcile_library_paths] Found {total_count} files to validate")
     offset = 0
     while True:
-        files, _ = await list_library_files(db, library_id=library_id, limit=batch_size, offset=offset)
+        files, _ = list_library_files(db, library_id=library_id, limit=batch_size, offset=offset)
         if not files:
             break
         logger.debug(f"[reconcile_library_paths] Processing batch at offset {offset} ({len(files)} files)")
@@ -70,17 +70,17 @@ async def reconcile_library_paths(
             file_path = file_record["path"]
             file_library_id = file_record.get("library_id", library_id)
             try:
-                library_path = await build_library_path_from_db(
+                library_path = build_library_path_from_db(
                     stored_path=file_path, db=db, library_id=file_library_id, check_disk=True
                 )
                 if library_path.is_valid():
                     result["valid_files"] += 1
                 elif library_path.status == "invalid_config":
                     result["invalid_config"] += 1
-                    await _handle_invalid_path(db, file_path, library_path, policy, result)
+                    _handle_invalid_path(db, file_path, library_path, policy, result)
                 elif library_path.status == "not_found":
                     result["not_found"] += 1
-                    await _handle_invalid_path(db, file_path, library_path, policy, result)
+                    _handle_invalid_path(db, file_path, library_path, policy, result)
                 elif library_path.status == "unknown":
                     result["unknown_status"] += 1
                     logger.warning(f"[reconcile_library_paths] Unknown status for {file_path}: {library_path.reason}")
@@ -109,7 +109,7 @@ async def reconcile_library_paths(
     return result
 
 
-async def _handle_invalid_path(
+def _handle_invalid_path(
     db: Database, file_path: str, library_path: LibraryPath, policy: ReconcilePolicy, result: ReconcileResult
 ) -> None:
     """Handle an invalid path based on policy.
@@ -130,7 +130,7 @@ async def _handle_invalid_path(
         logger.warning(f"[reconcile_library_paths] Invalid path ({status}): {file_path} - {reason}")
     elif policy == "delete_invalid":
         try:
-            await db.library.remove_file_by_path(file_path)
+            db.library.remove_file_by_path(file_path)
             result["deleted_files"] += 1
             logger.info(f"[reconcile_library_paths] Deleted invalid path ({status}): {file_path} - {reason}")
         except RuntimeError as e:

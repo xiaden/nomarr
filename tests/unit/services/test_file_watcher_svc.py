@@ -7,10 +7,12 @@ Tests verify:
 - Per-library watch modes (event/poll/off)
 """
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+import threading
+import time
+from unittest.mock import MagicMock, patch
 
 import pytest
+from watchdog.observers import Observer
 
 from nomarr.helpers.exceptions import LibraryAlreadyScanningError, LibraryNotFoundError
 from nomarr.services.infrastructure.file_watcher_svc import (
@@ -87,7 +89,7 @@ def mock_library_service():
         def __init__(self):
             self.scan_calls = []
 
-        async def start_quick_scan(self, library_id: int) -> dict[str, str]:
+        def start_quick_scan(self, library_id: int) -> dict[str, str]:
             self.scan_calls.append({"library_id": library_id, "scan_type": "quick"})
             return {"status": "ok"}
 
@@ -205,8 +207,7 @@ class TestLibraryEventHandler:
 class TestThreadSafety:
     """Test thread-safe event handling."""
 
-    @pytest.mark.asyncio
-    async def test_handles_concurrent_events(self, mock_db, mock_library_service):
+    def test_handles_concurrent_events(self, mock_db, mock_library_service):
         """Should handle events from multiple threads safely."""
         watcher = FileWatcherService(
             db=mock_db,
@@ -219,7 +220,7 @@ class TestThreadSafety:
             watcher._on_file_change(1, f"Rock/song{i}.mp3")
 
         # Wait for debounce
-        await asyncio.sleep(0.2)
+        time.sleep(0.2)
 
         # Should have batched all events into a single scan call
         assert len(mock_library_service.scan_calls) == 1
@@ -230,8 +231,7 @@ class TestThreadSafety:
 class TestWatcherLifecycle:
     """Test watcher start/stop lifecycle."""
 
-    @pytest.mark.asyncio
-    async def test_start_watching_library(self, mock_db, mock_library_service, temp_library):
+    def test_start_watching_library(self, mock_db, mock_library_service, temp_library):
         """Should start watching a library (when watch_mode is enabled)."""
         # Set watch_mode to 'event' so watcher actually starts
         mock_db.library.update_library(1, watch_mode="event")
@@ -246,7 +246,7 @@ class TestWatcherLifecycle:
             "nomarr.services.infrastructure.file_watcher_svc.get_library_watch_config",
             side_effect=lambda _db, library_id: _mock_get_library_watch_config(mock_db, library_id),
         ):
-            await watcher.start_watching_library(1)
+            watcher.start_watching_library(1)
 
         # Should have one observer
         assert len(watcher.observers) == 1
@@ -255,8 +255,7 @@ class TestWatcherLifecycle:
         # Cleanup
         watcher.stop_all()
 
-    @pytest.mark.asyncio
-    async def test_stop_watching_library(self, mock_db, mock_library_service, temp_library):
+    def test_stop_watching_library(self, mock_db, mock_library_service, temp_library):
         """Should stop watching a library."""
         # Set watch_mode to 'event' so watcher starts
         mock_db.library.update_library(1, watch_mode="event")
@@ -271,14 +270,13 @@ class TestWatcherLifecycle:
             "nomarr.services.infrastructure.file_watcher_svc.get_library_watch_config",
             side_effect=lambda _db, library_id: _mock_get_library_watch_config(mock_db, library_id),
         ):
-            await watcher.start_watching_library(1)
+            watcher.start_watching_library(1)
         watcher.stop_watching_library(1)
 
         # Should have no observers
         assert len(watcher.observers) == 0
 
-    @pytest.mark.asyncio
-    async def test_stop_all_watchers(self, mock_db, mock_library_service, temp_library):
+    def test_stop_all_watchers(self, mock_db, mock_library_service, temp_library):
         """Should stop all watchers."""
         # Set watch_mode to 'event' so watcher starts
         mock_db.library.update_library(1, watch_mode="event")
@@ -294,15 +292,14 @@ class TestWatcherLifecycle:
             "nomarr.services.infrastructure.file_watcher_svc.get_library_watch_config",
             side_effect=lambda _db, library_id: _mock_get_library_watch_config(mock_db, library_id),
         ):
-            await watcher.start_watching_library(1)
+            watcher.start_watching_library(1)
 
         watcher.stop_all()
 
         # Should have no observers
         assert len(watcher.observers) == 0
 
-    @pytest.mark.asyncio
-    async def test_raises_on_invalid_library(self, mock_library_service):
+    def test_raises_on_invalid_library(self, mock_library_service):
         """Should raise if library not found."""
         mock_db_invalid = MagicMock()
 
@@ -319,14 +316,13 @@ class TestWatcherLifecycle:
             ),
             pytest.raises(ValueError, match="not found"),
         ):
-            await watcher.start_watching_library(9999)
+            watcher.start_watching_library(9999)
 
 
 class TestPerLibraryWatchMode:
     """Test per-library watch mode configuration (off, event, poll)."""
 
-    @pytest.mark.asyncio
-    async def test_default_watch_mode_off_no_watcher_started(self, mock_db, mock_library_service):
+    def test_default_watch_mode_off_no_watcher_started(self, mock_db, mock_library_service):
         """Libraries without watch_mode field should default to 'off' and not start watcher."""
         watcher = FileWatcherService(
             db=mock_db,
@@ -338,13 +334,12 @@ class TestPerLibraryWatchMode:
             "nomarr.services.infrastructure.file_watcher_svc.get_library_watch_config",
             side_effect=lambda _db, library_id: _mock_get_library_watch_config(mock_db, library_id),
         ):
-            await watcher.start_watching_library(1)
+            watcher.start_watching_library(1)
 
         # No observer/task should be created
         assert 1 not in watcher.observers
 
-    @pytest.mark.asyncio
-    async def test_watch_mode_off_no_watcher_started(self, mock_db, mock_library_service):
+    def test_watch_mode_off_no_watcher_started(self, mock_db, mock_library_service):
         """Libraries with watch_mode='off' should not start watcher."""
         # Set library watch_mode to 'off'
         mock_db.library.update_library(1, watch_mode="off")
@@ -358,13 +353,12 @@ class TestPerLibraryWatchMode:
             "nomarr.services.infrastructure.file_watcher_svc.get_library_watch_config",
             side_effect=lambda _db, library_id: _mock_get_library_watch_config(mock_db, library_id),
         ):
-            await watcher.start_watching_library(1)
+            watcher.start_watching_library(1)
 
         # No observer/task should be created
         assert 1 not in watcher.observers
 
-    @pytest.mark.asyncio
-    async def test_watch_mode_event_starts_observer(self, mock_db, mock_library_service, temp_library):
+    def test_watch_mode_event_starts_observer(self, mock_db, mock_library_service, temp_library):
         """Libraries with watch_mode='event' should start watchdog Observer."""
         # Set library watch_mode to 'event'
         mock_db.library.update_library(1, watch_mode="event")
@@ -378,17 +372,16 @@ class TestPerLibraryWatchMode:
             "nomarr.services.infrastructure.file_watcher_svc.get_library_watch_config",
             side_effect=lambda _db, library_id: _mock_get_library_watch_config(mock_db, library_id),
         ):
-            await watcher.start_watching_library(1)
+            watcher.start_watching_library(1)
 
-        # Observer should be created (not an asyncio.Task)
+        # Observer should be created (not a threading.Thread)
         assert 1 in watcher.observers
-        assert not isinstance(watcher.observers[1], asyncio.Task)
+        assert isinstance(watcher.observers[1], Observer)
 
         # Cleanup
         watcher.stop_watching_library(1)
 
-    @pytest.mark.asyncio
-    async def test_watch_mode_poll_starts_task(self, mock_db, mock_library_service):
+    def test_watch_mode_poll_starts_task(self, mock_db, mock_library_service):
         """Libraries with watch_mode='poll' should start polling task."""
         # Set library watch_mode to 'poll'
         mock_db.library.update_library(1, watch_mode="poll")
@@ -403,17 +396,16 @@ class TestPerLibraryWatchMode:
             "nomarr.services.infrastructure.file_watcher_svc.get_library_watch_config",
             side_effect=lambda _db, library_id: _mock_get_library_watch_config(mock_db, library_id),
         ):
-            await watcher.start_watching_library(1)
+            watcher.start_watching_library(1)
 
         # Polling task should be created
         assert 1 in watcher.observers
-        assert isinstance(watcher.observers[1], asyncio.Task)
+        assert isinstance(watcher.observers[1], threading.Thread)
 
         # Cleanup
         watcher.stop_watching_library(1)
 
-    @pytest.mark.asyncio
-    async def test_switch_watch_mode_off_to_event(self, mock_db, mock_library_service, temp_library):
+    def test_switch_watch_mode_off_to_event(self, mock_db, mock_library_service, temp_library):
         """switch_watch_mode should transition from 'off' to 'event'."""
         # Start with watch_mode='off'
         mock_db.library.update_library(1, watch_mode="off")
@@ -433,16 +425,16 @@ class TestPerLibraryWatchMode:
                 "nomarr.services.infrastructure.file_watcher_svc.UpdateLibraryMetadataComp",
             ) as update_library_metadata_comp,
         ):
-            update_library_metadata_comp.return_value.update = AsyncMock(side_effect=mock_db.library.update_library)
-            await watcher.start_watching_library(1)
+            update_library_metadata_comp.return_value.update = MagicMock(side_effect=mock_db.library.update_library)
+            watcher.start_watching_library(1)
             assert 1 not in watcher.observers
 
             # Switch to 'event'
-            await watcher.switch_watch_mode(1, "event")
+            watcher.switch_watch_mode(1, "event")
 
         # Observer should be created
         assert 1 in watcher.observers
-        assert not isinstance(watcher.observers[1], asyncio.Task)
+        assert isinstance(watcher.observers[1], Observer)
 
         # Verify database was updated
         library = mock_db.library.get_library(1)
@@ -451,8 +443,7 @@ class TestPerLibraryWatchMode:
         # Cleanup
         watcher.stop_watching_library(1)
 
-    @pytest.mark.asyncio
-    async def test_switch_watch_mode_event_to_poll(self, mock_db, mock_library_service, temp_library):
+    def test_switch_watch_mode_event_to_poll(self, mock_db, mock_library_service, temp_library):
         """switch_watch_mode should transition from 'event' to 'poll'."""
         # Start with watch_mode='event'
         mock_db.library.update_library(1, watch_mode="event")
@@ -472,19 +463,19 @@ class TestPerLibraryWatchMode:
                 "nomarr.services.infrastructure.file_watcher_svc.UpdateLibraryMetadataComp",
             ) as update_library_metadata_comp,
         ):
-            update_library_metadata_comp.return_value.update = AsyncMock(side_effect=mock_db.library.update_library)
-            await watcher.start_watching_library(1)
+            update_library_metadata_comp.return_value.update = MagicMock(side_effect=mock_db.library.update_library)
+            watcher.start_watching_library(1)
 
             # Verify observer exists
             assert 1 in watcher.observers
-            assert not isinstance(watcher.observers[1], asyncio.Task)
+            assert isinstance(watcher.observers[1], Observer)
 
             # Switch to 'poll'
-            await watcher.switch_watch_mode(1, "poll")
+            watcher.switch_watch_mode(1, "poll")
 
         # Should now be a polling task
         assert 1 in watcher.observers
-        assert isinstance(watcher.observers[1], asyncio.Task)
+        assert isinstance(watcher.observers[1], threading.Thread)
 
         # Verify database was updated
         library = mock_db.library.get_library(1)
@@ -493,8 +484,7 @@ class TestPerLibraryWatchMode:
         # Cleanup
         watcher.stop_watching_library(1)
 
-    @pytest.mark.asyncio
-    async def test_switch_watch_mode_poll_to_off(self, mock_db, mock_library_service):
+    def test_switch_watch_mode_poll_to_off(self, mock_db, mock_library_service):
         """switch_watch_mode should transition from 'poll' to 'off'."""
         # Start with watch_mode='poll'
         mock_db.library.update_library(1, watch_mode="poll")
@@ -514,15 +504,15 @@ class TestPerLibraryWatchMode:
                 "nomarr.services.infrastructure.file_watcher_svc.UpdateLibraryMetadataComp",
             ) as update_library_metadata_comp,
         ):
-            update_library_metadata_comp.return_value.update = AsyncMock(side_effect=mock_db.library.update_library)
-            await watcher.start_watching_library(1)
+            update_library_metadata_comp.return_value.update = MagicMock(side_effect=mock_db.library.update_library)
+            watcher.start_watching_library(1)
 
             # Verify polling task exists
             assert 1 in watcher.observers
-            assert isinstance(watcher.observers[1], asyncio.Task)
+            assert isinstance(watcher.observers[1], threading.Thread)
 
             # Switch to 'off'
-            await watcher.switch_watch_mode(1, "off")
+            watcher.switch_watch_mode(1, "off")
 
         # Should no longer have watcher
         assert 1 not in watcher.observers
@@ -531,8 +521,7 @@ class TestPerLibraryWatchMode:
         library = mock_db.library.get_library(1)
         assert library["watch_mode"] == "off"
 
-    @pytest.mark.asyncio
-    async def test_switch_watch_mode_idempotent(self, mock_db, mock_library_service, temp_library):
+    def test_switch_watch_mode_idempotent(self, mock_db, mock_library_service, temp_library):
         """Switching to same mode multiple times should be idempotent."""
         mock_db.library.update_library(1, watch_mode="event")
 
@@ -551,20 +540,19 @@ class TestPerLibraryWatchMode:
                 "nomarr.services.infrastructure.file_watcher_svc.UpdateLibraryMetadataComp",
             ) as update_library_metadata_comp,
         ):
-            update_library_metadata_comp.return_value.update = AsyncMock(side_effect=mock_db.library.update_library)
-            await watcher.switch_watch_mode(1, "event")
-            await watcher.switch_watch_mode(1, "event")
-            await watcher.switch_watch_mode(1, "event")
+            update_library_metadata_comp.return_value.update = MagicMock(side_effect=mock_db.library.update_library)
+            watcher.switch_watch_mode(1, "event")
+            watcher.switch_watch_mode(1, "event")
+            watcher.switch_watch_mode(1, "event")
 
         # Should only have one observer
         assert 1 in watcher.observers
-        assert not isinstance(watcher.observers[1], asyncio.Task)
+        assert isinstance(watcher.observers[1], Observer)
 
         # Cleanup
         watcher.stop_watching_library(1)
 
-    @pytest.mark.asyncio
-    async def test_switch_watch_mode_invalid_mode_raises(self, mock_db, mock_library_service):
+    def test_switch_watch_mode_invalid_mode_raises(self, mock_db, mock_library_service):
         """switch_watch_mode should raise ValueError for invalid modes."""
         watcher = FileWatcherService(
             db=mock_db,
@@ -572,13 +560,12 @@ class TestPerLibraryWatchMode:
         )
 
         with pytest.raises(ValueError, match="Invalid watch_mode"):
-            await watcher.switch_watch_mode(1, "invalid")
+            watcher.switch_watch_mode(1, "invalid")
 
         with pytest.raises(ValueError, match="Invalid watch_mode"):
-            await watcher.switch_watch_mode(1, "")
+            watcher.switch_watch_mode(1, "")
 
-    @pytest.mark.asyncio
-    async def test_polling_triggers_periodic_scans(self, mock_db, mock_library_service):
+    def test_polling_triggers_periodic_scans(self, mock_db, mock_library_service):
         """Polling mode should trigger full-library scans at intervals."""
         # Set library watch_mode to 'poll'
         mock_db.library.update_library(1, watch_mode="poll")
@@ -594,14 +581,14 @@ class TestPerLibraryWatchMode:
             "nomarr.services.infrastructure.file_watcher_svc.get_library_watch_config",
             side_effect=lambda _db, library_id: _mock_get_library_watch_config(mock_db, library_id),
         ):
-            await watcher.start_watching_library(1)
+            watcher.start_watching_library(1)
 
             # Verify polling task was created
             assert 1 in watcher.observers
-            assert isinstance(watcher.observers[1], asyncio.Task)
+            assert isinstance(watcher.observers[1], threading.Thread)
 
             # Wait for 2-3 poll cycles
-            await asyncio.sleep(0.35)
+            time.sleep(0.35)
 
         # Stop watching (cancels task)
         watcher.stop_watching_library(1)
@@ -615,8 +602,7 @@ class TestPerLibraryWatchMode:
             assert call["library_id"] == 1
             assert call["scan_type"] == "quick"
 
-    @pytest.mark.asyncio
-    async def test_polling_stop_cancels_task(self, mock_db, mock_library_service):
+    def test_polling_stop_cancels_task(self, mock_db, mock_library_service):
         """Stopping polling mode should cancel the polling task."""
         mock_db.library.update_library(1, watch_mode="poll")
 
@@ -630,27 +616,26 @@ class TestPerLibraryWatchMode:
             "nomarr.services.infrastructure.file_watcher_svc.get_library_watch_config",
             side_effect=lambda _db, library_id: _mock_get_library_watch_config(mock_db, library_id),
         ):
-            await watcher.start_watching_library(1)
+            watcher.start_watching_library(1)
 
-            # Get task
-            task = watcher.observers[1]
-            assert isinstance(task, asyncio.Task)
-            assert not task.done()  # type: ignore[union-attr]
+            # Get thread
+            thread = watcher.observers[1]
+            assert isinstance(thread, threading.Thread)
+            assert thread.is_alive()
 
         # Stop watching
         watcher.stop_watching_library(1)
 
-        # Give task a moment to finish cancellation
-        await asyncio.sleep(0.01)
+        # Give thread a moment to finish
+        time.sleep(0.05)
 
-        # Task should be cancelled or done
-        assert task.cancelled() or task.done()  # type: ignore[union-attr]
+        # Thread should no longer be alive
+        assert not thread.is_alive()
 
         # Should no longer be in observers
         assert 1 not in watcher.observers
 
-    @pytest.mark.asyncio
-    async def test_polling_handles_scan_errors(self, mock_db, monkeypatch):
+    def test_polling_handles_scan_errors(self, mock_db, monkeypatch):
         """Polling should continue even if scan fails."""
         mock_db.library.update_library(1, watch_mode="poll")
 
@@ -658,7 +643,7 @@ class TestPerLibraryWatchMode:
             def __init__(self):
                 self.scan_call_count = 0
 
-            async def start_quick_scan(self, library_id: int) -> None:
+            def start_quick_scan(self, library_id: int) -> None:
                 self.scan_call_count += 1
                 raise RuntimeError("Scan failed")
 
@@ -674,10 +659,10 @@ class TestPerLibraryWatchMode:
             "nomarr.services.infrastructure.file_watcher_svc.get_library_watch_config",
             side_effect=lambda _db, library_id: _mock_get_library_watch_config(mock_db, library_id),
         ):
-            await watcher.start_watching_library(1)
+            watcher.start_watching_library(1)
 
             # Wait for 2-3 poll cycles
-            await asyncio.sleep(0.35)
+            time.sleep(0.35)
 
         # Stop watching
         watcher.stop_watching_library(1)
@@ -685,8 +670,7 @@ class TestPerLibraryWatchMode:
         # Should have attempted multiple scans despite errors
         assert failing_service.scan_call_count >= 2
 
-    @pytest.mark.asyncio
-    async def test_stop_all_handles_mixed_modes(self, mock_db, mock_library_service, temp_library):
+    def test_stop_all_handles_mixed_modes(self, mock_db, mock_library_service, temp_library):
         """stop_all() should handle both event and polling modes gracefully."""
         # Create library with event mode
         mock_db.library.update_library(1, watch_mode="event")
@@ -711,8 +695,8 @@ class TestPerLibraryWatchMode:
             "nomarr.services.infrastructure.file_watcher_svc.get_library_watch_config",
             side_effect=lambda _db, library_id: _mock_get_library_watch_config(mock_db, library_id),
         ):
-            await watcher.start_watching_library(1)
-            await watcher.start_watching_library(2)
+            watcher.start_watching_library(1)
+            watcher.start_watching_library(2)
 
         # Verify both exist
         assert 1 in watcher.observers
@@ -728,10 +712,9 @@ class TestPerLibraryWatchMode:
 class TestSyncWatchers:
     """Tests for FileWatcherService.sync_watchers."""
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_sync_watchers_empty_list_no_watchers_started(self) -> None:
+    def test_sync_watchers_empty_list_no_watchers_started(self) -> None:
         """sync_watchers should not start watchers when no libraries are watchable."""
         db = MagicMock()
 
@@ -751,16 +734,15 @@ class TestSyncWatchers:
                 wraps=watcher.start_watching_library,
             ) as start_watching_library,
         ):
-            await watcher.sync_watchers()
+            watcher.sync_watchers()
 
         start_watching_library.assert_not_called()
         assert watcher.observers == {}
         list_watchable_libraries_mock.assert_called_once_with(db)
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_sync_watchers_starts_watchers_for_watchable_libraries(self, tmp_path) -> None:
+    def test_sync_watchers_starts_watchers_for_watchable_libraries(self, tmp_path) -> None:
         """sync_watchers should attempt to start watchers for watchable libraries."""
         library = {
             "id": 1,
@@ -791,17 +773,16 @@ class TestSyncWatchers:
                 wraps=watcher.start_watching_library,
             ) as start_watching_library,
         ):
-            await watcher.sync_watchers()
+            watcher.sync_watchers()
 
         start_watching_library.assert_called_once_with(1)
         list_watchable_libraries_mock.assert_called_once_with(db)
         get_library_watch_config_mock.assert_called_once_with(db, 1)
         assert 1 not in watcher.observers
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_sync_watchers_stops_watcher_for_removed_library(self) -> None:
+    def test_sync_watchers_stops_watcher_for_removed_library(self) -> None:
         """sync_watchers should stop watchers for libraries no longer returned as watchable."""
         db = MagicMock()
         observer = MagicMock()
@@ -816,17 +797,16 @@ class TestSyncWatchers:
             "nomarr.services.infrastructure.file_watcher_svc.list_watchable_libraries",
             return_value=[],
         ) as list_watchable_libraries_mock:
-            await watcher.sync_watchers()
+            watcher.sync_watchers()
 
         observer.stop.assert_called_once_with()
         observer.join.assert_called_once_with(timeout=5.0)
         assert 1 not in watcher.observers
         list_watchable_libraries_mock.assert_called_once_with(db)
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_sync_watchers_skips_already_watched_library(self) -> None:
+    def test_sync_watchers_skips_already_watched_library(self) -> None:
         """sync_watchers should not restart a watcher that is already active."""
         library = {
             "id": 1,
@@ -851,16 +831,15 @@ class TestSyncWatchers:
             ) as list_watchable_libraries_mock,
             patch.object(watcher, "start_watching_library") as start_watching_library,
         ):
-            await watcher.sync_watchers()
+            watcher.sync_watchers()
 
         start_watching_library.assert_not_called()
         assert watcher.observers[1] is observer
         list_watchable_libraries_mock.assert_called_once_with(db)
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_sync_watchers_handles_start_error_gracefully(self, tmp_path) -> None:
+    def test_sync_watchers_handles_start_error_gracefully(self, tmp_path) -> None:
         """sync_watchers should swallow ValueError when a watcher cannot be started."""
         library = {
             "id": 1,
@@ -887,14 +866,13 @@ class TestSyncWatchers:
                 side_effect=ValueError("bad watcher config"),
             ) as start_watching_library,
         ):
-            await watcher.sync_watchers()
+            watcher.sync_watchers()
 
         start_watching_library.assert_called_once_with(1)
         assert watcher.observers == {}
         list_watchable_libraries_mock.assert_called_once_with(db)
 
-    @pytest.mark.asyncio
-    async def test_polling_loop_exits_when_library_deleted(self, mock_db, mock_library_service):
+    def test_polling_loop_exits_when_library_deleted(self, mock_db, mock_library_service):
         """_polling_loop should stop when library no longer exists mid-poll."""
         mock_db.library.update_library(1, watch_mode="poll")
         watcher = FileWatcherService(
@@ -914,13 +892,12 @@ class TestSyncWatchers:
             "nomarr.services.infrastructure.file_watcher_svc.get_library_watch_config",
             side_effect=_get_config,
         ):
-            await watcher.start_watching_library(1)
-            task = watcher.observers[1]
-            await asyncio.sleep(0.25)
-        assert task.done()
+            watcher.start_watching_library(1)
+            thread = watcher.observers[1]
+            time.sleep(0.25)
+        assert not thread.is_alive()
 
-    @pytest.mark.asyncio
-    async def test_polling_loop_exits_when_watch_mode_becomes_off(self, mock_db, mock_library_service):
+    def test_polling_loop_exits_when_watch_mode_becomes_off(self, mock_db, mock_library_service):
         """_polling_loop should stop when watch_mode flips to off mid-poll."""
         mock_db.library.update_library(1, watch_mode="poll")
         watcher = FileWatcherService(
@@ -941,19 +918,18 @@ class TestSyncWatchers:
             "nomarr.services.infrastructure.file_watcher_svc.get_library_watch_config",
             side_effect=_get_config,
         ):
-            await watcher.start_watching_library(1)
-            task = watcher.observers[1]
-            await asyncio.sleep(0.25)
-        assert task.done()
+            watcher.start_watching_library(1)
+            thread = watcher.observers[1]
+            time.sleep(0.25)
+        assert not thread.is_alive()
 
-    @pytest.mark.asyncio
-    async def test_polling_loop_continues_on_library_already_scanning_error(self, mock_db):
+    def test_polling_loop_continues_on_library_already_scanning_error(self, mock_db):
         """_polling_loop should continue (not exit) on LibraryAlreadyScanningError."""
         mock_db.library.update_library(1, watch_mode="poll")
         scan_calls = []
 
         class SelectiveLibraryService:
-            async def start_quick_scan(self, library_id: int) -> None:
+            def start_quick_scan(self, library_id: int) -> None:
                 scan_calls.append(library_id)
                 if len(scan_calls) == 1:
                     raise LibraryAlreadyScanningError("already scanning")
@@ -967,18 +943,17 @@ class TestSyncWatchers:
             "nomarr.services.infrastructure.file_watcher_svc.get_library_watch_config",
             side_effect=lambda _db, library_id: _mock_get_library_watch_config(mock_db, library_id),
         ):
-            await watcher.start_watching_library(1)
-            await asyncio.sleep(0.35)
+            watcher.start_watching_library(1)
+            time.sleep(0.35)
         watcher.stop_watching_library(1)
         assert len(scan_calls) >= 2
 
-    @pytest.mark.asyncio
-    async def test_polling_loop_exits_on_library_not_found_error(self, mock_db):
+    def test_polling_loop_exits_on_library_not_found_error(self, mock_db):
         """_polling_loop should stop when LibraryNotFoundError is raised by scan."""
         mock_db.library.update_library(1, watch_mode="poll")
 
         class MissingLibraryService:
-            async def start_quick_scan(self, library_id: int) -> None:
+            def start_quick_scan(self, library_id: int) -> None:
                 raise LibraryNotFoundError(library_id)
 
         watcher = FileWatcherService(
@@ -990,13 +965,12 @@ class TestSyncWatchers:
             "nomarr.services.infrastructure.file_watcher_svc.get_library_watch_config",
             side_effect=lambda _db, library_id: _mock_get_library_watch_config(mock_db, library_id),
         ):
-            await watcher.start_watching_library(1)
-            task = watcher.observers[1]
-            await asyncio.sleep(0.25)
-        assert task.done()
+            watcher.start_watching_library(1)
+            thread = watcher.observers[1]
+            time.sleep(0.25)
+        assert not thread.is_alive()
 
-    @pytest.mark.asyncio
-    async def test_switch_watch_mode_raises_when_library_not_found(self, mock_db, mock_library_service):
+    def test_switch_watch_mode_raises_when_library_not_found(self, mock_db, mock_library_service):
         """switch_watch_mode should raise ValueError when library does not exist."""
         watcher = FileWatcherService(
             db=mock_db,
@@ -1009,7 +983,7 @@ class TestSyncWatchers:
             ),
             pytest.raises(ValueError, match="not found"),
         ):
-            await watcher.switch_watch_mode(999, "event")
+            watcher.switch_watch_mode(999, "event")
 
 
 if __name__ == "__main__":

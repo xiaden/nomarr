@@ -1,5 +1,6 @@
 """ML management endpoints for web UI."""
 
+import asyncio
 import logging
 from typing import Annotated
 
@@ -48,7 +49,7 @@ async def ml_list_models(
 ) -> list[MlModelResponse]:
     """Return all registered ML model vertices with their configuration status."""
     try:
-        docs = await ml_service.list_all_models()
+        docs = await asyncio.to_thread(ml_service.list_all_models)
         return [MlModelResponse.from_doc(doc) for doc in docs]
     except Exception as e:
         logger.exception("[ml_if] Failed to list models")
@@ -66,7 +67,7 @@ async def ml_get_model_outputs(
     """Return all output activation vertices for a model."""
     decoded_model_id = decode_path_id(model_id)
     try:
-        docs = await ml_service.get_model_outputs(str(decoded_model_id))
+        docs = await asyncio.to_thread(ml_service.get_model_outputs, str(decoded_model_id))
         return [MlModelOutputResponse.from_doc(doc) for doc in docs]
     except Exception as e:
         logger.exception("[ml_if] Failed to get model outputs for %s", model_id)
@@ -93,7 +94,8 @@ async def ml_update_output_label(
     decoded_model_id = decode_path_id(model_id)
     decoded_output_id = decode_path_id(output_id)
     try:
-        await ml_service.update_output_label(
+        await asyncio.to_thread(
+            ml_service.update_output_label,
             model_id=decoded_model_id,
             output_id=decoded_output_id,
             label=body.label,
@@ -123,7 +125,7 @@ async def ml_mark_model_configured(
     """Set the fully_configured flag on a model, enabling or disabling it for inference."""
     decoded_model_id = decode_path_id(model_id)
     try:
-        await ml_service.mark_model_configured(model_id=decoded_model_id, value=body.value)
+        await asyncio.to_thread(ml_service.mark_model_configured, model_id=decoded_model_id, value=body.value)
         return MarkConfiguredResponse(status="updated", fully_configured=str(body.value).lower())
     except Exception as e:
         logger.exception("[ml_if] Failed to mark model configured for %s", model_id)
@@ -149,7 +151,7 @@ async def ml_trigger_vram_probe(
     This endpoint only schedules the re-probe by clearing the existing measurements.
     """
     try:
-        await ml_service.clear_vram_measurements()
+        await asyncio.to_thread(ml_service.clear_vram_measurements)
         return VramProbeResponse(status="probe_scheduled")
     except Exception as e:
         logger.exception("[ml_if] Failed to clear VRAM measurements")
@@ -173,7 +175,7 @@ async def web_work_status(
     Poll at 1s intervals when busy, 30s when idle.
     """
     try:
-        result = await library_service.get_work_status()
+        result = await asyncio.to_thread(library_service.get_work_status)
         return WorkStatusResponse.from_dto(result)
     except Exception as e:
         logger.exception("[ml_if] Failed to get work status")
@@ -194,7 +196,7 @@ async def web_recent_activity(
     Returns files sorted by scanned_at descending.
     """
     try:
-        files = await library_service.get_recently_processed(limit=limit, library_id=library_id)
+        files = await asyncio.to_thread(library_service.get_recently_processed, limit=limit, library_id=library_id)
         return RecentFilesResponse(files=[RecentFileItem(**file_doc) for file_doc in files])
     except Exception as e:
         logger.exception("[ml_if] Failed to get recent activity")

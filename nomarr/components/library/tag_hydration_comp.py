@@ -70,7 +70,7 @@ def extract_canonical_metadata(song_tags: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
-async def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Enrich songs with canonical metadata derived from their tags.
 
     Batch-reads tags for all songs and merges derived metadata into each.
@@ -98,7 +98,7 @@ async def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]])
     if not song_ids:
         return [{**song} for song in songs]
 
-    tags_by_song = await db.library.list_file_tags_for_files(song_ids)
+    tags_by_song = db.library.list_file_tags_for_files(song_ids)
 
     result: list[dict[str, Any]] = []
     for song in songs:
@@ -122,7 +122,7 @@ async def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]])
     return result
 
 
-async def hydrate_song_with_metadata(db: Database, song: dict[str, Any]) -> dict[str, Any]:
+def hydrate_song_with_metadata(db: Database, song: dict[str, Any]) -> dict[str, Any]:
     """Enrich a single song with canonical metadata derived from its tags.
 
     Convenience wrapper around hydrate_songs_with_metadata() for call sites
@@ -137,7 +137,7 @@ async def hydrate_song_with_metadata(db: Database, song: dict[str, Any]) -> dict
         returns a shallow copy unchanged.
 
     """
-    result = await hydrate_songs_with_metadata(db, [song])
+    result = hydrate_songs_with_metadata(db, [song])
     return result[0]
 
 

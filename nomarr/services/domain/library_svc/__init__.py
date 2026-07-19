@@ -69,7 +69,7 @@ class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin, Lib
         Args:
             cfg: Service configuration (namespace, library_root)
             db: Database instance
-            background_tasks: BackgroundTaskService for async scan operations
+            background_tasks: BackgroundTaskService for background scan operations
             file_watcher_service: Optional file watcher service for library lifecycle orchestration
 
         """

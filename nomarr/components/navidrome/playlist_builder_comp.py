@@ -39,7 +39,7 @@ _MS_PER_DAY: float = 86_400_000.0
 # ------------------------------------------------------------------
 
 
-async def _ann_search_cold(
+def _ann_search_cold(
     db: Database,
     backbone_id: str,
     centroid: list[float],
@@ -47,19 +47,19 @@ async def _ann_search_cold(
     fetch_multiplier: int,
 ) -> list[dict[str, Any]] | None:
     """Run ANN search on cold vectors; returns results or ``None`` if empty."""
-    stats = await db.ml.get_embedding_stats(backbone_id)
+    stats = db.ml.get_embedding_stats(backbone_id)
     if stats["cold_count"] == 0:
         return None
 
     fetch_limit = max_songs * fetch_multiplier
-    return await db.ml.search_vectors(  # type: ignore[return-value]
+    return db.ml.search_vectors(  # type: ignore[return-value]
         backbone_id,
         centroid,
         limit=fetch_limit,
     )
 
 
-async def _search_all_clusters(
+def _search_all_clusters(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
     fetch_multiplier: int,
@@ -72,7 +72,7 @@ async def _search_all_clusters(
     all_results: list[dict[str, Any]] = []
     any_searched = False
     for cluster in ctx["clusters"]:
-        raw = await _ann_search_cold(
+        raw = _ann_search_cold(
             db,
             ctx["backbone_id"],
             cluster["centroid"],
@@ -92,7 +92,7 @@ async def _search_all_clusters(
     return all_results
 
 
-async def build_familiar_playlist(
+def build_familiar_playlist(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
@@ -105,7 +105,7 @@ async def build_familiar_playlist(
     if not played:
         return []
 
-    raw_results = await _search_all_clusters(db, ctx, fetch_multiplier=5)
+    raw_results = _search_all_clusters(db, ctx, fetch_multiplier=5)
     if raw_results is None:
         return []
 
@@ -120,14 +120,14 @@ async def build_familiar_playlist(
     ]
 
 
-async def build_discovery_playlist(
+def build_discovery_playlist(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
     """Build a Discovery playlist: ANN search excluding played tracks."""
     played = {int(fid) for fid in ctx["played_file_ids"]}
 
-    raw_results = await _search_all_clusters(db, ctx, fetch_multiplier=2)
+    raw_results = _search_all_clusters(db, ctx, fetch_multiplier=2)
     if raw_results is None:
         return []
 
@@ -142,7 +142,7 @@ async def build_discovery_playlist(
     ]
 
 
-async def build_hidden_gems_playlist(
+def build_hidden_gems_playlist(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
@@ -154,12 +154,12 @@ async def build_hidden_gems_playlist(
     played = {int(fid) for fid in ctx["played_file_ids"]}
 
     known_artists: set[str] = set(
-        await get_distinct_tag_values_for_files(db, [int(fid) for fid in ctx["played_file_ids"]], "artist")
+        get_distinct_tag_values_for_files(db, [int(fid) for fid in ctx["played_file_ids"]], "artist")
     )
     if not known_artists:
         logger.debug("[navidrome] No known artists for hidden gems, falling back to discovery-style")
 
-    raw_results = await _search_all_clusters(db, ctx, fetch_multiplier=3)
+    raw_results = _search_all_clusters(db, ctx, fetch_multiplier=3)
     if raw_results is None:
         return []
 
@@ -167,7 +167,7 @@ async def build_hidden_gems_playlist(
 
     if known_artists:
         candidate_file_ids = [r["file_id"] for r in candidates]
-        candidate_artists = await get_tag_values_grouped_by_file(db, candidate_file_ids, "artist")
+        candidate_artists = get_tag_values_grouped_by_file(db, candidate_file_ids, "artist")
         candidates = [r for r in candidates if not (candidate_artists.get(r["file_id"], set()) & known_artists)]
 
     file_ids = [str(r["file_id"]) for r in candidates][: ctx["max_songs"]]
@@ -181,7 +181,7 @@ async def build_hidden_gems_playlist(
     ]
 
 
-async def build_universal_playlist(
+def build_universal_playlist(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
@@ -190,7 +190,7 @@ async def build_universal_playlist(
     Spreads selections across the result set for variety instead of
     taking the top-N results.
     """
-    raw_results = await _search_all_clusters(db, ctx, fetch_multiplier=3)
+    raw_results = _search_all_clusters(db, ctx, fetch_multiplier=3)
     if raw_results is None:
         return []
 
@@ -210,7 +210,7 @@ async def build_universal_playlist(
     ]
 
 
-async def build_genre_playlists(
+def build_genre_playlists(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
@@ -228,7 +228,7 @@ async def build_genre_playlists(
 
     played_file_ids = ctx["played_file_ids"]
 
-    stats = await db.ml.get_embedding_stats(ctx["backbone_id"])
+    stats = db.ml.get_embedding_stats(ctx["backbone_id"])
     if stats["cold_count"] == 0:
         return []
 
@@ -238,7 +238,7 @@ async def build_genre_playlists(
     # persistence-layer gap tracked in S2 scope.
     vector_map: dict[int, list[float]] = {}
     for fid_str in played_file_ids:
-        results = await db.ml.list_file_vectors(ctx["backbone_id"], int(fid_str))
+        results = db.ml.list_file_vectors(ctx["backbone_id"], int(fid_str))
         for doc in results:
             if doc.get("file_id"):
                 vector_map[doc["file_id"]] = doc["embedding"]  # type: ignore[typeddict-item]
@@ -247,7 +247,7 @@ async def build_genre_playlists(
         return []
 
     # Fetch genre tags for played tracks in one batch
-    file_genres = await get_tag_values_grouped_by_file(db, [int(fid) for fid in played_file_ids], "genre")
+    file_genres = get_tag_values_grouped_by_file(db, [int(fid) for fid in played_file_ids], "genre")
 
     now_ms_val = now_ms().value
     half_life = ctx["half_life_days"]
@@ -296,7 +296,7 @@ async def build_genre_playlists(
         genre_centroid = genre_centroids[genre]
 
         # Genre filtering is not supported in PostgreSQL yet; search without it.
-        raw_results = await db.ml.search_vectors(  # type: ignore[assignment]
+        raw_results = db.ml.search_vectors(  # type: ignore[assignment]
             ctx["backbone_id"],
             genre_centroid,
             limit=fetch_limit,
@@ -323,7 +323,7 @@ async def build_genre_playlists(
     return playlists
 
 
-async def _interleave_per_cluster(
+def _interleave_per_cluster(
     results: dict[str, list[dict[str, Any]]],
     weights: dict[str, float],
     target_size: int,

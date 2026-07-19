@@ -6,7 +6,6 @@ Navidrome config/playlist generation without exposing DB to interfaces.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
@@ -86,7 +85,7 @@ class NavidromeService:
         # when the user changes them via the web UI.
         self._client_creds: tuple[str, str, str] | None = None
 
-    async def preview_tag_stats(self) -> PreviewTagStatsResult:
+    def preview_tag_stats(self) -> PreviewTagStatsResult:
         """Get a preview of available tags for Navidrome config generation.
 
         Returns:
@@ -94,10 +93,10 @@ class NavidromeService:
             counts available for smart playlist construction.
 
         """
-        stats = await preview_tag_stats_workflow(self._db, namespace=self.cfg.namespace)
+        stats = preview_tag_stats_workflow(self._db, namespace=self.cfg.namespace)
         return PreviewTagStatsResult(stats=stats)
 
-    async def get_tag_values(self, name: str) -> list[str]:
+    def get_tag_values(self, name: str) -> list[str]:
         """Get distinct values for a specific tag name.
 
         Args:
@@ -107,10 +106,10 @@ class NavidromeService:
             Sorted list of distinct tag values as strings
 
         """
-        value_counts = await get_tag_value_counts(self._db, name)
+        value_counts = get_tag_value_counts(self._db, name)
         return sorted(str(v) for v in value_counts)
 
-    async def generate_navidrome_config(self) -> str:
+    def generate_navidrome_config(self) -> str:
         """Generate Navidrome config file content.
 
         Produces a Navidrome-compatible configuration snippet that exposes
@@ -120,9 +119,9 @@ class NavidromeService:
             String containing Navidrome configuration (TOML format).
 
         """
-        return await generate_navidrome_config_workflow(self._db, namespace=self.cfg.namespace)
+        return generate_navidrome_config_workflow(self._db, namespace=self.cfg.namespace)
 
-    async def preview_playlist(
+    def preview_playlist(
         self,
         query: str,
         preview_limit: int = 10,
@@ -137,7 +136,7 @@ class NavidromeService:
             PlaylistPreviewResult with track info and query metadata
 
         """
-        return await preview_smart_playlist_workflow(
+        return preview_smart_playlist_workflow(
             db=self._db,
             query=query,
             namespace=self.cfg.namespace,
@@ -207,7 +206,7 @@ class NavidromeService:
         files_generated = generate_template_files()
         return GenerateTemplateFilesResult(files_generated=files_generated)
 
-    async def generate_static_playlist(
+    def generate_static_playlist(
         self,
         file_ids: list[str],
         playlist_name: str = "Vector Search Playlist",
@@ -232,7 +231,7 @@ class NavidromeService:
         """
         m3u_output_path: str = self._config_service.get("m3u_output_path", "")
 
-        return await generate_static_playlist_workflow(
+        return generate_static_playlist_workflow(
             db=self._db,
             file_ids=[int(fid) for fid in file_ids],
             playlist_name=playlist_name,
@@ -350,7 +349,7 @@ class NavidromeService:
     # Similarity search
     # ------------------------------------------------------------------
 
-    async def get_similar_tracks(
+    def get_similar_tracks(
         self,
         seed_descriptor: dict[str, object],
         count: int,
@@ -373,7 +372,7 @@ class NavidromeService:
         group_size: int = self._config_service.get("vector_group_size", 15)
         thoroughness: int = self._config_service.get("vector_search_thoroughness", 10)
 
-        return await find_similar_tracks(
+        return find_similar_tracks(
             seed_descriptor=cast("TrackDescriptor", seed_descriptor),
             count=count,
             backbone_id=backbone_id,
@@ -386,7 +385,7 @@ class NavidromeService:
     # Playlist generation
     # ------------------------------------------------------------------
 
-    async def generate_playlists(
+    def generate_playlists(
         self,
         user_id: str,
         top_plays: list[TrackPlayData],
@@ -438,7 +437,7 @@ class NavidromeService:
             max_clusters if max_clusters is not None else self._config_service.get("pp_max_clusters", 10)
         )
 
-        playlists = await generate_playlists(
+        playlists = generate_playlists(
             db=self._db,
             user_id=user_id,
             top_plays=top_plays,
@@ -464,7 +463,7 @@ class NavidromeService:
 
         return result
 
-    async def resolve_files_to_descriptors(self, file_ids: list[str]) -> dict[str, TrackDescriptor]:
+    def resolve_files_to_descriptors(self, file_ids: list[str]) -> dict[str, TrackDescriptor]:
         """Resolve track references to portable track descriptors.
 
         Used by plugin-backed playlist/recommendation API flows so Nomarr returns
@@ -473,7 +472,7 @@ class NavidromeService:
         if not file_ids:
             return {}
 
-        file_docs = await get_files_by_ids_with_tags(self._db, [int(fid) for fid in file_ids])
+        file_docs = get_files_by_ids_with_tags(self._db, [int(fid) for fid in file_ids])
         descriptors_by_file_id: dict[str, TrackDescriptor] = {}
         for file_doc in file_docs:
             file_id = file_doc.get("id")
@@ -505,4 +504,4 @@ class NavidromeService:
         _, api_user, _ = self._get_api_credentials()
         if not api_user:
             raise MisconfiguredError("navidrome_api_user not configured")
-        return asyncio.run(self.generate_playlists(user_id=api_user, top_plays=top_plays))
+        return self.generate_playlists(user_id=api_user, top_plays=top_plays)

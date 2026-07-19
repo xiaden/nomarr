@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.model_repo_dto import ModelRecord
 from nomarr.helpers.exceptions import DatabaseStateError
@@ -20,7 +21,6 @@ from nomarr.persistence.sql.primitives import delete_by_key, select_by_key
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
-    from sqlalchemy.ext.asyncio import AsyncSession
 
 _T = cast("Table", MlModel.__table__)
 
@@ -53,69 +53,69 @@ def _row_to_dto(row: Row[Any]) -> ModelRecord:
 class ModelRepo:
     """Repository for the ``ml_models`` table."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: scoped_session[Session]) -> None:
         self._session = session
 
     # ── reads ───────────────────────────────────────────────────
 
-    async def get_model(self, model_id: str) -> ModelRecord | None:
+    def get_model(self, model_id: str) -> ModelRecord | None:
         """Fetch a single model by its string primary key."""
-        async with map_persistence_exceptions():
-            row = await select_by_key(_T, model_id, session=self._session)
+        with map_persistence_exceptions():
+            row = select_by_key(_T, model_id, session=self._session)
             return _row_to_dto(row) if row else None
 
-    async def get_model_by_type(self, model_type: str) -> ModelRecord | None:
+    def get_model_by_type(self, model_type: str) -> ModelRecord | None:
         """Fetch a model by its ``model_type`` column.
 
         ``MlModel`` has no ``path`` column; this searches by ``model_type``
         which identifies the model architecture (e.g. ``'onnx_genre_v2'``).
         """
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T).where(_T.c.model_type == model_type)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             row = result.fetchone()
             return _row_to_dto(row) if row else None
 
-    async def list_models(self) -> list[ModelRecord]:
+    def list_models(self) -> list[ModelRecord]:
         """Return all model rows."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [_row_to_dto(r) for r in result.all()]
 
-    async def count_models(self) -> int:
+    def count_models(self) -> int:
         """Return the total number of model rows."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(func.count()).select_from(_T)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return result.scalar() or 0
 
-    async def get_models_by_ids(self, model_ids: list[str]) -> list[ModelRecord]:
+    def get_models_by_ids(self, model_ids: list[str]) -> list[ModelRecord]:
         """Return models whose ``id`` is in *model_ids*."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             if not model_ids:
                 return []
             stmt = select(_T).where(_T.c.id.in_(model_ids))
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [_row_to_dto(r) for r in result.all()]
 
-    async def get_enabled_models(self) -> list[ModelRecord]:
+    def get_enabled_models(self) -> list[ModelRecord]:
         """Return models where ``enabled = 1``."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T).where(_T.c.enabled == 1)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [_row_to_dto(r) for r in result.all()]
 
-    async def get_by_backbone(self, backbone_id: str) -> list[ModelRecord]:
+    def get_by_backbone(self, backbone_id: str) -> list[ModelRecord]:
         """Return models for a given backbone."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T).where(_T.c.backbone_id == backbone_id)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [_row_to_dto(r) for r in result.all()]
 
     # ── writes ──────────────────────────────────────────────────
 
-    async def upsert_model(self, data: dict[str, Any]) -> ModelRecord:
+    def upsert_model(self, data: dict[str, Any]) -> ModelRecord:
         """Insert or update a model row keyed on ``id`` PK.
 
         Uses PostgreSQL ``ON CONFLICT (id) DO UPDATE``.  The ``updated_at``
@@ -127,13 +127,13 @@ class ModelRepo:
         embedder_release_date, registered_at).  Unknown keys are passed
         through to the database verbatim.
         """
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             now = int(time.time())
             data.setdefault("created_at", now)
             data["updated_at"] = now
 
             set_clause = {k: v for k, v in data.items() if k != "id"}
-            async with self._session.begin_nested():
+            with self._session.begin_nested():
                 stmt = (
                     pg_insert(_T)
                     .values(**data)
@@ -143,37 +143,37 @@ class ModelRepo:
                     )
                     .returning(_T)
                 )
-                result = await self._session.execute(stmt)
-            await self._session.commit()
-            row = result.fetchone()
+                result = self._session.execute(stmt)
+                row = result.fetchone()
+            self._session.commit()
             assert row is not None
             return _row_to_dto(row)
 
-    async def update_model(self, model_id: str, fields: dict[str, Any]) -> None:
+    def update_model(self, model_id: str, fields: dict[str, Any]) -> None:
         """Update arbitrary fields on a model row.
 
         Raises ``DatabaseStateError`` if no model with *model_id* exists.
         """
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             fields["updated_at"] = int(time.time())
             stmt = select(_T).where(_T.c.id == model_id)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             existing = result.fetchone()
             if existing is None:
                 msg = f"Model {model_id!r} not found for update"
                 raise DatabaseStateError(msg)
 
-            async with self._session.begin_nested():
+            with self._session.begin_nested():
                 update_stmt = update(_T).where(_T.c.id == model_id).values(**fields)
-                await self._session.execute(update_stmt)
-            await self._session.commit()
+                self._session.execute(update_stmt)
+            self._session.commit()
 
-    async def delete_model(self, model_id: str) -> None:
+    def delete_model(self, model_id: str) -> None:
         """Delete a model row by primary key.
 
         CASCADE handles outputs, calibration, and streams.
         """
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
-                await delete_by_key(_T, model_id, session=self._session)
-            await self._session.commit()
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                delete_by_key(_T, model_id, session=self._session)
+            self._session.commit()

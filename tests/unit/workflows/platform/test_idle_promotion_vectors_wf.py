@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -14,27 +14,27 @@ class TestIdlePromotionVectorsWorkflow:
     """Tests for idle_promotion_vectors_workflow."""
 
     @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
-    async def test_returns_zero_when_no_targets(self, mock_targets: AsyncMock) -> None:
+    def test_returns_zero_when_no_targets(self, mock_targets: MagicMock) -> None:
         """Returns 0 when no hot vector targets exist."""
         from nomarr.workflows.platform.idle_promotion_vectors_wf import (
             idle_promotion_vectors_workflow,
         )
 
         mock_targets.return_value = []
-        db = AsyncMock()
+        db = MagicMock()
 
-        result = await idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
+        result = idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
 
         assert result == 0
 
-    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow", new_callable=AsyncMock)
+    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow", new_callable=MagicMock)
     @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
     @patch(f"{MODULE_UNDER_TEST}.compute_promotion_ef_construction")
-    async def test_promotes_when_lock_acquired(
+    def test_promotes_when_lock_acquired(
         self,
-        mock_nlists: AsyncMock,
-        mock_targets: AsyncMock,
-        mock_workflow: AsyncMock,
+        mock_nlists: MagicMock,
+        mock_targets: MagicMock,
+        mock_workflow: MagicMock,
     ) -> None:
         """Promotes backbones when the distributed lock is successfully acquired."""
         from nomarr.workflows.platform.idle_promotion_vectors_wf import (
@@ -44,7 +44,7 @@ class TestIdlePromotionVectorsWorkflow:
         mock_targets.return_value = ["effnet", "musicnn"]
         mock_nlists.return_value = 100
 
-        db = AsyncMock()
+        db = MagicMock()
 
         with (
             patch(f"{MODULE_UNDER_TEST}.locks_comp.reap_stale_locks") as mock_reap,
@@ -53,7 +53,7 @@ class TestIdlePromotionVectorsWorkflow:
         ):
             mock_acquire.side_effect = [True, True]
 
-            result = await idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
+            result = idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
 
         assert result == 2
         assert mock_workflow.call_count == 2
@@ -69,14 +69,14 @@ class TestIdlePromotionVectorsWorkflow:
             call(db, "vector_promotion", "musicnn", "worker:tag:0"),
         ]
 
-    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow", new_callable=AsyncMock)
+    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow", new_callable=MagicMock)
     @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
     @patch(f"{MODULE_UNDER_TEST}.compute_promotion_ef_construction")
-    async def test_skips_when_lock_not_acquired(
+    def test_skips_when_lock_not_acquired(
         self,
-        mock_nlists: AsyncMock,
-        mock_targets: AsyncMock,
-        mock_workflow: AsyncMock,
+        mock_nlists: MagicMock,
+        mock_targets: MagicMock,
+        mock_workflow: MagicMock,
     ) -> None:
         """Skips promotion when the distributed lock is held elsewhere."""
         from nomarr.workflows.platform.idle_promotion_vectors_wf import (
@@ -86,7 +86,7 @@ class TestIdlePromotionVectorsWorkflow:
         mock_targets.return_value = ["effnet"]
         mock_nlists.return_value = 100
 
-        db = AsyncMock()
+        db = MagicMock()
 
         with (
             patch(f"{MODULE_UNDER_TEST}.locks_comp.reap_stale_locks") as mock_reap,
@@ -96,7 +96,7 @@ class TestIdlePromotionVectorsWorkflow:
             ) as mock_acquire,
             patch(f"{MODULE_UNDER_TEST}.locks_comp.release_distributed_lock") as mock_release,
         ):
-            result = await idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
+            result = idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
 
         assert result == 0
         mock_workflow.assert_not_called()
@@ -104,14 +104,14 @@ class TestIdlePromotionVectorsWorkflow:
         mock_acquire.assert_called_once_with(db, "vector_promotion", "effnet", "worker:tag:0", 1800)
         mock_release.assert_not_called()
 
-    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow", new_callable=AsyncMock)
+    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow", new_callable=MagicMock)
     @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
     @patch(f"{MODULE_UNDER_TEST}.compute_promotion_ef_construction")
-    async def test_releases_lock_on_workflow_failure(
+    def test_releases_lock_on_workflow_failure(
         self,
-        mock_nlists: AsyncMock,
-        mock_targets: AsyncMock,
-        mock_workflow: AsyncMock,
+        mock_nlists: MagicMock,
+        mock_targets: MagicMock,
+        mock_workflow: MagicMock,
     ) -> None:
         """Lock is released even when promote_and_rebuild_workflow raises."""
         from nomarr.workflows.platform.idle_promotion_vectors_wf import (
@@ -122,7 +122,7 @@ class TestIdlePromotionVectorsWorkflow:
         mock_nlists.return_value = 100
         mock_workflow.side_effect = RuntimeError("drain failed")
 
-        db = AsyncMock()
+        db = MagicMock()
 
         with (
             patch(f"{MODULE_UNDER_TEST}.locks_comp.reap_stale_locks") as mock_reap,
@@ -132,21 +132,21 @@ class TestIdlePromotionVectorsWorkflow:
             ) as mock_acquire,
             patch(f"{MODULE_UNDER_TEST}.locks_comp.release_distributed_lock") as mock_release,
         ):
-            result = await idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
+            result = idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
 
         assert result == 0
         mock_reap.assert_called_once_with(db, "worker:tag:0", stale_after_ms=600_000)
         mock_acquire.assert_called_once_with(db, "vector_promotion", "effnet", "worker:tag:0", 1800)
         mock_release.assert_called_once_with(db, "vector_promotion", "effnet", "worker:tag:0")
 
-    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow", new_callable=AsyncMock)
+    @patch(f"{MODULE_UNDER_TEST}.promote_and_rebuild_workflow", new_callable=MagicMock)
     @patch(f"{MODULE_UNDER_TEST}.list_hot_vector_targets")
     @patch(f"{MODULE_UNDER_TEST}.compute_promotion_ef_construction")
-    async def test_reaps_stale_locks(
+    def test_reaps_stale_locks(
         self,
-        mock_nlists: AsyncMock,
-        mock_targets: AsyncMock,
-        mock_workflow: AsyncMock,
+        mock_nlists: MagicMock,
+        mock_targets: MagicMock,
+        mock_workflow: MagicMock,
     ) -> None:
         """Reaps stale locks before attempting the next promotion target."""
         from nomarr.workflows.platform.idle_promotion_vectors_wf import (
@@ -156,7 +156,7 @@ class TestIdlePromotionVectorsWorkflow:
         mock_targets.return_value = ["effnet"]
         mock_nlists.return_value = 100
 
-        db = AsyncMock()
+        db = MagicMock()
 
         with (
             patch(f"{MODULE_UNDER_TEST}.locks_comp.reap_stale_locks") as mock_reap,
@@ -166,7 +166,7 @@ class TestIdlePromotionVectorsWorkflow:
             ) as mock_acquire,
             patch(f"{MODULE_UNDER_TEST}.locks_comp.release_distributed_lock") as mock_release,
         ):
-            result = await idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
+            result = idle_promotion_vectors_workflow(db, "worker:tag:0", "/models")
 
         assert result == 1
         mock_reap.assert_called_once_with(db, "worker:tag:0", stale_after_ms=600_000)

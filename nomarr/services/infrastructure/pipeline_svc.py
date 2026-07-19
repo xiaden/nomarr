@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import threading
 
@@ -81,7 +80,7 @@ class LibraryPipelineService:
         self.tagging_svc = tagging_svc
         self.navidrome_svc = navidrome_svc
 
-    async def recover_stale_states(self) -> dict[str, int]:
+    def recover_stale_states(self) -> dict[str, int]:
         """Recover pipeline states that require missing BTS tasks.
 
         Per-axis recovery:
@@ -101,15 +100,15 @@ class LibraryPipelineService:
         }
 
         # Recover stale scanning
-        scanning_libraries = await get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
+        scanning_libraries = get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
         stale_scanning = [
             library_id
             for library_id in scanning_libraries
             if not self._is_task_running(self._scan_task_id(int(library_id)))
         ]
         for library_id in stale_scanning:
-            await transition_pipeline_axis(self.db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
-            await update_scan_progress(
+            transition_pipeline_axis(self.db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
+            update_scan_progress(
                 self.db,
                 library_id,
                 scan_error="Scan interrupted by server restart",
@@ -120,7 +119,7 @@ class LibraryPipelineService:
 
         # Recover stale calibrating
         if not self._is_task_running(CALIBRATION_GENERATE_TASK_ID):
-            count = await bulk_transition_pipeline_axis(
+            count = bulk_transition_pipeline_axis(
                 self.db,
                 CAL_STATE_FIELD,
                 CAL_IN_PROGRESS,
@@ -131,17 +130,17 @@ class LibraryPipelineService:
                 logger.info("Recovered %s stale calibrating libraries to not_calibrated", count)
 
         # Recover stale writing
-        writing_libraries = await get_libraries_in_axis_state(self.db, WRITE_STATE_FIELD, WRITE_IN_PROGRESS)
+        writing_libraries = get_libraries_in_axis_state(self.db, WRITE_STATE_FIELD, WRITE_IN_PROGRESS)
         for library_id in writing_libraries:
             if self._is_task_running(self._write_task_id(int(library_id))):
                 continue
-            await transition_pipeline_axis(self.db, library_id, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
+            transition_pipeline_axis(self.db, library_id, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
             recovery_counts["writing"] += 1
             logger.info("Recovered stale writing library %s to not_written", library_id)
 
         return recovery_counts
 
-    async def recover_stale_heartbeats(self, timeout_ms: int = 300000) -> int:
+    def recover_stale_heartbeats(self, timeout_ms: int = 300000) -> int:
         """Recover scanning libraries with stale heartbeats.
 
         Args:
@@ -152,12 +151,12 @@ class LibraryPipelineService:
             Number of libraries recovered.
 
         """
-        scanning_libraries = await get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
+        scanning_libraries = get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
         recovered = 0
         for library_id in scanning_libraries:
-            if await is_scan_stale(self.db, int(library_id), timeout_ms):
-                await transition_pipeline_axis(self.db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
-                await update_scan_progress(
+            if is_scan_stale(self.db, int(library_id), timeout_ms):
+                transition_pipeline_axis(self.db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
+                update_scan_progress(
                     self.db,
                     library_id,
                     scan_error="Scan timed out: no heartbeat received",
@@ -169,15 +168,15 @@ class LibraryPipelineService:
                 )
         return recovered
 
-    async def trigger_calibration(self) -> None:
+    def trigger_calibration(self) -> None:
         """Start calibration for libraries in not_calibrated state.
 
         If calibration data already exists in the database the axis is advanced
         directly to ``calibrating`` and apply is dispatched.  Otherwise histogram
         calibration generation is started via ``CalibrationService``.
         """
-        calibration_exists = len(await self.db.ml.list_calibration_states()) > 0
-        calibrating_count = await bulk_transition_pipeline_axis(
+        calibration_exists = len(self.db.ml.list_calibration_states()) > 0
+        calibrating_count = bulk_transition_pipeline_axis(
             self.db,
             CAL_STATE_FIELD,
             CAL_NOT_CALIBRATED,
@@ -201,7 +200,7 @@ class LibraryPipelineService:
         )
         self.calibration_svc.start_histogram_calibration_background()
 
-    async def on_calibration_complete(self) -> None:
+    def on_calibration_complete(self) -> None:
         """Mark calibration axis as complete and dispatch apply.
 
         Transitions all libraries in ``calibrating`` state to ``calibrated``
@@ -210,7 +209,7 @@ class LibraryPipelineService:
         This callback is wired to ``CalibrationService.set_post_generation_hook``
         during startup.
         """
-        count = await bulk_transition_pipeline_axis(
+        count = bulk_transition_pipeline_axis(
             self.db,
             CAL_STATE_FIELD,
             CAL_IN_PROGRESS,
@@ -235,7 +234,7 @@ class LibraryPipelineService:
         task = ManagedTask(
             task_id=CALIBRATION_APPLY_TASK_ID,
             fn=self.tagging_svc._run_apply_calibration,
-            on_complete=lambda: asyncio.run(self.on_apply_complete()),
+            on_complete=lambda: self.on_apply_complete(),
             daemon=False,
         )
         try:
@@ -246,16 +245,16 @@ class LibraryPipelineService:
 
         logger.info("Started calibration apply in background via pipeline service")
 
-    async def on_apply_complete(self) -> None:
+    def on_apply_complete(self) -> None:
         """After calibration apply, check if auto-write should start."""
         # Find libraries that were calibrating and are now calibrated
-        calibrated_libraries = await get_libraries_in_axis_state(self.db, CAL_STATE_FIELD, CAL_COMPLETE)
+        calibrated_libraries = get_libraries_in_axis_state(self.db, CAL_STATE_FIELD, CAL_COMPLETE)
         for library_id in calibrated_libraries:
-            state = await get_pipeline_state(self.db, int(library_id))
+            state = get_pipeline_state(self.db, int(library_id))
             if state.get(WRITE_STATE_FIELD) == WRITE_IN_PROGRESS:
                 continue  # Already writing
 
-            library = await get_library_record(self.db, int(library_id), include_scan=False)
+            library = get_library_record(self.db, int(library_id), include_scan=False)
             if library is None:
                 logger.warning("Library %s was missing during apply completion", library_id)
                 continue
@@ -263,7 +262,7 @@ class LibraryPipelineService:
             library_auto_write = bool(library.get("library_auto_write", False))
             file_write_mode = str(library.get("file_write_mode", "none"))
             if library_auto_write and file_write_mode != "none":
-                await transition_pipeline_axis(self.db, library_id, WRITE_STATE_FIELD, WRITE_IN_PROGRESS)
+                transition_pipeline_axis(self.db, library_id, WRITE_STATE_FIELD, WRITE_IN_PROGRESS)
                 logger.info(
                     "Library %s entering writing stage after calibration apply completion",
                     library_id,
@@ -275,7 +274,7 @@ class LibraryPipelineService:
                     library_id,
                 )
 
-    async def get_pipeline_status(self, library_id: int) -> LibraryPipelineStatusDTO | None:
+    def get_pipeline_status(self, library_id: int) -> LibraryPipelineStatusDTO | None:
         """Return state-aware pipeline status details for a library.
 
         Queries all four pipeline axes (scan, ML, calibration, tag-write) and
@@ -283,29 +282,29 @@ class LibraryPipelineService:
         pending writes).
 
         Args:
-            library_id: Library document ``_id`` (e.g. ``"libraries/lib1"``).
+            library_id: Library database ID.
 
         Returns:
             ``LibraryPipelineStatusDTO`` with per-axis state and optional
             domain counts, or ``None`` if the library does not exist.
 
         """
-        library = await get_library_record(self.db, int(library_id), include_scan=False)
+        library = get_library_record(self.db, int(library_id), include_scan=False)
         if library is None:
             return None
 
-        state = await get_pipeline_state(self.db, int(library_id))
+        state = get_pipeline_state(self.db, int(library_id))
 
         untagged_count: int | None = None
         uncalibrated_count: int | None = None
         pending_write_count: int | None = None
 
         if state.get(ML_STATE_FIELD) == ML_IN_PROGRESS:
-            untagged_count = await count_untagged_files(self.db, int(library_id))
+            untagged_count = count_untagged_files(self.db, int(library_id))
         elif state.get(CAL_STATE_FIELD) in {CAL_NOT_CALIBRATED, CAL_IN_PROGRESS}:
-            uncalibrated_count = len(await get_uncalibrated_tagged_file_ids(self.db, int(library_id)))
+            uncalibrated_count = len(get_uncalibrated_tagged_file_ids(self.db, int(library_id)))
         elif state.get(WRITE_STATE_FIELD) in {WRITE_NOT_WRITTEN, WRITE_IN_PROGRESS}:
-            reconcile_status = await self.tagging_svc.get_reconcile_status(library_id)
+            reconcile_status = self.tagging_svc.get_reconcile_status(library_id)
             pending_write_count = int(reconcile_status["pending_count"])
 
         return LibraryPipelineStatusDTO(
@@ -328,7 +327,7 @@ class LibraryPipelineService:
             task_id = self.tagging_svc.start_write_tags_background(
                 library_id,
                 stop_event,
-                on_complete=lambda: asyncio.run(self.on_write_complete(library_id)),
+                on_complete=lambda: self.on_write_complete(library_id),
             )
         except ValueError:
             logger.warning("Write-tags task already running for library %s", library_id)
@@ -350,9 +349,9 @@ class LibraryPipelineService:
         """React to auto-write being disabled for a library."""
         self.stop_write(library_id)
 
-    async def on_write_complete(self, library_id: int) -> None:
+    def on_write_complete(self, library_id: int) -> None:
         """Mark tag_write axis as complete and trigger Navidrome rescan."""
-        await transition_pipeline_axis(self.db, int(library_id), WRITE_STATE_FIELD, WRITE_COMPLETE)
+        transition_pipeline_axis(self.db, int(library_id), WRITE_STATE_FIELD, WRITE_COMPLETE)
         logger.info("Library %s tag_write axis transitioned to written", library_id)
         rescan_triggered = self.navidrome_svc.trigger_rescan()
         logger.info(

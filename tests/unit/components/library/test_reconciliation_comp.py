@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -26,22 +26,22 @@ class TestClaimFilesForReconciliation:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_empty_list_when_no_stale_files(self) -> None:
-        mock_db = AsyncMock()
+    def test_returns_empty_list_when_no_stale_files(self) -> None:
+        mock_db = MagicMock()
 
         with patch(
             "nomarr.components.library.reconciliation_comp.get_stale_file_ids",
             return_value=[],
         ):
-            result = await claim_files_for_reconciliation(mock_db, "libraries/test", "workers/test")
+            result = claim_files_for_reconciliation(mock_db, "libraries/test", "workers/test")
 
         assert result == []
         mock_db.library.get_file.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_claims_available_file_successfully(self) -> None:
-        mock_db = AsyncMock()
+    def test_claims_available_file_successfully(self) -> None:
+        mock_db = MagicMock()
         candidate = {"id": 123}
         mock_db.library.get_file.return_value = candidate
 
@@ -56,11 +56,11 @@ class TestClaimFilesForReconciliation:
             ),
             patch(
                 "nomarr.components.library.reconciliation_comp.try_insert_or_steal_claim",
-                new_callable=AsyncMock,
+                new_callable=MagicMock,
                 return_value=True,
             ) as mock_try_claim,
         ):
-            result = await claim_files_for_reconciliation(mock_db, 1, "workers/test")
+            result = claim_files_for_reconciliation(mock_db, 1, "workers/test")
 
         assert result == [candidate]
         mock_db.library.get_file.assert_called_once_with(123)
@@ -75,8 +75,8 @@ class TestClaimFilesForReconciliation:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_respects_batch_size_limit(self) -> None:
-        mock_db = AsyncMock()
+    def test_respects_batch_size_limit(self) -> None:
+        mock_db = MagicMock()
         stale_ids = [100, 101, 102, 103, 104]
         candidates = [{"id": file_id} for file_id in stale_ids]
         mock_db.library.get_file.side_effect = candidates
@@ -92,11 +92,11 @@ class TestClaimFilesForReconciliation:
             ),
             patch(
                 "nomarr.components.library.reconciliation_comp.try_insert_or_steal_claim",
-                new_callable=AsyncMock,
+                new_callable=MagicMock,
                 return_value=True,
             ) as mock_try_claim,
         ):
-            result = await claim_files_for_reconciliation(
+            result = claim_files_for_reconciliation(
                 mock_db,
                 1,
                 "workers/test",
@@ -115,8 +115,8 @@ class TestClaimFilesForReconciliation:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_skips_already_claimed_active_file(self) -> None:
-        mock_db = AsyncMock()
+    def test_skips_already_claimed_active_file(self) -> None:
+        mock_db = MagicMock()
         candidate = {"id": 123}
         mock_db.library.get_file.return_value = candidate
 
@@ -131,11 +131,11 @@ class TestClaimFilesForReconciliation:
             ),
             patch(
                 "nomarr.components.library.reconciliation_comp.try_insert_or_steal_claim",
-                new_callable=AsyncMock,
+                new_callable=MagicMock,
                 return_value=False,
             ) as mock_try_claim,
         ):
-            result = await claim_files_for_reconciliation(
+            result = claim_files_for_reconciliation(
                 mock_db,
                 1,
                 "workers/test",
@@ -159,8 +159,8 @@ class TestClaimFilesForReconciliation:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_reclaims_expired_lease(self) -> None:
-        mock_db = AsyncMock()
+    def test_reclaims_expired_lease(self) -> None:
+        mock_db = MagicMock()
         candidate = {"id": 123}
         mock_db.library.get_file.return_value = candidate
 
@@ -175,11 +175,11 @@ class TestClaimFilesForReconciliation:
             ),
             patch(
                 "nomarr.components.library.reconciliation_comp.try_insert_or_steal_claim",
-                new_callable=AsyncMock,
+                new_callable=MagicMock,
                 return_value=True,
             ) as mock_try_claim,
         ):
-            result = await claim_files_for_reconciliation(
+            result = claim_files_for_reconciliation(
                 mock_db,
                 1,
                 "workers/test",
@@ -207,11 +207,11 @@ class TestSetFileWritten:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_normalizes_bare_key_to_full_id(self) -> None:
-        mock_db = AsyncMock()
+    def test_normalizes_bare_key_to_full_id(self) -> None:
+        mock_db = MagicMock()
 
         with patch("nomarr.components.library.reconciliation_comp.transition_file_state") as mock_transition:
-            await set_file_written(mock_db, 123)
+            set_file_written(mock_db, 123)
 
         first_transition = mock_transition.call_args_list[0].args
         assert first_transition == (
@@ -224,11 +224,11 @@ class TestSetFileWritten:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_normalizes_full_id_unchanged(self) -> None:
-        mock_db = AsyncMock()
+    def test_normalizes_full_id_unchanged(self) -> None:
+        mock_db = MagicMock()
 
         with patch("nomarr.components.library.reconciliation_comp.transition_file_state") as mock_transition:
-            await set_file_written(mock_db, 123)
+            set_file_written(mock_db, 123)
 
         for transition_call in mock_transition.call_args_list:
             assert transition_call.args[1] == [123]
@@ -236,11 +236,11 @@ class TestSetFileWritten:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_transitions_tag_state_edges(self) -> None:
-        mock_db = AsyncMock()
+    def test_transitions_tag_state_edges(self) -> None:
+        mock_db = MagicMock()
 
         with patch("nomarr.components.library.reconciliation_comp.transition_file_state") as mock_transition:
-            await set_file_written(mock_db, 123)
+            set_file_written(mock_db, 123)
 
         assert mock_transition.call_count == 2
         first_transition = mock_transition.call_args_list[0].args
@@ -260,11 +260,11 @@ class TestSetFileWritten:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_releases_claim_via_app_api(self) -> None:
-        mock_db = AsyncMock()
+    def test_releases_claim_via_app_api(self) -> None:
+        mock_db = MagicMock()
 
         with patch("nomarr.components.library.reconciliation_comp.transition_file_state"):
-            await set_file_written(mock_db, 123)
+            set_file_written(mock_db, 123)
 
         mock_db.app.release_claim.assert_called_once_with(123)
 
@@ -274,19 +274,19 @@ class TestReleaseClaim:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_normalizes_bare_key_and_releases_claim_via_app_api(self) -> None:
-        mock_db = AsyncMock()
+    def test_normalizes_bare_key_and_releases_claim_via_app_api(self) -> None:
+        mock_db = MagicMock()
 
-        await release_claim(mock_db, 123)
+        release_claim(mock_db, 123)
 
         mock_db.app.release_claim.assert_called_once_with(123)
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_does_not_change_state_edges(self) -> None:
-        mock_db = AsyncMock()
+    def test_does_not_change_state_edges(self) -> None:
+        mock_db = MagicMock()
 
-        await release_claim(mock_db, 123)
+        release_claim(mock_db, 123)
 
         mock_db.file_states.transition.assert_not_called()
 
@@ -296,8 +296,8 @@ class TestCountFilesNeedingReconciliation:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_count_of_stale_file_ids(self) -> None:
-        mock_db = AsyncMock()
+    def test_returns_count_of_stale_file_ids(self) -> None:
+        mock_db = MagicMock()
 
         with patch(
             "nomarr.components.library.reconciliation_comp.get_stale_file_ids",
@@ -307,19 +307,19 @@ class TestCountFilesNeedingReconciliation:
                 102,
             ],
         ):
-            result = await count_files_needing_reconciliation(mock_db, 1)
+            result = count_files_needing_reconciliation(mock_db, 1)
 
         assert result == 3
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_zero_when_no_stale_files(self) -> None:
-        mock_db = AsyncMock()
+    def test_returns_zero_when_no_stale_files(self) -> None:
+        mock_db = MagicMock()
 
         with patch(
             "nomarr.components.library.reconciliation_comp.get_stale_file_ids",
             return_value=[],
         ):
-            result = await count_files_needing_reconciliation(mock_db, 1)
+            result = count_files_needing_reconciliation(mock_db, 1)
 
         assert result == 0

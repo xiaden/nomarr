@@ -16,13 +16,12 @@ ml_model_outputs) via the ``Database`` facade.
 
 Usage:
     .venv/Scripts/python.exe scripts/diagnostics/head_calibration_audit.py
-    .venv/Scripts/python.exe scripts/diagnostics/head_calibration_audit.py --db-url postgresql+asyncpg://user:pass@host:5432/nomarr
+    .venv/Scripts/python.exe scripts/diagnostics/head_calibration_audit.py --db-url postgresql+psycopg2://user:pass@host:5432/nomarr
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 import logging
 from collections import defaultdict
 
@@ -33,7 +32,7 @@ from nomarr.persistence.db import Database
 
 # ── defaults ────────────────────────────────────────────────────────────────
 
-DEFAULT_DB_URL = "postgresql+asyncpg://nomarr:nomarr@localhost:5432/nomarr"
+DEFAULT_DB_URL = "postgresql+psycopg2://nomarr:nomarr@localhost:5432/nomarr"
 
 # Stability thresholds — must match tagging_aggregation_comp.py DEFAULT_STABILITY_THRESHOLDS
 GATE_ACCEPTABLE = 0.25
@@ -48,7 +47,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--db-url",
         default=DEFAULT_DB_URL,
-        help="PostgreSQL connection URL (asyncpg driver).  Default: %(default)s",
+        help="PostgreSQL connection URL (psycopg2 driver).  Default: %(default)s",
     )
     p.add_argument(
         "--verbose",
@@ -221,7 +220,7 @@ def exponent_sweep(raw_stds: np.ndarray, scale: float) -> dict[float, float]:
 # ── tag tier reporting ──────────────────────────────────────────────────────
 
 
-async def _fetch_tier_counts(db: Database) -> dict[str, int]:
+def _fetch_tier_counts(db: Database) -> dict[str, int]:
     """Count tags per tier level in the ``tags`` table.
 
     Returns a dict like ``{"strict": N, "regular": N, "loose": N, "other": N}``.
@@ -241,14 +240,13 @@ async def _fetch_tier_counts(db: Database) -> dict[str, int]:
     counts: dict[str, int] = {"strict": 0, "regular": 0, "loose": 0, "other": 0}
     tier_labels = {1: "strict", 2: "regular", 3: "loose"}
 
-    # Use the Database's session-maker to create a session for raw SQL.
-    async with db._pg_session() as session:
-        result = await session.execute(stmt)
-        for row in result.all():
-            tier_int = row[0]
-            cnt = int(row[1])
-            key = tier_labels.get(tier_int, "other")
-            counts[key] += cnt
+    session = db._scoped
+    result = session.execute(stmt)
+    for row in result.all():
+        tier_int = row[0]
+        cnt = int(row[1])
+        key = tier_labels.get(tier_int, "other")
+        counts[key] += cnt
 
     return counts
 
@@ -256,7 +254,7 @@ async def _fetch_tier_counts(db: Database) -> dict[str, int]:
 # ── main ─────────────────────────────────────────────────────────────────────
 
 
-async def main() -> None:
+def main() -> None:
     args = parse_args()
     logging.getLogger("head_calibration_audit")
     logging.basicConfig(level=logging.WARNING)  # keep DB chatter quiet
@@ -265,13 +263,13 @@ async def main() -> None:
 
     try:
         # ── 0. Tag tier counts ──────────────────────────────────────────
-        await _fetch_tier_counts(db)
+        _fetch_tier_counts(db)
         if not args.quiet:
             for _tier_name in ("strict", "regular", "loose", "other"):
                 pass
 
         # ── 1. Calibration states ───────────────────────────────────────
-        states = await db.ml.list_all_calibration_states_with_models()
+        states = db.ml.list_all_calibration_states_with_models()
         if not states:
             return
 
@@ -299,7 +297,7 @@ async def main() -> None:
             seg_means: list[float] = []
             seg_stds: list[float] = []
             if model_id:
-                outputs = await db.ml.list_model_outputs(model_id)
+                outputs = db.ml.list_model_outputs(model_id)
                 for out in outputs:
                     od = out.get("output_data", {})
                     if not isinstance(od, dict):
@@ -369,7 +367,7 @@ async def main() -> None:
         _print_summary(report_lines, head_groups)
 
     finally:
-        await db.close()
+        db.close()
 
 
 def _print_state_report(
@@ -425,4 +423,4 @@ def _print_summary(
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

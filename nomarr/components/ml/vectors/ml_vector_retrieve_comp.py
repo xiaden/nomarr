@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def get_cold_track_vector(
+def get_cold_track_vector(
     db: Database,
     file_id: int,
     backbone_id: str,
@@ -34,7 +34,7 @@ async def get_cold_track_vector(
         or ``None`` if no promoted vector exists.
 
     """
-    stats = await db.ml.get_embedding_stats(backbone_id)
+    stats = db.ml.get_embedding_stats(backbone_id)
     cold_count = stats.get("cold_count", 0)
     if cold_count is None or int(cold_count) <= 0:
         logger.debug(
@@ -43,13 +43,13 @@ async def get_cold_track_vector(
         )
         return None
 
-    results = await db.ml.list_file_vectors(backbone_id, file_id)
+    results = db.ml.list_file_vectors(backbone_id, file_id)
     if results:
         return results[0]  # type: ignore[return-value]
     return None
 
 
-async def search_similar_cold_track_vectors(
+def search_similar_cold_track_vectors(
     db: Database,
     backbone_id: str,
     seed_vector: list[float],
@@ -80,7 +80,7 @@ async def search_similar_cold_track_vectors(
         the promoted cold collection contains no documents.
 
     """
-    stats = await db.ml.get_embedding_stats(backbone_id)
+    stats = db.ml.get_embedding_stats(backbone_id)
     if stats.get("cold_count", 0) <= 0:
         logger.debug(
             "Skipping ANN search because cold collection is empty for backbone=%s",
@@ -88,7 +88,7 @@ async def search_similar_cold_track_vectors(
         )
         return []
 
-    return await db.ml.search_vectors(  # type: ignore[return-value]
+    return db.ml.search_vectors(  # type: ignore[return-value]
         backbone_id,
         seed_vector,
         limit=result_limit,

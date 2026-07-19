@@ -10,6 +10,7 @@ import time
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, select
+from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.output_repo_dto import ModelOutputRecord, OutputStreamRecord
 from nomarr.persistence.models.ml_model_output import MlModelOutput
@@ -23,7 +24,6 @@ from nomarr.persistence.sql.primitives import (
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
-    from sqlalchemy.ext.asyncio import AsyncSession
 
 _T_OUTPUT = cast("Table", MlModelOutput.__table__)
 _T_STREAM = cast("Table", MlOutputStream.__table__)
@@ -60,12 +60,12 @@ def _row_to_stream_record(row: Row[Any]) -> OutputStreamRecord:
 class OutputRepo:
     """Repository for the ``ml_model_outputs`` and ``ml_output_streams`` tables."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: scoped_session[Session]) -> None:
         self._session = session
 
     # ── model outputs ───────────────────────────────────────────
 
-    async def store_model_output(
+    def store_model_output(
         self,
         file_id: int,
         model_id: str,
@@ -79,10 +79,10 @@ class OutputRepo:
         Optional *output_index*, *label*, and *fully_labeled* parameters
         mirror all extended model output columns.
         """
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
                 now = int(time.time())
-                row = await insert_one(
+                row = insert_one(
                     _T_OUTPUT,
                     {
                         "file_id": file_id,
@@ -95,62 +95,62 @@ class OutputRepo:
                     },
                     session=self._session,
                 )
-            await self._session.commit()
+            self._session.commit()
             return _row_to_output_record(row)
 
-    async def get_output(self, output_id: int) -> ModelOutputRecord | None:
+    def get_output(self, output_id: int) -> ModelOutputRecord | None:
         """Fetch a single model output by primary key."""
-        async with map_persistence_exceptions():
-            row = await select_by_key(_T_OUTPUT, output_id, session=self._session)
+        with map_persistence_exceptions():
+            row = select_by_key(_T_OUTPUT, output_id, session=self._session)
             return _row_to_output_record(row) if row else None
 
-    async def get_outputs_for_file(self, file_id: int) -> list[ModelOutputRecord]:
+    def get_outputs_for_file(self, file_id: int) -> list[ModelOutputRecord]:
         """Return all model outputs for a given file."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T_OUTPUT).where(_T_OUTPUT.c.file_id == file_id)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [_row_to_output_record(r) for r in result.all()]
 
-    async def list_model_outputs(self, model_id: str) -> list[ModelOutputRecord]:
+    def list_model_outputs(self, model_id: str) -> list[ModelOutputRecord]:
         """Return all model outputs for a given model."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T_OUTPUT).where(_T_OUTPUT.c.model_id == model_id)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [_row_to_output_record(r) for r in result.all()]
 
-    async def delete_outputs_for_model(self, model_id: str) -> int:
+    def delete_outputs_for_model(self, model_id: str) -> int:
         """Delete all model outputs for a given model.  Returns count deleted."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
                 stmt = delete(_T_OUTPUT).where(_T_OUTPUT.c.model_id == model_id)
-                result = await self._session.execute(stmt)
-            await self._session.commit()
+                result = self._session.execute(stmt)
+            self._session.commit()
             return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult.rowcount is int at runtime
 
-    async def delete_outputs_for_file(self, file_id: int) -> int:
+    def delete_outputs_for_file(self, file_id: int) -> int:
         """Delete all model outputs for a given file.  Returns count deleted."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
                 stmt = delete(_T_OUTPUT).where(_T_OUTPUT.c.file_id == file_id)
-                result = await self._session.execute(stmt)
-            await self._session.commit()
+                result = self._session.execute(stmt)
+            self._session.commit()
             return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult.rowcount is int at runtime
 
-    async def delete_output(self, output_id: int) -> None:
+    def delete_output(self, output_id: int) -> None:
         """Delete a single model output by primary key."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
-                await delete_by_key(_T_OUTPUT, output_id, session=self._session)
-            await self._session.commit()
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                delete_by_key(_T_OUTPUT, output_id, session=self._session)
+            self._session.commit()
 
     # ── output streams ──────────────────────────────────────────
 
-    async def store_output_stream(self, file_id: int, model_id: str, status: str) -> OutputStreamRecord:
+    def store_output_stream(self, file_id: int, model_id: str, status: str) -> OutputStreamRecord:
         """Insert an output stream row and return it."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
                 now = int(time.time())
-                row = await insert_one(
+                row = insert_one(
                     _T_STREAM,
                     {
                         "file_id": file_id,
@@ -160,5 +160,5 @@ class OutputRepo:
                     },
                     session=self._session,
                 )
-            await self._session.commit()
+            self._session.commit()
             return _row_to_stream_record(row)

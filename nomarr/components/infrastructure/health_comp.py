@@ -27,16 +27,16 @@ class HealthComp:
     def __init__(self, db: Database) -> None:
         self.db = db
 
-    async def get_all_workers(self) -> list[HealthRow]:
+    def get_all_workers(self) -> list[HealthRow]:
         """Get all registered workers from health monitoring.
 
         Returns:
             List of worker health records
 
         """
-        return await self.db.app.list_worker_health()
+        return self.db.app.list_worker_health()
 
-    async def get_component(self, component: str) -> HealthRow | None:
+    def get_component(self, component: str) -> HealthRow | None:
         """Get health status for a specific component.
 
         Args:
@@ -46,20 +46,20 @@ class HealthComp:
             Health record or None if not found
 
         """
-        return await self.db.app.get_health(component)
+        return self.db.app.get_health(component)
 
 
-async def get_all_workers(db: Database) -> list[HealthRow]:
+def get_all_workers(db: Database) -> list[HealthRow]:
     """Get all registered workers from health monitoring.
 
     Canonical function entry point per COMPONENTS.md conventions.
     """
-    return await db.app.list_worker_health()
+    return db.app.list_worker_health()
 
 
-async def get_component(db: Database, component: str) -> HealthRow | None:
+def get_component(db: Database, component: str) -> HealthRow | None:
     """Get health status for a specific component.
 
     Canonical function entry point per COMPONENTS.md conventions.
     """
-    return await db.app.get_health(component)
+    return db.app.get_health(component)

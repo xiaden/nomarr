@@ -37,7 +37,7 @@ IDLE_SLEEP_S = 1.0
 MAX_CONSECUTIVE_ERRORS = 10
 
 
-async def _process_file(db: Database, file_id: int) -> None:
+def _process_file(db: Database, file_id: int) -> None:
     """Extract tags for one file and transition it to hydrated.
 
     Steps:
@@ -62,14 +62,14 @@ async def _process_file(db: Database, file_id: int) -> None:
     from nomarr.components.metadata.entity_seeding_comp import seed_entities_for_scan_batch
     from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
 
-    file_doc = await db.library.get_file(file_id)
+    file_doc = db.library.get_file(file_id)
     if file_doc is None:
         msg = f"File not found: {file_id}"
         raise ValueError(msg)
     path: str = str(file_doc["path"])
     namespace: str = str(file_doc.get("namespace", "nom"))
 
-    library_path = await build_library_path_from_input(path, db)
+    library_path = build_library_path_from_input(path, db)
     if not library_path.is_valid():
         msg = f"Invalid library path for {file_id}: {library_path.reason}"
         raise ValueError(msg)
@@ -84,17 +84,17 @@ async def _process_file(db: Database, file_id: int) -> None:
             (f"{namespace}:{name}" if not name.startswith(f"{namespace}:") else name): values
             for name, values in parsed_nom_tags.items()
         }
-        await save_file_tags(db, str(file_id), prefixed)
+        save_file_tags(db, str(file_id), prefixed)
 
     # Seed entity graph (artist, album, genre etc.)
-    await seed_entities_for_scan_batch(db, [str(file_id)], {str(file_id): metadata})
+    seed_entities_for_scan_batch(db, [str(file_id)], {str(file_id): metadata})
 
     # Update duration_seconds on the track record if not already set
     duration = metadata.get("duration")
     if duration is not None and not file_doc.get("duration_seconds"):
-        await db.library.update_file_fields(file_id, {"duration_seconds": duration})
+        db.library.update_file_fields(file_id, {"duration_seconds": duration})
 
-    await transition_file_state(db, [file_id], STATE_NOT_HYDRATED, STATE_HYDRATED)
+    transition_file_state(db, [file_id], STATE_NOT_HYDRATED, STATE_HYDRATED)
 
 
 class TagExtractionWorker(threading.Thread):
@@ -128,30 +128,24 @@ class TagExtractionWorker(threading.Thread):
 
     def run(self) -> None:
         """Worker main loop: discover → process, repeat."""
-        import asyncio
-
-        asyncio.run(self._async_run())
-
-    async def _async_run(self) -> None:
-        """Async implementation of the worker main loop."""
         logger.info("[%s] Tag extraction worker started", self._worker_id)
         consecutive_errors = 0
 
         while not self._stop_event.is_set():
-            file_doc = await discover_next_file_needing_tags(self._db, exclude_claimed=False)
+            file_doc = discover_next_file_needing_tags(self._db, exclude_claimed=False)
             if file_doc is None:
                 self._stop_event.wait(IDLE_SLEEP_S)
                 continue
             file_id: int = int(file_doc["id"])
 
             try:
-                await _process_file(self._db, file_id)
+                _process_file(self._db, file_id)
                 consecutive_errors = 0
                 logger.debug("[%s] Extracted tags for %s", self._worker_id, file_id)
             except Exception:
                 logger.exception("[%s] Error extracting tags for %s", self._worker_id, file_id)
                 try:
-                    await transition_file_state(self._db, [file_id], STATE_NOT_ERRORED, STATE_ERRORED)
+                    transition_file_state(self._db, [file_id], STATE_NOT_ERRORED, STATE_ERRORED)
                 except Exception:
                     logger.exception("[%s] Failed to set error state for %s", self._worker_id, file_id)
                 consecutive_errors += 1

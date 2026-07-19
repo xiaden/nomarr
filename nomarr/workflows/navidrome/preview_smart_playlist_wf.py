@@ -28,7 +28,7 @@ from nomarr.workflows.navidrome.parse_smart_playlist_query_wf import (
 )
 
 
-async def preview_smart_playlist_workflow(
+def preview_smart_playlist_workflow(
     db: Database,
     query: str,
     *,
@@ -58,13 +58,13 @@ async def preview_smart_playlist_workflow(
     playlist_filter = parse_smart_playlist_query(query, namespace)
 
     # Execute filter to get matching file IDs
-    file_ids = await execute_smart_playlist_filter(db, playlist_filter)
+    file_ids = execute_smart_playlist_filter(db, playlist_filter)
 
     # Count total matches
     total_count = len(file_ids)
 
     # Fetch sample tracks (limit already validated at API layer: 1-100)
-    sample_tracks = await get_tracks_by_file_ids(
+    sample_tracks = get_tracks_by_file_ids(
         db,
         file_ids=file_ids,
         order_by=None,  # Random order for preview

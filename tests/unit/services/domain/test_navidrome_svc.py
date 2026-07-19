@@ -43,8 +43,7 @@ def _playlist_entry() -> dict[str, object]:
 class TestNavidromeServiceGeneratePlaylists:
     """Tests for ``NavidromeService.generate_playlists``."""
 
-    @pytest.mark.asyncio
-    async def test_generate_playlists_reads_pp_keys_not_playlist_keys(self) -> None:
+    def test_generate_playlists_reads_pp_keys_not_playlist_keys(self) -> None:
         """Service should read the current ``pp_*`` config keys only."""
         config_values = {
             # library_key removed per ADR-036
@@ -68,7 +67,7 @@ class TestNavidromeServiceGeneratePlaylists:
             "nomarr.services.domain.navidrome_svc.generate_playlists",
             return_value=[_playlist_entry()],
         ):
-            await service.generate_playlists("user-1", top_plays=[])
+            service.generate_playlists("user-1", top_plays=[])
 
         called_keys = [call.args[0] for call in config_service.get.call_args_list]
         assert called_keys == [
@@ -90,8 +89,7 @@ class TestNavidromeServiceGeneratePlaylists:
         assert "vector_backbone_id" not in called_keys
         assert not any(key.startswith("playlist_") for key in called_keys)
 
-    @pytest.mark.asyncio
-    async def test_generate_playlists_derives_enabled_types_from_type_flags(self) -> None:
+    def test_generate_playlists_derives_enabled_types_from_type_flags(self) -> None:
         """Boolean ``pp_type_*`` flags should drive the workflow enabled-types list."""
         service, _ = _make_service(
             {
@@ -108,7 +106,7 @@ class TestNavidromeServiceGeneratePlaylists:
             "nomarr.services.domain.navidrome_svc.generate_playlists",
             return_value=[_playlist_entry()],
         ) as mock_generate:
-            await service.generate_playlists("user-1", top_plays=[])
+            service.generate_playlists("user-1", top_plays=[])
 
         assert mock_generate.call_args.kwargs["enabled_types"] == [
             "familiar",
@@ -116,8 +114,7 @@ class TestNavidromeServiceGeneratePlaylists:
             "universal",
         ]
 
-    @pytest.mark.asyncio
-    async def test_generate_playlists_returns_result_dto(self) -> None:
+    def test_generate_playlists_returns_result_dto(self) -> None:
         """Successful service call should return the typed result DTO."""
         service, _ = _make_service({"library_key": "lib-main"})
 
@@ -125,15 +122,14 @@ class TestNavidromeServiceGeneratePlaylists:
             "nomarr.services.domain.navidrome_svc.generate_playlists",
             return_value=[_playlist_entry()],
         ):
-            result = await service.generate_playlists("user-1", top_plays=[])
+            result = service.generate_playlists("user-1", top_plays=[])
 
         assert isinstance(result, NavidromeGeneratePlaylistsResult)
         assert result.status == "ok"
         assert result.message == ""
         assert result.playlists == [_playlist_entry()]
 
-    @pytest.mark.asyncio
-    async def test_generate_playlists_returns_no_data_when_workflow_returns_empty(self) -> None:
+    def test_generate_playlists_returns_no_data_when_workflow_returns_empty(self) -> None:
         """Empty workflow results should map to the no-data DTO variant."""
         service, _ = _make_service({"library_key": "lib-main"})
 
@@ -141,15 +137,14 @@ class TestNavidromeServiceGeneratePlaylists:
             "nomarr.services.domain.navidrome_svc.generate_playlists",
             return_value=[],
         ):
-            result = await service.generate_playlists("user-1", top_plays=[])
+            result = service.generate_playlists("user-1", top_plays=[])
 
         assert isinstance(result, NavidromeGeneratePlaylistsResult)
         assert result.status == "no_data"
         assert result.message == "No taste profile or no playlists generated"
         assert result.playlists == []
 
-    @pytest.mark.asyncio
-    async def test_generate_playlists_caps_max_genre_playlists_at_25(self) -> None:
+    def test_generate_playlists_caps_max_genre_playlists_at_25(self) -> None:
         """Explicit overrides above the endpoint ceiling should be clamped before workflow dispatch."""
         service, _ = _make_service({"library_key": "lib-main"})
 
@@ -157,7 +152,7 @@ class TestNavidromeServiceGeneratePlaylists:
             "nomarr.services.domain.navidrome_svc.generate_playlists",
             return_value=[_playlist_entry()],
         ) as mock_generate:
-            await service.generate_playlists("user-1", top_plays=[], max_genre_playlists=30)
+            service.generate_playlists("user-1", top_plays=[], max_genre_playlists=30)
 
         assert mock_generate.call_args.kwargs["max_genre_playlists"] == 25
 
@@ -167,8 +162,7 @@ class TestNavidromeServiceGeneratePlaylists:
 class TestNavidromeServiceDescriptorResolution:
     """Tests for ``NavidromeService.resolve_files_to_descriptors``."""
 
-    @pytest.mark.asyncio
-    async def test_resolve_files_to_descriptors_returns_descriptor_map(self) -> None:
+    def test_resolve_files_to_descriptors_returns_descriptor_map(self) -> None:
         service, _ = _make_service()
 
         with (
@@ -191,7 +185,7 @@ class TestNavidromeServiceDescriptorResolution:
                 },
             ) as mock_build,
         ):
-            descriptors = await service.resolve_files_to_descriptors([1])
+            descriptors = service.resolve_files_to_descriptors([1])
 
         assert descriptors == {
             "1": {
@@ -209,20 +203,18 @@ class TestNavidromeServiceDescriptorResolution:
         mock_get_files.assert_called_once_with(service._db, [1])
         mock_build.assert_called_once()
 
-    @pytest.mark.asyncio
-    async def test_resolve_files_to_descriptors_ignores_docs_without_id(self) -> None:
+    def test_resolve_files_to_descriptors_ignores_docs_without_id(self) -> None:
         service, _ = _make_service()
 
         with patch(
             "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
             return_value=[{"_key": "missing-id"}],
         ):
-            descriptors = await service.resolve_files_to_descriptors([1])
+            descriptors = service.resolve_files_to_descriptors([1])
 
         assert descriptors == {}
 
-    @pytest.mark.asyncio
-    async def test_resolve_files_to_descriptors_propagates_query_errors(self) -> None:
+    def test_resolve_files_to_descriptors_propagates_query_errors(self) -> None:
         service, _ = _make_service()
 
         with (
@@ -232,10 +224,9 @@ class TestNavidromeServiceDescriptorResolution:
             ),
             pytest.raises(RuntimeError, match="query failed"),
         ):
-            await service.resolve_files_to_descriptors([1])
+            service.resolve_files_to_descriptors([1])
 
-    @pytest.mark.asyncio
-    async def test_resolve_files_to_descriptors_propagates_build_errors(self) -> None:
+    def test_resolve_files_to_descriptors_propagates_build_errors(self) -> None:
         service, _ = _make_service()
 
         with (
@@ -249,7 +240,7 @@ class TestNavidromeServiceDescriptorResolution:
             ),
             pytest.raises(ValueError, match="bad descriptor"),
         ):
-            await service.resolve_files_to_descriptors([1])
+            service.resolve_files_to_descriptors([1])
 
 
 @pytest.mark.unit

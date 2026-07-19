@@ -11,8 +11,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import anyio
-
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 from nomarr.helpers.files_helper import is_audio_file
 from nomarr.helpers.time_helper import now_ms
@@ -34,7 +32,7 @@ class FileBatchResult:
     edge_bootstraps: list[dict[str, Any]] = field(default_factory=list)  # Post-upsert edge creation metadata
 
 
-async def scan_folder_files(
+def scan_folder_files(
     folder_path: Path,
     folder_rel_path: str,
     library_root: Path,
@@ -74,7 +72,7 @@ async def scan_folder_files(
         files = [
             os.path.join(str(folder_path), f)
             for f in filenames
-            if is_audio_file(f) and await anyio.to_thread.run_sync(os.path.isfile, os.path.join(str(folder_path), f))
+            if is_audio_file(f) and os.path.isfile(os.path.join(str(folder_path), f))
         ]
     except OSError as e:
         logger.exception(f"Cannot read folder {folder_path}: {e}")
@@ -91,7 +89,7 @@ async def scan_folder_files(
     for file_path in files:
         try:
             # Validate path
-            library_path = await build_library_path_from_input(file_path, db)
+            library_path = build_library_path_from_input(file_path, db)
             if not library_path.is_valid():
                 warnings.append(f"Invalid path: {file_path} - {library_path.reason}")
                 stats["files_failed"] += 1

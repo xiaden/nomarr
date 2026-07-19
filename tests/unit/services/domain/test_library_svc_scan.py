@@ -27,10 +27,9 @@ def _make_service(*, background_tasks: MagicMock | None = None) -> LibraryServic
 class TestScanDispatch:
     """Tests for ManagedTask-backed scan dispatch methods."""
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_start_quick_scan_registers_managed_task(self) -> None:
+    def test_start_quick_scan_registers_managed_task(self) -> None:
         """Quick scan should register a ManagedTask with the expected task id."""
         mock_bts = MagicMock()
         service = _make_service(background_tasks=mock_bts)
@@ -41,7 +40,7 @@ class TestScanDispatch:
                 "nomarr.services.domain.library_svc.scan.on_scan_complete_pipeline_hook",
             ) as mock_on_complete_hook,
         ):
-            result = await service.start_quick_scan(1)
+            result = service.start_quick_scan(1)
 
             mock_scan_setup.assert_called_once_with(service.db, 1, scan_type="quick")
             mock_bts.start_task.assert_called_once()
@@ -53,10 +52,9 @@ class TestScanDispatch:
             mock_on_complete_hook.assert_called_once_with(service.db, 1)
         assert result.job_ids == ["scan_library_1"]
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_start_full_scan_registers_managed_task(self) -> None:
+    def test_start_full_scan_registers_managed_task(self) -> None:
         """Full scan should register a ManagedTask with the expected task id."""
         mock_bts = MagicMock()
         service = _make_service(background_tasks=mock_bts)
@@ -67,7 +65,7 @@ class TestScanDispatch:
                 "nomarr.services.domain.library_svc.scan.on_scan_complete_pipeline_hook",
             ) as mock_on_complete_hook,
         ):
-            result = await service.start_full_scan(1)
+            result = service.start_full_scan(1)
 
             mock_scan_setup.assert_called_once_with(service.db, 1, scan_type="full")
             mock_bts.start_task.assert_called_once()
@@ -83,20 +81,18 @@ class TestScanDispatch:
 class TestScanStateQueries:
     """Tests for scan-status reads derived from pipeline state."""
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_get_status_aggregate_returns_configured(self) -> None:
+    def test_get_status_aggregate_returns_configured(self) -> None:
         """Aggregate status should return configured=True when library root is set."""
         service = _make_service()
-        result = await service.get_status()
+        result = service.get_status()
 
         assert result.configured is True
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_get_status_library_scan_status_reflects_pipeline_state(self) -> None:
+    def test_get_status_library_scan_status_reflects_pipeline_state(self) -> None:
         """Per-library scan_status should come from pipeline state."""
         service = _make_service()
         scan_state = {
@@ -122,14 +118,13 @@ class TestScanStateQueries:
                 },
             ),
         ):
-            result = await service.get_status(1)
+            result = service.get_status(1)
 
         assert result.scan_status == "scanning"
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_get_status_library_idle_pipeline_state_returns_idle_scan_status(self) -> None:
+    def test_get_status_library_idle_pipeline_state_returns_idle_scan_status(self) -> None:
         """Per-library scan_status should be idle when pipeline state is idle."""
         service = _make_service()
         scan_state = {
@@ -155,14 +150,13 @@ class TestScanStateQueries:
                 },
             ),
         ):
-            result = await service.get_status(1)
+            result = service.get_status(1)
 
         assert result.scan_status == "idle"
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_get_status_returns_unconfigured_when_library_root_is_none(self) -> None:
+    def test_get_status_returns_unconfigured_when_library_root_is_none(self) -> None:
         service = LibraryService(
             cfg=LibraryServiceConfig(
                 models_dir="models",
@@ -174,16 +168,15 @@ class TestScanStateQueries:
             background_tasks=MagicMock(),
         )
 
-        result = await service.get_status()
+        result = service.get_status()
 
         assert result.configured is False
 
 
 class TestGetScanHistory:
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_get_scan_history_delegates_to_component_with_limit(self) -> None:
+    def test_get_scan_history_delegates_to_component_with_limit(self) -> None:
         service = _make_service()
         expected = [
             {
@@ -197,32 +190,30 @@ class TestGetScanHistory:
             "nomarr.services.domain.library_svc.scan.get_library_scan_histories",
             return_value=expected,
         ) as mock_get_library_scan_histories:
-            result = await service.get_scan_history(limit=5)
+            result = service.get_scan_history(limit=5)
 
         mock_get_library_scan_histories.assert_called_once_with(service.db, limit=5)
         assert result == expected
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_get_scan_history_uses_default_limit_of_100(self) -> None:
+    def test_get_scan_history_uses_default_limit_of_100(self) -> None:
         service = _make_service()
 
         with patch(
             "nomarr.services.domain.library_svc.scan.get_library_scan_histories",
             return_value=[],
         ) as mock_get_library_scan_histories:
-            result = await service.get_scan_history()
+            result = service.get_scan_history()
 
         mock_get_library_scan_histories.assert_called_once_with(service.db, limit=100)
         assert result == []
 
 
 class TestValidateLibraryTags:
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_validate_library_tags_calls_resolve_then_workflow(self) -> None:
+    def test_validate_library_tags_calls_resolve_then_workflow(self) -> None:
         service = _make_service()
         library_id = 1
         expected = {
@@ -240,7 +231,7 @@ class TestValidateLibraryTags:
                 return_value=expected,
             ) as mock_validate_library_tags_workflow,
         ):
-            result = await service.validate_library_tags(library_id)
+            result = service.validate_library_tags(library_id)
 
         mock_resolve_library_for_scan.assert_called_once_with(service.db, library_id)
         mock_validate_library_tags_workflow.assert_called_once_with(
@@ -252,10 +243,9 @@ class TestValidateLibraryTags:
         )
         assert result == expected
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_validate_library_tags_propagates_library_not_found(self) -> None:
+    def test_validate_library_tags_propagates_library_not_found(self) -> None:
         service = _make_service()
         library_id = 999
 
@@ -269,7 +259,7 @@ class TestValidateLibraryTags:
             ) as mock_validate_library_tags_workflow,
             pytest.raises(ValueError, match="not found"),
         ):
-            await service.validate_library_tags(library_id)
+            service.validate_library_tags(library_id)
 
         mock_resolve_library_for_scan.assert_called_once_with(service.db, library_id)
         mock_validate_library_tags_workflow.assert_not_called()

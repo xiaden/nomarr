@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def validate_library_tags_workflow(
+def validate_library_tags_workflow(
     db: Database,
     models_dir: str,
     library_id: int | None = None,
@@ -30,7 +30,7 @@ async def validate_library_tags_workflow(
     the namespace.  Missing any head name marks the file incomplete.  Auto-repair
     removes the ``written`` edge so the file is rediscovered for tag writing.
     """
-    heads = await discover_heads(models_dir, db)
+    heads = discover_heads(models_dir, db)
     expected_heads: list[dict[str, Any]] = []
     for head in heads:
         model_key = head.backbone
@@ -56,7 +56,7 @@ async def validate_library_tags_workflow(
 
     namespace_prefix = f"{namespace}:"
 
-    results = await get_files_with_incomplete_tags(
+    results = get_files_with_incomplete_tags(
         db,
         expected_heads=expected_heads,
         namespace_prefix=namespace_prefix,
@@ -72,7 +72,7 @@ async def validate_library_tags_workflow(
     repaired = 0
     if auto_repair and incomplete:
         file_ids = [row["file_id"] for row in incomplete]
-        await transition_file_state(db, file_ids, STATE_WRITTEN, STATE_NOT_WRITTEN)
+        transition_file_state(db, file_ids, STATE_WRITTEN, STATE_NOT_WRITTEN)
         repaired = len(incomplete)
 
     return {

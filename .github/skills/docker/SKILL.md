@@ -122,7 +122,7 @@ Copy-Item docker/nomarr-postgres.env.example .devcontainer/nomarr-postgres.dev.e
 
 Then edit `.devcontainer/nomarr.dev.env`:
 ```
-DATABASE_URL=postgresql+asyncpg://nomarr:nomarr_dev_password@nomarr-postgres:5432/nomarr  # service name on the compose network — do NOT use localhost
+DATABASE_URL=postgresql+psycopg2://nomarr:nomarr_dev_password@nomarr-postgres:5432/nomarr  # service name on the compose network — do NOT use localhost
 ```
 
 Edit `.devcontainer/nomarr-postgres.dev.env`:

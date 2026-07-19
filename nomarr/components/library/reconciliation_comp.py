@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-async def claim_files_for_reconciliation(
+def claim_files_for_reconciliation(
     db: Database,
     library_id: int,
     worker_id: str,
@@ -43,14 +43,14 @@ async def claim_files_for_reconciliation(
         worker.
 
     """
-    stale_ids = await get_stale_file_ids(db, library_id=library_id)
+    stale_ids = get_stale_file_ids(db, library_id=library_id)
     if not stale_ids:
         return []
 
     candidates = [
         candidate
         for file_id in stale_ids
-        if (candidate := cast("dict[str, Any] | None", await db.library.get_file(file_id))) is not None
+        if (candidate := cast("dict[str, Any] | None", db.library.get_file(file_id))) is not None
     ]
 
     claimed: list[dict[str, Any]] = []
@@ -70,32 +70,32 @@ async def claim_files_for_reconciliation(
             "claim_type": "reconcile",
         }
 
-        if await try_insert_or_steal_claim(db, payload, now, lease_ms):
+        if try_insert_or_steal_claim(db, payload, now, lease_ms):
             claimed.append(candidate)
 
     return claimed
 
 
-async def set_file_written(db: Database, file_key: str) -> None:
+def set_file_written(db: Database, file_key: str) -> None:
     """Advance processing state transitions after a successful tag write.
 
     PostgreSQL uses integer IDs; file_key is the string representation of the ID.
     """
     file_id = int(file_key)
-    await transition_file_state(db, [file_id], STATE_NOT_WRITTEN, STATE_WRITTEN)
-    await transition_file_state(db, [file_id], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
-    await db.app.release_claim(file_id)
+    transition_file_state(db, [file_id], STATE_NOT_WRITTEN, STATE_WRITTEN)
+    transition_file_state(db, [file_id], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
+    db.app.release_claim(file_id)
 
 
-async def release_claim(db: Database, file_key: str) -> None:
+def release_claim(db: Database, file_key: str) -> None:
     """Release a reconciliation claim without changing projection state.
 
     PostgreSQL uses integer IDs; file_key is the string representation of the ID.
     """
     file_id = int(file_key)
-    await db.app.release_claim(file_id)
+    db.app.release_claim(file_id)
 
 
-async def count_files_needing_reconciliation(db: Database, library_id: int) -> int:
+def count_files_needing_reconciliation(db: Database, library_id: int) -> int:
     """Count files that are still in the ``tags_not_fresh`` state."""
-    return len(await get_stale_file_ids(db, library_id=library_id))
+    return len(get_stale_file_ids(db, library_id=library_id))

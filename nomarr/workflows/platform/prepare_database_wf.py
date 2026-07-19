@@ -51,7 +51,7 @@ def _run_alembic_upgrade() -> None:
     logger.info("Alembic migrations completed successfully")
 
 
-async def prepare_database_workflow(
+def prepare_database_workflow(
     db: Database,
     *,
     models_dir: str | None = None,
@@ -80,10 +80,10 @@ async def prepare_database_workflow(
     try:
         from nomarr.workflows.platform.prune_orphaned_files_wf import prune_orphaned_files_workflow
 
-        await prune_orphaned_files_workflow(db)
+        prune_orphaned_files_workflow(db)
     except Exception as exc:
         logger.warning("Orphaned file pruning failed (non-fatal): %s", exc, exc_info=True)
 
     # Step 3: Register ML models and seed known labels
     if models_dir is not None:
-        await register_ml_models_workflow(db, models_dir)
+        register_ml_models_workflow(db, models_dir)

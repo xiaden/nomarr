@@ -215,7 +215,7 @@ def get_default_histogram_spec(head_name: str) -> dict[str, Any]:
     return {"lo": 0.0, "hi": 1.0, "bins": 10000}
 
 
-async def get_sparse_histogram(
+def get_sparse_histogram(
     db: Database,
     *,
     model_id: str,
@@ -241,7 +241,7 @@ async def get_sparse_histogram(
         metadata is incomplete.
 
     """
-    model_doc = await db.ml.get_model(model_id)
+    model_doc = db.ml.get_model(model_id)
     if model_doc is None:
         return []
 
@@ -255,7 +255,7 @@ async def get_sparse_histogram(
     max_bin = bins - 1
 
     matching_names: list[str] = []
-    all_names = await db.library.list_all_tag_names(limit=10000)
+    all_names = db.library.list_all_tag_names(limit=10000)
     for name in all_names:
         if not isinstance(name, str) or not name.startswith("nom:"):
             continue
@@ -270,7 +270,7 @@ async def get_sparse_histogram(
 
     _raw_bins: dict[int, int] = {}
     for tag_name in sorted(matching_names):
-        tag_docs = await db.library.list_tags_by_name(name=tag_name, limit=50000)
+        tag_docs = db.library.list_tags_by_name(name=tag_name, limit=50000)
         for tag_doc in tag_docs:
             raw_value = tag_doc.get("value")
             if raw_value is None:
@@ -360,7 +360,7 @@ def derive_percentiles_from_sparse_histogram(
     }
 
 
-async def generate_calibration_from_histogram(
+def generate_calibration_from_histogram(
     db: Database,
     model_id: str,
     head_name: str,
@@ -387,7 +387,7 @@ async def generate_calibration_from_histogram(
 
     """
     bin_width = (hi - lo) / bins
-    sparse_bins = await get_sparse_histogram(db, model_id=model_id, label=label, lo=lo, hi=hi, bins=bins)
+    sparse_bins = get_sparse_histogram(db, model_id=model_id, label=label, lo=lo, hi=hi, bins=bins)
     if not sparse_bins:
         logger.warning(f"[calibration] No data for {model_id}:{head_name}:{label}")
         return {"p5": lo, "p95": hi, "n": 0, "underflow_count": 0, "overflow_count": 0, "histogram_bins": []}
@@ -407,7 +407,7 @@ async def generate_calibration_from_histogram(
     return result
 
 
-async def export_calibration_state_to_json(db: Database, output_path: str) -> dict[str, Any]:
+def export_calibration_state_to_json(db: Database, output_path: str) -> dict[str, Any]:
     """Export all calibration_state rows to a single JSON file.
 
     Exports the full calibration state table for backup or distribution.
@@ -428,8 +428,8 @@ async def export_calibration_state_to_json(db: Database, output_path: str) -> di
 
     """
     logger.info(f"[calibration] Exporting calibration_state to {output_path}")
-    calibrations = await db.ml.list_calibration_states()
-    all_models = await db.ml.list_models()
+    calibrations = db.ml.list_calibration_states()
+    all_models = db.ml.list_models()
     model_lookup: dict[str, ModelRecord] = {m["id"]: m for m in all_models}
 
     export_data = []
@@ -452,14 +452,14 @@ async def export_calibration_state_to_json(db: Database, output_path: str) -> di
         }
         export_data.append(export_doc)
 
-    with open(output_path, "w", encoding="utf-8") as f:  # noqa: ASYNC230
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump({"version": 2, "format": "nomarr_calibration_state", "calibrations": export_data}, f, indent=2)
 
     logger.info(f"[calibration] Exported {len(export_data)} calibrations to {output_path}")
     return {"calibrations_exported": len(export_data), "path": output_path}
 
 
-async def import_calibration_state_from_json(db: Database, input_path: str, overwrite: bool = False) -> dict[str, Any]:
+def import_calibration_state_from_json(db: Database, input_path: str, overwrite: bool = False) -> dict[str, Any]:
     """Import calibration_state documents from a JSON file.
 
     Imports calibrations exported by export_calibration_state_to_json().
@@ -480,7 +480,7 @@ async def import_calibration_state_from_json(db: Database, input_path: str, over
 
     """
     logger.info(f"[calibration] Importing calibration_state from {input_path}")
-    with open(input_path, encoding="utf-8") as f:  # noqa: ASYNC230
+    with open(input_path, encoding="utf-8") as f:
         data = json.load(f)
 
     if not isinstance(data, dict) or data.get("format") != "nomarr_calibration_state":
@@ -493,7 +493,7 @@ async def import_calibration_state_from_json(db: Database, input_path: str, over
         raise ValueError(msg)
 
     # Build model lookup cache: (backbone, embedder_release_date) -> model_id
-    all_models = await db.ml.list_models()
+    all_models = db.ml.list_models()
     model_lookup: dict[tuple[str, str], str] = {}
     for model in all_models:
         key = (model.get("backbone", ""), model.get("embedder_release_date", ""))
@@ -520,7 +520,7 @@ async def import_calibration_state_from_json(db: Database, input_path: str, over
                 continue
 
             # Check if calibration already exists
-            existing = await db.ml.get_calibration_state_view(head_name, label)
+            existing = db.ml.get_calibration_state_view(head_name, label)
             calibration_def_hash = calib.get("calibration_def_hash", "")
             if (
                 existing
@@ -543,7 +543,7 @@ async def import_calibration_state_from_json(db: Database, input_path: str, over
                 "overflow_count": calib.get("overflow_count", 0),
                 "histogram_bins": calib.get("histogram_bins"),
             }
-            await db.ml.replace_calibration_state(model_id, key="", payload=state_data)
+            db.ml.replace_calibration_state(model_id, key="", payload=state_data)
             logger.info(f"[calibration] Imported {head_name}:{label}")
             imported_count += 1
 

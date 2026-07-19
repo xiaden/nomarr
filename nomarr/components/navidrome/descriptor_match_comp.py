@@ -81,31 +81,31 @@ def build_track_descriptor(file_doc: dict[str, Any]) -> TrackDescriptor:
     return _descriptor_from_doc(file_doc)
 
 
-async def _search_candidate_docs(db: Database, field_name: str, value: str) -> list[dict[str, Any]]:
-    return cast("list[dict[str, Any]]", await db.library.search_files_by_tag_pattern(field_name, value))
+def _search_candidate_docs(db: Database, field_name: str, value: str) -> list[dict[str, Any]]:
+    return cast("list[dict[str, Any]]", db.library.search_files_by_tag_pattern(field_name, value))
 
 
-async def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
+def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
     title = seed.get("title", "")
     if title:
-        title_docs = await _search_candidate_docs(db, "title", title)
+        title_docs = _search_candidate_docs(db, "title", title)
         return {file_id for doc in title_docs if isinstance((file_id := doc.get("id")), str)}
 
     artist = seed.get("artist", "")
     if artist:
-        artist_docs = cast("list[dict[str, Any]]", await db.library.search_files_by_tag("artist", artist, limit=None))
+        artist_docs = cast("list[dict[str, Any]]", db.library.search_files_by_tag("artist", artist, limit=None))
         return {file_id for doc in artist_docs if isinstance((file_id := doc.get("id")), str)}
 
     return set()
 
 
-async def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tuple[str | None, str]:
+def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tuple[str | None, str]:
     """Resolve a portable seed descriptor to one Nomarr track record."""
-    candidate_ids = await _candidate_file_ids(db, seed)
+    candidate_ids = _candidate_file_ids(db, seed)
     if not candidate_ids:
         return None, "descriptor_unresolved"
 
-    docs = await get_files_by_ids_with_tags(db, [int(cid) for cid in sorted(candidate_ids)])
+    docs = get_files_by_ids_with_tags(db, [int(cid) for cid in sorted(candidate_ids)])
     descriptors_by_id = {
         file_id: _descriptor_from_doc(file_doc) for file_doc in docs if isinstance((file_id := file_doc.get("id")), str)
     }

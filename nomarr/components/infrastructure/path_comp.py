@@ -6,7 +6,7 @@ from nomarr.helpers.files_helper import is_audio_file
 from nomarr.persistence.db import Database
 
 
-async def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
+def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
     """Build LibraryPath from user input (API, CLI, etc.).
 
     This is the primary entry point for external path inputs.
@@ -25,7 +25,7 @@ async def build_library_path_from_input(raw_path: str, db: Database) -> LibraryP
     """
     # Resolve to absolute path
     try:
-        absolute = Path(raw_path).resolve()  # noqa: ASYNC240
+        absolute = Path(raw_path).resolve()
     except (ValueError, OSError) as e:
         return LibraryPath(
             relative="",
@@ -36,7 +36,7 @@ async def build_library_path_from_input(raw_path: str, db: Database) -> LibraryP
         )
 
     # Find which library contains this path
-    library = await find_library_containing_path(db, str(absolute))
+    library = find_library_containing_path(db, str(absolute))
     if not library:
         return LibraryPath(
             relative="",
@@ -47,7 +47,7 @@ async def build_library_path_from_input(raw_path: str, db: Database) -> LibraryP
         )
 
     # Calculate relative path
-    library_root = Path(library.root_path).resolve()  # noqa: ASYNC240
+    library_root = Path(library.root_path).resolve()
     try:
         relative_path = absolute.relative_to(library_root)
         relative_str = str(relative_path).replace("\\", "/")  # Normalize to forward slashes
@@ -100,7 +100,7 @@ async def build_library_path_from_input(raw_path: str, db: Database) -> LibraryP
     )
 
 
-async def build_library_path_from_db(
+def build_library_path_from_db(
     stored_path: str,
     db: Database,
     library_id: int | None = None,
@@ -126,7 +126,7 @@ async def build_library_path_from_db(
     """
     # If we have a library_id, fetch that library's configuration
     if library_id:
-        library = await get_library_record(db, library_id, include_scan=False)
+        library = get_library_record(db, library_id, include_scan=False)
         if not library or not library["is_enabled"]:
             # Library was disabled or deleted
             return LibraryPath(
@@ -137,12 +137,12 @@ async def build_library_path_from_db(
                 reason=f"Library {library_id} is disabled or no longer exists",
             )
 
-        library_root = Path(library["root_path"]).resolve()  # noqa: ASYNC240
+        library_root = Path(library["root_path"]).resolve()
 
         # Try to construct absolute path
         # stored_path might be relative or absolute
         if Path(stored_path).is_absolute():
-            absolute = Path(stored_path).resolve()  # noqa: ASYNC240
+            absolute = Path(stored_path).resolve()
         else:
             absolute = (library_root / stored_path).resolve()
 
@@ -162,7 +162,7 @@ async def build_library_path_from_db(
     else:
         # No library_id provided, need to find which library contains this path
         try:
-            absolute = Path(stored_path).resolve()  # noqa: ASYNC240
+            absolute = Path(stored_path).resolve()
         except (ValueError, OSError) as e:
             return LibraryPath(
                 relative=stored_path,
@@ -172,7 +172,7 @@ async def build_library_path_from_db(
                 reason=f"Cannot resolve stored path: {e}",
             )
 
-        found = await find_library_containing_path(db, str(absolute))
+        found = find_library_containing_path(db, str(absolute))
         if not found:
             return LibraryPath(
                 relative=stored_path,
@@ -182,7 +182,7 @@ async def build_library_path_from_db(
                 reason="Stored path is outside all configured library roots",
             )
 
-        library_root = Path(found.root_path).resolve()  # noqa: ASYNC240
+        library_root = Path(found.root_path).resolve()
         try:
             relative_path = absolute.relative_to(library_root)
             relative_str = str(relative_path).replace("\\", "/")
@@ -236,7 +236,7 @@ async def build_library_path_from_db(
     )
 
 
-async def get_library_root(library_path: LibraryPath, db: Database) -> Path | None:
+def get_library_root(library_path: LibraryPath, db: Database) -> Path | None:
     """Get the library root path for a given LibraryPath.
 
     Args:
@@ -250,8 +250,8 @@ async def get_library_root(library_path: LibraryPath, db: Database) -> Path | No
     if not library_path.library_id:
         return None
 
-    library = await get_library_record(db, library_path.library_id, include_scan=False)
+    library = get_library_record(db, library_path.library_id, include_scan=False)
     if not library:
         return None
 
-    return Path(library["root_path"]).resolve()  # noqa: ASYNC240
+    return Path(library["root_path"]).resolve()

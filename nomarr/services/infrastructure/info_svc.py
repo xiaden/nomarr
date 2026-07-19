@@ -249,7 +249,7 @@ class InfoService:
             warnings=warnings,
         )
 
-    async def get_public_info(self) -> PublicInfoResult:
+    def get_public_info(self) -> PublicInfoResult:
         """Get comprehensive public info for API endpoint.
 
         Orchestrates calls to multiple services and computes:
@@ -281,7 +281,7 @@ class InfoService:
 
         # Models info
         if self.ml_service:
-            heads = await self.ml_service.discover_heads()
+            heads = self.ml_service.discover_heads()
             embeddings = sorted({h.backbone for h in heads})
             models_info = ModelsInfo(total_heads=len(heads), embeddings=embeddings)
         else:
@@ -314,7 +314,7 @@ class InfoService:
             worker=worker_info,
         )
 
-    async def get_gpu_health(self) -> GPUHealthResult:
+    def get_gpu_health(self) -> GPUHealthResult:
         """Get GPU resource snapshot and monitor liveness.
 
         Reads cached GPU probe results written by GPUHealthMonitor process.
@@ -333,7 +333,7 @@ class InfoService:
             monitor_healthy = status in ("healthy", "recovering")
 
         # Read GPU resources from DB
-        gpu_resources_doc = await self.cfg.db.app.get_config_option("gpu_resources")
+        gpu_resources_doc = self.cfg.db.app.get_config_option("gpu_resources")
         gpu_resources_json = None if gpu_resources_doc is None else gpu_resources_doc["value"]
         if not gpu_resources_json:
             # No GPU resource data in DB yet

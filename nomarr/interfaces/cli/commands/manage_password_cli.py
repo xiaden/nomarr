@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import getpass
 from typing import TYPE_CHECKING
 
@@ -33,7 +32,7 @@ def cmd_manage_password(args: argparse.Namespace) -> int:
 def _show_password(service: KeyManagementService) -> int:
     """Show current password hash."""
     try:
-        asyncio.run(service.get_admin_password_hash())
+        service.get_admin_password_hash()
     except RuntimeError:
         # Password not found in DB
         print_info("No admin password set")
@@ -49,7 +48,7 @@ def _show_password(service: KeyManagementService) -> int:
 def _verify_password(service: KeyManagementService) -> int:
     """Verify if a password is correct."""
     try:
-        password_hash = asyncio.run(service.get_admin_password_hash())
+        password_hash = service.get_admin_password_hash()
     except RuntimeError:
         # Password not found in DB
         print_error("No admin password set yet")
@@ -84,7 +83,7 @@ def _reset_password(service: KeyManagementService) -> int:
         break
 
     # Use service method to reset password (hashes and stores internally)
-    asyncio.run(service.reset_admin_password(password1))
+    service.reset_admin_password(password1)
 
     print_success("✓ Admin password updated successfully")
     print_info("You can now log in to the web UI with the new password")

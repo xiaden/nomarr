@@ -11,7 +11,6 @@ dispatch logic can be tested and reasoned about independently of orchestration.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -70,7 +69,7 @@ def _make_predict(m: ONNXHeadModel, e: np.ndarray) -> Callable[[], np.ndarray]:
     """
 
     def _fn() -> np.ndarray:
-        return asyncio.run(m.run(e))
+        return m.run(e)
 
     return _fn
 
@@ -144,7 +143,7 @@ def run_single_head(
             logger.debug(
                 f"[processor] Captured {len(raw_values)} segment predictions for {head_name} (mean={np.mean(raw_values):.3f}, std={np.std(raw_values):.3f})",
             )
-        # Defer segment stats computation to async DB write thread.
+        # Defer segment stats computation to deferred DB write thread.
         # Keep raw scores per output index as RawOutputStream objects.
         raw_output_streams: list[RawOutputStream] | None = None
         if segment_scores.ndim == 2 and len(head_model.meta.labels) > 0:

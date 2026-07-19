@@ -10,10 +10,10 @@ Results stored as measured_backbone_vram_mb and estimated_worker_ram_mb.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -89,7 +89,7 @@ def compute_model_set_hash(models_dir: str) -> str:
     return hasher.hexdigest()[:16]  # Use first 16 chars
 
 
-async def get_or_run_capacity_probe(
+def get_or_run_capacity_probe(
     db: Database,
     models_dir: str,
     worker_id: str,
@@ -114,7 +114,7 @@ async def get_or_run_capacity_probe(
     gpu_capable = check_nvidia_gpu_capability()
 
     # Check for existing estimate (stored in meta/config)
-    raw = await db.app.get_config_option(key=f"capacity_estimate:{model_set_hash}")
+    raw = db.app.get_config_option(key=f"capacity_estimate:{model_set_hash}")
     if raw is not None and raw.get("value") is not None:
         existing = raw["value"]
         logger.debug(
@@ -132,7 +132,7 @@ async def get_or_run_capacity_probe(
         )
 
     # Try to acquire probe lock
-    lock_acquired = await db.app.acquire_lock(
+    lock_acquired = db.app.acquire_lock(
         resource_id=f"capacity_probe:{model_set_hash}",
         payload={"worker_id": worker_id, "status": "probing"},
     )
@@ -143,7 +143,7 @@ async def get_or_run_capacity_probe(
             "[ml_capacity_probe] Acquired probe lock for hash=%s, starting probe...",
             model_set_hash,
         )
-        return await _run_capacity_probe(
+        return _run_capacity_probe(
             db=db,
             model_set_hash=model_set_hash,
             models_dir=models_dir,
@@ -154,14 +154,14 @@ async def get_or_run_capacity_probe(
 
     # Another worker owns the lock - poll for completion
     logger.info("[ml_capacity_probe] Probe lock owned by another worker, polling for result...")
-    return await _wait_for_probe_completion(
+    return _wait_for_probe_completion(
         db=db,
         model_set_hash=model_set_hash,
         gpu_capable=gpu_capable,
     )
 
 
-async def _run_capacity_probe(
+def _run_capacity_probe(
     db: Database,
     model_set_hash: str,
     models_dir: str,
@@ -208,7 +208,7 @@ async def _run_capacity_probe(
                 "[ml_capacity_probe] No heads found in %s, using conservative estimates",
                 models_dir,
             )
-            await db.app.remove_lock(resource_id=f"capacity_probe:{model_set_hash}")
+            db.app.remove_lock(resource_id=f"capacity_probe:{model_set_hash}")
             return CapacityEstimate(
                 model_set_hash=model_set_hash,
                 measured_backbone_vram_mb=CONSERVATIVE_BACKBONE_VRAM_MB if gpu_capable else 0,
@@ -228,7 +228,7 @@ async def _run_capacity_probe(
         # Warm up ONNX model cache to measure actual memory usage
         from nomarr.components.ml.onnx.ml_cache import ONNXModelCache as _ONNXModelCache
 
-        _probe_cache = await _ONNXModelCache.create(models_dir, "gpu" if gpu_capable else "cpu")
+        _probe_cache = _ONNXModelCache.create(models_dir, "gpu" if gpu_capable else "cpu")
         _probe_cache.warm = True
 
         # Measure RAM after loading
@@ -258,7 +258,7 @@ async def _run_capacity_probe(
         )
 
         # Persist results
-        await db.app.update_config_option(
+        db.app.update_config_option(
             key=f"capacity_estimate:{model_set_hash}",
             payload={
                 "value": {
@@ -271,7 +271,7 @@ async def _run_capacity_probe(
         )
 
         # Mark lock as complete
-        await db.app.upsert_lock(
+        db.app.upsert_lock(
             resource_id=f"capacity_probe:{model_set_hash}",
             payload={"worker_id": "", "status": "complete"},
         )
@@ -287,7 +287,7 @@ async def _run_capacity_probe(
     except (OSError, ImportError, RuntimeError) as e:
         logger.exception("[ml_capacity_probe] Probe failed: %s", e)
         # Release lock on failure so another worker can try
-        await db.app.remove_lock(resource_id=f"capacity_probe:{model_set_hash}")
+        db.app.remove_lock(resource_id=f"capacity_probe:{model_set_hash}")
 
         # Return conservative estimates
         return CapacityEstimate(
@@ -299,7 +299,7 @@ async def _run_capacity_probe(
         )
 
 
-async def _wait_for_probe_completion(
+def _wait_for_probe_completion(
     db: Database,
     model_set_hash: str,
     gpu_capable: bool,
@@ -322,7 +322,7 @@ async def _wait_for_probe_completion(
 
     while internal_ms().value < deadline:
         # Check for completed estimate (stored in meta/config)
-        raw = await db.app.get_config_option(key=f"capacity_estimate:{model_set_hash}")
+        raw = db.app.get_config_option(key=f"capacity_estimate:{model_set_hash}")
         if raw is not None and raw.get("value") is not None:
             estimate = raw["value"]
             logger.info(
@@ -339,10 +339,10 @@ async def _wait_for_probe_completion(
             )
 
         # Check if lock is still held
-        lock = await db.app.get_lock(resource_id=f"capacity_probe:{model_set_hash}")
+        lock = db.app.get_lock(resource_id=f"capacity_probe:{model_set_hash}")
         if lock is None:
             # Lock was released (probe failed), check for estimate one more time
-            raw = await db.app.get_config_option(key=f"capacity_estimate:{model_set_hash}")
+            raw = db.app.get_config_option(key=f"capacity_estimate:{model_set_hash}")
             if raw is not None and raw.get("value") is not None:
                 estimate = raw["value"]
                 return CapacityEstimate(
@@ -359,7 +359,7 @@ async def _wait_for_probe_completion(
             # Probe completed but we missed the estimate query - retry
             continue
 
-        await asyncio.sleep(PROBE_POLL_INTERVAL_MS / 1000)
+        time.sleep(PROBE_POLL_INTERVAL_MS / 1000)
 
     # Timeout or lock released without estimate - use conservative fallback
     logger.warning("[ml_capacity_probe] Probe timeout/failure, using conservative estimates (max_workers=1)")
@@ -372,7 +372,7 @@ async def _wait_for_probe_completion(
     )
 
 
-async def invalidate_capacity_estimate(db: Database, models_dir: str) -> None:
+def invalidate_capacity_estimate(db: Database, models_dir: str) -> None:
     """Invalidate cached capacity estimate (e.g., when model set changes).
 
     Args:
@@ -381,5 +381,5 @@ async def invalidate_capacity_estimate(db: Database, models_dir: str) -> None:
 
     """
     model_set_hash = compute_model_set_hash(models_dir)
-    await db.app.remove_config_option(key=f"capacity_estimate:{model_set_hash}")
+    db.app.remove_config_option(key=f"capacity_estimate:{model_set_hash}")
     logger.info("[ml_capacity_probe] Invalidated capacity estimate for hash=%s", model_set_hash)

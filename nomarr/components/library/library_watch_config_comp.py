@@ -11,21 +11,21 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-async def list_watchable_libraries(db: Database) -> list[dict[str, Any]]:
+def list_watchable_libraries(db: Database) -> list[dict[str, Any]]:
     """Return libraries eligible for file watching.
 
     Projects to ``{"_id", "root_path", "watch_mode"}``.
     """
-    libraries = await list_watchable_library_records(db)
+    libraries = list_watchable_library_records(db)
     return [_project_watchable_library(library) for library in libraries]
 
 
-async def get_library_watch_config(db: Database, library_id: int) -> dict[str, Any] | None:
+def get_library_watch_config(db: Database, library_id: int) -> dict[str, Any] | None:
     """Return watch config for a library, or None if not found.
 
     Returns ``{"root_path", "watch_mode", "is_enabled"}``.
     """
-    library = await get_library_record(db, library_id, include_scan=False)
+    library = get_library_record(db, library_id, include_scan=False)
     if library is None:
         return None
 

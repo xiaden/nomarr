@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def get_track_vector(
+def get_track_vector(
     db: Database,
     file_id: int,
     backbone_id: str,
@@ -37,4 +37,4 @@ async def get_track_vector(
         or ``None`` when no promoted vector exists in the cold collection.
 
     """
-    return await get_cold_track_vector(db, file_id, backbone_id)
+    return get_cold_track_vector(db, file_id, backbone_id)

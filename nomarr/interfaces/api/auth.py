@@ -31,7 +31,7 @@ async def verify_key(creds: HTTPAuthorizationCredentials = Depends(auth_scheme))
     token = creds.credentials.strip()
 
     key_service = get_key_service()
-    api_key = await key_service.get_api_key()
+    api_key = key_service.get_api_key()
 
     if api_key is None:
         raise HTTPException(status_code=500, detail="API key not initialized")
@@ -55,14 +55,14 @@ def verify_password(password: str, password_hash: str) -> bool:
     return KeyManagementService.verify_password(password, password_hash)
 
 
-async def get_admin_password_hash() -> str:
+def get_admin_password_hash() -> str:
     """Get admin password hash from KeyManagementService."""
-    return await get_key_service().get_admin_password_hash()
+    return get_key_service().get_admin_password_hash()
 
 
-async def create_session() -> str:
+def create_session() -> str:
     """Create a new session using the singleton KeyManagementService instance."""
-    return await get_key_service().create_session()
+    return get_key_service().create_session()
 
 
 def validate_session(session_token: str) -> bool:
@@ -70,14 +70,14 @@ def validate_session(session_token: str) -> bool:
     return get_key_service().validate_session(session_token)
 
 
-async def invalidate_session(session_token: str) -> None:
+def invalidate_session(session_token: str) -> None:
     """Invalidate a session using the singleton KeyManagementService instance."""
-    await get_key_service().invalidate_session(session_token)
+    get_key_service().invalidate_session(session_token)
 
 
-async def load_sessions_from_db() -> int:
+def load_sessions_from_db() -> int:
     """Load sessions from database using KeyManagementService."""
-    return await get_key_service().load_sessions_from_db()
+    return get_key_service().load_sessions_from_db()
 
 
 # Export session cache for backward compatibility with tests

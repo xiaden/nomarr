@@ -1,16 +1,12 @@
-"""PostgreSQL async engine factory, session factory, and session generator.
+"""PostgreSQL sync engine factory, session factory, and session generator.
 
-PostgreSQL async engine factory for Nomarr.
+PostgreSQL sync engine factory for Nomarr.
 """
 
-from collections.abc import AsyncGenerator
+from collections.abc import Generator
 
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy import Engine, create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 
 def create_pg_engine(
@@ -18,72 +14,65 @@ def create_pg_engine(
     echo: bool = False,
     pool_size: int = 5,
     max_overflow: int = 10,
-) -> AsyncEngine:
-    """Create a configured async PostgreSQL engine.
+) -> Engine:
+    """Create a configured sync PostgreSQL engine.
 
     Args:
         database_url: Full connection string (e.g.
-            ``postgresql+asyncpg://user:pass@host:5432/db``).
+            ``postgresql+psycopg2://user:pass@host:5432/db``).
         echo: If ``True``, log all SQL statements (default: ``False``).
         pool_size: Connection pool size (default: 5).
         max_overflow: Max overflow connections beyond pool_size (default: 10).
 
     Returns:
-        Configured AsyncEngine instance.
+        Configured Engine instance.
 
     """
-    return create_async_engine(
+    return create_engine(
         database_url,
         echo=echo,
         pool_size=pool_size,
         max_overflow=max_overflow,
         pool_pre_ping=True,
         connect_args={
-            "statement_timeout": 30000,  # 30 seconds
-            "command_timeout": 30,  # 30 seconds
+            "options": "-c statement_timeout=30000",
         },
     )
 
 
-def async_session_factory(
-    engine: AsyncEngine,
-) -> async_sessionmaker[AsyncSession]:
-    """Create an async session factory bound to the given engine.
+def session_factory(
+    engine: Engine,
+) -> sessionmaker[Session]:
+    """Create a sync session factory bound to the given engine.
 
     Args:
-        engine: AsyncEngine instance from :func:`create_pg_engine`.
+        engine: Engine instance from :func:`create_pg_engine`.
 
     Returns:
-        Async sessionmaker with ``expire_on_commit=False``.
+        Sync sessionmaker with ``expire_on_commit=False``.
 
     """
-    return async_sessionmaker(
-        engine,
+    return sessionmaker(
+        bind=engine,
         expire_on_commit=False,
-        class_=AsyncSession,
     )
 
 
-async def get_session(
-    session_factory: async_sessionmaker[AsyncSession],
-) -> AsyncGenerator[AsyncSession, None]:
-    """Yield an :class:`AsyncSession` with automatic cleanup.
-
-    Uses :func:`asyncio.shield` on close to prevent connection leaks
-    under :exc:`asyncio.CancelledError`.
+def get_session(
+    session_factory: sessionmaker[Session],
+) -> Generator[Session, None, None]:
+    """Yield a :class:`Session` with automatic cleanup.
 
     Args:
-        session_factory: Pre-configured async sessionmaker (from
-            :func:`async_session_factory`).
+        session_factory: Pre-configured sessionmaker (from
+            :func:`session_factory`).
 
     Yields:
-        AsyncSession bound to the engine.
+        Session bound to the engine.
 
     """
-    import asyncio
-
-    async with session_factory() as session:
-        try:
-            yield session
-        finally:
-            await asyncio.shield(session.close())
+    session = session_factory()
+    try:
+        yield session
+    finally:
+        session.close()

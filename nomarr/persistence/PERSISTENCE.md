@@ -32,7 +32,7 @@ persistence/
 ├── __init__.py                  # Re-exports Database lazily
 ├── PERSISTENCE.md               # This guide
 ├── db.py                        # Top-level Database facade and sub-facade wiring
-├── pg_engine.py                 # PostgreSQL async engine, session factory, session generator
+├── pg_engine.py                 # PostgreSQL engine, session factory, scoped session
 ├── exceptions.py                # Domain exceptions (DuplicateKeyError, PersistenceError)
 ├── api/
 │   ├── __init__.py
@@ -93,7 +93,7 @@ If you see references to `collections.py`, `collections_base.py`, `accessors.py`
 `Database.__init__()` currently does four things:
 
 1. Accepts a PostgreSQL connection URL and pool configuration
-2. Creates an async SQLAlchemy engine and session factory via `pg_engine.py`
+2. Creates a SQLAlchemy engine and thread-local scoped session via `pg_engine.py`
 3. Instantiates all repository objects in `database/`
 4. Wires those repositories into intent-level sub-facades in `api/`
 
@@ -117,7 +117,7 @@ These group related persistence actions by domain rather than by physical table.
 - `db.ml_capacity` → `_MlCapacityAdapter` (distributed lock management)
 - `db.vram_promises` → `_VramPromisesAdapter` (VRAM promise management)
 
-These adapters wrap async `AppDb` methods and provide sync-compatible interfaces for legacy callers. New higher-layer code should not depend on them; use `db.app` or a direct repository reference instead.
+These adapters wrap `AppDb` methods. New higher-layer code should not depend on them; use `db.app` or a direct repository reference instead.
 
 ### Lowest-level implementation names
 
@@ -190,7 +190,7 @@ Examples include:
 - `CalibrationRepo`
 - `EmbeddingStreamRepository`
 
-These classes are intentionally narrow. They are not business services; they are focused table/relationship adapters over SQLAlchemy's `AsyncSession`.
+These classes are intentionally narrow. They are not business services; they are focused table/relationship adapters that receive a thread-local `scoped_session` proxy. Each repo's session parameter is a `scoped_session` that resolves to the current thread's `Session` at query time.
 
 They sit below the intent facades and above the generic SQL Core helper functions. They are private to persistence and should not be imported by higher layers.
 
@@ -227,9 +227,9 @@ Use these helpers when several repository classes need the same safe query-build
 
 `pg_engine.py` provides the PostgreSQL connection infrastructure:
 
-- `create_pg_engine(database_url)` — creates an async SQLAlchemy engine with connection pooling, pre-ping, and statement timeout
-- `async_session_factory(engine)` — creates an `async_sessionmaker` bound to the engine
-- `get_session(session_factory)` — async generator that yields an `AsyncSession` with automatic cleanup (uses `asyncio.shield` to prevent connection leaks under `CancelledError`)
+- `create_pg_engine(database_url)` — creates a SQLAlchemy engine with connection pooling, pre-ping, and statement timeout
+- `session_factory(engine)` — creates a `sessionmaker[Session]` bound to the engine
+- `get_session(session_factory)` — context manager that yields a `Session` with automatic cleanup (uses `try/finally` for commit/rollback and close)
 
 This means:
 
@@ -237,15 +237,16 @@ This means:
 - Statement timeouts are enforced at the database level (30 seconds)
 - Sessions use `expire_on_commit=False` to avoid detached-instance errors outside of active session scopes
 - Callers should work through repository classes and `sql/primitives.py` rather than issuing raw SQL
+- `Database.__init__` wraps the session factory in `scoped_session`, giving each thread its own `Session`; `Database.close()` calls `scoped.remove()` to clean up the thread-local session, then `engine.dispose()` to release all pooled connections
 
 ### Escape hatch: raw SQL
 
-For advanced queries or DDL work that repositories do not yet wrap, callers can use `AsyncSession.execute(text("..."))` directly:
+For advanced queries or DDL work that repositories do not yet wrap, callers can use `Session.execute(text("..."))` directly:
 
 ```python
 from sqlalchemy import text
 
-result = await session.execute(text("SELECT version()"))
+result = session.execute(text("SELECT version()"))
 ```
 
 This is the escape hatch — prefer intent facades and repository methods for routine work.
@@ -300,7 +301,7 @@ db.app.update_scan(library_id, {"status": "complete"})
 Use raw SQL access only for capabilities that are not already wrapped:
 
 ```python
-result = await session.execute(text("SELECT version()"))
+result = session.execute(text("SELECT version()"))
 ```
 
 The rule of thumb is simple:
@@ -352,11 +353,11 @@ If code starts deciding *what should happen* instead of *how data is read or wri
 
 Think about the current persistence layer like this:
 
-- **`db.py` wires the world together** — engine, session factory, repos, sub-facades
+- **`db.py` wires the world together** — engine, scoped session, repos, sub-facades
 - **`api/` presents the only supported caller-facing persistence API**
 - **`database/` holds private Tier 2 table and relationship repositories**
 - **`sql/primitives.py` provides the narrow private Tier 1 SQL Core toolbox**
-- **`pg_engine.py` manages the async PostgreSQL connection lifecycle**
+- **`pg_engine.py` manages the PostgreSQL connection lifecycle**
 - **`models/` defines the SQLAlchemy ORM table schema**
 - **`session.execute(text(...))` is the escape hatch for advanced raw SQL work**
 

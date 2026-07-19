@@ -37,7 +37,7 @@ def get_database() -> Database:
     """
     import os
 
-    url = os.environ.get("PG_DATABASE_URL", "postgresql+asyncpg://nomarr:nomarr@localhost:5432/nomarr")
+    url = os.environ.get("PG_DATABASE_URL", "postgresql+psycopg2://nomarr:nomarr@localhost:5432/nomarr")
     return Database(url=url)
 
 

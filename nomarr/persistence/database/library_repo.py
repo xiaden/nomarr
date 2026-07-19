@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, select, update
+from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.repo_dto import LibraryRow
 from nomarr.persistence.models.library import Library
@@ -22,7 +23,6 @@ from nomarr.persistence.sql.primitives import (
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
-    from sqlalchemy.ext.asyncio import AsyncSession
 
 _T = cast("Table", Library.__table__)
 
@@ -45,75 +45,75 @@ def _row_to_dto(row: Row) -> LibraryRow:
 class LibraryRepository:
     """Repository for the ``libraries`` table."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: scoped_session[Session]) -> None:
         self._session = session
 
     # ── basic CRUD ──────────────────────────────────────────────
 
-    async def add_library(self, payload: dict[str, Any]) -> int:
+    def add_library(self, payload: dict[str, Any]) -> int:
         """Insert a new library row and return its ``id``."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
-                row = await insert_one(_T, payload, session=self._session)
-            await self._session.commit()
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                row = insert_one(_T, payload, session=self._session)
+            self._session.commit()
             return int(row._mapping["id"])
 
-    async def get_library(self, library_id: int) -> LibraryRow | None:
+    def get_library(self, library_id: int) -> LibraryRow | None:
         """Fetch a single library by primary key."""
-        async with map_persistence_exceptions():
-            row = await select_by_key(_T, library_id, session=self._session)
+        with map_persistence_exceptions():
+            row = select_by_key(_T, library_id, session=self._session)
             return _row_to_dto(row) if row else None
 
-    async def get_library_by_name(self, name: str) -> LibraryRow | None:
+    def get_library_by_name(self, name: str) -> LibraryRow | None:
         """Fetch a single library by its unique ``name`` field."""
-        async with map_persistence_exceptions():
-            row = await select_by_key(_T, name, session=self._session, key_col="name")
+        with map_persistence_exceptions():
+            row = select_by_key(_T, name, session=self._session, key_col="name")
             return _row_to_dto(row) if row else None
 
-    async def list_libraries(self, *, enabled_only: bool = False) -> list[LibraryRow]:
+    def list_libraries(self, *, enabled_only: bool = False) -> list[LibraryRow]:
         """Return all libraries, optionally filtering to enabled types only."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T)
             if enabled_only:
                 stmt = stmt.where(_T.c.library_type != "disabled")
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [_row_to_dto(r) for r in result.all()]
 
-    async def list_library_keys(self) -> list[int]:
+    def list_library_keys(self) -> list[int]:
         """Return all library primary-key ids."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T.c.id)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [row[0] for row in result.all()]
 
-    async def update_library(self, library_id: int, fields: dict[str, Any]) -> None:
+    def update_library(self, library_id: int, fields: dict[str, Any]) -> None:
         """Update arbitrary fields on a library row."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
-                await update_by_field(_T, "id", library_id, fields, session=self._session)
-            await self._session.commit()
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                update_by_field(_T, "id", library_id, fields, session=self._session)
+            self._session.commit()
 
-    async def delete_library(self, library_id: int) -> None:
+    def delete_library(self, library_id: int) -> None:
         """Delete a library row by primary key."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
-                await delete_by_key(_T, library_id, session=self._session)
-            await self._session.commit()
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                delete_by_key(_T, library_id, session=self._session)
+            self._session.commit()
 
     # ── pipeline axis helpers ───────────────────────────────────
 
-    async def update_pipeline_axis(self, library_id: int, axis_field: str, axis_value: str) -> None:
+    def update_pipeline_axis(self, library_id: int, axis_field: str, axis_value: str) -> None:
         """Set a pipeline-axis column (e.g. ``scan_state``) on a library."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
                 stmt = update(_T).where(_T.c.id == library_id).values({axis_field: axis_value})
-                await self._session.execute(stmt)
-            await self._session.commit()
+                self._session.execute(stmt)
+            self._session.commit()
 
-    async def get_pipeline_state(self, library_id: int) -> dict[str, str] | None:
+    def get_pipeline_state(self, library_id: int) -> dict[str, str] | None:
         """Return the four pipeline-axis columns as a dict, or ``None``."""
-        async with map_persistence_exceptions():
-            row = await select_by_key(_T, library_id, session=self._session)
+        with map_persistence_exceptions():
+            row = select_by_key(_T, library_id, session=self._session)
             if row is None:
                 return None
             m = row._mapping
@@ -124,16 +124,16 @@ class LibraryRepository:
                 "tag_write_state": m.get("tag_write_state", "not_written"),
             }
 
-    async def get_libraries_in_axis_state(self, axis_field: str, axis_value: str) -> list[int]:
+    def get_libraries_in_axis_state(self, axis_field: str, axis_value: str) -> list[int]:
         """Return ids of libraries whose *axis_field* equals *axis_value*."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T.c.id).where(_T.c[axis_field] == axis_value)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [row[0] for row in result.all()]
 
     # ── cascade delete (ORM) ────────────────────────────────────
 
-    async def remove_library(self, library_id: int) -> None:
+    def remove_library(self, library_id: int) -> None:
         """Delete a library and all cascaded child data via FK ON DELETE CASCADE.
 
         Uses the ORM ``session.delete`` so that the identity map stays
@@ -142,12 +142,12 @@ class LibraryRepository:
         """
         from sqlalchemy import select as sa_select
 
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = sa_select(Library).where(Library.id == library_id)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             library = result.scalar_one_or_none()
             if library is None:
                 return
-            async with self._session.begin_nested():
-                await self._session.delete(library)
-            await self._session.commit()
+            with self._session.begin_nested():
+                self._session.delete(library)
+            self._session.commit()

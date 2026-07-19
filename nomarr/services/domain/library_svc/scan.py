@@ -7,7 +7,6 @@ This module handles:
 
 from __future__ import annotations
 
-import asyncio
 import functools
 import logging
 from collections.abc import Callable
@@ -38,32 +37,6 @@ if TYPE_CHECKING:
     from .config import LibraryServiceConfig
 
 
-# Keep strong references to fire-and-forget asyncio tasks scheduled by
-# ``_run_async_hook`` so they aren't garbage collected before completion.
-_background_tasks: set[asyncio.Task[Any]] = set()
-
-
-def _run_async_hook(coro_or_result: Any) -> None:
-    """Run an async hook result, handling both coroutine and non-coroutine cases.
-
-    When the hook returns a coroutine (production), this runs it via
-    ``asyncio.run()`` if no event loop is active, or schedules it on the
-    running loop.  When the hook is mocked and returns a non-coroutine
-    (tests), this is a no-op — the mock's side-effect has already recorded
-    the call.
-    """
-    if not asyncio.iscoroutine(coro_or_result):
-        return  # Mock in tests — call already recorded
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        asyncio.run(coro_or_result)
-    else:
-        task = loop.create_task(coro_or_result)
-        _background_tasks.add(task)
-        task.add_done_callback(_background_tasks.discard)
-
-
 class LibraryScanMixin:
     """Mixin providing library scanning methods."""
 
@@ -71,7 +44,7 @@ class LibraryScanMixin:
     db: Database
     background_tasks: Any | None
 
-    async def start_quick_scan(self, library_id: int) -> StartScanResult:
+    def start_quick_scan(self, library_id: int) -> StartScanResult:
         """Start a quick (incremental) library scan.
 
         Validates the library synchronously then dispatches the scan as a
@@ -88,11 +61,11 @@ class LibraryScanMixin:
             LibraryAlreadyScanningError: If library is already being scanned
 
         """
-        await scan_setup_workflow(self.db, library_id, scan_type="quick")
+        scan_setup_workflow(self.db, library_id, scan_type="quick")
         task_id = f"scan_library_{library_id}"
 
         def on_complete():
-            return _run_async_hook(on_scan_complete_pipeline_hook(self.db, int(library_id)))
+            on_scan_complete_pipeline_hook(self.db, int(library_id))
 
         if self.background_tasks is None:
             msg = "Background task service is not available"
@@ -117,7 +90,7 @@ class LibraryScanMixin:
             job_ids=[task_id],
         )
 
-    async def start_full_scan(self, library_id: int, skip_validation_autorepair: bool = False) -> StartScanResult:
+    def start_full_scan(self, library_id: int, skip_validation_autorepair: bool = False) -> StartScanResult:
         """Start a full library scan.
 
         Validates the library synchronously then dispatches the scan as a
@@ -137,7 +110,7 @@ class LibraryScanMixin:
             LibraryAlreadyScanningError: If library is already being scanned
 
         """
-        await scan_setup_workflow(self.db, library_id, scan_type="full")
+        scan_setup_workflow(self.db, library_id, scan_type="full")
         task_id = f"scan_library_{library_id}"
         # Repair scans must not change ML pipeline state — they exist to re-extract
         # tags, not to trigger a new ML pass.  The skip_validation_autorepair flag
@@ -147,7 +120,7 @@ class LibraryScanMixin:
         if not skip_validation_autorepair:
 
             def on_complete():
-                return _run_async_hook(on_scan_complete_pipeline_hook(self.db, int(library_id)))
+                on_scan_complete_pipeline_hook(self.db, int(library_id))
 
         if self.background_tasks is None:
             msg = "Background task service is not available"
@@ -197,7 +170,7 @@ class LibraryScanMixin:
         logger.warning("[LibraryService] Scan cancellation not yet implemented for direct scans")
         return False
 
-    async def repair_library_tags(self, library_id: int) -> StartScanResult:
+    def repair_library_tags(self, library_id: int) -> StartScanResult:
         """Mark all files for tag re-hydration and start a full scan.
 
         Transitions every file in the library to the ``not_hydrated``
@@ -216,14 +189,14 @@ class LibraryScanMixin:
             LibraryAlreadyScanningError: If library is already being scanned
 
         """
-        await resolve_library_for_scan(self.db, int(library_id))
-        files_queued = await bulk_set_not_hydrated(self.db, int(library_id))
+        resolve_library_for_scan(self.db, int(library_id))
+        files_queued = bulk_set_not_hydrated(self.db, int(library_id))
         logger.info("[LibraryService] Marked %d files for tag re-hydration in library %s", files_queued, library_id)
-        scan_result = await self.start_full_scan(library_id, skip_validation_autorepair=True)
+        scan_result = self.start_full_scan(library_id, skip_validation_autorepair=True)
         scan_result.files_queued = files_queued
         return scan_result
 
-    async def get_status(self, library_id: int | None = None) -> LibraryScanStatusResult:
+    def get_status(self, library_id: int | None = None) -> LibraryScanStatusResult:
         """Get current library scan status.
 
         Args:
@@ -245,10 +218,10 @@ class LibraryScanMixin:
                 library_path=self.cfg.library_root,
                 enabled=self.background_tasks is not None,
             )
-        await resolve_library_for_scan(self.db, int(library_id))  # Validate library exists
-        scan_state = await get_scan_state(self.db, int(library_id))
+        resolve_library_for_scan(self.db, int(library_id))  # Validate library exists
+        scan_state = get_scan_state(self.db, int(library_id))
         try:
-            pipeline_state = await get_pipeline_state(self.db, int(library_id))
+            pipeline_state = get_pipeline_state(self.db, int(library_id))
         except ValueError:
             pipeline_state = None
         scan_status = _pipeline_state_to_scan_status(pipeline_state, scan_state)
@@ -268,7 +241,7 @@ class LibraryScanMixin:
             scan_error=scan_error,
         )
 
-    async def get_scan_history(self, limit: int = 100) -> list[dict[str, Any]]:
+    def get_scan_history(self, limit: int = 100) -> list[dict[str, Any]]:
         """Get recent library scan history from library records.
 
         Note: Queue-based job history removed in favor of library.scanned_at field.
@@ -281,9 +254,9 @@ class LibraryScanMixin:
             List of scan info dicts with library_id, name, scanned_at, scan_status
 
         """
-        return await get_library_scan_histories(self.db, limit=limit)
+        return get_library_scan_histories(self.db, limit=limit)
 
-    async def validate_library_tags(
+    def validate_library_tags(
         self,
         library_id: int,
         auto_repair: bool = True,
@@ -302,8 +275,8 @@ class LibraryScanMixin:
             Validation summary dict (files_checked, incomplete_files, etc.)
 
         """
-        await resolve_library_for_scan(self.db, int(library_id))
-        return await validate_library_tags_workflow(
+        resolve_library_for_scan(self.db, int(library_id))
+        return validate_library_tags_workflow(
             db=self.db,
             models_dir=self.cfg.models_dir,
             library_id=int(library_id),

@@ -31,7 +31,7 @@ else:
     from nomarr.helpers.dto.navidrome_dto import RuleGroup
 
 
-async def _execute_rule_group(db: Database, rule_group: RuleGroup) -> set[int]:  # type: ignore[name-defined]
+def _execute_rule_group(db: Database, rule_group: RuleGroup) -> set[int]:  # type: ignore[name-defined]
     """Recursively execute a rule group and return matching file IDs.
 
     Combines conditions and nested groups using set operations based on
@@ -49,12 +49,12 @@ async def _execute_rule_group(db: Database, rule_group: RuleGroup) -> set[int]: 
 
     # Execute conditions in this group
     for condition in rule_group.conditions:
-        file_ids = await _execute_single_condition(db, condition)
+        file_ids = _execute_single_condition(db, condition)
         result_sets.append(file_ids)
 
     # Recursively execute nested groups
     for nested_group in rule_group.groups:
-        file_ids = await _execute_rule_group(db, nested_group)
+        file_ids = _execute_rule_group(db, nested_group)
         result_sets.append(file_ids)
 
     # Combine results based on logic
@@ -69,7 +69,7 @@ async def _execute_rule_group(db: Database, rule_group: RuleGroup) -> set[int]: 
     return set.union(*result_sets)
 
 
-async def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlaylistFilter) -> set[int]:
+def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlaylistFilter) -> set[int]:
     """Execute a smart playlist filter and return matching file IDs.
 
     Uses Python set operations to combine conditions:
@@ -85,10 +85,10 @@ async def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlay
         Set of file IDs matching the filter
 
     """
-    return await _execute_rule_group(db, playlist_filter.root)
+    return _execute_rule_group(db, playlist_filter.root)
 
 
-async def _resolve_tag_key(db: Database, tag_key: str) -> list[str]:
+def _resolve_tag_key(db: Database, tag_key: str) -> list[str]:
     """Resolve a tag key to actual storage key(s).
 
     Handles:
@@ -118,7 +118,7 @@ async def _resolve_tag_key(db: Database, tag_key: str) -> list[str]:
         # Try to resolve short name to versioned key(s)
         # Normalize: convert underscores to hyphens for lookup
         short_name = tag_key.replace("_", "-")
-        versioned_keys = await resolve_short_to_versioned_keys(short_name, db)
+        versioned_keys = resolve_short_to_versioned_keys(short_name, db)
         if versioned_keys:
             logger.debug(f"[filter_engine] Resolved '{tag_key}' to {versioned_keys}")
             return versioned_keys
@@ -131,7 +131,7 @@ async def _resolve_tag_key(db: Database, tag_key: str) -> list[str]:
     return [tag_key]
 
 
-async def _execute_single_condition(db: Database, condition: TagCondition) -> set[int]:
+def _execute_single_condition(db: Database, condition: TagCondition) -> set[int]:
     """Execute a single tag condition and return matching file IDs.
 
     Supports both full versioned tag keys and short user-friendly names.
@@ -146,21 +146,21 @@ async def _execute_single_condition(db: Database, condition: TagCondition) -> se
 
     """
     # Resolve tag key to actual storage key(s)
-    storage_keys = await _resolve_tag_key(db, condition.tag_key)
+    storage_keys = _resolve_tag_key(db, condition.tag_key)
 
     # Union results from all resolved keys
     all_matching: set[int] = set()
 
     for name in storage_keys:
         if condition.operator == "contains":
-            file_ids = await find_files_matching_tag(
+            file_ids = find_files_matching_tag(
                 db,
                 name=name,
                 operator="CONTAINS",
                 value=str(condition.value),
             )
         elif condition.operator == "notcontains":
-            file_ids = await find_files_matching_tag(
+            file_ids = find_files_matching_tag(
                 db,
                 name=name,
                 operator="NOTCONTAINS",
@@ -168,7 +168,7 @@ async def _execute_single_condition(db: Database, condition: TagCondition) -> se
             )
         else:
             # Numeric comparison query
-            file_ids = await find_files_matching_tag(
+            file_ids = find_files_matching_tag(
                 db,
                 name=name,
                 operator=condition.operator,

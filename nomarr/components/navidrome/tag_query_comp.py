@@ -12,23 +12,23 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-async def get_nomarr_tag_names(db: Database) -> list[str]:
+def get_nomarr_tag_names(db: Database) -> list[str]:
     """Get all unique tag names used by Nomarr."""
-    return await get_unique_names(db, nomarr_only=True)
+    return get_unique_names(db, nomarr_only=True)
 
 
-async def find_files_matching_tag(
+def find_files_matching_tag(
     db: Database,
     name: str,
     operator: str,
     value: Any,
 ) -> set[int]:
     """Find file IDs matching a tag condition."""
-    result = await get_file_ids_matching_tag(db, name=name, operator=operator, value=value)
+    result = get_file_ids_matching_tag(db, name=name, operator=operator, value=value)
     return set(result) if not isinstance(result, set) else result
 
 
-async def get_short_to_versioned_mapping(
+def get_short_to_versioned_mapping(
     db: Database,
     namespace: str = "nom",
 ) -> dict[str, list[str]]:
@@ -37,7 +37,7 @@ async def get_short_to_versioned_mapping(
     Most short names map to exactly one versioned key, but future
     calibrations could create multiple versions of the same label.
     """
-    all_names = await get_nomarr_tag_names(db)
+    all_names = get_nomarr_tag_names(db)
     nom_names = [name for name in all_names if name.startswith(f"{namespace}:")]
 
     mapping: dict[str, list[str]] = {}
@@ -53,11 +53,11 @@ async def get_short_to_versioned_mapping(
     return mapping
 
 
-async def resolve_short_to_versioned_keys(
+def resolve_short_to_versioned_keys(
     short_name: str,
     db: Database,
     namespace: str = "nom",
 ) -> list[str]:
     """Resolve a short tag name to its versioned storage key(s)."""
-    mapping = await get_short_to_versioned_mapping(db, namespace)
+    mapping = get_short_to_versioned_mapping(db, namespace)
     return mapping.get(short_name, [])

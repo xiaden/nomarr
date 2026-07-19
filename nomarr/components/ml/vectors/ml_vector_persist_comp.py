@@ -31,7 +31,7 @@ def _normalize_vector(vector: list[float]) -> list[float]:
     return [value / norm for value in vector]
 
 
-async def upsert_hot_track_vector(
+def upsert_hot_track_vector(
     db: Database,
     file_id: int,
     backbone: str,
@@ -75,9 +75,9 @@ async def upsert_hot_track_vector(
     }
 
     collection_name = f"vectors_track_hot__{backbone}"
-    await db.ml.replace_file_vectors(collection_name, file_id, [vector_doc])
+    db.ml.replace_file_vectors(collection_name, file_id, [vector_doc])
 
-    stored_vectors = await db.ml.list_file_vectors(collection_name, file_id)
+    stored_vectors = db.ml.list_file_vectors(collection_name, file_id)
     stored_vector_id = next(
         (
             str(stored_vector_id)
@@ -94,7 +94,7 @@ async def upsert_hot_track_vector(
     return stored_vector_id
 
 
-async def persist_backbone_vector(
+def persist_backbone_vector(
     db: Database,
     file_id: int,
     backbone: str,
@@ -123,7 +123,7 @@ async def persist_backbone_vector(
     try:
         vector = pool_embedding_for_storage(embeddings_2d)
         embed_dim = get_embedding_dimension(embeddings_2d)
-        await upsert_hot_track_vector(
+        upsert_hot_track_vector(
             db=db,
             file_id=file_id,
             backbone=backbone,

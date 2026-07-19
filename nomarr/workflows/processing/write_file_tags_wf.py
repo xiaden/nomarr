@@ -85,7 +85,7 @@ def _filter_tags_for_mode(
     return Tags(items=filtered_items)
 
 
-async def _resolve_library_path(
+def _resolve_library_path(
     file_doc: dict[str, Any],
     db: Database,
 ) -> LibraryPath | None:
@@ -93,7 +93,7 @@ async def _resolve_library_path(
     stored_path = file_doc.get("path", "")
     library_id = file_doc.get("library_id")
 
-    library_path = await build_library_path_from_db(
+    library_path = build_library_path_from_db(
         stored_path=stored_path,
         db=db,
         library_id=library_id,
@@ -103,7 +103,7 @@ async def _resolve_library_path(
     return library_path if library_path.is_valid() else None
 
 
-async def write_file_tags_workflow(
+def write_file_tags_workflow(
     db: Database,
     file_key: str,
     target_mode: str,
@@ -137,7 +137,7 @@ async def write_file_tags_workflow(
     """
     try:
         # Get file document via component
-        file_id, file_key, file_doc = await get_file_for_writing(db, file_key)
+        file_id, file_key, file_doc = get_file_for_writing(db, file_key)
 
         if not file_doc:
             return WriteResult(
@@ -149,7 +149,7 @@ async def write_file_tags_workflow(
             )
 
         # Resolve library path
-        library_path = await _resolve_library_path(file_doc, db)
+        library_path = _resolve_library_path(file_doc, db)
         if not library_path:
             return WriteResult(
                 file_key=file_key,
@@ -169,7 +169,7 @@ async def write_file_tags_workflow(
                 success=False,
                 error=f"Invalid library_id: {library_id}",
             )
-        library_root = await resolve_library_root(db, library_id)
+        library_root = resolve_library_root(db, library_id)
         if not library_root:
             return WriteResult(
                 file_key=file_key,
@@ -191,7 +191,7 @@ async def write_file_tags_workflow(
             )
 
         # Get tags from database (nomarr tags only) - returns Tags DTO
-        db_tags = await get_nomarr_tags(db, file_id)
+        db_tags = get_nomarr_tags(db, file_id)
 
         # Filter tags for target mode
         tags_to_write = _filter_tags_for_mode(db_tags, target_mode, has_calibration)
@@ -211,7 +211,7 @@ async def write_file_tags_workflow(
                     success=False,
                     error="file_modified_externally",
                 )
-            await release_file_claim(db, file_key)
+            release_file_claim(db, file_key)
             return WriteResult(
                 file_key=file_key,
                 tags_written=0,
@@ -222,10 +222,10 @@ async def write_file_tags_workflow(
 
         # Sync mtime in DB so scanner skips this file on next scan
         if result.new_mtime_ms is not None:
-            await update_file_modified_time(db, file_id, result.new_mtime_ms)
+            update_file_modified_time(db, file_id, result.new_mtime_ms)
 
         # Update file projection state in database
-        await set_file_written(db, file_key)
+        set_file_written(db, file_key)
 
         logger.debug(
             f"[write_file_tags] Wrote {len(tags_to_write)} tags to {library_path.relative} "
@@ -242,7 +242,7 @@ async def write_file_tags_workflow(
     except Exception as e:
         logger.exception(f"[write_file_tags] Failed to write tags for {file_key}")
         # Release claim on error (swallows exceptions internally)
-        await release_file_claim(db, file_key)
+        release_file_claim(db, file_key)
         return WriteResult(
             file_key=file_key,
             tags_written=0,

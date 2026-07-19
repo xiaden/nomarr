@@ -58,7 +58,7 @@ def derive_embed_dim(models_dir: str, backbone_id: str) -> int:
     )
 
 
-async def drain_hot_to_cold(db: Database, backbone_id: str) -> int:
+def drain_hot_to_cold(db: Database, backbone_id: str) -> int:
     """Drain hot embeddings to cold tier for a backbone via MlDb facade.
 
     Delegates to ``db.ml.index_backbone_embeddings`` which performs a single
@@ -72,10 +72,10 @@ async def drain_hot_to_cold(db: Database, backbone_id: str) -> int:
         Number of rows drained from hot to cold.
 
     """
-    return await db.ml.index_backbone_embeddings(backbone_id)
+    return db.ml.index_backbone_embeddings(backbone_id)
 
 
-async def verify_hot_empty(db: Database, backbone_id: str) -> None:
+def verify_hot_empty(db: Database, backbone_id: str) -> None:
     """Verify hot tier is empty after drain (completeness check).
 
     Queries embedding stats via the MlDb facade and raises if any hot
@@ -89,7 +89,7 @@ async def verify_hot_empty(db: Database, backbone_id: str) -> None:
         RuntimeError: If hot embeddings remain.
 
     """
-    stats = await db.ml.get_embedding_stats(backbone_id)
+    stats = db.ml.get_embedding_stats(backbone_id)
     hot_count = stats.get("hot_count", 0)
     if hot_count > 0:
         raise RuntimeError(
@@ -99,16 +99,16 @@ async def verify_hot_empty(db: Database, backbone_id: str) -> None:
         )
 
 
-async def drop_cold_vector_index(db: Database) -> None:
+def drop_cold_vector_index(db: Database) -> None:
     """Drop vector index from cold embeddings.
 
     PostgreSQL manages the partial HNSW index via schema migration — this
     delegates to the MlDb facade which is a no-op for PG.
     """
-    await db.ml.drop_vector_index()
+    db.ml.drop_vector_index()
 
 
-async def has_vector_index(db: Database, backbone_id: str) -> bool:
+def has_vector_index(db: Database, backbone_id: str) -> bool:
     """Check if the cold HNSW vector index exists.
 
     Args:
@@ -119,10 +119,10 @@ async def has_vector_index(db: Database, backbone_id: str) -> bool:
         True if the cold HNSW index exists.
 
     """
-    return await db.ml.has_vector_index(backbone_id)
+    return db.ml.has_vector_index(backbone_id)
 
 
-async def build_cold_vector_index(db: Database, embed_dim: int) -> None:
+def build_cold_vector_index(db: Database, embed_dim: int) -> None:
     """Build vector index on cold embeddings.
 
     For PostgreSQL, this is a no-op — the partial HNSW index is created
@@ -133,10 +133,10 @@ async def build_cold_vector_index(db: Database, embed_dim: int) -> None:
         embed_dim: Embedding dimension (from derive_embed_dim).
 
     """
-    await db.ml.build_vector_index(embed_dim)
+    db.ml.build_vector_index(embed_dim)
 
 
-async def rebuild_cold_vector_index(db: Database, embed_dim: int) -> None:
+def rebuild_cold_vector_index(db: Database, embed_dim: int) -> None:
     """Drop existing vector index and rebuild it.
 
     For PostgreSQL, this runs REINDEX CONCURRENTLY on the cold HNSW index
@@ -147,10 +147,10 @@ async def rebuild_cold_vector_index(db: Database, embed_dim: int) -> None:
         embed_dim: Embedding dimension.
 
     """
-    await db.ml.rebuild_vector_index(embed_dim)
+    db.ml.rebuild_vector_index(embed_dim)
 
 
-async def backfill_genres(db: Database, backbone_id: str) -> int:
+def backfill_genres(db: Database, backbone_id: str) -> int:
     """Backfill genres on cold embeddings that predate genre enrichment.
 
     Delegates to the MlDb facade which counts embeddings with NULL genres
@@ -165,4 +165,4 @@ async def backfill_genres(db: Database, backbone_id: str) -> int:
         Number of embeddings updated with genre data.
 
     """
-    return await db.ml.backfill_genres(backbone_id)
+    return db.ml.backfill_genres(backbone_id)

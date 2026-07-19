@@ -32,9 +32,9 @@ _BACKBONE = "cascade_drain_bb"
 # ── helpers ─────────────────────────────────────────────────────
 
 
-async def _create_library_and_file(session, *, lib_name: str = "CD Lib", idx: int = 0):
+def _create_library_and_file(session, *, lib_name: str = "CD Lib", idx: int = 0):
     """Insert a library + one file.  Return ``(library_id, file_id)``."""
-    lib_r = await session.execute(
+    lib_r = session.execute(
         insert(Library).values(
             name=lib_name,
             path=f"/cd/lib{idx}",
@@ -46,7 +46,7 @@ async def _create_library_and_file(session, *, lib_name: str = "CD Lib", idx: in
         )
     )
     lib_id = lib_r.inserted_primary_key[0]
-    file_r = await session.execute(
+    file_r = session.execute(
         insert(LibraryFile).values(
             library_id=lib_id,
             path=f"/cd/lib{idx}/track{idx}.mp3",
@@ -82,41 +82,39 @@ class TestCascadeAndDrain:
 
     # ── P3-S1: cascade delete ───────────────────────────────────
 
-    @pytest.mark.asyncio
-    async def test_delete_library_cascades_to_files(self, pg_session) -> None:
+    def test_delete_library_cascades_to_files(self, pg_session) -> None:
         """Deleting a library must cascade-delete its library_files rows."""
-        lib_id, _file_id = await _create_library_and_file(pg_session)
+        lib_id, _file_id = _create_library_and_file(pg_session)
 
         lib_repo = LibraryRepository(pg_session)
         file_repo = FileRepository(pg_session)
 
         # Sanity: library and file exist before delete.
-        assert await lib_repo.get_library(lib_id) is not None
-        assert await file_repo.count_library_files(lib_id) == 1
+        assert lib_repo.get_library(lib_id) is not None
+        assert file_repo.count_library_files(lib_id) == 1
 
         # Delete the library — FK ON DELETE CASCADE removes files.
-        await lib_repo.remove_library(lib_id)
+        lib_repo.remove_library(lib_id)
 
         # Library gone.
-        assert await lib_repo.get_library(lib_id) is None
+        assert lib_repo.get_library(lib_id) is None
         # Files gone (cascade).
-        assert await file_repo.count_library_files(lib_id) == 0
+        assert file_repo.count_library_files(lib_id) == 0
 
     # ── P3-S2: drain + delete verification ──────────────────────
 
-    @pytest.mark.asyncio
-    async def test_delete_embeddings_for_file(self, pg_session) -> None:
+    def test_delete_embeddings_for_file(self, pg_session) -> None:
         """delete_embeddings_for_file removes only the target file's rows."""
-        _, file_id_a = await _create_library_and_file(pg_session, lib_name="Def Lib A", idx=10)
+        _, file_id_a = _create_library_and_file(pg_session, lib_name="Def Lib A", idx=10)
         # Second library + file (independent data).
-        _, file_id_b = await _create_library_and_file(pg_session, lib_name="Def Lib B", idx=11)
+        _, file_id_b = _create_library_and_file(pg_session, lib_name="Def Lib B", idx=11)
 
         vec_repo = VectorRepo(pg_session)
 
         # Two embeddings per file.
         for seed_offset, fid in enumerate((file_id_a, file_id_b)):
             for j in range(2):
-                await vec_repo.insert_embedding(
+                vec_repo.insert_embedding(
                     file_id=fid,
                     backbone_id=_BACKBONE,
                     model_id="model_x",
@@ -124,26 +122,25 @@ class TestCascadeAndDrain:
                 )
 
         # Sanity: 2 embeddings for each file.
-        assert len(await vec_repo.get_embeddings_for_file(file_id_a)) == 2
-        assert len(await vec_repo.get_embeddings_for_file(file_id_b)) == 2
+        assert len(vec_repo.get_embeddings_for_file(file_id_a)) == 2
+        assert len(vec_repo.get_embeddings_for_file(file_id_b)) == 2
 
         # Delete only file A's embeddings.
-        await vec_repo.delete_embeddings_for_file(file_id_a)
+        vec_repo.delete_embeddings_for_file(file_id_a)
 
-        assert len(await vec_repo.get_embeddings_for_file(file_id_a)) == 0
+        assert len(vec_repo.get_embeddings_for_file(file_id_a)) == 0
         # File B untouched.
-        assert len(await vec_repo.get_embeddings_for_file(file_id_b)) == 2
+        assert len(vec_repo.get_embeddings_for_file(file_id_b)) == 2
 
-    @pytest.mark.asyncio
-    async def test_drain_hot_to_cold_no_data_loss(self, pg_session) -> None:
+    def test_drain_hot_to_cold_no_data_loss(self, pg_session) -> None:
         """drain_hot_to_cold moves all hot rows to cold; counts match."""
-        _, file_id = await _create_library_and_file(pg_session, lib_name="Drain Lib", idx=20)
+        _, file_id = _create_library_and_file(pg_session, lib_name="Drain Lib", idx=20)
 
         vec_repo = VectorRepo(pg_session)
         num_embeddings = 50
 
         for i in range(num_embeddings):
-            await vec_repo.insert_embedding(
+            vec_repo.insert_embedding(
                 file_id=file_id,
                 backbone_id=_BACKBONE,
                 model_id="model_drain",
@@ -151,32 +148,31 @@ class TestCascadeAndDrain:
             )
 
         # All hot before drain.
-        stats_before = await vec_repo.get_embedding_stats(_BACKBONE)
+        stats_before = vec_repo.get_embedding_stats(_BACKBONE)
         assert stats_before["hot_count"] == num_embeddings
         assert stats_before["cold_count"] == 0
 
         # Drain.
-        drained = await vec_repo.drain_hot_to_cold(_BACKBONE)
+        drained = vec_repo.drain_hot_to_cold(_BACKBONE)
         assert drained == num_embeddings
 
         # All cold after drain — zero data loss.
-        stats_after = await vec_repo.get_embedding_stats(_BACKBONE)
+        stats_after = vec_repo.get_embedding_stats(_BACKBONE)
         assert stats_after["hot_count"] == 0
         assert stats_after["cold_count"] == num_embeddings
-        assert await vec_repo.count_cold_embeddings(_BACKBONE) == num_embeddings
+        assert vec_repo.count_cold_embeddings(_BACKBONE) == num_embeddings
 
-    @pytest.mark.asyncio
-    async def test_delete_all_embeddings_clears_table(self, pg_session) -> None:
+    def test_delete_all_embeddings_clears_table(self, pg_session) -> None:
         """delete_all_embeddings removes every row from the embeddings table."""
-        _, file_id_a = await _create_library_and_file(pg_session, lib_name="Clr Lib A", idx=30)
-        _, file_id_b = await _create_library_and_file(pg_session, lib_name="Clr Lib B", idx=31)
+        _, file_id_a = _create_library_and_file(pg_session, lib_name="Clr Lib A", idx=30)
+        _, file_id_b = _create_library_and_file(pg_session, lib_name="Clr Lib B", idx=31)
 
         vec_repo = VectorRepo(pg_session)
 
         # Embeddings across two files and two backbones.
         for fid in (file_id_a, file_id_b):
             for bb in ("bb_clear_1", "bb_clear_2"):
-                await vec_repo.insert_embedding(
+                vec_repo.insert_embedding(
                     file_id=fid,
                     backbone_id=bb,
                     model_id="model_clr",
@@ -184,10 +180,10 @@ class TestCascadeAndDrain:
                 )
 
         # Sanity: 4 total embeddings.
-        row = await pg_session.execute(text("SELECT COUNT(*) FROM embeddings"))
+        row = pg_session.execute(text("SELECT COUNT(*) FROM embeddings"))
         assert row.scalar() == 4
 
-        await vec_repo.delete_all_embeddings()
+        vec_repo.delete_all_embeddings()
 
-        row = await pg_session.execute(text("SELECT COUNT(*) FROM embeddings"))
+        row = pg_session.execute(text("SELECT COUNT(*) FROM embeddings"))
         assert row.scalar() == 0

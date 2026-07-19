@@ -2,6 +2,10 @@
 
 Provides safe, read-only browsing of the music library directory.
 All paths are resolved and validated to prevent directory traversal attacks.
+
+I2 exception: this file is deliberately excluded from the asyncio.to_thread() conversion.
+It uses anyio.Path for async filesystem operations — these are direct async I/O calls,
+not service bridge calls. No sync services are called here.
 """
 
 from __future__ import annotations

@@ -55,17 +55,17 @@ class WorkerDeathOpsMixin:
         """Stub — implemented by the main class."""
         raise NotImplementedError
 
-    async def _reset_restart_count(self, component_id: str) -> None:
+    def _reset_restart_count(self, component_id: str) -> None:
         """Reset the restart counter once a worker has confirmed healthy after starting.
 
         A worker that starts and runs successfully should not carry forward crash
         counts from earlier sessions or restart cycles.
         """
         try:
-            restart_state = await self.db.app.get_worker_restart_policy(component_id)
+            restart_state = self.db.app.get_worker_restart_policy(component_id)
             if isinstance(restart_state, dict) and int(restart_state.get("restart_count", 0)) > 0:
                 timestamp = now_ms().value
-                await self.db.app.update_worker_restart_policy(
+                self.db.app.update_worker_restart_policy(
                     component_id,
                     {
                         "restart_count": 0,
@@ -77,8 +77,8 @@ class WorkerDeathOpsMixin:
         except Exception:
             logger.warning("[WorkerSystemService] Failed to reset restart count for %s", component_id, exc_info=True)
 
-    async def _handle_worker_death(self, component_id: str) -> None:
-        released_file_ids = await release_claims_for_worker(self.db, component_id)
+    def _handle_worker_death(self, component_id: str) -> None:
+        released_file_ids = release_claims_for_worker(self.db, component_id)
         if released_file_ids:
             logger.info(
                 "[WorkerSystemService] Released %d claim(s) for dead worker %s - files will be reprocessed",
@@ -86,7 +86,7 @@ class WorkerDeathOpsMixin:
                 component_id,
             )
         try:
-            await release_worker_promises(self.db, component_id)
+            release_worker_promises(self.db, component_id)
         except Exception:
             logger.warning(
                 "[WorkerSystemService] Failed to release VRAM promises for dead worker %s", component_id, exc_info=True
@@ -100,7 +100,7 @@ class WorkerDeathOpsMixin:
             logger.debug("[WorkerSystemService] Cancelled existing restart timer for %s", component_id)
         restart_state = cast(
             "dict[str, Any] | None",
-            await self.db.app.get_worker_restart_policy(component_id),
+            self.db.app.get_worker_restart_policy(component_id),
         )
         restart_count = int(restart_state.get("restart_count", 0)) if restart_state is not None else 0
         last_restart_wall_ms = (
@@ -116,7 +116,7 @@ class WorkerDeathOpsMixin:
         if decision.action == "restart":
             timestamp = now_ms().value
             if restart_state is None:
-                await self.db.app.upsert_worker_restart_policy(
+                self.db.app.upsert_worker_restart_policy(
                     component_id,
                     {
                         "restart_count": 1,
@@ -127,7 +127,7 @@ class WorkerDeathOpsMixin:
                     },
                 )
             else:
-                await self.db.app.update_worker_restart_policy(
+                self.db.app.update_worker_restart_policy(
                     component_id,
                     {
                         "restart_count": restart_count + 1,
@@ -144,7 +144,7 @@ class WorkerDeathOpsMixin:
         failure_reason = decision.failure_reason or "Restart limit exceeded"
         timestamp = now_ms().value
         if restart_state is None:
-            await self.db.app.upsert_worker_restart_policy(
+            self.db.app.upsert_worker_restart_policy(
                 component_id,
                 {
                     "restart_count": 0,
@@ -155,7 +155,7 @@ class WorkerDeathOpsMixin:
                 },
             )
         else:
-            await self.db.app.update_worker_restart_policy(
+            self.db.app.update_worker_restart_policy(
                 component_id,
                 {
                     "failed_at_wall_ms": timestamp,

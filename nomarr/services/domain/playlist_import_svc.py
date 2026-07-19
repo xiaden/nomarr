@@ -42,7 +42,7 @@ class PlaylistImportService:
         self._db = db
         self._config_service = config_service
 
-    async def convert_playlist(
+    def convert_playlist(
         self,
         playlist_url: str,
         *,
@@ -68,7 +68,7 @@ class PlaylistImportService:
             PlaylistConversionError: If URL is invalid, API fails, or no library exists
 
         """
-        return await convert_playlist_workflow(
+        return convert_playlist_workflow(
             self._db,
             playlist_url,
             library_id=int(library_id) if library_id is not None else None,

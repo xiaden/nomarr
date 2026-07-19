@@ -8,13 +8,11 @@
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import dataclasses
 import logging
 import os
 import threading
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
@@ -102,10 +100,9 @@ class ConfigService:
         """Initialize ConfigService: bootstrap config to DB, load cache."""
         self._cache: dict[str, Any] = {}
         self._lock = threading.Lock()
-        self._subscriptions: dict[str, list[Callable[[str, Any], Coroutine[Any, Any, None]]]] = {}
-        self._background_tasks: set[asyncio.Task[None]] = set()
+        self._subscriptions: dict[str, list[Callable[[str, Any], None]]] = {}
         self._logger = logging.getLogger(__name__)
-        asyncio.run(self._bootstrap_and_load())
+        self._bootstrap_and_load()
 
     def get_config(self) -> ConfigResult:
         """Get a snapshot of the current configuration.
@@ -135,8 +132,7 @@ class ConfigService:
         """Write-through setter: update cache then persist to DB.
 
         If the key is in ``OBSERVABLE_KEYS``, registered callbacks are
-        scheduled via ``asyncio.create_task`` *after* the cache and DB
-        writes complete.
+        called synchronously *after* the cache and DB writes complete.
 
         Args:
             key: Config key (must be in _ALLOWED_CONFIG_KEYS)
@@ -153,31 +149,29 @@ class ConfigService:
         with self._lock:
             self._cache[key] = value
             # Snapshot callbacks under the lock — fire them after releasing it.
-            callbacks: list[Callable[[str, Any], Coroutine[Any, Any, None]]] = (
+            callbacks: list[Callable[[str, Any], None]] = (
                 list(self._subscriptions.get(key, [])) if key in OBSERVABLE_KEYS else []
             )
 
-        db_task = asyncio.create_task(self._write_to_db(key, str(value) if value is not None else ""))
-        self._background_tasks.add(db_task)
-        db_task.add_done_callback(self._background_tasks.discard)
+        self._write_to_db(key, str(value) if value is not None else "")
         self._logger.info("Config '%s' updated (cache + DB)", key)
 
         for cb in callbacks:
-            # Keep a strong reference to prevent garbage collection of the task.
-            task = asyncio.create_task(cb(key, value))
-            self._background_tasks.add(task)
-            task.add_done_callback(self._background_tasks.discard)
+            try:
+                cb(key, value)
+            except Exception:
+                self._logger.exception("Config callback failed for key '%s'", key)
 
-    def subscribe(self, key: str, callback: Callable[[str, Any], Coroutine[Any, Any, None]]) -> None:
+    def subscribe(self, key: str, callback: Callable[[str, Any], None]) -> None:
         """Register a callback for runtime config changes.
 
-        The callback is fired (via ``asyncio.create_task``) after the value
-        has been written to cache and DB.  Only keys in ``OBSERVABLE_KEYS``
+        The callback is called synchronously after the value has been
+        written to cache and DB.  Only keys in ``OBSERVABLE_KEYS``
         can be subscribed to.
 
         Args:
             key: Config key to observe (must be in OBSERVABLE_KEYS).
-            callback: Async callable ``(key, new_value) -> None``.
+            callback: Sync callable ``(key, new_value) -> None``.
 
         Raises:
             ValueError: If *key* is not in OBSERVABLE_KEYS.
@@ -192,16 +186,16 @@ class ConfigService:
 
         self._logger.debug("Subscribed callback for observable key '%s'", key)
 
-    async def _write_to_db(self, key: str, value: str) -> None:
-        """Persist a config value to DB meta table via throwaway connection."""
+    def _write_to_db(self, key: str, value: str) -> None:
+        """Persist a config value to DB meta table via throwaway connection (sync)."""
         try:
             db = Database(
-                url=os.environ.get("PG_DATABASE_URL", "postgresql+asyncpg://nomarr:nomarr@localhost:5432/nomarr")
+                url=os.environ.get("PG_DATABASE_URL", "postgresql+psycopg2://nomarr:nomarr@localhost:5432/nomarr")
             )
             try:
-                await db.app.update_config_option(f"config_{key}", {"value": value})
+                db.app.update_config_option(f"config_{key}", {"value": value})
             finally:
-                await db.close()
+                db.close()
         except Exception:
             self._logger.exception("Failed to persist config '%s' to DB", key)
 
@@ -279,10 +273,10 @@ class ConfigService:
     # Private composition logic
     # ----------------------------------------------------------------------
 
-    async def _bootstrap_and_load(self) -> None:
+    def _bootstrap_and_load(self) -> None:
         """Bootstrap config to DB and load cache from DB.
 
-        Opens ONE throwaway Database connection and performs:
+        Opens a throwaway Database connection and performs:
         1. Compose bootstrap config (defaults → YAML → ENV)
         2. Seed to DB: write keys NOT already present (preserves web UI changes)
         3. Load all config_* keys from DB into self._cache (parsed to Python types)
@@ -294,24 +288,24 @@ class ConfigService:
 
         try:
             db = Database(
-                url=os.environ.get("PG_DATABASE_URL", "postgresql+asyncpg://nomarr:nomarr@localhost:5432/nomarr")
+                url=os.environ.get("PG_DATABASE_URL", "postgresql+psycopg2://nomarr:nomarr@localhost:5432/nomarr")
             )
             try:
                 # Batch-read existing config keys from DB
-                docs = await db.app.list_config_options(prefix="config_")
+                docs = db.app.list_config_options(prefix="config_")
                 existing_keys = {str(doc["key"])[7:] for doc in docs if "key" in doc}  # Strip 'config_' prefix
 
                 # Seed: write only keys NOT already in DB
                 for key in _ALLOWED_CONFIG_KEYS:
                     if key not in existing_keys and key in bootstrap_config:
                         value = bootstrap_config[key]
-                        await db.app.update_config_option(
+                        db.app.update_config_option(
                             f"config_{key}",
                             {"value": str(value) if value is not None else ""},
                         )
 
                 # Load: read all config_* keys back into cache
-                all_docs = await db.app.list_config_options(prefix="config_")
+                all_docs = db.app.list_config_options(prefix="config_")
                 for meta_doc in all_docs:
                     meta_key = str(meta_doc.get("key", ""))
                     config_key = meta_key[7:]  # Strip 'config_' prefix
@@ -320,7 +314,7 @@ class ConfigService:
 
                 self._logger.debug("Config bootstrap complete: %d keys loaded", len(self._cache))
             finally:
-                await db.close()
+                db.close()
 
         except Exception as e:
             # DB unavailable at startup — fall back to bootstrap config directly
@@ -339,7 +333,10 @@ class ConfigService:
         if stripped.isdigit() and (len(stripped) == len(value) or len(value) == len(stripped) + 1):
             return int(value)
         if value.replace(".", "", 1).replace("-", "", 1).isdigit():
-            return float(value)
+            try:
+                return float(value)
+            except ValueError:
+                return value
         return value
 
     def _build_bootstrap_config(self) -> dict[str, Any]:
@@ -369,8 +366,7 @@ class ConfigService:
         # 3) Environment variable overrides (flat -> nested mapping)
         self._apply_env_overrides(cfg)
 
-        with contextlib.suppress(Exception):
-            self._logger.debug("Bootstrap config composed; keys: %s", list(cfg.keys()))
+        self._logger.debug("Bootstrap config composed; keys: %s", list(cfg.keys()))
 
         return cfg
 

@@ -74,7 +74,7 @@ class BaseONNXModel(ABC):
     # Session lifecycle
     # ------------------------------------------------------------------
 
-    async def load(self, device: DevicePlacement) -> None:
+    def load(self, device: DevicePlacement) -> None:
         """Create and store an ONNX session for *device*.
 
         When *device* is ``"gpu"``, retrieves the worker context from
@@ -103,7 +103,7 @@ class BaseONNXModel(ABC):
             ctx = _worker_ctx.get_worker_context()
             if ctx is not None:
                 db, worker_id = ctx
-                raw_doc = await db.app.get_config_option(key=f"{_VRAM_META_PREFIX}{self._path}")
+                raw_doc = db.app.get_config_option(key=f"{_VRAM_META_PREFIX}{self._path}")
                 raw = None if raw_doc is None else raw_doc.get("value")
                 if raw is not None:
                     vram_limit_bytes = int(raw)
@@ -147,7 +147,7 @@ class BaseONNXModel(ABC):
             ctx = _worker_ctx.get_worker_context()
             if ctx is not None:
                 db, worker_id = ctx
-                _coordinator.release_vram_promise(db, worker_id, self._path)  # type: ignore[unused-coroutine]
+                _coordinator.release_vram_promise(db, worker_id, self._path)
         self._session = None
         self._device = None
 
@@ -175,13 +175,13 @@ class BaseONNXModel(ABC):
             return
         self.unload()
         try:
-            self.load(value)  # type: ignore[unused-coroutine]
+            self.load(value)
         except VramFitError:
             logger.warning(
                 "[model] VRAM coordinator rejected GPU for %s — falling back to CPU",
                 self._path,
             )
-            self.load("cpu")  # type: ignore[unused-coroutine]
+            self.load("cpu")
             raise
 
     # ------------------------------------------------------------------
@@ -200,7 +200,7 @@ class BaseONNXModel(ABC):
 
         """
 
-    async def run(self, inputs: np.ndarray) -> np.ndarray:
+    def run(self, inputs: np.ndarray) -> np.ndarray:
         """Run inference, self-healing and falls back to CPU when needed.
 
         The loop repeats until either:
@@ -235,7 +235,7 @@ class BaseONNXModel(ABC):
                 if ctx is None:
                     raise  # probe / test context — no DB, cannot self-heal
                 db, _ = ctx
-                new_limit = await update_model_vram_from_oom(db, self._path, requested)
+                new_limit = update_model_vram_from_oom(db, self._path, requested)
                 logger.warning(
                     "[model] BFC OOM on %s (requested=%d bytes) — "
                     "updated DB limit to %d bytes; reloading (will fall to CPU if still too large)",
@@ -249,10 +249,10 @@ class BaseONNXModel(ABC):
                 # time, not at load time).
                 self.unload()
                 try:
-                    await self.load("gpu")
+                    self.load("gpu")
                 except VramFitError:
                     # Coordinator rejected the larger limit — not enough free
                     # VRAM in the fleet.  Model is already on CPU after the
                     # VramFitError path in load().  Loop will see
                     # self._device == "cpu" and raise on next iteration.
-                    await self.load("cpu")
+                    self.load("cpu")

@@ -22,7 +22,7 @@ class CollectionOverviewResult(TypedDict):
     genre_distribution: list[dict[str, Any]]
 
 
-async def compute_collection_overview(
+def compute_collection_overview(
     db: Database,
     library_id: int | None = None,
 ) -> CollectionOverviewResult:
@@ -34,7 +34,7 @@ async def compute_collection_overview(
 
     """
     return {
-        "stats": await get_library_stats(db, library_id),
-        "year_distribution": await get_year_distribution(db, library_id),
-        "genre_distribution": await get_genre_distribution(db, library_id, limit=None),
+        "stats": get_library_stats(db, library_id),
+        "year_distribution": get_year_distribution(db, library_id),
+        "genre_distribution": get_genre_distribution(db, library_id, limit=None),
     }

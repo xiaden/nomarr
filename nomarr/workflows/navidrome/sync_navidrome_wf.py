@@ -52,7 +52,7 @@ def _apply_path_prefix_map(nd_path: str, path_prefix_map: list[tuple[str, str]])
     return nd_path
 
 
-async def _resolve_song_paths(
+def _resolve_song_paths(
     songs: list[CrawledSong],
     db: Database,
     path_prefix_map: list[tuple[str, str]],
@@ -68,12 +68,12 @@ async def _resolve_song_paths(
     resolved_docs: dict[str, dict[str, Any]] = {}
     for start in range(0, len(resolved_paths), _PATH_LOOKUP_BATCH_SIZE):
         batch = resolved_paths[start : start + _PATH_LOOKUP_BATCH_SIZE]
-        resolved_docs.update(await get_files_by_paths_bulk(db, batch))
+        resolved_docs.update(get_files_by_paths_bulk(db, batch))
 
     resolved_count = sum(1 for path in resolved_paths if path in resolved_docs)
     if resolved_count == 0:
         nd_sample = raw_paths[0] if raw_paths else "(no songs)"
-        nomarr_sample = await get_sample_normalized_path(db) or "(library appears empty — run a scan first)"
+        nomarr_sample = get_sample_normalized_path(db) or "(library appears empty — run a scan first)"
         msg = (
             "Could not match Navidrome paths to Nomarr library files. "
             "Ensure the Nomarr library has been scanned, and configure navidrome_path_prefix_map "
@@ -91,7 +91,7 @@ async def _resolve_song_paths(
     return resolved_paths, resolved_docs
 
 
-async def sync_navidrome(
+def sync_navidrome(
     client: SubsonicClient,
     db: Database,
     user_id: str,
@@ -101,7 +101,7 @@ async def sync_navidrome(
 
     Walks all albums via ``getAlbumList2`` (paginated), fetches each album's
     songs, optionally rewrites their paths via configured prefix mappings,
-    resolves Nomarr file IDs via ``await get_files_by_paths_bulk(db, ...)``, and writes
+    resolves Nomarr file IDs via ``get_files_by_paths_bulk(db, ...)``, and writes
     to ``navidrome_tracks``, ``has_nd_id``, ``navidrome_playcounts``, and
     play records.  Orphan tracks (present in DB but absent from
     Navidrome) are cascade-deleted.
@@ -121,7 +121,7 @@ async def sync_navidrome(
     all_songs: list[CrawledSong] = crawl_navidrome_songs(client)
 
     # Step 2: Resolve ND paths via raw paths or configured prefix remapping
-    remapped_paths, path_to_doc = await _resolve_song_paths(all_songs, db, path_prefix_map or [])
+    remapped_paths, path_to_doc = _resolve_song_paths(all_songs, db, path_prefix_map or [])
 
     # Step 3: Build resolved mappings and play relationships
     nd_ids: list[str] = []
@@ -155,18 +155,18 @@ async def sync_navidrome(
     # Step 4: Upsert track vertices and file links (batched)
     tracks_upserted = 0
     for i in range(0, len(nd_ids), _UPSERT_BATCH_SIZE):
-        tracks_upserted += await bulk_upsert_navidrome_tracks(db, nd_ids[i : i + _UPSERT_BATCH_SIZE])
+        tracks_upserted += bulk_upsert_navidrome_tracks(db, nd_ids[i : i + _UPSERT_BATCH_SIZE])
 
     for i in range(0, len(file_link_mappings), _UPSERT_BATCH_SIZE):
-        await bulk_ensure_navidrome_file_links(db, file_link_mappings[i : i + _UPSERT_BATCH_SIZE])
+        bulk_ensure_navidrome_file_links(db, file_link_mappings[i : i + _UPSERT_BATCH_SIZE])
 
     # Step 5: Upsert play count data (wipe-and-rebuild for user)
-    play_edges_upserted = await bulk_upsert_navidrome_plays(db, user_id, play_edges)
+    play_edges_upserted = bulk_upsert_navidrome_plays(db, user_id, play_edges)
 
     # Step 6: Orphan cleanup — remove tracks no longer in Navidrome
-    all_db_track_keys = await list_navidrome_track_keys(db)
+    all_db_track_keys = list_navidrome_track_keys(db)
     orphan_keys = [k for k in all_db_track_keys if k not in seen_nd_ids]
-    orphans_removed = await delete_navidrome_tracks_cascade(db, orphan_keys) if orphan_keys else 0
+    orphans_removed = delete_navidrome_tracks_cascade(db, orphan_keys) if orphan_keys else 0
     if orphans_removed:
         logger.info("sync_navidrome: Removed %d orphan tracks", orphans_removed)
 

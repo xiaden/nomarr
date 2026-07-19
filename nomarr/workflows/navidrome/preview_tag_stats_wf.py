@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def preview_tag_stats_workflow(db: Database, namespace: str = "nom") -> dict[str, dict[str, Any]]:
+def preview_tag_stats_workflow(db: Database, namespace: str = "nom") -> dict[str, dict[str, Any]]:
     """Preview statistics for all tags in the library.
 
     Returns stats for all tags: both standard tags (artist, album, year, etc.)
@@ -49,7 +49,7 @@ async def preview_tag_stats_workflow(db: Database, namespace: str = "nom") -> di
 
     """
     logger.info("[navidrome] Computing tag statistics (batched query)...")
-    stats_by_tag = await get_all_tag_stats_batched(db)
+    stats_by_tag = get_all_tag_stats_batched(db)
 
     # Add short_name and field_name to each tag's stats
     for tag_key, stats in stats_by_tag.items():

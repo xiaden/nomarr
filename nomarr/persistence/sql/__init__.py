@@ -1,7 +1,7 @@
 """SQL Core primitives and exception mapping for the persistence layer.
 
 Re-exports all eight Tier 1 CRUD primitives, the deprecated synchronous
-``map_sqlalchemy_error`` mapper, and the async ``map_persistence_exceptions``
+``map_sqlalchemy_error`` mapper, and the ``map_persistence_exceptions``
 context manager so callers can import directly from ``nomarr.persistence.sql``.
 """
 

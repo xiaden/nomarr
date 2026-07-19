@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -33,7 +33,6 @@ class TestCollectionRelMap:
 class TestListEntities:
     """Tests for list_entities."""
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
     @pytest.mark.parametrize(
@@ -46,7 +45,7 @@ class TestListEntities:
             ("year", "year"),
         ],
     )
-    async def test_uses_name_mapped_from_collection(
+    def test_uses_name_mapped_from_collection(
         self,
         collection: EntityCollection,
         expected_name: str,
@@ -59,7 +58,7 @@ class TestListEntities:
             patch("nomarr.services.domain.metadata_svc.list_tags_by_name", return_value=[]) as mock_list,
             patch("nomarr.services.domain.metadata_svc.count_tags_by_name", return_value=0) as mock_count,
         ):
-            result = await service.list_entities(collection)
+            result = service.list_entities(collection)
 
         assert result == {
             "entities": [],
@@ -76,10 +75,9 @@ class TestListEntities:
         )
         mock_count.assert_called_once_with(mock_db, expected_name, search=None)
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_passes_through_limit_offset_and_search(self) -> None:
+    def test_passes_through_limit_offset_and_search(self) -> None:
         """Explicit paging and search options should be forwarded to persistence."""
         mock_db = MagicMock()
         listed_tags = [
@@ -95,7 +93,7 @@ class TestListEntities:
             patch("nomarr.services.domain.metadata_svc.list_tags_by_name", return_value=listed_tags) as mock_list,
             patch("nomarr.services.domain.metadata_svc.count_tags_by_name", return_value=1) as mock_count,
         ):
-            result = await service.list_entities("artist", limit=10, offset=5, search="art")
+            result = service.list_entities("artist", limit=10, offset=5, search="art")
 
         assert result == {
             "entities": [
@@ -122,25 +120,23 @@ class TestListEntities:
 class TestGetEntity:
     """Tests for get_entity."""
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_none_when_tag_not_found(self) -> None:
+    def test_returns_none_when_tag_not_found(self) -> None:
         """Missing tags should surface as None."""
         mock_db = MagicMock()
         service = _make_service(db=mock_db)
 
-        with patch("nomarr.services.domain.metadata_svc.get_tag", AsyncMock(return_value=None)) as mock_get_tag:
-            result = await service.get_entity("tags/missing")
+        with patch("nomarr.services.domain.metadata_svc.get_tag", MagicMock(return_value=None)) as mock_get_tag:
+            result = service.get_entity("tags/missing")
 
         assert result is None
         mock_get_tag.assert_called_once_with(mock_db, "tags/missing")
         mock_db.song_has_tags.count.assert_not_called()
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_entity_dict_when_tag_found(self) -> None:
+    def test_returns_entity_dict_when_tag_found(self) -> None:
         """Existing tags should be transformed into an entity dict."""
         mock_db = MagicMock()
         tag_doc = {
@@ -150,10 +146,10 @@ class TestGetEntity:
         service = _make_service(db=mock_db)
 
         with (
-            patch("nomarr.services.domain.metadata_svc.get_tag", AsyncMock(return_value=tag_doc)) as mock_get_tag,
-            patch("nomarr.services.domain.metadata_svc.count_songs_for_tag", AsyncMock(return_value=7)) as mock_count,
+            patch("nomarr.services.domain.metadata_svc.get_tag", MagicMock(return_value=tag_doc)) as mock_get_tag,
+            patch("nomarr.services.domain.metadata_svc.count_songs_for_tag", MagicMock(return_value=7)) as mock_count,
         ):
-            result = await service.get_entity("tags/artist-1")
+            result = service.get_entity("tags/artist-1")
 
         assert result == {
             "id": 1,
@@ -167,10 +163,9 @@ class TestGetEntity:
 class TestGetEntityCounts:
     """Tests for get_entity_counts."""
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_calls_tags_persistence_for_all_singular_names(self) -> None:
+    def test_calls_tags_persistence_for_all_singular_names(self) -> None:
         """Entity counts should be derived from the tags persistence layer."""
         mock_db = MagicMock()
         counts_by_name = {
@@ -186,7 +181,7 @@ class TestGetEntityCounts:
             "nomarr.services.domain.metadata_svc.count_tags_by_name",
             side_effect=lambda _db, name: counts_by_name[name],
         ) as mock_count:
-            result = await service.get_entity_counts()
+            result = service.get_entity_counts()
 
         assert result == {
             "artists": 11,
@@ -208,23 +203,22 @@ class TestGetEntityCounts:
 
 
 class TestListSongsForEntity:
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_returns_song_ids_and_count_via_flat_api(self) -> None:
+    def test_returns_song_ids_and_count_via_flat_api(self) -> None:
         mock_db = MagicMock()
         service = _make_service(db=mock_db)
         with (
             patch(
                 "nomarr.services.domain.metadata_svc.list_songs_for_tag",
-                AsyncMock(return_value=["songs/1", "songs/2"]),
+                MagicMock(return_value=["songs/1", "songs/2"]),
             ) as mock_list,
             patch(
                 "nomarr.services.domain.metadata_svc.count_songs_for_tag",
-                AsyncMock(return_value=5),
+                MagicMock(return_value=5),
             ) as mock_count,
         ):
-            result = await service.list_songs_for_entity("tags/artist-1", "artist", limit=10, offset=0)
+            result = service.list_songs_for_entity("tags/artist-1", "artist", limit=10, offset=0)
         assert result["song_ids"] == ["songs/1", "songs/2"]
         assert result["total"] == 5
         assert result["limit"] == 10
@@ -232,23 +226,22 @@ class TestListSongsForEntity:
         mock_list.assert_called_once_with(mock_db, "tags/artist-1", limit=10, offset=0)
         mock_count.assert_called_once_with(mock_db, "tags/artist-1")
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_paging_params_forwarded(self) -> None:
+    def test_paging_params_forwarded(self) -> None:
         mock_db = MagicMock()
         service = _make_service(db=mock_db)
         with (
             patch(
                 "nomarr.services.domain.metadata_svc.list_songs_for_tag",
-                AsyncMock(return_value=[]),
+                MagicMock(return_value=[]),
             ) as mock_list,
             patch(
                 "nomarr.services.domain.metadata_svc.count_songs_for_tag",
-                AsyncMock(return_value=100),
+                MagicMock(return_value=100),
             ) as mock_count,
         ):
-            result = await service.list_songs_for_entity("tags/genre-7", "genre", limit=25, offset=50)
+            result = service.list_songs_for_entity("tags/genre-7", "genre", limit=25, offset=50)
         assert result["limit"] == 25
         assert result["offset"] == 50
         mock_list.assert_called_once_with(mock_db, "tags/genre-7", limit=25, offset=50)

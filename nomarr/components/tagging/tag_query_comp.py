@@ -107,20 +107,20 @@ def _first_name_value(tag_docs: list[dict[str, Any]], name: str) -> str:
     return ""
 
 
-async def get_tag(db: Database, tag_id: int) -> dict[str, Any] | None:
+def get_tag(db: Database, tag_id: int) -> dict[str, Any] | None:
     """Get one tag document by ``id``."""
-    return _narrow_tag_dict_opt(await db.library.get_tag(tag_id))
+    return _narrow_tag_dict_opt(db.library.get_tag(tag_id))
 
 
-async def count_songs_for_tag(db: Database, tag_id: int) -> int:
+def count_songs_for_tag(db: Database, tag_id: int) -> int:
     """Count files linked to one tag using the intent-level library facade."""
-    tag = await get_tag(db, tag_id)
+    tag = get_tag(db, tag_id)
     if tag is None:
         return 0
-    return len(await db.library.list_file_ids_for_tag_id(tag_id, limit=None))
+    return len(db.library.list_file_ids_for_tag_id(tag_id, limit=None))
 
 
-async def list_tags_by_name(
+def list_tags_by_name(
     db: Database,
     name: str | None = None,
     limit: int = 100,
@@ -132,27 +132,27 @@ async def list_tags_by_name(
     if sort_by_count:
         # For sort_by_count we need all matching tags sorted by count desc — fetch all, then sort.
         # This is an uncommon path so the cost is acceptable.
-        total = await db.library.count_tags_filtered(name=name, search=search)
+        total = db.library.count_tags_filtered(name=name, search=search)
         raw_tags = _narrow_tag_list(
-            await db.library.list_tags_with_song_count(name=name, search=search, limit=total, offset=0),
+            db.library.list_tags_with_song_count(name=name, search=search, limit=total, offset=0),
         )
         raw_tags.sort(key=lambda item: (-item.get("song_count", 0), str(item.get("value", "")).lower()))
         return raw_tags[offset : offset + limit]
 
     # Default path: sort by value, paginated server-side
     return _narrow_tag_list(
-        await db.library.list_tags_with_song_count(name=name, search=search, limit=limit, offset=offset),
+        db.library.list_tags_with_song_count(name=name, search=search, limit=limit, offset=offset),
     )
 
 
-async def count_tags_by_name(db: Database, name: str | None = None, search: str | None = None) -> int:
+def count_tags_by_name(db: Database, name: str | None = None, search: str | None = None) -> int:
     """Count tags, optionally filtered by tag name and search text."""
-    return await db.library.count_tags_filtered(name=name, search=search)
+    return db.library.count_tags_filtered(name=name, search=search)
 
 
-async def get_song_tags(db: Database, song_id: int, name: str | None = None, nomarr_only: bool = False) -> Tags:
+def get_song_tags(db: Database, song_id: int, name: str | None = None, nomarr_only: bool = False) -> Tags:
     """Return tags for one song as a ``Tags`` DTO."""
-    tag_docs = _narrow_tag_list(await db.library.list_tags_for_file(song_id))
+    tag_docs = _narrow_tag_list(db.library.list_tags_for_file(song_id))
     rows: list[dict[str, Any]] = []
     for tag in tag_docs:
         tag_name = tag.get("name")
@@ -166,12 +166,12 @@ async def get_song_tags(db: Database, song_id: int, name: str | None = None, nom
     return Tags.from_db_rows(rows)
 
 
-async def get_nomarr_tags_bulk(db: Database, file_ids: list[int]) -> dict[int, Tags]:
+def get_nomarr_tags_bulk(db: Database, file_ids: list[int]) -> dict[int, Tags]:
     """Return Nomarr-prefixed tags for many files in one query."""
     if not file_ids:
         return {}
 
-    result_raw = await db.library.list_file_tags_for_files(
+    result_raw = db.library.list_file_tags_for_files(
         file_ids,
         name_starts_with="nom:",
     )
@@ -190,27 +190,25 @@ async def get_nomarr_tags_bulk(db: Database, file_ids: list[int]) -> dict[int, T
     return result
 
 
-async def list_songs_for_tag(db: Database, tag_id: int, limit: int = 100, offset: int = 0) -> list[int]:
+def list_songs_for_tag(db: Database, tag_id: int, limit: int = 100, offset: int = 0) -> list[int]:
     """List song ids connected to one tag via the intent-level library facade."""
-    tag = await get_tag(db, tag_id)
+    tag = get_tag(db, tag_id)
     if tag is None:
         return []
-    result = await db.library.list_file_ids_for_tag_id(tag_id, limit=limit, offset=offset)
+    result = db.library.list_file_ids_for_tag_id(tag_id, limit=limit, offset=offset)
     if isinstance(result, list):
         return [fid for fid in result if isinstance(fid, int)]
     return []
 
 
-async def get_file_ids_matching_tag(db: Database, name: str, operator: str, value: TagValue) -> set[int]:
+def get_file_ids_matching_tag(db: Database, name: str, operator: str, value: TagValue) -> set[int]:
     """Return file ids matching one tag comparison."""
-    total = await db.library.count_tags()
+    total = db.library.count_tags()
     if total <= 0:
         return set()
 
     all_tags = _narrow_tag_list(
-        await db.library.list_tags(name=name, limit=total)
-        if name is not None
-        else await db.library.list_tags(limit=total)
+        db.library.list_tags(name=name, limit=total) if name is not None else db.library.list_tags(limit=total)
     )
     matching_tags = [tag for tag in all_tags if _matches_tag_operator(tag.get("value"), operator, value)]
 
@@ -221,7 +219,7 @@ async def get_file_ids_matching_tag(db: Database, name: str, operator: str, valu
         if not isinstance(tag_name, str) or tag_value is None:
             continue
         for file_doc in _narrow_tag_list(
-            await db.library.search_files_by_tag(tag_name, str(tag_value), limit=None),
+            db.library.search_files_by_tag(tag_name, str(tag_value), limit=None),
         ):
             file_id = file_doc.get("id")
             if isinstance(file_id, int):
@@ -229,7 +227,7 @@ async def get_file_ids_matching_tag(db: Database, name: str, operator: str, valu
     return file_ids
 
 
-async def get_file_ids_for_tags(
+def get_file_ids_for_tags(
     db: Database,
     tag_specs: list[tuple[str, str]],
     library_id: int | None = None,
@@ -242,23 +240,23 @@ async def get_file_ids_for_tags(
     if library_id is not None:
         library_ids = {
             file_id
-            for file_doc in _narrow_tag_list(await db.library.list_library_files(library_id))
+            for file_doc in _narrow_tag_list(db.library.list_library_files(library_id))
             if isinstance(file_id := file_doc.get("id"), int)
         }
 
-    total = await db.library.count_tags()
+    total = db.library.count_tags()
 
     for name, value in tag_specs:
         if value == "*":
             tags: list[dict[str, Any]] = (
-                _narrow_tag_list(await db.library.list_tags(name=name, limit=total)) if total > 0 else []
+                _narrow_tag_list(db.library.list_tags(name=name, limit=total)) if total > 0 else []
             )
         else:
             tags = []
             seen_ids: set[int] = set()
             for candidate in _candidate_filter_values(value):
                 for tag in _narrow_tag_list(
-                    await db.library.list_tags(name=name, value=candidate, limit=total),
+                    db.library.list_tags(name=name, value=candidate, limit=total),
                 ):
                     tag_id = tag.get("id")
                     if not isinstance(tag_id, int) or tag_id in seen_ids:
@@ -273,7 +271,7 @@ async def get_file_ids_for_tags(
             if not isinstance(tag_name, str) or tag_value is None:
                 continue
             for file_doc in _narrow_tag_list(
-                await db.library.search_files_by_tag(tag_name, str(tag_value), limit=None),
+                db.library.search_files_by_tag(tag_name, str(tag_value), limit=None),
             ):
                 file_id = file_doc.get("id")
                 if isinstance(file_id, int):
@@ -286,7 +284,7 @@ async def get_file_ids_for_tags(
     return result
 
 
-async def get_file_ids_for_mood_tags(
+def get_file_ids_for_mood_tags(
     db: Database,
     mood_values: list[str],
     mood_tier: str = "mood-strict",
@@ -301,13 +299,13 @@ async def get_file_ids_for_mood_tags(
     if library_id is not None:
         library_ids = {
             file_id
-            for file_doc in _narrow_tag_list(await db.library.list_library_files(library_id))
+            for file_doc in _narrow_tag_list(db.library.list_library_files(library_id))
             if isinstance(file_id := file_doc.get("id"), int)
         }
 
     for mood_value in mood_values:
         file_docs = _narrow_tag_list(
-            await db.library.search_files_by_tag_contains(name, mood_value, limit=None),
+            db.library.search_files_by_tag_contains(name, mood_value, limit=None),
         )
         file_ids: set[int] = {file_id for file_doc in file_docs if isinstance((file_id := file_doc.get("id")), int)}
         if library_ids is not None:
@@ -317,20 +315,20 @@ async def get_file_ids_for_mood_tags(
     return result
 
 
-async def get_unique_mood_values(db: Database, mood_tier: str = "mood-strict", limit: int = 100) -> list[str]:
+def get_unique_mood_values(db: Database, mood_tier: str = "mood-strict", limit: int = 100) -> list[str]:
     """Return unique mood values for one tier."""
     name = f"nom:{mood_tier}" if not mood_tier.startswith("nom:") else mood_tier
-    tags = await list_tags_by_name(db, name=name, limit=limit, offset=0)
+    tags = list_tags_by_name(db, name=name, limit=limit, offset=0)
     values = sorted({str(tag["value"]) for tag in tags})
     return values[:limit]
 
 
-async def get_distinct_tag_values_for_files(db: Database, file_ids: list[int], name: str) -> list[str]:
+def get_distinct_tag_values_for_files(db: Database, file_ids: list[int], name: str) -> list[str]:
     """Return distinct values for one tag name across many files."""
     if not file_ids:
         return []
 
-    raw = await db.library.list_file_tags_for_files(file_ids)
+    raw = db.library.list_file_tags_for_files(file_ids)
     if not isinstance(raw, dict):
         return []
     tags_by_file = {k: list(v) if isinstance(v, list) else [] for k, v in raw.items() if isinstance(k, int)}
@@ -343,12 +341,12 @@ async def get_distinct_tag_values_for_files(db: Database, file_ids: list[int], n
     return sorted(values)
 
 
-async def get_tag_values_grouped_by_file(db: Database, file_ids: list[int], name: str) -> dict[int, set[str]]:
+def get_tag_values_grouped_by_file(db: Database, file_ids: list[int], name: str) -> dict[int, set[str]]:
     """Return tag values grouped by file for one tag name."""
     if not file_ids:
         return {}
 
-    raw = await db.library.list_file_tags_for_files(file_ids)
+    raw = db.library.list_file_tags_for_files(file_ids)
     if not isinstance(raw, dict):
         return {}
     tags_by_file = {k: list(v) if isinstance(v, list) else [] for k, v in raw.items() if isinstance(k, int)}
@@ -364,14 +362,14 @@ async def get_tag_values_grouped_by_file(db: Database, file_ids: list[int], name
     return result
 
 
-async def get_tag_songs_with_metadata(db: Database, tag_id: int, limit: int = 50, offset: int = 0) -> list[TagSongItem]:
+def get_tag_songs_with_metadata(db: Database, tag_id: int, limit: int = 50, offset: int = 0) -> list[TagSongItem]:
     """Return song rows for a tag with basic file metadata."""
     result: list[TagSongItem] = []
-    for file_id in await list_songs_for_tag(db, tag_id, limit=limit, offset=offset):
-        file_doc = _narrow_tag_dict_opt(await db.library.get_file(file_id))
+    for file_id in list_songs_for_tag(db, tag_id, limit=limit, offset=offset):
+        file_doc = _narrow_tag_dict_opt(db.library.get_file(file_id))
         if file_doc is None:
             continue
-        tag_docs = _narrow_tag_list(await db.library.list_tags_for_file(file_id))
+        tag_docs = _narrow_tag_list(db.library.list_tags_for_file(file_id))
         result.append(
             TagSongItem(
                 file_id=str(file_id),

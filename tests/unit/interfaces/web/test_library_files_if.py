@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -64,13 +64,13 @@ def make_search_result() -> SearchFilesResult:
 @pytest.fixture
 def mock_library_service() -> MagicMock:
     """Provide a mocked library service dependency."""
-    return AsyncMock()
+    return MagicMock()
 
 
 @pytest.fixture
 def mock_tagging_service() -> MagicMock:
     """Provide a mocked tagging service dependency."""
-    return AsyncMock()
+    return MagicMock()
 
 
 @pytest.fixture

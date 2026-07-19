@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -30,11 +30,11 @@ def processor_config() -> ProcessorConfig:
 @pytest.fixture
 def worker_db() -> MagicMock:
     """Provide a mocked database handle with worker connection metadata."""
-    db = AsyncMock()
+    db = MagicMock()
     db.hosts = "http://localhost:8529"
     db.password = "test"
-    db.meta = AsyncMock()
-    db.worker_restart_policy = AsyncMock()
+    db.meta = MagicMock()
+    db.worker_restart_policy = MagicMock()
     db.worker_restart_policy.component_id.get.return_value = None
     return db
 
@@ -42,7 +42,7 @@ def worker_db() -> MagicMock:
 class TestIdlePipelineCompletion:
     """Tests for discovery worker idle-path pipeline completion checks."""
 
-    async def test_transitions_completed_libraries_and_signals_parent(
+    def test_transitions_completed_libraries_and_signals_parent(
         self,
         worker_db: MagicMock,
     ) -> None:
@@ -53,7 +53,7 @@ class TestIdlePipelineCompletion:
             {"library_id": "libraries/large", "tagged_count": INTERNAL_CALIBRATION_MIN_FILES},
             {"library_id": "libraries/small", "tagged_count": INTERNAL_CALIBRATION_MIN_FILES - 1},
         ]
-        health_pipe = AsyncMock()
+        health_pipe = MagicMock()
 
         with (
             patch(
@@ -62,7 +62,7 @@ class TestIdlePipelineCompletion:
             ) as mock_find_ml_complete_libraries,
             patch("nomarr.components.library.library_scan_state_comp.transition_pipeline_axis") as mock_transition,
         ):
-            transitions = await _check_idle_pipeline_completion(worker_db, health_pipe)
+            transitions = _check_idle_pipeline_completion(worker_db, health_pipe)
 
         assert transitions == 2
         mock_find_ml_complete_libraries.assert_called_once_with(worker_db, INTERNAL_CALIBRATION_MIN_FILES)
@@ -71,14 +71,14 @@ class TestIdlePipelineCompletion:
         assert mock_transition.call_count == 3
         health_pipe.send.assert_called_once_with(PIPELINE_FRAME_PREFIX + "calibration_trigger")
 
-    async def test_empty_completed_list_does_not_emit_pipeline_signal(
+    def test_empty_completed_list_does_not_emit_pipeline_signal(
         self,
         worker_db: MagicMock,
     ) -> None:
         """Idle-path checks with no completed libraries should be a no-op."""
         from nomarr.services.infrastructure.workers.discovery_worker import _check_idle_pipeline_completion
 
-        health_pipe = AsyncMock()
+        health_pipe = MagicMock()
 
         with (
             patch(
@@ -87,13 +87,13 @@ class TestIdlePipelineCompletion:
             ),
             patch("nomarr.components.library.library_scan_state_comp.transition_pipeline_axis") as mock_transition,
         ):
-            transitions = await _check_idle_pipeline_completion(worker_db, health_pipe)
+            transitions = _check_idle_pipeline_completion(worker_db, health_pipe)
 
         assert transitions == 0
         mock_transition.assert_not_called()
         health_pipe.send.assert_not_called()
 
-    async def test_transitions_libraries_and_returns_count_when_health_pipe_is_none(
+    def test_transitions_libraries_and_returns_count_when_health_pipe_is_none(
         self,
         worker_db: MagicMock,
     ) -> None:
@@ -112,7 +112,7 @@ class TestIdlePipelineCompletion:
             ) as mock_find_ml_complete_libraries,
             patch("nomarr.components.library.library_scan_state_comp.transition_pipeline_axis") as mock_transition,
         ):
-            transitions = await _check_idle_pipeline_completion(worker_db, None)
+            transitions = _check_idle_pipeline_completion(worker_db, None)
 
         assert transitions == 2
         mock_find_ml_complete_libraries.assert_called_once_with(worker_db, INTERNAL_CALIBRATION_MIN_FILES)
@@ -120,7 +120,7 @@ class TestIdlePipelineCompletion:
         # Large library gets both ML and CAL transitions (3 calls total: 2 for large, 1 for small)
         assert mock_transition.call_count == 3
 
-    async def test_broken_pipe_error_on_send_is_swallowed(
+    def test_broken_pipe_error_on_send_is_swallowed(
         self,
         worker_db: MagicMock,
     ) -> None:
@@ -128,7 +128,7 @@ class TestIdlePipelineCompletion:
         from nomarr.services.infrastructure.workers.discovery_worker import _check_idle_pipeline_completion
 
         completed = [{"library_id": "libraries/large", "tagged_count": INTERNAL_CALIBRATION_MIN_FILES}]
-        health_pipe = AsyncMock()
+        health_pipe = MagicMock()
         health_pipe.send.side_effect = BrokenPipeError("pipe closed")
 
         with (
@@ -138,7 +138,7 @@ class TestIdlePipelineCompletion:
             ) as mock_find_ml_complete_libraries,
             patch("nomarr.components.library.library_scan_state_comp.transition_pipeline_axis") as mock_transition,
         ):
-            transitions = await _check_idle_pipeline_completion(worker_db, health_pipe)
+            transitions = _check_idle_pipeline_completion(worker_db, health_pipe)
 
         assert transitions == 1
         mock_find_ml_complete_libraries.assert_called_once_with(worker_db, INTERNAL_CALIBRATION_MIN_FILES)

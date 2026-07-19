@@ -31,7 +31,7 @@ class VectorSearchService:
         self.db = db
         self._config_svc = config_svc
 
-    async def search_similar_tracks(
+    def search_similar_tracks(
         self,
         file_id: int,
         backbone_id: str,
@@ -70,7 +70,7 @@ class VectorSearchService:
 
         """
         # Step 1: Get the source track's vector from the per-backbone cold collection
-        vector_doc = await get_cold_track_vector(self.db, file_id, backbone_id)
+        vector_doc = get_cold_track_vector(self.db, file_id, backbone_id)
         if vector_doc is None:
             msg = (
                 f"No vector found for file '{file_id}' with backbone "
@@ -83,7 +83,7 @@ class VectorSearchService:
         group_size: int = self._config_svc.get("vector_group_size", 15)
         thoroughness: int = self._config_svc.get("vector_search_thoroughness", 10)
 
-        raw_results = await search_similar_cold_track_vectors(
+        raw_results = search_similar_cold_track_vectors(
             db=self.db,
             backbone_id=backbone_id,
             seed_vector=vector,
@@ -102,7 +102,7 @@ class VectorSearchService:
 
         return filtered_results
 
-    async def get_track_vector(self, backbone_id: str, file_id: int) -> dict[str, Any] | None:
+    def get_track_vector(self, backbone_id: str, file_id: int) -> dict[str, Any] | None:
         """Get vector for a specific track.
 
         Delegates to the get_track_vector workflow, which fetches from the
@@ -118,4 +118,4 @@ class VectorSearchService:
         """
         from nomarr.workflows.vectors.get_track_vector_wf import get_track_vector as get_track_vector_wf
 
-        return await get_track_vector_wf(self.db, file_id, backbone_id)
+        return get_track_vector_wf(self.db, file_id, backbone_id)

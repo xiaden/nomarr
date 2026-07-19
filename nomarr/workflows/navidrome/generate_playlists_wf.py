@@ -37,7 +37,7 @@ _BUILDERS = {
 }
 
 
-async def generate_playlists(
+def generate_playlists(
     db: Database,
     *,
     user_id: str,
@@ -83,7 +83,7 @@ async def generate_playlists(
 
     """
     # Step 1: Compute taste profile from caller-provided play data
-    profile = await compute_taste_profile(
+    profile = compute_taste_profile(
         db=db,
         user_id=user_id,
         top_plays=top_plays,
@@ -138,7 +138,7 @@ async def generate_playlists(
                 },
             )
             continue
-        playlists.extend(await builder(db, ctx))
+        playlists.extend(builder(db, ctx))
 
     # Step 5: Filter out playlists below min_songs
     playlists_before_filter = len(playlists)

@@ -22,8 +22,6 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import anyio
-
 from nomarr.components.ml.calibration.ml_calibration_comp import (
     compute_calibration_def_hash,
     compute_global_calibration_hash,
@@ -42,7 +40,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def import_calibration_bundle_wf(
+def import_calibration_bundle_wf(
     db: Database,
     bundle_path: str,
 ) -> dict[str, Any]:
@@ -83,15 +81,14 @@ async def import_calibration_bundle_wf(
     logger.info(f"[import_calibration] Importing bundle from {bundle_path}")
 
     path = Path(bundle_path)
-    if not await anyio.to_thread.run_sync(lambda: path.exists()):
+    if not path.exists():
         msg = f"Bundle file not found: {bundle_path}"
         raise FileNotFoundError(msg)
 
     # Parse bundle JSON
     try:
-        async with await anyio.open_file(path, encoding="utf-8") as f:
-            content = await f.read()
-            bundle_data = json.loads(content)
+        with open(path, encoding="utf-8") as f:
+            bundle_data = json.load(f)
     except json.JSONDecodeError as e:
         msg = f"Invalid JSON in bundle: {e}"
         raise ValueError(msg) from e
@@ -103,7 +100,7 @@ async def import_calibration_bundle_wf(
         raise ValueError(msg)
 
     # Build model lookup cache: (backbone, embedder_release_date) -> model_id
-    all_models = await list_registered_models(db)
+    all_models = list_registered_models(db)
     model_lookup: dict[tuple[str, str], str] = {}
     for model in all_models:
         backbone = model.get("backbone", "")
@@ -174,7 +171,7 @@ async def import_calibration_bundle_wf(
                 "bin_width": (params.get("hi", 1.0) - params.get("lo", 0.0)) / params.get("bins", 10000),
             }
 
-            await save_calibration_state(
+            save_calibration_state(
                 db,
                 model_id=model_id,
                 head_name=head_name,
@@ -197,9 +194,9 @@ async def import_calibration_bundle_wf(
             logger.exception(f"[import_calibration] Failed to import {label}: {e}")
 
     # Update global calibration version
-    calibration_states = await load_all_calibration_states(db)
+    calibration_states = load_all_calibration_states(db)
     global_version = compute_global_calibration_hash(calibration_states)
-    await set_calibration_version(db, global_version)
+    set_calibration_version(db, global_version)
 
     logger.info(
         f"[import_calibration] Import complete: {imported_count} imported, "
@@ -215,7 +212,7 @@ async def import_calibration_bundle_wf(
     }
 
 
-async def import_calibration_bundles_from_directory_wf(
+def import_calibration_bundles_from_directory_wf(
     db: Database,
     models_dir: str,
     calibrate_heads: bool = False,
@@ -244,7 +241,7 @@ async def import_calibration_bundles_from_directory_wf(
     logger.info(f"[import_calibration] Scanning {models_dir} for calibration bundles")
 
     models_path = Path(models_dir)
-    if not await anyio.to_thread.run_sync(lambda: models_path.exists()):
+    if not models_path.exists():
         logger.warning(f"[import_calibration] Models directory not found: {models_dir}")
         return {
             "bundles_processed": 0,
@@ -255,10 +252,10 @@ async def import_calibration_bundles_from_directory_wf(
 
     # Find bundle files
     if calibrate_heads:
-        bundle_files = await anyio.to_thread.run_sync(lambda: list(models_path.rglob("*-calibration-v*.json")))
+        bundle_files = list(models_path.rglob("*-calibration-v*.json"))
         logger.debug(f"[import_calibration] Found {len(bundle_files)} versioned bundles (dev mode)")
     else:
-        bundle_files = await anyio.to_thread.run_sync(lambda: list(models_path.rglob("*-calibration.json")))
+        bundle_files = list(models_path.rglob("*-calibration.json"))
         # Filter out versioned files
         bundle_files = [f for f in bundle_files if "-calibration-v" not in f.name]
         logger.debug(f"[import_calibration] Found {len(bundle_files)} reference bundles")
@@ -279,7 +276,7 @@ async def import_calibration_bundles_from_directory_wf(
 
     for bundle_file in bundle_files:
         try:
-            result = await import_calibration_bundle_wf(db, str(bundle_file))
+            result = import_calibration_bundle_wf(db, str(bundle_file))
             total_imported += result["imported_count"]
             total_skipped += result["skipped_count"]
             bundles_processed += 1
@@ -288,7 +285,7 @@ async def import_calibration_bundles_from_directory_wf(
             total_skipped += 1
 
     # Final global version (computed after all imports)
-    calibration_states = await load_all_calibration_states(db)
+    calibration_states = load_all_calibration_states(db)
     global_version = compute_global_calibration_hash(calibration_states)
 
     logger.info(

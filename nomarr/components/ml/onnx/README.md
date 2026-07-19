@@ -25,7 +25,7 @@ ONNX Runtime session management, model discovery, and caching — the execution 
 
 ## Patterns
 
-- **Session caching:** `ONNXModelCache.create()` is the async factory that discovers and wraps all models. No sessions are loaded until `warm = True`. Setting `warm = False` unloads everything (idle eviction).
+- **Session caching:** `ONNXModelCache.create()` is the factory that discovers and wraps all models. No sessions are loaded until `warm = True`. Setting `warm = False` unloads everything (idle eviction).
 - **BFC OOM self-healing:** `BaseONNXModel.run()` catches CUDA BFC arena OOM errors, falls back to CPU, and logs the transition — no manual intervention needed.
 - **VRAM coordinator integration:** `load()` checks with the fleet-wide VRAM coordinator before allocating GPU memory; raises `VramFitError` if headroom is exhausted.
 - **DB-sourced metadata:** Labels and configuration come from `ml_models`/`ml_model_outputs` collections — filesystem-only discovery is limited to probing.

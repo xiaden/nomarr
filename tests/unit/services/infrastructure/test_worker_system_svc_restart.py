@@ -1,7 +1,6 @@
 """Unit tests for WorkerSystemService restart integration."""
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -59,38 +58,30 @@ def worker_service(mock_db, mock_health_monitor, mock_pipeline_svc):
 class TestOnStatusChangeRestartLogic:
     """Test on_status_change() restart decision integration."""
 
-    @pytest.mark.asyncio
     @patch(
         "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_worker_promises",
-        new_callable=AsyncMock,
     )
     @patch(
         "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_claims_for_worker",
-        new_callable=AsyncMock,
     )
-    async def test_graceful_shutdown_prevents_restart(self, mock_release_claims, mock_release_promises, worker_service):
+    def test_graceful_shutdown_prevents_restart(self, mock_release_claims, mock_release_promises, worker_service):
         """When stop_event is set, no restart attempted."""
         worker_service._shutting_down = True
 
         worker_service.on_status_change("worker_0", "healthy", "dead", StatusChangeContext())
-        # Let the scheduled coroutine run
-        await asyncio.sleep(0)
 
         # Verify no restart-related DB calls since _shutting_down returns early
         assert worker_service.db.app.get_worker_restart_policy.call_count == 0
         assert worker_service.db.app.update_worker_restart_policy.call_count == 0
 
-    @pytest.mark.asyncio
     @patch(
         "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_worker_promises",
-        new_callable=AsyncMock,
     )
     @patch(
         "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_claims_for_worker",
-        new_callable=AsyncMock,
     )
     @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.should_restart_worker")
-    async def test_restart_decision_schedules_timer(
+    def test_restart_decision_schedules_timer(
         self, mock_should_restart, mock_release_claims, mock_release_promises, worker_service, mock_db
     ):
         """When decision is 'restart', schedules timer with backoff."""
@@ -99,14 +90,14 @@ class TestOnStatusChangeRestartLogic:
             backoff_seconds=2,
             reason="Under restart limit",
         )
-        mock_db.app.get_worker_restart_policy = AsyncMock(
+        mock_db.app.get_worker_restart_policy = MagicMock(
             return_value={
                 "component_id": "worker_1",
                 "restart_count": 2,
                 "last_restart_wall_ms": 1234567890,
             }
         )
-        mock_db.app.update_worker_restart_policy = AsyncMock()
+        mock_db.app.update_worker_restart_policy = MagicMock()
 
         with patch("threading.Timer") as mock_timer_class:
             mock_timer = MagicMock()
@@ -118,8 +109,6 @@ class TestOnStatusChangeRestartLogic:
                 "dead",
                 StatusChangeContext(),
             )
-            # Let the scheduled coroutine run
-            await asyncio.sleep(0)
 
             # Verify timer created with correct backoff
             mock_timer_class.assert_called_once()
@@ -139,17 +128,14 @@ class TestOnStatusChangeRestartLogic:
             assert update_args[0] == "worker_1"
             assert update_args[1]["restart_count"] == 3
 
-    @pytest.mark.asyncio
     @patch(
         "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_worker_promises",
-        new_callable=AsyncMock,
     )
     @patch(
         "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_claims_for_worker",
-        new_callable=AsyncMock,
     )
     @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.should_restart_worker")
-    async def test_mark_failed_decision(
+    def test_mark_failed_decision(
         self, mock_should_restart, mock_release_claims, mock_release_promises, worker_service, mock_db
     ):
         """When decision is 'mark_failed', marks worker as permanently failed."""
@@ -159,18 +145,16 @@ class TestOnStatusChangeRestartLogic:
             failure_reason="Restart limit exceeded",
             reason="Too many restarts",
         )
-        mock_db.app.get_worker_restart_policy = AsyncMock(
+        mock_db.app.get_worker_restart_policy = MagicMock(
             return_value={
                 "component_id": "worker_2",
                 "restart_count": 5,
                 "last_restart_wall_ms": 1234567890,
             }
         )
-        mock_db.app.update_worker_restart_policy = AsyncMock()
+        mock_db.app.update_worker_restart_policy = MagicMock()
 
         worker_service.on_status_change("worker_2", "healthy", "dead", StatusChangeContext())
-        # Let the scheduled coroutine run
-        await asyncio.sleep(0)
 
         # Verify health monitor called
         worker_service.health_monitor.set_failed.assert_called_once_with("worker_2")
@@ -184,17 +168,14 @@ class TestOnStatusChangeRestartLogic:
         # Verify no timer scheduled
         assert "worker_2" not in worker_service._pending_restart_timers
 
-    @pytest.mark.asyncio
     @patch(
         "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_worker_promises",
-        new_callable=AsyncMock,
     )
     @patch(
         "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_claims_for_worker",
-        new_callable=AsyncMock,
     )
     @patch("nomarr.services.infrastructure.worker_system_svc.worker_death_ops.should_restart_worker")
-    async def test_idempotent_restart_cancels_existing_timer(
+    def test_idempotent_restart_cancels_existing_timer(
         self, mock_should_restart, mock_release_claims, mock_release_promises, worker_service, mock_db
     ):
         """When worker crashes again during backoff, cancels old timer."""
@@ -203,15 +184,15 @@ class TestOnStatusChangeRestartLogic:
             backoff_seconds=2,
             reason="Under restart limit",
         )
-        mock_db.app.get_worker_restart_policy = AsyncMock(
+        mock_db.app.get_worker_restart_policy = MagicMock(
             return_value={
                 "component_id": "worker_3",
                 "restart_count": 1,
                 "last_restart_wall_ms": 1234567890,
             }
         )
-        mock_db.app.upsert_worker_restart_policy = AsyncMock()
-        mock_db.app.update_worker_restart_policy = AsyncMock()
+        mock_db.app.upsert_worker_restart_policy = MagicMock()
+        mock_db.app.update_worker_restart_policy = MagicMock()
 
         with patch("threading.Timer") as mock_timer_class:
             # First crash - create timer
@@ -224,8 +205,6 @@ class TestOnStatusChangeRestartLogic:
                 "dead",
                 StatusChangeContext(),
             )
-            # Let the scheduled coroutine run
-            await asyncio.sleep(0)
 
             # Second crash - should cancel first timer
             mock_timer_2 = MagicMock()
@@ -237,8 +216,6 @@ class TestOnStatusChangeRestartLogic:
                 "dead",
                 StatusChangeContext(),
             )
-            # Let the scheduled coroutine run
-            await asyncio.sleep(0)
 
             # Verify old timer cancelled
             mock_timer_1.cancel.assert_called_once()
@@ -297,8 +274,7 @@ class TestRestartWorkerHelper:
 class TestStopAllWorkersTimerCleanup:
     """Test stop_all_workers() cancels pending restart timers."""
 
-    @pytest.mark.asyncio
-    async def test_stop_all_workers_cancels_pending_timers(self, worker_service):
+    def test_stop_all_workers_cancels_pending_timers(self, worker_service):
         """When stopping, cancels all pending restart timers BEFORE setting _shutting_down."""
         # Setup pending timers
         mock_timer_1 = MagicMock()
@@ -314,7 +290,7 @@ class TestStopAllWorkersTimerCleanup:
         mock_worker.is_alive.return_value = False
         worker_service._workers = [mock_worker]
 
-        await worker_service.stop_all_workers(timeout_sec=1.0)
+        worker_service.stop_all_workers(timeout_sec=1.0)
 
         # Verify both timers cancelled
         mock_timer_1.cancel.assert_called_once()
@@ -435,8 +411,7 @@ class TestAddRemoveWorkers:
             assert mock_spawn.call_count == 2
             assert len(worker_service._workers) == 2
 
-    @pytest.mark.asyncio
-    async def test_remove_workers_normal(self, worker_service):
+    def test_remove_workers_normal(self, worker_service):
         """Normal path stops workers, joins, unregisters, removes from pool."""
         mock_workers = [MagicMock() for _ in range(3)]
         for i, mw in enumerate(mock_workers):
@@ -444,7 +419,7 @@ class TestAddRemoveWorkers:
             mw.is_alive.return_value = False
         worker_service._workers = list(mock_workers)
 
-        await worker_service.remove_workers(2)
+        worker_service.remove_workers(2)
 
         # Last two workers should have been stopped
         mock_workers[1].stop.assert_called_once()
@@ -458,15 +433,13 @@ class TestAddRemoveWorkers:
         assert len(worker_service._workers) == 1
         assert worker_service._workers[0] == mock_workers[0]
 
-    @pytest.mark.asyncio
-    async def test_remove_workers_zero(self, worker_service, caplog):
+    def test_remove_workers_zero(self, worker_service, caplog):
         """remove_workers(0) is a no-op with warning logged."""
         caplog.set_level("WARNING")
-        await worker_service.remove_workers(0)
+        worker_service.remove_workers(0)
         assert "remove_workers called with count=0" in caplog.text
 
-    @pytest.mark.asyncio
-    async def test_remove_workers_all_when_count_ge_pool(self, worker_service):
+    def test_remove_workers_all_when_count_ge_pool(self, worker_service):
         """When n >= len(pool), calls stop_all_workers."""
         mock_workers = [MagicMock() for _ in range(2)]
         for i, mw in enumerate(mock_workers):
@@ -474,27 +447,22 @@ class TestAddRemoveWorkers:
         worker_service._workers = list(mock_workers)
 
         with patch.object(worker_service, "stop_all_workers") as mock_stop_all:
-            await worker_service.remove_workers(3)
+            worker_service.remove_workers(3)
 
             mock_stop_all.assert_called_once()
 
-    @pytest.mark.asyncio
     @patch(
         "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_worker_promises",
-        new_callable=AsyncMock,
     )
     @patch(
         "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_claims_for_worker",
-        new_callable=AsyncMock,
     )
-    async def test_shutting_down_gates_restart_in_handle_worker_death(
+    def test_shutting_down_gates_restart_in_handle_worker_death(
         self, mock_release_claims, mock_release_promises, worker_service
     ):
         """When _shutting_down is True, _handle_worker_death returns without restart."""
         worker_service._shutting_down = True
         worker_service.on_status_change("worker_0", "healthy", "dead", StatusChangeContext())
-        # Let the scheduled coroutine run
-        await asyncio.sleep(0)
         # Verify no restart-related DB calls since we return early
         assert worker_service.db.app.get_worker_restart_policy.call_count == 0
 

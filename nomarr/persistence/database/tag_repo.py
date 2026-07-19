@@ -13,6 +13,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.repo_dto import TagRow
 from nomarr.persistence.models.file_tag import FileTag
@@ -26,7 +27,6 @@ from nomarr.persistence.sql.primitives import (
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
-    from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.schema import Table
 
 _T: Table = Tag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
@@ -52,41 +52,41 @@ def _tag_row_to_dto(row: Row) -> TagRow:
 class TagRepository:
     """Repository for the ``tags`` table."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: scoped_session[Session]) -> None:
         self._session = session
 
     # ── core CRUD ───────────────────────────────────────────────
 
-    async def get_tag(self, tag_id: int) -> TagRow | None:
+    def get_tag(self, tag_id: int) -> TagRow | None:
         """Fetch a single tag by primary key."""
-        async with map_persistence_exceptions():
-            row = await select_by_key(_T, tag_id, session=self._session)
+        with map_persistence_exceptions():
+            row = select_by_key(_T, tag_id, session=self._session)
             return _tag_row_to_dto(row) if row else None
 
-    async def get_tag_by_name(self, name: str, namespace: str) -> TagRow | None:
+    def get_tag_by_name(self, name: str, namespace: str) -> TagRow | None:
         """Fetch a tag by ``name`` AND ``namespace``."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T).where(
                 _T.c.name == name,
                 _T.c.namespace == namespace,
             )
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             row = result.fetchone()
             return _tag_row_to_dto(row) if row else None
 
-    async def get_or_create_tag(self, name: str, value: str, namespace: str) -> int:
+    def get_or_create_tag(self, name: str, value: str, namespace: str) -> int:
         """Return the id of an existing tag or insert a new one."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T.c.id).where(
                 _T.c.name == name,
                 _T.c.value == value,
                 _T.c.namespace == namespace,
             )
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             row = result.fetchone()
             if row is not None:
                 return int(row[0])
-            async with self._session.begin_nested():
+            with self._session.begin_nested():
                 payload = {
                     "name": name,
                     "value": value,
@@ -94,49 +94,49 @@ class TagRepository:
                     "source": "nomarr",
                     "created_at": int(time.time() * 1000),
                 }
-                inserted = await insert_one(_T, payload, session=self._session)
-            await self._session.commit()
+                inserted = insert_one(_T, payload, session=self._session)
+            self._session.commit()
             return int(inserted._mapping["id"])
 
-    async def create_tag(self, payload: dict[str, Any]) -> int:
+    def create_tag(self, payload: dict[str, Any]) -> int:
         """Insert a new tag row and return its ``id``."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
-                row = await insert_one(_T, payload, session=self._session)
-            await self._session.commit()
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                row = insert_one(_T, payload, session=self._session)
+            self._session.commit()
             return int(row._mapping["id"])
 
-    async def delete_tag(self, tag_id: int) -> None:
+    def delete_tag(self, tag_id: int) -> None:
         """Delete a tag by primary key."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
-                await delete_by_key(_T, tag_id, session=self._session)
-            await self._session.commit()
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                delete_by_key(_T, tag_id, session=self._session)
+            self._session.commit()
 
     # ── orphan management ───────────────────────────────────────
 
-    async def get_orphaned_tag_ids(self) -> list[int]:
+    def get_orphaned_tag_ids(self) -> list[int]:
         """Return tag ids that have no file-tag assignments."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T.c.id).outerjoin(_FT, _T.c.id == _FT.c.tag_id).where(_FT.c.id.is_(None))
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [row[0] for row in result.all()]
 
-    async def cleanup_orphaned_tags(self) -> int:
+    def cleanup_orphaned_tags(self) -> int:
         """Delete tags with no file assignments; return the count deleted."""
-        async with map_persistence_exceptions():
-            orphaned = await self.get_orphaned_tag_ids()
+        with map_persistence_exceptions():
+            orphaned = self.get_orphaned_tag_ids()
             if not orphaned:
                 return 0
-            async with self._session.begin_nested():
+            with self._session.begin_nested():
                 stmt = delete(_T).where(_T.c.id.in_(orphaned))
-                result = await self._session.execute(stmt)
-            await self._session.commit()
+                result = self._session.execute(stmt)
+            self._session.commit()
             return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult vs Result — mypy sees Result but .rowcount exists at runtime
 
     # ── tag listing ─────────────────────────────────────────────
 
-    async def list_tags(
+    def list_tags(
         self,
         *,
         name: str | None = None,
@@ -145,7 +145,7 @@ class TagRepository:
         offset: int = 0,
     ) -> list[TagRow]:
         """Return tags with optional name/value filters and pagination."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T)
             if name is not None:
                 stmt = stmt.where(_T.c.name == name)
@@ -155,21 +155,21 @@ class TagRepository:
                 stmt = stmt.offset(offset)
             if limit is not None:
                 stmt = stmt.limit(limit)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [_tag_row_to_dto(r) for r in result.all()]
 
-    async def count_tags(self) -> int:
+    def count_tags(self) -> int:
         """Return total row count of ``tags``."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(func.count()).select_from(_T)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return result.scalar() or 0
 
     # ── search ──────────────────────────────────────────────────
 
-    async def get_tag_value_frequencies(self, tag_name: str, *, limit: int) -> list[tuple[str, int]]:
+    def get_tag_value_frequencies(self, tag_name: str, *, limit: int) -> list[tuple[str, int]]:
         """Return ``(value, count)`` pairs for a given tag name, grouped."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = (
                 select(_T.c.value, func.count().label("cnt"))
                 .where(_T.c.name == tag_name)
@@ -177,10 +177,10 @@ class TagRepository:
                 .order_by(func.count().desc())
                 .limit(limit)
             )
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [(row[0], row[1]) for row in result.all()]
 
-    async def get_tag_value_frequencies_batch(
+    def get_tag_value_frequencies_batch(
         self,
         tag_names: list[str],
         *,
@@ -191,7 +191,7 @@ class TagRepository:
         Groups by ``(name, value)`` and returns a dict mapping each tag name
         to its list of ``(value, count)`` tuples, ordered by count descending.
         """
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             if not tag_names:
                 return {}
             stmt = (
@@ -200,7 +200,7 @@ class TagRepository:
                 .group_by(_T.c.name, _T.c.value)
                 .order_by(_T.c.name, func.count().desc())
             )
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             grouped: dict[str, list[tuple[str, int]]] = {name: [] for name in tag_names}
             for row in result.all():
                 name, value, cnt = row[0], row[1], row[2]
@@ -211,32 +211,32 @@ class TagRepository:
 
     # ── Plan E facade support ───────────────────────────────────
 
-    async def list_all_tag_names(self, *, limit: int | None = None) -> list[str]:
+    def list_all_tag_names(self, *, limit: int | None = None) -> list[str]:
         """Return distinct tag names."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T.c.name).distinct()
             if limit is not None:
                 stmt = stmt.limit(limit)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [row[0] for row in result.all()]
 
-    async def count_tags_filtered(
+    def count_tags_filtered(
         self,
         *,
         name: str | None = None,
         search: str | None = None,
     ) -> int:
         """Count tags with optional name and search filters."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(func.count()).select_from(_T)
             if name is not None:
                 stmt = stmt.where(_T.c.name == name)
             if search is not None:
                 stmt = stmt.where(_T.c.name.ilike(f"%{search}%"))
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return result.scalar() or 0
 
-    async def list_tags_with_song_count(
+    def list_tags_with_song_count(
         self,
         *,
         name: str | None = None,
@@ -245,7 +245,7 @@ class TagRepository:
         offset: int = 0,
     ) -> list[dict[str, Any]]:
         """Return tags with their file-assignment count."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(
                 _T.c.id,
                 _T.c.name,
@@ -277,7 +277,7 @@ class TagRepository:
                 stmt = stmt.offset(offset)
             if limit is not None:
                 stmt = stmt.limit(limit)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [
                 {
                     "id": r[0],
@@ -296,20 +296,20 @@ class TagRepository:
 
     # ── maintenance ─────────────────────────────────────────────
 
-    async def truncate_tags(self) -> None:
+    def truncate_tags(self) -> None:
         """Delete all rows from ``tags``."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
-                await self._session.execute(delete(_T))
-            await self._session.commit()
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                self._session.execute(delete(_T))
+            self._session.commit()
 
-    async def delete_tags_by_ids(self, tag_ids: list[int]) -> int:
+    def delete_tags_by_ids(self, tag_ids: list[int]) -> int:
         """Delete tags by their primary keys; return the count deleted."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             if not tag_ids:
                 return 0
-            async with self._session.begin_nested():
+            with self._session.begin_nested():
                 stmt = delete(_T).where(_T.c.id.in_(tag_ids))
-                result = await self._session.execute(stmt)
-            await self._session.commit()
+                result = self._session.execute(stmt)
+            self._session.commit()
             return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult vs Result — mypy sees Result but .rowcount exists at runtime

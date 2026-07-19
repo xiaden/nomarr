@@ -17,7 +17,7 @@ __all__ = [
 ]
 
 
-async def delete_vectors_by_file_id(db: Database, file_id: str) -> int:
+def delete_vectors_by_file_id(db: Database, file_id: str) -> int:
     """Delete vectors for a file from every registered vector collection.
 
     Args:
@@ -34,14 +34,14 @@ async def delete_vectors_by_file_id(db: Database, file_id: str) -> int:
     collection_names = db.ml.list_vector_collection_names()
 
     for collection_name in collection_names:
-        vectors = await db.ml.list_file_vectors(collection_name, int(file_id))
+        vectors = db.ml.list_file_vectors(collection_name, int(file_id))
         total_deleted += len(vectors)
-        await db.ml.remove_file_vectors(collection_name, int(file_id))
+        db.ml.remove_file_vectors(collection_name, int(file_id))
 
     return total_deleted
 
 
-async def delete_vectors_by_file_ids(db: Database, file_ids: list[str]) -> int:
+def delete_vectors_by_file_ids(db: Database, file_ids: list[str]) -> int:
     """Delete vectors for multiple files from every registered vector collection.
 
     Args:
@@ -62,9 +62,9 @@ async def delete_vectors_by_file_ids(db: Database, file_ids: list[str]) -> int:
 
     for collection_name in collection_names:
         for file_id in file_ids:
-            vectors = await db.ml.list_file_vectors(collection_name, int(file_id))
+            vectors = db.ml.list_file_vectors(collection_name, int(file_id))
             total_deleted += len(vectors)
         int_file_ids = [int(fid) for fid in file_ids]
-        await db.ml.remove_vectors_for_files(collection_name, int_file_ids)
+        db.ml.remove_vectors_for_files(collection_name, int_file_ids)
 
     return total_deleted

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def backfill_vector_genres_workflow(
+def backfill_vector_genres_workflow(
     db: Database,
     backbone_id: str,
 ) -> int:
@@ -36,7 +36,7 @@ async def backfill_vector_genres_workflow(
         backbone_id,
     )
 
-    updated = await backfill_genres(db, backbone_id)
+    updated = backfill_genres(db, backbone_id)
 
     logger.info(
         "[backfill vector genres wf] Completed for backbone=%s updated=%d",

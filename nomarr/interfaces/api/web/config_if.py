@@ -1,5 +1,6 @@
 """Configuration management endpoints for web UI."""
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Annotated
 
@@ -46,7 +47,7 @@ async def update_config(
                 status_code=400,
                 detail=f"Config key '{key}' cannot be edited via Web UI (set via config file or environment)",
             )
-        config_service.set(key, value)
+        await asyncio.to_thread(config_service.set, key, value)
         return ConfigUpdateResponse(status="success", message=f"Config '{key}' updated successfully.")
     except HTTPException:
         raise

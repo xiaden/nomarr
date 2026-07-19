@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -117,10 +117,9 @@ class TestStartWriteTagsBackground:
 class TestGetReconcileStatus:
     """Tests for reconcile status polling."""
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_get_reconcile_status_in_progress_true_when_running(self) -> None:
+    def test_get_reconcile_status_in_progress_true_when_running(self) -> None:
         """Running BTS state should surface as in_progress=True."""
         mock_db = MagicMock()
         mock_bts = MagicMock()
@@ -137,15 +136,14 @@ class TestGetReconcileStatus:
                 return_value=4,
             ),
         ):
-            result = await service.get_reconcile_status(1)
+            result = service.get_reconcile_status(1)
 
         assert result == {"pending_count": 4, "in_progress": True}
         mock_bts.get_task_status.assert_called_once_with("write_tags:1")
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_get_reconcile_status_in_progress_false_when_idle(self) -> None:
+    def test_get_reconcile_status_in_progress_false_when_idle(self) -> None:
         """Missing BTS task state should surface as in_progress=False."""
         mock_db = MagicMock()
         mock_bts = MagicMock()
@@ -162,15 +160,14 @@ class TestGetReconcileStatus:
                 return_value=2,
             ),
         ):
-            result = await service.get_reconcile_status(1)
+            result = service.get_reconcile_status(1)
 
         assert result == {"pending_count": 2, "in_progress": False}
         mock_bts.get_task_status.assert_called_once_with("write_tags:1")
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_get_reconcile_status_raises_for_unknown_library(self) -> None:
+    def test_get_reconcile_status_raises_for_unknown_library(self) -> None:
         """Unknown libraries should raise ValueError before BTS status is queried."""
         mock_db = MagicMock()
         mock_bts = MagicMock()
@@ -183,7 +180,7 @@ class TestGetReconcileStatus:
             ),
             pytest.raises(ValueError, match="Library not found: 1"),
         ):
-            await service.get_reconcile_status(1)
+            service.get_reconcile_status(1)
 
         mock_bts.get_task_status.assert_not_called()
 
@@ -191,10 +188,9 @@ class TestGetReconcileStatus:
 class TestWriteTagsToFiles:
     """Tests for direct write-tags batch processing."""
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_write_tags_to_files_raises_for_unknown_library(self) -> None:
+    def test_write_tags_to_files_raises_for_unknown_library(self) -> None:
         """Unknown libraries should raise ValueError before claiming files."""
         mock_db = MagicMock()
         service = _make_service(db=mock_db)
@@ -209,17 +205,16 @@ class TestWriteTagsToFiles:
             ) as mock_claim,
             pytest.raises(ValueError, match="Library not found: 1"),
         ):
-            await service.write_tags_to_files(1)
+            service.write_tags_to_files(1)
 
         mock_claim.assert_not_called()
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_write_tags_to_files_happy_path(self) -> None:
+    def test_write_tags_to_files_happy_path(self) -> None:
         """Successful writes should increment processed and leave failed at zero."""
         mock_db = MagicMock()
-        mock_db.app.get_config_option = AsyncMock(return_value={"value": "calibration-v1"})
+        mock_db.app.get_config_option = MagicMock(return_value={"value": "calibration-v1"})
         service = _make_service(db=mock_db)
 
         with (
@@ -229,7 +224,7 @@ class TestWriteTagsToFiles:
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[{"_key": "file1"}, {"_key": "file2"}],
+                return_value=[{"id": "file1"}, {"id": "file2"}],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
@@ -246,19 +241,18 @@ class TestWriteTagsToFiles:
                 ],
             ) as mock_workflow,
         ):
-            result = await service.write_tags_to_files(1)
+            result = service.write_tags_to_files(1)
 
         assert result == WriteTagsResult(processed=2, remaining=0, failed=0)
         assert mock_workflow.call_count == 2
         mock_release_claim.assert_not_called()
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_write_tags_to_files_partial_failure(self) -> None:
+    def test_write_tags_to_files_partial_failure(self) -> None:
         """Non-external workflow failures should increment failed without releasing claims."""
         mock_db = MagicMock()
-        mock_db.app.get_config_option = AsyncMock(return_value={"value": "calibration-v1"})
+        mock_db.app.get_config_option = MagicMock(return_value={"value": "calibration-v1"})
         service = _make_service(db=mock_db)
 
         with (
@@ -268,7 +262,7 @@ class TestWriteTagsToFiles:
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[{"_key": "file1"}, {"_key": "file2"}],
+                return_value=[{"id": "file1"}, {"id": "file2"}],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
@@ -285,18 +279,17 @@ class TestWriteTagsToFiles:
                 ],
             ),
         ):
-            result = await service.write_tags_to_files(1)
+            result = service.write_tags_to_files(1)
 
         assert result == WriteTagsResult(processed=1, remaining=0, failed=1)
         mock_release_claim.assert_not_called()
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_write_tags_to_files_externally_modified_file(self) -> None:
+    def test_write_tags_to_files_externally_modified_file(self) -> None:
         """Externally modified files should release their claim and not count as failed."""
         mock_db = MagicMock()
-        mock_db.app.get_config_option = AsyncMock(return_value=None)
+        mock_db.app.get_config_option = MagicMock(return_value=None)
         service = _make_service(db=mock_db)
 
         with (
@@ -306,7 +299,7 @@ class TestWriteTagsToFiles:
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[{"_key": "file1"}],
+                return_value=[{"id": "file1"}],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
@@ -320,18 +313,17 @@ class TestWriteTagsToFiles:
                 return_value=SimpleNamespace(success=False, error="file_modified_externally"),
             ),
         ):
-            result = await service.write_tags_to_files(1)
+            result = service.write_tags_to_files(1)
 
         assert result == WriteTagsResult(processed=0, remaining=0, failed=0)
         mock_release_claim.assert_called_once_with(mock_db, "file1")
 
-    @pytest.mark.asyncio
     @pytest.mark.unit
     @pytest.mark.mocked
-    async def test_write_tags_to_files_exception_releases_claim(self) -> None:
+    def test_write_tags_to_files_exception_releases_claim(self) -> None:
         """Workflow exceptions should count as failures and release the file claim."""
         mock_db = MagicMock()
-        mock_db.app.get_config_option = AsyncMock(return_value={"value": "calibration-v1"})
+        mock_db.app.get_config_option = MagicMock(return_value={"value": "calibration-v1"})
         service = _make_service(db=mock_db)
 
         with (
@@ -341,7 +333,7 @@ class TestWriteTagsToFiles:
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[{"_key": "file1"}],
+                return_value=[{"id": "file1"}],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
@@ -355,7 +347,7 @@ class TestWriteTagsToFiles:
                 side_effect=RuntimeError("boom"),
             ),
         ):
-            result = await service.write_tags_to_files(1)
+            result = service.write_tags_to_files(1)
 
         assert result == WriteTagsResult(processed=0, remaining=0, failed=1)
         mock_release_claim.assert_called_once_with(mock_db, "file1")

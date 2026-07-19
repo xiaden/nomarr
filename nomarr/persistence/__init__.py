@@ -1,6 +1,6 @@
 """Persistence layer — PostgreSQL database access and schema definitions.
 
-Provides type-safe access to the PostgreSQL database using SQLAlchemy async.
+Provides type-safe access to the PostgreSQL database using SQLAlchemy.
 All database operations flow through this layer; layers above (interfaces,
 services, workflows) must never access the database directly.
 

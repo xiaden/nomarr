@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -17,9 +17,9 @@ PATCH_BASE = "nomarr.components.ml.vectors.ml_vector_persist_comp"
 class TestUpsertHotTrackVector:
     """Tests for ``upsert_hot_track_vector``."""
 
-    async def test_replaces_file_vectors_and_reloads_vector_id(self) -> None:
+    def test_replaces_file_vectors_and_reloads_vector_id(self) -> None:
         """Writes the vector document through normalized file-vector methods and reloads its id."""
-        mock_db = AsyncMock()
+        mock_db = MagicMock()
         expected_key = hashlib.sha1(b"1|abc123").hexdigest()
         mock_db.ml.list_file_vectors.return_value = [
             {
@@ -29,7 +29,7 @@ class TestUpsertHotTrackVector:
         ]
 
         with patch(f"{PATCH_BASE}.internal_ms", return_value=MagicMock(value=1234)):
-            vector_id = await upsert_hot_track_vector(
+            vector_id = upsert_hot_track_vector(
                 db=mock_db,
                 file_id=1,
                 backbone="effnet",
@@ -66,9 +66,9 @@ class TestUpsertHotTrackVector:
 class TestPersistBackboneVector:
     """Tests for ``persist_backbone_vector``."""
 
-    async def test_returns_elapsed_ms_on_success(self) -> None:
+    def test_returns_elapsed_ms_on_success(self) -> None:
         """Returns elapsed milliseconds and persists the pooled vector on success."""
-        mock_db = AsyncMock()
+        mock_db = MagicMock()
         embeddings = np.ones((3, 128))
         pooled_vector = [0.25] * 128
 
@@ -87,7 +87,7 @@ class TestPersistBackboneVector:
                 return_value="vectors_track_hot__effnet/vector-doc",
             ) as mock_upsert_hot_track_vector,
         ):
-            result = await persist_backbone_vector(
+            result = persist_backbone_vector(
                 db=mock_db,
                 file_id=1,
                 backbone="effnet",
@@ -110,9 +110,9 @@ class TestPersistBackboneVector:
             num_segments=embeddings.shape[0],
         )
 
-    async def test_returns_none_on_exception(self) -> None:
+    def test_returns_none_on_exception(self) -> None:
         """Returns None and logs a warning when persistence raises an exception."""
-        mock_db = AsyncMock()
+        mock_db = MagicMock()
         embeddings = np.ones((3, 128))
 
         with (
@@ -125,7 +125,7 @@ class TestPersistBackboneVector:
             ) as mock_upsert_hot_track_vector,
             patch(f"{PATCH_BASE}.logger.warning") as mock_logger_warning,
         ):
-            result = await persist_backbone_vector(
+            result = persist_backbone_vector(
                 db=mock_db,
                 file_id=1,
                 backbone="effnet",
@@ -154,9 +154,9 @@ class TestPersistBackboneVector:
             exc_info=True,
         )
 
-    async def test_passes_correct_args_to_upsert_vector(self) -> None:
+    def test_passes_correct_args_to_upsert_vector(self) -> None:
         """Passes the expected keyword arguments to the component-owned hot upsert seam."""
-        mock_db = AsyncMock()
+        mock_db = MagicMock()
         embeddings = np.ones((3, 64))
         pooled_vector = [0.1] * 64
 
@@ -175,7 +175,7 @@ class TestPersistBackboneVector:
                 return_value="vectors_track_hot__effnet/vector-doc",
             ) as mock_upsert_hot_track_vector,
         ):
-            result = await persist_backbone_vector(
+            result = persist_backbone_vector(
                 db=mock_db,
                 file_id=f"{'library_files'}/f1",
                 backbone="effnet",

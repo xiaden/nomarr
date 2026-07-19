@@ -20,7 +20,7 @@ def _normalize_file_id(file_ref: str) -> str:
     return file_ref
 
 
-async def upsert_library_file(
+def upsert_library_file(
     db: Database,
     path: LibraryPath,
     library_id: int,
@@ -41,7 +41,7 @@ async def upsert_library_file(
     normalized_path = str(path.relative)
     absolute_path = str(path.absolute)
     library_key = library_key_from_ref(str(library_id))
-    return await db.library.add_file_to_library(
+    return db.library.add_file_to_library(
         library_id,
         {
             "path": absolute_path,
@@ -57,7 +57,7 @@ async def upsert_library_file(
     )
 
 
-async def delete_library_file(db: Database, file_id: int) -> None:
+def delete_library_file(db: Database, file_id: int) -> None:
     """Delete a library-file document and its edges.
 
     Accepts a file ID (integer) or a raw file path (resolved via path lookup).
@@ -67,13 +67,13 @@ async def delete_library_file(db: Database, file_id: int) -> None:
     try:
         int(file_id)
         # It's a numeric ID, use it directly
-        await db.library.remove_file(file_id)
+        db.library.remove_file(file_id)
     except ValueError:
         # Not an integer, treat as path
-        await db.library.remove_file_by_path(str(file_id))
+        db.library.remove_file_by_path(str(file_id))
 
 
-async def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[int]:
+def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[int]:
     """Batch-upsert library files with ownership edges.
 
     Each file_doc must include a ``library_id`` key. Returns id integers in
@@ -95,7 +95,7 @@ async def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[in
     result = [0] * len(file_docs)
     for library_id, entries in grouped_docs.items():
         payloads = [payload for _, payload in entries]
-        file_ids = await db.library.add_files_to_library(library_id, payloads)
+        file_ids = db.library.add_files_to_library(library_id, payloads)
         if len(file_ids) != len(entries):
             msg = f"add_files_to_library() returned {len(file_ids)} ids for {len(entries)} payloads"
             raise RuntimeError(msg)
@@ -104,7 +104,7 @@ async def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[in
     return result
 
 
-async def update_file_path(
+def update_file_path(
     db: Database,
     file_id: int,
     new_path: str,
@@ -114,7 +114,7 @@ async def update_file_path(
     normalized_path: str | None = None,
 ) -> None:
     """Update path and metadata for a moved file."""
-    await db.library.update_library_file_path(file_id, new_path)
+    db.library.update_library_file_path(file_id, new_path)
     fields: dict[str, Any] = {
         "file_size": file_size,
         "modified_time": modified_time,
@@ -124,15 +124,15 @@ async def update_file_path(
     }
     if normalized_path is not None:
         fields["normalized_path"] = normalized_path
-    await db.library.update_file_fields(file_id, fields)
+    db.library.update_file_fields(file_id, fields)
 
 
-async def update_file_modified_time(db: Database, file_key: int, modified_time_ms: int) -> None:
+def update_file_modified_time(db: Database, file_key: int, modified_time_ms: int) -> None:
     """Update the stored modified-time after a successful file write."""
-    await db.library.update_library_file_modified_time(file_key, modified_time_ms)
+    db.library.update_library_file_modified_time(file_key, modified_time_ms)
 
 
-async def bulk_delete_files(db: Database, paths: list[str]) -> int:
+def bulk_delete_files(db: Database, paths: list[str]) -> int:
     """Delete multiple library-file documents by path.
 
     Silently skips paths with no matching document. Returns the number deleted.
@@ -143,31 +143,31 @@ async def bulk_delete_files(db: Database, paths: list[str]) -> int:
     resolved = [
         path
         for path in paths
-        if cast("dict[str, Any] | None", await db.library.find_file_by_path_any_library(path)) is not None
+        if cast("dict[str, Any] | None", db.library.find_file_by_path_any_library(path)) is not None
     ]
     matched_paths = list(dict.fromkeys(resolved))
     if not matched_paths:
         return 0
 
     for path in matched_paths:
-        await db.library.remove_file_by_path(path)
+        db.library.remove_file_by_path(path)
     return len(matched_paths)
 
 
-async def get_file_library_key(db: Database, file_id: int) -> int | None:
+def get_file_library_key(db: Database, file_id: int) -> int | None:
     """Return the owning library id for a file id.
 
     PostgreSQL returns integer library ids directly (no ``libraries/`` prefix).
     """
-    library_ids = await db.library.get_library_ids_for_files([file_id])
+    library_ids = db.library.get_library_ids_for_files([file_id])
     return library_ids.get(file_id)
 
 
-async def set_chromaprint(db: Database, file_id: int, chromaprint: str) -> None:
+def set_chromaprint(db: Database, file_id: int, chromaprint: str) -> None:
     """Persist a chromaprint fingerprint for one file."""
-    await db.library.set_library_file_chromaprint(file_id, chromaprint)
+    db.library.set_library_file_chromaprint(file_id, chromaprint)
 
 
-async def update_last_tagged_at(db: Database, file_id: int) -> None:
+def update_last_tagged_at(db: Database, file_id: int) -> None:
     """Record the wall-clock time at which a file was tagged."""
-    await db.library.update_library_file_last_tagged_at(file_id, now_ms().value)
+    db.library.update_library_file_last_tagged_at(file_id, now_ms().value)

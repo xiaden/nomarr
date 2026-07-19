@@ -72,7 +72,7 @@ async def navidrome_similar_tracks(
         body.backbone_id,
     )
     try:
-        results = await svc.get_similar_tracks(
+        results = svc.get_similar_tracks(
             seed_descriptor=body.seed.model_dump(),
             count=body.count,
             backbone_id=body.backbone_id,
@@ -181,7 +181,7 @@ async def navidrome_generate_playlists(
         body.max_songs,
     )
     try:
-        result = await svc.generate_playlists(
+        result = svc.generate_playlists(
             user_id=body.user_id,
             top_plays=top_plays,
             enabled_types=body.enabled_types,
@@ -211,9 +211,7 @@ async def navidrome_generate_playlists(
     # Resolve internal file_ids to portable descriptors for plugin-side
     # Navidrome mediafile-ID resolution.
     all_file_ids = list({fid for playlist in result.playlists for fid in playlist["file_ids"]})
-    descriptor_map: dict[str, TrackDescriptor] = (
-        await svc.resolve_files_to_descriptors(all_file_ids) if all_file_ids else {}
-    )
+    descriptor_map: dict[str, TrackDescriptor] = svc.resolve_files_to_descriptors(all_file_ids) if all_file_ids else {}
 
     return GeneratePlaylistsResponse(
         status=result.status,

@@ -9,8 +9,9 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, distinct, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.repo_dto import LibraryFileRow, PipelineStateRow
 from nomarr.persistence.database.repo_helpers import _file_row_to_dto
@@ -22,7 +23,6 @@ from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
-    from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.schema import Table
 
 _T: Table = PipelineState.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
@@ -46,13 +46,13 @@ def _row_to_dto(row: Row) -> PipelineStateRow:
 class PipelineRepository:
     """Repository for the ``pipeline_states`` table."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: scoped_session[Session]) -> None:
         self._session = session
 
-    async def upsert_pipeline_state(self, library_id: int, state_key: str, state_data: dict[str, Any]) -> None:
+    def upsert_pipeline_state(self, library_id: int, state_key: str, state_data: dict[str, Any]) -> None:
         """Insert-or-update a pipeline state via ``ON CONFLICT``."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
                 payload = {
                     "library_id": library_id,
                     "state_key": state_key,
@@ -67,24 +67,24 @@ class PipelineRepository:
                         "updated_at": insert_stmt.excluded["updated_at"],
                     },
                 )
-                await self._session.execute(stmt)
-            await self._session.commit()
+                self._session.execute(stmt)
+            self._session.commit()
 
-    async def get_state(self, library_id: int, state_key: str) -> PipelineStateRow | None:
+    def get_state(self, library_id: int, state_key: str) -> PipelineStateRow | None:
         """Fetch a pipeline state by ``(library_id, state_key)``."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T).where(
                 _T.c.library_id == library_id,
                 _T.c.state_key == state_key,
             )
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             row = result.fetchone()
             return _row_to_dto(row) if row else None
 
-    async def update_pipeline_state(self, library_id: int, state_key: str, state_data: dict[str, Any]) -> None:
+    def update_pipeline_state(self, library_id: int, state_key: str, state_data: dict[str, Any]) -> None:
         """Update ``state_data`` for a ``(library_id, state_key)`` pair."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
                 stmt = (
                     update(_T)
                     .where(
@@ -96,48 +96,48 @@ class PipelineRepository:
                         updated_at=int(time.time() * 1000),
                     )
                 )
-                await self._session.execute(stmt)
-            await self._session.commit()
+                self._session.execute(stmt)
+            self._session.commit()
 
-    async def delete_pipeline_state(self, library_id: int) -> int:
+    def delete_pipeline_state(self, library_id: int) -> int:
         """Delete all pipeline states for a library; return row count."""
-        async with map_persistence_exceptions():
-            async with self._session.begin_nested():
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
                 stmt = delete(_T).where(_T.c.library_id == library_id)
-                result = await self._session.execute(stmt)
-            await self._session.commit()
+                result = self._session.execute(stmt)
+            self._session.commit()
             return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult vs Result — mypy sees Result but .rowcount exists at runtime
 
-    async def list_libraries_in_pipeline_state(self, state_key: str, state_value: str) -> list[int]:
+    def list_libraries_in_pipeline_state(self, state_key: str, state_value: str) -> list[int]:
         """Return library ids whose *state_data* contains *state_value*.
 
         Filters on the Python side to avoid PostgreSQL ``@>`` operator,
         which is not available on SQLite.  Works identically on both
         backends.
         """
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(_T).where(_T.c.state_key == state_key)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [
                 row._mapping["library_id"]
                 for row in result.all()
                 if row._mapping["state_data"].get("state") == state_value
             ]
 
-    async def count_pipeline_states(self) -> int:
+    def count_pipeline_states(self) -> int:
         """Return total row count of ``pipeline_states``."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = select(func.count()).select_from(_T)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return result.scalar() or 0
 
-    async def list_file_docs_in_state(self, state: str, *, limit: int | None = None) -> list[LibraryFileRow]:
+    def list_file_docs_in_state(self, state: str, *, limit: int | None = None) -> list[LibraryFileRow]:
         """Return file rows that have been assigned the given file state.
 
         Traverses ``file_state_assignments`` → ``file_states`` to resolve
         the state name, then joins ``library_files`` for the full row.
         """
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             stmt = (
                 select(_LF)
                 .join(_FSA, _LF.c.id == _FSA.c.file_id)
@@ -146,21 +146,19 @@ class PipelineRepository:
             )
             if limit is not None:
                 stmt = stmt.limit(limit)
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [_file_row_to_dto(r) for r in result.all()]
 
-    async def get_state_edges_for_files(self, file_ids: list[int]) -> list[dict[str, Any]]:
+    def get_state_edges_for_files(self, file_ids: list[int]) -> list[dict[str, Any]]:
         """Return pipeline-state dicts for libraries that own *file_ids*."""
-        async with map_persistence_exceptions():
+        with map_persistence_exceptions():
             if not file_ids:
                 return []
-            from sqlalchemy import distinct
-
             lib_ids_stmt = select(distinct(_LF.c.library_id)).where(_LF.c.id.in_(file_ids))
-            result = await self._session.execute(lib_ids_stmt)
+            result = self._session.execute(lib_ids_stmt)
             library_ids = [row[0] for row in result.all()]
             if not library_ids:
                 return []
             stmt = select(_T).where(_T.c.library_id.in_(library_ids))
-            result = await self._session.execute(stmt)
+            result = self._session.execute(stmt)
             return [dict(r._mapping) for r in result.all()]

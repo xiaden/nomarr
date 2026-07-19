@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -14,13 +14,13 @@ from nomarr.interfaces.api.web.library_scan_if import router as library_router
 
 
 @pytest.fixture
-def mock_pipeline_service() -> AsyncMock:
+def mock_pipeline_service() -> MagicMock:
     """Provide a mocked pipeline service dependency."""
-    return AsyncMock()
+    return MagicMock()
 
 
 @pytest.fixture
-def app(mock_pipeline_service: AsyncMock) -> Iterator[FastAPI]:
+def app(mock_pipeline_service: MagicMock) -> Iterator[FastAPI]:
     """Build a minimal FastAPI app for the library pipeline endpoint."""
     test_app = FastAPI()
     test_app.include_router(library_router, prefix="/api/web")
@@ -51,7 +51,7 @@ class TestPipelineEndpoint:
     def test_get_pipeline_status_happy_path(
         self,
         client: TestClient,
-        mock_pipeline_service: AsyncMock,
+        mock_pipeline_service: MagicMock,
     ) -> None:
         """The endpoint should serialize a pipeline DTO into the response body."""
         mock_pipeline_service.get_pipeline_status.return_value = LibraryPipelineStatusDTO(
@@ -87,7 +87,7 @@ class TestPipelineEndpoint:
     def test_get_pipeline_status_returns_404_when_library_missing(
         self,
         client: TestClient,
-        mock_pipeline_service: AsyncMock,
+        mock_pipeline_service: MagicMock,
     ) -> None:
         """Missing libraries should surface as HTTP 404."""
         mock_pipeline_service.get_pipeline_status.return_value = None

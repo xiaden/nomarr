@@ -1,10 +1,9 @@
 """Database connection and session management for PostgreSQL.
 
-Provides the :class:`Database` facade that creates a SQLAlchemy async engine,
-session factory, and all repository instances. Also exposes lightweight
+Provides the :class:`Database` facade that creates a SQLAlchemy engine,
+scoped session, and all repository instances. Also exposes lightweight
 adapter classes (``_MigrationsAdapter``, ``_MlCapacityAdapter``,
-``_VramPromisesAdapter``) that delegate to the async ``AppDb`` methods for
-backward compatibility with sync callers.
+``_VramPromisesAdapter``) that delegate to the ``AppDb`` methods.
 """
 
 from __future__ import annotations
@@ -14,6 +13,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from nomarr.persistence.api.application import AppDb
+
+from sqlalchemy.orm import scoped_session
 
 from nomarr.persistence.database.app_repo import AppRepository
 from nomarr.persistence.database.calibration_repo import CalibrationRepo
@@ -30,7 +31,7 @@ from nomarr.persistence.database.pipeline_repo import PipelineRepository
 from nomarr.persistence.database.scan_repo import ScanRepository
 from nomarr.persistence.database.tag_repo import TagRepository
 from nomarr.persistence.database.vector_repo import VectorRepo
-from nomarr.persistence.pg_engine import async_session_factory, create_pg_engine
+from nomarr.persistence.pg_engine import create_pg_engine, session_factory
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +39,12 @@ logger = logging.getLogger(__name__)
 class Database:
     """PostgreSQL database facade.
 
-    Creates an async SQLAlchemy engine and session factory, instantiates all
+    Creates a SQLAlchemy engine and scoped session, instantiates all
     repository classes, and exposes the ``app``, ``library``, and ``ml``
     sub-facades for application, library, and ML operations.
 
     Also provides adapter classes (``migrations``, ``ml_capacity``,
-    ``vram_promises``) that wrap async ``AppDb`` methods for backward
-    compatibility with sync callers.
+    ``vram_promises``) that wrap ``AppDb`` methods.
     """
 
     def __init__(
@@ -58,7 +58,7 @@ class Database:
         """Initialize PostgreSQL connection and all repositories.
 
         Args:
-            url: PostgreSQL connection URL (e.g., ``postgresql+asyncpg://...``).
+            url: PostgreSQL connection URL (e.g., ``postgresql+psycopg2://...``).
             echo: If ``True``, log all SQL statements.
             pool_size: Connection pool size.
             max_overflow: Max overflow connections beyond pool_size.
@@ -67,32 +67,32 @@ class Database:
         self._url = url
         self._echo = echo
 
-        # Create async engine and session factory
+        # Create engine and scoped session
         self._pg_engine = create_pg_engine(
             url,
             echo=echo,
             pool_size=pool_size,
             max_overflow=max_overflow,
         )
-        _session_factory = async_session_factory(self._pg_engine)
-        self._pg_session = _session_factory()
+        _factory = session_factory(self._pg_engine)
+        self._scoped = scoped_session(_factory)
 
         # Instantiate all repositories
-        self._app_repo = AppRepository(self._pg_session)
-        self._scan_repo = ScanRepository(self._pg_session)
-        self._library_repo = LibraryRepository(self._pg_session)
-        self._navidrome_repo = NavidromeRepo(self._pg_session)
-        self._file_state_repo = FileStateRepository(self._pg_session)
-        self._pipeline_repo = PipelineRepository(self._pg_session)
-        self._file_repo = FileRepository(self._pg_session)
-        self._folder_repo = FolderRepository(self._pg_session)
-        self._tag_repo = TagRepository(self._pg_session)
-        self._file_tag_repo = FileTagRepository(self._pg_session)
-        self._vector_repo = VectorRepo(self._pg_session)
-        self._model_repo = ModelRepo(self._pg_session)
-        self._output_repo = OutputRepo(self._pg_session)
-        self._calibration_repo = CalibrationRepo(self._pg_session)
-        self._embedding_stream_repo = EmbeddingStreamRepository(self._pg_session)
+        self._app_repo = AppRepository(self._scoped)
+        self._scan_repo = ScanRepository(self._scoped)
+        self._library_repo = LibraryRepository(self._scoped)
+        self._navidrome_repo = NavidromeRepo(self._scoped)
+        self._file_state_repo = FileStateRepository(self._scoped)
+        self._pipeline_repo = PipelineRepository(self._scoped)
+        self._file_repo = FileRepository(self._scoped)
+        self._folder_repo = FolderRepository(self._scoped)
+        self._tag_repo = TagRepository(self._scoped)
+        self._file_tag_repo = FileTagRepository(self._scoped)
+        self._vector_repo = VectorRepo(self._scoped)
+        self._model_repo = ModelRepo(self._scoped)
+        self._output_repo = OutputRepo(self._scoped)
+        self._calibration_repo = CalibrationRepo(self._scoped)
+        self._embedding_stream_repo = EmbeddingStreamRepository(self._scoped)
 
         # Import here to avoid circular imports
         from nomarr.persistence.api.application import AppDb
@@ -101,7 +101,7 @@ class Database:
 
         # Create sub-facades
         self.app = AppDb(
-            session=self._pg_session,
+            session=self._scoped,
             app_repo=self._app_repo,
             library_repo=self._library_repo,
             navidrome_repo=self._navidrome_repo,
@@ -125,35 +125,36 @@ class Database:
             embedding_stream_repo=self._embedding_stream_repo,
         )
 
-        # Adapter instances for backward compatibility
+        # Adapter instances
         self.migrations = _MigrationsAdapter(self.app)
         self.ml_capacity = _MlCapacityAdapter(self.app)
         self.vram_promises = _VramPromisesAdapter(self.app)
 
-    async def close(self) -> None:
-        """Dispose the PostgreSQL engine and release all connections."""
-        await self._pg_engine.dispose()
+    def close(self) -> None:
+        """Remove the scoped session and dispose the PostgreSQL engine."""
+        self._scoped.remove()
+        self._pg_engine.dispose()
 
-    async def get_version(self) -> str | None:
+    def get_version(self) -> str | None:
         """Return the current schema version from the config table."""
-        return await self.app.get_schema_version()
+        return self.app.get_schema_version()
 
-    async def set_version(self, version: str) -> None:
+    def set_version(self, version: str) -> None:
         """Update the schema version in the config table."""
-        await self.app.update_config_option("version", {"value": version})
+        self.app.update_config_option("version", {"value": version})
 
 
 class _MigrationsAdapter:
-    """Sync-compatible adapter wrapping async ``AppDb`` migration methods.
+    """Sync adapter wrapping ``AppDb`` migration methods.
 
-    Provides a sync-looking interface for migration orchestration code.
-    All methods are async and delegate to ``AppDb``.
+    Provides a sync interface for migration orchestration code.
+    All methods are sync and delegate to ``AppDb``.
     """
 
     def __init__(self, app: AppDb) -> None:
         self._app = app
 
-    async def record_migration_started(
+    def record_migration_started(
         self,
         migration_id: str,
         *,
@@ -161,7 +162,7 @@ class _MigrationsAdapter:
         checksum: str | None = None,
     ) -> None:
         """Record that a migration has started."""
-        await self._app.upsert_migration(
+        self._app.upsert_migration(
             migration_id,
             {
                 "filename": filename,
@@ -170,17 +171,17 @@ class _MigrationsAdapter:
             },
         )
 
-    async def mark_migration_applied(self, migration_id: str) -> None:
+    def mark_migration_applied(self, migration_id: str) -> None:
         """Mark a migration as successfully applied."""
-        await self._app.upsert_migration(migration_id, {"status": "applied"})
+        self._app.upsert_migration(migration_id, {"status": "applied"})
 
-    async def list_migrations(self) -> list[dict]:
+    def list_migrations(self) -> list[dict]:
         """Return all migration records."""
-        return await self._app.list_migrations()
+        return self._app.list_migrations()
 
 
 class _MlCapacityAdapter:
-    """Adapter wrapping async ``AppDb`` lock methods for ML capacity management.
+    """Adapter wrapping ``AppDb`` lock methods for ML capacity management.
 
     Provides methods for probing, acquiring, and releasing distributed locks
     used to coordinate ML worker capacity.
@@ -189,34 +190,34 @@ class _MlCapacityAdapter:
     def __init__(self, app: AppDb) -> None:
         self._app = app
 
-    async def probe(self, *, lock_id: str, worker_id: str) -> None:
+    def probe(self, *, lock_id: str, worker_id: str) -> None:
         """Create a probing lock for a worker."""
-        await self._app.add_lock({"key": lock_id, "value": {"worker_id": worker_id, "status": "probing"}})
+        self._app.add_lock({"key": lock_id, "value": {"worker_id": worker_id, "status": "probing"}})
 
-    async def acquire(self, *, lock_id: str, worker_id: str) -> None:
+    def acquire(self, *, lock_id: str, worker_id: str) -> None:
         """Upgrade a lock to acquired status."""
-        await self._app.add_lock({"key": lock_id, "value": {"worker_id": worker_id, "status": "acquired"}})
+        self._app.add_lock({"key": lock_id, "value": {"worker_id": worker_id, "status": "acquired"}})
 
-    async def release(self, *, lock_id: str) -> None:
+    def release(self, *, lock_id: str) -> None:
         """Release a lock by ID."""
-        await self._app.remove_lock(lock_id)
+        self._app.remove_lock(lock_id)
 
-    async def get(self, *, lock_id: str) -> dict | None:
+    def get(self, *, lock_id: str) -> dict | None:
         """Get lock data by ID, or None if not found."""
-        lock = await self._app.get_lock(lock_id)
+        lock = self._app.get_lock(lock_id)
         if lock is None:
             return None
         # LockRow is a TypedDict with 'key' and 'value' fields
         return {"key": lock["key"], **lock["value"]}
 
-    async def list_all(self) -> list[dict]:
+    def list_all(self) -> list[dict]:
         """Return all locks as dicts."""
-        locks = await self._app.list_locks()
+        locks = self._app.list_locks()
         return [{"key": lock["key"], **lock["value"]} for lock in locks]
 
 
 class _VramPromisesAdapter:
-    """Adapter wrapping async ``AppDb`` VRAM promise methods.
+    """Adapter wrapping ``AppDb`` VRAM promise methods.
 
     Provides methods for managing GPU VRAM promises made by ML workers.
     """
@@ -224,7 +225,7 @@ class _VramPromisesAdapter:
     def __init__(self, app: AppDb) -> None:
         self._app = app
 
-    async def promise(
+    def promise(
         self,
         *,
         worker_id: str,
@@ -235,7 +236,7 @@ class _VramPromisesAdapter:
         used_mb: float,
     ) -> None:
         """Record or update a VRAM promise from a worker."""
-        await self._app.add_vram_promise(
+        self._app.add_vram_promise(
             {
                 "worker_id": worker_id,
                 "pid": pid,
@@ -246,23 +247,23 @@ class _VramPromisesAdapter:
             }
         )
 
-    async def release(self, *, worker_id: str, model_path: str) -> None:
+    def release(self, *, worker_id: str, model_path: str) -> None:
         """Release a VRAM promise for a specific worker and model."""
-        for p in await self._app.list_vram_promises():
+        for p in self._app.list_vram_promises():
             if p.get("worker_id") == worker_id and p.get("model_path") == model_path:
                 pid = p.get("id")
                 if pid:
-                    await self._app.remove_vram_promise(pid)
+                    self._app.remove_vram_promise(pid)
                 break
 
-    async def release_all_for_worker(self, *, worker_id: str) -> None:
+    def release_all_for_worker(self, *, worker_id: str) -> None:
         """Release all VRAM promises for a worker."""
-        for p in await self._app.list_vram_promises():
+        for p in self._app.list_vram_promises():
             if p.get("worker_id") == worker_id:
                 pid = p.get("id")
                 if pid:
-                    await self._app.remove_vram_promise(pid)
+                    self._app.remove_vram_promise(pid)
 
-    async def list_all(self) -> list[dict]:
+    def list_all(self) -> list[dict]:
         """Return all VRAM promises as dicts."""
-        return await self._app.list_vram_promises()
+        return self._app.list_vram_promises()

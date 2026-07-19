@@ -5,6 +5,7 @@ Provides entity listing, song-entity relationships, and traversal queries
 for the web frontend using session authentication.
 """
 
+import asyncio
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -32,7 +33,7 @@ async def get_entity_counts(
     metadata_service: Annotated[MetadataService, Depends(get_metadata_service)],
 ) -> EntityCountsResponse:
     """Get total counts for all entity collections (artists, albums, etc.)."""
-    counts = await metadata_service.get_entity_counts()
+    counts = await asyncio.to_thread(metadata_service.get_entity_counts)
     return EntityCountsResponse(**counts)
 
 
@@ -45,7 +46,9 @@ async def list_entities(
     metadata_service: MetadataService = Depends(get_metadata_service),
 ) -> EntityListResponse:
     """List entities from a collection (artist, album, label, genre, year)."""
-    result = await metadata_service.list_entities(collection, limit=limit, offset=offset, search=search)
+    result = await asyncio.to_thread(
+        metadata_service.list_entities, collection, limit=limit, offset=offset, search=search
+    )
     return EntityListResponse.from_dto(result)
 
 
@@ -55,13 +58,13 @@ async def get_entity(
     entity_id: str,
     metadata_service: Annotated[MetadataService, Depends(get_metadata_service)],
 ) -> EntityResponse:
-    """Get entity details by _id.
+    """Get entity details by ID.
 
     Note: entity_id should be encoded (e.g., artists:v1_abc123).
     Collection parameter is informational only (entity_id already contains collection).
     """
     decoded_entity_id: int = decode_path_id(entity_id)
-    entity = await metadata_service.get_entity(decoded_entity_id)
+    entity = await asyncio.to_thread(metadata_service.get_entity, decoded_entity_id)
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
     return EntityResponse.from_dto(entity)
@@ -82,7 +85,9 @@ async def list_songs_for_entity(
     Returns all songs where this artist is the primary credited artist.
     """
     decoded_entity_id: int = decode_path_id(entity_id)
-    result = await metadata_service.list_songs_for_entity(decoded_entity_id, name, limit=limit, offset=offset)
+    result = await asyncio.to_thread(
+        metadata_service.list_songs_for_entity, decoded_entity_id, name, limit=limit, offset=offset
+    )
     return SongListResponse.from_dto(result)
 
 
@@ -97,7 +102,7 @@ async def list_artists_for_album(
     Returns deduplicated artists sorted by display_name.
     """
     decoded_album_id: int = decode_path_id(album_id)
-    artists = await metadata_service.list_artists_for_album(decoded_album_id, limit=limit)
+    artists = await asyncio.to_thread(metadata_service.list_artists_for_album, decoded_album_id, limit=limit)
     return [EntityResponse.from_dto(a) for a in artists]
 
 
@@ -113,5 +118,5 @@ async def list_albums_for_artist(
     Each album includes song_count (number of songs by this artist on that album).
     """
     decoded_artist_id: int = decode_path_id(artist_id)
-    albums = await metadata_service.list_albums_for_artist(decoded_artist_id, limit=limit)
+    albums = await asyncio.to_thread(metadata_service.list_albums_for_artist, decoded_artist_id, limit=limit)
     return [EntityResponse.from_dto(a) for a in albums]
