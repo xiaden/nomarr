@@ -41,8 +41,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # ----------------------------------------------------------------------
-# Install numpy before essentia waf configure (it checks for numpy at configure time)
-RUN python3 -m pip install --no-cache-dir --break-system-packages "numpy==1.26.4"
+# Install core deps before essentia — numpy is needed at configure time;
+# PostgreSQL deps go here so python3-dev is still available for any source builds.
+RUN python3 -m pip install --no-cache-dir --break-system-packages \
+    "numpy==1.26.4" \
+    "psycopg2-binary>=2.9.10" \
+    "sqlalchemy>=2.0.37" \
+    "pgvector>=0.3.6" \
+    "alembic>=1.14.0" \
+    "packaging>=24.0"
 #  Build essentia — minimal: AudioLoader + MonoLoader + MonoMixer +
 #  Resample + FrameCutter (FrameCutter required by waf Python bindings check)
 #  No TF, no Vamp, no examples, no tests.
@@ -81,11 +88,6 @@ RUN python3 -m pip install --no-cache-dir --break-system-packages \
     "rich==13.7.1" \
     "requests==2.32.3" \
     "bcrypt==4.2.1" \
-    "psycopg2-binary>=2.9.10" \
-    "sqlalchemy>=2.0.37" \
-    "pgvector>=0.3.6" \
-    "alembic>=1.14.0" \
-    "packaging>=24.0" \
     "watchdog==6.0.0" \
     "spotipy>=2.24.0" \
     "rapidfuzz>=3.0.0" \
