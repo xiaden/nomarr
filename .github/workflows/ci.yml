@@ -216,12 +216,12 @@ jobs:
           context: .
           file: ./dockerfile
           push: true
+          pull: true
           build-args: |
             BASE_TAG=${{ steps.tags.outputs.base_tag }}
           tags: ${{ steps.tags.outputs.sha_tag }}
           cache-from: |
             type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:buildcache
-            type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:latest
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:buildcache,mode=max
           provenance: true
           sbom: true
