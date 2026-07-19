@@ -81,6 +81,11 @@ RUN python3 -m pip install --no-cache-dir --break-system-packages \
     "rich==13.7.1" \
     "requests==2.32.3" \
     "bcrypt==4.2.1" \
+    "psycopg2-binary>=2.9.10" \
+    "sqlalchemy>=2.0.37" \
+    "pgvector>=0.3.6" \
+    "alembic>=1.14.0" \
+    "packaging>=24.0" \
     "watchdog==6.0.0" \
     "spotipy>=2.24.0" \
     "rapidfuzz>=3.0.0" \
