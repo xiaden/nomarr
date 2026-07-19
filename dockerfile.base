@@ -94,6 +94,6 @@ RUN apt-get purge -y g++ pkg-config git python3-dev \
 # Sanity check: verify compiled essentia and CUDA-dependent packages resolve
 RUN python3 -c "import onnxruntime; print('ONNX Runtime:', onnxruntime.__version__, '| providers:', onnxruntime.get_available_providers())" \
     && python3 -c "import essentia; import essentia.standard as es; es.MonoLoader; print('essentia:', essentia.__version__, '| MonoLoader: ok')" \
-    && python3 -c "import chromaprint; fp, _ = chromaprint.fingerprint(44100, 1, [b'\\x00' * 4096]); print('chromaprint:', len(fp), 'chars')"
+    && python3 -c "import chromaprint; f=chromaprint.Fingerprinter(); f.start(44100,1); f.feed(b'\x00'*4096); fp=f.finish(); print('chromaprint:', len(fp), 'chars')"
 
 WORKDIR /app
