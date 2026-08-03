@@ -18,14 +18,14 @@ from sqlalchemy.schema import Table
 
 from nomarr.helpers.dto.repo_dto import LibraryFileRow, TagRow
 from nomarr.persistence.database.repo_helpers import _file_row_to_dto
-from nomarr.persistence.models.file_tag import FileTag
+from nomarr.persistence.models.file_tag import SongTag
 from nomarr.persistence.models.library_file import LibraryFile
 from nomarr.persistence.models.tag import Tag
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 from nomarr.persistence.sql.primitives import insert_one
 
 _T: Table = Tag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
-_FT: Table = FileTag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
+_FT: Table = SongTag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 _LF: Table = LibraryFile.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 
 

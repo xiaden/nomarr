@@ -16,7 +16,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.repo_dto import TagRow
-from nomarr.persistence.models.file_tag import FileTag
+from nomarr.persistence.models.file_tag import SongTag
 from nomarr.persistence.models.tag import Tag
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 from nomarr.persistence.sql.primitives import (
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from sqlalchemy.schema import Table
 
 _T: Table = Tag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
-_FT: Table = FileTag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
+_FT: Table = SongTag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 
 
 def _tag_row_to_dto(row: Row) -> TagRow:

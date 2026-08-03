@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 
 _STREAM_TABLE = "ml_output_streams"
-_FILE_TABLE = "library_files"
+_FILE_TABLE = "songs"
 _OUTPUT_TABLE = "ml_model_outputs"
 
 logger = logging.getLogger(__name__)

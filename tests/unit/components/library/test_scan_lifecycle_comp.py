@@ -569,9 +569,9 @@ class TestSnapshotExistingFiles:
 
         with (
             patch(
-                "nomarr.components.library.library_scan_file_ops_comp.list_library_files",
+                "nomarr.components.library.library_scan_file_ops_comp.list_songs",
                 return_value=(files, 2),
-            ) as mock_list_library_files,
+            ) as mock_list_songs,
             patch(
                 "nomarr.components.library.library_scan_file_ops_comp.library_has_tagged_files",
                 return_value=True,
@@ -580,7 +580,7 @@ class TestSnapshotExistingFiles:
             result = snapshot_existing_files(mock_db, 1)
 
         assert result == ({"a.mp3": files[0], "b.mp3": files[1]}, True)
-        mock_list_library_files.assert_called_once_with(mock_db, limit=1_000_000, offset=0)
+        mock_list_songs.assert_called_once_with(mock_db, limit=1_000_000, offset=0)
         mock_library_has_tagged_files.assert_called_once_with(mock_db, 1)
 
     def test_returns_empty_snapshot_when_library_has_no_files(self) -> None:
@@ -588,9 +588,9 @@ class TestSnapshotExistingFiles:
 
         with (
             patch(
-                "nomarr.components.library.library_scan_file_ops_comp.list_library_files",
+                "nomarr.components.library.library_scan_file_ops_comp.list_songs",
                 return_value=([], 0),
-            ) as mock_list_library_files,
+            ) as mock_list_songs,
             patch(
                 "nomarr.components.library.library_scan_file_ops_comp.library_has_tagged_files",
                 return_value=False,
@@ -599,7 +599,7 @@ class TestSnapshotExistingFiles:
             result = snapshot_existing_files(mock_db, 1)
 
         assert result == ({}, False)
-        mock_list_library_files.assert_called_once_with(mock_db, limit=1_000_000, offset=0)
+        mock_list_songs.assert_called_once_with(mock_db, limit=1_000_000, offset=0)
         mock_library_has_tagged_files.assert_called_once_with(mock_db, 1)
 
 

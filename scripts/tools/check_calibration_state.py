@@ -25,7 +25,7 @@ def main() -> None:
 
         session = db._scoped
         result = session.execute(
-            text("SELECT COUNT(*) FROM library_files WHERE calibration_hash IS NOT NULL"),
+            text("SELECT COUNT(*) FROM songs WHERE calibration_hash IS NOT NULL"),
         )
         result.scalar() or 0
 
@@ -42,7 +42,7 @@ def main() -> None:
 
         # ── Sample a calibrated file ────────────────────────────────
         result = session.execute(
-            text("SELECT * FROM library_files WHERE calibration_hash IS NOT NULL LIMIT 1"),
+            text("SELECT * FROM songs WHERE calibration_hash IS NOT NULL LIMIT 1"),
         )
         row = result.fetchone()
 
@@ -94,7 +94,7 @@ def main() -> None:
         # ── Sample an uncalibrated file with mood tags ──────────────
         result = session.execute(
             text(
-                "SELECT lf.* FROM library_files lf "
+                "SELECT lf.* FROM songs lf "
                 "JOIN file_tags ft ON ft.file_id = lf.id "
                 "JOIN tags t ON t.id = ft.tag_id "
                 "WHERE lf.calibration_hash IS NULL "

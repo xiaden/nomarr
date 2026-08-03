@@ -356,7 +356,7 @@ docker exec nomarr-postgres-dev psql -U nomarr -d nomarr -c "\dt"
 
 # Row counts
 docker exec nomarr-postgres-dev psql -U nomarr -d nomarr -c "
-  SELECT 'library_files' AS tbl, COUNT(*) FROM library_files
+  SELECT 'songs' AS tbl, COUNT(*) FROM songs
   UNION ALL SELECT 'tags', COUNT(*) FROM tags
   UNION ALL SELECT 'song_has_tags', COUNT(*) FROM song_has_tags;"
 
@@ -377,9 +377,9 @@ docker exec nomarr-postgres-dev psql -U nomarr -d nomarr -c "
 ## Table Schema
 
 - `libraries` — library config and scan state
-- `library_files` — scanned audio files (one row per file)
+- `songs` — scanned audio files (one row per file)
 - `tags` — tag rows `{name, value}` (e.g. `{name: "artist", value: "Beatles"}`)
-- `song_has_tags` — join table `library_files.id` → `tags.id`
+- `song_has_tags` — join table `songs.id` → `tags.id`
 - `library_folders` — folder-level cache for quick scan skipping
 - `calibration_state`, `calibration_history` — calibration data
 - `sessions` — auth sessions
@@ -396,7 +396,7 @@ docker exec nomarr-postgres-dev psql -U nomarr -d nomarr -c "
 SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
 
 -- Table row counts
-SELECT COUNT(*) FROM library_files;
+SELECT COUNT(*) FROM songs;
 
 -- Tag names by frequency
 SELECT name, COUNT(*) AS c FROM tags GROUP BY name ORDER BY c DESC;
@@ -406,7 +406,7 @@ SELECT sf.song_id, sf.tag_id FROM song_has_tags sf LIMIT 3;
 
 -- Orphaned rows
 SELECT COUNT(*) FROM song_has_tags sf
-  LEFT JOIN library_files lf ON sf.song_id = lf.id
+  LEFT JOIN songs lf ON sf.song_id = lf.id
   WHERE lf.id IS NULL;
 ```
 

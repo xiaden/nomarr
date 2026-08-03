@@ -123,7 +123,7 @@ if qualifying:
 
     print("\n=== Check calibration_hash for qualifying file ===")
     cal_hash = query(f"""
-    FOR f IN library_files
+    FOR f IN songs
     FILTER f._id == '{file_id}'
     RETURN {{calibration_hash: f.calibration_hash, scan_hash: f.scan_hash}}
     """)

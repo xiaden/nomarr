@@ -14,13 +14,13 @@ from nomarr.interfaces.api.web import calibration_if as calibration
 from nomarr.interfaces.api.web import config_if as config
 from nomarr.interfaces.api.web import fs_if as fs
 from nomarr.interfaces.api.web import info_if as info
-from nomarr.interfaces.api.web import library_files_if as library_files
 from nomarr.interfaces.api.web import library_if as library
 from nomarr.interfaces.api.web import library_scan_if as library_scan
 from nomarr.interfaces.api.web import metadata_if as metadata
 from nomarr.interfaces.api.web import ml_if as ml
 from nomarr.interfaces.api.web import navidrome_if as navidrome
 from nomarr.interfaces.api.web import playlist_import_if as playlist_import
+from nomarr.interfaces.api.web import songs_if as songs
 from nomarr.interfaces.api.web import tag_curation_if as tag_curation
 from nomarr.interfaces.api.web import tags_if as tags
 from nomarr.interfaces.api.web import vectors_if as vectors
@@ -38,7 +38,7 @@ router.include_router(config.router)
 router.include_router(fs.router)
 router.include_router(info.router)
 router.include_router(library.router)
-router.include_router(library_files.router)
+router.include_router(songs.router)
 router.include_router(library_scan.router)
 router.include_router(metadata.router)
 router.include_router(ml.router)

@@ -34,10 +34,10 @@ from nomarr.components.library.library_file_query_comp import (
     get_tracks_by_file_ids,
     get_tracks_for_matching,
     list_all_file_ids,
-    list_library_files,
+    list_songs,
     require_library_file_id,
     search_files_by_tag,
-    search_library_files_with_tags,
+    search_songs_with_tags,
 )
 from nomarr.helpers.constants.file_states import STATE_PROCESSED
 
@@ -144,7 +144,7 @@ def test_get_files_by_ids_with_tags_returns_empty_list_when_ids_empty() -> None:
 
 
 @pytest.mark.unit
-def test_get_library_file_scoped_filters_library_files() -> None:
+def test_get_library_file_scoped_filters_songs() -> None:
 
     db = make_db()
 
@@ -154,13 +154,13 @@ def test_get_library_file_scoped_filters_library_files() -> None:
         "normalized_path": "song.flac",
     }
 
-    db.library.list_library_files.return_value = [row]
+    db.library.list_songs.return_value = [row]
 
     result = get_library_file(db, "song.flac", library_id=1)
 
     assert result == row
 
-    db.library.list_library_files.assert_called_once_with(1, limit=None)
+    db.library.list_songs.assert_called_once_with(1, limit=None)
 
 
 @pytest.mark.unit
@@ -239,7 +239,7 @@ def test_detect_nd_path_prefix_returns_none_without_match() -> None:
 
 
 @pytest.mark.unit
-def test_list_library_files_unscoped_sorts_and_paginates() -> None:
+def test_list_songs_unscoped_sorts_and_paginates() -> None:
 
     db = make_db()
 
@@ -252,7 +252,7 @@ def test_list_library_files_unscoped_sorts_and_paginates() -> None:
         "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
         side_effect=lambda _db, docs: docs,
     ):
-        rows, total = list_library_files(db, limit=1, offset=1)
+        rows, total = list_songs(db, limit=1, offset=1)
 
     assert rows == [{"id": 2, "artist": "B", "album": "A", "title": "T2"}]
 
@@ -262,7 +262,7 @@ def test_list_library_files_unscoped_sorts_and_paginates() -> None:
 
 
 @pytest.mark.unit
-def test_list_library_files_scoped_filters_in_python() -> None:
+def test_list_songs_scoped_filters_in_python() -> None:
 
     db = make_db()
 
@@ -273,7 +273,7 @@ def test_list_library_files_scoped_filters_in_python() -> None:
         "title": "Song",
     }
 
-    db.library.list_library_files.return_value = [
+    db.library.list_songs.return_value = [
         {"id": 8, "artist": "Other", "album": "Album", "title": "Song"},
         matching_row,
     ]
@@ -282,13 +282,13 @@ def test_list_library_files_scoped_filters_in_python() -> None:
         "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
         side_effect=lambda _db, docs: docs,
     ):
-        rows, total = list_library_files(db, artist="Artist", album="Album", library_id=1)
+        rows, total = list_songs(db, artist="Artist", album="Album", library_id=1)
 
     assert rows == [matching_row]
 
     assert total == 1
 
-    db.library.list_library_files.assert_called_once_with(1, limit=None)
+    db.library.list_songs.assert_called_once_with(1, limit=None)
 
 
 @pytest.mark.unit
@@ -366,13 +366,13 @@ def test_get_files_for_folder_marks_tagged_state_from_app_facade() -> None:
         "has_tagged_state": True,
     }
 
-    db.library.list_library_files_for_folder.return_value = [matching_doc]
+    db.library.list_songs_for_folder.return_value = [matching_doc]
 
     result = get_files_for_folder(db, 1, "Artist/Album")
 
     assert result == {matching_doc["path"]: matching_doc}
 
-    db.library.list_library_files_for_folder.assert_called_once_with(1, "Artist/Album")
+    db.library.list_songs_for_folder.assert_called_once_with(1, "Artist/Album")
 
 
 @pytest.mark.unit
@@ -392,7 +392,7 @@ def test_get_files_for_folders_matches_root_and_nested_paths() -> None:
         "normalized_path": "Artist/song.flac",
     }
 
-    db.library.list_library_files.return_value = [root_doc, nested_doc]
+    db.library.list_songs.return_value = [root_doc, nested_doc]
 
     db.app.list_files_in_state.return_value = [2]
 
@@ -473,13 +473,13 @@ def test_get_recently_processed_scopes_to_library_ids() -> None:
 
 
 @pytest.mark.unit
-def test_get_files_by_chromaprint_scoped_filters_library_files() -> None:
+def test_get_files_by_chromaprint_scoped_filters_songs() -> None:
 
     db = make_db()
 
     matching_doc = {"id": 1, "chromaprint": "abc"}
 
-    db.library.list_library_files.return_value = [
+    db.library.list_songs.return_value = [
         matching_doc,
         {"id": 2, "chromaprint": "def"},
     ]
@@ -488,7 +488,7 @@ def test_get_files_by_chromaprint_scoped_filters_library_files() -> None:
 
     assert result == [matching_doc]
 
-    db.library.list_library_files.assert_called_once_with(1, limit=None)
+    db.library.list_songs.assert_called_once_with(1, limit=None)
 
 
 @pytest.mark.unit
@@ -581,7 +581,7 @@ def test_get_library_counts_groups_parent_folders_by_library() -> None:
 
     db.library.list_library_keys.return_value = [1]
 
-    db.library.list_library_files.return_value = [
+    db.library.list_songs.return_value = [
         {"path": "D:/Music/Artist A/song.flac"},
         {"path": "D:/Music/Artist B/other.flac"},
     ]
@@ -590,7 +590,7 @@ def test_get_library_counts_groups_parent_folders_by_library() -> None:
 
     assert result == {1: {"file_count": 2, "folder_count": 2}}
 
-    db.library.list_library_files.assert_called_once_with(1, limit=None)
+    db.library.list_songs.assert_called_once_with(1, limit=None)
 
 
 @pytest.mark.unit
@@ -758,7 +758,7 @@ def test_collect_file_ids_for_tag_ids_returns_edge_sources() -> None:
 
 
 @pytest.mark.unit
-def test_search_library_files_with_tags_filters_and_hydrates_page() -> None:
+def test_search_songs_with_tags_filters_and_hydrates_page() -> None:
     db = make_db()
     file_docs = [
         {
@@ -789,7 +789,7 @@ def test_search_library_files_with_tags_filters_and_hydrates_page() -> None:
         "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
         side_effect=lambda _db, docs: docs,
     ):
-        rows, total = search_library_files_with_tags(
+        rows, total = search_songs_with_tags(
             db,
             query_text="song",
             artist="Artist",

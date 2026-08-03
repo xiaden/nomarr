@@ -52,4 +52,4 @@ def test_resolve_seed_descriptor_returns_unresolved_when_title_empty() -> None:
     assert status == "descriptor_unresolved"
     assert resolved is None
     db.library.search_files_by_tag.assert_called_once_with("artist", "Artist A", limit=None)
-    db.library_files.get.many.assert_not_called()
+    db.songs.get.many.assert_not_called()

@@ -102,7 +102,7 @@ class TestMlIfRoutes:
         """The recent-activity endpoint should be reachable under /machine-learning."""
         mock_library_service.get_recently_processed.return_value = [
             {
-                "file_id": f"{'library_files'}/1",
+                "file_id": f"{'songs'}/1",
                 "path": "Music/Test Song.flac",
                 "title": "Test Song",
                 "artist": "Test Artist",
@@ -118,7 +118,7 @@ class TestMlIfRoutes:
         assert response.json() == {
             "files": [
                 {
-                    "file_id": f"{'library_files'}/1",
+                    "file_id": f"{'songs'}/1",
                     "path": "Music/Test Song.flac",
                     "title": "Test Song",
                     "artist": "Test Artist",

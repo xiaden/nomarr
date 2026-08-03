@@ -23,12 +23,12 @@ class TestMarkFileTagged:
     ) -> None:
         mock_db = MagicMock()
 
-        mark_file_processed(mock_db, f"{'library_files'}/xyz")
+        mark_file_processed(mock_db, f"{'songs'}/xyz")
 
         mock_transition_file_state.assert_called_once_with(
             mock_db,
-            [f"{'library_files'}/xyz"],
+            [f"{'songs'}/xyz"],
             STATE_NOT_PROCESSED,
             STATE_PROCESSED,
         )
-        mock_persist_last_tagged_at.assert_called_once_with(mock_db, f"{'library_files'}/xyz")
+        mock_persist_last_tagged_at.assert_called_once_with(mock_db, f"{'songs'}/xyz")

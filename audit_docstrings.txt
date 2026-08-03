@@ -16,7 +16,7 @@
   Insert or update one library-file document and initialize its state edges. |  | Returns the ``_id`` of the upserted document.
 [F] add_files_to_library:
   Insert or update library-file documents for one library. |  | Initializes file-state edges only for genuinely new files so existing files | do not re-run their initial transitions. Files whose payload already has | ``last_tagged_at`` set are marked as tagged
-[F] update_library_files:
+[F] update_songs:
   Upsert a library's files and optionally remove files missing from the batch. |  | Calls `add_files_to_library`, then removes previously linked files whose ids | were not returned by the upsert when ``remove_missing`` is true. |  | Args: |     library_id: Library
 [F] update_library_file_scan_metadata:
   Patch a file document with scan metadata and mark it valid for the current scan. |  | Args: |     file_id: File document ``_id``. |     file_size: File size recorded during scanning. |     modified_time: File modification time recorded during scanning. |     art

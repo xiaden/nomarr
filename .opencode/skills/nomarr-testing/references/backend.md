@@ -109,7 +109,7 @@ class TestMyComponent:
     @pytest.mark.mocked
     def test_processes_files(self) -> None:
         mock_db = MagicMock()
-        mock_db.library_files.get_pending_files.return_value = [
+        mock_db.songs.get_pending_files.return_value = [
             {"_key": "f1", "file_path": "/music/song.mp3"},
         ]
         result = process_pending(mock_db, library_key="lib1")

@@ -130,7 +130,7 @@ class TestGetSegmentStatsForFilesBulk:
         result = get_segment_stats_for_files_bulk(mock_db, [])
 
         assert result == {}
-        mock_db.library_files.file_has_segment_stats.by_ids.assert_not_called()
+        mock_db.songs.file_has_segment_stats.by_ids.assert_not_called()
 
     def test_groups_rows_by_file_id_in_input_order(self) -> None:
         mock_db = MagicMock()
@@ -140,7 +140,7 @@ class TestGetSegmentStatsForFilesBulk:
         stats1 = {"_id": "segment_scores_stats/1", "head_name": "mood"}
         stats2a = {"_id": "segment_scores_stats/2a", "head_name": "genre"}
         stats2b = {"_id": "segment_scores_stats/2b", "head_name": "energy"}
-        mock_db.library_files.file_has_segment_stats.by_ids.return_value = [
+        mock_db.songs.file_has_segment_stats.by_ids.return_value = [
             {"start_id": file1, "v": stats1},
             {"start_id": file2, "v": stats2a},
             {"start_id": file2, "v": stats2b},
@@ -151,7 +151,7 @@ class TestGetSegmentStatsForFilesBulk:
 
         assert result == {file2: [stats2a, stats2b], file1: [stats1]}
         assert list(result.keys()) == [file2, file1]
-        mock_db.library_files.file_has_segment_stats.by_ids.assert_called_once_with([file2, file1, file3], limit=None)
+        mock_db.songs.file_has_segment_stats.by_ids.assert_called_once_with([file2, file1, file3], limit=None)
 
 
 @pytest.mark.unit
@@ -166,7 +166,7 @@ class TestGetSegmentStatsForFile:
             {"_id": "segment_scores_stats/7a", "head_name": "mood"},
             {"_id": "segment_scores_stats/7b", "head_name": "genre"},
         ]
-        mock_db.library_files.file_has_segment_stats.by_ids.return_value = [
+        mock_db.songs.file_has_segment_stats.by_ids.return_value = [
             {"start_id": file_id, "v": stats_docs[0]},
             {"start_id": file_id, "v": stats_docs[1]},
         ]
@@ -174,7 +174,7 @@ class TestGetSegmentStatsForFile:
         result = get_segment_stats_for_file(mock_db, file_id)
 
         assert result == stats_docs
-        mock_db.library_files.file_has_segment_stats.by_ids.assert_called_once_with([file_id], limit=None)
+        mock_db.songs.file_has_segment_stats.by_ids.assert_called_once_with([file_id], limit=None)
 
 
 @pytest.mark.unit
@@ -188,13 +188,13 @@ class TestDeleteSegmentStatsForFiles:
         result = delete_segment_stats_for_files(mock_db, [])
 
         assert result == 0
-        mock_db.library_files.file_has_segment_stats.by_ids.assert_not_called()
+        mock_db.songs.file_has_segment_stats.by_ids.assert_not_called()
         mock_db.segment_scores_stats.delete.cascade.assert_not_called()
 
     def test_returns_zero_when_grouped_stats_have_no_ids(self) -> None:
         mock_db = MagicMock()
         file_id = f"{CollectionNames.LIBRARY_FILES.value}/file-2"
-        mock_db.library_files.file_has_segment_stats.by_ids.return_value = [
+        mock_db.songs.file_has_segment_stats.by_ids.return_value = [
             {"start_id": file_id, "v": {"head_name": "mood"}},
             {"start_id": file_id, "v": {"label_stats": []}},
         ]
@@ -202,14 +202,14 @@ class TestDeleteSegmentStatsForFiles:
         result = delete_segment_stats_for_files(mock_db, [file_id])
 
         assert result == 0
-        mock_db.library_files.file_has_segment_stats.by_ids.assert_called_once_with([file_id], limit=None)
+        mock_db.songs.file_has_segment_stats.by_ids.assert_called_once_with([file_id], limit=None)
         mock_db.segment_scores_stats.delete.cascade.assert_not_called()
 
     def test_cascades_grouped_stats_ids_once(self) -> None:
         mock_db = MagicMock()
         file1 = f"{CollectionNames.LIBRARY_FILES.value}/file-1"
         file2 = f"{CollectionNames.LIBRARY_FILES.value}/file-2"
-        mock_db.library_files.file_has_segment_stats.by_ids.return_value = [
+        mock_db.songs.file_has_segment_stats.by_ids.return_value = [
             {"start_id": file2, "v": {"_id": "segment_scores_stats/stats-2", "head_name": "genre"}},
             {"start_id": file1, "v": {"_id": "segment_scores_stats/stats-1", "head_name": "mood"}},
             {"start_id": file2, "v": {"_id": "segment_scores_stats/stats-3", "head_name": "energy"}},
@@ -219,7 +219,7 @@ class TestDeleteSegmentStatsForFiles:
         result = delete_segment_stats_for_files(mock_db, [file1, file2])
 
         assert result == 3
-        mock_db.library_files.file_has_segment_stats.by_ids.assert_called_once_with([file1, file2], limit=None)
+        mock_db.songs.file_has_segment_stats.by_ids.assert_called_once_with([file1, file2], limit=None)
         mock_db.segment_scores_stats.delete.cascade.assert_called_once_with(
             [
                 "segment_scores_stats/stats-1",
@@ -237,7 +237,7 @@ class TestDeleteSegmentStatsForFile:
     def test_delegates_to_grouped_delete_path(self) -> None:
         mock_db = MagicMock()
         file_id = f"{CollectionNames.LIBRARY_FILES.value}/file-9"
-        mock_db.library_files.file_has_segment_stats.by_ids.return_value = [
+        mock_db.songs.file_has_segment_stats.by_ids.return_value = [
             {"start_id": file_id, "v": {"_id": "segment_scores_stats/stats-9a", "head_name": "mood"}},
             {"start_id": file_id, "v": {"_id": "segment_scores_stats/stats-9b", "head_name": "genre"}},
         ]
@@ -246,7 +246,7 @@ class TestDeleteSegmentStatsForFile:
         result = delete_segment_stats_for_file(mock_db, file_id)
 
         assert result == 2
-        mock_db.library_files.file_has_segment_stats.by_ids.assert_called_once_with([file_id], limit=None)
+        mock_db.songs.file_has_segment_stats.by_ids.assert_called_once_with([file_id], limit=None)
         mock_db.segment_scores_stats.delete.cascade.assert_called_once_with(
             ["segment_scores_stats/stats-9a", "segment_scores_stats/stats-9b"]
         )

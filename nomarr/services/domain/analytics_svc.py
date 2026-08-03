@@ -29,7 +29,7 @@ from nomarr.components.analytics.mood_analysis_comp import (
 )
 from nomarr.components.library.library_file_query_comp import (
     get_artist_album_frequencies,
-    list_library_files,
+    list_songs,
 )
 from nomarr.components.tagging.tag_query_comp import get_file_ids_for_mood_tags, get_file_ids_for_tags
 from nomarr.components.tagging.tag_stats_comp import get_tag_frequencies
@@ -92,7 +92,7 @@ class AnalyticsService:
         # Get artist/album frequencies from songs
         file_data = get_artist_album_frequencies(self._db, limit=limit)
         # Get total file count
-        _, total_count = list_library_files(self._db, limit=1)
+        _, total_count = list_songs(self._db, limit=1)
 
         data = {
             "total_files": total_count,

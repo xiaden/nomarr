@@ -73,12 +73,11 @@ class TestComputeChromaprint:
 
     @pytest.mark.mocked
     def test_compute_chromaprint_fallback_on_error(self) -> None:
-        """When spectral analysis raises, the function should return a fallback hash string."""
+        """When Chromaprint library raises, the function should return an empty string."""
         waveform = _sine_wave(duration_seconds=5.0)
         with patch(
-            "numpy.fft.rfft",
-            side_effect=RuntimeError("simulated FFT failure"),
+            "chromaprint.Fingerprinter",
+            side_effect=RuntimeError("simulated Chromaprint failure"),
         ):
             result = compute_chromaprint(waveform, SAMPLE_RATE)
-        assert isinstance(result, str)
-        assert len(result) > 0
+        assert result == ""

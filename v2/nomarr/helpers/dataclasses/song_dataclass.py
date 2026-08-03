@@ -12,17 +12,6 @@ between layers. It contains:
 - Metadata cache fields derived from tags (artist, album, title, etc.)
 - Tags via the canonical Tags container from tags_dataclass
 
-Metadata cache vs tags:
-
-    ``artist``, ``album``, ``title``, ``genres``, ``year``, ``artists``,
-    and ``labels`` are a **read-optimised denormalized cache** populated from
-    ``tags`` at write time.  They are not guaranteed to be in sync with
-    ``tags`` at every moment — ``tags`` is the source of truth, the cache
-    fields are for fast queries that do not need to traverse the tag graph.
-
-    Tag-derived fields such as ``bpm``, musical key, track/disc numbers are
-    intentionally NOT carried on Song.  Those belong in the ``tags`` container.
-
 Usage:
     from v2.nomarr.helpers.dataclasses.song_dataclass import Song
     from v2.nomarr.helpers.dataclasses.tags_dataclass import Tags, Tag
@@ -37,25 +26,15 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .tags_dataclass import Tags
 
-# ── Numeric bounds for validation ────────────────────────────────────────
-
-_MIN_YEAR = 1000  # oldest known music recording
-_MAX_YEAR = 2100  # far-future enough
-_MAX_FILE_SIZE = 2**63 - 1  # largest signed 64-bit int
-_MIN_EPOCH_MS = 0  # Unix epoch; rejects negative timestamps
-
 # ── DB field → Song field mapping ────────────────────────────────────────
 # Maps data-store document keys to Song field names used by ``from_db_doc``.
 # Every key on the left MUST have a corresponding Song field on the right.
 # The import-time assertion at the bottom of this file enforces this.
 _DOC_FIELD_MAP: dict[str, str] = {
-    # Identity
-    "_id": "id",
     # Location
     "path": "path",
     "normalized_path": "normalized_path",
-    "library_key": "library_key",  # raw DB field (library _key)
-    "library_id": "library_id",  # set by hydration pass
+    "library": "library",  # set by hydration pass
     # File attributes
     "file_size": "file_size",
     "modified_time": "modified_time",
@@ -70,14 +49,6 @@ _DOC_FIELD_MAP: dict[str, str] = {
     "calibration_hash": "calibration_hash",
     "write_claimed_by": "write_claimed_by",
     "status": "status",
-    # Metadata cache (tag-derived, hydrated at write time)
-    "artist": "artist",
-    "artists": "artists",
-    "album": "album",
-    "labels": "labels",
-    "genres": "genres",
-    "year": "year",
-    "title": "title",
 }
 
 # Fields that require bool coercion from int (0/1).
@@ -105,13 +76,6 @@ class Song:
     ``Tags`` instance is always non-empty (enforced by ``Tags.__post_init__``).
     """
 
-    # ── Identity ──────────────────────────────────────────────────────
-    id: str = ""
-    """Unique record identifier (e.g. ``"library_files/12345"``).
-
-    May be empty during initial seeding before a persistent record exists.
-    """
-
     # ── Location ──────────────────────────────────────────────────────
     path: str
     """Absolute filesystem path to the audio file."""
@@ -119,14 +83,7 @@ class Song:
     normalized_path: str | None = None
     """Relative path used for folder hierarchy (e.g. ``"Artist/Album"``)."""
 
-    library_key: str | None = None
-    """Raw data-store library reference (the owning library's key).
-
-    Set by the scan layer when inserting the file document.  The resolved
-    full library identifier is available as ``library_id`` after hydration.
-    """
-
-    library_id: str | None = None
+    library: str | None = None
     """Resolved owning library identifier (populated by hydration)."""
 
     # ── File attributes ───────────────────────────────────────────────
@@ -164,34 +121,6 @@ class Song:
     write_claimed_by: str | None = None
     """Worker ID that has claimed this file for tag writeback."""
 
-    # ── Metadata cache (read-optimised denormalisation of tags) ───────
-    # These fields are populated from ``tags`` at write time and serve as
-    # a fast-query cache.  ``tags`` is the canonical source of truth — these
-    # fields may be stale between a tag write and the next cache rebuild.
-    #
-    # Tag-derived fields that belong exclusively in ``tags`` (bpm, musical
-    # key, track/disc numbers) are intentionally NOT carried on Song.
-    artist: str | None = None
-    """Primary artist name cached from tag data."""
-
-    artists: tuple[str, ...] | None = None
-    """All artist names (sorted), cached from tag data."""
-
-    album: str | None = None
-    """Album name cached from tag data."""
-
-    labels: tuple[str, ...] | None = None
-    """Record labels (sorted), cached from tag data."""
-
-    genres: tuple[str, ...] | None = None
-    """Genre names (sorted), cached from tag data."""
-
-    year: int | None = None
-    """Release year parsed from tag data.  Must be between 1000 and 2100 when set."""
-
-    title: str | None = None
-    """Track title cached from tag data."""
-
     # ── Tags ──────────────────────────────────────────────────────────
     tags: Tags | None = None
     """Canonical tag container.
@@ -209,42 +138,13 @@ class Song:
         specific message.
         """
         # ── Identity / path ───────────────────────────────────────────
-        if self.id and not self.id.strip():
-            raise ValueError("Song.id must not be blank")
+
         if not self.path:
             raise ValueError("Song.path must not be empty")
         if not self.path.strip():
             raise ValueError("Song.path must not be blank")
 
-        # ── Numeric ranges ────────────────────────────────────────────
-        if self.file_size is not None and self.file_size < 0:
-            raise ValueError(f"Song.file_size must be >= 0, got {self.file_size}")
-        if self.file_size is not None and self.file_size > _MAX_FILE_SIZE:
-            raise ValueError(f"Song.file_size exceeds max, got {self.file_size}")
-
-        if self.duration_seconds is not None and self.duration_seconds < 0:
-            raise ValueError(f"Song.duration_seconds must be >= 0, got {self.duration_seconds}")
-
-        if self.scanned_at is not None and self.scanned_at < _MIN_EPOCH_MS:
-            raise ValueError(f"Song.scanned_at must be >= 0, got {self.scanned_at}")
-        if self.last_tagged_at is not None and self.last_tagged_at < _MIN_EPOCH_MS:
-            raise ValueError(f"Song.last_tagged_at must be >= 0, got {self.last_tagged_at}")
-        if self.modified_time is not None and self.modified_time < _MIN_EPOCH_MS:
-            raise ValueError(f"Song.modified_time must be >= 0, got {self.modified_time}")
-
-        if self.year is not None and not (_MIN_YEAR <= self.year <= _MAX_YEAR):
-            raise ValueError(f"Song.year must be between {_MIN_YEAR} and {_MAX_YEAR}, got {self.year}")
-
     # ── Convenience ───────────────────────────────────────────────────
-
-    @property
-    def key(self) -> str:
-        """Extract the record key from a qualified ``id``.
-
-        Returns everything after the last ``/``, or the full id if there
-        is no slash.
-        """
-        return self.id.rsplit("/", 1)[-1]
 
     @property
     def has_tags(self) -> bool:

@@ -54,9 +54,9 @@ def upgrade() -> None:
     op.create_index("ix_library_folders_library_id", "library_folders", ["library_id"])
     op.create_index("ix_library_folders_parent_id", "library_folders", ["parent_id"])
 
-    # library_files
+    # songs
     op.create_table(
-        "library_files",
+        "songs",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("library_id", sa.Integer(), nullable=False),
         sa.Column("folder_id", sa.Integer(), nullable=True),
@@ -77,16 +77,16 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["library_id"], ["libraries.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["folder_id"], ["library_folders.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("library_id", "path", name="uq_library_files_library_path"),
-        sa.UniqueConstraint("library_id", "normalized_path", name="uq_library_files_library_norm_path"),
+        sa.UniqueConstraint("library_id", "path", name="uq_songs_library_path"),
+        sa.UniqueConstraint("library_id", "normalized_path", name="uq_songs_library_norm_path"),
     )
-    op.create_index("ix_library_files_library_id", "library_files", ["library_id"])
-    op.create_index("ix_library_files_folder_id", "library_files", ["folder_id"])
-    op.create_index("ix_library_files_chromaprint", "library_files", ["chromaprint"])
-    op.create_index("ix_library_files_calibration_hash", "library_files", ["calibration_hash"])
-    op.create_index("ix_library_files_write_claimed_by", "library_files", ["write_claimed_by"])
-    op.create_index("ix_lf_needs_tagging_valid", "library_files", ["needs_tagging", "is_valid"])
-    op.create_index("ix_lf_library_tagged", "library_files", ["library_id", "tagged"])
+    op.create_index("ix_songs_library_id", "songs", ["library_id"])
+    op.create_index("ix_songs_folder_id", "songs", ["folder_id"])
+    op.create_index("ix_songs_chromaprint", "songs", ["chromaprint"])
+    op.create_index("ix_songs_calibration_hash", "songs", ["calibration_hash"])
+    op.create_index("ix_songs_write_claimed_by", "songs", ["write_claimed_by"])
+    op.create_index("ix_lf_needs_tagging_valid", "songs", ["needs_tagging", "is_valid"])
+    op.create_index("ix_lf_library_tagged", "songs", ["library_id", "tagged"])
 
     # tags
     op.create_table(
@@ -107,9 +107,7 @@ def upgrade() -> None:
     op.create_index("ix_tags_parent_tag_id", "tags", ["parent_tag_id"])
 
     # GIN trigram indexes for fuzzy search
-    op.execute(
-        "CREATE INDEX ix_library_files_normalized_path_trgm ON library_files USING gin (normalized_path gin_trgm_ops)"
-    )
+    op.execute("CREATE INDEX ix_songs_normalized_path_trgm ON songs USING gin (normalized_path gin_trgm_ops)")
     op.execute("CREATE INDEX ix_tags_name_trgm ON tags USING gin (name gin_trgm_ops)")
 
     # file_tags
@@ -121,7 +119,7 @@ def upgrade() -> None:
         sa.Column("confidence", sa.Float(), nullable=False, server_default=sa.text("1.0")),
         sa.Column("source", sa.String(length=100), nullable=False),
         sa.Column("created_at", sa.BigInteger(), nullable=False),
-        sa.ForeignKeyConstraint(["file_id"], ["library_files.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["file_id"], ["songs.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["tag_id"], ["tags.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("file_id", "tag_id", name="uq_file_tags_file_tag"),
@@ -146,7 +144,7 @@ def upgrade() -> None:
         sa.Column("file_id", sa.Integer(), nullable=False),
         sa.Column("state_id", sa.Integer(), nullable=False),
         sa.Column("created_at", sa.BigInteger(), nullable=False),
-        sa.ForeignKeyConstraint(["file_id"], ["library_files.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["file_id"], ["songs.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["state_id"], ["file_states.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("file_id", "state_id", name="uq_file_state_assign_file_state"),
@@ -206,7 +204,7 @@ def upgrade() -> None:
         sa.Column("model_id", sa.String(length=255), nullable=False),
         sa.Column("status", sa.String(length=50), nullable=False),
         sa.Column("created_at", sa.BigInteger(), nullable=False),
-        sa.ForeignKeyConstraint(["file_id"], ["library_files.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["file_id"], ["songs.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["model_id"], ["ml_models.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -221,7 +219,7 @@ def upgrade() -> None:
         sa.Column("backbone_id", sa.String(length=100), nullable=False),
         sa.Column("patches_emb", sa.LargeBinary(), nullable=False),
         sa.Column("created_at", sa.BigInteger(), nullable=False),
-        sa.ForeignKeyConstraint(["file_id"], ["library_files.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["file_id"], ["songs.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_ml_embedding_streams_file_id", "ml_embedding_streams", ["file_id"])
@@ -235,7 +233,7 @@ def upgrade() -> None:
         sa.Column("model_id", sa.String(length=255), nullable=False),
         sa.Column("output_data", postgresql.JSONB(), nullable=False),
         sa.Column("created_at", sa.BigInteger(), nullable=False),
-        sa.ForeignKeyConstraint(["file_id"], ["library_files.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["file_id"], ["songs.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["model_id"], ["ml_models.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -288,7 +286,7 @@ def upgrade() -> None:
         sa.Column("file_id", sa.Integer(), nullable=False),
         sa.Column("created_at", sa.BigInteger(), nullable=False),
         sa.ForeignKeyConstraint(["navidrome_track_id"], ["navidrome_tracks.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["file_id"], ["library_files.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["file_id"], ["songs.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("navidrome_track_id", "file_id"),
     )
     op.create_index("ix_navidrome_track_maps_file_id", "navidrome_track_maps", ["file_id"])
@@ -313,7 +311,7 @@ def upgrade() -> None:
         sa.Column("file_id", sa.Integer(), nullable=False),
         sa.Column("created_at", sa.BigInteger(), nullable=False),
         sa.ForeignKeyConstraint(["play_id"], ["navidrome_plays.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["file_id"], ["library_files.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["file_id"], ["songs.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("play_id", "file_id"),
     )
     op.create_index("ix_navidrome_play_maps_file_id", "navidrome_play_maps", ["file_id"])
@@ -420,7 +418,7 @@ def upgrade() -> None:
         sa.Column("tier", sa.String(length=10), nullable=False, server_default="hot"),
         sa.Column("created_at", sa.BigInteger(), nullable=False),
         sa.Column("updated_at", sa.BigInteger(), nullable=False),
-        sa.ForeignKeyConstraint(["file_id"], ["library_files.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["file_id"], ["songs.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("file_id", "backbone_id", name="uq_embeddings_file_backbone"),
     )
@@ -502,7 +500,7 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS ix_tags_name_trgm")
     op.drop_table("tags")
 
-    # embeddings must be dropped BEFORE library_files (FK: embeddings.file_id → library_files.id)
+    # embeddings must be dropped BEFORE songs (FK: embeddings.file_id → songs.id)
     op.drop_index("ix_embeddings_cold_hnsw", table_name="embeddings")
     op.drop_index("ix_embeddings_backbone_tier", table_name="embeddings")
     op.drop_index("ix_embeddings_model_id", table_name="embeddings")
@@ -510,15 +508,15 @@ def downgrade() -> None:
     op.drop_index("ix_embeddings_file_id", table_name="embeddings")
     op.drop_table("embeddings")
 
-    op.drop_index("ix_lf_library_tagged", table_name="library_files")
-    op.drop_index("ix_lf_needs_tagging_valid", table_name="library_files")
-    op.drop_index("ix_library_files_write_claimed_by", table_name="library_files")
-    op.drop_index("ix_library_files_calibration_hash", table_name="library_files")
-    op.drop_index("ix_library_files_chromaprint", table_name="library_files")
-    op.drop_index("ix_library_files_folder_id", table_name="library_files")
-    op.drop_index("ix_library_files_library_id", table_name="library_files")
-    op.execute("DROP INDEX IF EXISTS ix_library_files_normalized_path_trgm")
-    op.drop_table("library_files")
+    op.drop_index("ix_lf_library_tagged", table_name="songs")
+    op.drop_index("ix_lf_needs_tagging_valid", table_name="songs")
+    op.drop_index("ix_songs_write_claimed_by", table_name="songs")
+    op.drop_index("ix_songs_calibration_hash", table_name="songs")
+    op.drop_index("ix_songs_chromaprint", table_name="songs")
+    op.drop_index("ix_songs_folder_id", table_name="songs")
+    op.drop_index("ix_songs_library_id", table_name="songs")
+    op.execute("DROP INDEX IF EXISTS ix_songs_normalized_path_trgm")
+    op.drop_table("songs")
     op.drop_index("ix_library_folders_parent_id", table_name="library_folders")
     op.drop_index("ix_library_folders_library_id", table_name="library_folders")
     op.drop_table("library_folders")

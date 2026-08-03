@@ -50,7 +50,7 @@ def _make_mock_db() -> MagicMock:
     mock_db.app.get_file_state.return_value = None
     mock_db.app.get_file_states_for_files.return_value = {}
     mock_db.app.list_claims.return_value = []
-    mock_db.library.list_library_files.return_value = []
+    mock_db.library.list_songs.return_value = []
     mock_db.library.list_libraries.return_value = []
     mock_db.library.list_file_tags_for_files.return_value = {}
     return mock_db
@@ -198,7 +198,7 @@ class TestSimpleStateLookups:
             {"id": 1},
             {"id": 9},
         ]
-        mock_db.library.list_library_files.return_value = [
+        mock_db.library.list_songs.return_value = [
             {"id": 2},
             {"id": 9},
         ]
@@ -207,7 +207,7 @@ class TestSimpleStateLookups:
 
         assert result is True
         mock_db.app.list_file_docs_in_state.assert_called_once_with(STATE_PROCESSED)
-        mock_db.library.list_library_files.assert_called_once_with(1)
+        mock_db.library.list_songs.assert_called_once_with(1)
 
     @pytest.mark.unit
     def test_file_has_tagged_state_returns_false_when_count_is_zero(self) -> None:
@@ -222,7 +222,7 @@ class TestSimpleStateLookups:
     def test_library_has_tagged_files_returns_false_when_no_intersection(self) -> None:
         mock_db = _make_mock_db()
         mock_db.app.list_file_docs_in_state.return_value = [{"id": 1}]
-        mock_db.library.list_library_files.return_value = [{"id": 2}]
+        mock_db.library.list_songs.return_value = [{"id": 2}]
 
         result = library_has_tagged_files(mock_db, 1)
 
@@ -244,7 +244,7 @@ class TestDiscoverNextUntaggedFile:
             [{"id": 2}],
             [],
         ]
-        mock_db.library.list_library_files.return_value = [
+        mock_db.library.list_songs.return_value = [
             {"id": 1},
             {"id": 2},
             {"id": 3},
@@ -302,7 +302,7 @@ class TestLibraryScopedStateQueries:
                 {"id": 3},
             ],
         ]
-        mock_db.library.list_library_files.return_value = [
+        mock_db.library.list_songs.return_value = [
             {"id": 2},
             {"id": 3},
         ]
@@ -317,7 +317,7 @@ class TestLibraryScopedStateQueries:
     @pytest.mark.unit
     def test_get_errored_file_ids_normalizes_library_id_and_applies_limit_after_intersection(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.library.list_library_files.return_value = [
+        mock_db.library.list_songs.return_value = [
             {"id": 2},
             {"id": 3},
         ]
@@ -330,13 +330,13 @@ class TestLibraryScopedStateQueries:
         result = get_errored_file_ids(mock_db, 1, limit=1)
 
         assert result == [2]
-        mock_db.library.list_library_files.assert_called_once_with(1)
+        mock_db.library.list_songs.assert_called_once_with(1)
         mock_db.app.list_file_docs_in_state.assert_called_once_with(STATE_ERRORED)
 
     @pytest.mark.unit
     def test_count_errored_files_counts_full_intersection(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.library.list_library_files.return_value = [
+        mock_db.library.list_songs.return_value = [
             {"id": 2},
             {"id": 3},
         ]
@@ -352,7 +352,7 @@ class TestLibraryScopedStateQueries:
     @pytest.mark.unit
     def test_get_errored_file_ids_returns_all_when_limit_is_none(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.library.list_library_files.return_value = [
+        mock_db.library.list_songs.return_value = [
             {"id": 1},
             {"id": 2},
             {"id": 3},
@@ -378,13 +378,13 @@ class TestLibraryScopedStateQueries:
             {"id": 1},
             {"id": 2},
         ]
-        mock_db.library.list_library_files.return_value = [{"id": 2}]
+        mock_db.library.list_songs.return_value = [{"id": 2}]
 
         result = get_stale_file_ids(mock_db, library_id=1)
 
         assert result == [2]
         mock_db.app.list_file_docs_in_state.assert_called_once_with(STATE_TAGS_NOT_FRESH)
-        mock_db.library.list_library_files.assert_called_once_with(1)
+        mock_db.library.list_songs.assert_called_once_with(1)
 
     @pytest.mark.unit
     def test_count_untagged_files_returns_global_count_when_no_library_id(self) -> None:
@@ -400,7 +400,7 @@ class TestLibraryScopedStateQueries:
         result = count_untagged_files(mock_db)
 
         assert result == 3
-        mock_db.library.list_library_files.assert_not_called()
+        mock_db.library.list_songs.assert_not_called()
 
     @pytest.mark.unit
     def test_get_stale_file_ids_returns_all_ids_when_no_library_id(self) -> None:
@@ -413,7 +413,7 @@ class TestLibraryScopedStateQueries:
         result = get_stale_file_ids(mock_db)
 
         assert result == [1, 2]
-        mock_db.library.list_library_files.assert_not_called()
+        mock_db.library.list_songs.assert_not_called()
 
 
 class TestMultiStateComposition:
@@ -426,7 +426,7 @@ class TestMultiStateComposition:
             [{"id": 1}, {"id": 3}],
             [{"id": 2}, {"id": 3}],
         ]
-        mock_db.library.list_library_files.return_value = [
+        mock_db.library.list_songs.return_value = [
             {"id": 2},
             {"id": 3},
             {"id": 1},
@@ -447,7 +447,7 @@ class TestMultiStateComposition:
             {"id": 1},
             {"id": 2},
         ]
-        mock_db.library.list_library_files.side_effect = [
+        mock_db.library.list_songs.side_effect = [
             [{"id": 1}, {"id": 3}],
             [{"id": 2}, {"id": 4}],
         ]
@@ -478,7 +478,7 @@ class TestMultiStateComposition:
 
         assert result == []
         mock_db.library.list_libraries.assert_called_once_with()
-        mock_db.library.list_library_files.assert_not_called()
+        mock_db.library.list_songs.assert_not_called()
 
 
 class TestIncompleteTags:
@@ -528,7 +528,7 @@ class TestIncompleteTags:
             {"id": 1},
             {"id": 2},
         ]
-        mock_db.library.list_library_files.return_value = [{"id": 2}]
+        mock_db.library.list_songs.return_value = [{"id": 2}]
         mock_db.library.list_file_tags_for_files.return_value = {
             2: [{"name": "nom:mood_modelA_happy"}],
         }
@@ -545,7 +545,7 @@ class TestIncompleteTags:
                 "missing_heads": ["energy"],
             }
         ]
-        mock_db.library.list_library_files.assert_called_once_with(1)
+        mock_db.library.list_songs.assert_called_once_with(1)
         mock_db.library.list_file_tags_for_files.assert_called_once_with(
             [2],
             name_starts_with="nom:",
@@ -616,7 +616,7 @@ class TestBulkTransitions:
             if state == STATE_TAGS_CURRENT
             else []
         )
-        mock_db.library.list_library_files.return_value = [{"id": 2}]
+        mock_db.library.list_songs.return_value = [{"id": 2}]
         mock_db.app.get_file_states_for_files.return_value = {
             2: {STATE_TAGS_CURRENT},
         }
@@ -627,7 +627,7 @@ class TestBulkTransitions:
         mock_db.app.remove_file_states.assert_called_once_with([2])
         mock_db.app.add_file_states.assert_called_once_with([2], STATE_TAGS_NOT_FRESH)
         mock_db.app.list_file_docs_in_state.assert_any_call(STATE_TAGS_CURRENT)
-        mock_db.library.list_library_files.assert_called_once_with(1)
+        mock_db.library.list_songs.assert_called_once_with(1)
 
     @pytest.mark.unit
     def test_bulk_set_not_vectors_extracted_skips_empty_transition(self) -> None:
@@ -667,7 +667,7 @@ class TestBulkTransitions:
         assert result == 2
         mock_db.app.remove_file_states.assert_called_once_with(current_ids)
         mock_db.app.add_file_states.assert_called_once_with(current_ids, STATE_TAGS_NOT_FRESH)
-        mock_db.library.list_library_files.assert_not_called()
+        mock_db.library.list_songs.assert_not_called()
 
     @pytest.mark.unit
     def test_bulk_set_tags_not_fresh_returns_zero_and_skips_transition_when_no_tags_current_files(self) -> None:

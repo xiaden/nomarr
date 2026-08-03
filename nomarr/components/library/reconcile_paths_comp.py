@@ -11,7 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Literal
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db
-from nomarr.components.library.library_file_query_comp import get_library_stats, list_library_files
+from nomarr.components.library.library_file_query_comp import get_library_stats, list_songs
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -61,7 +61,7 @@ def reconcile_library_paths(
     logger.info(f"[reconcile_library_paths] Found {total_count} files to validate")
     offset = 0
     while True:
-        files, _ = list_library_files(db, library_id=library_id, limit=batch_size, offset=offset)
+        files, _ = list_songs(db, library_id=library_id, limit=batch_size, offset=offset)
         if not files:
             break
         logger.debug(f"[reconcile_library_paths] Processing batch at offset {offset} ({len(files)} files)")

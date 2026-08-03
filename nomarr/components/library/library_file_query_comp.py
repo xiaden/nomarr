@@ -111,7 +111,7 @@ def _path_parent(path_value: Any) -> str | None:
     return path_value.rsplit("/", 1)[0] if "/" in path_value else ""
 
 
-def _get_library_files_by_ids(db: Database, file_ids: list[int]) -> list[dict[str, Any]]:
+def _get_songs_by_ids(db: Database, file_ids: list[int]) -> list[dict[str, Any]]:
     if not file_ids:
         return []
     return cast("list[dict[str, Any]]", db.library.list_files_by_ids(file_ids))
@@ -235,7 +235,7 @@ def get_files_by_ids_with_tags(db: Database, file_ids: list[int]) -> list[dict[s
     if not file_ids:
         return []
 
-    file_docs = _get_library_files_by_ids(db, file_ids)
+    file_docs = _get_songs_by_ids(db, file_ids)
     docs_by_id = {file_id: file_doc for file_doc in file_docs if isinstance((file_id := file_doc.get("id")), int)}
     ordered_docs = [docs_by_id[file_id] for file_id in file_ids if file_id in docs_by_id]
     return _hydrate_files_with_tags(db, ordered_docs)
@@ -257,7 +257,7 @@ def get_library_file(
             file_doc
             for file_doc in cast(
                 "list[dict[str, Any]]",
-                db.library.list_library_files(library_id, limit=None),
+                db.library.list_songs(library_id, limit=None),
             )
             if _matches_requested_path(file_doc, path)
         ]
@@ -320,7 +320,7 @@ def detect_nd_path_prefix(db: Database, nd_path: str) -> str | None:
     return nd_path[: len(nd_path) - len(best_match)]
 
 
-def list_library_files(
+def list_songs(
     db: Database,
     limit: int = 100,
     offset: int = 0,
@@ -332,7 +332,7 @@ def list_library_files(
     if library_id is not None:
         file_docs = cast(
             "list[dict[str, Any]]",
-            db.library.list_library_files(library_id, limit=None),
+            db.library.list_songs(library_id, limit=None),
         )
     else:
         file_docs = _get_all_library_file_docs(db, DEFAULT_LIMIT)
@@ -358,7 +358,7 @@ def get_tagged_file_paths(db: Database) -> list[str]:
     return [str(file_doc["path"]) for file_doc in tagged_file_docs if isinstance(file_doc.get("path"), str)]
 
 
-def search_library_files_with_tags(
+def search_songs_with_tags(
     db: Database,
     query_text: str = "",
     artist: str | None = None,
@@ -461,7 +461,7 @@ def search_library_files_with_tags(
     elif not candidate_ids:
         return [], 0
     else:
-        file_docs = _get_library_files_by_ids(db, sorted(candidate_ids))
+        file_docs = _get_songs_by_ids(db, sorted(candidate_ids))
 
     file_docs = hydrate_songs_with_metadata(db, file_docs)
     file_docs.sort(key=_library_file_sort_key)
@@ -552,7 +552,7 @@ def get_files_for_folder(
     folder_rel_path: str,
 ) -> dict[str, dict[str, Any]]:
     """Get file documents for a single folder. Has_tagged_state is annotated in-query."""
-    file_docs = cast("list[dict[str, Any]]", db.library.list_library_files_for_folder(library_id, folder_rel_path))
+    file_docs = cast("list[dict[str, Any]]", db.library.list_songs_for_folder(library_id, folder_rel_path))
     return {file_doc["path"]: file_doc for file_doc in file_docs if isinstance(file_doc.get("path"), str)}
 
 
@@ -573,7 +573,7 @@ def get_files_for_folders(
         db,
         cast(
             "list[dict[str, Any]]",
-            db.library.list_library_files(library_id, limit=None),
+            db.library.list_songs(library_id, limit=None),
         ),
     )
     return {
@@ -602,7 +602,7 @@ def get_library_stats(db: Database, library_id: int | None = None) -> dict[str, 
     if library_id is not None:
         file_docs = cast(
             "list[dict[str, Any]]",
-            db.library.list_library_files(library_id, limit=None),
+            db.library.list_songs(library_id, limit=None),
         )
         total_files = db.library.count_files_for_library(library_id)
         file_ids = [doc["id"] for doc in file_docs if isinstance(doc.get("id"), int)]
@@ -645,7 +645,7 @@ def get_library_counts(db: Database) -> dict[int, dict[str, int]]:
     """Return file and folder counts for all libraries."""
     result: dict[int, dict[str, int]] = {}
     for library_id in db.library.list_library_keys():
-        file_docs = db.library.list_library_files(library_id, limit=None)
+        file_docs = db.library.list_songs(library_id, limit=None)
         folder_paths = {parent for file_doc in file_docs if (parent := _path_parent(file_doc.get("path"))) is not None}
         result[library_id] = {
             "file_count": len(file_docs),
@@ -803,7 +803,7 @@ def get_files_by_chromaprint(
             file_doc
             for file_doc in cast(
                 "list[dict[str, Any]]",
-                db.library.list_library_files(library_id, limit=None),
+                db.library.list_songs(library_id, limit=None),
             )
             if file_doc.get("chromaprint") == chromaprint
         ]
@@ -824,7 +824,7 @@ def get_tracks_by_file_ids(
     if not file_ids:
         return []
 
-    file_docs = _get_library_files_by_ids(db, list(file_ids))
+    file_docs = _get_songs_by_ids(db, list(file_ids))
     file_docs = hydrate_songs_with_metadata(db, file_docs)
     if order_by:
         for column, direction in reversed(order_by):

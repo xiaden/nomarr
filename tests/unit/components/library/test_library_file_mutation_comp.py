@@ -36,8 +36,8 @@ class TestUpsertBatch:
     def test_batch_groups_payloads_by_library_and_preserves_input_order(self) -> None:
         mock_db = MagicMock()
         mock_db.library.add_files_to_library.side_effect = [
-            [f"{'library_files'}/rock-existing", f"{'library_files'}/rock-new"],
-            [f"{'library_files'}/jazz-new"],
+            [f"{'songs'}/rock-existing", f"{'songs'}/rock-new"],
+            [f"{'songs'}/jazz-new"],
         ]
         file_docs: list[dict[str, Any]] = [
             {
@@ -66,9 +66,9 @@ class TestUpsertBatch:
         result = upsert_batch(mock_db, file_docs)
 
         assert result == [
-            f"{'library_files'}/rock-existing",
-            f"{'library_files'}/jazz-new",
-            f"{'library_files'}/rock-new",
+            f"{'songs'}/rock-existing",
+            f"{'songs'}/jazz-new",
+            f"{'songs'}/rock-new",
         ]
         assert mock_db.library.add_files_to_library.call_args_list == [
             call(
@@ -156,9 +156,9 @@ class TestBulkDeleteFiles:
     def test_bulk_delete_resolves_paths_and_removes_each_found_file_once(self) -> None:
         mock_db = MagicMock()
         mock_db.library.find_file_by_path_any_library.side_effect = [
-            {"_id": f"{'library_files'}/a"},
+            {"_id": f"{'songs'}/a"},
             None,
-            {"_id": f"{'library_files'}/c"},
+            {"_id": f"{'songs'}/c"},
         ]
 
         result = bulk_delete_files(mock_db, ["C:/music/a.mp3", "C:/music/missing.mp3", "C:/music/c.mp3"])
@@ -191,7 +191,7 @@ class TestUpsertLibraryFile:
     @pytest.mark.unit
     def test_adds_file_to_library_with_expected_payload(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.add_file_to_library.return_value = f"{'library_files'}/123"
+        mock_db.library.add_file_to_library.return_value = f"{'songs'}/123"
         mock_path = MagicMock()
         mock_path.is_valid.return_value = True
         mock_path.relative = "relative/song.mp3"
@@ -213,7 +213,7 @@ class TestUpsertLibraryFile:
                 modified_time=5678,
             )
 
-        assert result == f"{'library_files'}/123"
+        assert result == f"{'songs'}/123"
         mock_library_key_from_ref.assert_called_once_with("libraries/1")
         mock_db.library.add_file_to_library.assert_called_once_with(
             "libraries/1",
@@ -261,7 +261,7 @@ class TestUpdateFilePath:
             mock_now_ms.return_value.value = 2000
             update_file_path(
                 mock_db,
-                f"{'library_files'}/123",
+                f"{'songs'}/123",
                 "C:/music/new-song.mp3",
                 file_size=4321,
                 modified_time=8765,
@@ -269,11 +269,11 @@ class TestUpdateFilePath:
             )
 
         mock_db.library.update_library_file_path.assert_called_once_with(
-            f"{'library_files'}/123",
+            f"{'songs'}/123",
             "C:/music/new-song.mp3",
         )
         mock_db.library.update_file_fields.assert_called_once_with(
-            f"{'library_files'}/123",
+            f"{'songs'}/123",
             {
                 "file_size": 4321,
                 "modified_time": 8765,
@@ -291,7 +291,7 @@ class TestUpdateFilePath:
             mock_now_ms.return_value.value = 2000
             update_file_path(
                 mock_db,
-                f"{'library_files'}/123",
+                f"{'songs'}/123",
                 "C:/music/new-song.mp3",
                 file_size=4321,
                 modified_time=8765,
@@ -299,7 +299,7 @@ class TestUpdateFilePath:
             )
 
         mock_db.library.update_file_fields.assert_called_once_with(
-            f"{'library_files'}/123",
+            f"{'songs'}/123",
             {
                 "file_size": 4321,
                 "modified_time": 8765,
@@ -374,9 +374,9 @@ class TestUpdateLastTaggedAt:
 
         with patch("nomarr.components.library.library_file_mutation_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value.value = 9999
-            update_last_tagged_at(mock_db, f"{'library_files'}/123")
+            update_last_tagged_at(mock_db, f"{'songs'}/123")
 
         mock_db.library.update_library_file_last_tagged_at.assert_called_once_with(
-            f"{'library_files'}/123",
+            f"{'songs'}/123",
             9999,
         )

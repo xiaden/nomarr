@@ -400,13 +400,13 @@ class TestGetSongTags:
             {"name": "mood"},
         ]
 
-        result = get_song_tags(mock_db, f"{'library_files'}/1")
+        result = get_song_tags(mock_db, f"{'songs'}/1")
 
         assert result.to_dict() == {
             "artist": ("Artist One",),
             "genre": ("Rock",),
         }
-        mock_db.library.list_tags_for_file.assert_called_once_with(f"{'library_files'}/1")
+        mock_db.library.list_tags_for_file.assert_called_once_with(f"{'songs'}/1")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -418,7 +418,7 @@ class TestGetSongTags:
             {"name": "genre", "value": "Pop"},
         ]
 
-        result = get_song_tags(mock_db, f"{'library_files'}/1", name="genre")
+        result = get_song_tags(mock_db, f"{'songs'}/1", name="genre")
 
         assert result.to_dict() == {"genre": ("Rock", "Pop")}
 
@@ -432,7 +432,7 @@ class TestGetSongTags:
             {"name": "nom:mood-tier-1", "value": "bright"},
         ]
 
-        result = get_song_tags(mock_db, f"{'library_files'}/1", nomarr_only=True)
+        result = get_song_tags(mock_db, f"{'songs'}/1", nomarr_only=True)
 
         assert result.to_dict() == {"nom:mood-tier-1": ("calm", "bright")}
 
@@ -507,7 +507,7 @@ class TestGetFileIdsForMoodTags:
         from nomarr.components.tagging.tag_query_comp import get_file_ids_for_mood_tags
 
         mock_db = MagicMock()
-        mock_db.library.list_library_files.return_value = [
+        mock_db.library.list_songs.return_value = [
             {"id": 1},
             {"id": 2},
         ]

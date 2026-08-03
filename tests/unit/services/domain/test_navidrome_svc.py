@@ -33,7 +33,7 @@ def _playlist_entry() -> dict[str, object]:
         "playlist_name": "Familiar Favorites",
         "file_ids": [
             1,
-            f"{'library_files'}/track-2",
+            f"{'songs'}/track-2",
         ],
     }
 

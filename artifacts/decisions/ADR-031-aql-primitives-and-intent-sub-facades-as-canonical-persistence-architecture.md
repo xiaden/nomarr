@@ -1,6 +1,6 @@
 # ADR-031: AQL Primitives and Intent Sub-Facades as Canonical Persistence Architecture
 
-**Status:** Accepted  
+**Status:** Superseded by ADR-040  
 **Date:** 2026-05-11  
 **Tags:** persistence, architecture, aql, database  
 **Supersedes:** ADR-025-schema-driven-persistence-constructor-supersedes-hand-written-aql-conventions, ADR-030-adopt-descriptor-based-database-facade-for-persistence-access  

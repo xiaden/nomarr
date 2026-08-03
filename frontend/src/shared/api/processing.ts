@@ -1,7 +1,7 @@
 /**
  * Processing status API functions.
  *
- * With discovery-based workers, processing state is derived from library_files:
+ * With discovery-based workers, processing state is derived from songs:
  * - pending: Files waiting to be processed (needs_tagging=1)
  * - processed: Files already processed
  * - total: All files in library

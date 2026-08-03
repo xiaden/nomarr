@@ -161,7 +161,7 @@ All operations should be guarded for idempotency where possible:
    ```python
    def upgrade() -> None:
        op.execute("""
-           UPDATE library_files
+           UPDATE songs
            SET new_field = old_field, old_field = NULL
            WHERE old_field IS NOT NULL
        """)

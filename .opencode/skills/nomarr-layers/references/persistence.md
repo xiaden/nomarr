@@ -10,7 +10,7 @@ Persistence is the **data access layer**:
 - `collections.py` declares concrete collections
 - `constructor/` contains reusable SQL/query helpers (`verbs.py`, `filters.py`, `pagination.py`)
 
-External code accesses persistence via the injected `Database` facade, for example `db.tags.name.get.many(...)` or `db.library_files.path.get(...)`. Persistence returns raw document dicts and query results; higher layers map them to DTOs when needed.
+External code accesses persistence via the injected `Database` facade, for example `db.tags.name.get.many(...)` or `db.songs.path.get(...)`. Persistence returns raw document dicts and query results; higher layers map them to DTOs when needed.
 
 ---
 
@@ -60,13 +60,13 @@ External code should go through the injected `Database` facade:
 ```python
 # ✅ Correct - access via Database instance with collection-first verbs
 def some_workflow(db: Database) -> None:
-    file = db.library_files.get(path="/music/track.flac")
+    file = db.songs.get(path="/music/track.flac")
     tags = db.tags.get(name="genre", limit=100, offset=0)
-    db.library_files.insert([{"path": "/music/track.flac", ...}])
-    db.library_files.update(path="/music/track.flac", fields={"size_bytes": 12345})
+    db.songs.insert([{"path": "/music/track.flac", ...}])
+    db.songs.update(path="/music/track.flac", fields={"size_bytes": 12345})
 
 # ⚠️ Compatibility shim only - field accessor chains still work for legacy callers
-legacy_file = db.library_files.path.get("/music/track.flac")
+legacy_file = db.songs.path.get("/music/track.flac")
 
 # ❌ Wrong - importing persistence internals into higher layers
 from nomarr.persistence.collections import LibraryFiles

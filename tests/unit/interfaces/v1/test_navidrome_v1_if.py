@@ -198,12 +198,12 @@ class TestGeneratePlaylistsEndpoint:
                 {
                     "playlist_type": "familiar",
                     "playlist_name": "Familiar Favorites",
-                    "file_ids": [f"{'library_files'}/track-1"],
+                    "file_ids": [f"{'songs'}/track-1"],
                 },
             ],
         )
         mock_navidrome_service.resolve_files_to_descriptors.return_value = {
-            f"{'library_files'}/track-1": {
+            f"{'songs'}/track-1": {
                 "title": "Song A",
                 "artist": "Artist A",
                 "album": "Album A",
@@ -250,7 +250,7 @@ class TestGeneratePlaylistsEndpoint:
             ],
         }
         mock_navidrome_service.resolve_files_to_descriptors.assert_called_once_with(
-            [f"{'library_files'}/track-1"],
+            [f"{'songs'}/track-1"],
         )
         mock_navidrome_service.resolve_files_to_nd.assert_not_called()
 
@@ -294,14 +294,14 @@ class TestGeneratePlaylistsEndpoint:
                     "playlist_type": "familiar",
                     "playlist_name": "Familiar Favorites",
                     "file_ids": [
-                        f"{'library_files'}/track-1",
-                        f"{'library_files'}/missing",
+                        f"{'songs'}/track-1",
+                        f"{'songs'}/missing",
                     ],
                 },
             ],
         )
         mock_navidrome_service.resolve_files_to_descriptors.return_value = {
-            f"{'library_files'}/track-1": {
+            f"{'songs'}/track-1": {
                 "title": "Song A",
                 "artist": "Artist A",
                 "album": "Album A",

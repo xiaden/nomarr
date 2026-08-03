@@ -20,18 +20,12 @@ from typing import Any
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class EmbeddingStream:
-    """Canonical int8 temporal embedding stream for one ``(file, backbone)`` pair.
+    """Canonical temporal embedding stream for one ``(file, backbone)`` pair.
 
     Each document in the ``ml_embedding_streams`` collection stores a quantized
     backbone patch stream. The ``_key`` is deterministically derived from
     ``file_id`` and ``backbone``.
     """
-
-    id: str
-    """Unique record identifier (e.g. ``"ml_embedding_streams/abc123"``)."""
-
-    file_id: str
-    """Identifier of the owning library file."""
 
     backbone: str
     """Backbone model identifier (e.g. ``"effnet"``)."""
@@ -76,15 +70,6 @@ class VectorEntry:
     references a file and carries metadata about the model suite and
     segmentation that produced it.
     """
-
-    id: str
-    """Unique record identifier (e.g. ``"vectors_track_cold__effnet/xyz"``)."""
-
-    file_id: str
-    """Identifier of the owning library file."""
-
-    model_suite_hash: str
-    """Hash identifying the model suite that produced this vector."""
 
     embed_dim: int
     """Dimensionality of the vector."""

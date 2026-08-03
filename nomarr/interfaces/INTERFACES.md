@@ -70,7 +70,7 @@ interfaces/
 │       ├── fs_if.py                 # File system routes
 │       ├── info_if.py               # System info routes
 │       ├── library_if.py            # Library routes
-│       ├── library_files_if.py      # Library file/tag search routes
+│       ├── songs_if.py      # Library file/tag search routes
 │       ├── library_scan_if.py       # Library scan, repair, reconcile routes
 │       ├── metadata_if.py           # Metadata routes
 │       ├── ml_if.py                 # ML routes

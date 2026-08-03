@@ -112,7 +112,7 @@ class TestPgTrgm:
             for path in paths:
                 conn.execute(
                     text(
-                        "INSERT INTO library_files (library_id, path, normalized_path, file_size, "
+                        "INSERT INTO songs (library_id, path, normalized_path, file_size, "
                         "modified_time, duration_seconds, needs_tagging, is_valid, tagged, created_at) "
                         "VALUES (:lib_id, :path, :path, 1000, 1000, 180, 0, 1, 0, 1000)"
                     ),
@@ -122,7 +122,7 @@ class TestPgTrgm:
 
             # Query with pg_trgm similarity — 'Abby Road' should match 'Abbey Road'
             result = conn.execute(
-                text("SELECT path, similarity(path, 'Abby Road') AS sim FROM library_files WHERE path % 'Abby Road'")
+                text("SELECT path, similarity(path, 'Abby Road') AS sim FROM songs WHERE path % 'Abby Road'")
             )
             rows = result.fetchall()
             assert len(rows) >= 1, "pg_trgm should find at least one fuzzy match for 'Abby Road'"
@@ -216,7 +216,7 @@ class TestFkIndexes:
                 "embeddings_file_id_idx",
                 "file_tags_file_id_idx",
                 "file_tags_tag_id_idx",
-                "library_files_library_id_idx",
+                "songs_library_id_idx",
                 "library_folders_library_id_idx",
                 "ml_output_streams_file_id_idx",
                 "ml_output_streams_model_id_idx",
@@ -237,7 +237,7 @@ class TestFkEnforcement:
     def test_cascade_delete_library_removes_embeddings(self, pg_session) -> None:
         """Deleting a library should cascade through files to embeddings.
 
-        The FK chain is: libraries → library_files → embeddings (all CASCADE).
+        The FK chain is: libraries → songs → embeddings (all CASCADE).
         Verifies zero orphaned rows after remove_library().
         """
         lib_id = _create_library(pg_session, "FK Cascade Lib")
@@ -265,7 +265,7 @@ class TestFkEnforcement:
         assert result.scalar() == 0
 
         # Verify file is gone (cascaded)
-        result = pg_session.execute(text("SELECT COUNT(*) FROM library_files WHERE id = :id"), {"id": file_id})
+        result = pg_session.execute(text("SELECT COUNT(*) FROM songs WHERE id = :id"), {"id": file_id})
         assert result.scalar() == 0
 
         # Verify embedding is gone (cascaded)

@@ -2,7 +2,7 @@
 
 **Audience:** Developers working on worker processes, health monitoring, or debugging worker behavior.
 
-Nomarr uses a unified discovery-based worker system for background ML processing. Workers query `library_files` for work and claim files via the `worker_claims` table. This document describes the worker lifecycle, claim-based processing, and crash recovery.
+Nomarr uses a unified discovery-based worker system for background ML processing. Workers query `songs` for work and claim files via the `worker_claims` table. This document describes the worker lifecycle, claim-based processing, and crash recovery.
 
 ---
 
@@ -16,7 +16,7 @@ All workers are identical `DiscoveryWorker` processes. There are no separate sca
 
 **Worker loop:**
 
-1. Query `library_files` for next unprocessed file (`needs_tagging=1`)
+1. Query `songs` for next unprocessed file (`needs_tagging=1`)
 2. Claim file by inserting a deterministic claim document into `worker_claims`
 3. Process file using `process_file_workflow` (ONNX backbone + heads → tags)
 4. Execute deferred DB writes (tags, model outputs, segment stats) on background thread
@@ -197,7 +197,7 @@ file_id = discover_and_claim_file(
 ```json
 {
   "id": "claim_{file_id}",
-  "file_id": "library_files/12345",
+  "file_id": "songs/12345",
   "worker_id": "worker:discovery:0",
   "claimed_at": 1705779600000
 }
@@ -213,7 +213,7 @@ file_id = discover_and_claim_file(
 
 For each claimed file:
 
-1. Fetch file document from `library_files`
+1. Fetch file document from `songs`
 2. Lazy-warm ONNX model cache on first file (avoids VRAM allocation until work arrives)
 3. Run `process_file_workflow` (audio load → mel spectrogram → backbone embedding → head inference → tag aggregation)
 4. Submit deferred DB writes to background thread (overlaps I/O with next file's ML)
@@ -427,7 +427,7 @@ docker logs nomarr 2>&1 | grep "worker:discovery:0"
 **Workers not processing files:**
 
 - Verify `worker_enabled=True` (check `/api/v1/info`)
-- Ensure files exist in `library_files` with tagging state needing processing
+- Ensure files exist in `songs` with tagging state needing processing
 - Check worker is `healthy` (health pipe active)
 - Check for orphaned claims: query `worker_claims` table
 

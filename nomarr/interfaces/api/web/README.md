@@ -23,7 +23,7 @@ Internal HTTP endpoints powering the Nomarr web dashboard.
  | `fs_if.py` | Filesystem browser for library path selection |
  | `info_if.py` | System info, health, GPU health |
  | `library_if.py` | Library CRUD, stats, vector stats (per-library) |
- | `library_files_if.py` | File search, tag search, tag key/value listing, file tags, errored files |
+ | `songs_if.py` | File search, tag search, tag key/value listing, file tags, errored files |
  | `library_scan_if.py` | Library scan (quick/full), repair, reconcile, write tags, pipeline status |
  | `metadata_if.py` | Entity listing, detail, songs-by-entity, artists-for-album, albums-for-artist |
  | `ml_if.py` | Model listing, output labels, configuration, VRAM probe, work status, recent activity |

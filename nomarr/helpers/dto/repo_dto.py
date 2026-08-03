@@ -24,7 +24,7 @@ class LibraryRow(TypedDict):
 
 
 class LibraryFileRow(TypedDict):
-    """Single row from the ``library_files`` table."""
+    """Single row from the ``songs`` table."""
 
     id: int
     library_id: int

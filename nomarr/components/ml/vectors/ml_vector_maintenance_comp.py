@@ -155,7 +155,7 @@ def backfill_genres(db: Database, backbone_id: str) -> int:
 
     Delegates to the MlDb facade which counts embeddings with NULL genres
     for the given backbone. Full genre backfill requires joining with the
-    library_files tag data, which is outside MlDb's scope.
+    songs tag data, which is outside MlDb's scope.
 
     Args:
         db: Database handle.

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from nomarr.persistence.models.base import Base
 
 
-class FileTag(Base):
+class SongTag(Base):
     """Junction table: assigns a tag to a library file with confidence and source."""
 
     __tablename__ = "file_tags"

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_file_query_comp import (
     get_existing_file_paths,
-    list_library_files,
+    list_songs,
 )
 from nomarr.components.library.library_file_state_comp import (
     initialize_file_states_batch,
@@ -118,7 +118,7 @@ def snapshot_existing_files(
 
     Returns (existing_files_dict, has_tagged_files).
     """
-    files_tuple = list_library_files(db, limit=1_000_000, offset=0)
+    files_tuple = list_songs(db, limit=1_000_000, offset=0)
     existing_files_dict: dict[str, dict[str, Any]] = {f["path"]: f for f in files_tuple[0]}
     has_tagged_files = library_has_tagged_files(db, library_id)
     return existing_files_dict, has_tagged_files

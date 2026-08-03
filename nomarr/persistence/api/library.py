@@ -94,7 +94,7 @@ class LibraryDb:
 
     Part B authoritative migration map for this facade:
     - Final routine API: ``add_file_to_library``, ``add_files_to_library``,
-      ``update_library_files``, ``update_library_file_path``, ``remove_file``,
+      ``update_songs``, ``update_library_file_path``, ``remove_file``,
       ``remove_file_by_path``, ``replace_file_tags``,
       ``replace_tag_references``, ``replace_selected_tag_references``,
       ``remove_file_tags``, ``list_file_tags_for_files``,
@@ -266,18 +266,18 @@ class LibraryDb:
         """Return file IDs belonging to a library, with optional limit."""
         return self._file_repo.list_library_file_ids(library_id, limit=limit)
 
-    def list_library_files(
+    def list_songs(
         self,
         library_id: int,
         *,
         limit: int | None = None,
     ) -> list[LibraryFileRow]:
         """Return file rows belonging to a library, with optional limit."""
-        return self._file_repo.list_library_files(library_id, limit=limit)
+        return self._file_repo.list_songs(library_id, limit=limit)
 
     def count_files_for_library(self, library_id: int) -> int:
         """Return the number of files belonging to a library."""
-        return self._file_repo.count_library_files(library_id)
+        return self._file_repo.count_songs(library_id)
 
     def find_library_file_by_chromaprint(
         self,
@@ -561,7 +561,7 @@ class LibraryDb:
                 self._file_state_repo.ensure_file_state(file_id, initial_state)
         return file_ids
 
-    def update_library_files(
+    def update_songs(
         self,
         library_id: int,
         payloads: list[dict[str, Any]],
@@ -730,7 +730,7 @@ class LibraryDb:
         """Return the subset of the given paths that already have library-file rows."""
         return self._file_repo.list_existing_file_paths(paths)
 
-    def list_library_files_for_folder(
+    def list_songs_for_folder(
         self,
         library_id: int,
         folder_rel_path: str,

@@ -7,7 +7,7 @@ from sqlalchemy import insert
 
 from nomarr.persistence.database.file_tag_repo import FileTagRepository
 from nomarr.persistence.database.tag_repo import TagRepository
-from nomarr.persistence.models.file_tag import FileTag
+from nomarr.persistence.models.file_tag import SongTag
 from nomarr.persistence.models.library import Library
 from nomarr.persistence.models.library_file import LibraryFile
 from nomarr.persistence.models.tag import Tag
@@ -417,7 +417,7 @@ class TestTagRepository:
         file_tag_repo.truncate_file_tag_assignments()
         from sqlalchemy import select
 
-        result = pg_session.execute(select(FileTag))
+        result = pg_session.execute(select(SongTag))
         assert len(result.all()) == 0
 
     def test_truncate_tags(self, pg_session) -> None:

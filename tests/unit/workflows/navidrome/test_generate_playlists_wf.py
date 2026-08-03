@@ -31,7 +31,7 @@ def _mock_plays(*file_ids: str) -> list[dict[str, object]]:
     return [
         {
             "nd_id": f"nd-{i}",
-            "file_id": f"{'library_files'}/{fid}",
+            "file_id": f"{'songs'}/{fid}",
             "playcount": 5,
             "last_played": 123,
         }
@@ -96,7 +96,7 @@ class TestGeneratePlaylistsWorkflow:
     ) -> None:
         """Filtering every generated playlist should emit a warning."""
         db = _make_db()
-        builder = MagicMock(return_value=[_playlist_entry(f"{'library_files'}/track-1")])
+        builder = MagicMock(return_value=[_playlist_entry(f"{'songs'}/track-1")])
         workflow_logger = logging.getLogger("nomarr.workflows.navidrome.generate_playlists_wf")
         original_propagate = workflow_logger.propagate
         workflow_logger.propagate = True

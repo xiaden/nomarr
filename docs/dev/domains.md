@@ -48,7 +48,7 @@ Rules that MUST stay true about that data.
 
 ### 4. Private Implementation
 
-Direct persistence access is **private** to the domain. Other domains CANNOT call `db.library_files` directly — they MUST call library domain components.
+Direct persistence access is **private** to the domain. Other domains CANNOT call `db.songs` directly — they MUST call library domain components.
 
 **Metaphor:** Domains are like in-process microservices. You call their API (components), you never touch their database directly.
 
@@ -66,7 +66,7 @@ Direct persistence access is **private** to the domain. Other domains CANNOT cal
 from nomarr.persistence.db import Database
 
 def upsert_library_file(db: Database, library_id: str, file_path: str) -> dict:
-    return db.library_files.upsert({"path": file_path, ...})
+    return db.songs.upsert({"path": file_path, ...})
 
 # ✅ GOOD — Workflow calls component
 # workflows/library/scan_library_full_wf.py
@@ -77,7 +77,7 @@ def scan_library(db, library_id):
         upsert_library_file(db, library_id, path)
 
 # ❌ BAD — Workflow imports persistence
-db.library_files.insert(...)  # BYPASSES INVARIANTS!
+db.songs.insert(...)  # BYPASSES INVARIANTS!
 ```
 
 ### Rule 2: Cross-Domain via Components Only
@@ -109,7 +109,7 @@ Each domain maps to a subfolder under `components/` and owns specific PostgreSQL
 **Owns:**
 
 - `libraries` — Library definitions, root paths
-- `library_files` — File records, paths, audio metadata, tagging state
+- `songs` — File records, paths, audio metadata, tagging state
 - `library_folders` — Folder cache for quick scanning
 - `file_states` — Table for file lifecycle state (e.g., `ml_tagged`)
 
@@ -373,7 +373,7 @@ Each domain maps to a subfolder under `components/` and owns specific PostgreSQL
  | Question | Answer |
  | ---------- | -------- |
  | Where does "normalize tag label" belong? | `components/tagging/tag_normalization_comp.py` — enforces tagging invariants |
- | Where does "discover next file to process" belong? | `components/workers/worker_discovery_comp.py` — queries library_files |
+ | Where does "discover next file to process" belong? | `components/workers/worker_discovery_comp.py` — queries songs |
  | Where does "load audio file" belong? | `components/ml/audio/ml_audio_comp.py` — ML domain audio I/O |
  | Where does "bootstrap database" belong? | `components/platform/db_bootstrap_comp.py` — infrastructure |
  | Where does "match Spotify tracks" belong? | `components/playlist_import/track_matcher_comp.py` — playlist_import domain |

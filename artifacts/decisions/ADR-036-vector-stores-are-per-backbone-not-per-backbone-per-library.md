@@ -1,6 +1,6 @@
 # ADR-036: Vector Stores Are Per-Backbone, Not Per-Backbone-Per-Library
 
-**Status:** Proposed  
+**Status:** Superseded by ADR-040  
 **Date:** 2026-06-19  
 **Tags:** vectors, persistence, architecture, simplification  
 

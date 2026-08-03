@@ -58,7 +58,7 @@ from .scan_lifecycle_comp import (
 )
 from .search_files_comp import (
     get_unique_tag_values,
-    search_library_files,
+    search_songs,
 )
 
 __all__ = [
@@ -98,7 +98,7 @@ __all__ = [
     "resolve_path_within_library",
     "save_file_tags",
     "save_folder_record",
-    "search_library_files",
+    "search_songs",
     "set_chromaprint",
     "snapshot_existing_files",
     "update_library_config_fields",

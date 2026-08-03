@@ -557,7 +557,7 @@ class MlDb:
     def backfill_genres(self, backbone_id: str) -> int:
         """Count embeddings that need genre backfilling.
 
-        Full genre backfill requires joining with the library_files tag data,
+        Full genre backfill requires joining with the songs tag data,
         which is outside MlDb's scope.  This method counts the rows with
         ``genres IS NULL`` for the given backbone and returns the count.
 

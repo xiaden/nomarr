@@ -310,25 +310,25 @@ def test_list_library_file_ids_delegates() -> None:
 
 
 @pytest.mark.unit
-def test_list_library_files_delegates() -> None:
+def test_list_songs_delegates() -> None:
     db, _, file_repo, *_ = _make_library_db()
-    file_repo.list_library_files = MagicMock(return_value=sentinel.files)
+    file_repo.list_songs = MagicMock(return_value=sentinel.files)
 
-    result = db.list_library_files(1)
+    result = db.list_songs(1)
 
     assert result is sentinel.files
-    file_repo.list_library_files.assert_called_once_with(1, limit=None)
+    file_repo.list_songs.assert_called_once_with(1, limit=None)
 
 
 @pytest.mark.unit
 def test_count_files_for_library_delegates() -> None:
     db, _, file_repo, *_ = _make_library_db()
-    file_repo.count_library_files = MagicMock(return_value=42)
+    file_repo.count_songs = MagicMock(return_value=42)
 
     result = db.count_files_for_library(1)
 
     assert result == 42
-    file_repo.count_library_files.assert_called_once_with(1)
+    file_repo.count_songs.assert_called_once_with(1)
 
 
 @pytest.mark.unit
@@ -354,11 +354,11 @@ def test_list_tracks_for_matching_delegates() -> None:
 
 
 @pytest.mark.unit
-def test_list_library_files_for_folder_delegates() -> None:
+def test_list_songs_for_folder_delegates() -> None:
     db, _, file_repo, *_ = _make_library_db()
     file_repo.list_files_for_folder = MagicMock(return_value=sentinel.files)
 
-    result = db.list_library_files_for_folder(1, "Rock/ACDC")
+    result = db.list_songs_for_folder(1, "Rock/ACDC")
 
     assert result is sentinel.files
     file_repo.list_files_for_folder.assert_called_once_with(1, "Rock/ACDC")
@@ -434,7 +434,7 @@ def test_add_files_to_library_skips_state_for_existing_paths() -> None:
 
 
 @pytest.mark.unit
-def test_update_library_files_reconciles_added_updated_removed() -> None:
+def test_update_songs_reconciles_added_updated_removed() -> None:
     db, _, file_repo, _, _, _, _, file_state_repo = _make_library_db()
     file_repo.list_existing_file_paths = MagicMock(return_value=[])
     file_repo.upsert_files_for_library = MagicMock(return_value=[1, 2, 3])
@@ -443,7 +443,7 @@ def test_update_library_files_reconciles_added_updated_removed() -> None:
     file_repo.remove_files = MagicMock()
 
     payloads = [{"path": "/a.mp3"}, {"path": "/b.mp3"}, {"path": "/c.mp3"}]
-    result = db.update_library_files(1, payloads, remove_missing=True)
+    result = db.update_songs(1, payloads, remove_missing=True)
 
     assert result["added"] == 3
     assert result["updated"] == 0
@@ -452,7 +452,7 @@ def test_update_library_files_reconciles_added_updated_removed() -> None:
 
 
 @pytest.mark.unit
-def test_update_library_files_no_remove_when_flag_false() -> None:
+def test_update_songs_no_remove_when_flag_false() -> None:
     db, _, file_repo, *_, file_state_repo = _make_library_db()
     file_repo.list_existing_file_paths = MagicMock(return_value=[])
     file_repo.upsert_files_for_library = MagicMock(return_value=[1, 2, 3])
@@ -461,7 +461,7 @@ def test_update_library_files_no_remove_when_flag_false() -> None:
     file_repo.remove_files = MagicMock()
 
     payloads = [{"path": "/a.mp3"}, {"path": "/b.mp3"}, {"path": "/c.mp3"}]
-    db.update_library_files(1, payloads, remove_missing=False)
+    db.update_songs(1, payloads, remove_missing=False)
 
     file_repo.remove_files.assert_not_called()
 

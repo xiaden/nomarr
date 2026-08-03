@@ -177,7 +177,7 @@ class TestPersistBackboneVector:
         ):
             result = persist_backbone_vector(
                 db=mock_db,
-                file_id=f"{'library_files'}/f1",
+                file_id=f"{'songs'}/f1",
                 backbone="effnet",
                 embeddings_2d=embeddings,
                 model_suite_hash="abc123",
@@ -191,7 +191,7 @@ class TestPersistBackboneVector:
         mock_get_embedding_dimension.assert_called_once_with(embeddings)
         mock_upsert_hot_track_vector.assert_called_once_with(
             db=mock_db,
-            file_id=f"{'library_files'}/f1",
+            file_id=f"{'songs'}/f1",
             backbone="effnet",
             model_suite_hash="abc123",
             embed_dim=64,

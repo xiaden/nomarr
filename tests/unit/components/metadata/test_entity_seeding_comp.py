@@ -40,8 +40,8 @@ class TestSeedEntitiesForScanBatch:
 
         result = seed_entities_for_scan_batch(
             mock_db,
-            [f"{'library_files'}/1"],
-            {f"{'library_files'}/1": metadata},
+            [f"{'songs'}/1"],
+            {f"{'songs'}/1": metadata},
         )
 
         assert result == 1
@@ -55,7 +55,7 @@ class TestSeedEntitiesForScanBatch:
         # New format: one entry per file, with "tags" list of {name, value} dicts
         assert len(persisted_entries) > 0
         file_entry = persisted_entries[0]
-        assert file_entry["song_id"] == f"{'library_files'}/1"
+        assert file_entry["song_id"] == f"{'songs'}/1"
         assert "tags" in file_entry
 
         tags_list: list[dict] = file_entry["tags"]

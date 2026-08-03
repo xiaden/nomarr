@@ -135,7 +135,7 @@ class PipelineRepository:
         """Return file rows that have been assigned the given file state.
 
         Traverses ``file_state_assignments`` → ``file_states`` to resolve
-        the state name, then joins ``library_files`` for the full row.
+        the state name, then joins ``songs`` for the full row.
         """
         with map_persistence_exceptions():
             stmt = (

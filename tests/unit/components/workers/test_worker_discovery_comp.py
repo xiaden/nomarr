@@ -69,7 +69,7 @@ class TestClaimFile:
         mock_db = MagicMock()
         mock_db.app.add_claim.side_effect = self._duplicate_claim_error()
 
-        result = claim_file(mock_db, f"{'library_files'}/abc", "worker:tag:0")
+        result = claim_file(mock_db, f"{'songs'}/abc", "worker:tag:0")
 
         assert result is False
         mock_db.app.add_claim.assert_called_once()
@@ -170,20 +170,20 @@ class TestReleaseClaimsForWorker:
             {
                 "_id": "worker_claims/claim1",
                 "worker_id": "worker:tag:0",
-                "file_id": f"{'library_files'}/file1",
+                "file_id": f"{'songs'}/file1",
             },
             {
                 "_id": "worker_claims/claim2",
                 "worker_id": "worker:tag:0",
-                "file_id": f"{'library_files'}/file2",
+                "file_id": f"{'songs'}/file2",
             },
         ]
 
         result = release_claims_for_worker(mock_db, "worker:tag:0")
 
         assert result == [
-            f"{'library_files'}/file1",
-            f"{'library_files'}/file2",
+            f"{'songs'}/file1",
+            f"{'songs'}/file2",
         ]
         mock_db.app.list_claims.assert_called_once_with()
         mock_db.app.remove_claims.assert_called_once_with(worker_ids=["worker:tag:0"])

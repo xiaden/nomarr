@@ -92,7 +92,7 @@ interfaces → services → workflows → components → (persistence / helpers)
 4. **Type annotations are mandatory** - all Python code must be fully typed
 5. **Essentia is isolated** — only `components/ml/audio/ml_audio_comp.py` (audio loading) and `components/ml/audio/ml_preprocess_comp.py` (mel spectrogram) import essentia. Essentia is not the ML backend — ONNX Runtime is.
 6. **Persistence is components-only** — only the components layer may call persistence. Services, workflows, and interfaces must never access the database directly.
-7. **Discovery-based workers** — a single worker type claims files from the `library_files` collection. There is no queue-based processing.
+7. **Discovery-based workers** — a single worker type claims files from the `songs` collection. There is no queue-based processing.
 
 **Layer-specific instructions:**
 

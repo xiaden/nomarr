@@ -188,7 +188,7 @@ health_monitor.register_component(
 Workers write health frames to their pipe as prefixed JSON strings:
 
 ```
-HEALTH|{"component_id":"worker:discovery:0","status":"healthy","current_job":"library_files/12345"}
+HEALTH|{"component_id":"worker:discovery:0","status":"healthy","current_job":"songs/12345"}
 ```
 
 **Frame fields:**
@@ -273,7 +273,7 @@ Optional append-only snapshots for audit/debugging:
   "id": "snap_1705779600",
   "timestamp": 1705779600000,
   "components": [
-    {"component_id": "worker:discovery:0", "status": "healthy", "current_job": "library_files/12345"},
+    {"component_id": "worker:discovery:0", "status": "healthy", "current_job": "songs/12345"},
     {"component_id": "worker:discovery:1", "status": "healthy", "current_job": null}
   ]
 }

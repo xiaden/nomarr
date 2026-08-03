@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def _all_library_files(db: Database) -> list[dict[str, Any]]:
+def _all_songs(db: Database) -> list[dict[str, Any]]:
     """Return all library file documents with explicit pagination."""
     total = int(db.library.count_files())
     if total <= 0:
@@ -23,11 +23,11 @@ def _all_library_files(db: Database) -> list[dict[str, Any]]:
     return _narrow_tag_list(db.library.list_files(limit=total))
 
 
-def _library_files(db: Database, library_id: int | None) -> list[dict[str, Any]]:
+def _songs(db: Database, library_id: int | None) -> list[dict[str, Any]]:
     """Return file documents scoped to one library or the whole collection."""
     if library_id is not None:
-        return _narrow_tag_list(db.library.list_library_files(library_id))
-    return _all_library_files(db)
+        return _narrow_tag_list(db.library.list_songs(library_id))
+    return _all_songs(db)
 
 
 def _tag_file_ids(db: Database, tag_id: int) -> set[int]:
@@ -232,7 +232,7 @@ def get_tag_frequencies(db: Database, limit: int, namespace_prefix: str) -> dict
 
 def get_library_stats(db: Database, library_id: int | None = None) -> dict[str, Any]:
     """Return aggregate collection stats for the whole library or one library."""
-    files = _library_files(db, library_id)
+    files = _songs(db, library_id)
     if not files:
         return {
             "file_count": 0,
@@ -262,7 +262,7 @@ def get_year_distribution(db: Database, library_id: int | None = None) -> list[d
     if library_id is not None:
         library_file_ids = {
             file_id
-            for file_doc in _narrow_tag_list(db.library.list_library_files(library_id))
+            for file_doc in _narrow_tag_list(db.library.list_songs(library_id))
             if isinstance(file_id := file_doc.get("id"), int)
         }
     total_year = int(db.library.count_tags())
@@ -313,7 +313,7 @@ def get_genre_distribution(
     if library_id is not None:
         library_file_ids = {
             file_id
-            for file_doc in _narrow_tag_list(db.library.list_library_files(library_id))
+            for file_doc in _narrow_tag_list(db.library.list_songs(library_id))
             if isinstance(file_id := file_doc.get("id"), int)
         }
     total_genre = int(db.library.count_tags())

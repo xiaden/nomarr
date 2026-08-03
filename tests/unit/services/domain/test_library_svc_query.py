@@ -48,7 +48,7 @@ class TestGetTaggedLibraryPaths:
     """Tests for get_tagged_library_paths."""
 
     @pytest.mark.unit
-    def test_delegates_to_library_files(self) -> None:
+    def test_delegates_to_songs(self) -> None:
         mock_db = MagicMock()
         mixin = _ConcreteQueryMixin(mock_db)
         expected = ["/music/song1.mp3", "/music/song2.mp3"]
@@ -126,7 +126,7 @@ class TestGetPathsNeedingCalibration:
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.get_uncalibrated_tagged_file_ids",
-                return_value=[f"{'library_files'}/a", f"{'library_files'}/b"],
+                return_value=[f"{'songs'}/a", f"{'songs'}/b"],
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.get_files_by_ids_with_tags",
@@ -136,7 +136,7 @@ class TestGetPathsNeedingCalibration:
             result = mixin.get_paths_needing_calibration()
 
         assert result == ["/music/song1.mp3", "/music/song2.mp3"]
-        mock_files.assert_called_once_with(mock_db, [f"{'library_files'}/a", f"{'library_files'}/b"])
+        mock_files.assert_called_once_with(mock_db, [f"{'songs'}/a", f"{'songs'}/b"])
 
 
 class TestGetErroredFiles:
@@ -159,7 +159,7 @@ class TestGetErroredFiles:
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.get_errored_file_ids",
-                return_value=[f"{'library_files'}/1", f"{'library_files'}/2"],
+                return_value=[f"{'songs'}/1", f"{'songs'}/2"],
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.get_files_by_ids_with_tags",

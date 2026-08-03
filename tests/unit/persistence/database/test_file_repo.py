@@ -354,13 +354,13 @@ class TestFileRepository:
         result = repo.list_library_file_ids(lib_id)
         assert len(result) >= 2
 
-    def test_list_library_files(self, pg_session) -> None:
-        """list_library_files should return full file rows for a library."""
+    def test_list_songs(self, pg_session) -> None:
+        """list_songs should return full file rows for a library."""
         lib_id = _create_library(pg_session)
         _create_file(pg_session, lib_id, "/music/full1.mp3")
         _create_file(pg_session, lib_id, "/music/full2.mp3")
         repo = FileRepository(pg_session)
-        result = repo.list_library_files(lib_id)
+        result = repo.list_songs(lib_id)
         assert len(result) >= 2
         assert all(f["library_id"] == lib_id for f in result)
 
@@ -419,7 +419,7 @@ class TestFileRepository:
         lib_id = _create_library(pg_session)
         file_id = _create_file(pg_session, lib_id, "/music/orphan.mp3")
         # Delete the library to create an orphan — temporarily disable FK checks
-        # so SQLite doesn't cascade-delete the file (library_files.library_id
+        # so SQLite doesn't cascade-delete the file (songs.library_id
         # has ondelete=CASCADE).  PostgreSQL uses ``SET session_replication_role``;
         # SQLite uses ``PRAGMA foreign_keys``.
         pg_session.execute(text("PRAGMA foreign_keys = OFF"))
@@ -444,7 +444,7 @@ class TestFileRepository:
         """truncate_file_links should remove all file_tag rows."""
         from sqlalchemy import select
 
-        from nomarr.persistence.models.file_tag import FileTag
+        from nomarr.persistence.models.file_tag import SongTag
         from nomarr.persistence.models.tag import Tag
 
         lib_id = _create_library(pg_session)
@@ -465,7 +465,7 @@ class TestFileRepository:
         tag_id = tag_result.inserted_primary_key[0]
         # Insert a file_tag
         pg_session.execute(
-            insert(FileTag).values(
+            insert(SongTag).values(
                 file_id=file_id,
                 tag_id=tag_id,
                 confidence=0.9,
@@ -476,5 +476,5 @@ class TestFileRepository:
         pg_session.commit()
         repo = FileRepository(pg_session)
         repo.truncate_file_links()
-        result = pg_session.execute(select(FileTag))
+        result = pg_session.execute(select(SongTag))
         assert len(result.all()) == 0

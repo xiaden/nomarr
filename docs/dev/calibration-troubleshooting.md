@@ -101,7 +101,7 @@ ORDER BY head;
 
 **Verification:**
 
-1. Check library file count: `SELECT COUNT(*) FROM library_files;`
+1. Check library file count: `SELECT COUNT(*) FROM songs;`
 2. Compare to calibration sample count: should match file count, not 2× file count
 
 ---
@@ -133,7 +133,7 @@ ORDER BY head;
 ```sql
 -- Check which labels have predictions
 SELECT label, EXISTS(
-  SELECT 1 FROM library_files
+  SELECT 1 FROM songs
   WHERE song->'predictions'->'effnet_discogs'->>label IS NOT NULL
   LIMIT 1
 ) AS has_predictions

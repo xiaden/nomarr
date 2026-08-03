@@ -29,7 +29,7 @@ from nomarr.components.library.library_records_comp import get_library_record, l
 from nomarr.components.library.library_scan_state_comp import get_libraries_in_axis_state
 from nomarr.components.library.search_files_comp import (
     get_unique_tag_values,
-    search_library_files,
+    search_songs,
 )
 from nomarr.components.library.work_status_comp import compute_work_status
 from nomarr.components.tagging.tag_query_comp import get_unique_mood_values
@@ -143,7 +143,7 @@ class LibraryQueryMixin:
             limit, and offset.
 
         """
-        files, total = search_library_files(self.db, query)
+        files, total = search_songs(self.db, query)
         files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
         return SearchFilesResult(files=files_with_tags, total=total, limit=query.limit, offset=query.offset)
 

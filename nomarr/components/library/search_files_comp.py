@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_file_query_comp import search_library_files_with_tags
+from nomarr.components.library.library_file_query_comp import search_songs_with_tags
 from nomarr.components.tagging.tag_query_comp import list_tags_by_name
 from nomarr.helpers.dto.library_dto import SearchFilesQuery
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def search_library_files(
+def search_songs(
     db: Database,
     query: SearchFilesQuery,
 ) -> tuple[list[dict[str, Any]], int]:
@@ -30,7 +30,7 @@ def search_library_files(
 
     """
     # Use joined queries for efficient file+tag retrieval
-    return search_library_files_with_tags(
+    return search_songs_with_tags(
         db,
         query_text=query.query_text,
         artist=query.artist,

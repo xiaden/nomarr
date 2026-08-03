@@ -1,4 +1,4 @@
-"""FileRepository — CRUD and domain queries for the ``library_files`` table.
+"""FileRepository — CRUD and domain queries for the ``songs`` table.
 
 Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
 filtered queries, batch operations, and maintenance methods.
@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.repo_dto import LibraryFileRow
-from nomarr.persistence.models.file_tag import FileTag
+from nomarr.persistence.models.file_tag import SongTag
 from nomarr.persistence.models.library_file import LibraryFile
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 from nomarr.persistence.sql.primitives import (
@@ -54,7 +54,7 @@ def _row_to_dto(row: Row) -> LibraryFileRow:
 
 
 class FileRepository:
-    """Repository for the ``library_files`` table."""
+    """Repository for the ``songs`` table."""
 
     def __init__(self, session: scoped_session[Session]) -> None:
         self._session = session
@@ -110,7 +110,7 @@ class FileRepository:
                     pg_insert(_T)
                     .values(**payload)
                     .on_conflict_do_update(
-                        constraint="uq_library_files_library_path",
+                        constraint="uq_songs_library_path",
                         set_={k: v for k, v in payload.items() if k not in ("library_id", "path")},
                     )
                     .returning(_T)
@@ -139,7 +139,7 @@ class FileRepository:
                     col: insert_stmt.excluded[col] for col in rows_data[0] if col not in ("library_id", "path")
                 }
                 stmt = insert_stmt.on_conflict_do_update(
-                    constraint="uq_library_files_library_path",
+                    constraint="uq_songs_library_path",
                     set_=set_clause,
                 ).returning(_T.c.id)
                 result = self._session.execute(stmt)
@@ -181,7 +181,7 @@ class FileRepository:
             return [_row_to_dto(r) for r in result.all()]
 
     def count_files(self) -> int:
-        """Return total row count of ``library_files``."""
+        """Return total row count of ``songs``."""
         with map_persistence_exceptions():
             stmt = select(func.count()).select_from(_T)
             result = self._session.execute(stmt)
@@ -214,7 +214,7 @@ class FileRepository:
             result = self._session.execute(stmt)
             return [row[0] for row in result.all()]
 
-    def list_library_files(self, library_id: int, *, limit: int | None = None) -> list[LibraryFileRow]:
+    def list_songs(self, library_id: int, *, limit: int | None = None) -> list[LibraryFileRow]:
         """Return full file rows belonging to a library."""
         with map_persistence_exceptions():
             stmt = select(_T).where(_T.c.library_id == library_id)
@@ -279,7 +279,7 @@ class FileRepository:
             return [row[0] for row in result.all()]
 
     def truncate_files(self) -> None:
-        """Delete all rows from ``library_files``."""
+        """Delete all rows from ``songs``."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
                 self._session.execute(delete(_T))
@@ -289,10 +289,10 @@ class FileRepository:
         """Delete all rows from the ``file_tags`` junction table."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                self._session.execute(delete(cast("Table", FileTag.__table__)))
+                self._session.execute(delete(cast("Table", SongTag.__table__)))
             self._session.commit()
 
-    def count_library_files(self, library_id: int) -> int:
+    def count_songs(self, library_id: int) -> int:
         """Return the number of files belonging to *library_id*."""
         with map_persistence_exceptions():
             stmt = select(func.count()).select_from(_T).where(_T.c.library_id == library_id)

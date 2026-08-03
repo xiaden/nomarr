@@ -285,7 +285,7 @@ Prefer intent-level calls from higher layers:
 
 ```python
 library = db.library.get_library(library_id)
-files = db.library.list_library_files(library_id, limit=100)
+files = db.library.list_songs(library_id, limit=100)
 db.app.transition_file_states(file_ids, "queued", "processing")
 streams = db.ml.list_output_streams_for_file(file_id)
 ```

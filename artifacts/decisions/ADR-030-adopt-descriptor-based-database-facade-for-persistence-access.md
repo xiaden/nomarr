@@ -1,6 +1,6 @@
 # ADR-030: Adopt descriptor-based `Database` facade for persistence access
 
-**Status:** Accepted  
+**Status:** Superseded by ADR-040  
 **Date:** 2026-05-08  
 **Tags:** persistence, architecture, database, facade, descriptors  
 **Source Log:** agent#L1  

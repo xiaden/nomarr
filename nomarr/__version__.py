@@ -18,7 +18,7 @@ __version_info__ = (0, 3, 0)
 #         Backend:
 #         - /files/search endpoint with full-text search (artist/album/title) and tag filtering
 #         - /files/tags/values endpoint for dynamic value dropdowns
-#         - search_library_files_with_tags() supports tag_key+tag_value filtering
+#         - search_songs_with_tags() supports tag_key+tag_value filtering
 #         - get_unique_tag_values() for populating value dropdowns
 #         - Fixed UpdateLibraryFileFromTagsParams missing fields (calibration, library_id)
 #         Architecture & Refactoring:

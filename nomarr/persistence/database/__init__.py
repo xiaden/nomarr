@@ -3,7 +3,7 @@
 This package contains repository classes organized by domain/table:
 
 - ``LibraryRepository`` — ``libraries`` table
-- ``FileRepository`` — ``library_files`` table
+- ``FileRepository`` — ``songs`` table
 - ``FolderRepository`` — ``library_folders`` table
 - ``TagRepository`` — ``tags`` table
 - ``FileTagRepository`` — ``file_tags`` junction table

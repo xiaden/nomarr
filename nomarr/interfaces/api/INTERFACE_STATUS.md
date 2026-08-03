@@ -25,7 +25,7 @@ These domains follow the DTO-backed Pydantic pattern:
  | -------- | ----------- | ------------ | ------ |
  | **Library** | `types/library_types.py` | `web/library_if.py` | `dto/library_dto.py` (LibraryDict, LibraryStatsResult, LibraryScanStatusResult, etc.) |
  | **Library Scan** | `types/library_types.py` | `web/library_scan_if.py` | `dto/library_dto.py` (ReconcileResult, StartScanResult, etc.) |
- | **Library Files** | `types/library_types.py` | `web/library_files_if.py` | `dto/library_dto.py` (SearchFilesResult, FileTagsResult, etc.) |
+ | **Library Files** | `types/library_types.py` | `web/songs_if.py` | `dto/library_dto.py` (SearchFilesResult, FileTagsResult, etc.) |
  | **Navidrome** | `types/navidrome_types.py` | `web/navidrome_if.py` | `dto/navidrome_dto.py` (PlaylistPreviewResult, SmartPlaylistFilter, PreviewTagStatsResult, etc.) |
  | **Analytics** | `types/analytics_types.py` | `web/analytics_if.py` | `dto/analytics_dto.py` (TagCorrelationData, MoodDistributionData, etc.) |
  | **Config** | `types/config_types.py` | `web/config_if.py` | `dto/config_dto.py` (ConfigResult, GetInternalInfoResult) |

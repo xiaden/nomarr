@@ -39,11 +39,11 @@ class TestUpdateFileCalibrationHash:
         with patch(
             "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_file_state"
         ) as mock_transition:
-            update_file_calibration_hash(mock_db, f"{'library_files'}/abc123")
+            update_file_calibration_hash(mock_db, f"{'songs'}/abc123")
 
         mock_transition.assert_called_once_with(
             mock_db,
-            [f"{'library_files'}/abc123"],
+            [f"{'songs'}/abc123"],
             STATE_NOT_CALIBRATED,
             STATE_CALIBRATED,
         )
@@ -56,9 +56,9 @@ class TestUpdateFileCalibrationHashesBatch:
     def test_calls_transition_for_each_file_id(self) -> None:
         mock_db = MagicMock()
         file_ids = [
-            f"{'library_files'}/a",
-            f"{'library_files'}/b",
-            f"{'library_files'}/c",
+            f"{'songs'}/a",
+            f"{'songs'}/b",
+            f"{'songs'}/c",
         ]
         with patch(
             "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_file_state"

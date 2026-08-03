@@ -94,10 +94,10 @@ def pipeline_state_helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
         return db.library.get_pipeline_state(library_id)
 
     def _count_untagged_files(db, library_id):
-        return db.library_files.count_untagged_files(library_id)
+        return db.songs.count_untagged_files(library_id)
 
     def _get_uncalibrated_tagged_file_ids(db, library_id):
-        return db.library_files.get_uncalibrated_tagged_file_ids(library_id)
+        return db.songs.get_uncalibrated_tagged_file_ids(library_id)
 
     monkeypatch.setattr(
         "nomarr.services.infrastructure.pipeline_svc.get_library_record",

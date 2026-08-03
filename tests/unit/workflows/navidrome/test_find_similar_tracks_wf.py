@@ -122,10 +122,10 @@ class TestFindSimilarTracksHappyPath:
 
     @pytest.mark.unit
     def test_respects_count_limit(self) -> None:
-        ann = [{"file_id": f"{'library_files'}/f{i}", "score": 0.9 - i * 0.01} for i in range(10)]
+        ann = [{"file_id": f"{'songs'}/f{i}", "score": 0.9 - i * 0.01} for i in range(10)]
         docs = [
             {
-                "id": f"{'library_files'}/f{i}",
+                "id": f"{'songs'}/f{i}",
                 "title": f"S{i}",
                 "artist": "A",
                 "album": "B",
@@ -151,10 +151,10 @@ class TestFindSimilarTracksHappyPath:
     @pytest.mark.unit
     def test_does_not_use_navidrome_song_map_table(self) -> None:
         db = _make_db(
-            ann_results=[{"file_id": f"{'library_files'}/match-1", "score": 0.95}],
+            ann_results=[{"file_id": f"{'songs'}/match-1", "score": 0.95}],
             file_docs=[
                 {
-                    "id": f"{'library_files'}/match-1",
+                    "id": f"{'songs'}/match-1",
                     "title": "Song A",
                     "artist": "Artist A",
                     "album": "Album A",
@@ -207,8 +207,8 @@ class TestFindSimilarTracksEdgeCases:
     @pytest.mark.unit
     def test_missing_metadata_defaults(self) -> None:
         db = _make_db(
-            ann_results=[{"file_id": f"{'library_files'}/sparse", "score": 0.9}],
-            file_docs=[{"id": f"{'library_files'}/sparse", "tags": []}],
+            ann_results=[{"file_id": f"{'songs'}/sparse", "score": 0.9}],
+            file_docs=[{"id": f"{'songs'}/sparse", "tags": []}],
         )
 
         results = find_similar_tracks(SEED, count=10, backbone_id="effnet", db=db)

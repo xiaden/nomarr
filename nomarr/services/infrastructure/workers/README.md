@@ -4,7 +4,7 @@ Discovery-based ML processing worker that runs as a separate OS process, claimin
 
 ## Responsibilities
 
-- Discover unprocessed files from `library_files` collection
+- Discover unprocessed files from `songs` collection
 - Claim files atomically via `worker_claims` to prevent duplicate processing
 - Execute the full ML pipeline (`process_file_workflow`) per file
 - Send health heartbeats to the parent process via pipe

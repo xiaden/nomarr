@@ -240,7 +240,7 @@ def get_file_ids_for_tags(
     if library_id is not None:
         library_ids = {
             file_id
-            for file_doc in _narrow_tag_list(db.library.list_library_files(library_id))
+            for file_doc in _narrow_tag_list(db.library.list_songs(library_id))
             if isinstance(file_id := file_doc.get("id"), int)
         }
 
@@ -299,7 +299,7 @@ def get_file_ids_for_mood_tags(
     if library_id is not None:
         library_ids = {
             file_id
-            for file_doc in _narrow_tag_list(db.library.list_library_files(library_id))
+            for file_doc in _narrow_tag_list(db.library.list_songs(library_id))
             if isinstance(file_id := file_doc.get("id"), int)
         }
 

@@ -20,13 +20,26 @@ import shutil
 import sys
 from pathlib import Path
 
-import grimp
+# Ensure the project root is on the Python path so grimp can find
+# the 'nomarr' package regardless of working directory.
+_project_root = Path(__file__).resolve().parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
+import grimp  # noqa: E402 — must be after sys.path setup so grimp can find nomarr
 
 # Forbidden import pairs: (importer, imported)
 FORBIDDEN_PAIRS = [
     ("nomarr.components", "nomarr.persistence.database"),
     ("nomarr.workflows", "nomarr.persistence.database"),
     ("nomarr.services", "nomarr.persistence.database"),
+]
+
+# Authorized intermediaries — chains passing through these modules are allowed
+# because they travel through the Database facade (ADR-031) or its sub-facades.
+AUTHORIZED_INTERMEDIARIES = [
+    "nomarr.persistence.db",
+    "nomarr.persistence.api",
 ]
 
 CACHE_DIR = Path(".cache")
@@ -97,18 +110,37 @@ def invalidate_cache() -> None:
         HASH_FILE.unlink()
 
 
+def _chain_is_authorized(chain: tuple[str, ...]) -> bool:
+    """Return True if the chain passes through an authorized intermediary.
+
+    Only the intermediate modules (between the importer and the imported)
+    are checked — not the endpoints themselves.
+    """
+    intermediates = chain[1:-1]
+    return any(
+        any(im == auth or im.startswith(auth + ".") for auth in AUTHORIZED_INTERMEDIARIES) for im in intermediates
+    )
+
+
 def check_violations(graph: grimp.ImportGraph, verbose: bool = False) -> list[tuple[str, str, list[str]]]:
     """Check for forbidden import chains.
 
     Returns a list of tuples: (importer, imported, chain)
     where chain is a list of module names in the import path.
+
+    Chains that pass through an authorized intermediary (e.g., the Database
+    facade per ADR-031) are excluded — they are by-design, not violations.
     """
     violations = []
+    excluded_count = 0
 
     for importer, imported in FORBIDDEN_PAIRS:
         chains = graph.find_shortest_chains(importer, imported, as_packages=True)
 
         for chain in sorted(chains):
+            if _chain_is_authorized(chain):
+                excluded_count += 1
+                continue
             violations.append((importer, imported, list(chain)))
 
             if verbose:
@@ -125,6 +157,13 @@ def check_violations(graph: grimp.ImportGraph, verbose: bool = False) -> list[tu
                         print(f"    {src}:{line_num} → {dst}", file=sys.stderr)
                         if line_content:
                             print(f"      {line_content}", file=sys.stderr)
+
+    if verbose and excluded_count > 0:
+        print(
+            f"\nℹ Excluded {excluded_count} chain(s) passing through authorized "
+            "intermediaries (Database facade per ADR-031).",
+            file=sys.stderr,
+        )
 
     return violations
 

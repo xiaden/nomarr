@@ -7,7 +7,7 @@ from nomarr.persistence.models.calibration_state import CalibrationState
 from nomarr.persistence.models.embedding import Embedding
 from nomarr.persistence.models.file_state import FileState
 from nomarr.persistence.models.file_state_assignment import FileStateAssignment
-from nomarr.persistence.models.file_tag import FileTag
+from nomarr.persistence.models.file_tag import SongTag
 from nomarr.persistence.models.health import Health
 from nomarr.persistence.models.library import Library
 from nomarr.persistence.models.library_file import LibraryFile
@@ -38,7 +38,6 @@ __all__ = [
     "Embedding",
     "FileState",
     "FileStateAssignment",
-    "FileTag",
     "Health",
     "Library",
     "LibraryFile",
@@ -56,6 +55,7 @@ __all__ = [
     "NavidromeTrackMap",
     "PipelineState",
     "Session",
+    "SongTag",
     "Tag",
     "VramPromise",
     "WorkerClaim",

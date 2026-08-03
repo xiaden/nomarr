@@ -91,7 +91,7 @@ def _state_file_ids(db: Database, state_id: str) -> set[int]:
 
 
 def _library_file_docs(db: Database, library_id: int) -> list[Any]:
-    docs = db.library.list_library_files(library_id)
+    docs = db.library.list_songs(library_id)
     return list(docs)
 
 

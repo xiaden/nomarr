@@ -3,7 +3,7 @@
 Verifies cross-repository invariants that unit tests cannot cover:
 
 * FK ``ON DELETE CASCADE`` from ``libraries`` cascades through
-  ``library_files`` (and transitively to ``embeddings``, ``file_tags``,
+  ``songs`` (and transitively to ``embeddings``, ``file_tags``,
   ``ml_output_streams``).
 * ``VectorRepo.delete_embeddings_for_file`` removes only the target
   file's embeddings.
@@ -83,7 +83,7 @@ class TestCascadeAndDrain:
     # ── P3-S1: cascade delete ───────────────────────────────────
 
     def test_delete_library_cascades_to_files(self, pg_session) -> None:
-        """Deleting a library must cascade-delete its library_files rows."""
+        """Deleting a library must cascade-delete its songs rows."""
         lib_id, _file_id = _create_library_and_file(pg_session)
 
         lib_repo = LibraryRepository(pg_session)
@@ -91,7 +91,7 @@ class TestCascadeAndDrain:
 
         # Sanity: library and file exist before delete.
         assert lib_repo.get_library(lib_id) is not None
-        assert file_repo.count_library_files(lib_id) == 1
+        assert file_repo.count_songs(lib_id) == 1
 
         # Delete the library — FK ON DELETE CASCADE removes files.
         lib_repo.remove_library(lib_id)
@@ -99,7 +99,7 @@ class TestCascadeAndDrain:
         # Library gone.
         assert lib_repo.get_library(lib_id) is None
         # Files gone (cascade).
-        assert file_repo.count_library_files(lib_id) == 0
+        assert file_repo.count_songs(lib_id) == 0
 
     # ── P3-S2: drain + delete verification ──────────────────────
 
