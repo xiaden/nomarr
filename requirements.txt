@@ -34,7 +34,7 @@ pydub>=0.25.1
 
 # Complexity & Architecture Analysis
 radon>=5.1.0
-import-linter>=2.0
+import-linter>=2.11
 
 # Type stubs
 types-PyYAML
