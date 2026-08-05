@@ -145,7 +145,7 @@ Tears down the compose stack, rebuilds the `nomarr-dev` Docker image from `docke
 
 **When you need it:**
 - `dockerfile` changed
-- `requirements.txt` changed
+- `pyproject.toml` / `uv.lock` changed
 - `dockerfile.base` changed
 - Extensions or settings in `devcontainer.json` changed
 

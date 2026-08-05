@@ -273,7 +273,7 @@ def clear_model_vram_measurements(db: Database) -> None:
     existing_docs = cast("list[dict[str, Any]]", db.app.list_config_options(prefix=_META_PREFIX))
     removed = 0
     for doc in existing_docs:
-        key = doc.get("_key")
+        key = doc.get("key")
         if not isinstance(key, str) or not key:
             continue
         db.app.remove_config_option(key)

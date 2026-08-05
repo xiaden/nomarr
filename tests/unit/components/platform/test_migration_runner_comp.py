@@ -153,7 +153,7 @@ class TestApplyMigration:
 
         apply_migration("V001_test", module, db)
 
-        db.migrations.record_migration_started.assert_called_once_with(
+        db.app.record_migration_started.assert_called_once_with(
             migration_id="V001_test",
             filename="V001_test.py",
         )
@@ -166,7 +166,7 @@ class TestApplyMigration:
 
         apply_migration("V001_test", module, db)
 
-        db.migrations.mark_migration_applied.assert_called_once_with(
+        db.app.mark_migration_applied.assert_called_once_with(
             migration_id="V001_test",
         )
 

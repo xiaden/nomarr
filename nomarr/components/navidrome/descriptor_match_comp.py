@@ -68,7 +68,7 @@ def _descriptor_from_doc(file_doc: dict[str, Any]) -> TrackDescriptor:
         track_number=_tag_int(file_doc, "track_number", "tracknumber"),
         disc_number=_tag_int(file_doc, "disc_number", "discnumber"),
         year=_tag_int(file_doc, "year"),
-        nomarr_file_key=str(file_doc.get("_key") or "") or None,
+        nomarr_file_key=str(file_doc.get("key") or "") or None,
     )
 
 

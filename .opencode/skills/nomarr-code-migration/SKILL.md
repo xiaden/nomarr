@@ -187,7 +187,9 @@ python scripts/check_migration.py nomarr.helpers.old_module
 python scripts/check_migration.py nomarr.helpers.old_module --expect-ban
 
 # Full QC
-python scripts/run_qc.py
+ruff check nomarr/
+mypy nomarr/
+lint-imports
 pytest
 ```
 

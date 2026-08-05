@@ -12,7 +12,6 @@ Platform-level services that manage configuration, workers, health monitoring, M
 - Background task execution and tracking
 - API key, password, and session management
 - System info, health status, and GPU monitoring
-- Calibration bundle download and verification
 
 ## Key Modules
 
@@ -27,7 +26,6 @@ Platform-level services that manage configuration, workers, health monitoring, M
  | `cli_bootstrap_svc.py` | CLI factory functions — `get_database()`, `get_keys_service()`, `get_config_service()`, `get_metadata_service()` |
  | `keys_svc.py` | `KeyManagementService` — API keys, bcrypt passwords, session tokens, write-through session cache |
  | `info_svc.py` | `InfoService` — system info, health status, public info, GPU monitor subprocess lifecycle |
- | `calibration_download_svc.py` | Calibration bundle download, missing-check, and availability verification (stub) |
  | `workers/` | Worker subprocess implementations — see subfolder README |
 
 ## Patterns

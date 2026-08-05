@@ -109,16 +109,6 @@ These are the cleanest entry points for higher layers:
 
 These group related persistence actions by domain rather than by physical table.
 
-### Compatibility-only: adapters
-
-`Database` exposes lightweight adapter wrappers as intentional compatibility debt during the current migration window:
-
-- `db.migrations` → `_MigrationsAdapter` (migration lifecycle tracking)
-- `db.ml_capacity` → `_MlCapacityAdapter` (distributed lock management)
-- `db.vram_promises` → `_VramPromisesAdapter` (VRAM promise management)
-
-These adapters wrap `AppDb` methods. New higher-layer code should not depend on them; use `db.app` or a direct repository reference instead.
-
 ### Lowest-level implementation names
 
 The repository instances are constructed internally and wired into the sub-facades. Components and higher layers access data through the intent facades, not through raw repository methods unless a maintenance/bootstrap seam requires it.

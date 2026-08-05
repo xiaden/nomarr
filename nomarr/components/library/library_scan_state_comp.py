@@ -58,7 +58,7 @@ def _default_scan_doc(library_id: int) -> dict[str, Any]:
     """Build the canonical default scan document payload."""
     library_key = library_key_from_ref(str(library_id))
     return {
-        "_key": library_key,
+        "key": library_key,
         "library_key": library_key,
         **_DEFAULT_SCAN_FIELDS,
     }
@@ -77,7 +77,7 @@ def ensure_scan_state(db: Database, library_id: int) -> dict[str, Any]:
         repaired_doc = {
             **_DEFAULT_SCAN_FIELDS,
             **scan_doc,
-            "_key": library_key,
+            "key": library_key,
             "library_key": library_key,
         }
         db.library.remove_scan(library_id)

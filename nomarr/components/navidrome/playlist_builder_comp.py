@@ -1,7 +1,7 @@
 """Personal playlist builders from taste profiles and play history.
 
 Each public function builds one playlist type via ANN search against the
-cold vector collection.  Builders return ``songs/_id`` values;
+cold vector collection.  Builders return ``songs/id`` values;
 nd_id resolution is the interface layer's responsibility.
 """
 
@@ -335,7 +335,7 @@ def _interleave_per_cluster(
 
     Args:
         results: Mapping from cluster key to list of result dicts (each
-            containing a ``"file_id"`` or ``"_id"`` key).
+            containing a ``"file_id"`` or ``"id"`` key).
         weights: Mapping from cluster key to relative weight.
         target_size: Maximum number of items to return.
 

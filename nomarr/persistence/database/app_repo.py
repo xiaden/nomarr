@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import Table, delete, func, select, update
+from sqlalchemy import Table, delete, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, scoped_session
 
@@ -351,11 +351,19 @@ class AppRepository:
     # ── VRAM promises ───────────────────────────────────────────
 
     def upsert_vram_promise(self, payload: dict[str, Any]) -> None:
-        """Insert-or-update a VRAM promise keyed on ``id``."""
+        """Insert-or-update a VRAM promise keyed on ``id``.
+
+        When ``payload`` has no ``id`` (e.g. a fresh promise from
+        ``AppDb.promise_vram``), the row is plain-inserted and ``id`` is
+        filled by the autoincrement column.
+        """
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                promise_id = payload["id"]
-                upsert_by_field(_VP, "id", promise_id, payload, session=self._session)
+                if "id" not in payload:
+                    self._session.execute(insert(_VP).values(**payload))
+                else:
+                    promise_id = payload["id"]
+                    upsert_by_field(_VP, "id", promise_id, payload, session=self._session)
             self._session.commit()
 
     def get_vram_promises(self) -> list[dict[str, Any]]:
@@ -370,6 +378,33 @@ class AppRepository:
             with self._session.begin_nested():
                 delete_by_key(_VP, promise_id, session=self._session)
             self._session.commit()
+
+    def delete_vram_promise_by_worker_model(self, worker_id: str, model_path: str) -> int:
+        """Delete all VRAM promises for a worker+model pair; return row count.
+
+        Runs the delete in a single transaction that first locks the matching
+        rows with ``SELECT ... FOR UPDATE``. This eliminates the read-
+        modify-write race of the old adapter release (list-all, match,
+        delete-by-id): concurrent releases can no longer miss rows. SQLite
+        ignores ``FOR UPDATE`` (no-op) — the atomic no-stale semantics are
+        still exercised by the concurrent integration test; true row-locking
+        requires PostgreSQL (Docker, deferred).
+        """
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                stmt = (
+                    select(_VP.c.id)
+                    .where(_VP.c.worker_id == worker_id, _VP.c.model_path == model_path)
+                    .with_for_update()
+                )
+                rows = self._session.execute(stmt).all()
+                ids = [row[0] for row in rows]
+                deleted = 0
+                if ids:
+                    result = self._session.execute(delete(_VP).where(_VP.c.id.in_(ids)))
+                    deleted = int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult vs Result — mypy sees Result but .rowcount exists at runtime
+            self._session.commit()
+            return deleted
 
     # ── Worker restart policy ───────────────────────────────────
 

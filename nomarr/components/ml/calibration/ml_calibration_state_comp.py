@@ -93,7 +93,7 @@ def save_calibration_state(
     """
     _key = _make_calibration_state_key(head_name, label)
     doc = {
-        "_key": _key,
+        "key": _key,
         "head_name": head_name,
         "label": label,
         "calibration_def_hash": calibration_def_hash,
@@ -109,7 +109,7 @@ def save_calibration_state(
     db.ml.replace_calibration_state(
         model_id=model_id,
         key=_key,
-        payload={key: value for key, value in doc.items() if key != "_key"},
+        payload={key: value for key, value in doc.items() if key != "key"},
     )
 
 
@@ -224,7 +224,7 @@ def delete_old_calibration_history_snapshots(
         key=lambda snapshot: cast("int", snapshot.get("snapshot_at", 0)),
         reverse=True,
     )
-    stale_ids = [cast("str", snapshot["id"]) for snapshot in ordered_snapshots[keep_count:] if "_id" in snapshot]
+    stale_ids = [cast("str", snapshot["id"]) for snapshot in ordered_snapshots[keep_count:] if "id" in snapshot]
     if not stale_ids:
         return 0
 
@@ -281,7 +281,7 @@ def update_file_calibration_hashes_batch(
 
     Args:
         db: Database instance
-        file_ids: List of file _id values (e.g. ``song/abc123``).
+        file_ids: List of file id values (e.g. ``123``).
 
     """
     for file_id in file_ids:

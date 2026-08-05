@@ -185,7 +185,7 @@ def apply_migration(name: str, module: ModuleType, db: Database) -> None:
     Args:
         name: Migration identifier (filename stem).
         module: Migration module with upgrade() function (legacy, not executed).
-        db: Database wrapper (provides .migrations and .set_version).
+        db: Database wrapper (provides .app and .set_version).
 
     Raises:
         MigrationError: If the migration's upgrade() function fails.
@@ -198,7 +198,7 @@ def apply_migration(name: str, module: ModuleType, db: Database) -> None:
         module.MIGRATION_VERSION,
     )
 
-    db.migrations.record_migration_started(
+    db.app.record_migration_started(
         migration_id=name,
         filename=f"{name}.py",
     )
@@ -213,7 +213,7 @@ def apply_migration(name: str, module: ModuleType, db: Database) -> None:
 
     duration_ms = internal_ms().value - start_time.value
 
-    db.migrations.mark_migration_applied(migration_id=name)
+    db.app.mark_migration_applied(migration_id=name)
 
     # Write the new version only after the migration is fully recorded
     db.set_version(module.MIGRATION_VERSION)

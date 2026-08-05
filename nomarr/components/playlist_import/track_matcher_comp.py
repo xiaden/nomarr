@@ -46,10 +46,10 @@ class LibraryTrack:
     def from_db_row(cls, row: dict[str, Any]) -> "LibraryTrack":
         """Create LibraryTrack from database row.
 
-        Expected row keys: _id, path, title, artist, album, isrc
+        Expected row keys: id, path, title, artist, album, isrc
         """
         return cls(
-            file_id=row.get("_id", ""),
+            file_id=str(row.get("id") or ""),
             file_path=row.get("path", ""),
             title=row.get("title", ""),
             artist=row.get("artist", ""),

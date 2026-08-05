@@ -48,7 +48,7 @@ Thank you for your interest in contributing to Nomarr! This document provides gu
 - CI must pass before merge on `develop` or `main`, including all required gates:
   - Lint: `ruff check nomarr/ tests/`
   - Backend tests: `pytest tests/ -m "not container_only and not requires_database and not code_smell"`
-  - Frontend tests: `npm run test -- --run`
+  - Frontend tests: `cd frontend && npm run test -- --run`
   - CodeQL for pull requests to `main`
 - Python code passes `ruff` linting and `mypy` type checking (zero errors)
 - Frontend code passes ESLint

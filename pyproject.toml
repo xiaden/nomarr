@@ -25,7 +25,7 @@ classifiers = [
 dependencies = [
     "numpy==1.26.4",           # Pinned: onnxruntime compatibility
     "scipy>=1.13.1",
-    "onnxruntime>=1.18.0",     # CPU-only for dev/CI; Docker/GPU builds use onnxruntime-gpu (see requirements.txt)
+    "onnxruntime>=1.18.0",     # CPU-only for dev/CI; Docker/GPU builds use onnxruntime-gpu (see dockerfile.base)
     "mutagen>=1.47.0",
     "pyyaml>=6.0.2",
     "fastapi>=0.115.0",
@@ -61,6 +61,7 @@ dev = [
     "types-requests",
     "mcp>=1.0.0",
     "httpx>=0.27.0",
+    "orjson>=3.11",
     "pre-commit>=4.0.0",
     "testcontainers[postgres]>=4.9.0",
     "grimp>=3.14",
@@ -104,6 +105,8 @@ markers = [
     "mocked: Test uses mocked dependencies (informational)",
     "hnsw_build: Heavy HNSW index build tests — skip locally with `-m 'not hnsw_build'`",
     "serial: Tests that must run serially (SQLite lock avoidance)",
+    "characterization: Characterization tests that capture facade and service behavior snapshots",
+    "sabotage_check: Tests that enforce target-state architecture per CONTRACTS.md AR-1 through AR-6 (RED until implementing parts complete)",
 ]
 filterwarnings = [
     "error::nomarr.helpers.exceptions.FacadeMisuseWarning",

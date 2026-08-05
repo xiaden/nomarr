@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 def list_watchable_libraries(db: Database) -> list[dict[str, Any]]:
     """Return libraries eligible for file watching.
 
-    Projects to ``{"_id", "root_path", "watch_mode"}``.
+    Projects to ``{"id", "root_path", "watch_mode"}``.
     """
     libraries = list_watchable_library_records(db)
     return [_project_watchable_library(library) for library in libraries]

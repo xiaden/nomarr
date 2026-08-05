@@ -33,7 +33,7 @@ def mark_file_processed(db: Database, file_id: int) -> None:
 
     Args:
         db: Database instance
-        file_id: Document ``_id``
+        file_id: Document ``id``
 
     """
     transition_file_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)

@@ -722,13 +722,11 @@ def test_clear_library_data_truncates_all_facades() -> None:
 
     db.library.maintenance.truncate_song_tag_edges.assert_called_once_with()
 
-    db.app.clear_file_state_links.assert_called_once_with()
+    db.app.maintenance.truncate_file_state_edges.assert_called_once_with()
 
     db.library.maintenance.truncate_file_links.assert_called_once_with()
 
     db.library.maintenance.truncate_folder_links.assert_called_once_with()
-
-    db.app.clear_pipeline_state_links.assert_called_once_with()
 
     db.library.maintenance.truncate_tags.assert_called_once_with()
 

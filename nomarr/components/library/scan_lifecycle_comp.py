@@ -47,7 +47,7 @@ def is_library_scanning(db: Database, library_id: int) -> bool:
 
     Args:
         db: Database instance
-        library_id: Library document ``_id``
+        library_id: Library document ``id``
 
     Returns:
         ``True`` when the library scan_state equals ``scanning``;
@@ -66,7 +66,7 @@ def resolve_library_for_scan(db: Database, library_id: int) -> LibraryDict:
 
     Args:
         db: Database instance
-        library_id: Library document ``_id``
+        library_id: Library document ``id``
 
     Returns:
         ``LibraryDict`` domain object
@@ -94,7 +94,7 @@ def check_interrupted_scan(db: Database, library_id: int) -> tuple[bool, str | N
 
     Args:
         db: Database instance
-        library_id: Library document ``_id``
+        library_id: Library document ``id``
 
     Returns:
         Tuple of (was_interrupted, scan_type).  *scan_type* is ``"quick"``
@@ -114,7 +114,7 @@ def get_scanning_library_ids(db: Database) -> list[LibraryDict]:
         db: Database instance.
 
     Returns:
-        List of ``LibraryDict`` objects, deduplicated by ``_id``.
+        List of ``LibraryDict`` objects, deduplicated by ``id``.
 
     """
     raw_ids = cast(
@@ -141,7 +141,7 @@ def transition_to_scanning(db: Database, library_id: int) -> None:
 
     Args:
         db: Database instance
-        library_id: Library document ``_id``
+        library_id: Library document ``id``
 
     """
     transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)  # type: ignore[arg-type]
@@ -190,7 +190,7 @@ def mark_scan_started(db: Database, library_id: int, scan_type: str) -> None:
 
     Args:
         db: Database instance
-        library_id: Library document ``_id``
+        library_id: Library document ``id``
         scan_type: ``"quick"`` or ``"full"``
 
     """
@@ -209,7 +209,7 @@ def mark_scan_completed(db: Database, library_id: int) -> None:
 
     Args:
         db: Database instance
-        library_id: Library document ``_id``
+        library_id: Library document ``id``
 
     """
     db.library.update_scan(
@@ -236,7 +236,7 @@ def update_scan_progress(
 
     Args:
         db: Database instance
-        library_id: Library document ``_id``
+        library_id: Library document ``id``
         status: Scan status (``'idle'``, ``'scanning'``, ``'complete'``, ``'error'``)
         progress: Files processed so far
         total: Total files to scan
@@ -261,7 +261,7 @@ def is_scan_stale(db: Database, library_id: int, timeout_ms: int = 300_000) -> b
 
     Args:
         db: Database instance.
-        library_id: Library document ``_id``.
+        library_id: Library document ``id``.
         timeout_ms: Maximum allowed duration in milliseconds (default 5 min).
 
     Returns:
@@ -295,7 +295,7 @@ def on_scan_complete_pipeline_hook(db: Database, library_id: int) -> None:
 
     Args:
         db: Database instance
-        library_id: Library document ``_id``
+        library_id: Library document ``id``
 
     """
     file_count = len(db.library.list_library_file_ids(library_id))

@@ -1,0 +1,194 @@
+{
+  "pipeline": {
+    "stage1": {
+      "success": true,
+      "message": "Analyzed 13 suspects"
+    },
+    "stage2": {
+      "success": true,
+      "message": "Coverage analysis complete for 0 files"
+    },
+    "stage3": {
+      "success": true,
+      "message": "Vulture found 0 unused code items"
+    }
+  },
+  "verdicts": [
+    {
+      "name": "_MlCapacityAdapter",
+      "type": "class",
+      "file": "nomarr/persistence/db.py",
+      "verdict": "NEEDS REVIEW",
+      "stage1_callers": 0,
+      "stage1_files": [],
+      "stage2_coverage": "unknown",
+      "stage3_unused": false,
+      "notes": [
+        "Ambiguous signals"
+      ]
+    },
+    {
+      "name": "_MigrationsAdapter",
+      "type": "class",
+      "file": "nomarr/persistence/db.py",
+      "verdict": "NEEDS REVIEW",
+      "stage1_callers": 0,
+      "stage1_files": [],
+      "stage2_coverage": "unknown",
+      "stage3_unused": false,
+      "notes": [
+        "Ambiguous signals"
+      ]
+    },
+    {
+      "name": "_VramPromisesAdapter",
+      "type": "class",
+      "file": "nomarr/persistence/db.py",
+      "verdict": "NEEDS REVIEW",
+      "stage1_callers": 0,
+      "stage1_files": [],
+      "stage2_coverage": "unknown",
+      "stage3_unused": false,
+      "notes": [
+        "Ambiguous signals"
+      ]
+    },
+    {
+      "name": "LibraryEntitiesMixin",
+      "type": "class",
+      "file": "nomarr/services/domain/library_svc/entities.py",
+      "verdict": "NEEDS REVIEW",
+      "stage1_callers": 0,
+      "stage1_files": [],
+      "stage2_coverage": "unknown",
+      "stage3_unused": false,
+      "notes": [
+        "Ambiguous signals"
+      ]
+    },
+    {
+      "name": "truncate_pipeline_states",
+      "type": "method",
+      "file": "nomarr/persistence/api/application.py",
+      "verdict": "NEEDS REVIEW",
+      "stage1_callers": 0,
+      "stage1_files": [],
+      "stage2_coverage": "unknown",
+      "stage3_unused": false,
+      "notes": [
+        "Ambiguous signals"
+      ]
+    },
+    {
+      "name": "truncate_pipeline_state_edges",
+      "type": "method",
+      "file": "nomarr/persistence/api/application.py",
+      "verdict": "NEEDS REVIEW",
+      "stage1_callers": 0,
+      "stage1_files": [],
+      "stage2_coverage": "unknown",
+      "stage3_unused": false,
+      "notes": [
+        "Ambiguous signals"
+      ]
+    },
+    {
+      "name": "list_collections",
+      "type": "method",
+      "file": "nomarr/persistence/api/application.py",
+      "verdict": "NEEDS REVIEW",
+      "stage1_callers": 0,
+      "stage1_files": [],
+      "stage2_coverage": "unknown",
+      "stage3_unused": false,
+      "notes": [
+        "Ambiguous signals"
+      ]
+    },
+    {
+      "name": "delete_all_worker_claims",
+      "type": "method",
+      "file": "nomarr/persistence/api/application.py",
+      "verdict": "STAY",
+      "stage1_callers": 1,
+      "stage1_files": [
+        "tests/unit/persistence/api/test_app_db.py"
+      ],
+      "stage2_coverage": "unknown",
+      "stage3_unused": false,
+      "notes": [
+        "Has 1 caller file(s)"
+      ]
+    },
+    {
+      "name": "update_pipeline_state",
+      "type": "method",
+      "file": "nomarr/persistence/api/application.py",
+      "verdict": "STAY",
+      "stage1_callers": 2,
+      "stage1_files": [
+        "nomarr/persistence/database/pipeline_repo.py",
+        "tests/unit/persistence/database/test_pipeline_repo.py"
+      ],
+      "stage2_coverage": "unknown",
+      "stage3_unused": false,
+      "notes": [
+        "Has 2 caller file(s)"
+      ]
+    },
+    {
+      "name": "clear_file_state_links",
+      "type": "method",
+      "file": "nomarr/persistence/api/application.py",
+      "verdict": "NEEDS REVIEW",
+      "stage1_callers": 0,
+      "stage1_files": [],
+      "stage2_coverage": "unknown",
+      "stage3_unused": false,
+      "notes": [
+        "Ambiguous signals"
+      ]
+    },
+    {
+      "name": "clear_pipeline_state_links",
+      "type": "method",
+      "file": "nomarr/persistence/api/application.py",
+      "verdict": "NEEDS REVIEW",
+      "stage1_callers": 0,
+      "stage1_files": [],
+      "stage2_coverage": "unknown",
+      "stage3_unused": false,
+      "notes": [
+        "Ambiguous signals"
+      ]
+    },
+    {
+      "name": "truncate_vector_collection",
+      "type": "method",
+      "file": "nomarr/persistence/api/ml.py",
+      "verdict": "STAY",
+      "stage1_callers": 1,
+      "stage1_files": [
+        "tests/unit/persistence/api/test_ml_db.py"
+      ],
+      "stage2_coverage": "unknown",
+      "stage3_unused": false,
+      "notes": [
+        "Has 1 caller file(s)"
+      ]
+    },
+    {
+      "name": "download_calibrations",
+      "type": "function",
+      "file": "nomarr/services/infrastructure/calibration_download_svc.py",
+      "verdict": "NEEDS REVIEW",
+      "stage1_callers": 0,
+      "stage1_files": [],
+      "stage2_coverage": "unknown",
+      "stage3_unused": false,
+      "notes": [
+        "Ambiguous signals"
+      ]
+    }
+  ]
+}

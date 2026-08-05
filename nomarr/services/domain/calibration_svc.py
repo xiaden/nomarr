@@ -8,6 +8,7 @@ context to the pure workflow function.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -24,6 +25,7 @@ from nomarr.components.ml.calibration.ml_calibration_state_comp import (
 )
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads_no_db
 from nomarr.helpers import ManagedTask
+from nomarr.helpers.dto.calibration_dto import EnsureCalibrationsExistResult
 from nomarr.helpers.time_helper import now_ms
 from nomarr.workflows.calibration.generate_calibration_wf import (
     generate_histogram_calibration_wf,
@@ -83,6 +85,120 @@ class CalibrationConfig:
     models_dir: str
     namespace: str
     thresholds: dict[str, float] = field(default_factory=dict)
+
+
+def check_missing_calibrations(models_dir: str) -> list[dict[str, str]]:
+    """Check which heads are missing calibration files.
+
+    Scans models directory to find all heads and checks if each has
+    a calibration.json (or calibration-v*.json) file.
+
+    Args:
+        models_dir: Path to models directory
+
+    Returns:
+        List of dicts with missing calibration info:
+            - model: Model name (e.g., "effnet")
+            - head: Head name (e.g., "mood_happy")
+            - path: Expected calibration file path
+
+    Example:
+        >>> check_missing_calibrations("/app/models")
+        [
+            {"model": "effnet", "head": "mood_happy", "path": "/app/models/effnet/heads/mood_happy-calibration.json"},
+            ...
+        ]
+
+    """
+    logger.info(f"[calibration_download] Scanning for heads in {models_dir}")
+
+    # Discover all heads
+    heads = discover_heads_no_db(models_dir)
+
+    missing = []
+
+    for head in heads:
+        # Determine expected calibration file path
+        model_path = head.model_path
+        model_dir = os.path.dirname(model_path)
+        model_base = os.path.basename(model_path).rsplit(".", 1)[0]
+
+        # Check for calibration.json (reference file)
+        calib_path = os.path.join(model_dir, f"{model_base}-calibration.json")
+
+        if not os.path.exists(calib_path):
+            # Also check for versioned files (calibration-v*.json)
+            has_versioned = any(
+                f.startswith(f"{model_base}-calibration-v") and f.endswith(".json") for f in os.listdir(model_dir)
+            )
+
+            if not has_versioned:
+                missing.append(
+                    {
+                        "model": head.backbone,
+                        "head": head.name,
+                        "path": calib_path,
+                    },
+                )
+
+    logger.info(f"[calibration_download] Found {len(missing)} heads without calibration files")
+
+    return missing
+
+
+def ensure_calibrations_exist(
+    repo_url: str,
+    models_dir: str,
+    auto_download: bool = False,
+) -> EnsureCalibrationsExistResult:
+    """Ensure calibration files exist, optionally downloading if missing.
+
+    This is the main entry point for calibration availability checking.
+    Called during application startup to verify calibrations are available.
+
+    Args:
+        repo_url: GitHub repository URL for calibration files
+        models_dir: Path to local models directory
+        auto_download: If True, automatically download missing files (not yet implemented)
+
+    Returns:
+        EnsureCalibrationsExistResult DTO
+
+    Example:
+        >>> ensure_calibrations_exist("https://github.com/xiaden/nom-cal", "/app/models")
+        EnsureCalibrationsExistResult(has_calibrations=False, missing_count=5, ...)
+
+    """
+    logger.info("[calibration_download] Checking calibration availability")
+
+    missing = check_missing_calibrations(models_dir)
+
+    if not missing:
+        logger.info("[calibration_download] All heads have calibration bundle files")
+        return EnsureCalibrationsExistResult(
+            has_calibrations=True,
+            missing_count=0,
+            missing_heads=[],
+            action_required=None,
+        )
+
+    logger.warning(f"[calibration_download] {len(missing)} heads missing calibration bundle files")
+
+    if auto_download:
+        logger.warning(
+            "[calibration_download] Auto-download requested but unavailable — "
+            "automatic calibration download is not implemented; continuing without download",
+        )
+
+    return EnsureCalibrationsExistResult(
+        has_calibrations=False,
+        missing_count=len(missing),
+        missing_heads=missing,
+        action_required=(
+            f"Download calibration bundles from {repo_url} and import via "
+            f"import_calibration_bundle_wf, or enable calibrate_heads mode in config"
+        ),
+    )
 
 
 class CalibrationService:

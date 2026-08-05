@@ -18,6 +18,9 @@ from .domain import (
     TaggingServiceConfig,
 )
 
+# Calibration availability helpers (moved from infrastructure in Part B per CONTRACTS D3)
+from .domain.calibration_svc import check_missing_calibrations, ensure_calibrations_exist
+
 # Infrastructure services
 from .infrastructure import (
     INTERNAL_ALLOW_SHORT,
@@ -46,9 +49,6 @@ from .infrastructure import (
     MLConfig,
     MLService,
     WorkerSystemService,
-    check_missing_calibrations,
-    download_calibrations,
-    ensure_calibrations_exist,
 )
 
 __all__ = [
@@ -90,6 +90,5 @@ __all__ = [
     "TaggingServiceConfig",
     "WorkerSystemService",
     "check_missing_calibrations",
-    "download_calibrations",
     "ensure_calibrations_exist",
 ]

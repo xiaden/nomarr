@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 def _folder_key(library_id: int, folder_path: str) -> str:
-    """Generate the legacy-stable folder ``_key`` from library id and relative path."""
+    """Generate the legacy-stable folder ``key`` from library id and relative path."""
     composite = f"{library_id}/{folder_path}"
     return hashlib.md5(composite.encode("utf-8")).hexdigest()
 
@@ -54,7 +54,7 @@ def _folder_doc(
 ) -> dict[str, Any]:
     """Build the folder-cache document persisted for quick scans."""
     return {
-        "_key": _folder_key(library_id, folder_path),
+        "key": _folder_key(library_id, folder_path),
         "path": folder_path,
         "library_key": library_key_from_ref(str(library_id)),
         "mtime": mtime,
@@ -212,9 +212,9 @@ def save_folder_record(
 ) -> None:
     """Upsert a folder cache record (keyed deterministically by library/path)."""
     folder_doc = _folder_doc(library_id, rel_path, mtime, file_count)
-    folder_key = folder_doc["_key"]
+    folder_key = folder_doc["key"]
 
-    # Remove any existing folder with the same deterministic _key before
+    # Remove any existing folder with the same deterministic key before
     # inserting (add_library_folder is INSERT, not UPSERT).
     if existing_folder_id:
         db.library.remove_library_folder(library_id, existing_folder_id)
@@ -223,7 +223,7 @@ def save_folder_record(
         try:
             existing = db.library.list_folders_for_library(library_id)
             for folder in cast("list[dict[str, Any]]", existing):
-                if folder.get("_key") == folder_key:
+                if folder.get("key") == folder_key:
                     fid = folder.get("id")
                     if fid:
                         db.library.remove_library_folder(library_id, fid)

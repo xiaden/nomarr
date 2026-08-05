@@ -90,7 +90,7 @@ class TestFindSimilarTracksHappyPath:
             file_docs=[
                 {
                     "id": 2,
-                    "_key": "match-1",
+                    "key": "match-1",
                     "duration_seconds": 201.2,
                     "tags": [
                         {"key": "title", "value": "Song A"},

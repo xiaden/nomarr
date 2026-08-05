@@ -304,7 +304,7 @@ class TestScanStateHelpers:
         mock_db.library.add_scan.assert_called_once()
         assert mock_db.library.add_scan.call_args.args[0] == 1
         inserted_doc = mock_db.library.add_scan.call_args.args[1]
-        assert inserted_doc["_key"] == "1"
+        assert inserted_doc["key"] == "1"
         assert inserted_doc["library_key"] == "1"
         assert result["library_key"] == "1"
 

@@ -115,7 +115,7 @@ def decode_path_id(path_id: str | int) -> int:
 
 
 # Fields that should be encoded when found in response data
-_ID_FIELD_NAMES = frozenset({"_id", "id", "library_id", "file_id", "job_id", "task_id"})
+_ID_FIELD_NAMES = frozenset({"id", "library_id", "file_id", "job_id", "task_id"})
 
 
 def encode_ids(data: Any) -> Any:

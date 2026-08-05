@@ -47,7 +47,7 @@ class TaggingCurationMixin:
         then relinks all edges from source to target.
 
         Args:
-            tag_id: Source tag _id (e.g., "tags/12345")
+            tag_id: Source tag id (e.g., "12345")
             new_value: New value for the tag
 
         Returns:
@@ -78,8 +78,8 @@ class TaggingCurationMixin:
         relink_tag_edges to the canonical target.
 
         Args:
-            source_tag_ids: Tag _ids to merge FROM
-            canonical_tag_id: Tag _id to merge INTO
+            source_tag_ids: Tag ids to merge FROM
+            canonical_tag_id: Tag id to merge INTO
 
         Returns:
             MergeResult with total_moved and sources_removed counts
@@ -118,8 +118,8 @@ class TaggingCurationMixin:
         value and relinks only the specified songs.
 
         Args:
-            source_tag_id: Tag _id to split FROM
-            song_ids: Song _ids to move to the new tag
+            source_tag_id: Tag id to split FROM
+            song_ids: Song ids to move to the new tag
             new_value: Value for the new tag
 
         Returns:

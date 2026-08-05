@@ -16,7 +16,7 @@ def normalize_library_id(library_id: str) -> str:
 
 
 def library_key_from_ref(library_id: str) -> str:
-    """Extract the library ``_key`` from either a full id or a bare key."""
+    """Extract the library ``key`` from either a full id or a bare key."""
     if library_id.startswith("libraries/"):
         return library_id.split("/", 1)[1]
     return library_id

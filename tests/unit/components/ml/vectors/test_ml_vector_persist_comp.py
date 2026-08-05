@@ -24,7 +24,7 @@ class TestUpsertHotTrackVector:
         mock_db.ml.list_file_vectors.return_value = [
             {
                 "id": "vectors_track_hot__effnet/vector-doc",
-                "_key": expected_key,
+                "key": expected_key,
             }
         ]
 
@@ -40,7 +40,7 @@ class TestUpsertHotTrackVector:
             )
 
         expected_doc = {
-            "_key": expected_key,
+            "key": expected_key,
             "file_id": 1,
             "model_suite_hash": "abc123",
             "embed_dim": 2,

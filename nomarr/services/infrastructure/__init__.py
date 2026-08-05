@@ -1,6 +1,5 @@
 """Infrastructure services - runtime plumbing."""
 
-from .calibration_download_svc import check_missing_calibrations, download_calibrations, ensure_calibrations_exist
 from .config_svc import (
     INTERNAL_ALLOW_SHORT,
     INTERNAL_BATCH_SIZE,
@@ -54,7 +53,4 @@ __all__ = [
     "MLConfig",
     "MLService",
     "WorkerSystemService",
-    "check_missing_calibrations",
-    "download_calibrations",
-    "ensure_calibrations_exist",
 ]

@@ -53,7 +53,6 @@ services/domain/
 └── library_svc/                # Library management (multi-file)
     ├── admin.py                # Add/remove libraries
     ├── config.py               # Library configuration
-    ├── entities.py             # Artists/albums/tracks
     ├── files.py                # File operations
     ├── query.py                # Search and listing
     └── scan.py                 # Scanning operations
@@ -66,7 +65,6 @@ Runtime resource management and system operations:
 ```text
 services/infrastructure/
 ├── background_tasks_svc.py     # Async task management
-├── calibration_download_svc.py # Calibration file downloads
 ├── cli_bootstrap_svc.py        # CLI initialization
 ├── config_svc.py               # Configuration loading
 ├── file_watcher_svc.py         # Filesystem watching

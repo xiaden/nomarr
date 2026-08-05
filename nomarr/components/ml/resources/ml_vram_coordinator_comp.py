@@ -64,11 +64,12 @@ def register_vram_promise(
        total GPU VRAM.  The 10%% headroom reserves capacity for driver
        overhead and memory fragmentation.
 
-    Only when both checks pass is the promise inserted via
-    ``db.vram_promises.promise()``.
+     Only when both checks pass is the promise inserted via
+     ``db.app.promise_vram()``.
 
-    Args:
-        db:          Application database (must have ``vram_promises`` attribute).
+     Args:
+         db:          Application database (must have ``app`` sub-facade
+                      with VRAM promise methods).
         worker_id:   Worker identifier (e.g., ``"nomarr-tag:0"``).
         pid:         Worker OS PID.
         model_path:  Absolute path to the ONNX model file.
@@ -100,7 +101,7 @@ def register_vram_promise(
 
     # Fleet headroom fit-check: reject if adding this promise would exceed
     # 90% of total GPU VRAM (10% headroom for driver overhead/fragmentation).
-    existing = db.vram_promises.list_all()
+    existing = db.app.list_vram_promises()
     committed_mb = sum(float(p.get("promised_mb", 0)) for p in existing)
     if committed_mb + promised_mb > total_mb * 0.90:
         logger.debug(
@@ -115,7 +116,7 @@ def register_vram_promise(
         )
         return False
 
-    db.vram_promises.promise(
+    db.app.promise_vram(
         worker_id=worker_id,
         pid=pid,
         model_path=model_path,
@@ -154,7 +155,7 @@ def release_vram_promise(
         model_path:  Absolute path to the ONNX model file.
 
     """
-    db.vram_promises.release(worker_id=worker_id, model_path=model_path)
+    db.app.release_vram(worker_id=worker_id, model_path=model_path)
     logger.debug(
         "[vram_coordinator] Released promise: worker=%s model=%s",
         worker_id,
@@ -176,7 +177,7 @@ def get_fleet_vram_state(
         FleetVramState with ``promises`` list and ``vram`` telemetry snapshot.
 
     """
-    promises: list[dict[str, Any]] = db.vram_promises.list_all()
+    promises: list[dict[str, Any]] = db.app.list_vram_promises()
     vram = _resource_monitor.get_vram_usage_mb()
     return FleetVramState(promises=promises, vram=vram)  # type: ignore[typeddict-item]
 
@@ -202,10 +203,10 @@ def release_worker_promises(
         Number of promise documents removed.
 
     """
-    # Count promises before releasing (adapter's release_all_for_worker returns None)
+    # Count promises before releasing (AppDb.release_all_for_worker returns None)
     promises = db.app.list_vram_promises()
     count = sum(1 for p in promises if p.get("worker_id") == worker_id)
-    db.vram_promises.release_all_for_worker(worker_id=worker_id)
+    db.app.release_all_for_worker(worker_id=worker_id)
     if count:
         logger.info(
             "[vram_coordinator] Released %d promise(s) for worker %s",

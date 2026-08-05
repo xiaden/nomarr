@@ -676,10 +676,9 @@ def clear_library_data(db: Database) -> None:
             delete_output_streams(db, file_id)
     # Link/edge collections
     db.library.maintenance.truncate_song_tag_edges()
-    db.app.clear_file_state_links()
+    db.app.maintenance.truncate_file_state_edges()
     db.library.maintenance.truncate_file_links()
     db.library.maintenance.truncate_folder_links()
-    db.app.clear_pipeline_state_links()
     # Documents
     db.library.maintenance.truncate_tags()
     db.library.maintenance.truncate_files()

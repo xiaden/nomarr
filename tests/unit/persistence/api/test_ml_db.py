@@ -271,16 +271,6 @@ def test_truncate_vectors_in_collection_delegates_to_vector_repo() -> None:
 
 
 @pytest.mark.unit
-def test_truncate_vector_collection_delegates_to_truncate_vectors() -> None:
-    db, vector_repo, _, _ = _make_ml_maintenance_db()
-    vector_repo.truncate_embeddings = MagicMock()
-
-    db.truncate_vector_collection("vectors_track_hot__model__lib")
-
-    vector_repo.truncate_embeddings.assert_called_once_with()
-
-
-@pytest.mark.unit
 def test_truncate_calibration_states_delegates_to_calibration_repo() -> None:
     db, _, _, calibration_repo = _make_ml_maintenance_db()
     calibration_repo.truncate_states = MagicMock()

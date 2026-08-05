@@ -22,7 +22,7 @@ class WriteCalibratedTagsParams:
 
 @dataclass
 class EnsureCalibrationsExistResult:
-    """Result from calibration_download_svc.ensure_calibrations_exist."""
+    """Result from nomarr.services.domain.calibration_svc.ensure_calibrations_exist."""
 
     has_calibrations: bool
     missing_count: int

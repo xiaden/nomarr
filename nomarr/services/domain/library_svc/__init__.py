@@ -5,7 +5,6 @@ This package provides a modular LibraryService composed from focused mixins:
 - LibraryScanMixin: Scanning operations, status, and history
 - LibraryQueryMixin: Statistics, search, and tag discovery
 - LibraryFilesMixin: File tag operations and path handling
-- LibraryEntitiesMixin: Entity navigation (placeholder)
 """
 
 from __future__ import annotations
@@ -18,13 +17,12 @@ if TYPE_CHECKING:
 
 from .admin import LibraryAdminMixin
 from .config import LibraryServiceConfig
-from .entities import LibraryEntitiesMixin
 from .files import LibraryFilesMixin
 from .query import LibraryQueryMixin
 from .scan import LibraryScanMixin
 
 
-class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin, LibraryFilesMixin, LibraryEntitiesMixin):
+class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin, LibraryFilesMixin):
     """Unified library management service.
 
     This service composes functionality from multiple focused mixins:
@@ -32,7 +30,6 @@ class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin, Lib
     - Scan: Scanning operations, status, history
     - Query: Statistics, search, tag discovery
     - Files: File tag operations, reconciliation, path resolution
-    - Entities: Entity navigation (placeholder)
 
     Usage:
         db = Database(...)

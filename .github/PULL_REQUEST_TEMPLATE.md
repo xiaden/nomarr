@@ -73,7 +73,7 @@ Which layers are affected? (Check all that apply)
 - [ ] Python code passes `ruff check` with zero errors
 - [ ] Python code passes `mypy` with zero errors
 - [ ] Python code passes `import-linter` (layer boundaries)
-- [ ] Frontend code passes `npm run lint` (if applicable)
+- [ ] Frontend code passes `cd frontend && npm run lint` (if applicable)
 - [ ] All tests pass
 - [ ] Code follows existing patterns and conventions
 

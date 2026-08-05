@@ -54,10 +54,6 @@ class MlMaintenanceDb:
         """
         self._vector_repo.truncate_embeddings()
 
-    def truncate_vector_collection(self, collection_name: str) -> None:
-        """Compatibility shim for `truncate_vectors_in_collection`."""
-        self.truncate_vectors_in_collection(collection_name)
-
     def truncate_calibration_states(self) -> None:
         """Truncate all calibration state rows."""
         self._calibration_repo.truncate_states()

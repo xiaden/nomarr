@@ -40,24 +40,11 @@ class AppMaintenanceDb:
     def truncate_file_state_edges(self) -> None:
         self._file_state_repo.truncate_assignments()
 
-    def truncate_pipeline_states(self) -> None:
-        """No-op — pipeline state is now stored as fields on library documents."""
-
-    def truncate_pipeline_state_edges(self) -> None:
-        """No-op — pipeline state edges no longer exist."""
-
     def truncate_worker_claims(self) -> None:
         self._app_repo.truncate_worker_claims()
 
-    def delete_all_worker_claims(self) -> None:
-        # Legacy name shim — canonical method is truncate_worker_claims. Do not add new callers.
-        self.truncate_worker_claims()
-
     def truncate_health(self) -> None:
         self._app_repo.truncate_health()
-
-    def list_collections(self) -> list[str]:
-        return []
 
 
 class AppLegacyNavidromeDb:
@@ -236,14 +223,74 @@ class AppDb:
     def list_migrations(self) -> list[dict]:
         return self._app_repo.list_migrations()
 
+    def record_migration_started(
+        self,
+        migration_id: str,
+        *,
+        filename: str,
+        checksum: str | None = None,
+    ) -> None:
+        """Record that a migration has started."""
+        self.upsert_migration(
+            migration_id,
+            {
+                "filename": filename,
+                "checksum": checksum,
+                "status": "running",
+            },
+        )
+
+    def mark_migration_applied(self, migration_id: str) -> None:
+        """Mark a migration as successfully applied."""
+        self.upsert_migration(migration_id, {"status": "applied"})
+
     def add_vram_promise(self, payload: dict) -> None:
         self._app_repo.upsert_vram_promise(payload)
+
+    def promise_vram(
+        self,
+        *,
+        worker_id: str,
+        pid: int,
+        model_path: str,
+        promised_mb: float,
+        total_mb: float,
+        used_mb: float,
+    ) -> None:
+        """Record a VRAM promise from a worker (plain insert, id autoincrements)."""
+        self._app_repo.upsert_vram_promise(
+            {
+                "worker_id": worker_id,
+                "pid": pid,
+                "model_path": model_path,
+                "promised_mb": promised_mb,
+                "total_mb": total_mb,
+                "used_mb": used_mb,
+            }
+        )
 
     def list_vram_promises(self) -> list[dict]:
         return self._app_repo.get_vram_promises()
 
     def remove_vram_promise(self, promise_id: int) -> None:
         self._app_repo.delete_vram_promise(promise_id)
+
+    def release_vram(self, *, worker_id: str, model_path: str) -> None:
+        """Release the VRAM promise(s) for a worker+model in one atomic transaction."""
+        self._app_repo.delete_vram_promise_by_worker_model(worker_id, model_path)
+
+    def release_all_for_worker(self, *, worker_id: str) -> None:
+        """Release all VRAM promises held by a worker.
+
+        Preserves the list-then-remove loop semantics of the absorbed
+        VRAM-promises adapter (no ``FOR UPDATE`` — the plan does not
+        require row-locking for this method).
+        """
+        for p in self.list_vram_promises():
+            if p.get("worker_id") == worker_id:
+                pid = p.get("id")
+                if pid:
+                    self.remove_vram_promise(pid)
 
     def count_vram_promises(self) -> int:
         return len(self._app_repo.get_vram_promises())
@@ -344,23 +391,6 @@ class AppDb:
 
     def delete_navidrome_tracks_for_file(self, file_id: int) -> int:
         return self._navidrome_repo.delete_tracks_for_file(file_id)
-
-    def list_collections(self) -> list[str]:
-        """Return all collection/table names (empty list for PostgreSQL)."""
-        return self.maintenance.list_collections()
-
-    def clear_file_state_links(self) -> None:
-        """Remove all file-state assignment records."""
-        self.maintenance.truncate_file_state_edges()
-
-    def clear_pipeline_state_links(self) -> None:
-        """Remove all pipeline-state link records."""
-        self.maintenance.truncate_pipeline_state_edges()
-
-    def update_pipeline_state(self, library_id: int, state: str) -> None:
-        """Legacy single-value pipeline state update. DEPRECATED — use update_pipeline_axis."""
-        msg = "update_pipeline_state is deprecated — use update_pipeline_axis"
-        raise NotImplementedError(msg)
 
     def remove_pipeline_state(self, library_id: int) -> None:
         """Reset all pipeline axes to their default not_started values."""

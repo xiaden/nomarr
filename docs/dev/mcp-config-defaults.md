@@ -9,7 +9,7 @@ Tools should "just work" for the 80% use case (FastAPI + React/Vue) with **zero 
 ### When No Config File Exists
 
 1. **Auto-detect framework:**
-   - Backend: Check for `fastapi`, `flask`, `django` in requirements.txt or imports
+   - Backend: Check for `fastapi`, `flask`, `django` in pyproject.toml or imports
    - Frontend: Check for `package.json` dependencies (react, vue, svelte)
 
 2. **Use sensible defaults:**

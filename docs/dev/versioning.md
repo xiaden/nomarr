@@ -275,7 +275,7 @@ services:
 
 - Lint: `ruff check nomarr/ tests/`
 - Backend tests: `pytest tests/ -m "not container_only and not requires_database and not code_smell"`
-- Frontend tests: `npm run test -- --run`
+- Frontend tests: `cd frontend && npm run test -- --run`
 - CodeQL: runs weekly and on pull requests to `main`
 
 **On pull request to `main` or `develop`:**

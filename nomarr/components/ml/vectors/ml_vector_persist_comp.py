@@ -48,7 +48,7 @@ def upsert_hot_track_vector(
 
     Args:
         db: Database instance.
-        file_id: Library file document ``_id``.
+        file_id: Library file document ``id``.
         backbone: Backbone model name used to select the hot vector namespace.
         model_suite_hash: Hash of the model suite that produced the vector.
         embed_dim: Embedding dimensionality of ``vector``.
@@ -56,7 +56,7 @@ def upsert_hot_track_vector(
         num_segments: Number of source segments pooled into ``vector``.
 
     Returns:
-        The stored vector document ``_id``.
+        The stored vector document ``id``.
 
     Raises:
         RuntimeError: If the persisted vector cannot be reloaded after replacement.
@@ -64,7 +64,7 @@ def upsert_hot_track_vector(
     """
     vector_key = _make_vector_key(file_id, model_suite_hash)
     vector_doc: dict[str, Any] = {
-        "_key": vector_key,
+        "key": vector_key,
         "file_id": file_id,
         "model_suite_hash": model_suite_hash,
         "embed_dim": embed_dim,
@@ -82,8 +82,7 @@ def upsert_hot_track_vector(
         (
             str(stored_vector_id)
             for stored_vector in stored_vectors
-            if stored_vector.get("_key") == vector_key
-            and isinstance((stored_vector_id := stored_vector.get("id")), str)
+            if stored_vector.get("key") == vector_key and isinstance((stored_vector_id := stored_vector.get("id")), str)
         ),
         None,
     )
@@ -109,7 +108,7 @@ def persist_backbone_vector(
 
     Args:
         db: Database instance.
-        file_id: song document _id.
+        file_id: song document id.
         backbone: Backbone model name (used to select the vector collection).
         embeddings_2d: Shape ``[num_segments, embed_dim]`` backbone output.
         model_suite_hash: Hash of the model suite used to produce the embeddings.

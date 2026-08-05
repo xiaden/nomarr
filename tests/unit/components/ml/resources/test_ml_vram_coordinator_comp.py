@@ -18,7 +18,7 @@ from nomarr.components.ml.resources.ml_vram_coordinator_comp import (
 class TestRegisterVramPromise:
     def test_registers_promise_via_vram_facade(self) -> None:
         db = MagicMock()
-        db.vram_promises.list_all.return_value = []
+        db.app.list_vram_promises.return_value = []
 
         with (
             patch(
@@ -33,7 +33,7 @@ class TestRegisterVramPromise:
 
         assert result is True
         mock_reset.assert_called_once_with()
-        db.vram_promises.promise.assert_called_once_with(
+        db.app.promise_vram.assert_called_once_with(
             worker_id="worker:1",
             pid=999,
             model_path="model.onnx",
@@ -55,11 +55,11 @@ class TestRegisterVramPromise:
             result = register_vram_promise(db, "worker:1", 999, "model.onnx", 512.0)
 
         assert result is False
-        db.vram_promises.promise.assert_not_called()
+        db.app.promise_vram.assert_not_called()
 
     def test_headroom_fit_check_accepts_when_under_90_percent(self) -> None:
         db = MagicMock()
-        db.vram_promises.list_all.return_value = [
+        db.app.list_vram_promises.return_value = [
             {"promised_mb": 1000},
             {"promised_mb": 1000},
         ]
@@ -75,11 +75,11 @@ class TestRegisterVramPromise:
 
         # 1000 + 2000 = 3000 < 7200 (90% of 8000)
         assert result is True
-        db.vram_promises.promise.assert_called_once()
+        db.app.promise_vram.assert_called_once()
 
     def test_headroom_fit_check_rejects_when_over_90_percent(self) -> None:
         db = MagicMock()
-        db.vram_promises.list_all.return_value = [
+        db.app.list_vram_promises.return_value = [
             {"promised_mb": 3500},
             {"promised_mb": 3000},
         ]
@@ -95,11 +95,11 @@ class TestRegisterVramPromise:
 
         # 1000 + 6500 = 7500 > 7200 (90% of 8000)
         assert result is False
-        db.vram_promises.promise.assert_not_called()
+        db.app.promise_vram.assert_not_called()
 
     def test_headroom_fit_check_accepts_at_exact_90_percent(self) -> None:
         db = MagicMock()
-        db.vram_promises.list_all.return_value = [
+        db.app.list_vram_promises.return_value = [
             {"promised_mb": 3200},
             {"promised_mb": 3000},
         ]
@@ -115,7 +115,7 @@ class TestRegisterVramPromise:
 
         # 1000 + 6200 = 7200 == 7200 (90% of 8000); boundary is accepted (> not >=)
         assert result is True
-        db.vram_promises.promise.assert_called_once()
+        db.app.promise_vram.assert_called_once()
 
 
 @pytest.mark.unit
@@ -125,7 +125,7 @@ class TestReleaseVramPromise:
 
         release_vram_promise(db, "worker:1", "model.onnx")
 
-        db.vram_promises.release.assert_called_once_with(worker_id="worker:1", model_path="model.onnx")
+        db.app.release_vram.assert_called_once_with(worker_id="worker:1", model_path="model.onnx")
 
 
 @pytest.mark.unit
@@ -138,7 +138,7 @@ class TestReleaseWorkerPromises:
 
         assert result == 2
         db.app.list_vram_promises.assert_called_once_with()
-        db.vram_promises.release_all_for_worker.assert_called_once_with(worker_id="worker:1")
+        db.app.release_all_for_worker.assert_called_once_with(worker_id="worker:1")
 
 
 @pytest.mark.unit
@@ -149,7 +149,7 @@ class TestGetFleetVramState:
             {"worker_id": "worker:1", "model_path": "a.onnx", "promised_mb": 512},
             {"worker_id": "worker:2", "model_path": "b.onnx", "promised_mb": 256},
         ]
-        db.vram_promises.list_all.return_value = mock_promises
+        db.app.list_vram_promises.return_value = mock_promises
 
         with patch(
             "nomarr.components.ml.resources.ml_vram_coordinator_comp._resource_monitor.get_vram_usage_mb",
@@ -159,4 +159,4 @@ class TestGetFleetVramState:
 
         assert result["promises"] == mock_promises
         assert result["vram"] == {"used_mb": 2000, "total_mb": 8000, "error": None}
-        db.vram_promises.list_all.assert_called_once()
+        db.app.list_vram_promises.assert_called_once()

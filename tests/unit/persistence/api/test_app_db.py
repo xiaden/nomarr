@@ -11,6 +11,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, call
 
 import pytest
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from nomarr.helpers.constants.pipeline_states import PIPELINE_DEFAULTS
@@ -33,6 +34,8 @@ from nomarr.persistence.database.file_state_repo import FileStateRepository
 from nomarr.persistence.database.library_repo import LibraryRepository
 from nomarr.persistence.database.navidrome_repo import NavidromeRepo
 from nomarr.persistence.database.pipeline_repo import PipelineRepository
+from nomarr.persistence.models.base import Base
+from nomarr.persistence.models.vram_promise import VramPromise
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -102,6 +105,39 @@ def maintenance_db(
 @pytest.fixture
 def legacy_navidrome_db(mock_navidrome_repo: MagicMock) -> AppLegacyNavidromeDb:
     return AppLegacyNavidromeDb(navidrome_repo=mock_navidrome_repo)
+
+
+@pytest.fixture
+def sqlite_app_db() -> AppDb:
+    """End-to-end ``AppDb`` backed by a real in-memory SQLite engine.
+
+    Only the ``vram_promises`` table is created (its columns are all
+    portable — no JSONB, so no PostgreSQL-specific type patching is
+    needed). The other repositories are mocked because the VRAM promise
+    path exercises the real repo SQL layer, which is what catches bugs
+    like the missing-``id`` insert failure.
+    """
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine, tables=[VramPromise.__table__])
+    conn = engine.connect()
+    conn.begin()
+    conn.begin_nested()
+    session = Session(bind=conn)
+    app_db = AppDb(
+        session=session,
+        app_repo=AppRepository(session),
+        library_repo=MagicMock(spec=LibraryRepository),
+        navidrome_repo=MagicMock(spec=NavidromeRepo),
+        file_state_repo=MagicMock(spec=FileStateRepository),
+        pipeline_repo=MagicMock(spec=PipelineRepository),
+    )
+    try:
+        yield app_db
+    finally:
+        session.close()
+        conn.rollback()
+        conn.close()
+        engine.dispose()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -536,6 +572,148 @@ class TestAppDbVramPromiseMethods:
 
         assert result == 0
 
+    @pytest.mark.unit
+    def test_promise_vram_delegates_to_upsert(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        app_db.promise_vram(
+            worker_id="w1",
+            pid=1,
+            model_path="/m.onnx",
+            promised_mb=512.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
+
+        # Payload must NOT contain an 'id' — the repo plain-inserts and the
+        # autoincrement column assigns it.
+        mock_app_repo.upsert_vram_promise.assert_called_once_with(
+            {
+                "worker_id": "w1",
+                "pid": 1,
+                "model_path": "/m.onnx",
+                "promised_mb": 512.0,
+                "total_mb": 8000.0,
+                "used_mb": 1000.0,
+            }
+        )
+
+    @pytest.mark.unit
+    def test_promise_vram_inserts_end_to_end(self, sqlite_app_db: AppDb) -> None:
+        """promise_vram must insert a real row through the repo SQL layer.
+
+        Regression test for the latent KeyError: the old ``upsert_vram_promise``
+        unconditionally read ``payload["id"]``, which promise_vram's payload
+        does not contain.
+        """
+        sqlite_app_db.promise_vram(
+            worker_id="worker:1",
+            pid=999,
+            model_path="/models/a.onnx",
+            promised_mb=512.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
+
+        promises = sqlite_app_db.list_vram_promises()
+        assert len(promises) == 1
+        row = promises[0]
+        assert row["id"] is not None
+        assert row["worker_id"] == "worker:1"
+        assert row["pid"] == 999
+        assert row["model_path"] == "/models/a.onnx"
+        assert row["promised_mb"] == 512.0
+        assert row["total_mb"] == 8000.0
+        assert row["used_mb"] == 1000.0
+
+    @pytest.mark.unit
+    def test_release_vram_delegates_to_repo(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        app_db.release_vram(worker_id="w1", model_path="/m.onnx")
+
+        mock_app_repo.delete_vram_promise_by_worker_model.assert_called_once_with("w1", "/m.onnx")
+
+    @pytest.mark.unit
+    def test_release_vram_removes_promise_end_to_end(self, sqlite_app_db: AppDb) -> None:
+        """promise then release → zero rows remain for that worker+model.
+
+        Two promises are inserted for the SAME pair: the absorbed adapter's
+        release only deleted the first match it found (list-then-break), so
+        this is a deterministic regression guard for the atomic delete.
+        """
+        sqlite_app_db.promise_vram(
+            worker_id="worker:1",
+            pid=1,
+            model_path="/models/a.onnx",
+            promised_mb=512.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
+        sqlite_app_db.promise_vram(
+            worker_id="worker:1",
+            pid=2,
+            model_path="/models/a.onnx",
+            promised_mb=256.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
+        sqlite_app_db.promise_vram(
+            worker_id="worker:2",
+            pid=3,
+            model_path="/models/b.onnx",
+            promised_mb=128.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
+
+        sqlite_app_db.release_vram(worker_id="worker:1", model_path="/models/a.onnx")
+
+        remaining = sqlite_app_db.list_vram_promises()
+        assert len(remaining) == 1
+        assert remaining[0]["worker_id"] == "worker:2"
+
+    @pytest.mark.unit
+    def test_release_all_for_worker_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        mock_app_repo.get_vram_promises.return_value = [
+            {"id": 1, "worker_id": "w1"},
+            {"id": 2, "worker_id": "w2"},
+            {"id": 3, "worker_id": "w1"},
+        ]
+
+        app_db.release_all_for_worker(worker_id="w1")
+
+        assert mock_app_repo.delete_vram_promise.call_args_list == [call(1), call(3)]
+
+    @pytest.mark.unit
+    def test_release_all_for_worker_removes_matching_end_to_end(self, sqlite_app_db: AppDb) -> None:
+        sqlite_app_db.promise_vram(
+            worker_id="worker:1",
+            pid=1,
+            model_path="/models/a.onnx",
+            promised_mb=512.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
+        sqlite_app_db.promise_vram(
+            worker_id="worker:1",
+            pid=2,
+            model_path="/models/b.onnx",
+            promised_mb=256.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
+        sqlite_app_db.promise_vram(
+            worker_id="worker:2",
+            pid=3,
+            model_path="/models/c.onnx",
+            promised_mb=128.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
+
+        sqlite_app_db.release_all_for_worker(worker_id="worker:1")
+
+        remaining = sqlite_app_db.list_vram_promises()
+        assert len(remaining) == 1
+        assert remaining[0]["worker_id"] == "worker:2"
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AppDb — Worker Restart Policy Methods
@@ -867,31 +1045,6 @@ class TestAppDbNavidromeMethods:
 
 class TestAppDbCleanupShimMethods:
     @pytest.mark.unit
-    def test_list_collections_delegates_to_maintenance(self, app_db: AppDb) -> None:
-        result = app_db.list_collections()
-
-        assert result == []
-
-    @pytest.mark.unit
-    def test_clear_file_state_links_delegates_to_maintenance(
-        self, app_db: AppDb, mock_file_state_repo: MagicMock
-    ) -> None:
-        app_db.clear_file_state_links()
-
-        # Verify it went through maintenance → file_state_repo
-        assert mock_file_state_repo.truncate_assignments.call_count == 1
-
-    @pytest.mark.unit
-    def test_clear_pipeline_state_links_delegates_to_maintenance(self, app_db: AppDb) -> None:
-        # truncate_pipeline_state_edges is a no-op, so just verify it doesn't raise
-        app_db.clear_pipeline_state_links()
-
-    @pytest.mark.unit
-    def test_update_pipeline_state_raises_not_implemented(self, app_db: AppDb) -> None:
-        with pytest.raises(NotImplementedError, match="deprecated"):
-            app_db.update_pipeline_state(1, "scanning")
-
-    @pytest.mark.unit
     def test_remove_pipeline_state_resets_all_axes(self, app_db: AppDb, mock_library_repo: MagicMock) -> None:
         app_db.remove_pipeline_state(5)
 
@@ -964,28 +1117,8 @@ class TestAppMaintenanceDb:
         mock_file_state_repo.truncate_assignments.assert_called_once_with()
 
     @pytest.mark.unit
-    def test_truncate_pipeline_states_is_noop(self, maintenance_db: AppMaintenanceDb) -> None:
-        result = maintenance_db.truncate_pipeline_states()
-
-        assert result is None
-
-    @pytest.mark.unit
-    def test_truncate_pipeline_state_edges_is_noop(self, maintenance_db: AppMaintenanceDb) -> None:
-        result = maintenance_db.truncate_pipeline_state_edges()
-
-        assert result is None
-
-    @pytest.mark.unit
     def test_truncate_worker_claims_delegates(self, maintenance_db: AppMaintenanceDb, mock_app_repo: MagicMock) -> None:
         maintenance_db.truncate_worker_claims()
-
-        mock_app_repo.truncate_worker_claims.assert_called_once_with()
-
-    @pytest.mark.unit
-    def test_delete_all_worker_claims_shims_to_truncate(
-        self, maintenance_db: AppMaintenanceDb, mock_app_repo: MagicMock
-    ) -> None:
-        maintenance_db.delete_all_worker_claims()
 
         mock_app_repo.truncate_worker_claims.assert_called_once_with()
 
@@ -994,12 +1127,6 @@ class TestAppMaintenanceDb:
         maintenance_db.truncate_health()
 
         mock_app_repo.truncate_health.assert_called_once_with()
-
-    @pytest.mark.unit
-    def test_list_collections_returns_empty(self, maintenance_db: AppMaintenanceDb) -> None:
-        result = maintenance_db.list_collections()
-
-        assert result == []
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -291,7 +291,7 @@ class LibraryQueryMixin:
 
         Args:
             limit: Maximum number of files to return.
-            library_id: Optional library _id to filter by.
+            library_id: Optional library id to filter by.
 
         Returns:
             List of {file_id, path, title, artist, album, scanned_at}
