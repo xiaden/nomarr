@@ -31,7 +31,7 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn>=0.30.6",
     "rich>=13.7.0",
-    "requests>=2.32.0",
+    "requests>=2.33.0",
     "bcrypt>=4.2.0",
     "python-arango>=8.0.0",
     "watchdog>=6.0.0",
@@ -43,7 +43,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.3.0",
+    "pytest>=9.0.3",
     "pytest-cov>=5.0.0",
     "ruff>=0.14.0",
     "mypy>=1.19.0",
